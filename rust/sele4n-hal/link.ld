@@ -154,9 +154,10 @@ SECTIONS
      * metadata byte it reads and never reads the pages it serves.  4 KiB
      * aligned, because the allocator's pages are MMU granules.  Its bounds are
      * the only way the Rust side learns the extent
-     * (`lean_heap::arena_extent`), and the boot map's critical ranges include
-     * it (`mmu::image_ranges`), so translation is never enabled over tables
-     * that leave the heap unmapped. */
+     * (`lean_heap::arena_extent`); it lies inside the guaranteed gigabyte the
+     * boot map covers (`mmu::GUARANTEED_RAM_TOP`, asserted below), and
+     * `mmu::kernel_extent` keeps the device-tree window off it, so translation
+     * is never enabled over tables that leave the heap unmapped. */
     .lean_heap (NOLOAD) : ALIGN(4096) {
         __lean_heap_start = .;
         . += LEAN_HEAP_SIZE;

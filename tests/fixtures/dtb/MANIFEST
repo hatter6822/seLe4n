@@ -5,7 +5,8 @@
 #   regions: base+size,... | - (none) | refused (the Lean parser)
 four_gib_low_aperture | readable | 0x0+0xfc000000
 eight_gib_two_pairs | readable | 0x0+0xfc000000,0x100000000+0x100000000
-eight_gib_as_firmware_reports_it | readable | 0x0+0xfc000000,0x100000000+0x104000000
+eight_gib_bcm2711_relocated_bank | readable | 0x0+0xfc000000,0x100000000+0x104000000
+eight_gib_rpi5_firmware | readable | 0x0+0x80000,0x80000+0x3fb80000,0x40000000+0x1c0000000
 low_aperture_short_forfeits_high | readable | 0x0+0x40000000,0x100000000+0x80000000
 discontiguous_high_stops_at_hole | readable | 0x0+0xfc000000,0x100000000+0x40000000,0x200000000+0x40000000
 split_low_aperture | readable | 0x0+0x80000000,0x80000000+0x7c000000

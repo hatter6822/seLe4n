@@ -34,3 +34,11 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+# The v0.36.2 audit: the board runs this profile, and a silent wrap is the one
+# arithmetic outcome a microkernel must not have.  Every size and count that
+# takes untrusted input is already `checked_*` / `saturating_*`; this makes the
+# residue — an implicit `+` on a value some earlier check bounded — a halt
+# (the panic handler is the system barrier) rather than a wrapped value, at
+# the cost of a compare-and-branch per operation.  The dev profile, which
+# every host test runs under, has always had it on.
+overflow-checks = true

@@ -19,21 +19,19 @@ Constants are verified using one of:
 
 | # | Constant | Board.lean Value | Hardware Value | Status | Method |
 |---|----------|-----------------|----------------|--------|--------|
-| 1 | `gicDistributorBase` | `0xFF841000` | *pending* | PENDING | MMIO read GICD_IIDR at +0x008 |
-| 2 | `gicCpuInterfaceBase` | `0xFF842000` | *pending* | PENDING | MMIO read GICC_IIDR at +0x0FC |
-| 3 | `uart0Base` | `0xFE201000` | *pending* | PENDING | Serial write test char |
+| 1 | `gicDistributorBase` | `0x10_7FFF_9000` (BCM2712 GIC-400; `0xFF841000` was the BCM2711's until v0.36.2) | *pending* | PENDING | MMIO read GICD_IIDR at +0x008 |
+| 2 | `gicCpuInterfaceBase` | `0x10_7FFF_A000` (`0xFF842000` until v0.36.2) | *pending* | PENDING | MMIO read GICC_IIDR at +0x0FC |
+| 3 | `uart0Base` | `0x10_7D00_1000` (UART10, the debug header, 9.216 MHz; `0xFE201000` until v0.36.2) | *pending* | PENDING | Serial write test char |
 | 4 | `timerFrequencyHz` | `54000000` | *pending* | PENDING | MRS CNTFRQ_EL0 |
-| 5 | `ramStart` | `0x00000000` | *pending* | PENDING | Memory read/write test |
-| 6 | `ramEnd` | `0xFC000000` | *pending* | PENDING | Memory boundary probe |
-| 7 | `peripheralStart` | `0xFE000000` | *pending* | PENDING | MMIO access test |
-| 8 | `peripheralEnd` | `0xFF850000` | *pending* | PENDING | MMIO boundary probe |
-| 9 | `gicSpiCount` | `192` | *pending* | PENDING | Read GICD_TYPER ITLinesNumber |
-| 10 | `timerPpiId` | `30` | *pending* | PENDING | Timer interrupt fires on INTID 30 |
-| 11 | `registerWidth` | `64` | 64 | VERIFIED | ARM64 architecture invariant |
-| 12 | `virtualAddressWidth` | `48` | *pending* | PENDING | Read ID_AA64MMFR0_EL1.PARange |
-| 13 | `physicalAddressWidth` | `44` | *pending* | PENDING | Read ID_AA64MMFR0_EL1.PARange |
-| 14 | `pageSize` | `4096` | 4096 | VERIFIED | ARM64 4KiB granule (standard) |
-| 15 | `maxASID` | `65536` | *pending* | PENDING | Read ID_AA64MMFR0_EL1.ASIDBits |
+| 5 | `rpi5MemoryMapForConfig` RAM | `[0, ramSize)` per variant (contiguous from 0 on the BCM2712; the `ramStart`/`ramEnd` pair with `ramEnd = 0xFC000000` was the BCM2711 map until v0.36.2) | *pending* | PENDING | Memory read/write test at both ends; compare the firmware's `/memory@0` account (see plan row BP7.10 — the account withholds the top of the first gigabyte) |
+| 6 | `socPeripheralBase` / `socPeripheralSize` | `[0x10_7C00_0000, +64 MiB)` — the one device region (`peripheralStart`/`peripheralEnd` at `0xFE000000`/`0xFF850000` were the BCM2711's until v0.36.2) | *pending* | PENDING | MMIO access test at both ends of the window |
+| 7 | `gicSpiCount` | `192` | *pending* | PENDING | Read GICD_TYPER ITLinesNumber |
+| 8 | `timerPpiId` | `30` | *pending* | PENDING | Timer interrupt fires on INTID 30 |
+| 9 | `registerWidth` | `64` | 64 | VERIFIED | ARM64 architecture invariant |
+| 10 | `virtualAddressWidth` | `48` | *pending* | PENDING | Read ID_AA64MMFR0_EL1.PARange |
+| 11 | `physicalAddressWidth` | `44` | *pending* | PENDING | Read ID_AA64MMFR0_EL1.PARange |
+| 12 | `pageSize` | `4096` | 4096 | VERIFIED | ARM64 4KiB granule (standard) |
+| 13 | `maxASID` | `65536` | *pending* | PENDING | Read ID_AA64MMFR0_EL1.ASIDBits |
 
 ## Validation Script
 

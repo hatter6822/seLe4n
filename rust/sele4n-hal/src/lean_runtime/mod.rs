@@ -310,7 +310,14 @@ pub fn fatal(reason: &str) -> ! {
     }
     #[cfg(target_arch = "aarch64")]
     {
-        crate::cpu::fatal_halt()
+        // The v0.36.2 audit: the SYSTEM halts, as at every other boot-fatal
+        // refusal (the initializer, the Phase-7 topology check, the
+        // shootdown timeout).  A runtime contract violation is reached only
+        // after the kernel is installed, when other PEs may be serving it;
+        // parking this PE alone left them running EL0 threads until each
+        // wedged on the kernel-entry lock this PE still holds and halted
+        // with the lock's diagnostic rather than this one's.
+        crate::gic::halt_all()
     }
 }
 
@@ -467,9 +474,22 @@ pub unsafe fn ctor_get_u64(o: Obj, offset: usize) -> u64 {
 #[must_use]
 pub fn alloc_ctor(tag: u8, num_objs: u8, scalar_sz: usize) -> Obj {
     debug_assert!(tag <= MAX_CTOR_TAG);
-    let o = object::alloc_object(HEADER_BYTES + 8 * usize::from(num_objs) + scalar_sz);
+    let sz = HEADER_BYTES + 8 * usize::from(num_objs) + scalar_sz;
+    let o = object::alloc_object(sz);
     // SAFETY: `alloc_object` returned at least a header's worth of memory.
     unsafe { set_st_header(o, tag, num_objs) };
+    // `lean_alloc_ctor_memory`'s contract (the v0.36.2 audit): when the byte
+    // size is not a whole number of words, the last word is zeroed, so the
+    // sharing maximizer (`sharecommon_eq` / `sharecommon_hash`, which read
+    // every byte of a constructor) never sees uninitialised padding — a
+    // 20-byte constructor's four trailing bytes, for one.
+    let sz1 = sz.next_multiple_of(8);
+    if sz1 > sz {
+        // SAFETY: the allocator serves whole words (`mem::alloc` rounds a
+        // request up to its 8-byte classes), so `[sz1 - 8, sz1)` lies inside
+        // the allocation, and `o` is word-aligned, so the word is aligned.
+        unsafe { o.cast::<u8>().add(sz1 - 8).cast::<u64>().write(0) };
+    }
     o
 }
 

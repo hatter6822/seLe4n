@@ -291,9 +291,14 @@ mod exports {
 
     macro_rules! export_apply {
         ($($name:ident($($a:ident),+);)+) => {$(
-            #[doc = concat!("`", stringify!($name), "`: [`apply`] to the listed arguments.")]
+            /// One of `lean.h`'s fixed-arity application exports, minted by
+            /// `export_apply`: [`apply`] to the listed arguments.
+            ///
+            /// # Safety
+            ///
+            /// `f` and every argument are owned references to live objects, which the application consumes (the Lean calling convention).
             #[no_mangle]
-            pub extern "C" fn $name(f: Obj, $($a: Obj),+) -> Obj {
+            pub unsafe extern "C" fn $name(f: Obj, $($a: Obj),+) -> Obj {
                 // SAFETY: the Lean calling convention: `f` and every argument are
                 // owned references the callee consumes.
                 unsafe { apply(f, &[$($a),+]) }

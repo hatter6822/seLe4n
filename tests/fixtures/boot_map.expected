@@ -1,6 +1,6 @@
 # RPi5 boot map: the Lean memory map per RAM variant, and its kind at every probe (Lean/Rust cross-check)
 kernelReserved 0x0 0x10000000
-mmio uart 0x107d001000 0x1000
+mmio uart 0x107d001000 0x200
 mmio gicd 0x107fff9000 0x1000
 mmio gicc 0x107fffa000 0x2000
 variant 0x40000000 ramTop 0x40000000

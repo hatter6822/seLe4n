@@ -2391,6 +2391,17 @@ fn named_fn_body_span(code: &str, fn_name: &str) -> Result<(usize, usize), Strin
     let at = code
         .find(&signature)
         .ok_or_else(|| format!("`{fn_name}` is not defined here"))?;
+    // **The v0.36.2 audit**: one definition, or the answer is a choice.  A
+    // second `fn <name>(` — a `#[cfg(any())]` stub, or the `cfg`-split shape
+    // `smp.rs` uses for `secondary_entry` — would leave the first definition
+    // as the one every readiness relation is decided over while the second is
+    // the one the image runs; refuse the pair rather than pick.
+    if code[at + signature.len()..].contains(&signature) {
+        return Err(format!(
+            "`{fn_name}` is defined more than once here; the scanner cannot tell which \
+             definition the image runs"
+        ));
+    }
     // An offset *inside* the body: `enclosing_fn_span` resolves the innermost
     // `fn` whose brace-matched body contains it, and the signature itself sits
     // outside that span.
@@ -5657,15 +5668,52 @@ fn blank_hw_target_blocks(kept: &str, code: &str) -> String {
 }
 
 /// Byte spans of every `#[cfg(test)]` module body in `code`.
+///
+/// **The v0.36.2 audit**: the attribute is tied to the item it decorates.
+/// It used to attach to the next `mod ` *anywhere* after it, so a
+/// `#[cfg(test)] fn` (which `smp.rs` carries for its host `secondary_entry`)
+/// made the next live module read as a test span, and a live marker placed
+/// there was filtered out of the readiness derivation — fail-open on the
+/// scanner whose whole claim is "nothing else marks a core ready".  Now the
+/// item after the attribute — past further attributes and a visibility — must
+/// *be* `mod`; a decorated `fn`, `use`, `struct` or anything else is not a
+/// module span, and its body stays live, which is the direction that refuses.
 fn cfg_test_module_spans(code: &str) -> Vec<(usize, usize)> {
     let mut spans = Vec::new();
     let mut search = 0usize;
     while let Some(hit) = code[search..].find("#[cfg(test)]") {
         let at = search + hit;
         search = at + 1;
-        let Some(mod_at) = code[at..].find("mod ").map(|i| at + i) else {
+        // The decorated item: skip the attribute itself, any further
+        // attributes, and a visibility qualifier (`pub`, `pub(crate)`, …).
+        let mut item = &code[at + "#[cfg(test)]".len()..];
+        loop {
+            item = item.trim_start();
+            if let Some(rest) = item.strip_prefix("#[") {
+                match rest.find(']') {
+                    Some(end) => item = &rest[end + 1..],
+                    None => break,
+                }
+            } else if let Some(rest) = strip_word_prefix(item, "pub") {
+                let rest = rest.trim_start();
+                item = match rest.strip_prefix('(') {
+                    Some(inner) => match inner.find(')') {
+                        Some(end) => &inner[end + 1..],
+                        None => break,
+                    },
+                    None => rest,
+                };
+            } else {
+                break;
+            }
+        }
+        if strip_word_prefix(item, "mod").is_none() {
+            // The attribute decorates something other than a module: its body
+            // is not a test span (an item a test-only `fn` reaches is still
+            // read as live, which is the fail-closed direction).
             continue;
-        };
+        }
+        let mod_at = code.len() - item.len();
         let Some(open) = code[mod_at..].find('{').map(|i| mod_at + i) else {
             continue;
         };
@@ -9536,8 +9584,17 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
 /// so each must turn FP/SIMD off before anything else runs on that PE.
 const FP_TRAPPING_ENTRIES: [&str; 2] = ["_start", "secondary_entry"];
 
-/// The canonical prologue every entry in `FP_TRAPPING_ENTRIES` opens with,
-/// as normalised statements (`asm_statement_items`).
+/// The canonical FP-trap prologue every entry in `FP_TRAPPING_ENTRIES`
+/// writes immediately after its `.L_enter_el1` call (`EL1_ENTRY_CALL`), as
+/// normalised statements (`asm_statement_items`).
+///
+/// **After the call, never before it** (the v0.36.2 audit).  At EL2 with
+/// `HCR_EL2.E2H = 1` the spelling `cpacr_el1` denotes CPTR_EL2 (the VHE
+/// register redirection), and E2H resets to an UNKNOWN value; a write made
+/// before the drop can therefore land in the register `.L_enter_el1` then
+/// overwrites, leaving CPACR_EL1 at its UNKNOWN reset value with FP untrapped
+/// at EL1.  At EL1 the name is unconditional, so the prologue follows the
+/// drop, and both this scanner and `el1_entry_status` pin that order.
 ///
 /// `CPACR_EL1 := 0` sets `FPEN = 0b00` — trap every FP/SIMD access at EL0
 /// **and** EL1 (ARM ARM D19.2.30) — and `ZEN = SMEN = 0b00` besides, so SVE
@@ -9575,6 +9632,10 @@ enum AsmItem {
 fn asm_statement_items(view: &str) -> Vec<AsmItem> {
     let mut items = Vec::new();
     for line in view.lines() {
+        // A preprocessor line is not a statement.  Every scanner that reads
+        // these items refuses a source holding one first
+        // (`asm_unreadable_directive`), because a `#define` can alias the
+        // very register a negative below looks for.
         if line.trim_start().starts_with('#') {
             continue;
         }
@@ -9605,6 +9666,46 @@ fn asm_statement_items(view: &str) -> Vec<AsmItem> {
         }
     }
     items
+}
+
+/// **The v0.36.2 audit**: a line of an assembly code view that
+/// `asm_statement_items` cannot read as statements — a preprocessor line
+/// (`#define`, `#include`, `#if …`) or an inclusion directive (`.include`,
+/// `.incbin`).  Neither contributes an item, and each is a way to keep the
+/// token a negative looks for out of the items it counts: `#define CP
+/// cpacr_el1` followed by `msr CP, x9` re-enables FP with no statement naming
+/// `CPACR_EL1`, and an included file is text no scanner reads.  A provider
+/// scanner may treat such a line as contributing nothing; a negative must
+/// refuse it (CLAUDE.md, *a scanner's default branch is a decision*).  No
+/// `.S` in the tree carries one, so the refusal costs nothing.
+fn asm_unreadable_directive(view: &str) -> Option<String> {
+    for (index, line) in view.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            return Some(format!(
+                "line {}: preprocessor line `{trimmed}`; the assembly scanners read \
+                 statements and cannot see what the preprocessor would substitute",
+                index + 1
+            ));
+        }
+        let lowered = trimmed.to_ascii_lowercase();
+        if lowered.starts_with(".include") || lowered.starts_with(".incbin") {
+            return Some(format!(
+                "line {}: `{trimmed}` brings in text the assembly scanners do not read",
+                index + 1
+            ));
+        }
+    }
+    None
+}
+
+/// Whether a normalised assembly statement names `word` as a whole word —
+/// a register, a label or a symbol — with the same word boundary
+/// `names_el2_register` uses.
+fn asm_names_word(text: &str, word: &str) -> bool {
+    text.to_ascii_lowercase()
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .any(|w| w == word)
 }
 
 /// Whether `text` names `CPACR_EL1` in either spelling, as a whole word.
@@ -9643,6 +9744,14 @@ fn fp_trap_prologue_status(
     other_asm: &[(&str, &str)],
     rust: &[(&str, &str)],
 ) -> Result<(), String> {
+    if let Some(why) = asm_unreadable_directive(&asm_code_view(boot)) {
+        return Err(format!("boot.S: {why}"));
+    }
+    for (path, source) in other_asm {
+        if let Some(why) = asm_unreadable_directive(&asm_code_view(source)) {
+            return Err(format!("{path}: {why}"));
+        }
+    }
     let items = asm_statement_items(&asm_code_view(boot));
     let mut prologue_writes = 0usize;
     for entry in FP_TRAPPING_ENTRIES {
@@ -9658,7 +9767,16 @@ fn fp_trap_prologue_status(
                 defs.len()
             ));
         };
-        let opening: Vec<&AsmItem> = items[at + 1..]
+        // The v0.36.2 audit: the entry's first item is the drop to EL1, and
+        // the prologue follows it (see `FP_TRAP_PROLOGUE`'s docs for why the
+        // other order is unsound at EL2).
+        if items.get(at + 1) != Some(&AsmItem::Statement(EL1_ENTRY_CALL.to_string())) {
+            return Err(format!(
+                "`{entry}` does not begin with `{EL1_ENTRY_CALL}`; its first item is {:?}",
+                items.get(at + 1)
+            ));
+        }
+        let opening: Vec<&AsmItem> = items[at + 2..]
             .iter()
             .take(FP_TRAP_PROLOGUE.len())
             .collect();
@@ -9668,7 +9786,8 @@ fn fp_trap_prologue_status(
             .collect();
         if opening.len() != expected.len() || opening.iter().zip(&expected).any(|(a, b)| *a != b) {
             return Err(format!(
-                "`{entry}` does not open with `{}` then `{}`; its first items are {opening:?}",
+                "`{entry}` does not follow `{EL1_ENTRY_CALL}` with `{}` then `{}`; the items \
+                 after the call are {opening:?}",
                 FP_TRAP_PROLOGUE[0], FP_TRAP_PROLOGUE[1]
             ));
         }
@@ -9707,8 +9826,10 @@ fn fp_trap_prologue_status(
 /// order, the operand, the position, the spelling of a second write, or the
 /// enclosure (a comment, a string).
 fn verify_fp_trap_prologue_scanner() {
-    const GOOD: &str = "_start:\n    msr     cpacr_el1, xzr\n    isb\n    mrs x1, mpidr_el1\n\
-                        secondary_entry:\n    MSR CPACR_EL1 ,XZR ; isb\n    msr daifset, #0xf\n";
+    const GOOD: &str = "_start:\n    bl .L_enter_el1\n    msr     cpacr_el1, xzr\n    isb\n\
+                        \x20   mrs x1, mpidr_el1\n\
+                        secondary_entry:\n    bl .L_enter_el1\n    MSR CPACR_EL1 ,XZR ; isb\n\
+                        \x20   msr daifset, #0xf\n";
     let accept = |label: &str, boot: &str, asm: &[(&str, &str)], rust: &[(&str, &str)]| {
         if let Err(e) = fp_trap_prologue_status(boot, asm, rust) {
             panic!("FP-trap scanner self-test: `{label}` must be accepted: {e}");
@@ -9809,6 +9930,50 @@ fn verify_fp_trap_prologue_scanner() {
             "fn f() { unsafe { core::arch::asm!(\"msr cpacr_el1, {}\", in(reg) 3u64 << 20) } }\n",
         )],
     );
+    // The v0.36.2 audit: the token kept out of the items.  A preprocessor
+    // alias writes the register with no statement naming it, and an included
+    // file is text the scanner never sees.
+    refuse(
+        "re-enabled through a preprocessor alias",
+        &format!("#define CP cpacr_el1\n{GOOD}    mov x0, #0x300000\n    msr CP, x0\n"),
+        &[],
+        &[],
+    );
+    refuse(
+        "an included file in another .S",
+        GOOD,
+        &[("trap.S", "    .include \"fp.inc\"\n")],
+        &[],
+    );
+    refuse(
+        "a preprocessor conditional in boot.S",
+        &format!("#if 1\n{GOOD}#endif\n"),
+        &[],
+        &[],
+    );
+    // The v0.36.2 audit: every token kept, the prologue written BEFORE the
+    // drop to EL1 (the order this tree shipped until the audit), and the
+    // drop absent altogether.
+    refuse(
+        "the FP trap written before the drop to EL1",
+        &GOOD.replacen(
+            "_start:\n    bl .L_enter_el1\n    msr     cpacr_el1, xzr\n    isb\n",
+            "_start:\n    msr     cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n",
+            1,
+        ),
+        &[],
+        &[],
+    );
+    refuse(
+        "no drop to EL1 ahead of the prologue",
+        &GOOD.replacen(
+            "secondary_entry:\n    bl .L_enter_el1\n",
+            "secondary_entry:\n",
+            1,
+        ),
+        &[],
+        &[],
+    );
     assert!(
         !names_cpacr_el1("cpacr_el1_fpen"),
         "FP-trap scanner self-test: a longer word is not the register"
@@ -9819,7 +9984,8 @@ fn verify_fp_trap_prologue_scanner() {
 // Every boot entry reaches EL1 from whichever level the firmware chose
 // ============================================================================
 
-/// What each boot entry does immediately after `FP_TRAP_PROLOGUE`.
+/// The first item of each boot entry, ahead of `FP_TRAP_PROLOGUE` (whose docs
+/// say why the drop to EL1 must precede the `CPACR_EL1` write).
 const EL1_ENTRY_CALL: &str = "bl .l_enter_el1";
 
 /// What `_start` does with the entry level `.L_enter_el1` reports in `x9`:
@@ -9914,11 +10080,57 @@ const EL2_REGISTERS: [&str; 9] = [
 
 /// Whether `text` names an EL2 register, by name or by an `op1 = 4`
 /// encoding, as a whole word.
+///
+/// **The v0.36.2 audit**: by *name* means any word ending in `_el2` — the
+/// architecture's own spelling of every EL2 system register — not membership
+/// in `EL2_REGISTERS`, which is the pin the routine must match rather than a
+/// derivation of what a second writer could name.  A list-membership test
+/// accepted `msr vbar_el2, x9` / `msr sctlr_el2, x9` outside the routine
+/// while the contract said no other statement writes an EL2 register.  The
+/// routine's own `.L_enter_el1_from_el2` label ends the same way and counts
+/// on both sides of the comparison equally.
+///
+/// This is the question for **assembly** text — a `.S` source or an `asm!`
+/// template — where a word ending in `_el2` can only be a register.  Rust
+/// *code* is asked the narrower [`names_el2_register_by_name`]: a Rust
+/// identifier may end the same way (`CURRENT_EL_EL2`, the `CurrentEL` value
+/// `psci.rs` decides the conduit by) without naming a register, and a Rust
+/// statement writes an EL2 register only through a template or a system-
+/// register macro whose argument is the register's own name.
 fn names_el2_register(text: &str) -> bool {
     let lowered = text.to_ascii_lowercase();
     lowered
         .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .any(|word| word.ends_with("_el2") || word.starts_with("s3_4_c"))
+}
+
+/// Whether `text` names one of `EL2_REGISTERS`, or an `op1 = 4` encoding, as
+/// a whole word — the question for Rust code outside its string literals.
+fn names_el2_register_by_name(text: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    lowered
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
         .any(|word| EL2_REGISTERS.contains(&word) || word.starts_with("s3_4_c"))
+}
+
+/// The contents of every string literal in a Rust source: the bytes the
+/// strings-kept view carries where the strings-blanked view is blank.  Both
+/// views are byte-aligned (`rust_code_views`), so this is a byte-wise
+/// difference rather than a second lexer.  Each literal is followed by a
+/// space so two adjacent literals do not fuse into one word.
+fn rust_string_contents(kept: &str, code: &str) -> String {
+    let mut out = String::with_capacity(kept.len());
+    let mut inside = false;
+    for (k, c) in kept.bytes().zip(code.bytes()) {
+        if k != c && c == b' ' {
+            out.push(k as char);
+            inside = true;
+        } else if inside {
+            out.push(' ');
+            inside = false;
+        }
+    }
+    out
 }
 
 /// One item as the canonical tables spell it.
@@ -9939,6 +10151,27 @@ fn el1_entry_status(
     other_asm: &[(&str, &str)],
     rust: &[(&str, &str)],
 ) -> Result<(), String> {
+    if let Some(why) = asm_unreadable_directive(&asm_code_view(boot)) {
+        return Err(format!("boot.S: {why}"));
+    }
+    for (path, source) in other_asm {
+        if let Some(why) = asm_unreadable_directive(&asm_code_view(source)) {
+            return Err(format!("{path}: {why}"));
+        }
+    }
+    // The nine-name list is the pin the routine must match: a register the
+    // routine writes and the list does not name, or the reverse, is a table
+    // that has drifted from the code it describes.
+    for register in EL2_REGISTERS {
+        if !EL1_ENTRY_ROUTINE
+            .iter()
+            .any(|t| asm_names_word(t, register))
+        {
+            return Err(format!(
+                "EL2_REGISTERS names `{register}`, which EL1_ENTRY_ROUTINE never writes"
+            ));
+        }
+    }
     let items = asm_statement_items(&asm_code_view(boot));
     let texts: Vec<String> = items.iter().map(asm_item_text).collect();
     for entry in FP_TRAPPING_ENTRIES {
@@ -9955,21 +10188,22 @@ fn el1_entry_status(
                 defs.len()
             ));
         };
-        let call = at + 1 + FP_TRAP_PROLOGUE.len();
+        // The v0.36.2 audit: the call is the entry's FIRST item, and the FP
+        // prologue follows it — see `FP_TRAP_PROLOGUE`.
+        let call = at + 1;
         if texts.get(call).map(String::as_str) != Some(EL1_ENTRY_CALL) {
             return Err(format!(
-                "`{entry}` does not call `.L_enter_el1` immediately after its FP \
-                 prologue; the item there is {:?}",
+                "`{entry}` does not call `.L_enter_el1` as its first item; the item there \
+                 is {:?}",
                 texts.get(call)
             ));
         }
-        if entry == "_start"
-            && texts.get(call + 1).map(String::as_str) != Some(START_KEEPS_ENTRY_EL)
-        {
+        let keep = call + 1 + FP_TRAP_PROLOGUE.len();
+        if entry == "_start" && texts.get(keep).map(String::as_str) != Some(START_KEEPS_ENTRY_EL) {
             return Err(format!(
-                "`_start` does not keep the reported entry level with `{START_KEEPS_ENTRY_EL}`; \
-                 the item after the call is {:?}",
-                texts.get(call + 1)
+                "`_start` does not keep the reported entry level with `{START_KEEPS_ENTRY_EL}` \
+                 right after its FP prologue; the item there is {:?}",
+                texts.get(keep)
             ));
         }
     }
@@ -9997,6 +10231,41 @@ fn el1_entry_status(
              `{}` (found {boot_main_calls} calls, {hands_over} preceded by it)",
             START_PASSES_ENTRY_EL[0]
         ));
+    }
+    // **The v0.36.2 audit**: the level is *kept*, not merely stored and later
+    // read.  Two positions were pinned — `mov x20, x9` after the call and
+    // `mov x1, x20` before `rust_boot_main` — and nothing read the hundred
+    // statements between them, so a `mov x20, #0x4` there kept every token
+    // and handed `rust_boot_main` an EL1 entry level on the board's EL2 entry:
+    // `psci::select_conduit` then picks `hvc` with EL2 vacated, the hang BP5.5
+    // exists to close.  Nothing in `_start` legitimately names x20 between the
+    // keep and the pass, so any mention is refused.
+    let start_label = format!("{}:", FP_TRAPPING_ENTRIES[0].to_ascii_lowercase());
+    let start_at = texts
+        .iter()
+        .position(|t| *t == start_label)
+        .ok_or("`_start` is not defined")?;
+    let keep_at = texts[start_at..]
+        .iter()
+        .position(|t| t.as_str() == START_KEEPS_ENTRY_EL)
+        .map(|i| start_at + i)
+        .ok_or("`_start` does not keep the entry level")?;
+    let pass_at = texts
+        .windows(START_PASSES_ENTRY_EL.len())
+        .position(|w| w.iter().zip(START_PASSES_ENTRY_EL).all(|(a, b)| a == b))
+        .ok_or("`_start` does not pass the entry level")?;
+    if pass_at <= keep_at {
+        return Err("`_start` passes the entry level before it keeps it".into());
+    }
+    for (offset, text) in texts[keep_at + 1..pass_at].iter().enumerate() {
+        if asm_names_word(text, "x20") || asm_names_word(text, "w20") {
+            return Err(format!(
+                "`_start` names x20 between keeping the entry level and passing it \
+                 (item {} after the keep: `{text}`); the level must reach \
+                 `rust_boot_main` unchanged",
+                offset + 1
+            ));
+        }
     }
     let routine_defs: Vec<usize> = texts
         .iter()
@@ -10044,7 +10313,10 @@ fn el1_entry_status(
         }
     }
     for (path, source) in rust {
-        if names_el2_register(&rust_code_views(source).0) {
+        let (kept, code) = rust_code_views(source);
+        if names_el2_register_by_name(&code)
+            || names_el2_register(&rust_string_contents(&kept, &code))
+        {
             return Err(format!(
                 "{path} names an EL2 register in code or an `asm!` template; \
                  `.L_enter_el1` is the only writer"
@@ -10068,9 +10340,9 @@ fn el1_entry_fixture() -> String {
         })
         .collect();
     format!(
-        "_start:\n    msr cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n    mov x20, x9\n\
+        "_start:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n    mov x20, x9\n\
          \x20   mov x19, x0\n    mov x0, x19\n    mov x1, x20\n    bl rust_boot_main\n\
-         secondary_entry:\n    msr cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n    msr daifset, #0xf\n\
+         secondary_entry:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n    msr daifset, #0xf\n\
          {routine}"
     )
 }
@@ -10109,8 +10381,19 @@ fn verify_el1_entry_scanner() {
     refuse(
         "the call moved after an instruction",
         &mutate(
-            "    isb\n    bl .L_enter_el1\n    msr daifset",
-            "    isb\n    msr daifset, #0xf\n    bl .L_enter_el1\n    msr daifset",
+            "secondary_entry:\n    bl .L_enter_el1\n",
+            "secondary_entry:\n    msr daifset, #0xf\n    bl .L_enter_el1\n",
+        ),
+        &[],
+        &[],
+    );
+    // The v0.36.2 audit: the FP prologue written before the drop, the order
+    // this tree shipped until the audit.
+    refuse(
+        "the FP trap written before the drop to EL1",
+        &mutate(
+            "_start:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n",
+            "_start:\n    msr cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n",
         ),
         &[],
         &[],
@@ -10125,6 +10408,43 @@ fn verify_el1_entry_scanner() {
         "the entry level not passed",
         &mutate("    mov x1, x20\n", "    mov x1, xzr\n"),
         &[],
+        &[],
+    );
+    // The v0.36.2 audit: every token kept, the level overwritten between the
+    // keep and the pass.
+    refuse(
+        "the entry level clobbered before it is passed",
+        &mutate("    mov x19, x0\n", "    mov x19, x0\n    mov x20, #0x4\n"),
+        &[],
+        &[],
+    );
+    refuse(
+        "the entry level read into a scratch register between keep and pass",
+        &mutate("    mov x19, x0\n", "    mov x19, x0\n    mov x21, x20\n"),
+        &[],
+        &[],
+    );
+    // An EL2 register the list does not name, written by name; and the
+    // routine's own writes hidden behind a preprocessor alias.
+    refuse(
+        "another EL2 register written by name in boot.S",
+        &mutate(
+            "    mov x19, x0\n",
+            "    mov x19, x0\n    msr vbar_el2, x9\n",
+        ),
+        &[],
+        &[],
+    );
+    refuse(
+        "an EL2 register aliased by the preprocessor",
+        &format!("#define H hcr_el2\n{good}"),
+        &[],
+        &[],
+    );
+    refuse(
+        "an included file in another .S",
+        &good,
+        &[("trap.S", "    .include \"el2.inc\"\n")],
         &[],
     );
     refuse(
@@ -10270,9 +10590,10 @@ fn scan_el1_entry() {
     if let Err(e) = el1_entry_status(&boot, &asm_refs, &rust_refs) {
         panic!(
             "EL1 entry regression: {e}.\n\
-             Both boot entries must call `.L_enter_el1` right after the FP \
-             prologue, `.L_enter_el1` must be EL1_ENTRY_ROUTINE exactly, and \
-             nothing else may write an EL2 register (see EL1_ENTRY_ROUTINE)."
+             Both boot entries must call `.L_enter_el1` as their first item and \
+             write the FP-trap prologue right after it, `.L_enter_el1` must be \
+             EL1_ENTRY_ROUTINE exactly, and nothing else may write an EL2 \
+             register (see EL1_ENTRY_ROUTINE)."
         );
     }
 }
@@ -10311,9 +10632,11 @@ fn scan_fp_trap_prologue() {
     if let Err(e) = fp_trap_prologue_status(&boot, &asm_refs, &rust_refs) {
         panic!(
             "FP/SIMD trap regression: {e}.\n\
-             Every boot entry must open with `msr cpacr_el1, xzr` then `isb`, \
-             so FP/SIMD is trapped at EL0 and EL1 before any code runs on the \
-             PE, and nothing else may write CPACR_EL1 (see FP_TRAP_PROLOGUE)."
+             Every boot entry must call `.L_enter_el1` first and then write \
+             `msr cpacr_el1, xzr` then `isb`, so FP/SIMD is trapped at EL0 and \
+             EL1 — at EL1, where the register's name is unconditional — before \
+             any other code runs on the PE, and nothing else may write \
+             CPACR_EL1 (see FP_TRAP_PROLOGUE)."
         );
     }
 }
@@ -10338,9 +10661,14 @@ struct ReadinessPublicationSite {
     function: &'static str,
     core: &'static str,
     halt: &'static str,
-    /// The leading text (attributes stripped) of the top-level statement(s)
-    /// that must run before the mark.
-    after: &'static str,
+    /// The call the mark depends on: exactly one top-level statement of the
+    /// function must contain it, and the mark must come after that
+    /// statement.  **The v0.36.2 audit**: it was the leading text of a
+    /// *binding* (`let secondary_release`), which a decoy binding of that
+    /// name satisfied while the real install — renamed and moved after the
+    /// unmask — went unread; the call is the fact the mark waits for, so the
+    /// call is what is pinned.
+    after_call: &'static str,
 }
 
 const READINESS_PUBLICATION_SITES: [ReadinessPublicationSite; 2] = [
@@ -10349,14 +10677,14 @@ const READINESS_PUBLICATION_SITES: [ReadinessPublicationSite; 2] = [
         function: "rust_boot_main",
         core: "0",
         halt: "crate::gic::halt_all",
-        after: "let secondary_release",
+        after_call: "crate::lean_entry::enter_lean_kernel(",
     },
     ReadinessPublicationSite {
         path: "src/smp.rs",
         function: "rust_secondary_main",
         core: "core_idx",
         halt: "crate::cpu::fatal_halt",
-        after: "if let Err(e) = crate::timer::init_timer_secondary(",
+        after_call: "crate::timer::init_timer_secondary(",
     },
 ];
 
@@ -10405,6 +10733,34 @@ fn call_offsets(code: &str, name: &str) -> Vec<usize> {
         out.push(at);
     }
     out
+}
+
+/// Offsets of every whole-word `name` in `code` that is not the name in its
+/// own `fn` definition — a call or any other reference.
+fn word_offsets(code: &str, name: &str) -> Vec<usize> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut out = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find(name) {
+        let at = search + hit;
+        let end = at + name.len();
+        search = end;
+        if (at > 0 && is_ident(bytes[at - 1])) || (end < bytes.len() && is_ident(bytes[end])) {
+            continue;
+        }
+        if code[..at].trim_end().ends_with("fn") {
+            continue;
+        }
+        out.push(at);
+    }
+    out
+}
+
+/// Is the reference ending at `end` a call — followed by `(`, or by the
+/// turbofish / generic spelling a call can carry?
+fn is_call_at(code: &str, end: usize) -> bool {
+    code[end..].trim_start().starts_with('(')
 }
 
 /// One site's relation: the mark is a top-level statement, exactly spelled,
@@ -10465,19 +10821,31 @@ fn readiness_site_status(
             site.path, site.function
         ));
     }
+    // The dependency is the statement that *calls* `after_call`, located in
+    // the string-blanked view so a call spelled inside a literal is not one.
     let after: Vec<usize> = (0..stmts.len())
-        .filter(|&i| strip_leading_attributes(text(stmts[i])).starts_with(site.after))
+        .filter(|&i| code[stmts[i].0..stmts[i].1].contains(site.after_call))
         .collect();
-    if after.is_empty() {
+    let [after] = after[..] else {
         return Err(format!(
-            "{}::{}: no top-level statement begins `{}`",
-            site.path, site.function, site.after
+            "{}::{}: expected exactly one top-level statement calling `{}`, found {}",
+            site.path,
+            site.function,
+            site.after_call,
+            after.len()
+        ));
+    };
+    if word_occurrences(body, site.after_call.trim_end_matches('(')) != 1 {
+        return Err(format!(
+            "{}::{}: `{}` must occur once in the body, in the top-level statement the \
+             mark follows",
+            site.path, site.function, site.after_call
         ));
     }
-    if after.iter().any(|&i| i > publish) {
+    if after > publish {
         return Err(format!(
             "{}::{}: the core marks itself ready before `{}` has run",
-            site.path, site.function, site.after
+            site.path, site.function, site.after_call
         ));
     }
     Ok(())
@@ -10568,20 +10936,39 @@ fn readiness_publication_status(sources: &[(&str, &str)]) -> Result<(), String> 
         if *path == READINESS_PUBLICATION_SITES[0].path {
             readiness_refusal_status(&kept, &code).map_err(|e| format!("{path}: {e}"))?;
         }
-        for at in call_offsets(&code, READINESS_MARK_FN)
+        // **The v0.36.2 audit**: every whole-word *reference*, not every
+        // `name(` call.  `let m = mark_lean_ready; m(t)` and
+        // `(become_ready_or_halt)(c, halt)` reach the function without the
+        // call spelling, so a derivation over calls alone read them as
+        // absent — the rule the Lean-upcall scanner already applies (a
+        // reference that is not a call is refused outright, since no owner
+        // can be attributed to a value that escapes).
+        for at in word_offsets(&code, READINESS_MARK_FN)
             .into_iter()
             .filter(|&a| live(a))
         {
+            if !is_call_at(&code, at + READINESS_MARK_FN.len()) {
+                return Err(format!(
+                    "{path}: `{READINESS_MARK_FN}` is referenced without being called; a \
+                     value that escapes has no owner the derivation can attribute"
+                ));
+            }
             if enclosing_fn_name(&code, at).as_deref() != Some(READINESS_PUBLICATION_FN) {
                 return Err(format!(
                     "{path}: `{READINESS_MARK_FN}` is called outside `{READINESS_PUBLICATION_FN}`"
                 ));
             }
         }
-        for at in call_offsets(&code, READINESS_PUBLICATION_FN)
+        for at in word_offsets(&code, READINESS_PUBLICATION_FN)
             .into_iter()
             .filter(|&a| live(a))
         {
+            if !is_call_at(&code, at + READINESS_PUBLICATION_FN.len()) {
+                return Err(format!(
+                    "{path}: `{READINESS_PUBLICATION_FN}` is referenced without being called; \
+                     a value that escapes has no owner the derivation can attribute"
+                ));
+            }
             let owner = enclosing_fn_name(&code, at);
             let pinned = READINESS_PUBLICATION_SITES
                 .iter()
@@ -10810,6 +11197,59 @@ fn verify_readiness_publication_scanner() {
             "derived: the publication called from an unpinned function",
             b.into(),
             format!("{s}fn helper() {{ crate::lean_ready::become_ready_or_halt(2, crate::cpu::fatal_halt); }}\n"),
+            r.into(),
+        ),
+        // The v0.36.2 audit: the derivation counts references, not `name(`
+        // calls, and ties `#[cfg(test)]` to the item it decorates.
+        (
+            "derived: a marker taken as a function pointer",
+            b.into(),
+            format!("{s}fn mark_via_pointer(t: T) {{ let m = crate::lean_ready::mark_lean_ready; m(t); }}\n"),
+            r.into(),
+        ),
+        (
+            "derived: the publication referenced without a call",
+            b.into(),
+            format!(
+                "{s}#[cfg(feature = \"hw_target\")]\nfn ready_elsewhere(c: usize) {{ \
+                 (crate::lean_ready::become_ready_or_halt)(c, crate::cpu::fatal_halt); }}\n"
+            ),
+            r.into(),
+        ),
+        (
+            "derived: a live module after a test-only function",
+            b.into(),
+            format!(
+                "{s}#[cfg(test)]\nfn host_entry() {{}}\npub mod live_marker {{ pub fn mark(t: T) {{ \
+                 crate::lean_ready::mark_lean_ready(t); }} }}\n"
+            ),
+            r.into(),
+        ),
+        (
+            "boot: a decoy binding named like the install, the install after the unmask",
+            {
+                let install = "    #[cfg(feature = \"hw_target\")]\n    let secondary_release = { crate::lean_entry::enter_lean_kernel(x, dtb_ptr) };\n";
+                let decoyed = once(
+                    b,
+                    install,
+                    "    #[cfg(feature = \"hw_target\")]\n    let secondary_release_note = ();\n",
+                );
+                once(&decoyed, unmask, &format!("{unmask}{install}"))
+            },
+            s.into(),
+            r.into(),
+        ),
+        (
+            "smp: a second definition of the entry, the compliant one never compiled",
+            b.into(),
+            format!(
+                "#[cfg(any())]\n{s}{}",
+                once(
+                    s,
+                    "    #[cfg(feature = \"hw_target\")]\n    crate::lean_ready::become_ready_or_halt(core_idx, crate::cpu::fatal_halt);\n",
+                    "",
+                )
+            ),
             r.into(),
         ),
     ];

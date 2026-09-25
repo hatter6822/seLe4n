@@ -281,23 +281,6 @@ pub extern "C" fn secondary_entry() {
     // host stub: no-op
 }
 
-/// AN9-J: bring up all secondary cores listed in `mpidr_table`.
-///
-/// Inner form taking explicit state references so unit tests can
-/// substitute local atomics and avoid cargo's parallel-test global
-/// state race.  Production callers go through
-/// [`bring_up_secondaries`] which threads the global statics.
-///
-/// Behaviour:
-///   1. If `enabled.load(Acquire) == false`, returns 0 (no-op).
-///   2. Otherwise, issues PSCI `CPU_ON` for each secondary with
-///      `entry_point = secondary_entry` and `context_id` = index+1.
-///   3. Sets `core_ready[idx+1] = true` for each successful core.
-///   4. Stores online count into `online_count`.
-///   5. On aarch64, broadcasts SEV so secondaries parked in `wfe`
-///      wake immediately.
-///
-/// Returns the number of secondaries successfully brought up.
 /// **PR #889 review round 23**: how many of the first `expected` PEs `serves`,
 /// polled until they all do or `timeout_ticks` have elapsed on `now`.
 ///
@@ -359,9 +342,29 @@ pub fn serving_core_count_within_in<C: FnMut() -> u64, S: Fn(usize) -> bool>(
 /// both `Release`, and both are read here with `Acquire`.  A core outside the
 /// flag array serves nothing.
 pub fn core_serves(c: usize) -> bool {
-    c < CORE_IRQ_READY.len()
-        && CORE_IRQ_READY[c].load(Ordering::Acquire)
-        && crate::lean_ready::lean_ready(c)
+    core_serves_in(&CORE_IRQ_READY, crate::lean_ready::ready_mask(), c)
+}
+
+/// [`core_serves`] over the two facts it reads, so the conjunction is decided
+/// on values a test owns: a core serves when it is inside the IRQ-ready
+/// array, IRQ-ready there, **and** marked in the Lean-readiness mask
+/// (`lean_ready::mask_marks`).  The v0.36.2 audit: the production form had
+/// no witness for its second conjunct — no host test could put a core in the
+/// IRQ-ready-but-not-Lean-ready state on the shared flags — so deleting
+/// `lean_ready(c)` from it passed every test.
+pub fn core_serves_in(irq_ready: &[AtomicBool], lean_ready_mask: u8, c: usize) -> bool {
+    c < irq_ready.len()
+        && irq_ready[c].load(Ordering::Acquire)
+        && crate::lean_ready::mask_marks(lean_ready_mask, c)
+}
+
+/// The two halves of [`core_serves`] — `(IRQ-ready, Lean-ready)` — for the
+/// Phase-7 refusal's diagnostic, which names the half a PE is short of.
+pub fn core_readiness(c: usize) -> (bool, bool) {
+    (
+        c < CORE_IRQ_READY.len() && CORE_IRQ_READY[c].load(Ordering::Acquire),
+        crate::lean_ready::lean_ready(c),
+    )
 }
 
 /// **WS-BP BP6.3**: the production form, clocked by the generic timer
@@ -376,6 +379,23 @@ pub fn serving_core_count_within(expected: u32, timeout_ticks: u64) -> u32 {
     )
 }
 
+/// AN9-J: bring up all secondary cores listed in `mpidr_table`.
+///
+/// Inner form taking explicit state references so unit tests can
+/// substitute local atomics and avoid cargo's parallel-test global
+/// state race.  Production callers go through
+/// [`bring_up_secondaries`] which threads the global statics.
+///
+/// Behaviour:
+///   1. If `enabled.load(Acquire) == false`, returns 0 (no-op).
+///   2. Otherwise, issues PSCI `CPU_ON` for each secondary with
+///      `entry_point = secondary_entry` and `context_id` = index+1.
+///   3. Sets `core_ready[idx+1] = true` for each successful core.
+///   4. Stores online count into `online_count`.
+///   5. On aarch64, broadcasts SEV so secondaries parked in `wfe`
+///      wake immediately.
+///
+/// Returns the number of secondaries successfully brought up.
 pub fn bring_up_secondaries_inner(
     permit: crate::lean_entry::SecondaryReleasePermit,
     enabled: &AtomicBool,
@@ -743,6 +763,10 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // -----------------------------------------------------------------
     crate::mmu::init_mmu_secondary(core_id);
     crate::kprintln!("[smp] core {core_id}: MMU enabled (WXN, SA, SA0, EIS, EOS)");
+    // The v0.36.2 audit: this PE's `CTR_EL0` admits the cache-maintenance
+    // stride, or this PE parks and the boot core's Phase-7 wait counts it
+    // short.
+    crate::cache::verify_cache_line_stride_or_halt(crate::cpu::fatal_halt);
 
     // -----------------------------------------------------------------
     // Step 2 — Exception vectors.
@@ -754,6 +778,9 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // -----------------------------------------------------------------
     crate::boot::install_exception_vectors();
     crate::kprintln!("[smp] core {core_id}: VBAR_EL1 installed");
+    // The v0.36.2 audit: an SError on this PE is reported and halts from here
+    // on (`trap::handle_serror`), as on the boot core.
+    crate::interrupts::enable_serror();
 
     // -----------------------------------------------------------------
     // Step 3 — GIC CPU interface.
@@ -1056,6 +1083,32 @@ mod tests {
             |c| c < 3 || clock.get() >= 4,
         );
         assert_eq!(ready, 4);
+    }
+
+    /// The v0.36.2 audit: the conjunction decided on flags this test owns.
+    /// An IRQ-ready core that is not Lean-ready does not serve; marking it
+    /// Lean-ready makes it serve; a Lean-ready core that is not IRQ-ready
+    /// does not serve; and a core outside the array serves whatever the mask
+    /// says.  A mutation dropping either conjunct fails one of the first
+    /// three.
+    #[test]
+    fn serving_is_the_conjunction_of_irq_and_lean_readiness() {
+        let irq = [
+            AtomicBool::new(true),
+            AtomicBool::new(true),
+            AtomicBool::new(false),
+        ];
+        assert!(
+            !super::core_serves_in(&irq, 0b001, 1),
+            "IRQ-ready, not Lean-ready"
+        );
+        assert!(super::core_serves_in(&irq, 0b011, 1), "both halves");
+        assert!(
+            !super::core_serves_in(&irq, 0b111, 2),
+            "Lean-ready, not IRQ-ready"
+        );
+        assert!(!super::core_serves_in(&irq, 0xff, 3), "outside the array");
+        assert!(super::core_serves_in(&irq, 0b001, 0));
     }
 
     #[test]

@@ -1044,7 +1044,18 @@ That is the identical fail-open shape the `v0.34.115` audit closed on the memory
 `reg` path (`extractMemoryRegionsChecked`, against the Rust walker's
 whole-pairs test, since retired); this is its unswept sibling, and the
 rule it broke is this project's own: *when a fix names a relation, grep for
-every other place that asks it*. -/
+every other place that asks it*.
+
+**And exhaustion refuses too** (the `v0.36.2` audit).  `go`'s zero-fuel arm
+answered the prefix it had parsed, which is the same fail-open shape one arm
+over: a translation table missing its tail maps a peripheral falling in a
+later window to nothing, and `deviceTreeCoversMmioRegions` then decides the
+board on a partial table.  Unreachable at the default fuel: the walk spends
+one unit per entry and one more observing the property's end, an entry is at
+least one 4-byte cell, and `fdtWholeEntryCount` has already required the
+property to be a whole number of entries — so `bytes.size / 4 + 1` always
+reaches the end.  The arm is therefore a contract on callers passing less, and
+`Ak9PlatformSuite`'s `rangesWalkStarvedOfFuelRefuses` drives it directly. -/
 def parseFdtRanges (bytes : ByteArray) (childAddressCells parentAddressCells childSizeCells : Nat)
     (fuel : Nat := bytes.size / 4 + 1) : Option (List FdtRangeEntry) :=
   match fdtWholeEntryCount bytes ((childAddressCells + parentAddressCells + childSizeCells) * 4) with
@@ -1052,7 +1063,7 @@ def parseFdtRanges (bytes : ByteArray) (childAddressCells parentAddressCells chi
   | some _ => go 0 fuel []
 where
   go (offset : Nat) : Nat → List FdtRangeEntry → Option (List FdtRangeEntry)
-  | 0, acc => some acc.reverse
+  | 0, _ => none
   | fuel + 1, acc =>
     let entrySize := (childAddressCells + parentAddressCells + childSizeCells) * 4
     if entrySize == 0 || offset + entrySize > bytes.size then some acc.reverse

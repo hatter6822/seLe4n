@@ -38,7 +38,7 @@ initial thread, its CSpace and its own address space (BP3.2):
 | interrupt notification (every SPI signals it) | `5` | boot |
 | untyped `[256 MiB, 512 MiB)` | `6` | boot |
 | untyped `[512 MiB, 1 GiB)` | `7` | boot |
-| untypeds over the board's RAM above 1 GiB, one per BP4.6 extension (none on a 1 GiB board, two on 8 and 16 GiB) | `8`, `9`, … | boot |
+| untypeds over the board's RAM above 1 GiB, one per BP4.6 extension (none on a 1 GiB board, one on every larger board — the BCM2712's DRAM is contiguous from 0) | `8`, … | boot |
 | untrusted initial TCB (the upper separation witness) | `0x10_0000` | untrusted (`highUntrusted`) |
 | its CNode | `0x10_0001` | untrusted |
 | its VSpace (ASID 2, empty) | `0x10_0002` | untrusted |
@@ -237,7 +237,7 @@ def rpi5RootTaskCNodeFor (v : BCM2712Config) : CNode :=
     sits at a slot the CNode's radix can address, on every variant — the boot
     bounds a CNode's slot *count* and not its indices (WS-RR RR8.16), so a slot
     at or above sixteen would be stored and never reachable.  Decided by
-    evaluation; the largest board has two extensions, at slots 7 and 8. -/
+    evaluation; every board above the gigabyte has one extension, at slot 7. -/
 theorem rpi5RootTaskCNodeFor_slotsAddressable :
     ∀ v ∈ rpi5Variants, (rpi5RootTaskCNodeSlots v).all
       (fun p => (rpi5RootTaskCNodeFor v).slotAddressable p.1) = true := by

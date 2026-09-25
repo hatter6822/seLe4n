@@ -417,11 +417,16 @@ jobs:
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh --skip-test-deps
 
+      # `targets:` mirrors `rust/rust-toolchain.toml` as the cross job's does:
+      # the lane builds `sele4n-hal` for the target (the HAL-provided symbol
+      # census and the image), so the target is stated here rather than left
+      # to rustup's first-use install.
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: 1.94.1
           components: llvm-tools
+          targets: aarch64-unknown-none-softfloat
 
       - name: Build and reconcile the kernel's Lean archive for aarch64
         run: ./scripts/test_lean_aarch64_archive.sh

@@ -41,15 +41,18 @@
 //! posture, and [`initialise_core_runtime_with`] decides it before it mints the
 //! [`LeanRuntimeReadyOnCore`] token that marking consumes:
 //!
-//! 1. the call runs on the PE it is about (`TPIDR_EL1` names it), once;
-//! 2. the kernel install has happened-before (an `Acquire` of the flag the
+//! 1. the call runs on the PE it is about (`TPIDR_EL1` names it);
+//! 2. the PE translates (`SCTLR_EL1.M`), since the kernel heap's lock — and
+//!    the handshake's own once-only guard, which is why this is decided
+//!    before it — is an exclusive-monitor atomic that needs Normal cacheable
+//!    memory;
+//! 3. the handshake runs once per PE (the guard);
+//! 4. the kernel install has happened-before (an `Acquire` of the flag the
 //!    install publishes with `Release` before it mints the secondaries'
 //!    release permit);
-//! 3. the PE translates (`SCTLR_EL1.M`), since the kernel heap's lock is an
-//!    exclusive-monitor atomic that needs Normal cacheable memory;
-//! 4. the PE runs on its **own** stack slot — Lean code on two PEs sharing a
+//! 5. the PE runs on its **own** stack slot — Lean code on two PEs sharing a
 //!    stack corrupts both, and nothing else would notice;
-//! 5. the kernel heap answers an allocation and a free **from this PE**.
+//! 6. the kernel heap answers an allocation and a free **from this PE**.
 //!
 //! **The mark is safe and the promise is a type.**  Until BP6 marking was an
 //! `unsafe fn(core_id)` whose safety contract *was* the readiness promise.  It
@@ -74,10 +77,23 @@ static LEAN_READY_CORES: AtomicU8 = AtomicU8::new(0);
 /// represent is never ready).
 #[inline]
 pub fn lean_ready(core_id: usize) -> bool {
-    if core_id >= 8 {
-        return false;
-    }
-    LEAN_READY_CORES.load(Ordering::Acquire) & (1 << core_id) != 0
+    mask_marks(ready_mask(), core_id)
+}
+
+/// The readiness mask as of this read (`Acquire`, so a set bit carries the
+/// initialization behind it).  `smp::core_serves` reads it once per query.
+#[inline]
+pub fn ready_mask() -> u8 {
+    LEAN_READY_CORES.load(Ordering::Acquire)
+}
+
+/// Whether `mask` marks `core_id` ready: the one reading of a bit in the
+/// readiness mask, shared by [`lean_ready`] and `smp::core_serves_in` so the
+/// two cannot decide an out-of-range id differently.
+#[inline]
+#[must_use]
+pub fn mask_marks(mask: u8, core_id: usize) -> bool {
+    core_id < 8 && mask & (1 << core_id) != 0
 }
 
 /// Bytes of one PE's kernel stack: `link.ld`'s `.stack` for the boot core and
@@ -185,8 +201,10 @@ impl LeanRuntimeReadyOnCore {
 /// Run the per-PE handshake for `core_id` and mint its token.
 ///
 /// The checks run in the order the module docs list them.  `guard` is set for
-/// `core_id` before anything past the executing-core check, so a second
-/// handshake for one core is refused whether the first succeeded or not.
+/// `core_id` before anything past the translation check, so a second
+/// handshake for one core is refused whether the first succeeded or not; the
+/// two checks ahead of it are pure register reads, which is what lets a
+/// refused PE be refused rather than parked on an atomic it cannot complete.
 ///
 /// # Safety
 ///
@@ -211,14 +229,19 @@ pub unsafe fn initialise_core_runtime_with(
             executing: posture.executing_core,
         });
     }
+    // The v0.36.2 audit: translation is decided BEFORE the guard.  The guard
+    // is a `fetch_or` — an exclusive-monitor access, which on a PE with
+    // translation off (every access Device-nGnRnE, no global monitor on the
+    // BCM271x) never succeeds — so a handshake that read the guard first
+    // would spin forever on exactly the PE it exists to refuse.
+    if !posture.translation_enabled {
+        return Err(CoreRuntimeRefused::TranslationDisabled);
+    }
     if guard.fetch_or(1 << core_id, Ordering::AcqRel) & (1 << core_id) != 0 {
         return Err(CoreRuntimeRefused::AlreadyInitialised);
     }
     if !installed.load(Ordering::Acquire) {
         return Err(CoreRuntimeRefused::KernelNotInstalled);
-    }
-    if !posture.translation_enabled {
-        return Err(CoreRuntimeRefused::TranslationDisabled);
     }
     let on_own_stack = posture
         .own_stack
@@ -515,6 +538,12 @@ mod tests {
             handshake(&guard, true, 1, &p, true).unwrap_err(),
             CoreRuntimeRefused::TranslationDisabled
         );
+        // The v0.36.2 audit: the refusal came before the guard was touched —
+        // on the board the guard is an exclusive-monitor access that a PE
+        // without translation cannot complete, so the check must not reach
+        // it.  The retired order (guard first) leaves bit 1 set here.
+        assert_eq!(guard.load(Ordering::Relaxed), 0, "the guard is untouched");
+        assert!(handshake(&guard, true, 1, &posture(1), true).is_ok());
     }
 
     #[test]

@@ -46,9 +46,17 @@ not a whole page, an arena that is not page-aligned, an arena too big for the
 smallest board, and (BP2.6) each permission boundary moved off its page, or a
 section placed between the text and the read-only data, and (BP4.5) a loaded
 extent that runs into the NOLOAD sections, and (BP5.3) a device-tree window of
-the wrong size, one moved into the heap, and one past the reserved extent — and the link must fail naming that assertion's message.  An
-`ASSERT` that a mutation cannot trip reads exactly like one that protects
-something.
+the wrong size, one moved into the heap, and one past the reserved extent — and
+the link must fail naming that assertion's **whole** message.  An `ASSERT` that
+a mutation cannot trip reads exactly like one that protects something, and so
+does one whose witness is decided by a neighbour: two asserts here end in
+"must end inside the kernel's reserved extent" and one mutation trips both, so
+a fragment shared by the two would have let either be deleted with the gate
+still reporting it live (the `v0.36.2` audit).  A conjoined `ASSERT` gets one
+witness per conjunct — the reserved extent off a page, the window off its page,
+the read-only data ending before the text, the loaded extent ending before the
+read-only data — since a conjunct no mutation reaches is a conjunct nothing
+checks.
 
     check_link_script.py <libsele4n_hal_asm.a>
     check_link_script.py --self-test
@@ -139,12 +147,26 @@ ASSERTION_WITNESSES = (
     (
         "an image that outgrows the kernel's reserved extent",
         (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x1000000;"),),
-        "must end inside the kernel's reserved extent",
+        # The whole message: this mutation trips the device-tree window's
+        # ASSERT too, and the fragment "must end inside the kernel's reserved
+        # extent" is common to both, so a fragment left ASSERT 4 deletable.
+        "the image, Lean heap included, must end inside the kernel's reserved extent",
+    ),
+    (
+        "a reserved extent off a page",
+        (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x10000800;"),),
+        "the kernel's reserved extent must be whole pages inside the smallest RPi5's RAM",
     ),
     (
         "a device-tree window of the wrong size",
         (("        . += DTB_WINDOW_SIZE;", "        . += DTB_WINDOW_SIZE - 4096;"),),
         "must be DTB_WINDOW_SIZE bytes on a 4 KiB page",
+    ),
+    (
+        "a device-tree window off its page",
+        (("    .dtb_window (NOLOAD) : ALIGN(4096) {", "    .dtb_window (NOLOAD) : ALIGN(16) {"),
+         ("        . += LEAN_HEAP_SIZE;", "        . += LEAN_HEAP_SIZE + 16;")),
+        "the device tree's window must be DTB_WINDOW_SIZE bytes on a 4 KiB page",
     ),
     (
         "a device-tree window moved into the Lean heap",
@@ -155,7 +177,17 @@ ASSERTION_WITNESSES = (
     (
         "a device-tree window past the reserved extent",
         (("LEAN_HEAP_SIZE = 64M;", "LEAN_HEAP_SIZE = 254M;"),),
-        "must end inside the kernel's reserved extent",
+        "the device tree's window must end inside the kernel's reserved extent",
+    ),
+    (
+        "read-only data that ends before the text",
+        (("        __rodata_end = .;", "        __rodata_end = _start;"),),
+        "the read-only data must end on a 4 KiB page",
+    ),
+    (
+        "a loaded extent that ends before the read-only data",
+        (("        __image_load_end = .;", "        __image_load_end = _start;"),),
+        "the loaded image must run from the text through the initialised data",
     ),
     (
         "a reserved extent past the smallest board",

@@ -74,6 +74,16 @@ pub fn from_bytes_unchecked(content: &[u8], len: usize) -> Obj {
 }
 
 /// `get_utf8_size`: the length a leading byte announces; one for anything else.
+///
+/// Deliberately not [`next_width`]'s table: upstream answers *how many bytes
+/// does this lead byte announce* (`get_utf8_size`, five- and six-byte forms
+/// included) and *how far does `String.next` advance* (`lean_string_utf8_next`,
+/// one byte for anything past four) with two tables that differ on lead
+/// bytes `0xF8`–`0xFD`, and the kernel's runtime mirrors each upstream
+/// function rather than unifying them.  The two agree on every well-formed
+/// string, which is every string this runtime holds: `from_bytes` validates,
+/// the `_unchecked` constructors take compiler-emitted literals, and `push` /
+/// `set` encode (the v0.36.2 audit).
 fn utf8_size(c: u8) -> usize {
     match c {
         c if c & 0x80 == 0 => 1,
@@ -735,36 +745,56 @@ mod exports {
     }
 
     /// `lean_string_push`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned string.
     #[no_mangle]
-    pub extern "C" fn lean_string_push(s: Obj, c: u32) -> Obj {
+    pub unsafe extern "C" fn lean_string_push(s: Obj, c: u32) -> Obj {
         // SAFETY: an owned string.
         unsafe { push(s, c) }
     }
 
     /// `lean_string_append`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned and a borrowed string.
     #[no_mangle]
-    pub extern "C" fn lean_string_append(s1: Obj, s2: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_string_append(s1: Obj, s2: Obj) -> Obj {
         // SAFETY: an owned and a borrowed string.
         unsafe { append(s1, s2) }
     }
 
     /// `lean_string_eq_cold`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes two borrowed strings.
     #[no_mangle]
-    pub extern "C" fn lean_string_eq_cold(s1: Obj, s2: Obj) -> bool {
+    pub unsafe extern "C" fn lean_string_eq_cold(s1: Obj, s2: Obj) -> bool {
         // SAFETY: two borrowed strings.
         unsafe { eq_cold(s1, s2) }
     }
 
     /// `lean_string_lt`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes two borrowed strings.
     #[no_mangle]
-    pub extern "C" fn lean_string_lt(s1: Obj, s2: Obj) -> bool {
+    pub unsafe extern "C" fn lean_string_lt(s1: Obj, s2: Obj) -> bool {
         // SAFETY: two borrowed strings.
         unsafe { lt(s1, s2) }
     }
 
     /// `lean_string_hash`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed string.
     #[no_mangle]
-    pub extern "C" fn lean_string_hash(s: Obj) -> u64 {
+    pub unsafe extern "C" fn lean_string_hash(s: Obj) -> u64 {
         // SAFETY: a borrowed string.
         unsafe { hash(s) }
     }
@@ -776,43 +806,67 @@ mod exports {
     }
 
     /// `lean_string_mk`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned `List Char`.
     #[no_mangle]
-    pub extern "C" fn lean_string_mk(cs: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_string_mk(cs: Obj) -> Obj {
         // SAFETY: an owned `List Char`.
         unsafe { mk(cs) }
     }
 
     /// `lean_string_to_utf8`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed string.
     #[no_mangle]
-    pub extern "C" fn lean_string_to_utf8(s: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_string_to_utf8(s: Obj) -> Obj {
         // SAFETY: a borrowed string.
         unsafe { to_utf8(s) }
     }
 
     /// `lean_string_memcmp`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes borrowed strings and positions.
     #[no_mangle]
-    pub extern "C" fn lean_string_memcmp(s1: Obj, s2: Obj, l: Obj, r: Obj, n: Obj) -> bool {
+    pub unsafe extern "C" fn lean_string_memcmp(s1: Obj, s2: Obj, l: Obj, r: Obj, n: Obj) -> bool {
         // SAFETY: borrowed strings and positions.
         unsafe { memcmp(s1, s2, l, r, n) }
     }
 
     /// `lean_slice_hash`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed slice.
     #[no_mangle]
-    pub extern "C" fn lean_slice_hash(s: Obj) -> u64 {
+    pub unsafe extern "C" fn lean_slice_hash(s: Obj) -> u64 {
         // SAFETY: a borrowed slice.
         unsafe { slice_hash(s) }
     }
 
     /// `lean_slice_dec_lt`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes two borrowed slices.
     #[no_mangle]
-    pub extern "C" fn lean_slice_dec_lt(s1: Obj, s2: Obj) -> bool {
+    pub unsafe extern "C" fn lean_slice_dec_lt(s1: Obj, s2: Obj) -> bool {
         // SAFETY: two borrowed slices.
         unsafe { slice_lt(s1, s2) }
     }
 
     /// `lean_string_utf8_get`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed string and position.
     #[no_mangle]
-    pub extern "C" fn lean_string_utf8_get(s: Obj, i: Obj) -> u32 {
+    pub unsafe extern "C" fn lean_string_utf8_get(s: Obj, i: Obj) -> u32 {
         // SAFETY: a borrowed string and position.
         unsafe { utf8_get(s, i) }
     }
@@ -834,8 +888,12 @@ mod exports {
     }
 
     /// `lean_string_utf8_next`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed string and position.
     #[no_mangle]
-    pub extern "C" fn lean_string_utf8_next(s: Obj, i: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_string_utf8_next(s: Obj, i: Obj) -> Obj {
         // SAFETY: a borrowed string and position.
         unsafe { utf8_next(s, i) }
     }
@@ -847,22 +905,34 @@ mod exports {
     }
 
     /// `lean_string_is_valid_pos`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed string and position.
     #[no_mangle]
-    pub extern "C" fn lean_string_is_valid_pos(s: Obj, i: Obj) -> bool {
+    pub unsafe extern "C" fn lean_string_is_valid_pos(s: Obj, i: Obj) -> bool {
         // SAFETY: a borrowed string and position.
         unsafe { is_valid_pos(s, i) }
     }
 
     /// `lean_string_utf8_extract`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed string and positions.
     #[no_mangle]
-    pub extern "C" fn lean_string_utf8_extract(s: Obj, b: Obj, e: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_string_utf8_extract(s: Obj, b: Obj, e: Obj) -> Obj {
         // SAFETY: a borrowed string and positions.
         unsafe { utf8_extract(s, b, e) }
     }
 
     /// `lean_string_utf8_set`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned string and a borrowed position.
     #[no_mangle]
-    pub extern "C" fn lean_string_utf8_set(s: Obj, i: Obj, c: u32) -> Obj {
+    pub unsafe extern "C" fn lean_string_utf8_set(s: Obj, i: Obj, c: u32) -> Obj {
         // SAFETY: an owned string and a borrowed position.
         unsafe { utf8_set(s, i, c) }
     }

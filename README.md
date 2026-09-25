@@ -271,11 +271,12 @@ can now act.
 
 **SM10 is blocked on WS-BP** (the bare-metal boot path,
 [`SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)), which became
-SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 48 sub-tasks
-across nine phases — cross-implementation agreement and aarch64 Lean object
-code (BP0 and BP1, both landed at v0.36.2), bare-metal runtime
-hosting, the RPi5 deployment, the image, per-core readiness, the context
-restore, and first boot. Then **SM10** (release closure → v1.0.0).
+SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 50 sub-tasks
+across nine phases — cross-implementation agreement, aarch64 Lean object
+code, bare-metal runtime hosting, the RPi5 deployment, the boot seam, the
+image and per-core readiness (BP0–BP6, all landed at v0.36.2), then the
+context restore (BP7) and first boot (BP8), which remain. Then **SM10**
+(release closure → v1.0.0).
 
 Closed beside RR7 is **WS-LC** (lock datatype completion,
 [`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)):

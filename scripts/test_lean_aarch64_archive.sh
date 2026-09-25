@@ -32,7 +32,9 @@
 #
 # WS-BP BP5.3: and last, the Raspberry Pi 5 boot files cut from that image --
 # `kernel8.img` and `config.txt`, written to .lake/build/rpi5-image and checked
-# against the image by `scripts/build_rpi5_image.sh`.
+# against the image by `scripts/build_rpi5_image.sh`, which (WS-BP BP5.4) ends
+# by publishing the image's size and section map (`scripts/kernel_image_report.py`)
+# to the CI step summary and `kernel-image-report.json`.
 #
 # Needs the Lean toolchain (`setup_lean_env.sh`) and rustup's `llvm-tools`
 # component (listed in `rust/rust-toolchain.toml`), which supplies the

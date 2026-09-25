@@ -209,9 +209,20 @@ def virtualTimerPpiId : SeLe4n.Irq := ⟨27⟩
 -- ============================================================================
 
 /-- Known MMIO peripheral regions on BCM2712 that must not overlap with RAM.
-    Each region covers a specific hardware peripheral's register space. -/
+    Each region covers a specific hardware peripheral's register space, and
+    each is **the register block the device tree declares**, because
+    `deviceTreeCoversMmioRegions` requires the board's block to *contain* the
+    window: a window wider than the block is refused, and the boot halts.
+
+    The UART window is therefore `0x200` bytes, `bcm2712.dtsi`'s
+    `serial@7d001000` `reg = <0x7d001000 0x200>`, not the PL011's nominal
+    4 KiB register page (the `v0.36.2` audit found `0x1000` here against the
+    `0x200` the same file quotes three sections above, which no fixture could
+    show because every fixture's UART node was built from this constant).
+    Every register the console driver touches — `UARTDR` through `UARTICR`,
+    offsets `0x000`–`0x044` — lies inside it. -/
 def mmioRegions : List SeLe4n.MemoryRegion :=
-  [ { base := uart0Base,            size := 0x1000, kind := .device }  -- PL011 UART
+  [ { base := uart0Base,            size := 0x200,  kind := .device }  -- PL011 UART10
   , { base := gicDistributorBase,   size := 0x1000, kind := .device }  -- GIC-400 distributor
   , { base := gicCpuInterfaceBase,  size := 0x2000, kind := .device }  -- GIC-400 CPU interface
   ]
@@ -280,7 +291,7 @@ def mmioRegionsPairwiseDisjointCheck : Bool :=
 
 /-- X4-D/M-10: Proof that RPi5 MMIO regions are pairwise disjoint.
     The 3 MMIO regions have non-overlapping address ranges:
-    - UART10 PL011:      [0x10_7D00_1000, 0x10_7D00_2000)
+    - UART10 PL011:      [0x10_7D00_1000, 0x10_7D00_1200)
     - GIC distributor:   [0x10_7FFF_9000, 0x10_7FFF_A000)
     - GIC CPU interface: [0x10_7FFF_A000, 0x10_7FFF_C000)
     Note: GIC distributor ends at 0x10_7FFF_A000 and GIC CPU interface starts
@@ -352,7 +363,7 @@ def rpi5DeviceTree : SeLe4n.Platform.DeviceTree :=
   SeLe4n.Platform.DeviceTree.fromBoardConstants
     "Raspberry Pi 5 (BCM2712 / ARM64)"
     rpi5MachineConfig
-    [ { name := "uart0", base := uart0Base, size := 0x1000 }
+    [ { name := "uart0", base := uart0Base, size := 0x200 }
     , { name := "gic-distributor", base := gicDistributorBase, size := 0x1000 }
     , { name := "gic-cpu-interface", base := gicCpuInterfaceBase, size := 0x2000 }
     ]

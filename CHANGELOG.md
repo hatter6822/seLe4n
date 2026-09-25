@@ -9,7 +9,8 @@ drive their own implementation against, and a divergence fails the side that
 diverged.  Where the fixtures found the two sides disagreeing, the side that was
 wrong was fixed; nothing was recorded as an accepted difference.
 
-**BP0.1 — the shared device-tree corpus.**  `tests/fixtures/dtb/` holds 58 blobs
+**BP0.1 — the shared device-tree corpus.**  `tests/fixtures/dtb/` holds 59 blobs
+(58 until the audit below added the real Raspberry Pi 5 firmware account)
 as annotated hex and a `MANIFEST` stating each one's `/memory` extents (or
 `refused`, or none) and the RAM top they imply.  The expectations are written by
 hand in `scripts/generate_dtb_corpus.py`'s case table, beside the case that
@@ -66,7 +67,8 @@ Two further findings while landing it.  `a_memory_node_buried_under_exhausted_fu
 had passed **vacuously**: its rebuild copied the 40-byte header into the new
 structure block, so the walk refused `0xD00DFEED` as an unknown first token and
 the assertion held for a reason unrelated to its name.  It is
-`a_memory_node_behind_a_long_nop_run_is_read_whole` now, sliced from the block's
+`a_memory_node_behind_a_long_nop_run_is_read_whole` now (retired with the Rust
+`/memory` walk at BP2.6), sliced from the block's
 own start, asserting the structure check accepts it first.  And the `bootargs`
 search shares the new check, which the corpus alone could not show; two `/chosen`
 fixtures that are refused, and an assertion that a refused blob yields no command
@@ -160,8 +162,10 @@ runtime yet.  Four changes:
   (which also gains the `llvm-tools` component), the cross gate, the CI job and
   every script naming the target — so FP-freedom is a property of code
   generation, as it is for seL4's kernel.
-- **Both boot entries open with `msr cpacr_el1, xzr` then `isb`**, trapping
-  FP/SIMD/SVE/SME at EL0 and EL1 before anything else runs on the PE.
+- **Both boot entries write `msr cpacr_el1, xzr` then `isb` as their first
+  instructions at EL1**, trapping FP/SIMD/SVE/SME at EL0 and EL1 before anything
+  else runs on the PE at that level (the audit below moved the pair after
+  `.L_enter_el1`'s drop, since at EL2 the encoding may name `CPTR_EL2`).
   `build.rs`'s `scan_fp_trap_prologue` requires exactly that prologue at `_start`
   and `secondary_entry` and refuses any other write to `CPACR_EL1`, in either
   spelling (`S3_0_C1_C0_2`), in any `.S` file or `asm!` template; its self-test
@@ -204,7 +208,7 @@ the new target (0 host findings, 1 cross) rather than carried over.
 depends on is derived and then checked against an independent answer:
 
 - *The closure is the elaborator's* (BP1.1): a probe prints
-  `Environment.header.moduleNames` of `SeLe4n` — 256 package and 609 stdlib
+  `Environment.header.moduleNames` of `SeLe4n` — 258 package and 609 stdlib
   modules — and the build refuses unless the package half equals Lake's
   `SeLe4n:modules`, nothing outside `SeLe4n`/`Init`/`Std` appears (the
   elaborator left the closure in this same version, above), and it is disjoint
@@ -547,7 +551,7 @@ not need.  It reads nothing of the blob now.
 - **The corpus is retargeted, not retired.**  The pair it tied still exists: the
   bootargs reader the QEMU lanes use runs behind a Rust structure check.  The
   `MANIFEST` is `name | structure | regions`: the `structure` column holds the
-  Rust check and the Lean parser to one verdict on all 58 blobs (23 refused),
+  Rust check and the Lean parser to one verdict on all 59 blobs (23 refused),
   and `regions` is the Lean parser's alone (8 readable blobs whose regions it
   refuses).  `check_dtb_corpus_consumers.py` follows the new Rust calls.
 - **`link.ld`.**  `.text` and `.rodata` end page-aligned, the boundary symbols
@@ -841,7 +845,16 @@ configuration, and the proof that it boots.
     described a boot the entry no longer performs.  `rpi5PlatformConfigFor board`
     and `rpi5BoundPlatformConfigAt v` replace `rpi5PlatformConfig` /
     `rpi5BoundPlatformConfig` / `rpi5DeploymentBootState` (retired, with a
-    Tier 3 negative); every gate is decided on each of the five variants,
+    Tier 3 negative) — and with them the BP3 theorems named above:
+    `rpi5BoundPlatformConfig_wellFormed` / `_checked` / `_boot` are
+    `rpi5BoundPlatformConfigAt_wellFormed` / `_checked` / `_boot`,
+    `rpi5DeploymentBootState_witnessesInstalled` is
+    `rpi5DeploymentBootStateAt_witnessesInstalled`,
+    `rpi5DeploymentBootState_invariantBridge` is
+    `rpi5DeploymentBootStateAt_invariantBridge`, and
+    `bootAndInitialiseRPi5_rpi5PlatformConfig` /
+    `bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig` are their `…For` forms;
+    every gate is decided on each of the five variants,
     `bootAndInitialiseRPi5_rpi5PlatformConfigFor` holds for every account
     (`rpi5VariantFor_mem`), and the invariant bridge is stated per variant.
   - `tests/Ak9PlatformSuite.lean` `kernelEntry_boots_the_deployment_on_every_variant`
@@ -935,7 +948,9 @@ configuration, and the proof that it boots.
     normal-memory untyped per `rpi5BootRamExtensions v` entry, at id `8 + i`
     and root-CNode slot `7 + i`. `rpi5RootTaskRamUntypeds_regions` states the
     regions are exactly the extensions BP4.6 maps. That is two untypeds on the
-    8 and 16 GiB boards, one on 2 and 4 GiB, and none on 1 GiB.
+    8 and 16 GiB boards, one on 2 and 4 GiB, and none on 1 GiB — as the row
+    read when it landed; since the BCM2712 address-map correction DRAM is
+    contiguous from 0 and every board above the gigabyte has exactly one.
   - Every gate is decided per variant again, by evaluation.
     `rpi5RootTaskCNodeFor_slotsAddressable` is new: the boot bounds a CNode's
     slot count and not its indices, so every root-CNode slot is shown to be
@@ -1187,7 +1202,9 @@ the append and the upload.
 **BP5.5 — every boot entry reaches EL1, and the PSCI conduit follows the
 level it came from.**  The RPi5 firmware enters a 64-bit kernel at EL2; `boot.S`
 never read `CurrentEL`.  Both `_start` and `secondary_entry` now call
-`.L_enter_el1` as the item after the FP-trap prologue.  The routine uses no
+`.L_enter_el1` — as the item after the FP-trap prologue when this landed, and as
+their first item since the audit below put the prologue after the drop.  The
+routine uses no
 stack and preserves `x0`, so the DTB pointer and the PSCI context id cross it.
 It masks DAIF and reads `CurrentEL`, then:
 
@@ -1318,7 +1335,149 @@ BP7's context restore installs a successor.  All four PEs publishing readiness
 under QEMU, and a withheld PE failing the boot, is the first-boot phase's run
 to tick.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.5, BP6.1..BP6.3)
+**The `v0.36.2` audit of BP0–BP6** — every file this version touched was re-read
+against its own prose, with the documentation treated as a claim to check rather
+than a description to trust, and nine findings were code.  Nothing was recorded
+as an accepted difference: what was wrong was fixed, and the two findings whose
+fix is a design are registered with their evidence and scheduled (BP7.10,
+BP7.11).
+
+- **The FP-trap prologue ran before the PE had left EL2.**  `boot.S` wrote
+  `msr cpacr_el1, xzr` as each entry's first instruction and only then called
+  `.L_enter_el1`.  `HCR_EL2.E2H` is UNKNOWN at reset, and with it set an EL2
+  write to that encoding names `CPTR_EL2` (the VHE register redirection) —
+  `CPACR_EL1` stayed UNKNOWN and the trap the whole FP-free argument rests on
+  was never written on the firmware's EL2 entry.  Both entries call
+  `.L_enter_el1` **first** now and write the prologue once it has returned at
+  EL1; `build.rs`'s `fp_trap_prologue_status` and `el1_entry_status` require
+  that order (a prologue ahead of the call, and a call not first, are named
+  refusals, mutation-tested), and the Tier 3 anchors pin the sequence in
+  `boot.S` itself.
+- **The boot console took a ticket lock with translation off.**  The console
+  lock's `fetch_add` is an `LDAXR`/`STXR` loop on the LSE-less softfloat target,
+  and an exclusive access to Device memory with `SCTLR_EL1.M = 0` never
+  succeeds on the BCM271x (no global monitor), so the first `kprintln!` before
+  `enable_mmu` could spin forever.  `uart::with_boot_uart` now bypasses the
+  lock while the executing PE does not translate (`ticket_lock_usable`, read
+  from `SCTLR_EL1`; interrupts masked for the write instead), and the per-PE
+  readiness handshake asks the translation question *before* it touches its
+  once-per-core guard, so a PE refused there leaves the guard clear and a later
+  handshake can succeed.
+- **A runtime `fatal` and a heap exhaustion parked one PE.**  Both halt the
+  system (`gic::halt_all`) now: a kernel whose runtime has failed on one core
+  must not go on serving from the others.
+- **SError was never unmasked.**  Every PE enables it right after installing
+  its vectors (`interrupts::enable_serror`), and `handle_serror` reports the
+  syndrome through the unlocked console writer before parking — an
+  asynchronous external abort used to be pending, silently, until something
+  else unmasked it.
+- **The cache-line stride was assumed.**  `cache::verify_cache_line_stride_or_halt`
+  reads `CTR_EL0` on every PE and halts if either the data or the instruction
+  minimum line is smaller than the stride the maintenance loops use
+  (`line_sizes_of_ctr`, `line_size_admits_stride`; the A76's `0x8444C004` gives
+  64/64).
+- **The Phase-7 readiness window was 160 ms and unexplained.**  It is one
+  second, derived from what a secondary does before it publishes — its MMU, GIC
+  and timer setup, the handshake, the bring-up entry under the contended
+  kernel-entry lock, and ≈ 390 bytes of console traffic at 115 200 baud — and
+  the refusal names each short PE and the half (IRQ-ready, Lean-ready) it lacks
+  (`smp::core_readiness`).  `smp::core_serves_in` is the pure conjunction with a
+  witness of its own, so a mutation making it read one flag fails a test.
+- **The Lean runtime's ShareCommon compared big naturals by usable size.**  Two
+  equal `mpz` objects with different reserved capacities hashed and compared
+  differently, so the persistence pass could keep two copies of one value —
+  or, worse, the equality could hold on bytes past a value's size.  `sharecommon_eq`
+  compares tag and `(neg, limbs[..size])` before any size read, and
+  `sharecommon_hash` folds the same limbs; `alloc_ctor` zeroes the trailing pad
+  word, which `lean_alloc_ctor_memory`'s contract requires and the comparison
+  reads.  Both are pinned by `sharecommon_equality_implies_equal_hashes`.
+- **The runtime's C-ABI exports dereferenced a pointer inside a safe signature.**
+  Every export that reads an object it is handed — forty-two written out and
+  the four `macro_rules!` templates that mint the rest — is
+  `pub unsafe extern "C" fn` with a `# Safety` section now — a caller's
+  promise inside a safe signature is one the compiler lets any safe caller
+  break, and the justification scanner counted the `// SAFETY:` comment as a
+  discharge.  The release profile carries `overflow-checks = true`: a wrapped
+  index in the runtime is a memory-safety bug, not a performance question.
+- **The binding's UART window was four times the device tree's block.**
+  `mmioRegions` asked for `0x1000` bytes at `uart0Base` while `bcm2712.dtsi`
+  declares `serial@7d001000` as `reg = <0x7d001000 0x200>`, and
+  `deviceTreeCoversMmioRegions` requires the board's block to contain the
+  window — so every real board was refused (`.boardDoesNotMatchBinding`) and
+  `kernelMain` halted every PE before installing anything.  No fixture could
+  show it because every fixture's UART node was built from the binding's own
+  constant.  The window is `0x200` (every register the driver touches lies
+  below `0x048`), the fixtures carry the device tree's block,
+  `tests/fixtures/boot_map.expected` reads `mmio uart 0x107d001000 0x200`, and
+  `uartWindowIsTheDeviceTreesRegisterBlock` decides all three apertures — the
+  board's, a wider one (accepted) and a narrower one (refused).
+- **The real firmware account is refused — registered, not fixed.**  A
+  Raspberry Pi 5 reports its RAM as `[0, 0x80000)`, `[0x80000, 0x3FC00000)`
+  and `[0x40000000, top)`, withholding the top of the first gigabyte for the
+  firmware by an amount that varies per board; the variants declare
+  `[0, ramSize)` whole, so `rpi5VariantsCoveredBy` is empty on every real
+  account and the bridge refuses the board.  Fail-closed, and it also guards a
+  second hazard — BP3.2's `[256 MiB, 1 GiB)` boot untypeds would otherwise
+  hand the root task the firmware's memory.  The remedy is the account itself
+  (plan row **BP7.10**; register table B), the corpus gained the account as
+  `eight_gib_rpi5_firmware` (and the BCM2711-shaped fixture that carried the
+  name `eight_gib_as_firmware_reports_it` is `eight_gib_bcm2711_relocated_bank`),
+  and `realFirmwareAccountIsRefusedUntilDerived` pins the refusal so the closure
+  cannot land without flipping it.  Its sibling finding — nothing starts the
+  root task, and the untrusted witness can never run — is **BP7.11**.
+- **A boot untyped was checked for nothing.**  `bootSafeUntypedCheck` was
+  `true` and `bootSafeObject` had no untyped clause, so a configuration could
+  ship a watermark at the region's end or children naming objects the boot
+  never created.  A boot untyped is pristine now — `watermark = 0`,
+  `children = []`, `parent = none` — in the check, the Prop (a trailing
+  conjunct, so no projection moved) and `bootSafeObjectCheck_sound`, with
+  `bootUntypedMustBePristine` moving one field at a time off the control and
+  showing the deployment's own untypeds pass.
+- **A fuel-starved `ranges` walk answered its prefix.**  `parseFdtRanges.go`'s
+  zero-fuel arm returned the entries parsed so far — the partial-table shape
+  its own docstring retires for a partial entry.  It refuses now; unreachable
+  at the default fuel, whose `+ 1` is the unit the walk spends observing the
+  property's end, which `rangesWalkStarvedOfFuelRefuses` pins (three entries
+  need four units).
+- **Gates.**  `build_lean_aarch64_archive.py`'s reachable link refused to read
+  its exit status, so a link killed by a signal answered "nothing unresolved";
+  it refuses a status that disagrees with what it found.  `check_link_script.py`
+  matched an `ASSERT` message by a fragment two asserts share, so one was
+  deletable with the gate reporting it live; every witness names its whole
+  message and each conjoined assert has a witness per conjunct (34/34).
+  `check_dtb_corpus_consumers.py` decided "the suite compares" by the presence
+  of the call; it pins the comparison itself — the name bound to the check is
+  the name tested against the manifest — with the call-kept, comparison-dropped
+  mutations (20 cases).  `check_fp_simd_free_objects.py` counted an `<unknown>`
+  mnemonic as clean and knew no SVE predicate register or SVE/SME control
+  mnemonic; it refuses the first and covers the rest, and prints the objdump it
+  used.  `test_qemu.sh` named a binary that cannot exist (`sele4n-hal` is a
+  library): it builds the real image (`sele4n-kernel`, `kernel_image`) and
+  SKIPs unless `QEMU_MACHINE` names a machine, because QEMU models no BCM2712
+  — an honest NOT RUN in place of a permanent one.  The archive CI job installs
+  its `targets:` explicitly.  Three Tier 3 anchors were presence checks (a
+  negative scoped by indentation, two unbounded gaps) and are relations.
+  `build.rs`: `_start` may not name `x20` between keeping the entry level and
+  passing it; the readiness derivation counts whole-word references so a
+  non-call reference to a Lean upcall is refused; a `#[cfg(test)]` attaches to
+  the item it decorates; a preprocessor line or `.include` in a scanned `.S`
+  is refused; an EL2 register is recognised by its `_el2` suffix and its
+  `S3_4_` encoding; the `enter_lean_kernel` call is pinned rather than a
+  binding's name; a second `rust_secondary_main` definition is refused — each
+  with a token-preserving mutation.
+- **Documentation.**  Every stale claim the audit found is corrected: the
+  retired BP3 theorem names in the plan, spec and register; `HARDWARE_TESTING.md`
+  and `CI_POLICY.md`, which described a tree with no image; the BCM2711 values
+  in `rpi5_cross_check.md`; the README and the eleven locales, which named only
+  BP0 and BP1 as landed; the `48` sub-task count (now 50); the figures that moved
+  at BP4.6 (382 / 74 / 145, 258 package modules); the plan's acceptance boxes;
+  and the in-code comments in `link.ld`, `lean_heap.rs`, `smp.rs`, `FFI.lean`
+  and `cmdline.rs` (whose table now says the Lean-linked image halts rather
+  than boots fewer PEs).  Nine earlier commits of this version carry a session
+  trailer `CLAUDE.md` forbids; per its own remediation for pushed commits they
+  are a one-time leak and every later commit complies.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.5, BP6.1..BP6.3; BP7.10 and BP7.11 registered by the audit)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

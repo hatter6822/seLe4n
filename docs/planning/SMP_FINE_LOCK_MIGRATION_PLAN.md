@@ -574,7 +574,7 @@ rather than beside it.
 **Parallelism, stated.**  PRs 10 and 11 are Lean-only, touch no file WS-OD or
 WS-RR RR8 touch, and may run in parallel with either and with each other (PR
 11's third step excepted, above).  PRs 12 and 13 are strictly sequential, follow
-both Lean rows, and may not begin before BP6: PR 13 changes what a commit *is*,
+both Lean rows, and may begin now that BP6 has landed (v0.36.2): PR 13 changes what a commit *is*,
 and there is no way to validate that on a kernel that does not yet run on more
 than one PE.
 

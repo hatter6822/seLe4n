@@ -23,10 +23,15 @@ build runs.  What it holds:
    is a `#[test]` with no other attribute between it and its `fn` (so no
    `#[ignore]`), inside `mod dtb_corpus_tests`, which is `#[cfg(test)]`; and its
    body drives the manifest through the structure check the bootargs reader
-   runs first (`fdt_layout`, `fdt_structure_check`) and through that reader.
+   runs first (`fdt_layout`, `fdt_structure_check`) and through that reader —
+   and **compares** the check's answer with the manifest's verdict: the name
+   bound to the check is the name tested against `readable`, so a body that
+   keeps the call and decides on something else is refused (the `v0.36.2`
+   audit: presence of the call is not the comparison).
 4. **The Lean consumer is live**: `main`'s body in `tests/Ak9PlatformSuite.lean`
    carries the runner as a statement of its own, and the runner reads the
-   manifest and asks both the structural question and the `/memory` one.
+   manifest, asks both the structural question and the `/memory` one, and
+   compares each answer with the manifest's cell the same way.
 5. **Both suites are run by a gate**: Tier 2 executes `ak9_platform_suite`, and
    `scripts/test_rust.sh` runs the workspace's unit tests.
 
@@ -63,6 +68,33 @@ RUST_BODY_CALLS = ("manifest", "fdt_layout", "fdt_structure_check",
 LEAN_RUNNER = "dtbCorpus_every_fixture_agrees_with_the_manifest"
 LEAN_BODY_TOKENS = ('"MANIFEST"', "corpusStructureReadable", "corpusDeclaredRegions",
                     "readDir")
+# The comparisons: a name bound to the check's answer, then that name tested
+# against the manifest's verdict.  `{name}` is the bound name, escaped.
+RUST_VERDICT_BINDING = re.compile(r"let\s+(\w+)\s*=\s*fdt_layout\([^;]*fdt_structure_check\([^;]*;",
+                                  re.S)
+RUST_VERDICT_COMPARE = r"if\s+{name}\s*!=\s*\*?readable\b"
+LEAN_COMPARISONS = (
+    (re.compile(r"let\s+(\w+)\s*:=\s*corpusStructureReadable\s+\w+"),
+     r"if\s+{name}\s*!=\s*readable\b", "the structural verdict"),
+    (re.compile(r"let\s+(\w+)\s*:=\s*corpusDeclaredRegions\s+\w+"),
+     r"if\s+{name}\s*!=\s*expected\b", "the regions cell"),
+)
+
+
+def compared_with_manifest(body: str, binding: re.Pattern, compare: str, who: str,
+                           subject: str) -> list[str]:
+    """The consumer binds a name to the check's answer and tests THAT name
+    against the manifest's cell.  A body that keeps the call and compares a
+    constant, or the manifest with itself, keeps every token a presence check
+    reads and compares nothing."""
+    m = binding.search(body)
+    if not m:
+        return [f"`{who}` does not bind the answer to {subject}"]
+    name = m.group(1)
+    if not re.search(compare.format(name=re.escape(name)), body):
+        return [f"`{who}` binds `{name}` to {subject} and never compares it with the "
+                "manifest's cell"]
+    return []
 
 
 def manifest_names(text: str) -> list[str]:
@@ -116,8 +148,10 @@ def check_rust_consumer(text: str) -> list[str]:
     if body_close is None:
         return [f"`{RUST_TEST}` has no closing brace"]
     body = view[body_open:body_close]
-    return [f"`{RUST_TEST}` does not call `{c}`" for c in RUST_BODY_CALLS
-            if not re.search(r"\b" + re.escape(c) + r"\s*\(", body)]
+    problems = [f"`{RUST_TEST}` does not call `{c}`" for c in RUST_BODY_CALLS
+                if not re.search(r"\b" + re.escape(c) + r"\s*\(", body)]
+    return problems + compared_with_manifest(body, RUST_VERDICT_BINDING, RUST_VERDICT_COMPARE,
+                                             RUST_TEST, "the structure check")
 
 
 def _lean_decl_body(view: str, header: str) -> str | None:
@@ -147,6 +181,8 @@ def check_lean_consumer(text: str) -> list[str]:
         for tok in LEAN_BODY_TOKENS:
             if tok not in runner:
                 problems.append(f"`{LEAN_RUNNER}` does not read `{tok}`")
+        for binding, compare, subject in LEAN_COMPARISONS:
+            problems += compared_with_manifest(runner, binding, compare, LEAN_RUNNER, subject)
     return problems
 
 
@@ -227,6 +263,19 @@ def self_test() -> int:
         ("the runner stops asking the structural question",
          lambda: check_lean_consumer(lean.replace(
              "let gotReadable := corpusStructureReadable blob", "let gotReadable := readable")),
+         True),
+        # The v0.36.2 audit: the call kept, the comparison gone -- the shape a
+        # presence check passes.
+        ("the body keeps the structure check and drops the comparison",
+         lambda: check_rust_consumer(rust.replace("if got != *readable {", "if false {")), True),
+        ("the body compares the manifest's verdict with itself",
+         lambda: check_rust_consumer(rust.replace("if got != *readable {",
+                                                  "if *readable != *readable {")), True),
+        ("the runner keeps the structural question and drops the comparison",
+         lambda: check_lean_consumer(lean.replace("if gotReadable != readable then",
+                                                  "if false then")), True),
+        ("the runner keeps the regions question and drops the comparison",
+         lambda: check_lean_consumer(lean.replace("if got != expected then", "if false then")),
          True),
         ("the runner named in main only in a comment",
          lambda: check_lean_consumer(lean.replace(

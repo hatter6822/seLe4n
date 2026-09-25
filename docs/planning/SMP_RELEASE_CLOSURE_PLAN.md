@@ -163,7 +163,7 @@ repurposed ID**.
 
 WS-RR RR7.5 + RR7.15 landed that split at `v0.34.59`:
 [`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md) sequences the port as
-**48 sub-tasks across 9 phases `BP0..BP8`**, in execution order, with
+**50 sub-tasks across 9 phases `BP0..BP8`**, in execution order, with
 findings 19, 32 and 40–44 each scheduled to a named row and WS-XV absorbed as
 `BP0` at `v0.34.124`.  Nothing here is
 renumbered: `SM10.1.1` still means the image packaging, and `BP5.3` is the
@@ -296,7 +296,7 @@ makes: its *"State at the audited cut"* table is a measurement of `v0.34.3` and
 is labelled as one, and every row of it that has since moved carries its closing
 version in place (the aarch64 compile-coverage row at `v0.34.41`).  The
 deliverable list is unchanged in content; the runtime port it names is
-[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)'s 48 sub-tasks, and `SM10.1.1`
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)'s 50 sub-tasks, and `SM10.1.1`
 still means the image packaging.
 
 #### What the check found
@@ -395,7 +395,7 @@ image, `SM10.3.10`'s Tier-4 gate reports NOT RUN until one exists, and
 `SM10.5` boots the artefact this phase produces.
 
 **The port itself is planned in
-[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)** (WS-BP, 48 sub-tasks
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)** (WS-BP, 50 sub-tasks
 across `BP0..BP8`), which is where its schedule, its acceptance gate and its
 risk inventory live.  `SM10.1.1` below is unchanged and remains the release
 cut's row for the image *packaging*; `BP5.3` is the sub-task that produces
@@ -404,7 +404,7 @@ it.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM10.1.1 | Bootable image target — `kernel8.img` + `config.txt` packaging, and the `sele4n-hal` bootable binary it packages | `scripts/build_rpi5_image.sh` | XL |
+| SM10.1.1 | **Produced at `v0.36.2`** by WS-BP BP5.1–BP5.4 (`scripts/build_rpi5_image.sh`, CI artifact `rpi5-kernel-image`); what the release cut still owes is consuming it.  Bootable image target — `kernel8.img` + `config.txt` packaging, and the `sele4n-kernel` bootable binary it packages | `scripts/build_rpi5_image.sh` | XL |
 
 **Registered obligation — `lean_kernel_main` install ordering.**  When
 SM10.1.1 defines the primary's boot seam (`lean_kernel_main`, the

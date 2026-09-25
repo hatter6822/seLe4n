@@ -431,72 +431,112 @@ mod exports {
     use super::*;
 
     /// `lean_array_mk`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned list.
     #[no_mangle]
-    pub extern "C" fn lean_array_mk(lst: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_array_mk(lst: Obj) -> Obj {
         // SAFETY: an owned list.
         unsafe { array_mk(lst) }
     }
 
     /// `lean_array_to_list`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned array.
     #[no_mangle]
-    pub extern "C" fn lean_array_to_list(a: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_array_to_list(a: Obj) -> Obj {
         // SAFETY: an owned array.
         unsafe { array_to_list(a) }
     }
 
     /// `lean_mk_array`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned size and value.
     #[no_mangle]
-    pub extern "C" fn lean_mk_array(n: Obj, v: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_mk_array(n: Obj, v: Obj) -> Obj {
         // SAFETY: an owned size and value.
         unsafe { mk_array(n, v) }
     }
 
     /// `lean_copy_expand_array`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned array.
     #[no_mangle]
-    pub extern "C" fn lean_copy_expand_array(a: Obj, expand: bool) -> Obj {
+    pub unsafe extern "C" fn lean_copy_expand_array(a: Obj, expand: bool) -> Obj {
         // SAFETY: an owned array.
         unsafe { copy_expand_array(a, expand) }
     }
 
     /// `lean_copy_expand_array_nonlinear`: the out-of-line spelling `lean.h`
     /// uses on a shared array.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned array.
     #[no_mangle]
-    pub extern "C" fn lean_copy_expand_array_nonlinear(a: Obj, expand: bool) -> Obj {
+    pub unsafe extern "C" fn lean_copy_expand_array_nonlinear(a: Obj, expand: bool) -> Obj {
         // SAFETY: an owned array.
         unsafe { copy_expand_array(a, expand) }
     }
 
     /// `lean_array_push`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned array and value.
     #[no_mangle]
-    pub extern "C" fn lean_array_push(a: Obj, v: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_array_push(a: Obj, v: Obj) -> Obj {
         // SAFETY: an owned array and value.
         unsafe { array_push(a, v) }
     }
 
     /// `lean_array_get_panic`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned default.
     #[no_mangle]
-    pub extern "C" fn lean_array_get_panic(def: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_array_get_panic(def: Obj) -> Obj {
         // SAFETY: an owned default.
         unsafe { array_get_panic(def) }
     }
 
     /// `lean_byte_array_data`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned byte array.
     #[no_mangle]
-    pub extern "C" fn lean_byte_array_data(a: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_byte_array_data(a: Obj) -> Obj {
         // SAFETY: an owned byte array.
         unsafe { byte_array_data(a) }
     }
 
     /// `lean_float_array_data`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned float array.
     #[no_mangle]
-    pub extern "C" fn lean_float_array_data(a: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_float_array_data(a: Obj) -> Obj {
         // SAFETY: an owned float array.
         unsafe { float_array_data(a) }
     }
 
     /// `lean_byte_array_copy_slice`.
+    ///
+    /// # Safety
+    ///
+    /// The object arguments are live, owned or borrowed exactly as `lean.h` declares this primitive's prototype (`src` borrowed, `dest` owned, the positions and length borrowed), and `exact` is one byte.
     #[no_mangle]
-    pub extern "C" fn lean_byte_array_copy_slice(
+    pub unsafe extern "C" fn lean_byte_array_copy_slice(
         src: Obj,
         src_off: Obj,
         dest: Obj,
@@ -512,8 +552,12 @@ mod exports {
     }
 
     /// `lean_byte_array_hash`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed byte array.
     #[no_mangle]
-    pub extern "C" fn lean_byte_array_hash(a: Obj) -> u64 {
+    pub unsafe extern "C" fn lean_byte_array_hash(a: Obj) -> u64 {
         // SAFETY: a borrowed byte array.
         unsafe { byte_array_hash(a) }
     }

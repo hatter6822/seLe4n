@@ -15,8 +15,9 @@
 //! | `unsigned lean_small_mem_size(void * p)` | [`Heap::small_size`] |
 //!
 //! Objects above `LEAN_MAX_SMALL_OBJECT_SIZE` go through the runtime's
-//! `lean_alloc_object`, whose big path is `malloc`; that is BP2.2's libc surface,
-//! and it is served by [`Heap::alloc`] / [`Heap::free`] from **the same arena**,
+//! `lean_alloc_object` (`lean_runtime::object::alloc_object`), whose big path
+//! upstream serves from `malloc`; the kernel's runtime has no libc, and that
+//! path is served by [`Heap::alloc`] / [`Heap::free`] from **the same arena**,
 //! so the kernel has one heap and one exhaustion condition, never two.
 //!
 //! # The arena is a link-time constant
@@ -1017,11 +1018,17 @@ pub fn kernel_small_size(addr: usize) -> Result<u32, KernelHeapError> {
 /// The fail-closed end of every Lean-facing heap call: the Lean runtime cannot
 /// recover from a failed small allocation — `lean.h`'s inline paths do not test
 /// the result — and a contract violation means an object's lifetime is already
-/// wrong, so the PE parks rather than continue with memory it cannot trust.
+/// wrong, so the system halts rather than continue with memory it cannot
+/// trust.  The system (`gic::halt_all`), not the PE (the v0.36.2 audit): the
+/// kernel heap is one arena every PE serves the kernel from, so its exhaustion
+/// or corruption is a system-wide fact, and a PE parked here still holds the
+/// kernel-entry lock, on which every other PE would then wedge and halt with
+/// the wrong diagnostic.  The heap's own lock is released before this runs
+/// (`with_kernel_heap`).
 #[cfg(feature = "hw_target")]
 fn heap_halt(error: KernelHeapError) -> ! {
     crate::kprintln!("[lean_heap] FATAL: {:?}", error);
-    crate::cpu::fatal_halt()
+    crate::gic::halt_all()
 }
 
 /// `lean.h`: `void * lean_alloc_small(unsigned sz, unsigned slot_idx)`.  Halts

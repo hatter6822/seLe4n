@@ -173,8 +173,12 @@ mod exports {
     }
 
     /// `lean_option_get_or_block`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned option.
     #[no_mangle]
-    pub extern "C" fn lean_option_get_or_block(opt: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_option_get_or_block(opt: Obj) -> Obj {
         // SAFETY: an owned option.
         unsafe { option_get_or_block(opt) }
     }

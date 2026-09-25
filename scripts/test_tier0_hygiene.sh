@@ -481,8 +481,9 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_devicetree_legacy_consumers.sh"
 # WS-BP BP0.1/BP0.2: the shared device-tree corpus (`tests/fixtures/dtb/`) is
 # fresh against its generator, every blob has a manifest row, and both the Rust
 # walker's suite and the Lean parser's suite are wired to consume all of it —
-# so a case added to one side alone fails here, before any build.  Interim:
-# WS-BP BP2.6 retires the Rust walker and this gate with it.
+# so a case added to one side alone fails here, before any build.  WS-BP BP2.6
+# retired the Rust `/memory` walk and retargeted the corpus onto the structure
+# check the bootargs reader still runs, so the gate stays.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_dtb_corpus_consumers.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_dtb_corpus_consumers.py"
 

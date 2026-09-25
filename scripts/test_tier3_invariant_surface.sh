@@ -3829,7 +3829,7 @@ run_negative_check "INVARIANT" rg -n '\b(UNDESCRIBED_RAM_TOP|BOOT_TABLE_COVERAGE
 # call into `cmdline` in its body — and its two refusals, each ending in
 # `fatal_halt`, dominate the table build, which is built from the layout alone.
 run_negative_check "INVARIANT" rg -U -n '^pub fn init_mmu\(dtb_ptr: u64\) \{[^\n]*(\n([ \t][^\n]*)?)*crate::cmdline::' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n -U '^pub fn init_mmu\(dtb_ptr: u64\) \{\n    let layout = image_layout\(\);\n    if !layout\.is_well_formed\(\) \{\n(.*\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    if !dtb_window_admissible\(dtb_window\(dtb_ptr\), kernel_extent\(\)\) \{\n(.*\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(&layout\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub fn init_mmu\(dtb_ptr: u64\) \{\n    let layout = image_layout\(\);\n    if !layout\.is_well_formed\(\) \{\n(([ \t][^\n]*)?\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    if !dtb_window_admissible\(dtb_window\(dtb_ptr\), kernel_extent\(\)\) \{\n(([ \t][^\n]*)?\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(&layout\);' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^pub const GUARANTEED_RAM_TOP: u64 = 0x4000_0000;$' rust/sele4n-hal/src/mmu.rs
 # The cacheable window is the guaranteed interval unioned with the RAM BP4.6
@@ -3921,6 +3921,14 @@ run_check "INVARIANT" rg -n '^def bootSafeCapCheck($|[ ({:\[\]])' SeLe4n/Platfor
 run_check "INVARIANT" rg -n '^    cn\.slots\.fold true \(fun acc _ cap => acc && bootSafeCapCheck cap\)$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootSafeObjectCheck_sound \(obj : KernelObject\)$' SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n 'bootSafeObjectCheck_sound_structural' SeLe4n tests
+# The v0.36.2 audit: a boot untyped is pristine — the check reads its carve
+# state, the Prop has the clause, and the soundness bridge concludes it.  The
+# negative refuses the `=> true` arm coming back inside the declaration.
+run_check "INVARIANT" rg -n '^    ut\.watermark == 0 && ut\.children\.isEmpty && ut\.parent\.isNone$' SeLe4n/Platform/Boot.lean
+run_negative_check "INVARIANT" rg -n -U 'def bootSafeUntypedCheck[^\n]*(\n([ \t][^\n]*)?)*=> true' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'def bootSafeObject \(obj : KernelObject\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*  \(∀ ut, obj = \.untyped ut →\n    ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\)' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'theorem bootSafeObjectCheck_sound \(obj : KernelObject\)[^\n]*(\n([ \t][^\n]*)?)*    \(∀ ut, obj = \.untyped ut →\n      ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\) := by' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  bootUntypedMustBePristine$' tests/
 run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode holding a reply capability' tests/TwoPhaseArchSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
@@ -5043,13 +5051,19 @@ run_check "INVARIANT" rg -n 'kernel_image_report\.py" --self-test' scripts/test_
 run_check "INVARIANT" rg -U -n '^          name: rpi5-kernel-image\n          path: \|\n            rust/target/aarch64-unknown-none-softfloat/release/sele4n-kernel\n            \.lake/build/rpi5-image/kernel8\.img\n            \.lake/build/rpi5-image/config\.txt\n            \.lake/build/rpi5-image/kernel-image-report\.json$' .github/workflows/lean_action_ci.yml
 run_check "INVARIANT" rg -n '^    fn the_device_tree_window_is_the_dereference_bound\(\) \{$' rust/sele4n-hal/src/mmu.rs
 # WS-BP BP5.5: both boot entries reach EL1 from whichever level the firmware
-# chose.  Each calls `.L_enter_el1` right after the FP prologue; the routine
-# leaves FP/SIMD untrapped at EL2 (CPTR_EL2.TFP = 0), gives EL1 the physical
-# timer, the real MPIDR and an untrapped PMU, and `eret`s to EL1h with DAIF
-# masked; any other level halts.  build.rs pins the routine item for item.
+# chose.  Each calls `.L_enter_el1` as its FIRST item and writes the FP-trap
+# prologue right after it (the v0.36.2 audit: at EL2 with HCR_EL2.E2H = 1 the
+# spelling `cpacr_el1` denotes CPTR_EL2, and E2H resets UNKNOWN, so the trap
+# is written at EL1 where the name is unconditional); the routine leaves
+# FP/SIMD untrapped at EL2 (CPTR_EL2.TFP = 0), gives EL1 the physical timer,
+# the real MPIDR and an untrapped PMU, and `eret`s to EL1h with DAIF masked;
+# any other level halts.  build.rs pins the routine item for item, and both
+# scanners refuse the retired prologue-first order.
 run_check "INVARIANT" rg -n '^    scan_el1_entry\(\);$' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -U -n '^_start:\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n    mov     x20, x9 ' rust/sele4n-hal/src/boot.S
-run_check "INVARIANT" rg -U -n '^secondary_entry:\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^_start:\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb\n    mov     x20, x9 ' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^secondary_entry:\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb$' rust/sele4n-hal/src/boot.S
+run_negative_check "INVARIANT" rg -U -n '^(_start|secondary_entry):\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -n '"the FP trap written before the drop to EL1",' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -U -n '^\.L_enter_el1:\n    msr     daifset, #0xf\n    mrs     x9, currentel\n    cmp     x9, #0x4\n    b\.ne    \.L_enter_el1_from_el2\n    ret\n\.L_enter_el1_from_el2:\n    cmp     x9, #0x8\n    b\.ne    \.L_unsupported_el$' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -U -n '^    mov     x9, #0x33ff\n    msr     cptr_el2, x9$' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -U -n '^    mrs     x9, mpidr_el1\n    msr     vmpidr_el2, x9$' rust/sele4n-hal/src/boot.S
@@ -5058,12 +5072,17 @@ run_check "INVARIANT" rg -U -n '^\.L_unsupported_el:\n    wfe\n    b       \.L_u
 run_check "INVARIANT" rg -U -n '^    mov     x0, x19                 // x0 = DTB pointer \(first argument\)\n    mov     x1, x20 ' rust/sele4n-hal/src/boot.S
 # The PSCI conduit follows the entry level: an EL2 entry leaves nothing at
 # EL2 to take an `hvc`, so every call goes through `psci_call` and an EL2
-# entry selects `smc`.  No wrapper may hard-code `hvc #0` again.
+# entry selects `smc`.  No wrapper may hard-code `hvc #0` again: the two
+# conduit templates occur exactly once each in the whole HAL (a count, so a
+# re-indented copy is caught), and each inside `psci_call`'s arm for its own
+# conduit (the v0.36.2 audit — the retired negative matched one indentation).
 run_check "INVARIANT" rg -n '^        CURRENT_EL_EL2 => Some\(Conduit::Smc\),$' rust/sele4n-hal/src/psci.rs
 run_check "INVARIANT" rg -n '^        None => crate::cpu::fatal_halt\(\),$' rust/sele4n-hal/src/psci.rs
 run_check "INVARIANT" rg -n '^pub extern "C" fn rust_boot_main\(dtb_ptr: u64, entry_el: u64\) -> ! \{$' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -n '^    match crate::psci::select_conduit\(entry_el\) \{$' rust/sele4n-hal/src/boot.rs
-run_negative_check "INVARIANT" rg -n '^                "hvc #0",$' rust/sele4n-hal/src/psci.rs
+run_check "INVARIANT" bash -lc "rg -c --fixed-strings '\"hvc #0\"' rust/sele4n-hal/src/psci.rs | rg -x '1' && ! rg -l --fixed-strings '\"hvc #0\"' rust/sele4n-hal/src --glob '!psci.rs'"
+run_check "INVARIANT" bash -lc "rg -c --fixed-strings '\"smc #0\"' rust/sele4n-hal/src/psci.rs | rg -x '1' && ! rg -l --fixed-strings '\"smc #0\"' rust/sele4n-hal/src --glob '!psci.rs'"
+run_check "INVARIANT" rg -U -n '^unsafe fn psci_call\(function_id: u32, a1: u64, a2: u64, a3: u64\) -> u64 \{\n    let ret: u64;\n    match selected_conduit\(\) \{\n        Some\(Conduit::Smc\) => \{[^\n]*(\n([ \t][^\n]*)?)*?"smc #0",[^\n]*(\n([ \t][^\n]*)?)*?        Some\(Conduit::Hvc\) => \{[^\n]*(\n([ \t][^\n]*)?)*?"hvc #0",' rust/sele4n-hal/src/psci.rs
 # WS-BP BP6.1/BP6.2: each PE marks itself Lean-ready, on itself, through the
 # one function that consumes the per-PE handshake's token, before it unmasks
 # IRQs.  The mark is safe and takes the token; the unsafe per-core promise is
@@ -5081,7 +5100,12 @@ run_check "INVARIANT" rg -U -n '^    #\[cfg\(feature = "hw_target"\)\]\n    crat
 # WS-BP BP6.3: the boot refuses a topology in which a declared PE does not
 # serve the kernel — Lean-ready AND IRQ-ready — within the bounded window.
 # IRQ-readiness alone is satisfied by a PE whose gated seams are still dormant.
-run_check "INVARIANT" rg -U -n '^pub fn core_serves\(c: usize\) -> bool \{\n    c < CORE_IRQ_READY\.len\(\)\n        && CORE_IRQ_READY\[c\]\.load\(Ordering::Acquire\)\n        && crate::lean_ready::lean_ready\(c\)$' rust/sele4n-hal/src/smp.rs
+# The v0.36.2 audit: the production form delegates to `core_serves_in` over the
+# shared flags and the live Lean-readiness mask, and the conjunction is stated
+# once, on values a test owns (`serving_is_the_conjunction_of_irq_and_lean_readiness`).
+run_check "INVARIANT" rg -U -n '^pub fn core_serves\(c: usize\) -> bool \{\n    core_serves_in\(&CORE_IRQ_READY, crate::lean_ready::ready_mask\(\), c\)\n\}$' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -U -n '^pub fn core_serves_in\(irq_ready: &\[AtomicBool\], lean_ready_mask: u8, c: usize\) -> bool \{\n    c < irq_ready\.len\(\)\n        && irq_ready\[c\]\.load\(Ordering::Acquire\)\n        && crate::lean_ready::mask_marks\(lean_ready_mask, c\)$' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n '^    fn serving_is_the_conjunction_of_irq_and_lean_readiness\(\)' rust/sele4n-hal/src/smp.rs
 run_negative_check "INVARIANT" rg -n 'irq_ready_core_count_within' rust/sele4n-hal/src/
 # The re-type operand must NOT regress to the bare domain-wide invalidate.
 run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
@@ -15421,6 +15445,11 @@ run_check "INVARIANT" rg -n -U 'match fdtRoot\? nodes with\n      \| none => \.e
 run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount bytes \(\(childAddressCells \+ parentAddressCells \+ childSizeCells\) \* 4\) with\n  \| none => none\n  \| some _ => go 0 fuel \[\]' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match parseFdtRanges bytes childAddressCells parent\.addressCells childSizeCells with\n        \| none =>' SeLe4n/Platform/DeviceTree.lean
 run_negative_check "INVARIANT" rg -n 'let ranges := parseFdtRanges bytes childAddressCells' SeLe4n/Platform/DeviceTree.lean
+# The v0.36.2 audit: the ranges walk's exhaustion arm refuses rather than
+# answering a prefix; the negative is bounded to the declaration.
+run_check "INVARIANT" rg -n -U 'go \(offset : Nat\) : Nat → List FdtRangeEntry → Option \(List FdtRangeEntry\)\n  \| 0, _ => none' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n -U 'def parseFdtRanges[^\n]*(\n([ \t][^\n]*)?)*\| 0, acc => some acc\.reverse' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n '^  rangesWalkStarvedOfFuelRefuses$' tests/
 # A parse establishes the invariant `DeviceTree`'s own docstring states.
 run_check "INVARIANT" rg -n 'if dt\.validate then \.ok dt else \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
 # The round's Lean surface resolves.
@@ -21461,7 +21490,10 @@ run_check "INVARIANT" rg -n '^def uart0Base : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.
 run_check "INVARIANT" rg -n '^def gicDistributorBase : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107FFF9000\)$' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^def gicCpuInterfaceBase : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107FFFA000\)$' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^def socPeripheralBase : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107C000000\)$' SeLe4n/Platform/RPi5/Board.lean
-run_check "INVARIANT" rg -n '^mmio uart 0x107d001000 0x1000$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n '^mmio uart 0x107d001000 0x200$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n '^  \[ \{ base := uart0Base,            size := 0x200,  kind := \.device \}' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^  uartWindowIsTheDeviceTreesRegisterBlock$' tests/
+run_check "INVARIANT" rg -n '^  realFirmwareAccountIsRefusedUntilDerived$' tests/
 run_check "INVARIANT" rg -n '^mmio gicd 0x107fff9000 0x1000$' tests/fixtures/boot_map.expected
 run_check "INVARIANT" rg -n '^mmio gicc 0x107fffa000 0x2000$' tests/fixtures/boot_map.expected
 run_check "INVARIANT" rg -n '^pub\(crate\) fn lean_mmio_window\(name: &str\) -> \(u64, u64\) \{$' rust/sele4n-hal/src/mmu.rs

@@ -1275,9 +1275,9 @@ def untypedEntriesDisjoint (e₁ e₂ : ObjectEntry) : Bool :=
     describes only memory it may.**
 
     An untyped is authority over physical memory: its holder retypes it into
-    frames, page tables and kernel objects.  `bootSafeUntypedCheck` accepts
-    every region by design, and before this conjunct nothing else read an
-    untyped's extent, so a configuration could hand the root task an untyped
+    frames, page tables and kernel objects.  `bootSafeUntypedCheck` reads the
+    carve state, never the extent, by design, and before this conjunct
+    nothing else read an untyped's extent, so a configuration could hand the root task an untyped
     over the kernel's own image, a normal untyped over the GIC's registers, one
     over RAM the board does not have, or two untypeds over one range — each a
     route to memory the kernel never meant to give out.  seL4's boot derives
@@ -1715,18 +1715,30 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
        tcb.pendingReceiveReply.isNone &&
        decide (tcb.threadState = .Inactive)) := rfl
 
-/-- A boot **untyped** region carries no boot-safety condition: its region,
-    watermark, allocation records, device flag and ancestry are the
-    deployment's description of memory it owns, and what it may *not* record
-    is a reserved idle slot (`untypedReferencesReservedIdleSlot`).  The
-    pattern is the pin: a new field is classified here rather than inheriting
-    this `true`. -/
+/-- A boot **untyped** region is *pristine*: nothing has been carved from it
+    and it descends from nothing.  `watermark = 0` and `children = []`,
+    because a watermark with no children misreports the region's free space
+    and a child names an object the boot never carved; `parent = none`,
+    because a boot untyped is top-level by definition — `parent` is what
+    `untypedAncestorRegionsDisjoint` walks, and a config-supplied ancestor is
+    a chain the boot did not build.  Its region and device flag are the
+    deployment's description of memory it owns (bounded by
+    `untypedPlacementRespected`), what it may *not* record is a reserved idle
+    slot (`untypedReferencesReservedIdleSlot`), and `lock` is unheld by its
+    own default, as every boot object's is.  The pattern is the pin: a new
+    field is classified here rather than inheriting an accept.
+
+    Until the `v0.36.2` audit this arm was `true` — the one boot object whose
+    record the check read no field of — while `UntypedObject`'s own documented
+    invariant `watermark ≤ regionSize` was established nowhere at boot. -/
 def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
   match ut with
-  | ⟨_regionBase, _regionSize, _watermark, _children, _isDevice, _parent, _lock⟩ => true
+  | ⟨_regionBase, _regionSize, _watermark, _children, _isDevice, _parent, _lock⟩ =>
+    ut.watermark == 0 && ut.children.isEmpty && ut.parent.isNone
 
 @[simp] theorem bootSafeUntypedCheck_def (ut : UntypedObject) :
-    bootSafeUntypedCheck ut = true := rfl
+    bootSafeUntypedCheck ut =
+      (ut.watermark == 0 && ut.children.isEmpty && ut.parent.isNone) := rfl
 
 /-- A boot **SchedContext** has a well-formed CBS budget, no bound thread and
     (WS-OD OD2.1) an empty reply stack.  `scId` is pinned to the slot by
@@ -1871,7 +1883,11 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
     -- WS-SM SM6.D / PR #822: a boot Reply is inert — no blocked caller and no
     -- reply-stack link in either direction.
     (∀ r, obj = .reply r →
-      r.caller = none ∧ r.prev = none ∧ r.next = none) := by
+      r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
+    -- The `v0.36.2` audit: a boot untyped is pristine — nothing carved, no
+    -- ancestry.
+    (∀ ut, obj = .untyped ut →
+      ut.watermark = 0 ∧ ut.children = [] ∧ ut.parent = none) := by
   -- Discharge each constructor case. Non-matching constructors produce absurd
   -- injection hypotheses, discharged by `intro _ h; cases h`.
   cases obj with
@@ -1881,7 +1897,8 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
     exact ⟨fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he, fun _ he => by injection he⟩
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he⟩
   | notification notif =>
     simp only [bootSafeObjectCheck, bootSafeNotificationCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
@@ -1889,7 +1906,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
     exact ⟨fun _ he => by injection he, fun _ he => by injection he; subst_vars; exact ⟨h1, List.isEmpty_iff.mp h2, Option.eq_none_of_isNone h3⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he⟩
+           fun _ he => by injection he, fun _ he => by injection he⟩
   | cnode cn =>
     simp only [bootSafeObjectCheck, bootSafeCnodeCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
@@ -1901,7 +1918,8 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
                fun _ _ badge hL hB => (bootSafeCnodeCheck_caps hCaps hL).1 badge hB,
                fun _ _ rid hL => (bootSafeCnodeCheck_caps hCaps hL).2 rid⟩,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he, fun _ he => by injection he⟩
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he⟩
   | tcb tcb =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
@@ -1910,7 +1928,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
            fun _ he => by injection he,
            fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9⟩,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he⟩
+           fun _ he => by injection he, fun _ he => by injection he⟩
   | vspaceRoot vsr =>
     -- WS-BP BP3.2: bootSafeObjectCheck for VSpaceRoot reduces to
     -- `bootSafeUserVSpaceRootCheck vsr = true`, iff `bootSafeUserVSpaceRoot vsr`.
@@ -1919,12 +1937,19 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun v hv => by injection hv; subst_vars; exact hBoot,
-           fun _ he => by injection he, fun _ he => by injection he⟩
-  | untyped _ =>
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he⟩
+  | untyped ut =>
+    -- The `v0.36.2` audit: the check's `.untyped` arm reads the carve state;
+    -- thread its three conjuncts to the `.untyped` conclusion clause.
+    simp only [bootSafeObjectCheck, bootSafeUntypedCheck_def, Bool.and_eq_true,
+      beq_iff_eq] at h
+    obtain ⟨⟨hWatermark, hChildren⟩, hParent⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he⟩
+           fun _ he => by injection he,
+           fun _ he => by injection he; subst_vars; exact ⟨hWatermark, List.isEmpty_iff.mp hChildren, Option.eq_none_of_isNone hParent⟩⟩
   | reply r =>
     -- WS-SM SM6.D / PR #822: the check's `.reply` arm verifies the three
     -- inert-Reply fields; thread them to the `.reply` conclusion clause.
@@ -1933,7 +1958,8 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone hCaller, Option.eq_none_of_isNone hDonated, Option.eq_none_of_isNone hPrev⟩⟩
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone hCaller, Option.eq_none_of_isNone hDonated, Option.eq_none_of_isNone hPrev⟩,
+           fun _ he => by injection he⟩
   | schedContext sc =>
     simp only [bootSafeObjectCheck, bootSafeSchedContextCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
@@ -1942,7 +1968,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun s hs => ?_,
-            fun _ he => by injection he⟩
+            fun _ he => by injection he, fun _ he => by injection he⟩
     injection hs; subst_vars
     refine ⟨?_, Option.eq_none_of_isNone hUnbound, Option.eq_none_of_isNone hNoReplyStack,
             Option.eq_none_of_isNone hNoOrigin⟩
@@ -4928,7 +4954,16 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- WS-SM SM6.D: a boot Reply is inert — no blocked caller and no reply-stack
   -- link in either direction.
   (∀ r, obj = .reply r →
-    r.caller = none ∧ r.prev = none ∧ r.next = none)
+    r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
+  -- The `v0.36.2` audit: a boot untyped is pristine — nothing carved from it
+  -- and no ancestry.  The one boot object this predicate had no clause for,
+  -- while `bootSafeUntypedCheck` accepted every record: a configuration could
+  -- ship `watermark = regionSize` (nothing retypeable) or `children` naming
+  -- objects that do not exist, and no theorem was false because none read
+  -- these fields.  Stated at the end so every positional projection into
+  -- this conjunction is unchanged.
+  (∀ ut, obj = .untyped ut →
+    ut.watermark = 0 ∧ ut.children = [] ∧ ut.parent = none)
 
 /-- V4-A4: A PlatformConfig is boot-safe if all initial objects satisfy
     boot safety constraints. This is the standard precondition for
@@ -5013,7 +5048,7 @@ theorem bootSafeObject_bootObjectShape {obj : KernelObject} (h : bootSafeObject 
    fun vs hEq =>
      SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot_mappingsSafe
        (h.2.2.2.2.1 vs hEq) (hMappings vs hEq),
-   h.2.2.2.2.2.1, h.2.2.2.2.2.2⟩
+   h.2.2.2.2.2.1, h.2.2.2.2.2.2.1⟩
 
 /-- **WS-BP BP3.5**: the binding's boot root has the boot shape — every arm
     but the VSpace one is vacuous, and that one is its checks read per

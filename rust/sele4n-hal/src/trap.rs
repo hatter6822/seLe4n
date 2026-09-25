@@ -1184,9 +1184,25 @@ pub unsafe fn register_reschedule_sgi_handler() {
 /// `trap.S::__el0_serror_entry` / `__el1_serror_entry` now branch to `b .`
 /// after `bl handle_serror` (instead of the previously-dead `restore_context`
 /// fall-through) so the core halts in place if divergence is ever violated.
+///
+/// **The v0.36.2 audit**: SError is unmasked on every PE once its vectors
+/// are installed (`interrupts::enable_serror`), so this handler is reachable,
+/// and it reports through the console's **unlocked** writer: the interrupted
+/// context on this PE may hold the console lock — a store to an MMIO address
+/// no device answers is the commonest SError source, and that store is a
+/// console write as often as not — and taking the lock here would spin on
+/// it forever, silently.  The syndrome and the return address are printed
+/// because they are what a wrong board constant leaves behind.
 #[no_mangle]
-pub extern "C" fn handle_serror(_frame: &mut TrapFrame) -> ! {
-    crate::kprintln!("FATAL: SError exception");
+pub extern "C" fn handle_serror(frame: &mut TrapFrame) -> ! {
+    use core::fmt::Write;
+    let (esr, elr) = (frame.esr_el1, frame.elr_el1);
+    crate::uart::with_boot_uart_unlocked_for_fatal(|uart| {
+        let _ = writeln!(
+            uart,
+            "FATAL: SError exception (ESR_EL1 = {esr:#x}, ELR_EL1 = {elr:#x})"
+        );
+    });
     loop {
         crate::cpu::wfe();
     }

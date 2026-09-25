@@ -207,7 +207,7 @@ never behaviour.  BP0 makes a divergence fail a gate:
 
 | Pair | Shared artefact | Consumers |
 |------|-----------------|-----------|
-| Rust `cmdline` structure walk / Lean `DeviceTree` parser — *is this structure block readable at all?* (and, until BP2.6, *which `/memory` extents does it declare?*) | `tests/fixtures/dtb/` — 58 blobs and a hand-written `MANIFEST` (structure verdict; `/memory` regions, read by the Lean parser alone since BP2.6), rendered by `scripts/generate_dtb_corpus.py` | `cmdline::dtb_corpus_tests`, `tests/Ak9PlatformSuite.lean`; Tier 0 `check_dtb_corpus_consumers.py` |
+| Rust `cmdline` structure walk / Lean `DeviceTree` parser — *is this structure block readable at all?* (and, until BP2.6, *which `/memory` extents does it declare?*) | `tests/fixtures/dtb/` — 59 blobs and a hand-written `MANIFEST` (structure verdict; `/memory` regions, read by the Lean parser alone since BP2.6), rendered by `scripts/generate_dtb_corpus.py` | `cmdline::dtb_corpus_tests`, `tests/Ak9PlatformSuite.lean`; Tier 0 `check_dtb_corpus_consumers.py` |
 | `sele4n-abi` encoder / kernel decoder — *which bits and registers carry which field, within which bounds?* | `tests/fixtures/abi_layout.expected`, emitted from `MessageInfo.decode`/`encode`, `arm64DefaultLayout` and the ABI constants | `tests/SyscallReturnAbiSuite.lean`, `rust/sele4n-abi/tests/conformance.rs` |
 | `mmu::boot_mapping_for` / `rpi5MemoryMapForConfig` — *what does the boot map install at this address?* | `tests/fixtures/boot_map.expected`, the Lean map's kind at every boundary probe of every RAM variant | `tests/Ak9PlatformSuite.lean`, `mmu::boot_map_tests` |
 
@@ -251,7 +251,7 @@ boot-map pairs are permanent.
 Archive` CI lane (`scripts/test_lean_aarch64_archive.sh`).  Its contract:
 
 - **Contents.**  Exactly the elaborator's import closure of `SeLe4n`
-  (`Environment.header.moduleNames`): 256 package modules and the 609 `Init` /
+  (`Environment.header.moduleNames`): 258 package modules and the 609 `Init` /
   `Std` modules they reach.  The package half must equal Lake's
   `SeLe4n:modules`; nothing outside `SeLe4n` / `Init` / `Std` may appear, so the
   elaborator (`Lean.*`) cannot reach the kernel; and no staged or
@@ -538,7 +538,7 @@ def kernelMain (dtb : ByteArray) : BaseIO Unit :=
   So no bracketed committer can exist while the unbracketed install writes, and
   the lost-commit shape `kernel_entry.rs` documented is closed by construction.
   The PE-topology refusal moved to Phase 7, after the release.  That costs
-  nothing, because no core is lean-ready until BP6.
+  nothing until BP6 made every PE Lean-ready in the same version.
 - **Recorded, not exempted.**  The export-commit census lists the install as the
   eighth committing seam, unbracketed, with the ordering as its reason.  The
   reachability census's pin shrank by the nineteen boot-path transformers the
@@ -795,7 +795,13 @@ The binding is now the BCM2712's, cross-checked against
   the page-granular tail table the BCM2711 window needed is deleted.
 - **The console** is UART10 (`serial@7d001000`, the debug header) at
   `0x10_7D00_1000`, clocked at 9.216 MHz (`clk_uart`), so 115200 baud is
-  `IBRD = 5, FBRD = 0` exactly.
+  `IBRD = 5, FBRD = 0` exactly.  Its window is the `0x200`-byte register block
+  the device tree declares (`reg = <0x7d001000 0x200>`), not the PL011's
+  nominal 4 KiB page: `deviceTreeCoversMmioRegions` requires the board's block
+  to *contain* the binding's window, so the `0x1000` window the binding carried
+  until the `v0.36.2` audit was refused by every real board and the boot
+  halted before installing anything (`mmioRegions`, and the fixture line
+  `mmio uart 0x107d001000 0x200` both drivers read).
 - **The GIC-400** distributor is at `0x10_7FFF_9000` and the CPU interface at
   `0x10_7FFF_A000`.
 
@@ -811,8 +817,11 @@ source, and the first-boot readback (BP8.1) is what confirms them on hardware.
 
 The Raspberry Pi 5 firmware enters a 64-bit kernel at **EL2**; QEMU's `virt`
 machine enters at EL1 unless `virtualization=on`.  Both boot entries
-(`_start`, `secondary_entry`) call `boot.S`'s `.L_enter_el1` as the item after
-the FP-trap prologue.  With no stack and preserving every register but
+(`_start`, `secondary_entry`) call `boot.S`'s `.L_enter_el1` as their first
+item, ahead of the FP-trap prologue — the `v0.36.2` audit reordered the two,
+because `HCR_EL2.E2H` is UNKNOWN at reset and with it set a `cpacr_el1` write
+at EL2 names `CPTR_EL2`, so the trap is written once the PE is at EL1.  With
+no stack and preserving every register but
 `x9`, `x10` and `x30` — so the DTB pointer and the PSCI context id in `x0`
 survive — it masks DAIF and reads `CurrentEL`:
 
@@ -822,7 +831,7 @@ survive — it masks DAIF and reads `CurrentEL`:
   - `HCR_EL2 = RW` alone: EL1 is AArch64, with no stage 2 and no interrupt or
     `smc` routing to EL2.
   - `CPTR_EL2 = 0x33FF`: `TFP = 0`, so FP/SIMD is not trapped to EL2 and the
-    `CPACR_EL1` trap the prologue set is the one that fires.
+    `CPACR_EL1` trap the prologue sets after the drop is the one that fires.
   - `CNTHCTL_EL2 = 0x3` and `CNTVOFF_EL2 = 0`: EL1 owns the physical timer.
   - `VPIDR_EL2` / `VMPIDR_EL2` = the real `MIDR_EL1` / `MPIDR_EL1`.  An EL1
     read returns these, their reset values are UNKNOWN, and every core-id
@@ -2782,9 +2791,10 @@ plus SP_EL0, ELR_EL1, SPSR_EL1, ESR_EL1, and FAR_EL1 (288-byte `TrapFrame`;
 16-byte aligned).
 
 **The frame saves no FP/SIMD register, and that is sound because the kernel
-touches none** (v0.36.2).  Both boot entries (`_start`, `secondary_entry`) open
-with `msr cpacr_el1, xzr; isb`, trapping every FP/SIMD/SVE/SME access at EL0 and
-EL1 before any other instruction runs on the PE; the HAL is built for
+touches none** (v0.36.2).  Both boot entries (`_start`, `secondary_entry`) write
+`msr cpacr_el1, xzr; isb` as their first instructions at EL1 — right after
+`.L_enter_el1` returns — trapping every FP/SIMD/SVE/SME access at EL0 and
+EL1 before any other instruction runs on the PE at that level; the HAL is built for
 `aarch64-unknown-none-softfloat`, whose code generation uses no vector register;
 and `scripts/check_fp_simd_free_objects.py` disassembles the release objects in
 the cross gate to prove it.  `build.rs` (`scan_fp_trap_prologue`) requires the
@@ -3524,7 +3534,8 @@ being a different predicate.  A release-surviving tripwire's fail-closed
 branch must dominate every exit of its helper, not merely appear in it
 (`statement_may_exit`).  And `lean_kernel_main` had to **branch** on
 `bootAndInitialiseRPi5`'s `Except` and halt on `.error`
-(`boot_entry_handles_failure`): a failed boot installs no kernel state, so
+(`boot_entry_handles_failure`, the round-9 scanner check, retired at round
+17 for `BootEntryContract.lean`'s `approvedBootCall`): a failed boot installs no kernel state, so
 returning to the Rust caller would leave the image idling as though it had
 booted.  The check parses the match's arms, so the `.error` arm's own body
 must halt; a diverging statement before the handling match, or a rebinding of
@@ -7331,8 +7342,10 @@ root's ASID at a key nothing else holds, which `wellFormed`,
 `bootVSpaceRootObjIdDistinct` and `bootVSpaceAsidsDistinct` decide — and the
 scheduler supplies its run-queue facts (the boot core's queue holds its idle
 thread at priority `0`, or nothing).  The RPi5 deployment's instance is
-`rpi5DeploymentBootState_invariantBridge`, stated of the state
-`bootAndInitialiseRPi5OrHalt` installs.
+`rpi5DeploymentBootStateAt_invariantBridge v` for every `v ∈ rpi5Variants`,
+stated of the state `bootAndInitialiseRPi5OrHalt (rpi5BoundPlatformConfigAt v)`
+installs (BP4.4 generalised the single-board
+`rpi5DeploymentBootState_invariantBridge`).
 
 Proving it found a gap in the checked boot itself: the runtime CNode check
 did not look at slot contents, so a configuration whose CNode held a reply

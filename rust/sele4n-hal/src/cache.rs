@@ -22,7 +22,59 @@ use crate::barriers;
 
 /// Cortex-A76 cache line size in bytes (from CTR_EL0).
 /// ARM Cortex-A76 TRM: D-cache line = 64 bytes, I-cache line = 64 bytes.
+///
+/// Every by-VA maintenance loop in this module steps by this constant, and
+/// the constant is a claim about the PE: `verify_cache_line_stride_or_halt`
+/// reads `CTR_EL0` on each PE at boot and refuses one whose lines are
+/// smaller (the v0.36.2 audit).
 pub const CACHE_LINE_SIZE: u64 = 64;
+
+/// **The v0.36.2 audit**: the line sizes `CTR_EL0` reports, `(D-cache,
+/// I-cache)` in bytes.  `DminLine` is bits `[19:16]` and `IminLine` bits
+/// `[3:0]`, each the log2 of the line size in words (ARM ARM D17.2.20).
+#[must_use]
+pub const fn line_sizes_of_ctr(ctr: u64) -> (u64, u64) {
+    (4 << ((ctr >> 16) & 0xf), 4 << (ctr & 0xf))
+}
+
+/// Whether a PE with cache type register `ctr` is one the loops in this
+/// module reach every line of.  They step by [`CACHE_LINE_SIZE`], which
+/// misses lines only when the PE's are **smaller** — stepping 64 bytes over
+/// 32-byte lines skips every other one — while a larger line is cleaned or
+/// invalidated by whichever address the loop lands in it.  So the relation
+/// is a floor, on both caches: `DC CVAU` / `DC CIVAC` walk data lines and
+/// `IC IVAU` instruction lines.
+#[must_use]
+pub const fn line_size_admits_stride(ctr: u64) -> bool {
+    let (dcache, icache) = line_sizes_of_ctr(ctr);
+    dcache >= CACHE_LINE_SIZE && icache >= CACHE_LINE_SIZE
+}
+
+/// Refuse the executing PE unless its cache lines admit this module's stride
+/// ([`line_size_admits_stride`]).  Run once per PE after its MMU is on
+/// (`boot.rs` Phase 2, `smp.rs` Step 1); `halt` is the PE's fail-closed
+/// barrier.  On a host there is no `CTR_EL0` to read (the register macro
+/// answers zero), so the check is a no-op there and the relation is pinned
+/// by the tests instead.
+pub fn verify_cache_line_stride_or_halt(halt: fn() -> !) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let ctr = crate::registers::read_ctr_el0();
+        if !line_size_admits_stride(ctr) {
+            let (dcache, icache) = line_sizes_of_ctr(ctr);
+            crate::kprintln!(
+                "[cache] FATAL: CTR_EL0 = {ctr:#x}: D-cache line {dcache} B, I-cache line \
+                 {icache} B, smaller than the {CACHE_LINE_SIZE} B stride the maintenance \
+                 loops assume"
+            );
+            halt();
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = halt;
+    }
+}
 
 /// Clean and Invalidate by VA to Point of Coherency (DC CIVAC).
 ///
@@ -642,6 +694,38 @@ pub unsafe fn clean_pagetable_range(addr: usize, len: usize) {
 
 #[cfg(test)]
 mod tests {
+    /// The v0.36.2 audit: the Cortex-A76's `CTR_EL0` (`0x8444C004`: PIPT,
+    /// 64-byte lines on both caches) admits the stride; a PE with 32-byte
+    /// lines on either cache is refused, and one with 128-byte lines is
+    /// admitted, because over-stepping misses lines and under-stepping does
+    /// not.
+    #[test]
+    fn the_cache_line_stride_is_a_floor_on_both_caches() {
+        const A76: u64 = 0x8444_C004;
+        assert_eq!(super::line_sizes_of_ctr(A76), (64, 64));
+        assert!(super::line_size_admits_stride(A76));
+        assert!(
+            !super::line_size_admits_stride(0x8443_C004),
+            "32-byte D-cache lines"
+        );
+        assert!(
+            !super::line_size_admits_stride(0x8444_C003),
+            "32-byte I-cache lines"
+        );
+        assert!(
+            super::line_size_admits_stride(0x8445_C005),
+            "128-byte lines are reached"
+        );
+        assert_eq!(super::line_sizes_of_ctr(0), (4, 4));
+        assert!(
+            !super::line_size_admits_stride(0),
+            "an unread register admits nothing"
+        );
+        // The host has no register to read, so the production check is inert
+        // there; it must return rather than call the barrier.
+        super::verify_cache_line_stride_or_halt(|| panic!("the host check must not halt"));
+    }
+
     use super::*;
 
     #[test]

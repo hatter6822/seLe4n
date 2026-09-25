@@ -703,6 +703,17 @@ def reachable_unresolved(roots: list[str]) -> set[str]:
              if "error:" in l and "undefined symbol" not in l]
     if other:
         raise Refused(f"the reachable link failed for a reason other than an undefined symbol: {other[:4]}")
+    # The v0.36.2 audit: the exit status is read.  `--unresolved-symbols=report-all`
+    # makes every undefined symbol an error, so a link that exits nonzero and
+    # reports none — a linker that could not start, a crash, an archive it
+    # could not read — is not "everything resolved", which is what an empty
+    # set would have said to `check_reachable_provided`, silently.
+    if proc.returncode != 0 and not found:
+        raise Refused(f"the reachable link exited {proc.returncode} reporting no undefined "
+                      f"symbol and no other error:\n{proc.stderr[-2000:]}")
+    if proc.returncode == 0 and found:
+        raise Refused("the reachable link exited 0 while reporting undefined symbols; "
+                      "the linker's error reporting and its status disagree")
     return found
 
 

@@ -14,6 +14,16 @@
 //! | `smp_enabled`   | bool   | `true`  | Enable SMP secondary-core bring-up.      |
 //! | `smp_max_cores` | usize  | 4       | Upper bound on cores to bring up [0..4]. |
 //!
+//! **On the Lean-linked image both options can only halt the boot** (the
+//! v0.36.2 audit): since WS-BP BP6 the boot core's Phase 7 refuses the
+//! topology unless every PE the linked kernel declares — four on the RPi5
+//! (`boot::LEAN_DECLARED_CORE_COUNT`) — serves the kernel within the bounded
+//! window, so `smp_enabled=false` or `smp_max_cores` below four halts the
+//! system rather than booting fewer PEs.  A narrower machine is a binding with
+//! a smaller `coreCount`, never a command line.  The two options remain a
+//! partial bring-up on the HAL-only image, which links no Lean kernel and
+//! never reaches that refusal.
+//!
 //! `smp_enabled` defaults to `true`: SM5.I serialised kernel entry at
 //! v0.32.142, which is the condition maintainer decision #7 attaches to
 //! the on-by-default policy.  Single-core boot is the opt-OUT

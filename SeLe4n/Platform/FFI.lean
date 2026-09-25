@@ -1521,7 +1521,8 @@ def extendBootRamMap (extensions : List (Nat × Nat)) : BaseIO Unit :=
 
 Composed so that every accepting path goes through
 `bootAndInitialiseRPi5OrHalt` — the checked platform boot at the RPi5 binding
-with its own failure handled — and every refusing path parks the PE.  That is
+with its own failure handled — and every refusing path halts every PE
+(`ffiFatalHaltAll`, the system barrier a boot-fatal refusal takes).  That is
 the same disposition a refused boot already had, extended to the two ways a
 device tree can refuse one: an unparseable blob and a board that is not this
 image's.

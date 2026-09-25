@@ -22,7 +22,28 @@
 
 _start:
     // =====================================================================
-    // Step 0: trap FP/SIMD at EL0 and EL1 before anything else runs.
+    // Step 0: reach EL1 before anything else runs.  The Raspberry Pi 5
+    // firmware enters a 64-bit kernel at EL2; QEMU's `virt` machine enters
+    // at EL1.  `.L_enter_el1` returns at EL1 either way, with x0 (the DTB
+    // pointer) intact and the entry level in x9, or halts this PE if it
+    // was entered at EL3 or an unrecognised level.
+    //
+    // It runs FIRST because the FP trap below is written to a register
+    // whose NAME depends on the level: at EL2 with HCR_EL2.E2H = 1 an
+    // access spelled `cpacr_el1` is redirected to CPTR_EL2 (ARM ARM
+    // D8.2.30, the VHE register redirection), and E2H resets to an
+    // architecturally UNKNOWN value — so a write made before the drop
+    // could land in the very register `.L_enter_el1` then overwrites,
+    // leaving CPACR_EL1 at its UNKNOWN reset value and FP untrapped at
+    // EL1 (the v0.36.2 audit).  `build.rs` (`scan_el1_entry`) requires
+    // this call to be the first item of both entries and pins the
+    // routine's body.
+    // =====================================================================
+    bl      .L_enter_el1
+
+    // =====================================================================
+    // Step 0.5: trap FP/SIMD at EL0 and EL1 — now at EL1, where
+    // `cpacr_el1` names CPACR_EL1 unconditionally.
     //
     // CPACR_EL1 := 0 sets FPEN (and ZEN / SMEN) to 0b00: every FP, SIMD,
     // SVE and SME access at EL0 or EL1 traps (ARM ARM D19.2.30).  The
@@ -34,21 +55,12 @@ _start:
     // carry an FP context (WS-BP BP7); until then an EL0 access is
     // delivered as a userException fault.  The ISB makes the write take
     // effect before the next instruction.  `build.rs`
-    // (`scan_fp_trap_prologue`) requires these two statements to open
-    // both boot entries and refuses any other write to CPACR_EL1.
+    // (`scan_fp_trap_prologue`) requires these two statements to follow
+    // the `.L_enter_el1` call in both boot entries and refuses any other
+    // write to CPACR_EL1.
     // =====================================================================
     msr     cpacr_el1, xzr
     isb
-
-    // =====================================================================
-    // Step 0.5: reach EL1.  The Raspberry Pi 5 firmware enters a 64-bit
-    // kernel at EL2; QEMU's `virt` machine enters at EL1.  `.L_enter_el1`
-    // returns at EL1 either way, with x0 (the DTB pointer) intact, or
-    // halts this PE if it was entered at EL3 or an unrecognised level.
-    // `build.rs` (`scan_el1_entry`) requires this call to follow the FP
-    // prologue in both entries and pins the routine's body.
-    // =====================================================================
-    bl      .L_enter_el1
     mov     x20, x9                 // x20 = the level the firmware entered at
 
     // =====================================================================
@@ -216,20 +228,21 @@ _start:
 // PSCI HVC path on aarch64 firmware.
 // =========================================================================
 secondary_entry:
-    // Step 0: trap FP/SIMD at EL0 and EL1 before anything else runs on
-    // this PE.  CPACR_EL1 is per-PE and PSCI CPU_ON gives no guarantee
-    // about its value; see `_start`'s Step 0.
+    // Step 0: reach EL1 before anything else runs on this PE.  PSCI
+    // CPU_ON enters the target at the level of the CPU_ON caller
+    // (DEN0022D), which is EL1 once the boot core has dropped, and an EL1
+    // entry leaves this PE's EL2 state to the firmware as it does on the
+    // boot core.  A firmware that enters a secondary at EL2 regardless is
+    // not excluded, so every PE takes the same routine as the boot core —
+    // and takes it first, for the reason `_start`'s Step 0 gives.
+    // x0 (the PSCI context_id) survives it.
+    bl      .L_enter_el1
+
+    // Step 0.5: trap FP/SIMD at EL0 and EL1.  CPACR_EL1 is per-PE and
+    // PSCI CPU_ON gives no guarantee about its value; see `_start`'s
+    // Step 0.5.
     msr     cpacr_el1, xzr
     isb
-
-    // Step 0.5: reach EL1.  PSCI CPU_ON enters the target at the level
-    // of the CPU_ON caller (DEN0022D), which is EL1 once the boot core
-    // has dropped, and an EL1 entry leaves this PE's EL2 state to the
-    // firmware as it does on the boot core.  A firmware that enters a
-    // secondary at EL2 regardless is not excluded, so every PE takes the
-    // same routine as the boot core.
-    // x0 (the PSCI context_id) survives it; see `_start`'s Step 0.5.
-    bl      .L_enter_el1
 
     // Step 1: mask all maskable interrupts.  PSCI returns with DAIF
     // unset on some firmwares; do not assume.  Also mandatory before
@@ -363,7 +376,8 @@ secondary_entry:
 // =========================================================================
 // WS-BP BP5.5: enter EL1 from whichever level the firmware chose.
 //
-// Called by `bl` as the first action after each entry's FP prologue, with
+// Called by `bl` as each entry's first action, ahead of the FP prologue (a
+// `cpacr_el1` write at EL2 may denote CPTR_EL2 — see `_start`'s Step 0), with
 // no stack (SP_EL1 is UNKNOWN on an EL2 entry until the caller sets it).
 // Clobbers x9, x10 and x30; preserves every other general register, so
 // x0 — the DTB pointer on `_start`, the PSCI context_id on

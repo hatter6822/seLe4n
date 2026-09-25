@@ -44,17 +44,28 @@ const KERNEL_VERSION: &str = "0.36.2";
 const LEAN_DECLARED_CORE_COUNT: u32 = 4;
 
 /// **PR #889 review round 23**: how long the handoff waits for every declared
-/// PE to publish `CORE_IRQ_READY` before refusing the topology.
+/// PE to serve the kernel before refusing the topology.
 ///
 /// Bounded on purpose: a secondary that never publishes must make the boot
 /// *fail*, not hang, so the wait has a ceiling and the refusal below is what
-/// runs when it expires.  The unit is `wfe_bounded` ticks, the same clock the
-/// shootdown protocol's bounded waits use.
+/// runs when it expires.  The unit is `wfe_bounded` ticks (10 ms each), the
+/// same clock the shootdown protocol's bounded waits use.
+///
+/// **One second, derived rather than picked** (the v0.36.2 audit).  Before a
+/// secondary publishes it runs its MMU, vector, GIC and timer setup, the
+/// per-PE handshake, the kernel bring-up entry under the kernel-entry lock —
+/// which the boot core's 1 kHz tick contends — and about 390 bytes of console
+/// traffic, which at 115 200 baud 8N1 (86.8 µs a byte) is ≈ 34 ms per PE and,
+/// serialised through the one console lock with the boot core's own Phase-6
+/// and Phase-7 lines, ≈ 100 ms for three PEs.  The previous window, 160 ms,
+/// left a healthy board a margin under 2× from console traffic alone.  A
+/// generous window costs nothing on a healthy boot, which ends the wait the
+/// moment the last PE serves, and is paid only on a boot that fails anyway.
 ///
 /// `hw_target`-only for the same reason as `LEAN_DECLARED_CORE_COUNT`: its one
-/// reader is the Phase-6 handoff.
+/// reader is the Phase-7 refusal.
 #[cfg(feature = "hw_target")]
-const SECONDARY_READY_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS * 16;
+const SECONDARY_READY_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS * 100;
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from the firmware in x0, and in x1
@@ -182,6 +193,13 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // now uses the same code path the secondaries do.
     install_exception_vectors();
     crate::kprintln!("[boot] VBAR_EL1 set to exception vector table");
+    // The v0.36.2 audit: with the vectors installed, an asynchronous external
+    // abort is reported and halts (`trap::handle_serror`) rather than staying
+    // pending and silent for the life of the boot.
+    crate::interrupts::enable_serror();
+    // ...and the cache-maintenance stride this HAL assumes is checked against
+    // the PE's own `CTR_EL0` rather than trusted from the TRM.
+    crate::cache::verify_cache_line_stride_or_halt(crate::cpu::fatal_halt);
 
     // -----------------------------------------------------------------------
     // Phase 3: GIC-400 and timer initialization (AG5)
@@ -509,6 +527,18 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
                 LEAN_DECLARED_CORE_COUNT,
                 1 + online
             );
+            // The v0.36.2 audit: name the PE and the half it is short of, so
+            // a board with one dead core reports which one and whether it
+            // failed before its handshake (no Lean readiness) or before it
+            // unmasked (no IRQ readiness).
+            for core in 0..LEAN_DECLARED_CORE_COUNT as usize {
+                let (irq_ready, lean_ready) = crate::smp::core_readiness(core);
+                if !(irq_ready && lean_ready) {
+                    crate::kprintln!(
+                        "[boot]   PE {core}: IRQ-ready {irq_ready}, Lean-ready {lean_ready}"
+                    );
+                }
+            }
             // PR #889 review round 22: `halt_all`, not `fatal_halt`.  This
             // condition is reached *after* the secondaries that did start have
             // entered `rust_secondary_main`, unmasked IRQs and begun servicing

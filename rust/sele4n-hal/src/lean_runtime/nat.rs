@@ -46,7 +46,7 @@ struct Val<'a> {
 /// # Safety
 ///
 /// `o` must be a live number object, unchanged for `'a`.
-unsafe fn mpz_parts<'a>(o: Obj) -> (bool, &'a [u64]) {
+pub(super) unsafe fn mpz_parts<'a>(o: Obj) -> (bool, &'a [u64]) {
     // SAFETY: `o` is a live number object by this function's contract, whose
     // `size` limbs follow its fixed part.
     unsafe {
@@ -1004,9 +1004,13 @@ mod exports {
 
     macro_rules! borrowed2 {
         ($($name:ident => $f:ident;)+) => {$(
-            #[doc = concat!("`", stringify!($name), "`.")]
+            /// A two-argument `Nat`/`Int` export of `lean.h`'s, minted by `borrowed2`.
+            ///
+            /// # Safety
+            ///
+            /// Both arguments are `Nat`s or `Int`s — scalars or live big numbers — borrowed for the call, as `lean.h`'s inline fast paths pass them.
             #[no_mangle]
-            pub extern "C" fn $name(a1: Obj, a2: Obj) -> Obj {
+            pub unsafe extern "C" fn $name(a1: Obj, a2: Obj) -> Obj {
                 // SAFETY: `lean.h`'s calling convention: both borrowed numbers.
                 unsafe { $f(a1, a2) }
             }
@@ -1039,9 +1043,13 @@ mod exports {
 
     macro_rules! compare {
         ($($name:ident => $cmp:ident, |$o:ident| $test:expr;)+) => {$(
-            #[doc = concat!("`", stringify!($name), "`.")]
+            /// A `Nat`/`Int` comparison export of `lean.h`'s, minted by `compare`.
+            ///
+            /// # Safety
+            ///
+            /// Both arguments are `Nat`s or `Int`s — scalars or live big numbers — borrowed for the call, as `lean.h`'s inline fast paths pass them.
             #[no_mangle]
-            pub extern "C" fn $name(a1: Obj, a2: Obj) -> bool {
+            pub unsafe extern "C" fn $name(a1: Obj, a2: Obj) -> bool {
                 // SAFETY: `lean.h`'s calling convention: both borrowed numbers.
                 let $o: Ordering = unsafe { $cmp(a1, a2) };
                 $test
@@ -1059,15 +1067,23 @@ mod exports {
     }
 
     /// `lean_nat_big_succ`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed big `Nat`.
     #[no_mangle]
-    pub extern "C" fn lean_nat_big_succ(a: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_nat_big_succ(a: Obj) -> Obj {
         // SAFETY: a borrowed big `Nat`.
         unsafe { nat_big_succ(a) }
     }
 
     /// `lean_nat_log2`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed `Nat`.
     #[no_mangle]
-    pub extern "C" fn lean_nat_log2(a: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_nat_log2(a: Obj) -> Obj {
         // SAFETY: a borrowed `Nat`.
         unsafe { nat_log2(a) }
     }
@@ -1120,31 +1136,47 @@ mod exports {
     }
 
     /// `lean_big_int_to_nat`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned big `Int`.
     #[no_mangle]
-    pub extern "C" fn lean_big_int_to_nat(a: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_big_int_to_nat(a: Obj) -> Obj {
         // SAFETY: an owned big `Int`.
         unsafe { big_int_to_nat(a) }
     }
 
     /// `lean_int_big_neg`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed `Int`.
     #[no_mangle]
-    pub extern "C" fn lean_int_big_neg(a: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_int_big_neg(a: Obj) -> Obj {
         // SAFETY: a borrowed `Int`.
         unsafe { int_big_neg(a) }
     }
 
     /// `lean_int_big_nonneg`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed `Int`.
     #[no_mangle]
-    pub extern "C" fn lean_int_big_nonneg(a: Obj) -> bool {
+    pub unsafe extern "C" fn lean_int_big_nonneg(a: Obj) -> bool {
         // SAFETY: a borrowed `Int`.
         unsafe { int_big_nonneg(a) }
     }
 
     macro_rules! narrow {
         ($($name:ident => $f:ident as $t:ty;)+) => {$(
-            #[doc = concat!("`", stringify!($name), "`: the value's low bits.")]
+            /// A narrowing export of `lean.h`'s, minted by `narrow`: the value's low bits.
+            ///
+            /// # Safety
+            ///
+            /// The argument is a borrowed number of the kind the underlying primitive reads (a `Nat` for the `Nat` exports, an `Int` for the `Int` ones): a scalar or a live big number.
             #[no_mangle]
-            pub extern "C" fn $name(a: Obj) -> $t {
+            pub unsafe extern "C" fn $name(a: Obj) -> $t {
                 // SAFETY: a borrowed number of the kind `$f` reads.
                 unsafe { $f(a) as $t }
             }

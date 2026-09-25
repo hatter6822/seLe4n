@@ -502,21 +502,95 @@ static UART_LOCK: UartLock = UartLock::new();
 #[doc(hidden)]
 #[inline(always)]
 pub fn with_boot_uart<R, F: FnOnce(&mut Uart) -> R>(f: F) -> R {
-    let guard = UART_LOCK.with_guard();
-    // Reborrow `guard.inner` (itself a `&'a mut Uart`) so `f` receives a
-    // shorter-lived `&mut Uart` that ends before the guard's `Drop` runs
-    // at function scope exit. Under `panic = "unwind"` (test profile) the
-    // unwind path still invokes `Drop`, which releases the lock and
-    // restores DAIF; under `panic = "abort"` (production) the kernel
-    // halts before any subsequent code observes the lock state, so the
-    // skipped release is moot.
-    f(&mut *guard.inner)
+    with_uart_under(&UART_LOCK, ticket_lock_usable(), f)
+}
+
+/// **The v0.36.2 audit**: whether the executing PE can run the console's
+/// ticket lock at all.
+///
+/// `TicketLock::acquire` is a `fetch_add`, which the kernel's target (no LSE)
+/// compiles to an `LDAXR`/`STXR` loop: an exclusive-monitor access.  With
+/// `SCTLR_EL1.M = 0` every data access is Device-nGnRnE, and whether an
+/// exclusive access to Device memory can ever succeed is IMPLEMENTATION
+/// DEFINED (ARM ARM B2.9.5) — it needs an external global monitor, which the
+/// BCM271x memory system does not provide, so `STXR` fails forever and the
+/// acquire spins before the banner is printed.  The boot core prints from
+/// Phase 1, with translation off until Phase 2's `init_mmu`, and a secondary
+/// reports a refused PSCI context id before its own `init_mmu_secondary`.
+///
+/// The fact is read off the PE (`SCTLR_EL1.M`), never supplied by a call
+/// site: a flag would be a place for a caller to be wrong.  The host has no
+/// translation and no exclusive monitor to lose, so there the lock is always
+/// taken and the unlocked path is reached only through [`with_uart_under`].
+#[inline(always)]
+fn ticket_lock_usable() -> bool {
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::registers::read_sctlr_el1() & 1 != 0
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        true
+    }
+}
+
+/// Run `f` on the boot UART: under `lock` when the ticket lock is usable,
+/// and on a fresh handle to the same registers, with interrupts masked and
+/// no lock touched, when it is not.
+///
+/// The unlocked path is sound only while the PE taking it is the only one
+/// that can print, and that is the boot order rather than a property this
+/// function decides: translation is off on the boot core alone during
+/// Phases 1–2, before any secondary exists, and on a secondary only before
+/// its `init_mmu_secondary`, where its one print is the fatal refusal of an
+/// invalid PSCI context id.  A second printer at that moment could interleave
+/// characters — it holds no Rust state the locked writer also holds, since
+/// `Uart` is a base address and every write is a volatile MMIO store — but it
+/// cannot corrupt the lock, which the unlocked path never reads or writes.
+#[inline(always)]
+fn with_uart_under<R, F: FnOnce(&mut Uart) -> R>(lock: &UartLock, lock_usable: bool, f: F) -> R {
+    if lock_usable {
+        let guard = lock.with_guard();
+        // Reborrow `guard.inner` (itself a `&'a mut Uart`) so `f` receives a
+        // shorter-lived `&mut Uart` that ends before the guard's `Drop` runs
+        // at function scope exit. Under `panic = "unwind"` (test profile) the
+        // unwind path still invokes `Drop`, which releases the lock and
+        // restores DAIF; under `panic = "abort"` (production) the kernel
+        // halts before any subsequent code observes the lock state, so the
+        // skipped release is moot.
+        return f(&mut *guard.inner);
+    }
+    let saved_daif = crate::interrupts::disable_interrupts();
+    let mut uart = Uart::new(UART0_BASE);
+    let result = f(&mut uart);
+    crate::interrupts::restore_interrupts(saved_daif);
+    result
+}
+
+/// Run `f` on the boot UART **without** the console lock, for a handler
+/// that never returns.
+///
+/// **The v0.36.2 audit**: an SError can arrive while this PE holds the
+/// console lock — a UART register write to an address no device answers is
+/// itself a likely source — and `handle_serror` then printing through the
+/// lock would spin on the ticket its own interrupted context holds, halting
+/// silently.  A handler that halts the PE never releases anything it holds,
+/// so the lock is not owed to anyone else; what it may cost is interleaved
+/// characters if another PE is printing, which a fatal report accepts.
+/// Interrupts are masked for the write, as on the locked path.
+#[doc(hidden)]
+#[inline(always)]
+pub fn with_boot_uart_unlocked_for_fatal<R, F: FnOnce(&mut Uart) -> R>(f: F) -> R {
+    with_uart_under(&UART_LOCK, false, f)
 }
 
 /// Initialize the global boot UART.
 ///
 /// Must be called exactly once from the boot path, before any other
-/// `kprint!` / `kprintln!` usage. The lock is acquired for initialization.
+/// `kprint!` / `kprintln!` usage.  On the board this runs in Phase 1 with
+/// translation off, so it takes [`with_boot_uart`]'s unlocked path; `Uart`
+/// carries no state but its base address, so initialising through a fresh
+/// handle initialises the one UART.
 pub fn init_boot_uart() {
     with_boot_uart(|u| u.init());
 }
@@ -733,6 +807,40 @@ mod tests {
     //      invariant violation; we verify the unwinding test-profile
     //      behaviour here.)
     // ========================================================================
+
+    /// **The v0.36.2 audit**: with translation off the writer takes no
+    /// lock — a fresh private lock is untouched by the unlocked branch and
+    /// held by the locked one, decided inside `f` where the branch is
+    /// observable.  The dispatch reads `SCTLR_EL1.M` on the board and is
+    /// always `true` on the host, so this is the one place the unlocked
+    /// branch is exercised; a mutation that takes the lock on both branches
+    /// fails the first assertion, and one that takes it on neither fails the
+    /// second.
+    #[test]
+    fn a_pe_without_translation_prints_without_the_lock() {
+        let lock = UartLock::new();
+        let mut ran = 0;
+        with_uart_under(&lock, false, |uart| {
+            ran += 1;
+            assert!(
+                !lock.is_held(),
+                "the unlocked branch must not touch the lock"
+            );
+            assert_eq!(
+                uart.base, UART0_BASE,
+                "the unlocked handle is the boot UART's registers"
+            );
+        });
+        with_uart_under(&lock, true, |_| {
+            ran += 1;
+            assert!(
+                lock.is_held(),
+                "the locked branch holds the lock inside `f`"
+            );
+        });
+        assert_eq!(ran, 2);
+        assert!(!lock.is_held(), "both branches leave the lock released");
+    }
 
     #[test]
     fn uart_guard_holds_lock_for_scope_and_releases_on_exit() {

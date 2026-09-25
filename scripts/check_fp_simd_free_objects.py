@@ -53,8 +53,24 @@ REPO = Path(__file__).resolve().parent.parent
 # An FP/SIMD/SVE register operand, or an FP control/status register.  The
 # lookbehind refuses a register-like fragment inside a longer token (`#0x1d0`,
 # `x1d`), and the lookahead refuses one that continues (`at s1e1r` names an
-# address-translation operation, not the register `s1`).
-FP_OPERAND = re.compile(r"(?<![\w.#])(?:[vqdshbz]\d{1,2}(?:\.\w+)?|fpcr|fpsr)(?!\w)")
+# address-translation operation, not the register `s1`).  `p0`-`p15` are the
+# SVE predicate registers (the v0.36.2 audit: a predicate-only SVE instruction
+# such as `ptrue p0.b` names no `z` register).
+FP_OPERAND = re.compile(r"(?<![\w.#])(?:[vqdshbzp]\d{1,2}(?:\.\w+)?|fpcr|fpsr)(?!\w)")
+
+# SVE/SME instructions that touch FP/SIMD state through NO register operand:
+# `setffr` writes the first-fault register, `smstart`/`smstop` switch the
+# streaming SVE mode and zero the vector registers, `wrffr`/`rdffr` move the
+# FFR (their operand form is a `p` register, caught above).  Matched on the
+# mnemonic, since the operand scan cannot see them (the v0.36.2 audit).
+FP_MNEMONICS = frozenset({"setffr", "smstart", "smstop", "wrffr", "rdffr", "rdffrs"})
+
+# An instruction the disassembler could not decode.  It is refused rather than
+# counted clean: an undecodable word in executable code cannot be shown to be
+# FP-free, and "could not read" must not produce the PASS a clean file does
+# (the v0.36.2 audit; the release objects hold none today, so a data word in a
+# text section is a change this gate then reports rather than reads past).
+UNKNOWN_MNEMONIC = "<unknown>"
 
 # `  1c:\tmnemonic\toperands` -- llvm-objdump's instruction line with
 # `--no-show-raw-insn`.  The optional `<...>:` form is a function header.
@@ -96,9 +112,12 @@ def fp_findings(disassembly: str) -> tuple[int, list[str]]:
         if not insn:
             continue
         count += 1
+        mnemonic = insn.group(1)
         operands = operands_of(insn.group(2) or "")
-        if FP_OPERAND.search(operands):
-            findings.append(f"{function}: {insn.group(1)} {operands.strip()}")
+        if mnemonic == UNKNOWN_MNEMONIC:
+            raise Unreadable(f"an undecodable word in {function}: {line.strip()}")
+        if mnemonic.split(".", 1)[0] in FP_MNEMONICS or FP_OPERAND.search(operands):
+            findings.append(f"{function}: {mnemonic} {operands.strip()}")
     if count == 0:
         raise Unreadable("no instructions disassembled")
     return count, findings
@@ -155,6 +174,10 @@ def disassemble(objdump: str, path: Path) -> str:
 
 
 def check(paths: list[Path], objdump: str) -> int:
+    # The tool is named in the output: `rust_llvm_tool` prefers the
+    # toolchain's pinned `llvm-tools` and falls back to PATH, and which one
+    # decided is part of the verdict (the v0.36.2 audit).
+    print(f"disassembling with {objdump}")
     failed = False
     for path in paths:
         try:
@@ -201,6 +224,10 @@ _REFUSED = [
     ("FPCR read", "mrs\tx0, fpcr"),
     ("FPSR write", "msr\tfpsr, x1"),
     ("register after a symbol", "adr\tx0, <sym>\n      9:      \tfmov\td0, x0"),
+    ("SVE predicate register", "ptrue\tp0.b"),
+    ("SVE predicate move", "mov\tp1.b, p0.b"),
+    ("operand-free SVE instruction", "setffr"),
+    ("streaming-mode switch", "smstart\tsm"),
 ]
 
 _ACCEPTED = [
@@ -213,6 +240,8 @@ _ACCEPTED = [
     ("condition code", "b.hs\t0x20 <.L_loop>"),
     ("general registers", "stp\tx29, x30, [sp, #-0x10]!"),
     ("system register name", "msr\tcpacr_el1, xzr"),
+    ("a symbol named like a predicate register", "bl\t0x40 <p0>"),
+    ("a mnemonic that merely starts like one", "smsubl\tx0, w1, w2, x3"),
 ]
 
 
@@ -231,6 +260,7 @@ def self_test() -> int:
         ("foreign format", _disasm("ret", header=HEADER.replace(AARCH64_FORMAT, "elf64-x86-64"))),
         ("mixed formats", _disasm("ret") + HEADER.replace(AARCH64_FORMAT, "elf64-x86-64")),
         ("no instructions", HEADER),
+        ("an undecodable word", _disasm("ret", "<unknown>")),
     ]:
         try:
             fp_findings(text)
@@ -242,7 +272,7 @@ def self_test() -> int:
         failures.append(f"counts wrong: {count} instructions, {len(findings)} findings")
     for failure in failures:
         print(f"FAIL self-test: {failure}")
-    total = len(_REFUSED) + len(_ACCEPTED) + 5
+    total = len(_REFUSED) + len(_ACCEPTED) + 6
     if failures:
         return 1
     print(f"check_fp_simd_free_objects self-test: {total} cases passed")

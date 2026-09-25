@@ -66,7 +66,7 @@ it had made false.
 
 **SM10 — release closure at v1.0.0 — is blocked on WS-BP**, the bare-metal boot
 path ([`SMP_BOOT_PATH_PLAN.md`](../planning/SMP_BOOT_PATH_PLAN.md)), which
-became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 48
+became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 50
 sub-tasks across nine phases.  **BP0 landed at v0.36.2**: the three Lean/Rust
 pairs — the device-tree readers, the ABI encoder and decoder, the boot map and
 the Lean memory map — are driven through shared fixtures, so a divergence fails
@@ -84,7 +84,7 @@ to fit the smallest board) and an allocator in the HAL behind `lean.h`'s
 small-object API, whose state is all out of band so it never touches the memory
 it serves and refuses every invalid free.  **BP2.2** gave the kernel its own
 Lean runtime, written in Rust so the image carries no C++: every symbol the
-archive's reachable link needs (144, 118 of them the runtime's) is provided, each
+archive's reachable link needs (144, 118 of them the runtime's; 145 since BP4.6) is provided, each
 one faithful to upstream, answering for a machine with no operating system, or
 halting; 9 215 results computed on upstream's runtime are recomputed by the
 kernel's, and a Tier 1 census proves no kernel entry reaches the environmental

@@ -561,6 +561,41 @@ fn sharecommon_equality_implies_equal_hashes() {
         for o in [x, y, z, n1, n2, n3] {
             dec(o);
         }
+        // The v0.36.2 audit: one value built two ways lands in two
+        // allocation classes — `nat_shiftl` reserves a limb its result does
+        // not use — and is one value to the sharing maximizer all the same.
+        // The class inequality is asserted so this is known to be the case
+        // the retired size-first comparison answered `false` on.
+        let by_product = nat::nat_big_mul(boxed(1 << 32), boxed(1 << 32));
+        let by_shift = nat::nat_shiftl(boxed(1), boxed(64));
+        assert!(!is_scalar(by_product) && !is_scalar(by_shift));
+        assert_ne!(
+            mem::usable_size(by_product as usize),
+            mem::usable_size(by_shift as usize),
+            "the two producers must reserve differently for this to decide"
+        );
+        assert!(object::sharecommon_eq(by_product, by_shift));
+        assert_eq!(
+            object::sharecommon_hash(by_product),
+            object::sharecommon_hash(by_shift)
+        );
+        // A constructor whose scalar part is not a whole word: its padding is
+        // zeroed at allocation, so two builds of it agree byte for byte.
+        let c1 = alloc_ctor(4, 1, 4);
+        let c2 = alloc_ctor(4, 1, 4);
+        ctor_set(c1, 0, boxed(7));
+        ctor_set(c2, 0, boxed(7));
+        for c in [c1, c2] {
+            c.cast::<u8>()
+                .add(HEADER_BYTES + 8)
+                .cast::<u32>()
+                .write_unaligned(38);
+        }
+        assert!(object::sharecommon_eq(c1, c2));
+        assert_eq!(object::sharecommon_hash(c1), object::sharecommon_hash(c2));
+        for o in [by_product, by_shift, c1, c2] {
+            dec(o);
+        }
     }
     assert_eq!(live(), before);
 }

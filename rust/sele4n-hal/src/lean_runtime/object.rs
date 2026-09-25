@@ -303,9 +303,15 @@ impl WorkStack {
     }
 }
 
-extern "C" fn mark_persistent_fn(o: Obj) -> Obj {
-    // SAFETY: a closure applied by an external class's `foreach` receives a
-    // live object or a scalar.
+/// The closure body `mark_persistent` applies to an external object's
+/// children through the class's `foreach`.
+///
+/// # Safety
+///
+/// `o` is a scalar or a live heap object: what an external class's `foreach`
+/// hands the closure it is given.
+unsafe extern "C" fn mark_persistent_fn(o: Obj) -> Obj {
+    // SAFETY: forwarded from the caller.
     unsafe { mark_persistent(o) };
     super::boxed(0)
 }
@@ -641,13 +647,22 @@ unsafe fn data_byte_size(o: Obj) -> usize {
 pub unsafe fn sharecommon_eq(o1: Obj, o2: Obj) -> bool {
     // SAFETY: forwarded from the caller.
     unsafe {
-        let (sz1, sz2) = (data_byte_size(o1), data_byte_size(o2));
-        if sz1 != sz2 || tag(o1) != tag(o2) || header(o1).other != header(o2).other {
+        if tag(o1) != tag(o2) || header(o1).other != header(o2).other {
             return false;
         }
+        // The v0.36.2 audit: a big number is compared by VALUE before any
+        // size is read.  `data_byte_size` answers a number's allocation class,
+        // and `Building::new` sizes a number by the *capacity* its producer
+        // could need (`nat_shiftl`, `nat_pow`, `divrem`, `cstr_to_nat` all
+        // over-reserve), so two equal values routinely live in different
+        // classes and a size test first answered `false` for them.
         if tag(o1) == TAG_MPZ {
             return super::nat::nat_big_cmp(o1, o2) == core::cmp::Ordering::Equal
                 && super::nat::int_big_nonneg(o1) == super::nat::int_big_nonneg(o2);
+        }
+        let (sz1, sz2) = (data_byte_size(o1), data_byte_size(o2));
+        if sz1 != sz2 {
+            return false;
         }
         let h = super::HEADER_BYTES;
         let b1 = core::slice::from_raw_parts(o1.cast::<u8>().add(h), sz1 - h);
@@ -657,8 +672,11 @@ pub unsafe fn sharecommon_eq(o1: Obj, o2: Obj) -> bool {
 }
 
 /// `lean_sharecommon_hash(o)`: a hash consistent with [`sharecommon_eq`].  A big
-/// number hashes its sign and limbs; upstream hashes GMP's representation,
-/// which no two builds need agree on, so only consistency is owed here.
+/// number hashes its sign and its `size` limbs — the value, never the
+/// capacity limbs behind it (the v0.36.2 audit: hashing the whole allocation
+/// gave equal values different hashes whenever their producers reserved
+/// differently); upstream hashes GMP's representation, which no two builds
+/// need agree on, so only consistency is owed here.
 ///
 /// # Safety
 ///
@@ -668,14 +686,15 @@ pub unsafe fn sharecommon_hash(o: Obj) -> u64 {
     // SAFETY: forwarded from the caller.
     unsafe {
         let t = tag(o);
-        let sz = data_byte_size(o);
         if t == TAG_MPZ {
-            let body = core::slice::from_raw_parts(
-                o.cast::<u8>().add(super::HEADER_BYTES),
-                sz - super::HEADER_BYTES,
-            );
-            return mix_hash(u64::from(t), hash_bytes(body, 11));
+            let (neg, limbs) = super::nat::mpz_parts(o);
+            return limbs
+                .iter()
+                .fold(mix_hash(u64::from(t), u64::from(neg)), |h, &limb| {
+                    mix_hash(h, limb)
+                });
         }
+        let sz = data_byte_size(o);
         let init = mix_hash(u64::from(t), u64::from(header(o).other));
         let h = super::HEADER_BYTES;
         hash_bytes(
@@ -700,29 +719,45 @@ mod exports {
     }
 
     /// `lean_free_object`.
+    ///
+    /// # Safety
+    ///
+    /// `o` is a live heap object that no reference will be used again: `lean.h`'s `lean_free_object` contract.
     #[no_mangle]
-    pub extern "C" fn lean_free_object(o: Obj) {
+    pub unsafe extern "C" fn lean_free_object(o: Obj) {
         // SAFETY: `lean.h`'s contract: `o` is live and dead after this call.
         unsafe { free_object(o) }
     }
 
     /// `lean_dec_ref_cold`.
+    ///
+    /// # Safety
+    ///
+    /// `o` is an owned reference to a live object, which this call consumes; `lean.h`'s inline `lean_dec_ref` is the caller.
     #[no_mangle]
-    pub extern "C" fn lean_dec_ref_cold(o: Obj) {
+    pub unsafe extern "C" fn lean_dec_ref_cold(o: Obj) {
         // SAFETY: `lean.h` calls this with an owned reference to a live object.
         unsafe { dec_ref_cold(o) }
     }
 
     /// `lean_mark_persistent`.
+    ///
+    /// # Safety
+    ///
+    /// `o` is a scalar or a live heap object the module initializer just computed and will never release.
     #[no_mangle]
-    pub extern "C" fn lean_mark_persistent(o: Obj) {
+    pub unsafe extern "C" fn lean_mark_persistent(o: Obj) {
         // SAFETY: the initializer passes a global it just computed.
         unsafe { mark_persistent(o) }
     }
 
     /// `lean_panic_fn`.
+    ///
+    /// # Safety
+    ///
+    /// `default` is an owned object and `msg` an owned live string, as the compiled `panic!` passes them.
     #[no_mangle]
-    pub extern "C" fn lean_panic_fn(default: Obj, msg: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_panic_fn(default: Obj, msg: Obj) -> Obj {
         // SAFETY: the compiled `panic!` passes an owned message string.
         unsafe { panic_fn(default, msg) }
     }
@@ -765,43 +800,67 @@ mod exports {
     }
 
     /// `lean_st_ref_get`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed reference cell.
     #[no_mangle]
-    pub extern "C" fn lean_st_ref_get(r: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_st_ref_get(r: Obj) -> Obj {
         // SAFETY: a borrowed reference cell.
         unsafe { st_ref_get(r) }
     }
 
     /// `lean_st_ref_take`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed reference cell.
     #[no_mangle]
-    pub extern "C" fn lean_st_ref_take(r: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_st_ref_take(r: Obj) -> Obj {
         // SAFETY: a borrowed reference cell.
         unsafe { st_ref_take(r) }
     }
 
     /// `lean_st_ref_set`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed reference cell and an owned value.
     #[no_mangle]
-    pub extern "C" fn lean_st_ref_set(r: Obj, a: Obj) -> Obj {
+    pub unsafe extern "C" fn lean_st_ref_set(r: Obj, a: Obj) -> Obj {
         // SAFETY: a borrowed reference cell and an owned value.
         unsafe { st_ref_set(r, a) }
     }
 
     /// `lean_name_eq`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes two borrowed names.
     #[no_mangle]
-    pub extern "C" fn lean_name_eq(n1: Obj, n2: Obj) -> u8 {
+    pub unsafe extern "C" fn lean_name_eq(n1: Obj, n2: Obj) -> u8 {
         // SAFETY: two borrowed names.
         u8::from(unsafe { name_eq(n1, n2) })
     }
 
     /// `lean_sharecommon_eq`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes two borrowed objects.
     #[no_mangle]
-    pub extern "C" fn lean_sharecommon_eq(o1: Obj, o2: Obj) -> u8 {
+    pub unsafe extern "C" fn lean_sharecommon_eq(o1: Obj, o2: Obj) -> u8 {
         // SAFETY: two borrowed objects.
         u8::from(unsafe { sharecommon_eq(o1, o2) })
     }
 
     /// `lean_sharecommon_hash`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes a borrowed object.
     #[no_mangle]
-    pub extern "C" fn lean_sharecommon_hash(o: Obj) -> u64 {
+    pub unsafe extern "C" fn lean_sharecommon_hash(o: Obj) -> u64 {
         // SAFETY: a borrowed object.
         unsafe { sharecommon_hash(o) }
     }

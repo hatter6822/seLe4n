@@ -212,8 +212,25 @@ def c_eight_gib() -> Fdt:
     return close(memory(root(), "memory@0", (0, LOW), (0x1_0000_0000, 0x1_0000_0000)))
 
 
-def c_eight_gib_firmware() -> Fdt:
+def c_eight_gib_bcm2711_relocated_bank() -> Fdt:
+    # The BCM2711 (Raspberry Pi 4) shape: a low aperture ending at 0xFC00_0000
+    # and the 64 MiB the peripheral window displaces relocated above 4 GiB.
+    # Kept as a parser case; it is not what a Raspberry Pi 5 reports (below).
     return close(memory(root(), "memory@0", (0, LOW), (0x1_0000_0000, 0x1_0400_0000)))
+
+
+# What a Raspberry Pi 5's firmware actually writes into /memory@0 on an 8 GiB
+# board (Pi 5 Model B Rev 1.1 account, read 2026-09-25): the first 512 KiB, the
+# rest of the first gigabyte up to 0x3FC0_0000 -- the firmware keeps the top
+# 4 MiB for itself -- and everything above 1 GiB.  DRAM is contiguous across
+# the 4 GiB boundary on the BCM2712, so there is no relocated bank.  The RPi5
+# binding's variants declare `[0, ramSize)` whole, so no variant is covered by
+# this account and the bridge refuses it; the Lean witness
+# `realFirmwareAccountIsRefusedUntilDerived` pins that until plan row BP7.10
+# derives the deployment's first-gigabyte RAM from the account.
+def c_eight_gib_rpi5_firmware() -> Fdt:
+    return close(memory(root(), "memory@0", (0, 0x8_0000), (0x8_0000, 0x3FB8_0000),
+                        (0x4000_0000, 0x1_C000_0000)))
 
 
 def c_two_nodes_low_short() -> Fdt:
@@ -519,7 +536,8 @@ def c_rsvmap_past_totalsize() -> Fdt:
 CASES: list[tuple[str, object, bool, list[tuple[int, int]] | None]] = [
     ("four_gib_low_aperture", c_four_gib, True, [(0, LOW)]),
     ("eight_gib_two_pairs", c_eight_gib, True, [(0, LOW), (0x1_0000_0000, 0x1_0000_0000)]),
-    ("eight_gib_as_firmware_reports_it", c_eight_gib_firmware, True, [(0, LOW), (0x1_0000_0000, 0x1_0400_0000)]),
+    ("eight_gib_bcm2711_relocated_bank", c_eight_gib_bcm2711_relocated_bank, True, [(0, LOW), (0x1_0000_0000, 0x1_0400_0000)]),
+    ("eight_gib_rpi5_firmware", c_eight_gib_rpi5_firmware, True, [(0, 0x8_0000), (0x8_0000, 0x3FB8_0000), (0x4000_0000, 0x1_C000_0000)]),
     ("low_aperture_short_forfeits_high", c_two_nodes_low_short, True, [(0, GIB), (0x1_0000_0000, 2 * GIB)]),
     ("discontiguous_high_stops_at_hole", c_discontiguous_high, True, [(0, LOW), (0x1_0000_0000, GIB), (0x2_0000_0000, GIB)]),
     ("split_low_aperture", c_split_low, True, [(0, 0x8000_0000), (0x8000_0000, 0x7C00_0000)]),
