@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 13,928 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** at v0.36.2 (§6.2.13); BP5.2..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** at v0.36.2 (§6.2.13); BP5.3..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -684,7 +684,7 @@ read the device tree and the binding has chosen the variant.
   `rpi5DeploymentBootStateAt_ramUntypedInstalled` says the boot installs each.
   `tests/Ak9PlatformSuite.lean` runs this on 1, 2, 3, 4 and 8 GiB device trees.
 
-### 6.2.13 The kernel image (WS-BP BP5.1, v0.36.2)
+### 6.2.13 The kernel image (WS-BP BP5.1, BP5.2, v0.36.2)
 
 The kernel is one bare-metal binary, `sele4n-kernel`
 (`rust/sele4n-hal/src/bin/sele4n_kernel.rs`), `no_std` and `no_main`.
@@ -712,9 +712,34 @@ The kernel is one bare-metal binary, `sele4n-kernel`
   `boot.S`'s branch targets are text.  Finally, `check_link_script`'s layout
   relations hold of the image's own symbol table.  The FP/SIMD gate then
   disassembles the image.
-- **Rust only, for now.**  The image is built without `hw_target`, which names
-  the Lean kernel's symbols, so the boot takes
-  `SecondaryReleasePermit::no_lean_kernel`.  Linking `libsele4n.a` is BP5.2.
+- **The Lean kernel is linked in with `hw_target`** (BP5.2).  With that
+  feature the HAL names the Lean kernel's symbols, so the build script links
+  two more inputs into the image.  One is `libsele4n.a`.  The other is
+  `libsele4n.roots.ld`, a linker script
+  `scripts/build_lean_aarch64_archive.py` writes beside the archive.  Its
+  `EXTERN` names the library initializer and every production `@[export]`,
+  and the link runs with `--gc-sections`.  These are the roots of the
+  builder's own reachable link, which reads the same file, and that link is
+  what shows the kernel's runtime defines everything it reaches.  So the
+  image is the link that proof is about.  The archive references upstream
+  runtime functions no root reaches, and the collection drops them.  A
+  missing archive stops the link with the path it could not open.  The build
+  script names the three paths as constants, and the builder's self-test
+  holds them equal to its own output.
+- **Where each image is checked.**  The Lean archive lane
+  (`scripts/test_lean_aarch64_archive.sh`, step [4/4]) builds the release
+  image with `hw_target,kernel_image` after the archive.  It then runs
+  `check_kernel_image.py --lean-kernel` with the roots script, which also
+  requires the roots to begin with the initializer, to name
+  `lean_kernel_main`, and to be text in the image.  Finally the FP/SIMD gate
+  disassembles that image.  This is where the gate is conclusive:
+  `compiler_builtins` is not FP-free, and only the linked image shows which
+  of its members the kernel carries.  `check_aarch64_cross_target.py` holds
+  the lane to those relations: `hw_target` and `kernel_image` on one release
+  build, run after the archive build, with each check run after the image
+  build.  The cross lane still builds the image *without* `hw_target`, since
+  it builds no Lean.  That image is the HAL half alone and takes
+  `SecondaryReleasePermit::no_lean_kernel`.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

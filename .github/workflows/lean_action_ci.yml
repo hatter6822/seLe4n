@@ -394,6 +394,10 @@ jobs:
     # supplies the `llvm-nm` / `llvm-objdump` the archive is read with.  The
     # regenerated stdlib C is cached under `.lake/build` keyed by the
     # toolchain, so only the first run on a new toolchain pays for it.
+    #
+    # WS-BP BP5.2: the lane's last step links the kernel image with the Lean
+    # kernel in it -- `libsele4n.a` and the roots script the builder writes,
+    # under `--gc-sections` -- and checks and disassembles that image.
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -433,4 +437,5 @@ jobs:
           path: |
             .lake/build/aarch64-unknown-none-softfloat/libsele4n.a
             .lake/build/aarch64-unknown-none-softfloat/libsele4n.unresolved
+            .lake/build/aarch64-unknown-none-softfloat/libsele4n.roots.ld
           if-no-files-found: warn

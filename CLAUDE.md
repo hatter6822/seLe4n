@@ -7147,7 +7147,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4 and BP5.1 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5.1 and BP5.2 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`); BP5.2..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots); BP5.3..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7251,8 +7251,8 @@ release objects, not followed by `&&`/`||` (which exempts a command from
 conclusive only on the linked image**: the target's own `compiler_builtins` is
 *not* FP-free (the complex-arithmetic helpers and `__negsf2`/`__negdf2` use
 `d`/`v` registers, and `__negdf2` takes a hard-float `d0` argument no soft-float
-caller supplies), so BP5.2 runs the gate over the image, where the link decides
-which members are in.  And the firmware enters the RPi5 at **EL2**, which
+caller supplies), so the gate also runs over the linked image, where the link
+decides which members are in (BP5.2: none of them is).  And the firmware enters the RPi5 at **EL2**, which
 `boot.S` does not handle at all — BP5.5.
 
 **BP1 — the kernel's Lean object code for the target is built and checked**
@@ -7327,9 +7327,10 @@ with `--gc-sections` rooted at the library initializer — `initialize_seLe4n_Se
 package-prefixed; an earlier probe rooted at `initialize_SeLe4n` measured 62
 because the root was silently absent — and every production `@[export]`, and
 every symbol that link leaves undefined must be a global function of the HAL's
-rlib or `compiler_builtins`' (144 needed, 118 the runtime's).  The 111 upstream
+rlib or `compiler_builtins`' (the builder prints how many).  The upstream
 functions the runtime omits are *unreachable* by that link, so the image link
-(BP5.2) must use `--gc-sections` over the same roots.  (2) **Each symbol is
+(BP5.2) uses `--gc-sections` over the same roots — read from the one file the
+builder writes.  (2) **Each symbol is
 faithful, environmental or fail-closed, and says which**: faithful ones are
 ported from `lean4` at the toolchain's commit; the environmental ones answer for
 a machine with no OS (platform queries, `Lean.githash` pinned to
@@ -7673,12 +7674,38 @@ resolves to `0`), and any allocated section `link.ld` does not name or places
 out of order.  It also refuses a `NOLOAD` section with file bytes and a loaded
 section outside `[_start, __image_load_end)`.  The allowed sections are derived
 from `link.ld` itself, so an orphan placed by the linker fails the lane.  The
-FP/SIMD gate reads the linked image too.  (4) **The image is built without
-`hw_target` until the Lean kernel is linked**, because that feature names the
-Lean kernel's symbols and nothing provides them yet; it boots the Rust half
+FP/SIMD gate reads the linked image too.  (4) **The cross lane's image is the
+HAL half**: it builds without `hw_target`, because with it `build.rs` links the
+Lean archive, which that lane does not build; that image boots the Rust half
 (`SecondaryReleasePermit::no_lean_kernel`).  The cross clippy lane builds with
 `hw_target,kernel_image --lib --bins`, so the panic handler — compiled for the
 bare-metal target only — is linted.
+
+**BP5.2 — the image carries the Lean kernel, linked from the roots the proof is
+about** (`v0.36.2`).  Four things new code must respect.  (1) **One roots file,
+two links**: `scripts/build_lean_aarch64_archive.py` writes
+`libsele4n.roots.ld` beside the archive — `EXTERN(...)` naming the library
+initializer, then every production `@[export]` — and both its reachable link
+and the image's link read that file, so the runtime-surface proof and the image
+cannot be taken over different root sets.  A new kernel entry is a new
+`@[export]`, and it reaches both links by construction.  (2) **`build.rs` links
+it under `hw_target` on a bare-metal target only**, with `--gc-sections`, by
+path: a missing archive or roots file stops the link naming the file, never a
+kernel linked without its Lean half.  The three paths are constants the
+builder's self-test holds equal to its own `OUT_DIR`, `ARCHIVE` and
+`ROOTS_SCRIPT`.  (3) **The Lean archive lane owns the kernel image**: step
+[4/4] of `scripts/test_lean_aarch64_archive.sh` removes the stale image,
+builds it release with `hw_target,kernel_image` after the archive, runs
+`check_kernel_image.py --lean-kernel` over it (the roots begin with the
+initializer, name `lean_kernel_main`, and are all the image's text), then the
+FP/SIMD gate — and `check_aarch64_cross_target.py` holds those four relations
+(both features on one release build, after the archive build, each check after
+the image build, none exempted from `set -e`).  (4) **The FP/SIMD gate is
+conclusive here**: none of `compiler_builtins`' FP-using members is in the
+linked image, so a change that pulls one in fails the lane.  The cross gate's
+shell expander now resolves a variable whose value names another
+(`ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"`) to a fixpoint;
+one pass in length order left it half-substituted.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

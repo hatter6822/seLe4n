@@ -31,13 +31,20 @@ same questions, and the ones only a real link can answer, of the image itself
      text;
   6. `check_link_script.check_layout`'s relations hold of the image's own
      symbol table — the arena, the permission boundaries, the loaded extent
-     and the kernel's reserved extent the Lean side states.
+     and the kernel's reserved extent the Lean side states;
+  7. with `--lean-kernel ROOTS` (BP5.2), the image carries the Lean kernel:
+     `ROOTS` is the linker script `build_lean_aarch64_archive.py` writes and
+     the image link reads, it names the library initializer first and the
+     boot entry `lean_kernel_main` among the production `@[export]`s, and
+     every root it names is defined in the image's text.  A root the image
+     does not define is a kernel the link did not carry, whatever the HAL
+     half looks like.
 
 It reads the ELF header and section headers itself (a few `struct` fields,
 so there is no second tool to disagree with) and the symbol table with the
 toolchain-pinned `llvm-nm`.  An input it cannot read is refused.
 
-    check_kernel_image.py <sele4n-kernel ELF>
+    check_kernel_image.py [--lean-kernel <libsele4n.roots.ld>] <sele4n-kernel ELF>
     check_kernel_image.py --self-test
 """
 
@@ -57,6 +64,7 @@ from check_fp_simd_free_objects import Unreadable, rust_llvm_tool  # noqa: E402
 from check_link_script import (  # noqa: E402
     BOOT_MAP_FIXTURE, LINK_SCRIPT, _GOOD, check_layout, lean_reserved_extent, symbols,
 )
+from build_lean_aarch64_archive import Refused, parse_roots_script  # noqa: E402
 
 ELF_MAGIC = b"\x7fELF"
 ET_EXEC = 2
@@ -69,6 +77,9 @@ VECTOR_ALIGNMENT = 2048
 REQUIRED_SECTIONS = (".text.boot", ".text.vectors", ".text")
 # What `boot.S` and `vectors.S` branch to by name.
 TEXT_SYMBOLS = ("rust_boot_main", "secondary_entry", "rust_secondary_main")
+# What the Lean kernel's roots must include: the HAL enters the kernel here.
+LEAN_BOOT_ENTRY = "lean_kernel_main"
+LEAN_INITIALIZER_PREFIX = "initialize_"
 
 
 class GateFailure(Exception):
@@ -145,7 +156,7 @@ def undefined_symbols(path: Path) -> list[str]:
 
 
 def check_image(image: Image, script: Script, table: dict[str, int], undefined: list[str],
-                reserved: tuple[int, int]) -> list[str]:
+                reserved: tuple[int, int], lean_roots: list[str] | None = None) -> list[str]:
     problems: list[str] = []
     if image.elf_type != ET_EXEC or image.machine != EM_AARCH64:
         problems.append(f"the image is ELF type {image.elf_type}, machine {image.machine}; "
@@ -193,7 +204,16 @@ def check_image(image: Image, script: Script, table: dict[str, int], undefined: 
                         f"`.text.vectors` at {vectors.addr:#x}; the table is that section's "
                         f"first byte, {VECTOR_ALIGNMENT}-byte aligned")
     text_end = table.get("__text_end")
-    for name in TEXT_SYMBOLS:
+    text_symbols = list(TEXT_SYMBOLS)
+    if lean_roots is not None:
+        if not lean_roots or not lean_roots[0].startswith(LEAN_INITIALIZER_PREFIX):
+            problems.append(f"the Lean kernel's roots do not begin with the library "
+                            f"initializer: {lean_roots[:3]}")
+        if LEAN_BOOT_ENTRY not in lean_roots:
+            problems.append(f"the Lean kernel's roots do not name the boot entry "
+                            f"`{LEAN_BOOT_ENTRY}`: {lean_roots}")
+        text_symbols += [r for r in lean_roots if r not in text_symbols]
+    for name in text_symbols:
         addr = table.get(name)
         if addr is None or start is None or text_end is None or not start <= addr < text_end:
             problems.append(f"`{name}` is at {addr}, not in the text [{start}, {text_end})")
@@ -265,7 +285,27 @@ def self_test() -> int:
          {**_TABLE, "__lean_heap_end": _TABLE["__lean_heap_end"] - 4096}, [],
          "not LEAN_HEAP_SIZE"),
     ]
+    roots = ["initialize_seLe4n_SeLe4n", "lean_kernel_main", "lean_per_core_timer_tick"]
+    kernel = {**_TABLE, "initialize_seLe4n_SeLe4n": 0x80b00, "lean_kernel_main": 0x80c00,
+              "lean_per_core_timer_tick": 0x80d00}
+    lean_cases = [
+        ("the Lean kernel's roots, all text", kernel, roots, None),
+        ("a root the image does not define", {k: v for k, v in kernel.items()
+                                              if k != "lean_per_core_timer_tick"}, roots,
+         "lean_per_core_timer_tick"),
+        ("the boot entry placed in read-only data", {**kernel, "lean_kernel_main": 0x81800},
+         roots, "lean_kernel_main"),
+        ("roots that lost the boot entry", kernel, [roots[0], roots[2]], "boot entry"),
+        ("roots whose first is not the initializer", kernel, roots[1:] + roots[:1],
+         "library initializer"),
+    ]
     failures = 0
+    for name, table, lean_roots, expect in lean_cases:
+        problems = check_image(_IMAGE, _SCRIPT, table, [], reserved, lean_roots)
+        ok = (not problems) if expect is None else (len(problems) == 1 and expect in problems[0])
+        if not ok:
+            failures += 1
+            print(f"  FAIL {name}: {problems}", file=sys.stderr)
     for name, image, script, table, undefined, expect in cases:
         problems = check_image(image, script, table, undefined, reserved)
         ok = (not problems) if expect is None else (len(problems) == 1 and expect in problems[0])
@@ -282,7 +322,7 @@ def self_test() -> int:
     except GateFailure as e:
         failures += 1
         print(f"  FAIL link.ld: {e}", file=sys.stderr)
-    total = len(cases) + 1
+    total = len(cases) + len(lean_cases) + 1
     print(f"check_kernel_image self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
 
@@ -290,24 +330,32 @@ def self_test() -> int:
 def main(argv: list[str]) -> int:
     if argv[1:] == ["--self-test"]:
         return self_test()
-    if len(argv) != 2:
+    args = argv[1:]
+    roots_path = None
+    if len(args) == 3 and args[0] == "--lean-kernel":
+        roots_path, args = Path(args[1]), args[2:]
+    if len(args) != 1 or args[0].startswith("-"):
         print(__doc__.rsplit("\n\n", 1)[-1].strip(), file=sys.stderr)
         return 2
-    path = Path(argv[1])
+    path = Path(args[0])
     try:
+        roots = parse_roots_script(roots_path.read_text()) if roots_path else None
         image = read_image(path)
         table = symbols(path)
         problems = check_image(image, parse_script(LINK_SCRIPT.read_text()), table,
                                undefined_symbols(path),
-                               lean_reserved_extent(BOOT_MAP_FIXTURE.read_text()))
+                               lean_reserved_extent(BOOT_MAP_FIXTURE.read_text()), roots)
         if problems:
             raise GateFailure("; ".join(problems))
-    except (GateFailure, Unreadable, subprocess.CalledProcessError, OSError, struct.error) as e:
+    except (GateFailure, Refused, Unreadable, subprocess.CalledProcessError, OSError,
+            struct.error) as e:
         print(f"check_kernel_image: FAIL — {e}", file=sys.stderr)
         return 1
     loaded = sum(s.size for s in image.sections if not s.nobits)
+    kernel = (f"; the Lean kernel's {len(roots)} roots are text" if roots
+              else "; no Lean kernel checked")
     print(f"  {path.name}: entered at _start {image.entry:#x}, {len(image.sections)} sections "
-          f"in link.ld's order, {loaded:#x} loaded bytes, nothing undefined")
+          f"in link.ld's order, {loaded:#x} loaded bytes, nothing undefined{kernel}")
     return 0
 
 

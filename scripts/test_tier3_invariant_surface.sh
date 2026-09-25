@@ -5008,6 +5008,14 @@ run_negative_check "INVARIANT" rg -n '\brpi5InitialObjects\b|\brpi5RootTaskCNode
 run_check "INVARIANT" rg -U -n '^\[\[bin\]\]\nname = "sele4n-kernel"\npath = "src/bin/sele4n_kernel\.rs"\nrequired-features = \["kernel_image"\]$' rust/sele4n-hal/Cargo.toml
 run_check "INVARIANT" rg -U -n '^#\[panic_handler\]\nfn panic\(_info: &core::panic::PanicInfo<._>\) -> ! \{\n    sele4n_hal::gic::halt_all\(\)\n\}$' rust/sele4n-hal/src/bin/sele4n_kernel.rs
 run_check "INVARIANT" rg -U -n '^    if std::env::var\("CARGO_CFG_TARGET_OS"\)\.as_deref\(\) == Ok\("none"\) \{[^\n]*(\n([ \t][^\n]*)?)*?        println!\("cargo:rustc-link-arg-bin=sele4n-kernel=-T\{manifest_dir\}/link\.ld"\);$' rust/sele4n-hal/build.rs
+# WS-BP BP5.2: with `hw_target` the image links the Lean archive AND the roots
+# script, with `--gc-sections`, inside the bare-metal branch; the archive
+# builder's reachable link reads that same roots script; and the Lean archive
+# lane checks the linked image against it.
+run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            for input in \[LEAN_ARCHIVE, LEAN_ARCHIVE_ROOTS\] \{\n                println!\("cargo:rustc-link-arg-bin=sele4n-kernel=\{archive_dir\}/\{input\}"\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            println!\("cargo:rustc-link-arg-bin=sele4n-kernel=--gc-sections"\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -U -n '^    ROOTS_SCRIPT\.write_text\(render_roots_script\(roots\)\)[^\n]*(\n([ \t][^\n]*)?)*?            str\(ROOTS_SCRIPT\), str\(ARCHIVE\)\]$' scripts/build_lean_aarch64_archive.py
+run_check "INVARIANT" rg -U -n 'check_kernel_image\.py" \\\n    --lean-kernel "\$\{ARCHIVE_DIR\}/libsele4n\.roots\.ld" \\\n    target/"\$\{CROSS_TARGET\}"/release/"\$\{IMAGE_BIN\}"$' scripts/test_lean_aarch64_archive.sh
 # The re-type operand must NOT regress to the bare domain-wide invalidate.
 run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
 # The scrubbed extent has exactly ONE definition, and both the scrub and the

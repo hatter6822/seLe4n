@@ -2,9 +2,10 @@
 """The kernel's linker script links, and the Lean heap arena it places is where
 the allocator and the boot map assume (WS-BP BP2.1).
 
-`rust/sele4n-hal/link.ld` is linked by nothing in the tree until BP5.2 builds
-the kernel image, so without this gate its sections, its symbols and its
-`ASSERT`s would be text no tool had read.  This gate links the HAL's own
+`rust/sele4n-hal/link.ld` lays out the kernel image, which
+`scripts/check_kernel_image.py` checks once it links; this gate proves the
+script's own relations first, on a probe no other part of the build can make
+fail, so its `ASSERT`s are live rather than text no tool had read.  This gate links the HAL's own
 assembled objects — the real `.text.boot` and `.text.vectors` — under the
 script with `rust-lld`, reads the symbol table the link produced, and asks the
 relations the Rust side depends on:
@@ -32,7 +33,8 @@ relations the Rust side depends on:
      `__bss_start` — every loaded byte, and nothing the firmware does not load.
 
 Undefined symbols are ignored in the probe link: it is a layout check, and the
-objects' references into the Rust and Lean code are BP5.2's link to resolve.
+objects' references into the Rust and Lean code are the image link's to
+resolve (WS-BP BP5.1, BP5.2).
 
 Each of the script's `ASSERT`s is then proved *live* rather than present: the
 script is mutated so exactly that assertion's relation breaks — a size that is

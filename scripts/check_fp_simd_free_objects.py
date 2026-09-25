@@ -30,8 +30,9 @@ Scope.  It decides the files it is handed.  The linked image additionally
 contains whatever members of the target's `compiler_builtins` the link pulls
 in, and that library is **not** FP-free even for the softfloat target (its
 complex-arithmetic helpers and `__negsf2` / `__negdf2` use `d` registers), so
-the image-level run is WS-BP BP5.2's, where it decides what was actually
-linked.
+the image-level runs decide what was actually linked: the cross lane's over
+the HAL-only image (WS-BP BP5.1) and the Lean archive lane's over the image
+that carries the Lean kernel (BP5.2).
 
     check_fp_simd_free_objects.py [--objdump PATH] FILE...
     check_fp_simd_free_objects.py --self-test

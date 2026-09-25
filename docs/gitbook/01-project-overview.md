@@ -121,7 +121,10 @@ and **BP4.7** hands that RAM to the root task as untypeds, so on every board no
 RAM outside the kernel's reserved extent is left unowned.  **BP5.1** makes the
 kernel one bare-metal binary, `sele4n-kernel`, entered at `_start` under
 `link.ld` and checked as an image by `scripts/check_kernel_image.py`; its panic
-handler halts the system.  BP5.2..BP8 have not started.
+handler halts the system.  **BP5.2** links the Lean kernel into that image with
+`--gc-sections`, rooted at the same symbols as the archive lane's reachable
+link, and runs the FP/SIMD gate over the linked image.  BP5.3..BP8 have not
+started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

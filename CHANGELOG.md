@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4 and BP5.1: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1 and BP5.2: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -993,6 +993,50 @@ configuration, and the proof that it boots.
     next row.
   - The plan's BP5.3 row now pins `kernel_address` to `link.ld`'s load address,
     rather than relying on the firmware's default.
+- **BP5.2 — the image carries the Lean kernel.**
+  - `scripts/build_lean_aarch64_archive.py` writes `libsele4n.roots.ld` beside
+    the archive: one `EXTERN(...)` naming the library initializer, then every
+    production `@[export]`. Its own reachable link now reads that file, in
+    place of a list of `--undefined` flags, so the runtime-surface proof and
+    the image link take one root set. The renderer and the parser both refuse
+    anything that is not distinct C identifiers in exactly that shape.
+  - With `hw_target`, on a bare-metal target, `build.rs` passes the archive,
+    the roots script and `--gc-sections` to the `sele4n-kernel` link. It names
+    them by path, so a missing input stops the link with the file it could not
+    open. The three paths are constants, and the builder's self-test holds them
+    equal to its own output paths.
+  - `scripts/test_lean_aarch64_archive.sh` gains step [4/4]. After the
+    archive, it removes the stale image and builds it release with
+    `hw_target,kernel_image`. It then runs `check_kernel_image.py --lean-kernel`
+    over the image, and then the FP/SIMD gate.
+  - `check_kernel_image.py --lean-kernel ROOTS` also requires three things: the
+    roots begin with the library initializer, they name `lean_kernel_main`,
+    and every root is the image's text. There are five new single-relation
+    cases; the self-test has 20.
+  - Measured at `v0.36.2`: the linked image has ten roots, all text, and
+    nothing undefined. Its loaded bytes are `0x4b48a4`. It is 1,204,787
+    instructions with no FP/SIMD register operand, so none of
+    `compiler_builtins`' FP-using members is in the kernel. The registered debt
+    row for them is closed.
+  - `check_aarch64_cross_target.py` holds the lane to four relations: both
+    features on one release image build, run after the archive build; the
+    image check with the builder's roots script, over the release image; the FP
+    gate over the release image; and each check after the image build. None
+    may be exempted from `set -e`. There are ten new token-preserving cases;
+    the self-test has 102.
+  - The gate's shell expander now resolves a value that names another variable
+    (`ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"`) to a
+    fixpoint. One pass in length order had left it half-substituted. The lane
+    fixture carries that shape, and reverting to one pass fails the clean
+    baseline.
+  - The CI job uploads the roots script with the archive. Four Tier 3 anchors
+    pin the link: both inputs, `--gc-sections`, the reachable link reading the
+    roots script, and the lane's `--lean-kernel` check. Each was verified by a
+    mutation that keeps its tokens.
+  - The cross lane still builds the image without `hw_target`, because it
+    builds no Lean. Its comments, and the forward-looking "until BP5.2" notes in
+    the binary, `Cargo.toml`, `check_link_script.py` and
+    `check_fp_simd_free_objects.py`, now say which lane owns which image.
 - **Tests.**
   - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
     admitted with its ASID registered, beside the binding's; ASID collisions are
@@ -1007,7 +1051,7 @@ configuration, and the proof that it boots.
     badge. Reverting the check is caught when the build fails:
     `bootSafeObjectCheck_sound` stops elaborating.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1)
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1, BP5.2)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

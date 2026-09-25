@@ -3,8 +3,8 @@
 //! This is the one final binary crate in the tree, so it is where the
 //! kernel's image-wide decisions live: the entry point, the linker script
 //! and the panic handler.  It contains almost no code, deliberately, because
-//! everything the image runs is the HAL library's (and, once BP5.2 links it,
-//! the Lean kernel's):
+//! everything the image runs is the HAL library's and, with `hw_target`, the
+//! Lean kernel's:
 //!
 //! * **The entry is `_start`** in `boot.S`, selected by `ENTRY(_start)` in
 //!   `link.ld`.  `_start` masks FP/SIMD, zeroes `.bss` and the stacks, sets
@@ -34,10 +34,16 @@
 //! hosted target can link.  `required-features = ["kernel_image"]` keeps it
 //! out of every ordinary build.
 //!
-//! Until BP5.2 links `libsele4n.a` this image is built **without**
-//! `hw_target`, so it boots the Rust half only —
-//! `SecondaryReleasePermit::no_lean_kernel` licenses the secondaries'
-//! release and no Lean code is present to install kernel state.
+//! **With `hw_target` the image carries the Lean kernel** (WS-BP BP5.2): the
+//! HAL's build script links `libsele4n.a` and the roots script
+//! `scripts/build_lean_aarch64_archive.py` writes beside it, with
+//! `--gc-sections` rooted at the library initializer and every production
+//! `@[export]` — the link that builder proves needs nothing the kernel's
+//! runtime does not define.  `scripts/test_lean_aarch64_archive.sh` builds it
+//! that way and checks that every root is the image's text.  Without the
+//! feature (the cross lane, which builds no Lean) the image boots the Rust
+//! half only: `SecondaryReleasePermit::no_lean_kernel` licenses the
+//! secondaries' release and no Lean code is present to install kernel state.
 
 #![cfg_attr(target_os = "none", no_std)]
 #![cfg_attr(target_os = "none", no_main)]

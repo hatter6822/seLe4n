@@ -266,8 +266,14 @@ variant's memory map, never by listing untypeds per board.
 --features kernel_image --bin sele4n-kernel` from `rust/`, laid out by
 `link.ld` (the build script passes `-T` to that binary alone), and checked by
 `scripts/check_kernel_image.py` in the cross lane's step [7/7].  Its panic
-handler is `gic::halt_all`.  Until the Lean kernel is linked it is built without
-`hw_target`, which names symbols nothing yet provides.
+handler is `gic::halt_all`.  That lane builds it without `hw_target`, so it is
+the HAL half alone.
+**With `hw_target` the image carries the Lean kernel** (BP5.2): the build script
+links `.lake/build/aarch64-unknown-none-softfloat/libsele4n.a` and the
+`libsele4n.roots.ld` the archive builder writes beside it, with
+`--gc-sections`, so build the archive first (`scripts/test_lean_aarch64_archive.sh`
+does both, then runs `check_kernel_image.py --lean-kernel` and the FP/SIMD gate
+over the linked image).  A missing archive fails the link naming the path.
 Lean 4.28 returns an `IO`/`BaseIO` function's value directly (no world, no
 result wrapper): declare a `BaseIO Unit` export `-> lean_runtime::LeanBaseIoUnit`
 and hand the value to `lean_runtime::discharge_base_io`; only a module

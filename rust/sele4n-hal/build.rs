@@ -12,6 +12,15 @@
 /// up" the `adrp`+`ldr` pair back to `mov`/`movk` literals and losing the
 /// single-source-of-truth property.
 ///
+/// WS-BP BP5.2: where the kernel image finds its Lean half — the directory
+/// under the repository root `scripts/build_lean_aarch64_archive.py` writes,
+/// the archive, and the linker script naming the link's roots.  That builder's
+/// self-test holds its own `OUT_DIR`, `ARCHIVE` and `ROOTS_SCRIPT` equal to
+/// these three, so the two sides cannot name different files.
+const LEAN_ARCHIVE_DIR: &str = ".lake/build/aarch64-unknown-none-softfloat";
+const LEAN_ARCHIVE: &str = "libsele4n.a";
+const LEAN_ARCHIVE_ROOTS: &str = "libsele4n.roots.ld";
+
 /// WS-SM SM1.B regression guard: every build re-reads `src/boot.S` and
 /// verifies the `secondary_entry` block continues to reach the per-CPU
 /// data block via the symbol-based `adrp`+`add` / `adrp`+`ldr` pattern
@@ -225,6 +234,27 @@ fn main() {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
             .expect("cargo sets CARGO_MANIFEST_DIR for every build script");
         println!("cargo:rustc-link-arg-bin=sele4n-kernel=-T{manifest_dir}/link.ld");
+        // WS-BP BP5.2: with `hw_target` the HAL names the Lean kernel's
+        // symbols, so the image links the kernel's Lean archive — the one
+        // `scripts/build_lean_aarch64_archive.py` builds — together with the
+        // linker script that same builder writes beside it, which roots the
+        // link at the library initializer and every production `@[export]`
+        // (`EXTERN`).  The archive lane proves on exactly that root set that
+        // the runtime defines everything the link reaches, and
+        // `--gc-sections` is what makes the image the link that proof is
+        // about: the archive references upstream runtime functions no root
+        // reaches.  Both inputs are named by path, so a missing archive stops
+        // the link with the path it could not open rather than linking a
+        // kernel without its Lean half; a check-only build (the cross clippy
+        // lane) never links and never needs them.
+        if std::env::var_os("CARGO_FEATURE_HW_TARGET").is_some() {
+            let archive_dir = format!("{manifest_dir}/../../{LEAN_ARCHIVE_DIR}");
+            for input in [LEAN_ARCHIVE, LEAN_ARCHIVE_ROOTS] {
+                println!("cargo:rustc-link-arg-bin=sele4n-kernel={archive_dir}/{input}");
+                println!("cargo:rerun-if-changed={archive_dir}/{input}");
+            }
+            println!("cargo:rustc-link-arg-bin=sele4n-kernel=--gc-sections");
+        }
     }
 
     let mut asm = cc::Build::new();

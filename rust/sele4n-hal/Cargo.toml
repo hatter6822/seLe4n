@@ -60,7 +60,8 @@ host_tools = []
 # never enable it, so `cargo build -p sele4n-hal` stays a library build; the
 # cross lane builds the image by naming it (`--features kernel_image --bin
 # sele4n-kernel`).  It enables nothing in the library: whether the image links
-# the Lean kernel is `hw_target`'s question, and BP5.2's.
+# the Lean kernel is `hw_target`'s question -- with it, `build.rs` links
+# `libsele4n.a` into the image (WS-BP BP5.2).
 kernel_image = []
 
 # Explicit target declaration so `required-features` can be attached.

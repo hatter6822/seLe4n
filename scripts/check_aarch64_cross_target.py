@@ -126,6 +126,11 @@ LEAN_ARCHIVE_LANE = "scripts/test_lean_aarch64_archive.sh"
 LEAN_ARCHIVE_BUILDER = "scripts/build_lean_aarch64_archive.py"
 ENTRY_GATE = "scripts/check_kernel_entry_exports.py"
 ENTRY_GATE_CROSS_FLAG = "--require-cross"
+# WS-BP BP5.2: the lane's last step links the Lean kernel into the image and
+# checks it.  The roots script is the builder's output, named by its tail so
+# the check does not depend on how the lane spells the repository root.
+LEAN_KERNEL_FLAG = "--lean-kernel"
+LEAN_ROOTS_TAIL = f".lake/build/{CROSS_TARGET}/libsele4n.roots.ld"
 LEAN_ARCHIVE_COMPONENTS = ("llvm-tools",)
 HAL_CRATE = "rust/sele4n-hal"
 ORACLE_PKG = "sele4n-hal"
@@ -237,10 +242,19 @@ def expand_shell_vars(code: str) -> str:
         values.setdefault(name, value)
     for name in reassigned:
         del values[name]
-    for name in sorted(values, key=len, reverse=True):
-        code = code.replace(f"${{{name}}}", values[name]).replace(
-            f"${name}", values[name]
-        )
+    # A value may itself name a variable (`DIR="${ROOT}/.lake/${TARGET}"`),
+    # and one pass in length order inserts it after the shorter-named ones
+    # were already substituted.  So repeat to a fixpoint, bounded by the
+    # number of names: a chain resolves within that many passes, and a cycle
+    # is left unresolved, which fails the checks.
+    for _ in range(len(values) + 1):
+        before = code
+        for name in sorted(values, key=len, reverse=True):
+            code = code.replace(f"${{{name}}}", values[name]).replace(
+                f"${name}", values[name]
+            )
+        if code == before:
+            break
     return code
 
 
@@ -830,9 +844,11 @@ def check_gate_script(root: str) -> list[str]:
             f"of the cross surface."
         )
     # WS-BP BP5.1: the image build is its own lane.  It links the HAL under
-    # `link.ld` into `IMAGE_BIN`, and until BP5.2 links the Lean kernel it is
-    # built without `hw_target` (which names symbols nothing yet provides), so
-    # the library's rules below are asked of the library builds alone.
+    # `link.ld` into `IMAGE_BIN`.  Here it is built without `hw_target`: with
+    # the feature `build.rs` links the Lean archive, which this lane does not
+    # build -- the Lean archive lane links and checks that image (BP5.2,
+    # `check_lean_archive_lane`) -- so the library's rules below are asked of
+    # the library builds alone.
     images = [argv for argv in targeted if IMAGE_BIN in option_values(argv, "bin")]
     targeted = [argv for argv in targeted if argv not in images]
     released_images = [
@@ -1264,7 +1280,16 @@ def check_lean_archive_lane(root: str) -> list[str]:
     must carry `--require-cross` on the same command (an absent archive is
     otherwise a narrower check that passes), it must run AFTER the build (a
     reconciliation read before the archive is written decides on the last
-    run's), and neither may be exempted from `set -e` by `&&` / `||`."""
+    run's), and neither may be exempted from `set -e` by `&&` / `||`.
+
+    WS-BP BP5.2: and then the kernel image with the Lean kernel in it.  A
+    release cross `cargo build` of `IMAGE_BIN` with BOTH `hw_target` (which
+    is what makes `build.rs` link the archive) and `IMAGE_FEATURE` on the
+    same command, after the archive build (an image linked before it links
+    the last run's archive); `IMAGE_CHECK_SCRIPT` with `--lean-kernel`
+    naming the builder's roots script, over `IMAGE_PATH`, after the image
+    build; and the FP/SIMD gate over `IMAGE_PATH`, after the image build.
+    Each executed and none exempted from `set -e`."""
     text = read(root, LEAN_ARCHIVE_LANE)
     if text is None:
         return [f"{LEAN_ARCHIVE_LANE}: missing. It is the one place the kernel's "
@@ -1272,23 +1297,52 @@ def check_lean_archive_lane(root: str) -> list[str]:
     problems: list[str] = []
     if not os.access(os.path.join(root, LEAN_ARCHIVE_LANE), os.X_OK):
         problems.append(f"{LEAN_ARCHIVE_LANE}: not executable (chmod +x).")
-    code = code_view(text)
+    code = expand_shell_vars(code_view(text))
     wrappers = executing_wrappers(code)
     builds: list[int] = []
     reconciles: list[int] = []
+    images: list[int] = []
+    image_checks: list[int] = []
+    image_fp: list[int] = []
     for position, (command, operator) in enumerate(shell_command_list(code)):
         argv = executed_argv(command, wrappers)
+        image_build = (
+            argv[:2] == ["cargo", "build"]
+            and CROSS_TARGET in option_values(argv, "target")
+            and IMAGE_BIN in option_values(argv, "bin")
+            and ("--release" in argv or "release" in option_values(argv, "profile"))
+            and {"hw_target", IMAGE_FEATURE}
+            <= {f for v in option_values(argv, "features") for f in v.replace(",", " ").split()}
+            and "--all-features" not in argv
+        )
+        if image_build:
+            images.append(position)
+            if operator in ERREXIT_EXEMPTING_OPERATORS:
+                problems.append(
+                    f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
+                    f"which exempts it from `set -e`: it runs and its failure is "
+                    f"discarded."
+                )
+            continue
         if argv and argv[0] in ("python3", "python") and len(argv) > 1:
             argv = argv[1:]
         if not argv or "--self-test" in argv[1:]:
             continue
         builder = argv[0].endswith(LEAN_ARCHIVE_BUILDER.split("/")[-1])
         gate = argv[0].endswith(ENTRY_GATE.split("/")[-1])
+        image_gate = argv[0].endswith(IMAGE_CHECK_SCRIPT.split("/")[-1])
+        fp_gate = argv[0].endswith(FP_CHECK_SCRIPT.split("/")[-1])
         if builder:
             builds.append(position)
         if gate and ENTRY_GATE_CROSS_FLAG in argv[1:]:
             reconciles.append(position)
-        if (builder or gate) and operator in ERREXIT_EXEMPTING_OPERATORS:
+        roots = option_values(argv, LEAN_KERNEL_FLAG.lstrip("-"))
+        if (image_gate and argv[-1:] == [IMAGE_PATH] and len(roots) == 1
+                and roots[0].endswith(LEAN_ROOTS_TAIL)):
+            image_checks.append(position)
+        if fp_gate and argv[1:] == [IMAGE_PATH]:
+            image_fp.append(position)
+        if (builder or gate or image_gate or fp_gate) and operator in ERREXIT_EXEMPTING_OPERATORS:
             problems.append(
                 f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
                 f"which exempts it from `set -e`: it runs and its failure is "
@@ -1307,10 +1361,69 @@ def check_lean_archive_lane(root: str) -> list[str]:
             f"{LEAN_ARCHIVE_LANE}: the reconciliation runs before the archive is "
             f"built, so it decides on whatever a previous run left behind."
         )
+    if not images:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `cargo build --release --target "
+            f"{CROSS_TARGET} --features hw_target,{IMAGE_FEATURE} --bin {IMAGE_BIN}`. "
+            f"`hw_target` is what makes `build.rs` link the Lean archive into the "
+            f"image; without it the image carries the HAL alone."
+        )
+    elif builds and min(images) < max(builds):
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: the kernel image is linked before the archive is "
+            f"built, so it carries whatever archive a previous run left behind."
+        )
+    if not image_checks:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `{IMAGE_CHECK_SCRIPT} {LEAN_KERNEL_FLAG} "
+            f"<...{LEAN_ROOTS_TAIL}> {IMAGE_PATH}`. It is what proves every root of "
+            f"the link is the image's text."
+        )
+    if not image_fp:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `{FP_CHECK_SCRIPT} {IMAGE_PATH}`. Only "
+            f"the linked image decides which `compiler_builtins` members the kernel "
+            f"carries, and some of them are not FP-free."
+        )
+    if images and any(p < min(images) for p in image_checks + image_fp):
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: the image is checked before it is linked, so the "
+            f"check reads a previous run's image."
+        )
     enabled = shell_option_state(code)
     if not (enabled.get("errexit") and enabled.get("pipefail")):
         problems.append(f"{LEAN_ARCHIVE_LANE}: needs `set -e` and `set -o pipefail`.")
     return problems
+
+
+def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, str]]:
+    """WS-BP BP5.2: token-preserving mutations of the lane's image step."""
+    build = (f"cargo build --release --target {CROSS_TARGET} -p sele4n-hal "
+             f"--features hw_target,{IMAGE_FEATURE} --bin {IMAGE_BIN}\n")
+    check = (f'python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" {LEAN_KERNEL_FLAG} '
+             f'"${{ARCHIVE_DIR}}/libsele4n.roots.ld" {IMAGE_PATH}\n')
+    fp = f'python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}\n'
+    assert build in lane and check in lane and fp in lane
+    return [
+        ("lane links the image without hw_target",
+         lane.replace(build, build.replace("hw_target,", "") + "echo hw_target\n")),
+        ("lane links a debug image", lane.replace(build, build.replace("--release ", ""))),
+        ("lane links the image before it builds the archive",
+         lane.replace(builder_line, "").replace(build, build + builder_line)),
+        ("lane checks the image without the Lean kernel's roots",
+         lane.replace(check, check.replace(f"{LEAN_KERNEL_FLAG} ", "--roots "))),
+        ("lane checks the image against another roots file",
+         lane.replace(check, check.replace("libsele4n.roots.ld", "libsele4n.unresolved"))),
+        ("lane checks the image before it links it", lane.replace(build + check, check + build)),
+        ("lane disassembles the archive rather than the image",
+         lane.replace(fp, fp.replace(IMAGE_PATH, '"${ARCHIVE_DIR}/libsele4n.a"'))),
+        ("lane names the roots script under a directory it re-points",
+         lane.replace('ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"\n',
+                      'ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"\n'
+                      'ARCHIVE_DIR="/tmp"\n')),
+        ("lane discards the image check's failure", lane.replace(check, check.rstrip("\n") + " || true\n")),
+        ("lane discards the image link's failure", lane.replace(build, build.rstrip("\n") + " || true\n")),
+    ]
 
 
 def check_workflow(root: str) -> list[str]:
@@ -1764,9 +1877,14 @@ jobs:
 
 GOOD_LEAN_LANE = f"""#!/usr/bin/env bash
 set -euo pipefail
+CROSS_TARGET="{CROSS_TARGET}"
+ARCHIVE_DIR="${{PROJECT_ROOT}}/.lake/build/${{CROSS_TARGET}}"
 lake build SeLe4n:static
 python3 "${{SCRIPT_DIR}}/{LEAN_ARCHIVE_BUILDER.split('/')[-1]}"
 python3 "${{SCRIPT_DIR}}/{ENTRY_GATE.split('/')[-1]}" {ENTRY_GATE_CROSS_FLAG}
+cargo build --release --target {CROSS_TARGET} -p sele4n-hal --features hw_target,{IMAGE_FEATURE} --bin {IMAGE_BIN}
+python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" {LEAN_KERNEL_FLAG} "${{ARCHIVE_DIR}}/libsele4n.roots.ld" {IMAGE_PATH}
+python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}
 """
 
 GOOD_HOST_LANE = """#!/usr/bin/env bash
@@ -2733,7 +2851,7 @@ def self_test() -> int:
         ("lane reconciles before it builds", lane.replace(builder_line + gate_line, gate_line + builder_line)),
         ("lane discards the reconciliation's failure", lane.replace(gate_line, gate_line.rstrip("\n") + " || true\n")),
         ("lane turns errexit back off", lane + "set +e\n"),
-    ]:
+    ] + _lean_image_lane_mutations(lane, builder_line):
         files = baseline()
         files[LEAN_ARCHIVE_LANE] = mutated
         cases.append(Case(label, files, True, check="lean_archive_lane", mutation="preserving"))

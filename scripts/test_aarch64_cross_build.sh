@@ -226,9 +226,10 @@ echo ""
 # WS-BP BP5.1: `sele4n-kernel` is `no_std` / `no_main`, entered at `_start`
 # from `boot.S` and laid out by `link.ld`, which the HAL's build script passes
 # to this binary's link alone.  Both profiles, for the reason step [2/7] builds
-# both.  It is built WITHOUT `hw_target` until BP5.2 links `libsele4n.a`: with
-# the feature the HAL names the Lean kernel's symbols, and nothing here
-# provides them yet.  A stale image is removed first so the checks below read
+# both.  It is built WITHOUT `hw_target`: with the feature `build.rs` links
+# `libsele4n.a`, which this lane does not build, so this is the image of the
+# HAL half; `scripts/test_lean_aarch64_archive.sh` links and checks the image
+# that carries the Lean kernel (WS-BP BP5.2).  A stale image is removed first so the checks below read
 # this run's link.  `scripts/check_kernel_image.py` then asks the release image
 # the questions only a real link answers -- entered at `_start` at link.ld's
 # load address, nothing undefined, every section one link.ld names and in its
