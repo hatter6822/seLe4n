@@ -280,7 +280,9 @@ from that image (the archive lane's step [5/5] does this).  Copy both to the
 SD card's boot partition.  `config.txt` is generated — its `kernel_address` is
 the image's entry and its `device_tree_address` / `device_tree_end` are
 `link.ld`'s `.dtb_window` — and `rpi5_boot_files.py check` refuses a key it
-does not set, so add a firmware option there, not by hand.
+does not set, so add a firmware option there, not by hand.  The script ends by
+printing the image's size and section map (`kernel_image_report.py`, BP5.4),
+which CI appends to the job summary and uploads with the boot files.
 Lean 4.28 returns an `IO`/`BaseIO` function's value directly (no world, no
 result wrapper): declare a `BaseIO Unit` export `-> lean_runtime::LeanBaseIoUnit`
 and hand the value to `lean_runtime::discharge_base_io`; only a module

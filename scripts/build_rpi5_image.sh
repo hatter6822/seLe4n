@@ -20,6 +20,12 @@
 #
 #   scripts/build_rpi5_image.sh [<sele4n-kernel ELF> [<out dir>]]
 #
+# WS-BP BP5.4: the last step publishes the image's size and section map
+# (`kernel_image_report.py`): Markdown on stdout and, in a GitHub Actions run,
+# appended to the step summary; JSON beside the boot files, which the CI job
+# uploads.  It runs after the packager so the size it reports is the size of
+# the `kernel8.img` just checked, and it refuses one that is not the image.
+#
 # Defaults: the release image under rust/target, and .lake/build/rpi5-image.
 set -euo pipefail
 
@@ -42,3 +48,4 @@ fi
 
 python3 "${SCRIPT_DIR}/check_kernel_image.py" --lean-kernel "${ROOTS}" "${ELF}"
 python3 "${SCRIPT_DIR}/rpi5_boot_files.py" package "${ELF}" "${OUT_DIR}"
+python3 "${SCRIPT_DIR}/kernel_image_report.py" "${ELF}" "${OUT_DIR}"

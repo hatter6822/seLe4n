@@ -439,3 +439,19 @@ jobs:
             .lake/build/aarch64-unknown-none-softfloat/libsele4n.unresolved
             .lake/build/aarch64-unknown-none-softfloat/libsele4n.roots.ld
           if-no-files-found: warn
+
+      # WS-BP BP5.4: the image the firmware would boot, and the size and
+      # section map `scripts/kernel_image_report.py` published to this run's
+      # step summary, kept with the run so a regression in either is visible
+      # here rather than on the board.
+      - name: Upload the kernel image, its boot files and its size report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rpi5-kernel-image
+          path: |
+            rust/target/aarch64-unknown-none-softfloat/release/sele4n-kernel
+            .lake/build/rpi5-image/kernel8.img
+            .lake/build/rpi5-image/config.txt
+            .lake/build/rpi5-image/kernel-image-report.json
+          if-no-files-found: warn

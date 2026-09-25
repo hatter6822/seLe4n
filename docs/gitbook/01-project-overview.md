@@ -127,7 +127,8 @@ link, and runs the FP/SIMD gate over the linked image.  **BP5.3** packages it
 for the firmware: `scripts/build_rpi5_image.sh` writes `kernel8.img` and a
 `config.txt` pinning the load address to the image's entry and the device tree
 to a window `link.ld` places inside the kernel's reserved extent, and checks
-both against the image.  BP5.4..BP8 have not started.
+both against the image.  **BP5.4** publishes the image's size and section map
+with every CI run.  BP5.5..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

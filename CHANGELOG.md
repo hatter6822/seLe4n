@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2 and BP5.3: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places, and the RPi5 binding corrected from the BCM2711's address map to the BCM2712's
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2, BP5.3 and BP5.4: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places, with its size and section map published by every CI run, and the RPi5 binding corrected from the BCM2711's address map to the BCM2712's
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -1165,7 +1165,26 @@ Cross-checked now against `arch/arm64/boot/dts/broadcom/bcm2712.dtsi` and
   them, and its plan row now records that QEMU has no BCM2712 machine, so the
   image's constant device map meets no device under QEMU.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.3)
+**BP5.4 — the image's size and section map are published with every run.**
+`scripts/kernel_image_report.py` (new) is `scripts/build_rpi5_image.sh`'s last
+step, so the `Lean aarch64 Archive` job reports, on each run, the size of
+`kernel8.img` — read from the file and required to equal the image's loaded
+extent `[_start, __image_load_end)`, so a file that is not the image is refused
+rather than reported — the loaded section bytes, the text bytes, the alignment
+padding, the `NOLOAD` bytes, how much of `[0, KERNEL_RESERVED_END)` the image
+uses up to `__dtb_window_end`, and every allocated section's extent, size and
+kind.  The Markdown is appended to the run's step summary (never overwritten:
+other steps write there too) and written as `kernel-image-report.json` beside
+the boot files; `.github/workflows/lean_action_ci.yml` uploads the ELF,
+`kernel8.img`, `config.txt` and the JSON as the `rpi5-kernel-image` artifact.
+On this tree: `kernel8.img` is `0x4b5030` bytes (4.71 MiB, 4.60 MiB of it
+text), and the image places its last byte at 28.0% of the reserved extent.
+The report's self-test (Tier 0) refuses a flat image one page short and one
+page long, an image with no device-tree window and one with no section, and
+checks the step summary is appended to; Tier 3 pins the file-size relation,
+the append and the upload.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.4)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

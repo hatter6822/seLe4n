@@ -5029,8 +5029,18 @@ run_check "INVARIANT" rg -U -n '^    \(out / CONFIG_NAME\)\.write_text\(render_c
 run_check "INVARIANT" rg -U -n '^    window = \(table\.get\("__dtb_window_start"\), table\.get\("__dtb_window_end"\)\)\n    if \(dtb_start, dtb_end\) != window:$' scripts/rpi5_boot_files.py
 run_check "INVARIANT" rg -U -n '^    if not kernel_address == image\.entry == table\.get\("_start"\) == origin:$' scripts/rpi5_boot_files.py
 run_check "INVARIANT" rg -U -n '^        if key not in CONFIG_KEYS:\n            raise GateFailure\(' scripts/rpi5_boot_files.py
-run_check "INVARIANT" rg -U -n '^python3 "\$\{SCRIPT_DIR\}/check_kernel_image\.py" --lean-kernel "\$\{ROOTS\}" "\$\{ELF\}"\npython3 "\$\{SCRIPT_DIR\}/rpi5_boot_files\.py" package "\$\{ELF\}" "\$\{OUT_DIR\}"$' scripts/build_rpi5_image.sh
+run_check "INVARIANT" rg -U -n '^python3 "\$\{SCRIPT_DIR\}/check_kernel_image\.py" --lean-kernel "\$\{ROOTS\}" "\$\{ELF\}"\npython3 "\$\{SCRIPT_DIR\}/rpi5_boot_files\.py" package "\$\{ELF\}" "\$\{OUT_DIR\}"\npython3 "\$\{SCRIPT_DIR\}/kernel_image_report\.py" "\$\{ELF\}" "\$\{OUT_DIR\}"$' scripts/build_rpi5_image.sh
 run_check "INVARIANT" rg -U -n '^"\$\{PROJECT_ROOT\}/scripts/build_rpi5_image\.sh" \\\n    target/"\$\{CROSS_TARGET\}"/release/"\$\{IMAGE_BIN\}" ' scripts/test_lean_aarch64_archive.sh
+# WS-BP BP5.4: the image's size and section map are published with every run.
+# The report reads kernel8.img's size from the FILE and refuses one that is not
+# the loaded extent, appends to the step summary rather than overwriting it,
+# and the CI job uploads the image, its boot files and the JSON report.
+run_check "INVARIANT" rg -U -n '^    if flat_size != load_end - start:\n        raise ReportRefused\(' scripts/kernel_image_report.py
+run_check "INVARIANT" rg -n 'm = measure\(read_image\(elf\), symbols\(elf\), \(out / KERNEL_NAME\)\.stat\(\)\.st_size\)' scripts/kernel_image_report.py
+run_check "INVARIANT" rg -n 'with open\(summary, "a", encoding="utf-8"\) as f:' scripts/kernel_image_report.py
+run_check "INVARIANT" rg -n 'publish\(m, out, os\.environ\.get\("GITHUB_STEP_SUMMARY"\) or None\)' scripts/kernel_image_report.py
+run_check "INVARIANT" rg -n 'kernel_image_report\.py" --self-test' scripts/test_tier0_hygiene.sh
+run_check "INVARIANT" rg -U -n '^          name: rpi5-kernel-image\n          path: \|\n            rust/target/aarch64-unknown-none-softfloat/release/sele4n-kernel\n            \.lake/build/rpi5-image/kernel8\.img\n            \.lake/build/rpi5-image/config\.txt\n            \.lake/build/rpi5-image/kernel-image-report\.json$' .github/workflows/lean_action_ci.yml
 run_check "INVARIANT" rg -n '^    fn the_device_tree_window_is_the_dereference_bound\(\) \{$' rust/sele4n-hal/src/mmu.rs
 # The re-type operand must NOT regress to the bare domain-wide invalidate.
 run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"

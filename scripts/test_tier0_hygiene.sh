@@ -546,6 +546,7 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_kernel_image.py" --self-test
 # `config.txt` and a synthetic image, broken one at a time with both files
 # kept present and well-formed.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/rpi5_boot_files.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/kernel_image_report.py" --self-test
 
 # WS-RR RR1.9: the TLBI broadcast discipline `SMP_RUST_HAL_PLAN.md` §4.4
 # said tier 0 enforced.  It did not, and the sketch in §5.6 would not have

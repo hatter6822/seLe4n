@@ -7147,7 +7147,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2 and BP5.3 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2, BP5.3 and BP5.4 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots), and **BP5.3** (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it); BP5.4..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots), and **BP5.3** (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it), and **BP5.4** (the image's size and section map published with every CI run); BP5.5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7732,6 +7732,19 @@ rebuilds `[_start, __image_load_end)` from the section headers
 and the archive lane runs the script as step [5/5] over the image it linked,
 which `check_aarch64_cross_target.py` holds (after the image build, not
 exempted from `set -e`).
+
+**BP5.4 — the image's size and section map are published with every run**
+(`v0.36.2`).  `scripts/kernel_image_report.py` is `build_rpi5_image.sh`'s last
+step, so the archive lane's job reports on each run the size of `kernel8.img`,
+the loaded, text, padding and `NOLOAD` bytes, the share of the reserved extent
+used, and every section's extent — in the step summary, and as
+`kernel-image-report.json`, uploaded with the image and its boot files as the
+`rpi5-kernel-image` artifact.  Two things new code must respect.  (1) **The
+size is read from the file and held to the image**: a `kernel8.img` that is not
+`[_start, __image_load_end)` is refused rather than reported, because a figure
+the report could not establish would be a guess published as a measurement.
+(2) **The summary is appended to**, never overwritten, since other steps write
+to the same file.
 
 
 **The RPi5 binding is the BCM2712's address map** (`v0.36.2`, found while
