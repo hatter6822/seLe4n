@@ -51,12 +51,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 420,527 across 343 Lean files |
-| **Test LoC** | 85,428 across 71 Lean test suites |
-| **Proved declarations** | 13,922 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 420,685 across 343 Lean files |
+| **Test LoC** | 85,461 across 71 Lean test suites |
+| **Proved declarations** | 13,928 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** at v0.36.2 (§6.2.12); BP4.7 and BP5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12); BP5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -505,7 +505,7 @@ closed.
 ```lean
 @[export lean_kernel_main]
 def kernelMain (dtb : ByteArray) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjects none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjectsFor none
 ```
 
 (The `ByteArray` argument is BP4.3/BP4.4's; §6.2.10 has what it changed.)
@@ -670,9 +670,19 @@ read the device tree and the binding has chosen the variant.
   applies them and requires the extended Normal window to be exactly that
   variant's RAM on every variant, both by walking the tables and through
   `ram_range_covered`.
-- **Not yet handed out.**  The deployment's untypeds are fixed before the
-  variant is known and stay in `[256 MiB, 1 GiB)`; making them a function of
-  the variant is BP4.7.
+- **Handed to the root task** (WS-BP BP4.7).  The deployment's objects are a
+  function of the variant (`rpi5InitialObjectsFor`), which the device-tree
+  bridge applies to the variant its parse selected (`rpi5PlatformConfigFromDtb`'s
+  `initialObjectsFor`).  `rpi5RootTaskRamUntypeds v` is one normal-memory untyped
+  per extension, at ids `8, 9, …` and root-CNode slots `7, 8, …`, and
+  `rpi5RootTaskRamUntypeds_regions` states its regions **are**
+  `rpi5BootRamExtensions v`.  Every gate is decided per variant again, and
+  `rpi5RootTaskCNodeFor_slotsAddressable` adds that every root-CNode slot is
+  below the CNode's sixteen.  `rpi5InitialObjectsFor_covers_ram` is the
+  direction the placement conjunct cannot state: every RAM address outside the
+  kernel's reserved extent lies in some root-task untyped, on every board.
+  `rpi5DeploymentBootStateAt_ramUntypedInstalled` says the boot installs each.
+  `tests/Ak9PlatformSuite.lean` runs this on 1, 2, 3, 4 and 8 GiB device trees.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

@@ -38,6 +38,7 @@ initial thread, its CSpace and its own address space (BP3.2):
 | interrupt notification (every SPI signals it) | `5` | boot |
 | untyped `[256 MiB, 512 MiB)` | `6` | boot |
 | untyped `[512 MiB, 1 GiB)` | `7` | boot |
+| untypeds over the board's RAM above 1 GiB, one per BP4.6 extension (none on a 1 GiB board, two on 8 and 16 GiB) | `8`, `9`, … | boot |
 | untrusted initial TCB (the upper separation witness) | `0x10_0000` | untrusted (`highUntrusted`) |
 | its CNode | `0x10_0001` | untrusted |
 | its VSpace (ASID 2, empty) | `0x10_0002` | untrusted |
@@ -45,15 +46,17 @@ initial thread, its CSpace and its own address space (BP3.2):
 Four decisions, each a consequence of a rule elsewhere rather than a choice made
 here:
 
-* **The untypeds are the guaranteed gigabyte minus the kernel's reserved
-  extent** — `[rpi5KernelReservedEnd, 1 GiB)`, split on power-of-two bounds.  The
-  boot refuses anything else (`untypedPlacementRespected`).  RAM above the
-  gigabyte is mapped since WS-BP BP4.6, once the verified parse has chosen the
-  variant (`Platform.FFI.extendBootRamMap`), but these objects are fixed before
-  the variant is known, so they cannot describe it: handing it to the root task
-  as untypeds is BP4.7's, which makes the objects a function of the variant.
-  Only the boot domain holds untypeds: memory is authority, and the untrusted
-  domain's share is the boot domain's to delegate.
+* **The untypeds are the board's RAM minus the kernel's reserved extent** —
+  `[rpi5KernelReservedEnd, 1 GiB)`, split on power-of-two bounds, and (WS-BP
+  BP4.7) one untyped per region of RAM the board has above the gigabyte, exactly
+  the regions BP4.6 maps (`rpi5RootTaskRamUntypeds_regions`).  The boot refuses
+  anything else (`untypedPlacementRespected`), and
+  `rpi5InitialObjectsFor_covers_ram` is the other direction: no RAM outside the
+  reserved extent is left unowned.  That makes the objects a function of the
+  variant (`rpi5InitialObjectsFor`), which the device-tree wrapper applies to
+  the variant its parse selected.  Only the boot domain holds untypeds: memory
+  is authority, and the untrusted domain's share is the boot domain's to
+  delegate.
 * **No capability crosses the domain boundary.**  `confinedLabelingContext`
   makes the two domains unable to reach each other in either direction; a root
   task holding a capability to the untrusted thread would be a flow the labeling
@@ -105,6 +108,15 @@ def rpi5InterruptNotificationId : SeLe4n.ObjId := ⟨5⟩
 def rpi5RootTaskUntypedLowId : SeLe4n.ObjId := ⟨6⟩
 /-- The upper untyped, `[512 MiB, 1 GiB)`. -/
 def rpi5RootTaskUntypedHighId : SeLe4n.ObjId := ⟨7⟩
+/-- **WS-BP BP4.7**: the root task's `i`-th untyped over RAM above the
+    guaranteed gigabyte.  Ids `8, 9, …`, below the untrusted domain's boundary
+    and the idle-thread slots, so the boot domain holds them. -/
+def rpi5RootTaskRamUntypedId (i : Nat) : SeLe4n.ObjId := ⟨8 + i⟩
+/-- **WS-BP BP4.7**: that untyped's slot in the root task's CNode — `7 + i`,
+    after the six slots every board has.  The CNode has sixteen, so nine
+    extensions fit; `rpi5RootTaskCNodeFor_slotsAddressable` is the theorem that
+    every variant's do. -/
+def rpi5RootTaskRamUntypedSlot (i : Nat) : SeLe4n.Slot := SeLe4n.Slot.ofNat (7 + i)
 /-- The untrusted domain's initial TCB — the labeling's upper separation
     witness. -/
 def rpi5UntrustedTcbId : SeLe4n.ObjId := ⟨rpi5UpperDomainBase⟩
@@ -121,6 +133,19 @@ def rpi5UntrustedAsid : SeLe4n.ASID := SeLe4n.ASID.ofNat 2
 /-- An initial thread's priority — seL4's `seL4_MaxPrio`, which is what its
     initial thread runs at. -/
 def rpi5InitialThreadPriority : SeLe4n.Priority := ⟨255⟩
+
+/-- The five members of the family, as a case split every gate below is decided
+    over. -/
+private theorem rpi5Variants_cases {P : BCM2712Config → Prop}
+    (hOne : P { ramSize := 1 * 1024 * 1024 * 1024 })
+    (hTwo : P { ramSize := 2 * 1024 * 1024 * 1024 })
+    (hFour : P { ramSize := 4 * 1024 * 1024 * 1024 })
+    (hEight : P { ramSize := 8 * 1024 * 1024 * 1024 })
+    (hSixteen : P { ramSize := 16 * 1024 * 1024 * 1024 }) :
+    ∀ v ∈ rpi5Variants, P v := by
+  intro v hv
+  simp only [rpi5Variants, List.mem_cons, List.not_mem_nil, or_false] at hv
+  rcases hv with rfl | rfl | rfl | rfl | rfl <;> assumption
 
 -- ============================================================================
 -- Objects
@@ -158,16 +183,65 @@ def rpi5InitialCNode (slots : List (SeLe4n.Slot × Capability)) : CNode :=
 def rpi5InitialVSpace (asid : SeLe4n.ASID) : VSpaceRoot :=
   { asid := asid, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
 
-/-- The root task's CNode: its own TCB, CNode and VSpace, the interrupt
-    notification, and the two untypeds. -/
-def rpi5RootTaskCNode : CNode :=
-  rpi5InitialCNode
-    [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap rpi5RootTaskTcbId [.read, .write, .grant, .grantReply])
-    , (SeLe4n.Slot.ofNat 2, rpi5InitialCap rpi5RootTaskCNodeId [.read, .write, .grant, .grantReply])
-    , (SeLe4n.Slot.ofNat 3, rpi5InitialCap rpi5RootTaskVSpaceId [.read, .write])
-    , (SeLe4n.Slot.ofNat 4, rpi5InitialCap rpi5InterruptNotificationId [.read, .write])
-    , (SeLe4n.Slot.ofNat 5, rpi5InitialCap rpi5RootTaskUntypedLowId [.read, .write, .retype])
-    , (SeLe4n.Slot.ofNat 6, rpi5InitialCap rpi5RootTaskUntypedHighId [.read, .write, .retype]) ]
+/-- A normal-memory untyped over `[base, base + size)`, with nothing carved. -/
+def rpi5InitialUntyped (base size : Nat) : UntypedObject :=
+  { regionBase := SeLe4n.PAddr.ofNat base, regionSize := size }
+
+@[simp] theorem rpi5InitialUntyped_base (base size : Nat) :
+    (rpi5InitialUntyped base size).regionBase.toNat = base := rfl
+
+@[simp] theorem rpi5InitialUntyped_size (base size : Nat) :
+    (rpi5InitialUntyped base size).regionSize = size := rfl
+
+/-- **WS-BP BP4.7**: the root task's untypeds over the RAM its board has above
+    the guaranteed gigabyte — one per extension the boot maps
+    (`rpi5BootRamExtensions v`, which is `Platform.FFI.extendBootRamMap`'s
+    argument on a board of variant `v`), the `i`-th at id
+    `rpi5RootTaskRamUntypedId i`.  Derived from the extensions rather than listed
+    per variant, so the RAM the HAL maps and the RAM the root task owns are one
+    list (`rpi5RootTaskRamUntypeds_regions`). -/
+def rpi5RootTaskRamUntypeds (v : BCM2712Config) : List (SeLe4n.ObjId × UntypedObject) :=
+  (rpi5BootRamExtensions v).mapIdx fun i e =>
+    (rpi5RootTaskRamUntypedId i, rpi5InitialUntyped e.1 e.2)
+
+/-- **WS-BP BP4.7**: the untypeds' regions are exactly the extensions the boot
+    maps, in order — on every board, not only the five variants. -/
+theorem rpi5RootTaskRamUntypeds_regions (v : BCM2712Config) :
+    (rpi5RootTaskRamUntypeds v).map (fun u => (u.2.regionBase.toNat, u.2.regionSize)) =
+      rpi5BootRamExtensions v := by
+  apply List.ext_getElem
+  · simp [rpi5RootTaskRamUntypeds]
+  · intro i h₁ h₂
+    simp [rpi5RootTaskRamUntypeds]
+
+/-- The root task's CNode on a board of variant `v`: its own TCB, CNode and
+    VSpace, the interrupt notification, the two untypeds of the guaranteed
+    gigabyte, and — **WS-BP BP4.7** — one untyped per extension of the board's
+    RAM above it, at slot `7 + i` (`rpi5RootTaskRamUntypedSlot`). -/
+def rpi5RootTaskCNodeSlots (v : BCM2712Config) : List (SeLe4n.Slot × Capability) :=
+  [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap rpi5RootTaskTcbId [.read, .write, .grant, .grantReply])
+  , (SeLe4n.Slot.ofNat 2, rpi5InitialCap rpi5RootTaskCNodeId [.read, .write, .grant, .grantReply])
+  , (SeLe4n.Slot.ofNat 3, rpi5InitialCap rpi5RootTaskVSpaceId [.read, .write])
+  , (SeLe4n.Slot.ofNat 4, rpi5InitialCap rpi5InterruptNotificationId [.read, .write])
+  , (SeLe4n.Slot.ofNat 5, rpi5InitialCap rpi5RootTaskUntypedLowId [.read, .write, .retype])
+  , (SeLe4n.Slot.ofNat 6, rpi5InitialCap rpi5RootTaskUntypedHighId [.read, .write, .retype]) ] ++
+  (rpi5RootTaskRamUntypeds v).mapIdx fun i u =>
+    (rpi5RootTaskRamUntypedSlot i, rpi5InitialCap u.1 [.read, .write, .retype])
+
+/-- The root task's CNode on a board of variant `v`, over
+    `rpi5RootTaskCNodeSlots v`. -/
+def rpi5RootTaskCNodeFor (v : BCM2712Config) : CNode :=
+  rpi5InitialCNode (rpi5RootTaskCNodeSlots v)
+
+/-- **WS-BP BP4.7**: every capability the root task's CNode is configured with
+    sits at a slot the CNode's radix can address, on every variant — the boot
+    bounds a CNode's slot *count* and not its indices (WS-RR RR8.16), so a slot
+    at or above sixteen would be stored and never reachable.  Decided by
+    evaluation; the largest board has two extensions, at slots 7 and 8. -/
+theorem rpi5RootTaskCNodeFor_slotsAddressable :
+    ∀ v ∈ rpi5Variants, (rpi5RootTaskCNodeSlots v).all
+      (fun p => (rpi5RootTaskCNodeFor v).slotAddressable p.1) = true := by
+  apply rpi5Variants_cases <;> decide
 
 /-- The untrusted initial thread's CNode: its own TCB, CNode and VSpace, and
     nothing of the boot domain's. -/
@@ -176,10 +250,6 @@ def rpi5UntrustedCNode : CNode :=
     [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap rpi5UntrustedTcbId [.read, .write, .grant, .grantReply])
     , (SeLe4n.Slot.ofNat 2, rpi5InitialCap rpi5UntrustedCNodeId [.read, .write, .grant, .grantReply])
     , (SeLe4n.Slot.ofNat 3, rpi5InitialCap rpi5UntrustedVSpaceId [.read, .write]) ]
-
-/-- A normal-memory untyped over `[base, base + size)`, with nothing carved. -/
-def rpi5InitialUntyped (base size : Nat) : UntypedObject :=
-  { regionBase := SeLe4n.PAddr.ofNat base, regionSize := size }
 
 private def tcbEntry (id : SeLe4n.ObjId) (tcb : TCB) : ObjectEntry :=
   { id := id
@@ -211,11 +281,23 @@ private def notificationEntry (id : SeLe4n.ObjId) : ObjectEntry :=
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => nomatch h }
 
-/-- **WS-BP BP3.2**: the initial objects. -/
-def rpi5InitialObjects : List ObjectEntry :=
+/-- **WS-BP BP3.2 / BP4.7**: the initial objects on a board of variant `v` — the
+    nine the deployment has on every board, then the root task's untypeds over
+    that board's RAM above the guaranteed gigabyte (`rpi5RootTaskRamUntypeds`).
+
+    **WS-BP BP4.7** made this a function of the variant, and it has to be one:
+    which RAM a board has is what the verified device-tree parse decides, so a
+    fixed list either describes the smallest board on every board — the RAM
+    BP4.6 maps above the gigabyte then owned by nobody — or describes RAM a
+    smaller board lacks, which `untypedPlacementRespected` refuses.  The device
+    tree wrapper applies it to the variant its parse selected
+    (`rpi5PlatformConfigFromDtb`'s `initialObjectsFor`).  The retired
+    variant-independent `rpi5InitialObjects` is its value on the 1 GiB board,
+    where there is nothing above the gigabyte to hand out. -/
+def rpi5InitialObjectsFor (v : BCM2712Config) : List ObjectEntry :=
   [ tcbEntry rpi5RootTaskTcbId
       (rpi5InitialThread rpi5RootTaskTcbId rpi5RootTaskCNodeId rpi5RootTaskVSpaceId)
-  , cnodeEntry rpi5RootTaskCNodeId rpi5RootTaskCNode
+  , cnodeEntry rpi5RootTaskCNodeId (rpi5RootTaskCNodeFor v)
   , vspaceEntry rpi5RootTaskVSpaceId rpi5RootTaskAsid
   , notificationEntry rpi5InterruptNotificationId
   , untypedEntry rpi5RootTaskUntypedLowId (rpi5InitialUntyped 0x1000_0000 0x1000_0000)
@@ -223,7 +305,8 @@ def rpi5InitialObjects : List ObjectEntry :=
   , tcbEntry rpi5UntrustedTcbId
       (rpi5InitialThread rpi5UntrustedTcbId rpi5UntrustedCNodeId rpi5UntrustedVSpaceId)
   , cnodeEntry rpi5UntrustedCNodeId rpi5UntrustedCNode
-  , vspaceEntry rpi5UntrustedVSpaceId rpi5UntrustedAsid ]
+  , vspaceEntry rpi5UntrustedVSpaceId rpi5UntrustedAsid ] ++
+  (rpi5RootTaskRamUntypeds v).map fun u => untypedEntry u.1 u.2
 
 /-- **WS-BP BP3.1**: the IRQ table — every shared peripheral interrupt the
     interrupt contract supports (`rpi5InterruptContract.irqLineSupported`,
@@ -242,7 +325,7 @@ def rpi5IrqTable : List IrqEntry :=
     stated over every account rather than over one board. -/
 def rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) : PlatformConfig :=
   { irqTable := rpi5IrqTable
-    initialObjects := rpi5InitialObjects
+    initialObjects := rpi5InitialObjectsFor (rpi5VariantFor board)
     machineConfig := board }
 
 /-- **WS-BP BP4.4**: the configuration the hardware boot checks on a board whose
@@ -250,7 +333,7 @@ def rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) : PlatformConfig :=
     (`bindPlatformConfig_rpi5PlatformConfigFor`). -/
 def rpi5BoundPlatformConfigAt (v : BCM2712Config) : PlatformConfig :=
   { irqTable := rpi5IrqTable
-    initialObjects := rpi5InitialObjects
+    initialObjects := rpi5InitialObjectsFor v
     machineConfig := rpi5MachineConfigForVariant v
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := RPi5Platform) }
 
@@ -259,19 +342,6 @@ def rpi5BoundPlatformConfigAt (v : BCM2712Config) : PlatformConfig :=
 theorem bindPlatformConfig_rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) :
     bindPlatformConfig RPi5Platform (rpi5PlatformConfigFor board) =
       rpi5BoundPlatformConfigAt (rpi5VariantFor board) := rfl
-
-/-- The five members of the family, as a case split every gate below is decided
-    over. -/
-private theorem rpi5Variants_cases {P : BCM2712Config → Prop}
-    (hOne : P { ramSize := 1 * 1024 * 1024 * 1024 })
-    (hTwo : P { ramSize := 2 * 1024 * 1024 * 1024 })
-    (hFour : P { ramSize := 4 * 1024 * 1024 * 1024 })
-    (hEight : P { ramSize := 8 * 1024 * 1024 * 1024 })
-    (hSixteen : P { ramSize := 16 * 1024 * 1024 * 1024 }) :
-    ∀ v ∈ rpi5Variants, P v := by
-  intro v hv
-  simp only [rpi5Variants, List.mem_cons, List.not_mem_nil, or_false] at hv
-  rcases hv with rfl | rfl | rfl | rfl | rfl <;> assumption
 
 -- ============================================================================
 -- WS-BP BP3.3 — every gate of the checked boot, discharged by evaluation, on
@@ -284,9 +354,10 @@ private theorem rpi5Variants_cases {P : BCM2712Config → Prop}
     duplicate checks run a hash set the kernel cannot reduce, so they are
     rewritten to their transparent forms first (`irqsUnique_eq_transparent`,
     `objectIdsUnique_eq_transparent`); everything else is `decide`.  The
-    placement is the conjunct that reads the variant: the untypeds lie in
+    placement is the conjunct that reads the variant: two untypeds lie in
     `[256 MiB, 1 GiB)`, which is RAM on the smallest board and therefore on
-    every one. -/
+    every one, and (WS-BP BP4.7) the rest over the variant's own RAM above the
+    gigabyte, which is RAM of that variant's map by construction. -/
 theorem rpi5BoundPlatformConfigAt_wellFormed :
     ∀ v ∈ rpi5Variants, (rpi5BoundPlatformConfigAt v).wellFormed = true := by
   apply rpi5Variants_cases <;>
@@ -295,11 +366,10 @@ theorem rpi5BoundPlatformConfigAt_wellFormed :
      decide)
 
 /-- **WS-BP BP3.3**: every configured object passes the boot-safety sweep. -/
-theorem rpi5BoundPlatformConfigAt_bootSafe (v : BCM2712Config) :
-    (rpi5BoundPlatformConfigAt v).initialObjects.all
+theorem rpi5BoundPlatformConfigAt_bootSafe :
+    ∀ v ∈ rpi5Variants, (rpi5BoundPlatformConfigAt v).initialObjects.all
       (fun entry => bootSafeObjectCheck entry.obj) = true := by
-  show rpi5InitialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true
-  decide
+  apply rpi5Variants_cases <;> decide
 
 /-- **WS-BP BP3.3**: the three VSpace roots — the kernel's and the two threads'
     — are on three ASIDs. -/
@@ -361,7 +431,7 @@ theorem rpi5BoundPlatformConfigAt_checked (v : BCM2712Config) (hv : v ∈ rpi5Va
           rpi5BootVSpaceRootEntry.id rpi5BootVSpaceRootEntry.root
           rpi5BootVSpaceRootEntry.hMappings)) :=
   bootFromPlatformChecked_admits_bootVSpace _ (rpi5BoundPlatformConfigAt_wellFormed v hv)
-    (rpi5BoundPlatformConfigAt_bootSafe v) (rpi5BoundPlatformConfigAt_asidsDistinct v hv)
+    (rpi5BoundPlatformConfigAt_bootSafe v hv) (rpi5BoundPlatformConfigAt_asidsDistinct v hv)
     (rpi5BoundPlatformConfigAt_irqHandlers v hv)
     (rpi5BoundPlatformConfigAt_machineConfig_wellFormed v hv)
     (rpi5BoundPlatformConfigAt_physicalAddressWidth v)
@@ -396,7 +466,7 @@ theorem rpi5BoundPlatformConfigAt_boot (v : BCM2712Config) (hv : v ∈ rpi5Varia
 /-- **WS-BP BP3.4**: a configured thread is a thread of the boot state. -/
 private theorem rpi5Deployment_tcb_installed (v : BCM2712Config) (hv : v ∈ rpi5Variants)
     (id cspace vspace : SeLe4n.ObjId)
-    (hMem : tcbEntry id (rpi5InitialThread id cspace vspace) ∈ rpi5InitialObjects) :
+    (hMem : tcbEntry id (rpi5InitialThread id cspace vspace) ∈ rpi5InitialObjectsFor v) :
     ((rpi5DeploymentBootStateAt v).state.getTcb? ⟨id.val⟩).isSome = true := by
   have h := bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem _ _ _
     (rpi5BoundPlatformConfigAt_boot v hv) _ hMem
@@ -417,9 +487,9 @@ theorem rpi5DeploymentBootStateAt_witnessesInstalled (v : BCM2712Config)
   rw [rpi5_deploymentLabeling_separatedThreads]
   simp only [Bool.and_eq_true]
   exact ⟨rpi5Deployment_tcb_installed v hv rpi5RootTaskTcbId rpi5RootTaskCNodeId
-      rpi5RootTaskVSpaceId (by simp [rpi5InitialObjects]),
+      rpi5RootTaskVSpaceId (by simp [rpi5InitialObjectsFor]),
     rpi5Deployment_tcb_installed v hv rpi5UntrustedTcbId rpi5UntrustedCNodeId
-      rpi5UntrustedVSpaceId (by simp [rpi5InitialObjects])⟩
+      rpi5UntrustedVSpaceId (by simp [rpi5InitialObjectsFor])⟩
 
 /-- **WS-BP BP3 acceptance, BP4.4 generalisation**: the hardware boot, given
     this deployment on **any** board account, commits the boot state of the
@@ -478,9 +548,64 @@ theorem rpi5DeploymentBootStateAt_invariantBridge (v : BCM2712Config) (hv : v �
     theorem above, stated over an arbitrary account, is a theorem about what the
     hardware entry boots. -/
 theorem rpi5PlatformConfigFromDtb_deployment_ok (blob : ByteArray) (config : PlatformConfig)
-    (h : rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjects none = .ok config) :
+    (h : rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjectsFor none = .ok config) :
     config = rpi5PlatformConfigFor config.machineConfig := by
   obtain ⟨dt, -, rfl⟩ := rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree _ _ _ _ _ h
   rfl
+
+-- ============================================================================
+-- WS-BP BP4.7 — the RAM the boot maps is the RAM the root task owns
+-- ============================================================================
+
+/-- **WS-BP BP4.7 (the payoff)**: every address a board's variant declares RAM,
+    outside the kernel's reserved extent, lies in some untyped the deployment
+    hands the root task — the two of the guaranteed gigabyte below it, and one
+    per BP4.6 extension above it (`bootRamExtensionsOf_covers`, read through
+    `rpi5RootTaskRamUntypeds`).  So no RAM the boot maps is left idle, on any
+    board: the direction BP4.6 left open, which the placement conjunct cannot
+    state because it bounds the untypeds from above only. -/
+theorem rpi5InitialObjectsFor_covers_ram (v : BCM2712Config)
+    (r : SeLe4n.MemoryRegion) (hr : r ∈ rpi5MemoryMapForConfig v) (hk : r.kind = .ram)
+    (a : Nat) (hlo : r.base.toNat ≤ a) (hhi : a < r.endAddr)
+    (hk' : rpi5KernelReservedEnd ≤ a) :
+    ∃ e ∈ rpi5InitialObjectsFor v, ∃ ut, e.obj = .untyped ut ∧ ut.isDevice = false ∧
+      ut.regionBase.toNat ≤ a ∧ a < ut.regionBase.toNat + ut.regionSize := by
+  unfold rpi5KernelReservedEnd at hk'
+  by_cases hg : a < rpi5GuaranteedRamTop
+  · unfold rpi5GuaranteedRamTop at hg
+    by_cases hLow : a < 0x2000_0000
+    · exact ⟨untypedEntry rpi5RootTaskUntypedLowId (rpi5InitialUntyped 0x1000_0000 0x1000_0000),
+        by simp [rpi5InitialObjectsFor], _, rfl, rfl,
+        by simp only [rpi5InitialUntyped_base]; omega,
+        by simp only [rpi5InitialUntyped_base, rpi5InitialUntyped_size]; omega⟩
+    · exact ⟨untypedEntry rpi5RootTaskUntypedHighId (rpi5InitialUntyped 0x2000_0000 0x2000_0000),
+        by simp [rpi5InitialObjectsFor], _, rfl, rfl,
+        by simp only [rpi5InitialUntyped_base]; omega,
+        by simp only [rpi5InitialUntyped_base, rpi5InitialUntyped_size]; omega⟩
+  · obtain ⟨ext, hExt, h1, h2⟩ :=
+      bootRamExtensionsOf_covers _ r hr hk a hlo hhi (by omega)
+    obtain ⟨i, hi, hEq⟩ := List.mem_iff_getElem.mp hExt
+    have hLen : i < (rpi5RootTaskRamUntypeds v).length := by
+      simpa [rpi5RootTaskRamUntypeds, rpi5BootRamExtensions] using hi
+    refine ⟨untypedEntry (rpi5RootTaskRamUntypedId i) (rpi5InitialUntyped ext.1 ext.2), ?_,
+      _, rfl, rfl, ?_, ?_⟩
+    · refine List.mem_append_right _ (List.mem_map.mpr ⟨(rpi5RootTaskRamUntypedId i,
+        rpi5InitialUntyped ext.1 ext.2), ?_, rfl⟩)
+      exact List.mem_mapIdx.mpr ⟨i, by simpa [rpi5BootRamExtensions] using hi, by
+        simp [rpi5BootRamExtensions] at hEq ⊢; rw [hEq]⟩
+    · simp only [rpi5InitialUntyped_base]; omega
+    · simp only [rpi5InitialUntyped_base, rpi5InitialUntyped_size]; omega
+
+/-- **WS-BP BP4.7**: and every one of those untypeds is an object of the state
+    the hardware boot installs, at its own id, on every variant — so the RAM
+    above the gigabyte is not only described but handed over: the root task's
+    CNode names each one (`rpi5RootTaskCNodeSlots`), and the boot installs it. -/
+theorem rpi5DeploymentBootStateAt_ramUntypedInstalled (v : BCM2712Config)
+    (hv : v ∈ rpi5Variants) (u : SeLe4n.ObjId × UntypedObject)
+    (hu : u ∈ rpi5RootTaskRamUntypeds v) :
+    (rpi5DeploymentBootStateAt v).state.objects[u.1]? = some (.untyped u.2) :=
+  bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem _ _ _
+    (rpi5BoundPlatformConfigAt_boot v hv) (untypedEntry u.1 u.2)
+    (List.mem_append_right _ (List.mem_map.mpr ⟨u, hu, rfl⟩))
 
 end SeLe4n.Platform.RPi5

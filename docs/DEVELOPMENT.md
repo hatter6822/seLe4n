@@ -255,6 +255,11 @@ verified variant's RAM above the guaranteed gigabyte through
 through `mmu::extend_boot_ram_map` — it writes invalid entries only, decides every
 refusal first, and widens `is_boot_cacheable_range` by the same record — and never
 after the seal.
+**The deployment's objects are a function of the variant** (BP4.7):
+`rpi5PlatformConfigFromDtb` applies `initialObjectsFor` to the variant its parse
+selected, and the RPi5 deployment's root-task untypeds over RAM above the
+gigabyte are derived from `rpi5BootRamExtensions v` — add RAM by changing the
+variant's memory map, never by listing untypeds per board.
 Lean 4.28 returns an `IO`/`BaseIO` function's value directly (no world, no
 result wrapper): declare a `BaseIO Unit` export `-> lean_runtime::LeanBaseIoUnit`
 and hand the value to `lean_runtime::discharge_base_io`; only a module

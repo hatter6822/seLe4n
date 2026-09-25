@@ -7147,7 +7147,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3 and BP4.1–BP4.6 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3 and BP4.1–BP4.7 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte); BP4.7 and BP5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds); BP5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7507,7 +7507,7 @@ clauses were checked elsewhere. `bootSafeCapCheck` refuses both, and
 type** (`v0.36.2`).  Four things new code must respect.  (1) **The hardware boot
 entry is `SeLe4n.Platform.RPi5.kernelMain`** (`SeLe4n/Platform/RPi5/KernelMain.lean`,
 in the library root): `@[export lean_kernel_main]`, exactly
-`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjects none`
+`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjectsFor none`
 since BP4.4 (the item after this block), and `kernelMain_installs` states the
 program it is.  `BootEntryContract.lean` now
 **refuses** an environment with no entry, so a second one, a moved one or a
@@ -7552,7 +7552,7 @@ nothing.  The post-BP4.5 ABI audit fixed both.)
 **BP4.3/BP4.4 — the device tree reaches Lean, and the entry boots on it**
 (`v0.36.2`).  Four things new code must respect.  (1) **The entry takes the
 firmware's blob, not its pointer**: `kernelMain (dtb : ByteArray)` is
-`bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjects none`,
+`bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjectsFor none`,
 and `BootEntryContract.lean`'s `approvedBootCall` is that wrapper, with the
 blob required to be the entry's **own parameter** — a fixed blob, an edited
 copy, and the retired `bootAndInitialiseRPi5OrHalt` call are refused witnesses.
@@ -7630,8 +7630,30 @@ a refusal of any kind halts the system (`ffi_extend_boot_ram_map` →
 `tests/fixtures/boot_map.expected` carries each variant's `extend` lines, and the
 HAL test applies them and requires the extended Normal window to be **exactly**
 that variant's RAM on every variant.  What BP4.6 does *not* do is hand the RAM to
-anyone: the deployment's untypeds are fixed before the variant is known, and
-making them a function of it is **BP4.7**.
+anyone; that is BP4.7's (the paragraph below).
+
+**BP4.7 — the RAM the boot maps is the RAM the root task owns** (`v0.36.2`).
+Four things new code must respect.  (1) **A deployment's objects are a function
+of the variant**: `rpi5PlatformConfigFromDtb` and the device-tree wrapper take
+`initialObjectsFor : BCM2712Config → List ObjectEntry` and apply it to
+`rpi5VariantFor dt.machineConfig`, the variant the board check just read, and
+the RPi5 deployment's is `rpi5InitialObjectsFor v`; a caller whose objects do
+not depend on the board passes a constant function.  The variant-independent
+`rpi5InitialObjects` and `rpi5RootTaskCNode` are retired, with a Tier 3
+negative.  (2) **The untypeds are derived from the extensions, never listed**:
+`rpi5RootTaskRamUntypeds v` is one normal-memory untyped per
+`rpi5BootRamExtensions v` entry, at id `8 + i` and root-CNode slot `7 + i`, and
+`rpi5RootTaskRamUntypeds_regions` states its regions **are** the RAM BP4.6 maps.
+(3) **The boot bounds a CNode's slot count, not its indices**, so
+`rpi5RootTaskCNodeFor_slotsAddressable` decides per variant that every root-CNode
+slot is below sixteen; nine extensions fit, and a variant needing more must
+widen the root CNode's radix.  (4) **The coverage is the direction the placement
+conjunct cannot state**: `untypedPlacementRespected` bounds the untypeds from
+above, and `rpi5InitialObjectsFor_covers_ram` says every RAM address outside the
+kernel's reserved extent lies in some root-task untyped, on every board, with
+`rpi5DeploymentBootStateAt_ramUntypedInstalled` that the boot installs each.
+`BootEntryContract.lean`'s `approvedBootCall` did not move; the object function
+is data like the rest of the wrapper's arguments.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

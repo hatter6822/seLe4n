@@ -1341,7 +1341,7 @@ private def variantMap (gib : Nat) : List MemoryRegion :=
 (`RPi5.kernelMain`), so this is its pure half: the bridge, then the checked
 idle-thread boot on the binding's cores.  `none` is the halt. -/
 private def kernelEntryBoot? (blob : ByteArray) : Option (PlatformConfig × IntermediateState) :=
-  match rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjects none with
+  match rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjectsFor none with
   | .error _ => none
   | .ok config =>
       match bootFromPlatformCheckedWithIdleThreadsFor
@@ -1367,7 +1367,7 @@ def deviceTreeBridge_01_fixture_blob_parses : IO Unit := do
 configuration carries the device tree's machine map plus the caller's
 deployment half. -/
 def deviceTreeBridge_02_matching_board_accepted : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000) [] (fun _ => []) none with
   | .error _ => expect "RR7.27-02 matching board accepted" false
   | .ok config =>
       expect "RR7.27-02 matching board accepted" true
@@ -1384,7 +1384,7 @@ PR #892 review round 2 moved the bar from the fixed 4 GiB map to the family's
 smallest member — 512 MiB is short of every Raspberry Pi 5 ever shipped, where
 1 GiB (the old fixture) is a board this image is built for. -/
 def deviceTreeBridge_03_short_ram_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) [] (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       expect "RR7.27-03 short-RAM board refused" true
   | _ => expect "RR7.27-03 short-RAM board refused" false
@@ -1393,7 +1393,7 @@ def deviceTreeBridge_03_short_ram_refused : IO Unit := do
 binding programs is refused — the half a RAM-only check would miss.  Same RAM,
 same header; only the peripheral nodes are gone. -/
 def deviceTreeBridge_04_missing_mmio_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000 (withMmio := false)) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000 (withMmio := false)) [] (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       expect "RR7.27-04 board without the binding's MMIO refused" true
   | _ => expect "RR7.27-04 board without the binding's MMIO refused" false
@@ -1401,7 +1401,7 @@ def deviceTreeBridge_04_missing_mmio_refused : IO Unit := do
 /-- WS-RR RR7.27: an unparseable blob is refused as such, not as a mismatched
 board — the two refusals mean different things to an operator. -/
 def deviceTreeBridge_05_unparseable_blob_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (ByteArray.mk #[0x00, 0x01, 0x02, 0x03]) [] [] none with
+  match rpi5PlatformConfigFromDtb (ByteArray.mk #[0x00, 0x01, 0x02, 0x03]) [] (fun _ => []) none with
   | .error (.unparseableBlob _) =>
       expect "RR7.27-05 unparseable blob refused as unparseable" true
   | _ => expect "RR7.27-05 unparseable blob refused as unparseable" false
@@ -1425,13 +1425,13 @@ def deviceTreeBridge_06_coverage_is_refusable : IO Unit := do
 Raspberry Pi 5 are accepted, and the hardware boot binds each board's **own**
 variant, not the 4 GiB map the bridge used to demand of every board. -/
 def deviceTreeBridge_07_small_variants_bind_their_own_map : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x40000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x40000000) [] (fun _ => []) none with
   | .error _ => expect "PR892-07 1 GiB board accepted" false
   | .ok config =>
       expect "PR892-07 1 GiB board accepted" true
       expect "PR892-07 1 GiB board binds the 1 GiB variant"
         (decide (boundMapOf config = variantMap 1))
-  match rpi5PlatformConfigFromDtb (boardDtb 0x80000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x80000000) [] (fun _ => []) none with
   | .error _ => expect "PR892-07 2 GiB board accepted" false
   | .ok config =>
       expect "PR892-07 2 GiB board accepted" true
@@ -1444,7 +1444,7 @@ def deviceTreeBridge_07_small_variants_bind_their_own_map : IO Unit := do
 configuration — the selection is the largest covered variant, and the 8 GiB
 member needs RAM above 4 GiB this board does not report. -/
 def deviceTreeBridge_08_canonical_board_binds_canonical_map : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000) [] (fun _ => []) none with
   | .error _ => expect "PR892-08 4 GiB board accepted" false
   | .ok config =>
       expect "PR892-08 4 GiB board binds the canonical map"
@@ -1456,7 +1456,7 @@ the model's high region — binds the 8 GiB variant, whose map is contained in
 the report.  Two `reg` pairs, so the fixture is the shape a real blob has. -/
 def deviceTreeBridge_09_eight_gib_as_reported : IO Unit := do
   let blob := boardDtbRegions [(0, 0xFC000000), (0x100000000, 0x104000000)]
-  match rpi5PlatformConfigFromDtb blob [] [] none with
+  match rpi5PlatformConfigFromDtb blob [] (fun _ => []) none with
   | .error _ => expect "PR892-09 8 GiB board accepted" false
   | .ok config =>
       expect "PR892-09 config carries both reported regions"
@@ -1468,7 +1468,7 @@ def deviceTreeBridge_09_eight_gib_as_reported : IO Unit := do
 covers — 3 GiB is accepted and runs on the 2 GiB map.  The lost-resource
 direction: the boot declares less RAM than the board has and never more. -/
 def deviceTreeBridge_10_between_variants_binds_largest_covered : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0xC0000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0xC0000000) [] (fun _ => []) none with
   | .error _ => expect "PR892-10 3 GiB board accepted" false
   | .ok config =>
       expect "PR892-10 3 GiB board binds the 2 GiB variant"
@@ -1479,7 +1479,7 @@ of RAM at a foreign base covers no variant — the binding checks *where* the
 RAM is, not how much — so the board is refused, not bound the 4 GiB map over
 memory the BCM2712 does not put there. -/
 def deviceTreeBridge_11_foreign_base_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtbRegions [(0x40000000, 0x100000000)]) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtbRegions [(0x40000000, 0x100000000)]) [] (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       expect "PR892-11 RAM at a foreign base refused" true
   | _ => expect "PR892-11 RAM at a foreign base refused" false
@@ -1489,7 +1489,7 @@ a 4 GiB board reported as two adjacent halves binds the canonical map, where
 the single-entry reading refused it. -/
 def deviceTreeBridge_12_split_aperture_binds_canonical_map : IO Unit := do
   let blob := boardDtbRegions [(0, 0x80000000), (0x80000000, 0x7C000000)]
-  match rpi5PlatformConfigFromDtb blob [] [] none with
+  match rpi5PlatformConfigFromDtb blob [] (fun _ => []) none with
   | .error _ => expect "PR892-12 split-aperture board accepted" false
   | .ok config =>
       expect "PR892-12 split-aperture board binds the canonical map"
@@ -1500,7 +1500,7 @@ def deviceTreeBridge_12_split_aperture_binds_canonical_map : IO Unit := do
   -- The walk stops at the gap (`memoryRegionCovered_gap_refused`); what the
   -- boot does with that is the lost-resource direction, never a false claim.
   let gapped := boardDtbRegions [(0, 0x80000000), (0x80200000, 0x7BE00000)]
-  match rpi5PlatformConfigFromDtb gapped [] [] none with
+  match rpi5PlatformConfigFromDtb gapped [] (fun _ => []) none with
   | .error _ => expect "PR892-12 NEGATIVE: a gapped board still boots on what it covers" false
   | .ok config =>
       expect "PR892-12 NEGATIVE: a gap between the halves refuses the 4 GiB member"
@@ -1539,7 +1539,7 @@ def deviceTreeBridge_22_every_register_block_is_a_window : IO Unit := do
       (dt.peripherals.any (fun d => d.base.toNat == 0xFF841000))
     expect "RR892-22 the CPU-interface window is present too"
       (dt.peripherals.any (fun d => d.base.toNat == 0xFF842000 && d.size == 0x2000))
-  match rpi5PlatformConfigFromDtb singleGicNodeBoardDtb [] [] none with
+  match rpi5PlatformConfigFromDtb singleGicNodeBoardDtb [] (fun _ => []) none with
   | .ok _ => expect "RR892-22 the board is accepted" true
   | .error _ => expect "RR892-22 the board is accepted" false
 
@@ -1590,7 +1590,7 @@ def deviceTreeBridge_18_every_memory_node_contributes : IO Unit := do
       (ram.any (fun r => r.base.toNat == 0x100000000))
   -- And the bridge binds the variant the two nodes together cover, not the one
   -- the first node alone would: 8 GiB, whose map the binding installs.
-  match rpi5PlatformConfigFromDtb twoMemoryNodeDtb [] [] none with
+  match rpi5PlatformConfigFromDtb twoMemoryNodeDtb [] (fun _ => []) none with
   | .error _ => expect "RR892-18 the two-node board is accepted" false
   | .ok config =>
     expect "RR892-18 the bound map is the 8 GiB variant's"
@@ -1637,7 +1637,7 @@ def deviceTreeBridge_14_unterminated_blob_refused : IO Unit := do
   match DeviceTree.fromDtbFull unterminatedBoardDtb rpi5MachineConfig.physicalAddressWidth with
   | .ok _ => expect "RR892-14 an unterminated structure block is refused" false
   | .error _ => expect "RR892-14 an unterminated structure block is refused" true
-  match rpi5PlatformConfigFromDtb unterminatedBoardDtb [] [] none with
+  match rpi5PlatformConfigFromDtb unterminatedBoardDtb [] (fun _ => []) none with
   | .ok _ => expect "RR892-14 the bridge refuses it too" false
   | .error _ => expect "RR892-14 the bridge refuses it too" true
 
@@ -1659,7 +1659,7 @@ def deviceTreeBridge_16_disabled_memory_refused : IO Unit := do
     | .ok _ => expect "RR892-16 a withheld memory node is refused" false
     | .error _ => expect "RR892-16 a withheld memory node is refused" true
   for status in ["okay", "ok"] do
-    match rpi5PlatformConfigFromDtb (boardDtbWithMemoryStatus status) [] [] none with
+    match rpi5PlatformConfigFromDtb (boardDtbWithMemoryStatus status) [] (fun _ => []) none with
     | .ok _ => expect "RR892-16 an operational memory node is accepted" true
     | .error _ => expect "RR892-16 an operational memory node is accepted" false
 
@@ -1702,9 +1702,18 @@ def review8_mmio_windows_require_the_right_devices : IO Unit := do
     expect "NEGATIVE review8 the wrong devices do not satisfy the binding"
       (!deviceTreeCoversMmioRegions dt requiredMmioWindows)
   -- And the bridge refuses the board rather than binding it.
-  match rpi5PlatformConfigFromDtb wrongDevicesAtRightWindowsDtb [] [] none with
+  match rpi5PlatformConfigFromDtb wrongDevicesAtRightWindowsDtb [] (fun _ => []) none with
   | .ok _ => expect "NEGATIVE review8 the bridge refuses the wrong-device board" false
   | .error _ => expect "NEGATIVE review8 the bridge refuses the wrong-device board" true
+
+/-- The number of RAM regions above the guaranteed gigabyte each fixture
+variant has, written by hand from `rpi5MemoryMapForConfig` rather than
+computed, so the check below compares the derivation against the map. -/
+private def ramUntypedCount : Nat → Nat
+  | 1 => 0
+  | 8 => 2
+  | 16 => 2
+  | _ => 1
 
 /-- **WS-BP BP4.4**: the deployment the hardware entry installs boots on every
 board the device tree describes — 1, 2, 3 (bound as 2), 4 and 8 GiB — binding
@@ -1726,6 +1735,30 @@ def kernelEntry_boots_the_deployment_on_every_variant : IO Unit := do
           (decide (boundMapOf config = variantMap gib))
         expect s!"BP4.4 the {name} board installs both separation witnesses"
           (declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := RPi5Platform)))
+        -- WS-BP BP4.7: the RAM the boot maps above the gigabyte is the RAM the
+        -- root task owns — one installed untyped per extension of the bound
+        -- variant, over exactly that extension, named by the root CNode at
+        -- slot `7 + i`, and no untyped id past the last.
+        let exts := rpi5BootRamExtensions (rpi5VariantFor config.machineConfig)
+        expect s!"BP4.7 the {name} board has {ramUntypedCount gib} RAM untyped(s) above 1 GiB"
+          (decide (exts.length = ramUntypedCount gib))
+        let rootSlots : List (SeLe4n.Slot × Capability) :=
+          match ist.state.objects[rpi5RootTaskCNodeId]? with
+          | some (.cnode cn) => cn.slots.toList
+          | _ => []
+        for (e, i) in exts.zipIdx do
+          let installed := match ist.state.objects[rpi5RootTaskRamUntypedId i]? with
+            | some (.untyped ut) =>
+                decide (ut.regionBase.toNat = e.1) && decide (ut.regionSize = e.2) && !ut.isDevice
+            | _ => false
+          expect s!"BP4.7 the {name} board installs untyped {i} over its extension {i}" installed
+          expect s!"BP4.7 the {name} root CNode names untyped {i} at slot {7 + i} with retype"
+            (rootSlots.any fun (sl, cap) =>
+              decide (sl = rpi5RootTaskRamUntypedSlot i) &&
+                decide (cap.target = .object (rpi5RootTaskRamUntypedId i)) &&
+                cap.rights.mem .retype)
+        expect s!"BP4.7 the {name} board installs no RAM untyped past the last extension"
+          (ist.state.objects[rpi5RootTaskRamUntypedId exts.length]?).isNone
   expect "BP4.4 NEGATIVE: a board short of the smallest variant boots nothing"
     (kernelEntryBoot? (boardDtb 0x20000000)).isNone
   expect "BP4.4 NEGATIVE: an empty blob — what the HAL hands over for an unreadable pointer — boots nothing"

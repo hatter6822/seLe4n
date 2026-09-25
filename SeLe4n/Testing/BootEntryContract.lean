@@ -113,7 +113,7 @@ this situation — code this project writes, which does not exist yet: *require 
 canonical spelling and refuse the rest.*  The entry's body must **be** the
 approved boot applied to a configuration:
 
-    fun dtb => Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb irqTable objects root
+    fun dtb => Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb irqTable objectsFor root
 
 Every question the walk approximated is then either answered exactly or has no
 subject.  Does the boot execute?  The entry *is* the boot.  Does anything
@@ -126,8 +126,9 @@ contract *stronger* than the walk it replaces, not weaker: that one permitted
 arbitrary extra actions provided none of them wrote kernel state.
 
 The arguments are where the strength comes from, and it is type-theoretic
-rather than analysed: an IRQ table, an object list and an optional root are
-**data**.  A term of those types performs no effects, installs nothing, cannot
+rather than analysed: an IRQ table, an object list per RAM variant (WS-BP
+BP4.7 — a pure function of the variant the parse selects) and an optional root
+are **data**.  A term of those types performs no effects, installs nothing, cannot
 halt and has no monadic structure, so no walk over it is needed or possible.
 The blob is not even that free: it must be the entry's **own parameter**
 (WS-BP BP4.4), so an entry that boots a fixed blob, or edits the firmware's
@@ -247,13 +248,14 @@ application after reduction, and the head-directed reduction says so. -/
 
 /-- An alias of the approved boot, for the acceptance witness below. -/
 private def bootEntryWitnessBootAlias : ByteArray → List Platform.Boot.IrqEntry →
-    List Platform.Boot.ObjectEntry → Option Platform.Boot.BootVSpaceRootEntry → BaseIO Unit :=
+    (Platform.RPi5.BCM2712Config → List Platform.Boot.ObjectEntry) →
+    Option Platform.Boot.BootVSpaceRootEntry → BaseIO Unit :=
   Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt
 
 /-- The shape the entry must have, at the type its `extern "C"`
 declaration is called at. -/
 private def bootEntryWitnessCompliant (dtb : ByteArray) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] (fun _ => []) none
 
 /-- The approved call reached through a `do` chain.  **Refused** since round 21,
 where the walk accepted it: a sequence is an arbitrary `BaseIO` program in the
@@ -263,7 +265,7 @@ program cannot be analysed — a lawless `Bind`, an `opaque` body, a halt, a
 boot and nothing else. -/
 private def bootEntryWitnessSequenced (dtb : ByteArray) : BaseIO Unit := do
   let _ ← Platform.FFI.getKernelState
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] (fun _ => []) none
 
 /-- The configuration bound by a `let` — round 21's finding, in the position it
 was reported at.  **Accepted**: the reduction zeta-reduces, so this *is* the
@@ -271,27 +273,27 @@ approved application, and no `letE` arm has to be written to see it. -/
 private def bootEntryWitnessLetBoundConfig (dtb : ByteArray) : BaseIO Unit :=
   let irqTable : List Platform.Boot.IrqEntry := []
   let blob := dtb
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt blob irqTable [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt blob irqTable (fun _ => []) none
 
 /-- The same program reached through an alias of the approved call.
 **Accepted**, and it is what keeps the contract from being a name match: the
 alias is a different constant and the same program, which is exactly the
 distinction definitional equality makes and a spelling comparison does not. -/
 private def bootEntryWitnessAliasedBoot (dtb : ByteArray) : BaseIO Unit :=
-  bootEntryWitnessBootAlias dtb [] [] none
+  bootEntryWitnessBootAlias dtb [] (fun _ => []) none
 
 /-- **WS-BP BP4.4**: the approved call on a blob the entry did **not** receive.
 Every token is present and the type is right; the device tree the board check
 reads is a constant, so an image on the wrong board would boot as though it
 were the right one. -/
 private def bootEntryWitnessFixedBlob (_dtb : ByteArray) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt ByteArray.empty [] [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt ByteArray.empty [] (fun _ => []) none
 
 /-- **WS-BP BP4.4**: the approved call on an *edited* copy of the firmware's
 blob.  Pure, so it cannot bypass the boot — and still refused, because what the
 board check must read is the tree the firmware handed over. -/
 private def bootEntryWitnessEditedBlob (dtb : ByteArray) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt (dtb.push 0) [] [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt (dtb.push 0) [] (fun _ => []) none
 
 /-- **WS-BP BP4.4**: the *retired* approved call — the checked boot on a
 configuration no device tree was checked against.  It was the entry until this
@@ -304,20 +306,20 @@ private def bootEntryWitnessRetiredCall (_dtb : ByteArray) : BaseIO Unit :=
 reachable; on the path any real device tree takes, nothing boots. -/
 private def bootEntryWitnessConditional (dtb : ByteArray) : BaseIO Unit :=
   if dtb.size == 0 then
-    Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
+    Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] (fun _ => []) none
   else pure ()
 
 /-- Parks the PE and *then* boots (PR #889 review round 20).  Every token is
 present, the `Bind` instance is canonical, and the boot is unreachable. -/
 private def bootEntryWitnessHaltedFirst (dtb : ByteArray) : BaseIO Unit := do
   Platform.FFI.ffiFatalHaltAll
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] (fun _ => []) none
 
 /-- The same through an *alias* of the primitive, so a name match is not what
 decides it. -/
 private def bootEntryWitnessAliasHaltedFirst (dtb : ByteArray) : BaseIO Unit := do
   Kernel.Concurrency.fatalHaltAll
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] (fun _ => []) none
 
 /-- Round 21's reported case, verbatim: the halt reached through a `let`-bound
 name, so the first action's head is a bound variable rather than a constant.
@@ -327,7 +329,7 @@ first action is. -/
 private def bootEntryWitnessLetBoundHalt (dtb : ByteArray) : BaseIO Unit := do
   let halt := Platform.FFI.ffiFatalHaltAll
   halt
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] (fun _ => []) none
 
 /-! The bogus-monad witness (PR #889 review round 19).  `BootEntryBogusMonad α`
 is definitionally `BaseIO Unit`, so an application of `Bind.bind` at *this*
@@ -343,7 +345,7 @@ never runs it.  The head is `Bind.bind` and the entry's type is right; only the
 *instance* distinguishes this from the sequenced witness. -/
 private def bootEntryWitnessBogusBind (dtb : ByteArray) : BaseIO Unit :=
   @Bind.bind BootEntryBogusMonad inferInstance PUnit PUnit
-    (Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none)
+    (Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] (fun _ => []) none)
     (fun _ => (pure () : BaseIO Unit))
 
 /-- An `opaque` alias of a kernel-state installer (PR #889 review round 19).
@@ -355,20 +357,20 @@ private opaque bootEntryWitnessOpaqueInstaller : Model.SystemState → BaseIO Un
 /-- Boots through the approved call and then installs state through that
 opaque alias. -/
 private def bootEntryWitnessOpaqueBypass (dtb : ByteArray) : BaseIO Unit := do
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] (fun _ => []) none
   bootEntryWitnessOpaqueInstaller default
 
 /-- Keeps the approved call and takes the *wrong* argument type (PR #889 review
 round 18; the type moved at WS-BP BP4.3).  A C symbol carries no type, so this
 links and Rust then calls it with a boxed `ByteArray` in an unboxed position. -/
 private def bootEntryWitnessWrongType (dtbPointer : UInt64) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt (ByteArray.mk #[dtbPointer.toUInt8]) [] [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt (ByteArray.mk #[dtbPointer.toUInt8]) [] (fun _ => []) none
 
 /-- Keeps the device-tree bridge, the `match`, the `.error` arm and the halt,
 and installs the state itself — so a *later* change to what the checked boot
 establishes would not reach the live state. -/
 private def bootEntryWitnessBypass (dtb : ByteArray) : BaseIO Unit := do
-  match Platform.FFI.rpi5PlatformConfigFromDtb dtb [] [] none with
+  match Platform.FFI.rpi5PlatformConfigFromDtb dtb [] (fun _ => []) none with
   | .error _ => Platform.FFI.ffiFatalHaltAll
   | .ok config =>
       match ← Platform.FFI.bootAndInitialiseRPi5 config with
@@ -377,7 +379,7 @@ private def bootEntryWitnessBypass (dtb : ByteArray) : BaseIO Unit := do
 
 /-- Keeps the approved call *and* installs state beside it. -/
 private def bootEntryWitnessSideInstall (dtb : ByteArray) : BaseIO Unit := do
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] (fun _ => []) none
   Platform.FFI.initialiseKernelState default
 
 /-- Installs nothing at all: the image would idle with no kernel. -/

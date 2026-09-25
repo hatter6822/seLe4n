@@ -20,7 +20,8 @@ The argument is the firmware's flattened device tree, copied by the HAL into a
 Lean `ByteArray` (WS-BP BP4.3; an unreadable pointer is handed over as the empty
 array, which the parser refuses).  The entry is the device-tree boot with its
 failure handled, `Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`, applied to
-that blob and to BP3's deployment — and nothing else.  That is not a style
+that blob and to BP3's deployment — whose objects are a function of the variant
+the parse selects (WS-BP BP4.7) — and nothing else.  That is not a style
 choice: `SeLe4n/Testing/BootEntryContract.lean` requires exactly this program,
 decided by the elaborator, so an entry that sequenced another action around the
 boot, installed state beside it, or booted a blob it did not receive would fail
@@ -45,12 +46,12 @@ namespace SeLe4n.Platform.RPi5
 HAL owns the copy and hands its one reference over. -/
 @[export lean_kernel_main]
 def kernelMain (dtb : ByteArray) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjects none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjectsFor none
 
 /-- **WS-BP BP4.4**: a device tree the bridge refuses — unparseable, or a board
 that is not the one this image was built for — boots nothing: every PE halts. -/
 theorem kernelMain_refuses (dtb : ByteArray) (e : Platform.FFI.DeviceTreeBootRefusal)
-    (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5IrqTable rpi5InitialObjects none =
+    (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5IrqTable rpi5InitialObjectsFor none =
       .error e) :
     kernelMain dtb = Platform.FFI.ffiFatalHaltAll :=
   Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt_unparseable _ _ _ _ e h
@@ -60,9 +61,13 @@ boot state on the variant the board's account selects, and the binding's
 labeling context, and nothing else — the halting boot's halt arm is never taken
 on it (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`, over every
 account).  **WS-BP BP4.6**: first it maps that variant's RAM above the
-guaranteed gigabyte — the same variant the installed state is of. -/
+guaranteed gigabyte — the same variant the installed state is of.  **WS-BP
+BP4.7**: and the installed state's objects are that variant's too
+(`rpi5InitialObjectsFor`), so the RAM just mapped is the RAM the root task's
+untypeds describe (`rpi5RootTaskRamUntypeds_regions`,
+`rpi5DeploymentBootStateAt_ramUntypedInstalled`). -/
 theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformConfig)
-    (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5IrqTable rpi5InitialObjects none =
+    (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5IrqTable rpi5InitialObjectsFor none =
       .ok config) :
     kernelMain dtb =
       (do

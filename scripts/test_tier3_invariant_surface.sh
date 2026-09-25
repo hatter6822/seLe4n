@@ -3928,7 +3928,7 @@ run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode ho
 # expected-unresolved symbol left.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.RPi5\.KernelMain$' SeLe4n.lean
 # WS-BP BP4.4: the entry is the device-tree boot on the blob it receives.
-run_check "INVARIANT" rg -U -n '^@\[export lean_kernel_main\]\ndef kernelMain \(dtb : ByteArray\) : BaseIO Unit :=\n  Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjects none$' SeLe4n/Platform/RPi5/KernelMain.lean
+run_check "INVARIANT" rg -U -n '^@\[export lean_kernel_main\]\ndef kernelMain \(dtb : ByteArray\) : BaseIO Unit :=\n  Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjectsFor none$' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^theorem kernelMain_installs($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^theorem kernelMain_refuses($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^def approvedBootCall : Name := `SeLe4n\.Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
@@ -4987,6 +4987,20 @@ run_check "INVARIANT" rg -U -n '^pub extern "C" fn ffi_extend_boot_ram_map\(base
 run_check "INVARIANT" rg -n 'fn a_refused_extension_writes_nothing' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '\["extend", base, size\] => variants' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^extend 0x100000000 0x300000000$' tests/fixtures/boot_map.expected
+# WS-BP BP4.7: the RAM the boot maps above the gigabyte is handed to the root
+# task.  The deployment's objects are a function of the variant, the bridge
+# applies it to the variant its parse selected, the RAM untypeds are DERIVED
+# from the same extensions BP4.6 maps, and the coverage and installation
+# theorems exist.  The retired variant-independent object list must not return.
+run_check "INVARIANT" rg -U -n '^        \.ok \(SeLe4n\.Platform\.Boot\.PlatformConfig\.fromDeviceTree dt irqTable\n          \(initialObjectsFor \(SeLe4n\.Platform\.RPi5\.rpi5VariantFor dt\.machineConfig\)\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -U -n '^def rpi5RootTaskRamUntypeds \(v : BCM2712Config\) : List \(SeLe4n\.ObjId × UntypedObject\) :=\n  \(rpi5BootRamExtensions v\)\.mapIdx fun i e =>$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -U -n '^def rpi5InitialObjectsFor \(v : BCM2712Config\) : List ObjectEntry :=[^\n]*(\n([ \t][^\n]*)?)*?  \(rpi5RootTaskRamUntypeds v\)\.map fun u => untypedEntry u\.1 u\.2$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -U -n '^def rpi5PlatformConfigFor \(board : SeLe4n\.MachineConfig\) : PlatformConfig :=\n  \{ irqTable := rpi5IrqTable\n    initialObjects := rpi5InitialObjectsFor \(rpi5VariantFor board\)$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5RootTaskRamUntypeds_regions($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5InitialObjectsFor_covers_ram($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_ramUntypedInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5RootTaskCNodeFor_slotsAddressable($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_negative_check "INVARIANT" rg -n '\brpi5InitialObjects\b|\brpi5RootTaskCNode\b' SeLe4n tests
 # The re-type operand must NOT regress to the bare domain-wide invalidate.
 run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
 # The scrubbed extent has exactly ONE definition, and both the scrub and the
@@ -14120,6 +14134,7 @@ open SeLe4n.Platform.FFI
 #check @rpi5PlatformConfigFromDtb_refuses_foreign_board
 #check @rpi5PlatformConfigFromDtb_refuses_missing_mmio
 #check @rpi5PlatformConfigFromDtb_ok_machineConfig
+#check @rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree
 #check @bootAndInitialiseRPi5FromDtbOrHalt
 #check @bootAndInitialiseRPi5FromDtbOrHalt_unparseable
 #check @bootAndInitialiseRPi5FromDtbOrHalt_accepted

@@ -98,9 +98,9 @@ security model) от seL4, вводя при этом архитектурные
 |---------|----------|
 | **Версия** | `0.36.2` |
 | **Тулчейн Lean** | `v4.28.0` |
-| **Продуктовый код (Lean LoC)** | 420 527 строк в 343 файлах |
-| **Тестовый код (Lean LoC)** | 85 428 строк в 71 тест-сьюте |
-| **Доказанные декларации** | 13 922 декларации theorem/lemma (ноль sorry/axiom) |
+| **Продуктовый код (Lean LoC)** | 420 685 строк в 343 файлах |
+| **Тестовый код (Lean LoC)** | 85 461 строка в 71 тест-сьюте |
+| **Доказанные декларации** | 13 928 деклараций theorem/lemma (ноль sorry/axiom) |
 | **Целевое оборудование** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Канонический аудит** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — комплексный предрелизный аудит 1.0 (202 результата; устранены WS-AK AK1–AK10; в архиве) |
 | **Последний аудит** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — аудит готовности перед 1.0, выполненный после закрытия WS-AN (сменяет ныне архивированный [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), замечания которого устранены WS-AN AN0–AN12). WS-RC R0..R5 LANDED в v0.31.2; WS-RC R6..R14 поглощены WS-SM согласно карте поглощения SM0.Q.1 (см. [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Активный план рабочего потока: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |

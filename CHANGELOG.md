@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3 and BP4.1–BP4.6: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3 and BP4.1–BP4.7: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -924,6 +924,35 @@ configuration, and the proof that it boots.
   - What it does not do: hand the RAM to anyone.  The deployment's untypeds are
     fixed before the variant is known, so making them a function of the variant
     is **BP4.7**, added to the plan by this cut (48 sub-tasks).
+- **BP4.7 — the RAM the boot maps above the gigabyte is handed to the root
+  task.**
+  - The bridge takes the objects as a function of the variant.
+    `rpi5PlatformConfigFromDtb` and `bootAndInitialiseRPi5FromDtbOrHalt` take
+    `initialObjectsFor : BCM2712Config → List ObjectEntry` and apply it to
+    `rpi5VariantFor dt.machineConfig`, the variant the board check just read.
+    `kernelMain` passes `rpi5InitialObjectsFor`.
+  - The untypeds are derived, not listed. `rpi5RootTaskRamUntypeds v` is one
+    normal-memory untyped per `rpi5BootRamExtensions v` entry, at id `8 + i`
+    and root-CNode slot `7 + i`. `rpi5RootTaskRamUntypeds_regions` states the
+    regions are exactly the extensions BP4.6 maps. That is two untypeds on the
+    8 and 16 GiB boards, one on 2 and 4 GiB, and none on 1 GiB.
+  - Every gate is decided per variant again, by evaluation.
+    `rpi5RootTaskCNodeFor_slotsAddressable` is new: the boot bounds a CNode's
+    slot count and not its indices, so every root-CNode slot is shown to be
+    below sixteen.
+  - `rpi5InitialObjectsFor_covers_ram` states the direction the placement
+    conjunct cannot: every RAM address outside the kernel's reserved extent
+    lies in some root-task untyped, on every board.
+    `rpi5DeploymentBootStateAt_ramUntypedInstalled` states that the boot
+    installs each one.
+  - `BootEntryContract.lean`'s `approvedBootCall` is unchanged. Its witnesses
+    take the wrapper's new argument, which is data like the rest.
+  - Retired: the variant-independent `rpi5InitialObjects` and
+    `rpi5RootTaskCNode`, refused by a Tier 3 negative.
+  - Tests: `tests/Ak9PlatformSuite.lean` checks, on 1, 2, 3, 4 and 8 GiB device
+    trees, each installed RAM untyped against its extension and its root-CNode
+    capability (with `retype`). It also checks that no untyped id exists past
+    the last extension.
 - **Tests.**
   - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
     admitted with its ASID registered, beside the binding's; ASID collisions are
@@ -938,7 +967,7 @@ configuration, and the proof that it boots.
     badge. Reverting the check is caught when the build fails:
     `bootSafeObjectCheck_sound` stops elaborating.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.6)
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

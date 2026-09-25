@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.2): 420,527 lines of production Lean across 343 files, 85,428 lines across 71 Lean test suites,
-13,922 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.36.2): 420,685 lines of production Lean across 343 files, 85,461 lines across 71 Lean test suites,
+13,928 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -116,8 +116,10 @@ variant, which is proved for all five.  **BP4.5** cleans the image's loaded
 bytes to the Point of Unification before any thread can fetch, so an initial
 task's code is fetched as the firmware loaded it.  **BP4.6** maps the RAM a
 larger board has above the guaranteed gigabyte, once the verified parse has
-chosen the variant, and seals the boot map before any secondary is released.
-BP4.7 and BP5..BP8 have not started.
+chosen the variant, and seals the boot map before any secondary is released,
+and **BP4.7** hands that RAM to the root task as untypeds, so on every board no
+RAM outside the kernel's reserved extent is left unowned.  BP5..BP8 have not
+started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core
