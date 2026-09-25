@@ -11,6 +11,7 @@
  * the address used by U-Boot and the RPi firmware bootloader).
  *
  * Section order: .text.boot → .text.vectors → .text → .rodata → .data → .bss
+ *   → .stack → .smp_stacks → .lean_heap → .dtb_window (all NOLOAD from .bss)
  */
 
 ENTRY(_start)
@@ -31,6 +32,14 @@ LEAN_HEAP_SIZE = 64M;
  * scripts/check_link_script.py hold all three together.  Written in hex on one
  * line, which is the form both of those read. */
 KERNEL_RESERVED_END = 0x10000000;
+
+/* WS-BP BP5.3: the size of the window the image build places the device tree
+ * in (`.dtb_window` below).  It is `cmdline::MAX_DTB_SIZE`, the bound every
+ * reader of the blob enforces before it forms a slice and the extent
+ * `mmu::dtb_window` takes from the pointer, so a blob the firmware writes
+ * inside the window is the whole of what the kernel may dereference.  The
+ * HAL's test holds the two equal.  Hex on one line, as above. */
+DTB_WINDOW_SIZE = 0x200000;
 
 MEMORY
 {
@@ -152,6 +161,22 @@ SECTIONS
         __lean_heap_end = .;
     } > RAM
 
+    /* WS-BP BP5.3: the device tree's window.  `NOLOAD`, so the image file
+     * carries nothing here: the firmware writes the blob here because the
+     * image build's `config.txt` names `[__dtb_window_start,
+     * __dtb_window_end)` as `device_tree_address` / `device_tree_end`
+     * (`scripts/build_rpi5_image.sh`).  After the Lean heap, so it is
+     * disjoint from `[_start, __lean_heap_end)`, the memory the image owns;
+     * inside the kernel's reserved extent, so no boot untyped can describe it
+     * (BP3.2) -- the two conditions `mmu::dtb_window_admissible` refuses a
+     * device tree without.  The linker places it, so the placement is a
+     * relation this link checks rather than an address a script computes. */
+    .dtb_window (NOLOAD) : ALIGN(4096) {
+        __dtb_window_start = .;
+        . += DTB_WINDOW_SIZE;
+        __dtb_window_end = .;
+    } > RAM
+
     /* Discard unneeded sections */
     /DISCARD/ : {
         *(.comment)
@@ -173,6 +198,13 @@ ASSERT(__lean_heap_end <= 0x40000000, "the image, Lean heap included, must end i
  * reserved extent, which is page aligned and inside the guaranteed RAM. */
 ASSERT(__lean_heap_end <= KERNEL_RESERVED_END, "the image, Lean heap included, must end inside the kernel's reserved extent")
 ASSERT(KERNEL_RESERVED_END % 4096 == 0 && KERNEL_RESERVED_END <= 0x40000000, "the kernel's reserved extent must be whole pages inside the smallest RPi5's RAM")
+
+/* WS-BP BP5.3: the device tree's window is the size every reader bounds a
+ * blob by, on a page, after the Lean heap and inside the reserved extent --
+ * so the address `config.txt` pins is one `init_mmu` accepts. */
+ASSERT(__dtb_window_end - __dtb_window_start == DTB_WINDOW_SIZE && __dtb_window_start % 4096 == 0, "the device tree's window must be DTB_WINDOW_SIZE bytes on a 4 KiB page")
+ASSERT(__dtb_window_start >= __lean_heap_end, "the device tree's window must lie after the Lean heap, outside the memory the image owns")
+ASSERT(__dtb_window_end <= KERNEL_RESERVED_END, "the device tree's window must end inside the kernel's reserved extent")
 
 /* WS-BP BP2.6: the permission boundaries `mmu::ImageLayout::is_well_formed`
  * requires — each on a page, the text non-empty and ahead of the read-only

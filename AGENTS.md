@@ -7147,7 +7147,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5.1 and BP5.2 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2 and BP5.3 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots); BP5.3..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots), and **BP5.3** (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it); BP5.4..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7423,8 +7423,8 @@ the image where the map does not reach.  (4) **`init_mmu` reads nothing of the
 blob** (a Tier 3 negative refuses any `cmdline` call in its body).  It only
 checks that `dtb_window` — `MAX_DTB_SIZE` from the pointer, the bound every
 reader enforces before forming a slice — lies in guaranteed RAM and outside
-`[_start, __lean_heap_end)`, and refuses otherwise; BP5.3's `config.txt` is to
-pin the placement.  (5) **The bootargs reader stays, in Rust, with translation on**:
+`[_start, __lean_heap_end)`, and refuses otherwise; BP5.3's `config.txt` pins
+the placement to `link.ld`'s `.dtb_window`.  (5) **The bootargs reader stays, in Rust, with translation on**:
 it is a Rust-only question with no Lean counterpart, and the QEMU lanes use it.
 So "is this structure block readable" is still two-sided, and the shared corpus
 was **retargeted rather than retired**: its manifest carries a hand-written
@@ -7706,6 +7706,32 @@ linked image, so a change that pulls one in fails the lane.  The cross gate's
 shell expander now resolves a variable whose value names another
 (`ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"`) to a fixpoint;
 one pass in length order left it half-substituted.
+
+**BP5.3 — the firmware's boot files are cut from the image and checked against
+it** (`v0.36.2`).  Four things new code must respect.  (1) **The device tree's
+window is `link.ld`'s**: a `NOLOAD` `.dtb_window` of `DTB_WINDOW_SIZE` after the
+Lean heap, with `ASSERT`s (each proved live by `check_link_script.py`) that it
+is that size on a page, after `__lean_heap_end` and inside
+`KERNEL_RESERVED_END` — the two conditions `mmu::dtb_window_admissible`
+refuses without — and `DTB_WINDOW_SIZE` equals `cmdline::MAX_DTB_SIZE` by the
+HAL's test.  A section added after `.lean_heap` goes before `.dtb_window` or
+moves it, never between it and the reserved extent's end unchecked.  (2)
+**`config.txt` is generated, and a key it does not set is refused**:
+`scripts/rpi5_boot_files.py` writes exactly `arm_64bit`, `kernel`,
+`kernel_address` (the image's entry, `_start` and `ORIGIN`),
+`device_tree_address` and `device_tree_end` (the linker's window), and its
+check refuses an unknown key, a repeated or missing one, and a conditional
+`[...]` section, since each could move the load or the blob where the check did
+not look.  A new firmware option is added to `CONFIG_KEYS` with the relation
+it must hold, never by hand to the file.  (3) **`kernel8.img` has two
+readings that must agree**: `llvm-objcopy -O binary` cuts it, and the check
+rebuilds `[_start, __image_load_end)` from the section headers
+(`check_kernel_image.Section.offset`) and requires byte identity.  (4)
+**Packaging is the Lean-linked image's**: `scripts/build_rpi5_image.sh` runs
+`check_kernel_image.py --lean-kernel` first, `package` always ends in `check`,
+and the archive lane runs the script as step [5/5] over the image it linked,
+which `check_aarch64_cross_target.py` holds (after the image build, not
+exempted from `set -e`).
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

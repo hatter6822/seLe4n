@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1 and BP5.2: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2 and BP5.3: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -1037,6 +1037,60 @@ configuration, and the proof that it boots.
     builds no Lean. Its comments, and the forward-looking "until BP5.2" notes in
     the binary, `Cargo.toml`, `check_link_script.py` and
     `check_fp_simd_free_objects.py`, now say which lane owns which image.
+- **BP5.3 — the Raspberry Pi 5 boot files.** `scripts/build_rpi5_image.sh`
+  writes `kernel8.img` and `config.txt` from the Lean-linked release image and
+  checks both against it. This is the deliverable the release cut's `SM10.1.1`
+  names.
+  - **The device tree's window is placed by `link.ld`.** A new `NOLOAD`
+    section, `.dtb_window`, sits after the Lean heap. It is `DTB_WINDOW_SIZE`
+    bytes (2 MiB), which the HAL's test holds equal to `cmdline::MAX_DTB_SIZE`,
+    the extent `mmu::dtb_window` takes from the pointer. Three new `ASSERT`s
+    require it to be that size on a page, after the heap, and inside the
+    kernel's reserved extent. Those are the two conditions
+    `dtb_window_admissible` refuses a device tree without, so the address
+    `config.txt` pins is one `init_mmu` accepts by construction, rather than
+    one a script computed. `check_link_script.py` checks the relation on the
+    probe link (its seventh), and proves each new `ASSERT` live with a mutation
+    of its own.
+  - **`kernel8.img` is cut, then checked.** The toolchain's
+    `llvm-objcopy -O binary` cuts the file. `scripts/rpi5_boot_files.py` then
+    rebuilds the loaded extent `[_start, __image_load_end)` from the ELF's own
+    section headers and requires the two to be byte-identical. That gives two
+    implementations of "which bytes are the image". `check_kernel_image.py`'s
+    `Section` now records each section's file offset for this.
+  - **`config.txt` sets five keys, each derived from the image:**
+    - `arm_64bit=1` and `kernel=kernel8.img`;
+    - `kernel_address`, which must equal the image's entry, `_start` and
+      `link.ld`'s `ORIGIN`, so the firmware's default load address is never
+      used;
+    - `device_tree_address` and `device_tree_end`, which must be the linker's
+      window: `DTB_WINDOW_SIZE` bytes, 8-byte aligned, inside the reserved
+      extent the Lean side states, and outside `[_start, __lean_heap_end)`.
+      `device_tree_end` bounds what the firmware may write to what every reader
+      bounds what it reads by.
+  - **The check refuses what it cannot vouch for:** an unknown key, a key set
+    twice, a missing key, and a conditional `[...]` section. Any of those could
+    make the firmware load the kernel, or write the blob, somewhere the check
+    did not look.
+  - **Packaging is always followed by checking.** `package` writes the files
+    and then runs `check`; `check` alone re-verifies files already on disk. The
+    shell entry first runs `check_kernel_image.py --lean-kernel`, so a HAL-only
+    image, or one the last archive build did not link, is refused rather than
+    packaged.
+  - **The archive lane packages the image it linked** as its new step [5/5],
+    writing `.lake/build/rpi5-image/`. `check_aarch64_cross_target.py` requires
+    that step to run over the release image, after the image build, and not
+    exempted from `set -e`. There are four new token-preserving cases; the
+    self-test has 106.
+  - **Measured on the real image.** `kernel8.img` is 0x4b5030 bytes, entered
+    at 0x80000, with the device tree pinned to `[0x45b5000, 0x47b5000)`.
+    Changing one byte of the file, or moving `kernel_address` to the firmware's
+    0x200000 default, is refused.
+  - `rpi5_boot_files.py --self-test` (17 cases, each keeping both files present
+    and well-formed and breaking one relation) runs in Tier 0. Eleven Tier 3
+    anchors pin the section, two of its `ASSERT`s, the write-then-check order,
+    the window and entry relations, the unknown-key refusal, the shell's
+    check-before-package order, the lane step and the HAL test.
 - **Tests.**
   - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
     admitted with its ASID registered, beside the binding's; ASID collisions are
@@ -1051,7 +1105,7 @@ configuration, and the proof that it boots.
     badge. Reverting the check is caught when the build fails:
     `bootSafeObjectCheck_sound` stops elaborating.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1, BP5.2)
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.3)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

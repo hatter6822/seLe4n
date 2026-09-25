@@ -131,6 +131,8 @@ ENTRY_GATE_CROSS_FLAG = "--require-cross"
 # the check does not depend on how the lane spells the repository root.
 LEAN_KERNEL_FLAG = "--lean-kernel"
 LEAN_ROOTS_TAIL = f".lake/build/{CROSS_TARGET}/libsele4n.roots.ld"
+# WS-BP BP5.3: and cuts the Raspberry Pi 5 boot files from that image.
+BOOT_FILES_SCRIPT = "scripts/build_rpi5_image.sh"
 LEAN_ARCHIVE_COMPONENTS = ("llvm-tools",)
 HAL_CRATE = "rust/sele4n-hal"
 ORACLE_PKG = "sele4n-hal"
@@ -1289,7 +1291,10 @@ def check_lean_archive_lane(root: str) -> list[str]:
     the last run's archive); `IMAGE_CHECK_SCRIPT` with `--lean-kernel`
     naming the builder's roots script, over `IMAGE_PATH`, after the image
     build; and the FP/SIMD gate over `IMAGE_PATH`, after the image build.
-    Each executed and none exempted from `set -e`."""
+
+    WS-BP BP5.3: and `BOOT_FILES_SCRIPT` over `IMAGE_PATH`, after the image
+    build -- boot files cut before the link are cut from a previous run's
+    image.  Each executed and none exempted from `set -e`."""
     text = read(root, LEAN_ARCHIVE_LANE)
     if text is None:
         return [f"{LEAN_ARCHIVE_LANE}: missing. It is the one place the kernel's "
@@ -1304,6 +1309,7 @@ def check_lean_archive_lane(root: str) -> list[str]:
     images: list[int] = []
     image_checks: list[int] = []
     image_fp: list[int] = []
+    boot_files: list[int] = []
     for position, (command, operator) in enumerate(shell_command_list(code)):
         argv = executed_argv(command, wrappers)
         image_build = (
@@ -1332,6 +1338,9 @@ def check_lean_archive_lane(root: str) -> list[str]:
         gate = argv[0].endswith(ENTRY_GATE.split("/")[-1])
         image_gate = argv[0].endswith(IMAGE_CHECK_SCRIPT.split("/")[-1])
         fp_gate = argv[0].endswith(FP_CHECK_SCRIPT.split("/")[-1])
+        packager = argv[0].endswith(BOOT_FILES_SCRIPT.split("/")[-1])
+        if packager and argv[1:2] == [IMAGE_PATH]:
+            boot_files.append(position)
         if builder:
             builds.append(position)
         if gate and ENTRY_GATE_CROSS_FLAG in argv[1:]:
@@ -1342,7 +1351,8 @@ def check_lean_archive_lane(root: str) -> list[str]:
             image_checks.append(position)
         if fp_gate and argv[1:] == [IMAGE_PATH]:
             image_fp.append(position)
-        if (builder or gate or image_gate or fp_gate) and operator in ERREXIT_EXEMPTING_OPERATORS:
+        if ((builder or gate or image_gate or fp_gate or packager)
+                and operator in ERREXIT_EXEMPTING_OPERATORS):
             problems.append(
                 f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
                 f"which exempts it from `set -e`: it runs and its failure is "
@@ -1385,7 +1395,13 @@ def check_lean_archive_lane(root: str) -> list[str]:
             f"the linked image decides which `compiler_builtins` members the kernel "
             f"carries, and some of them are not FP-free."
         )
-    if images and any(p < min(images) for p in image_checks + image_fp):
+    if not boot_files:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `{BOOT_FILES_SCRIPT} {IMAGE_PATH} ...`. "
+            f"The boot files the release cut ships are cut from the image the lane "
+            f"linked and checked, and nowhere else."
+        )
+    if images and any(p < min(images) for p in image_checks + image_fp + boot_files):
         problems.append(
             f"{LEAN_ARCHIVE_LANE}: the image is checked before it is linked, so the "
             f"check reads a previous run's image."
@@ -1403,7 +1419,9 @@ def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, 
     check = (f'python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" {LEAN_KERNEL_FLAG} '
              f'"${{ARCHIVE_DIR}}/libsele4n.roots.ld" {IMAGE_PATH}\n')
     fp = f'python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}\n'
-    assert build in lane and check in lane and fp in lane
+    pack = (f'"${{PROJECT_ROOT}}/{BOOT_FILES_SCRIPT}" {IMAGE_PATH} '
+            f'"${{PROJECT_ROOT}}/.lake/build/rpi5-image"\n')
+    assert build in lane and check in lane and fp in lane and pack in lane
     return [
         ("lane links the image without hw_target",
          lane.replace(build, build.replace("hw_target,", "") + "echo hw_target\n")),
@@ -1423,6 +1441,11 @@ def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, 
                       'ARCHIVE_DIR="/tmp"\n')),
         ("lane discards the image check's failure", lane.replace(check, check.rstrip("\n") + " || true\n")),
         ("lane discards the image link's failure", lane.replace(build, build.rstrip("\n") + " || true\n")),
+        ("lane echoes the boot-file packaging", lane.replace(pack, "echo " + pack)),
+        ("lane packages the debug image",
+         lane.replace(pack, pack.replace("/release/", "/debug/"))),
+        ("lane packages before it links", lane.replace(build, pack + build).replace(fp + pack, fp)),
+        ("lane discards the packaging's failure", lane.replace(pack, pack.rstrip("\n") + " || true\n")),
     ]
 
 
@@ -1885,6 +1908,7 @@ python3 "${{SCRIPT_DIR}}/{ENTRY_GATE.split('/')[-1]}" {ENTRY_GATE_CROSS_FLAG}
 cargo build --release --target {CROSS_TARGET} -p sele4n-hal --features hw_target,{IMAGE_FEATURE} --bin {IMAGE_BIN}
 python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" {LEAN_KERNEL_FLAG} "${{ARCHIVE_DIR}}/libsele4n.roots.ld" {IMAGE_PATH}
 python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}
+"${{PROJECT_ROOT}}/{BOOT_FILES_SCRIPT}" {IMAGE_PATH} "${{PROJECT_ROOT}}/.lake/build/rpi5-image"
 """
 
 GOOD_HOST_LANE = """#!/usr/bin/env bash

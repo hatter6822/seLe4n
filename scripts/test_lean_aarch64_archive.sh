@@ -30,6 +30,10 @@
 # of its members the kernel carries.  The stale image is removed first, so
 # the checks read this run's link.
 #
+# WS-BP BP5.3: and last, the Raspberry Pi 5 boot files cut from that image --
+# `kernel8.img` and `config.txt`, written to .lake/build/rpi5-image and checked
+# against the image by `scripts/build_rpi5_image.sh`.
+#
 # Needs the Lean toolchain (`setup_lean_env.sh`) and rustup's `llvm-tools`
 # component (listed in `rust/rust-toolchain.toml`), which supplies the
 # `llvm-nm` and `llvm-objdump` the builder reads object code with.
@@ -48,16 +52,16 @@ CROSS_TARGET="aarch64-unknown-none-softfloat"
 IMAGE_BIN="sele4n-kernel"
 ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"
 
-echo "[1/4] Host static archive (the reconciliation's other half)"
+echo "[1/5] Host static archive (the reconciliation's other half)"
 lake build SeLe4n:static
 
-echo "[2/4] Cross archive"
+echo "[2/5] Cross archive"
 python3 "${SCRIPT_DIR}/build_lean_aarch64_archive.py"
 
-echo "[3/4] Kernel-entry reconciliation over both archives"
+echo "[3/5] Kernel-entry reconciliation over both archives"
 python3 "${SCRIPT_DIR}/check_kernel_entry_exports.py" --require-cross
 
-echo "[4/4] The kernel image, linked with the Lean kernel, and checked"
+echo "[4/5] The kernel image, linked with the Lean kernel, and checked"
 cd "${PROJECT_ROOT}/rust"
 rm -f "target/${CROSS_TARGET}/release/${IMAGE_BIN}"
 cargo build --release --target "${CROSS_TARGET}" -p sele4n-hal \
@@ -68,4 +72,8 @@ python3 "${PROJECT_ROOT}/scripts/check_kernel_image.py" \
 python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
 
-echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it."
+echo "[5/5] The Raspberry Pi 5 boot files, cut from that image and checked"
+"${PROJECT_ROOT}/scripts/build_rpi5_image.sh" \
+    target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}" "${PROJECT_ROOT}/.lake/build/rpi5-image"
+
+echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it and is packaged."

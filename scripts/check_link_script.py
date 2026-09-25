@@ -30,7 +30,11 @@ relations the Rust side depends on:
      untypeds over is the extent this link actually reserved;
   6. (WS-BP BP4.5) `__image_load_end`, the end of the extent the boot cleans to
      the Point of Unification, lies between the read-only data's end and
-     `__bss_start` — every loaded byte, and nothing the firmware does not load.
+     `__bss_start` — every loaded byte, and nothing the firmware does not load;
+  7. (WS-BP BP5.3) the device tree's window `[__dtb_window_start,
+     __dtb_window_end)` is `DTB_WINDOW_SIZE` bytes on a 4 KiB page, lies after
+     the Lean heap and ends inside the reserved extent — the window the image
+     build's `config.txt` pins the firmware to, and the one `init_mmu` accepts.
 
 Undefined symbols are ignored in the probe link: it is a layout check, and the
 objects' references into the Rust and Lean code are the image link's to
@@ -41,7 +45,8 @@ script is mutated so exactly that assertion's relation breaks — a size that is
 not a whole page, an arena that is not page-aligned, an arena too big for the
 smallest board, and (BP2.6) each permission boundary moved off its page, or a
 section placed between the text and the read-only data, and (BP4.5) a loaded
-extent that runs into the NOLOAD sections — and the link must fail naming that assertion's message.  An
+extent that runs into the NOLOAD sections, and (BP5.3) a device-tree window of
+the wrong size, one moved into the heap, and one past the reserved extent — and the link must fail naming that assertion's message.  An
 `ASSERT` that a mutation cannot trip reads exactly like one that protects
 something.
 
@@ -137,6 +142,22 @@ ASSERTION_WITNESSES = (
         "must end inside the kernel's reserved extent",
     ),
     (
+        "a device-tree window of the wrong size",
+        (("        . += DTB_WINDOW_SIZE;", "        . += DTB_WINDOW_SIZE - 4096;"),),
+        "must be DTB_WINDOW_SIZE bytes on a 4 KiB page",
+    ),
+    (
+        "a device-tree window moved into the Lean heap",
+        (("        __dtb_window_start = .;", "        __dtb_window_start = . - 4096;"),
+         ("        . += DTB_WINDOW_SIZE;", "        . += DTB_WINDOW_SIZE - 4096;")),
+        "must lie after the Lean heap",
+    ),
+    (
+        "a device-tree window past the reserved extent",
+        (("LEAN_HEAP_SIZE = 64M;", "LEAN_HEAP_SIZE = 254M;"),),
+        "must end inside the kernel's reserved extent",
+    ),
+    (
         "a reserved extent past the smallest board",
         (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x50000000;"),),
         "whole pages inside the smallest RPi5's RAM",
@@ -183,7 +204,8 @@ def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
     need = ("_start", "__text_end", "__rodata_start", "__rodata_end", "__image_load_end",
             "__bss_start", "__bss_end",
             "__stack_top", "__smp_secondary_stack_top", "__lean_heap_start",
-            "__lean_heap_end", "LEAN_HEAP_SIZE", "KERNEL_RESERVED_END")
+            "__lean_heap_end", "LEAN_HEAP_SIZE", "KERNEL_RESERVED_END",
+            "__dtb_window_start", "__dtb_window_end", "DTB_WINDOW_SIZE")
     missing = [n for n in need if n not in table]
     if missing:
         return [f"the link defines no {', '.join(missing)}"]
@@ -226,6 +248,17 @@ def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
     if end > reserved_end:
         problems.append(f"the arena ends at {end:#x}, past the kernel's reserved extent "
                         f"({reserved_end:#x})")
+    # WS-BP BP5.3: the window the firmware is pinned to write the device tree
+    # in is one `init_mmu` accepts: outside the memory the image owns and
+    # inside the extent no boot untyped reaches.
+    dtb_start, dtb_end = table["__dtb_window_start"], table["__dtb_window_end"]
+    if dtb_end - dtb_start != table["DTB_WINDOW_SIZE"] or dtb_start % PAGE:
+        problems.append(f"the device tree's window [{dtb_start:#x}, {dtb_end:#x}) is not "
+                        f"DTB_WINDOW_SIZE ({table['DTB_WINDOW_SIZE']:#x}) bytes on a page")
+    if not end <= dtb_start <= dtb_end <= reserved_end:
+        problems.append(f"the device tree's window [{dtb_start:#x}, {dtb_end:#x}) is not "
+                        f"between the Lean heap's end ({end:#x}) and the reserved "
+                        f"extent's ({reserved_end:#x})")
     return problems
 
 
@@ -245,6 +278,8 @@ _GOOD = {
     "__smp_secondary_stack_top": 0xC1000, "__lean_heap_start": 0xC2000,
     "__lean_heap_end": 0xC2000 + 0x400_0000, "LEAN_HEAP_SIZE": 0x400_0000,
     "KERNEL_RESERVED_END": 0x1000_0000,
+    "__dtb_window_start": 0xC2000 + 0x400_0000, "__dtb_window_end": 0xC2000 + 0x420_0000,
+    "DTB_WINDOW_SIZE": 0x20_0000,
 }
 
 
@@ -257,12 +292,16 @@ def self_test() -> int:
         ("an arena shorter than its constant", {"__lean_heap_end": _GOOD["__lean_heap_end"] - PAGE},
          "not LEAN_HEAP_SIZE"),
         ("an unaligned arena", {"__lean_heap_start": 0xC2010,
-                                "__lean_heap_end": 0xC2010 + 0x400_0000}, "not 4 KiB aligned"),
+                                "__lean_heap_end": 0xC2010 + 0x400_0000,
+                                "__dtb_window_start": 0xC3000 + 0x400_0000,
+                                "__dtb_window_end": 0xC3000 + 0x420_0000}, "not 4 KiB aligned"),
         ("an arena inside the secondary stacks", {"__lean_heap_start": 0xC0000,
                                                   "__lean_heap_end": 0xC0000 + 0x400_0000},
          "inside the image or its stacks"),
         ("an arena past the smallest board", {"__lean_heap_start": 0x3FF0_0000,
                                                "__lean_heap_end": 0x43F0_0000,
+                                               "__dtb_window_start": 0x43F0_0000,
+                                               "__dtb_window_end": 0x4410_0000,
                                                "KERNEL_RESERVED_END": 0x5000_0000},
          "past the smallest"),
         ("a missing symbol", {"__lean_heap_end": None}, "defines no __lean_heap_end"),
@@ -273,12 +312,24 @@ def self_test() -> int:
         ("a gap between the text and the read-only data", {"__rodata_start": 0x82000},
          "not where the text ends"),
         ("an arena past the reserved extent", {"KERNEL_RESERVED_END": 0x200_0000},
-         "past the kernel's reserved extent"),
+         ("past the kernel's reserved extent", "between the Lean heap's end")),
         ("a loaded extent that stops inside the read-only data",
          {"__image_load_end": 0x81800}, "the loaded image ends"),
         ("a loaded extent that runs into .bss", {"__image_load_end": 0x83800},
          "the loaded image ends"),
         ("a Lean extent that differs", {}, "the Lean side"),
+        ("a device-tree window shorter than its constant",
+         {"__dtb_window_end": _GOOD["__dtb_window_end"] - PAGE}, "not DTB_WINDOW_SIZE"),
+        ("a device-tree window off its page",
+         {"__dtb_window_start": _GOOD["__dtb_window_start"] + 8,
+          "__dtb_window_end": _GOOD["__dtb_window_end"] + 8}, "not DTB_WINDOW_SIZE"),
+        ("a device-tree window inside the Lean heap",
+         {"__dtb_window_start": _GOOD["__lean_heap_end"] - PAGE,
+          "__dtb_window_end": _GOOD["__lean_heap_end"] - PAGE + 0x20_0000},
+         "between the Lean heap's end"),
+        ("a device-tree window past the reserved extent",
+         {"__dtb_window_start": 0x1000_0000, "__dtb_window_end": 0x1020_0000},
+         "between the Lean heap's end"),
     ]
     failures = 0
     for name, edits, expect in cases:
@@ -288,10 +339,12 @@ def self_test() -> int:
         reserved = ((0, 0x2000_0000) if name == "a Lean extent that differs"
                     else (0, table.get("KERNEL_RESERVED_END", 0)))
         problems = check_layout(table, reserved)
-        if expect is None:
-            ok = not problems
-        else:
-            ok = len(problems) == 1 and expect in problems[0]
+        # A case names the one relation it breaks, or -- where breaking it
+        # necessarily breaks a second (an arena past the reserved extent puts
+        # the window after it past the extent too) -- each, in order.
+        expected = () if expect is None else (expect,) if isinstance(expect, str) else expect
+        ok = len(problems) == len(expected) and all(
+            fragment in problem for fragment, problem in zip(expected, problems))
         if not ok:
             failures += 1
             print(f"  FAIL {name}: {problems}", file=sys.stderr)

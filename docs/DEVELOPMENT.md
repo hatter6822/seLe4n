@@ -274,6 +274,13 @@ links `.lake/build/aarch64-unknown-none-softfloat/libsele4n.a` and the
 `--gc-sections`, so build the archive first (`scripts/test_lean_aarch64_archive.sh`
 does both, then runs `check_kernel_image.py --lean-kernel` and the FP/SIMD gate
 over the linked image).  A missing archive fails the link naming the path.
+**The firmware's boot files** (BP5.3): `./scripts/build_rpi5_image.sh [ELF
+[OUT]]` writes `kernel8.img` and `config.txt` to `.lake/build/rpi5-image/`
+from that image (the archive lane's step [5/5] does this).  Copy both to the
+SD card's boot partition.  `config.txt` is generated — its `kernel_address` is
+the image's entry and its `device_tree_address` / `device_tree_end` are
+`link.ld`'s `.dtb_window` — and `rpi5_boot_files.py check` refuses a key it
+does not set, so add a firmware option there, not by hand.
 Lean 4.28 returns an `IO`/`BaseIO` function's value directly (no world, no
 result wrapper): declare a `BaseIO Unit` export `-> lean_runtime::LeanBaseIoUnit`
 and hand the value to `lean_runtime::discharge_base_io`; only a module

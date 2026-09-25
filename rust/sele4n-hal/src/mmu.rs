@@ -2498,8 +2498,9 @@ mod boot_map_tests {
         let size = crate::cmdline::MAX_DTB_SIZE as u64;
         // A null pointer reads nothing.
         assert!(dtb_window_admissible((0, 0), kernel));
-        // Where the image build places it, touching the image's end, and
-        // ending exactly at the reserved extent's end.
+        // Inside the reserved extent, touching the image's end (which is where
+        // `link.ld`'s `.dtb_window` begins when nothing pads the heap -- WS-BP
+        // BP5.3), and ending exactly at the reserved extent's end.
         for base in [0x0EFF_0000u64, kernel_end, KERNEL_RESERVED_END - size] {
             assert!(dtb_window_admissible((base, size), kernel), "{base:#x}");
         }
@@ -2590,6 +2591,30 @@ mod boot_map_tests {
             std::vec![KERNEL_RESERVED_END],
             "link.ld's reserved extent"
         );
+    }
+
+    /// **WS-BP BP5.3**: the window `link.ld` places the device tree in is
+    /// exactly the extent a reader may dereference from its pointer
+    /// ([`dtb_window`], [`crate::cmdline::MAX_DTB_SIZE`]).  A smaller window
+    /// would let a reader leave it; a larger one would pin the firmware to a
+    /// window whose tail no reader is bounded by.
+    #[test]
+    fn the_device_tree_window_is_the_dereference_bound() {
+        const LINK_SCRIPT: &str = include_str!("../link.ld");
+        let declared: Vec<u64> = LINK_SCRIPT
+            .lines()
+            .filter_map(|l| {
+                let rest = l.trim().strip_prefix("DTB_WINDOW_SIZE = ")?;
+                let hex = rest.strip_suffix(';')?.trim_start_matches("0x");
+                Some(u64::from_str_radix(hex, 16).expect("hex in link.ld"))
+            })
+            .collect();
+        assert_eq!(
+            declared,
+            std::vec![crate::cmdline::MAX_DTB_SIZE as u64],
+            "link.ld's DTB_WINDOW_SIZE"
+        );
+        assert_eq!(dtb_window(0x1000).1, declared[0]);
     }
 
     #[test]

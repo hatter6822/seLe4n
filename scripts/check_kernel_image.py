@@ -93,6 +93,9 @@ class Section:
     size: int
     nobits: bool
     executable: bool
+    # Where the section's bytes sit in the file (WS-BP BP5.3 cuts the flat
+    # image against it); meaningless for a NOLOAD section.
+    offset: int = 0
 
 
 @dataclass(frozen=True)
@@ -140,12 +143,12 @@ def read_image(path: Path) -> Image:
     strtab_offset, strtab_size = headers[shstrndx][4], headers[shstrndx][5]
     names = data[strtab_offset:strtab_offset + strtab_size]
     sections = []
-    for name_off, kind, flags, addr, _offset, size, *_ in headers:
+    for name_off, kind, flags, addr, offset, size, *_ in headers:
         if not flags & SHF_ALLOC:
             continue
         end = names.find(b"\0", name_off)
         sections.append(Section(names[name_off:end].decode(), addr, size,
-                                kind == SHT_NOBITS, bool(flags & SHF_EXECINSTR)))
+                                kind == SHT_NOBITS, bool(flags & SHF_EXECINSTR), offset))
     return Image(elf_type, machine, entry, tuple(sorted(sections, key=lambda s: s.addr)))
 
 
@@ -228,7 +231,8 @@ def check_image(image: Image, script: Script, table: dict[str, int], undefined: 
 # A well-formed image, for the self-test: the shape a real link produces.
 _SCRIPT = Script(0x80000, ((".text.boot", False), (".text.vectors", False), (".text", False),
                           (".rodata", False), (".data", False), (".bss", True),
-                          (".stack", True), (".smp_stacks", True), (".lean_heap", True)))
+                          (".stack", True), (".smp_stacks", True), (".lean_heap", True),
+                          (".dtb_window", True)))
 _TABLE = {**_GOOD, "__exception_vectors": 0x80800, "rust_boot_main": 0x80900,
           "secondary_entry": 0x80100, "rust_secondary_main": 0x80a00}
 _IMAGE = Image(ET_EXEC, EM_AARCH64, 0x80000, (
@@ -241,6 +245,7 @@ _IMAGE = Image(ET_EXEC, EM_AARCH64, 0x80000, (
     Section(".stack", 0x83000, 0xE000, True, False),
     Section(".smp_stacks", 0x91000, 0x30000, True, False),
     Section(".lean_heap", 0xC2000, 0x400_0000, True, False),
+    Section(".dtb_window", 0x40C2000, 0x20_0000, True, False),
 ))
 
 

@@ -5016,6 +5016,22 @@ run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_
 run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            println!\("cargo:rustc-link-arg-bin=sele4n-kernel=--gc-sections"\);$' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -U -n '^    ROOTS_SCRIPT\.write_text\(render_roots_script\(roots\)\)[^\n]*(\n([ \t][^\n]*)?)*?            str\(ROOTS_SCRIPT\), str\(ARCHIVE\)\]$' scripts/build_lean_aarch64_archive.py
 run_check "INVARIANT" rg -U -n 'check_kernel_image\.py" \\\n    --lean-kernel "\$\{ARCHIVE_DIR\}/libsele4n\.roots\.ld" \\\n    target/"\$\{CROSS_TARGET\}"/release/"\$\{IMAGE_BIN\}"$' scripts/test_lean_aarch64_archive.sh
+# WS-BP BP5.3: `link.ld` places the device tree's window after the Lean heap
+# and inside the reserved extent; the boot files pin the firmware to exactly
+# that window and to the image's entry, refuse a firmware option they do not
+# read, and are always checked after they are written; the image build refuses
+# an image that is not the Lean-linked one; and the archive lane packages the
+# image it linked.
+run_check "INVARIANT" rg -U -n '^    \.dtb_window \(NOLOAD\) : ALIGN\(4096\) \{\n        __dtb_window_start = \.;\n        \. \+= DTB_WINDOW_SIZE;\n        __dtb_window_end = \.;$' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n '^ASSERT\(__dtb_window_end <= KERNEL_RESERVED_END, ' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n '^ASSERT\(__dtb_window_start >= __lean_heap_end, ' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -U -n '^    \(out / CONFIG_NAME\)\.write_text\(render_config\(\n        image\.entry, table\["__dtb_window_start"\], table\["__dtb_window_end"\]\)\)\n    return check\(elf, out\)$' scripts/rpi5_boot_files.py
+run_check "INVARIANT" rg -U -n '^    window = \(table\.get\("__dtb_window_start"\), table\.get\("__dtb_window_end"\)\)\n    if \(dtb_start, dtb_end\) != window:$' scripts/rpi5_boot_files.py
+run_check "INVARIANT" rg -U -n '^    if not kernel_address == image\.entry == table\.get\("_start"\) == origin:$' scripts/rpi5_boot_files.py
+run_check "INVARIANT" rg -U -n '^        if key not in CONFIG_KEYS:\n            raise GateFailure\(' scripts/rpi5_boot_files.py
+run_check "INVARIANT" rg -U -n '^python3 "\$\{SCRIPT_DIR\}/check_kernel_image\.py" --lean-kernel "\$\{ROOTS\}" "\$\{ELF\}"\npython3 "\$\{SCRIPT_DIR\}/rpi5_boot_files\.py" package "\$\{ELF\}" "\$\{OUT_DIR\}"$' scripts/build_rpi5_image.sh
+run_check "INVARIANT" rg -U -n '^"\$\{PROJECT_ROOT\}/scripts/build_rpi5_image\.sh" \\\n    target/"\$\{CROSS_TARGET\}"/release/"\$\{IMAGE_BIN\}" ' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -n '^    fn the_device_tree_window_is_the_dereference_bound\(\) \{$' rust/sele4n-hal/src/mmu.rs
 # The re-type operand must NOT regress to the bare domain-wide invalidate.
 run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
 # The scrubbed extent has exactly ONE definition, and both the scrub and the

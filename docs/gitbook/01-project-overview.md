@@ -123,8 +123,11 @@ kernel one bare-metal binary, `sele4n-kernel`, entered at `_start` under
 `link.ld` and checked as an image by `scripts/check_kernel_image.py`; its panic
 handler halts the system.  **BP5.2** links the Lean kernel into that image with
 `--gc-sections`, rooted at the same symbols as the archive lane's reachable
-link, and runs the FP/SIMD gate over the linked image.  BP5.3..BP8 have not
-started.
+link, and runs the FP/SIMD gate over the linked image.  **BP5.3** packages it
+for the firmware: `scripts/build_rpi5_image.sh` writes `kernel8.img` and a
+`config.txt` pinning the load address to the image's entry and the device tree
+to a window `link.ld` places inside the kernel's reserved extent, and checks
+both against the image.  BP5.4..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core
