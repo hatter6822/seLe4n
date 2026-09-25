@@ -2537,7 +2537,10 @@ mod tests {
         // perfectly well-formed, page-aligned range, in the peripheral window
         // rather than in RAM.  `DC CVAC` there cleans an address the kernel
         // did not mean.
-        clean_pagetable_range_within_identity_map(crate::mmu::DEVICE_WINDOW_BASE + 0x0100_1000, 0x1000);
+        clean_pagetable_range_within_identity_map(
+            crate::mmu::DEVICE_WINDOW_BASE + 0x0100_1000,
+            0x1000,
+        );
     }
 
     #[test]

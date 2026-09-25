@@ -283,6 +283,12 @@ the image's entry and its `device_tree_address` / `device_tree_end` are
 does not set, so add a firmware option there, not by hand.  The script ends by
 printing the image's size and section map (`kernel_image_report.py`, BP5.4),
 which CI appends to the job summary and uploads with the boot files.
+**Both boot entries reach EL1 through `boot.S`'s `.L_enter_el1`** (BP5.5):
+the RPi5 firmware enters at EL2 and QEMU's `virt` at EL1.  The routine is pinned
+item for item by `build.rs`'s `EL1_ENTRY_ROUTINE`, so change the two together,
+and no other code may name an EL2 register.  PSCI calls go through
+`psci::psci_call`, whose conduit `rust_boot_main` selects from the entry level;
+never write an `hvc` or `smc` of your own.
 Lean 4.28 returns an `IO`/`BaseIO` function's value directly (no world, no
 result wrapper): declare a `BaseIO Unit` export `-> lean_runtime::LeanBaseIoUnit`
 and hand the value to `lean_runtime::discharge_base_io`; only a module

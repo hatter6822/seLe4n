@@ -1775,7 +1775,10 @@ pub(crate) fn lean_mmio_window(name: &str) -> (u64, u64) {
         if cols.next() == Some("mmio") && cols.next() == Some(name) {
             let base = hex(cols.next().expect("an mmio line carries a base"));
             let size = hex(cols.next().expect("an mmio line carries a size"));
-            assert!(found.is_none(), "two `mmio {name}` lines in the boot-map table");
+            assert!(
+                found.is_none(),
+                "two `mmio {name}` lines in the boot-map table"
+            );
             found = Some((base, size));
         }
     }

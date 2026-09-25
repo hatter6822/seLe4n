@@ -8,6 +8,8 @@
 //
 // Boot sequence:
 //   0. Trap FP/SIMD at EL0 and EL1 (CPACR_EL1 := 0)
+//   0.5 Reach EL1: the firmware enters at EL2 on the RPi5, so drop to
+//       EL1h (`.L_enter_el1`); an entry at EL3 or any other level halts
 //   1. Read MPIDR_EL1 — park all cores except core 0
 //   2. Save DTB pointer in callee-saved register (x19)
 //   3. Zero the BSS section
@@ -37,6 +39,17 @@ _start:
     // =====================================================================
     msr     cpacr_el1, xzr
     isb
+
+    // =====================================================================
+    // Step 0.5: reach EL1.  The Raspberry Pi 5 firmware enters a 64-bit
+    // kernel at EL2; QEMU's `virt` machine enters at EL1.  `.L_enter_el1`
+    // returns at EL1 either way, with x0 (the DTB pointer) intact, or
+    // halts this PE if it was entered at EL3 or an unrecognised level.
+    // `build.rs` (`scan_el1_entry`) requires this call to follow the FP
+    // prologue in both entries and pins the routine's body.
+    // =====================================================================
+    bl      .L_enter_el1
+    mov     x20, x9                 // x20 = the level the firmware entered at
 
     // =====================================================================
     // Step 1: Core ID check — only cluster-0 core-0 proceeds
@@ -142,9 +155,12 @@ _start:
     // =====================================================================
     // Step 5: Branch to Rust boot entry point
     //
-    // rust_boot_main(dtb_ptr: u64) -> ! defined in boot.rs
+    // rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! defined in boot.rs;
+    // `entry_el` is the CurrentEL value `.L_enter_el1` reported, which
+    // decides the PSCI conduit (`psci::select_conduit`).
     // =====================================================================
     mov     x0, x19                 // x0 = DTB pointer (first argument)
+    mov     x1, x20                 // x1 = entry CurrentEL (second argument)
     bl      rust_boot_main          // Call Rust entry point
 
     // rust_boot_main should never return, but if it does:
@@ -205,6 +221,15 @@ secondary_entry:
     // about its value; see `_start`'s Step 0.
     msr     cpacr_el1, xzr
     isb
+
+    // Step 0.5: reach EL1.  PSCI CPU_ON enters the target at the level
+    // of the CPU_ON caller (DEN0022D), which is EL1 once the boot core
+    // has dropped, and an EL1 entry leaves this PE's EL2 state to the
+    // firmware as it does on the boot core.  A firmware that enters a
+    // secondary at EL2 regardless is not excluded, so every PE takes the
+    // same routine as the boot core.
+    // x0 (the PSCI context_id) survives it; see `_start`'s Step 0.5.
+    bl      .L_enter_el1
 
     // Step 1: mask all maskable interrupts.  PSCI returns with DAIF
     // unset on some firmwares; do not assume.  Also mandatory before
@@ -334,3 +359,108 @@ secondary_entry:
 .L_secondary_invalid:
     wfe
     b       .L_secondary_invalid
+
+// =========================================================================
+// WS-BP BP5.5: enter EL1 from whichever level the firmware chose.
+//
+// Called by `bl` as the first action after each entry's FP prologue, with
+// no stack (SP_EL1 is UNKNOWN on an EL2 entry until the caller sets it).
+// Clobbers x9, x10 and x30; preserves every other general register, so
+// x0 — the DTB pointer on `_start`, the PSCI context_id on
+// `secondary_entry` — reaches the caller unchanged.  `eret` writes no
+// general register.  Returns in x9 the CurrentEL value it was entered at
+// (#0x4 or #0x8): once EL2 is vacated nothing can service an `hvc`, so
+// the PSCI conduit depends on it (`psci::select_conduit`).
+//
+// CurrentEL[3:2] is the level (ARM ARM D19.2.29):
+//   0b01 (#0x4) EL1 — return;
+//   0b10 (#0x8) EL2 — configure EL2 for a non-virtualised EL1 and `eret`
+//                     to the caller at EL1h;
+//   otherwise       — EL3 (or a value no architecture defines): halt.
+// Interrupts are masked first, at every level: nothing below installs an
+// EL2 vector table, so an exception taken at EL2 here would have nowhere
+// to go.
+//
+// What the EL2 path writes, and why each one:
+//   HCR_EL2     := RW (bit 31) alone.  EL1 is AArch64; TSC = 0, so an
+//                  EL1 `smc` reaches the EL3 firmware; E2H = 0 (the
+//                  non-VHE layout every register below is written in, made
+//                  effective by the `isb` before CPTR_EL2); VM = 0 (no
+//                  stage 2); IMO/FMO/AMO = 0, so IRQ, FIQ and SError are
+//                  taken at EL1, where the kernel's vectors are.
+//   CPTR_EL2    := 0x33FF.  TFP (bit 10) = 0, so FP/SIMD is not trapped to
+//                  EL2 and the CPACR_EL1 trap the prologue set is the one
+//                  that fires — an EL0 FP access must reach EL1's vectors,
+//                  not an EL2 with no handler.  TTA, TAM and TCPAC are 0.
+//                  Bits 13:12, 9:8 and 7:0 are written 1: on the
+//                  Cortex-A76 (no SVE, no SME) TZ (bit 8) and TSM (bit 12)
+//                  are RES1 with the rest.
+//   CNTHCTL_EL2 := EL1PCTEN | EL1PCEN (0x3): EL1 reads the physical counter
+//                  and owns the physical timer (`timer.rs`), untrapped.
+//   CNTVOFF_EL2 := 0: the virtual counter equals the physical one.
+//   VPIDR_EL2 / VMPIDR_EL2 := MIDR_EL1 / MPIDR_EL1: an EL1 read of MIDR or
+//                  MPIDR returns these when EL2 exists, and their reset
+//                  values are UNKNOWN — the core-id check in `_start` and
+//                  every `current_core_id` read depend on the real MPIDR.
+//   MDCR_EL2    := HPMN = PMCR_EL0.N when a PMU is implemented
+//                  (ID_AA64DFR0_EL1.PMUVer not 0 or 0xF), else 0; every
+//                  trap bit 0, so EL1's PMU (`profiling.rs`) and debug
+//                  accesses are not trapped to EL2, and every counter is
+//                  EL1's.
+//   SCTLR_EL1   := 0x30D00800: its RES1 bits, MMU and caches off,
+//                  little-endian (EE = E0E = 0).  Its reset value is
+//                  UNKNOWN on an EL2 entry and the kernel runs with
+//                  translation off until `init_mmu` writes the whole
+//                  register.
+//   SPSR_EL2    := 0x3C5: M = EL1h (0b0101), D, A, I, F masked.
+//   ELR_EL2     := x30: the `eret` returns to the instruction after the
+//                  caller's `bl`, now at EL1.
+//
+// `build.rs` (`scan_el1_entry`) pins this sequence item for item and
+// refuses a write to any EL2 register anywhere else.
+// =========================================================================
+.L_enter_el1:
+    msr     daifset, #0xf
+    mrs     x9, currentel
+    cmp     x9, #0x4
+    b.ne    .L_enter_el1_from_el2
+    ret
+.L_enter_el1_from_el2:
+    cmp     x9, #0x8
+    b.ne    .L_unsupported_el
+    mov     x9, #0x80000000
+    msr     hcr_el2, x9
+    isb
+    mov     x9, #0x33ff
+    msr     cptr_el2, x9
+    mov     x9, #0x3
+    msr     cnthctl_el2, x9
+    msr     cntvoff_el2, xzr
+    mrs     x9, midr_el1
+    msr     vpidr_el2, x9
+    mrs     x9, mpidr_el1
+    msr     vmpidr_el2, x9
+    mov     x10, xzr
+    mrs     x9, s3_0_c0_c5_0         // ID_AA64DFR0_EL1 (op0 3, op1 0, CRn 0, CRm 5, op2 0)
+    ubfx    x9, x9, #8, #4
+    cbz     x9, .L_enter_el1_mdcr
+    cmp     x9, #0xf
+    b.eq    .L_enter_el1_mdcr
+    mrs     x10, pmcr_el0
+    ubfx    x10, x10, #11, #5
+.L_enter_el1_mdcr:
+    msr     mdcr_el2, x10
+    mov     x9, #0x0800
+    movk    x9, #0x30d0, lsl #16
+    msr     sctlr_el1, x9
+    mov     x9, #0x3c5
+    msr     spsr_el2, x9
+    msr     elr_el2, x30
+    mov     x9, #0x8
+    eret
+
+// Entered at EL3 or an unrecognised level: this kernel neither runs at EL3
+// nor knows how to leave it, so the PE halts here with interrupts masked.
+.L_unsupported_el:
+    wfe
+    b       .L_unsupported_el

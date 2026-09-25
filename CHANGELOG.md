@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2, BP5.3 and BP5.4: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places, with its size and section map published by every CI run, and the RPi5 binding corrected from the BCM2711's address map to the BCM2712's
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2, BP5.3, BP5.4 and BP5.5: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places, with its size and section map published by every CI run, and the RPi5 binding corrected from the BCM2711's address map to the BCM2712's, and both boot entries dropped to EL1 from the firmware's EL2 with the PSCI conduit following the entry level
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -1184,7 +1184,82 @@ page long, an image with no device-tree window and one with no section, and
 checks the step summary is appended to; Tier 3 pins the file-size relation,
 the append and the upload.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.4)
+**BP5.5 — every boot entry reaches EL1, and the PSCI conduit follows the
+level it came from.**  The RPi5 firmware enters a 64-bit kernel at EL2; `boot.S`
+never read `CurrentEL`.  Both `_start` and `secondary_entry` now call
+`.L_enter_el1` as the item after the FP-trap prologue.  The routine uses no
+stack and preserves `x0`, so the DTB pointer and the PSCI context id cross it.
+It masks DAIF and reads `CurrentEL`, then:
+
+- **EL1**: returns.
+- **Any level but EL1 or EL2**: halts.
+- **EL2**: programs the registers below, then `eret`s to EL1h with DAIF masked
+  (`SPSR_EL2 = 0x3C5`, `ELR_EL2 = x30`).  It returns the entry level, which
+  `_start` passes to `rust_boot_main` as a new second argument, `entry_el`.
+
+What the EL2 path writes:
+
+- `HCR_EL2 = RW` alone, then an `isb`, so the non-VHE layout the rest is
+  written in takes effect.
+- `CPTR_EL2 = 0x33FF`.  `TFP = 0`, so FP/SIMD is not trapped to EL2 and the
+  `CPACR_EL1` trap the prologue sets is the one that fires.
+- `CNTHCTL_EL2 = 0x3` and `CNTVOFF_EL2 = 0`.
+
+Three registers the plan row did not name are also written, each for a reason
+recorded at the routine:
+
+- `VPIDR_EL2` / `VMPIDR_EL2` are set to the real `MIDR_EL1` / `MPIDR_EL1`.  An
+  EL1 read of MPIDR returns `VMPIDR_EL2`, its reset value is UNKNOWN, and
+  `_start`'s core-id check and every `current_core_id` read depend on it.
+- `MDCR_EL2` is set to `HPMN` alone, so the PMU `profiling.rs` uses is not
+  trapped to EL2.
+- `SCTLR_EL1` is set to a known MMU-off, little-endian value, since the kernel
+  runs with translation off until `init_mmu`.
+
+`build.rs`'s `scan_el1_entry`, beside `scan_fp_trap_prologue`, pins:
+
+- the call's position in both entries;
+- `_start`'s hand-off of the entry level;
+- the routine item for item (`EL1_ENTRY_ROUTINE`, which ends the file).
+
+It refuses a write to any EL2 register — by name, or by an `S3_4_…` encoding —
+anywhere else in assembly or Rust code.  Its self-test keeps every token and
+breaks a relation: a moved call, an unkept or unpassed level, `TFP` set, EL1t
+or unmasked interrupts in `SPSR_EL2`, a reordered `HCR_EL2` write, a missing
+`isb` or `VMPIDR_EL2` write, an EL3 entry falling into the EL2 path, a halt
+that returns, a statement past the routine, a third caller, and writers in
+`boot.S`, another `.S` file, an encoding and an `asm!` template.
+
+**Found while landing it: the PSCI conduit.**  Every PSCI wrapper hard-coded
+`hvc #0`, on the stated ground that the RPi5 firmware serves PSCI at EL2.  It
+cannot: the firmware hands EL2 to the kernel, so an `hvc` was taken at EL2
+through a vector table nothing had installed — from EL2 itself before this
+cut, and from EL1 after the drop.  `CPU_ON` could therefore never have reached
+the firmware on the board.  Unobservable until now, because nothing boots on
+hardware.
+
+The fix:
+
+- Every call now goes through `psci::psci_call`, which issues `smc #0` or
+  `hvc #0` according to `psci::Conduit`.
+- `rust_boot_main` selects the conduit from `entry_el` before anything can call
+  PSCI: `smc` after an EL2 entry, where nothing is left at EL2, and `hvc` after
+  an EL1 entry, which is QEMU `virt`'s default.  An unrecognised level halts.
+- A PSCI call made before the selection halts.
+- A Tier 3 negative refuses the retired inline template.
+
+Reading the conduit from the device tree's `/psci` `method` on an EL1 entry is
+registered debt (`docs/REGISTERED_DEBT.md`).  The same cut corrects
+`SMP_PANIC_HANG_REMEDIATION_PLAN.md`'s claim that the RPi5 is HVC-only.
+
+No current harness reaches the EL2 path, because QEMU's `virt` machine enters at
+EL1 unless `virtualization=on`; BP8.1 runs QEMU both ways.  The cross build's
+disassembly shows the call in both entries, the `eret`, and the `smc`/`hvc`
+pair behind the conduit.  Two formatting slips the BCM2712 correction left in
+`ffi.rs` and `mmu.rs` tests, which failed `test_rust.sh`'s `cargo fmt` check,
+are fixed in the same cut.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.5)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 13,928 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13); BP5.5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15); BP6..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -806,6 +806,49 @@ tests read them (`mmu::lean_mmio_window`) and require the constant to equal the
 Lean base and to lie inside the device window.  What this does **not** establish
 is what a real board's firmware reports: the variant maps follow the device-tree
 source, and the first-boot readback (BP8.1) is what confirms them on hardware.
+
+### 6.2.15 The firmware's entry level (WS-BP BP5.5, v0.36.2)
+
+The Raspberry Pi 5 firmware enters a 64-bit kernel at **EL2**; QEMU's `virt`
+machine enters at EL1 unless `virtualization=on`.  Both boot entries
+(`_start`, `secondary_entry`) call `boot.S`'s `.L_enter_el1` as the item after
+the FP-trap prologue.  With no stack and preserving every register but
+`x9`, `x10` and `x30` — so the DTB pointer and the PSCI context id in `x0`
+survive — it masks DAIF and reads `CurrentEL`:
+
+- **EL1**: returns.
+- **EL2**: configures EL2 for a non-virtualised EL1 and `eret`s to the caller
+  at EL1h with DAIF masked.
+  - `HCR_EL2 = RW` alone: EL1 is AArch64, with no stage 2 and no interrupt or
+    `smc` routing to EL2.
+  - `CPTR_EL2 = 0x33FF`: `TFP = 0`, so FP/SIMD is not trapped to EL2 and the
+    `CPACR_EL1` trap the prologue set is the one that fires.
+  - `CNTHCTL_EL2 = 0x3` and `CNTVOFF_EL2 = 0`: EL1 owns the physical timer.
+  - `VPIDR_EL2` / `VMPIDR_EL2` = the real `MIDR_EL1` / `MPIDR_EL1`.  An EL1
+    read returns these, their reset values are UNKNOWN, and every core-id
+    computation reads MPIDR.
+  - `MDCR_EL2` = `HPMN` alone, so there is no PMU or debug trap.
+  - `SCTLR_EL1` = a known MMU-off, little-endian value.
+- **Any other level**: halts the PE.
+
+It returns the entry level, and `_start` hands it to `rust_boot_main` as
+`entry_el`.  `build.rs`'s `scan_el1_entry` pins the routine item for item
+(`EL1_ENTRY_ROUTINE`), the call position in both entries and the entry-level
+hand-off.  It refuses a write to an EL2 register — by name, or by an `S3_4_…`
+encoding — anywhere else in assembly or Rust.
+
+**The PSCI conduit follows the entry level.**  Every PSCI wrapper used to issue
+`hvc #0`, on the stated ground that the RPi5 firmware serves PSCI at EL2.  It
+cannot: it hands EL2 to the kernel.  So an `hvc` was taken at EL2 through a
+vector table nothing had installed, and `CPU_ON` could never have reached the
+firmware on the board.  Every call now goes through `psci::psci_call`, which
+issues `smc` or `hvc` according to `psci::Conduit`.  `rust_boot_main` selects
+the conduit from `entry_el` before anything can make a PSCI call: an EL2 entry
+leaves `smc` to the EL3 firmware as the only conduit, and an EL1 entry keeps
+`hvc`.  A call made before the selection halts.  On an EL1 entry the platform's
+authority is the device tree's `/psci` `method` property, and reading it is
+registered debt.  No current harness executes the EL2 path; BP8.1 runs QEMU both
+ways.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

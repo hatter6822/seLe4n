@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots), and **BP5.3** (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it), and **BP5.4** (the image's size and section map published with every CI run); BP5.5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots), and **BP5.3** (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it), and **BP5.4** (the image's size and section map published with every CI run), and **BP5.5** (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level); BP6..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7253,7 +7253,7 @@ conclusive only on the linked image**: the target's own `compiler_builtins` is
 `d`/`v` registers, and `__negdf2` takes a hard-float `d0` argument no soft-float
 caller supplies), so the gate also runs over the linked image, where the link
 decides which members are in (BP5.2: none of them is).  And the firmware enters the RPi5 at **EL2**, which
-`boot.S` does not handle at all — BP5.5.
+`boot.S` handles since BP5.5 (the paragraph below).
 
 **BP1 — the kernel's Lean object code for the target is built and checked**
 (`v0.36.2`, `scripts/build_lean_aarch64_archive.py`, lane
@@ -7746,6 +7746,30 @@ the report could not establish would be a guess published as a measurement.
 (2) **The summary is appended to**, never overwritten, since other steps write
 to the same file.
 
+
+**BP5.5 — every boot entry reaches EL1, and the PSCI conduit follows the level
+it came from** (`v0.36.2`).  Four things new code must respect.  (1) **Both
+entries call `.L_enter_el1` as the item after the FP prologue**, and the
+routine is `build.rs`'s `EL1_ENTRY_ROUTINE` item for item.  It returns at EL1
+and halts at any level but EL1 or EL2.  At EL2 it `eret`s to EL1h with DAIF
+masked, after writing `HCR_EL2 = RW`, `CPTR_EL2` with `TFP = 0` (the
+`CPACR_EL1` trap is the one that fires), the timer controls,
+`VPIDR_EL2`/`VMPIDR_EL2` (an EL1 MPIDR read returns the latter, reset UNKNOWN),
+an untrapping `MDCR_EL2` and a known MMU-off `SCTLR_EL1`.  Changing the routine
+means changing the table, and `scan_el1_entry` refuses a write to any EL2
+register — by name or by an `S3_4_…` encoding — anywhere else in assembly or
+Rust.  (2) **The routine uses no stack and keeps `x0`**: the DTB pointer and
+the PSCI context id cross the drop, and it returns the entry level in `x9`,
+which `_start` hands to `rust_boot_main` as `entry_el`.  (3) **A PSCI call goes
+through `psci::psci_call`, never an `hvc` or `smc` of its own**.  Every wrapper
+used to hard-code `hvc #0`.  That could never have reached the RPi5 firmware:
+the firmware hands EL2 to the kernel, so an `hvc` was taken at EL2 through a
+vector table nothing had installed.  `select_conduit` picks `smc` after an EL2
+entry and keeps `hvc` after an EL1 one, and a call before the selection halts.
+A Tier 3 negative refuses the retired inline template.  (4) **Reading the
+conduit from the device tree's `/psci` `method` on an EL1 entry is registered
+debt**, and no current harness executes the EL2 path; BP8.1 runs QEMU both
+ways.
 
 **The RPi5 binding is the BCM2712's address map** (`v0.36.2`, found while
 scoping BP5.4).  Until then the model and the HAL both carried the **BCM2711**'s

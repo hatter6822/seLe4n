@@ -217,6 +217,7 @@ fn main() {
     // FP-free; this makes a stray FP instruction a trap rather than a silent
     // clobber of the interrupted thread's vector registers.
     scan_fp_trap_prologue();
+    scan_el1_entry();
 
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
@@ -9808,6 +9809,468 @@ fn verify_fp_trap_prologue_scanner() {
         !names_cpacr_el1("cpacr_el1_fpen"),
         "FP-trap scanner self-test: a longer word is not the register"
     );
+}
+
+// ============================================================================
+// Every boot entry reaches EL1 from whichever level the firmware chose
+// ============================================================================
+
+/// What each boot entry does immediately after `FP_TRAP_PROLOGUE`.
+const EL1_ENTRY_CALL: &str = "bl .l_enter_el1";
+
+/// What `_start` does with the entry level `.L_enter_el1` reports in `x9`:
+/// keep it in a callee-saved register through BSS zeroing and hand it to
+/// `rust_boot_main` as its second argument, where it selects the PSCI
+/// conduit (`psci::select_conduit`).
+const START_KEEPS_ENTRY_EL: &str = "mov x20, x9";
+const START_PASSES_ENTRY_EL: [&str; 2] = ["mov x1, x20", "bl rust_boot_main"];
+
+/// The routine both entries call, item for item, as `asm_statement_items`
+/// normalises it (a trailing `:` marks a label).  The canonical-spelling
+/// contract, not an analysis: the HAL writes this code, so the sequence is
+/// required exactly and any deviation is refused rather than reasoned
+/// about.  The per-register reasons are in `boot.S` beside the routine.
+///
+/// The load-bearing values: `HCR_EL2 = RW` (EL1 is AArch64, no stage 2,
+/// interrupts and `smc` not routed to EL2); `CPTR_EL2 = 0x33FF` (TFP = 0:
+/// FP/SIMD is not trapped to EL2, so `CPACR_EL1`'s EL1 trap is the one
+/// that fires); `CNTHCTL_EL2 = 0x3` (EL1 owns the physical counter and
+/// timer); `CNTVOFF_EL2 = 0`; `VPIDR_EL2` / `VMPIDR_EL2` = the real
+/// `MIDR_EL1` / `MPIDR_EL1` (an EL1 read returns these, and every core-id
+/// computation reads MPIDR); `MDCR_EL2` traps nothing; `SCTLR_EL1` a known
+/// MMU-off, little-endian value; `SPSR_EL2 = 0x3C5` (EL1h, DAIF masked);
+/// `ELR_EL2 = x30`; and any level but EL1 or EL2 halts.
+const EL1_ENTRY_ROUTINE: [&str; 43] = [
+    ".l_enter_el1:",
+    "msr daifset, #0xf",
+    "mrs x9, currentel",
+    "cmp x9, #0x4",
+    "b.ne .l_enter_el1_from_el2",
+    "ret",
+    ".l_enter_el1_from_el2:",
+    "cmp x9, #0x8",
+    "b.ne .l_unsupported_el",
+    "mov x9, #0x80000000",
+    "msr hcr_el2, x9",
+    "isb",
+    "mov x9, #0x33ff",
+    "msr cptr_el2, x9",
+    "mov x9, #0x3",
+    "msr cnthctl_el2, x9",
+    "msr cntvoff_el2, xzr",
+    "mrs x9, midr_el1",
+    "msr vpidr_el2, x9",
+    "mrs x9, mpidr_el1",
+    "msr vmpidr_el2, x9",
+    "mov x10, xzr",
+    // ID_AA64DFR0_EL1, by its encoding: `boot.S` is scanned by the
+    // identifier-naming gate, whose phase-code pattern reads `aa64` as one.
+    "mrs x9, s3_0_c0_c5_0",
+    "ubfx x9, x9, #8, #4",
+    "cbz x9, .l_enter_el1_mdcr",
+    "cmp x9, #0xf",
+    "b.eq .l_enter_el1_mdcr",
+    "mrs x10, pmcr_el0",
+    "ubfx x10, x10, #11, #5",
+    ".l_enter_el1_mdcr:",
+    "msr mdcr_el2, x10",
+    "mov x9, #0x0800",
+    "movk x9, #0x30d0, lsl #16",
+    "msr sctlr_el1, x9",
+    "mov x9, #0x3c5",
+    "msr spsr_el2, x9",
+    "msr elr_el2, x30",
+    "mov x9, #0x8",
+    "eret",
+    ".l_unsupported_el:",
+    "wfe",
+    "b .l_unsupported_el",
+    // Sentinel: the routine ends here, so a statement appended to the halt
+    // loop is a deviation rather than a continuation.
+    "<end>",
+];
+
+/// The EL2 system registers the routine writes.  Only the routine may name
+/// them, in any assembly source or Rust code: a second writer is the only
+/// way the EL2 configuration could change after the drop.  An encoded
+/// spelling with `op1 = 4` (`S3_4_C…`) is EL2's system-register space and
+/// is refused too, so a register the list does not name cannot be written
+/// through its encoding.
+const EL2_REGISTERS: [&str; 9] = [
+    "hcr_el2",
+    "cptr_el2",
+    "cnthctl_el2",
+    "cntvoff_el2",
+    "vpidr_el2",
+    "vmpidr_el2",
+    "mdcr_el2",
+    "spsr_el2",
+    "elr_el2",
+];
+
+/// Whether `text` names an EL2 register, by name or by an `op1 = 4`
+/// encoding, as a whole word.
+fn names_el2_register(text: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    lowered
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .any(|word| EL2_REGISTERS.contains(&word) || word.starts_with("s3_4_c"))
+}
+
+/// One item as the canonical tables spell it.
+fn asm_item_text(item: &AsmItem) -> String {
+    match item {
+        AsmItem::Label(l) => format!("{}:", l.to_ascii_lowercase()),
+        AsmItem::Statement(s) => s.clone(),
+    }
+}
+
+/// The decision, over source text: each entry in `FP_TRAPPING_ENTRIES`
+/// calls `.L_enter_el1` as the item after its FP prologue; `_start` keeps
+/// the reported level and passes it to `rust_boot_main`; `.L_enter_el1` is
+/// defined once and its body is `EL1_ENTRY_ROUTINE` to the end of the file;
+/// and no other statement anywhere names an EL2 register.
+fn el1_entry_status(
+    boot: &str,
+    other_asm: &[(&str, &str)],
+    rust: &[(&str, &str)],
+) -> Result<(), String> {
+    let items = asm_statement_items(&asm_code_view(boot));
+    let texts: Vec<String> = items.iter().map(asm_item_text).collect();
+    for entry in FP_TRAPPING_ENTRIES {
+        let label = format!("{}:", entry.to_ascii_lowercase());
+        let defs: Vec<usize> = texts
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| **t == label)
+            .map(|(i, _)| i)
+            .collect();
+        let [at] = defs[..] else {
+            return Err(format!(
+                "`{entry}` is defined {} times in boot.S; expected exactly once",
+                defs.len()
+            ));
+        };
+        let call = at + 1 + FP_TRAP_PROLOGUE.len();
+        if texts.get(call).map(String::as_str) != Some(EL1_ENTRY_CALL) {
+            return Err(format!(
+                "`{entry}` does not call `.L_enter_el1` immediately after its FP \
+                 prologue; the item there is {:?}",
+                texts.get(call)
+            ));
+        }
+        if entry == "_start"
+            && texts.get(call + 1).map(String::as_str) != Some(START_KEEPS_ENTRY_EL)
+        {
+            return Err(format!(
+                "`_start` does not keep the reported entry level with `{START_KEEPS_ENTRY_EL}`; \
+                 the item after the call is {:?}",
+                texts.get(call + 1)
+            ));
+        }
+    }
+    let calls = texts
+        .iter()
+        .filter(|t| t.as_str() == EL1_ENTRY_CALL)
+        .count();
+    if calls != FP_TRAPPING_ENTRIES.len() {
+        return Err(format!(
+            "boot.S calls `.L_enter_el1` {calls} times; only the {} entries may",
+            FP_TRAPPING_ENTRIES.len()
+        ));
+    }
+    let hands_over = texts
+        .windows(START_PASSES_ENTRY_EL.len())
+        .filter(|w| w.iter().zip(START_PASSES_ENTRY_EL).all(|(a, b)| a == b))
+        .count();
+    let boot_main_calls = texts
+        .iter()
+        .filter(|t| t.as_str() == START_PASSES_ENTRY_EL[1])
+        .count();
+    if hands_over != 1 || boot_main_calls != 1 {
+        return Err(format!(
+            "`rust_boot_main` must be called exactly once, immediately after \
+             `{}` (found {boot_main_calls} calls, {hands_over} preceded by it)",
+            START_PASSES_ENTRY_EL[0]
+        ));
+    }
+    let routine_defs: Vec<usize> = texts
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.as_str() == EL1_ENTRY_ROUTINE[0])
+        .map(|(i, _)| i)
+        .collect();
+    let [start] = routine_defs[..] else {
+        return Err(format!(
+            "`.L_enter_el1` is defined {} times in boot.S; expected exactly once",
+            routine_defs.len()
+        ));
+    };
+    let mut body: Vec<&str> = texts[start..].iter().map(String::as_str).collect();
+    body.push("<end>");
+    if body != EL1_ENTRY_ROUTINE {
+        let diverges = body
+            .iter()
+            .zip(EL1_ENTRY_ROUTINE)
+            .position(|(a, b)| *a != b)
+            .unwrap_or(body.len().min(EL1_ENTRY_ROUTINE.len()));
+        return Err(format!(
+            "`.L_enter_el1` is not the canonical routine (EL1_ENTRY_ROUTINE); \
+             item {diverges} is {:?} where {:?} is required",
+            body.get(diverges),
+            EL1_ENTRY_ROUTINE.get(diverges)
+        ));
+    }
+    let routine_el2 = EL1_ENTRY_ROUTINE
+        .iter()
+        .filter(|t| names_el2_register(t))
+        .count();
+    let boot_el2 = texts.iter().filter(|t| names_el2_register(t)).count();
+    if boot_el2 != routine_el2 {
+        return Err(format!(
+            "boot.S names an EL2 register in {boot_el2} statements; only the \
+             {routine_el2} in `.L_enter_el1` may"
+        ));
+    }
+    for (path, source) in other_asm {
+        if names_el2_register(&asm_code_view(source)) {
+            return Err(format!(
+                "{path} names an EL2 register; only `.L_enter_el1` may"
+            ));
+        }
+    }
+    for (path, source) in rust {
+        if names_el2_register(&rust_code_views(source).0) {
+            return Err(format!(
+                "{path} names an EL2 register in code or an `asm!` template; \
+                 `.L_enter_el1` is the only writer"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The canonical `boot.S` shape `el1_entry_status` accepts, built from its
+/// own tables so the fixture cannot drift from the contract it pins.
+fn el1_entry_fixture() -> String {
+    let routine: String = EL1_ENTRY_ROUTINE[..EL1_ENTRY_ROUTINE.len() - 1]
+        .iter()
+        .map(|t| {
+            if t.ends_with(':') {
+                format!("{}\n", t.replace(".l_", ".L_"))
+            } else {
+                format!("    {}\n", t.replace(".l_", ".L_"))
+            }
+        })
+        .collect();
+    format!(
+        "_start:\n    msr cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n    mov x20, x9\n\
+         \x20   mov x19, x0\n    mov x0, x19\n    mov x1, x20\n    bl rust_boot_main\n\
+         secondary_entry:\n    msr cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n    msr daifset, #0xf\n\
+         {routine}"
+    )
+}
+
+/// Pin `el1_entry_status` with token-preserving mutations: each refused
+/// case keeps the routine's tokens and breaks a relation — an order, a
+/// value, a position, an extra writer, or the halt.
+fn verify_el1_entry_scanner() {
+    let good = el1_entry_fixture();
+    let accept = |label: &str, boot: &str, asm: &[(&str, &str)], rust: &[(&str, &str)]| {
+        if let Err(e) = el1_entry_status(boot, asm, rust) {
+            panic!("EL1-entry scanner self-test: `{label}` must be accepted: {e}");
+        }
+    };
+    let refuse = |label: &str, boot: &str, asm: &[(&str, &str)], rust: &[(&str, &str)]| {
+        assert!(
+            el1_entry_status(boot, asm, rust).is_err(),
+            "EL1-entry scanner self-test: `{label}` must be refused"
+        );
+    };
+    let mutate = |from: &str, to: &str| {
+        assert_eq!(
+            good.matches(from).count(),
+            1,
+            "EL1-entry self-test: `{from}` must occur once"
+        );
+        good.replacen(from, to, 1)
+    };
+    accept("canonical", &good, &[], &[]);
+    accept(
+        "comments mention EL2 registers",
+        &format!("// HCR_EL2 is written below\n{good}"),
+        &[("trap.S", "/* msr elr_el2, x0 */\n")],
+        &[("cpu.rs", "// msr spsr_el2, x0\nfn f() {}\n")],
+    );
+    refuse(
+        "the call moved after an instruction",
+        &mutate(
+            "    isb\n    bl .L_enter_el1\n    msr daifset",
+            "    isb\n    msr daifset, #0xf\n    bl .L_enter_el1\n    msr daifset",
+        ),
+        &[],
+        &[],
+    );
+    refuse(
+        "the entry level not kept",
+        &mutate("    mov x20, x9\n", "    mov x21, x9\n"),
+        &[],
+        &[],
+    );
+    refuse(
+        "the entry level not passed",
+        &mutate("    mov x1, x20\n", "    mov x1, xzr\n"),
+        &[],
+        &[],
+    );
+    refuse(
+        "rust_boot_main called a second time",
+        &mutate(
+            "secondary_entry:\n",
+            "    bl rust_boot_main\nsecondary_entry:\n",
+        ),
+        &[],
+        &[],
+    );
+    refuse("FP trapped at EL2", &mutate("#0x33ff", "#0x37ff"), &[], &[]);
+    refuse(
+        "SPSR returns to EL1t",
+        &mutate("#0x3c5", "#0x3c4"),
+        &[],
+        &[],
+    );
+    refuse(
+        "SPSR returns with interrupts unmasked",
+        &mutate("#0x3c5", "#0x005"),
+        &[],
+        &[],
+    );
+    refuse(
+        "HCR written before its value (order)",
+        &mutate(
+            "    mov x9, #0x80000000\n    msr hcr_el2, x9\n",
+            "    msr hcr_el2, x9\n    mov x9, #0x80000000\n",
+        ),
+        &[],
+        &[],
+    );
+    refuse(
+        "no isb after HCR_EL2",
+        &mutate("    msr hcr_el2, x9\n    isb\n", "    msr hcr_el2, x9\n"),
+        &[],
+        &[],
+    );
+    refuse(
+        "VMPIDR_EL2 not written",
+        &mutate("    msr vmpidr_el2, x9\n", ""),
+        &[],
+        &[],
+    );
+    refuse(
+        "an EL3 entry falls into the EL2 path",
+        &mutate("    b.ne .L_unsupported_el\n", "    nop\n"),
+        &[],
+        &[],
+    );
+    refuse(
+        "the halt returns",
+        &mutate("    b .L_unsupported_el\n", "    ret\n"),
+        &[],
+        &[],
+    );
+    refuse(
+        "a statement after the halt loop",
+        &format!("{good}    nop\n"),
+        &[],
+        &[],
+    );
+    refuse(
+        "a third caller",
+        &format!("helper:\n    bl .L_enter_el1\n{good}"),
+        &[],
+        &[],
+    );
+    refuse(
+        "an EL2 register written elsewhere in boot.S",
+        &mutate(
+            "    mov x19, x0\n",
+            "    mov x19, x0\n    msr elr_el2, x0\n",
+        ),
+        &[],
+        &[],
+    );
+    refuse(
+        "an EL2 register written from another .S",
+        &good,
+        &[("trap.S", "    msr hcr_el2, x0\n")],
+        &[],
+    );
+    refuse(
+        "an EL2 register written through its encoding",
+        &good,
+        &[("trap.S", "    msr S3_4_C1_C1_0, x0\n")],
+        &[],
+    );
+    refuse(
+        "an EL2 register written from an asm! template",
+        &good,
+        &[],
+        &[(
+            "cpu.rs",
+            "fn f() { unsafe { core::arch::asm!(\"msr cptr_el2, {}\", in(reg) 0u64) } }\n",
+        )],
+    );
+    refuse(
+        "the routine missing",
+        &good.replacen(".L_enter_el1:\n", "", 1),
+        &[],
+        &[],
+    );
+    assert!(
+        !names_el2_register("hcr_el2x spsr_el1"),
+        "EL1-entry self-test: a longer word, or an EL1 register, is not an EL2 register"
+    );
+}
+
+/// Enforce `el1_entry_status` on the real sources.
+fn scan_el1_entry() {
+    verify_el1_entry_scanner();
+    let read = |path: &std::path::Path| {
+        println!("cargo:rerun-if-changed={}", path.display());
+        std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("EL1-entry scanner: cannot read {}: {e}", path.display()))
+    };
+    let boot = read(std::path::Path::new("src/boot.S"));
+    let mut rust_paths = Vec::new();
+    collect_rust_sources(std::path::Path::new("src"), &mut rust_paths);
+    let mut asm_paths = Vec::new();
+    for entry in std::fs::read_dir("src")
+        .expect("EL1-entry scanner: cannot read src/")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("S") && !path.ends_with("boot.S") {
+            asm_paths.push(path);
+        }
+    }
+    let asm: Vec<(String, String)> = asm_paths
+        .iter()
+        .map(|p| (p.display().to_string(), read(p)))
+        .collect();
+    let rust: Vec<(String, String)> = rust_paths
+        .iter()
+        .map(|p| (p.display().to_string(), read(p)))
+        .collect();
+    let asm_refs: Vec<(&str, &str)> = asm.iter().map(|(p, s)| (p.as_str(), s.as_str())).collect();
+    let rust_refs: Vec<(&str, &str)> = rust.iter().map(|(p, s)| (p.as_str(), s.as_str())).collect();
+    if let Err(e) = el1_entry_status(&boot, &asm_refs, &rust_refs) {
+        panic!(
+            "EL1 entry regression: {e}.\n\
+             Both boot entries must call `.L_enter_el1` right after the FP \
+             prologue, `.L_enter_el1` must be EL1_ENTRY_ROUTINE exactly, and \
+             nothing else may write an EL2 register (see EL1_ENTRY_ROUTINE)."
+        );
+    }
 }
 
 /// Enforce `fp_trap_prologue_status` on the real sources.

@@ -768,8 +768,11 @@ an intractable race.
   (`rwLock_fifo_admission_temporal`) — formally captured in F-02's
   divergence note; the queued variant is the FIFO-preserving choice
   for kernel paths that need strict FIFO at SM3+.
-* PSCI conduit parameterisation (HVC vs SMC) — RPi5 is HVC-only;
-  post-1.0 work.
+* PSCI conduit parameterisation (HVC vs SMC) — landed at v0.36.2
+  (WS-BP BP5.5): the RPi5 firmware enters the kernel at EL2, so after
+  the EL2-to-EL1 drop nothing at EL2 can service an `hvc`; the conduit
+  now follows the entry level (`psci::select_conduit`).  Reading it
+  from the device tree on an EL1 entry is registered debt.
 * Multi-cluster TLBI / cache-broadcast tuning — RPi5 is
   single-cluster; the OS variants are pre-positioned but unused at
   v1.0.0.

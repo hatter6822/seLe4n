@@ -5042,6 +5042,28 @@ run_check "INVARIANT" rg -n 'publish\(m, out, os\.environ\.get\("GITHUB_STEP_SUM
 run_check "INVARIANT" rg -n 'kernel_image_report\.py" --self-test' scripts/test_tier0_hygiene.sh
 run_check "INVARIANT" rg -U -n '^          name: rpi5-kernel-image\n          path: \|\n            rust/target/aarch64-unknown-none-softfloat/release/sele4n-kernel\n            \.lake/build/rpi5-image/kernel8\.img\n            \.lake/build/rpi5-image/config\.txt\n            \.lake/build/rpi5-image/kernel-image-report\.json$' .github/workflows/lean_action_ci.yml
 run_check "INVARIANT" rg -n '^    fn the_device_tree_window_is_the_dereference_bound\(\) \{$' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP5.5: both boot entries reach EL1 from whichever level the firmware
+# chose.  Each calls `.L_enter_el1` right after the FP prologue; the routine
+# leaves FP/SIMD untrapped at EL2 (CPTR_EL2.TFP = 0), gives EL1 the physical
+# timer, the real MPIDR and an untrapped PMU, and `eret`s to EL1h with DAIF
+# masked; any other level halts.  build.rs pins the routine item for item.
+run_check "INVARIANT" rg -n '^    scan_el1_entry\(\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -U -n '^_start:\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n    mov     x20, x9 ' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^secondary_entry:\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^\.L_enter_el1:\n    msr     daifset, #0xf\n    mrs     x9, currentel\n    cmp     x9, #0x4\n    b\.ne    \.L_enter_el1_from_el2\n    ret\n\.L_enter_el1_from_el2:\n    cmp     x9, #0x8\n    b\.ne    \.L_unsupported_el$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^    mov     x9, #0x33ff\n    msr     cptr_el2, x9$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^    mrs     x9, mpidr_el1\n    msr     vmpidr_el2, x9$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^    mov     x9, #0x3c5\n    msr     spsr_el2, x9\n    msr     elr_el2, x30\n    mov     x9, #0x8\n    eret$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^\.L_unsupported_el:\n    wfe\n    b       \.L_unsupported_el$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^    mov     x0, x19                 // x0 = DTB pointer \(first argument\)\n    mov     x1, x20 ' rust/sele4n-hal/src/boot.S
+# The PSCI conduit follows the entry level: an EL2 entry leaves nothing at
+# EL2 to take an `hvc`, so every call goes through `psci_call` and an EL2
+# entry selects `smc`.  No wrapper may hard-code `hvc #0` again.
+run_check "INVARIANT" rg -n '^        CURRENT_EL_EL2 => Some\(Conduit::Smc\),$' rust/sele4n-hal/src/psci.rs
+run_check "INVARIANT" rg -n '^        None => crate::cpu::fatal_halt\(\),$' rust/sele4n-hal/src/psci.rs
+run_check "INVARIANT" rg -n '^pub extern "C" fn rust_boot_main\(dtb_ptr: u64, entry_el: u64\) -> ! \{$' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^    match crate::psci::select_conduit\(entry_el\) \{$' rust/sele4n-hal/src/boot.rs
+run_negative_check "INVARIANT" rg -n '^                "hvc #0",$' rust/sele4n-hal/src/psci.rs
 # The re-type operand must NOT regress to the bare domain-wide invalidate.
 run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
 # The scrubbed extent has exactly ONE definition, and both the scrub and the

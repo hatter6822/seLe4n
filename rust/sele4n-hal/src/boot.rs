@@ -53,7 +53,11 @@ const LEAN_DECLARED_CORE_COUNT: u32 = 4;
 const SECONDARY_READY_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS * 16;
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
-/// stack setup. Receives the DTB pointer from U-Boot in x0.
+/// stack setup. Receives the DTB pointer from the firmware in x0, and in x1
+/// the `CurrentEL` value the firmware entered `_start` at (`0x4` for EL1,
+/// `0x8` for EL2), which `boot.S`'s `.L_enter_el1` reports after dropping
+/// to EL1 (WS-BP BP5.5).  The entry level selects the PSCI conduit before
+/// anything can make a PSCI call (`psci::select_conduit`).
 ///
 /// This function must never return. If the kernel main returns (which it
 /// shouldn't), we enter an infinite WFE loop.
@@ -65,7 +69,7 @@ const SECONDARY_READY_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS
 /// function, `boot.S` must be updated in lockstep — `cargo build` would
 /// fail with an unresolved-symbol error before any binary is produced.
 #[no_mangle]
-pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
+pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // -----------------------------------------------------------------------
     // Phase 1: UART initialization, boot banner, per-CPU data verification
     //
@@ -90,9 +94,23 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     crate::kprintln!("  ARM64 / BCM2712 / Cortex-A76");
     crate::kprintln!();
 
-    // Report current exception level
+    // Report the level the firmware entered at and the level the kernel
+    // runs at, then select the PSCI conduit the entry level implies.  An
+    // entry level `boot.S` never reports cannot pick a conduit; the core
+    // halts rather than guess (WS-BP BP5.5).
     let el = crate::registers::read_current_el();
-    crate::kprintln!("[boot] Current exception level: EL{}", el);
+    crate::kprintln!(
+        "[boot] Entered at EL{}, running at EL{}",
+        (entry_el >> 2) & 0x3,
+        el
+    );
+    match crate::psci::select_conduit(entry_el) {
+        Some(conduit) => crate::kprintln!("[boot] PSCI conduit: {:?}", conduit),
+        None => {
+            crate::kprintln!("[boot] FATAL: unrecognised entry level {:#x}", entry_el);
+            crate::cpu::fatal_halt();
+        }
+    }
 
     // SM1.D.5: per-CPU data verification before any subsequent phase.
     // The check is platform-independent (host stubs run identically),
