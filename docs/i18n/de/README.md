@@ -97,9 +97,9 @@ Lean-4-Beweissystem ermöglicht werden:
 |-------------|------|
 | **Version** | `0.36.2` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 420.374 über 343 Dateien |
-| **Test-LoC (Lean)** | 85.416 über 71 Testsuiten |
-| **Bewiesene Deklarationen** | 13.916 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Produktions-LoC (Lean)** | 420.527 über 343 Dateien |
+| **Test-LoC (Lean)** | 85.428 über 71 Testsuiten |
+| **Bewiesene Deklarationen** | 13.922 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Kanonisches Audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — umfassendes Pre-1.0-Audit (202 Befunde; behoben durch WS-AK AK1–AK10; archiviert) |
 | **Letztes Audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — Pre-1.0-Bereitschaftsaudit nach dem WS-AN-Abschluss (Nachfolger des inzwischen archivierten [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), behoben durch WS-AN AN0–AN12). WS-RC R0..R5 LANDED bei v0.31.2; WS-RC R6..R14 gemäß der SM0.Q.1-Absorptionszuordnung in WS-SM aufgegangen (siehe [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Aktiver Workstream-Plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |

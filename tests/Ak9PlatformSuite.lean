@@ -2175,7 +2175,13 @@ the Lean map itself: for every RAM variant, the regions it declares and the kind
 it, address 0, and one address far above every map.  The Rust suite
 (`mmu::tests::the_boot_map_agrees_with_the_lean_map`) pushes the same probes,
 and its own boundary constants, through `boot_mapping_for` and through a walk of
-the tables it builds, and requires the kind the Lean map gives. -/
+the tables it builds, and requires the kind the Lean map gives.
+
+**WS-BP BP4.6**: each variant also carries its `extend` lines — the RAM the boot
+maps above the guaranteed gigabyte once the verified parse has chosen that
+variant (`rpi5BootRamExtensions`).  The Rust suite applies them to its tables
+and requires the extended Normal window to be **exactly** that variant's RAM,
+on every variant rather than the smallest alone. -/
 
 private def bootMapHex (n : Nat) : String :=
   "0x" ++ String.ofList (Nat.toDigits 16 n)
@@ -2208,6 +2214,12 @@ private def bootMapTableLines : List String :=
       s!"variant {bootMapHex v.ramSize} ramTop {bootMapHex ramTop}"
         :: map.map (fun r =>
             s!"region {bootMapHex r.base.toNat} {bootMapHex r.size} {bootMapKindName r.kind}")
+        -- WS-BP BP4.6: what the boot maps above the guaranteed gigabyte on this
+        -- variant, as `extend <base> <size>` — the HAL's test applies each to
+        -- its tables through `mmu::extend_boot_tables` and then requires the
+        -- Normal window to be exactly this variant's RAM.
+        ++ (rpi5BootRamExtensions v).map (fun e =>
+            s!"extend {bootMapHex e.1} {bootMapHex e.2}")
         ++ (bootMapProbes map).map fun a =>
             s!"probe {bootMapHex a} {bootMapKindName (classifyAddress (SeLe4n.PAddr.ofNat a) map)}"
 

@@ -258,6 +258,10 @@ pub fn enter_lean_kernel(
     // cache dropped, before the permit that releases a secondary exists and so
     // before any PE can dispatch a thread.
     crate::cache::clean_boot_image_to_pou();
+    // WS-BP BP4.6: the install has extended the boot map to the verified
+    // board's RAM; from here every PE shares the tables, so they are sealed
+    // before the permit that releases one exists.
+    crate::mmu::seal_boot_map();
     SecondaryReleasePermit { _private: () }
 }
 

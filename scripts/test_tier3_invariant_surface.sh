@@ -3832,8 +3832,9 @@ run_negative_check "INVARIANT" rg -U -n '^pub fn init_mmu\(dtb_ptr: u64\) \{[^\n
 run_check "INVARIANT" rg -n -U '^pub fn init_mmu\(dtb_ptr: u64\) \{\n    let layout = image_layout\(\);\n    if !layout\.is_well_formed\(\) \{\n(.*\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    if !dtb_window_admissible\(dtb_window\(dtb_ptr\), kernel_extent\(\)\) \{\n(.*\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(&layout\);' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^pub const GUARANTEED_RAM_TOP: u64 = 0x4000_0000;$' rust/sele4n-hal/src/mmu.rs
-# The cacheable window is the one guaranteed interval, a pure constant question.
-run_check "INVARIANT" rg -n -U '^pub const fn is_boot_cacheable_range\(base: u64, size: u64\) -> bool \{\n    if size == 0 \{\n        return true;\n    \}\n    match base\.checked_add\(size\) \{\n        Some\(end\) => end <= GUARANTEED_RAM_TOP,' rust/sele4n-hal/src/mmu.rs
+# The cacheable window is the guaranteed interval unioned with the RAM BP4.6
+# records: `ram_range_covered` starts from guaranteed RAM whatever the record.
+run_check "INVARIANT" rg -n -U '^pub const fn ram_range_covered\(base: u64, size: u64, extensions: &\[\(u64, u64\)\]\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?        if cursor < GUARANTEED_RAM_TOP \{\n            next = Some\(GUARANTEED_RAM_TOP\);' rust/sele4n-hal/src/mmu.rs
 # The device tree's window is the readers' own bound, taken from the pointer,
 # and admitted only inside the kernel's reserved extent (WS-BP BP3.2) and
 # outside the image.
@@ -4954,7 +4955,7 @@ run_check "INVARIANT" rg -n '^theorem bootImageIcacheOp_discharges_obligation($|
 # The HAL emits that operand over the image's loaded extent, and does so inside
 # `enter_lean_kernel` immediately before it mints the secondary-release permit:
 # the clean is ordered after the install and before any PE can dispatch.
-run_check "INVARIANT" rg -U -n '^    let dtb = device_tree_blob\(blob\);[^\n]*(\n([ \t][^\n]*)?)*?    let res = unsafe \{ lean_kernel_main\(dtb\) \};[^\n]*(\n([ \t][^\n]*)?)*?    crate::cache::clean_boot_image_to_pou\(\);\n    SecondaryReleasePermit \{ _private: \(\) \}\n\}' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -U -n '^    let dtb = device_tree_blob\(blob\);[^\n]*(\n([ \t][^\n]*)?)*?    let res = unsafe \{ lean_kernel_main\(dtb\) \};[^\n]*(\n([ \t][^\n]*)?)*?    crate::cache::clean_boot_image_to_pou\(\);\n([ \t]*\n|    //[^\n]*\n)*    crate::mmu::seal_boot_map\(\);\n    SecondaryReleasePermit \{ _private: \(\) \}\n\}' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -U -n '^pub const fn boot_image_icache_operand\(extent: \(u64, u64\)\) -> ICacheInvalidation \{\n    ICacheInvalidation::CleanRangeIallu\(extent\.0, extent\.1\)\n\}' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -U -n '^pub fn clean_boot_image_to_pou\(\) \{\n    apply_icache_invalidation\(boot_image_icache_operand\(\n        crate::mmu::boot_image_loaded_extent\(\),' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -U -n '^pub fn boot_image_loaded_extent\(\) -> \(u64, u64\) \{[^\n]*(\n([ \t][^\n]*)?)*?            static __image_load_end: u8;' rust/sele4n-hal/src/mmu.rs
@@ -4962,6 +4963,30 @@ run_check "INVARIANT" rg -n '^        __image_load_end = \.;$' rust/sele4n-hal/l
 run_check "INVARIANT" rg -n '^pub fn clean_range_pou_then_invalidate_all_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'CleanRangeIallu\(u64, u64\)' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'fn test_clean_range_pou_line_coverage' rust/sele4n-hal/src/cache.rs
+# WS-BP BP4.6: the verified board's RAM above the guaranteed gigabyte.  Lean
+# derives the extent from the bound variant's memory map (never a per-variant
+# list) and proves it is that RAM in both directions; the device-tree wrapper's
+# accepting arm maps it and THEN installs, with nothing between; the HAL writes
+# only invalid entries after deciding every refusal, widens the cacheable window
+# by the same record, and refuses once sealed.  The seal precedes the permit
+# (the BP4.5 anchor above holds that order).
+run_check "INVARIANT" rg -U -n '^def bootRamExtensionsOf \(map : List SeLe4n\.MemoryRegion\) : List \(Nat × Nat\) :=\n  map\.filterMap fun r =>\n    if r\.kind = \.ram ∧ max r\.base\.toNat rpi5GuaranteedRamTop < r\.endAddr then' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -U -n '^def rpi5BootRamExtensionsFor \(board : SeLe4n\.MachineConfig\) : List \(Nat × Nat\) :=\n  bootRamExtensionsOf \(rpi5BoundMachineConfig board\)\.memoryMap$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^theorem mem_bootRamExtensionsOf($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^theorem bootRamExtensionsOf_covers($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^theorem rpi5BootRamExtensions_values($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^theorem rpi5BootRamExtensions_admissible($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -U -n '^@\[extern "ffi_extend_boot_ram_map"\]\nopaque ffiExtendBootRamMap \(base size : UInt64\) : BaseIO Unit$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -U -n '^  \| \.ok config => do\n      extendBootRamMap \(SeLe4n\.Platform\.RPi5\.rpi5BootRamExtensionsFor config\.machineConfig\)\n      bootAndInitialiseRPi5OrHalt config$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -U -n '^theorem kernelMain_installs[^\n]*(\n([ \t][^\n]*)?)*?        Platform\.FFI\.extendBootRamMap\n          \(rpi5BootRamExtensions \(rpi5VariantFor config\.machineConfig\)\)\n        Platform\.FFI\.initialiseKernelState' SeLe4n/Platform/RPi5/KernelMain.lean
+run_check "INVARIANT" rg -U -n '^pub fn is_boot_cacheable_range\(base: u64, size: u64\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?    ram_range_covered\(base, size, &extensions\[\.\.recorded\]\)\n\}' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n 'pub const fn is_boot_cacheable_range' rust/sele4n-hal/src
+run_check "INVARIANT" rg -U -n '^pub fn extend_boot_ram_map\(base: u64, size: u64\) -> Result<\(\), RamExtensionRefusal> \{\n    if BOOT_MAP_SEALED\.load\(Ordering::Acquire\) \{\n        return Err\(RamExtensionRefusal::Sealed\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -U -n '^    unsafe \{ BOOT_TABLES\.with_inner_mut\(\|tables\| extend_boot_tables\(tables, base, size\)\) \}\?;\n([ \t]*\n|    //[^\n]*\n)*    unsafe \{ crate::cache::clean_pagetable_range\(BOOT_TABLES\.pa\(\), PageTableCell::size\(\)\) \};\n    barriers::dsb_ish\(\);\n    barriers::isb\(\);\n    RAM_EXTENSIONS\[recorded\]' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -U -n '^pub extern "C" fn ffi_extend_boot_ram_map\(base: u64, size: u64\) -> crate::lean_runtime::Obj \{\n    if let Err\(refusal\) = crate::mmu::extend_boot_ram_map\(base, size\) \{[^\n]*(\n([ \t][^\n]*)?)*?        crate::gic::halt_all\(\);' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n 'fn a_refused_extension_writes_nothing' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '\["extend", base, size\] => variants' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^extend 0x100000000 0x300000000$' tests/fixtures/boot_map.expected
 # The re-type operand must NOT regress to the bare domain-wide invalidate.
 run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
 # The scrubbed extent has exactly ONE definition, and both the scrub and the

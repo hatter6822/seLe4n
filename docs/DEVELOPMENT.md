@@ -248,6 +248,13 @@ to it that breaks any variant fails to elaborate.  Releasing a secondary consume
 `enter_lean_kernel` returns after the install, and `no_lean_kernel()` is for
 images and tests that link no kernel.  A new bring-up path takes the permit too
 — it is how the install is kept ahead of every secondary without a lock.
+**The boot map grows once, before the seal** (BP4.6): the accepting arm maps the
+verified variant's RAM above the guaranteed gigabyte through
+`ffiExtendBootRamMap` before the install, and `enter_lean_kernel` seals the map
+(`mmu::seal_boot_map`) before it mints the permit.  Extend the boot tables only
+through `mmu::extend_boot_ram_map` — it writes invalid entries only, decides every
+refusal first, and widens `is_boot_cacheable_range` by the same record — and never
+after the seal.
 Lean 4.28 returns an `IO`/`BaseIO` function's value directly (no world, no
 result wrapper): declare a `BaseIO Unit` export `-> lean_runtime::LeanBaseIoUnit`
 and hand the value to `lean_runtime::discharge_base_io`; only a module

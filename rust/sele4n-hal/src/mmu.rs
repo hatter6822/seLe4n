@@ -22,6 +22,7 @@
 //! References: ARM ARM D8 (The AArch64 Virtual Memory System Architecture)
 
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use crate::barriers;
 
@@ -281,16 +282,22 @@ pub const fn compute_sctlr_el1_bitmap() -> u64 {
 //   * `[DEVICE_WINDOW_BASE, DEVICE_WINDOW_TOP)`: Device.
 //   * everything else: unmapped.
 //
-// RAM above the guaranteed gigabyte is mapped once the verified Lean parser has
-// read the device tree with translation on (BP4.6), which is the one reader of
-// that blob the kernel keeps for memory.
+// **WS-BP BP4.6**: RAM above the guaranteed gigabyte is mapped once the verified
+// Lean parser has read the device tree with translation on and chosen the
+// variant — the one reader of that blob the kernel keeps for memory.  Lean
+// derives the variant's RAM above the gigabyte (`bootRamExtensionsOf`) and hands
+// each region to [`extend_boot_ram_map`], which adds descriptors only to entries
+// these tables leave invalid and widens [`is_boot_cacheable_range`] by the same
+// record.  The boot map stays a function of the image and the board; the board
+// is decided by the verified parser rather than before translation is on.
 //
 // The map is checked against `rpi5MemoryMapForConfig` in
 // `SeLe4n/Platform/RPi5/Board.lean` by driving, not mirroring (WS-BP BP0.4):
 // `the_boot_map_agrees_with_the_lean_map` requires every address the boot maps
 // Normal to be RAM, and every address it maps Device to be a device region, in
 // **every** RAM variant's Lean map — and on the smallest variant the Normal
-// window to be exactly its RAM.  `scripts/check_physical_address_width.sh`
+// window to be exactly its RAM; since BP4.6, with each variant's `extend` lines
+// applied, the extended Normal window is exactly **that** variant's RAM.  `scripts/check_physical_address_width.sh`
 // holds `link.ld`'s RAM region to [`GUARANTEED_RAM_TOP`], which no Lean
 // definition states.
 
@@ -464,22 +471,72 @@ pub const fn boot_mapping_for(addr: u64, layout: &ImageLayout) -> BootMapping {
 /// Asks the question for a *range* rather than for its first byte, because a
 /// range that starts in RAM and runs off the end of it is exactly the
 /// under-maintenance a per-address check would miss.  **WS-BP BP2.6**: the
-/// Normal window is one interval, `[0, GUARANTEED_RAM_TOP)`, whatever the
+/// Normal window was one interval, `[0, GUARANTEED_RAM_TOP)`, whatever the
 /// image's permissions inside it (cache maintenance by address needs read
-/// access, which every Normal page grants), so the predicate is pure and
-/// constant — it used to read a RAM top the device tree had supplied.
-/// `boot_cacheable_range_agrees_with_pointwise_mapping` pins it against
-/// [`boot_mapping_for`].  An empty range is vacuously contained; a range whose
-/// end overflows `u64` is refused.
+/// access, which every Normal page grants).  **WS-BP BP4.6**: it is that
+/// interval together with every extension [`extend_boot_ram_map`] has
+/// recorded — the RAM of the variant the verified device-tree parse selected —
+/// so the window and the tables are widened by one call and cannot disagree.
+/// [`ram_range_covered`] is the pure form, pinned against a walk of extended
+/// tables by `boot_map_tests`.  An empty range is vacuously contained; a range
+/// whose end overflows `u64` is refused.
 #[must_use]
-pub const fn is_boot_cacheable_range(base: u64, size: u64) -> bool {
+pub fn is_boot_cacheable_range(base: u64, size: u64) -> bool {
+    let recorded = RAM_EXTENSION_COUNT
+        .load(Ordering::Acquire)
+        .min(MAX_RAM_EXTENSIONS);
+    let mut extensions = [(0u64, 0u64); MAX_RAM_EXTENSIONS];
+    for (i, slot) in extensions.iter_mut().enumerate().take(recorded) {
+        *slot = (
+            RAM_EXTENSIONS[i].0.load(Ordering::Relaxed),
+            RAM_EXTENSIONS[i].1.load(Ordering::Relaxed),
+        );
+    }
+    ram_range_covered(base, size, &extensions[..recorded])
+}
+
+/// **WS-BP BP4.6**: is every byte of `[base, base + size)` inside guaranteed
+/// RAM or one of `extensions` (each a `(base, end)` interval)?
+///
+/// The intervals may abut — the first extension begins where guaranteed RAM
+/// ends — so containment is asked of their union: advance a cursor through
+/// whichever interval holds it until the range is covered or no interval holds
+/// the cursor.  Each step moves the cursor to an interval's end, strictly past
+/// where it was, so the loop runs at most once per interval plus one.
+#[must_use]
+pub const fn ram_range_covered(base: u64, size: u64, extensions: &[(u64, u64)]) -> bool {
     if size == 0 {
         return true;
     }
-    match base.checked_add(size) {
-        Some(end) => end <= GUARANTEED_RAM_TOP,
-        None => false,
+    let end = match base.checked_add(size) {
+        Some(end) => end,
+        None => return false,
+    };
+    let mut cursor = base;
+    let mut steps = 0;
+    while steps <= extensions.len() {
+        if cursor >= end {
+            return true;
+        }
+        let mut next = None;
+        if cursor < GUARANTEED_RAM_TOP {
+            next = Some(GUARANTEED_RAM_TOP);
+        }
+        let mut i = 0;
+        while i < extensions.len() {
+            let (lo, hi) = extensions[i];
+            if lo <= cursor && cursor < hi {
+                next = Some(hi);
+            }
+            i += 1;
+        }
+        match next {
+            Some(hi) => cursor = hi,
+            None => return false,
+        }
+        steps += 1;
     }
+    cursor >= end
 }
 
 // ---------------------------------------------------------------------------
@@ -666,6 +723,212 @@ const _: () = assert!(DEVICE_WINDOW_TOP.is_multiple_of(L3_PAGE_SIZE));
 const _: () = assert!(DEVICE_TAIL_BLOCK_BASE.is_multiple_of(L2_BLOCK_SIZE));
 const _: () = assert!(DEVICE_TAIL_BLOCK_BASE >= DEVICE_WINDOW_BASE);
 const _: () = assert!(L2_BLOCK_SIZE == 1 << 21);
+
+// ---------------------------------------------------------------------------
+// WS-BP BP4.6 — the verified board's RAM above the guaranteed gigabyte
+// ---------------------------------------------------------------------------
+
+/// **WS-BP BP4.6**: one past the last address the boot tables can describe —
+/// the span of `l0[0]`, the only level-0 entry they populate (512 GiB, which
+/// the BCM2712's 44-bit physical address space never needs past 16 GiB).
+pub const BOOT_TABLE_REACH: u64 = 1 << 39;
+
+/// **WS-BP BP4.6**: how many RAM extensions the boot map can record.  The
+/// largest Raspberry Pi 5 needs two — the rest of the low 4 GiB below the GPU
+/// carve-out, and the RAM above 4 GiB — and a third is refused on no board;
+/// the slack is for a future variant, never a reason to leave one unrecorded.
+pub const MAX_RAM_EXTENSIONS: usize = 4;
+
+/// **WS-BP BP4.6**: why [`extend_boot_tables`] or [`extend_boot_ram_map`]
+/// refused an extension.  Every refusal is decided before any descriptor is
+/// written, so a refused extension leaves the tables exactly as they were.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RamExtensionRefusal {
+    /// `size` is zero: an extension that maps nothing is a caller's mistake.
+    Empty,
+    /// `base + size` overflows `u64`.
+    Overflow,
+    /// `base` or `base + size` is not on a 2 MiB boundary — the smallest block
+    /// an extension writes.
+    Unaligned,
+    /// The range begins inside guaranteed RAM, which the boot map already
+    /// describes with the image's own permissions.
+    BelowGuaranteedRam,
+    /// The range ends past [`BOOT_TABLE_REACH`].
+    BeyondTableReach,
+    /// The range covers part of a gigabyte whose level-1 entry is invalid: the
+    /// tables have no level-2 table for it, so only a whole gigabyte (one
+    /// 1 GiB block) can be mapped there.  The device window's gigabyte has its
+    /// own level-2 table and takes 2 MiB blocks.
+    PartialGigabyte,
+    /// A descriptor the range needs is already valid — guaranteed RAM, the
+    /// device window, or an earlier extension.  Extending never rewrites a
+    /// valid descriptor, which is what makes it safe without break-before-make
+    /// and without a TLB invalidation: a translation that faults is never
+    /// cached (ARM ARM D8.14).
+    AlreadyMapped,
+    /// [`MAX_RAM_EXTENSIONS`] are already recorded.
+    RecordFull,
+    /// The boot map was sealed ([`seal_boot_map`]): a secondary may already be
+    /// walking these tables, and the tables are no longer single-writer.
+    Sealed,
+}
+
+/// **WS-BP BP4.6**: the per-gigabyte step both passes of
+/// [`extend_boot_tables`] walk — `(gigabyte index, lo, hi)` for the part of
+/// `[base, end)` inside each gigabyte, in address order.
+fn gigabytes_of(base: u64, end: u64) -> impl Iterator<Item = (usize, u64, u64)> {
+    let first = base / L1_BLOCK_SIZE;
+    let last = (end - 1) / L1_BLOCK_SIZE;
+    (first..=last).map(move |g| {
+        let gib = g * L1_BLOCK_SIZE;
+        (g as usize, base.max(gib), end.min(gib + L1_BLOCK_SIZE))
+    })
+}
+
+/// **WS-BP BP4.6**: extend `tables`' identity map over `[base, base + size)` as
+/// Normal RAM — writable, never executable ([`BootMapping::NormalRam`]).
+///
+/// Pure over its arguments so the host suite drives it against the Lean map.
+/// Two passes: every refusal ([`RamExtensionRefusal`]) is decided by the first,
+/// so the second, which writes, cannot fail half way.  A whole gigabyte is one
+/// level-1 block descriptor; the device window's gigabyte, which has a level-2
+/// table, takes 2 MiB block descriptors in its invalid entries.  Only entries
+/// the tables leave **invalid** are written, never a valid one.
+///
+/// # Errors
+///
+/// The [`RamExtensionRefusal`] the range violates, with `tables` unchanged.
+pub fn extend_boot_tables(
+    tables: &mut BootPageTables,
+    base: u64,
+    size: u64,
+) -> Result<(), RamExtensionRefusal> {
+    if size == 0 {
+        return Err(RamExtensionRefusal::Empty);
+    }
+    let end = base
+        .checked_add(size)
+        .ok_or(RamExtensionRefusal::Overflow)?;
+    if !base.is_multiple_of(L2_BLOCK_SIZE) || !end.is_multiple_of(L2_BLOCK_SIZE) {
+        return Err(RamExtensionRefusal::Unaligned);
+    }
+    if base < GUARANTEED_RAM_TOP {
+        return Err(RamExtensionRefusal::BelowGuaranteedRam);
+    }
+    if end > BOOT_TABLE_REACH {
+        return Err(RamExtensionRefusal::BeyondTableReach);
+    }
+    for (g, lo, hi) in gigabytes_of(base, end) {
+        let gib = g as u64 * L1_BLOCK_SIZE;
+        if g == DEVICE_GIB {
+            let mut block = lo;
+            while block < hi {
+                if tables.l2_device[((block - gib) / L2_BLOCK_SIZE) as usize] != 0 {
+                    return Err(RamExtensionRefusal::AlreadyMapped);
+                }
+                block += L2_BLOCK_SIZE;
+            }
+        } else {
+            if tables.l1[g] != 0 {
+                return Err(RamExtensionRefusal::AlreadyMapped);
+            }
+            if lo != gib || hi != gib + L1_BLOCK_SIZE {
+                return Err(RamExtensionRefusal::PartialGigabyte);
+            }
+        }
+    }
+    for (g, lo, hi) in gigabytes_of(base, end) {
+        let gib = g as u64 * L1_BLOCK_SIZE;
+        if g == DEVICE_GIB {
+            let mut block = lo;
+            while block < hi {
+                tables.l2_device[((block - gib) / L2_BLOCK_SIZE) as usize] =
+                    block_descriptor(block, BootMapping::NormalRam);
+                block += L2_BLOCK_SIZE;
+            }
+        } else {
+            // A level-1 block descriptor has the level-2 block's format (ARM
+            // ARM D8.3); only the output address's alignment differs.
+            tables.l1[g] = block_descriptor(gib, BootMapping::NormalRam);
+        }
+    }
+    Ok(())
+}
+
+/// **WS-BP BP4.6**: the extensions recorded so far, as `(base, end)`, and how
+/// many are published.  The count is stored `Release` after both words of its
+/// slot, and read `Acquire` by [`is_boot_cacheable_range`], so a reader never
+/// sees a slot before its contents.  One writer: the boot core, before
+/// [`seal_boot_map`].
+static RAM_EXTENSIONS: [(AtomicU64, AtomicU64); MAX_RAM_EXTENSIONS] =
+    [const { (AtomicU64::new(0), AtomicU64::new(0)) }; MAX_RAM_EXTENSIONS];
+static RAM_EXTENSION_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// **WS-BP BP4.6**: set once, by the boot seam, before the permit that
+/// releases a secondary exists (`lean_entry::enter_lean_kernel`).  After it
+/// the boot tables are shared with every PE that enables translation, so they
+/// are never written again.
+static BOOT_MAP_SEALED: AtomicBool = AtomicBool::new(false);
+
+/// **WS-BP BP4.6**: seal the boot map.  Called by the boot seam immediately
+/// before it mints the `SecondaryReleasePermit`; every later
+/// [`extend_boot_ram_map`] is refused with [`RamExtensionRefusal::Sealed`].
+pub fn seal_boot_map() {
+    BOOT_MAP_SEALED.store(true, Ordering::Release);
+}
+
+/// **WS-BP BP4.6**: extend the live boot map over `[base, base + size)` and
+/// widen the cacheable window to match.
+///
+/// What the verified Lean boot calls, through `ffi_extend_boot_ram_map`, once
+/// per RAM region of the variant the device tree selected
+/// (`Platform.FFI.extendBootRamMap`).  The extension adds descriptors to entries
+/// the tables leave invalid, so it needs no break-before-make and no TLB
+/// invalidation.  The table extent is cleaned to the Point of Coherency — a
+/// secondary enables translation with its data cache off — and one `DSB ISH`
+/// makes the descriptors visible to the table walker (walks are
+/// inner-shareable write-back cacheable, `TCR_EL1`'s `IRGN0`/`ORGN0`/`SH0`) and
+/// one `ISB` to the instruction stream.  The record
+/// is published after the barrier, so no caller can be told a range is
+/// cacheable before a walk can resolve it.
+///
+/// # Errors
+///
+/// [`RamExtensionRefusal::Sealed`] after [`seal_boot_map`],
+/// [`RamExtensionRefusal::RecordFull`] with the record full, and otherwise
+/// [`extend_boot_tables`]'s refusal — each with nothing written.
+pub fn extend_boot_ram_map(base: u64, size: u64) -> Result<(), RamExtensionRefusal> {
+    if BOOT_MAP_SEALED.load(Ordering::Acquire) {
+        return Err(RamExtensionRefusal::Sealed);
+    }
+    let recorded = RAM_EXTENSION_COUNT.load(Ordering::Relaxed);
+    if recorded >= MAX_RAM_EXTENSIONS {
+        return Err(RamExtensionRefusal::RecordFull);
+    }
+    // SAFETY: the boot map is not sealed, so no secondary has been released
+    // and this runs on the boot core alone, inside the single-threaded boot
+    // install; the only other reader of the tables is this PE's own walker,
+    // and `extend_boot_tables` writes only descriptors that are invalid, which
+    // no walk can have cached.
+    unsafe { BOOT_TABLES.with_inner_mut(|tables| extend_boot_tables(tables, base, size)) }?;
+    // SAFETY: `BOOT_TABLES` is the kernel's own `.bss`, identity-mapped Normal
+    // RAM, and `PageTableCell::size()` is its whole extent.  Cleaning it to the
+    // Point of Coherency is what `enable_mmu` does before its own enable: a
+    // secondary enables translation with its data cache off, so the descriptors
+    // just written with this PE's cache on must be in memory, not only in a
+    // line this PE holds.  The call ends in `DSB ISH`, which also makes the
+    // descriptors visible to this PE's own walker.
+    unsafe { crate::cache::clean_pagetable_range(BOOT_TABLES.pa(), PageTableCell::size()) };
+    barriers::dsb_ish();
+    barriers::isb();
+    RAM_EXTENSIONS[recorded].0.store(base, Ordering::Relaxed);
+    RAM_EXTENSIONS[recorded]
+        .1
+        .store(base + size, Ordering::Relaxed);
+    RAM_EXTENSION_COUNT.store(recorded + 1, Ordering::Release);
+    Ok(())
+}
 
 /// Physical address of the table at index `table` of the struct at `base_pa`.
 #[inline]
@@ -1629,6 +1892,7 @@ mod boot_map_tests {
             ram_top: u64,
             regions: Vec<(u64, u64, &'a str)>,
             probes: Vec<(u64, &'a str)>,
+            extensions: Vec<(u64, u64)>,
         }
         let mut variants: Vec<Variant> = Vec::new();
         for line in LEAN_TABLE.lines().filter(|l| !l.starts_with('#')) {
@@ -1638,6 +1902,7 @@ mod boot_map_tests {
                     ram_top: hex(top),
                     regions: Vec::new(),
                     probes: Vec::new(),
+                    extensions: Vec::new(),
                 }),
                 ["region", base, size, kind] => variants
                     .last_mut()
@@ -1649,6 +1914,13 @@ mod boot_map_tests {
                     .expect("a probe belongs to a variant")
                     .probes
                     .push((hex(addr), kind)),
+                // WS-BP BP4.6: what the boot maps above the guaranteed gigabyte
+                // on this variant, as `(base, size)`.
+                ["extend", base, size] => variants
+                    .last_mut()
+                    .expect("an extension belongs to a variant")
+                    .extensions
+                    .push((hex(base), hex(size))),
                 // WS-BP BP3.2: the reserved extent, which
                 // `the_kernel_reserved_extent_is_the_lean_and_linker_one` reads.
                 ["kernelReserved", _, _] => {}
@@ -1663,6 +1935,17 @@ mod boot_map_tests {
         // The guaranteed window is the smallest variant's RAM, and it begins at
         // address 0 in every variant.
         let smallest = variants.iter().map(|v| v.ram_top).min().unwrap();
+        // WS-BP BP4.6: a board larger than the guaranteed gigabyte is extended,
+        // and the smallest is not — so the exact comparison below is not
+        // satisfied by a table that carries no `extend` lines at all.
+        for v in &variants {
+            assert_eq!(
+                v.extensions.is_empty(),
+                v.ram_top <= GUARANTEED_RAM_TOP,
+                "variant {:#x}: extensions present exactly when it has RAM above the gigabyte",
+                v.ram_top
+            );
+        }
         assert_eq!(
             GUARANTEED_RAM_TOP, smallest,
             "GUARANTEED_RAM_TOP is the smallest RPi5's RAM top"
@@ -1700,6 +1983,26 @@ mod boot_map_tests {
                     addrs.push(c);
                 }
                 let exact = v.ram_top == smallest;
+                let (mut extended, _) = build(layout);
+                let mut ranges: Vec<(u64, u64)> = Vec::new();
+                for &(base, size) in &v.extensions {
+                    extend_boot_tables(&mut extended, base, size).unwrap_or_else(|r| {
+                        panic!(
+                            "variant {:#x}: [{base:#x}, +{size:#x}) refused: {r:?}",
+                            v.ram_top
+                        )
+                    });
+                    ranges.push((base, base + size));
+                    addrs.push(base);
+                    addrs.push(base + size - 1);
+                    addrs.push(base + size);
+                }
+                for &(b, sz, _) in &v.regions {
+                    for c in [b, b + sz] {
+                        addrs.push(c.saturating_sub(1));
+                        addrs.push(c);
+                    }
+                }
                 for a in addrs {
                     let kind = boot_mapping_for(a, layout);
                     let lean = lean_kind(a);
@@ -1719,6 +2022,33 @@ mod boot_map_tests {
                             "smallest variant: {a:#x} is {lean} in the Lean map"
                         );
                     }
+                    // WS-BP BP4.6: with the variant's extensions applied, the
+                    // Normal window is exactly the variant's RAM — on every
+                    // variant, not only the smallest — through a walk of the
+                    // extended tables and through the cacheable predicate.
+                    let extended_normal = walk(&extended, base_pa, a)
+                        .is_some_and(|(_, attrs)| attrs & ATTR_IDX_DEVICE == 0);
+                    assert_eq!(
+                        extended_normal,
+                        lean == "ram",
+                        "variant {:#x} extended: {a:#x} is {lean} in the Lean map",
+                        v.ram_top
+                    );
+                    assert_eq!(
+                        ram_range_covered(a, 1, &ranges),
+                        lean == "ram",
+                        "variant {:#x}: the cacheable window at {a:#x} is not its RAM",
+                        v.ram_top
+                    );
+                    if let Some((pa, attrs)) = walk(&extended, base_pa, a) {
+                        assert_eq!(pa, a, "the extended map is an identity map");
+                        if a >= GUARANTEED_RAM_TOP && attrs & ATTR_IDX_DEVICE == 0 {
+                            assert!(
+                                writable(attrs) && !executable(attrs),
+                                "{a:#x}: extended RAM is writable and never executable"
+                            );
+                        }
+                    }
                     let walked = walk(&tables, base_pa, a);
                     match kind {
                         BootMapping::Unmapped => {
@@ -1737,6 +2067,108 @@ mod boot_map_tests {
                 }
             }
         }
+    }
+
+    /// **WS-BP BP4.6**: every refusal is decided before anything is written,
+    /// so a refused extension leaves the tables byte-identical.
+    #[test]
+    fn a_refused_extension_writes_nothing() {
+        const GIB: u64 = L1_BLOCK_SIZE;
+        let cases: [(u64, u64, RamExtensionRefusal); 9] = [
+            (GIB, 0, RamExtensionRefusal::Empty),
+            (
+                u64::MAX - L2_BLOCK_SIZE + 1,
+                L2_BLOCK_SIZE,
+                RamExtensionRefusal::Overflow,
+            ),
+            (GIB + 0x1000, L2_BLOCK_SIZE, RamExtensionRefusal::Unaligned),
+            (GIB, L2_BLOCK_SIZE + 0x1000, RamExtensionRefusal::Unaligned),
+            (
+                GUARANTEED_RAM_TOP - L2_BLOCK_SIZE,
+                GIB,
+                RamExtensionRefusal::BelowGuaranteedRam,
+            ),
+            (
+                BOOT_TABLE_REACH - GIB,
+                2 * GIB,
+                RamExtensionRefusal::BeyondTableReach,
+            ),
+            // A partial gigabyte outside the device window has no level-2 table.
+            (GIB, GIB / 2, RamExtensionRefusal::PartialGigabyte),
+            // The device window's own blocks are valid already.
+            (
+                DEVICE_WINDOW_BASE,
+                L2_BLOCK_SIZE,
+                RamExtensionRefusal::AlreadyMapped,
+            ),
+            // A whole gigabyte followed by the device window: the second
+            // gigabyte's refusal must leave the first unwritten.
+            (2 * GIB, 2 * GIB, RamExtensionRefusal::AlreadyMapped),
+        ];
+        for (base, size, refusal) in cases {
+            let (mut tables, _) = build(&LAYOUT);
+            let (pristine, _) = build(&LAYOUT);
+            assert_eq!(
+                extend_boot_tables(&mut tables, base, size),
+                Err(refusal),
+                "[{base:#x}, +{size:#x})"
+            );
+            assert!(
+                tables.l1 == pristine.l1 && tables.l2_device == pristine.l2_device,
+                "[{base:#x}, +{size:#x}): a refusal wrote a descriptor"
+            );
+        }
+    }
+
+    /// **WS-BP BP4.6**: an extension never rewrites a valid descriptor — a
+    /// second extension over the same range is refused, and so is one that
+    /// overlaps it by a single block.
+    #[test]
+    fn an_extension_does_not_remap() {
+        let (mut tables, base_pa) = build(&LAYOUT);
+        assert_eq!(
+            extend_boot_tables(&mut tables, L1_BLOCK_SIZE, L1_BLOCK_SIZE),
+            Ok(())
+        );
+        assert_eq!(
+            extend_boot_tables(&mut tables, L1_BLOCK_SIZE, L1_BLOCK_SIZE),
+            Err(RamExtensionRefusal::AlreadyMapped)
+        );
+        let gpu = 0xFC00_0000;
+        assert_eq!(
+            extend_boot_tables(&mut tables, 3 * L1_BLOCK_SIZE, gpu - 3 * L1_BLOCK_SIZE),
+            Ok(())
+        );
+        assert_eq!(
+            extend_boot_tables(&mut tables, gpu - L2_BLOCK_SIZE, 2 * L2_BLOCK_SIZE),
+            Err(RamExtensionRefusal::AlreadyMapped)
+        );
+        // The first block after the extension is still unmapped, and the
+        // device window is still Device.
+        assert!(walk(&tables, base_pa, gpu).is_none());
+        let (_, attrs) = walk(&tables, base_pa, DEVICE_WINDOW_BASE).expect("device maps");
+        assert_ne!(attrs & ATTR_IDX_DEVICE, 0);
+    }
+
+    /// **WS-BP BP4.6**: the cacheable window is the union of guaranteed RAM and
+    /// the extensions — a range crossing from one into an abutting one is
+    /// covered, one crossing into a gap is not.
+    #[test]
+    fn the_cacheable_window_is_a_union() {
+        const GIB: u64 = L1_BLOCK_SIZE;
+        let ext = [(GIB, 3 * GIB), (4 * GIB, 8 * GIB)];
+        assert!(ram_range_covered(GIB - 0x1000, 0x2000, &ext));
+        assert!(ram_range_covered(0, 3 * GIB, &ext));
+        assert!(!ram_range_covered(3 * GIB - 0x1000, 0x2000, &ext));
+        assert!(ram_range_covered(4 * GIB, 4 * GIB, &ext));
+        assert!(!ram_range_covered(4 * GIB, 4 * GIB + 1, &ext));
+        assert!(!ram_range_covered(GIB, 0x1000, &[]));
+        assert!(ram_range_covered(GUARANTEED_RAM_TOP - 0x1000, 0x1000, &[]));
+        assert!(ram_range_covered(8 * GIB, 0, &[]));
+        assert!(!ram_range_covered(u64::MAX - 3, 16, &ext));
+        // Order of the record does not matter.
+        let reversed = [(4 * GIB, 8 * GIB), (GIB, 3 * GIB)];
+        assert!(ram_range_covered(0, 3 * GIB, &reversed));
     }
 
     #[test]

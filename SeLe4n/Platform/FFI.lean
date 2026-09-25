@@ -431,6 +431,20 @@ opaque ffiFatalHalt : BaseIO Unit
 @[extern "ffi_fatal_halt_all"]
 opaque ffiFatalHaltAll : BaseIO Unit
 
+/-- **WS-BP BP4.6**: extend the boot identity map over `[base, base + size)` as
+    Normal RAM — writable, never executable — and widen the HAL's cacheable
+    window to the same extent.  The HAL writes only descriptors its boot tables
+    leave invalid, so no break-before-make and no TLB invalidation is needed;
+    a range it cannot map (unaligned, below the guaranteed gigabyte, over an
+    already-valid entry, or after the boot map is sealed) **halts the system**
+    rather than returning, since a kernel that went on would hold memory it
+    cannot address.  Called only by `extendBootRamMap`, on the extensions the
+    verified map derives (`SeLe4n.Platform.RPi5.bootRamExtensionsOf`).
+
+    Rust: `ffi_extend_boot_ram_map` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_extend_boot_ram_map"]
+opaque ffiExtendBootRamMap (base size : UInt64) : BaseIO Unit
+
 /-- **WS-SM SM7.B.5 + B.6 + SM7.F.3**: bounded acquire-poll for round
     generation `gen` acknowledged — spins up to `timeoutTicks`
     generic-timer ticks; returns `1` on observed all-acked-for-`gen`,
@@ -1479,6 +1493,19 @@ def rpi5PlatformConfigFromDtb (blob : ByteArray)
       else
         .error .boardDoesNotMatchBinding
 
+/-- **WS-BP BP4.6**: map every extension of the verified board's RAM, in order.
+
+The extensions are `rpi5BootRamExtensionsFor` of the accepted configuration's
+board account: the RAM regions, above the guaranteed gigabyte, of the variant
+the binding installs for that account — the same variant whose memory map the
+boot state carries (`rpi5BootRamExtensionsFor_eq`), so the RAM the HAL maps and
+the RAM the kernel's model declares are one map.  `mem_bootRamExtensionsOf`
+proves every extension is RAM of that map and `bootRamExtensionsOf_covers`
+that every RAM address of it above the gigabyte is in some extension;
+`rpi5BootRamExtensions_admissible` that each is one the HAL accepts. -/
+def extendBootRamMap (extensions : List (Nat × Nat)) : BaseIO Unit :=
+  extensions.forM fun e => ffiExtendBootRamMap (UInt64.ofNat e.1) (UInt64.ofNat e.2)
+
 /-- **WS-RR RR7.27**: the DTB-driven hardware boot, with its failure handled.
 
 Composed so that every accepting path goes through
@@ -1492,14 +1519,22 @@ This is the wrapper `SeLe4n/Testing/BootEntryContract.lean` anticipated by
 name when it said the kernel supplies one rather than letting the boot entry
 carry an effectful prologue, and since WS-BP BP4.4 it is that contract's
 `approvedBootCall`: `lean_kernel_main` is this wrapper on the firmware's blob,
-which the HAL copies into a `ByteArray` on the kernel's Lean heap (BP4.3). -/
+which the HAL copies into a `ByteArray` on the kernel's Lean heap (BP4.3).
+
+**WS-BP BP4.6**: an accepted board's RAM above the guaranteed gigabyte is mapped
+first (`extendBootRamMap`), before the boot state is installed — the variant is
+known from the verified parse and from nothing earlier, and every secondary is
+still parked, so the boot tables have one writer.  The install then boots on the
+same variant. -/
 def bootAndInitialiseRPi5FromDtbOrHalt (blob : ByteArray)
     (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry) : BaseIO Unit :=
   match rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot with
   | .error _ => ffiFatalHaltAll
-  | .ok config => bootAndInitialiseRPi5OrHalt config
+  | .ok config => do
+      extendBootRamMap (SeLe4n.Platform.RPi5.rpi5BootRamExtensionsFor config.machineConfig)
+      bootAndInitialiseRPi5OrHalt config
 
 /-- **WS-RR RR7.27**: an unparseable blob boots nothing — it parks the PE
 rather than falling through to a boot on a default configuration. -/
@@ -1516,7 +1551,8 @@ theorem bootAndInitialiseRPi5FromDtbOrHalt_unparseable (blob : ByteArray)
 
 /-- **WS-RR RR7.27**: an accepted board boots through the checked entry and
 nothing else — the property that makes this wrapper safe to name from the boot
-entry contract. -/
+entry contract.  **WS-BP BP4.6**: preceded by mapping that board's RAM above the
+guaranteed gigabyte, and by nothing else. -/
 theorem bootAndInitialiseRPi5FromDtbOrHalt_accepted (blob : ByteArray)
     (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
@@ -1524,7 +1560,9 @@ theorem bootAndInitialiseRPi5FromDtbOrHalt_accepted (blob : ByteArray)
     (config : SeLe4n.Platform.Boot.PlatformConfig)
     (h : rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .ok config) :
     bootAndInitialiseRPi5FromDtbOrHalt blob irqTable initialObjects bootVSpaceRoot
-      = bootAndInitialiseRPi5OrHalt config := by
+      = (do
+          extendBootRamMap (SeLe4n.Platform.RPi5.rpi5BootRamExtensionsFor config.machineConfig)
+          bootAndInitialiseRPi5OrHalt config) := by
   unfold bootAndInitialiseRPi5FromDtbOrHalt
   rw [h]
 

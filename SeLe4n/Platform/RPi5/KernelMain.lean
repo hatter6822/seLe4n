@@ -59,12 +59,15 @@ theorem kernelMain_refuses (dtb : ByteArray) (e : Platform.FFI.DeviceTreeBootRef
 boot state on the variant the board's account selects, and the binding's
 labeling context, and nothing else — the halting boot's halt arm is never taken
 on it (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`, over every
-account). -/
+account).  **WS-BP BP4.6**: first it maps that variant's RAM above the
+guaranteed gigabyte — the same variant the installed state is of. -/
 theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformConfig)
     (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5IrqTable rpi5InitialObjects none =
       .ok config) :
     kernelMain dtb =
       (do
+        Platform.FFI.extendBootRamMap
+          (rpi5BootRamExtensions (rpi5VariantFor config.machineConfig))
         Platform.FFI.initialiseKernelState
           (rpi5DeploymentBootStateAt (rpi5VariantFor config.machineConfig)).state
         Platform.FFI.initialiseKernelLabelingContext

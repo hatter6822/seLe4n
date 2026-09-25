@@ -222,14 +222,14 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~81487 lines)
+- `CHANGELOG.md` (~82427 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23845 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12507 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~9220 lines)
+- `SeLe4n/Kernel/API.lean` (~9221 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8709 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8235 lines)
-- `docs/spec/SELE4N_SPEC.md` (~7358 lines)
+- `docs/spec/SELE4N_SPEC.md` (~7873 lines)
 - `SeLe4n/Platform/Boot.lean` (~7278 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6360 lines)
 - `SeLe4n/Model/State.lean` (~6153 lines)
@@ -250,10 +250,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3843 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `SeLe4n/Platform/FFI.lean` (~3596 lines)
+- `SeLe4n/Platform/FFI.lean` (~3667 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3477 lines)
-- `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
+- `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3389 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~3328 lines)
 - `tests/OperationChainSuite.lean` (~3320 lines)
@@ -290,31 +290,31 @@ To find files that need pagination today, run:
 - `tests/ModelIntegritySuite.lean` (~2456 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~2360 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
+- `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2352 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
+- `tests/Ak9PlatformSuite.lean` (~2320 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
-- `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2281 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~2207 lines)
-- `SeLe4n/Prelude.lean` (~2187 lines)
+- `SeLe4n/Prelude.lean` (~2201 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2176 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `tests/SyscallDispatchSuite.lean` (~2112 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2086 lines)
-- `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2066 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2057 lines)
+- `SeLe4n/Platform/DeviceTree.lean` (~2042 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2031 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~2023 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~2018 lines)
+- `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~2004 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1996 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1979 lines)
-- `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1962 lines)
-- `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
 - `tests/LockSetSuite.lean` (~1960 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1909 lines)
@@ -343,7 +343,7 @@ To find files that need pagination today, run:
 - `tests/PriorityManagementSuite.lean` (~1605 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1593 lines)
-- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1553 lines)
+- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1537 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1521 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~1511 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
@@ -380,18 +380,18 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/SchedContext/Operations.lean` (~1210 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~1207 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
+- `tests/SyscallReturnAbiSuite.lean` (~1185 lines)
+- `tests/SmpCacheMaintenanceSuite.lean` (~1184 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
-- `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1168 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1165 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean` (~1161 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
+- `SeLe4n/Machine.lean` (~1144 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (~1132 lines)
-- `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
-- `SeLe4n/Machine.lean` (~1128 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1121 lines)
 - `SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean` (~1120 lines)
@@ -419,28 +419,28 @@ To find files that need pagination today, run:
 - `tests/SmpCrossCoreNotificationSuite.lean` (~937 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
+- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~934 lines)
 - `tests/SmpTimerSuite.lean` (~934 lines)
-- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
+- `docs/DEVELOPMENT.md` (~931 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~923 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `tests/SuspendResumeSuite.lean` (~910 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~900 lines)
-- `docs/DEVELOPMENT.md` (~899 lines)
+- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~908 lines)
+- `tests/TwoPhaseArchSuite.lean` (~901 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
 - `SeLe4n/Testing/InvariantChecks.lean` (~879 lines)
-- `tests/TwoPhaseArchSuite.lean` (~870 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `tests/An10CascadeSuite.lean` (~866 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~861 lines)
+- `docs/REGISTERED_DEBT.md` (~861 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `docs/REGISTERED_DEBT.md` (~849 lines)
 - `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~841 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~840 lines)
 - `tests/DecodingSuite.lean` (~835 lines)
@@ -7147,18 +7147,18 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3 and BP4.1–BP4.5 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3 and BP4.1–BP4.6 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
 SMP work is complete") that was false of the phase's own first row.  WS-RR
 RR7.5 + RR7.15 split it out: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)
-sequences **47 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
+sequences **48 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
 cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch); BP4.6 and BP5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte); BP4.7 and BP5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7282,14 +7282,14 @@ provider's own object code or declarations** — allocator, the HAL (a productio
 module's `@[extern]`), the kernel's runtime (BP2.2), Rust `compiler_builtins`
 for the target, or *unreachable* (an upstream runtime function or stdlib
 `@[extern]` the reachable link proves nothing names) — and an unattributed one
-stops the build.  Measured: 381 unresolved, **no libc symbol at all**.  And
+stops the build.  Measured: 382 unresolved, **no libc symbol at all**.  And
 `check_kernel_entry_exports.py` decides on **both** archives: a requirement is
 met where both define it, an exemption stale where either does, and
 `--require-cross` makes an absent cross archive a failure.  Since BP2.1 the
 lane also holds the HAL-provided classes to the HAL's own object code: every
 `allocator`, `hal` and (since BP2.2) `runtime` symbol, and the whole
 small-allocator API, must be a global **function** of `sele4n-hal`'s rlib for the
-target (192 of 192 at `v0.36.2`).
+target (193 of 193 at `v0.36.2`).
 
 **BP2.1 — the Lean heap is one arena the linker places** (`v0.36.2`,
 `rust/sele4n-hal/src/lean_heap.rs`).  Five things new code must respect.  (1)
@@ -7402,9 +7402,8 @@ the image's layout, nothing else** (`boot_mapping_for(addr, layout)`):
 device window Device, everything else unmapped.  The driven BP0.4 test requires
 every Normal address to be RAM in **every** variant's Lean map and the Normal
 window to equal the smallest variant's RAM.  RAM above the gigabyte is BP4.6's,
-after the verified Lean parse; until then it is unmapped (a lost resource, never
-a false claim) and cache maintenance there fails closed.  `is_boot_cacheable_range`
-is a pure constant question.  (2) **W^X at EL1**: the text `[_start, __text_end)`
+mapped after the verified Lean parse (the BP4.6 paragraph below); before that
+nothing past the gigabyte is Normal and cache maintenance there fails closed.  (2) **W^X at EL1**: the text `[_start, __text_end)`
 is read-only and executable, the read-only data read-only and never executable,
 and every writable page never executable.  The retired single Normal descriptor
 was writable and PXN-clear while `SCTLR_EL1.WXN` is set — which makes a writable
@@ -7599,6 +7598,40 @@ after the install and immediately before it mints the `SecondaryReleasePermit`,
 so no secondary is released, and the boot core reaches no scheduling point,
 before the clean; a Tier 3 anchor holds the order, and a clean moved after the
 permit or commented out fails it.  Observing the clean on hardware is BP8.1's.
+
+**BP4.6 — the verified board's RAM above the guaranteed gigabyte is mapped,
+and the boot map is sealed before a secondary exists** (`v0.36.2`).  Five things
+new code must respect.  (1) **Lean decides the extent, and derives it**: the
+device-tree wrapper's accepting arm runs `extendBootRamMap
+(rpi5BootRamExtensionsFor config.machineConfig)` before the install, and
+`bootRamExtensionsOf` is every RAM region of the *bound* variant's map above
+`rpi5GuaranteedRamTop`, clipped to it — `mem_bootRamExtensionsOf` and
+`bootRamExtensionsOf_covers` prove it is exactly that RAM in both directions, so
+the RAM the HAL maps and the RAM the installed state's machine configuration
+declares are one variant's.  A new variant changes its memory map, never a list.
+(2) **The HAL writes only invalid entries, and decides every refusal first**:
+`mmu::extend_boot_tables` is two passes over one per-gigabyte walk — validate,
+then write — so a refused range (`RamExtensionRefusal`) leaves the tables
+byte-identical; it writes 1 GiB level-1 blocks, and 2 MiB blocks in the device
+window's gigabyte (the only one with a level-2 table), all Normal, writable and
+never executable.  Never rewriting a valid descriptor is what makes the change
+safe with no break-before-make and no TLB invalidation (a faulting translation
+is never cached); the table extent is cleaned to the PoC, as `enable_mmu` does, so a
+secondary enabling translation with its cache off reads it, then one `DSB ISH` + `ISB`; a partial gigabyte outside
+the device window is refused rather than given a table.  (3) **The cacheable
+window moves with the tables, by one call**: `extend_boot_ram_map` records each
+region after the barrier and `is_boot_cacheable_range` is the union
+`ram_range_covered` over guaranteed RAM and the record — no longer a `const fn`.
+(4) **The boot map is sealed before the permit**: `enter_lean_kernel` calls
+`mmu::seal_boot_map` immediately before it mints the `SecondaryReleasePermit`,
+and every later extension is refused `Sealed`, so the tables have one writer;
+a refusal of any kind halts the system (`ffi_extend_boot_ram_map` →
+`gic::halt_all`).  (5) **It is driven, not mirrored**:
+`tests/fixtures/boot_map.expected` carries each variant's `extend` lines, and the
+HAL test applies them and requires the extended Normal window to be **exactly**
+that variant's RAM on every variant.  What BP4.6 does *not* do is hand the RAM to
+anyone: the deployment's untypeds are fixed before the variant is known, and
+making them a function of it is **BP4.7**.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

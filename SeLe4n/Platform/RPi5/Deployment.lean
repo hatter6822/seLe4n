@@ -47,10 +47,13 @@ here:
 
 * **The untypeds are the guaranteed gigabyte minus the kernel's reserved
   extent** — `[rpi5KernelReservedEnd, 1 GiB)`, split on power-of-two bounds.  The
-  boot refuses anything else (`untypedPlacementRespected`), and RAM above the
-  gigabyte is unmapped until BP4.6 extends the boot map, so it is not yet memory
-  the kernel can hand out.  Only the boot domain holds untypeds: memory is
-  authority, and the untrusted domain's share is the boot domain's to delegate.
+  boot refuses anything else (`untypedPlacementRespected`).  RAM above the
+  gigabyte is mapped since WS-BP BP4.6, once the verified parse has chosen the
+  variant (`Platform.FFI.extendBootRamMap`), but these objects are fixed before
+  the variant is known, so they cannot describe it: handing it to the root task
+  as untypeds is BP4.7's, which makes the objects a function of the variant.
+  Only the boot domain holds untypeds: memory is authority, and the untrusted
+  domain's share is the boot domain's to delegate.
 * **No capability crosses the domain boundary.**  `confinedLabelingContext`
   makes the two domains unable to reach each other in either direction; a root
   task holding a capability to the untrusted thread would be a flow the labeling

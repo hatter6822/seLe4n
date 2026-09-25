@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3 and BP4.1–BP4.5: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3 and BP4.1–BP4.6: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -880,6 +880,50 @@ configuration, and the proof that it boots.
     tests pin the operand to the tag-3 decode and the identity-map refusal, and
     run the clean on the host.  The Tier 3 ordering anchor fails on a clean moved
     after the permit and on a commented-out one.
+- **BP4.6 — the verified board's RAM above the guaranteed gigabyte is mapped,
+  and the boot map is sealed before a secondary exists.**  BP2.6's map covers
+  `[0, 1 GiB)` on every board, so on a 2–16 GiB board the rest was unmapped: lost,
+  not falsely claimed, and cache maintenance there failed closed.
+  - Lean derives the extent: `bootRamExtensionsOf` is every RAM region of a map
+    above `rpi5GuaranteedRamTop`, clipped to it and non-empty.
+    `mem_bootRamExtensionsOf` and `bootRamExtensionsOf_covers` prove it is
+    exactly that RAM, in both directions.  The first proof found a zero-size
+    region above the gigabyte would have produced an empty extension, so the
+    filter asks that the clipped region be non-empty.
+    `rpi5BootRamExtensionsFor board` reads the map of the variant the binding
+    installs.  `rpi5BootRamExtensions_values` evaluates all five variants, and
+    `rpi5BootRamExtensions_admissible` proves each extension is 2 MiB aligned
+    and inside the tables' 512 GiB.
+  - The device-tree wrapper's accepting arm runs `extendBootRamMap` over those
+    extensions and then the install; `_accepted` and `kernelMain_installs` state
+    that program.  Each region crosses as `ffiExtendBootRamMap base size`.
+  - The HAL: `mmu::extend_boot_tables` validates every block, then writes; a
+    refusal (`RamExtensionRefusal`, nine kinds) leaves the tables byte-identical.
+    It writes 1 GiB level-1 blocks, plus 2 MiB blocks in the device window's
+    gigabyte, which alone has a level-2 table.  Every block is Normal, writable
+    and never executable, and goes only into an invalid entry: no
+    break-before-make and no TLB invalidation.  The table extent is then cleaned
+    to the PoC, because a secondary enables translation with its cache off, and
+    one `DSB ISH` + `ISB` follows.
+  - `extend_boot_ram_map` records each region after the barrier.
+    `is_boot_cacheable_range` is now the union `ram_range_covered` over
+    guaranteed RAM and that record, and is no longer a `const fn`.
+  - `ffi_extend_boot_ram_map` halts the system on any refusal.
+    `enter_lean_kernel` calls `mmu::seal_boot_map` immediately before minting
+    the `SecondaryReleasePermit`, and a later extension is refused `Sealed`.
+  - Tests: `tests/fixtures/boot_map.expected` gains each variant's `extend`
+    lines. The HAL's `the_boot_map_agrees_with_the_lean_map` applies them and
+    requires the extended Normal window to equal exactly that variant's RAM, on
+    every variant, by walking the tables and through `ram_range_covered`. Three
+    unit tests cover the refusals (nothing written), no remapping, and the
+    union.
+  - Mutation checks: mapping the extension executable fails the fixture test,
+    and so does letting the union admit one byte below an extension.
+  - The aarch64 archive now references 382 symbols it does not define (74 of
+    them HAL), and the reachable link needs 145.
+  - What it does not do: hand the RAM to anyone.  The deployment's untypeds are
+    fixed before the variant is known, so making them a function of the variant
+    is **BP4.7**, added to the plan by this cut (48 sub-tasks).
 - **Tests.**
   - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
     admitted with its ASID registered, beside the binding's; ASID collisions are
@@ -894,7 +938,7 @@ configuration, and the proof that it boots.
     badge. Reverting the check is caught when the build fails:
     `bootSafeObjectCheck_sound` stops elaborating.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.5)
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.6)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

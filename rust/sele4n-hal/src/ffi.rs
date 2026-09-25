@@ -672,6 +672,32 @@ pub extern "C" fn ffi_fatal_halt_all() -> ! {
     crate::gic::halt_all()
 }
 
+/// **WS-BP BP4.6**: extend the boot identity map over `[base, base + size)` as
+/// Normal RAM and widen the cacheable window to match
+/// ([`crate::mmu::extend_boot_ram_map`]).
+///
+/// The verified Lean boot calls it once per RAM region, above the guaranteed
+/// gigabyte, of the variant the device tree selected — before the boot state is
+/// installed and before any secondary exists.  A refusal is a disagreement
+/// between the verified map and the tables this image built, which no caller
+/// can recover from, so it halts the system rather than returning: a kernel
+/// that went on would hand out untypeds over memory it cannot address.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiExtendBootRamMap`
+#[no_mangle]
+pub extern "C" fn ffi_extend_boot_ram_map(base: u64, size: u64) -> crate::lean_runtime::Obj {
+    if let Err(refusal) = crate::mmu::extend_boot_ram_map(base, size) {
+        crate::kprintln!(
+            "[boot] FATAL: the boot map refuses RAM [{:#x}, +{:#x}): {:?}",
+            base,
+            size,
+            refusal
+        );
+        crate::gic::halt_all();
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
 /// **WS-SM SM7.B.5 + B.6 + SM7.F.3**: Bounded acquire-poll for round
 /// generation `gen` acknowledged — spins up to `timeout_ticks`
 /// generic-timer ticks.  Returns `1` on observed all-acked-for-`gen`,

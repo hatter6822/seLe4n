@@ -680,4 +680,113 @@ theorem rpi5VariantFor_foreign_base :
       = [] := by
   decide
 
+-- ============================================================================
+-- WS-BP BP4.6 — the verified board's RAM above the guaranteed gigabyte
+-- ============================================================================
+
+/-- **WS-BP BP4.6**: one past the RAM every Raspberry Pi 5 has — the smallest
+variant's gigabyte.  The HAL's boot map describes `[0, rpi5GuaranteedRamTop)`
+from constants before anything is parsed (`mmu::GUARANTEED_RAM_TOP`, WS-BP
+BP2.6); everything a larger board has above it is mapped only once the verified
+device-tree parse has chosen the variant (`bootRamExtensionsOf`). -/
+def rpi5GuaranteedRamTop : Nat := 0x4000_0000
+
+/-- The guaranteed gigabyte is the smallest variant's RAM. -/
+theorem rpi5GuaranteedRamTop_eq_smallest : rpi5GuaranteedRamTop = rpi5SmallestVariant.ramSize :=
+  rfl
+
+/-- **WS-BP BP4.6**: the RAM a memory map declares above the guaranteed
+gigabyte, one `(base, size)` per RAM region that reaches past it, clipped from
+below to `rpi5GuaranteedRamTop` — and only where what is left is non-empty, so no
+extension maps nothing (the HAL refuses an empty one).
+
+Derived from the map rather than listed per variant, so a variant whose map
+changes changes what the boot maps with it; `mem_bootRamExtensionsOf` and
+`bootRamExtensionsOf_covers` state that the result is exactly the map's RAM
+above the gigabyte, in both directions. -/
+def bootRamExtensionsOf (map : List SeLe4n.MemoryRegion) : List (Nat × Nat) :=
+  map.filterMap fun r =>
+    if r.kind = .ram ∧ max r.base.toNat rpi5GuaranteedRamTop < r.endAddr then
+      some (max r.base.toNat rpi5GuaranteedRamTop,
+        r.endAddr - max r.base.toNat rpi5GuaranteedRamTop)
+    else none
+
+/-- **WS-BP BP4.6 (soundness)**: every extension is RAM — inside one RAM
+region of the map, ending where it ends — non-empty, and above the guaranteed
+gigabyte.  So the boot never maps as Normal memory an address the verified map
+does not call RAM. -/
+theorem mem_bootRamExtensionsOf (map : List SeLe4n.MemoryRegion) (e : Nat × Nat)
+    (h : e ∈ bootRamExtensionsOf map) :
+    ∃ r ∈ map, r.kind = .ram ∧ r.base.toNat ≤ e.1 ∧ e.1 + e.2 = r.endAddr ∧
+      rpi5GuaranteedRamTop ≤ e.1 ∧ 0 < e.2 := by
+  unfold bootRamExtensionsOf at h
+  rw [List.mem_filterMap] at h
+  obtain ⟨r, hr, hsome⟩ := h
+  by_cases hc : r.kind = .ram ∧ max r.base.toNat rpi5GuaranteedRamTop < r.endAddr
+  · rw [if_pos hc] at hsome
+    cases hsome
+    have hg := hc.2
+    refine ⟨r, hr, hc.1, Nat.le_max_left _ _, ?_, Nat.le_max_right _ _, ?_⟩
+    · simp only
+      omega
+    · simp only
+      omega
+  · rw [if_neg hc] at hsome
+    cases hsome
+
+/-- **WS-BP BP4.6 (completeness)**: every RAM address of the map above the
+guaranteed gigabyte lies in some extension — so on a board whose variant the
+parse selected, no RAM the verified map declares is left unmapped. -/
+theorem bootRamExtensionsOf_covers (map : List SeLe4n.MemoryRegion)
+    (r : SeLe4n.MemoryRegion) (hr : r ∈ map) (hk : r.kind = .ram) (a : Nat)
+    (hlo : r.base.toNat ≤ a) (hhi : a < r.endAddr) (hg : rpi5GuaranteedRamTop ≤ a) :
+    ∃ e ∈ bootRamExtensionsOf map, e.1 ≤ a ∧ a < e.1 + e.2 := by
+  have hc : r.kind = .ram ∧ max r.base.toNat rpi5GuaranteedRamTop < r.endAddr :=
+    ⟨hk, Nat.max_lt.mpr ⟨by omega, by omega⟩⟩
+  refine ⟨(max r.base.toNat rpi5GuaranteedRamTop,
+      r.endAddr - max r.base.toNat rpi5GuaranteedRamTop), ?_, ?_, ?_⟩
+  · unfold bootRamExtensionsOf
+    exact List.mem_filterMap.mpr ⟨r, hr, by rw [if_pos hc]⟩
+  · simp only
+    omega
+  · simp only
+    omega
+
+/-- **WS-BP BP4.6**: the extensions of variant `v` — what the boot maps above
+the guaranteed gigabyte on a board of that variant. -/
+def rpi5BootRamExtensions (v : BCM2712Config) : List (Nat × Nat) :=
+  bootRamExtensionsOf (rpi5MemoryMapForConfig v)
+
+/-- **WS-BP BP4.6**: the extensions the boot maps for a board account — those
+of the variant the binding installs for it, so the map the HAL builds and the
+memory map the boot state carries are one variant's. -/
+def rpi5BootRamExtensionsFor (board : SeLe4n.MachineConfig) : List (Nat × Nat) :=
+  bootRamExtensionsOf (rpi5BoundMachineConfig board).memoryMap
+
+theorem rpi5BootRamExtensionsFor_eq (board : SeLe4n.MachineConfig) :
+    rpi5BootRamExtensionsFor board = rpi5BootRamExtensions (rpi5VariantFor board) := rfl
+
+/-- **WS-BP BP4.6**: the five variants' extensions, evaluated — nothing on the
+1 GiB board; the second gigabyte on the 2 GiB board; everything below the GPU
+carve-out on the 4 GiB board; and, on the 8 and 16 GiB boards, the RAM above
+the 4 GiB boundary as well. -/
+theorem rpi5BootRamExtensions_values :
+    rpi5Variants.map rpi5BootRamExtensions =
+      [ [],
+        [(0x4000_0000, 0x4000_0000)],
+        [(0x4000_0000, 0xBC00_0000)],
+        [(0x4000_0000, 0xBC00_0000), (0x1_0000_0000, 0x1_0000_0000)],
+        [(0x4000_0000, 0xBC00_0000), (0x1_0000_0000, 0x3_0000_0000)] ] := by
+  decide
+
+/-- **WS-BP BP4.6**: every extension of every variant is what the HAL's
+extension accepts — both ends on a 2 MiB boundary (the smallest block it
+writes), and the whole of it below the 512 GiB the boot tables reach
+(`mmu::BOOT_TABLE_REACH`).  A variant that broke either would be refused on
+hardware with the system halted; this is the theorem that it cannot. -/
+theorem rpi5BootRamExtensions_admissible :
+    rpi5Variants.all (fun v => (rpi5BootRamExtensions v).all fun e =>
+      e.1 % 0x20_0000 == 0 && (e.1 + e.2) % 0x20_0000 == 0 && e.1 + e.2 ≤ 2 ^ 39) = true := by
+  decide
+
 end SeLe4n.Platform.RPi5

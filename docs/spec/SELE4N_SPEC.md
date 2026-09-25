@@ -51,12 +51,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 420,374 across 343 Lean files |
-| **Test LoC** | 85,416 across 71 Lean test suites |
-| **Proved declarations** | 13,916 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 420,527 across 343 Lean files |
+| **Test LoC** | 85,428 across 71 Lean test suites |
+| **Proved declarations** | 13,922 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11); BP4.6 and BP5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** at v0.36.2 (§6.2.12); BP4.7 and BP5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -272,7 +272,8 @@ Archive` CI lane (`scripts/test_lean_aarch64_archive.sh`).  Its contract:
   the small allocator, the HAL (a production module's `@[extern]`), the
   kernel's Lean runtime (§6.2.5), Rust's `compiler_builtins` for the target, or
   *unreachable* — a symbol the lane's reachable link proves nothing needs.  At
-  v0.36.2: 381 unresolved = 1 + 73 + 118 + 78 + 111, and no libc symbol at all.
+  v0.36.2: 382 unresolved = 1 + 74 + 118 + 78 + 111, and no libc symbol at all
+  (381 and 73 until BP4.6 added the boot map's extension binding).
 - **Entries.**  `scripts/check_kernel_entry_exports.py` decides the HAL's
   kernel-entry requirements on this archive and the host one together: a
   requirement is met only where both define it.
@@ -330,8 +331,8 @@ carries its own, in Rust (`rust/sele4n-hal/src/lean_runtime/`), over the heap of
   `--gc-sections`, rooted at the library initializer
   (`initialize_seLe4n_SeLe4n`) and every production `@[export]`; each symbol
   that link leaves undefined must be a global function of the HAL's rlib or of
-  `compiler_builtins`.  At v0.36.2 that is 144 symbols, 118 of them the
-  runtime's.  The 111 upstream functions it omits are unreachable by that link,
+  `compiler_builtins`.  At v0.36.2 that is 145 symbols, 118 of them the
+  runtime's (144 until BP4.6's `ffi_extend_boot_ram_map`).  The 111 upstream functions it omits are unreachable by that link,
   so the image link (BP5.2) uses `--gc-sections` over the same roots.
 - **Three kinds of symbol.**  *Faithful* ones are ported from `lean4` at the
   toolchain's commit: reference counting with an iterative release, persistence,
@@ -410,9 +411,9 @@ no size.
 
   The driven BP0.4 comparison (§6.2.2) requires every Normal address to be RAM
   in **every** RAM variant's Lean map, and the Normal window to equal the
-  smallest variant's RAM.  RAM above the gigabyte is to be mapped after the
-  verified Lean parse has chosen the board (BP4.6, not started).  Until then it is unmapped: a lost
-  resource, never a false claim.
+  smallest variant's RAM.  RAM above the gigabyte is mapped after the verified
+  Lean parse has chosen the board (BP4.6, below): before that it is unmapped,
+  a lost resource rather than a false claim.
 - **W^X at EL1.**  Inside guaranteed RAM:
   - the kernel text `[_start, __text_end)` is read-only and executable;
   - its read-only data `[__rodata_start, __rodata_end)` is read-only and never
@@ -434,8 +435,9 @@ no size.
   `[0, KERNEL_RESERVED_END)` (since BP3.2, §6.2.8; before it, anywhere in
   guaranteed RAM) and outside `[_start, __lean_heap_end)`; otherwise the boot
   is refused.
-- **Cache maintenance.**  `is_boot_cacheable_range` is one interval,
-  `[0, GUARANTEED_RAM_TOP)`.  An operand outside it fails closed.
+- **Cache maintenance.**  `is_boot_cacheable_range` is `[0, GUARANTEED_RAM_TOP)`
+  together with the RAM BP4.6 maps after the verified parse (§6.2.12).  An
+  operand outside that union fails closed.
 
 ### 6.2.8 The RPi5 deployment (WS-BP BP3, v0.36.2)
 
@@ -518,7 +520,8 @@ def kernelMain (dtb : ByteArray) : BaseIO Unit :=
   `EXPECTED_UNRESOLVED` is empty.  Every HAL `extern "C"` declaration (ten) is
   defined by both the host and the aarch64 archive.  The reachable link rooted
   at the initializer and the nine kernel exports needs the same 144 runtime
-  symbols it did before, so the boot path adds none.
+  symbols it did before, so the boot path adds none (BP4.6's extension binding
+  is the 145th, and a HAL symbol rather than a runtime one).
 - **The install precedes the secondaries, and the order is a type.**
   `rust_boot_main` runs the library initializer and the install in Phase 5, on
   the boot core alone, and releases the secondaries in Phase 6.
@@ -621,6 +624,55 @@ the boot path because its extent is the link's rather than the model's.
   `kernelCodeWriteSites_all_emitted` states it, replacing the partition marker
   `kernelCodeWriteSites_emission_pending`.  Observing the clean on hardware is
   BP8.1's.
+
+### 6.2.12 The verified board's RAM above the guaranteed gigabyte (WS-BP BP4.6, v0.36.2)
+
+The boot map (§6.2.2's BP2.6 paragraph) is built from constants before anything
+is parsed, so it covers only `[0, 1 GiB)`, the RAM every Raspberry Pi 5 has.  The
+RAM a larger board has above that is mapped once the verified Lean parser has
+read the device tree and the binding has chosen the variant.
+
+- **The extent is derived.**  `bootRamExtensionsOf map` is every RAM region of
+  `map` reaching past `rpi5GuaranteedRamTop`, clipped to it and non-empty.
+  `mem_bootRamExtensionsOf` (every extension is RAM of the map, above the
+  gigabyte, non-empty) and `bootRamExtensionsOf_covers` (every RAM address of
+  the map above the gigabyte is in one) state that it is exactly that RAM.  The
+  boot uses the map of the variant the binding installs
+  (`rpi5BootRamExtensionsFor`), so the RAM mapped and the RAM the installed
+  state's machine configuration declares are one variant's.
+  `rpi5BootRamExtensions_values` evaluates the five variants — nothing on 1 GiB;
+  `[1 GiB, 2 GiB)` on 2 GiB; `[1 GiB, 0xFC00_0000)` on 4 GiB; and on 8 and
+  16 GiB that plus the RAM from 4 GiB up.  `rpi5BootRamExtensions_admissible`
+  proves each is 2 MiB aligned and inside the tables' 512 GiB reach.
+- **Where it runs.**  The device-tree wrapper's accepting arm runs
+  `extendBootRamMap` and then the install; an unparseable blob or a foreign
+  board halts before either (`bootAndInitialiseRPi5FromDtbOrHalt_accepted`,
+  `kernelMain_installs`).  Each region crosses to the HAL as
+  `ffiExtendBootRamMap base size`.
+- **What the HAL writes.**  `mmu::extend_boot_tables` decides every refusal
+  (`RamExtensionRefusal`) before it writes anything, then writes a 1 GiB
+  level-1 block per whole gigabyte and a 2 MiB block per block in the device
+  window's gigabyte — the only gigabyte with a level-2 table — each Normal,
+  writable and never executable, and only into entries the tables leave
+  invalid.  A partial gigabyte elsewhere is refused.  Because no valid
+  descriptor changes, no break-before-make and no TLB invalidation is needed.
+  The table extent is cleaned to the Point of Coherency (a secondary enables
+  translation with its data cache off), then one `DSB ISH` and one `ISB`.  The region is then recorded, and
+  `is_boot_cacheable_range` is the union of guaranteed RAM and the record
+  (`ram_range_covered`), so cache maintenance and the tables widen together.
+  Any refusal halts the system.
+- **The seal.**  `lean_entry::enter_lean_kernel` calls `mmu::seal_boot_map`
+  immediately before minting the `SecondaryReleasePermit`; an extension after
+  it is refused.  So the boot tables have one writer, the boot core, and every
+  secondary enables translation on the finished map.
+- **Driven, not mirrored.**  `tests/fixtures/boot_map.expected` carries each
+  variant's `extend` lines.  The HAL's `the_boot_map_agrees_with_the_lean_map`
+  applies them and requires the extended Normal window to be exactly that
+  variant's RAM on every variant, both by walking the tables and through
+  `ram_range_covered`.
+- **Not yet handed out.**  The deployment's untypeds are fixed before the
+  variant is known and stay in `[256 MiB, 1 GiB)`; making them a function of
+  the variant is BP4.7.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
