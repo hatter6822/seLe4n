@@ -104,33 +104,6 @@ pub enum InitialisationRefused {
     },
 }
 
-/// Classify and consume an `IO` result.
-///
-/// Returns `Ok(())` exactly for a heap constructor with tag 0 (`lean.h`'s
-/// `lean_io_result_is_ok`).  Every heap object, whatever its tag, has the
-/// reference the initializer returned released.
-///
-/// # Safety
-///
-/// `res` must be a scalar or a live heap object whose one reference the caller
-/// owns; this call consumes it.
-unsafe fn consume_io_result(res: Obj) -> Result<(), InitialisationRefused> {
-    if lean_runtime::is_scalar(res) {
-        return Err(InitialisationRefused::Malformed { tag: None });
-    }
-    // SAFETY: `res` is a live heap object by the caller's contract and the
-    // test above.
-    let tag = unsafe { lean_runtime::tag(res) };
-    // SAFETY: the reference is the caller's to hand over, and nothing below
-    // reads `res` again.
-    unsafe { lean_runtime::dec(res) };
-    match tag {
-        0 => Ok(()),
-        1 => Err(InitialisationRefused::Error),
-        other => Err(InitialisationRefused::Malformed { tag: Some(other) }),
-    }
-}
-
 /// Run `initializer` once under `guard` and classify its result.
 ///
 /// The guard is set before the initializer runs, so a second call is refused
@@ -152,7 +125,12 @@ pub unsafe fn initialise_with(
     }
     let res = initializer();
     // SAFETY: forwarded from the caller.
-    unsafe { consume_io_result(res) }?;
+    unsafe { lean_runtime::consume_io_result(res) }.map_err(|why| match why {
+        lean_runtime::IoResultRefused::Error => InitialisationRefused::Error,
+        lean_runtime::IoResultRefused::Malformed { tag } => {
+            InitialisationRefused::Malformed { tag }
+        }
+    })?;
     Ok(LeanLibraryInitialised { _private: () })
 }
 
@@ -174,13 +152,13 @@ pub fn initialise_lean_library() -> LeanLibraryInitialised {
         /// `builtin = 1` because this is the image the kernel boots, not a
         /// plugin loaded into a running environment.  It returns an `IO` result
         /// whose one reference the caller owns.
-        fn initialize_seLe4n_SeLe4n(builtin: u8) -> Obj;
+        fn initialize_seLe4n_SeLe4n(builtin: u8) -> lean_runtime::LeanIoResult;
     }
     let initializer = || {
         // SAFETY: called once, on the primary, before any Lean code runs;
         // `initialise_with`'s guard refuses a second call before it gets here,
         // and nothing else in the image calls this symbol.
-        unsafe { initialize_seLe4n_SeLe4n(1) }
+        unsafe { initialize_seLe4n_SeLe4n(1) }.into_obj()
     };
     // SAFETY: the initializer returns an `IO` result whose one reference is
     // handed over, which is `initialise_with`'s contract.
@@ -221,12 +199,15 @@ pub fn enter_lean_kernel(
         /// on the boot core, after the library initializer, before any other
         /// Lean upcall on any PE and before any secondary is released.
         /// `dtb_ptr` must be the firmware's device-tree pointer.
-        fn lean_kernel_main(dtb_ptr: u64);
+        fn lean_kernel_main(dtb_ptr: u64) -> lean_runtime::LeanIoResult;
     }
     // SAFETY: the token proves the library initializer ran and succeeded, and
     // it is consumed here, so this call happens at most once per
     // initialization.  The firmware's DTB pointer is passed through.
-    unsafe { lean_kernel_main(dtb_ptr) };
+    let res = unsafe { lean_kernel_main(dtb_ptr) };
+    // SAFETY: `res` is the `IO` result `lean_kernel_main` just returned, whose
+    // one reference this caller owns.
+    unsafe { lean_runtime::discharge_base_io(res, "lean_kernel_main") };
     SecondaryReleasePermit { _private: () }
 }
 

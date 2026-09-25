@@ -532,6 +532,15 @@ def kernelMain (_dtbPointer : UInt64) : BaseIO Unit :=
   eighth committing seam, unbracketed, with the ordering as its reason.  The
   reachability census's pin shrank by the nineteen boot-path transformers the
   entry now reaches.
+- **A `BaseIO` export's result is owned, and released.**  The generated C
+  returns a heap-allocated `IO` result (`lean_object*`) on every call.  Every
+  HAL declaration of such an export returns `lean_runtime::LeanIoResult`, a
+  `#[must_use]` pointer wrapper, and its call site releases the result through
+  `discharge_base_io`.  Before this, six declarations dropped the result, so
+  each call leaked one object: latent, but an uptime-bounded denial of service
+  once cores are ready.  `check_kernel_entry_exports.py` holds every HAL
+  declaration of a Lean-generated symbol to the prototype the Lean compiler
+  generated, because the linker compares names and never types.
 - **Not yet read: the DTB pointer.**  The configuration fixes the smallest
   board as the board account.  Moving the entry onto the device-tree wrapper is
   BP4.3–BP4.4.

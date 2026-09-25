@@ -496,3 +496,93 @@ pub fn io_result_mk_error(error: Obj) -> Obj {
     unsafe { ctor_set(r, 0, error) };
     r
 }
+
+/// The owned `IO` result a Lean `IO` or `BaseIO` action returns across the C
+/// boundary: a `lean_object*` whose one reference the caller holds.
+///
+/// A distinct type rather than a bare [`Obj`] because a raw pointer is not
+/// `must_use`, so a call whose result was dropped compiled silently — which is
+/// how six HAL seams leaked one heap object per call.  `#[must_use]` makes a
+/// dropped result a warning, and the crate's `-D warnings` lint makes it an
+/// error; `#[repr(transparent)]` makes it the pointer at the ABI, so a foreign
+/// declaration may name it as its return type.  `scripts/check_kernel_entry_exports.py`
+/// holds every HAL declaration whose generated C returns `lean_object*` to this
+/// type.
+#[must_use = "a Lean `IO` result owns a heap object: pass it to `discharge_base_io` \
+              or `consume_io_result`"]
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct LeanIoResult(Obj);
+
+impl LeanIoResult {
+    /// The object, handed over: the caller now owns its one reference.
+    pub fn into_obj(self) -> Obj {
+        self.0
+    }
+}
+
+/// Why an `IO` result is not `ok`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IoResultRefused {
+    /// An `IO` error (constructor tag 1).  The error object is released
+    /// without being read, because reading it would mean calling back into
+    /// Lean, and the runtime never does that.
+    Error,
+    /// A scalar, or a constructor whose tag is neither `ok` (0) nor `error`
+    /// (1).  No generated `IO` action returns one, so it is refused as a
+    /// malformed result rather than read as success.
+    Malformed {
+        /// The tag found, or `None` for a scalar.
+        tag: Option<u8>,
+    },
+}
+
+/// Classify and consume an `IO` result: `Ok(())` exactly for a heap
+/// constructor with tag 0 (`lean.h`'s `lean_io_result_is_ok`).  Every heap
+/// object, whatever its tag, has the one reference it arrived with released.
+///
+/// # Safety
+///
+/// `res` must be a scalar or a live heap object whose one reference the caller
+/// owns; this call consumes it.
+pub unsafe fn consume_io_result(res: Obj) -> Result<(), IoResultRefused> {
+    if is_scalar(res) {
+        return Err(IoResultRefused::Malformed { tag: None });
+    }
+    // SAFETY: `res` is a live heap object by the caller's contract and the
+    // test above.
+    let tag = unsafe { self::tag(res) };
+    // SAFETY: the reference is the caller's to hand over, and nothing below
+    // reads `res` again.
+    unsafe { dec(res) };
+    match tag {
+        0 => Ok(()),
+        1 => Err(IoResultRefused::Error),
+        other => Err(IoResultRefused::Malformed { tag: Some(other) }),
+    }
+}
+
+/// Consume the result of a `BaseIO` export the HAL called, or halt.
+///
+/// A Lean `BaseIO α` export compiles to a C function returning an **owned**
+/// `IO` result (`lean_io_result_mk_ok`, a fresh heap constructor on every
+/// call), so a caller that drops it leaks one object on the Lean heap per call
+/// — which, on a per-tick seam, exhausts the heap in minutes.  Every HAL call
+/// of such an export hands its result here.  `BaseIO` cannot fail, so anything
+/// but `ok` means the boundary itself is broken, and that halts rather than
+/// continues; `symbol` names the export in the report.
+///
+/// # Safety
+///
+/// `res` must be the result a `BaseIO` export just returned to this caller;
+/// this call consumes it.
+pub unsafe fn discharge_base_io(res: LeanIoResult, symbol: &str) {
+    // SAFETY: forwarded from the caller, which owns the one reference.
+    if unsafe { consume_io_result(res.into_obj()) }.is_err() {
+        diagnostic(
+            "BaseIO export returned a non-ok result: ",
+            symbol.as_bytes(),
+        );
+        fatal("a BaseIO export returned a result BaseIO cannot produce");
+    }
+}

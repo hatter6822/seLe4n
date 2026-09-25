@@ -244,6 +244,18 @@ def lean_sources() -> dict[str, str]:
 def extern_declarations_in(text: str, where: str) -> set[str]:
     """The **linker symbols** declared inside an `extern "C" { … }` block.
 
+    The symbol set of `extern_functions_in`, which is the one reader; see it
+    for how an item is found and named.
+    """
+    return {symbol for symbol, _, _ in extern_functions_in(text, where)}
+
+
+def extern_functions_in(text: str, where: str) -> list[tuple[str, list[str], str | None]]:
+    """Every function declared inside an `extern "C" { … }` block, as its
+    effective linker symbol, its parameter types and its return type (`None`
+    for none).  The types are the Rust text, whitespace removed; what they must
+    be is `signature_violations`'s question.
+
     Brace-matched rather than line-scanned: a declaration is a `fn` inside the
     block, and the block ends at its matching `}` — a `fn` *after* the block is
     a definition in the crate, not a symbol the crate expects to link against.
@@ -265,7 +277,7 @@ def extern_declarations_in(text: str, where: str) -> set[str]:
     kept = rust_code_view.code(text)
     if len(view) != len(kept):
         sys.exit(f"[FAIL] {where}: the Rust code views are not byte-aligned")
-    found: set[str] = set()
+    found: list[tuple[str, list[str], str | None]] = []
     try:
         blocks = rust_code_view.extern_blocks(view)
     except rust_code_view.UnbalancedExternBlock as unbalanced:
@@ -327,14 +339,197 @@ def extern_declarations_in(text: str, where: str) -> set[str]:
                 kept[found_at.start(1) : found_at.end(1)]
                 for found_at in LINK_NAME_ATTR.finditer(view, item_at, declaration.start())
             ]
-            found.add(renamed[-1] if renamed else declaration.group(1))
+            params, ret = rust_fn_signature(view, declaration.end() - 1, item_end, where)
+            found.append((renamed[-1] if renamed else declaration.group(1), params, ret))
     return found
 
 
+def rust_fn_signature(
+    view: str, open_paren: int, item_end: int, where: str
+) -> tuple[list[str], str | None]:
+    """The parameter types and return type of a foreign `fn` whose parameter
+    list opens at `open_paren`, read off the string-free view.
+
+    Parameters split at the commas outside every bracket; each parameter's type
+    is what follows its first `:`.  The return type is what follows `->` up to
+    the item's end; `()` and no arrow both mean none.  Whitespace is removed,
+    since `* mut T` and `*mut T` are one type.
+    """
+    depth = 0
+    close = None
+    for at in range(open_paren, item_end):
+        ch = view[at]
+        if ch in "([<":
+            depth += 1
+        elif ch in ")]>":
+            depth -= 1
+            if depth == 0 and ch == ")":
+                close = at
+                break
+    if close is None:
+        sys.exit(f"[FAIL] {where}: a foreign `fn`'s parameter list does not close")
+    params: list[str] = []
+    depth = 0
+    start = open_paren + 1
+    for at in range(open_paren + 1, close + 1):
+        ch = view[at]
+        if ch in "([<":
+            depth += 1
+        elif ch in ")]>" and at != close:
+            depth -= 1
+        if (ch == "," and depth == 0) or at == close:
+            piece = view[start:at].strip()
+            start = at + 1
+            if not piece:
+                continue
+            if ":" not in piece:
+                sys.exit(f"[FAIL] {where}: a foreign `fn` parameter {piece!r} has no type")
+            params.append(re.sub(r"\s+", "", piece.split(":", 1)[1]))
+    rest = view[close + 1 : item_end].strip().rstrip(";").strip()
+    if not rest:
+        return params, None
+    if not rest.startswith("->"):
+        sys.exit(f"[FAIL] {where}: a foreign `fn` ends in {rest!r}, not a return type")
+    ret = re.sub(r"\s+", "", rest[2:])
+    return params, (None if ret == "()" else ret)
+
+
+#: The Lean compiler's C for the host library: one `.c` per module, each
+#: exported function given a `LEAN_EXPORT` prototype.  Built by the same
+#: `lake build SeLe4n:static` that produces `ARCHIVE`.
+IR_ROOT = REPO / ".lake" / "build" / "ir"
+
+#: A `LEAN_EXPORT` prototype or definition: the return type, the name and the
+#: parameter list.  Lean's generator writes one per line.
+LEAN_EXPORT_PROTOTYPE = re.compile(
+    r"^LEAN_EXPORT\s+([A-Za-z_][\w\s]*?\s*\**)\s*\b([A-Za-z_]\w*)\s*\(([^)]*)\)\s*[;{]",
+    re.MULTILINE,
+)
+
+#: The C types a Lean `@[export]` crosses the boundary in, and the one Rust
+#: spelling each must be declared at.  `lean_object*` is an owned object
+#: reference, spelled `Obj` (`lean_runtime::Obj`) as a parameter; as a
+#: **return** it is the `IO` result of an `IO`/`BaseIO` action, which the caller
+#: owns and must release, so it is spelled `LeanIoResult` — the `#[must_use]`,
+#: `#[repr(transparent)]` wrapper that makes dropping it a compile error rather
+#: than a leak (`RETURN_TYPE_OVERRIDES`).  A C type not here is refused rather
+#: than skipped: an unread type is a signature nobody checked.
+C_TO_RUST_TYPE: dict[str, str | None] = {
+    "uint8_t": "u8",
+    "uint16_t": "u16",
+    "uint32_t": "u32",
+    "uint64_t": "u64",
+    "size_t": "usize",
+    "lean_object*": "Obj",
+    "void": None,
+}
+
+#: Where a C type's Rust spelling differs in the return position.
+RETURN_TYPE_OVERRIDES: dict[str, str] = {"lean_object*": "LeanIoResult"}
+
+
+def c_type(declarator: str) -> str:
+    """A C parameter or return declarator reduced to its type: the parameter
+    name, when there is one, dropped; pointer stars kept, spaces removed."""
+    tokens = re.findall(r"[A-Za-z_]\w*|\*", declarator)
+    if len(tokens) > 1 and tokens[-1] != "*":
+        tokens = tokens[:-1]
+    return "".join(tokens)
+
+
+def lean_export_prototypes_in(c_text: str) -> dict[str, tuple[list[str], str]]:
+    """Every `LEAN_EXPORT` function in one generated C file: its C parameter
+    types and its C return type."""
+    found: dict[str, tuple[list[str], str]] = {}
+    for match in LEAN_EXPORT_PROTOTYPE.finditer(c_text):
+        params_text = match.group(3).strip()
+        params = [] if params_text in ("", "void") else [
+            c_type(p) for p in params_text.split(",")
+        ]
+        found[match.group(2)] = (params, c_type(match.group(1)))
+    return found
+
+
+def lean_export_prototypes(ir_root: Path) -> dict[str, tuple[list[str], str]]:
+    found: dict[str, tuple[list[str], str]] = {}
+    for path in sorted(ir_root.rglob("*.c")):
+        found.update(lean_export_prototypes_in(path.read_text(errors="surrogateescape")))
+    return found
+
+
+def rust_type_name(rust: str | None) -> str | None:
+    """A Rust type with its module path dropped (`crate::lean_runtime::Obj` is
+    `Obj`); `None` stays `None`."""
+    if rust is None:
+        return None
+    return re.sub(r"^(?:[A-Za-z_]\w*::)+", "", rust)
+
+
+def signature_violations(
+    functions: list[tuple[str, list[str], str | None, str]],
+    prototypes: dict[str, tuple[list[str], str]],
+    lean_exports: set[str],
+) -> list[str]:
+    """Where a HAL foreign declaration of a Lean export disagrees with the C the
+    Lean compiler generated for it; `[]` when every one agrees.
+
+    WS-BP BP4.1's audit found six HAL declarations of `BaseIO Unit` exports
+    written with **no** return type while the generated C returns an owned
+    `lean_object*` — the `IO` result, heap-allocated on every call.  The
+    linker checks names, never types, so every call leaked one object on the
+    Lean heap and nothing could see it.  The C prototype is the compiler's own
+    statement of the ABI, so the declaration is held to it rather than to a
+    hand-written table.  A Lean export with no generated prototype is refused,
+    since that is a signature nothing can check.
+    """
+    violations: list[str] = []
+    for symbol, params, ret, where in functions:
+        if symbol not in lean_exports and symbol not in prototypes:
+            continue  # provided by the HAL's assembly or its own runtime
+        if symbol not in prototypes:
+            violations.append(
+                f"{where}: `{symbol}` is a Lean export with no generated C prototype under "
+                f"{IR_ROOT.relative_to(REPO)} — its signature cannot be checked"
+            )
+            continue
+        c_params, c_ret = prototypes[symbol]
+        expected: list[str | None] = []
+        for c in [*c_params, c_ret]:
+            if c not in C_TO_RUST_TYPE:
+                violations.append(
+                    f"{where}: `{symbol}`'s generated C uses `{c}`, a type this gate has no "
+                    f"Rust spelling for"
+                )
+                break
+            expected.append(C_TO_RUST_TYPE[c])
+        else:
+            if c_ret in RETURN_TYPE_OVERRIDES:
+                expected[-1] = RETURN_TYPE_OVERRIDES[c_ret]
+            want_params, want_ret = expected[:-1], expected[-1]
+            got_params = [rust_type_name(t) for t in params]
+            if got_params != want_params or rust_type_name(ret) != want_ret:
+                violations.append(
+                    f"{where}: `{symbol}` is declared `fn({', '.join(params)})"
+                    f"{' -> ' + ret if ret else ''}` and the Lean compiler generated "
+                    f"`{c_ret} {symbol}({', '.join(c_params)})`, which is "
+                    f"`fn({', '.join(str(t) for t in want_params)})"
+                    f"{' -> ' + want_ret if want_ret else ''}`"
+                )
+    return violations
+
+
 def hal_extern_declarations() -> set[str]:
-    found: set[str] = set()
+    return {symbol for symbol, _, _, _ in hal_extern_functions()}
+
+
+def hal_extern_functions() -> list[tuple[str, list[str], str | None, str]]:
+    found: list[tuple[str, list[str], str | None, str]] = []
     for path in sorted(HAL_SRC.rglob("*.rs")):
-        found.update(extern_declarations_in(path.read_text(), str(path)))
+        where = str(path.relative_to(REPO))
+        found.extend(
+            (symbol, params, ret, where)
+            for symbol, params, ret in extern_functions_in(path.read_text(), str(path))
+        )
     return found
 
 
@@ -921,6 +1116,54 @@ def self_test() -> int:
     live_lean = "@[export lean_alpha]\ndef alpha : Nat := 0\n"
     if lean_exports_in(live_lean) != {"lean_alpha"}:
         failures.append("a live `@[export]` was not collected")
+
+    # WS-BP BP4.1 audit: the declared signature against the generated C.  Every
+    # case keeps the symbol -- which is all the link, and every name check,
+    # ever compared -- and moves one type.
+    proto = lean_export_prototypes_in(
+        "LEAN_EXPORT lean_object* lean_tick(uint64_t);\n"
+        "LEAN_EXPORT uint32_t lean_classify(uint64_t x_1) {\n"
+        "LEAN_EXPORT lean_object* initialize_pkg(uint8_t builtin) {\n"
+    )
+    if proto != {
+        "lean_tick": (["uint64_t"], "lean_object*"),
+        "lean_classify": (["uint64_t"], "uint32_t"),
+        "initialize_pkg": (["uint8_t"], "lean_object*"),
+    }:
+        failures.append(f"generated prototypes were misread: {proto}")
+    agreeing = extern_functions_in(
+        'extern "C" {\n    fn lean_tick(core: u64) -> crate::lean_runtime::LeanIoResult;\n'
+        "    fn lean_classify(esr: u64) -> u32;\n}\n",
+        "<agreeing>",
+    )
+    if signature_violations([(*f, "<agreeing>") for f in agreeing], proto, {"lean_tick", "lean_classify"}):
+        failures.append("an agreeing declaration (with a path-qualified `LeanIoResult`) was refused")
+    for mutated, why in (
+        # The defect itself: the owned `IO` result is dropped on the floor.
+        ('extern "C" { fn lean_tick(core: u64); }', "a dropped owned return"),
+        # The owned result as a bare pointer: the right ABI, and droppable in
+        # silence, because a raw pointer is not `must_use`.
+        ('extern "C" { fn lean_tick(core: u64) -> Obj; }', "an owned return as a bare pointer"),
+        ('extern "C" { fn lean_tick(core: u32) -> LeanIoResult; }', "a narrowed parameter"),
+        ('extern "C" { fn lean_tick(core: u64, extra: u64) -> LeanIoResult; }', "an extra parameter"),
+        ('extern "C" { fn lean_classify(esr: u64) -> u64; }', "a widened scalar return"),
+        ('extern "C" { fn lean_classify(esr: u64) -> (); }', "a unit return for a scalar"),
+    ):
+        functions = [(*f, "<mutated>") for f in extern_functions_in(mutated, "<mutated>")]
+        if not signature_violations(functions, proto, {"lean_tick", "lean_classify"}):
+            failures.append(f"{why} was accepted")
+    # A Lean export with no generated prototype is refused, not skipped; a
+    # non-Lean symbol (an assembly or runtime provider) is outside the domain.
+    orphan = [(*f, "<orphan>") for f in extern_functions_in('extern "C" { fn lean_gone(x: u64); }', "<orphan>")]
+    if not signature_violations(orphan, proto, {"lean_gone"}):
+        failures.append("a Lean export with no generated prototype was skipped")
+    provider = [(*f, "<asm>") for f in extern_functions_in('extern "C" { fn secondary_entry(); }', "<asm>")]
+    if signature_violations(provider, proto, {"lean_tick"}):
+        failures.append("a symbol the Lean compiler does not generate was held to a prototype")
+    # The initializer is not an `@[export]`, and is checked because it has one.
+    initializer = [(*f, "<init>") for f in extern_functions_in('extern "C" { fn initialize_pkg(builtin: u8); }', "<init>")]
+    if not signature_violations(initializer, proto, set()):
+        failures.append("a generated symbol outside the `@[export]` inventory was skipped")
 
     # WS-RR RR7.16: the archive-shadowing relation.  Every token a presence
     # check would look for stays put — the `@[extern]` binding is a real one and
@@ -1870,6 +2113,23 @@ def main() -> int:
         )
         for symbol in stale_exported:
             print(f"         {symbol}")
+    prototypes = lean_export_prototypes(IR_ROOT)
+    hal_functions = hal_extern_functions()
+    signature_mismatches = signature_violations(hal_functions, prototypes, exports)
+    signatures_checked = sum(
+        1 for symbol, _, _, _ in hal_functions if symbol in exports or symbol in prototypes
+    )
+    if not IR_ROOT.is_dir():
+        failed = True
+        print(f"[FAIL] {IR_ROOT} does not exist — the generated C the signatures are checked against")
+    if signature_mismatches:
+        failed = True
+        print(
+            "[FAIL] HAL `extern \"C\"` declarations whose Rust signature is not the C the Lean "
+            "compiler generated (the linker checks names, never types):"
+        )
+        for mismatch in signature_mismatches:
+            print(f"         {mismatch}")
     if failed:
         return 1
 
@@ -1884,7 +2144,8 @@ def main() -> int:
         f"[PASS] all {len(required)} HAL kernel-entry declarations are defined in "
         f"{'both archives' if len(archives) > 1 else 'the archive'} — {checked} "
         f"({len(externs & asm_globals)} resolved by the HAL's assembly — {provider_basis}; "
-        f"{len(EXPECTED_UNRESOLVED)} expected unresolved and reconciled); boot entry "
+        f"{len(EXPECTED_UNRESOLVED)} expected unresolved and reconciled; {signatures_checked} "
+        f"signatures agree with the C the Lean compiler generated); boot entry "
         f"`{BOOT_ENTRY_SYMBOL}`: {boot_entry}"
     )
     for symbol in required:

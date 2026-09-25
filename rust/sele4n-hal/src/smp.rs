@@ -831,20 +831,26 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
                 /// its Lean runtime is initialised (`lean_ready` checked on
                 /// *this* PE).  `core_id` must equal the executing PE's
                 /// `TPIDR_EL1`, which the caller asserts.
-                fn lean_secondary_kernel_main(core_id: u64);
+                fn lean_secondary_kernel_main(core_id: u64) -> crate::lean_runtime::LeanIoResult;
             }
             // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted
             // C-callable wrapper for `SeLe4n.Kernel.secondaryKernelMain`.
             // The function takes one u64 argument (the PSCI context_id)
-            // and returns `()` — the call is total and never unwinds
+            // and returns its owned `IO` result — the call is total and never unwinds
             // across the FFI boundary (Lean's `BaseIO` never throws under
             // `panic = "abort"`).  The verified step decodes the id
             // fail-closed, so even an out-of-range context_id commits
             // nothing.  This core's Lean runtime is initialized (the
             // `lean_ready` gate just checked).
-            crate::kernel_entry::with_kernel_entry(core_idx, || unsafe {
-                lean_secondary_kernel_main(core_id);
+            let res = crate::kernel_entry::with_kernel_entry(core_idx, || unsafe {
+                lean_secondary_kernel_main(core_id)
             });
+            // The export returns its owned `IO` result, released outside the
+            // bracket so a malformed one halts this PE without holding the
+            // kernel-entry lock (`lean_runtime::discharge_base_io`).
+            // SAFETY: `res` is the result the export just returned, whose one
+            // reference this caller owns.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_secondary_kernel_main") };
             crate::kprintln!(
                 "[smp] core {core_id}: kernel bring-up entry complete (first reschedule)"
             );

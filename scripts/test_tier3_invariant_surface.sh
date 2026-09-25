@@ -3933,6 +3933,20 @@ run_check "INVARIANT" rg -U -n '^pub fn bring_up_secondaries_inner\(\n    permit
 run_check "INVARIANT" rg -n 'crate::cmdline::apply_cmdline_and_start_smp\(&cmdline_cfg, secondary_release\);' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -U -n '^    #\[cfg\(any\(test, not\(feature = "hw_target"\)\)\)\]\n    pub fn no_lean_kernel\(\) -> Self \{$' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -U -n '^pub fn enter_lean_kernel\(\n    initialised: LeanLibraryInitialised,\n    dtb_ptr: u64,\n\) -> SecondaryReleasePermit \{$' rust/sele4n-hal/src/lean_entry.rs
+# The BP4.1 audit: a Lean `IO`/`BaseIO` export returns an OWNED `IO` result.
+# Its HAL declaration returns the `#[must_use]` wrapper, every seam releases it,
+# and the link gate holds each declaration to the C the Lean compiler generated.
+run_check "INVARIANT" rg -U -n '^#\[must_use = "a Lean .IO. result owns a heap object[^\n]*\n[^\n]*\n#\[repr\(transparent\)\]\n#\[derive\(Debug\)\]\npub struct LeanIoResult\(Obj\);$' rust/sele4n-hal/src/lean_runtime/mod.rs
+run_check "INVARIANT" rg -n '^pub unsafe fn discharge_base_io\(res: LeanIoResult, symbol: &str\) \{$' rust/sele4n-hal/src/lean_runtime/mod.rs
+run_check "INVARIANT" rg -n 'fn lean_per_core_timer_tick\(core_id: u64\) -> crate::lean_runtime::LeanIoResult;' rust/sele4n-hal/src/timer.rs
+run_check "INVARIANT" rg -n 'unsafe \{ crate::lean_runtime::discharge_base_io\(res, "lean_per_core_timer_tick"\) \};' rust/sele4n-hal/src/timer.rs
+run_check "INVARIANT" rg -n 'unsafe \{ crate::lean_runtime::discharge_base_io\(res, "lean_per_core_reschedule"\) \};' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'unsafe \{ crate::lean_runtime::discharge_base_io\(res, "lean_handle_fault"\) \};' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'unsafe \{ crate::lean_runtime::discharge_base_io\(res, "lean_handle_unknown_syscall"\) \};' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'unsafe \{ crate::lean_runtime::discharge_base_io\(res, "lean_secondary_kernel_main"\) \};' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n 'unsafe \{ lean_runtime::discharge_base_io\(res, "lean_kernel_main"\) \};' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n '^RETURN_TYPE_OVERRIDES: dict\[str, str\] = \{"lean_object\*": "LeanIoResult"\}$' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^    signature_mismatches = signature_violations\(hal_functions, prototypes, exports\)$' scripts/check_kernel_entry_exports.py
 # PR #892 review round 2: the FIFO stress test's round count rounds UP, so an
 # acquisition override below the thread count cannot make every worker loop
 # run zero times and the test pass on the lock's initial state.

@@ -7525,6 +7525,18 @@ compile.  (4) **The install is the eighth committing seam, recorded unbracketed*
 in `ExportCommitDisciplineCensus` with that ordering as its reason, and the
 reachability census's pin shrank by the nineteen boot-path transformers it now
 reaches.  A new step the boot entry reaches is therefore *live*, not pinned.
+(5) **A Lean `IO`/`BaseIO` export returns an OWNED result, and the HAL must
+release it.**  The generated C is `lean_object* f(…)`, a heap-allocated `IO`
+result on every call; six HAL declarations wrote no return and so leaked one
+object per call on the Lean heap — on the per-tick seam, the whole 64 MiB in
+minutes once a core is ready.  Such a declaration returns
+`lean_runtime::LeanIoResult` (`#[must_use]`, `#[repr(transparent)]`, so dropping
+it is a compile error) and its caller hands it to
+`lean_runtime::discharge_base_io`, outside the kernel-entry bracket.  **The
+linker checks names, never types**, so `check_kernel_entry_exports.py` holds
+every HAL foreign declaration of a Lean-generated symbol to the C prototype the
+Lean compiler generated under `.lake/build/ir` — a new seam's signature is
+checked against the compiler's own statement of the ABI, not against a table.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

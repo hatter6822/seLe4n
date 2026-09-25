@@ -245,6 +245,10 @@ shape and refuses its absence.  Releasing a secondary consumes a
 `enter_lean_kernel` returns after the install, and `no_lean_kernel()` is for
 images and tests that link no kernel.  A new bring-up path takes the permit too
 — it is how the install is kept ahead of every secondary without a lock.
+A Lean `IO`/`BaseIO` export returns an owned `IO` result: declare it
+`-> lean_runtime::LeanIoResult` and hand the result to
+`lean_runtime::discharge_base_io`.  `check_kernel_entry_exports.py` checks each
+declaration against the C prototype the Lean compiler generated.
 
 **`cargo check` is not a substitute.** It stops before code generation, so it
 never hands an `asm!` template to an assembler. The first real cross build

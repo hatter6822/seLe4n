@@ -452,7 +452,7 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
                 /// (`lean_ready` checked on *this* PE).  `core_id` must be the
                 /// executing PE's own id: the tick charges that core's budget
                 /// and re-buckets its run queue.
-                fn lean_per_core_timer_tick(core_id: u64);
+                fn lean_per_core_timer_tick(core_id: u64) -> crate::lean_runtime::LeanIoResult;
             }
             // WS-SM SM5.I: the tick commits kernel state through the same
             // `modifyGetKernelState` read-then-write the syscall path uses,
@@ -468,9 +468,15 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
             // this core's Lean runtime is initialized (the readiness gate above
             // established that) and inside the kernel-entry bracket, which
             // serialises its `IO.Ref` commit against every other entry.
-            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
-                lean_per_core_timer_tick(core_id);
+            let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_per_core_timer_tick(core_id)
             });
+            // The export returns its owned `IO` result, released outside the
+            // bracket so a malformed one halts this PE without holding the
+            // kernel-entry lock (`lean_runtime::discharge_base_io`).
+            // SAFETY: `res` is the result the export just returned, whose one
+            // reference this caller owns.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_per_core_timer_tick") };
         }
     }
 }

@@ -773,6 +773,36 @@ configuration, and the proof that it boots.
     closure plan's §3 obligation, now recorded as discharged.
   - The boot summary no longer claims a "3 GiB RAM" identity map, which BP2.6
     had already made false.
+- **A leak the BP4.1 audit found, closed (latent; reported as a possible
+  vulnerability).**  The Lean compiler emits a `BaseIO` export as a C function
+  returning an owned `lean_object*`: the `IO` result, which
+  `lean_io_result_mk_ok` heap-allocates on every call.  Six HAL declarations
+  declared no return value: `lean_kernel_main`, `lean_per_core_timer_tick`,
+  `lean_per_core_reschedule`, `lean_secondary_kernel_main`, `lean_handle_fault`
+  and `lean_handle_unknown_syscall`.  So every call leaked one object on the
+  Lean heap.
+  - Once a core is lean-ready (BP6), the timer tick alone (1000 Hz on four PEs)
+    exhausts the 64 MiB heap in minutes, and faults or unknown syscall numbers
+    from a user thread accelerate it: an uptime-bounded denial of service.
+    Unreachable today, because no core is ready.
+  - The six declarations return `lean_runtime::LeanIoResult`, a `#[must_use]`,
+    `#[repr(transparent)]` wrapper, so a dropped result fails the `-D warnings`
+    build.  Each call site hands it to `lean_runtime::discharge_base_io`, which
+    releases it outside the kernel-entry bracket and halts on anything but
+    `ok`, since a `BaseIO` action cannot fail.  The `IO`-result classifier moved
+    from `lean_entry.rs` to `lean_runtime` (`consume_io_result`), so the
+    initializer and the seams read one answer.
+  - `scripts/check_kernel_entry_exports.py` now holds every HAL foreign
+    declaration of a Lean-generated symbol to the C prototype the Lean compiler
+    itself generated under `.lake/build/ir` (10 checked).  The linker checks
+    names and never types, which is why nothing had seen this.  The self-test
+    keeps the symbol and moves one type per case: a dropped return, a
+    bare-pointer return, a narrowed or an extra parameter, a widened scalar.
+    Reverting one declaration on the real tree fails the gate, and dropping one
+    result fails compilation.
+  - `lean_runtime` tests: a thousand discharged results leave the heap as it
+    was, the classifier releases every heap result whatever its tag, and a
+    non-`ok` result halts.
 - **Tests.**
   - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
     admitted with its ASID registered, beside the binding's; ASID collisions are

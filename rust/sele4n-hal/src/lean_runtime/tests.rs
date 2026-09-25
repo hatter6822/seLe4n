@@ -918,3 +918,52 @@ fn the_census_decides_exactly_the_symbols_this_runtime_does_not_provide() {
         "the Lean census and the Rust runtime disagree about the list"
     );
 }
+
+/// A `BaseIO` export's result, discharged, leaves the heap as it was: the one
+/// reference the call returned is released.  This is the leak the HAL's six
+/// `BaseIO` seams had while their declarations dropped the result — one object
+/// per call, on the per-tick path.
+#[test]
+fn a_discharged_base_io_result_is_released() {
+    let before = live();
+    for _ in 0..1000 {
+        let res = io_result_mk_ok(boxed(0));
+        // SAFETY: `res` is a fresh `IO` result owned here.
+        unsafe { discharge_base_io(LeanIoResult(res), "test_export") };
+    }
+    assert_eq!(live(), before, "discharging an `ok` result must free it");
+}
+
+/// The classification `discharge_base_io` decides by: only a tag-0 heap
+/// constructor is `ok`, and every heap object is released whatever it held.
+#[test]
+fn an_io_result_is_classified_and_released() {
+    let before = live();
+    // SAFETY: each argument is a fresh object or a scalar, owned here.
+    unsafe {
+        assert_eq!(consume_io_result(io_result_mk_ok(boxed(0))), Ok(()));
+        assert_eq!(
+            consume_io_result(io_result_mk_error(boxed(0))),
+            Err(IoResultRefused::Error)
+        );
+        assert_eq!(
+            consume_io_result(alloc_ctor(7, 0, 0)),
+            Err(IoResultRefused::Malformed { tag: Some(7) })
+        );
+        assert_eq!(
+            consume_io_result(boxed(0)),
+            Err(IoResultRefused::Malformed { tag: None })
+        );
+    }
+    assert_eq!(live(), before, "every classified result must be freed");
+}
+
+/// `BaseIO` cannot fail, so an error result means the boundary is broken, and
+/// the discharge refuses to continue.  On the host `fatal` panics, which is the
+/// observable.
+#[test]
+#[should_panic(expected = "a BaseIO export returned a result BaseIO cannot produce")]
+fn a_non_ok_base_io_result_halts() {
+    // SAFETY: a fresh `IO` error result owned here.
+    unsafe { discharge_base_io(LeanIoResult(io_result_mk_error(boxed(0))), "test_export") };
+}
