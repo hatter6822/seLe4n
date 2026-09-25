@@ -93,9 +93,9 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 |------|-----|
 | **バージョン** | `0.36.2` |
 | **Lean ツールチェーン** | `v4.28.0` |
-| **本番 Lean コード行数** | 342 ファイルにわたる 420,033 行 |
+| **本番 Lean コード行数** | 343 ファイルにわたる 420,101 行 |
 | **テスト Lean コード行数** | 71 テストスイートにわたる 85,359 行 |
-| **証明済み宣言数** | 13,905 件の定理/補題宣言（sorry/axiom ゼロ） |
+| **証明済み宣言数** | 13,906 件の定理/補題宣言（sorry/axiom ゼロ） |
 | **ターゲットハードウェア** | Raspberry Pi 5（BCM2712 / ARM Cortex-A76 / ARMv8-A） |
 | **標準監査** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) ―― 1.0 前の包括的監査（202 件の指摘事項；WS-AK AK1–AK10 で修正済み；アーカイブ済み） |
 | **最新監査** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) ―― WS-AN 完了後に実施された 1.0 前レディネス監査（WS-AN AN0–AN12 で修正され現在アーカイブ済みの [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) を引き継ぐ）。WS-RC R0..R5 は v0.31.2 で完了；WS-RC R6..R14 は SM0.Q.1 吸収マッピングに従って WS-SM に吸収（[`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) を参照）。アクティブなワークストリーム計画：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)。 |

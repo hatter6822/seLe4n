@@ -98,9 +98,9 @@ demostración de Lean 4:
 |----------|-------|
 | **Versión** | `0.36.2` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 420.033 en 342 archivos |
+| **LoC de producción en Lean** | 420.101 en 343 archivos |
 | **LoC de pruebas en Lean** | 85.359 en 71 suites de pruebas |
-| **Declaraciones demostradas** | 13.905 declaraciones theorem/lemma (cero sorry/axiom) |
+| **Declaraciones demostradas** | 13.906 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Auditoría canónica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoría integral previa a 1.0 (202 hallazgos; remediados por WS-AK AK1–AK10; archivada) |
 | **Última auditoría** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — auditoría de preparación previa a 1.0 realizada tras el cierre de WS-AN (sucede a la ahora archivada [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), remediada por WS-AN AN0–AN12). WS-RC R0..R5 completados en v0.31.2; WS-RC R6..R14 absorbidos en WS-SM según el mapeo de absorción SM0.Q.1 (véase [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Plan de flujo de trabajo activo: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |

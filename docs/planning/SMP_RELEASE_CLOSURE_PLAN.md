@@ -433,6 +433,14 @@ installed — instead of the empty default).  Cross-references:
 `rust/sele4n-hal/src/kernel_entry.rs` (module docs) both name this
 obligation.
 
+**Discharged at `v0.36.2` by option 1** ([`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)
+`BP4.1`/`BP4.2`).  `lean_kernel_main` is `SeLe4n.Platform.RPi5.kernelMain`;
+`rust_boot_main` runs it in Phase 5 and releases the secondaries in Phase 6, and
+the order is a type: every bring-up path consumes a
+`lean_entry::SecondaryReleasePermit`, which on an image that links the kernel
+only `enter_lean_kernel` returns, after the install.  The two cross-references
+above now record the closure rather than the obligation.
+
 ### SM10.2 — Documentation sync (9 sub-tasks)
 
 | Sub | Description | Files | Est |

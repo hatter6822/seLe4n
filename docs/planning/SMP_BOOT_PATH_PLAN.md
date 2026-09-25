@@ -1,7 +1,7 @@
 # WS-BP — The bare-metal boot path, and the cross-implementation
 # agreement it ends
 
-> **Status**: **IN FLIGHT — BP0, BP1, BP2 and BP3 LANDED at `v0.36.2`**; BP4..BP8 not started.
+> **Status**: **IN FLIGHT — BP0, BP1, BP2, BP3, BP4.1 and BP4.2 LANDED at `v0.36.2`**; BP4.3..BP4.6 and BP5..BP8 not started.
 > Unblocked at `v0.35.203`, WS-RR RR8 having closed.  Registered at `v0.34.59`
 > by WS-RR RR7.5 + RR7.15 (register §6 findings 19, 40–44).  BP7.8 was added at `v0.35.203` by WS-RR
 > RR8.16's hand-off check, which re-homed the registered `MR4`-onward
@@ -281,8 +281,8 @@ and the state it installs satisfies the proof-layer invariant bundle (met at
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| BP4.1 | `@[export lean_kernel_main]` calling `Platform.FFI.bootAndInitialiseRPi5OrHalt` applied to BP3's configuration — the exact program `SeLe4n/Testing/BootEntryContract.lean` requires, decided by a head-directed reduction (`Meta.whnfUntil`) and one reducible `Meta.isDefEq`.  The configuration is BP3's `rpi5PlatformConfig`.  Consumes BP3.3 and BP3.5 — the second because this row makes the boot live | `SeLe4n/Platform/FFI.lean` (or a new entry module in the production closure) | M |
-| BP4.2 | The install ordering: perform the kernel-state install **before** `apply_cmdline_and_start_smp` releases any secondary, so no bracketed committer exists during the unbracketed install (option 1 of the two `SMP_RELEASE_CLOSURE_PLAN.md` §3 records).  The lost-commit shape `kernel_entry.rs` documents is closed by construction rather than by a lock | `rust/sele4n-hal/src/boot.rs`, `rust/sele4n-hal/src/smp.rs` | M |
+| BP4.1 | **LANDED `v0.36.2`** (`SeLe4n/Platform/RPi5/KernelMain.lean`, in the library root).  `SeLe4n.Platform.RPi5.kernelMain`, `@[export lean_kernel_main]`, is `Platform.FFI.bootAndInitialiseRPi5OrHalt rpi5PlatformConfig` and nothing else; `BootEntryContract.lean` accepts it by its head-directed reduction and, since the entry exists, **refuses an environment with none** rather than logging the contract vacuous.  `kernelMain_installs` states the program it is: the deployment's boot state and the binding's labeling installed, the halt arm never taken.  `check_kernel_entry_exports.py`'s `EXPECTED_UNRESOLVED` is **empty** and both archives define the symbol (10 HAL declarations); the export-commit census records the eighth committing seam as unbracketed with the ordering as its reason, and nineteen boot-path transformers left the reachability census's pin because a committing export now reaches them.  The reachable link rooted at the initializer and the nine kernel exports still needs **144** runtime symbols — the boot path adds none.  The device-tree pointer is not yet read; a later row of this phase moves the entry onto the device-tree wrapper | `SeLe4n/Platform/RPi5/KernelMain.lean` | M |
+| BP4.2 | **LANDED `v0.36.2`**, as a type.  `rust_boot_main` runs the library initializer and the install in Phase 5, on the boot core alone, and releases the secondaries in Phase 6; the PE-topology refusal moves after the release, to Phase 7, which costs nothing because no core is lean-ready until BP6.  The order is not a comment: `smp::bring_up_secondaries_inner`, which every bring-up path reaches, consumes a `lean_entry::SecondaryReleasePermit`, and on an image that links the kernel (`hw_target`) the only one is what `enter_lean_kernel` returns after `lean_kernel_main`; an image without the kernel gets `SecondaryReleasePermit::no_lean_kernel`, which does not exist under `hw_target`.  The permit is neither `Clone` nor `Copy`, so one install licenses one release.  The lost-commit shape `kernel_entry.rs` documented is closed by construction rather than by a lock (option 1 of `SMP_RELEASE_CLOSURE_PLAN.md` §3) | `rust/sele4n-hal/src/boot.rs`, `rust/sele4n-hal/src/lean_entry.rs`, `rust/sele4n-hal/src/smp.rs`, `rust/sele4n-hal/src/cmdline.rs` | M |
 | BP4.3 | Turn `rust_boot_main`'s `dtb_ptr` into the `ByteArray` `bootAndInitialiseRPi5FromDtbOrHalt` takes — a Lean-runtime allocation, hence the dependency on BP2.  This is what gives WS-RR RR7.27's board-versus-binding check a hardware caller | `rust/sele4n-hal/src/boot.rs`, `SeLe4n/Platform/FFI.lean` | M |
 | BP4.4 | Move the boot entry to the DTB wrapper and `BootEntryContract.lean`'s `approvedBootCall` with it — the one-line change that file anticipates by name.  Consumes BP4.3 | `SeLe4n/Testing/BootEntryContract.lean` | S |
 | BP4.5 | **The boot image's clean-to-PoU** (WS-RR RR7.20, SM7.D deferred item 4).  `kernelCodeWriteEmitted .bootImageLoad = false` records that the one remaining kernel-code-write site emits no `DC CVAU` → `DSB ISH` → `IC IALLUIS` sequence, and `kernelCodeWriteSites_emission_pending` pins that it is the only one.  The initial task's code is in the image before the first instruction fetch, so the clean must run in the boot seam before any user code can be fetched — the site could not name its extent while there was no image and no physical backing, which is why SM7.D deferred it here rather than closing it.  Flipping the `kernelCodeWriteEmitted` arm breaks a `decide`, so the closure cannot land silently.  Consumes BP4.2 (the install ordering).  The emission needs no image — it is a boot-seam instruction sequence — so this row does not wait on one; observing it on hardware is BP8's | `SeLe4n/Kernel/Architecture/`, `rust/sele4n-hal/src/boot.rs` | M |
@@ -386,9 +386,13 @@ that no script had ever performed.
 - [ ] The Lean runtime's failure path halts rather than continues (BP2.4).
 - [ ] `bootAndInitialiseRPi5OrHalt rpi5PlatformConfig` evaluates to `.ok`
       with every refusal arm shown unreachable (BP3.3, BP3.4).
-- [ ] `lean_kernel_main` is defined by the archive; the `EXPECTED_UNRESOLVED`
-      entry is removed rather than retained (BP4.1).
+- [x] `lean_kernel_main` is defined by the archive; the `EXPECTED_UNRESOLVED`
+      entry is removed rather than retained (BP4.1).  Executed at `v0.36.2`:
+      `scripts/test_lean_aarch64_archive.sh` reports all 10 HAL kernel-entry
+      declarations defined in both archives, 0 expected unresolved.
 - [ ] The kernel-state install precedes the release of any secondary (BP4.2).
+      Enforced by type at `v0.36.2` (`SecondaryReleasePermit`); the box is
+      ticked by a boot trace showing the order, which is BP8's.
 - [ ] The device tree reaches Lean, and a foreign board is refused (BP4.3).
 - [ ] `kernel8.img` is built by CI and contains `_start`,
       `__exception_vectors` and `lean_kernel_main` (BP5.3, BP5.4).

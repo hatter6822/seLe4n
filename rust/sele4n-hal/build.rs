@@ -76,10 +76,10 @@ fn main() {
     scan_boot_s_for_secondary_entry_context_id_validation();
 
     // WS-SM SM1.D (closes the DTB-cmdline / Phase-5 contract): verify
-    // `boot.rs::rust_boot_main` actually invokes the SM1.D Phase-5
+    // `boot.rs::rust_boot_main` actually invokes the SM1.D Phase-6
     // helpers (`cmdline::parse_cmdline_from_dtb` +
     // `cmdline::apply_cmdline_and_start_smp`).  A regression that
-    // dropped Phase 5 would silently default to "no secondary cores"
+    // dropped Phase 6 would silently default to "no secondary cores"
     // because `smp::SMP_ENABLED` stays `false` at module load — the
     // production-vs-stub behaviour would diverge without any compile
     // error.  Pinning the call sites at build time forces the contract.
@@ -630,13 +630,15 @@ fn scan_boot_s_for_secondary_entry_context_id_validation() {
 }
 
 /// **WS-SM SM1.D** regression guard: verify `boot.rs::rust_boot_main`
-/// invokes the SM1.D Phase-5 cmdline-parse + SMP-bring-up entry points.
+/// invokes the SM1.D Phase-6 cmdline-parse + SMP-bring-up entry points.
 ///
-/// The SM1.D contract is that Phase 5 of `rust_boot_main`:
+/// The SM1.D contract is that Phase 6 of `rust_boot_main`:
 ///   1. Parses the DTB-supplied bootargs via
 ///      `cmdline::parse_cmdline_from_dtb(dtb_ptr)`.
 ///   2. Applies the parsed config + brings up secondaries via
-///      `cmdline::apply_cmdline_and_start_smp(&cmdline_cfg)`.
+///      `cmdline::apply_cmdline_and_start_smp(&cmdline_cfg, secondary_release)`,
+///      consuming the permit Phase 5's kernel-state install returns
+///      (WS-BP BP4.2 — the ordering itself is the type's, not this scanner's).
 ///
 /// A regression that silently drops either call would result in:
 ///   - Either `SMP_ENABLED` stays at its module-load default
@@ -660,15 +662,15 @@ fn scan_boot_rs_calls_cmdline_smp_startup() {
     let (_, stripped) = rust_code_views(&contents);
     let normalised = stripped.to_ascii_lowercase();
 
-    // Required Phase-5 call sites.  Each entry is (call site, step name).
+    // Required Phase-6 call sites.  Each entry is (call site, step name).
     let required: &[(&str, &str)] = &[
         (
             "cmdline::parse_cmdline_from_dtb(",
-            "Phase 5 step 1: DTB cmdline parse",
+            "Phase 6 step 1: DTB cmdline parse",
         ),
         (
             "cmdline::apply_cmdline_and_start_smp(",
-            "Phase 5 step 2: SMP bring-up dispatch",
+            "Phase 6 step 2: SMP bring-up dispatch",
         ),
     ];
 
@@ -682,8 +684,8 @@ fn scan_boot_rs_calls_cmdline_smp_startup() {
     if !missing.is_empty() {
         panic!(
             "WS-SM SM1.D regression: `{path}::rust_boot_main` is missing \
-             one or more required Phase 5 call sites.  Missing: \
-             {missing:?}.  Phase 5 must (1) parse the DTB cmdline via \
+             one or more required Phase 6 call sites.  Missing: \
+             {missing:?}.  Phase 6 must (1) parse the DTB cmdline via \
              `cmdline::parse_cmdline_from_dtb` and (2) dispatch the SMP \
              bring-up via `cmdline::apply_cmdline_and_start_smp`.  \
              Without these, the kernel falls back to the module-load \
@@ -2163,9 +2165,11 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
         "enter_lean_kernel",
         "lean_kernel_main",
         1,
-        "the primary core's boot install: this call is the one that marks the \
-         boot core ready, so it cannot sit behind the gate; it is reachable only \
-         with the token a successful library initialization returns",
+        "the primary core's boot install: it writes the kernel state every gated \
+         seam reads, so it precedes every core's readiness and cannot sit behind \
+         the gate; it is reachable only with the token a successful library \
+         initialization returns, and it precedes every secondary's release \
+         because the bring-up consumes the permit it returns (WS-BP BP4.2)",
     ),
     // WS-BP BP2.3: the library initializer runs before any Lean code, on the
     // primary, so it precedes every readiness decision there is.  Its caller

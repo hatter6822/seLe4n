@@ -365,5 +365,6 @@ pub mod lean_runtime;
 // initializer runs first, its `IO` result is checked, and a refusal halts the
 // system.  `lean_kernel_main` is reachable only by handing over the token a
 // successful initialization returns, so the order is a type rather than a
-// convention.
+// convention.  WS-BP BP4.2: the entry returns the `SecondaryReleasePermit` every
+// secondary bring-up consumes, so the install precedes the release by a type too.
 pub mod lean_entry;

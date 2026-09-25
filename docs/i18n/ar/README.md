@@ -71,9 +71,9 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 |-------|--------|
 | **الإصدار** | `0.36.2` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
-| **أسطر Lean الإنتاجية** | 420,033 عبر 342 ملفًا |
+| **أسطر Lean الإنتاجية** | 420,101 عبر 343 ملفًا |
 | **أسطر Lean للاختبارات** | 85,359 عبر 71 مجموعة اختبار |
-| **الإعلانات المُبرهَنة** | 13,905 إعلانات theorem/lemma (صفر sorry/axiom) |
+| **الإعلانات المُبرهَنة** | 13,906 إعلانات theorem/lemma (صفر sorry/axiom) |
 | **العتاد المستهدف** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **التدقيق القياسي** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — تدقيق شامل ما قبل الإصدار 1.0 (202 نتيجة؛ تمت المعالجة بواسطة WS-AK AK1–AK10؛ مؤرشف) |
 | **آخر تدقيق** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — تدقيق جاهزية ما قبل الإصدار 1.0 أُجري بعد إغلاق WS-AN (يخلف [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) المؤرشف الآن والذي عولج بواسطة WS-AN AN0–AN12). WS-RC R0..R5 أُنجز في v0.31.2؛ WS-RC R6..R14 استُوعب في WS-SM وفق خريطة الاستيعاب SM0.Q.1 (انظر [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). خطة تيار العمل النشطة: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |

@@ -291,8 +291,9 @@ outright: its parameters are states it is *about*.
 
 Measured on this environment: **10** carrier types besides `SystemState`, and the
 domain grows by **39** definitions no committing export reaches — the boot builder
-and the whole boot path (unreachable because `lean_kernel_main` is not written
-until SM10.1/WS-BP), the revocation traversals that are already a registered
+and the whole boot path (unreachable then because `lean_kernel_main` was not
+written; WS-BP BP4.1 writes it, and the nineteen boot-path definitions it reaches
+left the pin in that cut), the revocation traversals that are already a registered
 residue, the lock-bracket machinery, and the reviewer's own
 `TlbCacheJointState` pair.  Every one of them is a definition that produces a value
 holding kernel state, which is precisely this census's subject. -/
@@ -1104,7 +1105,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.endpointSendDualChecked
   , `SeLe4n.Kernel.endpointSendDualWithCaps
   , `SeLe4n.Kernel.endpointSweepBody
-  , `SeLe4n.Kernel.enqueueIdleThreadOnCore
   , `SeLe4n.Kernel.ensureRunnable
   , `SeLe4n.Kernel.faultAbandon
   , `SeLe4n.Kernel.faultSuspend
@@ -1190,44 +1190,26 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.timerTickOnCorePrepared
   , `SeLe4n.Kernel.timerTickWithBudget
   , `SeLe4n.Kernel.withObjects
-  , `SeLe4n.Model.Builder.createObject
   , `SeLe4n.Model.Builder.insertCap
   , `SeLe4n.Model.Builder.mapPage
   , `SeLe4n.Model.Builder.markRunnable
-  , `SeLe4n.Model.Builder.registerIrq
   , `SeLe4n.Model.Builder.registerService
   , `SeLe4n.Model.Builder.withTaint
-  , `SeLe4n.Model.IntermediateState.state
-  , `SeLe4n.Model.SystemState.withObjectStored
   , `SeLe4n.Model.lookupObject
   , `SeLe4n.Model.lookupVSpaceRoot
-  , `SeLe4n.Model.mkEmptyIntermediateState
   , `SeLe4n.Model.setCurrentThread
   , `SeLe4n.Model.setDomainScheduleChecked
   , `SeLe4n.Model.storeObjectChecked
   , `SeLe4n.Model.storeObjectKindChecked
   , `SeLe4n.Model.storeServiceState
-  , `SeLe4n.Platform.Boot.applyMachineConfig
   , `SeLe4n.Platform.Boot.applyMachineConfigChecked
-  , `SeLe4n.Platform.Boot.bootEnableInterruptsOp
-  , `SeLe4n.Platform.Boot.bootFromPlatform
-  , `SeLe4n.Platform.Boot.bootFromPlatformChecked
   , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
-  , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor
   , `SeLe4n.Platform.Boot.bootFromPlatformUnchecked
   , `SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads
   , `SeLe4n.Platform.Boot.bootFromPlatformWithInterrupts
   , `SeLe4n.Platform.Boot.bootFromPlatformWithWarnings
-  , `SeLe4n.Platform.Boot.createBootObject
-  , `SeLe4n.Platform.Boot.enqueueIdleThread
-  , `SeLe4n.Platform.Boot.foldIrqs
-  , `SeLe4n.Platform.Boot.foldObjects
-  , `SeLe4n.Platform.Boot.installBootVSpaceRoot
   , `SeLe4n.Platform.Boot.installIdleThread
   , `SeLe4n.Platform.FFI.bootAndInitialiseFromPlatform
-  , `SeLe4n.Platform.FFI.bootAndInitialiseFromPlatformOn
-  , `SeLe4n.Platform.FFI.bootAndInitialisePlatform
-  , `SeLe4n.Platform.FFI.bootAndInitialiseRPi5
   , `SeLe4n.Platform.FFI.getKernelState
   , `SeLe4n.Platform.RPi5.mmioRead
   , `SeLe4n.Platform.RPi5.mmioRead32

@@ -51,12 +51,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 420,033 across 342 Lean files |
+| **Production LoC** | 420,101 across 343 Lean files |
 | **Test LoC** | 85,359 across 71 Lean test suites |
-| **Proved declarations** | 13,905 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,906 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2); BP4..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9); BP4.3..BP4.6 and BP5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -379,9 +379,9 @@ once with `builtin = 1`, before any Lean code runs, in
   result's reference is released on every path, and the error is not read,
   because reading it would mean calling back into Lean.
 - **Failure halts the system.**  Any refusal is reported on the boot UART and
-  calls `gic::halt_all()`: the secondaries are already running and servicing
-  interrupts, so halting only the boot PE would leave them working for a kernel
-  that was never entered.
+  calls `gic::halt_all()`.  This is the barrier every boot-fatal refusal uses.
+  Since BP4.2 the initializer runs before any secondary is released (§6.2.9),
+  so the system-wide halt costs nothing extra here.
 - **Not called.**  Upstream's `lean_initialize_runtime_module` and
   `lean_io_mark_end_initialization` set up per-thread heaps, a task manager and
   an initialization flag.  The kernel's runtime has none of these, and the
@@ -491,6 +491,50 @@ invariant bundle, and its freeze the frozen one —
 `bootToRuntime_invariantBridge_checked`, which covers every configuration the
 checked boot accepts.  §8.14.2 has the argument and the CNode-check gap it
 closed.
+
+### 6.2.9 The boot entry and its install ordering (WS-BP BP4.1/BP4.2, v0.36.2)
+
+`lean_kernel_main` is `SeLe4n.Platform.RPi5.kernelMain`
+(`SeLe4n/Platform/RPi5/KernelMain.lean`, in the library root):
+
+```lean
+@[export lean_kernel_main]
+def kernelMain (_dtbPointer : UInt64) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5OrHalt rpi5PlatformConfig
+```
+
+- **It is the program the contract requires, and nothing else.**
+  `SeLe4n/Testing/BootEntryContract.lean` accepts it by reducing its body
+  towards the approved call.  Now that the entry exists, the contract also
+  refuses an environment with **no** entry.  `kernelMain_installs` states what
+  the entry does: it installs the deployment's boot state and the binding's
+  labeling context, and never takes its halt arm.
+- **The link is complete.**  `scripts/check_kernel_entry_exports.py`'s
+  `EXPECTED_UNRESOLVED` is empty.  Every HAL `extern "C"` declaration (ten) is
+  defined by both the host and the aarch64 archive.  The reachable link rooted
+  at the initializer and the nine kernel exports needs the same 144 runtime
+  symbols it did before, so the boot path adds none.
+- **The install precedes the secondaries, and the order is a type.**
+  `rust_boot_main` runs the library initializer and the install in Phase 5, on
+  the boot core alone, and releases the secondaries in Phase 6.
+  `smp::bring_up_secondaries_inner` is the one function every bring-up path
+  reaches, and it consumes a `lean_entry::SecondaryReleasePermit`.
+  - On an image that links the kernel (`hw_target`), the only permit is the one
+    `enter_lean_kernel` returns after the install.
+  - `SecondaryReleasePermit::no_lean_kernel` exists only on images that link no
+    kernel.
+
+  So no bracketed committer can exist while the unbracketed install writes, and
+  the lost-commit shape `kernel_entry.rs` documented is closed by construction.
+  The PE-topology refusal moved to Phase 7, after the release.  That costs
+  nothing, because no core is lean-ready until BP6.
+- **Recorded, not exempted.**  The export-commit census lists the install as the
+  eighth committing seam, unbracketed, with the ordering as its reason.  The
+  reachability census's pin shrank by the nineteen boot-path transformers the
+  entry now reaches.
+- **Not yet read: the DTB pointer.**  The configuration fixes the smallest
+  board as the board account.  Moving the entry onto the device-tree wrapper is
+  BP4.3–BP4.4.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
@@ -3057,8 +3101,9 @@ undeclared core's slot is absent after the boot
 **The hardware entry is fixed at the RPi5 binding and boots the binding's
 own configuration** (PR #889 review round 7).  `Platform.FFI.bootAndInitialiseRPi5`
 is `bootAndInitialisePlatform RPi5Platform` by definition
-(`bootAndInitialiseRPi5_eq`), and the boot-entry gate requires SM10.1's
-`lean_kernel_main` to execute it and no other kernel-state installer — the
+(`bootAndInitialiseRPi5_eq`), and the boot-entry contract requires
+`lean_kernel_main` (`SeLe4n.Platform.RPi5.kernelMain`, §6.2.9) to execute it and
+no other kernel-state installer — the
 generic entry included, so the platform cannot be varied by the entry.  The
 platform entry boots `bindPlatformConfig platform config`: the caller's IRQ
 table and initial objects under the binding's `bootVSpaceRoot` and the machine
@@ -3098,8 +3143,8 @@ separation witnesses are not installed threads of the boot state
 that two admissible ids are separated, only the boot state can say they are
 threads), and is provably the checked idle boot followed by the witness check
 and the two installs with the labeling-refusal arm unreachable
-(`bootAndInitialisePlatform_eq_checked_boot`); SM10.1's `lean_kernel_main` is
-its intended caller.
+(`bootAndInitialisePlatform_eq_checked_boot`); `lean_kernel_main` is its caller,
+through `bootAndInitialiseRPi5OrHalt` (§6.2.9).
 
 **The readiness guard resolves to the gate, and the boot entry handles a
 failed boot** (PR #889 review round 9).  An unqualified `lean_ready(..)`
@@ -3108,7 +3153,7 @@ and defines no function of that name (`bare_ready_call_resolves`) — a
 same-scope helper of that name satisfied every other readiness question while
 being a different predicate.  A release-surviving tripwire's fail-closed
 branch must dominate every exit of its helper, not merely appear in it
-(`statement_may_exit`).  And SM10.1's `lean_kernel_main` must **branch** on
+(`statement_may_exit`).  And `lean_kernel_main` had to **branch** on
 `bootAndInitialiseRPi5`'s `Except` and halt on `.error`
 (`boot_entry_handles_failure`): a failed boot installs no kernel state, so
 returning to the Rust caller would leave the image idling as though it had

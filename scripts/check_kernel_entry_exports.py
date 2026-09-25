@@ -42,10 +42,10 @@ every HAL declaration instead catches a rename on either side, because the
 HAL's spelling is then unresolved.  What the Lean side exports beyond what the
 HAL declares is not a link requirement and is not checked here.
 
-**Expected-unresolved symbols are reconciled, not exempted.**  `lean_kernel_main`
-is declared by the HAL and provided by nobody until SM10.1 writes the primary's
-boot install.  It is listed in `EXPECTED_UNRESOLVED` with its reason, and the
-list is held in both directions: a listed symbol the HAL no longer declares, or
+**Expected-unresolved symbols are reconciled, not exempted.**  A symbol the HAL
+declares before any provider exists is listed in `EXPECTED_UNRESOLVED` with its
+reason (`lean_kernel_main` was, until WS-BP BP4.1 wrote the primary's boot
+install; the table is empty since), and the list is held in both directions: a listed symbol the HAL no longer declares, or
 one the archive now defines, fails the gate — a stale entry is the exemption
 that outlived its reason.
 
@@ -113,12 +113,13 @@ REQUIRE_CROSS_FLAG = "--require-cross"
 #: HAL `extern "C"` declarations that no provider defines **yet**, with the
 #: reason.  Reconciled in both directions by `classify_link_requirements`: an
 #: entry the HAL no longer declares, or one the archive now defines, fails.
-EXPECTED_UNRESOLVED: dict[str, str] = {
-    "lean_kernel_main": (
-        "the primary's boot install; SM10.1 provides it — no `@[export lean_kernel_main]` "
-        "exists yet, and the HAL's declaration is the seam waiting for it"
-    ),
-}
+#:
+#: Empty since WS-BP BP4.1, which wrote `lean_kernel_main` (the primary's boot
+#: install, `SeLe4n.Platform.RPi5.kernelMain`) -- the one entry this held.  An
+#: empty table is not a disabled check: every HAL declaration is then a
+#: requirement some provider must meet, and a seam added before its provider
+#: goes here with its reason.
+EXPECTED_UNRESOLVED: dict[str, str] = {}
 
 # Whether an `extern` *opens a block* is decided structurally by
 # `rust_code_view.extern_blocks`, not by a spelling: PR #889 review round 17
@@ -146,9 +147,9 @@ EXPECTED_UNRESOLVED: dict[str, str] = {
 #: provider.
 EXTERN_FN = re.compile(
     rust_code_view.keyword("fn") + r"\s+(?:r#)?(" + rust_code_view.ident() + r")\s*\(")
-#: The symbol SM10.1's boot entry exports.  Only the link-level reconciliation
-#: reads it here — that the archive does not define it yet, and that
-#: `EXPECTED_UNRESOLVED` still says so.  What the entry must *do* is
+#: The symbol the boot entry exports (`SeLe4n.Platform.RPi5.kernelMain`, WS-BP
+#: BP4.1).  Only the link-level reconciliation reads it here — that both
+#: archives define it, like every other HAL declaration.  What the entry must *do* is
 #: `SeLe4n/Testing/BootEntryContract.lean`'s, decided over the elaborated
 #: environment (PR #889 review round 17).
 BOOT_ENTRY_SYMBOL = "lean_kernel_main"
@@ -1579,8 +1580,7 @@ def self_test() -> int:
     # answered by the elaborator in `SeLe4n/Testing/BootEntryContract.lean`,
     # over `Environment`, where the references are resolved constants; that
     # module's own witnesses (a compliant entry and three token-preserving
-    # deviations) keep it from being vacuous while the entry is still SM10.1's
-    # to write.  What remains here is the link-level reconciliation: symbols,
+    # deviations) keep it decisive against the entry WS-BP BP4.1 wrote.  What remains here is the link-level reconciliation: symbols,
     # archives and Rust declarations, which no Lean elaboration can see.
 
     # A HAL declaration whose Lean export exists under ANOTHER spelling: the
@@ -1847,7 +1847,7 @@ def main() -> int:
                 "`scripts/staged_module_allowlist.txt`)"
                 if symbol in exports
                 else "nothing exports it — a Lean `@[export]` under another spelling, a renamed "
-                "seam, or a declaration with no provider (SM10.1 seams go in "
+                "seam, or a declaration with no provider (a seam declared before its provider goes in "
                 "`EXPECTED_UNRESOLVED` with their reason)"
             )
             lacking = [label for label, syms in per_archive.items() if symbol not in syms]
@@ -1877,7 +1877,7 @@ def main() -> int:
     boot_entry = (
         "exported; its contract is checked by `SeLe4n/Testing/BootEntryContract.lean`"
         if BOOT_ENTRY_SYMBOL in exports
-        else "not yet exported (SM10.1), reconciled as expected unresolved"
+        else "not exported by the Lean source inventory, yet defined by every checked archive"
     )
     checked = " and ".join(f"{label} ({path.relative_to(REPO)})" for label, path in archives)
     print(

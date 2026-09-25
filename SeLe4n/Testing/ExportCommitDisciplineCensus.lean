@@ -180,9 +180,10 @@ addition to the unbracketed majority. -/
 
 /-- Every state-committing `@[export]` of this kernel, with how it commits.
 
-**Five of seven bracket** since WS-RR RR7.39 (two before it): the two syscall
-seams and the three per-core scheduler entries.  The two that do not are the
-fault-delivery seams, and each names why, so this list is the project's honest
+**Five of eight bracket** since WS-BP BP4.1 (five of seven from WS-RR RR7.39,
+two before it): the two syscall seams and the three per-core scheduler entries.
+The three that do not are the two fault-delivery seams and the boot install,
+and each names why, so this list is the project's honest
 statement of how much of the kernel the fine-lock discipline actually covers —
 the figure a release claim has to quote. -/
 def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
@@ -214,7 +215,17 @@ def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
         footprint would have to be resolved from the fault rather than from a decode")
   , (`SeLe4n.Kernel.unknownSyscallEntry,
       .unbracketed "fault delivery: an unknown syscall number is delivered through the \
-        same entry, with the same missing declaration") ]
+        same entry, with the same missing declaration")
+    -- WS-BP BP4.1: the hardware boot entry.  It installs the whole kernel state
+    -- once, before any core can enter the kernel, so there is no concurrent
+    -- committer for a lock to exclude — which is an ordering fact the HAL
+    -- establishes (WS-BP BP4.2: the install runs before the secondaries are
+    -- released), not a footprint a lock set could state.
+  , (`SeLe4n.Platform.RPi5.kernelMain,
+      .unbracketed "boot install: `lean_kernel_main` writes the kernel state and the \
+        labeling context once, on the boot core, before any secondary is released \
+        (WS-BP BP4.2), so no other committer exists; it replaces the state wholesale \
+        rather than committing a transition a footprint could describe") ]
 
 /-- The seams that commit and are recorded as bracketed. -/
 def bracketedSeams : List Name :=

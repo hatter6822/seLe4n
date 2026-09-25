@@ -357,11 +357,16 @@ pub fn irq_ready_core_count_within(expected: u32, timeout_ticks: u64) -> u32 {
 }
 
 pub fn bring_up_secondaries_inner(
+    permit: crate::lean_entry::SecondaryReleasePermit,
     enabled: &AtomicBool,
     core_ready: &[AtomicBool],
     online_count: &AtomicU32,
     mpidr_table: &[u64],
 ) -> u32 {
+    // WS-BP BP4.2: the permit is the proof that the kernel-state install (if
+    // the image links one) has completed; it is consumed by the release it
+    // licenses and carries no data.
+    let crate::lean_entry::SecondaryReleasePermit { .. } = permit;
     if !enabled.load(Ordering::Acquire) {
         return 0;
     }
@@ -421,8 +426,9 @@ pub fn bring_up_secondaries_inner(
 /// state to avoid global-state races under parallel cargo test.
 ///
 /// Returns the number of secondaries successfully brought up.
-pub fn bring_up_secondaries() -> u32 {
+pub fn bring_up_secondaries(permit: crate::lean_entry::SecondaryReleasePermit) -> u32 {
     bring_up_secondaries_inner(
+        permit,
         &SMP_ENABLED,
         &CORE_READY,
         &SECONDARY_CORES_ONLINE,
@@ -471,8 +477,12 @@ pub fn bring_up_secondaries() -> u32 {
 /// refactors should NOT collapse them into one with a default
 /// argument since `bring_up_secondaries` is already in the public
 /// API and renaming it would break downstream consumers.
-pub fn bring_up_secondaries_with_limit(max_cores: usize) -> u32 {
+pub fn bring_up_secondaries_with_limit(
+    permit: crate::lean_entry::SecondaryReleasePermit,
+    max_cores: usize,
+) -> u32 {
     bring_up_secondaries_with_limit_inner(
+        permit,
         max_cores,
         &SMP_ENABLED,
         &CORE_READY,
@@ -496,6 +506,7 @@ pub fn bring_up_secondaries_with_limit(max_cores: usize) -> u32 {
 /// plus the `apply_cmdline_and_start_smp_inner` companion in
 /// `cmdline.rs`.
 pub(crate) fn bring_up_secondaries_with_limit_inner(
+    permit: crate::lean_entry::SecondaryReleasePermit,
     max_cores: usize,
     enabled: &AtomicBool,
     core_ready: &[AtomicBool],
@@ -511,7 +522,7 @@ pub(crate) fn bring_up_secondaries_with_limit_inner(
     // (length == MAX_SECONDARY_CORES) and the cap is a no-op.
     let take = secondaries_to_spawn.min(mpidr_table.len());
     let table = &mpidr_table[..take];
-    bring_up_secondaries_inner(enabled, core_ready, online_count, table)
+    bring_up_secondaries_inner(permit, enabled, core_ready, online_count, table)
 }
 
 /// **WS-SM SM1.C.5 / audit-pass-1** (defense-in-depth): validate a
@@ -971,6 +982,7 @@ mod tests {
     }
 
     use super::*;
+    use crate::lean_entry::SecondaryReleasePermit;
 
     // AN9-J test discipline: the inner-state-injection refactor
     // eliminates global-state races.  Each test allocates its own
@@ -1004,7 +1016,13 @@ mod tests {
     fn bring_up_secondaries_returns_zero_when_disabled() {
         // AN9-J: with `enabled = false`, no PSCI calls are issued.
         let (enabled, ready, count) = fresh_local_state();
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
         assert_eq!(online, 0);
         assert_eq!(count.load(Ordering::Acquire), 0);
     }
@@ -1046,7 +1064,13 @@ mod tests {
         // returning Success, all 3 secondaries come online.
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
         assert_eq!(online, MAX_SECONDARY_CORES as u32);
         assert_eq!(count.load(Ordering::Acquire), MAX_SECONDARY_CORES as u32);
         // Each secondary's ready flag should now be true.  Iterate
@@ -1068,7 +1092,13 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let small_table: [u64; 1] = [0x0001];
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &small_table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &small_table,
+        );
         assert_eq!(online, 1);
         assert!(ready[1].load(Ordering::Acquire));
         // Cores 2 and 3 untouched.
@@ -1513,7 +1543,13 @@ mod tests {
         enabled.store(true, Ordering::Release);
         // Use the inner helper so we don't touch the global state.
         let empty_table: [u64; 0] = [];
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &empty_table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &empty_table,
+        );
         assert_eq!(online, 0);
         // No CORE_READY flips on secondaries.
         assert!(!ready[1].load(Ordering::Acquire));
@@ -1539,7 +1575,13 @@ mod tests {
         let secondaries_to_spawn = limit.min(MAX_SECONDARY_CORES + 1).saturating_sub(1);
         let table = &SECONDARY_MPIDR_TABLE[..secondaries_to_spawn];
         assert_eq!(table.len(), 1);
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            table,
+        );
         assert_eq!(online, 1);
         assert!(
             ready[1].load(Ordering::Acquire),
@@ -1564,7 +1606,13 @@ mod tests {
         let secondaries_to_spawn = limit.min(MAX_SECONDARY_CORES + 1).saturating_sub(1);
         let table = &SECONDARY_MPIDR_TABLE[..secondaries_to_spawn];
         assert_eq!(table.len(), 2);
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            table,
+        );
         assert_eq!(online, 2);
         assert!(ready[1].load(Ordering::Acquire));
         assert!(ready[2].load(Ordering::Acquire));
@@ -1581,7 +1629,13 @@ mod tests {
         let secondaries_to_spawn = limit.min(MAX_SECONDARY_CORES + 1).saturating_sub(1);
         let table = &SECONDARY_MPIDR_TABLE[..secondaries_to_spawn];
         assert_eq!(table.len(), MAX_SECONDARY_CORES);
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            table,
+        );
         assert_eq!(online, MAX_SECONDARY_CORES as u32);
         // Iterate over `ready[1..=MAX_SECONDARY_CORES]` via
         // `enumerate().skip(1).take(MAX_SECONDARY_CORES)` to keep
@@ -1616,17 +1670,23 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         // Leave enabled = false (the default for fresh_local_state).
         let table = &SECONDARY_MPIDR_TABLE[..2];
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            table,
+        );
         assert_eq!(online, 0);
     }
 
     #[test]
     fn with_limit_function_resolves_via_crate_smp() {
         // SM1.D.6: the public function exists and has the documented
-        // signature `fn(usize) -> u32`.  Pinning the signature at the
-        // type-system level catches a future PR that renames or
-        // re-types it.
-        let _: fn(usize) -> u32 = bring_up_secondaries_with_limit;
+        // signature `fn(SecondaryReleasePermit, usize) -> u32` (the permit
+        // since WS-BP BP4.2).  Pinning the signature at the type-system level
+        // catches a future PR that renames or re-types it.
+        let _: fn(SecondaryReleasePermit, usize) -> u32 = bring_up_secondaries_with_limit;
     }
 
     #[test]
@@ -1642,7 +1702,7 @@ mod tests {
         // result behaviour: with max_cores = 1, secondaries_to_spawn
         // = 0 and the inner loop is empty regardless of the
         // SMP_ENABLED state.
-        let result = bring_up_secondaries_with_limit(1);
+        let result = bring_up_secondaries_with_limit(SecondaryReleasePermit::no_lean_kernel(), 1);
         assert_eq!(result, 0);
     }
 
@@ -1661,6 +1721,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             0,
             &enabled,
             &ready,
@@ -1679,6 +1740,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             1,
             &enabled,
             &ready,
@@ -1694,6 +1756,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             2,
             &enabled,
             &ready,
@@ -1711,6 +1774,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             MAX_SECONDARY_CORES + 1,
             &enabled,
             &ready,
@@ -1732,6 +1796,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             999,
             &enabled,
             &ready,
@@ -1747,6 +1812,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         // Leave enabled = false.
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             MAX_SECONDARY_CORES + 1,
             &enabled,
             &ready,
@@ -1775,6 +1841,7 @@ mod tests {
         enabled.store(true, Ordering::Release);
         let short_table: [u64; 1] = [0x0001];
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             MAX_SECONDARY_CORES + 1, // request all but only 1 in table
             &enabled,
             &ready,
@@ -1787,9 +1854,18 @@ mod tests {
 
     #[test]
     fn inner_function_signature_pin() {
-        // SM1.D.6 audit-pass-1: pin the inner-helper ABI.
-        let _: fn(usize, &AtomicBool, &[AtomicBool], &AtomicU32, &[u64]) -> u32 =
-            bring_up_secondaries_with_limit_inner;
+        // SM1.D.6 audit-pass-1: pin the inner-helper ABI.  The shared
+        // bring-up state is one alias, so the pin names every parameter
+        // without a type the linter calls too complex to read.
+        type SharedBringUpState<'a> = (&'a AtomicBool, &'a [AtomicBool], &'a AtomicU32, &'a [u64]);
+        fn pinned(
+            permit: SecondaryReleasePermit,
+            max_cores: usize,
+            (enabled, ready, online, table): SharedBringUpState<'_>,
+        ) -> u32 {
+            bring_up_secondaries_with_limit_inner(permit, max_cores, enabled, ready, online, table)
+        }
+        let _ = pinned;
     }
 
     // ========================================================================
@@ -1915,7 +1991,13 @@ mod tests {
         enabled.store(true, Ordering::Release);
 
         // Round 1: bring up all secondaries.
-        let online1 = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        let online1 = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
         assert_eq!(online1, MAX_SECONDARY_CORES as u32);
         for (idx, slot) in ready.iter().enumerate().skip(1) {
             assert!(
@@ -1935,7 +2017,13 @@ mod tests {
         // to `true` in round 1 must remain `true` after round 2,
         // because the bring-up loop only writes `true` on the
         // success branch and never clears the flag.
-        let online2 = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        let online2 = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
         assert_eq!(online2, MAX_SECONDARY_CORES as u32);
         for (idx, slot) in ready.iter().enumerate().skip(1) {
             assert!(
@@ -2016,6 +2104,7 @@ mod tests {
             let (enabled, ready, count) = fresh_local_state();
             enabled.store(true, Ordering::Release);
             let online = bring_up_secondaries_with_limit_inner(
+                SecondaryReleasePermit::no_lean_kernel(),
                 limit,
                 &enabled,
                 &ready,
@@ -2040,7 +2129,13 @@ mod tests {
         // Step 1: bring up all secondaries with local state.
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
         assert_eq!(online, MAX_SECONDARY_CORES as u32);
 
         // Step 2: validate every primary-emitted context_id.

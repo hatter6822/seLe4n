@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2 and BP3: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4.1 and BP4.2: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists and runs before any secondary core is released
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -729,6 +729,50 @@ configuration, and the proof that it boots.
     conjunct of `bootSafeObject`.
   - The RPi5 deployment's `decide`-checked gates still pass: its CNodes hold
     unbadged object capabilities.
+- **The boot entry exists (BP4.1).** `SeLe4n.Platform.RPi5.kernelMain`, in the
+  new root-imported module `SeLe4n/Platform/RPi5/KernelMain.lean`, carries
+  `@[export lean_kernel_main]` and is exactly
+  `Platform.FFI.bootAndInitialiseRPi5OrHalt rpi5PlatformConfig`.
+  - `SeLe4n/Testing/BootEntryContract.lean` accepts it by the head-directed
+    reduction.  Since the entry exists, the contract now **refuses** an
+    environment with none; it used to log itself vacuous there.
+  - `kernelMain_installs` states the program: the deployment's boot state and
+    the binding's labeling installed, the halt arm never taken.
+  - `check_kernel_entry_exports.py`'s `EXPECTED_UNRESOLVED` is empty.  The
+    aarch64 archive lane reports all 10 HAL kernel-entry declarations defined in
+    both archives.  The reachable link, rooted at the initializer and the nine
+    kernel exports, still needs 144 runtime symbols, so the boot path adds none.
+  - The export-commit census records the eighth committing seam as unbracketed,
+    with the ordering below as its reason.  The reachability census's pin
+    loses the nineteen boot-path transformers a committing export now reaches:
+    the boot builder, the checked and unchecked boots, the idle enqueue and the
+    platform entries.
+- **The install precedes the secondaries, as a type (BP4.2).**
+  - Before this cut, `rust_boot_main` released the secondaries in Phase 5 and
+    ran the unbracketed install in Phase 6.  The install is one write of the
+    whole kernel state, so a secondary's bracketed tick in between could have
+    had its commit overwritten: the lost-commit shape `kernel_entry.rs`
+    recorded as an SM10.1 obligation.
+  - The library initializer and the install now run in Phase 5, the release in
+    Phase 6, and the PE-topology refusal in Phase 7.  The refusal still halts
+    the system before anything is served, since no core is lean-ready until
+    BP6.
+  - `smp::bring_up_secondaries_inner` is what every bring-up path reaches, and
+    it consumes a `lean_entry::SecondaryReleasePermit` by value.  The permit is
+    neither `Clone` nor `Copy` and its field is private.  With `hw_target` the
+    only permit is what `enter_lean_kernel` returns after `lean_kernel_main`.
+    `SecondaryReleasePermit::no_lean_kernel` exists only on images that link no
+    kernel, and in tests.  So releasing a secondary before the install does not
+    compile.
+  - `apply_cmdline_and_start_smp`, `bring_up_secondaries` and
+    `bring_up_secondaries_with_limit` take the permit too, and their signature
+    pins moved with them.
+  - Stale prose swept: `kernel_entry.rs`, `lean_ready.rs` (which said the
+    install "marks the boot core ready"; nothing does, until BP6), the
+    `build.rs` exemption reason, the `modifyGetKernelState` docstring, and the
+    closure plan's §3 obligation, now recorded as discharged.
+  - The boot summary no longer claims a "3 GiB RAM" identity map, which BP2.6
+    had already made false.
 - **Tests.**
   - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
     admitted with its ASID registered, beside the binding's; ASID collisions are
@@ -743,7 +787,7 @@ configuration, and the proof that it boots.
     badge. Reverting the check is caught when the build fails:
     `bootSafeObjectCheck_sound` stops elaborating.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5)
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1, BP4.2)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

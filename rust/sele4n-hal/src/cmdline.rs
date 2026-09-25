@@ -1303,8 +1303,13 @@ pub fn parse_cmdline_from_dtb(dtb_ptr: u64) -> CmdlineConfig {
 /// **WS-SM SM1.D.2**: Apply a parsed [`CmdlineConfig`] to the SMP
 /// runtime state and (if enabled) bring up secondaries.
 ///
-/// Called from `rust_boot_main` Phase 5.  Returns the number of
-/// secondaries actually brought up.
+/// Called from `rust_boot_main` after the kernel-state install.  Returns the
+/// number of secondaries actually brought up.
+///
+/// **WS-BP BP4.2**: `permit` is the licence the install returns
+/// (`lean_entry::enter_lean_kernel`), so no secondary can be released before
+/// the unbracketed install has completed; with SMP disabled it is consumed
+/// unused.
 ///
 /// Side effects:
 ///   1. Stores `cfg.smp_enabled` into [`crate::smp::SMP_ENABLED`]
@@ -1316,9 +1321,13 @@ pub fn parse_cmdline_from_dtb(dtb_ptr: u64) -> CmdlineConfig {
 /// This is the production-globals entry point.  The implementation
 /// dispatches to [`apply_cmdline_and_start_smp_inner`], which takes
 /// explicit state references for test isolation.
-pub fn apply_cmdline_and_start_smp(cfg: &CmdlineConfig) -> u32 {
+pub fn apply_cmdline_and_start_smp(
+    cfg: &CmdlineConfig,
+    permit: crate::lean_entry::SecondaryReleasePermit,
+) -> u32 {
     apply_cmdline_and_start_smp_inner(
         cfg,
+        permit,
         &crate::smp::SMP_ENABLED,
         &crate::smp::CORE_READY,
         &crate::smp::SECONDARY_CORES_ONLINE,
@@ -1340,6 +1349,7 @@ pub fn apply_cmdline_and_start_smp(cfg: &CmdlineConfig) -> u32 {
 /// external callers must go through the production entry point.
 pub(crate) fn apply_cmdline_and_start_smp_inner(
     cfg: &CmdlineConfig,
+    permit: crate::lean_entry::SecondaryReleasePermit,
     enabled: &core::sync::atomic::AtomicBool,
     core_ready: &[core::sync::atomic::AtomicBool],
     online_count: &core::sync::atomic::AtomicU32,
@@ -1348,6 +1358,7 @@ pub(crate) fn apply_cmdline_and_start_smp_inner(
     enabled.store(cfg.smp_enabled, Ordering::Release);
     if cfg.smp_enabled {
         crate::smp::bring_up_secondaries_with_limit_inner(
+            permit,
             cfg.smp_max_cores,
             enabled,
             core_ready,
@@ -2511,6 +2522,7 @@ mod tests {
         };
         let online = apply_cmdline_and_start_smp_inner(
             &cfg,
+            crate::lean_entry::SecondaryReleasePermit::no_lean_kernel(),
             &enabled,
             &ready,
             &count,
@@ -2543,6 +2555,7 @@ mod tests {
         };
         let _online = apply_cmdline_and_start_smp_inner(
             &cfg,
+            crate::lean_entry::SecondaryReleasePermit::no_lean_kernel(),
             &enabled,
             &ready,
             &count,
@@ -2565,6 +2578,7 @@ mod tests {
         };
         let online = apply_cmdline_and_start_smp_inner(
             &cfg,
+            crate::lean_entry::SecondaryReleasePermit::no_lean_kernel(),
             &enabled,
             &ready,
             &count,
@@ -2601,6 +2615,7 @@ mod tests {
         };
         let online = apply_cmdline_and_start_smp_inner(
             &cfg,
+            crate::lean_entry::SecondaryReleasePermit::no_lean_kernel(),
             &enabled,
             &ready,
             &count,
@@ -2638,6 +2653,7 @@ mod tests {
         };
         let online = apply_cmdline_and_start_smp_inner(
             &cfg,
+            crate::lean_entry::SecondaryReleasePermit::no_lean_kernel(),
             &enabled,
             &ready,
             &count,
@@ -2661,6 +2677,7 @@ mod tests {
         };
         let online = apply_cmdline_and_start_smp_inner(
             &cfg,
+            crate::lean_entry::SecondaryReleasePermit::no_lean_kernel(),
             &enabled,
             &ready,
             &count,
@@ -2678,13 +2695,16 @@ mod tests {
         // SM1.D.2: pin the function pointer signature so a future
         // refactor that changes the inner-helper ABI surfaces here
         // at compile time.
-        let _: fn(
-            &CmdlineConfig,
-            &core::sync::atomic::AtomicBool,
-            &[core::sync::atomic::AtomicBool],
-            &core::sync::atomic::AtomicU32,
-            &[u64],
-        ) -> u32 = apply_cmdline_and_start_smp_inner;
+        use core::sync::atomic::{AtomicBool, AtomicU32};
+        type SharedBringUpState<'a> = (&'a AtomicBool, &'a [AtomicBool], &'a AtomicU32, &'a [u64]);
+        fn pinned(
+            cfg: &CmdlineConfig,
+            permit: crate::lean_entry::SecondaryReleasePermit,
+            (enabled, ready, online, table): SharedBringUpState<'_>,
+        ) -> u32 {
+            apply_cmdline_and_start_smp_inner(cfg, permit, enabled, ready, online, table)
+        }
+        let _ = pinned;
     }
 
     #[test]
@@ -2693,7 +2713,8 @@ mod tests {
         // changing it (e.g., taking ownership of CmdlineConfig)
         // would break boot.rs callers; this test surfaces the
         // signature shift at the type system.
-        let _: fn(&CmdlineConfig) -> u32 = apply_cmdline_and_start_smp;
+        let _: fn(&CmdlineConfig, crate::lean_entry::SecondaryReleasePermit) -> u32 =
+            apply_cmdline_and_start_smp;
     }
 
     /// Build a DTB containing `/chosen/sub/bootargs = <value>` —

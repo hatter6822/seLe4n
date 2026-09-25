@@ -11,7 +11,8 @@ import Lean.Elab.Command
 -- compiles into `SeLe4n:static`, and therefore the set of modules whose
 -- `@[export]` can emit a symbol a kernel image links.  `Platform.Staged` pulls
 -- the staged modules in beside it.  PR #889 review round 18: with `Staged`
--- alone, an entry SM10.1 defines in a module imported only by `SeLe4n.lean`
+-- alone, an entry defined in a module imported only by `SeLe4n.lean` — which is
+-- where WS-BP BP4.1 put it (`SeLe4n.Platform.RPi5.KernelMain`) —
 -- would be a symbol in the archive and *absent from this environment*, so the
 -- contract would log itself vacuous while the Python link check saw the symbol
 -- — the two halves disagreeing in the one direction neither can catch.
@@ -21,9 +22,9 @@ import SeLe4n.Platform.Staged
 /-!
 # The hardware boot entry's contract, decided by the elaborator
 
-**PR #889 review round 17.**  SM10.1 writes the declaration carrying
-`@[export lean_kernel_main]`: the symbol `rust_boot_main` calls once the Lean
-runtime is up.  Two things must be true of it, and nothing in the Lean language
+**PR #889 review round 17.**  The declaration carrying
+`@[export lean_kernel_main]` — `SeLe4n.Platform.RPi5.kernelMain` since WS-BP
+BP4.1 — is the symbol `rust_boot_main` calls once the Lean runtime is up.  Two things must be true of it, and nothing in the Lean language
 makes them true by construction:
 
 1. it boots through `Platform.FFI.bootAndInitialiseRPi5OrHalt`, so a refused
@@ -50,10 +51,10 @@ returns constants, and a constant has one definition.
 
 The check runs at elaboration time, so building this module *is* the check —
 the pattern `SeLe4n.Testing.IpcDethreadingEnvironmentCensus` already uses, and
-`scripts/test_tier1_build.sh` builds it on every push.  It is vacuous until the
-entry exists (no declaration exports the symbol yet) and decisive after, and
-the witnesses at the end keep it from being vacuous *today*: a compliant entry
-must be accepted and three token-preserving deviations must each be refused.
+`scripts/test_tier1_build.sh` builds it on every push.  Since WS-BP BP4.1 wrote
+the entry it is decisive on that entry and refuses an environment with none;
+the witnesses at the end keep it decisive on every other input: the compliant
+spellings must be accepted and the token-preserving deviations each refused.
 -/
 
 namespace SeLe4n.Testing.BootEntryContract
@@ -61,8 +62,9 @@ namespace SeLe4n.Testing.BootEntryContract
 open Lean Elab Command
 
 /-- The symbol the hardware boot entry exports.  `rust_boot_main` declares it
-`extern "C"`; `scripts/check_kernel_entry_exports.py` reconciles its absence
-from the archive against `EXPECTED_UNRESOLVED` until SM10.1 provides it. -/
+`extern "C"`; `scripts/check_kernel_entry_exports.py` requires both the host and
+the aarch64 archive to define it (it was reconciled as `EXPECTED_UNRESOLVED`
+until WS-BP BP4.1 wrote it). -/
 def bootEntrySymbol : Name := `lean_kernel_main
 
 /-- The one boot call that entry may make: the checked RPi5 boot with its
@@ -116,14 +118,14 @@ arbitrary extra actions provided none of them wrote kernel state.
 The argument is where the strength comes from, and it is type-theoretic rather
 than analysed: `PlatformConfig` is **data**.  A term of that type performs no
 effects, installs nothing, cannot halt and has no monadic structure, so no
-walk over it is needed or possible.  Whatever SM10.1 derives from the DTB
+walk over it is needed or possible.  Whatever the entry derives from the DTB
 pointer, deriving it cannot bypass the checked boot.
 
 What this deliberately refuses is an entry that needs *effects* to build its
 configuration (`do let cfg ← readDtb ptr; boot cfg`).  That is not an oversight:
 such a prologue is an arbitrary `BaseIO` program again, and this file has four
-rounds of evidence that it cannot be analysed.  If SM10.1 needs one, the
-kernel supplies it as a definition — `bootAndInitialiseRPi5FromDtb`, wrapping
+rounds of evidence that it cannot be analysed.  When the entry needs one — WS-BP
+BP4.3's device-tree read — the kernel supplies it as a definition, wrapping
 the read and the boot — and `approvedBootCall` moves to that wrapper, which is
 a one-line change here and a reviewed one there.  Refusing what cannot be
 decided is the posture; silently admitting it is what the walk did.
@@ -205,8 +207,8 @@ def bootEntryDeclarations (env : Environment) : List Name :=
 
 /-! ## Witnesses
 
-The check above is vacuous until SM10.1 writes the entry, and a vacuous check
-reads exactly like a passing one.  These declarations are what a boot entry
+The check above decides one declaration, and a check exercised on one input
+reads exactly like one that cannot refuse.  These declarations are what a boot entry
 could be; the elaboration below requires the contract to accept the compliant
 ones and refuse the rest.  Each deviation **keeps** the tokens a text scanner
 looks for — the boot call, the halt, the `match`, the `.error` arm — and breaks
@@ -223,9 +225,10 @@ from being merely restrictive: an entry that binds its configuration with a
 `let`, and one that reaches the same program through an alias — both are that
 application after reduction, and the head-directed reduction says so. -/
 
-/-- The configuration SM10.1 derives from the DTB pointer.  A placeholder: the
-witnesses need *a* pure `UInt64 → PlatformConfig`, and the real derivation
-(`Platform.DeviceTree` against the blob `rust_boot_main` passes) is SM10.1's. -/
+/-- A configuration derived from the DTB pointer.  A placeholder: the witnesses
+need *a* pure `UInt64 → PlatformConfig`.  The live entry uses the deployment
+`rpi5PlatformConfig` and does not read the pointer until WS-BP BP4.4 moves it
+onto the device-tree wrapper. -/
 private def bootEntryWitnessConfig (_dtbPointer : UInt64) : Platform.Boot.PlatformConfig :=
   { irqTable := [], initialObjects := [] }
 
@@ -233,7 +236,7 @@ private def bootEntryWitnessConfig (_dtbPointer : UInt64) : Platform.Boot.Platfo
 private def bootEntryWitnessBootAlias : Platform.Boot.PlatformConfig → BaseIO Unit :=
   Platform.FFI.bootAndInitialiseRPi5OrHalt
 
-/-- The shape SM10.1's entry must have, at the type its `extern "C"`
+/-- The shape the entry must have, at the type its `extern "C"`
 declaration is called at. -/
 private def bootEntryWitnessCompliant (dtbPointer : UInt64) : BaseIO Unit :=
   Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
@@ -380,9 +383,14 @@ run_cmd Command.liftTermElabM do
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted"
   -- The contract itself.
   match bootEntryDeclarations env with
+  -- WS-BP BP4.1 wrote the entry, so an environment with none is a regression,
+  -- not a state to report: the HAL calls the symbol unconditionally on an image
+  -- that links the kernel, and a contract that passed on an absent entry would
+  -- read exactly like one that decided a present one.
   | [] =>
-      logInfo m!"boot-entry contract: no declaration exports `{bootEntrySymbol}` yet \
-        (SM10.1 writes it); the contract is pinned by its thirteen witnesses"
+      throwError "boot-entry contract: no declaration exports `{bootEntrySymbol}`.  The \
+        hardware boot entry is `SeLe4n.Platform.RPi5.kernelMain` (WS-BP BP4.1), and the HAL \
+        calls the symbol on every image that links the kernel"
   | [entry] =>
       match ← bootEntryContractViolations entry with
       | [] => logInfo m!"boot-entry contract: `{entry}` is `{approvedBootCall}` applied \

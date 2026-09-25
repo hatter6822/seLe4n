@@ -21,13 +21,26 @@
 //! * code that enters it twice from one initialization does not compile;
 //! * a second initialization is refused at runtime, by the guard.
 //!
+//! **The install precedes the secondaries, and that is a type too** (WS-BP
+//! BP4.2).  `lean_kernel_main` writes the whole kernel state outside every lock
+//! bracket, so a secondary running a bracketed seam during it could commit a
+//! transition the install then overwrites.  Rather than taking a lock around a
+//! write nothing else may race, the race is made impossible: releasing a
+//! secondary (`smp::bring_up_secondaries_inner`, which every bring-up path
+//! reaches) consumes a [`SecondaryReleasePermit`], and on an image that links
+//! the Lean kernel the only permit is the one [`enter_lean_kernel`] returns
+//! *after* the install.  An image without the Lean kernel has no install to
+//! order, and gets its permit from [`SecondaryReleasePermit::no_lean_kernel`],
+//! which does not exist when the kernel is linked.
+//!
 //! **A failed initialization fails closed.**  If the initializer returns an
 //! error, returns something that is not an `IO` result, or runs twice,
 //! [`initialise_lean_library`] halts the whole system through
 //! `gic::halt_all`.  By then the secondaries have started and are servicing
 //! interrupts, so parking only the boot PE would leave them running for a
-//! kernel that was never entered.  The IRQ-readiness topology refusal in
-//! `boot.rs` uses the same halt for the same reason.
+//! kernel that was never entered.  Since BP4.2 no secondary has been released at
+//! that point, and the system-wide halt is still the right one: it is the one
+//! barrier every boot-fatal refusal uses, whatever has started.
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -42,6 +55,33 @@ use crate::lean_runtime::{self, Obj};
 #[derive(Debug)]
 pub struct LeanLibraryInitialised {
     _private: (),
+}
+
+/// Licence to release the secondary PEs.
+///
+/// On an image that links the Lean kernel the only way to obtain one is
+/// [`enter_lean_kernel`], which returns it after `lean_kernel_main` has
+/// installed the kernel state; every secondary bring-up consumes one.  So a
+/// secondary cannot be released while the unbracketed install runs — the
+/// lost-commit shape `kernel_entry.rs` records is closed by construction rather
+/// than by a lock (WS-BP BP4.2).  Its field is private to this module and it is
+/// neither `Clone` nor `Copy`, so one install licenses one release.
+#[must_use = "the secondaries are released by passing this to the bring-up"]
+#[derive(Debug)]
+pub struct SecondaryReleasePermit {
+    _private: (),
+}
+
+impl SecondaryReleasePermit {
+    /// The permit of an image with no Lean kernel linked: there is no install
+    /// for a release to be ordered after.  Absent from an image that links the
+    /// kernel (`hw_target`), so no code path there can release a secondary
+    /// without the install's permit.  Test builds have it whatever the feature
+    /// set, because they run no boot.
+    #[cfg(any(test, not(feature = "hw_target")))]
+    pub fn no_lean_kernel() -> Self {
+        SecondaryReleasePermit { _private: () }
+    }
 }
 
 /// Why initialization was refused.
@@ -157,28 +197,37 @@ pub fn initialise_lean_library() -> LeanLibraryInitialised {
     }
 }
 
-/// Enter the Lean kernel.  Consumes the proof that it was initialized.
+/// Enter the Lean kernel.  Consumes the proof that it was initialized, and
+/// returns the licence to release the secondaries.
 ///
 /// `lean_kernel_main` is the primary's boot install and the only Lean upcall
-/// that runs outside the readiness gate: it is the call that marks the boot
-/// core ready, so it cannot sit behind that gate.
+/// that runs outside the readiness gate: it installs the state every gated seam
+/// reads, so it cannot sit behind that gate.  It returns only on success — a
+/// refused boot halts the system inside it
+/// (`Platform.FFI.bootAndInitialiseRPi5OrHalt`) — so reaching the `return`
+/// below is reaching an installed kernel state, which is what the permit
+/// certifies.
 #[cfg(feature = "hw_target")]
-pub fn enter_lean_kernel(initialised: LeanLibraryInitialised, dtb_ptr: u64) {
+pub fn enter_lean_kernel(
+    initialised: LeanLibraryInitialised,
+    dtb_ptr: u64,
+) -> SecondaryReleasePermit {
     let LeanLibraryInitialised { _private: () } = initialised;
     extern "C" {
         /// # Safety
         ///
         /// The primary PE's one-time boot install, and the only Lean upcall
         /// that runs *outside* the readiness gate.  It must run exactly once,
-        /// on the boot core, after the library initializer and before any other
-        /// Lean upcall on any PE.  `dtb_ptr` must be the firmware's device-tree
-        /// pointer.
+        /// on the boot core, after the library initializer, before any other
+        /// Lean upcall on any PE and before any secondary is released.
+        /// `dtb_ptr` must be the firmware's device-tree pointer.
         fn lean_kernel_main(dtb_ptr: u64);
     }
     // SAFETY: the token proves the library initializer ran and succeeded, and
     // it is consumed here, so this call happens at most once per
     // initialization.  The firmware's DTB pointer is passed through.
     unsafe { lean_kernel_main(dtb_ptr) };
+    SecondaryReleasePermit { _private: () }
 }
 
 #[cfg(test)]

@@ -237,6 +237,15 @@ entry on the primary takes that token too, rather than declaring its own
 readiness scan, so a call to one must be registered in
 `LEAN_UPCALLS_OUTSIDE_THE_GATE` or sit behind the gate.
 
+**The boot entry and its ordering** (WS-BP BP4.1/BP4.2).  `lean_kernel_main` is
+`SeLe4n.Platform.RPi5.kernelMain`, exactly the halting checked boot of
+`rpi5PlatformConfig`; `SeLe4n/Testing/BootEntryContract.lean` refuses any other
+shape and refuses its absence.  Releasing a secondary consumes a
+`lean_entry::SecondaryReleasePermit`: with `hw_target` the only one is what
+`enter_lean_kernel` returns after the install, and `no_lean_kernel()` is for
+images and tests that link no kernel.  A new bring-up path takes the permit too
+— it is how the install is kept ahead of every secondary without a lock.
+
 **`cargo check` is not a substitute.** It stops before code generation, so it
 never hands an `asm!` template to an assembler. The first real cross build
 found six defects and three lints; four of the defects were `check`-clean.

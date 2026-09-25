@@ -7147,7 +7147,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2 and BP3 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4.1 and BP4.2 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs); BP4..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type); BP4.3..BP4.6 and BP5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7382,8 +7382,9 @@ before it calls anything: a retry after a failure would answer `ok` without
 re-running what failed.  (3) **Success is exactly a heap constructor of tag
 0**; a scalar or any other tag is *malformed* and refused rather than read as
 success, and the result's reference is released on every path.  A failure
-halts the **system** (`gic::halt_all`), not the PE, since the secondaries are
-already servicing interrupts — the topology refusal's reason.  (4) **A
+halts the **system** (`gic::halt_all`), not the PE: it is the one barrier every
+boot-fatal refusal uses, and since BP4.2 it also runs before any secondary is
+released, so it costs nothing to use it here too.  (4) **A
 HAL-declared `initialize_…` symbol is Lean code** to `build.rs`'s readiness
 derivation (`is_hal_declared_lean_symbol`, shared with the `link_name` alias
 scan), so the initializer call is one of the two entries in
@@ -7503,6 +7504,28 @@ booted, and the soundness bridge was partial under a docstring saying the
 clauses were checked elsewhere. `bootSafeCapCheck` refuses both, and
 `bootSafeObjectCheck_sound` concludes all of `bootSafeObject`.
 
+**BP4.1/BP4.2 — the entry exists, and the install precedes the secondaries by a
+type** (`v0.36.2`).  Four things new code must respect.  (1) **The hardware boot
+entry is `SeLe4n.Platform.RPi5.kernelMain`** (`SeLe4n/Platform/RPi5/KernelMain.lean`,
+in the library root): `@[export lean_kernel_main]`, exactly
+`Platform.FFI.bootAndInitialiseRPi5OrHalt rpi5PlatformConfig`, and
+`kernelMain_installs` states the program it is.  `BootEntryContract.lean` now
+**refuses** an environment with no entry, so a second one, a moved one or a
+deleted one fails Tier 1.  (2) **`EXPECTED_UNRESOLVED` is empty**: every HAL
+`extern "C"` declaration is a requirement both archives must meet, and a seam
+declared before its provider goes there with its reason.  (3) **Releasing a
+secondary consumes a `lean_entry::SecondaryReleasePermit`**, which
+`smp::bring_up_secondaries_inner` — the one function every bring-up path reaches
+— takes by value.  On an image that links the kernel (`hw_target`) the only
+permit is what `enter_lean_kernel` returns after the install;
+`SecondaryReleasePermit::no_lean_kernel` exists only without `hw_target` (and in
+tests).  So `rust_boot_main` installs in Phase 5, releases in Phase 6 and refuses
+a PE-topology mismatch in Phase 7, and a reordering that releases first does not
+compile.  (4) **The install is the eighth committing seam, recorded unbracketed**
+in `ExportCommitDisciplineCensus` with that ordering as its reason, and the
+reachability census's pin shrank by the nineteen boot-path transformers it now
+reaches.  A new step the boot entry reaches is therefore *live*, not pinned.
+
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
 ### WS-LC Lock datatype completion — COMPLETE (v0.34.51 → v0.34.55; closure audit v0.34.56)
@@ -7534,8 +7557,10 @@ code may assume:
   `SHOOTDOWN_ROUND_LOCK` and self-servicing pending shootdowns while spinning.
   It brackets all five state-committing entries (syscall dispatch, per-core
   timer tick, `.reschedule` SGI receiver, secondary bring-up entry, cross-core
-  suspend); the primary's `lean_kernel_main` boot install remains outside and
-  its ordering is an SM10.1 obligation (see kernel_entry.rs module docs).
+  suspend); the primary's `lean_kernel_main` boot install remains outside, and
+  needs no bracket because it runs before any secondary is released — a
+  bring-up consumes the `SecondaryReleasePermit` only the install returns
+  (WS-BP BP4.2; see kernel_entry.rs module docs).
   The lock-order tripwire asks **ownership**, not held-ness (PR #889 review):
   the round lock records its holder (`round_lock_held_by`, owner word
   `core + 1`, `0` free), so a core entering while *another* core's shootdown
@@ -11279,8 +11304,8 @@ code may assume:
   satisfied every other readiness question while being a different predicate, and the **two** upcalls that run
   ungated — the Lean library initializer `initialize_seLe4n_SeLe4n`, which must
   run before any Lean definition is used, and the primary's `lean_kernel_main`
-  boot install, which marks the boot core ready and so cannot sit behind the
-  gate — are `LEAN_UPCALLS_OUTSIDE_THE_GATE`, each with its occurrence count
+  boot install, which writes the state every gated seam reads and so precedes
+  every core's readiness — are `LEAN_UPCALLS_OUTSIDE_THE_GATE`, each with its occurrence count
   and reason, reconciled in both directions
   (`reconcile_upcall_exemptions`, round 6: a second call in an exempt
   function is a count mismatch, not a free pass).  A reference to a Lean
@@ -11411,7 +11436,8 @@ code may assume:
   predicate the two share sits upstream of the bindings in
   `Platform/Boot/MemoryCoverage.lean`.
   The hardware entry is `bootAndInitialiseRPi5`, the generic entry fixed at
-  `RPi5Platform`; SM10.1's `lean_kernel_main` calls it and nothing else.
+  `RPi5Platform`; `lean_kernel_main` (`SeLe4n.Platform.RPi5.kernelMain`, WS-BP
+  BP4.1) calls it, through `bootAndInitialiseRPi5OrHalt`, and nothing else.
   **The declared
   separation witnesses must be installed threads of the boot state** (PR #889
   review round 3): the guard decides that the labeling separates two
@@ -12604,7 +12630,8 @@ code may assume:
   build's assembled archive is present, also defined by that object code; a
   directive alone declares binding and defines nothing, PR #889 review
   rounds 3–4), or by a reconciled
-  `EXPECTED_UNRESOLVED` entry (`lean_kernel_main`, until SM10.1 writes it; an
+  `EXPECTED_UNRESOLVED` entry (empty since WS-BP BP4.1 wrote
+  `lean_kernel_main`, its one entry until then; an
   entry the HAL stops declaring, the archive starts defining, or — round 6 —
   the Lean tree starts exporting fails, the last because an exported symbol
   whose module sits outside the import closure is exported and undefined at
@@ -12624,8 +12651,9 @@ code may assume:
   reach a kernel-state installer except through that call, walked over
   `Expr.getUsedConstants`.  Building the module is the check, and four
   witnesses (a compliant entry and three token-preserving deviations) keep it
-  decisive before SM10.1 writes the entry.  What the Python gate still holds is
-  the link-level half — vacuous until SM10.1 writes the entry, decisive after,
+  decisive whatever the entry is; since WS-BP BP4.1 wrote it the contract also
+  refuses an environment with none.  What the Python gate still holds is
+  the link-level half — vacuous until the entry existed, decisive since,
   so the idle-thread, labeling and reservation guarantees cannot be bypassed
   by an entry that boots through `bootFromPlatform` directly.  Executing the
   call is necessary and not sufficient (round 9): the entry must **branch** on

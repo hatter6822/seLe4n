@@ -22,12 +22,12 @@
 //! is skipped) — exactly the behaviour of a host build, and safe by
 //! construction.
 //!
-//! **Who marks ready (SM10.1)**: the bootable-image work owns the flips.
-//! The boot core is marked after `lean_kernel_main` initializes the Lean
-//! runtime and installs the kernel state (and per the registered SM10.1
-//! ordering obligation, before secondaries are released or under the
-//! kernel-entry bracket).  Each secondary is marked in
-//! `rust_secondary_main` once SM10.1's per-core runtime initialization
+//! **Who marks ready (WS-BP BP6)**: the boot-path work owns the flips.
+//! The boot core is marked after the Lean library initializer has run and
+//! `lean_kernel_main` has installed the kernel state — which happens before
+//! any secondary is released, because the bring-up consumes the permit the
+//! install returns (`lean_entry.rs`, WS-BP BP4.2).  Each secondary is marked in
+//! `rust_secondary_main` once its per-core runtime initialization (BP6.1)
 //! for that PE has run — after which the already-wired gate passes and
 //! the bring-up reschedule proceeds unmodified.  Nothing in the tree
 //! marks a core ready today, which is precisely the point: the seams are
@@ -57,7 +57,7 @@ pub fn lean_ready(core_id: usize) -> bool {
 
 /// Mark `core_id` ready to enter the Lean runtime.
 ///
-/// Called by the SM10.1 image's initialization path once the Lean
+/// Called by the boot path (WS-BP BP6) once the Lean
 /// runtime is initialized for this PE (boot core: after
 /// `lean_kernel_main`'s runtime init + kernel-state install; secondary:
 /// after its per-core runtime init in `rust_secondary_main`).  Release
@@ -75,8 +75,9 @@ pub fn lean_ready(core_id: usize) -> bool {
 /// 1. the Lean runtime is fully initialized for that PE (module
 ///    initializers run; the PE's runtime thread-state established), and
 /// 2. the kernel state the entries commit against is installed (the
-///    boot core's `lean_kernel_main` install has happened-before, per
-///    the registered SM10.1 ordering obligation).
+///    boot core's `lean_kernel_main` install has happened-before; for a
+///    secondary this holds by construction, since its release consumed the
+///    permit the install returns — WS-BP BP4.2).
 ///
 /// Marking a core whose runtime is not initialized is undefined
 /// behaviour at that core's next gated interrupt — exactly the hazard

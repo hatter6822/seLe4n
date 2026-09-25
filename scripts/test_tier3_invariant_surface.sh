@@ -3913,6 +3913,26 @@ run_check "INVARIANT" rg -n '^    cn\.slots\.fold true \(fun acc _ cap => acc &&
 run_check "INVARIANT" rg -n '^theorem bootSafeObjectCheck_sound \(obj : KernelObject\)$' SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n 'bootSafeObjectCheck_sound_structural' SeLe4n tests
 run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode holding a reply capability' tests/TwoPhaseArchSuite.lean
+# WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
+# exactly the halting checked boot of the deployment.  The contract refuses an
+# environment with no entry now that one exists, and the link gate has no
+# expected-unresolved symbol left.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.RPi5\.KernelMain$' SeLe4n.lean
+run_check "INVARIANT" rg -U -n '^@\[export lean_kernel_main\]\ndef kernelMain \(_dtbPointer : UInt64\) : BaseIO Unit :=\n  Platform\.FFI\.bootAndInitialiseRPi5OrHalt rpi5PlatformConfig$' SeLe4n/Platform/RPi5/KernelMain.lean
+run_check "INVARIANT" rg -n '^theorem kernelMain_installs($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
+run_check "INVARIANT" rg -U -n '^  \| \[\] =>\n      throwError "boot-entry contract: no declaration exports' SeLe4n/Testing/BootEntryContract.lean
+run_negative_check "INVARIANT" rg -n 'logInfo m!"boot-entry contract: no declaration exports' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^EXPECTED_UNRESOLVED: dict\[str, str\] = \{\}$' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Platform\.RPi5\.kernelMain,$' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+# WS-BP BP4.2: the install precedes the release of every secondary, as a type.
+# The one function every bring-up path reaches takes the permit first; the
+# production entry is handed the install's permit; the no-kernel constructor
+# does not exist on an image that links the kernel; and the install's entry
+# returns the permit rather than unit.
+run_check "INVARIANT" rg -U -n '^pub fn bring_up_secondaries_inner\(\n    permit: crate::lean_entry::SecondaryReleasePermit,$' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n 'crate::cmdline::apply_cmdline_and_start_smp\(&cmdline_cfg, secondary_release\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -U -n '^    #\[cfg\(any\(test, not\(feature = "hw_target"\)\)\)\]\n    pub fn no_lean_kernel\(\) -> Self \{$' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -U -n '^pub fn enter_lean_kernel\(\n    initialised: LeanLibraryInitialised,\n    dtb_ptr: u64,\n\) -> SecondaryReleasePermit \{$' rust/sele4n-hal/src/lean_entry.rs
 # PR #892 review round 2: the FIFO stress test's round count rounds UP, so an
 # acquisition override below the thread count cannot make every worker loop
 # run zero times and the test pass on the lock's initial state.
@@ -18440,7 +18460,12 @@ run_check "INVARIANT" rg -F -n 'private def censusWitnessReaderProducer : Census
 # THE REVIEWER'S OWN EXAMPLE IS IN THE PIN, which is the measurement that the
 # widening reaches the tree rather than only its witnesses.
 run_check "INVARIANT" rg -F -n '  , `SeLe4n.Kernel.Architecture.TlbCacheJointState.pageTableUpdate' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
-run_check "INVARIANT" rg -F -n '  , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# The boot-path carrier: `bootFromPlatformCheckedWithIdleThreadsFor` was the
+# pinned instance until WS-BP BP4.1 made the boot entry reach it, so the
+# all-cores form that nothing runs stands for the widening now, and the reached
+# form must NOT be pinned -- a stale entry reads exactly like coverage.
+run_check "INVARIANT" rg -n '^  , `SeLe4n\.Platform\.Boot\.bootFromPlatformCheckedWithIdleThreads$' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_negative_check "INVARIANT" rg -n '^  , `SeLe4n\.Platform\.Boot\.bootFromPlatformCheckedWithIdleThreadsFor$' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 # ...and the `SizeOf` instance that WAS pinned is gone with the clause that let it
 # in: a generated instance is not a definition anyone wrote, and a stale entry
 # reads exactly like coverage.

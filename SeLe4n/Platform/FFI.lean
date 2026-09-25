@@ -1060,14 +1060,13 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     reschedule — bracketed *and* invoked before `enable_irq` on its core, so a
     tick cannot re-enter the non-reentrant lock on the same core) and
     `suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`).  The primary
-    bring-up entry (`lean_kernel_main`, the SM10.1 image target's boot seam) is
-    the one committing path outside the bracket: its `initialiseKernelState`
-    install runs while secondaries may already be executing bracketed entries,
-    so SM10.1 MUST either order the install before Phase 5 releases the
-    secondaries or take this same bracket — an unbracketed install racing a
-    bracketed tick can be overwritten by a commit derived from the
-    pre-install state (the lost-commit shape above).  Recorded as an SM10.1
-    obligation in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`.
+    bring-up entry (`lean_kernel_main`, `SeLe4n.Platform.RPi5.kernelMain`, WS-BP
+    BP4.1) is the one committing path outside the bracket, and it needs none: an
+    unbracketed install racing a bracketed tick could be overwritten by a commit
+    derived from the pre-install state (the lost-commit shape above), so the HAL
+    runs the install before it releases any secondary — and makes that a type,
+    since releasing a secondary consumes the permit the install returns
+    (`rust/sele4n-hal/src/lean_entry.rs`, WS-BP BP4.2).
 
     The lock is the SM2 verified `TicketLock`, so entry is FIFO and no core
     starves; it is acquired strictly **outside** `SHOOTDOWN_ROUND_LOCK`; and its
@@ -1354,8 +1353,9 @@ is described — so the entry boots `bindPlatformConfig platform config`: the
 caller's IRQ table and initial objects under the binding's boot VSpace root and
 the machine configuration the binding binds for the caller's account
 (`PlatformBinding.bindMachineConfig`, PR #892 review round 2 — on the RPi5, the
-RAM variant the account covers).  SM10.1's `lean_kernel_main` calls
-`bootAndInitialiseRPi5`, the instance of this entry fixed at `RPi5Platform`. -/
+RAM variant the account covers).  The hardware entry `lean_kernel_main`
+(`SeLe4n.Platform.RPi5.kernelMain`) calls `bootAndInitialiseRPi5`, the instance
+of this entry fixed at `RPi5Platform`, through `bootAndInitialiseRPi5OrHalt`. -/
 def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) : BaseIO (Except String SystemState) :=
   bootAndInitialiseFromPlatformOn (PlatformBinding.declaredCores (platform := platform))
@@ -1365,9 +1365,10 @@ def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
 fixed at `RPi5Platform`, so the platform is a definition rather than an argument
 the exported entry could vary.
 
-The boot-entry gate (`scripts/check_kernel_entry_exports.py`) holds whichever
-declaration carries `@[export lean_kernel_main]` to executing *this* function
-and no other kernel-state installer.  With the generic entry as the callee the
+The boot-entry contract (`SeLe4n/Testing/BootEntryContract.lean`, since PR #889
+review round 17; `scripts/check_kernel_entry_exports.py` before it) holds
+whichever declaration carries `@[export lean_kernel_main]` to executing *this*
+function, through its halting wrapper, and no other kernel-state installer.  With the generic entry as the callee the
 gate never inspected the platform argument, so an entry executing
 `bootAndInitialisePlatform SimSingleCorePlatform config` — the harness labeling
 and a single idle thread, on an image whose Rust boot releases four PEs —
@@ -1391,7 +1392,8 @@ the fail-open direction on the one call that decides whether the kernel exists.
 The handling is the same on every failure and there is exactly one right answer
 to it, so it belongs here rather than in the caller.
 
-This is what SM10.1's `lean_kernel_main` calls.  Making the failure handling a
+This is what `lean_kernel_main` calls (`SeLe4n.Platform.RPi5.kernelMain`, WS-BP
+BP4.1), applied to the deployment `rpi5PlatformConfig`.  Making the failure handling a
 *definition* is what lets the contract on that entry be decided by the
 elaborator (`SeLe4n/Testing/BootEntryContract.lean`): "the entry calls this
 constant, and no path from it installs kernel state except through it" is a
