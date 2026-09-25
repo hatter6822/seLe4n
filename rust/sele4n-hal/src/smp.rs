@@ -298,9 +298,15 @@ pub extern "C" fn secondary_entry() {
 ///      wake immediately.
 ///
 /// Returns the number of secondaries successfully brought up.
-/// **PR #889 review round 23**: how many of the first `expected` PEs have
-/// published [`CORE_IRQ_READY`], polled until they all have or `timeout_ticks`
-/// have elapsed on `now`.
+/// **PR #889 review round 23**: how many of the first `expected` PEs `serves`,
+/// polled until they all do or `timeout_ticks` have elapsed on `now`.
+///
+/// **WS-BP BP6.3**: the question is whether a PE *serves the kernel*, and the
+/// production predicate is [`core_serves`] — the PE published
+/// [`CORE_IRQ_READY`] **and** marked itself Lean-ready.  The first cut counted
+/// the IRQ flag alone, which a PE that unmasked interrupts with its seams still
+/// dormant satisfies.  The predicate is a parameter so the bound is testable
+/// on the host without touching the process-global flags.
 ///
 /// `bring_up_secondaries` returns the number of PSCI `CPU_ON` calls that were
 /// accepted, which is a *proxy* for "this PE will service kernel work": it is
@@ -322,18 +328,15 @@ pub extern "C" fn secondary_entry() {
 /// conclusion and written it down; this is that pattern, for the same reason.
 /// The clock is injected so the bound is testable on the host, exactly as the
 /// shootdown wait does it.
-pub fn irq_ready_core_count_within_in<C: FnMut() -> u64>(
+pub fn serving_core_count_within_in<C: FnMut() -> u64, S: Fn(usize) -> bool>(
     expected: u32,
     timeout_ticks: u64,
     mut now: C,
+    serves: S,
 ) -> u32 {
     let expected = (expected as usize).min(CORE_IRQ_READY.len());
-    let ready_now = |expected: usize| -> u32 {
-        CORE_IRQ_READY[..expected]
-            .iter()
-            .filter(|flag| flag.load(Ordering::Acquire))
-            .count() as u32
-    };
+    let ready_now =
+        |expected: usize| -> u32 { (0..expected).filter(|&c| serves(c)).count() as u32 };
     let start = now();
     loop {
         let ready = ready_now(expected);
@@ -350,10 +353,27 @@ pub fn irq_ready_core_count_within_in<C: FnMut() -> u64>(
     }
 }
 
-/// **PR #889 review round 23**: the production form, clocked by the generic
-/// timer (`CNTPCT_EL0`) — the same clock the shootdown's bounded wait uses.
-pub fn irq_ready_core_count_within(expected: u32, timeout_ticks: u64) -> u32 {
-    irq_ready_core_count_within_in(expected, timeout_ticks, crate::timer::read_counter)
+/// **WS-BP BP6.3**: does core `c` serve the kernel?  It has marked itself
+/// Lean-ready (`lean_ready::become_ready_or_halt`, before its `enable_irq`)
+/// **and** published [`CORE_IRQ_READY`] (after it).  Both are its own writes,
+/// both `Release`, and both are read here with `Acquire`.  A core outside the
+/// flag array serves nothing.
+pub fn core_serves(c: usize) -> bool {
+    c < CORE_IRQ_READY.len()
+        && CORE_IRQ_READY[c].load(Ordering::Acquire)
+        && crate::lean_ready::lean_ready(c)
+}
+
+/// **WS-BP BP6.3**: the production form, clocked by the generic timer
+/// (`CNTPCT_EL0`) — the same clock the shootdown's bounded wait uses — and
+/// asking [`core_serves`].  The boot core's Phase-7 refusal reads it.
+pub fn serving_core_count_within(expected: u32, timeout_ticks: u64) -> u32 {
+    serving_core_count_within_in(
+        expected,
+        timeout_ticks,
+        crate::timer::read_counter,
+        core_serves,
+    )
 }
 
 pub fn bring_up_secondaries_inner(
@@ -627,17 +647,23 @@ pub(crate) const fn validate_secondary_context_id(context_id: u64) -> Option<usi
 ///      Failure (CntfrqNotProgrammed) is fatal for this core — we
 ///      log and halt the secondary while leaving primary +
 ///      already-initialised secondaries running.
-///   6. **Lean kernel bring-up entry**:
+///   6. **Per-PE readiness** ([`crate::lean_ready::become_ready_or_halt`],
+///      WS-BP BP6.1/BP6.2): the per-core Lean runtime handshake — this PE is
+///      the core it names, translates, runs on its own stack slot, and the
+///      kernel heap serves it — then the core marks itself ready.  A refusal
+///      parks this PE, and the boot core's bounded readiness wait halts the
+///      system (BP6.3).
+///   7. **Lean kernel bring-up entry**:
 ///      `lean_secondary_kernel_main(core_id)` (emitted by Lean from
 ///      `SeLe4n.Kernel.SecondaryEntry`) — the core's first reschedule.
 ///      Runs inside `kernel_entry::with_kernel_entry` and with IRQs
 ///      still masked (the non-reentrant-lock discipline), committing
 ///      the verified `handleRescheduleSgiOnCore` transition that
 ///      establishes this core's `currentOnCore`.
-///   7. **IRQ unmask** ([`crate::interrupts::enable_irq`]): clear
+///   8. **IRQ unmask** ([`crate::interrupts::enable_irq`]): clear
 ///      PSTATE.I so the GIC may deliver interrupts to this PE; then
 ///      publish `CORE_IRQ_READY` (shootdown-target eligibility).
-///   8. **Interrupt-driven idle**: the core parks in a WFE loop; every
+///   9. **Interrupt-driven idle**: the core parks in a WFE loop; every
 ///      subsequent kernel entry on this core is an interrupt — per-core
 ///      timer ticks and `.reschedule` SGIs through
 ///      `trap.rs::handle_irq_per_core` under the kernel-entry lock.
@@ -762,6 +788,30 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     );
 
     // -----------------------------------------------------------------
+    // Step 4b — per-PE Lean runtime handshake, then readiness (WS-BP
+    // BP6.1/BP6.2).
+    //
+    // The per-image half of the handshake — the library initializer and
+    // the kernel install — ran once on the boot core, and happened-before
+    // this PE through the `CORE_READY` release it just acquired.  What is
+    // left is per-PE: this PE is the core it names, it translates, it runs
+    // on its own stack slot, and the kernel heap serves it
+    // (`lean_ready::initialise_core_runtime`).  The core is then marked
+    // ready **on itself**, before the bring-up entry below consults the gate
+    // and before Step 6 unmasks IRQs, so no interrupt is ever taken here in
+    // the degraded Rust-only mode once the kernel exists.
+    //
+    // A refused handshake parks this PE (`cpu::fatal_halt`): it never
+    // publishes `CORE_IRQ_READY`, so the boot core's bounded readiness wait
+    // counts it short and halts the system (WS-BP BP6.3) — the boot fails
+    // rather than running a kernel this PE cannot serve.  `build.rs`
+    // (`readiness_publication_status`) holds this statement after the timer
+    // arm and before `enable_irq`.
+    // -----------------------------------------------------------------
+    #[cfg(feature = "hw_target")]
+    crate::lean_ready::become_ready_or_halt(core_idx, crate::cpu::fatal_halt);
+
+    // -----------------------------------------------------------------
     // Step 5 — Lean kernel bring-up entry (the core's first reschedule).
     //
     // Calls into `SeLe4n.Kernel.secondaryKernelMain` (defined in
@@ -798,14 +848,12 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // -----------------------------------------------------------------
     #[cfg(feature = "hw_target")]
     {
-        // Lean-runtime readiness gate: SM10.1's image initialization runs
-        // this core's per-core Lean runtime init earlier in this function
-        // and marks the core ready; until that work exists, no core is
-        // ever ready and the bring-up entry is skipped — a PE must never
-        // enter a Lean runtime it has not initialized.  A skipped entry
-        // leaves `currentOnCore` at its boot value (`none`, the legacy
-        // idle representation); the core's first ready-side scheduling
-        // point performs the deferred first reschedule.
+        // Lean-runtime readiness gate: Step 4b ran this PE's per-core
+        // handshake and marked it ready, so on the image the gate passes.
+        // It stays because a PE must never enter a Lean runtime it has not
+        // initialized, and the gate is where `build.rs` checks that; a PE
+        // that marked itself and still reads not-ready has a broken mask,
+        // and parks rather than skip its first reschedule.
         //
         // PR #887 review round 6: the readiness gate is the EXECUTING PE's.
         // `core_idx` is the PSCI context id the primary passed, validated
@@ -857,8 +905,9 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
             );
         } else {
             crate::kprintln!(
-                "[smp] core {core_id}: kernel bring-up entry deferred (Lean runtime not ready)"
+                "[smp] core {core_id}: FATAL: not ready after marking itself; halting this core"
             );
+            crate::cpu::fatal_halt();
         }
     }
     #[cfg(not(feature = "hw_target"))]
@@ -931,33 +980,39 @@ mod tests {
         }
     }
 
+    /// Cores `< n` serve; the rest never do.
+    fn first_serve(n: usize) -> impl Fn(usize) -> bool {
+        move |c| c < n
+    }
+
     #[test]
-    fn irq_ready_wait_returns_on_timeout_when_a_core_never_publishes() {
-        // Ask for more cores than can ever be ready in this process: the boot
-        // core is `true` by construction, the rest are only set by their own
-        // `secondary_entry`, which no host test runs.
-        let ready = super::irq_ready_core_count_within_in(
+    fn serving_wait_returns_on_timeout_when_a_core_never_serves() {
+        let ready = super::serving_core_count_within_in(
             super::CORE_IRQ_READY.len() as u32,
             8,
             ticking_clock(),
+            first_serve(3),
         );
-        assert!(
-            (ready as usize) < super::CORE_IRQ_READY.len(),
+        assert_eq!(
+            ready, 3,
             "the wait must return the honest short count on timeout, not hang \
              or report success"
         );
     }
 
     #[test]
-    fn irq_ready_wait_returns_immediately_when_every_expected_core_is_ready() {
-        // The boot core alone: `CORE_IRQ_READY[0]` is `true` from primary boot,
-        // so this must not consult the clock at all beyond the initial read.
+    fn serving_wait_returns_immediately_when_every_expected_core_serves() {
         let mut reads = 0u64;
-        let ready = super::irq_ready_core_count_within_in(1, u64::MAX, || {
-            reads += 1;
-            reads
-        });
-        assert_eq!(ready, 1, "the boot core is IRQ-ready from primary boot");
+        let ready = super::serving_core_count_within_in(
+            4,
+            u64::MAX,
+            || {
+                reads += 1;
+                reads
+            },
+            first_serve(4),
+        );
+        assert_eq!(ready, 4);
         assert!(
             reads <= 1,
             "a satisfied wait must not spin: the common case costs one pass"
@@ -965,27 +1020,57 @@ mod tests {
     }
 
     #[test]
-    fn irq_ready_wait_clamps_expected_to_the_flag_array() {
-        // A caller asking for more PEs than the model has must not index out of
-        // bounds; the count returned is over the flags that exist.
-        let ready = super::irq_ready_core_count_within_in(
+    fn serving_wait_clamps_expected_to_the_flag_array() {
+        // A caller asking for more PEs than the model has must not ask the
+        // predicate about a core outside the flag array.
+        let ready = super::serving_core_count_within_in(
             super::CORE_IRQ_READY.len() as u32 + 8,
             4,
             ticking_clock(),
+            |c| {
+                assert!(c < super::CORE_IRQ_READY.len(), "asked about core {c}");
+                true
+            },
         );
-        assert!((ready as usize) <= super::CORE_IRQ_READY.len());
+        assert_eq!(ready as usize, super::CORE_IRQ_READY.len());
     }
 
     #[test]
-    fn irq_ready_wait_with_a_zero_timeout_still_terminates() {
-        // The degenerate budget: one poll, then the final read.  A wait that
-        // needed a positive budget to terminate would hang here.
-        let ready = super::irq_ready_core_count_within_in(
-            super::CORE_IRQ_READY.len() as u32,
-            0,
-            ticking_clock(),
+    fn serving_wait_with_a_zero_timeout_still_terminates() {
+        let ready = super::serving_core_count_within_in(4, 0, ticking_clock(), first_serve(0));
+        assert_eq!(ready, 0);
+    }
+
+    #[test]
+    fn a_straggler_that_serves_by_the_deadline_is_counted() {
+        // Core 3 starts serving on the fourth clock read: the wait must see it
+        // rather than refuse a topology that completed in time.
+        let clock = core::cell::Cell::new(0u64);
+        let ready = super::serving_core_count_within_in(
+            4,
+            100,
+            || {
+                clock.set(clock.get() + 1);
+                clock.get()
+            },
+            |c| c < 3 || clock.get() >= 4,
         );
-        assert!((ready as usize) < super::CORE_IRQ_READY.len());
+        assert_eq!(ready, 4);
+    }
+
+    #[test]
+    fn an_irq_ready_core_that_is_not_lean_ready_does_not_serve() {
+        // WS-BP BP6.3: the production predicate asks both flags.  Core 0 is
+        // IRQ-ready from primary boot; cores 4 and 5 of the readiness mask are
+        // never marked by any test, and are outside the flag array, so they
+        // serve nothing whatever the mask says.
+        assert!(super::CORE_IRQ_READY[0].load(Ordering::Acquire));
+        assert!(!super::core_serves(super::CORE_IRQ_READY.len()));
+        assert!(!super::core_serves(usize::MAX));
+        // A secondary never published IRQ-readiness in a host test.
+        for c in 1..super::CORE_IRQ_READY.len() {
+            assert!(!super::core_serves(c), "core {c} cannot serve on the host");
+        }
     }
 
     use super::*;

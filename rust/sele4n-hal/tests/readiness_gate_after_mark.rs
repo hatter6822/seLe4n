@@ -16,6 +16,7 @@
 //! seam reads a constant core id of `0`, so there is no second core to borrow.
 //! These tests therefore live where marking core `0` disturbs nobody.
 
+use sele4n_hal::lean_ready::LeanRuntimeReadyOnCore;
 use sele4n_hal::svc_dispatch::{
     dispatch_svc, error_frame_regs, DispatchError, SvcOutcome, SyscallArgs, SyscallId,
     ERROR_LABEL_BASE,
@@ -32,8 +33,9 @@ fn mark_this_core_ready() {
     let core = sele4n_hal::per_cpu::current_core_id_from_tpidr() as usize;
     // SAFETY: host-side test — `hw_target` is off, so no seam is compiled to
     // call a Lean-emitted symbol and the readiness promise is vacuous (see
-    // `lean_ready::mark_lean_ready`'s safety contract).
-    unsafe { sele4n_hal::lean_ready::mark_lean_ready(core) };
+    // `lean_ready::LeanRuntimeReadyOnCore::assume_initialised`'s contract).
+    let ready = unsafe { LeanRuntimeReadyOnCore::assume_initialised(core) };
+    sele4n_hal::lean_ready::mark_lean_ready(ready);
 }
 
 fn zero_frame() -> TrapFrame {

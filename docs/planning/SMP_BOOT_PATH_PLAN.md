@@ -1,7 +1,7 @@
 # WS-BP — The bare-metal boot path, and the cross-implementation
 # agreement it ends
 
-> **Status**: **IN FLIGHT — BP0, BP1, BP2, BP3 and BP4 (BP4.1–BP4.7) LANDED at `v0.36.2`**; BP5..BP8 not started.
+> **Status**: **IN FLIGHT — BP0, BP1, BP2, BP3, BP4, BP5 and BP6 LANDED at `v0.36.2`**; BP7..BP8 not started.
 > Unblocked at `v0.35.203`, WS-RR RR8 having closed.  Registered at `v0.34.59`
 > by WS-RR RR7.5 + RR7.15 (register §6 findings 19, 40–44).  BP7.8 was added at `v0.35.203` by WS-RR
 > RR8.16's hand-off check, which re-homed the registered `MR4`-onward
@@ -325,9 +325,9 @@ preempted again.  Flipping the mask is what makes the kernel run.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| BP6.1 | Per-core Lean runtime initialization on a secondary — whatever of BP2's handshake is per-PE rather than per-image, established before the core takes its first interrupt.  Consumes BP2.3 | `rust/sele4n-hal/src/smp.rs` | M |
-| BP6.2 | Mark the core ready, on the core itself, after its own initialization and before `enable_irq`.  Consumes BP6.1 | `rust/sele4n-hal/src/lean_ready.rs`, `rust/sele4n-hal/src/smp.rs` | S |
-| BP6.3 | A gate that no seam is left dormant: `LEAN_READY_GATED_SEAMS` is already derived, so this row adds the *runtime* half — a boot-time assertion that every declared PE published readiness within the bounded window, failing the boot rather than running a kernel one core cannot serve.  Consumes BP6.2 | `rust/sele4n-hal/src/boot.rs`, `rust/sele4n-hal/build.rs` | M |
+| BP6.1 | **LANDED `v0.36.2`**.  The per-image half of the handshake — the library initializer and the install — ran once on the boot core, and `enter_lean_kernel` now publishes it (`lean_ready::publish_kernel_installed`, `Release`) before it mints the release permit.  The kernel's runtime has no per-thread heap, task manager or stack guard, so what is per-PE is the PE's own posture, decided by `lean_ready::initialise_core_runtime_with` in order: the call runs on the core it names (`TPIDR_EL1`), once per core; the install happened-before (`Acquire`); the PE translates (`SCTLR_EL1.M`, since the heap lock is an exclusive-monitor atomic); it runs on its own stack slot (`own_stack_extent`: the boot stack, or the `c`-th 64 KiB slot below `__smp_secondary_stack_top`); and the kernel heap serves an allocation and a free from it.  Success mints a `LeanRuntimeReadyOnCore`, neither `Clone` nor `Copy`.  The boot core runs it too, after Phase 5.  Consumes BP2.3 | `rust/sele4n-hal/src/smp.rs`, `rust/sele4n-hal/src/lean_ready.rs`, `rust/sele4n-hal/src/lean_entry.rs`, `rust/sele4n-hal/src/boot.rs` | M |
+| BP6.2 | **LANDED `v0.36.2`**.  `mark_lean_ready` is safe and consumes the token; the `unsafe fn mark_lean_ready(core_id)` whose contract was the promise is retired (`LeanRuntimeReadyOnCore::assume_initialised` is the unsafe host-test form).  `lean_ready::become_ready_or_halt` is the one caller: `rust_secondary_main` calls it after the timer arm and before its bring-up entry and `enable_irq`, parking the PE on a refusal; `rust_boot_main` calls it after the install, halting the system on a refusal, and its `enable_irq` moved from Phase 4 to after the mark, so no PE takes an interrupt in the degraded Rust-only mode once the kernel exists.  Consumes BP6.1 | `rust/sele4n-hal/src/lean_ready.rs`, `rust/sele4n-hal/src/smp.rs`, `rust/sele4n-hal/src/boot.rs` | S |
+| BP6.3 | **LANDED `v0.36.2`**.  The Phase-7 refusal waits for cores that *serve the kernel* — `smp::core_serves`, IRQ-ready **and** Lean-ready — through `serving_core_count_within`, bounded, and halts the system (`gic::halt_all`) unless every declared PE does; the retired `irq_ready_core_count_within` counted the IRQ flag alone, which a PE with every seam dormant satisfies.  `build.rs`'s `readiness_publication_status` holds both marks (hardware-only top-level statements, after their dependencies, before their PE's one `enable_irq`, with the pinned halts), the refusal (after the bring-up; the wait then an `if` on its shortfall whose block ends in the system halt, no `else`), and — derived — that nothing else calls `mark_lean_ready` or `become_ready_or_halt`; fourteen token-preserving mutations and ten mutations of the checker are refused.  Consumes BP6.2 | `rust/sele4n-hal/src/boot.rs`, `rust/sele4n-hal/src/smp.rs`, `rust/sele4n-hal/build.rs` | M |
 
 **Acceptance**: all four PEs publish readiness under QEMU, and a PE that
 does not makes the boot fail rather than hang.
@@ -407,7 +407,9 @@ that no script had ever performed.
 - [ ] `kernel8.img` is built by CI and contains `_start`,
       `__exception_vectors` and `lean_kernel_main` (BP5.3, BP5.4).
 - [ ] Every declared PE publishes readiness within the bounded window, and a
-      PE that does not fails the boot (BP6.3).
+      PE that does not fails the boot (BP6.3).  Implemented at `v0.36.2` and
+      pinned by `build.rs`; the box is ticked by the QEMU run with four PEs,
+      and by one with a PE withheld, which the first-boot phase runs.
 - [ ] `contextRestoreSeamLive` is `true`, and no path installs a sentinel
       frame or halts pending SM10.1 (BP7.6).
 - [ ] A blocked caller is resumed with the frame the kernel staged, on

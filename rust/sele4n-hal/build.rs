@@ -218,6 +218,10 @@ fn main() {
     // clobber of the interrupted thread's vector registers.
     scan_fp_trap_prologue();
     scan_el1_entry();
+    // WS-BP BP6.2/BP6.3: each PE marks itself Lean-ready before it unmasks
+    // IRQs, nothing else marks a core, and the boot core refuses a topology in
+    // which a declared PE does not serve the kernel.
+    scan_readiness_publication();
 
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
@@ -10310,6 +10314,539 @@ fn scan_fp_trap_prologue() {
              Every boot entry must open with `msr cpacr_el1, xzr` then `isb`, \
              so FP/SIMD is trapped at EL0 and EL1 before any code runs on the \
              PE, and nothing else may write CPACR_EL1 (see FP_TRAP_PROLOGUE)."
+        );
+    }
+}
+
+// ============================================================================
+// WS-BP BP6.2/BP6.3 — every PE marks itself ready before it unmasks IRQs, and
+// the boot refuses a topology in which a declared PE does not serve the kernel
+// ============================================================================
+
+/// **WS-BP BP6.2**: where a PE marks itself Lean-ready.
+///
+/// `lean_ready::become_ready_or_halt` is the one function that marks a core
+/// ready (it consumes the per-PE handshake's token), and these are its two
+/// call sites.  Each must be a top-level statement of the PE's boot function,
+/// spelled exactly `#[cfg(feature = "hw_target")] <call>(<core>, <halt>);`,
+/// after the statement(s) whose initialization it depends on and before the
+/// function's one `crate::interrupts::enable_irq();`.  The halt is part of the
+/// pin: the boot core has released nothing and halts the system, a secondary
+/// parks itself and the boot core's readiness wait halts the system.
+struct ReadinessPublicationSite {
+    path: &'static str,
+    function: &'static str,
+    core: &'static str,
+    halt: &'static str,
+    /// The leading text (attributes stripped) of the top-level statement(s)
+    /// that must run before the mark.
+    after: &'static str,
+}
+
+const READINESS_PUBLICATION_SITES: [ReadinessPublicationSite; 2] = [
+    ReadinessPublicationSite {
+        path: "src/boot.rs",
+        function: "rust_boot_main",
+        core: "0",
+        halt: "crate::gic::halt_all",
+        after: "let secondary_release",
+    },
+    ReadinessPublicationSite {
+        path: "src/smp.rs",
+        function: "rust_secondary_main",
+        core: "core_idx",
+        halt: "crate::cpu::fatal_halt",
+        after: "if let Err(e) = crate::timer::init_timer_secondary(",
+    },
+];
+
+const READINESS_PUBLICATION_CALL: &str = "crate::lean_ready::become_ready_or_halt";
+const READINESS_PUBLICATION_FN: &str = "become_ready_or_halt";
+const READINESS_MARK_FN: &str = "mark_lean_ready";
+const READINESS_HW_CFG: &str = "#[cfg(feature = \"hw_target\")]";
+const READINESS_IRQ_UNMASK: &str = "crate::interrupts::enable_irq();";
+
+/// **WS-BP BP6.3**: the boot core's refusal, as two adjacent top-level
+/// statements of a `#[cfg(feature = "hw_target")] { … }` block of
+/// `rust_boot_main` that follows the bring-up.  Compared with all whitespace
+/// removed and a trailing comma before `)` dropped.
+const READINESS_WAIT: &str = "let running_cores = crate::smp::serving_core_count_within(\
+                              LEAN_DECLARED_CORE_COUNT, SECONDARY_READY_TIMEOUT_TICKS);";
+const READINESS_REFUSAL_CONDITION: &str = "running_cores != LEAN_DECLARED_CORE_COUNT";
+const READINESS_REFUSAL_HALT: &str = "crate::gic::halt_all();";
+const READINESS_BRING_UP: &str = "apply_cmdline_and_start_smp";
+
+/// Whitespace removed, `,)` read as `)`.
+fn squash(text: &str) -> String {
+    let joined: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    joined.replace(",)", ")")
+}
+
+/// Offsets of every whole-word `name` in `code` that is followed by `(` and
+/// is not the name in its own `fn` definition.
+fn call_offsets(code: &str, name: &str) -> Vec<usize> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut out = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find(name) {
+        let at = search + hit;
+        let end = at + name.len();
+        search = end;
+        if (at > 0 && is_ident(bytes[at - 1])) || (end < bytes.len() && is_ident(bytes[end])) {
+            continue;
+        }
+        if !code[end..].trim_start().starts_with('(') {
+            continue;
+        }
+        if code[..at].trim_end().ends_with("fn") {
+            continue;
+        }
+        out.push(at);
+    }
+    out
+}
+
+/// One site's relation: the mark is a top-level statement, exactly spelled,
+/// after its dependencies and before the one IRQ unmask.
+fn readiness_site_status(
+    kept: &str,
+    code: &str,
+    site: &ReadinessPublicationSite,
+) -> Result<(), String> {
+    let (open, close) =
+        named_fn_body_span(code, site.function).map_err(|e| format!("{}: {e}", site.path))?;
+    let body = &code[open..=close];
+    let stmts = top_level_statements(code, open, close);
+    let text = |(a, b): (usize, usize)| &kept[a..b];
+    let wanted = squash(&format!(
+        "{READINESS_HW_CFG} {READINESS_PUBLICATION_CALL}({}, {});",
+        site.core, site.halt
+    ));
+    let publish: Vec<usize> = (0..stmts.len())
+        .filter(|&i| squash(text(stmts[i])) == wanted)
+        .collect();
+    let [publish] = publish[..] else {
+        return Err(format!(
+            "{}::{}: expected exactly one top-level statement `{READINESS_HW_CFG} \
+             {READINESS_PUBLICATION_CALL}({}, {});`, found {}",
+            site.path,
+            site.function,
+            site.core,
+            site.halt,
+            publish.len()
+        ));
+    };
+    if word_occurrences(body, READINESS_PUBLICATION_FN) != 1 {
+        return Err(format!(
+            "{}::{}: `{READINESS_PUBLICATION_FN}` must occur once in the body, as the \
+             top-level statement",
+            site.path, site.function
+        ));
+    }
+    let unmask: Vec<usize> = (0..stmts.len())
+        .filter(|&i| squash(text(stmts[i])) == squash(READINESS_IRQ_UNMASK))
+        .collect();
+    let [unmask] = unmask[..] else {
+        return Err(format!(
+            "{}::{}: expected exactly one top-level `{READINESS_IRQ_UNMASK}`",
+            site.path, site.function
+        ));
+    };
+    if word_occurrences(body, "enable_irq") != 1 {
+        return Err(format!(
+            "{}::{}: `enable_irq` must occur once in the body, as the top-level statement",
+            site.path, site.function
+        ));
+    }
+    if publish > unmask {
+        return Err(format!(
+            "{}::{}: the core marks itself ready after it unmasks IRQs",
+            site.path, site.function
+        ));
+    }
+    let after: Vec<usize> = (0..stmts.len())
+        .filter(|&i| strip_leading_attributes(text(stmts[i])).starts_with(site.after))
+        .collect();
+    if after.is_empty() {
+        return Err(format!(
+            "{}::{}: no top-level statement begins `{}`",
+            site.path, site.function, site.after
+        ));
+    }
+    if after.iter().any(|&i| i > publish) {
+        return Err(format!(
+            "{}::{}: the core marks itself ready before `{}` has run",
+            site.path, site.function, site.after
+        ));
+    }
+    Ok(())
+}
+
+/// The boot core's refusal: after the bring-up, a hardware-only block whose
+/// top-level statements include the serving-core wait immediately followed by
+/// an `if` on its shortfall whose last top-level statement halts the system.
+fn readiness_refusal_status(kept: &str, code: &str) -> Result<(), String> {
+    let (open, close) = named_fn_body_span(code, "rust_boot_main")?;
+    let stmts = top_level_statements(code, open, close);
+    let bring_up = call_offsets(&code[open..=close], READINESS_BRING_UP)
+        .first()
+        .map(|o| open + o)
+        .ok_or("rust_boot_main does not bring up the secondaries")?;
+    let mut found = 0usize;
+    for (a, b) in stmts {
+        let stmt = &kept[a..b];
+        let rest = stmt.trim_start();
+        let Some(after_cfg) = rest.strip_prefix(READINESS_HW_CFG) else {
+            continue;
+        };
+        if !after_cfg.trim_start().starts_with('{') {
+            continue;
+        }
+        let block_open = a + (stmt.len() - after_cfg.trim_start().len());
+        let Some(block_close) = matching_close_brace(code, block_open) else {
+            continue;
+        };
+        let inner = top_level_statements(code, block_open, block_close);
+        let Some(wait) = inner
+            .iter()
+            .position(|&(x, y)| squash(&kept[x..y]) == squash(READINESS_WAIT))
+        else {
+            continue;
+        };
+        found += 1;
+        if a < bring_up {
+            return Err("the serving-core wait runs before the secondaries are released".into());
+        }
+        let Some(&(ia, ib)) = inner.get(wait + 1) else {
+            return Err("the serving-core wait is not followed by its refusal".into());
+        };
+        let refusal = &code[ia..ib];
+        let (if_at, if_open) = top_level_if_statement(refusal)
+            .ok_or("the statement after the serving-core wait is not an `if`")?;
+        let condition = &kept[ia + if_at + 2..ia + if_open];
+        if squash(condition) != squash(READINESS_REFUSAL_CONDITION) {
+            return Err(format!(
+                "the refusal's condition is `{}`, not `{READINESS_REFUSAL_CONDITION}`",
+                condition.trim()
+            ));
+        }
+        let if_close = matching_close_brace(refusal, if_open).ok_or("unbalanced refusal block")?;
+        if !refusal[if_close + 1..].trim().is_empty() {
+            return Err(
+                "the refusal has an `else`; the halt must be unconditional in its block".into(),
+            );
+        }
+        let arms = top_level_statements(code, ia + if_open, ia + if_close);
+        let last = arms.last().ok_or("the refusal's block is empty")?;
+        if squash(&kept[last.0..last.1]) != squash(READINESS_REFUSAL_HALT) {
+            return Err("the refusal's block does not end by halting the system".into());
+        }
+    }
+    match found {
+        1 => Ok(()),
+        n => Err(format!(
+            "expected one hardware-only block holding `{READINESS_WAIT}`, found {n}"
+        )),
+    }
+}
+
+/// The whole relation over the HAL's sources: both sites, the refusal, and —
+/// derived rather than listed — that nothing else marks a core ready.
+fn readiness_publication_status(sources: &[(&str, &str)]) -> Result<(), String> {
+    let mut seen_sites = 0usize;
+    for (path, raw) in sources {
+        let (kept, code) = rust_code_views(raw);
+        let tests = cfg_test_module_spans(&code);
+        let live = |at: usize| !tests.iter().any(|&(a, b)| a <= at && at <= b);
+        for site in &READINESS_PUBLICATION_SITES {
+            if *path == site.path {
+                readiness_site_status(&kept, &code, site)?;
+                seen_sites += 1;
+            }
+        }
+        if *path == READINESS_PUBLICATION_SITES[0].path {
+            readiness_refusal_status(&kept, &code).map_err(|e| format!("{path}: {e}"))?;
+        }
+        for at in call_offsets(&code, READINESS_MARK_FN)
+            .into_iter()
+            .filter(|&a| live(a))
+        {
+            if enclosing_fn_name(&code, at).as_deref() != Some(READINESS_PUBLICATION_FN) {
+                return Err(format!(
+                    "{path}: `{READINESS_MARK_FN}` is called outside `{READINESS_PUBLICATION_FN}`"
+                ));
+            }
+        }
+        for at in call_offsets(&code, READINESS_PUBLICATION_FN)
+            .into_iter()
+            .filter(|&a| live(a))
+        {
+            let owner = enclosing_fn_name(&code, at);
+            let pinned = READINESS_PUBLICATION_SITES
+                .iter()
+                .any(|s| *path == s.path && owner.as_deref() == Some(s.function));
+            if !pinned {
+                return Err(format!(
+                    "{path}: `{READINESS_PUBLICATION_FN}` is called from {owner:?}, which is not a \
+                     pinned readiness site"
+                ));
+            }
+        }
+    }
+    if seen_sites != READINESS_PUBLICATION_SITES.len() {
+        return Err(format!(
+            "found {seen_sites} of {} readiness sites",
+            READINESS_PUBLICATION_SITES.len()
+        ));
+    }
+    Ok(())
+}
+
+const READINESS_FIXTURE_BOOT: &str = r#"pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
+    init();
+    #[cfg(feature = "hw_target")]
+    let secondary_release = { crate::lean_entry::enter_lean_kernel(x, dtb_ptr) };
+    #[cfg(not(feature = "hw_target"))]
+    let secondary_release = crate::lean_entry::SecondaryReleasePermit::no_lean_kernel();
+    #[cfg(feature = "hw_target")]
+    crate::lean_ready::become_ready_or_halt(0, crate::gic::halt_all);
+    crate::interrupts::enable_irq();
+    let online = crate::cmdline::apply_cmdline_and_start_smp(&cfg, secondary_release);
+    #[cfg(feature = "hw_target")]
+    {
+        let running_cores = crate::smp::serving_core_count_within(
+            LEAN_DECLARED_CORE_COUNT,
+            SECONDARY_READY_TIMEOUT_TICKS,
+        );
+        if running_cores != LEAN_DECLARED_CORE_COUNT {
+            crate::kprintln!("[boot] FATAL: {}", running_cores);
+            crate::gic::halt_all();
+        }
+    }
+    idle_loop()
+}
+"#;
+
+const READINESS_FIXTURE_SMP: &str = r#"pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
+    let core_idx = validate(context_id);
+    if let Err(e) = crate::timer::init_timer_secondary(HZ) {
+        loop { crate::cpu::wfe(); }
+    }
+    #[cfg(feature = "hw_target")]
+    crate::lean_ready::become_ready_or_halt(core_idx, crate::cpu::fatal_halt);
+    #[cfg(feature = "hw_target")]
+    {
+        if crate::lean_ready::lean_ready(core_idx) { enter(); }
+    }
+    crate::interrupts::enable_irq();
+    loop { crate::cpu::wfe(); }
+}
+"#;
+
+const READINESS_FIXTURE_READY: &str = r#"pub fn become_ready_or_halt(core_id: usize, halt: fn() -> !) {
+    match initialise_core_runtime(core_id) {
+        Ok(ready) => mark_lean_ready(ready),
+        Err(_) => halt(),
+    }
+}
+pub fn mark_lean_ready(ready: LeanRuntimeReadyOnCore) { set(ready) }
+#[cfg(test)]
+mod tests {
+    fn t() { mark_lean_ready(x); }
+}
+"#;
+
+/// Pin `readiness_publication_status` with token-preserving mutations: each
+/// refused case keeps the call, the unmask, the wait and the halt, and breaks
+/// a relation — an order, a nesting, a condition, a halt, or who calls.
+fn verify_readiness_publication_scanner() {
+    let run = |boot: &str, smp: &str, ready: &str| {
+        readiness_publication_status(&[
+            ("src/boot.rs", boot),
+            ("src/smp.rs", smp),
+            ("src/lean_ready.rs", ready),
+        ])
+    };
+    let (b, s, r) = (
+        READINESS_FIXTURE_BOOT,
+        READINESS_FIXTURE_SMP,
+        READINESS_FIXTURE_READY,
+    );
+    let once = |text: &str, from: &str, to: &str| {
+        assert_eq!(
+            text.matches(from).count(),
+            1,
+            "readiness self-test: `{from}` must occur once"
+        );
+        text.replacen(from, to, 1)
+    };
+    if let Err(e) = run(b, s, r) {
+        panic!("readiness self-test: the canonical fixture must be accepted: {e}");
+    }
+    let commented = once(
+        s,
+        "    crate::interrupts::enable_irq();",
+        "    // enable_irq() and become_ready_or_halt(1, x) are named here\n    crate::interrupts::enable_irq();",
+    );
+    if let Err(e) = run(b, &commented, r) {
+        panic!("readiness self-test: comments naming the calls must be accepted: {e}");
+    }
+    let mark = "    #[cfg(feature = \"hw_target\")]\n    crate::lean_ready::become_ready_or_halt(0, crate::gic::halt_all);\n";
+    let unmask = "    crate::interrupts::enable_irq();\n";
+    let refused: Vec<(&str, String, String, String)> = vec![
+        (
+            "boot: the mark after the unmask",
+            once(b, &format!("{mark}{unmask}"), &format!("{unmask}{mark}")),
+            s.into(),
+            r.into(),
+        ),
+        (
+            "boot: the mark nested under a condition",
+            once(
+                b,
+                mark,
+                "    if dtb_ptr != 0 {\n        #[cfg(feature = \"hw_target\")]\n        crate::lean_ready::become_ready_or_halt(0, crate::gic::halt_all);\n    }\n",
+            ),
+            s.into(),
+            r.into(),
+        ),
+        (
+            "boot: the mark before the install",
+            once(&once(b, mark, ""), "    init();\n", &format!("    init();\n{mark}")),
+            s.into(),
+            r.into(),
+        ),
+        (
+            "boot: the mark under the negated feature",
+            once(
+                b,
+                mark,
+                "    #[cfg(not(feature = \"hw_target\"))]\n    crate::lean_ready::become_ready_or_halt(0, crate::gic::halt_all);\n",
+            ),
+            s.into(),
+            r.into(),
+        ),
+        (
+            "boot: the boot core parks instead of halting the system",
+            once(b, "become_ready_or_halt(0, crate::gic::halt_all)", "become_ready_or_halt(0, crate::cpu::fatal_halt)"),
+            s.into(),
+            r.into(),
+        ),
+        (
+            "smp: a conditional unmask ahead of the mark",
+            b.into(),
+            once(
+                s,
+                "    #[cfg(feature = \"hw_target\")]\n    crate::lean_ready::become_ready_or_halt(core_idx",
+                "    if core_idx == 1 { crate::interrupts::enable_irq(); }\n    #[cfg(feature = \"hw_target\")]\n    crate::lean_ready::become_ready_or_halt(core_idx",
+            ),
+            r.into(),
+        ),
+        (
+            "smp: the mark before the timer arm",
+            b.into(),
+            once(
+                &once(
+                    s,
+                    "    #[cfg(feature = \"hw_target\")]\n    crate::lean_ready::become_ready_or_halt(core_idx, crate::cpu::fatal_halt);\n",
+                    "",
+                ),
+                "    let core_idx = validate(context_id);\n",
+                "    let core_idx = validate(context_id);\n    #[cfg(feature = \"hw_target\")]\n    crate::lean_ready::become_ready_or_halt(core_idx, crate::cpu::fatal_halt);\n",
+            ),
+            r.into(),
+        ),
+        (
+            "refusal: the condition inverted",
+            once(b, "if running_cores != LEAN", "if running_cores == LEAN"),
+            s.into(),
+            r.into(),
+        ),
+        (
+            "refusal: the halt nested under a condition",
+            once(
+                b,
+                "            crate::gic::halt_all();\n",
+                "            if running_cores == 0 { crate::gic::halt_all(); }\n",
+            ),
+            s.into(),
+            r.into(),
+        ),
+        (
+            "refusal: the wait counts IRQ-readiness alone",
+            once(b, "crate::smp::serving_core_count_within(", "crate::smp::irq_ready_core_count_within("),
+            s.into(),
+            r.into(),
+        ),
+        (
+            "refusal: the check before the bring-up",
+            {
+                let start = b.find("    #[cfg(feature = \"hw_target\")]\n    {").unwrap();
+                let end = b.find("    idle_loop()").unwrap();
+                let block = &b[start..end];
+                once(
+                    &once(b, block, ""),
+                    "    let online = ",
+                    &format!("{block}    let online = "),
+                )
+            },
+            s.into(),
+            r.into(),
+        ),
+        (
+            "refusal: an else arm",
+            once(b, "            crate::gic::halt_all();\n        }\n", "            crate::gic::halt_all();\n        } else { idle_loop() }\n"),
+            s.into(),
+            r.into(),
+        ),
+        (
+            "derived: a second marker outside the handshake",
+            b.into(),
+            format!("{s}fn helper(t: T) {{ crate::lean_ready::mark_lean_ready(t); }}\n"),
+            r.into(),
+        ),
+        (
+            "derived: the publication called from an unpinned function",
+            b.into(),
+            format!("{s}fn helper() {{ crate::lean_ready::become_ready_or_halt(2, crate::cpu::fatal_halt); }}\n"),
+            r.into(),
+        ),
+    ];
+    for (label, boot, smp, ready) in &refused {
+        assert!(
+            run(boot, smp, ready).is_err(),
+            "readiness self-test: `{label}` must be refused"
+        );
+    }
+}
+
+/// Enforce `readiness_publication_status` over every `.rs` file under `src/`.
+fn scan_readiness_publication() {
+    verify_readiness_publication_scanner();
+    let mut paths = Vec::new();
+    collect_rust_sources(std::path::Path::new("src"), &mut paths);
+    let sources: Vec<(String, String)> = paths
+        .iter()
+        .map(|p| {
+            println!("cargo:rerun-if-changed={}", p.display());
+            let text = std::fs::read_to_string(p)
+                .unwrap_or_else(|e| panic!("readiness scanner: cannot read {}: {e}", p.display()));
+            (p.display().to_string(), text)
+        })
+        .collect();
+    let refs: Vec<(&str, &str)> = sources
+        .iter()
+        .map(|(p, s)| (p.as_str(), s.as_str()))
+        .collect();
+    if let Err(e) = readiness_publication_status(&refs) {
+        panic!(
+            "WS-BP BP6 readiness regression: {e}.\n\
+             Each PE marks itself Lean-ready through `lean_ready::become_ready_or_halt`, \
+             as a hardware-only top-level statement of its boot function, after its own \
+             initialization and before its one `enable_irq`; the boot core then refuses \
+             the topology unless every declared PE serves the kernel \
+             (`smp::serving_core_count_within`) — see READINESS_PUBLICATION_SITES."
         );
     }
 }

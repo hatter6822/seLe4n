@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2, BP5.3, BP5.4 and BP5.5: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places, with its size and section map published by every CI run, and the RPi5 binding corrected from the BCM2711's address map to the BCM2712's, and both boot entries dropped to EL1 from the firmware's EL2 with the PSCI conduit following the entry level
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2, BP5.3, BP5.4, BP5.5 and BP6: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places, with its size and section map published by every CI run, and the RPi5 binding corrected from the BCM2711's address map to the BCM2712's, and both boot entries dropped to EL1 from the firmware's EL2 with the PSCI conduit following the entry level, and every PE marking itself Lean-ready after its own per-PE runtime handshake and before it unmasks IRQs, with the boot halting unless every declared PE serves the kernel
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -1259,7 +1259,66 @@ pair behind the conduit.  Two formatting slips the BCM2712 correction left in
 `ffi.rs` and `mmu.rs` tests, which failed `test_rust.sh`'s `cargo fmt` check,
 are fixed in the same cut.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.5)
+**BP6 — every PE marks itself ready, and a boot one PE cannot serve halts.**
+The five seams behind the per-core `lean_ready` gate were wired end to end and
+dormant, because no core was ever marked ready.  They are live now.
+
+*BP6.1, the per-PE handshake.*  The library initializer and the install are
+per-image and run once on the boot core.  `enter_lean_kernel` now publishes
+their completion (`lean_ready::publish_kernel_installed`, `Release`) before it
+mints the release permit.  The kernel's runtime has no per-thread heap, task
+manager or stack guard, so what is per-PE is the PE's own posture.
+`lean_ready::initialise_core_runtime_with` checks, in order:
+
+1. the call runs on the core it names (`TPIDR_EL1`), once per core;
+2. the install happened-before (`Acquire`);
+3. the PE translates (`SCTLR_EL1.M`), since the heap lock is an
+   exclusive-monitor atomic;
+4. the PE runs on its own stack slot (`own_stack_extent`);
+5. the kernel heap serves an allocation and a free from it.
+
+Success mints a `LeanRuntimeReadyOnCore` token, neither `Clone` nor `Copy`.
+
+*BP6.2, the mark.*  `mark_lean_ready` is now safe and consumes the token.  The
+`unsafe fn mark_lean_ready(core_id)`, whose safety contract was the readiness
+promise itself, is retired.  Host tests use the `unsafe`
+`LeanRuntimeReadyOnCore::assume_initialised` instead.
+`lean_ready::become_ready_or_halt` is the one caller:
+
+- `rust_secondary_main` calls it after the timer arm and before the bring-up
+  entry and `enable_irq`, and parks the PE on a refusal.
+- `rust_boot_main` calls it after the Phase 5 install, and halts the system on a
+  refusal.
+
+The boot core's `enable_irq` moved from Phase 4 to after its mark.  So no PE
+takes an interrupt in the degraded, Rust-only mode once the kernel exists.  The
+bring-up entry's not-ready arm now parks the PE, since reaching it means the mask
+is broken.
+
+*BP6.3, the refusal.*  Phase 7 now waits for cores that serve the kernel.
+`smp::core_serves` means IRQ-ready **and** Lean-ready, and the count is taken
+through `serving_core_count_within`.  The boot halts the system unless every
+declared PE serves.  The retired `irq_ready_core_count_within` counted the IRQ
+flag alone, which a PE with every seam dormant satisfies.
+`build.rs`'s `readiness_publication_status` holds three relations:
+
+- **The marks.** Each is a hardware-only top-level statement with its pinned
+  halt, placed after its dependencies and before its PE's one `enable_irq`.
+- **The refusal.** It follows the bring-up.  The wait is followed at once by an
+  `if` on the shortfall, whose block ends in the system halt, with no `else`.
+- **The callers (derived).** Nothing else calls `mark_lean_ready` or
+  `become_ready_or_halt`.
+
+The self-test refuses fourteen token-preserving mutations, and each of ten
+mutations of the checker is caught by it.
+
+What BP6 does not do is return anyone to EL0.  The delivered-fault and
+capability-fault halts are now reachable.  They stay the seam's occupant until
+BP7's context restore installs a successor.  All four PEs publishing readiness
+under QEMU, and a withheld PE failing the boot, is the first-boot phase's run
+to tick.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.5, BP6.1..BP6.3)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

@@ -858,7 +858,8 @@ unsafe fn lean_syscall_dispatch_cross_core(
 /// frame it would resume on.  Hence the raw 64-bit syscall word, not a
 /// narrowed id.
 ///
-/// Reachable on hardware only before SM10.1 marks the core ready; on the host
+/// Reachable on hardware only on a core that has not marked itself ready —
+/// since WS-BP BP6 none takes an EL0 exception before then; on the host
 /// lane `fatal_halt` panics, which the readiness integration tests observe
 /// through `catch_unwind`.
 pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> ! {

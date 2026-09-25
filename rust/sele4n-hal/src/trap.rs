@@ -392,7 +392,7 @@ fn halt_on_kernel_abort(frame: &TrapFrame, esr: u64) -> ! {
 /// `sync_class_mirrors_lean_ec_table` — and the routing then reaches the
 /// seams' fail-closed halves (`deliver_fault`'s status frame), which is the
 /// documented pre-readiness behaviour of the whole fault path.  Reachable
-/// only on the primary before the image target marks it ready: no other core
+/// on no core since WS-BP BP6 marks each one ready before it unmasks IRQs: no core
 /// runs EL0 code without a Lean runtime, and an EL1-origin exception halts
 /// before classification (`halt_if_kernel_origin`).  `build.rs` pins the
 /// relation — the Lean call sits after the gate in this body, the mirror is
@@ -494,7 +494,7 @@ fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
 /// frame, straight back onto the instruction that faulted, which is precisely
 /// the defect RR4 exists to remove.  So the interim behaviour is to stop:
 /// `fatal_halt` after a diagnostic, rather than spin.  The halt is
-/// unreachable at `v0.34.x` (no core sets `lean_ready`), and SM10.1 replaces
+/// reachable since WS-BP BP6 marks each core ready, and the context restore replaces
 /// it with the successor install — it is the seam's occupant, not its
 /// contract.
 ///

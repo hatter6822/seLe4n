@@ -4955,7 +4955,7 @@ run_check "INVARIANT" rg -n '^theorem bootImageIcacheOp_discharges_obligation($|
 # The HAL emits that operand over the image's loaded extent, and does so inside
 # `enter_lean_kernel` immediately before it mints the secondary-release permit:
 # the clean is ordered after the install and before any PE can dispatch.
-run_check "INVARIANT" rg -U -n '^    let dtb = device_tree_blob\(blob\);[^\n]*(\n([ \t][^\n]*)?)*?    let res = unsafe \{ lean_kernel_main\(dtb\) \};[^\n]*(\n([ \t][^\n]*)?)*?    crate::cache::clean_boot_image_to_pou\(\);\n([ \t]*\n|    //[^\n]*\n)*    crate::mmu::seal_boot_map\(\);\n    SecondaryReleasePermit \{ _private: \(\) \}\n\}' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -U -n '^    let dtb = device_tree_blob\(blob\);[^\n]*(\n([ \t][^\n]*)?)*?    let res = unsafe \{ lean_kernel_main\(dtb\) \};[^\n]*(\n([ \t][^\n]*)?)*?    crate::cache::clean_boot_image_to_pou\(\);\n([ \t]*\n|    //[^\n]*\n)*    crate::mmu::seal_boot_map\(\);\n([ \t]*\n|    //[^\n]*\n)*    crate::lean_ready::publish_kernel_installed\(\);\n    SecondaryReleasePermit \{ _private: \(\) \}\n\}' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -U -n '^pub const fn boot_image_icache_operand\(extent: \(u64, u64\)\) -> ICacheInvalidation \{\n    ICacheInvalidation::CleanRangeIallu\(extent\.0, extent\.1\)\n\}' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -U -n '^pub fn clean_boot_image_to_pou\(\) \{\n    apply_icache_invalidation\(boot_image_icache_operand\(\n        crate::mmu::boot_image_loaded_extent\(\),' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -U -n '^pub fn boot_image_loaded_extent\(\) -> \(u64, u64\) \{[^\n]*(\n([ \t][^\n]*)?)*?            static __image_load_end: u8;' rust/sele4n-hal/src/mmu.rs
@@ -5064,6 +5064,25 @@ run_check "INVARIANT" rg -n '^        None => crate::cpu::fatal_halt\(\),$' rust
 run_check "INVARIANT" rg -n '^pub extern "C" fn rust_boot_main\(dtb_ptr: u64, entry_el: u64\) -> ! \{$' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -n '^    match crate::psci::select_conduit\(entry_el\) \{$' rust/sele4n-hal/src/boot.rs
 run_negative_check "INVARIANT" rg -n '^                "hvc #0",$' rust/sele4n-hal/src/psci.rs
+# WS-BP BP6.1/BP6.2: each PE marks itself Lean-ready, on itself, through the
+# one function that consumes the per-PE handshake's token, before it unmasks
+# IRQs.  The mark is safe and takes the token; the unsafe per-core promise is
+# retired.  build.rs holds the order, the halts and the call sites.
+run_check "INVARIANT" rg -n '^    scan_readiness_publication\(\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^pub fn mark_lean_ready\(ready: LeanRuntimeReadyOnCore\) \{$' rust/sele4n-hal/src/lean_ready.rs
+run_negative_check "INVARIANT" rg -n 'pub unsafe fn mark_lean_ready' rust/sele4n-hal/src/
+run_check "INVARIANT" rg -n '^pub fn become_ready_or_halt\(core_id: usize, halt: fn\(\) -> !\) \{$' rust/sele4n-hal/src/lean_ready.rs
+run_check "INVARIANT" rg -n '^pub unsafe fn initialise_core_runtime_with\($' rust/sele4n-hal/src/lean_ready.rs
+run_check "INVARIANT" rg -n '^    if !installed\.load\(Ordering::Acquire\) \{$' rust/sele4n-hal/src/lean_ready.rs
+run_check "INVARIANT" rg -n '^    if !heap_probe\(\) \{$' rust/sele4n-hal/src/lean_ready.rs
+run_check "INVARIANT" rg -U -n '^    crate::lean_ready::publish_kernel_installed\(\);\n    SecondaryReleasePermit \{ _private: \(\) \}$' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -U -n '^    #\[cfg\(feature = "hw_target"\)\]\n    crate::lean_ready::become_ready_or_halt\(0, crate::gic::halt_all\);\n    crate::interrupts::enable_irq\(\);$' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -U -n '^    #\[cfg\(feature = "hw_target"\)\]\n    crate::lean_ready::become_ready_or_halt\(core_idx, crate::cpu::fatal_halt\);$' rust/sele4n-hal/src/smp.rs
+# WS-BP BP6.3: the boot refuses a topology in which a declared PE does not
+# serve the kernel — Lean-ready AND IRQ-ready — within the bounded window.
+# IRQ-readiness alone is satisfied by a PE whose gated seams are still dormant.
+run_check "INVARIANT" rg -U -n '^pub fn core_serves\(c: usize\) -> bool \{\n    c < CORE_IRQ_READY\.len\(\)\n        && CORE_IRQ_READY\[c\]\.load\(Ordering::Acquire\)\n        && crate::lean_ready::lean_ready\(c\)$' rust/sele4n-hal/src/smp.rs
+run_negative_check "INVARIANT" rg -n 'irq_ready_core_count_within' rust/sele4n-hal/src/
 # The re-type operand must NOT regress to the bare domain-wide invalidate.
 run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
 # The scrubbed extent has exactly ONE definition, and both the scrub and the
@@ -9647,8 +9666,8 @@ run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' 
 # event and the first sleep never returns, making the topology refusal
 # unreachable.  This is the pattern `shootdown::wait_all_acked_bounded_in`
 # already chose, for the reason it already wrote down.
-run_check "INVARIANT" rg -n '^pub fn irq_ready_core_count_within_in' rust/sele4n-hal/src/smp.rs
-run_check "INVARIANT" rg -n '^pub fn irq_ready_core_count_within' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n '^pub fn serving_core_count_within_in<' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n '^pub fn serving_core_count_within\(' rust/sele4n-hal/src/smp.rs
 run_check "INVARIANT" rg -nF 'crate::timer::read_counter' rust/sele4n-hal/src/smp.rs
 run_check "INVARIANT" rg -nF 'core::hint::spin_loop();' rust/sele4n-hal/src/smp.rs
 # NOT a file-wide negative on `wfe_bounded`: the secondary's own idle wait uses
@@ -9656,7 +9675,7 @@ run_check "INVARIANT" rg -nF 'core::hint::spin_loop();' rust/sele4n-hal/src/smp.
 # name it to explain why the readiness wait does not.  A file-scoped negative
 # here would be the region-scoped-presence-check mistake this repository has
 # been burned by — the positive anchors above say what the wait *is*.
-run_check "INVARIANT" rg -nF 'crate::smp::irq_ready_core_count_within(' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -nF 'crate::smp::serving_core_count_within(' rust/sele4n-hal/src/boot.rs
 run_negative_check "INVARIANT" rg -nF 'let running_cores = 1 + online;' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -n '^const SECONDARY_READY_TIMEOUT_TICKS' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -n '^def declaredCoreCountInRange($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean

@@ -8,17 +8,21 @@
 //!           TPIDR_EL1 is set and before any code consumes per-core state)
 //! Phase 2: MMU initialization → VBAR_EL1 setup
 //! Phase 3: GIC-400 + ARM Generic Timer initialization (AG5)
-//! Phase 4: TPIDR_EL1 setup → IRQ enable
+//! Phase 4: TPIDR_EL1 setup (IRQs stay masked — WS-BP BP6.2)
 //! Phase 5: WS-BP BP4.1–BP4.5 — Lean library initialization → the device
 //!          tree copied into a Lean `ByteArray` → the kernel-state install
 //!          (`lean_kernel_main`) → the image's loaded bytes cleaned to the
-//!          Point of Unification, on the boot core alone
+//!          Point of Unification, on the boot core alone → the boot core's
+//!          per-PE runtime handshake and readiness (WS-BP BP6.1/BP6.2) →
+//!          IRQ enable
 //! Phase 6: WS-SM SM1.D — DTB cmdline parse → secondary-core bring-up
 //!          (`smp_enabled=true` is the default again since v0.32.142,
 //!           when SM5.I serialised kernel entry; see
 //!           `cmdline::CmdlineConfig::default`).  The bring-up consumes the
 //!          `SecondaryReleasePermit` Phase 5 returns, so it cannot run first.
-//! Phase 7: handoff summary → the PE-topology refusal
+//! Phase 7: handoff summary → the PE-topology refusal: every declared PE
+//!          must serve the kernel (Lean-ready and IRQ-ready) within the
+//!          bounded window, or the system halts (WS-BP BP6.3)
 
 /// Kernel version string — matches Lean lakefile.toml version.
 const KERNEL_VERSION: &str = "0.36.2";
@@ -240,7 +244,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     crate::kprintln!("[boot] Timer initialized (54 MHz counter, 1ms ticks)");
 
     // -----------------------------------------------------------------------
-    // Phase 4: TPIDR_EL1 setup → IRQ enable
+    // Phase 4: TPIDR_EL1 setup (the IRQ enable moved after Phase 5, BP6.2)
     //
     // WS-SM SM0.N / SM1.B (closes SMP-M4): set TPIDR_EL1 on the boot core.
     //
@@ -315,10 +319,13 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
         crate::kprintln!("[boot] current_core_id_from_tpidr() = {}", live_id);
     }
 
-    // Enable IRQ delivery now that GIC, timer, and per-core base
-    // register (TPIDR_EL1) are configured.
-    crate::interrupts::enable_irq();
-    crate::kprintln!("[boot] IRQ delivery enabled");
+    // WS-BP BP6.2: IRQ delivery is NOT enabled here any more.  The boot core
+    // unmasks only after Phase 5 has installed the kernel state and the core
+    // has marked itself Lean-ready, which is the order every secondary keeps
+    // too — so no PE takes an interrupt in the degraded, Rust-only mode once
+    // the kernel exists.  Nothing in Phase 5 waits on an interrupt: the timer
+    // armed in Phase 3 pends until the unmask, and a shootdown's initiator
+    // never needs its own acknowledgment.
 
     // -----------------------------------------------------------------------
     // Phase 5: the kernel-state install (WS-BP BP4.1/BP4.2)
@@ -352,6 +359,19 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     };
     #[cfg(not(feature = "hw_target"))]
     let secondary_release = crate::lean_entry::SecondaryReleasePermit::no_lean_kernel();
+
+    // WS-BP BP6.1/BP6.2: the boot core's per-PE runtime handshake, then its
+    // readiness, then — and only then — IRQ delivery.  The per-image half ran
+    // just above (`enter_lean_kernel` publishes the install); the per-PE half
+    // checks that this PE is core 0, translates, runs on the boot stack, and
+    // that the kernel heap serves it.  A refusal halts the system: no
+    // secondary has been released, and a boot core that cannot serve the
+    // kernel is a boot that failed.  `build.rs` (`readiness_publication_status`)
+    // holds this statement after the install and before `enable_irq`.
+    #[cfg(feature = "hw_target")]
+    crate::lean_ready::become_ready_or_halt(0, crate::gic::halt_all);
+    crate::interrupts::enable_irq();
+    crate::kprintln!("[boot] IRQ delivery enabled");
 
     // -----------------------------------------------------------------------
     // Phase 6: WS-SM SM1.D — DTB cmdline parse + secondary-core bring-up
@@ -433,12 +453,14 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     crate::kprintln!();
     crate::kprintln!("[boot] Boot complete");
 
-    // WS-BP BP4.2: the topology refusal, now that the secondaries have had
-    // their bounded window to publish readiness.  It runs after the install
-    // (above) rather than before it, and that costs nothing: no core is
-    // lean-ready yet (WS-BP BP6 marks them), so nothing has been served from
-    // the installed state, and a mismatch halts the whole system before
-    // anything is.
+    // WS-BP BP4.2 / BP6.3: the topology refusal, now that the secondaries have
+    // had their bounded window to publish readiness.  It is the runtime half of
+    // "no seam is left dormant": every PE the linked kernel declares must have
+    // marked itself Lean-ready and unmasked its IRQs within the window, or the
+    // boot halts the system rather than running a kernel one core cannot
+    // serve.  No EL0 thread has run yet — the first dispatch is a scheduling
+    // point this refusal precedes on every core but the ones already serving —
+    // so a mismatch halts before anything is served to user space.
     #[cfg(feature = "hw_target")]
     {
         // PR #889 review round 21: the linked Lean kernel declares its PE count
@@ -470,13 +492,18 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
         // IRQ-serviceable set — so this waits for it, bounded, rather than
         // trusting the proxy.  A core that never publishes leaves
         // `running_cores` short and the topology refusal below fires.
-        let running_cores = crate::smp::irq_ready_core_count_within(
+        //
+        // WS-BP BP6.3: and it waits for **Lean** readiness too
+        // (`smp::core_serves`).  IRQ-readiness alone is satisfied by a PE that
+        // unmasked interrupts with every gated seam still dormant, which is
+        // exactly the kernel "one core cannot serve".
+        let running_cores = crate::smp::serving_core_count_within(
             LEAN_DECLARED_CORE_COUNT,
             SECONDARY_READY_TIMEOUT_TICKS,
         );
         if running_cores != LEAN_DECLARED_CORE_COUNT {
             crate::kprintln!(
-                "[boot] FATAL: {} PE(s) IRQ-ready but the linked Lean kernel declares {} \
+                "[boot] FATAL: {} PE(s) serving the kernel but the linked Lean kernel declares {} \
                  ({} PSCI CPU_ON call(s) succeeded)",
                 running_cores,
                 LEAN_DECLARED_CORE_COUNT,

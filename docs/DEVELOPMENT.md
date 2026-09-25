@@ -289,6 +289,12 @@ item for item by `build.rs`'s `EL1_ENTRY_ROUTINE`, so change the two together,
 and no other code may name an EL2 register.  PSCI calls go through
 `psci::psci_call`, whose conduit `rust_boot_main` selects from the entry level;
 never write an `hvc` or `smc` of your own.
+**A core is marked Lean-ready only by `lean_ready::become_ready_or_halt`**
+(BP6), which runs the per-PE handshake and hands its token to the safe
+`mark_lean_ready`; each PE calls it on itself before its one `enable_irq`, and
+`build.rs` (`readiness_publication_status`) refuses any other caller or order.
+A host test that needs a ready core uses the `unsafe`
+`LeanRuntimeReadyOnCore::assume_initialised`.
 Lean 4.28 returns an `IO`/`BaseIO` function's value directly (no world, no
 result wrapper): declare a `BaseIO Unit` export `-> lean_runtime::LeanBaseIoUnit`
 and hand the value to `lean_runtime::discharge_base_io`; only a module

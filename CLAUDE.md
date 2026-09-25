@@ -1336,7 +1336,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `AlreadyOn` PE that never reaches `secondary_entry`, still counts.  The fact
   is `smp::CORE_IRQ_READY[c]`, which core `c` publishes *itself* after
   `enable_irq` and which the shootdown protocol already reads as the
-  IRQ-serviceable set.  `irq_ready_core_count_within` waits for it, **bounded**,
+  IRQ-serviceable set.  `serving_core_count_within` (named `irq_ready_core_count_within` until WS-BP BP6.3, which added Lean-readiness to what it waits for) waits for it, **bounded**,
   so a PE that never publishes makes the boot *fail* rather than hang.  When a
   cheap number is available beside the expensive fact, check which one the
   property is about.
@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots), and **BP5.3** (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it), and **BP5.4** (the image's size and section map published with every CI run), and **BP5.5** (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level); BP6..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots), and **BP5.3** (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it), and **BP5.4** (the image's size and section map published with every CI run), and **BP5.5** (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level), and **BP6** (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel); BP7..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7770,6 +7770,42 @@ A Tier 3 negative refuses the retired inline template.  (4) **Reading the
 conduit from the device tree's `/psci` `method` on an EL1 entry is registered
 debt**, and no current harness executes the EL2 path; BP8.1 runs QEMU both
 ways.
+
+**BP6 — every PE marks itself ready, and a boot one PE cannot serve halts**
+(`v0.36.2`).  The five gated seams went live: the IRQ redirect, the `.reschedule`
+SGI receiver, the secondary bring-up entry, the SVC dispatch and the classifier
+now run their Lean halves on the image.  Five things new code must respect.
+(1) **A core is marked ready by `lean_ready::become_ready_or_halt` and nothing
+else**: it runs the per-PE handshake (`initialise_core_runtime`) and hands its
+token to `mark_lean_ready`, which is **safe** and consumes a
+`LeanRuntimeReadyOnCore` — the old `unsafe fn mark_lean_ready(core_id)`, whose
+safety contract *was* the readiness promise, is retired, and the one way to
+assert readiness without a handshake is `LeanRuntimeReadyOnCore::assume_initialised`,
+which is `unsafe` and exists for host tests.  (2) **Per-PE means the PE's own
+posture, because the kernel's runtime has no per-thread state**: the library
+initializer and the install are per-image and ran once on the boot core, and
+`enter_lean_kernel` publishes that (`Release`) before it mints the release
+permit.  The handshake then decides, in order: the call runs on the core it
+names, once; the install happened-before (`Acquire`); the PE translates
+(`SCTLR_EL1.M` — the heap lock is an exclusive-monitor atomic); it runs on its
+**own** stack slot (`own_stack_extent`, the boot stack or the `c`-th 64 KiB
+slot below `__smp_secondary_stack_top`); and the kernel heap serves an
+allocation and a free from it.  (3) **Every PE marks itself before it unmasks
+IRQs** — the boot core's `enable_irq` moved from Phase 4 to after its own mark,
+which follows the Phase 5 install, so no PE takes an interrupt in the degraded
+Rust-only mode once the kernel exists; `build.rs`'s
+`readiness_publication_status` holds each mark as a hardware-only top-level
+statement after its dependencies and before its PE's one `enable_irq`, and
+derives that nothing else calls `mark_lean_ready` or `become_ready_or_halt`.
+(4) **A refusal is a halt, and the halt is the pin**: the boot core halts the
+system (`gic::halt_all`, nothing released yet), a secondary parks itself
+(`cpu::fatal_halt`), and the boot core's Phase-7 wait counts it short.  (5)
+**The wait counts cores that serve the kernel** — `smp::core_serves`, IRQ-ready
+**and** Lean-ready, through `serving_core_count_within`; the retired
+`irq_ready_core_count_within` counted the IRQ flag alone, which a PE with every
+seam dormant satisfies.  What BP6 does not do is return anyone to EL0: the
+fault and cap-fault halts are now **reachable**, and stay the seam's occupant
+until the context restore (BP7) installs a successor.
 
 **The RPi5 binding is the BCM2712's address map** (`v0.36.2`, found while
 scoping BP5.4).  Until then the model and the HAL both carried the **BCM2711**'s
@@ -11536,13 +11572,16 @@ code may assume:
   Scheduler-subsystem follow-up (`Liveness/Yield.lean` scope — AN5-E.4
   honest-framing note, `Scheduler/Liveness/RPi5CanonicalConfig.lean`). Docs
   citing these theorems must state the hypothesis.
-- **No core is marked ready anywhere in the tree**, so every seam behind the
-  per-core `lean_ready` gate (`rust/sele4n-hal/src/lean_ready.rs`) degrades to
-  its Rust-only half on hardware: the IRQ vector redirect, the `.reschedule`
-  SGI receiver and the secondary bring-up entry are all wired end to end and
-  all dormant until SM10.1's per-core Lean runtime initialization flips them.
-  New code must not assume a Lean seam executes on hardware merely because it
-  is wired.  **The gated set is derived, not listed** (PR #887 review round
+- **Every PE marks itself ready, on itself, before it unmasks IRQs** (WS-BP
+  BP6, `v0.36.2`), through `lean_ready::become_ready_or_halt` after its per-PE
+  runtime handshake; until then no core was ready anywhere and every seam
+  behind the per-core `lean_ready` gate (`rust/sele4n-hal/src/lean_ready.rs`)
+  degraded to its Rust-only half.  On the image the gate now passes on every
+  serving PE, and the boot halts the system unless every declared PE serves
+  (`smp::core_serves`).  The gate itself stays, and so does everything below:
+  a new seam must still consult it, because the gate is where a PE that has
+  not initialized is refused, and the not-ready arms are still what a host
+  build and a refused PE take.  **The gated set is derived, not listed** (PR #887 review round
   2): `build.rs`'s `scan_lean_upcalls_readiness_gated` collects every Lean
   upcall from the Lean tree's `@[export]`s — read over a comment-free,
   string-free Lean view with attribute lists split (`lean_code_view`,
@@ -12292,7 +12331,7 @@ code may assume:
   decision.  The host lane keeps the abort fallback frame as the harness
   observable; `scan_trap_rs_abort_fallback_halts` pins that the write is
   host-only and the halt sits on the not-ready path.  Both halts are
-  unreachable at v0.34.44 (no core sets `lean_ready`) and SM10.1 replaces the
+  reachable since WS-BP BP6 marks each core ready, and the context restore replaces the
   delivered one with the successor install; new code must not read either as
   the fault path's contract.  A kernel-origin exception halts the core too,
   and that one *is* the contract: `halt_if_kernel_origin` (an EL1-origin

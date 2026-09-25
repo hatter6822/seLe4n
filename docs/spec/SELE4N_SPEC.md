@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 13,928 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15); BP6..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16); BP7..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -849,6 +849,61 @@ leaves `smc` to the EL3 firmware as the only conduit, and an EL1 entry keeps
 authority is the device tree's `/psci` `method` property, and reading it is
 registered debt.  No current harness executes the EL2 path; BP8.1 runs QEMU both
 ways.
+
+### 6.2.16 Per-core readiness (WS-BP BP6, v0.36.2)
+
+Every seam behind the per-core `lean_ready` gate — the IRQ redirect, the
+`.reschedule` SGI receiver, the secondary bring-up entry, the SVC dispatch and
+the classifier — is wired and was dormant, because no core was ever marked
+ready.  Every PE now marks **itself**, through one function,
+`lean_ready::become_ready_or_halt`, at one point in its boot.
+
+**The per-PE handshake (BP6.1).**  The library initializer and the install are
+per-image: they run once, on the boot core, and `enter_lean_kernel` publishes
+their completion (`Release`) before it mints the permit that releases the
+secondaries.  The kernel's runtime has no per-thread heap, task manager or
+stack guard, so what remains per-PE is the PE's own posture.
+`lean_ready::initialise_core_runtime_with` decides it in order:
+
+1. the call runs on the core it names (`TPIDR_EL1`), and only once per core;
+2. the install happened-before (`Acquire` of the published flag);
+3. the PE translates (`SCTLR_EL1.M`) — the kernel heap's lock is an
+   exclusive-monitor atomic, which needs Normal cacheable memory;
+4. the PE runs on its **own** stack slot: the boot stack for core 0, the
+   `c`-th 64 KiB slot below `__smp_secondary_stack_top` for secondary `c`
+   (`own_stack_extent`);
+5. the kernel heap serves an allocation and a free from this PE.
+
+Success mints a `LeanRuntimeReadyOnCore` token, neither `Clone` nor `Copy`.
+
+**The mark (BP6.2).**  `mark_lean_ready` is safe and consumes the token; the
+`unsafe fn mark_lean_ready(core_id)` whose safety contract was the readiness
+promise is retired, and `LeanRuntimeReadyOnCore::assume_initialised` is the
+unsafe form host tests use.  `rust_secondary_main` marks after its timer arm
+and before its bring-up entry and `enable_irq`; `rust_boot_main` marks after
+the Phase 5 install, and its `enable_irq` moved from Phase 4 to after the mark.
+So no PE takes an interrupt in the degraded, Rust-only mode once the kernel
+exists.  A refused handshake halts the system on the boot core (nothing is
+released yet) and parks a secondary.
+
+**The refusal (BP6.3).**  Phase 7 waits, bounded, for the cores that **serve
+the kernel** — `smp::core_serves`: IRQ-ready *and* Lean-ready — and halts the
+system unless every PE the linked kernel declares does.  The wait used to count
+IRQ-readiness alone, which a PE with every seam dormant satisfies.
+
+`build.rs`'s `readiness_publication_status` holds the relation, not the tokens:
+
+- each mark is a hardware-only top-level statement of its PE's boot function,
+  with the pinned halt, after the statements it depends on and before that
+  function's one `enable_irq`;
+- the refusal follows the bring-up, and is the wait immediately followed by an
+  `if` on its shortfall whose block ends by halting the system, with no `else`;
+- nothing else calls `mark_lean_ready` or `become_ready_or_halt` — derived over
+  every source file, not listed.
+
+What BP6 does not do is return anyone to EL0.  The delivered-fault and
+capability-fault halts become reachable, and stay the seam's occupant until the
+context restore (BP7) installs a successor.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

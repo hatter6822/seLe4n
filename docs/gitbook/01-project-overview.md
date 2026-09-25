@@ -132,7 +132,10 @@ with every CI run.  **BP5.5** handles the firmware's EL2 entry: both boot entrie
 drop to EL1 through one routine `build.rs` pins item for item, with FP/SIMD left
 untrapped at EL2 so the EL1 trap fires, and the PSCI conduit follows the entry
 level (`smc` after an EL2 entry, where nothing is left to take an `hvc`).
-BP6..BP8 have not started.
+**BP6** makes the dormant seams live: every PE runs a per-PE runtime handshake
+and marks itself ready before it unmasks IRQs, and the boot halts unless every
+declared PE serves the kernel (IRQ-ready and Lean-ready) within a bounded
+window.  BP7..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

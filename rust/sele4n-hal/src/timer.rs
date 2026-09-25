@@ -430,8 +430,9 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
     // 2. Re-arm the per-core comparator for the next tick.
     reprogram_timer();
     // 3. Drive the Lean per-core scheduler timer tick (hardware only),
-    // gated on this core's Lean-runtime readiness: until SM10.1's image
-    // initialization marks the core ready (`lean_ready::mark_lean_ready`),
+    // gated on this core's Lean-runtime readiness: until the core marks
+    // itself ready (`lean_ready::become_ready_or_halt`, WS-BP BP6 — which it
+    // does before it unmasks IRQs, so on the image this arm is not taken),
     // the ISR is the record-and-rearm seam only — a PE must never enter
     // the Lean runtime it has not initialized (the constraint
     // shootdown.rs has always stated, now structural).
@@ -903,7 +904,8 @@ mod tests {
         );
         // SAFETY: host-side unit test — no gated seam is compiled to call
         // Lean here (`hw_target` off), so the readiness promise is vacuous.
-        unsafe { crate::lean_ready::mark_lean_ready(0) };
+        let ready = unsafe { crate::lean_ready::LeanRuntimeReadyOnCore::assume_initialised(0) };
+        crate::lean_ready::mark_lean_ready(ready);
         // Post-readiness: STILL no ISR-side advance — the shadow moves only
         // with the Lean entry's committed clock advance, which the host
         // build does not run.

@@ -329,9 +329,10 @@ pub mod lock_bridge;
 // the constraint shootdown.rs states in prose ("a reentrant per-core
 // Lean runtime … does not exist"): every Rust seam that would call into
 // Lean consults `lean_ready(core_id)` and degrades to a fail-closed
-// alternative until SM10.1's image initialization marks the core ready.
-// No core is ready at boot; nothing in the tree marks one yet — the
-// seams are wired, dormant, and cannot fire early.
+// alternative until the core is marked ready.  No core is ready at boot;
+// since WS-BP BP6 each PE marks itself, through
+// `lean_ready::become_ready_or_halt`, after its own per-PE runtime handshake
+// and before it unmasks IRQs, so a seam cannot fire on a PE early.
 //
 // WS-RR RR5.6/RR5.7: the seam list is **derived, not enumerated**.  This
 // comment used to name three seams — the timer ISR, the reschedule SGI

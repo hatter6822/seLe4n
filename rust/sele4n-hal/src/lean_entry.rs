@@ -262,6 +262,11 @@ pub fn enter_lean_kernel(
     // board's RAM; from here every PE shares the tables, so they are sealed
     // before the permit that releases one exists.
     crate::mmu::seal_boot_map();
+    // WS-BP BP6.1: the per-image half of the runtime handshake is done.  The
+    // flag is published `Release` before the permit exists, so every PE the
+    // permit releases acquires it through `CORE_READY` before its own per-PE
+    // handshake reads it (`lean_ready::initialise_core_runtime`).
+    crate::lean_ready::publish_kernel_installed();
     SecondaryReleasePermit { _private: () }
 }
 

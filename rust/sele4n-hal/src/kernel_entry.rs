@@ -52,7 +52,7 @@
 //! access to `kernelStateRef`; it does not make the Lean runtime exist
 //! on a PE.  Every hardware seam above therefore also consults the
 //! per-core readiness gate ([`crate::lean_ready`]) before its Lean
-//! call — a core SM10.1's initialization has not marked ready refuses
+//! call — a core that has not marked itself ready (WS-BP BP6) refuses
 //! instead of entering a runtime it never initialized.
 //!
 //! **WS-RR RR5.6/RR5.7**: that sentence was false when it was written.
