@@ -97,7 +97,7 @@ Lean-4-Beweissystem ermöglicht werden:
 |-------------|------|
 | **Version** | `0.36.2` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 420.295 über 343 Dateien |
+| **Produktions-LoC (Lean)** | 420.374 über 343 Dateien |
 | **Test-LoC (Lean)** | 85.416 über 71 Testsuiten |
 | **Bewiesene Deklarationen** | 13.916 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

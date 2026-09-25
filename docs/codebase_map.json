@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/nice-rubin-dzkos7",
-      "commit_sha": "1c9fdb3a272992a191b5113a557ffeb4f7ce0a4a",
-      "tree_sha": "9a3f85a170da5ac9ec07460a6d5ab2f2b9786ea2",
-      "committed_at_utc": "2026-09-25T03:41:32+00:00"
+      "commit_sha": "503eb937ee86a9f2f7cde0ec75322d55034a144e",
+      "tree_sha": "b8d9e6a8e9b46971ea16fc6025d4f4bd426fc4d3",
+      "committed_at_utc": "2026-09-25T06:21:49+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ff835235544f0db2bf4d19bfc25d8471a455fab92cc907abfb3693f26950091a"
+    "source_digest": "a39830fe9af76de93b52c76c1102a34ab177f02b68245786025ff7bc92a36553"
   },
   "summary": {
     "module_count": 414,
-    "declaration_count": 23236
+    "declaration_count": 23244
   },
   "readme_sync": {
     "version": "0.36.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 343,
-    "production_loc": 420295,
+    "production_loc": 420374,
     "test_files": 71,
     "test_loc": 85416,
     "proved_theorem_lemma_decls": 13916,
@@ -287367,7 +287367,7 @@
     {
       "module": "SeLe4n.Testing.ExportCommitDisciplineCensus",
       "path": "SeLe4n/Testing/ExportCommitDisciplineCensus.lean",
-      "declaration_count": 17,
+      "declaration_count": 25,
       "declarations": [
         {
           "kind": "namespace",
@@ -287547,24 +287547,95 @@
           "name": "censusWitnessNoCommit",
           "line": 297,
           "called": [
+            "getKernelState",
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "exportResultTypes",
+          "line": 319,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "exportResultViolation",
+          "line": 324,
+          "called": [
+            "contains",
+            "exportResultTypes",
+            "none",
+            "of",
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "exportResultWitnessUnit",
+          "line": 350,
+          "called": [
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "exportResultWitnessScalar",
+          "line": 351,
+          "called": [
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "exportResultWitnessBoxed",
+          "line": 352,
+          "called": [
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "exportResultWitnessPure",
+          "line": 353,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "exportResultWitnessPureBoxed",
+          "line": 354,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "exportResultWitnessIO",
+          "line": 355,
+          "called": [
             "bracketForms",
             "bracketedSeams",
             "censusWitnessBareCommit",
             "censusWitnessBracketed",
             "censusWitnessIndirectCommit",
+            "censusWitnessNoCommit",
             "commitDisciplineRegistry",
             "commitPrimitives",
             "commitsState",
             "contains",
             "disciplineViolations",
-            "getKernelState",
+            "exportResultViolation",
+            "exportResultWitnessBoxed",
+            "exportResultWitnessPure",
+            "exportResultWitnessPureBoxed",
+            "exportResultWitnessScalar",
+            "exportResultWitnessUnit",
             "isEmpty",
             "isProjectConstant",
             "length",
+            "none",
             "of",
             "pure",
             "reconciliationViolations",
-            "state"
+            "state",
+            "toList"
           ]
         }
       ]
