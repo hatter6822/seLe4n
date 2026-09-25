@@ -77,6 +77,21 @@ pub fn alloc_sarray(elem_size: u8, size: usize, capacity: usize) -> Obj {
     o
 }
 
+/// A fresh `ByteArray` holding a copy of `bytes`, its one reference owned by the
+/// caller.
+///
+/// WS-BP BP4.3: how the firmware's device tree reaches Lean — the kernel entry
+/// takes a `ByteArray`, and the blob lives in memory the kernel neither owns
+/// nor keeps, so the kernel's copy is on its own heap.
+#[must_use]
+pub fn byte_array_of(bytes: &[u8]) -> Obj {
+    let o = alloc_sarray(1, bytes.len(), bytes.len());
+    // SAFETY: `o` is the fresh scalar array just allocated with `bytes.len()`
+    // one-byte elements, referenced nowhere else.
+    unsafe { sarray_bytes_mut(o) }.copy_from_slice(bytes);
+    o
+}
+
 /// The bytes of a scalar array's elements in use.
 ///
 /// # Safety

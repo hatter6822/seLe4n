@@ -1171,10 +1171,11 @@ pub fn extract_bootargs_into(dtb_ptr: u64, buffer: &mut [u8]) -> &str {
 ///
 /// Factored out at RR7.1, when the boot path asked the device tree two
 /// questions — `/chosen/bootargs` and `/memory`.  WS-BP BP2.6 retired the second
-/// (the boot map is built from constants), so the bootargs reader is its one
-/// caller; it stays factored because the header-first validation is what makes
-/// the raw slice sound, and the slice it forms lies inside `mmu::dtb_window`,
-/// the window `init_mmu` checked the boot map covers.
+/// (the boot map is built from constants); WS-BP BP4.3 gave it a second caller,
+/// `lean_entry::enter_lean_kernel`, which copies the blob into the `ByteArray`
+/// the Lean entry parses.  It stays one function because the header-first
+/// validation is what makes the raw slice sound, and the slice it forms lies
+/// inside `mmu::dtb_window`, the window `init_mmu` checked the boot map covers.
 ///
 /// Two reads, deliberately:
 ///   1. Header slice (40 bytes) — covers magic + `totalsize`.
@@ -1198,7 +1199,7 @@ pub fn extract_bootargs_into(dtb_ptr: u64, buffer: &mut [u8]) -> &str {
 /// is orders of magnitude above any plausible legitimate DTB and well below
 /// the smallest RAM region U-Boot typically maps.
 #[cfg(target_arch = "aarch64")]
-unsafe fn dtb_blob_from_ptr<'a>(dtb_ptr: u64) -> Option<&'a [u8]> {
+pub(crate) unsafe fn dtb_blob_from_ptr<'a>(dtb_ptr: u64) -> Option<&'a [u8]> {
     if dtb_ptr == 0 {
         return None;
     }

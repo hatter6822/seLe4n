@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.2): 420,101 lines of production Lean across 343 files, 85,359 lines across 71 Lean test suites,
-13,906 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.36.2): 420,258 lines of production Lean across 343 files, 85,402 lines across 71 Lean test suites,
+13,914 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -107,10 +107,13 @@ every configuration the checked boot accepts, the RPi5 deployment an instance �
 through one argument the unchecked boot now shares, and made the checked boot
 refuse a CNode holding a reply capability or an out-of-range badge, which it
 had admitted.  **BP4.1** writes the hardware boot entry, `lean_kernel_main`,
-as exactly the halting checked boot of that deployment, and **BP4.2** runs it
-before any secondary core is released — enforced by a permit type the
-bring-up consumes and only the install returns.  BP4.3..BP4.6 and BP5..BP8
-have not started.
+and **BP4.2** runs it before any secondary core is released — enforced by a
+permit type the bring-up consumes and only the install returns.  **BP4.3**
+copies the firmware's device tree into a Lean `ByteArray`, and **BP4.4** makes
+the entry the device-tree boot on it: a board that is not a Raspberry Pi 5
+halts every core, and an accepted one boots the deployment on its own RAM
+variant, which is proved for all five.  BP4.5, BP4.6 and BP5..BP8 have not
+started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

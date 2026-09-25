@@ -3885,9 +3885,17 @@ run_prose_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END % 4096 == 0 && 
 run_check "INVARIANT" rg -n 'fn the_kernel_reserved_extent_is_the_lean_and_linker_one\(\)' rust/sele4n-hal/src/mmu.rs
 # BP3.3/BP3.4 — the deployment config boots, installs both separation
 # witnesses, and is what the hardware entry boots.
-run_check "INVARIANT" rg -n '^theorem rpi5BoundPlatformConfig_checked($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootState_witnessesInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+# WS-BP BP4.4: over every RAM variant, since the device tree chooses which.
+run_check "INVARIANT" rg -n '^theorem rpi5BoundPlatformConfigAt_checked($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_witnessesInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^    ∀ v ∈ rpi5Variants, \(rpi5BoundPlatformConfigAt v\)\.wellFormed = true := by$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^  have hv := rpi5VariantFor_mem board$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5PlatformConfigFromDtb_deployment_ok($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+# NEGATIVE: the single-board deployment BP4.4 retired — it proved the boot on
+# the smallest variant alone, which is not the board the entry now boots.
+run_negative_check "INVARIANT" rg -n '\b(rpi5PlatformConfig|rpi5BoundPlatformConfig|rpi5DeploymentBootState)\b' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.RPi5\.Deployment$' SeLe4n.lean
 # WS-BP BP3.5: the production boot state's proof-layer bundle.  One argument
 # over a boot-shaped state, and both boots its instances — the unchecked one
@@ -3900,7 +3908,7 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_
 run_check "INVARIANT" rg -n '^    refine proofLayerInvariantBundle_of_bootShape \(cores\.foldl enqueueIdleThread base\)$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_checked($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_asidTableConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootState_invariantBridge($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_invariantBridge($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^  bootToRuntime_invariantBridge_checked _ PlatformBinding\.declaredCores_nodup _ _$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem PlatformBinding\.declaredCores_nodup($|[ ({:\[\]])' SeLe4n/Platform/Contract.lean
 run_check "INVARIANT" rg -n '^theorem RHTable\.fold_and_true_of_get\?($|[ ({:\[\]])' SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
@@ -3918,8 +3926,19 @@ run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode ho
 # environment with no entry now that one exists, and the link gate has no
 # expected-unresolved symbol left.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.RPi5\.KernelMain$' SeLe4n.lean
-run_check "INVARIANT" rg -U -n '^@\[export lean_kernel_main\]\ndef kernelMain \(_dtbPointer : UInt64\) : BaseIO Unit :=\n  Platform\.FFI\.bootAndInitialiseRPi5OrHalt rpi5PlatformConfig$' SeLe4n/Platform/RPi5/KernelMain.lean
+# WS-BP BP4.4: the entry is the device-tree boot on the blob it receives.
+run_check "INVARIANT" rg -U -n '^@\[export lean_kernel_main\]\ndef kernelMain \(dtb : ByteArray\) : BaseIO Unit :=\n  Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjects none$' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^theorem kernelMain_installs($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
+run_check "INVARIANT" rg -n '^theorem kernelMain_refuses($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
+run_check "INVARIANT" rg -n '^def approvedBootCall : Name := `SeLe4n\.Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^        return \(← instantiateMVars passed\) == blob$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^ +..bootEntryWitnessEditedBlob, ..bootEntryWitnessRetiredCall\] do$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^  \.forallE .dtb \(mkConst ..ByteArray\) \(mkApp \(mkConst ..BaseIO\) \(mkConst ..Unit\)\) \.default$' SeLe4n/Testing/BootEntryContract.lean
+# WS-BP BP4.3: the HAL copies the firmware's blob into the `ByteArray` the entry
+# takes, and an unreadable pointer is handed over empty for Lean to refuse.
+run_check "INVARIANT" rg -n '^        fn lean_kernel_main\(dtb: Obj\) -> lean_runtime::LeanIoResult;$' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n '^    lean_runtime::array::byte_array_of\(blob\.unwrap_or\(&\[\]\)\)$' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n '^pub fn byte_array_of\(bytes: &\[u8\]\) -> Obj \{$' rust/sele4n-hal/src/lean_runtime/array.rs
 run_check "INVARIANT" rg -U -n '^  \| \[\] =>\n      throwError "boot-entry contract: no declaration exports' SeLe4n/Testing/BootEntryContract.lean
 run_negative_check "INVARIANT" rg -n 'logInfo m!"boot-entry contract: no declaration exports' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^EXPECTED_UNRESOLVED: dict\[str, str\] = \{\}$' scripts/check_kernel_entry_exports.py
@@ -9617,7 +9636,7 @@ run_check "INVARIANT" rg -n '^def isApprovedBootApplication($|[ ({:\[\]])' SeLe4
 # recursion limit on every `bind`-headed witness once the boot's configuration
 # binding reached the RAM-variant selection, and which would have accepted an
 # inlined copy of the wrapper's body.
-run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedBootCall with\n\s+\| none => pure false\n\s+\| some reduced =>[^\n]*(\n([ \t][^\n]*)?)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkApp \(mkConst approvedBootCall\) config\)' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedBootCall with\n\s+\| none => pure false\n\s+\| some reduced =>[^\n]*(\n([ \t][^\n]*)?)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkAppN \(mkConst approvedBootCall\) args\)' SeLe4n/Testing/BootEntryContract.lean
 run_negative_check "INVARIANT" rg -nF 'Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean

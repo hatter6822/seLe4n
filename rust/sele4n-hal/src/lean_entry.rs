@@ -175,16 +175,37 @@ pub fn initialise_lean_library() -> LeanLibraryInitialised {
     }
 }
 
+/// The `ByteArray` the Lean entry parses, built from what the firmware's
+/// pointer yielded.
+///
+/// WS-BP BP4.3.  A pointer the HAL cannot turn into a blob — NULL, a header
+/// that is not a device tree, a `totalsize` beyond `MAX_DTB_SIZE` — is handed
+/// over as the **empty** array rather than refused here: the verified Lean
+/// parser refuses it (`DeviceTreeBootRefusal.unparseableBlob`) and the entry
+/// halts every PE (`kernelMain_refuses`), so the decision "is this a board the
+/// image may boot on" has one owner and it is the verified one.
+#[must_use]
+pub fn device_tree_blob(blob: Option<&[u8]>) -> Obj {
+    lean_runtime::array::byte_array_of(blob.unwrap_or(&[]))
+}
+
 /// Enter the Lean kernel.  Consumes the proof that it was initialized, and
 /// returns the licence to release the secondaries.
 ///
 /// `lean_kernel_main` is the primary's boot install and the only Lean upcall
 /// that runs outside the readiness gate: it installs the state every gated seam
 /// reads, so it cannot sit behind that gate.  It returns only on success — a
-/// refused boot halts the system inside it
-/// (`Platform.FFI.bootAndInitialiseRPi5OrHalt`) — so reaching the `return`
-/// below is reaching an installed kernel state, which is what the permit
-/// certifies.
+/// device tree the verified parser refuses, a board that is not a Raspberry
+/// Pi 5, and a refused boot all halt the system inside it
+/// (`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`) — so reaching the
+/// `return` below is reaching an installed kernel state, which is what the
+/// permit certifies.
+///
+/// WS-BP BP4.3: the firmware's device tree is copied into a Lean `ByteArray`
+/// on the kernel's heap before the call, and the entry takes that copy's one
+/// reference.  The copy is read with translation on, inside the window
+/// `init_mmu` admitted (`mmu::dtb_window`), which is what makes forming the
+/// slice sound.
 #[cfg(feature = "hw_target")]
 pub fn enter_lean_kernel(
     initialised: LeanLibraryInitialised,
@@ -197,14 +218,27 @@ pub fn enter_lean_kernel(
         /// The primary PE's one-time boot install, and the only Lean upcall
         /// that runs *outside* the readiness gate.  It must run exactly once,
         /// on the boot core, after the library initializer, before any other
-        /// Lean upcall on any PE and before any secondary is released.
-        /// `dtb_ptr` must be the firmware's device-tree pointer.
-        fn lean_kernel_main(dtb_ptr: u64) -> lean_runtime::LeanIoResult;
+        /// Lean upcall on any PE and before any secondary is released.  `dtb`
+        /// must be a live `ByteArray` whose one reference the callee takes.
+        fn lean_kernel_main(dtb: Obj) -> lean_runtime::LeanIoResult;
     }
+    // SAFETY: `init_mmu` admitted `mmu::dtb_window(dtb_ptr)` — `MAX_DTB_SIZE`
+    // bytes from the pointer, inside the guaranteed RAM the boot map covers and
+    // outside the image — so every slice `dtb_blob_from_ptr` can form lies in
+    // mapped, readable memory nothing writes during boot.
+    #[cfg(target_arch = "aarch64")]
+    let blob = unsafe { crate::cmdline::dtb_blob_from_ptr(dtb_ptr) };
+    #[cfg(not(target_arch = "aarch64"))]
+    let blob: Option<&[u8]> = {
+        let _ = dtb_ptr;
+        None
+    };
+    let dtb = device_tree_blob(blob);
     // SAFETY: the token proves the library initializer ran and succeeded, and
     // it is consumed here, so this call happens at most once per
-    // initialization.  The firmware's DTB pointer is passed through.
-    let res = unsafe { lean_kernel_main(dtb_ptr) };
+    // initialization.  `dtb` is the fresh `ByteArray` just built, whose one
+    // reference is handed over.
+    let res = unsafe { lean_kernel_main(dtb) };
     // SAFETY: `res` is the `IO` result `lean_kernel_main` just returned, whose
     // one reference this caller owns.
     unsafe { lean_runtime::discharge_base_io(res, "lean_kernel_main") };
@@ -302,5 +336,25 @@ mod tests {
         assert_eq!(rc, 1);
         // SAFETY: the last reference.
         unsafe { lean_runtime::dec(res) };
+    }
+
+    /// WS-BP BP4.3: a pointer the HAL could not turn into a blob is handed to
+    /// Lean as the empty array — which the verified parser refuses — never as
+    /// a refusal decided here.
+    #[test]
+    fn an_unreadable_device_tree_is_handed_over_empty() {
+        let o = device_tree_blob(None);
+        // SAFETY: `o` is the live array just built, owned here.
+        unsafe {
+            assert!(lean_runtime::array::sarray_bytes(o).is_empty());
+            lean_runtime::dec(o);
+        }
+        let blob = [1u8, 2, 3];
+        let o = device_tree_blob(Some(&blob));
+        // SAFETY: as above.
+        unsafe {
+            assert_eq!(lean_runtime::array::sarray_bytes(o), &blob);
+            lean_runtime::dec(o);
+        }
     }
 }

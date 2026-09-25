@@ -1219,7 +1219,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Platform.RPi5.mmioWrite32
   , `SeLe4n.Platform.RPi5.mmioWrite32W1C
   , `SeLe4n.Platform.RPi5.mmioWrite64
-  , `SeLe4n.Platform.RPi5.rpi5DeploymentBootState
+  , `SeLe4n.Platform.RPi5.rpi5DeploymentBootStateAt
   , `SeLe4n.Testing.KernelTransitionReachabilityCensus._cstage1.censusWitnessMintedTransformer
   ]
 

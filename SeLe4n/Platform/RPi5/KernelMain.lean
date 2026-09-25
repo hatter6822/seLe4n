@@ -10,56 +10,76 @@
 import SeLe4n.Platform.RPi5.Deployment
 
 /-!
-# Raspberry Pi 5 — the hardware boot entry (WS-BP BP4.1)
+# Raspberry Pi 5 — the hardware boot entry (WS-BP BP4.1, BP4.4)
 
-`rust_boot_main` calls `lean_kernel_main(dtb_ptr)` once, on the boot core, after
-the library initializer (`rust/sele4n-hal/src/lean_entry.rs`).  This module is
-that symbol.
+`rust_boot_main` calls `lean_kernel_main(dtb)` once, on the boot core, after the
+library initializer (`rust/sele4n-hal/src/lean_entry.rs`).  This module is that
+symbol.
 
-The entry is the checked RPi5 boot, with its failure handled, applied to BP3's
-deployment — and nothing else.  That is not a style choice:
-`SeLe4n/Testing/BootEntryContract.lean` requires exactly this program, decided by
-the elaborator, so an entry that sequenced another action around the boot, or
-installed state beside it, would fail to build.  Why nothing precedes or follows
-the boot is recorded there.
+The argument is the firmware's flattened device tree, copied by the HAL into a
+Lean `ByteArray` (WS-BP BP4.3; an unreadable pointer is handed over as the empty
+array, which the parser refuses).  The entry is the device-tree boot with its
+failure handled, `Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`, applied to
+that blob and to BP3's deployment — and nothing else.  That is not a style
+choice: `SeLe4n/Testing/BootEntryContract.lean` requires exactly this program,
+decided by the elaborator, so an entry that sequenced another action around the
+boot, installed state beside it, or booted a blob it did not receive would fail
+to build.
 
-What the entry does not yet read is the device-tree pointer.  The
-configuration is `rpi5PlatformConfig`, which fixes the smallest board as the
-board account; `bindPlatformConfig` then binds the machine configuration the
-RPi5 binding declares for it.  Reading the firmware's blob into a `ByteArray`
-is a Lean-runtime allocation, and moving the entry onto the DTB-driven wrapper
-(`bootAndInitialiseRPi5FromDtbOrHalt`) is WS-BP BP4.3–BP4.4.  Until then the
-pointer is accepted at the type the `extern "C"` declaration is called at and
-not consulted.
-
-What the boot this entry runs establishes is proved of the state it installs:
-`rpi5PlatformConfig_boots` (it succeeds and installs both separation witnesses),
-`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig` (the halting entry never halts
-on it) and `rpi5DeploymentBootState_invariantBridge` (the proof-layer bundle of
-the installed state, and the frozen API bundle across the freeze).
+What the device tree decides is whether this is a Raspberry Pi 5 and which RAM
+variant it is.  A blob the verified parser refuses, or a board that does not
+cover the binding's RAM and MMIO, halts every PE (`kernelMain_refuses`).  An
+accepted board boots the deployment on the variant its account selects, and
+nothing on that path can halt (`kernelMain_installs`): the deployment is proved
+to boot on every member of the family (`bootAndInitialiseRPi5_rpi5PlatformConfigFor`),
+and the variant validated and the variant installed are one value
+(`rpi5PlatformConfigFromDtb_ok_binds_detected_variant`).
 -/
 
 namespace SeLe4n.Platform.RPi5
 
 /-- The hardware boot entry: `lean_kernel_main`.
 
-The `UInt64` is the DTB pointer `rust_boot_main` passes, at the type
-`BootEntryContract.expectedBootEntryType` pins; it is not read until the entry
-moves onto the DTB-driven wrapper (WS-BP BP4.4). -/
+`dtb` is the firmware's device tree, at the type
+`BootEntryContract.expectedBootEntryType` pins (`ByteArray → BaseIO Unit`); the
+HAL owns the copy and hands its one reference over. -/
 @[export lean_kernel_main]
-def kernelMain (_dtbPointer : UInt64) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5OrHalt rpi5PlatformConfig
+def kernelMain (dtb : ByteArray) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjects none
 
-/-- What the entry does, as a program: it installs the deployment's boot state
-and the binding's labeling context, and nothing else — the halting boot's halt
-arm is never taken on this configuration
-(`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`). -/
-theorem kernelMain_installs (dtbPointer : UInt64) :
-    kernelMain dtbPointer =
+/-- **WS-BP BP4.4**: a device tree the bridge refuses — unparseable, or a board
+that is not the one this image was built for — boots nothing: every PE halts. -/
+theorem kernelMain_refuses (dtb : ByteArray) (e : Platform.FFI.DeviceTreeBootRefusal)
+    (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5IrqTable rpi5InitialObjects none =
+      .error e) :
+    kernelMain dtb = Platform.FFI.ffiFatalHaltAll :=
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt_unparseable _ _ _ _ e h
+
+/-- **WS-BP BP4.4**: a device tree the bridge accepts installs the deployment's
+boot state on the variant the board's account selects, and the binding's
+labeling context, and nothing else — the halting boot's halt arm is never taken
+on it (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`, over every
+account). -/
+theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformConfig)
+    (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5IrqTable rpi5InitialObjects none =
+      .ok config) :
+    kernelMain dtb =
       (do
-        Platform.FFI.initialiseKernelState rpi5DeploymentBootState.state
+        Platform.FFI.initialiseKernelState
+          (rpi5DeploymentBootStateAt (rpi5VariantFor config.machineConfig)).state
         Platform.FFI.initialiseKernelLabelingContext
-          (PlatformBinding.labeling (platform := RPi5Platform))) :=
-  bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig
+          (PlatformBinding.labeling (platform := RPi5Platform))) := by
+  unfold kernelMain
+  rw [Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt_accepted _ _ _ _ config h,
+    rpi5PlatformConfigFromDtb_deployment_ok dtb config h,
+    bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor]
+  rfl
+
+/-- **WS-BP BP4.4**: ...and the state it installs satisfies the proof-layer
+invariant bundle, whichever variant the device tree selected. -/
+theorem kernelMain_installs_invariantBundle (config : Platform.Boot.PlatformConfig) :
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
+      (rpi5DeploymentBootStateAt (rpi5VariantFor config.machineConfig)).state :=
+  (rpi5DeploymentBootStateAt_invariantBridge _ (rpi5VariantFor_mem _)).1
 
 end SeLe4n.Platform.RPi5

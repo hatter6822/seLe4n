@@ -27,8 +27,10 @@ import SeLe4n.Platform.Staged
 BP4.1 — is the symbol `rust_boot_main` calls once the Lean runtime is up.  Two things must be true of it, and nothing in the Lean language
 makes them true by construction:
 
-1. it boots through `Platform.FFI.bootAndInitialiseRPi5OrHalt`, so a refused
-   boot parks the PE instead of returning to Rust with no kernel state; and
+1. it boots through `Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt` on the
+   device tree it was handed (WS-BP BP4.4), so a board that is not a
+   Raspberry Pi 5 — or a refused boot — parks every PE instead of returning to
+   Rust with no kernel state; and
 2. no path from it installs kernel state any other way, so the idle threads,
    the deployment labeling and the reserved slots the checked boot establishes
    are the live state's and not merely some state's.
@@ -67,11 +69,19 @@ the aarch64 archive to define it (it was reconciled as `EXPECTED_UNRESOLVED`
 until WS-BP BP4.1 wrote it). -/
 def bootEntrySymbol : Name := `lean_kernel_main
 
-/-- The one boot call that entry may make: the checked RPi5 boot with its
-failure handled (`Platform.FFI.bootAndInitialiseRPi5OrHalt`).  Naming the
+/-- The one boot call that entry may make: the device-tree boot with its
+failure handled (`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`).  Naming the
 *wrapper* rather than the boot is what removes the error-path question from
-this file: the halt is in that definition, once. -/
-def approvedBootCall : Name := `SeLe4n.Platform.FFI.bootAndInitialiseRPi5OrHalt
+this file: the halts — an unparseable blob, a foreign board, a refused boot —
+are in that definition, once.
+
+**WS-BP BP4.4** moved it here from `bootAndInitialiseRPi5OrHalt`, the
+one-line change round 21 anticipated: the entry now needs the firmware's device
+tree, and reading it is the kernel's wrapper rather than a prologue the entry
+carries.  The retired call is a refused witness below, because booting a
+configuration no device tree was checked against is exactly what the move
+retires. -/
+def approvedBootCall : Name := `SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt
 
 /-- The value of `n`, or `none` for a declaration that has none (an axiom, a
 constructor).
@@ -103,7 +113,7 @@ this situation — code this project writes, which does not exist yet: *require 
 canonical spelling and refuse the rest.*  The entry's body must **be** the
 approved boot applied to a configuration:
 
-    fun dtbPointer => Platform.FFI.bootAndInitialiseRPi5OrHalt (config dtbPointer)
+    fun dtb => Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb irqTable objects root
 
 Every question the walk approximated is then either answered exactly or has no
 subject.  Does the boot execute?  The entry *is* the boot.  Does anything
@@ -115,11 +125,14 @@ declaration install kernel state?  Nothing else runs — which makes this
 contract *stronger* than the walk it replaces, not weaker: that one permitted
 arbitrary extra actions provided none of them wrote kernel state.
 
-The argument is where the strength comes from, and it is type-theoretic rather
-than analysed: `PlatformConfig` is **data**.  A term of that type performs no
-effects, installs nothing, cannot halt and has no monadic structure, so no
-walk over it is needed or possible.  Whatever the entry derives from the DTB
-pointer, deriving it cannot bypass the checked boot.
+The arguments are where the strength comes from, and it is type-theoretic
+rather than analysed: an IRQ table, an object list and an optional root are
+**data**.  A term of those types performs no effects, installs nothing, cannot
+halt and has no monadic structure, so no walk over it is needed or possible.
+The blob is not even that free: it must be the entry's **own parameter**
+(WS-BP BP4.4), so an entry that boots a fixed blob, or edits the firmware's
+before the parser sees it, is refused — the device tree the board check reads
+is the one the firmware handed over.
 
 What this deliberately refuses is an entry that needs *effects* to build its
 configuration (`do let cfg ← readDtb ptr; boot cfg`).  That is not an oversight:
@@ -143,33 +156,39 @@ whole point of naming the wrapper is that the halt lives in one definition and
 an inlined copy drifts.  So the body is reduced **towards the approved call**
 (`Meta.whnfUntil`: beta, zeta, `mdata`, and delta through aliases, until the
 head constant is `approvedBootCall` or reduction is stuck), and only then held
-to exactly one argument at reducible transparency, where nothing further can
-unfold.  The approved call is never opened.  What this accepts is exactly the
+to the approved call's arguments at reducible transparency, where nothing
+further can unfold — the first of which must be the entry's own parameter.  The approved call is never opened.  What this accepts is exactly the
 canonical spelling and its reductions; what it refuses is everything else,
 including a re-spelling of the wrapper's body, and it decides in constant time
 on every witness rather than by exhausting a budget. -/
 def isApprovedBootApplication (value : Expr) : MetaM Bool :=
-  Meta.lambdaTelescope value fun _ body => do
+  Meta.lambdaTelescope value fun params body => do
+    let some blob := params[0]? | pure false
+    unless params.size == 1 do return false
     match ← Meta.whnfUntil body approvedBootCall with
     | none => pure false
     | some reduced =>
-        let configType := mkConst ``SeLe4n.Platform.Boot.PlatformConfig
-        let config ← Meta.mkFreshExprMVar configType
-        Meta.withReducible <| Meta.isDefEq reduced (mkApp (mkConst approvedBootCall) config)
+        let (args, _, _) ← Meta.forallMetaTelescope (← Meta.inferType (mkConst approvedBootCall))
+        unless ← Meta.withReducible <| Meta.isDefEq reduced (mkAppN (mkConst approvedBootCall) args) do
+          return false
+        -- The blob the wrapper parses is the one the firmware handed over.
+        let some passed := args[0]? | pure false
+        return (← instantiateMVars passed) == blob
 
 
 /-- The type the exported entry must have.
 
-`rust/sele4n-hal/src/boot.rs` declares `extern "C" { fn lean_kernel_main(dtb_ptr:
-u64); }`, and a C symbol carries no type information, so the linker accepts a
-Lean declaration of *any* shape under that name and Rust then calls it with an
-incompatible ABI — passing the DTB address where the wrapper expects a boxed
-`lean_object*`, for instance.  `UInt64 → BaseIO Unit` is the same Lean type the
-tree's other `fn lean_x(arg: u64)` seams already carry
-(`lean_per_core_timer_tick`, `lean_secondary_kernel_main`), so this pins the
-convention rather than inventing one (PR #889 review round 18). -/
+`rust/sele4n-hal/src/lean_entry.rs` declares `extern "C" { fn lean_kernel_main(dtb:
+Obj) -> LeanIoResult; }`, and a C symbol carries no type information, so the
+linker accepts a Lean declaration of *any* shape under that name and Rust then
+calls it with an incompatible ABI — a boxed `ByteArray` where the entry expects
+an unboxed `UInt64`, for instance (PR #889 review round 18).  WS-BP BP4.3 moved
+the entry from the raw pointer to the blob the HAL copies out of it, so the type
+is `ByteArray → BaseIO Unit`; `scripts/check_kernel_entry_exports.py` holds the
+Rust declaration to the C prototype the Lean compiler generates from it, so the
+two halves of the ABI are each pinned to the other. -/
 def expectedBootEntryType : Expr :=
-  .forallE `dtbPointer (mkConst ``UInt64) (mkApp (mkConst ``BaseIO) (mkConst ``Unit)) .default
+  .forallE `dtb (mkConst ``ByteArray) (mkApp (mkConst ``BaseIO) (mkConst ``Unit)) .default
 
 /-- Why `entry` does not meet the boot-entry contract; `[]` when it does. -/
 def bootEntryContractViolations (entry : Name) : MetaM (List String) := do
@@ -179,15 +198,16 @@ def bootEntryContractViolations (entry : Name) : MetaM (List String) := do
         if ← Meta.isDefEq info.type expectedBootEntryType then pure []
         else pure [s!"`{entry}` has type `{info.type}`, and the hardware boot entry must have \
                       the type its `extern \"C\"` declaration is called at — \
-                      `UInt64 → BaseIO Unit`, the DTB pointer `rust_boot_main` passes.  A C \
+                      `ByteArray → BaseIO Unit`, the device tree the HAL copies.  A C \
                       symbol carries no type, so the link succeeds and the ABI does not"]
     | none => pure [s!"`{entry}` is not a declaration of this environment"]
   let shaped ← match declarationValue env entry with
     | some value =>
         if ← isApprovedBootApplication value then pure []
-        else pure [s!"`{entry}` is not `{approvedBootCall}` applied to a configuration.  The \
-                      hardware boot entry must *be* that application — the checked platform \
-                      boot with its failure handled, so a refused boot parks the PE instead of \
+        else pure [s!"`{entry}` is not `{approvedBootCall}` applied to its own device-tree \
+                      argument and a configuration.  The hardware boot entry must *be* that \
+                      application — the device-tree boot with its failure handled, so a foreign \
+                      board or a refused boot parks every PE instead of \
                       returning to Rust with no kernel state — and nothing else, so no other \
                       path can install kernel state around it.  A prologue that computes the \
                       configuration with effects is refused deliberately: the kernel supplies \
@@ -225,21 +245,15 @@ from being merely restrictive: an entry that binds its configuration with a
 `let`, and one that reaches the same program through an alias — both are that
 application after reduction, and the head-directed reduction says so. -/
 
-/-- A configuration derived from the DTB pointer.  A placeholder: the witnesses
-need *a* pure `UInt64 → PlatformConfig`.  The live entry uses the deployment
-`rpi5PlatformConfig` and does not read the pointer until WS-BP BP4.4 moves it
-onto the device-tree wrapper. -/
-private def bootEntryWitnessConfig (_dtbPointer : UInt64) : Platform.Boot.PlatformConfig :=
-  { irqTable := [], initialObjects := [] }
-
 /-- An alias of the approved boot, for the acceptance witness below. -/
-private def bootEntryWitnessBootAlias : Platform.Boot.PlatformConfig → BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5OrHalt
+private def bootEntryWitnessBootAlias : ByteArray → List Platform.Boot.IrqEntry →
+    List Platform.Boot.ObjectEntry → Option Platform.Boot.BootVSpaceRootEntry → BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt
 
 /-- The shape the entry must have, at the type its `extern "C"`
 declaration is called at. -/
-private def bootEntryWitnessCompliant (dtbPointer : UInt64) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+private def bootEntryWitnessCompliant (dtb : ByteArray) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
 
 /-- The approved call reached through a `do` chain.  **Refused** since round 21,
 where the walk accepted it: a sequence is an arbitrary `BaseIO` program in the
@@ -247,53 +261,73 @@ action position, and four rounds of findings are the evidence that such a
 program cannot be analysed — a lawless `Bind`, an `opaque` body, a halt, a
 `let`-bound head each defeated one version of the walk.  The entry performs the
 boot and nothing else. -/
-private def bootEntryWitnessSequenced (dtbPointer : UInt64) : BaseIO Unit := do
+private def bootEntryWitnessSequenced (dtb : ByteArray) : BaseIO Unit := do
   let _ ← Platform.FFI.getKernelState
-  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
 
 /-- The configuration bound by a `let` — round 21's finding, in the position it
 was reported at.  **Accepted**: the reduction zeta-reduces, so this *is* the
 approved application, and no `letE` arm has to be written to see it. -/
-private def bootEntryWitnessLetBoundConfig (dtbPointer : UInt64) : BaseIO Unit :=
-  let config := bootEntryWitnessConfig dtbPointer
-  Platform.FFI.bootAndInitialiseRPi5OrHalt config
+private def bootEntryWitnessLetBoundConfig (dtb : ByteArray) : BaseIO Unit :=
+  let irqTable : List Platform.Boot.IrqEntry := []
+  let blob := dtb
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt blob irqTable [] none
 
 /-- The same program reached through an alias of the approved call.
 **Accepted**, and it is what keeps the contract from being a name match: the
 alias is a different constant and the same program, which is exactly the
 distinction definitional equality makes and a spelling comparison does not. -/
-private def bootEntryWitnessAliasedBoot (dtbPointer : UInt64) : BaseIO Unit :=
-  bootEntryWitnessBootAlias (bootEntryWitnessConfig dtbPointer)
+private def bootEntryWitnessAliasedBoot (dtb : ByteArray) : BaseIO Unit :=
+  bootEntryWitnessBootAlias dtb [] [] none
+
+/-- **WS-BP BP4.4**: the approved call on a blob the entry did **not** receive.
+Every token is present and the type is right; the device tree the board check
+reads is a constant, so an image on the wrong board would boot as though it
+were the right one. -/
+private def bootEntryWitnessFixedBlob (_dtb : ByteArray) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt ByteArray.empty [] [] none
+
+/-- **WS-BP BP4.4**: the approved call on an *edited* copy of the firmware's
+blob.  Pure, so it cannot bypass the boot — and still refused, because what the
+board check must read is the tree the firmware handed over. -/
+private def bootEntryWitnessEditedBlob (dtb : ByteArray) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt (dtb.push 0) [] [] none
+
+/-- **WS-BP BP4.4**: the *retired* approved call — the checked boot on a
+configuration no device tree was checked against.  It was the entry until this
+row; accepting it now would let the board check be skipped. -/
+private def bootEntryWitnessRetiredCall (_dtb : ByteArray) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5OrHalt { irqTable := [], initialObjects := [] }
 
 /-- Keeps the approved call and puts it *inside a branch* (PR #889 review round
 18).  Every token a scanner reads is present and no other state writer is
-reachable; on the path any real configuration takes, nothing boots. -/
-private def bootEntryWitnessConditional (dtbPointer : UInt64) : BaseIO Unit :=
-  if dtbPointer == 0 then
-    Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+reachable; on the path any real device tree takes, nothing boots. -/
+private def bootEntryWitnessConditional (dtb : ByteArray) : BaseIO Unit :=
+  if dtb.size == 0 then
+    Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
   else pure ()
 
 /-- Parks the PE and *then* boots (PR #889 review round 20).  Every token is
 present, the `Bind` instance is canonical, and the boot is unreachable. -/
-private def bootEntryWitnessHaltedFirst (dtbPointer : UInt64) : BaseIO Unit := do
+private def bootEntryWitnessHaltedFirst (dtb : ByteArray) : BaseIO Unit := do
   Platform.FFI.ffiFatalHaltAll
-  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
 
 /-- The same through an *alias* of the primitive, so a name match is not what
 decides it. -/
-private def bootEntryWitnessAliasHaltedFirst (dtbPointer : UInt64) : BaseIO Unit := do
+private def bootEntryWitnessAliasHaltedFirst (dtb : ByteArray) : BaseIO Unit := do
   Kernel.Concurrency.fatalHaltAll
-  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
 
 /-- Round 21's reported case, verbatim: the halt reached through a `let`-bound
 name, so the first action's head is a bound variable rather than a constant.
 That defeated the walk's non-returning derivation — which is the last such form
 this file will have to know about, since the contract does not ask what the
 first action is. -/
-private def bootEntryWitnessLetBoundHalt (dtbPointer : UInt64) : BaseIO Unit := do
+private def bootEntryWitnessLetBoundHalt (dtb : ByteArray) : BaseIO Unit := do
   let halt := Platform.FFI.ffiFatalHaltAll
   halt
-  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
 
 /-! The bogus-monad witness (PR #889 review round 19).  `BootEntryBogusMonad α`
 is definitionally `BaseIO Unit`, so an application of `Bind.bind` at *this*
@@ -307,9 +341,9 @@ private instance : Bind BootEntryBogusMonad where
 /-- Keeps the approved call in a bind's action position, under an instance that
 never runs it.  The head is `Bind.bind` and the entry's type is right; only the
 *instance* distinguishes this from the sequenced witness. -/
-private def bootEntryWitnessBogusBind (dtbPointer : UInt64) : BaseIO Unit :=
+private def bootEntryWitnessBogusBind (dtb : ByteArray) : BaseIO Unit :=
   @Bind.bind BootEntryBogusMonad inferInstance PUnit PUnit
-    (Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer))
+    (Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none)
     (fun _ => (pure () : BaseIO Unit))
 
 /-- An `opaque` alias of a kernel-state installer (PR #889 review round 19).
@@ -320,31 +354,34 @@ private opaque bootEntryWitnessOpaqueInstaller : Model.SystemState → BaseIO Un
 
 /-- Boots through the approved call and then installs state through that
 opaque alias. -/
-private def bootEntryWitnessOpaqueBypass (dtbPointer : UInt64) : BaseIO Unit := do
-  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+private def bootEntryWitnessOpaqueBypass (dtb : ByteArray) : BaseIO Unit := do
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
   bootEntryWitnessOpaqueInstaller default
 
 /-- Keeps the approved call and takes the *wrong* argument type (PR #889 review
-round 18).  A C symbol carries no type, so this links and Rust then calls it
-with the DTB address in a boxed-pointer position. -/
-private def bootEntryWitnessWrongType (config : Platform.Boot.PlatformConfig) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5OrHalt config
+round 18; the type moved at WS-BP BP4.3).  A C symbol carries no type, so this
+links and Rust then calls it with a boxed `ByteArray` in an unboxed position. -/
+private def bootEntryWitnessWrongType (dtbPointer : UInt64) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt (ByteArray.mk #[dtbPointer.toUInt8]) [] [] none
 
-/-- Keeps the checked boot, the `match`, the `.error` arm and the halt, and
-installs the state itself — so a *later* change to what the checked boot
+/-- Keeps the device-tree bridge, the `match`, the `.error` arm and the halt,
+and installs the state itself — so a *later* change to what the checked boot
 establishes would not reach the live state. -/
-private def bootEntryWitnessBypass (dtbPointer : UInt64) : BaseIO Unit := do
-  match ← Platform.FFI.bootAndInitialiseRPi5 (bootEntryWitnessConfig dtbPointer) with
-  | .ok st => Platform.FFI.initialiseKernelState st
+private def bootEntryWitnessBypass (dtb : ByteArray) : BaseIO Unit := do
+  match Platform.FFI.rpi5PlatformConfigFromDtb dtb [] [] none with
   | .error _ => Platform.FFI.ffiFatalHaltAll
+  | .ok config =>
+      match ← Platform.FFI.bootAndInitialiseRPi5 config with
+      | .ok st => Platform.FFI.initialiseKernelState st
+      | .error _ => Platform.FFI.ffiFatalHaltAll
 
 /-- Keeps the approved call *and* installs state beside it. -/
-private def bootEntryWitnessSideInstall (dtbPointer : UInt64) : BaseIO Unit := do
-  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+private def bootEntryWitnessSideInstall (dtb : ByteArray) : BaseIO Unit := do
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb [] [] none
   Platform.FFI.initialiseKernelState default
 
 /-- Installs nothing at all: the image would idle with no kernel. -/
-private def bootEntryWitnessUnbooted (_dtbPointer : UInt64) : BaseIO Unit :=
+private def bootEntryWitnessUnbooted (_dtb : ByteArray) : BaseIO Unit :=
   pure ()
 
 run_cmd Command.liftTermElabM do
@@ -378,7 +415,8 @@ run_cmd Command.liftTermElabM do
                   ``bootEntryWitnessUnbooted, ``bootEntryWitnessBogusBind,
                   ``bootEntryWitnessOpaqueBypass, ``bootEntryWitnessHaltedFirst,
                   ``bootEntryWitnessAliasHaltedFirst, ``bootEntryWitnessSequenced,
-                  ``bootEntryWitnessLetBoundHalt] do
+                  ``bootEntryWitnessLetBoundHalt, ``bootEntryWitnessFixedBlob,
+                  ``bootEntryWitnessEditedBlob, ``bootEntryWitnessRetiredCall] do
     if (← bootEntryContractViolations witness).isEmpty then
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted"
   -- The contract itself.
@@ -394,7 +432,7 @@ run_cmd Command.liftTermElabM do
   | [entry] =>
       match ← bootEntryContractViolations entry with
       | [] => logInfo m!"boot-entry contract: `{entry}` is `{approvedBootCall}` applied \
-                to a configuration, and nothing else"
+                to its own device tree and a configuration, and nothing else"
       | violations => throwError "boot-entry contract: {violations}"
   | entries =>
       throwError "boot-entry contract: {entries.length} declarations export \

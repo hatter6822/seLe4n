@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/nice-rubin-dzkos7",
-      "commit_sha": "264486f9879278b73910240803aa6c9d466d7556",
-      "tree_sha": "56bc1e0be3d638ac3c52eb2b625d0ef84e3e1fba",
-      "committed_at_utc": "2026-09-25T00:18:18+00:00"
+      "commit_sha": "b82fdaafe859348cacfed195d8bd3fbfa1d28a5e",
+      "tree_sha": "3bad9a4cf8bab58d2fedc3c8990a71d79c92cc69",
+      "committed_at_utc": "2026-09-25T00:33:22+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0481fb9d577cf099d4d689cc8739488d018709206b3c46e859cb5fecffb5d4f8"
+    "source_digest": "dee5de00a895cde7f178eac9a47be11d3a70b150fcf68f19e9009238b24c7cb6"
   },
   "summary": {
     "module_count": 414,
-    "declaration_count": 23223
+    "declaration_count": 23233
   },
   "readme_sync": {
     "version": "0.36.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 343,
-    "production_loc": 420101,
+    "production_loc": 420258,
     "test_files": 71,
-    "test_loc": 85359,
-    "proved_theorem_lemma_decls": 13906,
+    "test_loc": 85402,
+    "proved_theorem_lemma_decls": 13914,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -277387,7 +277387,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 183,
+      "declaration_count": 184,
       "declarations": [
         {
           "kind": "namespace",
@@ -278114,7 +278114,7 @@
         {
           "kind": "def",
           "name": "bootAndInitialiseRPi5OrHalt",
-          "line": 1403,
+          "line": 1404,
           "called": [
             "PlatformConfig",
             "bootAndInitialiseRPi5",
@@ -278126,7 +278126,7 @@
         {
           "kind": "inductive",
           "name": "DeviceTreeBootRefusal",
-          "line": 1429,
+          "line": 1430,
           "called": [
             "DeviceTreeParseError"
           ]
@@ -278134,7 +278134,7 @@
         {
           "kind": "def",
           "name": "rpi5PlatformConfigFromDtb",
-          "line": 1463,
+          "line": 1464,
           "called": [
             "BootVSpaceRootEntry",
             "DeviceTree.fromDtbFull",
@@ -278244,8 +278244,24 @@
         },
         {
           "kind": "theorem",
+          "name": "rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree",
+          "line": 1602,
+          "called": [
+            "BootVSpaceRootEntry",
+            "DeviceTree.fromDtbFull",
+            "IrqEntry",
+            "ObjectEntry",
+            "PlatformConfig",
+            "PlatformConfig.fromDeviceTree",
+            "config",
+            "rpi5PlatformConfigFromDtb",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "rpi5PlatformConfigFromDtb_ok_machineConfig",
-          "line": 1599,
+          "line": 1630,
           "called": [
             "BootVSpaceRootEntry",
             "DeviceTree",
@@ -278263,7 +278279,7 @@
         {
           "kind": "theorem",
           "name": "rpi5PlatformConfigFromDtb_ok_binds_detected_variant",
-          "line": 1625,
+          "line": 1656,
           "called": [
             "BootVSpaceRootEntry",
             "DeviceTree.fromDtbFull",
@@ -278286,7 +278302,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialisePlatform_eq_checked_boot",
-          "line": 1664,
+          "line": 1695,
           "called": [
             "PlatformBinding",
             "PlatformBinding.declaredCores",
@@ -278309,7 +278325,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialisePlatform_rpi5_all_cores",
-          "line": 1687,
+          "line": 1718,
           "called": [
             "PlatformBinding.declaredCores",
             "PlatformConfig",
@@ -278324,7 +278340,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_bound_config",
-          "line": 1701,
+          "line": 1732,
           "called": [
             "PlatformConfig",
             "RPi5Platform",
@@ -278337,7 +278353,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_bound_config_mem_family",
-          "line": 1711,
+          "line": 1742,
           "called": [
             "PlatformConfig",
             "RPi5Platform",
@@ -278351,7 +278367,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_bound_config_canonical",
-          "line": 1720,
+          "line": 1751,
           "called": [
             "PlatformConfig",
             "RPi5Platform",
@@ -278366,7 +278382,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_bound_config_declaredCoreCount",
-          "line": 1731,
+          "line": 1762,
           "called": [
             "PlatformConfig",
             "RPi5Platform",
@@ -278377,7 +278393,7 @@
         {
           "kind": "def",
           "name": "writeFfiRegistersToTcb",
-          "line": 1762,
+          "line": 1793,
           "called": [
             "SystemState",
             "ThreadId",
@@ -278391,7 +278407,7 @@
         {
           "kind": "def",
           "name": "readReturnValue",
-          "line": 1803,
+          "line": 1834,
           "called": [
             "SystemState",
             "ThreadId",
@@ -278403,7 +278419,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_eq_readReturnFrame_x0",
-          "line": 1828,
+          "line": 1859,
           "called": [
             "SystemState",
             "ThreadId",
@@ -278418,7 +278434,7 @@
         {
           "kind": "def",
           "name": "syscallReturnOutcome",
-          "line": 1844,
+          "line": 1875,
           "called": [
             "SyscallOutcome",
             "SystemState",
@@ -278437,7 +278453,7 @@
         {
           "kind": "def",
           "name": "syscallReturnOutcomeFrame",
-          "line": 1885,
+          "line": 1916,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -278453,7 +278469,7 @@
         {
           "kind": "theorem",
           "name": "syscallReturnOutcome_of_getTcb",
-          "line": 1893,
+          "line": 1924,
           "called": [
             "SystemState",
             "TCB",
@@ -278468,7 +278484,7 @@
         {
           "kind": "theorem",
           "name": "syscallReturnOutcome_of_getTcb",
-          "line": 1904,
+          "line": 1935,
           "called": [
             "SystemState",
             "ThreadId",
@@ -278482,7 +278498,7 @@
         {
           "kind": "theorem",
           "name": "syscallReturnOutcome_blocks_of_ipcBlocked",
-          "line": 1916,
+          "line": 1947,
           "called": [
             "SystemState",
             "TCB",
@@ -278497,7 +278513,7 @@
         {
           "kind": "theorem",
           "name": "syscallReturnOutcome_returns_of_not_ipcBlocked",
-          "line": 1927,
+          "line": 1958,
           "called": [
             "SystemState",
             "TCB",
@@ -278514,7 +278530,7 @@
         {
           "kind": "theorem",
           "name": "syscallReturnOutcome_blocks_iff",
-          "line": 1943,
+          "line": 1974,
           "called": [
             "SystemState",
             "TCB",
@@ -278531,7 +278547,7 @@
         {
           "kind": "theorem",
           "name": "blockingArm_returns_no_frame",
-          "line": 1969,
+          "line": 2000,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -278548,7 +278564,7 @@
         {
           "kind": "theorem",
           "name": "syscallReturnOutcome_blocked_independent_of_id",
-          "line": 1984,
+          "line": 2015,
           "called": [
             "SystemState",
             "TCB",
@@ -278563,7 +278579,7 @@
         {
           "kind": "theorem",
           "name": "syscallReturnOutcome_blocked_ignores_staged_registers",
-          "line": 1998,
+          "line": 2029,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -278584,7 +278600,7 @@
         {
           "kind": "theorem",
           "name": "syscallReturnOutcome_ne_faulted",
-          "line": 2018,
+          "line": 2049,
           "called": [
             "SystemState",
             "ThreadId",
@@ -278598,7 +278614,7 @@
         {
           "kind": "def",
           "name": "refusedSignalReceiver",
-          "line": 2076,
+          "line": 2107,
           "called": [
             "CPtr",
             "SystemState",
@@ -278612,7 +278628,7 @@
         {
           "kind": "theorem",
           "name": "refusedSignalReceiver",
-          "line": 2094,
+          "line": 2125,
           "called": [
             "CNode",
             "CPtr",
@@ -278634,7 +278650,7 @@
         {
           "kind": "def",
           "name": "refusalReceiverFor",
-          "line": 2114,
+          "line": 2145,
           "called": [
             "KernelError",
             "SyscallId",
@@ -278650,7 +278666,7 @@
         {
           "kind": "theorem",
           "name": "refusalReceiverFor_receiver_hop",
-          "line": 2121,
+          "line": 2152,
           "called": [
             "SystemState",
             "ThreadId",
@@ -278664,7 +278680,7 @@
         {
           "kind": "theorem",
           "name": "refusalReceiverFor_other",
-          "line": 2128,
+          "line": 2159,
           "called": [
             "KernelError",
             "SyscallId",
@@ -278678,7 +278694,7 @@
         {
           "kind": "def",
           "name": "recordSyscallRefusal",
-          "line": 2149,
+          "line": 2180,
           "called": [
             "CoreId",
             "KernelError",
@@ -278699,7 +278715,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_exempt",
-          "line": 2173,
+          "line": 2204,
           "called": [
             "CoreId",
             "KernelError",
@@ -278717,7 +278733,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_undecodable",
-          "line": 2185,
+          "line": 2216,
           "called": [
             "CoreId",
             "KernelError",
@@ -278734,7 +278750,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_records",
-          "line": 2196,
+          "line": 2227,
           "called": [
             "CoreId",
             "KernelError",
@@ -278756,7 +278772,7 @@
         {
           "kind": "theorem",
           "name": "refusalRecord_names_failed_hop",
-          "line": 2233,
+          "line": 2264,
           "called": [
             "CNode",
             "Capability",
@@ -278792,7 +278808,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_frame",
-          "line": 2279,
+          "line": 2310,
           "called": [
             "CoreId",
             "KernelError",
@@ -278807,7 +278823,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_preserves_proofLayerInvariantBundle",
-          "line": 2307,
+          "line": 2338,
           "called": [
             "CoreId",
             "KernelError",
@@ -278824,7 +278840,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_objects_eq",
-          "line": 2321,
+          "line": 2352,
           "called": [
             "CoreId",
             "KernelError",
@@ -278838,7 +278854,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_scheduler_eq",
-          "line": 2332,
+          "line": 2363,
           "called": [
             "CoreId",
             "KernelError",
@@ -278852,7 +278868,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_machine_eq",
-          "line": 2343,
+          "line": 2374,
           "called": [
             "CoreId",
             "KernelError",
@@ -278866,7 +278882,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_readReturnFrame_eq",
-          "line": 2359,
+          "line": 2390,
           "called": [
             "CoreId",
             "KernelError",
@@ -278883,7 +278899,7 @@
         {
           "kind": "theorem",
           "name": "refusalRecord_domain_is_seam_resolved_at_seam",
-          "line": 2378,
+          "line": 2409,
           "called": [
             "CoreId",
             "DeclassificationRefusal",
@@ -278907,7 +278923,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_ledger_congr",
-          "line": 2417,
+          "line": 2448,
           "called": [
             "CoreId",
             "KernelError",
@@ -278927,7 +278943,7 @@
         {
           "kind": "theorem",
           "name": "refusalWrite_declassificationAuditLog_eq",
-          "line": 2454,
+          "line": 2485,
           "called": [
             "CoreId",
             "KernelError",
@@ -278941,7 +278957,7 @@
         {
           "kind": "theorem",
           "name": "refusalWrite_cannot_exhaust_trail",
-          "line": 2475,
+          "line": 2506,
           "called": [
             "CoreId",
             "DeclassificationEvent",
@@ -278958,7 +278974,7 @@
         {
           "kind": "def",
           "name": "syscallWindow",
-          "line": 2492,
+          "line": 2523,
           "called": [
             "FaultRegisterWindow"
           ]
@@ -278966,13 +278982,13 @@
         {
           "kind": "def",
           "name": "svcFaultIP",
-          "line": 2500,
+          "line": 2531,
           "called": []
         },
         {
           "kind": "def",
           "name": "capFaultReceivePhase",
-          "line": 2526,
+          "line": 2557,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -278991,7 +279007,7 @@
         {
           "kind": "theorem",
           "name": "capFaultReceivePhase",
-          "line": 2568,
+          "line": 2599,
           "called": [
             "SyscallId",
             "refusalSeamClass"
@@ -279000,7 +279016,7 @@
         {
           "kind": "def",
           "name": "syscallCapFaultOf",
-          "line": 2604,
+          "line": 2635,
           "called": [
             "Fault",
             "KernelError",
@@ -279024,7 +279040,7 @@
         {
           "kind": "def",
           "name": "deliverSyscallCapFault",
-          "line": 2637,
+          "line": 2668,
           "called": [
             "CoreId",
             "Fault",
@@ -279042,7 +279058,7 @@
         {
           "kind": "theorem",
           "name": "syscallCapFaultOf_none_of_no_fault_phase",
-          "line": 2648,
+          "line": 2679,
           "called": [
             "KernelError",
             "SyscallDecodeResult",
@@ -279061,7 +279077,7 @@
         {
           "kind": "theorem",
           "name": "syscallCapFaultOf_none_of_resolve_ok",
-          "line": 2661,
+          "line": 2692,
           "called": [
             "CNode",
             "Capability",
@@ -279084,7 +279100,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchFromAbi",
-          "line": 2724,
+          "line": 2755,
           "called": [
             "CoreId",
             "Kernel",
@@ -279107,13 +279123,13 @@
         {
           "kind": "opaque",
           "name": "ffiSuspendThread",
-          "line": 2797,
+          "line": 2828,
           "called": []
         },
         {
           "kind": "def",
           "name": "suspendThreadInner",
-          "line": 2861,
+          "line": 2892,
           "called": [
             "KernelError.toUInt32",
             "getKernelState",
@@ -279130,19 +279146,19 @@
         {
           "kind": "opaque",
           "name": "ffiIcIalluIs",
-          "line": 2896,
+          "line": 2927,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcMaintenance",
-          "line": 2932,
+          "line": 2963,
           "called": []
         },
         {
           "kind": "def",
           "name": "icMaintenanceBroadcast",
-          "line": 2984,
+          "line": 3015,
           "called": [
             "ICacheInvalidation",
             "ffiIcMaintenance",
@@ -279154,7 +279170,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_iallu_encoding",
-          "line": 2989,
+          "line": 3020,
           "called": [
             "toOpTag",
             "toPaddr"
@@ -279163,7 +279179,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_ivauPage_encoding",
-          "line": 2996,
+          "line": 3027,
           "called": [
             "PAddr",
             "ofNat",
@@ -279175,7 +279191,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_cleanRangeIallu_encoding",
-          "line": 3005,
+          "line": 3036,
           "called": [
             "PAddr",
             "ofNat",
@@ -279188,19 +279204,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 3040,
+          "line": 3071,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 3053,
+          "line": 3084,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 3069,
+          "line": 3100,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -279224,7 +279240,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 3122,
+          "line": 3153,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -279242,7 +279258,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_blocks_of_ipcBlocked",
-          "line": 3149,
+          "line": 3180,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -279264,7 +279280,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_blocked_returns_no_frame",
-          "line": 3172,
+          "line": 3203,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -279287,7 +279303,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_scheduler",
-          "line": 3201,
+          "line": 3232,
           "called": [
             "SystemState",
             "ThreadId",
@@ -279299,7 +279315,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_implies_capability_held",
-          "line": 3232,
+          "line": 3263,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -279330,7 +279346,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 3295,
+          "line": 3326,
           "called": [
             "CoreId",
             "KernelError",
@@ -279352,7 +279368,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_capFault_faulted",
-          "line": 3324,
+          "line": 3355,
           "called": [
             "CoreId",
             "Fault",
@@ -279374,7 +279390,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_stages_no_frame",
-          "line": 3360,
+          "line": 3391,
           "called": [
             "CoreId",
             "KernelError",
@@ -279398,7 +279414,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_write_is_caller_invisible",
-          "line": 3401,
+          "line": 3432,
           "called": [
             "CoreId",
             "KernelError",
@@ -279420,7 +279436,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_records_refusal",
-          "line": 3429,
+          "line": 3460,
           "called": [
             "CoreId",
             "KernelError",
@@ -279452,7 +279468,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_exempt_refusal_frames_ledger",
-          "line": 3476,
+          "line": 3507,
           "called": [
             "CoreId",
             "KernelError",
@@ -279478,7 +279494,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 3506,
+          "line": 3537,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -279493,7 +279509,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 3529,
+          "line": 3560,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -279506,7 +279522,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 3551,
+          "line": 3582,
           "called": [
             "SystemState",
             "TCB",
@@ -279522,7 +279538,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 3579,
+          "line": 3610,
           "called": [
             "SystemState",
             "TCB",
@@ -280437,18 +280453,18 @@
     {
       "module": "SeLe4n.Platform.RPi5.Deployment",
       "path": "SeLe4n/Platform/RPi5/Deployment.lean",
-      "declaration_count": 47,
+      "declaration_count": 50,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.RPi5",
-          "line": 76,
+          "line": 83,
           "called": []
         },
         {
           "kind": "def",
           "name": "rpi5RootTaskTcbId",
-          "line": 87,
+          "line": 94,
           "called": [
             "ObjId",
             "rpi5LowerWitnessIndex"
@@ -280457,7 +280473,7 @@
         {
           "kind": "def",
           "name": "rpi5RootTaskCNodeId",
-          "line": 89,
+          "line": 96,
           "called": [
             "ObjId"
           ]
@@ -280465,7 +280481,7 @@
         {
           "kind": "def",
           "name": "rpi5RootTaskVSpaceId",
-          "line": 91,
+          "line": 98,
           "called": [
             "ObjId"
           ]
@@ -280473,7 +280489,7 @@
         {
           "kind": "def",
           "name": "rpi5InterruptNotificationId",
-          "line": 93,
+          "line": 100,
           "called": [
             "ObjId"
           ]
@@ -280481,7 +280497,7 @@
         {
           "kind": "def",
           "name": "rpi5RootTaskUntypedLowId",
-          "line": 95,
+          "line": 102,
           "called": [
             "ObjId"
           ]
@@ -280489,7 +280505,7 @@
         {
           "kind": "def",
           "name": "rpi5RootTaskUntypedHighId",
-          "line": 97,
+          "line": 104,
           "called": [
             "ObjId"
           ]
@@ -280497,7 +280513,7 @@
         {
           "kind": "def",
           "name": "rpi5UntrustedTcbId",
-          "line": 100,
+          "line": 107,
           "called": [
             "ObjId",
             "rpi5UpperDomainBase"
@@ -280506,7 +280522,7 @@
         {
           "kind": "def",
           "name": "rpi5UntrustedCNodeId",
-          "line": 102,
+          "line": 109,
           "called": [
             "ObjId",
             "rpi5UpperDomainBase"
@@ -280515,7 +280531,7 @@
         {
           "kind": "def",
           "name": "rpi5UntrustedVSpaceId",
-          "line": 104,
+          "line": 111,
           "called": [
             "ObjId",
             "rpi5UpperDomainBase"
@@ -280524,7 +280540,7 @@
         {
           "kind": "def",
           "name": "rpi5RootTaskAsid",
-          "line": 107,
+          "line": 114,
           "called": [
             "ASID",
             "ofNat"
@@ -280533,7 +280549,7 @@
         {
           "kind": "def",
           "name": "rpi5UntrustedAsid",
-          "line": 109,
+          "line": 116,
           "called": [
             "ASID",
             "ofNat"
@@ -280542,7 +280558,7 @@
         {
           "kind": "def",
           "name": "rpi5InitialThreadPriority",
-          "line": 113,
+          "line": 120,
           "called": [
             "Priority"
           ]
@@ -280550,7 +280566,7 @@
         {
           "kind": "def",
           "name": "rpi5InitialThread",
-          "line": 124,
+          "line": 131,
           "called": [
             "ObjId",
             "TCB",
@@ -280561,7 +280577,7 @@
         {
           "kind": "def",
           "name": "rpi5InitialCap",
-          "line": 133,
+          "line": 140,
           "called": [
             "AccessRight",
             "Capability",
@@ -280572,7 +280588,7 @@
         {
           "kind": "def",
           "name": "rpi5InitialCNode",
-          "line": 139,
+          "line": 146,
           "called": [
             "CNode",
             "Capability",
@@ -280583,7 +280599,7 @@
         {
           "kind": "def",
           "name": "rpi5InitialVSpace",
-          "line": 148,
+          "line": 155,
           "called": [
             "ASID",
             "RHTable.empty",
@@ -280593,7 +280609,7 @@
         {
           "kind": "def",
           "name": "rpi5RootTaskCNode",
-          "line": 153,
+          "line": 160,
           "called": [
             "CNode",
             "ofNat",
@@ -280610,7 +280626,7 @@
         {
           "kind": "def",
           "name": "rpi5UntrustedCNode",
-          "line": 164,
+          "line": 171,
           "called": [
             "CNode",
             "ofNat",
@@ -280624,7 +280640,7 @@
         {
           "kind": "def",
           "name": "rpi5InitialUntyped",
-          "line": 171,
+          "line": 178,
           "called": [
             "UntypedObject",
             "ofNat",
@@ -280634,7 +280650,7 @@
         {
           "kind": "def",
           "name": "tcbEntry",
-          "line": 174,
+          "line": 181,
           "called": [
             "ObjId",
             "ObjectEntry",
@@ -280644,7 +280660,7 @@
         {
           "kind": "def",
           "name": "cnodeEntry",
-          "line": 180,
+          "line": 187,
           "called": [
             "CNode",
             "ObjId",
@@ -280655,7 +280671,7 @@
         {
           "kind": "def",
           "name": "vspaceEntry",
-          "line": 185,
+          "line": 192,
           "called": [
             "ASID",
             "ObjId",
@@ -280667,7 +280683,7 @@
         {
           "kind": "def",
           "name": "untypedEntry",
-          "line": 191,
+          "line": 198,
           "called": [
             "ObjId",
             "ObjectEntry",
@@ -280677,7 +280693,7 @@
         {
           "kind": "def",
           "name": "notificationEntry",
-          "line": 197,
+          "line": 204,
           "called": [
             "ObjId",
             "ObjectEntry",
@@ -280689,7 +280705,7 @@
         {
           "kind": "def",
           "name": "rpi5InitialObjects",
-          "line": 205,
+          "line": 212,
           "called": [
             "ObjectEntry",
             "cnodeEntry",
@@ -280717,7 +280733,7 @@
         {
           "kind": "def",
           "name": "rpi5IrqTable",
-          "line": 222,
+          "line": 229,
           "called": [
             "IrqEntry",
             "gicSpiCount",
@@ -280727,145 +280743,196 @@
         },
         {
           "kind": "def",
-          "name": "rpi5PlatformConfig",
-          "line": 231,
+          "name": "rpi5PlatformConfigFor",
+          "line": 240,
           "called": [
+            "MachineConfig",
             "PlatformConfig",
             "rpi5InitialObjects",
-            "rpi5IrqTable",
-            "rpi5MachineConfigForVariant",
-            "rpi5SmallestVariant"
+            "rpi5IrqTable"
           ]
         },
         {
-          "kind": "abbrev",
-          "name": "rpi5BoundPlatformConfig",
-          "line": 237,
+          "kind": "def",
+          "name": "rpi5BoundPlatformConfigAt",
+          "line": 248,
           "called": [
+            "BCM2712Config",
             "PlatformConfig",
             "RPi5Platform",
-            "bindPlatformConfig",
-            "rpi5PlatformConfig"
+            "rpi5InitialObjects",
+            "rpi5IrqTable",
+            "rpi5MachineConfigForVariant"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_wellFormed",
-          "line": 250,
+          "name": "bindPlatformConfig_rpi5PlatformConfigFor",
+          "line": 256,
+          "called": [
+            "MachineConfig",
+            "RPi5Platform",
+            "bindPlatformConfig",
+            "rpi5BoundPlatformConfigAt",
+            "rpi5PlatformConfigFor",
+            "rpi5VariantFor"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5Variants_cases",
+          "line": 262,
+          "called": [
+            "BCM2712Config",
+            "rpi5Variants"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5BoundPlatformConfigAt_wellFormed",
+          "line": 287,
           "called": [
             "PlatformConfig.wellFormed",
             "irqsUnique_eq_transparent",
             "objectIdsUnique_eq_transparent",
+            "rpi5BoundPlatformConfigAt",
+            "rpi5Variants",
+            "rpi5Variants_cases",
             "wellFormed"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_bootSafe",
-          "line": 256,
+          "name": "rpi5BoundPlatformConfigAt_bootSafe",
+          "line": 295,
           "called": [
+            "BCM2712Config",
             "all",
-            "bootSafeObjectCheck"
+            "bootSafeObjectCheck",
+            "rpi5BoundPlatformConfigAt"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_asidsDistinct",
-          "line": 263,
+          "name": "rpi5BoundPlatformConfigAt_asidsDistinct",
+          "line": 303,
           "called": [
             "bootVSpaceAsidsDistinct",
-            "rpi5BoundPlatformConfig"
+            "rpi5BoundPlatformConfigAt",
+            "rpi5Variants",
+            "rpi5Variants_cases"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_irqHandlers",
-          "line": 268,
+          "name": "rpi5BoundPlatformConfigAt_irqHandlers",
+          "line": 308,
           "called": [
             "irqHandlersReferenceNotifications",
-            "rpi5BoundPlatformConfig"
+            "rpi5BoundPlatformConfigAt",
+            "rpi5Variants",
+            "rpi5Variants_cases"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_machineConfig_wellFormed",
-          "line": 273,
+          "name": "rpi5BoundPlatformConfigAt_machineConfig_wellFormed",
+          "line": 314,
           "called": [
+            "rpi5BoundPlatformConfigAt",
+            "rpi5Variants",
+            "rpi5Variants_wellFormed",
             "wellFormed"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_physicalAddressWidth",
-          "line": 278,
-          "called": []
+          "name": "rpi5BoundPlatformConfigAt_physicalAddressWidth",
+          "line": 321,
+          "called": [
+            "BCM2712Config",
+            "rpi5BoundPlatformConfigAt",
+            "rpi5MachineConfigForVariant",
+            "rpi5MachineConfigForVariant_physicalAddressWidth"
+          ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_rootDistinct",
-          "line": 284,
+          "name": "rpi5BoundPlatformConfigAt_rootDistinct",
+          "line": 329,
           "called": [
             "bootVSpaceRootObjIdDistinct",
-            "rpi5BoundPlatformConfig"
+            "rpi5BoundPlatformConfigAt",
+            "rpi5Variants",
+            "rpi5Variants_cases"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_rootNonSentinel",
-          "line": 289,
+          "name": "rpi5BoundPlatformConfigAt_rootNonSentinel",
+          "line": 334,
           "called": [
             "bootVSpaceRootObjIdNonSentinel",
-            "rpi5BoundPlatformConfig"
+            "rpi5BoundPlatformConfigAt",
+            "rpi5Variants",
+            "rpi5Variants_cases"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_rootSafe",
-          "line": 294,
+          "name": "rpi5BoundPlatformConfigAt_rootSafe",
+          "line": 339,
           "called": [
             "bootVSpaceRootSafe",
-            "rpi5BoundPlatformConfig"
+            "rpi5BoundPlatformConfigAt",
+            "rpi5Variants",
+            "rpi5Variants_cases"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_affinities",
-          "line": 300,
+          "name": "rpi5BoundPlatformConfigAt_affinities",
+          "line": 345,
           "called": [
             "PlatformBinding.declaredCores",
             "RPi5Platform",
             "bootAffinitiesDeclared",
-            "rpi5BoundPlatformConfig"
+            "rpi5BoundPlatformConfigAt",
+            "rpi5Variants",
+            "rpi5Variants_cases"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_checked",
-          "line": 308,
+          "name": "rpi5BoundPlatformConfigAt_checked",
+          "line": 354,
           "called": [
+            "BCM2712Config",
             "bootEnableInterruptsOp",
             "bootFromPlatform",
             "bootFromPlatformChecked",
             "bootFromPlatformChecked_admits_bootVSpace",
             "installBootVSpaceRoot",
             "rpi5BootVSpaceRootEntry",
-            "rpi5BoundPlatformConfig",
-            "rpi5BoundPlatformConfig_asidsDistinct",
-            "rpi5BoundPlatformConfig_bootSafe",
-            "rpi5BoundPlatformConfig_irqHandlers",
-            "rpi5BoundPlatformConfig_machineConfig_wellFormed",
-            "rpi5BoundPlatformConfig_physicalAddressWidth",
-            "rpi5BoundPlatformConfig_rootDistinct",
-            "rpi5BoundPlatformConfig_rootNonSentinel",
-            "rpi5BoundPlatformConfig_rootSafe",
-            "rpi5BoundPlatformConfig_wellFormed"
+            "rpi5BoundPlatformConfigAt",
+            "rpi5BoundPlatformConfigAt_asidsDistinct",
+            "rpi5BoundPlatformConfigAt_bootSafe",
+            "rpi5BoundPlatformConfigAt_irqHandlers",
+            "rpi5BoundPlatformConfigAt_machineConfig_wellFormed",
+            "rpi5BoundPlatformConfigAt_physicalAddressWidth",
+            "rpi5BoundPlatformConfigAt_rootDistinct",
+            "rpi5BoundPlatformConfigAt_rootNonSentinel",
+            "rpi5BoundPlatformConfigAt_rootSafe",
+            "rpi5BoundPlatformConfigAt_wellFormed",
+            "rpi5Variants"
           ]
         },
         {
           "kind": "def",
-          "name": "rpi5DeploymentBootState",
-          "line": 327,
+          "name": "rpi5DeploymentBootStateAt",
+          "line": 376,
           "called": [
+            "BCM2712Config",
             "IntermediateState",
             "PlatformBinding.declaredCores",
             "RPi5Platform",
@@ -280873,45 +280940,53 @@
             "bootFromPlatform",
             "enqueueIdleThread",
             "installBootVSpaceRoot",
-            "rpi5BoundPlatformConfig"
+            "rpi5BoundPlatformConfigAt"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfig_boot",
-          "line": 336,
+          "name": "rpi5BoundPlatformConfigAt_boot",
+          "line": 385,
           "called": [
+            "BCM2712Config",
             "PlatformBinding.declaredCores",
             "RPi5Platform",
             "bootFromPlatformCheckedWithIdleThreadsFor",
             "bootFromPlatformCheckedWithIdleThreadsFor_map_ok",
-            "rpi5BoundPlatformConfig",
-            "rpi5BoundPlatformConfig_affinities",
-            "rpi5BoundPlatformConfig_checked",
-            "rpi5DeploymentBootState"
+            "rpi5BoundPlatformConfigAt",
+            "rpi5BoundPlatformConfigAt_affinities",
+            "rpi5BoundPlatformConfigAt_checked",
+            "rpi5DeploymentBootStateAt",
+            "rpi5Variants"
           ]
         },
         {
           "kind": "theorem",
           "name": "rpi5Deployment_tcb_installed",
-          "line": 344,
+          "line": 394,
           "called": [
+            "BCM2712Config",
             "ObjId",
             "bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem",
             "getTcb",
-            "rpi5BoundPlatformConfig_boot",
+            "rpi5BoundPlatformConfigAt_boot",
+            "rpi5DeploymentBootStateAt",
+            "rpi5InitialObjects",
             "rpi5InitialThread",
+            "rpi5Variants",
             "tcbEntry"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5DeploymentBootState_witnessesInstalled",
-          "line": 359,
+          "name": "rpi5DeploymentBootStateAt_witnessesInstalled",
+          "line": 409,
           "called": [
+            "BCM2712Config",
             "PlatformBinding.labeling",
             "RPi5Platform",
             "declaredWitnessesInstalled",
+            "rpi5DeploymentBootStateAt",
             "rpi5Deployment_tcb_installed",
             "rpi5InitialObjects",
             "rpi5RootTaskCNodeId",
@@ -280920,17 +280995,21 @@
             "rpi5UntrustedCNodeId",
             "rpi5UntrustedTcbId",
             "rpi5UntrustedVSpaceId",
+            "rpi5Variants",
             "rpi5_deploymentLabeling_separatedThreads",
             "state"
           ]
         },
         {
           "kind": "theorem",
-          "name": "bootAndInitialiseRPi5_rpi5PlatformConfig",
-          "line": 376,
+          "name": "bootAndInitialiseRPi5_rpi5PlatformConfigFor",
+          "line": 430,
           "called": [
+            "MachineConfig",
             "PlatformBinding.labeling",
             "RPi5Platform",
+            "bindPlatformConfig",
+            "bindPlatformConfig_rpi5PlatformConfigFor",
             "bootAndInitialisePlatform_eq_checked_boot",
             "bootAndInitialiseRPi5",
             "bootAndInitialiseRPi5_eq",
@@ -280938,41 +281017,63 @@
             "initialiseKernelLabelingContext",
             "initialiseKernelState",
             "pure",
-            "rpi5BoundPlatformConfig",
-            "rpi5BoundPlatformConfig_boot",
-            "rpi5DeploymentBootState_witnessesInstalled",
-            "rpi5PlatformConfig",
+            "rpi5BoundPlatformConfigAt_boot",
+            "rpi5DeploymentBootStateAt",
+            "rpi5DeploymentBootStateAt_witnessesInstalled",
+            "rpi5PlatformConfigFor",
+            "rpi5VariantFor",
+            "rpi5VariantFor_mem",
             "state"
           ]
         },
         {
           "kind": "theorem",
-          "name": "bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig",
-          "line": 391,
+          "name": "bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor",
+          "line": 447,
           "called": [
+            "MachineConfig",
             "PlatformBinding.labeling",
             "RPi5Platform",
             "bootAndInitialiseRPi5OrHalt",
-            "bootAndInitialiseRPi5_rpi5PlatformConfig",
+            "bootAndInitialiseRPi5_rpi5PlatformConfigFor",
             "initialiseKernelLabelingContext",
             "initialiseKernelState",
-            "rpi5PlatformConfig",
+            "rpi5DeploymentBootStateAt",
+            "rpi5PlatformConfigFor",
+            "rpi5VariantFor",
             "state"
           ]
         },
         {
           "kind": "theorem",
-          "name": "rpi5DeploymentBootState_invariantBridge",
-          "line": 409,
+          "name": "rpi5DeploymentBootStateAt_invariantBridge",
+          "line": 463,
           "called": [
+            "BCM2712Config",
             "PlatformBinding.declaredCores_nodup",
             "apiInvariantBundle_frozen",
             "bootToRuntime_invariantBridge_checked",
             "freeze",
             "proofLayerInvariantBundle",
-            "rpi5BoundPlatformConfig_boot",
-            "rpi5DeploymentBootState",
+            "rpi5BoundPlatformConfigAt_boot",
+            "rpi5DeploymentBootStateAt",
+            "rpi5Variants",
             "state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5PlatformConfigFromDtb_deployment_ok",
+          "line": 477,
+          "called": [
+            "PlatformConfig",
+            "config",
+            "none",
+            "rpi5InitialObjects",
+            "rpi5IrqTable",
+            "rpi5PlatformConfigFor",
+            "rpi5PlatformConfigFromDtb",
+            "rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree"
           ]
         }
       ]
@@ -280980,34 +281081,76 @@
     {
       "module": "SeLe4n.Platform.RPi5.KernelMain",
       "path": "SeLe4n/Platform/RPi5/KernelMain.lean",
-      "declaration_count": 3,
+      "declaration_count": 5,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.RPi5",
-          "line": 42,
+          "line": 39,
           "called": []
         },
         {
           "kind": "def",
           "name": "kernelMain",
-          "line": 50,
+          "line": 47,
           "called": [
-            "bootAndInitialiseRPi5OrHalt",
-            "rpi5PlatformConfig"
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "none",
+            "rpi5InitialObjects",
+            "rpi5IrqTable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "kernelMain_refuses",
+          "line": 52,
+          "called": [
+            "DeviceTreeBootRefusal",
+            "bootAndInitialiseRPi5FromDtbOrHalt_unparseable",
+            "ffiFatalHaltAll",
+            "kernelMain",
+            "none",
+            "rpi5InitialObjects",
+            "rpi5IrqTable",
+            "rpi5PlatformConfigFromDtb"
           ]
         },
         {
           "kind": "theorem",
           "name": "kernelMain_installs",
-          "line": 57,
+          "line": 63,
           "called": [
             "PlatformBinding.labeling",
+            "PlatformConfig",
             "RPi5Platform",
-            "bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig",
+            "bootAndInitialiseRPi5FromDtbOrHalt_accepted",
+            "bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor",
+            "config",
             "initialiseKernelLabelingContext",
             "initialiseKernelState",
             "kernelMain",
+            "none",
+            "rpi5DeploymentBootStateAt",
+            "rpi5InitialObjects",
+            "rpi5IrqTable",
+            "rpi5PlatformConfigFromDtb",
+            "rpi5PlatformConfigFromDtb_deployment_ok",
+            "rpi5VariantFor",
+            "state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "kernelMain_installs_invariantBundle",
+          "line": 80,
+          "called": [
+            "PlatformConfig",
+            "config",
+            "proofLayerInvariantBundle",
+            "rpi5DeploymentBootStateAt",
+            "rpi5DeploymentBootStateAt_invariantBridge",
+            "rpi5VariantFor",
+            "rpi5VariantFor_mem",
             "state"
           ]
         }
@@ -286802,32 +286945,32 @@
     {
       "module": "SeLe4n.Testing.BootEntryContract",
       "path": "SeLe4n/Testing/BootEntryContract.lean",
-      "declaration_count": 27,
+      "declaration_count": 29,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.BootEntryContract",
-          "line": 60,
+          "line": 62,
           "called": []
         },
         {
           "kind": "def",
           "name": "bootEntrySymbol",
-          "line": 68,
+          "line": 70,
           "called": []
         },
         {
           "kind": "def",
           "name": "approvedBootCall",
-          "line": 74,
+          "line": 84,
           "called": [
-            "bootAndInitialiseRPi5OrHalt"
+            "bootAndInitialiseRPi5FromDtbOrHalt"
           ]
         },
         {
           "kind": "def",
           "name": "declarationValue",
-          "line": 81,
+          "line": 91,
           "called": [
             "bind",
             "value"
@@ -286836,20 +286979,19 @@
         {
           "kind": "def",
           "name": "isApprovedBootApplication",
-          "line": 151,
+          "line": 164,
           "called": [
-            "PlatformConfig",
             "approvedBootCall",
-            "config",
             "none",
             "pure",
+            "size",
             "value"
           ]
         },
         {
           "kind": "def",
           "name": "expectedBootEntryType",
-          "line": 171,
+          "line": 190,
           "called": [
             "default"
           ]
@@ -286857,7 +286999,7 @@
         {
           "kind": "def",
           "name": "bootEntryContractViolations",
-          "line": 175,
+          "line": 194,
           "called": [
             "approvedBootCall",
             "boot",
@@ -286874,116 +287016,138 @@
         {
           "kind": "def",
           "name": "bootEntryDeclarations",
-          "line": 203,
+          "line": 223,
           "called": [
             "bootEntrySymbol"
           ]
         },
         {
           "kind": "def",
-          "name": "bootEntryWitnessConfig",
-          "line": 232,
-          "called": [
-            "PlatformConfig"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "bootEntryWitnessBootAlias",
-          "line": 236,
+          "line": 249,
           "called": [
-            "PlatformConfig",
-            "bootAndInitialiseRPi5OrHalt"
+            "BootVSpaceRootEntry",
+            "IrqEntry",
+            "ObjectEntry",
+            "bootAndInitialiseRPi5FromDtbOrHalt"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessCompliant",
-          "line": 241,
+          "line": 255,
           "called": [
-            "bootAndInitialiseRPi5OrHalt",
-            "bootEntryWitnessConfig"
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessSequenced",
-          "line": 250,
+          "line": 264,
           "called": [
-            "bootAndInitialiseRPi5OrHalt",
-            "bootEntryWitnessConfig",
-            "getKernelState"
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "getKernelState",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessLetBoundConfig",
-          "line": 257,
+          "line": 271,
           "called": [
-            "bootAndInitialiseRPi5OrHalt",
-            "bootEntryWitnessConfig",
-            "config"
+            "IrqEntry",
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessAliasedBoot",
-          "line": 265,
+          "line": 280,
           "called": [
             "bootEntryWitnessBootAlias",
-            "bootEntryWitnessConfig"
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootEntryWitnessFixedBlob",
+          "line": 287,
+          "called": [
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "empty",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootEntryWitnessEditedBlob",
+          "line": 293,
+          "called": [
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootEntryWitnessRetiredCall",
+          "line": 299,
+          "called": [
+            "bootAndInitialiseRPi5OrHalt"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessConditional",
-          "line": 271,
+          "line": 305,
           "called": [
-            "bootAndInitialiseRPi5OrHalt",
-            "bootEntryWitnessConfig",
-            "pure"
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "none",
+            "pure",
+            "size"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessHaltedFirst",
-          "line": 278,
+          "line": 312,
           "called": [
-            "bootAndInitialiseRPi5OrHalt",
-            "bootEntryWitnessConfig",
-            "ffiFatalHaltAll"
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "ffiFatalHaltAll",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessAliasHaltedFirst",
-          "line": 284,
+          "line": 318,
           "called": [
-            "bootAndInitialiseRPi5OrHalt",
-            "bootEntryWitnessConfig",
-            "fatalHaltAll"
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "fatalHaltAll",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessLetBoundHalt",
-          "line": 293,
+          "line": 327,
           "called": [
-            "bootAndInitialiseRPi5OrHalt",
-            "bootEntryWitnessConfig",
-            "ffiFatalHaltAll"
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "ffiFatalHaltAll",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "BootEntryBogusMonad",
-          "line": 302,
+          "line": 336,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:304>",
-          "line": 304,
+          "name": "<anonymous:instance:338>",
+          "line": 338,
           "called": [
             "BootEntryBogusMonad",
             "bind",
@@ -286993,19 +287157,19 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessBogusBind",
-          "line": 310,
+          "line": 344,
           "called": [
             "BootEntryBogusMonad",
             "bind",
-            "bootAndInitialiseRPi5OrHalt",
-            "bootEntryWitnessConfig",
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "none",
             "pure"
           ]
         },
         {
           "kind": "opaque",
           "name": "bootEntryWitnessOpaqueInstaller",
-          "line": 318,
+          "line": 352,
           "called": [
             "SystemState",
             "initialiseKernelState"
@@ -287014,51 +287178,52 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessOpaqueBypass",
-          "line": 323,
+          "line": 357,
           "called": [
-            "bootAndInitialiseRPi5OrHalt",
-            "bootEntryWitnessConfig",
+            "bootAndInitialiseRPi5FromDtbOrHalt",
             "bootEntryWitnessOpaqueInstaller",
-            "default"
+            "default",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessWrongType",
-          "line": 330,
+          "line": 364,
           "called": [
-            "PlatformConfig",
-            "bootAndInitialiseRPi5OrHalt",
-            "config"
+            "bootAndInitialiseRPi5FromDtbOrHalt",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessBypass",
-          "line": 336,
+          "line": 370,
           "called": [
             "bootAndInitialiseRPi5",
-            "bootEntryWitnessConfig",
+            "config",
             "ffiFatalHaltAll",
             "initialiseKernelState",
+            "none",
+            "rpi5PlatformConfigFromDtb",
             "st"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessSideInstall",
-          "line": 342,
+          "line": 379,
           "called": [
-            "bootAndInitialiseRPi5OrHalt",
-            "bootEntryWitnessConfig",
+            "bootAndInitialiseRPi5FromDtbOrHalt",
             "default",
-            "initialiseKernelState"
+            "initialiseKernelState",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessUnbooted",
-          "line": 347,
+          "line": 384,
           "called": [
             "approvedBootCall",
             "boot",
@@ -287071,10 +287236,13 @@
             "bootEntryWitnessBypass",
             "bootEntryWitnessCompliant",
             "bootEntryWitnessConditional",
+            "bootEntryWitnessEditedBlob",
+            "bootEntryWitnessFixedBlob",
             "bootEntryWitnessHaltedFirst",
             "bootEntryWitnessLetBoundConfig",
             "bootEntryWitnessLetBoundHalt",
             "bootEntryWitnessOpaqueBypass",
+            "bootEntryWitnessRetiredCall",
             "bootEntryWitnessSequenced",
             "bootEntryWitnessSideInstall",
             "bootEntryWitnessWrongType",
@@ -289143,7 +289311,7 @@
             "revokeCdtStreamingTraversal",
             "revokeCdtStrictTraversal",
             "revokeCdtTransactionalTraversal",
-            "rpi5DeploymentBootState",
+            "rpi5DeploymentBootStateAt",
             "runChainExtension",
             "runUnderDeclaredLockSet",
             "saveOutgoingContext",
@@ -292513,24 +292681,24 @@
     {
       "module": "tests.Ak9PlatformSuite",
       "path": "tests/Ak9PlatformSuite.lean",
-      "declaration_count": 151,
+      "declaration_count": 153,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.Ak9PlatformSuite",
-          "line": 53,
+          "line": 54,
           "called": []
         },
         {
           "kind": "def",
           "name": "tag",
-          "line": 55,
+          "line": 56,
           "called": []
         },
         {
           "kind": "def",
           "name": "expect",
-          "line": 57,
+          "line": 58,
           "called": [
             "expectCond",
             "tag"
@@ -292539,7 +292707,7 @@
         {
           "kind": "def",
           "name": "ak9a_01_mmioRead32_rejects_unaligned",
-          "line": 65,
+          "line": 66,
           "called": [
             "PAddr",
             "SystemState",
@@ -292554,7 +292722,7 @@
         {
           "kind": "def",
           "name": "ak9a_02_mmioRead64_rejects_unaligned",
-          "line": 76,
+          "line": 77,
           "called": [
             "PAddr",
             "SystemState",
@@ -292569,7 +292737,7 @@
         {
           "kind": "def",
           "name": "ak9a_03_mmioRead32_rejects_ram",
-          "line": 85,
+          "line": 86,
           "called": [
             "PAddr",
             "SystemState",
@@ -292583,7 +292751,7 @@
         {
           "kind": "def",
           "name": "ak9a_04_mmioRead32_accepts_gic",
-          "line": 95,
+          "line": 96,
           "called": [
             "PAddr",
             "SystemState",
@@ -292597,7 +292765,7 @@
         {
           "kind": "def",
           "name": "ak9d_01_range_within_gic_dist",
-          "line": 108,
+          "line": 109,
           "called": [
             "expect",
             "gicDistributorBase",
@@ -292607,7 +292775,7 @@
         {
           "kind": "def",
           "name": "ak9d_02_range_crosses_boundary",
-          "line": 117,
+          "line": 118,
           "called": [
             "PAddr",
             "expect",
@@ -292618,7 +292786,7 @@
         {
           "kind": "def",
           "name": "ak9b_01_sim_objectStoreEmptyAtBoot",
-          "line": 129,
+          "line": 130,
           "called": [
             "expect",
             "simBootContract_objectStoreEmptyAtBoot_holds"
@@ -292627,7 +292795,7 @@
         {
           "kind": "def",
           "name": "ak9b_02_rpi5_objectStoreEmptyAtBoot",
-          "line": 136,
+          "line": 137,
           "called": [
             "expect",
             "rpi5BootContract_objectStoreEmptyAtBoot_holds"
@@ -292636,7 +292804,7 @@
         {
           "kind": "def",
           "name": "ak9c_01_empty_irqs_accepted",
-          "line": 146,
+          "line": 147,
           "called": [
             "PlatformConfig",
             "expect",
@@ -292646,7 +292814,7 @@
         {
           "kind": "def",
           "name": "ak9c_02_missing_handler_rejected",
-          "line": 152,
+          "line": 153,
           "called": [
             "PlatformConfig",
             "expect",
@@ -292658,7 +292826,7 @@
         {
           "kind": "def",
           "name": "minimalNotif",
-          "line": 160,
+          "line": 161,
           "called": [
             "Notification",
             "empty",
@@ -292668,7 +292836,7 @@
         {
           "kind": "def",
           "name": "minimalTcb",
-          "line": 163,
+          "line": 164,
           "called": [
             "TCB",
             "ThreadId",
@@ -292678,7 +292846,7 @@
         {
           "kind": "def",
           "name": "mkNotifObjectEntry",
-          "line": 171,
+          "line": 172,
           "called": [
             "ObjId",
             "ObjectEntry",
@@ -292688,7 +292856,7 @@
         {
           "kind": "def",
           "name": "mkTcbObjectEntry",
-          "line": 177,
+          "line": 178,
           "called": [
             "ObjId",
             "ObjectEntry",
@@ -292699,7 +292867,7 @@
         {
           "kind": "def",
           "name": "ak9c_03_non_notification_rejected",
-          "line": 184,
+          "line": 185,
           "called": [
             "ObjId",
             "PlatformConfig",
@@ -292713,7 +292881,7 @@
         {
           "kind": "def",
           "name": "ak9c_04_notification_accepted",
-          "line": 193,
+          "line": 194,
           "called": [
             "ObjId",
             "PlatformConfig",
@@ -292727,7 +292895,7 @@
         {
           "kind": "def",
           "name": "ak9f_01_classify_empty_map",
-          "line": 207,
+          "line": 208,
           "called": [
             "FdtMemoryRegion",
             "classifyMemoryRegionChecked",
@@ -292739,7 +292907,7 @@
         {
           "kind": "def",
           "name": "ak9f_02_classify_unmapped",
-          "line": 213,
+          "line": 214,
           "called": [
             "FdtMemoryRegion",
             "MemoryRegion",
@@ -292753,7 +292921,7 @@
         {
           "kind": "def",
           "name": "ak9f_03_classify_mapped",
-          "line": 221,
+          "line": 222,
           "called": [
             "FdtMemoryRegion",
             "MemoryRegion",
@@ -292766,7 +292934,7 @@
         {
           "kind": "def",
           "name": "ak9f_04_applyMachineConfigChecked_rejects_zero_pa",
-          "line": 230,
+          "line": 231,
           "called": [
             "IntermediateState",
             "MachineConfig",
@@ -292779,7 +292947,7 @@
         {
           "kind": "def",
           "name": "ak9f_05_applyMachineConfigChecked_rejects_pa_over_52",
-          "line": 238,
+          "line": 239,
           "called": [
             "IntermediateState",
             "MachineConfig",
@@ -292792,7 +292960,7 @@
         {
           "kind": "def",
           "name": "ak9f_06_applyMachineConfigChecked_accepts_default",
-          "line": 246,
+          "line": 247,
           "called": [
             "IntermediateState",
             "applyMachineConfigChecked",
@@ -292804,7 +292972,7 @@
         {
           "kind": "def",
           "name": "ak9g_01_enables_interrupts",
-          "line": 257,
+          "line": 258,
           "called": [
             "bootEnableInterruptsOp",
             "bootFromPlatform",
@@ -292814,7 +292982,7 @@
         {
           "kind": "def",
           "name": "ak9g_02_default_disabled",
-          "line": 264,
+          "line": 265,
           "called": [
             "bootFromPlatform",
             "expect"
@@ -292823,7 +292991,7 @@
         {
           "kind": "def",
           "name": "ak9g_03_withInterrupts_enables",
-          "line": 270,
+          "line": 271,
           "called": [
             "bootFromPlatformWithInterrupts",
             "expect"
@@ -292832,7 +293000,7 @@
         {
           "kind": "def",
           "name": "ak9ce_01_checked_boot_rejects_bad_irq",
-          "line": 282,
+          "line": 283,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -292844,7 +293012,7 @@
         {
           "kind": "def",
           "name": "ak9ce_02_checked_boot_rejects_tcb_handler",
-          "line": 293,
+          "line": 294,
           "called": [
             "ObjId",
             "PlatformConfig",
@@ -292858,7 +293026,7 @@
         {
           "kind": "def",
           "name": "ak9fe_01_checked_boot_rejects_pa_over_52",
-          "line": 305,
+          "line": 306,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -292869,7 +293037,7 @@
         {
           "kind": "def",
           "name": "ak9fe_02_checked_boot_rejects_malformed_machine_config",
-          "line": 316,
+          "line": 317,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -292880,7 +293048,7 @@
         {
           "kind": "def",
           "name": "ak9ge_01_checked_boot_enables_interrupts",
-          "line": 327,
+          "line": 328,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -292890,7 +293058,7 @@
         {
           "kind": "def",
           "name": "ak9a_05_mmioReadByte_accepts_uart",
-          "line": 340,
+          "line": 341,
           "called": [
             "PAddr",
             "SystemState",
@@ -292904,7 +293072,7 @@
         {
           "kind": "def",
           "name": "ak9a_06_mmioRead_alias_matches_byte",
-          "line": 352,
+          "line": 353,
           "called": [
             "PAddr",
             "SystemState",
@@ -292921,7 +293089,7 @@
         {
           "kind": "def",
           "name": "ak9a_07_mmioRead32_positive_success",
-          "line": 384,
+          "line": 385,
           "called": [
             "PAddr",
             "SystemState",
@@ -292935,7 +293103,7 @@
         {
           "kind": "def",
           "name": "ak9a_08_mmioRead64_positive_success",
-          "line": 393,
+          "line": 394,
           "called": [
             "PAddr",
             "SystemState",
@@ -292949,7 +293117,7 @@
         {
           "kind": "def",
           "name": "ak9h_01_readCStringChecked_rejects_oob",
-          "line": 406,
+          "line": 407,
           "called": [
             "expect",
             "readCStringChecked"
@@ -292958,7 +293126,7 @@
         {
           "kind": "def",
           "name": "ak9h_02_readCStringChecked_rejects_fuel_zero",
-          "line": 415,
+          "line": 416,
           "called": [
             "expect",
             "readCStringChecked"
@@ -292967,7 +293135,7 @@
         {
           "kind": "def",
           "name": "ak9h_03_readCStringChecked_ok",
-          "line": 424,
+          "line": 425,
           "called": [
             "expect",
             "readCStringChecked"
@@ -292976,7 +293144,7 @@
         {
           "kind": "def",
           "name": "ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated",
-          "line": 433,
+          "line": 434,
           "called": [
             "expect",
             "readCStringChecked"
@@ -292985,7 +293153,7 @@
         {
           "kind": "def",
           "name": "an7d2_01_rpi5BootVSpaceRoot_wellFormed",
-          "line": 449,
+          "line": 450,
           "called": [
             "expect",
             "size",
@@ -292995,7 +293163,7 @@
         {
           "kind": "def",
           "name": "an7d2_02_rpi5BootVSpaceRoot_wxCompliant",
-          "line": 470,
+          "line": 471,
           "called": [
             "expect",
             "wxCompliant"
@@ -293004,7 +293172,7 @@
         {
           "kind": "def",
           "name": "an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions",
-          "line": 496,
+          "line": 497,
           "called": [
             "VAddr",
             "expect",
@@ -293018,7 +293186,7 @@
         {
           "kind": "def",
           "name": "an7d2_04_rpi5BootVSpaceRoot_paddrBounded",
-          "line": 524,
+          "line": 525,
           "called": [
             "expect",
             "toNat"
@@ -293027,7 +293195,7 @@
         {
           "kind": "def",
           "name": "mkRegProperty",
-          "line": 547,
+          "line": 548,
           "called": [
             "size"
           ]
@@ -293035,7 +293203,7 @@
         {
           "kind": "def",
           "name": "mkPeripheral",
-          "line": 569,
+          "line": 570,
           "called": [
             "FdtNode",
             "mkRegProperty",
@@ -293045,7 +293213,7 @@
         {
           "kind": "def",
           "name": "mkRangesProperty",
-          "line": 579,
+          "line": 580,
           "called": [
             "length",
             "mkRegProperty"
@@ -293054,13 +293222,13 @@
         {
           "kind": "def",
           "name": "mkCellProperty",
-          "line": 584,
+          "line": 585,
           "called": []
         },
         {
           "kind": "def",
           "name": "mkBus",
-          "line": 599,
+          "line": 600,
           "called": [
             "FdtNode",
             "mkCellProperty",
@@ -293071,7 +293239,7 @@
         {
           "kind": "def",
           "name": "withStatus",
-          "line": 611,
+          "line": 612,
           "called": [
             "FdtNode",
             "ofNat",
@@ -293082,7 +293250,7 @@
         {
           "kind": "def",
           "name": "an7d5_01_extractPeripherals_depth3_discovery",
-          "line": 631,
+          "line": 632,
           "called": [
             "FdtNode",
             "any",
@@ -293098,7 +293266,7 @@
         {
           "kind": "def",
           "name": "review5_bus_without_ranges_hides_its_children",
-          "line": 672,
+          "line": 673,
           "called": [
             "FdtNode",
             "any",
@@ -293111,7 +293279,7 @@
         {
           "kind": "def",
           "name": "review5_empty_ranges_is_the_identity",
-          "line": 688,
+          "line": 689,
           "called": [
             "FdtNode",
             "any",
@@ -293125,7 +293293,7 @@
         {
           "kind": "def",
           "name": "review7_partial_ranges_tuple_maps_nothing",
-          "line": 708,
+          "line": 709,
           "called": [
             "FdtNode",
             "any",
@@ -293140,7 +293308,7 @@
         {
           "kind": "def",
           "name": "review5_untranslatable_address_is_refused",
-          "line": 729,
+          "line": 730,
           "called": [
             "FdtNode",
             "any",
@@ -293154,7 +293322,7 @@
         {
           "kind": "def",
           "name": "review5_disabled_peripheral_is_not_discovered",
-          "line": 744,
+          "line": 745,
           "called": [
             "any",
             "expect",
@@ -293166,7 +293334,7 @@
         {
           "kind": "def",
           "name": "an7d5_02_extractPeripherals_zero_fuel_collapses",
-          "line": 765,
+          "line": 766,
           "called": [
             "FdtNode",
             "expect",
@@ -293178,7 +293346,7 @@
         {
           "kind": "def",
           "name": "an7d5_03_extractPeripherals_skips_incomplete_nodes",
-          "line": 779,
+          "line": 780,
           "called": [
             "FdtNode",
             "expect",
@@ -293189,7 +293357,7 @@
         {
           "kind": "def",
           "name": "an7d5_04_extractPeripherals_excludes_reserved_names",
-          "line": 789,
+          "line": 790,
           "called": [
             "FdtNode",
             "any",
@@ -293204,13 +293372,13 @@
         {
           "kind": "def",
           "name": "be32",
-          "line": 827,
+          "line": 828,
           "called": []
         },
         {
           "kind": "def",
           "name": "be64",
-          "line": 834,
+          "line": 835,
           "called": [
             "be32"
           ]
@@ -293218,7 +293386,7 @@
         {
           "kind": "def",
           "name": "fdtString",
-          "line": 838,
+          "line": 839,
           "called": [
             "size"
           ]
@@ -293226,7 +293394,7 @@
         {
           "kind": "def",
           "name": "fdtProp",
-          "line": 845,
+          "line": 846,
           "called": [
             "be32",
             "size",
@@ -293236,7 +293404,7 @@
         {
           "kind": "def",
           "name": "fdtBeginNode",
-          "line": 850,
+          "line": 851,
           "called": [
             "be32",
             "fdtString"
@@ -293245,14 +293413,6 @@
         {
           "kind": "def",
           "name": "fdtEndNodeTok",
-          "line": 853,
-          "called": [
-            "be32"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "fdtEndTok",
           "line": 854,
           "called": [
             "be32"
@@ -293260,8 +293420,16 @@
         },
         {
           "kind": "def",
+          "name": "fdtEndTok",
+          "line": 855,
+          "called": [
+            "be32"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "stringsBlock",
-          "line": 857,
+          "line": 858,
           "called": [
             "fdtString"
           ]
@@ -293269,21 +293437,12 @@
         {
           "kind": "def",
           "name": "regNameOff",
-          "line": 861,
+          "line": 862,
           "called": []
         },
         {
           "kind": "def",
           "name": "deviceTypeNameOff",
-          "line": 862,
-          "called": [
-            "fdtString",
-            "size"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "compatibleNameOff",
           "line": 863,
           "called": [
             "fdtString",
@@ -293292,8 +293451,17 @@
         },
         {
           "kind": "def",
+          "name": "compatibleNameOff",
+          "line": 864,
+          "called": [
+            "fdtString",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "statusNameOff",
-          "line": 867,
+          "line": 868,
           "called": [
             "fdtString",
             "size"
@@ -293302,7 +293470,7 @@
         {
           "kind": "def",
           "name": "addressCellsNameOff",
-          "line": 870,
+          "line": 871,
           "called": [
             "fdtString",
             "size",
@@ -293312,7 +293480,7 @@
         {
           "kind": "def",
           "name": "sizeCellsNameOff",
-          "line": 871,
+          "line": 872,
           "called": [
             "addressCellsNameOff",
             "fdtString",
@@ -293322,7 +293490,7 @@
         {
           "kind": "def",
           "name": "rootCellProperties",
-          "line": 881,
+          "line": 882,
           "called": [
             "addressCellsNameOff",
             "be32",
@@ -293333,7 +293501,7 @@
         {
           "kind": "def",
           "name": "peripheralNode",
-          "line": 886,
+          "line": 887,
           "called": [
             "be64",
             "compatibleNameOff",
@@ -293348,7 +293516,7 @@
         {
           "kind": "def",
           "name": "emptyRsvBlock",
-          "line": 901,
+          "line": 902,
           "called": [
             "be64"
           ]
@@ -293356,7 +293524,7 @@
         {
           "kind": "def",
           "name": "assembleDtb",
-          "line": 905,
+          "line": 906,
           "called": [
             "be32",
             "emptyRsvBlock",
@@ -293367,7 +293535,7 @@
         {
           "kind": "def",
           "name": "boardDtbRegions",
-          "line": 920,
+          "line": 921,
           "called": [
             "assembleDtb",
             "be64",
@@ -293385,7 +293553,7 @@
         {
           "kind": "def",
           "name": "boardDtb",
-          "line": 937,
+          "line": 938,
           "called": [
             "boardDtbRegions"
           ]
@@ -293393,7 +293561,7 @@
         {
           "kind": "def",
           "name": "assembleDtbReserving",
-          "line": 947,
+          "line": 948,
           "called": [
             "be32",
             "be64",
@@ -293406,7 +293574,7 @@
         {
           "kind": "def",
           "name": "assembleDtbWithoutRsvBlock",
-          "line": 969,
+          "line": 970,
           "called": [
             "be32",
             "size",
@@ -293416,7 +293584,7 @@
         {
           "kind": "def",
           "name": "assembleDtbAtOffsets",
-          "line": 987,
+          "line": 988,
           "called": [
             "be32",
             "emptyRsvBlock",
@@ -293427,7 +293595,7 @@
         {
           "kind": "def",
           "name": "assembleDtbVersioned",
-          "line": 1000,
+          "line": 1001,
           "called": [
             "be32",
             "emptyRsvBlock",
@@ -293438,7 +293606,7 @@
         {
           "kind": "def",
           "name": "assembleDtbDeclaring",
-          "line": 1018,
+          "line": 1019,
           "called": [
             "be32",
             "emptyRsvBlock",
@@ -293449,7 +293617,7 @@
         {
           "kind": "def",
           "name": "canonicalStructBlock",
-          "line": 1031,
+          "line": 1032,
           "called": [
             "be64",
             "deviceTypeNameOff",
@@ -293466,7 +293634,7 @@
         {
           "kind": "def",
           "name": "terminatorOutsideStructBlockDtb",
-          "line": 1052,
+          "line": 1053,
           "called": [
             "assembleDtbDeclaring",
             "canonicalStructBlock",
@@ -293476,7 +293644,7 @@
         {
           "kind": "def",
           "name": "nameOutsideStringsBlockDtb",
-          "line": 1064,
+          "line": 1065,
           "called": [
             "assembleDtbDeclaring",
             "canonicalStructBlock",
@@ -293487,7 +293655,7 @@
         {
           "kind": "def",
           "name": "memoryNamedRootDtb",
-          "line": 1073,
+          "line": 1074,
           "called": [
             "assembleDtb",
             "be64",
@@ -293503,7 +293671,7 @@
         {
           "kind": "def",
           "name": "twoRootDtb",
-          "line": 1081,
+          "line": 1082,
           "called": [
             "assembleDtb",
             "be64",
@@ -293520,7 +293688,7 @@
         {
           "kind": "def",
           "name": "overlappingMemoryDtb",
-          "line": 1101,
+          "line": 1102,
           "called": [
             "boardDtbRegions"
           ]
@@ -293528,7 +293696,7 @@
         {
           "kind": "def",
           "name": "unterminatedBoardDtb",
-          "line": 1112,
+          "line": 1113,
           "called": [
             "assembleDtb",
             "be64",
@@ -293545,7 +293713,7 @@
         {
           "kind": "def",
           "name": "unknownTokenBoardDtb",
-          "line": 1126,
+          "line": 1127,
           "called": [
             "assembleDtb",
             "be32",
@@ -293563,7 +293731,7 @@
         {
           "kind": "def",
           "name": "boardDtbWithMemoryStatus",
-          "line": 1136,
+          "line": 1137,
           "called": [
             "assembleDtb",
             "be64",
@@ -293582,7 +293750,7 @@
         {
           "kind": "def",
           "name": "singleGicNodeBoardDtb",
-          "line": 1154,
+          "line": 1155,
           "called": [
             "assembleDtb",
             "be64",
@@ -293601,7 +293769,7 @@
         {
           "kind": "def",
           "name": "canonicalBodyWithMemory",
-          "line": 1171,
+          "line": 1172,
           "called": [
             "deviceTypeNameOff",
             "fdtBeginNode",
@@ -293617,7 +293785,7 @@
         {
           "kind": "def",
           "name": "headerReservedBoardDtb",
-          "line": 1184,
+          "line": 1185,
           "called": [
             "assembleDtbReserving",
             "be64",
@@ -293627,7 +293795,7 @@
         {
           "kind": "def",
           "name": "reservedMemoryNodeBoardDtb",
-          "line": 1190,
+          "line": 1191,
           "called": [
             "addressCellsNameOff",
             "assembleDtb",
@@ -293648,7 +293816,7 @@
         {
           "kind": "def",
           "name": "futureVersionBoardDtb",
-          "line": 1211,
+          "line": 1212,
           "called": [
             "assembleDtbReserving",
             "be64",
@@ -293658,7 +293826,7 @@
         {
           "kind": "def",
           "name": "latePropertyBoardDtb",
-          "line": 1217,
+          "line": 1218,
           "called": [
             "addressCellsNameOff",
             "assembleDtb",
@@ -293677,7 +293845,7 @@
         {
           "kind": "def",
           "name": "duplicateStatusBoardDtb",
-          "line": 1230,
+          "line": 1231,
           "called": [
             "assembleDtb",
             "be64",
@@ -293695,7 +293863,7 @@
         {
           "kind": "def",
           "name": "wrongDevicesAtRightWindowsDtb",
-          "line": 1247,
+          "line": 1248,
           "called": [
             "assembleDtb",
             "be64",
@@ -293713,7 +293881,7 @@
         {
           "kind": "def",
           "name": "twoMemoryNodeDtb",
-          "line": 1263,
+          "line": 1264,
           "called": [
             "assembleDtb",
             "be64",
@@ -293732,7 +293900,7 @@
         {
           "kind": "def",
           "name": "singleCellBoardDtb",
-          "line": 1281,
+          "line": 1282,
           "called": [
             "addressCellsNameOff",
             "assembleDtb",
@@ -293751,7 +293919,7 @@
         {
           "kind": "def",
           "name": "truncatedRegBoardDtb",
-          "line": 1297,
+          "line": 1298,
           "called": [
             "assembleDtb",
             "be64",
@@ -293768,7 +293936,7 @@
         {
           "kind": "def",
           "name": "emptyUnitAddressDtb",
-          "line": 1308,
+          "line": 1309,
           "called": [
             "assembleDtb",
             "be64",
@@ -293785,7 +293953,7 @@
         {
           "kind": "def",
           "name": "reservedMemoryOnlyDtb",
-          "line": 1319,
+          "line": 1320,
           "called": [
             "assembleDtb",
             "be64",
@@ -293802,7 +293970,7 @@
         {
           "kind": "def",
           "name": "boundMapOf",
-          "line": 1331,
+          "line": 1332,
           "called": [
             "MemoryRegion",
             "PlatformConfig",
@@ -293814,7 +293982,7 @@
         {
           "kind": "def",
           "name": "variantMap",
-          "line": 1335,
+          "line": 1336,
           "called": [
             "MemoryRegion",
             "rpi5MemoryMapForConfig"
@@ -293822,8 +293990,26 @@
         },
         {
           "kind": "def",
+          "name": "kernelEntryBoot",
+          "line": 1343,
+          "called": [
+            "IntermediateState",
+            "PlatformBinding.declaredCores",
+            "PlatformConfig",
+            "RPi5Platform",
+            "bindPlatformConfig",
+            "bootFromPlatformCheckedWithIdleThreadsFor",
+            "config",
+            "none",
+            "rpi5InitialObjects",
+            "rpi5IrqTable",
+            "rpi5PlatformConfigFromDtb"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "deviceTreeBridge_01_fixture_blob_parses",
-          "line": 1341,
+          "line": 1356,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -293834,7 +294020,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_02_matching_board_accepted",
-          "line": 1354,
+          "line": 1369,
           "called": [
             "boardDtb",
             "config",
@@ -293848,7 +294034,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_03_short_ram_refused",
-          "line": 1371,
+          "line": 1386,
           "called": [
             "boardDtb",
             "expect",
@@ -293859,7 +294045,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_04_missing_mmio_refused",
-          "line": 1380,
+          "line": 1395,
           "called": [
             "boardDtb",
             "expect",
@@ -293870,7 +294056,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_05_unparseable_blob_refused",
-          "line": 1388,
+          "line": 1403,
           "called": [
             "expect",
             "none",
@@ -293880,7 +294066,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_06_coverage_is_refusable",
-          "line": 1397,
+          "line": 1412,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -293895,7 +294081,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_07_small_variants_bind_their_own_map",
-          "line": 1412,
+          "line": 1427,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -293909,7 +294095,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_08_canonical_board_binds_canonical_map",
-          "line": 1431,
+          "line": 1446,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -293922,7 +294108,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_09_eight_gib_as_reported",
-          "line": 1442,
+          "line": 1457,
           "called": [
             "boardDtbRegions",
             "boundMapOf",
@@ -293937,7 +294123,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_10_between_variants_binds_largest_covered",
-          "line": 1455,
+          "line": 1470,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -293951,7 +294137,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_11_foreign_base_refused",
-          "line": 1466,
+          "line": 1481,
           "called": [
             "boardDtbRegions",
             "expect",
@@ -293962,7 +294148,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_12_split_aperture_binds_canonical_map",
-          "line": 1475,
+          "line": 1490,
           "called": [
             "boardDtbRegions",
             "boundMapOf",
@@ -293976,7 +294162,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_13_direct_path_fallback_is_smallest",
-          "line": 1499,
+          "line": 1514,
           "called": [
             "PlatformConfig",
             "all",
@@ -293995,7 +294181,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_22_every_register_block_is_a_window",
-          "line": 1519,
+          "line": 1534,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -294010,7 +294196,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_23_extent_past_the_window_is_refused",
-          "line": 1539,
+          "line": 1554,
           "called": [
             "any",
             "expect",
@@ -294025,7 +294211,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_18_every_memory_node_contributes",
-          "line": 1568,
+          "line": 1583,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -294044,7 +294230,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_19_root_cell_widths_are_honoured",
-          "line": 1587,
+          "line": 1602,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -294059,7 +294245,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_20_partial_reg_pair_refused",
-          "line": 1599,
+          "line": 1614,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -294069,7 +294255,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_21_empty_unit_address_is_not_memory",
-          "line": 1606,
+          "line": 1621,
           "called": [
             "DeviceTree.fromDtbFull",
             "emptyUnitAddressDtb",
@@ -294079,7 +294265,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_14_unterminated_blob_refused",
-          "line": 1618,
+          "line": 1633,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -294093,7 +294279,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_15_unknown_token_refused",
-          "line": 1631,
+          "line": 1646,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -294103,7 +294289,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_16_disabled_memory_refused",
-          "line": 1640,
+          "line": 1655,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtbWithMemoryStatus",
@@ -294115,7 +294301,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_17_reserved_memory_child_is_not_ram",
-          "line": 1655,
+          "line": 1670,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -294125,7 +294311,7 @@
         {
           "kind": "def",
           "name": "review8_mmio_windows_require_the_right_devices",
-          "line": 1663,
+          "line": 1678,
           "called": [
             "DeviceTree.fromDtbFull",
             "all",
@@ -294147,8 +294333,28 @@
         },
         {
           "kind": "def",
+          "name": "kernelEntry_boots_the_deployment_on_every_variant",
+          "line": 1715,
+          "called": [
+            "PlatformBinding.labeling",
+            "RPi5Platform",
+            "boardDtb",
+            "boardDtbRegions",
+            "boundMapOf",
+            "config",
+            "declaredWitnessesInstalled",
+            "empty",
+            "expect",
+            "kernelEntryBoot",
+            "none",
+            "state",
+            "variantMap"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "review7_declared_block_extents_are_enforced",
-          "line": 1702,
+          "line": 1744,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtBlob.of",
@@ -294170,7 +294376,7 @@
         {
           "kind": "def",
           "name": "review9_parser_conformance_and_reservations",
-          "line": 1762,
+          "line": 1804,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtBlob.of",
@@ -294217,7 +294423,7 @@
         {
           "kind": "def",
           "name": "review9_runtime_contract_follows_the_installed_map",
-          "line": 1977,
+          "line": 2019,
           "called": [
             "MachineConfig",
             "MachineState",
@@ -294233,13 +294439,13 @@
         {
           "kind": "def",
           "name": "dtbCorpusDir",
-          "line": 2006,
+          "line": 2048,
           "called": []
         },
         {
           "kind": "def",
           "name": "corpusHexDigit",
-          "line": 2008,
+          "line": 2050,
           "called": [
             "none",
             "toNat"
@@ -294248,7 +294454,7 @@
         {
           "kind": "def",
           "name": "parseCorpusHex",
-          "line": 2016,
+          "line": 2058,
           "called": [
             "corpusHexDigit",
             "empty",
@@ -294263,7 +294469,7 @@
         {
           "kind": "def",
           "name": "parseCorpusNat",
-          "line": 2031,
+          "line": 2073,
           "called": [
             "corpusHexDigit",
             "isEmpty",
@@ -294273,7 +294479,7 @@
         {
           "kind": "def",
           "name": "parseCorpusRegions",
-          "line": 2041,
+          "line": 2083,
           "called": [
             "foldr",
             "none",
@@ -294284,7 +294490,7 @@
         {
           "kind": "def",
           "name": "corpusDeclaredRegions",
-          "line": 2059,
+          "line": 2101,
           "called": [
             "fdtRoot",
             "memoryRegionsFromNodes",
@@ -294297,7 +294503,7 @@
         {
           "kind": "def",
           "name": "corpusStructureReadable",
-          "line": 2074,
+          "line": 2116,
           "called": [
             "fdtRoot",
             "none",
@@ -294308,7 +294514,7 @@
         {
           "kind": "def",
           "name": "dtbCorpus_every_fixture_agrees_with_the_manifest",
-          "line": 2082,
+          "line": 2124,
           "called": [
             "corpusDeclaredRegions",
             "corpusStructureReadable",
@@ -294327,7 +294533,7 @@
         {
           "kind": "def",
           "name": "bootMapHex",
-          "line": 2138,
+          "line": 2180,
           "called": [
             "ofList"
           ]
@@ -294335,7 +294541,7 @@
         {
           "kind": "def",
           "name": "bootMapKindName",
-          "line": 2141,
+          "line": 2183,
           "called": [
             "MemoryKind"
           ]
@@ -294343,13 +294549,13 @@
         {
           "kind": "def",
           "name": "bootMapFarProbe",
-          "line": 2148,
+          "line": 2190,
           "called": []
         },
         {
           "kind": "def",
           "name": "bootMapProbes",
-          "line": 2150,
+          "line": 2192,
           "called": [
             "MemoryRegion",
             "bootMapFarProbe",
@@ -294360,7 +294566,7 @@
         {
           "kind": "def",
           "name": "bootMapTableLines",
-          "line": 2155,
+          "line": 2197,
           "called": [
             "bootMapHex",
             "bootMapKindName",
@@ -294377,7 +294583,7 @@
         {
           "kind": "def",
           "name": "bootMap_the_lean_map_is_the_shared_table",
-          "line": 2172,
+          "line": 2214,
           "called": [
             "bootMapTableLines",
             "checkSharedFixture"
@@ -294386,7 +294592,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2179,
+          "line": 2221,
           "called": [
             "ak9a_01_mmioRead32_rejects_unaligned",
             "ak9a_02_mmioRead64_rejects_unaligned",
@@ -294455,6 +294661,7 @@
             "deviceTreeBridge_22_every_register_block_is_a_window",
             "deviceTreeBridge_23_extent_past_the_window_is_refused",
             "dtbCorpus_every_fixture_agrees_with_the_manifest",
+            "kernelEntry_boots_the_deployment_on_every_variant",
             "review5_bus_without_ranges_hides_its_children",
             "review5_disabled_peripheral_is_not_discovered",
             "review5_empty_ranges_is_the_identity",

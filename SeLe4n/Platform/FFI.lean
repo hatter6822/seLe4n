@@ -1392,8 +1392,9 @@ the fail-open direction on the one call that decides whether the kernel exists.
 The handling is the same on every failure and there is exactly one right answer
 to it, so it belongs here rather than in the caller.
 
-This is what `lean_kernel_main` calls (`SeLe4n.Platform.RPi5.kernelMain`, WS-BP
-BP4.1), applied to the deployment `rpi5PlatformConfig`.  Making the failure handling a
+This is what `lean_kernel_main` reaches (`SeLe4n.Platform.RPi5.kernelMain`, WS-BP
+BP4.1), through the device-tree wrapper below since BP4.4, on the deployment's
+configuration for the board the device tree describes.  Making the failure handling a
 *definition* is what lets the contract on that entry be decided by the
 elaborator (`SeLe4n/Testing/BootEntryContract.lean`): "the entry calls this
 constant, and no path from it installs kernel state except through it" is a
@@ -1413,12 +1414,12 @@ def bootAndInitialiseRPi5OrHalt (config : PlatformConfig) : BaseIO Unit := do
 -- caller at all; this is its production one.
 --
 -- Everything here is a function of *data*.  The blob arrives as a `ByteArray`
--- rather than as the raw `dtb_ptr` `rust_boot_main` holds, because turning a
--- pointer into a `ByteArray` is a Lean-runtime allocation the bare-metal
--- runtime port owns (register §6 finding 40, SM10.1's largest deliverable).
--- Keeping that one read outside means the whole decision — parse, check the
--- board against the binding, boot or halt — is decidable here and testable
--- without a runtime.
+-- rather than as the raw `dtb_ptr` `rust_boot_main` holds: the HAL copies it
+-- onto the kernel's Lean heap (WS-BP BP4.3, `lean_entry::enter_lean_kernel`),
+-- and `lean_kernel_main` (`RPi5.kernelMain`) is this wrapper on that copy
+-- (BP4.4).  Keeping the one read on the Rust side means the whole decision —
+-- parse, check the board against the binding, boot or halt — is decidable here
+-- and testable without a runtime.
 -- ============================================================================
 
 /-- **WS-RR RR7.27**: why a DTB-driven boot refused.
@@ -1487,12 +1488,11 @@ the same disposition a refused boot already had, extended to the two ways a
 device tree can refuse one: an unparseable blob and a board that is not this
 image's.
 
-This is the wrapper `SeLe4n/Testing/BootEntryContract.lean` anticipates by
-name when it says the kernel supplies one rather than letting the boot entry
-carry an effectful prologue.  What SM10.1 still owes is the one read this
-signature keeps out: turning `rust_boot_main`'s `dtb_ptr` into this
-`ByteArray`, which needs the bare-metal Lean runtime (`docs/REGISTERED_DEBT.md`,
-owned by SM10.1). -/
+This is the wrapper `SeLe4n/Testing/BootEntryContract.lean` anticipated by
+name when it said the kernel supplies one rather than letting the boot entry
+carry an effectful prologue, and since WS-BP BP4.4 it is that contract's
+`approvedBootCall`: `lean_kernel_main` is this wrapper on the firmware's blob,
+which the HAL copies into a `ByteArray` on the kernel's Lean heap (BP4.3). -/
 def bootAndInitialiseRPi5FromDtbOrHalt (blob : ByteArray)
     (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
@@ -1591,6 +1591,37 @@ theorem rpi5PlatformConfigFromDtb_refuses_missing_mmio (blob : ByteArray)
   unfold rpi5PlatformConfigFromDtb
   rw [hParse]
   simp [hMmio]
+
+/-- **WS-BP BP4.4**: every configuration the bridge accepts *is* the device
+tree's account wrapped around the caller's half — the IRQ table, the objects and
+the boot root the caller passed, and the parsed tree's machine configuration.
+The inverse of `rpi5PlatformConfigFromDtb_ok_machineConfig`: that one says what
+an accepted blob produces, this one says an accepted result was produced that
+way, which is what lets a theorem about the hardware entry name the
+configuration it boots without re-running the parse. -/
+theorem rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (config : SeLe4n.Platform.Boot.PlatformConfig)
+    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .ok config) :
+    ∃ dt, SeLe4n.Platform.DeviceTree.fromDtbFull blob
+        SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt ∧
+      config = SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable initialObjects
+        bootVSpaceRoot := by
+  unfold rpi5PlatformConfigFromDtb at h
+  cases hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth with
+  | error e =>
+      rw [hParse] at h
+      cases h
+  | ok dt =>
+      rw [hParse] at h
+      dsimp only at h
+      split at h
+      · injection h with hConfig
+        exact ⟨dt, rfl, hConfig.symm⟩
+      · cases h
 
 /-- **WS-RR RR7.27**: and an accepted one carries the device tree's own machine
 configuration into the config — which `bindPlatformConfig` then replaces with

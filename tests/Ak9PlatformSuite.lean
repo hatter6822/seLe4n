@@ -12,6 +12,7 @@ import SeLe4n.Machine
 import SeLe4n.Model.Object
 import SeLe4n.Platform.Boot
 import SeLe4n.Platform.RPi5.Board
+import SeLe4n.Platform.RPi5.Deployment
 import SeLe4n.Platform.RPi5.MmioAdapter
 import SeLe4n.Platform.RPi5.BootContract
 import SeLe4n.Platform.RPi5.RuntimeContract
@@ -1335,6 +1336,20 @@ private def boundMapOf (config : PlatformConfig) : List MemoryRegion :=
 private def variantMap (gib : Nat) : List MemoryRegion :=
   rpi5MemoryMapForConfig { ramSize := gib * 1024 * 1024 * 1024 }
 
+/-- WS-BP BP4.4: the hardware entry's decision on a blob, run without a runtime —
+`lean_kernel_main` is `bootAndInitialiseRPi5FromDtbOrHalt` on the deployment
+(`RPi5.kernelMain`), so this is its pure half: the bridge, then the checked
+idle-thread boot on the binding's cores.  `none` is the halt. -/
+private def kernelEntryBoot? (blob : ByteArray) : Option (PlatformConfig × IntermediateState) :=
+  match rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjects none with
+  | .error _ => none
+  | .ok config =>
+      match bootFromPlatformCheckedWithIdleThreadsFor
+          (PlatformBinding.declaredCores (platform := RPi5Platform))
+          (bindPlatformConfig RPi5Platform config) with
+      | .error _ => none
+      | .ok ist => some (config, ist)
+
 /-- WS-RR RR7.27: the fixture blob parses — the precondition every case below
 rests on, asserted separately so a broken fixture is distinguishable from a
 broken check. -/
@@ -1690,6 +1705,33 @@ def review8_mmio_windows_require_the_right_devices : IO Unit := do
   match rpi5PlatformConfigFromDtb wrongDevicesAtRightWindowsDtb [] [] none with
   | .ok _ => expect "NEGATIVE review8 the bridge refuses the wrong-device board" false
   | .error _ => expect "NEGATIVE review8 the bridge refuses the wrong-device board" true
+
+/-- **WS-BP BP4.4**: the deployment the hardware entry installs boots on every
+board the device tree describes — 1, 2, 3 (bound as 2), 4 and 8 GiB — binding
+that board's own variant and installing both separation witnesses, and a board
+the bridge refuses boots nothing.  `kernelMain_installs` is the theorem; this
+runs it on the fixture boards, so a deployment that booted only on the smallest
+variant (which is all BP3 proved) would fail here on the first larger one. -/
+def kernelEntry_boots_the_deployment_on_every_variant : IO Unit := do
+  let boards : List (String × ByteArray × Nat) :=
+    [ ("1 GiB", boardDtb 0x40000000, 1), ("2 GiB", boardDtb 0x80000000, 2),
+      ("3 GiB", boardDtb 0xC0000000, 2), ("4 GiB", boardDtb 0xFC000000, 4),
+      ("8 GiB", boardDtbRegions [(0, 0xFC000000), (0x100000000, 0x104000000)], 8) ]
+  for (name, blob, gib) in boards do
+    match kernelEntryBoot? blob with
+    | none => expect s!"BP4.4 the entry boots the deployment on a {name} board" false
+    | some (config, ist) =>
+        expect s!"BP4.4 the entry boots the deployment on a {name} board" true
+        expect s!"BP4.4 the {name} board boots on the {gib} GiB variant"
+          (decide (boundMapOf config = variantMap gib))
+        expect s!"BP4.4 the {name} board installs both separation witnesses"
+          (declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := RPi5Platform)))
+  expect "BP4.4 NEGATIVE: a board short of the smallest variant boots nothing"
+    (kernelEntryBoot? (boardDtb 0x20000000)).isNone
+  expect "BP4.4 NEGATIVE: an empty blob — what the HAL hands over for an unreadable pointer — boots nothing"
+    (kernelEntryBoot? ByteArray.empty).isNone
+  expect "BP4.4 NEGATIVE: a board without the binding's MMIO boots nothing"
+    (kernelEntryBoot? (boardDtb 0xFC000000 (withMmio := false))).isNone
 
 /-- **PR #892 review round 7**: the four bounds findings and the validation one,
 each on a blob that keeps every byte the accepting parser read.
@@ -2261,5 +2303,6 @@ def main : IO Unit := do
   deviceTreeBridge_23_extent_past_the_window_is_refused
   dtbCorpus_every_fixture_agrees_with_the_manifest
   bootMap_the_lean_map_is_the_shared_table
+  kernelEntry_boots_the_deployment_on_every_variant
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

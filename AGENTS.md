@@ -7147,7 +7147,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4.1 and BP4.2 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3 and BP4.1–BP4.4 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type); BP4.3..BP4.6 and BP5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it); BP4.5, BP4.6 and BP5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7436,7 +7436,7 @@ and the RAM-top constants.
 
 **BP3 — the RPi5 deployment boots, proved by evaluation** (`v0.36.2`,
 `SeLe4n/Platform/RPi5/Deployment.lean`, in the library root).
-`rpi5PlatformConfig` has two domains as `confinedDeploymentLabeling` declares
+The deployment (`rpi5PlatformConfigFor`, over a board account) has two domains as `confinedDeploymentLabeling` declares
 them. The root task sits at the lower witness `2`, with its CNode, a VSpace on
 ASID 1, the notification every SPI signals, and untypeds over
 `[256 MiB, 1 GiB)`. The untrusted initial thread sits at the upper witness
@@ -7485,14 +7485,14 @@ everything after that is `decide`. No `native_decide` anywhere.
 successful boot's state, at its own id — is how a deployment's threads are read
 off the configuration rather than evaluated out of the boot. `BaseIO` has no
 `LawfulMonad` instance in this toolchain, so an IO equation closes by `rfl`
-(`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`), not by rewriting.
+(`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`), not by rewriting.
 
 (6) **The state the hardware boot installs satisfies the proof-layer bundle,
 and there is one argument for it** (BP3.5).
 `bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle` covers the
 checked, idle-enqueued boot of every configuration the checked boot accepts,
 `bootToRuntime_invariantBridge_checked` adds the freeze, and
-`rpi5DeploymentBootState_invariantBridge` is the deployment's instance. Both
+`rpi5DeploymentBootStateAt_invariantBridge` is the deployment's instance. Both
 boots, checked and unchecked, are instances of
 `proofLayerInvariantBundle_of_bootShape`: every object is `bootObjectShape`,
 the quiescent fields are defaults, the ASID table is consistent, and the
@@ -7508,8 +7508,9 @@ clauses were checked elsewhere. `bootSafeCapCheck` refuses both, and
 type** (`v0.36.2`).  Four things new code must respect.  (1) **The hardware boot
 entry is `SeLe4n.Platform.RPi5.kernelMain`** (`SeLe4n/Platform/RPi5/KernelMain.lean`,
 in the library root): `@[export lean_kernel_main]`, exactly
-`Platform.FFI.bootAndInitialiseRPi5OrHalt rpi5PlatformConfig`, and
-`kernelMain_installs` states the program it is.  `BootEntryContract.lean` now
+`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjects none`
+since BP4.4 (the item after this block), and `kernelMain_installs` states the
+program it is.  `BootEntryContract.lean` now
 **refuses** an environment with no entry, so a second one, a moved one or a
 deleted one fails Tier 1.  (2) **`EXPECTED_UNRESOLVED` is empty**: every HAL
 `extern "C"` declaration is a requirement both archives must meet, and a seam
@@ -7537,6 +7538,32 @@ linker checks names, never types**, so `check_kernel_entry_exports.py` holds
 every HAL foreign declaration of a Lean-generated symbol to the C prototype the
 Lean compiler generated under `.lake/build/ir` — a new seam's signature is
 checked against the compiler's own statement of the ABI, not against a table.
+
+**BP4.3/BP4.4 — the device tree reaches Lean, and the entry boots on it**
+(`v0.36.2`).  Four things new code must respect.  (1) **The entry takes the
+firmware's blob, not its pointer**: `kernelMain (dtb : ByteArray)` is
+`bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjects none`,
+and `BootEntryContract.lean`'s `approvedBootCall` is that wrapper, with the
+blob required to be the entry's **own parameter** — a fixed blob, an edited
+copy, and the retired `bootAndInitialiseRPi5OrHalt` call are refused witnesses.
+(2) **The HAL copies, and does not decide**: `lean_entry::enter_lean_kernel`
+reads the blob through `cmdline::dtb_blob_from_ptr` inside the window `init_mmu`
+admitted and copies it onto the kernel's Lean heap
+(`lean_runtime::array::byte_array_of`); a pointer that yields no blob is handed
+over as the **empty** array, which the verified parser refuses
+(`kernelMain_refuses`), so whether this board may boot has one owner.  (3) **The
+deployment is proved on every board, not one**: `rpi5PlatformConfigFor board`
+and `rpi5BoundPlatformConfigAt v` replace the smallest-board
+`rpi5PlatformConfig` (retired, with a Tier 3 negative), every gate is decided on
+each of the five variants, and `bootAndInitialiseRPi5_rpi5PlatformConfigFor`
+holds for every account because `rpi5VariantFor` always names a member.  A
+deployment change that breaks the boot on any variant fails to elaborate.  (4)
+**What the bridge accepts is the deployment**:
+`rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree` says an accepted result is the
+parsed tree's account around the caller's half, so `kernelMain_installs` names
+the state it installs — the variant the device tree selected — without
+re-running the parse, and `tests/Ak9PlatformSuite.lean` runs that decision on
+1, 2, 3, 4 and 8 GiB boards.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

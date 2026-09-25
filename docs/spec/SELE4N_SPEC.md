@@ -51,12 +51,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 420,101 across 343 Lean files |
-| **Test LoC** | 85,359 across 71 Lean test suites |
-| **Proved declarations** | 13,906 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 420,258 across 343 Lean files |
+| **Test LoC** | 85,402 across 71 Lean test suites |
+| **Proved declarations** | 13,914 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9); BP4.3..BP4.6 and BP5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10); BP4.5, BP4.6 and BP5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -440,7 +440,9 @@ no size.
 ### 6.2.8 The RPi5 deployment (WS-BP BP3, v0.36.2)
 
 `SeLe4n/Platform/RPi5/Deployment.lean` is the configuration the hardware boot
-installs, `rpi5PlatformConfig`, and the proof that it boots.
+installs, `rpi5PlatformConfigFor board` over the board account the device tree
+supplies (BP4.4), and the proof that it boots on every Raspberry Pi 5 RAM
+variant.
 
 | Object | Id | Domain | Holds |
 |---|---|---|---|
@@ -475,19 +477,20 @@ Three boot rules changed to admit it:
   `mmu::KERNEL_RESERVED_END`, held equal through
   `tests/fixtures/boot_map.expected`.
 
-Every gate of the checked boot is decided by evaluation
-(`rpi5BoundPlatformConfig_wellFormed` and nine siblings, after
+Every gate of the checked boot is decided by evaluation, on each of the five
+variants (`rpi5BoundPlatformConfigAt_wellFormed` and nine siblings, after
 `irqsUnique_eq_transparent` / `objectIdsUnique_eq_transparent` make the
 duplicate checks kernel-reducible).  Both witnesses are installed
-(`rpi5DeploymentBootState_witnessesInstalled`, through the general
+(`rpi5DeploymentBootStateAt_witnessesInstalled`, through the general
 `bootFromPlatformChecked_ok_objects_of_mem`).  The acceptance is
-`bootAndInitialiseRPi5_rpi5PlatformConfig` and
-`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`: the hardware entry installs
-this deployment and never halts on it.
+`bootAndInitialiseRPi5_rpi5PlatformConfigFor` and
+`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`, over **every** board
+account, because `rpi5VariantFor` always names a member of the family: the
+hardware boot installs this deployment and never halts on it.
 
 **The bundle (BP3.5):** the state this boot installs satisfies the proof-layer
 invariant bundle, and its freeze the frozen one —
-`rpi5DeploymentBootState_invariantBridge`, an instance of
+`rpi5DeploymentBootStateAt_invariantBridge`, an instance of
 `bootToRuntime_invariantBridge_checked`, which covers every configuration the
 checked boot accepts.  §8.14.2 has the argument and the CNode-check gap it
 closed.
@@ -499,9 +502,11 @@ closed.
 
 ```lean
 @[export lean_kernel_main]
-def kernelMain (_dtbPointer : UInt64) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5OrHalt rpi5PlatformConfig
+def kernelMain (dtb : ByteArray) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjects none
 ```
+
+(The `ByteArray` argument is BP4.3/BP4.4's; §6.2.10 has what it changed.)
 
 - **It is the program the contract requires, and nothing else.**
   `SeLe4n/Testing/BootEntryContract.lean` accepts it by reducing its body
@@ -544,6 +549,39 @@ def kernelMain (_dtbPointer : UInt64) : BaseIO Unit :=
 - **Not yet read: the DTB pointer.**  The configuration fixes the smallest
   board as the board account.  Moving the entry onto the device-tree wrapper is
   BP4.3–BP4.4.
+
+
+### 6.2.10 The device tree reaches the boot (WS-BP BP4.3/BP4.4, v0.36.2)
+
+`lean_kernel_main` takes the firmware's flattened device tree as a Lean
+`ByteArray` and is `bootAndInitialiseRPi5FromDtbOrHalt` on it and the
+deployment's IRQ table and objects.
+
+- **The HAL copies; Lean decides.**  `lean_entry::enter_lean_kernel` reads the
+  blob through `cmdline::dtb_blob_from_ptr` — header first, `totalsize` bounded
+  by `MAX_DTB_SIZE`, inside the window `init_mmu` admitted — and copies it onto
+  the kernel's Lean heap (`lean_runtime::array::byte_array_of`).  A pointer that
+  yields no blob is handed over as the empty array.  The verified parser refuses
+  that, a malformed blob, and a board that does not cover the binding's RAM and
+  MMIO, and every one halts every PE (`kernelMain_refuses`).
+- **An accepted board boots on its own variant.**
+  `rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree` says an accepted result is the
+  parsed tree's machine configuration around the caller's half, so the
+  configuration booted is `rpi5PlatformConfigFor` of the board's account, and
+  `kernelMain_installs` names the state installed: the deployment's boot state on
+  `rpi5VariantFor` of that account, which the bridge has already checked the
+  board covers (`rpi5PlatformConfigFromDtb_ok_binds_detected_variant`).  That
+  state satisfies the proof-layer bundle (`kernelMain_installs_invariantBundle`).
+- **The contract follows.**  `BootEntryContract.lean`'s `approvedBootCall` is
+  the device-tree wrapper, the entry's type is `ByteArray → BaseIO Unit`, and the
+  blob passed must be the entry's own parameter: a fixed blob, an edited copy and
+  the retired config-taking call are refused witnesses.  The link gate holds the
+  Rust declaration `fn lean_kernel_main(dtb: Obj) -> LeanIoResult` to the C the
+  Lean compiler generated.
+- **Measured on boards.**  `tests/Ak9PlatformSuite.lean` runs the entry's pure
+  half on 1, 2, 3, 4 and 8 GiB device trees — each boots on its own variant with
+  both witnesses installed — and refuses a short board, a board without the
+  binding's MMIO, and the empty blob.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

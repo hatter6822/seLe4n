@@ -13,7 +13,8 @@ import SeLe4n.Platform.FFI
 # Raspberry Pi 5 — the deployment the hardware boot installs (WS-BP BP3)
 
 `Platform.FFI.bootAndInitialiseRPi5` boots *a configuration*; this module is
-that configuration, `rpi5PlatformConfig`, and the proof that it boots.
+that configuration, `rpi5PlatformConfigFor board`, and the proof that it boots
+on every board a Raspberry Pi 5 can be.
 
 ## What it is
 
@@ -21,7 +22,10 @@ The caller's half of a `PlatformConfig` (BP3.1): the IRQ table and the initial
 objects.  The other two fields — the machine configuration and the boot VSpace
 root — are the binding's, supplied by `bindPlatformConfig`, so the machine
 configuration here is only the *board account* the binding selects a variant
-from (the smallest board, until the device-tree path supplies a real one).
+from.  Since WS-BP BP4.4 that account is the firmware's device tree's
+(`rpi5PlatformConfigFromDtb_deployment_ok`), so nothing here is stated for one
+board: every gate is decided on each of the five variants, and every boot
+theorem is stated over an arbitrary account.
 
 Two domains, as `confinedDeploymentLabeling` declares them (BP3.4), each with one
 initial thread, its CSpace and its own address space (BP3.2):
@@ -63,14 +67,17 @@ here:
 
 ## What is proved
 
-`rpi5PlatformConfig_bound_wellFormed` and its siblings discharge every gate of
-the checked boot **by evaluation** (BP3.3) — `wellFormed` through the
-transparent duplicate checks (`irqsUnique_eq_transparent`), every other gate by
-`decide`.  `rpi5PlatformConfig_boots` is the acceptance statement: the checked
-boot on the binding's cores succeeds and installs both witness threads, so
-`bootAndInitialiseRPi5 rpi5PlatformConfig` commits its state and labeling
-(`bootAndInitialiseRPi5_rpi5PlatformConfig`) and the halting entry the boot seam
-calls never halts on it (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`).
+`rpi5BoundPlatformConfigAt_wellFormed` and its siblings discharge every gate
+of the checked boot **by evaluation** (BP3.3), on every member of the RAM family
+(BP4.4) — `wellFormed` through the transparent duplicate checks
+(`irqsUnique_eq_transparent`), every other gate by `decide`.
+`rpi5BoundPlatformConfigAt_boot` is the acceptance statement at a variant: the
+checked boot on the binding's cores succeeds, and
+`rpi5DeploymentBootStateAt_witnessesInstalled` says it installs both witness
+threads.  So `bootAndInitialiseRPi5 (rpi5PlatformConfigFor board)` commits the
+state of the variant `board` selects and the labeling, for **every** account
+(`bootAndInitialiseRPi5_rpi5PlatformConfigFor`), and the halting boot the entry
+reaches never halts on it (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`).
 -/
 
 namespace SeLe4n.Platform.RPi5
@@ -223,131 +230,174 @@ def rpi5IrqTable : List IrqEntry :=
   (List.range gicSpiCount).map fun i =>
     { irq := ⟨32 + i⟩, handler := rpi5InterruptNotificationId }
 
-/-- **WS-BP BP3.1**: the RPi5 deployment's configuration — the caller's half.
-    `bindPlatformConfig` supplies the binding's boot VSpace root and binds the
-    machine configuration; the one given here is the board account, the smallest
-    board, which binds the smallest variant: the memory every Raspberry Pi 5
-    has. -/
-def rpi5PlatformConfig : PlatformConfig :=
+/-- **WS-BP BP3.1 / BP4.4**: the RPi5 deployment's configuration on a board
+    account — the caller's half.  `bindPlatformConfig` supplies the binding's
+    boot VSpace root and binds the machine configuration; `board` is only the
+    *account* the binding selects a variant from.  The hardware entry takes it
+    from the firmware's device tree (`PlatformConfig.fromDeviceTree`,
+    `rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree`), so the deployment is
+    stated over every account rather than over one board. -/
+def rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) : PlatformConfig :=
   { irqTable := rpi5IrqTable
     initialObjects := rpi5InitialObjects
-    machineConfig := rpi5MachineConfigForVariant rpi5SmallestVariant }
+    machineConfig := board }
 
-/-- The configuration the hardware boot actually checks. -/
-abbrev rpi5BoundPlatformConfig : PlatformConfig :=
-  bindPlatformConfig RPi5Platform rpi5PlatformConfig
+/-- **WS-BP BP4.4**: the configuration the hardware boot checks on a board whose
+    account selects variant `v` — `bindPlatformConfig` at the RPi5 binding
+    (`bindPlatformConfig_rpi5PlatformConfigFor`). -/
+def rpi5BoundPlatformConfigAt (v : BCM2712Config) : PlatformConfig :=
+  { irqTable := rpi5IrqTable
+    initialObjects := rpi5InitialObjects
+    machineConfig := rpi5MachineConfigForVariant v
+    bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := RPi5Platform) }
+
+/-- **WS-BP BP4.4**: binding a board account is choosing a variant — the bound
+    configuration depends on the account only through `rpi5VariantFor`. -/
+theorem bindPlatformConfig_rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) :
+    bindPlatformConfig RPi5Platform (rpi5PlatformConfigFor board) =
+      rpi5BoundPlatformConfigAt (rpi5VariantFor board) := rfl
+
+/-- The five members of the family, as a case split every gate below is decided
+    over. -/
+private theorem rpi5Variants_cases {P : BCM2712Config → Prop}
+    (hOne : P { ramSize := 1 * 1024 * 1024 * 1024 })
+    (hTwo : P { ramSize := 2 * 1024 * 1024 * 1024 })
+    (hFour : P { ramSize := 4 * 1024 * 1024 * 1024 })
+    (hEight : P { ramSize := 8 * 1024 * 1024 * 1024 })
+    (hSixteen : P { ramSize := 16 * 1024 * 1024 * 1024 }) :
+    ∀ v ∈ rpi5Variants, P v := by
+  intro v hv
+  simp only [rpi5Variants, List.mem_cons, List.not_mem_nil, or_false] at hv
+  rcases hv with rfl | rfl | rfl | rfl | rfl <;> assumption
 
 -- ============================================================================
--- WS-BP BP3.3 — every gate of the checked boot, discharged by evaluation
+-- WS-BP BP3.3 — every gate of the checked boot, discharged by evaluation, on
+-- every variant (BP4.4: the device tree chooses which)
 -- ============================================================================
 
-/-- **WS-BP BP3.3**: the bound configuration is well-formed — all seven
-    conjuncts, `idleSlotsReserved`, `embeddedIdentitiesMatchSlots`,
+/-- **WS-BP BP3.3**: the bound configuration is well-formed on every variant —
+    all seven conjuncts, `idleSlotsReserved`, `embeddedIdentitiesMatchSlots`,
     `declaredCoreCountInRange` and the untyped placement among them.  The two
     duplicate checks run a hash set the kernel cannot reduce, so they are
     rewritten to their transparent forms first (`irqsUnique_eq_transparent`,
-    `objectIdsUnique_eq_transparent`); everything else is `decide`. -/
-theorem rpi5BoundPlatformConfig_wellFormed : rpi5BoundPlatformConfig.wellFormed = true := by
-  unfold PlatformConfig.wellFormed
-  rw [irqsUnique_eq_transparent, objectIdsUnique_eq_transparent]
-  decide
+    `objectIdsUnique_eq_transparent`); everything else is `decide`.  The
+    placement is the conjunct that reads the variant: the untypeds lie in
+    `[256 MiB, 1 GiB)`, which is RAM on the smallest board and therefore on
+    every one. -/
+theorem rpi5BoundPlatformConfigAt_wellFormed :
+    ∀ v ∈ rpi5Variants, (rpi5BoundPlatformConfigAt v).wellFormed = true := by
+  apply rpi5Variants_cases <;>
+    (unfold PlatformConfig.wellFormed
+     rw [irqsUnique_eq_transparent, objectIdsUnique_eq_transparent]
+     decide)
 
 /-- **WS-BP BP3.3**: every configured object passes the boot-safety sweep. -/
-theorem rpi5BoundPlatformConfig_bootSafe :
-    rpi5BoundPlatformConfig.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) =
-      true := by
+theorem rpi5BoundPlatformConfigAt_bootSafe (v : BCM2712Config) :
+    (rpi5BoundPlatformConfigAt v).initialObjects.all
+      (fun entry => bootSafeObjectCheck entry.obj) = true := by
+  show rpi5InitialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true
   decide
 
 /-- **WS-BP BP3.3**: the three VSpace roots — the kernel's and the two threads'
     — are on three ASIDs. -/
-theorem rpi5BoundPlatformConfig_asidsDistinct :
-    bootVSpaceAsidsDistinct rpi5BoundPlatformConfig = true := by
-  decide
+theorem rpi5BoundPlatformConfigAt_asidsDistinct :
+    ∀ v ∈ rpi5Variants, bootVSpaceAsidsDistinct (rpi5BoundPlatformConfigAt v) = true := by
+  apply rpi5Variants_cases <;> decide
 
 /-- **WS-BP BP3.3**: every IRQ's handler is a notification in the config. -/
-theorem rpi5BoundPlatformConfig_irqHandlers :
-    irqHandlersReferenceNotifications rpi5BoundPlatformConfig = true := by
-  decide
+theorem rpi5BoundPlatformConfigAt_irqHandlers :
+    ∀ v ∈ rpi5Variants, irqHandlersReferenceNotifications (rpi5BoundPlatformConfigAt v) = true := by
+  apply rpi5Variants_cases <;> decide
 
-/-- **WS-BP BP3.3**: the bound machine configuration is well-formed. -/
-theorem rpi5BoundPlatformConfig_machineConfig_wellFormed :
-    rpi5BoundPlatformConfig.machineConfig.wellFormed = true := by
-  decide
+/-- **WS-BP BP3.3**: the bound machine configuration is well-formed — the
+    family's own `rpi5Variants_wellFormed`, read at one member. -/
+theorem rpi5BoundPlatformConfigAt_machineConfig_wellFormed :
+    ∀ v ∈ rpi5Variants, (rpi5BoundPlatformConfigAt v).machineConfig.wellFormed = true := by
+  intro v hv
+  exact List.all_eq_true.mp rpi5Variants_wellFormed v hv
 
-/-- **WS-BP BP3.3**: the bound physical address width is the BCM2712's 44. -/
-theorem rpi5BoundPlatformConfig_physicalAddressWidth :
-    rpi5BoundPlatformConfig.machineConfig.physicalAddressWidth ≤ 52 := by
+/-- **WS-BP BP3.3**: the bound physical address width is the BCM2712's 44, on
+    every variant. -/
+theorem rpi5BoundPlatformConfigAt_physicalAddressWidth (v : BCM2712Config) :
+    (rpi5BoundPlatformConfigAt v).machineConfig.physicalAddressWidth ≤ 52 := by
+  show (rpi5MachineConfigForVariant v).physicalAddressWidth ≤ 52
+  rw [rpi5MachineConfigForVariant_physicalAddressWidth]
   decide
 
 /-- **WS-BP BP3.3**: the binding's boot root collides with no configured
     object. -/
-theorem rpi5BoundPlatformConfig_rootDistinct :
-    bootVSpaceRootObjIdDistinct rpi5BoundPlatformConfig = true := by
-  decide
+theorem rpi5BoundPlatformConfigAt_rootDistinct :
+    ∀ v ∈ rpi5Variants, bootVSpaceRootObjIdDistinct (rpi5BoundPlatformConfigAt v) = true := by
+  apply rpi5Variants_cases <;> decide
 
 /-- **WS-BP BP3.3**: the binding's boot root is not at the sentinel id. -/
-theorem rpi5BoundPlatformConfig_rootNonSentinel :
-    bootVSpaceRootObjIdNonSentinel rpi5BoundPlatformConfig = true := by
-  decide
+theorem rpi5BoundPlatformConfigAt_rootNonSentinel :
+    ∀ v ∈ rpi5Variants, bootVSpaceRootObjIdNonSentinel (rpi5BoundPlatformConfigAt v) = true := by
+  apply rpi5Variants_cases <;> decide
 
 /-- **WS-BP BP3.3**: the binding's boot root is boot-safe. -/
-theorem rpi5BoundPlatformConfig_rootSafe :
-    bootVSpaceRootSafe rpi5BoundPlatformConfig = true := by
-  decide
+theorem rpi5BoundPlatformConfigAt_rootSafe :
+    ∀ v ∈ rpi5Variants, bootVSpaceRootSafe (rpi5BoundPlatformConfigAt v) = true := by
+  apply rpi5Variants_cases <;> decide
 
 /-- **WS-BP BP3.3**: every configured thread's affinity names a core the binding
     declares (both are unpinned). -/
-theorem rpi5BoundPlatformConfig_affinities :
-    bootAffinitiesDeclared (PlatformBinding.declaredCores (platform := RPi5Platform))
-      rpi5BoundPlatformConfig = true := by
-  decide
+theorem rpi5BoundPlatformConfigAt_affinities :
+    ∀ v ∈ rpi5Variants,
+      bootAffinitiesDeclared (PlatformBinding.declaredCores (platform := RPi5Platform))
+        (rpi5BoundPlatformConfigAt v) = true := by
+  apply rpi5Variants_cases <;> decide
 
 /-- **WS-BP BP3.3**: the checked boot takes its success arm — the one with the
-    binding's root installed — so none of its ten refusals is reachable for
-    this configuration. -/
-theorem rpi5BoundPlatformConfig_checked :
-    bootFromPlatformChecked rpi5BoundPlatformConfig =
+    binding's root installed — on every variant, so none of its ten refusals is
+    reachable for this deployment on any Raspberry Pi 5. -/
+theorem rpi5BoundPlatformConfigAt_checked (v : BCM2712Config) (hv : v ∈ rpi5Variants) :
+    bootFromPlatformChecked (rpi5BoundPlatformConfigAt v) =
       .ok (bootEnableInterruptsOp
-        (installBootVSpaceRoot (bootFromPlatform rpi5BoundPlatformConfig)
+        (installBootVSpaceRoot (bootFromPlatform (rpi5BoundPlatformConfigAt v))
           rpi5BootVSpaceRootEntry.id rpi5BootVSpaceRootEntry.root
           rpi5BootVSpaceRootEntry.hMappings)) :=
-  bootFromPlatformChecked_admits_bootVSpace _ rpi5BoundPlatformConfig_wellFormed
-    rpi5BoundPlatformConfig_bootSafe rpi5BoundPlatformConfig_asidsDistinct
-    rpi5BoundPlatformConfig_irqHandlers rpi5BoundPlatformConfig_machineConfig_wellFormed
-    rpi5BoundPlatformConfig_physicalAddressWidth rpi5BoundPlatformConfig_rootDistinct
-    rpi5BoundPlatformConfig_rootNonSentinel rpi5BoundPlatformConfig_rootSafe
-    rpi5BootVSpaceRootEntry rfl
+  bootFromPlatformChecked_admits_bootVSpace _ (rpi5BoundPlatformConfigAt_wellFormed v hv)
+    (rpi5BoundPlatformConfigAt_bootSafe v) (rpi5BoundPlatformConfigAt_asidsDistinct v hv)
+    (rpi5BoundPlatformConfigAt_irqHandlers v hv)
+    (rpi5BoundPlatformConfigAt_machineConfig_wellFormed v hv)
+    (rpi5BoundPlatformConfigAt_physicalAddressWidth v)
+    (rpi5BoundPlatformConfigAt_rootDistinct v hv)
+    (rpi5BoundPlatformConfigAt_rootNonSentinel v hv)
+    (rpi5BoundPlatformConfigAt_rootSafe v hv) rpi5BootVSpaceRootEntry rfl
 
 -- ============================================================================
--- WS-BP BP3.4 / acceptance — the deployment boots, with both witnesses
+-- WS-BP BP3.4 / acceptance — the deployment boots, with both witnesses, on
+-- every board account
 -- ============================================================================
 
-/-- The state the hardware boot installs for this deployment: the checked boot
-    with each declared core's idle thread enqueued. -/
-def rpi5DeploymentBootState : IntermediateState :=
+/-- The state the hardware boot installs for this deployment on variant `v`:
+    the checked boot with each declared core's idle thread enqueued. -/
+def rpi5DeploymentBootStateAt (v : BCM2712Config) : IntermediateState :=
   (PlatformBinding.declaredCores (platform := RPi5Platform)).foldl enqueueIdleThread
     (bootEnableInterruptsOp
-      (installBootVSpaceRoot (bootFromPlatform rpi5BoundPlatformConfig)
+      (installBootVSpaceRoot (bootFromPlatform (rpi5BoundPlatformConfigAt v))
         rpi5BootVSpaceRootEntry.id rpi5BootVSpaceRootEntry.root
         rpi5BootVSpaceRootEntry.hMappings))
 
-/-- **WS-BP BP3.3**: the idle-thread boot on the binding's cores succeeds, and
-    this is what it returns. -/
-theorem rpi5BoundPlatformConfig_boot :
+/-- **WS-BP BP3.3**: the idle-thread boot on the binding's cores succeeds on
+    every variant, and this is what it returns. -/
+theorem rpi5BoundPlatformConfigAt_boot (v : BCM2712Config) (hv : v ∈ rpi5Variants) :
     bootFromPlatformCheckedWithIdleThreadsFor
-        (PlatformBinding.declaredCores (platform := RPi5Platform)) rpi5BoundPlatformConfig =
-      .ok rpi5DeploymentBootState :=
-  bootFromPlatformCheckedWithIdleThreadsFor_map_ok _ _ _ rpi5BoundPlatformConfig_checked
-    rpi5BoundPlatformConfig_affinities
+        (PlatformBinding.declaredCores (platform := RPi5Platform))
+        (rpi5BoundPlatformConfigAt v) =
+      .ok (rpi5DeploymentBootStateAt v) :=
+  bootFromPlatformCheckedWithIdleThreadsFor_map_ok _ _ _ (rpi5BoundPlatformConfigAt_checked v hv)
+    (rpi5BoundPlatformConfigAt_affinities v hv)
 
 /-- **WS-BP BP3.4**: a configured thread is a thread of the boot state. -/
-private theorem rpi5Deployment_tcb_installed (id cspace vspace : SeLe4n.ObjId)
-    (hMem : tcbEntry id (rpi5InitialThread id cspace vspace) ∈
-      rpi5BoundPlatformConfig.initialObjects) :
-    (rpi5DeploymentBootState.state.getTcb? ⟨id.val⟩).isSome = true := by
+private theorem rpi5Deployment_tcb_installed (v : BCM2712Config) (hv : v ∈ rpi5Variants)
+    (id cspace vspace : SeLe4n.ObjId)
+    (hMem : tcbEntry id (rpi5InitialThread id cspace vspace) ∈ rpi5InitialObjects) :
+    ((rpi5DeploymentBootStateAt v).state.getTcb? ⟨id.val⟩).isSome = true := by
   have h := bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem _ _ _
-    rpi5BoundPlatformConfig_boot _ hMem
-  have hTcb : rpi5DeploymentBootState.state.getTcb? ⟨id.val⟩ =
+    (rpi5BoundPlatformConfigAt_boot v hv) _ hMem
+  have hTcb : (rpi5DeploymentBootStateAt v).state.getTcb? ⟨id.val⟩ =
       some (rpi5InitialThread id cspace vspace) :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mpr h
   rw [hTcb]; rfl
@@ -355,61 +405,79 @@ private theorem rpi5Deployment_tcb_installed (id cspace vspace : SeLe4n.ObjId)
 /-- **WS-BP BP3.4**: both threads the labeling declares separated are installed
     — the root task at the lower witness, the untrusted initial thread at the
     upper — so the boot's last refusal (`uninstalledSeparationWitnessBootError`)
-    is unreachable too. -/
-theorem rpi5DeploymentBootState_witnessesInstalled :
-    declaredWitnessesInstalled rpi5DeploymentBootState.state
+    is unreachable too, on every variant. -/
+theorem rpi5DeploymentBootStateAt_witnessesInstalled (v : BCM2712Config)
+    (hv : v ∈ rpi5Variants) :
+    declaredWitnessesInstalled (rpi5DeploymentBootStateAt v).state
       (PlatformBinding.labeling (platform := RPi5Platform)) = true := by
   unfold declaredWitnessesInstalled
   rw [rpi5_deploymentLabeling_separatedThreads]
   simp only [Bool.and_eq_true]
-  exact ⟨rpi5Deployment_tcb_installed rpi5RootTaskTcbId rpi5RootTaskCNodeId
-      rpi5RootTaskVSpaceId (by show _ ∈ rpi5InitialObjects; simp [rpi5InitialObjects]),
-    rpi5Deployment_tcb_installed rpi5UntrustedTcbId rpi5UntrustedCNodeId
-      rpi5UntrustedVSpaceId (by show _ ∈ rpi5InitialObjects; simp [rpi5InitialObjects])⟩
+  exact ⟨rpi5Deployment_tcb_installed v hv rpi5RootTaskTcbId rpi5RootTaskCNodeId
+      rpi5RootTaskVSpaceId (by simp [rpi5InitialObjects]),
+    rpi5Deployment_tcb_installed v hv rpi5UntrustedTcbId rpi5UntrustedCNodeId
+      rpi5UntrustedVSpaceId (by simp [rpi5InitialObjects])⟩
 
-/-- **WS-BP BP3 acceptance**: the hardware boot entry, given this deployment,
-    commits the boot state and the binding's labeling and returns `.ok` — every
-    refusal arm is unreachable (`rpi5BoundPlatformConfig_checked`,
-    `rpi5BoundPlatformConfig_affinities`,
-    `rpi5DeploymentBootState_witnessesInstalled`, and the labeling guard, which
-    `PlatformBinding.labeling_admitted` discharges for every binding). -/
-theorem bootAndInitialiseRPi5_rpi5PlatformConfig :
-    bootAndInitialiseRPi5 rpi5PlatformConfig =
+/-- **WS-BP BP3 acceptance, BP4.4 generalisation**: the hardware boot, given
+    this deployment on **any** board account, commits the boot state of the
+    variant that account selects and the binding's labeling, and returns `.ok`
+    — every refusal arm is unreachable (`rpi5BoundPlatformConfigAt_checked`,
+    `rpi5BoundPlatformConfigAt_affinities`,
+    `rpi5DeploymentBootStateAt_witnessesInstalled`, and the labeling guard,
+    which `PlatformBinding.labeling_admitted` discharges for every binding).
+    The account is arbitrary because `rpi5VariantFor` always names a member of
+    the family (`rpi5VariantFor_mem`). -/
+theorem bootAndInitialiseRPi5_rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) :
+    bootAndInitialiseRPi5 (rpi5PlatformConfigFor board) =
       (do
-        initialiseKernelState rpi5DeploymentBootState.state
+        initialiseKernelState (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state
         initialiseKernelLabelingContext (PlatformBinding.labeling (platform := RPi5Platform))
-        pure (Except.ok rpi5DeploymentBootState.state)) := by
+        pure (Except.ok (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state)) := by
+  have hv := rpi5VariantFor_mem board
   rw [bootAndInitialiseRPi5_eq, bootAndInitialisePlatform_eq_checked_boot]
-  show (match bootFromPlatformCheckedWithIdleThreadsFor _ rpi5BoundPlatformConfig with
+  show (match bootFromPlatformCheckedWithIdleThreadsFor _
+      (bindPlatformConfig RPi5Platform (rpi5PlatformConfigFor board)) with
     | .error e => _ | .ok ist => _) = _
-  rw [rpi5BoundPlatformConfig_boot]
-  simp only [rpi5DeploymentBootState_witnessesInstalled, ↓reduceIte]
+  rw [bindPlatformConfig_rpi5PlatformConfigFor, rpi5BoundPlatformConfigAt_boot _ hv]
+  simp only [rpi5DeploymentBootStateAt_witnessesInstalled _ hv, ↓reduceIte]
 
-/-- **WS-BP BP3 acceptance**: ...so the halting entry the boot seam calls
+/-- **WS-BP BP3 acceptance**: ...so the halting boot the entry reaches
     (`bootAndInitialiseRPi5OrHalt`) installs the deployment and never reaches
-    `ffiFatalHaltAll` on it. -/
-theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig :
-    bootAndInitialiseRPi5OrHalt rpi5PlatformConfig =
+    `ffiFatalHaltAll` on it, whatever board account it is given. -/
+theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) :
+    bootAndInitialiseRPi5OrHalt (rpi5PlatformConfigFor board) =
       (do
-        initialiseKernelState rpi5DeploymentBootState.state
+        initialiseKernelState (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state
         initialiseKernelLabelingContext (PlatformBinding.labeling (platform := RPi5Platform))) := by
   unfold bootAndInitialiseRPi5OrHalt
-  rw [bootAndInitialiseRPi5_rpi5PlatformConfig]
+  rw [bootAndInitialiseRPi5_rpi5PlatformConfigFor]
   -- `BaseIO` carries no `LawfulMonad` instance to rewrite with, and needs
   -- none: its bind reduces, so the two programs are the same term.
   rfl
 
-
 /-- **WS-BP BP3.5**: the state the hardware boot installs for this deployment
     satisfies the proof-layer invariant bundle, and its freeze the frozen one —
-    `bootToRuntime_invariantBridge_checked` at the binding's declared cores.
-    This is the row's own instance: the boot BP4.1 makes live is this one, and
-    the theorem is stated of the state `bootAndInitialiseRPi5OrHalt` installs
-    (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`), not of a model of it. -/
-theorem rpi5DeploymentBootState_invariantBridge :
-    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle rpi5DeploymentBootState.state ∧
-    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze rpi5DeploymentBootState) :=
+    `bootToRuntime_invariantBridge_checked` at the binding's declared cores — on
+    every variant.  Stated of the state `bootAndInitialiseRPi5OrHalt` installs
+    (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`), not of a model of it. -/
+theorem rpi5DeploymentBootStateAt_invariantBridge (v : BCM2712Config) (hv : v ∈ rpi5Variants) :
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle (rpi5DeploymentBootStateAt v).state ∧
+    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze (rpi5DeploymentBootStateAt v)) :=
   bootToRuntime_invariantBridge_checked _ PlatformBinding.declaredCores_nodup _ _
-    rpi5BoundPlatformConfig_boot
+    (rpi5BoundPlatformConfigAt_boot v hv)
+
+-- ============================================================================
+-- WS-BP BP4.4 — the configuration the device tree yields is this deployment's
+-- ============================================================================
+
+/-- **WS-BP BP4.4**: the device-tree bridge, given this deployment's caller half,
+    yields exactly `rpi5PlatformConfigFor` of the board's own account — so every
+    theorem above, stated over an arbitrary account, is a theorem about what the
+    hardware entry boots. -/
+theorem rpi5PlatformConfigFromDtb_deployment_ok (blob : ByteArray) (config : PlatformConfig)
+    (h : rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjects none = .ok config) :
+    config = rpi5PlatformConfigFor config.machineConfig := by
+  obtain ⟨dt, -, rfl⟩ := rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree _ _ _ _ _ h
+  rfl
 
 end SeLe4n.Platform.RPi5

@@ -9,8 +9,9 @@
 //! Phase 2: MMU initialization → VBAR_EL1 setup
 //! Phase 3: GIC-400 + ARM Generic Timer initialization (AG5)
 //! Phase 4: TPIDR_EL1 setup → IRQ enable
-//! Phase 5: WS-BP BP4.1/BP4.2 — Lean library initialization → the
-//!          kernel-state install (`lean_kernel_main`), on the boot core alone
+//! Phase 5: WS-BP BP4.1–BP4.4 — Lean library initialization → the device
+//!          tree copied into a Lean `ByteArray` → the kernel-state install
+//!          (`lean_kernel_main`), on the boot core alone
 //! Phase 6: WS-SM SM1.D — DTB cmdline parse → secondary-core bring-up
 //!          (`smp_enabled=true` is the default again since v0.32.142,
 //!           when SM5.I serialised kernel entry; see
@@ -314,9 +315,12 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // image with no Lean kernel (`hw_target` off: the host lane, the QEMU
     // HAL-only boots) has no install to order and uses `no_lean_kernel`.
     //
-    // A refused boot does not return: `lean_kernel_main` is the checked RPi5
-    // boot with its failure handled (`Platform.FFI.bootAndInitialiseRPi5OrHalt`),
-    // which halts the system inside the call.
+    // A refused boot does not return: `lean_kernel_main` is the device-tree
+    // boot with its failure handled
+    // (`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`, WS-BP BP4.4), which
+    // halts the system inside the call on a blob the verified parser refuses,
+    // on a board that is not a Raspberry Pi 5, and on a refused boot.  The
+    // firmware's blob reaches it as a `ByteArray` the HAL copies (BP4.3).
     // -----------------------------------------------------------------------
     #[cfg(feature = "hw_target")]
     let secondary_release = {
@@ -429,7 +433,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
         // SGI sent to a PE that cannot take it — and reports success.
         //
         // The two numbers are not reconcilable at this seam: `lean_kernel_main`
-        // takes the DTB pointer and nothing else, and a kernel that adapts its
+        // takes the device tree and nothing else, and a kernel that adapts its
         // topology at runtime is SM10.1's to build.  So the mismatch is
         // refused rather than papered over, which is what this whole cut is
         // about.  An operator who wants fewer PEs declares a binding with that

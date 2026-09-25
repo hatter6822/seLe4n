@@ -967,3 +967,29 @@ fn a_non_ok_base_io_result_halts() {
     // SAFETY: a fresh `IO` error result owned here.
     unsafe { discharge_base_io(LeanIoResult(io_result_mk_error(boxed(0))), "test_export") };
 }
+
+/// WS-BP BP4.3: the device tree's copy is a `ByteArray` of exactly the blob's
+/// bytes, and releasing its one reference leaves the heap as it was — the
+/// entry takes that reference, so the copy is the kernel's to free.
+#[test]
+fn a_byte_array_copy_holds_the_bytes_and_is_released() {
+    let before = live();
+    let blob: [u8; 5] = [0xd0, 0x0d, 0xfe, 0xed, 0x2a];
+    let o = array::byte_array_of(&blob);
+    // SAFETY: `o` is the live scalar array just built, owned here.
+    unsafe {
+        assert_eq!(array::sarray_bytes(o), &blob);
+        dec(o);
+    }
+    let empty = array::byte_array_of(&[]);
+    // SAFETY: as above.
+    unsafe {
+        assert!(array::sarray_bytes(empty).is_empty());
+        dec(empty);
+    }
+    assert_eq!(
+        live(),
+        before,
+        "the copy must be freed with its last reference"
+    );
+}

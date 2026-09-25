@@ -238,9 +238,12 @@ readiness scan, so a call to one must be registered in
 `LEAN_UPCALLS_OUTSIDE_THE_GATE` or sit behind the gate.
 
 **The boot entry and its ordering** (WS-BP BP4.1/BP4.2).  `lean_kernel_main` is
-`SeLe4n.Platform.RPi5.kernelMain`, exactly the halting checked boot of
-`rpi5PlatformConfig`; `SeLe4n/Testing/BootEntryContract.lean` refuses any other
-shape and refuses its absence.  Releasing a secondary consumes a
+`SeLe4n.Platform.RPi5.kernelMain`, exactly the halting device-tree boot of the
+deployment on the `ByteArray` the HAL copies from the firmware's blob (BP4.3/BP4.4);
+`SeLe4n/Testing/BootEntryContract.lean` refuses any other shape — a fixed or
+edited blob included — and refuses its absence.  The deployment is
+`rpi5PlatformConfigFor board`, proved to boot on every RAM variant, so a change
+to it that breaks any variant fails to elaborate.  Releasing a secondary consumes a
 `lean_entry::SecondaryReleasePermit`: with `hw_target` the only one is what
 `enter_lean_kernel` returns after the install, and `no_lean_kernel()` is for
 images and tests that link no kernel.  A new bring-up path takes the permit too

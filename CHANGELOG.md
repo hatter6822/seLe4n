@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4.1 and BP4.2: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists and runs before any secondary core is released
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3 and BP4.1–BP4.4: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -803,6 +803,42 @@ configuration, and the proof that it boots.
   - `lean_runtime` tests: a thousand discharged results leave the heap as it
     was, the classifier releases every heap result whatever its tag, and a
     non-`ok` result halts.
+- **BP4.3/BP4.4 — the device tree reaches Lean, and the entry boots on it.**
+  `lean_kernel_main` took the DTB pointer and did not read it, and booted a
+  deployment whose board account was fixed at the smallest Raspberry Pi 5, so
+  the board-versus-binding check WS-RR RR7.27 built had no hardware caller.
+  - The HAL copies the firmware's blob onto the kernel's Lean heap
+    (`lean_entry::enter_lean_kernel`, through `cmdline::dtb_blob_from_ptr` inside
+    the window `init_mmu` admitted, and `lean_runtime::array::byte_array_of`) and
+    hands the `ByteArray`'s one reference to `lean_kernel_main`, now declared
+    `fn(dtb: Obj) -> LeanIoResult` and held to the compiler's C by the link gate.
+    A pointer that yields no blob is handed over **empty** rather than refused
+    in Rust, so the verified parser owns the refusal.
+  - `kernelMain (dtb : ByteArray)` is `bootAndInitialiseRPi5FromDtbOrHalt` on it.
+    `kernelMain_refuses`: a blob the parser refuses, or a board that does not
+    cover the binding's RAM and MMIO, halts every PE.  `kernelMain_installs`: an
+    accepted board installs the deployment's state on the variant its account
+    selects, read off `rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree` (new).
+  - `BootEntryContract.lean`'s `approvedBootCall` is the device-tree wrapper and
+    the entry's type `ByteArray → BaseIO Unit`, and the blob must be the entry's
+    own parameter.  New refused witnesses: a fixed blob, an edited copy, and the
+    retired `bootAndInitialiseRPi5OrHalt` call.  Making the parameter check
+    return `true` fails the build on the fixed-blob witness.
+  - **The deployment is proved on every board, not one.**  The device tree now
+    selects the RAM variant, so BP3's proofs at the smallest board would have
+    described a boot the entry no longer performs.  `rpi5PlatformConfigFor board`
+    and `rpi5BoundPlatformConfigAt v` replace `rpi5PlatformConfig` /
+    `rpi5BoundPlatformConfig` / `rpi5DeploymentBootState` (retired, with a
+    Tier 3 negative); every gate is decided on each of the five variants,
+    `bootAndInitialiseRPi5_rpi5PlatformConfigFor` holds for every account
+    (`rpi5VariantFor_mem`), and the invariant bridge is stated per variant.
+  - `tests/Ak9PlatformSuite.lean` `kernelEntry_boots_the_deployment_on_every_variant`
+    runs the entry's pure half on 1, 2, 3, 4 and 8 GiB device trees — each boots
+    on its own variant (3 GiB on the 2 GiB map) with both separation witnesses
+    installed — and refuses a short board, a board without the binding's MMIO,
+    and the empty blob.  `lean_runtime` and `lean_entry` tests: the copy holds
+    the bytes, is freed with its last reference, and an unreadable pointer
+    becomes the empty array.
 - **Tests.**
   - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
     admitted with its ASID registered, beside the binding's; ASID collisions are
@@ -817,7 +853,7 @@ configuration, and the proof that it boots.
     badge. Reverting the check is caught when the build fails:
     `bootSafeObjectCheck_sound` stops elaborating.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1, BP4.2)
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.4)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 
