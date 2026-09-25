@@ -5001,6 +5001,13 @@ run_check "INVARIANT" rg -n '^theorem rpi5InitialObjectsFor_covers_ram($|[ ({:\[
 run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_ramUntypedInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5RootTaskCNodeFor_slotsAddressable($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_negative_check "INVARIANT" rg -n '\brpi5InitialObjects\b|\brpi5RootTaskCNode\b' SeLe4n tests
+# WS-BP BP5.1: the kernel image is one bare-metal binary, gated behind its own
+# feature so no ordinary build links it; its panic handler halts the SYSTEM
+# (never this PE alone); and `link.ld` reaches that binary's link, on a
+# bare-metal target only.
+run_check "INVARIANT" rg -U -n '^\[\[bin\]\]\nname = "sele4n-kernel"\npath = "src/bin/sele4n_kernel\.rs"\nrequired-features = \["kernel_image"\]$' rust/sele4n-hal/Cargo.toml
+run_check "INVARIANT" rg -U -n '^#\[panic_handler\]\nfn panic\(_info: &core::panic::PanicInfo<._>\) -> ! \{\n    sele4n_hal::gic::halt_all\(\)\n\}$' rust/sele4n-hal/src/bin/sele4n_kernel.rs
+run_check "INVARIANT" rg -U -n '^    if std::env::var\("CARGO_CFG_TARGET_OS"\)\.as_deref\(\) == Ok\("none"\) \{[^\n]*(\n([ \t][^\n]*)?)*?        println!\("cargo:rustc-link-arg-bin=sele4n-kernel=-T\{manifest_dir\}/link\.ld"\);$' rust/sele4n-hal/build.rs
 # The re-type operand must NOT regress to the bare domain-wide invalidate.
 run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
 # The scrubbed extent has exactly ONE definition, and both the scrub and the

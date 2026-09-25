@@ -215,6 +215,18 @@ fn main() {
         return;
     }
 
+    // WS-BP BP5.1: the kernel image binary is laid out by `link.ld`.  The
+    // argument reaches that binary's link alone (`rustc-link-arg-bin`), and
+    // only on a bare-metal target, where `link.ld` is the image's layout; a
+    // hosted build of the library, its tests and its host tools never sees it.
+    // The path is absolute, because the link runs in a directory cargo
+    // chooses.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("none") {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+            .expect("cargo sets CARGO_MANIFEST_DIR for every build script");
+        println!("cargo:rustc-link-arg-bin=sele4n-kernel=-T{manifest_dir}/link.ld");
+    }
+
     let mut asm = cc::Build::new();
     // WS-RR RR1.6: pick an assembler that can actually target aarch64.
     // Left to its defaults, `cc` falls back to the host `cc` for

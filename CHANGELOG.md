@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3 and BP4.1–BP4.7: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4 and BP5.1: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -953,6 +953,46 @@ configuration, and the proof that it boots.
     trees, each installed RAM untyped against its extension and its root-CNode
     capability (with `retype`). It also checks that no untyped id exists past
     the last extension.
+- **BP5.1 — the kernel image is one bare-metal binary.**
+  - `sele4n-kernel` (`rust/sele4n-hal/src/bin/sele4n_kernel.rs`) is `no_std` /
+    `no_main`. It requires the new `kernel_image` feature, so no ordinary build
+    of the HAL links it. On a hosted target it is a program that refuses to run,
+    which keeps `cargo clippy --all-targets --all-features` building.
+  - The HAL's build script passes `-T link.ld` to that binary's link alone,
+    only when `target_os = "none"`. The image's ELF entry is `boot.S`'s `_start`.
+  - Its `#[panic_handler]` is `gic::halt_all`, the system-wide barrier every
+    boot-fatal refusal uses. It prints nothing, because the UART writer takes a
+    lock the panicking core may hold. `shootdown.rs`'s two comments saying the
+    tree has no panic handler are corrected.
+  - `scripts/check_kernel_image.py` checks the linked release image, as the
+    cross lane's new step [7/7].
+    - It is an AArch64 executable, entered at `_start`, at `link.ld`'s `ORIGIN`
+      and at `.text.boot`'s first byte.
+    - Nothing is undefined, weak symbols included.
+    - Every allocated section is one `link.ld` names, in its order and of its
+      kind. A `NOLOAD` section holds no file bytes and lies at or after
+      `__bss_start`. Every other section lies inside `[_start,
+      __image_load_end)`.
+    - `__exception_vectors` is `.text.vectors`' 2 KiB-aligned first byte, and
+      `boot.S`'s branch targets are text.
+    - `check_link_script`'s layout relations hold of the image's own symbols.
+  - The section list is read from `link.ld`, not written into the gate. The
+    self-test has fourteen single-relation cases, and the script parses into the
+    shape they assume. Mutating each check out fails its case.
+  - The FP/SIMD gate reads the linked image. The release image is 10,053
+    instructions with no FP/SIMD register operand; `compiler_builtins`' FP
+    helpers are not in this link.
+  - `check_aarch64_cross_target.py` requires the release image build with its
+    feature (never `--all-features`), both image checks over exactly the release
+    path, and a cross clippy lane covering the binary. That lane is now
+    `--features hw_target,kernel_image --lib --bins`. Twelve new
+    token-preserving cases; the self-test has 92.
+  - The image is built without `hw_target`, which names the Lean kernel's
+    symbols that nothing yet provides. It boots the Rust half
+    (`SecondaryReleasePermit::no_lean_kernel`); linking `libsele4n.a` is the
+    next row.
+  - The plan's BP5.3 row now pins `kernel_address` to `link.ld`'s load address,
+    rather than relying on the firmware's default.
 - **Tests.**
   - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
     admitted with its ASID registered, beside the binding's; ASID collisions are
@@ -967,7 +1007,7 @@ configuration, and the proof that it boots.
     badge. Reverting the check is caught when the build fails:
     `bootSafeObjectCheck_sound` stops elaborating.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7)
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

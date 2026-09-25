@@ -55,6 +55,13 @@ hw_target = []
 # what made the whole crate look uncross-compilable.  See the `[[bin]]`
 # section below.
 host_tools = []
+# WS-BP BP5.1: gate for the kernel image binary (`src/bin/sele4n_kernel.rs`),
+# the one final bare-metal binary in the tree.  The HAL library's own builds
+# never enable it, so `cargo build -p sele4n-hal` stays a library build; the
+# cross lane builds the image by naming it (`--features kernel_image --bin
+# sele4n-kernel`).  It enables nothing in the library: whether the image links
+# the Lean kernel is `hw_target`'s question, and BP5.2's.
+kernel_image = []
 
 # Explicit target declaration so `required-features` can be attached.
 # Declaring one `[[bin]]` disables Cargo's auto-discovery of `src/bin/`
@@ -77,6 +84,18 @@ host_tools = []
 name = "rw_lock_oracle"
 path = "src/bin/rw_lock_oracle.rs"
 required-features = ["host_tools"]
+
+# WS-BP BP5.1: the kernel image.  `no_std` / `no_main` on a bare-metal target,
+# entered at `_start` from `boot.S` and laid out by `link.ld`, which the build
+# script passes to this binary's link alone.  `test = false` and `bench =
+# false` because a `no_main` image has no harness to run; its behaviour is the
+# library's, which the library's tests cover.
+[[bin]]
+name = "sele4n-kernel"
+path = "src/bin/sele4n_kernel.rs"
+required-features = ["kernel_image"]
+test = false
+bench = false
 
 [build-dependencies]
 # AN8-E (R-HAL-L3): pinned with explicit minimum versions matching the

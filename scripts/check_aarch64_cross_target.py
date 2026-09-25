@@ -106,6 +106,15 @@ FP_CHECKED_OBJECTS = (
 # THIS target -- the real `.text.boot` the probe link places under `link.ld`.
 LINK_CHECK_SCRIPT = "scripts/check_link_script.py"
 LINK_CHECKED_ARCHIVE = FP_CHECKED_OBJECTS[1]
+# WS-BP BP5.1: the kernel image -- the one final bare-metal binary in the tree
+# -- its feature, the RELEASE image's path as bash receives it after expansion,
+# and the gate that asks the image the questions only a real link answers.  An
+# image build is a cross `cargo build` naming `--bin` IMAGE_BIN; every other
+# cross build is a library build and keeps the library's rules.
+IMAGE_BIN = "sele4n-kernel"
+IMAGE_FEATURE = "kernel_image"
+IMAGE_PATH = f"target/{CROSS_TARGET}/release/{IMAGE_BIN}"
+IMAGE_CHECK_SCRIPT = "scripts/check_kernel_image.py"
 # Toolchain components the gate needs: clippy for the cross lint lane,
 # llvm-tools for the pinned llvm-objdump the FP/SIMD check disassembles with.
 REQUIRED_COMPONENTS = ("clippy", "llvm-tools")
@@ -820,6 +829,29 @@ def check_gate_script(root: str) -> list[str]:
             f"exists for -- and a build for any other target compiles none "
             f"of the cross surface."
         )
+    # WS-BP BP5.1: the image build is its own lane.  It links the HAL under
+    # `link.ld` into `IMAGE_BIN`, and until BP5.2 links the Lean kernel it is
+    # built without `hw_target` (which names symbols nothing yet provides), so
+    # the library's rules below are asked of the library builds alone.
+    images = [argv for argv in targeted if IMAGE_BIN in option_values(argv, "bin")]
+    targeted = [argv for argv in targeted if argv not in images]
+    released_images = [
+        argv
+        for argv in images
+        if ("--release" in argv or "release" in option_values(argv, "profile"))
+        and IMAGE_FEATURE in option_values(argv, "features")
+        and "--all-features" not in argv
+    ]
+    if not released_images:
+        problems.append(
+            f"{GATE_SCRIPT}: no cross `cargo build --release --target "
+            f"{CROSS_TARGET} --features {IMAGE_FEATURE} --bin {IMAGE_BIN}`; "
+            f"found {[' '.join(a) for a in images] or 'no image build'}. "
+            f"The kernel image is the one link that resolves every symbol "
+            f"the HAL names and lays it out under `link.ld`, and the deployed "
+            f"image is a release build.  `--all-features` would enable "
+            f"`host_tools`, which is not a bare-metal feature."
+        )
     unfeatured = [
         argv
         for argv in targeted
@@ -908,6 +940,24 @@ def check_gate_script(root: str) -> list[str]:
             f"lane has them removed before rustc or clippy runs -- so "
             f"without it the cross surface is compiled but never linted."
         )
+    # WS-BP BP5.1: the image's `#[panic_handler]` exists on the bare-metal
+    # target alone, so the cross clippy lane is the only one that can lint it.
+    # A lane that names the feature but restricts itself to the library
+    # (`--lib` alone) lints none of it.
+    def lints_image(argv: list[str]) -> bool:
+        if IMAGE_FEATURE not in option_values(argv, "features") and "--all-features" not in argv:
+            return False
+        kinds = [flag for flag in argv if flag in TARGET_KIND_FLAGS + ("--lib", "--bins", "--bin")]
+        return (not kinds or "--bins" in argv or "--all-targets" in argv
+                or IMAGE_BIN in option_values(argv, "bin"))
+
+    if lints and not any(lints_image(argv) for argv in lints):
+        problems.append(
+            f"{GATE_SCRIPT}: no cross `cargo clippy` lints the kernel image "
+            f"(`--features {IMAGE_FEATURE}` with its binary selected): "
+            f"{[' '.join(a) for a in lints]}. Its panic handler is compiled "
+            f"for the bare-metal target only, which no host lane reaches."
+        )
     for argv in lints:
         if (
             "hw_target" not in option_values(argv, "features")
@@ -984,6 +1034,25 @@ def check_gate_script(root: str) -> list[str]:
             f"image exists."
         )
 
+    # WS-BP BP5.1: the image the release build produced is checked as an
+    # image and disassembled.  Executed, and over exactly the RELEASE image of
+    # THIS target: a debug image is not what is deployed.
+    image_runs = gate_runs(IMAGE_CHECK_SCRIPT)
+    if not any(args == [IMAGE_PATH] for args in image_runs):
+        problems.append(
+            f"{GATE_SCRIPT}: no executed `{IMAGE_CHECK_SCRIPT}` over "
+            f"{IMAGE_PATH}; found {image_runs or 'no invocation'}. It is what "
+            f"proves the image is entered at `_start`, leaves nothing "
+            f"undefined, and holds only the sections `link.ld` names."
+        )
+    if not any(IMAGE_PATH in args for args in fp_runs):
+        problems.append(
+            f"{GATE_SCRIPT}: no executed `{FP_CHECK_SCRIPT}` over the "
+            f"release image {IMAGE_PATH}; found {fp_runs or 'no invocation'}. "
+            f"The target's `compiler_builtins` is not FP-free, so only the "
+            f"linked image shows which of its members the link pulled in."
+        )
+
     # A load-bearing command must be able to FAIL the script.  Under
     # `set -e` a command followed by `&&` or `||` is exempt from errexit, so
     # it runs, its failure is discarded, and every token above stays put.
@@ -994,7 +1063,9 @@ def check_gate_script(root: str) -> list[str]:
             and argv[1:2] in (["build"], ["clippy"])
             and CROSS_TARGET in option_values(argv, "target")
         ) or any(
-            token.endswith(FP_CHECK_SCRIPT) or token.endswith(LINK_CHECK_SCRIPT)
+            token.endswith(FP_CHECK_SCRIPT)
+            or token.endswith(LINK_CHECK_SCRIPT)
+            or token.endswith(IMAGE_CHECK_SCRIPT)
             for token in argv[:2]
         )
         if load_bearing and operator in ERREXIT_EXEMPTING_OPERATORS:
@@ -1649,12 +1720,18 @@ set -euo pipefail
 CROSS_TARGET="{CROSS_TARGET}"
 cargo build --target "$CROSS_TARGET" -p sele4n-hal --features hw_target
 cargo build --release --target "$CROSS_TARGET" -p sele4n-hal --features hw_target
-cargo clippy --target "$CROSS_TARGET" -p sele4n-hal --features hw_target -- -D warnings
+cargo clippy --target "$CROSS_TARGET" -p sele4n-hal --features hw_target,{IMAGE_FEATURE} --lib --bins -- -D warnings
 python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" \\
     target/"${{CROSS_TARGET}}"/release/deps/libsele4n_hal-*.rlib \\
     target/"${{CROSS_TARGET}}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a
 python3 "${{PROJECT_ROOT}}/{LINK_CHECK_SCRIPT}" \\
     target/"${{CROSS_TARGET}}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a
+IMAGE_BIN="{IMAGE_BIN}"
+cargo build --release --target "$CROSS_TARGET" -p sele4n-hal --features {IMAGE_FEATURE} --bin "$IMAGE_BIN"
+python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" \\
+    target/"${{CROSS_TARGET}}"/release/"${{IMAGE_BIN}}"
+python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" \\
+    target/"${{CROSS_TARGET}}"/release/"${{IMAGE_BIN}}"
 """
 
 GOOD_WORKFLOW = f"""name: CI
@@ -2262,7 +2339,8 @@ def self_test() -> int:
     # clippy, so a lint on the aarch64 surface no longer fails the step.
     deny_before_separator = baseline()
     deny_before_separator[GATE_SCRIPT] = GOOD_GATE.replace(
-        "--features hw_target -- -D warnings", "-D warnings --features hw_target"
+        f"--features hw_target,{IMAGE_FEATURE} --lib --bins -- -D warnings",
+        f"-D warnings --features hw_target,{IMAGE_FEATURE} --lib --bins",
     )
     cases.append(
         Case(
@@ -2574,6 +2652,49 @@ def self_test() -> int:
         fixture = baseline()
         fixture[GATE_SCRIPT] = GOOD_GATE.replace(link_tail, replacement)
         cases.append(Case(label, fixture, True, check="gate_script", mutation="preserving"))
+    # --- WS-BP BP5.1: the kernel image.  Each keeps the image's tokens. ---
+    image_build = (f'cargo build --release --target "$CROSS_TARGET" -p sele4n-hal '
+                   f'--features {IMAGE_FEATURE} --bin "$IMAGE_BIN"\n')
+    image_check = (f'python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" \\\n'
+                   f'    target/"${{CROSS_TARGET}}"/release/"${{IMAGE_BIN}}"\n')
+    image_fp = (f'python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" \\\n'
+                f'    target/"${{CROSS_TARGET}}"/release/"${{IMAGE_BIN}}"\n')
+    for text in (image_build, image_check, image_fp):
+        assert GOOD_GATE.count(text) == 1, text
+    image_cases = [
+        ("the image is never built", image_build, "", "deleting"),
+        ("the image is built in debug only",
+         image_build, image_build.replace("--release ", ""), "preserving"),
+        ("the image is built without its feature",
+         image_build, image_build.replace(IMAGE_FEATURE, "other"), "preserving"),
+        ("the image is built with --all-features",
+         image_build, image_build.replace(f"--features {IMAGE_FEATURE}", "--all-features"),
+         "preserving"),
+        ("the image build names another binary",
+         image_build, image_build.replace('--bin "$IMAGE_BIN"', "--bin rw_lock_oracle"),
+         "preserving"),
+        ("the image is built for the host",
+         image_build, image_build.replace('--target "$CROSS_TARGET" ', ""), "preserving"),
+        ("the image check is echoed, not run", image_check, "echo " + image_check, "preserving"),
+        ("the image check reads the debug image",
+         image_check, image_check.replace("/release/", "/debug/"), "preserving"),
+        ("the image check's failure is discarded by `|| true`",
+         image_check, image_check.replace('"\n', '" || true\n'), "preserving"),
+        ("the FP check never reads the image",
+         image_fp, image_fp.replace("/release/", "/debug/"), "preserving"),
+    ]
+    image_clippy = f"--features hw_target,{IMAGE_FEATURE} --lib --bins"
+    assert GOOD_GATE.count(image_clippy) == 1
+    image_cases += [
+        ("the cross clippy lane lints the library alone",
+         image_clippy, f"--features hw_target,{IMAGE_FEATURE} --lib", "preserving"),
+        ("the cross clippy lane drops the image's feature",
+         image_clippy, "--features hw_target --lib --bins", "preserving"),
+    ]
+    for label, old, new, mutation in image_cases:
+        fixture = baseline()
+        fixture[GATE_SCRIPT] = GOOD_GATE.replace(old, new)
+        cases.append(Case(label, fixture, True, check="gate_script", mutation=mutation))
     for label, old, new, target in [
         ("the toolchain drops llvm-tools",
          '"clippy", "rustfmt", "llvm-tools"', '"clippy", "rustfmt"', TOOLCHAIN_FILE),

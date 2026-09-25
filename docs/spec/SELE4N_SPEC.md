@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 13,928 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12); BP5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** at v0.36.2 (§6.2.13); BP5.2..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -683,6 +683,38 @@ read the device tree and the binding has chosen the variant.
   kernel's reserved extent lies in some root-task untyped, on every board.
   `rpi5DeploymentBootStateAt_ramUntypedInstalled` says the boot installs each.
   `tests/Ak9PlatformSuite.lean` runs this on 1, 2, 3, 4 and 8 GiB device trees.
+
+### 6.2.13 The kernel image (WS-BP BP5.1, v0.36.2)
+
+The kernel is one bare-metal binary, `sele4n-kernel`
+(`rust/sele4n-hal/src/bin/sele4n_kernel.rs`), `no_std` and `no_main`.
+
+- **Built only when named.**  The `[[bin]]` requires the `kernel_image`
+  feature, so no ordinary build of the HAL, its tests or its host tools links it.
+  On a hosted target the file is a program that refuses to run, which is what
+  keeps `cargo clippy --all-targets --all-features` building.
+- **Entered at `_start` and laid out by `link.ld`.**  The HAL's build script
+  passes `-T link.ld` to this binary's link alone, and only on a bare-metal
+  target.  `boot.S`'s `_start`, at the script's load address, is the image's
+  ELF entry.
+- **A panic halts the system.**  The binary's `#[panic_handler]` is
+  `gic::halt_all`, the barrier every boot-fatal refusal in the HAL uses.  It
+  prints nothing, because the UART writer takes a lock the panicking core may
+  hold.
+- **Checked as an image.**  `scripts/check_kernel_image.py`, the cross lane's
+  step [7/7], checks five things of the release image.  It is an AArch64
+  executable entered at `_start` at `link.ld`'s `ORIGIN` and `.text.boot`'s
+  first byte.  It leaves no symbol undefined, weak ones included.  Every
+  allocated section is one `link.ld` names, in its order and of its kind: a
+  `NOLOAD` section holds no file bytes and lies at or after `__bss_start`, and
+  every other section lies inside `[_start, __image_load_end)`.
+  `__exception_vectors` is `.text.vectors`' first byte, 2 KiB aligned, and
+  `boot.S`'s branch targets are text.  Finally, `check_link_script`'s layout
+  relations hold of the image's own symbol table.  The FP/SIMD gate then
+  disassembles the image.
+- **Rust only, for now.**  The image is built without `hw_target`, which names
+  the Lean kernel's symbols, so the boot takes
+  `SecondaryReleasePermit::no_lean_kernel`.  Linking `libsele4n.a` is BP5.2.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

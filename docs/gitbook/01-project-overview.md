@@ -118,8 +118,10 @@ task's code is fetched as the firmware loaded it.  **BP4.6** maps the RAM a
 larger board has above the guaranteed gigabyte, once the verified parse has
 chosen the variant, and seals the boot map before any secondary is released,
 and **BP4.7** hands that RAM to the root task as untypeds, so on every board no
-RAM outside the kernel's reserved extent is left unowned.  BP5..BP8 have not
-started.
+RAM outside the kernel's reserved extent is left unowned.  **BP5.1** makes the
+kernel one bare-metal binary, `sele4n-kernel`, entered at `_start` under
+`link.ld` and checked as an image by `scripts/check_kernel_image.py`; its panic
+handler halts the system.  BP5.2..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

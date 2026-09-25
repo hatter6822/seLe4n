@@ -260,6 +260,14 @@ after the seal.
 selected, and the RPi5 deployment's root-task untypeds over RAM above the
 gigabyte are derived from `rpi5BootRamExtensions v` — add RAM by changing the
 variant's memory map, never by listing untypeds per board.
+**The kernel image is one bare-metal binary** (BP5.1): `sele4n-kernel`
+(`rust/sele4n-hal/src/bin/sele4n_kernel.rs`) is built with
+`cargo build --release --target aarch64-unknown-none-softfloat -p sele4n-hal
+--features kernel_image --bin sele4n-kernel` from `rust/`, laid out by
+`link.ld` (the build script passes `-T` to that binary alone), and checked by
+`scripts/check_kernel_image.py` in the cross lane's step [7/7].  Its panic
+handler is `gic::halt_all`.  Until the Lean kernel is linked it is built without
+`hw_target`, which names symbols nothing yet provides.
 Lean 4.28 returns an `IO`/`BaseIO` function's value directly (no world, no
 result wrapper): declare a `BaseIO Unit` export `-> lean_runtime::LeanBaseIoUnit`
 and hand the value to `lean_runtime::discharge_base_io`; only a module
@@ -278,7 +286,7 @@ saves general-purpose registers only, so kernel code must never touch a vector
 register. The hard-float `aarch64-unknown-none` target lets the compiler use
 them for zeroing, copies and spills — it put 129 such instructions in the HAL —
 so the HAL builds for `aarch64-unknown-none-softfloat`, and the cross gate's
-step [5/6] checks the generated code rather than trusting the flag. Do not
+step [5/7] checks the generated code rather than trusting the flag. Do not
 write `neon`/`fp-armv8` target features, FP inline assembly or a second
 `CPACR_EL1` write: `build.rs` and the disassembly gate refuse all three. User
 FP/SIMD traps and is delivered as a fault until per-thread FP state lands

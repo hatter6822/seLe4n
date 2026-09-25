@@ -7147,7 +7147,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3 and BP4.1–BP4.7 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4 and BP5.1 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds); BP5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`); BP5.2..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7242,7 +7242,7 @@ other write to `CPACR_EL1` in either spelling (`S3_0_C1_C0_2` included) in any
 **user** FP instruction traps too and is delivered as a `userException` fault
 until BP7.9 gives threads an FP context — fail-closed, and the known cost.  (3)
 **`scripts/check_fp_simd_free_objects.py` is the evidence rather than the flag**:
-the cross gate's step [5/6] disassembles the release rlib and the assembly
+the cross gate's step [5/7] disassembles the release rlib and the assembly
 archive and refuses any FP/SIMD/SVE register operand or `FPCR`/`FPSR` access,
 reading operands only and refusing input it cannot decide, and
 `check_aarch64_cross_target.py` requires that step — executed, over those two
@@ -7297,7 +7297,7 @@ target (193 of 193 at `v0.36.2`).
 `.lean_heap` of `LEAN_HEAP_SIZE` (64 MiB) above the image and both stacks, three
 `ASSERT`s (whole pages, page-aligned, inside the smallest board's `[0, 1 GiB)`),
 each proved live by `scripts/check_link_script.py` — the cross lane's step
-[6/6], which links a probe under the script and mutates it until every
+[6/7], which links a probe under the script and mutates it until every
 assertion fires, because nothing else links `link.ld` before BP5.  (2) **One
 heap, one exhaustion condition**: the HAL exports `lean.h`'s `lean_alloc_small`
 / `lean_free_small` / `lean_small_mem_size` under `hw_target`, and the kernel's
@@ -7654,6 +7654,31 @@ kernel's reserved extent lies in some root-task untyped, on every board, with
 `rpi5DeploymentBootStateAt_ramUntypedInstalled` that the boot installs each.
 `BootEntryContract.lean`'s `approvedBootCall` did not move; the object function
 is data like the rest of the wrapper's arguments.
+
+**BP5.1 — the kernel is one bare-metal binary, and it is checked as an image**
+(`v0.36.2`).  Four things new code must respect.  (1) **`sele4n-kernel` is the
+tree's only final binary** (`rust/sele4n-hal/src/bin/sele4n_kernel.rs`,
+`no_std` / `no_main`), so image-wide decisions live there and nowhere else.  It
+requires the `kernel_image` feature, and the HAL's build script passes
+`-T link.ld` to that binary's link alone and only when `target_os = "none"`.
+A new binary target gets its own `[[bin]]`, since declaring one disables
+auto-discovery.  (2) **A panic halts the system**: the `#[panic_handler]` is
+`gic::halt_all`, not the per-PE `cpu::fatal_halt`, and prints nothing because
+the UART writer takes a lock the panicking core may hold.  A Tier 3 anchor pins
+that body.  (3) **The image is checked as an image**, not as objects:
+`scripts/check_kernel_image.py` (the cross lane's step [7/7], required by
+`check_aarch64_cross_target.py`) refuses an entry other than `_start` at
+`link.ld`'s `ORIGIN`, any undefined symbol (weak ones too, which a static link
+resolves to `0`), and any allocated section `link.ld` does not name or places
+out of order.  It also refuses a `NOLOAD` section with file bytes and a loaded
+section outside `[_start, __image_load_end)`.  The allowed sections are derived
+from `link.ld` itself, so an orphan placed by the linker fails the lane.  The
+FP/SIMD gate reads the linked image too.  (4) **The image is built without
+`hw_target` until the Lean kernel is linked**, because that feature names the
+Lean kernel's symbols and nothing provides them yet; it boots the Rust half
+(`SecondaryReleasePermit::no_lean_kernel`).  The cross clippy lane builds with
+`hw_target,kernel_image --lib --bins`, so the panic handler — compiled for the
+bare-metal target only — is linted.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

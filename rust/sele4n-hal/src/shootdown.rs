@@ -601,9 +601,11 @@ pub static SHOOTDOWN_ROUND_SEQ: AtomicU64 = AtomicU64::new(0);
 ///
 /// **The halt is system-wide** (PR #854 review).  This branch used a
 /// bare `assert!`, which takes the ordinary panic/abort path — and the
-/// repository defines no `#[panic_handler]` at all, so what that path
-/// does is decided by a final binary crate that does not exist until
-/// SM10.1.  Meanwhile the caller has already committed its page-table
+/// repository then defined no `#[panic_handler]` at all, so what that path
+/// did was undecided.  (Since WS-BP BP5.1 the kernel image's panic handler
+/// halts system-wide too; the explicit call stays, because the halt is
+/// this branch's decision rather than a consequence of how a panic is
+/// handled.)  Meanwhile the caller has already committed its page-table
 /// transition and holds the round lock, and has published neither
 /// operands nor SGIs, so the other PEs hold stale translations that
 /// nothing will ever invalidate.  Stopping this PE alone does not
@@ -1708,7 +1710,7 @@ mod tests {
     /// (MMIO is a no-op off-target), which is what `should_panic`
     /// observes. The expected text is `fatal_halt`'s, so this fails if
     /// the branch ever reverts to the local `assert!` -- that carried a
-    /// different message and, with no `#[panic_handler]` in the tree,
+    /// different message and, when the tree had no `#[panic_handler]`,
     /// no defined halt behaviour.
     #[test]
     #[should_panic(expected = "fail-closed halt reached")]
