@@ -72,9 +72,9 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 |----------|------|
 | **संस्करण** | `0.36.2` |
 | **Lean टूलचेन** | `v4.28.0` |
-| **उत्पादन Lean LoC** | 343 फ़ाइलों में 420,258 |
-| **परीक्षण Lean LoC** | 71 परीक्षण सुइट्स में 85,402 |
-| **प्रमाणित घोषणाएँ** | 13,914 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
+| **उत्पादन Lean LoC** | 343 फ़ाइलों में 420,295 |
+| **परीक्षण Lean LoC** | 71 परीक्षण सुइट्स में 85,416 |
+| **प्रमाणित घोषणाएँ** | 13,916 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
 | **लक्ष्य हार्डवेयर** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **विहित लेखापरीक्षा** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — पूर्व-1.0 व्यापक लेखापरीक्षा (202 निष्कर्ष; WS-AK AK1–AK10 द्वारा ठीक किए गए; संग्रहीत) |
 | **नवीनतम लेखापरीक्षा** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — WS-AN समापन के बाद की गई पूर्व-1.0 तत्परता लेखापरीक्षा (अब-संग्रहीत [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) की उत्तराधिकारी, जिसे WS-AN AN0–AN12 द्वारा ठीक किया गया)। WS-RC R0..R5 v0.31.2 में सम्पन्न; WS-RC R6..R14 SM0.Q.1 अवशोषण मानचित्रण के अनुसार WS-SM में समाहित (देखें [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md))। सक्रिय कार्यधारा योजना: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)। |

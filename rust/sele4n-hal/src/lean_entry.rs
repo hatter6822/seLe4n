@@ -33,6 +33,14 @@
 //! order, and gets its permit from [`SecondaryReleasePermit::no_lean_kernel`],
 //! which does not exist when the kernel is linked.
 //!
+//! **The permit also certifies a clean image** (WS-BP BP4.5).  Between the
+//! install and minting the permit, [`enter_lean_kernel`] cleans the image's
+//! loaded bytes to the Point of Unification and invalidates every instruction
+//! cache in the domain (`cache::clean_boot_image_to_pou`), so no thread can be
+//! dispatched — by a released secondary or by the boot core's own first
+//! scheduling point, which follows Phase 5 — before an initial task's code is
+//! fetchable as the firmware loaded it.
+//!
 //! **A failed initialization fails closed.**  If the initializer returns an
 //! error, returns something that is not an `IO` result, or runs twice,
 //! [`initialise_lean_library`] halts the whole system through
@@ -61,7 +69,8 @@ pub struct LeanLibraryInitialised {
 ///
 /// On an image that links the Lean kernel the only way to obtain one is
 /// [`enter_lean_kernel`], which returns it after `lean_kernel_main` has
-/// installed the kernel state; every secondary bring-up consumes one.  So a
+/// installed the kernel state and the image has been cleaned to the Point of
+/// Unification (WS-BP BP4.5); every secondary bring-up consumes one.  So a
 /// secondary cannot be released while the unbracketed install runs — the
 /// lost-commit shape `kernel_entry.rs` records is closed by construction rather
 /// than by a lock (WS-BP BP4.2).  Its field is private to this module and it is
@@ -198,8 +207,9 @@ pub fn device_tree_blob(blob: Option<&[u8]>) -> Obj {
 /// device tree the verified parser refuses, a board that is not a Raspberry
 /// Pi 5, and a refused boot all halt the system inside it
 /// (`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`) — so reaching the
-/// `return` below is reaching an installed kernel state, which is what the
-/// permit certifies.
+/// `return` below is reaching an installed kernel state.  The image's loaded
+/// bytes are then cleaned to the Point of Unification before the permit is
+/// minted (WS-BP BP4.5), which is the other thing the permit certifies.
 ///
 /// WS-BP BP4.3: the firmware's device tree is copied into a Lean `ByteArray`
 /// on the kernel's heap before the call, and the entry takes that copy's one
@@ -242,6 +252,11 @@ pub fn enter_lean_kernel(
     // SAFETY: `res` is the `IO` result `lean_kernel_main` just returned, whose
     // one reference this caller owns.
     unsafe { lean_runtime::discharge_base_io(res, "lean_kernel_main") };
+    // WS-BP BP4.5: the image's loaded bytes — where an initial task's code is
+    // carried — are cleaned to the Point of Unification, and every instruction
+    // cache dropped, before the permit that releases a secondary exists and so
+    // before any PE can dispatch a thread.
+    crate::cache::clean_boot_image_to_pou();
     SecondaryReleasePermit { _private: () }
 }
 

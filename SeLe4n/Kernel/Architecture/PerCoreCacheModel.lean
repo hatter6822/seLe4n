@@ -714,8 +714,9 @@ memory:
   fetch the previous owner's instructions from a stale PoU copy.  (seL4's
   `clearMemory` does exactly this: `memzero` followed by
   `cleanCacheRange_PoU`.)
-* `bootImageLoad` — the boot pipeline materialises the initial task's objects,
-  including its code, before the first fetch.
+* `bootImageLoad` — the image's loaded bytes, where an initial task's code is
+  carried, are present before the first fetch; the boot seam cleans them
+  (`bootImageIcacheOp`, WS-BP BP4.5).
 
 This enumeration exists so the obligation is a *checked* object rather than a
 comment: `kernelCodeWriteSites_owe_pou_clean` states it, and
@@ -756,10 +757,8 @@ v0.32.94 claim that no site could name its extent — "only `UntypedObject` has
 `regionBase` / `regionSize`" — was inherited from `.bootImageLoad`, where it
 holds, and was simply false for the re-type: `scrubObjectMemory` computes
 `(base, size)` from `(ObjId, KernelObjectType)` at the point of the write.
-`.bootImageLoad` remains genuinely un-emittable today (boot materialises objects
-through the builder, with no transition to hang an operand on) and is scoped to
-SM10.1 hardware bring-up, which is also the first point at which the memory is
-physically backed and the omission could bite.
+`.bootImageLoad` emits since WS-BP BP4.5: its extent is the image's loaded
+bytes, which the HAL's boot seam reads off the link (`bootImageIcacheOp`).
 
 **PR #845 review (P2)** replaced the previous obligation form, which took
 `_site` (ignoring it) and asserted only that `armv8DCacheToICacheSequence`
@@ -862,35 +861,73 @@ theorem dischargesPoUClean_isDomainWide {op : ICacheInvalidation}
   cases op <;> simp_all [dischargesPoUClean, ICacheInvalidation.covers,
     ICacheInvalidation.isDomainWide]
 
-/-- **WS-SM SM7.D.2**: does a **live** transition emit this site's obligation
-today?
+/-- **WS-BP BP4.5**: the instruction-cache maintenance the boot owes before any
+thread can fetch — clean the image's loaded extent `[base, base + size)` to the
+Point of Unification, then invalidate every instruction cache in the domain.
+
+The extent is the image's **loaded** bytes (`link.ld`'s `[_start,
+__image_load_end)`: text, read-only data and initialised data), because that is
+the only memory the boot makes present that a thread could be handed as code.
+Everything else the boot writes — the Lean heap the install builds its objects
+on, `.bss`, the stacks, the boot tables — lies in `MachineConfig.kernelReserved`,
+which no boot untyped may describe (`untypedPlacementRespected`) and no boot
+VSpace maps (`bootSafeUserVSpaceRootCheck` refuses a configured mapping), so no
+thread can ever fetch it.  An initial task's code, when the image carries one,
+is in those loaded bytes; memory a thread *does* receive comes from an untyped
+through a re-type, which cleans it itself (`.retypeScrub`).
+
+The HAL emits this operand in the boot seam, in
+`lean_entry::enter_lean_kernel`, after the install and before it mints the
+`SecondaryReleasePermit` — so before any secondary is released and before the
+boot core's first scheduling point can dispatch a thread.  The HAL passes the
+typed `CleanRangeIallu` operand directly, whose op tag is `3`
+(`icMaintenanceBroadcast_cleanRangeIallu_encoding`). -/
+def bootImageIcacheOp (base : SeLe4n.PAddr) (size : Nat) : ICacheInvalidation :=
+  .cleanRangeIallu base size
+
+/-- **WS-BP BP4.5** (the obligation discharged): the boot's operand discharges
+the `.bootImageLoad` clean-to-PoU obligation over exactly the extent it names.
+It would be **false** of a bare `.iallu`
+(`ICacheInvalidation.iallu_not_covers_cleanRangeIallu`), which drops the stale
+instruction lines and leaves the loaded bytes wherever the data side holds them. -/
+theorem bootImageIcacheOp_discharges_obligation (base : SeLe4n.PAddr) (size : Nat) :
+    dischargesPoUClean (bootImageIcacheOp base size) base size = true := by
+  simp [bootImageIcacheOp, dischargesPoUClean, ICacheInvalidation.covers]
+
+/-- **WS-BP BP4.5**: the boot's operand ends in `IC IALLUIS`, so every core's
+instruction cache is cold after it. -/
+theorem bootImageIcacheOp_isDomainWide (base : SeLe4n.PAddr) (size : Nat) :
+    (bootImageIcacheOp base size).isDomainWide = true :=
+  dischargesPoUClean_isDomainWide (bootImageIcacheOp_discharges_obligation base size)
+
+/-- **WS-SM SM7.D.2**: does the kernel emit this site's obligation before the
+memory the site writes can be fetched as instructions?
 
 * `.retypeScrub` — **yes** (since v0.32.100).  `retypeIcacheOp` reads the
   target object's type from the pre-state, computes the same
   `(base, size)` that `scrubObjectMemory` will zero, and emits
   `cleanRangeIallu base size`; `retypeIcacheOp_discharges_scrub_obligation`
-  is the machine-checked link.  The extent turned out to be nameable after
-  all: `scrubObjectMemory` derives it from `(ObjId, KernelObjectType)`, not
-  from an untyped region.
-* `.bootImageLoad` — not yet.  Boot materialises objects before any extent
-  bookkeeping exists, and there is no transition to hang an operand on; scoped
-  to SM10.1 hardware bring-up, which is also the first point at which the memory
-  is physically backed and the omission could bite. -/
+  is the machine-checked link.
+* `.bootImageLoad` — **yes** (since WS-BP BP4.5).  The HAL's boot seam emits
+  `bootImageIcacheOp` over the image's loaded extent after the install and
+  before the secondary-release permit exists;
+  `bootImageIcacheOp_discharges_obligation` is the link.  SM7.D deferred this
+  site because the builder names no extent; the extent is the image's, which
+  only the link knows, and the boot seam is where the link is read. -/
 def kernelCodeWriteEmitted : KernelCodeWriteSite → Bool
   | .retypeScrub   => true
-  | .bootImageLoad => false
+  | .bootImageLoad => true
 
-/-- **WS-SM SM7.D.2** (the honesty marker): exactly which sites still owe an
-emission.
+/-- **WS-BP BP4.5** (the closure of SM7.D's honesty marker): every kernel
+code-write site emits its clean-to-PoU.
 
-The v0.32.95 form asserted that *every* site's obligation was a placeholder.
-That is no longer true — the re-type's clean is live — so the marker is now the
-**partition**: wiring the boot-side emission means flipping
-`kernelCodeWriteEmitted .bootImageLoad`, which breaks this `decide` and forces
-the edit to be visible and reviewed rather than silent. -/
-theorem kernelCodeWriteSites_emission_pending :
-    kernelCodeWriteSites.filter (fun s => !kernelCodeWriteEmitted s)
-      = [.bootImageLoad] := by
+It replaces `kernelCodeWriteSites_emission_pending`, which pinned
+`.bootImageLoad` as the one site still owing an emission; flipping that arm
+broke its `decide`, which is how this closure was made visible.  A site added to
+`KernelCodeWriteSite` must be listed (`kernelCodeWriteSites_complete`) and must
+emit, or this `decide` fails. -/
+theorem kernelCodeWriteSites_all_emitted :
+    ∀ s ∈ kernelCodeWriteSites, kernelCodeWriteEmitted s = true := by
   decide
 
 -- ============================================================================

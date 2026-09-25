@@ -489,6 +489,40 @@ pub fn apply_icache_invalidation(op: ICacheInvalidation) {
     }
 }
 
+/// **WS-BP BP4.5**: the operand the boot owes over the image's loaded extent —
+/// clean `[base, base + size)` to the Point of Unification, then invalidate
+/// every instruction cache in the domain.
+///
+/// Lean model: `Architecture.bootImageIcacheOp`, which discharges the
+/// `.bootImageLoad` clean-to-PoU obligation
+/// (`bootImageIcacheOp_discharges_obligation`); its FFI encoding is op tag 3,
+/// the tag [`decode_icache_invalidation`] maps to this variant.
+#[must_use]
+pub const fn boot_image_icache_operand(extent: (u64, u64)) -> ICacheInvalidation {
+    ICacheInvalidation::CleanRangeIallu(extent.0, extent.1)
+}
+
+/// **WS-BP BP4.5**: clean the image's loaded bytes to the Point of Unification
+/// and drop every instruction line in the domain, before any thread can fetch.
+///
+/// An initial task's code is carried in the image, and the firmware wrote those
+/// bytes through a data path this PE's instruction fetches do not read: until
+/// they are cleaned to the PoU and the instruction caches are invalidated, a
+/// fetch may observe stale content.  The extent is
+/// [`crate::mmu::boot_image_loaded_extent`]; memory a thread receives any other
+/// way comes from an untyped through a re-type, which cleans it itself.
+///
+/// Routed through [`apply_icache_invalidation`], so an extent outside the
+/// identity map halts the PE rather than maintaining an address the kernel does
+/// not mean.  The image lies in guaranteed RAM (`link.ld`), so a linked image
+/// cannot reach that refusal.  Called by `lean_entry::enter_lean_kernel` after
+/// the install and before it mints the secondary-release permit.
+pub fn clean_boot_image_to_pou() {
+    apply_icache_invalidation(boot_image_icache_operand(
+        crate::mmu::boot_image_loaded_extent(),
+    ));
+}
+
 /// AN8-D (RUST-M07): Pure memory-ordering fence (no cache-line side effect).
 ///
 /// Issues a DSB ISH so that all preceding memory operations from the
@@ -1052,5 +1086,47 @@ mod identity_map_operand_tests {
         // pass for a function that halted unconditionally.
         apply_icache_invalidation(ICacheInvalidation::IvauPage(IN_WINDOW));
         apply_icache_invalidation(ICacheInvalidation::Iallu);
+    }
+
+    // ------------------------------------------------------------------
+    // WS-BP BP4.5 — the boot image's clean-to-PoU
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn the_boot_operand_is_the_range_clean_over_the_extent_it_is_given() {
+        // The operand the Lean model says discharges `.bootImageLoad`
+        // (`bootImageIcacheOp`, op tag 3) — a clean over the whole extent, not
+        // the bare invalidate, which cleans nothing.
+        let extent = (0x8_0000, 0x20_0000);
+        assert_eq!(
+            boot_image_icache_operand(extent),
+            ICacheInvalidation::CleanRangeIallu(0x8_0000, 0x20_0000)
+        );
+        assert_eq!(
+            decode_icache_invalidation(3, extent.0, extent.1),
+            Some(boot_image_icache_operand(extent))
+        );
+        assert_ne!(boot_image_icache_operand(extent), ICacheInvalidation::Iallu);
+    }
+
+    #[test]
+    fn a_boot_image_in_guaranteed_ram_is_maintainable() {
+        // `link.ld` places the image in guaranteed RAM, so the fail-closed
+        // refusal is unreachable for a linked image; an extent that ran past it
+        // would halt rather than be under-maintained.
+        assert!(icache_operand_within_identity_map(
+            boot_image_icache_operand((0x8_0000, 0x20_0000))
+        ));
+        assert!(!icache_operand_within_identity_map(
+            boot_image_icache_operand((ABOVE_RAM, PAGE_SIZE))
+        ));
+    }
+
+    #[test]
+    fn the_boot_clean_runs_on_the_host() {
+        // The host has no link script, so the extent is empty and the call is
+        // the bare domain-wide invalidate — it must not halt.
+        assert_eq!(crate::mmu::boot_image_loaded_extent(), (0, 0));
+        clean_boot_image_to_pou();
     }
 }

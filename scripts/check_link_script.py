@@ -26,7 +26,10 @@ relations the Rust side depends on:
      board's RAM, and `KERNEL_RESERVED_END` is the number the Lean side states
      — read from the line `tests/Ak9PlatformSuite.lean` writes into
      `tests/fixtures/boot_map.expected`, so the extent the boot refuses
-     untypeds over is the extent this link actually reserved.
+     untypeds over is the extent this link actually reserved;
+  6. (WS-BP BP4.5) `__image_load_end`, the end of the extent the boot cleans to
+     the Point of Unification, lies between the read-only data's end and
+     `__bss_start` — every loaded byte, and nothing the firmware does not load.
 
 Undefined symbols are ignored in the probe link: it is a layout check, and the
 objects' references into the Rust and Lean code are BP5.2's link to resolve.
@@ -35,7 +38,8 @@ Each of the script's `ASSERT`s is then proved *live* rather than present: the
 script is mutated so exactly that assertion's relation breaks — a size that is
 not a whole page, an arena that is not page-aligned, an arena too big for the
 smallest board, and (BP2.6) each permission boundary moved off its page, or a
-section placed between the text and the read-only data — and the link must fail naming that assertion's message.  An
+section placed between the text and the read-only data, and (BP4.5) a loaded
+extent that runs into the NOLOAD sections — and the link must fail naming that assertion's message.  An
 `ASSERT` that a mutation cannot trip reads exactly like one that protects
 something.
 
@@ -121,6 +125,11 @@ ASSERTION_WITNESSES = (
         "read-only data must end on a 4 KiB page",
     ),
     (
+        "a loaded extent that runs into the NOLOAD sections",
+        (("        __image_load_end = .;", "        __image_load_end = . + 0x100000;"),),
+        "end before the NOLOAD sections",
+    ),
+    (
         "an image that outgrows the kernel's reserved extent",
         (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x1000000;"),),
         "must end inside the kernel's reserved extent",
@@ -167,9 +176,10 @@ def symbols(elf: Path) -> dict[str, int]:
 
 
 def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
-    """The five relations, over one link's symbol table and the reserved extent
+    """The six relations, over one link's symbol table and the reserved extent
     the Lean side states."""
-    need = ("_start", "__text_end", "__rodata_start", "__rodata_end", "__bss_end",
+    need = ("_start", "__text_end", "__rodata_start", "__rodata_end", "__image_load_end",
+            "__bss_start", "__bss_end",
             "__stack_top", "__smp_secondary_stack_top", "__lean_heap_start",
             "__lean_heap_end", "LEAN_HEAP_SIZE", "KERNEL_RESERVED_END")
     missing = [n for n in need if n not in table]
@@ -200,6 +210,13 @@ def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
     if not text_start < text_end <= rodata_end <= table["__bss_end"]:
         problems.append(f"the permission boundaries {text_start:#x} < {text_end:#x} <= "
                         f"{rodata_end:#x} are not ordered inside the image")
+    # WS-BP BP4.5: the extent the boot cleans to the Point of Unification is
+    # every loaded byte and nothing the firmware does not load.
+    load_end = table["__image_load_end"]
+    if not rodata_end <= load_end <= table["__bss_start"]:
+        problems.append(f"the loaded image ends at {load_end:#x}, outside "
+                        f"[{rodata_end:#x}, {table['__bss_start']:#x}] (the read-only data's "
+                        f"end to the NOLOAD sections' start)")
     reserved_end = table["KERNEL_RESERVED_END"]
     if reserved != (0, reserved_end):
         problems.append(f"link.ld reserves [0, {reserved_end:#x}), the Lean side "
@@ -221,7 +238,7 @@ def mutate(text: str, edits) -> str:
 
 _GOOD = {
     "_start": 0x80000, "__text_end": 0x81000, "__rodata_start": 0x81000,
-    "__rodata_end": 0x82000,
+    "__rodata_end": 0x82000, "__image_load_end": 0x82800, "__bss_start": 0x83000,
     "__bss_end": 0x83000, "__stack_top": 0x91000,
     "__smp_secondary_stack_top": 0xC1000, "__lean_heap_start": 0xC2000,
     "__lean_heap_end": 0xC2000 + 0x400_0000, "LEAN_HEAP_SIZE": 0x400_0000,
@@ -255,6 +272,10 @@ def self_test() -> int:
          "not where the text ends"),
         ("an arena past the reserved extent", {"KERNEL_RESERVED_END": 0x200_0000},
          "past the kernel's reserved extent"),
+        ("a loaded extent that stops inside the read-only data",
+         {"__image_load_end": 0x81800}, "the loaded image ends"),
+        ("a loaded extent that runs into .bss", {"__image_load_end": 0x83800},
+         "the loaded image ends"),
         ("a Lean extent that differs", {}, "the Lean side"),
     ]
     failures = 0

@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.2): 420,258 lines of production Lean across 343 files, 85,402 lines across 71 Lean test suites,
-13,914 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.36.2): 420,295 lines of production Lean across 343 files, 85,416 lines across 71 Lean test suites,
+13,916 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -112,7 +112,9 @@ permit type the bring-up consumes and only the install returns.  **BP4.3**
 copies the firmware's device tree into a Lean `ByteArray`, and **BP4.4** makes
 the entry the device-tree boot on it: a board that is not a Raspberry Pi 5
 halts every core, and an accepted one boots the deployment on its own RAM
-variant, which is proved for all five.  BP4.5, BP4.6 and BP5..BP8 have not
+variant, which is proved for all five.  **BP4.5** cleans the image's loaded
+bytes to the Point of Unification before any thread can fetch, so an initial
+task's code is fetched as the firmware loaded it.  BP4.6 and BP5..BP8 have not
 started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals

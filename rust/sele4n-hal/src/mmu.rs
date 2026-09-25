@@ -1010,6 +1010,31 @@ fn image_layout() -> ImageLayout {
     }
 }
 
+/// **WS-BP BP4.5**: the image's loaded bytes, `[_start, __image_load_end)` —
+/// its text, read-only data and initialised data, which is everything the
+/// firmware copies from the image file and so the only memory the boot makes
+/// present that a thread could be handed as code.  The boot seam cleans it to
+/// the Point of Unification ([`crate::cache::clean_boot_image_to_pou`]).
+///
+/// The host has no link script and reports the empty range.
+#[must_use]
+pub fn boot_image_loaded_extent() -> (u64, u64) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" {
+            static _start: u8;
+            static __image_load_end: u8;
+        }
+        let start = &raw const _start as u64;
+        let end = &raw const __image_load_end as u64;
+        (start, end.saturating_sub(start))
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        (0, 0)
+    }
+}
+
 /// **WS-BP BP2.6**: the memory the image owns, `[_start, __lean_heap_end)` —
 /// its text, data, `.bss` (the boot tables live there), both stack regions and
 /// the Lean heap arena, which `link.ld` places in that order.

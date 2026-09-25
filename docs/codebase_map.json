@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/nice-rubin-dzkos7",
-      "commit_sha": "b82fdaafe859348cacfed195d8bd3fbfa1d28a5e",
-      "tree_sha": "3bad9a4cf8bab58d2fedc3c8990a71d79c92cc69",
-      "committed_at_utc": "2026-09-25T00:33:22+00:00"
+      "commit_sha": "1c9fdb3a272992a191b5113a557ffeb4f7ce0a4a",
+      "tree_sha": "9a3f85a170da5ac9ec07460a6d5ab2f2b9786ea2",
+      "committed_at_utc": "2026-09-25T03:41:32+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "dee5de00a895cde7f178eac9a47be11d3a70b150fcf68f19e9009238b24c7cb6"
+    "source_digest": "ff835235544f0db2bf4d19bfc25d8471a455fab92cc907abfb3693f26950091a"
   },
   "summary": {
     "module_count": 414,
-    "declaration_count": 23233
+    "declaration_count": 23236
   },
   "readme_sync": {
     "version": "0.36.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 343,
-    "production_loc": 420258,
+    "production_loc": 420295,
     "test_files": 71,
-    "test_loc": 85402,
-    "proved_theorem_lemma_decls": 13914,
+    "test_loc": 85416,
+    "proved_theorem_lemma_decls": 13916,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -10812,7 +10812,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.PerCoreCacheModel",
       "path": "SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean",
-      "declaration_count": 147,
+      "declaration_count": 150,
       "declarations": [
         {
           "kind": "namespace",
@@ -11638,13 +11638,13 @@
         {
           "kind": "inductive",
           "name": "KernelCodeWriteSite",
-          "line": 724,
+          "line": 725,
           "called": []
         },
         {
           "kind": "def",
           "name": "kernelCodeWriteSites",
-          "line": 732,
+          "line": 733,
           "called": [
             "KernelCodeWriteSite"
           ]
@@ -11652,7 +11652,7 @@
         {
           "kind": "theorem",
           "name": "kernelCodeWriteSites_complete",
-          "line": 738,
+          "line": 739,
           "called": [
             "KernelCodeWriteSite",
             "kernelCodeWriteSites"
@@ -11661,7 +11661,7 @@
         {
           "kind": "structure",
           "name": "PoUCleanObligation",
-          "line": 772,
+          "line": 771,
           "called": [
             "CacheBarrierSequence",
             "DCacheMaintenance",
@@ -11671,7 +11671,7 @@
         {
           "kind": "def",
           "name": "DCacheMaintenance.isClean",
-          "line": 786,
+          "line": 785,
           "called": [
             "DCacheMaintenance"
           ]
@@ -11679,7 +11679,7 @@
         {
           "kind": "def",
           "name": "ICacheInvalidation.invalidatesInstruction",
-          "line": 794,
+          "line": 793,
           "called": [
             "ICacheInvalidation"
           ]
@@ -11687,7 +11687,7 @@
         {
           "kind": "def",
           "name": "kernelCodeWriteObligation",
-          "line": 808,
+          "line": 807,
           "called": [
             "KernelCodeWriteSite",
             "PoUCleanObligation",
@@ -11698,7 +11698,7 @@
         {
           "kind": "def",
           "name": "kernelCodeWriteOwesPoUClean",
-          "line": 821,
+          "line": 820,
           "called": [
             "KernelCodeWriteSite",
             "covers",
@@ -11710,7 +11710,7 @@
         {
           "kind": "theorem",
           "name": "kernelCodeWriteSites_owe_pou_clean",
-          "line": 833,
+          "line": 832,
           "called": [
             "kernelCodeWriteOwesPoUClean",
             "kernelCodeWriteSites"
@@ -11719,7 +11719,7 @@
         {
           "kind": "def",
           "name": "dischargesPoUClean",
-          "line": 851,
+          "line": 850,
           "called": [
             "ICacheInvalidation",
             "PAddr",
@@ -11730,7 +11730,7 @@
         {
           "kind": "theorem",
           "name": "dischargesPoUClean_isDomainWide",
-          "line": 859,
+          "line": 858,
           "called": [
             "ICacheInvalidation",
             "ICacheInvalidation.covers",
@@ -11743,25 +11743,60 @@
         },
         {
           "kind": "def",
+          "name": "bootImageIcacheOp",
+          "line": 885,
+          "called": [
+            "ICacheInvalidation",
+            "PAddr",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootImageIcacheOp_discharges_obligation",
+          "line": 893,
+          "called": [
+            "ICacheInvalidation.covers",
+            "PAddr",
+            "bootImageIcacheOp",
+            "dischargesPoUClean",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootImageIcacheOp_isDomainWide",
+          "line": 899,
+          "called": [
+            "PAddr",
+            "bootImageIcacheOp",
+            "bootImageIcacheOp_discharges_obligation",
+            "dischargesPoUClean_isDomainWide",
+            "isDomainWide",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "kernelCodeWriteEmitted",
-          "line": 879,
+          "line": 917,
           "called": [
             "KernelCodeWriteSite"
           ]
         },
         {
           "kind": "theorem",
-          "name": "kernelCodeWriteSites_emission_pending",
-          "line": 891,
+          "name": "kernelCodeWriteSites_all_emitted",
+          "line": 929,
           "called": [
-            "filter",
-            "kernelCodeWriteEmitted"
+            "kernelCodeWriteEmitted",
+            "kernelCodeWriteSites"
           ]
         },
         {
           "kind": "inductive",
           "name": "CoherentAgent",
-          "line": 914,
+          "line": 951,
           "called": [
             "CoreId"
           ]
@@ -11769,7 +11804,7 @@
         {
           "kind": "def",
           "name": "modeledCoherentAgents",
-          "line": 921,
+          "line": 958,
           "called": [
             "CoherentAgent"
           ]
@@ -11777,7 +11812,7 @@
         {
           "kind": "theorem",
           "name": "mem_modeledCoherentAgents",
-          "line": 924,
+          "line": 961,
           "called": [
             "CoreId",
             "allCores",
@@ -11787,7 +11822,7 @@
         {
           "kind": "theorem",
           "name": "modeledCoherentAgents_no_dma_master",
-          "line": 933,
+          "line": 970,
           "called": [
             "CoreId",
             "modeledCoherentAgents",
@@ -11797,7 +11832,7 @@
         {
           "kind": "theorem",
           "name": "dcMaintenance_covers_all_modeled_agents",
-          "line": 943,
+          "line": 980,
           "called": [
             "CoreId",
             "DCacheMaintenance",
@@ -11812,7 +11847,7 @@
         {
           "kind": "def",
           "name": "icacheLineConsistent",
-          "line": 972,
+          "line": 1009,
           "called": [
             "ICacheLine",
             "SystemState",
@@ -11824,7 +11859,7 @@
         {
           "kind": "def",
           "name": "icacheCoherent_perCore",
-          "line": 987,
+          "line": 1024,
           "called": [
             "CoreId",
             "SystemState",
@@ -11836,7 +11871,7 @@
         {
           "kind": "theorem",
           "name": "icacheLineConsistent_of_frame",
-          "line": 995,
+          "line": 1032,
           "called": [
             "ICacheLine",
             "SystemState",
@@ -11848,7 +11883,7 @@
         {
           "kind": "theorem",
           "name": "default_icacheCoherent_perCore",
-          "line": 1003,
+          "line": 1040,
           "called": [
             "ICacheState.empty",
             "SystemState",
@@ -11860,7 +11895,7 @@
         {
           "kind": "theorem",
           "name": "icacheCoherent_perCore_bootCore",
-          "line": 1010,
+          "line": 1047,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -11873,7 +11908,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateOnCore_preserves_icacheCoherent_perCore",
-          "line": 1020,
+          "line": 1057,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -11891,7 +11926,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_preserves_icacheCoherent_perCore",
-          "line": 1036,
+          "line": 1073,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -11907,7 +11942,7 @@
         {
           "kind": "theorem",
           "name": "icFetchOnCore_preserves_icacheCoherent_perCore",
-          "line": 1055,
+          "line": 1092,
           "called": [
             "CoreId",
             "ICacheLine",
@@ -11926,7 +11961,7 @@
         {
           "kind": "theorem",
           "name": "icFetchOnCore_line_was_authorised",
-          "line": 1081,
+          "line": 1118,
           "called": [
             "CoreId",
             "ICacheLine",
@@ -11942,7 +11977,7 @@
         {
           "kind": "def",
           "name": "icacheLineConsistentCheck",
-          "line": 1096,
+          "line": 1133,
           "called": [
             "ICacheLine",
             "SystemState",
@@ -11954,7 +11989,7 @@
         {
           "kind": "theorem",
           "name": "icacheLineConsistentCheck_iff",
-          "line": 1100,
+          "line": 1137,
           "called": [
             "ICacheLine",
             "SystemState",
@@ -11967,7 +12002,7 @@
         {
           "kind": "def",
           "name": "icacheCoherentCheck_perCore",
-          "line": 1109,
+          "line": 1146,
           "called": [
             "SystemState",
             "all",
@@ -11979,7 +12014,7 @@
         {
           "kind": "theorem",
           "name": "icacheCoherentCheck_perCore_iff",
-          "line": 1114,
+          "line": 1151,
           "called": [
             "CoreId",
             "SystemState",
@@ -11992,8 +12027,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1133>",
-          "line": 1133,
+          "name": "<anonymous:instance:1170>",
+          "line": 1170,
           "called": [
             "SystemState",
             "icacheCoherentCheck_perCore_iff",
@@ -12004,7 +12039,7 @@
         {
           "kind": "theorem",
           "name": "cacheCoherency_cross_subsystem",
-          "line": 1154,
+          "line": 1191,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -12022,7 +12057,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1168,
+          "line": 1205,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -12038,7 +12073,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_preserves_perCore_memory_invariants",
-          "line": 1188,
+          "line": 1225,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -12054,7 +12089,7 @@
         {
           "kind": "def",
           "name": "recordIcacheMaintenance",
-          "line": 1219,
+          "line": 1256,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12065,7 +12100,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_objects",
-          "line": 1227,
+          "line": 1264,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12076,7 +12111,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_asidTable",
-          "line": 1230,
+          "line": 1267,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12087,7 +12122,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_scheduler",
-          "line": 1233,
+          "line": 1270,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12098,7 +12133,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_machine",
-          "line": 1236,
+          "line": 1273,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12109,7 +12144,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_tlb",
-          "line": 1239,
+          "line": 1276,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12120,7 +12155,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_tlbShootdown",
-          "line": 1242,
+          "line": 1279,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12131,7 +12166,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_perCoreTlb",
-          "line": 1245,
+          "line": 1282,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12142,7 +12177,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_perCoreICache",
-          "line": 1248,
+          "line": 1285,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12153,7 +12188,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_ne_nil",
-          "line": 1255,
+          "line": 1292,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12165,7 +12200,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_covered",
-          "line": 1264,
+          "line": 1301,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12178,7 +12213,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_of_nil",
-          "line": 1276,
+          "line": 1313,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -12189,7 +12224,7 @@
         {
           "kind": "def",
           "name": "clearIcacheMaintenance",
-          "line": 1284,
+          "line": 1321,
           "called": [
             "SystemState",
             "st"
@@ -12198,7 +12233,7 @@
         {
           "kind": "theorem",
           "name": "clearIcacheMaintenance_pending",
-          "line": 1288,
+          "line": 1325,
           "called": [
             "SystemState",
             "clearIcacheMaintenance",
@@ -12208,7 +12243,7 @@
         {
           "kind": "theorem",
           "name": "clearIcacheMaintenance_frame",
-          "line": 1294,
+          "line": 1331,
           "called": [
             "SystemState",
             "clearIcacheMaintenance",
@@ -12218,7 +12253,7 @@
         {
           "kind": "theorem",
           "name": "clearIcacheMaintenance_preserves_icacheCoherent_perCore",
-          "line": 1307,
+          "line": 1344,
           "called": [
             "SystemState",
             "clearIcacheMaintenance",
@@ -12230,7 +12265,7 @@
         {
           "kind": "theorem",
           "name": "clearIcacheMaintenance_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1313,
+          "line": 1350,
           "called": [
             "SystemState",
             "clearIcacheMaintenance",
@@ -12242,7 +12277,7 @@
         {
           "kind": "def",
           "name": "withIcacheBroadcast",
-          "line": 1332,
+          "line": 1369,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -12257,7 +12292,7 @@
         {
           "kind": "theorem",
           "name": "withIcacheBroadcast_error_iff",
-          "line": 1347,
+          "line": 1384,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -12270,7 +12305,7 @@
         {
           "kind": "theorem",
           "name": "withIcacheBroadcast_none_inert",
-          "line": 1358,
+          "line": 1395,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -12283,7 +12318,7 @@
         {
           "kind": "theorem",
           "name": "withIcacheBroadcast_some_ok",
-          "line": 1370,
+          "line": 1407,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -12298,7 +12333,7 @@
         {
           "kind": "theorem",
           "name": "withIcacheBroadcast_frame",
-          "line": 1385,
+          "line": 1422,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -12311,7 +12346,7 @@
         {
           "kind": "def",
           "name": "unmapExecutablePaddr",
-          "line": 1417,
+          "line": 1454,
           "called": [
             "ASID",
             "PAddr",
@@ -12327,7 +12362,7 @@
         {
           "kind": "def",
           "name": "unmapIcacheOperand",
-          "line": 1431,
+          "line": 1468,
           "called": [
             "ASID",
             "ICacheInvalidation",
@@ -12340,7 +12375,7 @@
         {
           "kind": "theorem",
           "name": "unmapExecutablePaddr_of_executable",
-          "line": 1438,
+          "line": 1475,
           "called": [
             "ASID",
             "ObjId",
@@ -12358,7 +12393,7 @@
         {
           "kind": "theorem",
           "name": "unmapExecutablePaddr_eq_some",
-          "line": 1450,
+          "line": 1487,
           "called": [
             "ASID",
             "PAddr",
@@ -12373,7 +12408,7 @@
         {
           "kind": "theorem",
           "name": "unmapIcacheOperand_eq_some_iff",
-          "line": 1465,
+          "line": 1502,
           "called": [
             "ASID",
             "PAddr",
@@ -12387,7 +12422,7 @@
         {
           "kind": "theorem",
           "name": "unmapIcacheOperand_eq_none_iff",
-          "line": 1473,
+          "line": 1510,
           "called": [
             "ASID",
             "SystemState",
@@ -12401,7 +12436,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast",
-          "line": 1498,
+          "line": 1535,
           "called": [
             "ASID",
             "CoreId",
@@ -12416,7 +12451,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_error_iff",
-          "line": 1505,
+          "line": 1542,
           "called": [
             "ASID",
             "CoreId",
@@ -12432,7 +12467,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_non_executable_inert",
-          "line": 1516,
+          "line": 1553,
           "called": [
             "ASID",
             "CoreId",
@@ -12450,7 +12485,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownPerCore_perCoreICache_eq",
-          "line": 1530,
+          "line": 1567,
           "called": [
             "ASID",
             "CoreId",
@@ -12467,7 +12502,7 @@
         {
           "kind": "theorem",
           "name": "unmapSurvivor_not_target",
-          "line": 1564,
+          "line": 1601,
           "called": [
             "ASID",
             "ICacheLine",
@@ -12482,7 +12517,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_icacheCoherent_perCore",
-          "line": 1590,
+          "line": 1627,
           "called": [
             "ASID",
             "CoreId",
@@ -12534,7 +12569,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1701,
+          "line": 1738,
           "called": [
             "ASID",
             "CoreId",
@@ -12564,7 +12599,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_perCore_memory_invariants",
-          "line": 1747,
+          "line": 1784,
           "called": [
             "ASID",
             "CoreId",
@@ -12588,7 +12623,7 @@
         {
           "kind": "def",
           "name": "unifyTargetPaddr",
-          "line": 1782,
+          "line": 1819,
           "called": [
             "ASID",
             "PAddr",
@@ -12603,7 +12638,7 @@
         {
           "kind": "theorem",
           "name": "unifyTargetPaddr_of_mapped",
-          "line": 1788,
+          "line": 1825,
           "called": [
             "ASID",
             "ObjId",
@@ -12621,7 +12656,7 @@
         {
           "kind": "def",
           "name": "vspaceUnifyInstructionPage",
-          "line": 1818,
+          "line": 1855,
           "called": [
             "ASID",
             "Kernel",
@@ -12638,7 +12673,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_asid_unbound",
-          "line": 1833,
+          "line": 1870,
           "called": [
             "ASID",
             "SystemState",
@@ -12652,7 +12687,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_unmapped",
-          "line": 1841,
+          "line": 1878,
           "called": [
             "ASID",
             "ObjId",
@@ -12669,7 +12704,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_ok",
-          "line": 1851,
+          "line": 1888,
           "called": [
             "ASID",
             "ObjId",
@@ -12690,7 +12725,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_frame",
-          "line": 1865,
+          "line": 1902,
           "called": [
             "ASID",
             "SystemState",
@@ -12708,7 +12743,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_records_unify",
-          "line": 1890,
+          "line": 1927,
           "called": [
             "ASID",
             "ObjId",
@@ -12728,7 +12763,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_invalidates_all_cores",
-          "line": 1906,
+          "line": 1943,
           "called": [
             "ASID",
             "CoreId",
@@ -12753,7 +12788,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_preserves_icacheCoherent_perCore",
-          "line": 1923,
+          "line": 1960,
           "called": [
             "ASID",
             "SystemState",
@@ -12775,7 +12810,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1946,
+          "line": 1983,
           "called": [
             "ASID",
             "SystemState",
@@ -320048,6 +320083,9 @@
             "applyICacheInvalidation_survivor_paddr_ne",
             "bootFromPlatform_pendingIcacheMaintenance_eq",
             "bootFromPlatform_perCoreICache_eq",
+            "bootImageIcacheOp",
+            "bootImageIcacheOp_discharges_obligation",
+            "bootImageIcacheOp_isDomainWide",
             "byteRangeContains",
             "byteRangeContains_iff",
             "byteRangeContains_refl",
@@ -320139,8 +320177,8 @@
             "kernelCodeWriteEmitted",
             "kernelCodeWriteOwesPoUClean",
             "kernelCodeWriteSites",
+            "kernelCodeWriteSites_all_emitted",
             "kernelCodeWriteSites_complete",
-            "kernelCodeWriteSites_emission_pending",
             "kernelCodeWriteSites_owe_pou_clean",
             "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache",
             "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_error_iff",
@@ -320218,16 +320256,16 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:321>",
-          "line": 321,
+          "name": "<anonymous:example:324>",
+          "line": 324,
           "called": [
             "toOpTag"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:322>",
-          "line": 322,
+          "name": "<anonymous:example:325>",
+          "line": 325,
           "called": [
             "ofNat",
             "toOpTag"
@@ -320235,16 +320273,16 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:323>",
-          "line": 323,
+          "name": "<anonymous:example:326>",
+          "line": 326,
           "called": [
             "toPaddr"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:327>",
-          "line": 327,
+          "name": "<anonymous:example:330>",
+          "line": 330,
           "called": [
             "ICacheLine",
             "icacheLineMatches"
@@ -320252,8 +320290,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:330>",
-          "line": 330,
+          "name": "<anonymous:example:333>",
+          "line": 333,
           "called": [
             "SystemState",
             "default",
@@ -320263,8 +320301,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:335>",
-          "line": 335,
+          "name": "<anonymous:example:338>",
+          "line": 338,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -320280,8 +320318,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:342>",
-          "line": 342,
+          "name": "<anonymous:example:345>",
+          "line": 345,
           "called": [
             "CoreId",
             "DCacheViews",
@@ -320293,8 +320331,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:347>",
-          "line": 347,
+          "name": "<anonymous:example:350>",
+          "line": 350,
           "called": [
             "CoreId",
             "modeledCoherentAgents",
@@ -320303,8 +320341,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:351>",
-          "line": 351,
+          "name": "<anonymous:example:354>",
+          "line": 354,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -320323,7 +320361,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 362,
+          "line": 365,
           "called": [
             "throw"
           ]
@@ -320331,30 +320369,6 @@
         {
           "kind": "def",
           "name": "core0",
-          "line": 369,
-          "called": [
-            "CoreId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "core1",
-          "line": 370,
-          "called": [
-            "CoreId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "core2",
-          "line": 371,
-          "called": [
-            "CoreId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "core3",
           "line": 372,
           "called": [
             "CoreId"
@@ -320362,8 +320376,32 @@
         },
         {
           "kind": "def",
-          "name": "asid5",
+          "name": "core1",
+          "line": 373,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "core2",
           "line": 374,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "core3",
+          "line": 375,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "asid5",
+          "line": 377,
           "called": [
             "ASID"
           ]
@@ -320371,7 +320409,7 @@
         {
           "kind": "def",
           "name": "vaddrPage",
-          "line": 375,
+          "line": 378,
           "called": [
             "VAddr",
             "ofNat"
@@ -320380,7 +320418,7 @@
         {
           "kind": "def",
           "name": "vaddrOther",
-          "line": 376,
+          "line": 379,
           "called": [
             "VAddr",
             "ofNat"
@@ -320389,7 +320427,7 @@
         {
           "kind": "def",
           "name": "paddrPage",
-          "line": 377,
+          "line": 380,
           "called": [
             "PAddr",
             "ofNat"
@@ -320398,7 +320436,7 @@
         {
           "kind": "def",
           "name": "paddrOther",
-          "line": 378,
+          "line": 381,
           "called": [
             "PAddr",
             "ofNat"
@@ -320407,7 +320445,7 @@
         {
           "kind": "def",
           "name": "permsExec",
-          "line": 381,
+          "line": 384,
           "called": [
             "PagePermissions"
           ]
@@ -320415,7 +320453,7 @@
         {
           "kind": "def",
           "name": "lineExec",
-          "line": 385,
+          "line": 388,
           "called": [
             "ICacheLine",
             "asid5",
@@ -320427,7 +320465,7 @@
         {
           "kind": "def",
           "name": "lineOther",
-          "line": 389,
+          "line": 392,
           "called": [
             "ICacheLine",
             "asid5",
@@ -320439,7 +320477,7 @@
         {
           "kind": "def",
           "name": "runOperandChecks",
-          "line": 396,
+          "line": 399,
           "called": [
             "ICacheState",
             "all",
@@ -320459,7 +320497,7 @@
         {
           "kind": "def",
           "name": "runAccessorChecks",
-          "line": 425,
+          "line": 428,
           "called": [
             "SystemState",
             "all",
@@ -320479,7 +320517,7 @@
         {
           "kind": "def",
           "name": "runBroadcastReachChecks",
-          "line": 442,
+          "line": 445,
           "called": [
             "SystemState",
             "all",
@@ -320507,7 +320545,7 @@
         {
           "kind": "def",
           "name": "dcViews",
-          "line": 477,
+          "line": 480,
           "called": [
             "CacheState.empty",
             "CoreId",
@@ -320521,7 +320559,7 @@
         {
           "kind": "def",
           "name": "runDCachePoCChecks",
-          "line": 481,
+          "line": 484,
           "called": [
             "SystemState",
             "all",
@@ -320547,7 +320585,7 @@
         {
           "kind": "def",
           "name": "runDmaScopeChecks",
-          "line": 514,
+          "line": 517,
           "called": [
             "all",
             "assertBool",
@@ -320559,7 +320597,7 @@
         {
           "kind": "def",
           "name": "udVsp",
-          "line": 527,
+          "line": 530,
           "called": [
             "ObjId"
           ]
@@ -320567,7 +320605,7 @@
         {
           "kind": "def",
           "name": "udCn",
-          "line": 528,
+          "line": 531,
           "called": [
             "ObjId"
           ]
@@ -320575,7 +320613,7 @@
         {
           "kind": "def",
           "name": "udCaller",
-          "line": 529,
+          "line": 532,
           "called": [
             "ThreadId"
           ]
@@ -320583,7 +320621,7 @@
         {
           "kind": "def",
           "name": "cacheState",
-          "line": 531,
+          "line": 534,
           "called": [
             "Capability",
             "Slot",
@@ -320604,7 +320642,7 @@
         {
           "kind": "def",
           "name": "runInvariantChecks",
-          "line": 544,
+          "line": 547,
           "called": [
             "ICacheLine",
             "all",
@@ -320636,7 +320674,7 @@
         {
           "kind": "def",
           "name": "runLiveUnmapChecks",
-          "line": 584,
+          "line": 587,
           "called": [
             "SystemState",
             "all",
@@ -320668,7 +320706,7 @@
         {
           "kind": "def",
           "name": "runLiveRetypeChecks",
-          "line": 635,
+          "line": 638,
           "called": [
             "Capability",
             "SystemState",
@@ -320697,7 +320735,7 @@
         {
           "kind": "def",
           "name": "runSeamConformanceChecks",
-          "line": 665,
+          "line": 668,
           "called": [
             "SystemState",
             "assertBool",
@@ -320713,7 +320751,7 @@
         {
           "kind": "def",
           "name": "runLedgerChecks",
-          "line": 689,
+          "line": 692,
           "called": [
             "Capability",
             "SystemState",
@@ -320755,22 +320793,26 @@
         {
           "kind": "def",
           "name": "runCodeWriteObligationChecks",
-          "line": 793,
+          "line": 796,
           "called": [
             "all",
             "assertBool",
+            "bootImageIcacheOp",
             "contains",
             "covers",
-            "filter",
+            "dischargesPoUClean",
             "kernelCodeWriteEmitted",
             "length",
-            "st"
+            "ofNat",
+            "st",
+            "toOpTag",
+            "toSize"
           ]
         },
         {
           "kind": "def",
           "name": "unifyDecoded",
-          "line": 817,
+          "line": 831,
           "called": [
             "SyscallDecodeResult",
             "length",
@@ -320780,7 +320822,7 @@
         {
           "kind": "def",
           "name": "runUnifyInstructionChecks",
-          "line": 823,
+          "line": 837,
           "called": [
             "Capability",
             "ICacheLine",
@@ -320817,7 +320859,7 @@
         {
           "kind": "def",
           "name": "runMappingAlignmentChecks",
-          "line": 944,
+          "line": 958,
           "called": [
             "VSpaceRoot",
             "all",
@@ -320840,7 +320882,7 @@
         {
           "kind": "def",
           "name": "runRetypeCleanToPoUChecks",
-          "line": 980,
+          "line": 994,
           "called": [
             "Capability",
             "KernelObjectType",
@@ -320883,7 +320925,7 @@
         {
           "kind": "def",
           "name": "mockClusterA",
-          "line": 1099,
+          "line": 1113,
           "called": [
             "CoreId",
             "core0",
@@ -320893,7 +320935,7 @@
         {
           "kind": "def",
           "name": "mockClusterB",
-          "line": 1102,
+          "line": 1116,
           "called": [
             "CoreId",
             "core2",
@@ -320903,7 +320945,7 @@
         {
           "kind": "def",
           "name": "runCrossClusterReachChecks",
-          "line": 1104,
+          "line": 1118,
           "called": [
             "SystemState",
             "all",
@@ -320928,7 +320970,7 @@
         {
           "kind": "def",
           "name": "runSmpCacheMaintenanceChecks",
-          "line": 1145,
+          "line": 1159,
           "called": [
             "runAccessorChecks",
             "runBroadcastReachChecks",
@@ -320950,7 +320992,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1169,
+          "line": 1183,
           "called": [
             "runSmpCacheMaintenanceChecks"
           ]

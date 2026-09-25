@@ -51,12 +51,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 420,258 across 343 Lean files |
-| **Test LoC** | 85,402 across 71 Lean test suites |
-| **Proved declarations** | 13,914 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 420,295 across 343 Lean files |
+| **Test LoC** | 85,416 across 71 Lean test suites |
+| **Proved declarations** | 13,916 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10); BP4.5, BP4.6 and BP5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11); BP4.6 and BP5..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -582,6 +582,39 @@ deployment's IRQ table and objects.
   half on 1, 2, 3, 4 and 8 GiB device trees — each boots on its own variant with
   both witnesses installed — and refuses a short board, a board without the
   binding's MMIO, and the empty blob.
+
+### 6.2.11 The boot image is cleaned to the Point of Unification (WS-BP BP4.5, v0.36.2)
+
+Instruction fetches read at the Point of Unification (PoU), and a store lands in
+the data cache, so memory the kernel makes present as code must be cleaned to
+the PoU, and the instruction caches invalidated, before it can be fetched.
+SM7.D enumerated the two kernel sites that owe this (`KernelCodeWriteSite`):
+the re-type's scrub, emitted since v0.32.100, and the boot image, deferred to
+the boot path because its extent is the link's rather than the model's.
+
+- **The extent.**  The image's loaded bytes, `link.ld`'s
+  `[_start, __image_load_end)`: text, read-only data and initialised data.
+  These are the only bytes the boot makes present that a thread could be handed
+  as code — an initial task's code is carried there.  Everything else the boot
+  writes lies in the kernel's reserved extent, which no boot untyped describes
+  and no boot VSpace maps; memory a thread receives otherwise comes from an
+  untyped through a re-type, which cleans it itself.
+- **The operand.**  `Architecture.bootImageIcacheOp base size` is
+  `cleanRangeIallu base size` — `DC CVAU` over the extent, `DSB ISH`,
+  `IC IALLUIS`, `DSB ISH`, `ISB` — and
+  `bootImageIcacheOp_discharges_obligation` proves it discharges the
+  `.bootImageLoad` obligation over that extent; a bare `IC IALLUIS` does not.
+  The HAL's `cache::boot_image_icache_operand` is the same operand (op tag 3).
+- **Where it runs.**  `lean_entry::enter_lean_kernel` calls
+  `cache::clean_boot_image_to_pou` after the kernel-state install and
+  immediately before minting the `SecondaryReleasePermit`, so no secondary is
+  released and the boot core reaches no scheduling point before it.  The call
+  goes through `apply_icache_invalidation`, which halts on an extent outside the
+  identity map; `link.ld` places the image in guaranteed RAM.
+- **The marker.**  `kernelCodeWriteEmitted` is `true` at both sites and
+  `kernelCodeWriteSites_all_emitted` states it, replacing the partition marker
+  `kernelCodeWriteSites_emission_pending`.  Observing the clean on hardware is
+  BP8.1's.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

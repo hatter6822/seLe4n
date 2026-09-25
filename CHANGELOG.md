@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3 and BP4.1–BP4.4: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3 and BP4.1–BP4.5: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -839,6 +839,35 @@ configuration, and the proof that it boots.
     and the empty blob.  `lean_runtime` and `lean_entry` tests: the copy holds
     the bytes, is freed with its last reference, and an unreadable pointer
     becomes the empty array.
+- **BP4.5 — the boot image is cleaned to the Point of Unification before any
+  thread can fetch** (SM7.D deferred item 4).  `.bootImageLoad` was the one
+  kernel code-write site that emitted no clean-to-PoU, pinned by
+  `kernelCodeWriteSites_emission_pending`: SM7.D deferred it because the builder
+  names no extent, and the extent is the link's.
+  - The extent is the image's loaded bytes, `link.ld`'s new
+    `[_start, __image_load_end)`, the end assigned inside `.data` and held
+    between `__rodata_end` and `__bss_start` by an `ASSERT` that
+    `scripts/check_link_script.py` proves live by mutation (and whose relation
+    the gate checks on the linked symbol table).  Everything else the boot writes
+    is kernel-reserved, never mapped to a thread; memory a thread receives
+    otherwise comes through a re-type, which cleans it itself.
+  - `mmu::boot_image_loaded_extent` reads it; `cache::boot_image_icache_operand`
+    is `CleanRangeIallu` over it (op tag 3); `cache::clean_boot_image_to_pou`
+    applies it through `apply_icache_invalidation`, which halts on an extent
+    outside the identity map.  `lean_entry::enter_lean_kernel` calls it after
+    the install and immediately before minting the `SecondaryReleasePermit`, so
+    the permit now also certifies a clean image.
+  - Lean: `Architecture.bootImageIcacheOp` with
+    `bootImageIcacheOp_discharges_obligation` and `_isDomainWide`;
+    `kernelCodeWriteEmitted .bootImageLoad = true`; and
+    `kernelCodeWriteSites_all_emitted` replaces the retired partition marker
+    (Tier 3 negative).
+  - Tests: `tests/SmpCacheMaintenanceSuite.lean` §3.11 asserts both sites emit,
+    the boot operand discharges the obligation over an image extent and crosses
+    the FFI as tag 3, with a bare `IC IALLUIS` as the control that does not; HAL
+    tests pin the operand to the tag-3 decode and the identity-map refusal, and
+    run the clean on the host.  The Tier 3 ordering anchor fails on a clean moved
+    after the permit and on a commented-out one.
 - **Tests.**
   - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
     admitted with its ASID registered, beside the binding's; ASID collisions are
@@ -853,7 +882,7 @@ configuration, and the proof that it boots.
     badge. Reverting the check is caught when the build fails:
     `bootSafeObjectCheck_sound` stops elaborating.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.4)
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.5)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

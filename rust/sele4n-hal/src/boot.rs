@@ -9,9 +9,10 @@
 //! Phase 2: MMU initialization → VBAR_EL1 setup
 //! Phase 3: GIC-400 + ARM Generic Timer initialization (AG5)
 //! Phase 4: TPIDR_EL1 setup → IRQ enable
-//! Phase 5: WS-BP BP4.1–BP4.4 — Lean library initialization → the device
+//! Phase 5: WS-BP BP4.1–BP4.5 — Lean library initialization → the device
 //!          tree copied into a Lean `ByteArray` → the kernel-state install
-//!          (`lean_kernel_main`), on the boot core alone
+//!          (`lean_kernel_main`) → the image's loaded bytes cleaned to the
+//!          Point of Unification, on the boot core alone
 //! Phase 6: WS-SM SM1.D — DTB cmdline parse → secondary-core bring-up
 //!          (`smp_enabled=true` is the default again since v0.32.142,
 //!           when SM5.I serialised kernel entry; see

@@ -7147,7 +7147,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3 and BP4.1–BP4.4 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3 and BP4.1–BP4.5 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it); BP4.5, BP4.6 and BP5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch); BP4.6 and BP5..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7564,6 +7564,30 @@ parsed tree's account around the caller's half, so `kernelMain_installs` names
 the state it installs — the variant the device tree selected — without
 re-running the parse, and `tests/Ak9PlatformSuite.lean` runs that decision on
 1, 2, 3, 4 and 8 GiB boards.
+
+**BP4.5 — the boot image is cleaned to the Point of Unification before any
+thread can fetch** (`v0.36.2`, closing SM7.D's deferred item 4).  Four things
+new code must respect.  (1) **Both kernel code-write sites emit**:
+`kernelCodeWriteEmitted .bootImageLoad` is `true`, and
+`kernelCodeWriteSites_all_emitted` replaces `kernelCodeWriteSites_emission_pending`
+(retired, with a Tier 3 negative), so a site added to `KernelCodeWriteSite`
+must emit or the `decide` fails.  (2) **The extent is the image's loaded
+bytes**, `link.ld`'s `[_start, __image_load_end)` — text, read-only data and
+initialised data, the only memory the boot makes present that a thread could be
+handed as code.  Everything else it writes (the Lean heap, `.bss`, the stacks,
+the boot tables) is in `MachineConfig.kernelReserved`, which no boot untyped
+describes and no boot VSpace maps, and memory a thread receives otherwise comes
+through a re-type, which cleans it itself.  `__image_load_end` sits between
+`__rodata_end` and `__bss_start` by a live-by-mutation `ASSERT`.  (3) **The
+operand is the model's**: `cache::boot_image_icache_operand` is
+`CleanRangeIallu` over that extent — op tag 3, `Architecture.bootImageIcacheOp`,
+which `bootImageIcacheOp_discharges_obligation` proves discharges the
+obligation and which a bare `IC IALLUIS` would not.  (4) **The permit certifies
+it**: `lean_entry::enter_lean_kernel` runs `cache::clean_boot_image_to_pou`
+after the install and immediately before it mints the `SecondaryReleasePermit`,
+so no secondary is released, and the boot core reaches no scheduling point,
+before the clean; a Tier 3 anchor holds the order, and a clean moved after the
+permit or commented out fails it.  Observing the clean on hardware is BP8.1's.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

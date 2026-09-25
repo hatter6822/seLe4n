@@ -4922,7 +4922,23 @@ run_check "INVARIANT" rg -n '^theorem retypeIcacheOp_discharges_scrub_obligation
 run_check "INVARIANT" rg -n '^def dischargesPoUClean($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^theorem dischargesPoUClean_isDomainWide($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^def kernelCodeWriteEmitted($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_emission_pending($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+# WS-BP BP4.5: the boot image's clean-to-PoU is emitted, so no kernel code-write
+# site owes one.  The retired partition marker must not come back, the boot arm
+# of the emission predicate is `true`, and the operand the boot emits
+# discharges the obligation over the extent it names.
+run_negative_check "INVARIANT" rg -n 'kernelCodeWriteSites_emission_pending' SeLe4n tests
+run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_all_emitted($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -U -n '^def kernelCodeWriteEmitted : KernelCodeWriteSite → Bool[^\n]*(\n([ \t][^\n]*)?)*?  \| \.bootImageLoad => true$' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -U -n '^def bootImageIcacheOp \(base : SeLe4n\.PAddr\) \(size : Nat\) : ICacheInvalidation :=\n  \.cleanRangeIallu base size$' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem bootImageIcacheOp_discharges_obligation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+# The HAL emits that operand over the image's loaded extent, and does so inside
+# `enter_lean_kernel` immediately before it mints the secondary-release permit:
+# the clean is ordered after the install and before any PE can dispatch.
+run_check "INVARIANT" rg -U -n '^    let dtb = device_tree_blob\(blob\);[^\n]*(\n([ \t][^\n]*)?)*?    let res = unsafe \{ lean_kernel_main\(dtb\) \};[^\n]*(\n([ \t][^\n]*)?)*?    crate::cache::clean_boot_image_to_pou\(\);\n    SecondaryReleasePermit \{ _private: \(\) \}\n\}' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -U -n '^pub const fn boot_image_icache_operand\(extent: \(u64, u64\)\) -> ICacheInvalidation \{\n    ICacheInvalidation::CleanRangeIallu\(extent\.0, extent\.1\)\n\}' rust/sele4n-hal/src/cache.rs
+run_check "INVARIANT" rg -U -n '^pub fn clean_boot_image_to_pou\(\) \{\n    apply_icache_invalidation\(boot_image_icache_operand\(\n        crate::mmu::boot_image_loaded_extent\(\),' rust/sele4n-hal/src/cache.rs
+run_check "INVARIANT" rg -U -n '^pub fn boot_image_loaded_extent\(\) -> \(u64, u64\) \{[^\n]*(\n([ \t][^\n]*)?)*?            static __image_load_end: u8;' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^        __image_load_end = \.;$' rust/sele4n-hal/link.ld
 run_check "INVARIANT" rg -n '^pub fn clean_range_pou_then_invalidate_all_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'CleanRangeIallu\(u64, u64\)' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'fn test_clean_range_pou_line_coverage' rust/sele4n-hal/src/cache.rs

@@ -76,9 +76,16 @@ SECTIONS
         __rodata_end = .;
     } > RAM
 
-    /* Initialized data */
+    /* Initialized data.  `__image_load_end` is one past the last byte the
+     * firmware loads from the image file: text, read-only data and this
+     * section.  WS-BP BP4.5 cleans `[_start, __image_load_end)` to the Point
+     * of Unification before any thread can fetch, because an initial task's
+     * code is carried in those bytes (`cache::clean_boot_image_to_pou`).
+     * Assigned inside the section for the reason the text and read-only data
+     * boundaries are. */
     .data : ALIGN(4096) {
         *(.data .data.*)
+        __image_load_end = .;
     } > RAM
 
     /* Uninitialized data — zeroed during boot (boot.S) */
@@ -174,3 +181,4 @@ ASSERT(_start % 4096 == 0, "the kernel text must start on a 4 KiB page")
 ASSERT(__text_end % 4096 == 0 && __text_end > _start, "the kernel text must end on a 4 KiB page after it starts")
 ASSERT(__rodata_start == __text_end, "the read-only data must begin where the kernel text ends")
 ASSERT(__rodata_end % 4096 == 0 && __rodata_end >= __text_end, "the read-only data must end on a 4 KiB page")
+ASSERT(__image_load_end >= __rodata_end && __image_load_end <= __bss_start, "the loaded image must run from the text through the initialised data and end before the NOLOAD sections")
