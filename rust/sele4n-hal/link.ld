@@ -5,7 +5,9 @@
  *                             board's 1 GiB) — the image, arena included,
  *                             must lie inside it, because it is the RAM the
  *                             boot map covers (`mmu::GUARANTEED_RAM_TOP`)
- *   0xFE000000 – 0xFF850000 : Peripherals (BCM2712 + GIC-400)
+ *   0x107C000000 – 0x1080000000 : the BCM2712 SoC-bus window (UART10 +
+ *                             GIC-400), mapped Device by the boot tables;
+ *                             DRAM is contiguous from 0 below it
  *
  * Kernel load address: 0x80000 (standard RPi5 kernel entry point, matching
  * the address used by U-Boot and the RPi firmware bootloader).

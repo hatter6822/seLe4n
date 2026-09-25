@@ -108,19 +108,28 @@ fi
 # ── Device tree based checks (available on RPi5 Linux) ──────────────────
 log_section "HYGIENE" "Checking device tree constants..."
 
+# The BCM2712 address-map correction (v0.36.2): these two checks looked for the
+# BCM2711's nodes (`interrupt-controller@ff841000`, `serial@fe201000`), which a
+# Raspberry Pi 5 device tree never carries, so both were skips on every run.
+# The BCM2712's nodes sit under the `axi` / `soc@107c000000` buses at their
+# bus-local unit addresses, so the node is searched for by name wherever it is.
+dt_node_present() {
+    [[ -d /proc/device-tree ]] && \
+        find /proc/device-tree -maxdepth 3 -type d -name "$1" -print -quit 2>/dev/null | grep -q .
+}
+
 # Check 6: GIC addresses from device tree
-if [[ -d /proc/device-tree/interrupt-controller@ff841000 ]]; then
-    log_section "TRACE" "PASS: GIC distributor node found at ff841000 (Board.lean: 0xFF841000)"
+if dt_node_present "interrupt-controller@7fff9000"; then
+    log_section "TRACE" "PASS: GIC-400 node found at 7fff9000 (Board.lean: 0x10_7FFF_9000)"
 else
-    record_skip "TRACE" "GIC distributor base (Board.lean 0xFF841000) — device-tree node absent"
+    record_skip "TRACE" "GIC distributor base (Board.lean 0x10_7FFF_9000) — device-tree node absent"
 fi
 
-# Check 7: UART0 base from device tree
-if [[ -d /proc/device-tree/soc/serial@fe201000 ]] || \
-   [[ -d /proc/device-tree/axi/serial@fe201000 ]]; then
-    log_section "TRACE" "PASS: UART0 node found at fe201000 (Board.lean: 0xFE201000)"
+# Check 7: UART10 base from device tree
+if dt_node_present "serial@7d001000"; then
+    log_section "TRACE" "PASS: UART10 node found at 7d001000 (Board.lean: 0x10_7D00_1000)"
 else
-    record_skip "TRACE" "UART0 base (Board.lean 0xFE201000) — device-tree node absent"
+    record_skip "TRACE" "UART10 base (Board.lean 0x10_7D00_1000) — device-tree node absent"
 fi
 
 # Check 8: Virtual address width (48-bit, from kernel config)
@@ -145,18 +154,18 @@ if command -v devmem2 &>/dev/null || command -v devmem &>/dev/null; then
     fi
     log_section "TRACE" "MMIO tool available: ${DEVMEM_CMD}"
 
-    # GIC Distributor: read GICD_IIDR at 0xFF841008
+    # GIC Distributor: read GICD_IIDR at 0x10_7FFF_9008
     log_section "TRACE" "INFO: MMIO register validation available with ${DEVMEM_CMD}"
-    log_section "TRACE" "INFO: Run with root for GICD_IIDR read at 0xFF841008"
+    log_section "TRACE" "INFO: Run with root for GICD_IIDR read at 0x10_7FFF_9008"
 else
-    record_skip "META" "MMIO register checks (GICD_IIDR at 0xFF841008) — neither devmem2 nor devmem on PATH; install devmem2"
+    record_skip "META" "MMIO register checks (GICD_IIDR at 0x10_7FFF_9008) — neither devmem2 nor devmem on PATH; install devmem2"
 fi
 
 # ── Pending constants (require bare-metal or kernel module) ──────────────
 log_section "META" "Constants requiring a bare-metal seLe4n boot (no kernel image is built yet):"
-log_section "META" "  - peripheralBaseLow (0xFE000000) — verifiable via /proc/iomem"
+log_section "META" "  - socPeripheralBase (0x10_7C00_0000) — verifiable via /proc/iomem"
 log_section "META" "  - peripheralBaseHigh (0x1000000000) — requires 64-bit MMIO probe"
-log_section "META" "  - gicCpuInterfaceBase (0xFF842000) — requires devmem read"
+log_section "META" "  - gicCpuInterfaceBase (0x10_7FFF_A000) — requires devmem read"
 log_section "META" "  - gicSpiCount (192) — requires GIC GICD_TYPER read"
 log_section "META" "  - timerPpiId (30) / virtualTimerPpiId (27) — requires IRQ test"
 log_section "META" "  - maxASID (65536) — requires ID_AA64MMFR0_EL1 read"

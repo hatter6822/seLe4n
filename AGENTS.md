@@ -7217,8 +7217,8 @@ reads a cell width that is not one `<u32>`.  (3) **A Rust FDT walk's bound is th
 structure block's size** (`fdt_token_bound`), never a fixed fuel: 4096 tokens
 refused a large well-formed device tree the Lean parser reads whole.  (4) **The
 boot map is held to the Lean map**: every address it maps Normal is RAM in every
-variant, its device window is exactly the Lean one (`DEVICE_WINDOW_TOP` is the
-Lean extent, the straddling block an L3 table), and on the smallest variant its
+variant, its device window is exactly the Lean one (the BCM2712's SoC-bus
+window, both ends 2 MiB aligned), and on the smallest variant its
 RAM is exactly the variant's; `check_physical_address_width.sh` no longer
 regex-parses `Board.lean` — the driven test decides it.
 
@@ -7732,6 +7732,29 @@ rebuilds `[_start, __image_load_end)` from the section headers
 and the archive lane runs the script as step [5/5] over the image it linked,
 which `check_aarch64_cross_target.py` holds (after the image build, not
 exempted from `set -e`).
+
+
+**The RPi5 binding is the BCM2712's address map** (`v0.36.2`, found while
+scoping BP5.4).  Until then the model and the HAL both carried the **BCM2711**'s
+(Raspberry Pi 4) map — UART `0xFE20_1000` at 48 MHz, GIC-400 `0xFF84_1000` /
+`0xFF84_2000`, a device window `[0xFE00_0000, 0xFF85_0000)`, RAM capped at
+`0xFC00_0000` — all of it DRAM on the BCM2712, and `Board.lean`'s checklist
+marked every one **Validated**.  Four things new code must respect.  (1) **The
+map follows `bcm2712.dtsi`**: DRAM contiguous from 0 (`[0, ramSize)`, one RAM
+region per variant, one boot extension above the gigabyte), the SoC-bus window
+`[0x10_7C00_0000, +64 MiB)` as the one device region (`socPeripheralBase`,
+`mmu::DEVICE_WINDOW_BASE`), UART10 at `0x10_7D00_1000` clocked at 9.216 MHz,
+GIC-400 at `0x10_7FFF_9000` / `0x10_7FFF_A000`; `peripheralBaseLow` is retired,
+and a Tier 3 negative refuses any BCM2711 address returning as a live constant.
+(2) **A driver's base is compared with the Lean one by running both**: the Lean
+suite writes `mmio uart|gicd|gicc` lines into `tests/fixtures/boot_map.expected`
+from `mmioRegions`, and the HAL's UART and GIC tests read them
+(`mmu::lean_mmio_window`) — the literal-beside-a-comment tests those replace are
+how both sides agreed on the wrong board.  (3) **The window is block aligned**,
+so the boot map's device-tail L3 table is deleted and a Tier 3 negative refuses
+it returning.  (4) **Cross-checked is not validated**: the constants are the
+device-tree source's (`raspberrypi/linux` `rpi-6.6.y`, read 2026-09-25), and
+what a real board's firmware reports is BP8.1's readback to confirm.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

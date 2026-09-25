@@ -266,8 +266,8 @@ theorem rpi5BootVSpaceRoot_wxCompliant :
 
 /-- **AN7-D.2.2**: The canonical RPi5 boot root's mapped physical
     addresses all fit within the BCM2712 44-bit PA space.  Every base
-    (kernel text 0x80000, data 0x180000, stack 0x200000, UART0 0xFE201000,
-    GIC dist 0xFF841000, GIC CPU 0xFF842000) is well below 2^44 ≈
+    (kernel text 0x80000, data 0x180000, stack 0x200000, UART10 0x10_7D00_1000,
+    GIC dist 0x10_7FFF_9000, GIC CPU 0x10_7FFF_A000) is well below 2^44 ≈
     1.76e13.  Discharged by `decide` on the finite six-element fold. -/
 theorem rpi5BootVSpaceRoot_paddrBounded :
     VSpaceRootPaddrBounded rpi5BootVSpaceRoot := by

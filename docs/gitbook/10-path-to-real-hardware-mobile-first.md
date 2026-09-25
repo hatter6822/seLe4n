@@ -373,7 +373,7 @@ with GIC → timer → IRQ enable phase.
 
 **Phase AG4 (HAL Crate + Boot Foundation) is complete.** 7 sub-tasks created the
 first hardware-executable code: the `sele4n-hal` Rust crate (4th workspace crate)
-with ARM64 boot sequence, PL011 UART driver (0xFE201000, 115200 8N1), MMU
+with ARM64 boot sequence, PL011 UART driver (115200 8N1; since v0.36.2 the BCM2712's UART10 at 0x10_7D00_1000 with its 9.216 MHz clock — the original 0xFE201000 was the BCM2711's), MMU
 initialization (identity-mapped L1 block descriptors), exception vector table
 (16 entries, 2048-byte aligned for VBAR_EL1), trap entry/exit assembly (272-byte
 TrapFrame with full GPR save/restore), and kernel linker script (0x80000 entry).

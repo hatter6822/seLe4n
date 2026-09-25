@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2 and BP5.3: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2 and BP5.3: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places, and the RPi5 binding corrected from the BCM2711's address map to the BCM2712's
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -1104,6 +1104,66 @@ configuration, and the proof that it boots.
     runtime witness, because every public `Badge` constructor yields a valid
     badge. Reverting the check is caught when the build fails:
     `bootSafeObjectCheck_sound` stops elaborating.
+
+**The RPi5 binding is the BCM2712's address map, not the BCM2711's.**  Found
+while scoping BP5.4, and a false-assurance gap in the sense `CLAUDE.md`'s
+vulnerability rule names: the model and the HAL both described the Raspberry
+Pi 4's SoC — a UART at `0xFE20_1000` clocked at 48 MHz, a GIC-400 at
+`0xFF84_1000` / `0xFF84_2000`, a device window `[0xFE00_0000, 0xFF85_0000)`,
+RAM capped at `0xFC00_0000` beneath a "GPU carve-out" — and `Board.lean`'s
+address checklist marked every one of them **Validated** against the BCM2712.
+On the BCM2712 each of those addresses is DRAM.  On hardware the image would
+have written its console and programmed its interrupt controller by storing to
+memory, the GIC self-check would have halted every boot (or, had it read back,
+the kernel would have run with no interrupts), and the 115200-baud divisor was
+computed for a clock five times the real one.  No gate could catch it: nothing
+reads a datasheet, and both sides of every Lean/Rust comparison carried the same
+wrong numbers, compared as a literal beside a comment naming the other side.
+Cross-checked now against `arch/arm64/boot/dts/broadcom/bcm2712.dtsi` and
+`bcm2712-rpi-5-b.dts` in `raspberrypi/linux` branch `rpi-6.6.y`:
+
+- `SeLe4n/Platform/RPi5/Board.lean`: `rpi5MemoryMapForConfig` is two regions —
+  RAM `[0, ramSize)` (the BCM2712's DRAM is contiguous from 0; `axi` `ranges`)
+  and the SoC-bus window `socPeripheralBase` (`0x10_7C00_0000`, 64 MiB; `soc`
+  `ranges`) as the one device region.  `uart0Base` is UART10 (`serial@7d001000`,
+  the debug header) at `0x10_7D00_1000`; `gicDistributorBase` /
+  `gicCpuInterfaceBase` are `0x10_7FFF_9000` / `0x10_7FFF_A000`.
+  `peripheralBaseLow` is retired with a tombstone.  The two checklist tables
+  are one, marked *cross-checked* against the named source rather than
+  *validated*, with a paragraph recording the false marks.
+  `rpi5BootRamExtensions_values` is re-evaluated (one extension per board above
+  the gigabyte), `rpi5VariantFor_eight_gib_as_reported` — the BCM2711's
+  relocated-bank shape — becomes `rpi5VariantFor_eight_gib_two_banks`, and
+  `MemoryCoverage`'s two walk witnesses move to a 4 GiB aperture.
+- `rust/sele4n-hal/src/mmu.rs`: `DEVICE_WINDOW_BASE` / `DEVICE_WINDOW_TOP` are
+  the SoC-bus window, in the L1 slot for gigabyte 65, block aligned at both
+  ends, so the device-tail L3 table the BCM2711 window needed is **deleted**
+  (`BootPageTables` is seven 4 KiB tables).  The BCM2711 addresses are asserted
+  *unmapped*.
+- `rust/sele4n-hal/src/uart.rs`: `UART0_BASE` is `0x10_7D00_1000` and
+  `UART_CLOCK_HZ` is `clk_uart`'s 9.216 MHz, so 115200 baud is `IBRD = 5,
+  FBRD = 0` exactly.  `rust/sele4n-hal/src/gic.rs`: `GICD_BASE` /
+  `GICC_BASE` are the BCM2712's; the self-check and SGI-register address tests
+  follow.
+- **The drivers are compared with the Lean model by running both.**
+  `tests/Ak9PlatformSuite.lean` writes `mmio uart|gicd|gicc <base> <size>`
+  lines into `tests/fixtures/boot_map.expected` from `mmioRegions`;
+  `mmu::lean_mmio_window` reads them, and the UART and GIC tests require each
+  base to equal the Lean one and lie inside the device window.  The fixture is
+  regenerated (the variants' regions, extensions and probes all moved).
+- `tests/Ak9PlatformSuite.lean`'s board device trees carry the BCM2712's
+  nodes and a 4 GiB board reports `[0, 4 GiB)`; the one-cell and corpus parser
+  fixtures, which test the parser rather than the board, are unchanged.
+- `scripts/test_hw_crosscheck.sh` searched `/proc/device-tree` for the
+  BCM2711's nodes, which a Raspberry Pi 5 never carries, so both checks were
+  skips on every run; it searches for the BCM2712's by name now.
+- Tier 3: positives over the new constants, the fixture's `mmio` lines
+  and the drivers' reads of them, and negatives refusing the tail table and any
+  BCM2711 address returning as a live constant.
+- What this does **not** establish is what a real board's firmware reports.
+  The maps follow the device-tree source; BP8.1's first-boot readback confirms
+  them, and its plan row now records that QEMU has no BCM2712 machine, so the
+  image's constant device map meets no device under QEMU.
 
 Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.3)
 

@@ -994,7 +994,7 @@ mod identity_map_operand_tests {
     const IN_WINDOW: u64 = 0x0010_0000;
     /// An address inside the BCM2712 peripheral window — mapped Device, so
     /// `IC IVAU` against it maintains nothing the kernel meant.
-    const IN_DEVICE_WINDOW: u64 = 0xFE20_1000;
+    const IN_DEVICE_WINDOW: u64 = 0x10_7D00_1000;
     /// An address above the guaranteed RAM the boot tables map — unmapped, so
     /// the instruction takes a translation fault at EL1.
     const ABOVE_RAM: u64 = 0x1_0000_0000;

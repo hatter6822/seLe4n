@@ -749,7 +749,11 @@ Expectations for the device-tree corpus are written by hand in the generator's
 case table — per blob, whether its structure is readable and which memory
 regions it declares (or that the region read refuses it); the two tables are emitted by Lean and must then be matched by the
 Rust side, never edited to match it.  A divergence one of them exposes is fixed
-on the side that is wrong.
+on the side that is wrong.  `boot_map.expected` also carries the RPi5's MMIO windows
+(`mmio uart|gicd|gicc`, from `mmioRegions`), which the HAL's UART and GIC tests
+read, so a driver base that drifts from `Board.lean` fails there — the
+literal-beside-a-comment tests they replaced agreed with `Board.lean` while
+both carried the BCM2711's addresses (spec §6.2.14).
 
 ### Generated artefacts
 

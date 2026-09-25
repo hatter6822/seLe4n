@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! PL011 UART driver for debug console output on Raspberry Pi 5.
 //!
-//! Base address: 0xFE201000 (BCM2712 UART0, matches `Board.lean:uart0Base`).
-//! Baud rate: 115200 at 48 MHz UART reference clock.
+//! Base address: `0x10_7D00_1000` — BCM2712 UART10, the PL011 on the
+//! Raspberry Pi 5's debug header, `Board.lean`'s `uart0Base` (the device
+//! tree labels it `uart0`, `serial@7d001000` on the SoC bus, which the `soc`
+//! node's `ranges` places at CPU physical `0x10_7C00_0000 + 0x0100_1000`).
+//! Baud rate: 115200 at the BCM2712's 9.216 MHz UART reference clock.
+//!
+//! **The BCM2712 address-map correction (v0.36.2)**: this was `0xFE20_1000`
+//! at 48 MHz — the BCM2711's (Raspberry Pi 4's) UART0 and clock.  On the
+//! BCM2712 that address is DRAM, so every console write was a store to memory,
+//! and the divisor was computed for a clock five times the real one.
 //!
 //! Register offsets per ARM PrimeCell UART (PL011) Technical Reference Manual.
 
@@ -42,11 +50,17 @@ mod flags {
     pub const BUSY: u32 = 1 << 3;
 }
 
-/// BCM2712 UART0 base address (from Board.lean `uart0Base`).
-pub const UART0_BASE: usize = 0xFE201000;
+/// BCM2712 UART10 base address (Board.lean `uart0Base`; the two are held
+/// together by `tests/fixtures/boot_map.expected`'s `mmio uart` line, which
+/// the Lean suite writes and `tests::the_console_is_the_lean_uart_inside_the_device_window`
+/// reads).
+pub const UART0_BASE: usize = 0x10_7D00_1000;
 
-/// UART reference clock frequency on RPi5 (48 MHz).
-const UART_CLOCK_HZ: u32 = 48_000_000;
+/// UART reference clock frequency on RPi5: `bcm2712.dtsi`'s `clk_uart`, a
+/// fixed 9.216 MHz clock (`clock-frequency = <9216000>`), which is exactly
+/// `16 × 115200 × 5` — so the 115200-baud divisor is `IBRD = 5, FBRD = 0` with
+/// no rounding error.
+const UART_CLOCK_HZ: u32 = 9_216_000;
 
 /// Default baud rate for debug console.
 const DEFAULT_BAUD: u32 = 115_200;
@@ -638,30 +652,37 @@ macro_rules! kprint_core {
 mod tests {
     use super::*;
 
+    /// The console is the Lean model's UART, and it lies inside the device
+    /// window the boot map maps Device — read from the fixture the Lean suite
+    /// writes, never from a literal beside a comment naming `Board.lean`
+    /// (the shape that let `0xFE20_1000` sit here, "matching", while both
+    /// sides were the BCM2711's).
     #[test]
-    fn uart0_base_matches_board_lean() {
-        // Board.lean: uart0Base : PAddr := ⟨0xFE201000⟩
-        assert_eq!(UART0_BASE, 0xFE201000);
+    fn the_console_is_the_lean_uart_inside_the_device_window() {
+        let (base, size) = crate::mmu::lean_mmio_window("uart");
+        assert_eq!(UART0_BASE as u64, base);
+        assert!(crate::mmu::DEVICE_WINDOW_BASE <= base);
+        assert!(base + size <= crate::mmu::DEVICE_WINDOW_TOP);
     }
 
     #[test]
     fn baud_rate_divisor_115200() {
-        // For 48 MHz clock at 115200 baud:
-        //   BRD = 48000000 / (16 × 115200) = 26.0416...
-        //   IBRD = 26, FBRD = round(0.0416 × 64) = round(2.667) = 3
+        // For the 9.216 MHz clock at 115200 baud:
+        //   BRD = 9216000 / (16 × 115200) = 5.0 exactly
+        //   IBRD = 5, FBRD = 0
         let baud: u32 = 115_200;
         let divisor = baud as u64 * 2;
         let brd_times_64 = (UART_CLOCK_HZ as u64 * 4 * 2 + baud as u64) / divisor;
         let ibrd = (brd_times_64 / 64) as u32;
         let fbrd = (brd_times_64 % 64) as u32;
 
-        assert_eq!(ibrd, 26);
-        assert_eq!(fbrd, 3);
+        assert_eq!(ibrd, 5);
+        assert_eq!(fbrd, 0);
     }
 
     #[test]
-    fn uart_clock_48mhz() {
-        assert_eq!(UART_CLOCK_HZ, 48_000_000);
+    fn uart_clock_is_the_bcm2712_fixed_clock() {
+        assert_eq!(UART_CLOCK_HZ, 9_216_000);
     }
 
     #[test]

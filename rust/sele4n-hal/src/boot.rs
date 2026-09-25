@@ -398,7 +398,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // -----------------------------------------------------------------------
     crate::kprintln!();
     crate::kprintln!("[boot] Hardware initialization complete:");
-    crate::kprintln!("  UART   : PL011 @ 0xFE201000 (115200 8N1)");
+    crate::kprintln!("  UART   : PL011 UART10 @ 0x10_7D00_1000 (115200 8N1)");
     crate::kprintln!("  MMU    : identity map (guaranteed RAM + device window)");
     crate::kprintln!("  VBAR   : exception vectors installed");
     crate::kprintln!("  GIC    : GIC-400 distributor + CPU interface");

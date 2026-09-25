@@ -51,8 +51,8 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 420,685 across 343 Lean files |
-| **Test LoC** | 85,461 across 71 Lean test suites |
+| **Production LoC** | 420,682 across 343 Lean files |
+| **Test LoC** | 85,467 across 71 Lean test suites |
 | **Proved declarations** | 13,928 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -230,10 +230,12 @@ two readers now share one set of refusals:
   `#size-cells` value that is not exactly one `<u32>` refused on both sides.
 
 The boot-map pair found the device window mapped Device up to `0xFFA0_0000`,
-the Lean extent rounded up to a 2 MiB block, over space the Lean map reserves.
-`DEVICE_WINDOW_TOP` is the Lean extent `0xFF85_0000` exactly, and the one block
-straddling it is described by a level-3 table of 4 KiB pages
-(`DEVICE_TAIL_BLOCK_BASE`).
+the Lean extent rounded up to a 2 MiB block, over space the Lean map reserves,
+and closed it with a level-3 table for the straddling block.  Since the BCM2712
+address-map correction (v0.36.2, §6.2.14) the window is the BCM2712's SoC-bus
+window `[0x10_7C00_0000, 0x10_8000_0000)`, block aligned at both ends, so
+`DEVICE_WINDOW_TOP` is the Lean extent with no straddling block and the level-3
+table is deleted.
 
 The device-tree pair was written as **interim**.  BP2.6 (§6.2.7) removed the
 Rust `/memory` walk from the boot path, so the Lean parser is the only reader of
@@ -406,7 +408,8 @@ no size.
   and the image's layout alone:
   - `[0, GUARANTEED_RAM_TOP)` (`0x4000_0000`, the RAM every Raspberry Pi 5 has)
     is Normal;
-  - the device window `[0xFE00_0000, 0xFF85_0000)` is Device;
+  - the device window `[0x10_7C00_0000, 0x10_8000_0000)` — the BCM2712's
+    SoC-bus window, holding UART10 and the GIC-400 (§6.2.14) — is Device;
   - everything else is unmapped.
 
   The driven BP0.4 comparison (§6.2.2) requires every Normal address to be RAM
@@ -640,9 +643,9 @@ read the device tree and the binding has chosen the variant.
   boot uses the map of the variant the binding installs
   (`rpi5BootRamExtensionsFor`), so the RAM mapped and the RAM the installed
   state's machine configuration declares are one variant's.
-  `rpi5BootRamExtensions_values` evaluates the five variants — nothing on 1 GiB;
-  `[1 GiB, 2 GiB)` on 2 GiB; `[1 GiB, 0xFC00_0000)` on 4 GiB; and on 8 and
-  16 GiB that plus the RAM from 4 GiB up.  `rpi5BootRamExtensions_admissible`
+  `rpi5BootRamExtensions_values` evaluates the five variants — nothing on 1 GiB,
+  and on every other board one region, `[1 GiB, ramSize)`, the BCM2712's DRAM
+  being contiguous from 0 (§6.2.14).  `rpi5BootRamExtensions_admissible`
   proves each is 2 MiB aligned and inside the tables' 512 GiB reach.
 - **Where it runs.**  The device-tree wrapper's accepting arm runs
   `extendBootRamMap` and then the install; an unparseable blob or a foreign
@@ -757,6 +760,44 @@ The kernel is one bare-metal binary, `sele4n-kernel`
   `[_start, __lean_heap_end)`.  An unknown key, a repeated or missing key, and
   a conditional `[...]` section are refused, since each could move the load or
   the blob somewhere the check did not look.
+
+### 6.2.14 The BCM2712 address map (v0.36.2)
+
+Until v0.36.2 the RPi5 binding described the **BCM2711** (Raspberry Pi 4): a
+UART at `0xFE20_1000` clocked at 48 MHz, a GIC-400 at `0xFF84_1000` /
+`0xFF84_2000`, a device window `[0xFE00_0000, 0xFF85_0000)`, and RAM capped at
+`0xFC00_0000` beneath a "GPU carve-out".  On the BCM2712 every one of those
+addresses is DRAM, so on hardware the image would have programmed its console
+and its interrupt controller by writing to memory, and every boot would have
+halted in the GIC self-check or run with no interrupts.  `Board.lean`'s
+address checklist marked each of them **Validated**; nothing in the tree could
+have caught them, because no gate reads a datasheet and both the Lean model and
+the HAL carried the same wrong numbers.
+
+The binding is now the BCM2712's, cross-checked against
+`arch/arm64/boot/dts/broadcom/bcm2712.dtsi` in `raspberrypi/linux` branch
+`rpi-6.6.y` (read 2026-09-25):
+
+- **DRAM is contiguous from 0** on every variant (`axi` `ranges` map
+  `[0, 0x10_0000_0000)` 1:1), so each variant's map is one RAM region
+  `[0, ramSize)` and the boot maps one extension above the guaranteed gigabyte.
+- **The SoC bus** appears at `0x10_7C00_0000` (64 MiB, `soc` `ranges`), which is
+  the device window (`socPeripheralBase`, `mmu::DEVICE_WINDOW_BASE`).  Both ends
+  are 2 MiB aligned, so the boot map describes it with 2 MiB Device blocks and
+  the page-granular tail table the BCM2711 window needed is deleted.
+- **The console** is UART10 (`serial@7d001000`, the debug header) at
+  `0x10_7D00_1000`, clocked at 9.216 MHz (`clk_uart`), so 115200 baud is
+  `IBRD = 5, FBRD = 0` exactly.
+- **The GIC-400** distributor is at `0x10_7FFF_9000` and the CPU interface at
+  `0x10_7FFF_A000`.
+
+The HAL's constants are no longer compared with a literal beside a comment:
+the Lean suite writes `mmio uart|gicd|gicc <base> <size>` into
+`tests/fixtures/boot_map.expected` from `mmioRegions`, and the UART and GIC
+tests read them (`mmu::lean_mmio_window`) and require the constant to equal the
+Lean base and to lie inside the device window.  What this does **not** establish
+is what a real board's firmware reports: the variant maps follow the device-tree
+source, and the first-boot readback (BP8.1) is what confirms them on hardware.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

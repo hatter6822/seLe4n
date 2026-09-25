@@ -334,35 +334,30 @@ const _: () = assert!(
     KERNEL_RESERVED_END <= GUARANTEED_RAM_TOP && KERNEL_RESERVED_END.is_multiple_of(L3_PAGE_SIZE)
 );
 
-/// Base of the device (peripheral) window: BCM2712 legacy peripherals at
-/// `0xFE00_0000` through the GIC-400 at `0xFF84_1000` / `0xFF84_2000`.
+/// Base of the device (peripheral) window: the BCM2712's SoC-bus window,
+/// `bcm2712.dtsi`'s `soc` node `ranges = <0x7c000000 0x10 0x7c000000
+/// 0x04000000>` — bus addresses `[0x7C00_0000, 0x8000_0000)` at CPU physical
+/// `0x10_7C00_0000`.  UART10 (`0x10_7D00_1000`) and the GIC-400
+/// (`0x10_7FFF_9000` / `0x10_7FFF_A000`) both lie inside it.
 ///
-/// Below it on the larger boards is the VideoCore firmware carve-out, which
-/// the kernel must never touch; the boot map leaves every address between
-/// [`GUARANTEED_RAM_TOP`] and this one **unmapped**.
-pub const DEVICE_WINDOW_BASE: u64 = 0xFE00_0000;
+/// **The BCM2712 address-map correction (v0.36.2)**: this was `0xFE00_0000`,
+/// the BCM2711's (Raspberry Pi 4's) legacy peripheral window, which on the
+/// BCM2712 is DRAM — so the boot map mapped memory as Device and left the real
+/// UART and interrupt controller unmapped, and the first console write or GIC
+/// access would have gone to RAM.  Every address between the RAM the boot
+/// maps and this one is **unmapped**.
+pub const DEVICE_WINDOW_BASE: u64 = 0x10_7C00_0000;
 
 /// One past the last byte of the device window — exactly the end of the
-/// `.device` region `rpi5MemoryMapForConfig` declares.
+/// `.device` region `rpi5MemoryMapForConfig` declares, and the end of the
+/// gigabyte the window sits in.
 ///
-/// Above it the Lean map declares reserved space, left unmapped for the same
-/// fail-closed reason as the firmware carve-out.
-///
-/// **WS-BP BP0.4**: this was `0xFFA0_0000`, the extent rounded up to the 2 MiB
-/// block the level-2 tables describe, so `[0xFF85_0000, 0xFFA0_0000)` — space
-/// the Lean map *reserves* — was mapped Device.  A gate tolerated the round-up
-/// as a sub-block difference; driving one address set through both maps
-/// (`tests/fixtures/boot_map.expected`) made it a divergence, and it is closed
-/// rather than tolerated: the one block that straddles this address is
-/// described at 4 KiB granularity by a level-3 table ([`DEVICE_TAIL_BLOCK_BASE`]),
-/// so the tables map exactly the window the Lean map declares.
-pub const DEVICE_WINDOW_TOP: u64 = 0xFF85_0000;
-
-/// **WS-BP BP0.4**: the base of the one 2 MiB block of the device window whose
-/// addresses are not all of one kind — the block containing
-/// [`DEVICE_WINDOW_TOP`].  The boot tables describe it with a level-3 table of
-/// 4 KiB pages.
-pub const DEVICE_TAIL_BLOCK_BASE: u64 = DEVICE_WINDOW_TOP & !((1 << 21) - 1);
+/// Both ends are on 2 MiB boundaries, so the window is described by 2 MiB
+/// Device blocks alone.  (Until v0.36.2 the window ended at the BCM2711's
+/// `0xFF85_0000`, not a block boundary, and a level-3 table described the one
+/// straddling block; with nothing left to straddle that table is deleted
+/// rather than kept describing nothing.)
+pub const DEVICE_WINDOW_TOP: u64 = 0x10_8000_0000;
 
 /// What the boot tables map an address as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -588,9 +583,8 @@ const DESC_ADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
 /// - **L2** (`l2_ram`): 2 MiB blocks describing guaranteed RAM, except the
 ///   blocks an image boundary falls inside, which are Table descriptors to
 ///   `l3_image`.
-/// - **L2** (`l2_device`): 2 MiB Device blocks over the device window, except
-///   [`DEVICE_TAIL_BLOCK_BASE`], a Table descriptor to `l3_device_tail`.
-/// - **L3**: 4 KiB pages for those blocks.
+/// - **L2** (`l2_device`): 2 MiB Device blocks over the device window.
+/// - **L3**: 4 KiB pages for the straddled image blocks.
 #[repr(C, align(4096))]
 pub struct BootPageTables {
     l0: [u64; TABLE_ENTRIES],
@@ -598,7 +592,6 @@ pub struct BootPageTables {
     l2_ram: [u64; TABLE_ENTRIES],
     l2_device: [u64; TABLE_ENTRIES],
     l3_image: [[u64; TABLE_ENTRIES]; IMAGE_BOUNDARY_COUNT],
-    l3_device_tail: [u64; TABLE_ENTRIES],
 }
 
 impl BootPageTables {
@@ -609,20 +602,18 @@ impl BootPageTables {
             l2_ram: [0; TABLE_ENTRIES],
             l2_device: [0; TABLE_ENTRIES],
             l3_image: [[0; TABLE_ENTRIES]; IMAGE_BOUNDARY_COUNT],
-            l3_device_tail: [0; TABLE_ENTRIES],
         }
     }
 }
 
 /// How many 4 KiB tables [`BootPageTables`] holds.
-const BOOT_TABLE_COUNT: usize = 4 + IMAGE_BOUNDARY_COUNT + 1;
+const BOOT_TABLE_COUNT: usize = 4 + IMAGE_BOUNDARY_COUNT;
 
 /// Index of each table within [`BootPageTables`], in 4 KiB pages from its base.
 const L1_TABLE: u64 = 1;
 const L2_RAM_TABLE: u64 = 2;
 const L2_DEVICE_TABLE: u64 = 3;
 const L3_IMAGE_TABLE_BASE: u64 = 4;
-const L3_DEVICE_TAIL_TABLE: u64 = 4 + IMAGE_BOUNDARY_COUNT as u64;
 
 /// AK5-E (R-HAL-H01, R-HAL-M03): Interior-mutable wrapper around the boot
 /// translation tables.
@@ -716,12 +707,11 @@ const _: () = assert!(GUARANTEED_RAM_TOP.is_multiple_of(L2_BLOCK_SIZE));
 const _: () = assert!(DEVICE_GIB != 0);
 const _: () = assert!(DEVICE_WINDOW_BASE.is_multiple_of(L2_BLOCK_SIZE));
 const _: () = assert!(DEVICE_WINDOW_TOP <= (DEVICE_GIB as u64 + 1) * L1_BLOCK_SIZE);
-// WS-BP BP0.4: the window's top is the Lean extent, which is page aligned and
-// not block aligned; the block containing it is the one the device L3 table
-// describes.
-const _: () = assert!(DEVICE_WINDOW_TOP.is_multiple_of(L3_PAGE_SIZE));
-const _: () = assert!(DEVICE_TAIL_BLOCK_BASE.is_multiple_of(L2_BLOCK_SIZE));
-const _: () = assert!(DEVICE_TAIL_BLOCK_BASE >= DEVICE_WINDOW_BASE);
+// The BCM2712 address-map correction: the window's top is the Lean extent and a
+// 2 MiB boundary, so 2 MiB Device blocks describe it exactly and no block of
+// the window mixes kinds.
+const _: () = assert!(DEVICE_WINDOW_TOP.is_multiple_of(L2_BLOCK_SIZE));
+const _: () = assert!(DEVICE_WINDOW_BASE < DEVICE_WINDOW_TOP);
 const _: () = assert!(L2_BLOCK_SIZE == 1 << 21);
 
 // ---------------------------------------------------------------------------
@@ -733,9 +723,9 @@ const _: () = assert!(L2_BLOCK_SIZE == 1 << 21);
 /// the BCM2712's 44-bit physical address space never needs past 16 GiB).
 pub const BOOT_TABLE_REACH: u64 = 1 << 39;
 
-/// **WS-BP BP4.6**: how many RAM extensions the boot map can record.  The
-/// largest Raspberry Pi 5 needs two — the rest of the low 4 GiB below the GPU
-/// carve-out, and the RAM above 4 GiB — and a third is refused on no board;
+/// **WS-BP BP4.6**: how many RAM extensions the boot map can record.  Every
+/// Raspberry Pi 5 needs at most one — its DRAM above the guaranteed gigabyte,
+/// which is contiguous on the BCM2712 — and a second is refused on no board;
 /// the slack is for a future variant, never a reason to leave one unrecorded.
 pub const MAX_RAM_EXTENSIONS: usize = 4;
 
@@ -1001,8 +991,8 @@ const fn image_l3_slot(layout: &ImageLayout, base: u64) -> Option<usize> {
 /// Every descriptor is derived from [`boot_mapping_for`], so the tables and the
 /// cacheable-window predicate cannot disagree about a single address.  A 2 MiB
 /// block descriptor is used only where the whole block has one kind, which
-/// holds everywhere except the blocks [`image_l3_slot`] names and the device
-/// tail, each described page by page.
+/// holds everywhere except the blocks [`image_l3_slot`] names, each described
+/// page by page.
 fn populate_boot_tables(tables: &mut BootPageTables, base_pa: u64, layout: &ImageLayout) {
     // Level 0: one Table descriptor covering VA [0, 512 GiB).
     tables.l0 = [0; TABLE_ENTRIES];
@@ -1030,17 +1020,7 @@ fn populate_boot_tables(tables: &mut BootPageTables, base_pa: u64, layout: &Imag
     let device_gib_base = (DEVICE_GIB as u64) * L1_BLOCK_SIZE;
     for (i, entry) in tables.l2_device.iter_mut().enumerate() {
         let base = device_gib_base + (i as u64) * L2_BLOCK_SIZE;
-        *entry = if base == DEVICE_TAIL_BLOCK_BASE {
-            // WS-BP BP0.4: the one non-uniform device block, at page
-            // granularity.
-            table_descriptor(base_pa, L3_DEVICE_TAIL_TABLE)
-        } else {
-            block_descriptor(base, boot_mapping_for(base, layout))
-        };
-    }
-    for (k, entry) in tables.l3_device_tail.iter_mut().enumerate() {
-        let page = DEVICE_TAIL_BLOCK_BASE + (k as u64) * L3_PAGE_SIZE;
-        *entry = page_descriptor(page, boot_mapping_for(page, layout));
+        *entry = block_descriptor(base, boot_mapping_for(base, layout));
     }
 }
 
@@ -1052,7 +1032,8 @@ fn populate_boot_tables(tables: &mut BootPageTables, base_pa: u64, layout: &Imag
 /// - `[text_start, text_end)`:       kernel text, read-only, executable at EL1
 /// - `[text_end, rodata_end)`:       kernel read-only data, execute-never
 /// - `[rodata_end, 0x4000_0000)`:    Normal RAM, writable, execute-never
-/// - `0xFE00_0000 – 0xFF84_FFFF`:    Device (BCM2712 peripherals + GIC-400)
+/// - `0x10_7C00_0000 – 0x10_7FFF_FFFF`: Device (the BCM2712 SoC-bus window:
+///   UART10 + GIC-400)
 /// - everything else:                unmapped
 ///
 /// This is a boot mapping. AN8-D (RUST-M04): the runtime kernel uses
@@ -1661,14 +1642,15 @@ mod tests {
     #[test]
     fn boot_table_extent_is_every_translation_table() {
         // **WS-BP BP2.6**: one L0, one L1, two L2 (guaranteed RAM, the device
-        // window), three L3 for the image's boundary blocks and one for the
-        // device tail, each 512 entries × 8 bytes = 4096 bytes.  `enable_mmu`
+        // window) and three L3 for the image's boundary blocks, each 512
+        // entries × 8 bytes = 4096 bytes (the device tail's L3 went with the
+        // BCM2712 address-map correction).  `enable_mmu`
         // cleans exactly this extent to
         // the Point of Coherency before the walker is switched on, so an
         // extent that under-reports the tables would leave a table dirty in
         // the D-cache while the walker reads memory.
         assert_eq!(PageTableCell::size(), BOOT_TABLE_COUNT * 4096);
-        assert_eq!(PageTableCell::size(), 32768);
+        assert_eq!(PageTableCell::size(), 28672);
     }
 
     #[test]
@@ -1774,6 +1756,32 @@ mod tests {
 // predicate address by address rather than checking that both exist.
 // ===========================================================================
 
+/// **The BCM2712 address-map correction (v0.36.2)**: the MMIO window the Lean
+/// binding programs under `name` (`uart`, `gicd`, `gicc`), as `(base, size)`,
+/// read from the `mmio` lines `tests/Ak9PlatformSuite.lean` writes into
+/// `tests/fixtures/boot_map.expected` from `mmioRegions`.
+///
+/// The UART and GIC drivers' tests compare their base constants with this, so
+/// the two sides are compared by running both.  Before it they asserted a
+/// literal beside a comment naming `Board.lean`, and both sides then carried
+/// the BCM2711's addresses together while every test passed.
+#[cfg(test)]
+pub(crate) fn lean_mmio_window(name: &str) -> (u64, u64) {
+    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+    let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
+    let mut found = None;
+    for line in LEAN_TABLE.lines() {
+        let mut cols = line.split_whitespace();
+        if cols.next() == Some("mmio") && cols.next() == Some(name) {
+            let base = hex(cols.next().expect("an mmio line carries a base"));
+            let size = hex(cols.next().expect("an mmio line carries a size"));
+            assert!(found.is_none(), "two `mmio {name}` lines in the boot-map table");
+            found = Some((base, size));
+        }
+    }
+    found.unwrap_or_else(|| panic!("no `mmio {name}` line in the boot-map table"))
+}
+
 #[cfg(test)]
 mod boot_map_tests {
     use super::*;
@@ -1816,10 +1824,11 @@ mod boot_map_tests {
             L1_TABLE => Some(&tables.l1),
             L2_RAM_TABLE => Some(&tables.l2_ram),
             L2_DEVICE_TABLE => Some(&tables.l2_device),
-            i if (L3_IMAGE_TABLE_BASE..L3_DEVICE_TAIL_TABLE).contains(&i) => {
+            i if (L3_IMAGE_TABLE_BASE..L3_IMAGE_TABLE_BASE + IMAGE_BOUNDARY_COUNT as u64)
+                .contains(&i) =>
+            {
                 Some(&tables.l3_image[(i - L3_IMAGE_TABLE_BASE) as usize])
             }
-            L3_DEVICE_TAIL_TABLE => Some(&tables.l3_device_tail),
             _ => None,
         }
     }
@@ -1924,6 +1933,9 @@ mod boot_map_tests {
                 // WS-BP BP3.2: the reserved extent, which
                 // `the_kernel_reserved_extent_is_the_lean_and_linker_one` reads.
                 ["kernelReserved", _, _] => {}
+                // The BCM2712 address-map correction: the MMIO windows, which
+                // `lean_mmio_window` reads for the UART and GIC tests.
+                ["mmio", _, _, _] => {}
                 _ => panic!("unrecognised boot-map line {line:?}"),
             }
         }
@@ -1971,7 +1983,6 @@ mod boot_map_tests {
                 for c in [
                     GUARANTEED_RAM_TOP,
                     DEVICE_WINDOW_BASE,
-                    DEVICE_TAIL_BLOCK_BASE,
                     DEVICE_WINDOW_TOP,
                     v.ram_top,
                     layout.text_start,
@@ -2101,9 +2112,13 @@ mod boot_map_tests {
                 L2_BLOCK_SIZE,
                 RamExtensionRefusal::AlreadyMapped,
             ),
-            // A whole gigabyte followed by the device window: the second
-            // gigabyte's refusal must leave the first unwritten.
-            (2 * GIB, 2 * GIB, RamExtensionRefusal::AlreadyMapped),
+            // A whole gigabyte followed by the device window's gigabyte: the
+            // second gigabyte's refusal must leave the first unwritten.
+            (
+                (DEVICE_GIB as u64 - 1) * GIB,
+                2 * GIB,
+                RamExtensionRefusal::AlreadyMapped,
+            ),
         ];
         for (base, size, refusal) in cases {
             let (mut tables, _) = build(&LAYOUT);
@@ -2134,18 +2149,18 @@ mod boot_map_tests {
             extend_boot_tables(&mut tables, L1_BLOCK_SIZE, L1_BLOCK_SIZE),
             Err(RamExtensionRefusal::AlreadyMapped)
         );
-        let gpu = 0xFC00_0000;
+        // A partial extension inside the device window's gigabyte, the one
+        // gigabyte with a level-2 table of its own.
+        let gib = DEVICE_GIB as u64 * L1_BLOCK_SIZE;
+        let end = gib + 0x2000_0000;
+        assert_eq!(extend_boot_tables(&mut tables, gib, end - gib), Ok(()));
         assert_eq!(
-            extend_boot_tables(&mut tables, 3 * L1_BLOCK_SIZE, gpu - 3 * L1_BLOCK_SIZE),
-            Ok(())
-        );
-        assert_eq!(
-            extend_boot_tables(&mut tables, gpu - L2_BLOCK_SIZE, 2 * L2_BLOCK_SIZE),
+            extend_boot_tables(&mut tables, end - L2_BLOCK_SIZE, 2 * L2_BLOCK_SIZE),
             Err(RamExtensionRefusal::AlreadyMapped)
         );
         // The first block after the extension is still unmapped, and the
         // device window is still Device.
-        assert!(walk(&tables, base_pa, gpu).is_none());
+        assert!(walk(&tables, base_pa, end).is_none());
         let (_, attrs) = walk(&tables, base_pa, DEVICE_WINDOW_BASE).expect("device maps");
         assert_ne!(attrs & ATTR_IDX_DEVICE, 0);
     }
@@ -2286,6 +2301,11 @@ mod boot_map_tests {
             GUARANTEED_RAM_TOP,
             0x8000_0000,
             0xFC00_0000,
+            // The BCM2711's UART and GIC distributor, which the boot map
+            // mapped Device until the BCM2712 address-map correction: on this
+            // board they are DRAM above the guaranteed gigabyte.
+            0xFE20_1000,
+            0xFF84_1000,
             DEVICE_WINDOW_BASE - 1,
             DEVICE_WINDOW_TOP,
             0xFFFF_FFFF,
@@ -2299,10 +2319,11 @@ mod boot_map_tests {
 
     #[test]
     fn the_device_window_covers_the_uart_and_both_gic_frames() {
-        // `SeLe4n/Platform/RPi5/Board.lean`'s `mmioRegions`, and `gic.rs`'s
-        // GICD_BASE / GICC_BASE.
+        // `SeLe4n/Platform/RPi5/Board.lean`'s `mmioRegions`, read from the
+        // fixture the Lean suite writes, first and last byte of each.
         let (tables, base_pa) = build(&LAYOUT);
-        for va in [0xFE20_1000u64, 0xFF84_1000, 0xFF84_2000] {
+        let windows = ["uart", "gicd", "gicc"].map(lean_mmio_window);
+        for va in windows.iter().flat_map(|&(b, sz)| [b, b + sz - 1]) {
             let (pa, attrs) =
                 walk(&tables, base_pa, va).unwrap_or_else(|| panic!("{va:#x} must be mapped"));
             assert_eq!(pa, va);
@@ -2349,13 +2370,8 @@ mod boot_map_tests {
             let device_gib_base = (DEVICE_GIB as u64) * L1_BLOCK_SIZE;
             for (i, &entry) in tables.l2_device.iter().enumerate() {
                 let base = device_gib_base + (i as u64) * L2_BLOCK_SIZE;
-                if base == DEVICE_TAIL_BLOCK_BASE {
-                    assert!(!uniform(base));
-                    assert_eq!(entry, table_descriptor(base_pa, L3_DEVICE_TAIL_TABLE));
-                } else {
-                    assert!(uniform(base), "device block {base:#x} is not homogeneous");
-                    assert_eq!(entry, block_descriptor(base, kind_of(base)));
-                }
+                assert!(uniform(base), "device block {base:#x} is not homogeneous");
+                assert_eq!(entry, block_descriptor(base, kind_of(base)));
             }
         }
     }
@@ -2469,7 +2485,7 @@ mod boot_map_tests {
             0x2000
         ));
         // A range wholly inside the device window is not cacheable at all.
-        assert!(!is_boot_cacheable_range(0xFE20_1000, 0x1000));
+        assert!(!is_boot_cacheable_range(lean_mmio_window("uart").0, 0x1000));
     }
 
     #[test]

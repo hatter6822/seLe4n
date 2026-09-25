@@ -4986,7 +4986,7 @@ run_check "INVARIANT" rg -U -n '^    unsafe \{ BOOT_TABLES\.with_inner_mut\(\|ta
 run_check "INVARIANT" rg -U -n '^pub extern "C" fn ffi_extend_boot_ram_map\(base: u64, size: u64\) -> crate::lean_runtime::Obj \{\n    if let Err\(refusal\) = crate::mmu::extend_boot_ram_map\(base, size\) \{[^\n]*(\n([ \t][^\n]*)?)*?        crate::gic::halt_all\(\);' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n 'fn a_refused_extension_writes_nothing' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '\["extend", base, size\] => variants' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n '^extend 0x100000000 0x300000000$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n '^extend 0x40000000 0x3c0000000$' tests/fixtures/boot_map.expected
 # WS-BP BP4.7: the RAM the boot maps above the gigabyte is handed to the root
 # task.  The deployment's objects are a function of the variant, the bridge
 # applies it to the variant its parse selected, the RAM untypeds are DERIVED
@@ -14204,7 +14204,7 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_defaultMachineConfig
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_one_gib
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_two_gib
-#check @SeLe4n.Platform.RPi5.rpi5VariantFor_eight_gib_as_reported
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_eight_gib_two_banks
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_foreign_base
 #check @SeLe4n.Platform.RPi5.rpi5_bindMachineConfig
 #check @SeLe4n.Platform.PlatformBinding.bindMachineConfig
@@ -21388,11 +21388,36 @@ run_check "INVARIANT" rg -n 'checkSharedFixture "[^"]*" abiLayoutFixturePath' te
 run_check "INVARIANT" rg -n 'checkSharedFixture "[^"]*" "tests/fixtures/boot_map\.expected"' tests/
 run_check "INVARIANT" rg -n 'include_str!\("\.\./\.\./\.\./tests/fixtures/abi_layout\.expected"\)' rust/sele4n-abi/tests/conformance.rs
 run_check "INVARIANT" rg -n 'include_str!\("\.\./\.\./\.\./tests/fixtures/boot_map\.expected"\)' rust/sele4n-hal/src/mmu.rs
-# The boot map installs exactly the Lean map: the window's top is the Lean
-# extent, the straddling block is an L3 table, and the mirrored-literal test and
-# the regex scan of `Board.lean` it stood beside are gone.
-run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_TOP: u64 = 0xFF85_0000;$' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n 'if base == DEVICE_TAIL_BLOCK_BASE \{' rust/sele4n-hal/src/mmu.rs
+# The boot map installs exactly the Lean map: the window is the Lean extent,
+# and the mirrored-literal test and the regex scan of `Board.lean` it stood
+# beside are gone.
+#
+# The BCM2712 address-map correction (v0.36.2): the window is the BCM2712's
+# SoC-bus window, block aligned at both ends, so the page-granular tail table
+# the BCM2711 window needed is deleted rather than kept describing nothing.
+# The Lean map, the HAL boot map, the UART and the GIC are one set of addresses,
+# and the drivers' bases are read from the fixture the Lean suite writes.  None
+# of the BCM2711's addresses may come back as a live constant.
+run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_BASE: u64 = 0x10_7C00_0000;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_TOP: u64 = 0x10_8000_0000;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^const _: \(\) = assert!\(DEVICE_WINDOW_TOP\.is_multiple_of\(L2_BLOCK_SIZE\)\);$' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n 'DEVICE_TAIL_BLOCK_BASE|l3_device_tail|L3_DEVICE_TAIL_TABLE' rust/sele4n-hal/src/
+run_check "INVARIANT" rg -n '^pub const UART0_BASE: usize = 0x10_7D00_1000;$' rust/sele4n-hal/src/uart.rs
+run_check "INVARIANT" rg -n '^const UART_CLOCK_HZ: u32 = 9_216_000;$' rust/sele4n-hal/src/uart.rs
+run_check "INVARIANT" rg -n '^pub const GICD_BASE: usize = 0x10_7FFF_9000;$' rust/sele4n-hal/src/gic.rs
+run_check "INVARIANT" rg -n '^pub const GICC_BASE: usize = 0x10_7FFF_A000;$' rust/sele4n-hal/src/gic.rs
+run_check "INVARIANT" rg -n '^def uart0Base : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107D001000\)$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^def gicDistributorBase : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107FFF9000\)$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^def gicCpuInterfaceBase : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107FFFA000\)$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^def socPeripheralBase : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107C000000\)$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^mmio uart 0x107d001000 0x1000$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n '^mmio gicd 0x107fff9000 0x1000$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n '^mmio gicc 0x107fffa000 0x2000$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n '^pub\(crate\) fn lean_mmio_window\(name: &str\) -> \(u64, u64\) \{$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n 'crate::mmu::lean_mmio_window\("uart"\)' rust/sele4n-hal/src/uart.rs
+run_check "INVARIANT" rg -n 'crate::mmu::lean_mmio_window\(name\)' rust/sele4n-hal/src/gic.rs
+run_negative_check "INVARIANT" rg -n -i '0xFE20_?1000|0xFF84_?[12]000|0xFE00_?0000|0xFF85_?0000' SeLe4n/Platform/RPi5/Board.lean rust/sele4n-hal/src/uart.rs rust/sele4n-hal/src/gic.rs rust/sele4n-hal/src/boot.rs rust/sele4n-hal/link.ld
+run_negative_check "INVARIANT" rg -n '^def peripheralBaseLow' SeLe4n/
 run_negative_check "INVARIANT" rg -n 'the_boot_map_boundaries_mirror_the_lean_memory_map|LEAN_DEVICE_EXTENT_TOP' rust/sele4n-hal/src/
 run_negative_check "INVARIANT" rg -n 'lean_device_region|device_window_relation_verdict' scripts/check_physical_address_width.sh
 
