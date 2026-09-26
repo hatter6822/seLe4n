@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Capability.Operations
+import SeLe4n.Kernel.Capability.FrameFinalise
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
@@ -3901,7 +3902,7 @@ gives).  The reserved-idle refusal is the chokepoint's own
 (`syscallResolveCap_ok_not_reserved`).  `resolveVSpaceMapFrame_ok_authorised`
 is the fact the arm rests on. -/
 def resolveVSpaceMapFrame (callerTid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
-    (st : SystemState) : Except KernelError (Capability × FrameObject) :=
+    (st : SystemState) : Except KernelError (CSpaceAddr × Capability × FrameObject) :=
   match st.getTcb? callerTid with
   | none => .error .objectNotFound
   | some callerTcb =>
@@ -3922,7 +3923,14 @@ def resolveVSpaceMapFrame (callerTid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
         | .object frameObjId =>
           match st.getFrame? frameObjId with
           | none => .error .invalidCapability
-          | some frame => .ok (frameCap, frame)
+          | some frame =>
+            -- WS-BP BP7.1 (`v0.36.7`): the slot the capability sits in, which
+            -- is where the mapping is recorded.  The same pure resolution the
+            -- gate's lookup ran (`resolveVSpaceMapFrame_ok_slot`), so it names
+            -- the slot the capability was read from.
+            match resolveCapAddress callerTcb.cspaceRoot args.frame rootCn.depth st with
+            | .error e => .error e
+            | .ok frameSlot => .ok (frameSlot, frameCap, frame)
         | _ => .error .invalidCapability
 
 /-- **WS-BP BP7.1 (`v0.36.5`): the two slots a carve names, resolved through the
@@ -4033,8 +4041,8 @@ read-only lookup returns the state it was given
 itself. -/
 theorem resolveVSpaceMapFrame_ok_authorised
     (callerTid : SeLe4n.ThreadId) (args : VSpaceMapArgs) (st : SystemState)
-    (frameCap : Capability) (frame : FrameObject)
-    (h : resolveVSpaceMapFrame callerTid args st = .ok (frameCap, frame)) :
+    (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
+    (h : resolveVSpaceMapFrame callerTid args st = .ok (frameSlot, frameCap, frame)) :
     ∃ (callerTcb : TCB) (rootCn : CNode) (frameObjId : SeLe4n.ObjId),
       st.getTcb? callerTid = some callerTcb ∧
       st.getCNode? callerTcb.cspaceRoot = some rootCn ∧
@@ -4044,7 +4052,9 @@ theorem resolveVSpaceMapFrame_ok_authorised
           requiredRight := .read } st = .ok (frameCap, st) ∧
       frameCap.hasRight .read = true ∧
       frameCap.target = .object frameObjId ∧
-      st.getFrame? frameObjId = some frame := by
+      st.getFrame? frameObjId = some frame ∧
+      resolveCapAddress callerTcb.cspaceRoot args.frame rootCn.depth st = .ok frameSlot ∧
+      SystemState.lookupSlotCap st frameSlot = some frameCap := by
   unfold resolveVSpaceMapFrame at h
   cases hCaller : st.getTcb? callerTid with
   | none => rw [hCaller] at h; cases h
@@ -4068,6 +4078,17 @@ theorem resolveVSpaceMapFrame_ok_authorised
         obtain ⟨_, _, _, hRight, hSt⟩ :=
           syscallLookupCap_implies_capability_held _ st cap' s' hLk
         rw [hSt] at hLk
+        -- The slot the gate's lookup read the capability from.
+        obtain ⟨ref0, hRes0, hLk0, -, -⟩ :=
+          syscallLookupCap_implies_capability_held _ st cap' st hLk
+        have hSlotOf : ∀ ref, resolveCapAddress callerTcb.cspaceRoot args.frame
+            rootCn.depth st = .ok ref → SystemState.lookupSlotCap st ref = some cap' := by
+          intro ref hRef
+          have : ref0 = ref := by
+            have h2 : (Except.ok ref0 : Except KernelError CSpaceAddr) = .ok ref :=
+              hRes0.symm.trans hRef
+            cases h2; rfl
+          subst this; exact hLk0
         cases hTgt : cap'.target
         case object frameObjId =>
           rw [hTgt] at h
@@ -4076,13 +4097,18 @@ theorem resolveVSpaceMapFrame_ok_authorised
           | none => rw [hF] at h; cases h
           | some f =>
             rw [hF] at h
-            simp only [Except.ok.injEq, Prod.mk.injEq] at h
-            obtain ⟨hCap, hFr⟩ := h
-            subst hCap; subst hFr
-            exact ⟨callerTcb, rootCn, frameObjId,
-              by first | exact hCaller | rfl,
-              by first | exact hRoot | rfl,
-              hLk, hRight, hTgt, hF⟩
+            simp only at h
+            cases hRef : resolveCapAddress callerTcb.cspaceRoot args.frame rootCn.depth st with
+            | error e => rw [hRef] at h; cases h
+            | ok ref =>
+              rw [hRef] at h
+              simp only [Except.ok.injEq, Prod.mk.injEq] at h
+              obtain ⟨hS, hCap, hFr⟩ := h
+              subst hS; subst hCap; subst hFr
+              exact ⟨callerTcb, rootCn, frameObjId,
+                by first | exact hCaller | rfl,
+                by first | exact hRoot | rfl,
+                hLk, hRight, hTgt, hF, hRef, hSlotOf _ hRef⟩
         all_goals (rw [hTgt] at h; cases h)
 
 /-- **WS-BP BP7.1: what a frame capability authorises a mapping to do.**
@@ -4137,10 +4163,17 @@ def vspaceMapFromFrameCap (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs) : Kerne
   fun st =>
     match resolveVSpaceMapFrame tid args st with
     | .error e => .error e
-    | .ok (frameCap, frame) =>
+    | .ok (frameSlot, frameCap, frame) =>
       match frameMappingAdmissible frameCap frame args.perms with
       | .error e => .error e
       | .ok () =>
+        -- WS-BP BP7.1 (`v0.36.7`): a frame capability maps its frame once, as
+        -- in seL4 — a capability whose recorded mapping is still in place is
+        -- refused; mapping the frame again takes a copy of the capability,
+        -- which carries no record.  A record gone stale (its address space
+        -- unmapped the address, or was destroyed) is simply overwritten.
+        if capabilityMappingLive st frameCap then .error .invalidCapability
+        else
         -- AH1-D (M-01 fix): Validate permissions against memory kind before mapping.
         -- Device regions must not receive execute permission (undefined on ARM64).
         match validateVSpaceMapPermsForMemoryKind frame.base args.perms
@@ -4157,8 +4190,15 @@ def vspaceMapFromFrameCap (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs) : Kerne
           -- live *fill* that finally holds a real entry on the syscall
           -- path — and (b) retires any stale initiator entry atomically.
           -- Trace-safe: both are `perCoreTlb`-only, ∉ `projectState`.
-          Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
-            (determineExecutingCore st tid) args.asid args.vaddr frame.base perms st
+          match Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
+              (determineExecutingCore st tid) args.asid args.vaddr frame.base perms st with
+          | .error e => .error e
+          | .ok ((), st1) =>
+            -- WS-BP BP7.1 (`v0.36.7`): the mapping now belongs to the
+            -- capability that made it — recorded on it, in its own slot, so
+            -- destroying the capability removes it (`cspaceDeleteSlotFinalising`,
+            -- `cspaceRevokeCdtFinalising`).
+            cspaceRecordFrameMapping frameSlot { asid := args.asid, vaddr := args.vaddr } st1
 
 /-- **WS-BP BP7.1**: a successful frame-capability mapping resolved a frame the
 caller holds a capability to, admitted the requested permissions, and installed
@@ -4167,19 +4207,23 @@ reads. -/
 theorem vspaceMapFromFrameCap_ok (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
     (st st' : SystemState)
     (h : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
-    ∃ (frameCap : Capability) (frame : FrameObject),
-      resolveVSpaceMapFrame tid args st = .ok (frameCap, frame) ∧
+    ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
+      (st1 : SystemState),
+      resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame) ∧
       frameMappingAdmissible frameCap frame args.perms = .ok () ∧
+      capabilityMappingLive st frameCap = false ∧
       validateVSpaceMapPermsForMemoryKind frame.base args.perms st.machine.memoryMap
         = .ok args.perms ∧
       Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
         (determineExecutingCore st tid) args.asid args.vaddr frame.base args.perms st
+        = .ok ((), st1) ∧
+      cspaceRecordFrameMapping frameSlot { asid := args.asid, vaddr := args.vaddr } st1
         = .ok ((), st') := by
   unfold vspaceMapFromFrameCap at h
   cases hR : resolveVSpaceMapFrame tid args st with
   | error e => rw [hR] at h; cases h
-  | ok pair =>
-    obtain ⟨frameCap, frame⟩ := pair
+  | ok triple =>
+    obtain ⟨frameSlot, frameCap, frame⟩ := triple
     rw [hR] at h
     simp only at h
     cases hA : frameMappingAdmissible frameCap frame args.perms with
@@ -4188,14 +4232,63 @@ theorem vspaceMapFromFrameCap_ok (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
       cases u
       rw [hA] at h
       simp only at h
-      cases hV : validateVSpaceMapPermsForMemoryKind frame.base args.perms
-          st.machine.memoryMap with
-      | error e => rw [hV] at h; cases h
-      | ok perms =>
-        rw [hV] at h
-        have hEq := validateVSpaceMapPermsForMemoryKind_ok_eq _ _ _ _ hV
-        subst hEq
-        exact ⟨frameCap, frame, by first | exact hR | rfl, by first | exact hA | rfl, hV, h⟩
+      cases hLive : capabilityMappingLive st frameCap
+      · rw [hLive] at h
+        simp only [Bool.false_eq_true, ↓reduceIte] at h
+        cases hV : validateVSpaceMapPermsForMemoryKind frame.base args.perms
+            st.machine.memoryMap with
+        | error e => rw [hV] at h; cases h
+        | ok perms =>
+          rw [hV] at h
+          have hEq := validateVSpaceMapPermsForMemoryKind_ok_eq _ _ _ _ hV
+          subst hEq
+          simp only at h
+          cases hM : Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
+              (determineExecutingCore st tid) args.asid args.vaddr frame.base args.perms st with
+          | error e => rw [hM] at h; cases h
+          | ok pr =>
+            obtain ⟨u, st1⟩ := pr; cases u
+            rw [hM] at h
+            exact ⟨frameSlot, frameCap, frame, st1, by first | exact hR | rfl,
+              by first | exact hA | rfl, hLive, hV, by first | exact hM | rfl, h⟩
+      · rw [hLive] at h; simp at h
+
+/-- **WS-BP BP7.1 (`v0.36.7`): a successful mapping records itself on the
+capability that made it** — the slot the capability was resolved from now holds
+it with `mapping := some ⟨asid, vaddr⟩`, so destroying it removes the mapping. -/
+theorem vspaceMapFromFrameCap_ok_records (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (h : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
+    ∃ (frameSlot : CSpaceAddr) (frameCap : Capability),
+      SystemState.lookupSlotCap st frameSlot = some frameCap ∧
+      SystemState.lookupSlotCap st' frameSlot =
+        some { frameCap with mapping := some { asid := args.asid, vaddr := args.vaddr } } := by
+  obtain ⟨frameSlot, frameCap, frame, st1, hR, -, -, -, hMap, hRec⟩ :=
+    vspaceMapFromFrameCap_ok tid args st st' h
+  obtain ⟨_, _, _, _, _, _, _, _, _, -, hSlotCap⟩ :=
+    resolveVSpaceMapFrame_ok_authorised tid args st frameSlot frameCap frame hR
+  refine ⟨frameSlot, frameCap, hSlotCap, ?_⟩
+  obtain ⟨cn, cap, hCn, hLk, hStore⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st1 st' hRec
+  obtain ⟨hInv1, hW, -⟩ :=
+    vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1 hObjInv hMap
+  have hAt := storeObject_objects_eq st1 st' frameSlot.cnode _ hInv1 hStore
+  -- The map writes VSpace roots only, so the slot held the resolved capability at
+  -- `st1` too.
+  have hCnPre : st.objects[frameSlot.cnode]? = some (.cnode cn) := by
+    have hPre1 := (SystemState.getCNode?_eq_some_iff st1 frameSlot.cnode cn).mp hCn
+    rw [← hW.eq_of_not_root' (fun r hr => by rw [hPre1] at hr; cases hr)]
+    exact hPre1
+  have hCapEq : cap = frameCap := by
+    unfold SystemState.lookupSlotCap SystemState.lookupCNode at hSlotCap
+    rw [hCnPre] at hSlotCap
+    simp only at hSlotCap
+    rw [hLk] at hSlotCap
+    exact Option.some.inj hSlotCap
+  subst hCapEq
+  unfold SystemState.lookupSlotCap SystemState.lookupCNode
+  rw [hAt]
+  simp only
+  exact CNode.lookup_insert_eq cn frameSlot.slot _ (CNode.slotsUnique_holds cn)
 
 /-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these 14 arms
 derive authority entirely from capability possession and require no
@@ -4217,7 +4310,11 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .error e => .error e
         | .ok args =>
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
-            cspaceDeleteSlot addr st
+            -- WS-BP BP7.1 (`v0.36.7`): the finalising delete — seL4's
+            -- `cteDelete` → `finaliseCap`: a frame capability's recorded
+            -- mapping is removed with it, through the `.vspaceUnmap` arm's own
+            -- transition, the invoking thread's core initiating the shootdown.
+            cspaceDeleteSlotFinalising (determineExecutingCore st tid) addr st
     | _ => fun _ => .error .invalidCapability
   -- **WS-RR RR8.16 (`v0.35.190`)**: `seL4_CNode_Revoke`.  The arm the revocation
   -- family had never had — `cspaceRevokeCdt`'s own routing guide already named
@@ -4247,7 +4344,9 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .error e => .error e
         | .ok args =>
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
-            cspaceRevokeCdt addr st
+            -- WS-BP BP7.1 (`v0.36.7`): the finalising revocation — every
+            -- mapping a destroyed frame capability recorded is removed with it.
+            cspaceRevokeCdtFinalising (determineExecutingCore st tid) addr st
     | _ => fun _ => .error .invalidCapability
   -- PR #822 Phase H: mint a reply cap from an `.object`-to-Reply cap.  Same src/dst-slot
   -- ABI as `cspaceCopy` (reuses `decodeCSpaceCopyArgs`); the cap names the CNode, and
@@ -4806,7 +4905,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          exact cspaceDeleteSlot_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep
+          exact cspaceDeleteSlotFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
     all_goals try cases hStep
   case cspaceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -4816,7 +4915,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          exact cspaceRevokeCdt_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep
+          exact cspaceRevokeCdtFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
     all_goals try cases hStep
   case mintReplyCap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -4863,9 +4962,13 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          · obtain ⟨_, _, _, _, _, hMap⟩ := vspaceMapFromFrameCap_ok tid args st st' hStep
-            exact vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
-              st st' _ _ _ _ _ hObjInv hInv hMap
+          · obtain ⟨_, _, _, st1, _, _, _, _, hMap, hRec⟩ :=
+              vspaceMapFromFrameCap_ok tid args st st' hStep
+            exact (cspaceRecordFrameMapping_preserves_ipcInvariantFull _ _ st1 st'
+              (vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1
+                hObjInv hMap).1
+              (vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
+                st st1 _ _ _ _ _ hObjInv hInv hMap) hRec).1
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -7064,18 +7167,36 @@ theorem dispatchWithCap_cspaceMove_delegates
       cspaceMove src dst := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
-/-- WS-K-C: When cspaceDelete dispatch succeeds, the kernel-level
-`cspaceDeleteSlot` is invoked with the decoded target slot. -/
+/-- WS-K-C / WS-BP BP7.1 (`v0.36.7`): When cspaceDelete dispatch succeeds, the
+**finalising** delete runs on the decoded target slot, with the invoking thread's
+core as the initiator of the teardown's shootdown rounds: the capability is
+deleted and the mapping it recorded, if it records one, is removed. -/
 theorem dispatchWithCap_cspaceDelete_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs)
+    (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState)
     (hSyscall : decoded.syscallId = .cspaceDelete)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
-    dispatchWithCap decoded tid gate cap =
-      let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
-      cspaceDeleteSlot addr := by
+    dispatchWithCap decoded tid gate cap st =
+      cspaceDeleteSlotFinalising (determineExecutingCore st tid)
+        { cnode := cnodeId, slot := args.targetSlot } st := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+
+/-- WS-BP BP7.1 (`v0.36.7`): When cspaceRevoke dispatch succeeds, the
+**finalising** CDT revocation runs on the decoded source slot: every derivation
+of the capability is destroyed, and every mapping a destroyed frame capability
+recorded is removed. -/
+theorem dispatchWithCap_cspaceRevoke_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (cnodeId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState)
+    (hSyscall : decoded.syscallId = .cspaceRevoke)
+    (hTarget : cap.target = .object cnodeId)
+    (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
+    dispatchWithCap decoded tid gate cap st =
+      cspaceRevokeCdtFinalising (determineExecutingCore st tid)
+        { cnode := cnodeId, slot := args.targetSlot } st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 -- ============================================================================
@@ -7277,15 +7398,19 @@ theorem dispatchWithCap_vspaceMap_maps_frame_base
     (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true)
     (hOk : dispatchWithCap decoded tid gate cap st = .ok ((), st')) :
-    ∃ (frameCap : Capability) (frame : FrameObject),
-      resolveVSpaceMapFrame tid args st = .ok (frameCap, frame) ∧
+    ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
+      (st1 : SystemState),
+      resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame) ∧
       Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
         (determineExecutingCore st tid) args.asid args.vaddr frame.base args.perms st
+        = .ok ((), st1) ∧
+      cspaceRecordFrameMapping frameSlot { asid := args.asid, vaddr := args.vaddr } st1
         = .ok ((), st') := by
   rw [dispatchWithCap_vspaceMap_delegates decoded tid gate cap objId args st
     hSyscall hTarget hDecode hAuth] at hOk
-  obtain ⟨frameCap, frame, hR, _, _, hMap⟩ := vspaceMapFromFrameCap_ok tid args st st' hOk
-  exact ⟨frameCap, frame, hR, hMap⟩
+  obtain ⟨frameSlot, frameCap, frame, st1, hR, _, _, _, hMap, hRec⟩ :=
+    vspaceMapFromFrameCap_ok tid args st st' hOk
+  exact ⟨frameSlot, frameCap, frame, st1, hR, hMap, hRec⟩
 
 /-- **Fail-closed**: `.vspaceUnmap` dispatch rejects a capability that does not
 name the operand ASID's VSpace root, leaving the address space intact.  This is
@@ -9484,6 +9609,29 @@ def syscallDelegates : SyscallId → Prop
         cap.target = .object untypedId →
         dispatchWithCap decoded tid gate cap st =
           untypedReset (determineExecutingCore st tid) untypedId st
+  -- WS-BP BP7.1 (`v0.36.7`): the two destroying arms.  Each names the finalising
+  -- composite — the delete or the revocation, then the removal of every mapping a
+  -- destroyed frame capability recorded — at the invoking thread's core.
+  | .cspaceDelete =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (cnodeId : SeLe4n.ObjId)
+        (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState),
+        decoded.syscallId = .cspaceDelete →
+        cap.target = .object cnodeId →
+        decodeCSpaceDeleteArgs decoded = .ok args →
+        dispatchWithCap decoded tid gate cap st =
+          cspaceDeleteSlotFinalising (determineExecutingCore st tid)
+            { cnode := cnodeId, slot := args.targetSlot } st
+  | .cspaceRevoke =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (cnodeId : SeLe4n.ObjId)
+        (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState),
+        decoded.syscallId = .cspaceRevoke →
+        cap.target = .object cnodeId →
+        decodeCSpaceDeleteArgs decoded = .ok args →
+        dispatchWithCap decoded tid gate cap st =
+          cspaceRevokeCdtFinalising (determineExecutingCore st tid)
+            { cnode := cnodeId, slot := args.targetSlot } st
   | _ => False
 
 /-- The `.receive` obligation, discharged. -/
@@ -9556,6 +9704,18 @@ theorem syscallDelegates_untypedReset : syscallDelegates .untypedReset := by
   intro decoded tid gate cap untypedId st hSyscall hTarget
   exact dispatchWithCap_untypedReset_delegates decoded tid gate cap untypedId st
     hSyscall hTarget
+
+/-- WS-BP BP7.1 (`v0.36.7`): the `.cspaceDelete` obligation, discharged. -/
+theorem syscallDelegates_cspaceDelete : syscallDelegates .cspaceDelete := by
+  intro decoded tid gate cap cnodeId args st hSyscall hTarget hDecode
+  exact dispatchWithCap_cspaceDelete_delegates decoded tid gate cap cnodeId args st
+    hSyscall hTarget hDecode
+
+/-- WS-BP BP7.1 (`v0.36.7`): the `.cspaceRevoke` obligation, discharged. -/
+theorem syscallDelegates_cspaceRevoke : syscallDelegates .cspaceRevoke := by
+  intro decoded tid gate cap cnodeId args st hSyscall hTarget hDecode
+  exact dispatchWithCap_cspaceRevoke_delegates decoded tid gate cap cnodeId args st
+    hSyscall hTarget hDecode
 
 /-- The `.send` obligation, discharged. -/
 theorem syscallDelegates_send : syscallDelegates .send := by

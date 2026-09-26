@@ -389,12 +389,47 @@ structure SlotRef where
 @[inline] instance : Hashable SlotRef where
   hash a := mixHash (hash a.cnode) (hash a.slot)
 
+/-- **WS-BP BP7.1 (`v0.36.7`): where a frame capability has mapped its frame** —
+the address space (by ASID) and the virtual address.
+
+seL4's frame capability carries exactly this pair (`capFMappedASID`,
+`capFMappedAddress`), and it is what makes a mapping *belong to* a capability:
+deleting the capability finalises it (`finaliseCap` → `unmapPage`), so no
+mapping outlives the authority that made it.  A `VSpaceRoot` records a physical
+address, not the capability that installed it, so without this record a
+capability deletion cannot find its own mapping — which is how a revoked frame
+capability used to leave its page mapped until the untyped was reset. -/
+structure FrameMapping where
+  asid : SeLe4n.ASID
+  vaddr : SeLe4n.VAddr
+  deriving Repr, DecidableEq
+
+/-- **WS-BP BP7.1 (`v0.36.7`): one page as an address space maps it** — the
+ASID, the virtual address and the physical page the translation names.  The
+unit a mapping teardown works in: a frame capability's `FrameMapping` together
+with the frame's `base`, or a VSpace root's entry together with the root's ASID.
+Carrying the physical page is what lets a teardown remove a translation only if
+it still names *this* page, so a record gone stale — the address space unmapped
+or reused the address — removes nothing that is not its own. -/
+structure MappedPage where
+  asid : SeLe4n.ASID
+  vaddr : SeLe4n.VAddr
+  paddr : SeLe4n.PAddr
+  deriving Repr, DecidableEq
+
 /-- WS-F5/D2b: Capability with order-independent rights set.
-    `rights` is an `AccessRightSet` (bitmask), replacing the prior `List AccessRight`. -/
+    `rights` is an `AccessRightSet` (bitmask), replacing the prior `List AccessRight`.
+
+    **WS-BP BP7.1 (`v0.36.7`)**: `mapping` is the frame mapping this capability
+    made (`FrameMapping`).  Only `.vspaceMap` writes it, on the invoked frame
+    capability's own slot; a **derived** capability — a copy, a mint, an IPC
+    transfer — starts with none (`withoutMapping`, seL4's `deriveCap`), a move
+    carries it, and destroying the capability unmaps what it records. -/
 structure Capability where
   target : CapTarget
   rights : AccessRightSet
   badge : Option SeLe4n.Badge := none
+  mapping : Option FrameMapping := none
   deriving Repr, DecidableEq, Inhabited
 
 namespace Capability
@@ -402,6 +437,14 @@ namespace Capability
 /-- WS-F5/D2b: Check if a capability has a specific right. O(1) bit test. -/
 def hasRight (cap : Capability) (right : AccessRight) : Bool :=
   cap.rights.mem right
+
+/-- **WS-BP BP7.1 (`v0.36.7`): the capability a derivation produces** — this one
+with its mapping record cleared, seL4's `deriveCap` for a frame capability.  A
+copy or a transfer is a *new* authority over the frame, not the authority that
+made the mapping: were the record carried, two capabilities would each claim one
+mapping and destroying either would unmap the other's. -/
+@[inline] def withoutMapping (cap : Capability) : Capability :=
+  { cap with mapping := none }
 
 /-- AK7-I (F-M07 / MEDIUM): Null capability predicate.
 

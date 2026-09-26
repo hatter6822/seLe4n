@@ -1,3 +1,119 @@
+## v0.36.7 — WS-BP BP7.1: a frame capability owns the mapping it made, so destroying it unmaps
+
+Slice 3 (`v0.36.6`) registered a divergence from seL4.  Revoking or deleting a
+frame capability did not remove the mapping it had made; the mapping stayed
+until the untyped's holder reset the untyped.  So a thread whose every
+capability to a page had been revoked kept reading and writing that page.
+
+**Security note.**  This was reported before the fix, as a Low/Medium
+authority-revocation defect.  No *other* thread could reach the page in the
+meantime: a carved page is never handed out again until `untypedReset` has
+removed every mapping of it.  So there was no cross-thread leak and no
+aliasing.  What failed was revocation itself: a component could not take
+memory back from the thread it had granted it to.  This cut closes it the way
+seL4 does, rather than waiting for slice 4's page-table reshape.
+
+**The record.**  `Capability` gains `mapping : Option FrameMapping` (an ASID
+and a virtual address).  This is seL4's `capFMappedASID` / `capFMappedAddress`.
+
+* `.vspaceMap` writes the record on the capability that made the mapping, in
+  that capability's own slot (`cspaceRecordFrameMapping`).
+* `.vspaceMap` refuses a capability whose recorded mapping is still in place,
+  with `.invalidCapability` (`capabilityMappingLive`).  This is seL4's
+  `seL4_ARM_Page_Map` refusing a mapped capability.  To map a frame twice, map
+  through a copy.
+* A copy and an IPC transfer insert `Capability.withoutMapping`, so the record
+  never travels (seL4's `deriveCap`).
+* A move and a mutate keep the record, because the capability they leave is
+  the one that made the mapping.
+
+**The destroying arms finalise.**  The live `.cspaceDelete` arm now runs
+`cspaceDeleteSlotFinalising`, and the live `.cspaceRevoke` arm runs
+`cspaceRevokeCdtFinalising` (both in the new module
+`SeLe4n/Kernel/Capability/FrameFinalise.lean`).  Each does three things:
+
+1. it runs the destroying step;
+2. it removes every mapping a destroyed capability recorded, through the
+   `.vspaceUnmap` arm's own verified transition;
+3. it **decides** the result (`livePagesCleared`, `.illegalState` otherwise)
+   rather than trusting the pass.
+
+The revocation learns which pages to remove from `cspaceRevokeCdt` itself, which
+now returns them: its fold reads the page of each capability from the slot it
+deletes, at the state the deletion runs on (`revokeCdtFoldBody_records`).  A
+first draft added a second, reporting traversal beside the state-only one; the
+reachability census then reported the state-only one as executed by nothing, so
+it was **deleted** rather than pinned — one traversal, one fold.  The payoffs are
+`cspaceDeleteSlotFinalising_ok_unmapped` and
+`cspaceRevokeCdtFinalising_ok_unmapped`.
+
+The unmap pass moved to a new module, `Architecture/PageTeardown.lean`
+(`mappedPageLive`, `unmapLivePages`, `livePagesCleared`), because the untyped
+reset and the two destroying arms share it.  The `vspaceRootOnlyWrite` frame
+family moved with it.
+
+**The record write keeps the capability bundle.**  `.vspaceMap` now writes a
+CNode, so `cspaceRecordFrameMapping_preserves_capabilityInvariantBundle` states
+what `cspaceMutate`'s theorem states for the same in-place shape.  It needs no
+slot-capacity hypothesis, because an overwrite of an occupied slot cannot grow
+the CNode (`CNode.insert_slotCountBounded_of_lookup`, over
+`RHTable.size_insert_le_of_get?`).  Seven helper lemmas an earlier draft wrote
+and nothing consumed — five `withoutMapping_*` simp lemmas and two
+no-record lemmas — were deleted after a build without them proved them unused.
+
+**Stale records remove nothing.**  `.vspaceUnmap` works through a VSpace
+capability, so a record can outlive its mapping.  Each teardown step therefore
+re-checks that the recorded address still maps the frame's own page, which is
+seL4's `unmapPage` paddr comparison.  A different frame mapped there since
+survives.  What remains is seL4's own residue: a copy of the *same* frame
+remapped at that address is removed by the stale record's deletion, exactly as
+upstream.
+
+**Nothing else may drop a recording capability.**
+
+* A CNode holding one is refused an in-place retype with `.revocationRequired`
+  (`CNode.holdsFrameMappingRecord`).
+* The boot refuses a configured record (`bootSafeCapCheck`, with
+  `bootSafeCnodeCheck_caps` now concluding it).
+* The frozen delete has no unmap, so it refuses a recording capability rather
+  than dropping it (FO-013b).
+
+**Footprints and inventories.**
+
+* `lockSet_cspaceDelete` takes the unmapped VSpace root as an optional write
+  member.
+* `lockSet_vspaceMap` names the frame capability's CNode (write, for the
+  record) and the frame (read).
+* `permittedKinds` admits `.vspaceRoot` for the delete and the revocation, and
+  `.page` for the map.
+* Every bound and consistency theorem is restated at full arity.
+* Both destroying arms are live, delegation-backed entries of the cross-core
+  inventory, with an empty write set (33 transitions, 25 live, 17
+  delegation-backed).
+* They are capability-only entries of the enforcement boundary (canonical 49,
+  per-core 64), and `ipcInvariantFull` is preserved by both.
+
+**Witnesses.**  `tests/VSpaceCapabilityBindingSuite.lean` §5f covers:
+
+* the map records the mapping on the capability that made it;
+* a copy carries no record;
+* a live-mapped capability cannot map again;
+* deleting a frame capability removes exactly the mapping it made, with the
+  retired non-finalising delete computed beside it;
+* a stale record removes nothing, and does not block a fresh map;
+* a CNode holding a recording capability is not retyped, with a stripped
+  control;
+* the boot refuses a configured record, with a control.
+
+§5e's revocation assertion inverts: the revocation now removes the mapping,
+with the retired revocation computed beside it.  Seven Tier 3 mutations —
+reverting each arm, the live-mapping refusal, the copy strip, the CNode guard,
+the post-check and the frozen refusal — are each caught.
+
+Registered debt: `docs/REGISTERED_DEBT.md` table B's "revoking a frame
+capability does not unmap it" is closed.  Slice 4 still owes page-table
+objects, the child-untyped carve, and the reset retiring both.
+
 ## v0.36.6 — WS-BP BP7.1, slice 3: the untyped reset — `.untypedReset` returns an untyped's memory
 
 After slice 2 a thread could carve frames from an untyped and map them, but the

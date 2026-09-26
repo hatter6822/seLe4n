@@ -154,13 +154,13 @@ theorem ipcTransferSingleCap_preserves_badgeWellFormed
         | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
         | true =>
         simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
         | error e => simp [hIns] at hStep
         | ok pair =>
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
           have hBadgeMid := cspaceInsertSlot_preserves_badgeWellFormed st pair.2
-            { cnode := receiverRoot, slot := emptySlot } cap hInv hObjInv hCapValid
+            { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv hObjInv hCapValid
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
           have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }

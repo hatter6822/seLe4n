@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers
+import SeLe4n.Kernel.Architecture.PageTeardown
 
 /-!
 # The untyped reset — memory returns to the untyped it was carved from
@@ -28,10 +29,13 @@ CDT descendants of the invoked slot.  The question is therefore asked of the
 objects themselves (`untypedChildrenUnreferenced`): no CNode slot, and no
 capability parked in a blocked sender's message, names any carved child.
 
-A capability is not the only way to reach memory.  A **mapping** records a
-physical address, not an object id, and deleting the last capability to a frame
-leaves every mapping of it in place.  So the reset **finalises** the frames the
-way seL4's `finaliseCap` does when the last frame capability goes: every mapping
+A capability is not the only way to reach memory.  A **mapping** is recorded on
+the frame capability that made it (`Capability.mapping`, `v0.36.7`), and
+destroying that capability removes it (`cspaceDeleteSlotFinalising`,
+`cspaceRevokeCdtFinalising`) — but a record can go stale, since a VSpace
+capability may unmap the address and a copy may map the frame again, so the
+reset does not rely on the records.  It **finalises** the frames the way seL4's
+`finaliseCap` does when the last frame capability goes: every mapping
 of a page in the untyped's region is removed, through the one verified unmap the
 `.vspaceUnmap` arm runs (`vspaceUnmapPageWithShootdownAndIcacheBroadcast` — the
 page-table erase, the local flush, the `.vae1` shootdown round, the initiator's
@@ -42,7 +46,8 @@ missed makes the reset refuse rather than hand the page out again.
 
 ## What the reset writes
 
-1. every mapping of a page meeting the region, removed (`untypedResetUnmap`);
+1. every mapping of a page meeting the region, removed (`unmapLivePages`, the
+   page teardown this reset shares with a frame capability's destruction);
 2. every carved child **retired** — erased from the object store with its index
    and metadata rows (`retireFrame`), so its object id and its store capacity
    return too.  Leaving a capless frame in the store would be unreachable but
@@ -144,30 +149,25 @@ maps to a page meeting the region, read off the pre-state.  Collected, not
 trusted — `untypedRegionUnmapped` decides afterwards whether anything was
 missed. -/
 def untypedRegionMappings (st : SystemState) (ut : UntypedObject) :
-    List (SeLe4n.ASID × SeLe4n.VAddr) :=
+    List MappedPage :=
   st.objects.fold [] (fun acc _ o =>
     match o with
     | .vspaceRoot root =>
         root.mappings.fold acc (fun acc' v e =>
-          if ut.regionMeetsPage e.1 then (root.asid, v) :: acc' else acc')
+          if ut.regionMeetsPage e.1 then
+            { asid := root.asid, vaddr := v, paddr := e.1 } :: acc'
+          else acc')
     | _ => acc)
 
 -- ============================================================================
 -- §2  The unmap pass
 -- ============================================================================
 
-/-- **Remove each collected mapping through the verified unmap**, in order,
-stopping at the first failure.  Every step is the `.vspaceUnmap` arm's own
-transition, so the TLB and instruction-cache discipline a single unmap owes is
-owed — and paid — per mapping. -/
-def untypedResetUnmap (executingCore : Concurrency.CoreId) :
-    List (SeLe4n.ASID × SeLe4n.VAddr) → Kernel Unit
-  | [] => fun st => .ok ((), st)
-  | (asid, vaddr) :: rest => fun st =>
-      match Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
-          executingCore asid vaddr st with
-      | .error e => .error e
-      | .ok ((), st1) => untypedResetUnmap executingCore rest st1
+-- The unmap pass is `unmapLivePages` (`Architecture/PageTeardown.lean`), with
+-- the frames that say what it can change (`vspaceRootOnlyWrite`,
+-- `unmapLivePages_ok_frame`): the one teardown this reset shares with a frame
+-- capability's destruction, so the two cannot come to disagree about how a
+-- mapping is removed.
 
 -- ============================================================================
 -- §3  Retiring a frame
@@ -210,7 +210,7 @@ def untypedReset (executingCore : Concurrency.CoreId) (untypedId : SeLe4n.ObjId)
       if !untypedChildrenRetirable st ut then .error .revocationRequired
       else if !untypedChildrenUnreferenced st ut then .error .revocationRequired
       else
-        match untypedResetUnmap executingCore (untypedRegionMappings st ut) st with
+        match unmapLivePages executingCore (untypedRegionMappings st ut) st with
         | .error e => .error e
         | .ok ((), st1) =>
           if !untypedRegionUnmapped st1 ut then .error .illegalState
@@ -222,146 +222,6 @@ def untypedReset (executingCore : Concurrency.CoreId) (untypedId : SeLe4n.ObjId)
 -- ============================================================================
 -- §5  Frames: what each step of the reset can change
 -- ============================================================================
-
-/-- **A write that touches VSpace roots only**: at every key the object is
-unchanged, or a VSpace root on both sides.  What one unmap does, and so what the
-whole unmap pass does. -/
-def vspaceRootOnlyWrite (st st' : SystemState) : Prop :=
-  ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
-    ((∃ r, st.objects[oid]? = some (.vspaceRoot r)) ∧
-     (∃ r', st'.objects[oid]? = some (.vspaceRoot r')))
-
-theorem vspaceRootOnlyWrite.refl (st : SystemState) : vspaceRootOnlyWrite st st :=
-  fun _ => Or.inl rfl
-
-theorem vspaceRootOnlyWrite.trans {s1 s2 s3 : SystemState}
-    (hFirst : vspaceRootOnlyWrite s1 s2) (hSecond : vspaceRootOnlyWrite s2 s3) :
-    vspaceRootOnlyWrite s1 s3 := by
-  intro oid
-  rcases hFirst oid with e12 | ⟨r1, r2⟩ <;> rcases hSecond oid with e23 | ⟨r2', r3⟩
-  · exact Or.inl (e23.trans e12)
-  · exact Or.inr ⟨by rw [← e12]; exact r2', r3⟩
-  · exact Or.inr ⟨r1, by rw [e23]; exact r2⟩
-  · exact Or.inr ⟨r1, r3⟩
-
-/-- A key a VSpace-root-only write leaves unchanged: every key that does not hold
-a VSpace root beforehand. -/
-theorem vspaceRootOnlyWrite.eq_of_not_root {st st' : SystemState}
-    (h : vspaceRootOnlyWrite st st') {oid : SeLe4n.ObjId}
-    (hNot : ∀ r, st.objects[oid]? ≠ some (.vspaceRoot r)) :
-    st'.objects[oid]? = st.objects[oid]? := by
-  rcases h oid with e | ⟨⟨r, hr⟩, _⟩
-  · exact e
-  · exact absurd hr (hNot r)
-
-/-- ...and a key that holds no VSpace root afterwards is unchanged too. -/
-theorem vspaceRootOnlyWrite.eq_of_not_root' {st st' : SystemState}
-    (h : vspaceRootOnlyWrite st st') {oid : SeLe4n.ObjId}
-    (hNot : ∀ r, st'.objects[oid]? ≠ some (.vspaceRoot r)) :
-    st'.objects[oid]? = st.objects[oid]? := by
-  rcases h oid with e | ⟨_, ⟨r, hr⟩⟩
-  · exact e
-  · exact absurd hr (hNot r)
-
-/-- **One page-table unmap** stores a VSpace root at the key the ASID resolved
-to, which held a VSpace root; nothing else moves in the object store. -/
-theorem vspaceUnmapPage_ok_frame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
-    (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : Architecture.vspaceUnmapPage asid vaddr st = .ok ((), st')) :
-    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler := by
-  unfold Architecture.vspaceUnmapPage at hStep
-  cases hRes : Architecture.resolveAsidRoot st asid with
-  | none => rw [hRes] at hStep; cases hStep
-  | some pr =>
-    obtain ⟨rootId, root⟩ := pr
-    rw [hRes] at hStep
-    simp only at hStep
-    cases hUn : root.unmapPage vaddr with
-    | none => rw [hUn] at hStep; cases hStep
-    | some root' =>
-      rw [hUn] at hStep
-      simp only at hStep
-      obtain ⟨_, hObj, _⟩ :=
-        Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hRes
-      refine ⟨storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStep, ?_,
-        storeObject_scheduler_eq _ _ _ _ hStep⟩
-      intro oid
-      by_cases hK : oid = rootId
-      · subst hK
-        exact Or.inr ⟨⟨root, hObj⟩, ⟨root', storeObject_objects_eq _ _ _ _ hObjInv hStep⟩⟩
-      · exact Or.inl (storeObject_objects_ne _ _ _ _ _ hK hObjInv hStep)
-
-/-- **The verified unmap the `.vspaceUnmap` arm runs** changes the object store
-exactly as its page-table erase does: the local flush, the shootdown round, the
-initiator's drain and the instruction-cache broadcast write only TLB, shootdown
-and cache state. -/
-theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame
-    (ec : Concurrency.CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
-    (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
-      = .ok ((), st')) :
-    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler := by
-  unfold Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast at hStep
-  cases hK : Architecture.vspaceUnmapPageWithShootdownPerCore ec asid vaddr st with
-  | error e =>
-    rw [(Architecture.withIcacheBroadcast_error_iff _ _ st e).mpr hK] at hStep
-    cases hStep
-  | ok pr =>
-    obtain ⟨u, stK⟩ := pr; cases u
-    obtain ⟨hObjsK, -, hSchedK, -⟩ := Architecture.withIcacheBroadcast_frame hK hStep
-    unfold Architecture.vspaceUnmapPageWithShootdownPerCore at hK
-    cases hS : Architecture.vspaceUnmapPageWithShootdown ec asid vaddr st with
-    | error e => rw [hS] at hK; cases hK
-    | ok pr2 =>
-      obtain ⟨u2, stS⟩ := pr2; cases u2
-      rw [hS] at hK
-      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hK
-      subst hK
-      unfold Architecture.vspaceUnmapPageWithShootdown at hS
-      cases hF : Architecture.vspaceUnmapPageWithFlush asid vaddr st with
-      | error e => rw [hF] at hS; cases hS
-      | ok pr3 =>
-        obtain ⟨u3, stF⟩ := pr3; cases u3
-        rw [hF] at hS
-        simp only [Architecture.withShootdownRound_total, Except.ok.injEq, Prod.mk.injEq,
-          true_and] at hS
-        subst hS
-        unfold Architecture.vspaceUnmapPageWithFlush at hF
-        cases hU : Architecture.vspaceUnmapPage asid vaddr st with
-        | error e => rw [hU] at hF; cases hF
-        | ok pr4 =>
-          obtain ⟨u4, stU⟩ := pr4; cases u4
-          rw [hU] at hF
-          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
-          subst hF
-          obtain ⟨hInvU, hWU, hSchU⟩ := vspaceUnmapPage_ok_frame asid vaddr st stU hObjInv hU
-          have hObjs : st'.objects = stU.objects := hObjsK
-          have hSch : st'.scheduler = stU.scheduler := hSchedK
-          refine ⟨hObjs ▸ hInvU, fun oid => ?_, hSch.trans hSchU⟩
-          rw [hObjs]; exact hWU oid
-
-/-- **The unmap pass** is a VSpace-root-only write that keeps the scheduler and
-the object table's invariant. -/
-theorem untypedResetUnmap_ok_frame (ec : Concurrency.CoreId) :
-    ∀ (ms : List (SeLe4n.ASID × SeLe4n.VAddr)) (st st' : SystemState),
-      st.objects.invExt →
-      untypedResetUnmap ec ms st = .ok ((), st') →
-      st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler
-  | [], st, st', hInv, hStep => by
-      simp only [untypedResetUnmap, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-      subst hStep
-      exact ⟨hInv, vspaceRootOnlyWrite.refl _, rfl⟩
-  | (asid, vaddr) :: rest, st, st', hInv, hStep => by
-      simp only [untypedResetUnmap] at hStep
-      cases h1 : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st with
-      | error e => rw [h1] at hStep; cases hStep
-      | ok pr =>
-        obtain ⟨u, st1⟩ := pr; cases u
-        rw [h1] at hStep
-        obtain ⟨hInv1, hW1, hS1⟩ :=
-          vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame ec asid vaddr st st1 hInv h1
-        obtain ⟨hInv2, hW2, hS2⟩ := untypedResetUnmap_ok_frame ec rest st1 st' hInv1 hStep
-        exact ⟨hInv2, hW1.trans hW2, hS2.trans hS1⟩
 
 /-- **Retiring one frame**: the key erased held a frame; every other key is
 unchanged.  Stated with the headroom an erase needs (`size < capacity`), which
@@ -478,7 +338,7 @@ theorem untypedReset_ok_decompose (ec : Concurrency.CoreId) (untypedId : SeLe4n.
       st.getUntyped? untypedId = some ut ∧
       untypedChildrenRetirable st ut = true ∧
       untypedChildrenUnreferenced st ut = true ∧
-      untypedResetUnmap ec (untypedRegionMappings st ut) st = .ok ((), st1) ∧
+      unmapLivePages ec (untypedRegionMappings st ut) st = .ok ((), st1) ∧
       untypedRegionUnmapped st1 ut = true ∧
       st1.objects.size < st1.objects.capacity ∧
       storeObject untypedId (.untyped ut.reset)
@@ -494,7 +354,7 @@ theorem untypedReset_ok_decompose (ec : Concurrency.CoreId) (untypedId : SeLe4n.
     cases hU : untypedChildrenUnreferenced st ut
     · simp [hR, hU] at hStep
     simp only [hR, hU, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hStep
-    cases hM : untypedResetUnmap ec (untypedRegionMappings st ut) st with
+    cases hM : unmapLivePages ec (untypedRegionMappings st ut) st with
     | error e => rw [hM] at hStep; cases hStep
     | ok pr =>
       obtain ⟨u, st1⟩ := pr; cases u
@@ -528,14 +388,14 @@ private theorem child_ne_untyped {st : SystemState} {untypedId : SeLe4n.ObjId}
 unmap pass's VSpace-root-only write and the retire's frame-retire write. -/
 private theorem untypedReset_ok_frames {ec : Concurrency.CoreId}
     {st st1 : SystemState} {ut : UntypedObject} (hObjInv : st.objects.invExt)
-    (hM : untypedResetUnmap ec (untypedRegionMappings st ut) st = .ok ((), st1))
+    (hM : unmapLivePages ec (untypedRegionMappings st ut) st = .ok ((), st1))
     (hSz : st1.objects.size < st1.objects.capacity) :
     let st2 := retireFrames st1 (ut.children.map (·.objId))
     st1.objects.invExt ∧ vspaceRootOnlyWrite st st1 ∧ st1.scheduler = st.scheduler ∧
     st2.objects.invExt ∧ st2.scheduler = st1.scheduler ∧ frameRetireWrite st1 st2 ∧
     (∀ id ∈ ut.children.map (·.objId), (st1.objects[id]? = none ∨
         ∃ f, st1.objects[id]? = some (KernelObject.frame f)) → st2.objects[id]? = none) := by
-  obtain ⟨hInv1, hW1, hS1⟩ := untypedResetUnmap_ok_frame ec _ st st1 hObjInv hM
+  obtain ⟨hInv1, hW1, hS1⟩ := unmapLivePages_ok_frame ec _ st st1 hObjInv hM
   obtain ⟨hInv2, -, hS2, hW2, hN2⟩ := retireFrames_frame (ut.children.map (·.objId)) st1 hInv1 hSz
   exact ⟨hInv1, hW1, hS1, hInv2, hS2, hW2, hN2⟩
 

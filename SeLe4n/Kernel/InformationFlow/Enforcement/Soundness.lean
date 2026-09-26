@@ -357,7 +357,7 @@ theorem enforcementSoundness_registerServiceChecked
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L/Z8-M/D2/D3/AC4-D (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 47 entries, matching the canonical `enforcementBoundary`.
+    has exactly 49 entries, matching the canonical `enforcementBoundary`.
 
     WS-SM SM9.A.11 added the two audit-trail entries (`auditReadFromCore`,
     `auditDrainVisiblePrefix`), both capability-only; WS-SM SM9.C.8 added the
@@ -368,12 +368,15 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     capability-only — the live `.untypedRetype` arm's transition, the untyped
     carve behind its two slot resolutions; and WS-BP BP7.1 (`v0.36.6`) added
     `untypedReset`, capability-only — the live `.untypedReset` arm's
-    transition.
+    transition; and WS-BP BP7.1 (`v0.36.7`) added `cspaceDeleteSlotFinalising`
+    and `cspaceRevokeCdtFinalising`, capability-only — the live `.cspaceDelete`
+    and `.cspaceRevoke` arms' transitions, each removing the mappings the frame
+    capabilities it destroys recorded.
 
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 47 := by rfl
+    enforcementBoundaryExtended.length = 49 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

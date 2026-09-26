@@ -1635,14 +1635,14 @@ theorem cspaceCopy_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) 
     | none => simp [hNN] at hStep
     | some capNN =>
       simp only [hNN] at hStep
-      cases hIns : cspaceInsertSlot dst capNN.val st with
+      cases hIns : cspaceInsertSlot dst capNN.val.withoutMapping st with
       | error e => simp [hIns] at hStep
       | ok pairI =>
         simp only [hIns, Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨_, hEq⟩ := hStep
         subst hEq
         refine observableSlotsConfinedToCore_trans
-          (cspaceInsertSlot_confinedToCore st pairI.2 dst capNN.val c₀ hIns) ?_
+          (cspaceInsertSlot_confinedToCore st pairI.2 dst capNN.val.withoutMapping c₀ hIns) ?_
         refine observableSlotsConfinedToCore_trans
           (ensureCdtNodeForSlot_confinedToCore pairI.2 src c₀) ?_
         refine observableSlotsConfinedToCore_trans

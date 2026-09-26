@@ -13,9 +13,9 @@
 [smp-information-flow] rendezvous call write set: [2, 0], send write set: [2]
 [smp-information-flow] lock acquired on an object low can see: raw writer true, projected unheld on every core true
 [smp-information-flow] non-interference coverage: 35 per-core lifts, 31 with derived confinement, 4 catch-all
-[smp-information-flow] cross-core inventory: 31 transitions, 23 live arms, 24 remote writers
-[smp-information-flow] enforcement boundary: canonical 47 = 13 policy-gated + 30 capability-only + 4 read-only
-[smp-information-flow] enforcement boundary: per-core 62 = canonical + 15 cross-core wrappers; re-routed syscalls 15
+[smp-information-flow] cross-core inventory: 33 transitions, 25 live arms, 24 remote writers
+[smp-information-flow] enforcement boundary: canonical 49 = 13 policy-gated + 32 capability-only + 4 read-only
+[smp-information-flow] enforcement boundary: per-core 64 = canonical + 15 cross-core wrappers; re-routed syscalls 15
 [smp-information-flow] channel 1 (scheduling state): severity=medium modelVisible=true perCoreInstance=true
 [smp-information-flow] channel 2 (machine timer): severity=medium modelVisible=false perCoreInstance=true
 [smp-information-flow] channel 3 (TCB metadata): severity=low modelVisible=true perCoreInstance=false

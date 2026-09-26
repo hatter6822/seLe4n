@@ -817,6 +817,14 @@ theorem findFirstEmptySlot_none_iff
         have hEq : base.toNat + 1 + j = base.toNat + (j + 1) := by omega
         rw [hEq] at this; exact this
 
+/-- **WS-BP BP7.1 (`v0.36.7`): does any slot hold a capability that records a
+frame mapping?**  Destroying such a capability owes the unmapping of what it
+mapped (`cspaceDeleteSlotFinalising`), which a CNode's destruction by retype does
+not perform, so the retype refuses a CNode for which this holds — delete those
+capabilities first. -/
+def holdsFrameMappingRecord (node : CNode) : Bool :=
+  node.slots.fold false (fun acc _ cap => acc || cap.mapping.isSome)
+
 /-- The local same-TARGET sweep: keep the source slot, delete every other slot in
 this CNode that names the same capability target.
 
@@ -1075,6 +1083,18 @@ theorem remove_slotCountBounded
   have h : (cn.slots.erase slot).table.size ≤ cn.slots.table.size :=
     RHTable.size_erase_le cn.slots.table slot
   exact Nat.le_trans h hBounded
+
+/-- **WS-BP BP7.1 (`v0.36.7`): overwriting an occupied slot preserves the
+slot-count bound** — the rewrite replaces an entry rather than adding one
+(`RHTable.size_insert_le_of_get?`).  What an in-place capability rewrite (the
+frame-mapping record `.vspaceMap` writes) owes the CNode's capacity. -/
+theorem insert_slotCountBounded_of_lookup
+    (cn : CNode) (slot : SeLe4n.Slot) (old new : Capability)
+    (hBounded : cn.slotCountBounded) (hLk : cn.lookup slot = some old) :
+    (cn.insert slot new).slotCountBounded := by
+  show (cn.slots.insert slot new).table.size ≤ 2 ^ cn.radixWidth
+  exact Nat.le_trans
+    (RHTable.size_insert_le_of_get? cn.slots.table slot new old cn.slots.hWF.1 hLk) hBounded
 
 /-- Revoking target-local preserves the slot-count bound (filter can only decrease size). -/
 

@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.6` (`lakefile.toml`) |
+| **Package version** | `0.36.7` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 423,960 across 344 Lean files |
-| **Test LoC** | 86,280 across 71 Lean test suites |
-| **Proved declarations** | 14,056 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 425,292 across 346 Lean files |
+| **Test LoC** | 86,511 across 71 Lean test suites |
+| **Proved declarations** | 14,097 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6 (§8.10.2a); the rest of BP7, and BP8, not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4632,9 +4632,34 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   `ipcReadViewAgreement.of_inertOrAbsentWrites`).  It declares no static
   lock footprint (the VSpace roots it writes are state-discovered and
   unbounded, `.cspaceRevoke`'s reason) and writes no scheduler slot.
-  **Divergence, registered**: revoking a frame capability does not unmap
-  it — the mapping persists until the reset — where seL4 unmaps when the
-  capability that made the mapping is deleted (owner: slice 4).
+  The reset shares its unmap pass with the destroying arms below
+  (`unmapLivePages`, `Architecture/PageTeardown.lean`), which re-checks each
+  page is still live before removing it.
+- **A frame capability owns the mapping it made** (`v0.36.7`, closing the
+  divergence slice 3 registered: a revoked frame capability's mapping used to
+  persist until the reset).  `Capability.mapping : Option FrameMapping` is
+  seL4's `capFMappedASID` / `capFMappedAddress`: `.vspaceMap` records the
+  mapping on the capability that made it (`cspaceRecordFrameMapping`) and
+  refuses a capability whose recorded mapping is still live
+  (`capabilityMappingLive`, `.invalidCapability`); a copy and an IPC transfer
+  insert `cap.withoutMapping` (seL4's `deriveCap`).  The live `.cspaceDelete`
+  and `.cspaceRevoke` arms are `cspaceDeleteSlotFinalising` /
+  `cspaceRevokeCdtFinalising`: the destroying step, then the removal of every
+  mapping a destroyed capability recorded through the `.vspaceUnmap` arm's
+  own transition, decided afterwards (`livePagesCleared`, `.illegalState`
+  otherwise).  The revocation reports exactly the pages its traversal
+  destroyed: `cspaceRevokeCdt` returns them, its fold reading each page from
+  the slot it deletes (`revokeCdtFoldBody_records`), so there is one
+  revocation traversal, not a second one beside it.
+  Payoffs: `cspaceDeleteSlotFinalising_ok_unmapped`,
+  `cspaceRevokeCdtFinalising_ok_unmapped`.  A stale record — its address
+  unmapped through a VSpace capability — removes nothing unless the address
+  maps the same frame's page again (seL4's `unmapPage` paddr comparison).  A
+  CNode holding a recording capability is refused an in-place retype
+  (`CNode.holdsFrameMappingRecord`), the boot refuses a configured record
+  (`bootSafeCapCheck`), and the frozen delete refuses what it cannot
+  finalise.  `lockSet_cspaceDelete` names the unmapped VSpace root and
+  `lockSet_vspaceMap` the frame capability's CNode and the frame.
 - `decodeVSpaceMapArgsChecked` is retired with the physical-address operand
   it bounded; the PA-width bound on the frame's `base` is
   `vspaceMapPageCheckedWithFlushFromState`'s.
@@ -5249,7 +5274,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **200** statements in the family (the
+bound on a post-state across all **204** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to

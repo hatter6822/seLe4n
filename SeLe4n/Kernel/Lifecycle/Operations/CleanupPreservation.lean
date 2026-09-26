@@ -1797,7 +1797,17 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- node's ancestor takes the unrelated newcomer with it.  Past the guard the
     -- detach is unconditionally correct — every mapping it erases belongs to a
     -- node with no descendants and no transfer in flight.
+    --
+    -- **WS-BP BP7.1 (`v0.36.7`): and a slot holding a capability that records a
+    -- frame mapping cannot be destroyed here either** — destroying it owes the
+    -- unmapping of what it mapped (seL4's `finaliseCap`), which only the
+    -- finalising delete performs (`cspaceDeleteSlotFinalising`); a retype that
+    -- dropped it would leave its page mapped with no capability left to name
+    -- the mapping.  Refused with the same error: delete those capabilities
+    -- first.
     if cnodeHasDerivationParentSlot st target cn then
+      .error .revocationRequired
+    else if cn.holdsFrameMappingRecord then
       .error .revocationRequired
     else
       .ok (detachCNodeSlots st target cn)
@@ -2120,7 +2130,9 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     -- detached one, whose scheduler is framed.
     split at hOk
     · exact absurd hOk (by simp)
-    · injection hOk with hOk; subst hOk
+    · split at hOk
+      · exact absurd hOk (by simp)
+      injection hOk with hOk; subst hOk
       have hSched := detachCNodeSlots_scheduler_eq st target cn
       rw [show ((detachCNodeSlots st target cn).scheduler.runQueueOnCore bootCoreId).flat =
             (st.scheduler.runQueueOnCore bootCoreId).flat from by rw [hSched]] at h
@@ -2195,7 +2207,9 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     -- and the detach frames the shootdown state.
     split at hOk
     · exact absurd hOk (by simp)
-    · injection hOk with hOk; subst hOk
+    · split at hOk
+      · exact absurd hOk (by simp)
+      injection hOk with hOk; subst hOk
       exact detachCNodeSlots_tlbShootdown_eq st target cn
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk

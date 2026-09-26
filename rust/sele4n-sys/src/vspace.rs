@@ -27,6 +27,12 @@ use sele4n_types::{Asid, CPtr, KernelResult, SyscallId, VAddr};
 /// `PagePerms::CACHEABLE` for it.  A capability to anything but a frame, or an
 /// empty slot, is `InvalidCapability`.
 ///
+/// The mapping is recorded on the frame capability that made it, so deleting
+/// or revoking that capability unmaps it.  A frame capability maps its frame
+/// **once**: mapping through a capability whose recorded mapping is still in
+/// place is `InvalidCapability` — copy the capability (a copy carries no
+/// record) to map the same frame again.
+///
 /// Enforces W^X: the WRITE and EXECUTE permission bits cannot both be set.
 /// Returns `PolicyDenied` if the W^X constraint is violated.
 #[inline]

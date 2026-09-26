@@ -1290,7 +1290,7 @@ theorem cspaceCopy_preserves_projection
     have hToNN : cap.toNonNull? = some ⟨cap, hNotNull⟩ :=
       Capability.toNonNull?_of_not_null hNotNull
     simp only [hToNN] at hStep
-    cases hInsert : cspaceInsertSlot dst cap st with
+    cases hInsert : cspaceInsertSlot dst cap.withoutMapping st with
     | error e => simp [hInsert] at hStep
     | ok pair₂ =>
       rcases pair₂ with ⟨_, stIns⟩
@@ -1302,7 +1302,7 @@ theorem cspaceCopy_preserves_projection
       rw [hAddEdge,
           ensureCdtNodeForSlot_preserves_projection' ctx observer _ dst,
           ensureCdtNodeForSlot_preserves_projection' ctx observer _ src,
-          cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
+          cspaceInsertSlot_preserves_projection ctx observer dst cap.withoutMapping st stIns hDstHigh hObjInv hInsert]
 
 /-- WS-H9: cspaceCopy preserves low-equivalence. -/
 private theorem cspaceCopy_preserves_lowEquivalent

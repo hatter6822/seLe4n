@@ -1640,7 +1640,14 @@ def bootSafeCapCheck (cap : Capability) : Bool :=
    | none => true) &&
   (match cap.target with
    | .replyCap _ => false
-   | _ => true)
+   | _ => true) &&
+  -- **WS-BP BP7.1 (`v0.36.7`)**: and it records no frame mapping.  A mapping
+  -- record is written only by `.vspaceMap`, on the capability that made the
+  -- mapping; a configured one names a mapping no capability made (the boot
+  -- admits no frame and no user mapping), so destroying the capability would
+  -- tear down whatever a later thread maps at that address, and the CNode's
+  -- retype would be refused for a mapping that does not exist.
+  cap.mapping.isNone
 
 /-- A boot **CNode** is structurally well-formed, and every capability it holds
     passes `bootSafeCapCheck`.  The structural conditions are over derived
@@ -1668,13 +1675,14 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     (hFold : cn.slots.fold true (fun acc _ cap => acc && bootSafeCapCheck cap) = true)
     {slot : SeLe4n.Slot} {cap : Capability} (hLookup : cn.lookup slot = some cap) :
     (∀ badge, cap.badge = some badge → badge.valid) ∧
-    (∀ rid, cap.target ≠ .replyCap rid) := by
+    (∀ rid, cap.target ≠ .replyCap rid) ∧
+    cap.mapping = none := by
   have hc := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? cn.slots.table
     (fun _ cap => bootSafeCapCheck cap) hFold hLookup
   unfold bootSafeCapCheck at hc
-  rw [Bool.and_eq_true] at hc
-  obtain ⟨hBadge, hTarget⟩ := hc
-  refine ⟨fun badge hB => ?_, fun rid hT => ?_⟩
+  simp only [Bool.and_eq_true] at hc
+  obtain ⟨⟨hBadge, hTarget⟩, hMap⟩ := hc
+  refine ⟨fun badge hB => ?_, fun rid hT => ?_, Option.isNone_iff_eq_none.mp hMap⟩
   · rw [hB] at hBadge
     simpa [SeLe4n.Badge.isValid, SeLe4n.Badge.valid] using hBadge
   · rw [hT] at hTarget
@@ -1932,7 +1940,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
              injection hc; subst_vars
              exact ⟨hSlots, hDepth, hWf,
                fun _ _ badge hL hB => (bootSafeCnodeCheck_caps hCaps hL).1 badge hB,
-               fun _ _ rid hL => (bootSafeCnodeCheck_caps hCaps hL).2 rid⟩,
+               fun _ _ rid hL => (bootSafeCnodeCheck_caps hCaps hL).2.1 rid⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he⟩

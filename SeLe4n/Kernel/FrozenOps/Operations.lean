@@ -1207,12 +1207,24 @@ def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     | some _ => .error .objectNotFound
     | none => .error .objectNotFound
 
-/-- Q7-C3: Frozen CSpace delete — erase a capability from a frozen CNode. -/
+/-- Q7-C3: Frozen CSpace delete — erase a capability from a frozen CNode.
+
+WS-BP BP7.1 (`v0.36.7`): a capability carrying a **mapping record** is refused
+with `.revocationRequired`.  The live delete (`cspaceDeleteSlotFinalising`)
+removes the recorded mapping before it returns — seL4's `finaliseCap` →
+`unmapPage` — and this surface has no VSpace unmap to perform it with, so
+erasing the slot here would leave a mapping whose frame capability is gone:
+the defect the live cut closes.  Refusing is the one sound mirror of a step
+the surface cannot model, and it can only refuse what the live kernel
+performs, never admit what it refuses. -/
 def frozenCspaceDelete (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     : FrozenKernel Unit :=
   fun st =>
     match st.getObject? rootId with
     | some (.cnode cn) =>
+      if (cn.slots.lookup slot).any (fun cap => cap.mapping.isSome) then
+        .error .revocationRequired
+      else
         let slots' := cn.slots.erase slot
         let cn' : FrozenCNode := { cn with slots := slots' }
         match frozenWithObjectStored st rootId (.cnode cn') with

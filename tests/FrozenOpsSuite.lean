@@ -480,6 +480,29 @@ private def fo013_cspaceDelete : IO Unit := do
       | .error e => expect "deleted → invalidCapability" (e == .invalidCapability)
   | .error _ => throw <| IO.userError "delete should succeed"
 
+/-- FO-013b (WS-BP BP7.1, `v0.36.7`): frozenCspaceDelete refuses a capability
+that records a mapping.  The live delete removes that mapping before it returns
+(`cspaceDeleteSlotFinalising`, seL4's `finaliseCap` → `unmapPage`); this surface
+has no VSpace unmap to do it with, so erasing the slot would leave a mapping
+whose capability is gone — the defect the live cut closes.  The control is the
+same capability with no record, which FO-013 already deletes. -/
+private def fo013b_cspaceDeleteRefusesMappedFrameCap : IO Unit := do
+  let cap : Capability :=
+    { target := .object ⟨42⟩, rights := .ofNat 7, badge := none,
+      mapping := some { asid := SeLe4n.ASID.ofNat 3, vaddr := SeLe4n.VAddr.ofNat 0x60000 } }
+  let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
+  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fst with
+  | .ok _ => throw <| IO.userError "deleting a mapping-recording capability should be refused"
+  | .error e => expect "mapping record → revocationRequired" (e == .revocationRequired)
+  -- CONTROL: the same capability, record stripped, deletes.
+  let radix' := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap.withoutMapping
+  let fst' := mkFrozenState [(⟨10⟩, .cnode { cn with slots := radix' })]
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fst' with
+  | .ok _ => expect "CONTROL: no record → the delete succeeds" true
+  | .error _ => throw <| IO.userError "the record-free delete should succeed"
+
 -- ============================================================================
 -- TPH-014: Notification Signal/Wait
 -- ============================================================================
@@ -3141,6 +3164,7 @@ def main : IO Unit := do
   fo012_serviceLookupMissing
   IO.println "--- TPH-013: Delete in Frozen ---"
   fo013_cspaceDelete
+  fo013b_cspaceDeleteRefusesMappedFrameCap
   IO.println "--- TPH-014: Notification Signal/Wait ---"
   fo014_notificationSignal
   fo015_notificationWait

@@ -1423,7 +1423,12 @@ exercised on one entry point is a claim about that entry point. -/
 private def revocationEntryPoints :
     List (String × (SeLe4n.Kernel.CSpaceAddr → SystemState →
       Except KernelError (Unit × SystemState))) :=
-  [ ("cspaceRevokeCdt", fun addr st => SeLe4n.Kernel.cspaceRevokeCdt addr st)
+  [ ("cspaceRevokeCdt", fun addr st =>
+      -- WS-BP BP7.1 (`v0.36.7`): the materialized revocation also reports the
+      -- pages its destroyed capabilities had mapped; this table compares states.
+      match SeLe4n.Kernel.cspaceRevokeCdt addr st with
+      | .error e => .error e
+      | .ok (_, stDone) => .ok ((), stDone))
   , ("cspaceRevokeCdtStreaming", fun addr st => SeLe4n.Kernel.cspaceRevokeCdtStreaming addr st)
   , ("cspaceRevokeCdtStrict", fun addr st =>
       match SeLe4n.Kernel.cspaceRevokeCdtStrict addr st with
@@ -2425,7 +2430,7 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
   let stPre ← mkState
 
   -- Run materialized revocation
-  let ((), stMaterialized) ← expectOkSt "chain21: materialized revokeCdt"
+  let (_, stMaterialized) ← expectOkSt "chain21: materialized revokeCdt"
     (SeLe4n.Kernel.cspaceRevokeCdt rootSlot stPre)
 
   -- Run streaming BFS revocation on same initial state

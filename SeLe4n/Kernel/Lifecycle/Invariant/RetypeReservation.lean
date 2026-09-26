@@ -319,7 +319,9 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
     simp only at h
     split at h
     · exact absurd h (by simp)
-    · injection h with h
+    · split at h
+      · exact absurd h (by simp)
+      injection h with h
       subst h
       exact (replenishQueueAffinityConsistent_smp_frame
         (st := st) (st' := detachCNodeSlots st target cn)
@@ -587,7 +589,9 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
     simp only at h
     split at h
     · exact absurd h (by simp)
-    · injection h with h
+    · split at h
+      · exact absurd h (by simp)
+      injection h with h
       subst h
       exact schedContextBindingConsistent_of_objects_eq
         (detachCNodeSlots_objects_eq st target cn) hCons
@@ -780,7 +784,9 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
     subst hC; simp only at h
     split at h
     · exact absurd h (by simp)
-    · injection h with h; subst h
+    · split at h
+      · exact absurd h (by simp)
+      injection h with h; subst h
       rw [detachCNodeSlots_objects_eq]; exact hInv
   | reply r =>
     subst hC; simp only at h
@@ -886,7 +892,9 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
     subst hC; simp only at h
     split at h
     · exact absurd h (by simp)
-    · injection h with h; subst h
+    · split at h
+      · exact absurd h (by simp)
+      injection h with h; subst h
       exact retypeTargetUnpaired_of_objects_eq
         (detachCNodeSlots_objects_eq st target cn)
         ⟨fun t hT => by rw [hStored] at hT; exact absurd hT (by simp),

@@ -11,6 +11,7 @@ import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Architecture.VSpace
 import SeLe4n.Model.State
 import SeLe4n.Testing.StateBuilder
+import SeLe4n.Platform.Boot
 
 /-!
 # VSpace capability-binding suite (PR #845 review, P1)
@@ -67,6 +68,16 @@ because the defect lived in dispatch and only dispatch can witness it.
   removes every mapping of the region (an unrelated mapping survives), retires
   the frames and resets the watermark, so the next carve reuses both the page,
   zeroed again, and the child id.
+* §5f — **WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it
+  made.**  `.vspaceMap` records the mapping on the capability; a copy carries
+  none; a capability whose mapping is live cannot map again; deleting a frame
+  capability removes exactly the mapping it made (seL4's `finaliseCap` →
+  `unmapPage`), with the retired non-finalising delete computed beside it; a
+  record gone stale removes nothing — a different frame mapped since at the
+  same address survives — and does not block a fresh map; a CNode holding a
+  recording capability is not retyped in place; and the boot refuses a
+  configured record.  §5e's revocation witness inverts in the same cut: the
+  revocation now removes the mapping the reset used to be the first to remove.
 * §6 — the authorized positive paths still work (the gate is not a blanket
   denial).
 -/
@@ -738,8 +749,29 @@ private def runResetChecks : IO Unit := do
         (SystemState.lookupSlotCap stRev { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotCarved }
           == none &&
          SystemState.lookupSlotCap stRev { cnode := carveCn, slot := SeLe4n.Slot.ofNat 9 } == none)
-      assertBool "but the mapping of the carved page is still there (a mapping records memory)"
-        (mappedPaddr stRev carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase)
+      -- WS-BP BP7.1 (`v0.36.7`): the revocation also REMOVES the mapping the
+      -- destroyed frame capability made — seL4's `finaliseCap` → `unmapPage`.
+      -- Until then it stayed until the reset, so a thread went on reading and
+      -- writing memory whose every capability had been revoked.  The revocation
+      -- STEP alone — the retired arm, with no teardown — is computed beside the
+      -- live arm on the same state, so the assertion is known to discriminate;
+      -- and the step REPORTS the destroyed capability's page, which is exactly
+      -- what the teardown then removes.
+      assertBool "the revocation removes the mapping the destroyed frame capability recorded"
+        (mappedPaddr stRev carveAsid (SeLe4n.VAddr.ofNat 0x60000) == none)
+      assertBool "RETIRED: the revocation step without its teardown left that mapping in place"
+        (match cspaceRevokeCdt { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotUtRetype } st with
+          | .ok (_, stOld) =>
+              mappedPaddr stOld carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase
+          | .error _ => false)
+      assertBool "the revocation step reports exactly the page the destroyed capability recorded"
+        (match cspaceRevokeCdt { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotUtRetype } st with
+          | .ok (pages, _) =>
+              pages.map (fun p => (p.asid, p.vaddr.toNat, p.paddr.toNat))
+                == [(carveAsid, 0x60000, carveUtBase)]
+          | .error _ => false)
+      assertBool "and it leaves the mapping of a page no destroyed capability recorded alone"
+        (mappedPaddr stRev carveAsid (SeLe4n.VAddr.ofNat 0x70000) == some carveDevBase)
       let inFlight : TCB :=
         { tid := ⟨990⟩, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := carveCn,
           vspaceRoot := carveVsp, ipcBuffer := SeLe4n.VAddr.ofNat 8192,
@@ -759,7 +791,7 @@ private def runResetChecks : IO Unit := do
       match dispatchSyscall (decodeReset slotUtRetype) carveOwner stDirty with
       | .error e => assertBool s!"the reset after revocation succeeds (got {repr e})" false
       | .ok ((), stReset) => do
-        assertBool "the reset removes the mapping of the region's page"
+        assertBool "after the reset the region's page is mapped nowhere"
           (mappedPaddr stReset carveAsid (SeLe4n.VAddr.ofNat 0x60000) == none)
         assertBool "and leaves the mapping of a page OUTSIDE the region alone"
           (mappedPaddr stReset carveAsid (SeLe4n.VAddr.ofNat 0x70000) == some carveDevBase)
@@ -798,6 +830,133 @@ private def runResetChecks : IO Unit := do
   | .ok ((), stObj) =>
     assertBool "a reset whose child is not a frame is refused (revocationRequired)"
       (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner stObj))
+
+-- ============================================================================
+-- §5f  WS-BP BP7.1 (`v0.36.7`) — a frame capability owns the mapping it made
+-- ============================================================================
+
+/-- `.cspaceDelete` of `slot` in the owner's CSpace root, invoked on the
+writable root capability. -/
+private def decodeDelete (slot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat slotOwnCnRW
+  , msgInfo   := { length := 1, extraCaps := 0, label := 0 }
+  , syscallId := .cspaceDelete
+  , msgRegs   := #[SeLe4n.RegValue.ofNat slot] }
+
+/-- `.vspaceUnmap` of `vaddr` in the owner's address space, invoked on the
+owner's VSpace-root capability — the unmap that leaves a record stale. -/
+private def decodeOwnUnmap (vaddr : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat slotOwnVsp
+  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+  , syscallId := .vspaceUnmap
+  , msgRegs   := #[SeLe4n.RegValue.ofNat 6, SeLe4n.RegValue.ofNat vaddr] }
+
+/-- The mapping record on the capability in the owner's root at `slot`. -/
+private def recordAt (st : SystemState) (slot : Nat) : Option FrameMapping :=
+  (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot }).bind
+    (·.mapping)
+
+private def runFrameFinaliseChecks : IO Unit := do
+  IO.println "-- §5f a frame capability owns the mapping it made (WS-BP BP7.1)"
+  let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
+    match r with | .error e' => e' == e | .ok _ => false
+  -- Carve two frames (slots 8, 9), map the first through slot 8 at 0x60000,
+  -- and copy slot 8 to slot 12.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
+       decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9,
+       decodeOwnMap 0x60000 slotCarved permsRWUC,
+       decodeCopy slotCarved 12] with
+  | .error e => assertBool s!"the carve-map-copy setup succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "the map records the mapping on the capability that made it"
+      (recordAt st slotCarved == some { asid := carveAsid, vaddr := SeLe4n.VAddr.ofNat 0x60000 })
+    assertBool "a copy carries no mapping record (seL4's `deriveCap`)"
+      (recordAt st 12 == none &&
+       (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 }).isSome)
+    assertBool "a capability whose mapping is live cannot map again (invalidCapability)"
+      (isErr .invalidCapability
+        (dispatchSyscall (decodeOwnMap 0x61000 slotCarved permsRWUC) carveOwner st))
+    -- The copy maps the same frame a second time, and deleting the COPY removes
+    -- exactly the mapping the copy made.
+    match dispatchSyscall (decodeOwnMap 0x61000 12 permsRWUC) carveOwner st with
+    | .error e => assertBool s!"the copy maps the frame again (got {repr e})" false
+    | .ok ((), st2) => do
+      assertBool "setup: the frame is mapped twice"
+        (mappedPaddr st2 carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase &&
+         mappedPaddr st2 carveAsid (SeLe4n.VAddr.ofNat 0x61000) == some carveUtBase)
+      match dispatchSyscall (decodeDelete 12) carveOwner st2 with
+      | .error e => assertBool s!"deleting the copy succeeds (got {repr e})" false
+      | .ok ((), st3) => do
+        assertBool "deleting a frame capability removes the mapping it made"
+          (mappedPaddr st3 carveAsid (SeLe4n.VAddr.ofNat 0x61000) == none)
+        assertBool "and leaves the mapping another capability made alone"
+          (mappedPaddr st3 carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase)
+        assertBool "RETIRED: the non-finalising delete left the deleted capability's mapping in place"
+          (match cspaceDeleteSlot { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 } st2 with
+            | .ok ((), stOld) =>
+                mappedPaddr stOld carveAsid (SeLe4n.VAddr.ofNat 0x61000) == some carveUtBase
+            | .error _ => false)
+  -- A STALE record: the address space unmaps 0x60000 through its own VSpace
+  -- capability and maps the OTHER frame there.  Deleting slot 8 — whose record
+  -- still names 0x60000 — must not remove a mapping it did not make.  (A fresh
+  -- chain, with no copy of slot 8: a deleted copy's CDT node keeps its parent
+  -- a derivation parent until a revocation, as it always has.)
+  match runAll carveScenario
+      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
+       decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9,
+       decodeOwnMap 0x60000 slotCarved permsRWUC,
+       decodeOwnUnmap 0x60000,
+       decodeOwnMap 0x60000 9 permsRWUC] with
+  | .error e => assertBool s!"the map-unmap-remap setup succeeds (got {repr e})" false
+  | .ok st4 => do
+    assertBool "setup: 0x60000 now maps the second frame, and slot 8's record is stale"
+      (mappedPaddr st4 carveAsid (SeLe4n.VAddr.ofNat 0x60000)
+          == some (carveUtBase + SeLe4n.pageBytes) &&
+       recordAt st4 slotCarved == some { asid := carveAsid, vaddr := SeLe4n.VAddr.ofNat 0x60000 })
+    match dispatchSyscall (decodeDelete slotCarved) carveOwner st4 with
+    | .error e => assertBool s!"deleting the stale-record capability succeeds (got {repr e})" false
+    | .ok ((), st5) =>
+      assertBool "a stale record removes nothing: the other frame's mapping survives"
+        (mappedPaddr st5 carveAsid (SeLe4n.VAddr.ofNat 0x60000)
+          == some (carveUtBase + SeLe4n.pageBytes))
+    -- A stale record does not block a fresh map of its capability.
+    match dispatchSyscall (decodeOwnMap 0x62000 slotCarved permsRWUC) carveOwner st4 with
+    | .error e => assertBool s!"a capability with a stale record maps again (got {repr e})" false
+    | .ok ((), st6) =>
+      assertBool "and the new mapping replaces the stale record"
+        (recordAt st6 slotCarved
+          == some { asid := carveAsid, vaddr := SeLe4n.VAddr.ofNat 0x62000 })
+  -- A CNode whose ONLY obstacle to an in-place retype is a mapping record: a
+  -- fresh CNode holding one frame capability with no CDT node at all, so no
+  -- derivation-parent guard can be what refuses it.  The control is the same
+  -- CNode with the record stripped.
+  let recCap : Capability :=
+    { frameCapability (SeLe4n.ObjId.ofNat 950) with
+      mapping := some { asid := carveAsid, vaddr := SeLe4n.VAddr.ofNat 0x60000 } }
+  let lone (cap : Capability) : CNode :=
+    { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+      slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, cap)] }
+  let retypeLone (cap : Capability) : Bool :=
+    match storeObject (SeLe4n.ObjId.ofNat 970) (.cnode (lone cap)) carveScenario with
+    | .error _ => false
+    | .ok ((), stL) =>
+      match lifecyclePreRetypeCleanup stL (SeLe4n.ObjId.ofNat 970) (.cnode (lone cap))
+          (.endpoint {}) with
+      | .error .revocationRequired => false
+      | .error _ => false
+      | .ok _ => true
+  assertBool "a CNode holding a capability that records a mapping is not retyped in place"
+    (!retypeLone recCap)
+  assertBool "CONTROL: the same CNode with the record stripped is retyped"
+    (retypeLone recCap.withoutMapping)
+  -- The boot admits no configured record: every mapping is one a capability made.
+  assertBool "the boot refuses a configured capability that records a mapping"
+    (!SeLe4n.Platform.Boot.bootSafeCapCheck
+      { frameCapability (SeLe4n.ObjId.ofNat 950) with
+        mapping := some { asid := carveAsid, vaddr := SeLe4n.VAddr.ofNat 0x60000 } })
+  assertBool "CONTROL: and admits the same capability with no record"
+    (SeLe4n.Platform.Boot.bootSafeCapCheck (frameCapability (SeLe4n.ObjId.ofNat 950)))
 
 private def runAuthorizedChecks : IO Unit := do
   IO.println "-- §6 authorized callers still succeed"
@@ -847,6 +1006,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runFrameCapabilityChecks
   runCarveChecks
   runResetChecks
+  runFrameFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."

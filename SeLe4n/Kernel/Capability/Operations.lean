@@ -1031,6 +1031,36 @@ def revokePendingTransfersFrom (st : SystemState) (nodes : List CdtNodeId) :
     SystemState :=
   (st.objects.toList.map (·.1)).foldl (revokePendingTransfersStep nodes) st
 
+/-- One sweep step writes the object store alone: the scheduler and the machine
+are the accumulator's. -/
+private theorem revokePendingTransfersStep_scheduler_machine (nodes : List CdtNodeId)
+    (stAcc : SystemState) (oid : SeLe4n.ObjId) :
+    (revokePendingTransfersStep nodes stAcc oid).scheduler = stAcc.scheduler ∧
+    (revokePendingTransfersStep nodes stAcc oid).machine = stAcc.machine := by
+  unfold revokePendingTransfersStep
+  repeat' split
+  all_goals exact ⟨rfl, rfl⟩
+
+/-- **WS-BP BP7.1 (`v0.36.7`)**: the in-flight sweep writes neither the scheduler
+nor the machine — what the finalising revocation's cross-core confinement reads. -/
+theorem revokePendingTransfersFrom_scheduler_machine (st : SystemState)
+    (nodes : List CdtNodeId) :
+    (revokePendingTransfersFrom st nodes).scheduler = st.scheduler ∧
+    (revokePendingTransfersFrom st nodes).machine = st.machine := by
+  unfold revokePendingTransfersFrom
+  suffices h : ∀ (keys : List SeLe4n.ObjId) (s : SystemState),
+      (keys.foldl (revokePendingTransfersStep nodes) s).scheduler = s.scheduler ∧
+      (keys.foldl (revokePendingTransfersStep nodes) s).machine = s.machine from h _ st
+  intro keys
+  induction keys with
+  | nil => intro s; exact ⟨rfl, rfl⟩
+  | cons k rest ih =>
+    intro s
+    simp only [List.foldl_cons]
+    obtain ⟨h1, h2⟩ := ih (revokePendingTransfersStep nodes s k)
+    obtain ⟨h3, h4⟩ := revokePendingTransfersStep_scheduler_machine nodes s k
+    exact ⟨h1.trans h3, h2.trans h4⟩
+
 /-- **A step either does nothing, or replaces one TCB with a TCB.**
 
 The shape every frame below rests on, stated once so the case analysis happens
@@ -1235,6 +1265,39 @@ def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
     else
       cspaceDeleteSlotCore addr st
 
+/-- **WS-BP BP7.1 (`v0.36.7`)**: the core delete writes one CNode and the CDT —
+never the scheduler or the machine. -/
+theorem cspaceDeleteSlotCore_scheduler_machine (addr : CSpaceAddr) (st st' : SystemState)
+    (h : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
+  unfold cspaceDeleteSlotCore at h
+  cases hCn : st.getCNode? addr.cnode with
+  | none => rw [hCn] at h; cases h
+  | some cn =>
+    rw [hCn] at h
+    simp only at h
+    cases hS : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
+    | error e => rw [hS] at h; cases h
+    | ok pr =>
+      obtain ⟨u, st1⟩ := pr; cases u
+      rw [hS] at h
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h
+      have hD : (SystemState.detachSlotFromCdt st1 addr).scheduler = st1.scheduler ∧
+          (SystemState.detachSlotFromCdt st1 addr).machine = st1.machine := by
+        unfold SystemState.detachSlotFromCdt; split <;> exact ⟨rfl, rfl⟩
+      exact ⟨hD.1.trans (storeObject_scheduler_eq _ _ _ _ hS),
+        hD.2.trans (storeObject_machine_eq _ _ _ _ hS)⟩
+
+/-- ...and so does the guarded delete. -/
+theorem cspaceDeleteSlot_scheduler_machine (addr : CSpaceAddr) (st st' : SystemState)
+    (h : cspaceDeleteSlot addr st = .ok ((), st')) :
+    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
+  unfold cspaceDeleteSlot at h
+  split at h
+  · cases h
+  · exact cspaceDeleteSlotCore_scheduler_machine addr st st' h
+
 /-- **A slot with a transfer in flight from it cannot be deleted.**
 
 The parked-window property.  Between a blocking send and the unwrap that
@@ -1347,7 +1410,10 @@ def cspaceCopy (src dst : CSpaceAddr) : Kernel Unit :=
         match cap.toNonNull? with
         | none => .error .nullCapability
         | some capNN =>
-            match cspaceInsertSlot dst capNN.val st' with
+            -- WS-BP BP7.1 (`v0.36.7`): a copy is a *derivation* — a new
+            -- authority over the target, not the authority that made a frame
+            -- mapping — so it carries no mapping record (seL4's `deriveCap`).
+            match cspaceInsertSlot dst capNN.val.withoutMapping st' with
             | .error e => .error e
             | .ok ((), st'') =>
                 let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st'' src
@@ -1747,8 +1813,45 @@ theorem revokeCdtScaffold_ok_decompose {ρ : Type} (emptyReport : ρ)
         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
         exact Or.inr ⟨rootNode, out, hTrav, hStep.2.symm⟩
 
+-- ============================================================================
+-- WS-BP BP7.1 (`v0.36.7`): frame capabilities own their mappings
+-- ============================================================================
+
+/-! A frame capability records where it has mapped its frame
+(`Capability.mapping`), so destroying the capability can remove that mapping —
+seL4's `finaliseCap` → `unmapPage`.  The capability layer answers two questions
+and leaves the unmapping itself to the architecture layer
+(`Architecture/PageTeardown.lean`), which it does not import: *which page does a
+capability's record name* (here), and *which capabilities did a destruction
+destroy* (`cspaceRevokeCdt`'s report, below).
+The composites that unmap are `cspaceDeleteSlotFinalising` and
+`cspaceRevokeCdtFinalising` (`Capability/FrameFinalise.lean`). -/
+
+/-- **The page a capability's mapping record names**: the recorded address space
+and virtual address, and the physical page of the frame the capability targets.
+`none` for a capability that records no mapping or targets no frame. -/
+def capabilityMappedPage (st : SystemState) (cap : Capability) : Option MappedPage :=
+  match cap.mapping, cap.target with
+  | some m, .object frameId =>
+    (st.getFrame? frameId).map fun f => { asid := m.asid, vaddr := m.vaddr, paddr := f.base }
+  | _, _ => none
+
+/-- **The pages a slot's capability records** — at most one — read off the state
+the deletion runs on. -/
+def slotMappedPages (st : SystemState) (addr : CSpaceAddr) : List MappedPage :=
+  ((SystemState.lookupSlotCap st addr).bind (capabilityMappedPage st)).toList
+
 /-- Fold body for the materialized traversal: process one CDT descendant node,
-propagating a failure rather than swallowing it.
+propagating a failure rather than swallowing it, and **report the page the
+destroyed capability records**.
+
+Before a descendant's slot is deleted, the page its capability records is
+appended to the report — read at the state the deletion runs on, from the very
+slot `processRevokeNode` deletes, so the report names exactly the destroyed
+capabilities' mappings and nothing a separate walk could get wrong
+(`revokeCdtFoldBody_records`).  The report is what `cspaceRevokeCdtFinalising`
+unmaps (WS-BP BP7.1, `v0.36.7`); it is the fold's only addition to the
+state-only fold it replaced, which it therefore is on the state component.
 
 Materializing the descendant list and folding this over it is what
 `revokeCdtMaterializedTraversal` below is.
@@ -1758,14 +1861,18 @@ For deep CDT trees this is a performance concern (O(n) allocation), not a
 correctness issue; `revokeCdtStreamingTraversal` is the O(branching-factor)
 alternative. -/
 def revokeCdtFoldBody
-    (acc : Except KernelError (Unit × SystemState)) (node : CdtNodeId) :
-    Except KernelError (Unit × SystemState) :=
+    (acc : Except KernelError (List MappedPage × SystemState)) (node : CdtNodeId) :
+    Except KernelError (List MappedPage × SystemState) :=
   match acc with
   | .error e => .error e
-  | .ok ((), stAcc) =>
+  | .ok (pages, stAcc) =>
+      let destroyed : List MappedPage :=
+        match SystemState.lookupCdtSlotOfNode stAcc node with
+        | none => []
+        | some descAddr => slotMappedPages stAcc descAddr
       match processRevokeNode stAcc node with
       | .error e => .error e
-      | .ok stNext => .ok ((), stNext)
+      | .ok stNext => .ok (destroyed ++ pages, stNext)
 
 /-- Error propagation: `revokeCdtFoldBody` propagates errors unchanged. -/
 theorem revokeCdtFoldBody_error (e : KernelError) (node : CdtNodeId) :
@@ -1794,24 +1901,27 @@ division `revokeCdtScaffold_ok_decompose` makes one level up. -/
 theorem revokeCdtFold_induct {P : SystemState → Prop}
     (hNode : ∀ (stA stB : SystemState) (node : CdtNodeId),
       P stA → processRevokeNode stA node = .ok stB → P stB)
-    (nodes : List CdtNodeId) (stInit stFinal : SystemState) (hP : P stInit)
-    (hFold : nodes.foldl revokeCdtFoldBody (.ok ((), stInit)) = .ok ((), stFinal)) :
+    (nodes : List CdtNodeId) (psInit psFinal : List MappedPage)
+    (stInit stFinal : SystemState) (hP : P stInit)
+    (hFold : nodes.foldl revokeCdtFoldBody (.ok (psInit, stInit)) = .ok (psFinal, stFinal)) :
     P stFinal := by
-  induction nodes generalizing stInit with
+  induction nodes generalizing psInit stInit with
   | nil => simp only [List.foldl_nil, Except.ok.injEq, Prod.mk.injEq] at hFold
            exact hFold.2 ▸ hP
   | cons node rest ih =>
     simp only [List.foldl_cons] at hFold
     cases hProc : processRevokeNode stInit node with
     | error e =>
-      rw [show revokeCdtFoldBody (.ok ((), stInit)) node = .error e by
-            unfold revokeCdtFoldBody; simp only []; rw [hProc]] at hFold
+      rw [show revokeCdtFoldBody (.ok (psInit, stInit)) node = .error e by
+            unfold revokeCdtFoldBody; simp only [hProc]] at hFold
       rw [revokeCdtFoldBody_foldl_error] at hFold
       simp at hFold
     | ok stMid =>
-      rw [show revokeCdtFoldBody (.ok ((), stInit)) node = .ok ((), stMid) by
-            unfold revokeCdtFoldBody; simp only []; rw [hProc]] at hFold
-      exact ih stMid (hNode stInit stMid node hP hProc) hFold
+      obtain ⟨ps1, h1⟩ : ∃ ps1, revokeCdtFoldBody (.ok (psInit, stInit)) node
+          = .ok (ps1, stMid) := by
+        unfold revokeCdtFoldBody; simp only [hProc]; exact ⟨_, rfl⟩
+      rw [h1] at hFold
+      exact ih ps1 stMid (hNode stInit stMid node hP hProc) hFold
 
 /-- The traversal is that fold, with the descendant list reported as revoked.
 
@@ -1820,14 +1930,15 @@ own lemmas are about a function rather than about an inlined lambda a proof has
 to `change` its way into. -/
 def revokeCdtMaterializedTraversal (stLocal : SystemState) (_rootNode : CdtNodeId)
     (descendants : List CdtNodeId)
-    : Except KernelError (RevokeTraversalOutcome Unit) :=
+    : Except KernelError (RevokeTraversalOutcome (List MappedPage)) :=
   match descendants.foldl revokeCdtFoldBody
-      (.ok ((), stLocal) : Except KernelError (Unit × SystemState)) with
+      (.ok ([], stLocal) : Except KernelError (List MappedPage × SystemState)) with
   | .error e => .error e
-  | .ok ((), stDone) =>
+  | .ok (pages, stDone) =>
       -- Reaching `.ok` means every descendant was processed, so the traversal
-      -- revoked the whole list it was handed.
-      .ok { report := (), revokedNodes := descendants, state := stDone }
+      -- revoked the whole list it was handed, and `pages` is what the
+      -- capabilities it destroyed had mapped.
+      .ok { report := pages, revokedNodes := descendants, state := stDone }
 
 /-- **The traversal's induction, over any state predicate.**
 
@@ -1837,16 +1948,16 @@ theorem revokeCdtMaterializedTraversal_ok_induct {P : SystemState → Prop}
     (hNode : ∀ (stA stB : SystemState) (node : CdtNodeId),
       P stA → processRevokeNode stA node = .ok stB → P stB)
     (stLocal : SystemState) (rootNode : CdtNodeId) (descendants : List CdtNodeId)
-    (out : RevokeTraversalOutcome Unit) (hP : P stLocal)
+    (out : RevokeTraversalOutcome (List MappedPage)) (hP : P stLocal)
     (hTrav : revokeCdtMaterializedTraversal stLocal rootNode descendants = .ok out) :
     P out.state := by
   unfold revokeCdtMaterializedTraversal at hTrav
   split at hTrav
   · simp at hTrav
-  · rename_i stDone hFold
+  · rename_i pages stDone hFold
     simp only [Except.ok.injEq] at hTrav
     subst hTrav
-    exact revokeCdtFold_induct hNode descendants stLocal stDone hP hFold
+    exact revokeCdtFold_induct hNode descendants [] pages stLocal stDone hP hFold
 
 /-- WS-E4/C-04: Revoke all capabilities derived from the source capability
 via CDT traversal, across all CNodes in the system.
@@ -1875,8 +1986,104 @@ as part of WS-R2 / M-06's error-propagation tightening. The reference is
 retained in this note purely so a future reader searching the codebase
 for the old symbol can find the explanation here rather than guess at a
 missing helper. -/
-def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
-  revokeCdtScaffold () revokeCdtMaterializedTraversal addr
+def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel (List MappedPage) :=
+  revokeCdtScaffold [] revokeCdtMaterializedTraversal addr
+
+-- ============================================================================
+-- WS-BP BP7.1 (`v0.36.7`): the mapping record's writer
+-- ============================================================================
+
+/-- **Record a mapping on the capability in `addr`**, in place — the one write
+`.vspaceMap` makes to a CNode.  The slot must hold a capability (the one the arm
+resolved); every other field of that capability is kept.  The record is written
+wholesale, so a stale record the mapping replaces is simply overwritten. -/
+def cspaceRecordFrameMapping (addr : CSpaceAddr) (m : FrameMapping) : Kernel Unit :=
+  fun st =>
+    match st.getCNode? addr.cnode with
+    | none => .error .objectNotFound
+    | some cn =>
+      match cn.lookup addr.slot with
+      | none => .error .invalidCapability
+      | some cap => storeObject addr.cnode (.cnode (cn.insert addr.slot { cap with mapping := some m })) st
+
+/-- **What a successful record write is**: the slot held a capability, and the
+CNode was stored back with that capability carrying the record. -/
+theorem cspaceRecordFrameMapping_ok_decompose (addr : CSpaceAddr) (m : FrameMapping)
+    (st st' : SystemState) (h : cspaceRecordFrameMapping addr m st = .ok ((), st')) :
+    ∃ cn cap, st.getCNode? addr.cnode = some cn ∧ cn.lookup addr.slot = some cap ∧
+      storeObject addr.cnode (.cnode (cn.insert addr.slot { cap with mapping := some m })) st
+        = .ok ((), st') := by
+  unfold cspaceRecordFrameMapping at h
+  cases hCn : st.getCNode? addr.cnode with
+  | none => rw [hCn] at h; cases h
+  | some cn =>
+    rw [hCn] at h
+    simp only at h
+    cases hLk : cn.lookup addr.slot with
+    | none => rw [hLk] at h; cases h
+    | some cap => rw [hLk] at h; exact ⟨cn, cap, rfl, hLk, h⟩
+
+/-- **The fold's report records every page a destroyed capability
+named.**  The report only grows (`ps ⊆ ps'`), and a step that deletes a slot
+whose capability records a page adds that page. -/
+theorem revokeCdtFoldBody_records
+    (ps : List MappedPage) (st : SystemState) (node : CdtNodeId)
+    (ps' : List MappedPage) (st' : SystemState)
+    (h : revokeCdtFoldBody (.ok (ps, st)) node = .ok (ps', st')) :
+    (∀ p ∈ ps, p ∈ ps') ∧
+    (∀ descAddr, SystemState.lookupCdtSlotOfNode st node = some descAddr →
+      ∀ p ∈ slotMappedPages st descAddr, p ∈ ps') := by
+  unfold revokeCdtFoldBody at h
+  simp only at h
+  cases hP : processRevokeNode st node with
+  | error e => rw [hP] at h; cases h
+  | ok stNext =>
+    rw [hP] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨hPs, -⟩ := h
+    subst hPs
+    refine ⟨fun p hp => List.mem_append_right _ hp, fun descAddr hSlot p hp => ?_⟩
+    rw [hSlot]
+    exact List.mem_append_left _ hp
+
+/-- One revoked node writes neither the scheduler nor the machine. -/
+theorem processRevokeNode_scheduler_machine (st st' : SystemState) (node : CdtNodeId)
+    (h : processRevokeNode st node = .ok st') :
+    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
+  unfold processRevokeNode at h
+  cases hSlot : SystemState.lookupCdtSlotOfNode st node with
+  | none => rw [hSlot] at h; cases h; exact ⟨rfl, rfl⟩
+  | some descAddr =>
+    rw [hSlot] at h
+    simp only at h
+    cases hDel : cspaceDeleteSlotCore descAddr st with
+    | error e => rw [hDel] at h; cases h
+    | ok pr =>
+      obtain ⟨u, stDel⟩ := pr; cases u
+      rw [hDel] at h
+      simp only [Except.ok.injEq] at h
+      subst h
+      exact cspaceDeleteSlotCore_scheduler_machine descAddr st stDel hDel
+
+/-- **WS-BP BP7.1 (`v0.36.7`)**: the CDT revocation writes neither the scheduler
+nor the machine — the shared scaffold's decomposition, the traversal's induction
+at that pair, then the in-flight sweep's frame. -/
+theorem cspaceRevokeCdt_scheduler_machine (addr : CSpaceAddr) (st st' : SystemState)
+    (pages : List MappedPage) (h : cspaceRevokeCdt addr st = .ok (pages, st')) :
+    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
+  obtain ⟨_, hRest⟩ := revokeCdtScaffold_ok_decompose [] revokeCdtMaterializedTraversal
+    st st' addr pages h
+  rcases hRest with rfl | ⟨rootNode, out, hTrav, rfl⟩
+  · exact ⟨rfl, rfl⟩
+  · have hOut := revokeCdtMaterializedTraversal_ok_induct
+      (P := fun s => s.scheduler = st.scheduler ∧ s.machine = st.machine)
+      (fun stA stB nd hP hSt => by
+        obtain ⟨h1, h2⟩ := processRevokeNode_scheduler_machine stA stB nd hSt
+        exact ⟨h1.trans hP.1, h2.trans hP.2⟩)
+      st rootNode _ out ⟨rfl, rfl⟩ hTrav
+    obtain ⟨h1, h2⟩ := revokePendingTransfersFrom_scheduler_machine out.state
+      (rootNode :: out.revokedNodes)
+    exact ⟨h1.trans hOut.1, h2.trans hOut.2⟩
 
 -- ============================================================================
 -- M-P04: Streaming CDT revocation (WS-M5)
@@ -2127,7 +2334,7 @@ what happened, and what these pin against.
 Stated as definitional equations rather than as a table of claims: a table
 records what someone remembered, `rfl` records what the definition is. -/
 theorem cspaceRevokeCdt_routes_through_scaffold :
-    cspaceRevokeCdt = revokeCdtScaffold () revokeCdtMaterializedTraversal := rfl
+    cspaceRevokeCdt = revokeCdtScaffold [] revokeCdtMaterializedTraversal := rfl
 
 /-- Streaming revocation is the scaffold at the BFS traversal. -/
 theorem cspaceRevokeCdtStreaming_routes_through_scaffold :
@@ -2359,7 +2566,12 @@ def ipcTransferSingleCap
             | false => .ok (.sourceRevoked, st)
             | true =>
             let dstAddr : CSpaceAddr := { cnode := receiverCspaceRoot, slot := emptySlot }
-            match cspaceInsertSlot dstAddr cap st with
+            -- WS-BP BP7.1 (`v0.36.7`): the transferred capability is a
+            -- derivation (the sender keeps its own), so it arrives with no
+            -- frame-mapping record — seL4's `deriveCap`.  Were the sender's
+            -- record carried, the receiver could unmap the sender's mapping by
+            -- deleting its copy.
+            match cspaceInsertSlot dstAddr cap.withoutMapping st with
             | .error e => .error e
             | .ok ((), st') =>
                 -- The source node is supplied by the resolver, which minted it
@@ -2450,7 +2662,7 @@ theorem ipcTransferSingleCap_sourceRevoked_preserves_state
       | false => simp [hSrc] at hStep; exact hStep.symm
       | true =>
         simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverCspaceRoot, slot := emptySlot } cap st with
+        cases hIns : cspaceInsertSlot { cnode := receiverCspaceRoot, slot := emptySlot } cap.withoutMapping st with
         | error e => simp [hIns] at hStep
         | ok pair => simp [hIns] at hStep
 
@@ -2493,12 +2705,12 @@ theorem ipcTransferSingleCap_preserves_scheduler
         | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
         | true =>
         simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
         | error e => simp [hIns] at hStep
         | ok pair =>
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          have h1 := cspaceInsertSlot_preserves_scheduler st pair.2 _ cap (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
+          have h1 := cspaceInsertSlot_preserves_scheduler st pair.2 _ cap.withoutMapping (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
           have h2 := ensureCdtNodeForSlot_scheduler_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
           simp_all
@@ -2532,12 +2744,12 @@ theorem ipcTransferSingleCap_preserves_machine
         | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
         | true =>
         simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
         | error e => simp [hIns] at hStep
         | ok pair =>
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          have h1 := cspaceInsertSlot_preserves_machine st pair.2 _ cap
+          have h1 := cspaceInsertSlot_preserves_machine st pair.2 _ cap.withoutMapping
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
           have h2 := ensureCdtNodeForSlot_machine_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
@@ -2570,12 +2782,12 @@ theorem ipcTransferSingleCap_preserves_objects_ne
         | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
         | true =>
         simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
         | error e => simp [hIns] at hStep
         | ok pair =>
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          have hObjIns := cspaceInsertSlot_preserves_objects_ne st pair.2 _ cap oid hNe hObjInv
+          have hObjIns := cspaceInsertSlot_preserves_objects_ne st pair.2 _ cap.withoutMapping oid hNe hObjInv
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
           have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
@@ -2605,12 +2817,12 @@ theorem ipcTransferSingleCap_preserves_services
         | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
         | true =>
         simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
         | error e => simp [hIns] at hStep
         | ok pair =>
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          have h1 := cspaceInsertSlot_preserves_services st pair.2 _ cap (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
+          have h1 := cspaceInsertSlot_preserves_services st pair.2 _ cap.withoutMapping (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
           have h2 := ensureCdtNodeForSlot_services_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
           simp_all
@@ -2641,12 +2853,12 @@ theorem ipcTransferSingleCap_preserves_objects_invExt
         | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
         | true =>
         simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
         | error e => simp [hIns] at hStep
         | ok pair =>
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap hObjInv
+          have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap.withoutMapping hObjInv
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
           have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
@@ -2714,7 +2926,7 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
           intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
         | true =>
         simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
         | error e => simp [hIns] at hStep
         | ok pair =>
           simp [hIns] at hStep; obtain ⟨_, rfl⟩ := hStep
@@ -2736,7 +2948,7 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
           -- Let's unfold cspaceInsertSlot SystemState.getCNode? at hIns to extract storeObject
           obtain ⟨cn', _, _, _, hStore⟩ :=
             cspaceInsertSlot_ok_decompose st pair.2
-              { cnode := receiverRoot, slot := emptySlot } cap hIns
+              { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hIns
           have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hStore
           rw [hStoreObj] at h
           exact absurd h (by simp)
@@ -2888,7 +3100,7 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
     | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
     | true =>
     simp only [hSrc] at hStep
-    cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+    cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
     | error e => simp [hIns] at hStep
     | ok pair =>
       simp [hIns] at hStep; obtain ⟨_, rfl⟩ := hStep
@@ -2897,12 +3109,12 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
       -- pair.2.objects[receiverRoot]? is a CNode from cspaceInsertSlot
       obtain ⟨cn', hCn', _, _, hStore⟩ :=
         cspaceInsertSlot_ok_decompose st pair.2
-          { cnode := receiverRoot, slot := emptySlot } cap hIns
+          { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hIns
       have hCnEq : cn' = cn := by
         simp only [hCnTyped] at hCn'; exact (Option.some.inj hCn').symm
       subst hCnEq
       have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hStore
-      refine ⟨cn'.insert emptySlot cap, ?_⟩
+      refine ⟨cn'.insert emptySlot cap.withoutMapping, ?_⟩
       simp only [hObjSrc]
       exact hStoreObj
 

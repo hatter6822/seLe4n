@@ -1526,7 +1526,9 @@ theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne (st st' : SystemState)
       simp only at h
       split at h
       · exact absurd h (by simp)
-      · injection h with h
+      · split at h
+        · exact absurd h (by simp)
+        injection h with h
         subst h
         rw [detachCNodeSlots_scheduler_eq]
   | reply r =>

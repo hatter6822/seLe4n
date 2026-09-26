@@ -573,7 +573,9 @@ example : permittedKinds .notificationWait = [.tcb, .cnode, .notification] := by
 example : permittedKinds .cspaceMint = [.tcb, .cnode, .objStore] := by decide
 example : permittedKinds .cspaceCopy = [.tcb, .cnode, .objStore] := by decide
 example : permittedKinds .cspaceMove = [.tcb, .cnode, .objStore] := by decide
-example : permittedKinds .cspaceDelete = [.tcb, .cnode, .objStore] := by decide
+-- WS-BP BP7.1 (v0.36.7): the delete also writes the VSpace root its frame
+-- capability's mapping record names, so `.vspaceRoot` joins it.
+example : permittedKinds .cspaceDelete = [.tcb, .cnode, .objStore, .vspaceRoot] := by decide
 -- PR #873 round 7: `.lifecycleRetype` admits EVERY kind too, and for the same
 -- reason `.declassify` does below.  SM9.D.12 makes the retype the arm that
 -- *clears* taint at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
@@ -583,7 +585,8 @@ example : permittedKinds .cspaceDelete = [.tcb, .cnode, .objStore] := by decide
 example : permittedKinds .lifecycleRetype =
     [.tcb, .cnode, .untyped,
      .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page] := by decide
-example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot] := by decide
+-- WS-BP BP7.1 (v0.36.7): the map reads the frame its capability names.
+example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page] := by decide
 example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
 -- WS-RR RR7.23: `.objStore` on all three — `serviceRegistry` is a
 -- `SystemState`-level map and `stateLevelLock` is the only member that can name
@@ -965,7 +968,7 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .send"
     (decide (permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore]))
   assertBool "permittedKinds .vspaceMap"
-    (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot]))
+    (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page]))
   -- PR #873 round 7: every kind, because the retype's taint clear keys on
   -- `args.targetObj`, whose type the state decides.  The fixed four are pinned
   -- separately by `lockSet_lifecycleRetype_nonTarget_kinds`.
@@ -1117,9 +1120,33 @@ private def runPerTransitionShapeChecks : IO Unit := do
         ∈ (lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
      decide ((stateLevelLock, AccessMode.write)
         ∈ (lockSet_mintReplyCap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs))
-  -- VSpace: 3 locks each.
-  assertBool "vspaceMap size = 3"
-    (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))
+  -- VSpace: `vspaceMap` declares the frame it maps (read) and the frame
+  -- capability's CNode (write, for the mapping record) beside the caller, the
+  -- caller's root and the VSpace root (WS-BP BP7.1, v0.36.7).  With the frame
+  -- capability in the caller's own root CNode — the single-level CSpace the
+  -- live seam admits — `insertOrMerge` lubs the root's read into the record's
+  -- write, so the footprint is four keys; in a second CNode it is five.
+  assertBool "vspaceMap size = 4 (frame capability in the caller's root)"
+    (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (ObjId.ofNat 10) (ObjId.ofNat 30)).size = 4))
+  assertBool "vspaceMap size = 5 (frame capability in another CNode)"
+    (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (ObjId.ofNat 40) (ObjId.ofNat 30)).size = 5))
+  assertBool "vspaceMap declares the frame capability's CNode for write"
+    (decide ((cnodeLock (ObjId.ofNat 10), AccessMode.write)
+        ∈ (lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+            (ObjId.ofNat 10) (ObjId.ofNat 30)).pairs))
+  -- The delete of a capability whose mapping record resolves to a VSpace root
+  -- declares that root for write (the unmap `cspaceDeleteSlotFinalising`
+  -- performs); a capability with no live record declares the pre-BP7.1 four.
+  assertBool "cspaceDelete size = 4 without a live mapping record"
+    (decide ((lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  assertBool "cspaceDelete declares the unmapped root for write"
+    (decide ((vspaceRootLock (ObjId.ofNat 50), AccessMode.write)
+        ∈ (lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+            (some (ObjId.ofNat 50))).pairs) &&
+     decide ((lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+            (some (ObjId.ofNat 50))).size = 5))
   -- Lifecycle: 5 locks (caller TCB read + CNode root read + untyped write + dst
   -- CNode write + the state-level write WS-RR RR7.23 added for the registry
   -- sweep and the CDT detach the pre-retype cleanup performs).

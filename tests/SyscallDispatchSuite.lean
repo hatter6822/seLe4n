@@ -1371,7 +1371,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
       | .error e =>
           failLine "sd058_revoke_of_the_mint_source"
             s!"revoking the mint source must succeed; got: {repr e}"
-      | .ok ((), stRevoked) =>
+      | .ok (_, stRevoked) =>
           expect "sd058_revoke_removes_the_minted_cap"
             (match SeLe4n.Kernel.cspaceLookupSlot dst stRevoked with
              | .error _ => true | .ok _ => false)

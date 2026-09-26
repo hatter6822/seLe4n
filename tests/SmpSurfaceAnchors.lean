@@ -892,7 +892,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "lock-set non-interference + the covert-channel inventory resolve"
     (have _w := @SeLe4n.Kernel.withLockSet_preserves_projection
      have _u := @SeLe4n.Kernel.nonInterference_perCore_underLockSet
-     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 62 :=
+     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 64 :=
        SeLe4n.Kernel.enforcementBoundaryPerCore_count
      -- PR #861 review round 4: the boundary now also classifies the live
      -- cross-core wrappers, and the SMP completeness half audits them.  Rounds
@@ -1028,7 +1028,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- that silently reverted — or a second entry added without reconciling the
   -- per-core list — fails the anchor file too, not only the dedicated suite.
   assertBool "the canonical enforcement boundary carries the two-phase-locking bracket"
-    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 47 :=
+    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 49 :=
        SeLe4n.Kernel.enforcementBoundaryExtended_count
      have _c := SeLe4n.Kernel.enforcementBoundary_classifies_withLockSet
      have _o := SeLe4n.Kernel.enforcementBoundaryPerCore_classifies_withLockSet_once
