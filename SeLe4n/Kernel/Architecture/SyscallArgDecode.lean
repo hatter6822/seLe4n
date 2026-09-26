@@ -115,13 +115,21 @@ structure LifecycleRetypeArgs where
 
 /-- **WS-BP BP7.1 (`v0.36.5`)**: per-syscall argument structure for
 `untypedRetype` — seL4's `seL4_Untyped_Retype`, invoked on an untyped
-capability.  Register mapping: x2=newType tag, x3=childId (the object id the
-carved object takes), x4=destination CNode capability address, x5=destination
-slot.  `newType` is typed at the decode boundary, as the in-place retype's is;
-the arm then carves only the kinds an untyped's memory can back directly — a
-frame today. -/
+capability.  Register mapping: x2=newType tag in bits `[0, 8)` and the object's
+size in bits `[8, 64)` as a power of two (seL4's `size_bits`), x3=childId (the
+object id the carved object takes), x4=destination CNode capability address,
+x5=destination slot.  `newType` is typed at the decode boundary, as the in-place
+retype's is; the arm then carves only the kinds an untyped's memory can back
+directly — a frame, whose size is fixed (`sizeBits` must be `0`), or a child
+untyped, whose size `sizeBits` names (WS-BP BP7.1 slice 4, `v0.36.8`).
+
+The size shares MR0 with the tag because every register a syscall can read is
+already taken — the four argument registers x2–x5 — and seL4's own
+`seL4_Untyped_Retype` carries `size_bits` beside `type`.  A frame's MR0 is its
+tag alone, exactly as before this field existed. -/
 structure UntypedRetypeArgs where
   newType  : KernelObjectType
+  sizeBits : Nat
   childId  : ObjId
   dstCNode : CPtr
   dstSlot  : Slot
@@ -241,9 +249,10 @@ def decodeUntypedRetypeArgs (decoded : SyscallDecodeResult)
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
-  match KernelObjectType.ofNat? r0.val with
+  match KernelObjectType.ofNat? (r0.val % 256) with
   | some objType =>
     pure { newType  := objType
+           sizeBits := r0.val / 256
            childId  := ObjId.ofNat r1.val
            dstCNode := CPtr.ofNat r2.val
            dstSlot  := Slot.ofNat r3.val }
@@ -413,7 +422,8 @@ theorem validateVSpaceMapPermsForMemoryKind_ok_eq
 /-- **WS-BP BP7.1**: encode untyped-retype arguments into message registers.
     Inverse of `decodeUntypedRetypeArgs`. -/
 @[inline] def encodeUntypedRetypeArgs (args : UntypedRetypeArgs) : Array RegValue :=
-  #[⟨args.newType.toNat⟩, ⟨args.childId.toNat⟩, ⟨args.dstCNode.toNat⟩, ⟨args.dstSlot.toNat⟩]
+  #[⟨args.newType.toNat + args.sizeBits * 256⟩, ⟨args.childId.toNat⟩,
+    ⟨args.dstCNode.toNat⟩, ⟨args.dstSlot.toNat⟩]
 
 /-- Encode VSpace map arguments into message registers.
     Inverse of `decodeVSpaceMapArgs`. T6-C: encodes PagePermissions via toNat. -/
@@ -856,14 +866,19 @@ theorem decodeLifecycleRetypeArgs_roundtrip (args : LifecycleRetypeArgs) :
   cases t <;> rfl
 
 /-- **WS-BP BP7.1**: round-trip for UntypedRetypeArgs — the type tag's `ofNat?`
-and `toNat` are inverses per variant, and the three identifier registers carry
+and `toNat` are inverses per variant, every tag is below `256` so the size in
+the word's upper bits reads back whole, and the three identifier registers carry
 their values verbatim. -/
 theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs) :
     decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args := by
-  rcases args with ⟨t, c, d, sl⟩
-  simp only [decodeUntypedRetypeArgs, encodeUntypedRetypeArgs, stubDecoded,
-    requireMsgReg, KernelObjectType.toNat]
-  cases t <;> rfl
+  rcases args with ⟨t, b, c, d, sl⟩
+  have hLt : t.toNat < 256 := by cases t <;> decide
+  have hDiv : (t.toNat + b * 256) / 256 = b := by omega
+  have hTag' : KernelObjectType.ofNat? (t.toNat % 256) = some t := by
+    rw [Nat.mod_eq_of_lt hLt]; cases t <;> rfl
+  simp [hTag', decodeUntypedRetypeArgs, encodeUntypedRetypeArgs, stubDecoded,
+    requireMsgReg, hDiv, bind, Except.bind, pure, Except.pure]
+  exact ⟨rfl, rfl, rfl⟩
 
 /-- T6-C: Round-trip requires that the permissions encode to a valid range.
     `PagePermissions.toNat` always produces values < 32 (5-bit bitfield). -/

@@ -1892,6 +1892,19 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- path uses for "clear this precondition first" — here, revoke the untyped
     -- capability and reset it.
     .error .revocationRequired
+  | .untyped _ =>
+    -- **WS-BP BP7.1 slice 4 (`v0.36.8`): nor can an untyped, for the same
+    -- reason one level up.**  An untyped *is* a region of physical memory, and
+    -- the objects carved from it — frames, child untypeds and their own carves
+    -- — are named by its child list, which the parent's reset walks to retire
+    -- them.  Replacing it in place would orphan every carved object (a frame
+    -- whose page no untyped accounts for any more) and, for a child untyped,
+    -- leave its parent's child list naming a kernel object the parent's reset
+    -- can never retire, so one holder of the child's capability could wedge
+    -- the parent's reset for good.  seL4 has no in-place retype of an untyped
+    -- at all; its memory returns through the untyped it was carved from
+    -- (`untypedReset`), and a boot untyped is never destroyed.
+    .error .revocationRequired
   | _ => .ok st
 
 /-- **WS-OD OD5.4 / `v0.35.4`: a Reply that is a reply-stack frame cannot be
@@ -2141,9 +2154,12 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk
     rw [cleanupEndpointServiceRegistrations_scheduler_eq] at h; exact h
-  | notification _ | vspaceRoot _ | untyped _ =>
+  | notification _ | vspaceRoot _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; exact h
+  | untyped _ =>
+    -- WS-BP BP7.1 slice 4: an untyped target is refused (vacuous on `.ok`).
+    simp [lifecyclePreRetypeCleanup] at hOk
   | schedContext _ =>
     -- WS-OD OD5.4: a context that heads a reply stack errors (vacuous on `.ok`).
     -- `v0.35.165`: one that heads none releases the binding it still holds, and
@@ -2215,9 +2231,11 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk
     exact cleanupEndpointServiceRegistrations_tlbShootdown_eq st target
-  | notification _ | vspaceRoot _ | untyped _ =>
+  | notification _ | vspaceRoot _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; rfl
+  | untyped _ =>
+    simp [lifecyclePreRetypeCleanup] at hOk
   | schedContext _ =>
     -- WS-OD OD5.4: the stack-head refusal is vacuous on `.ok`.  `v0.35.165`: the
     -- binding release is shootdown-silent (`releaseSchedContextBinding_tlbShootdown`).

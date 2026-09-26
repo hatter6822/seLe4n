@@ -3974,51 +3974,89 @@ def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (decoded : SyscallDecodeR
             | some _ => .ok (src, { cnode := cnodeId, slot := args.dstSlot })
           | _ => .error .invalidCapability
 
-/-- **WS-BP BP7.1 (`v0.36.5`): the live `.untypedRetype` arm's transition** — seL4's
-`seL4_Untyped_Retype` at the frame type.
+/-- **WS-BP BP7.1 slice 4 (`v0.36.8`): the carve a decoded `.untypedRetype`
+requests.**  A frame, whose size is fixed, so its `sizeBits` must be `0` — the
+value a frame's MR0 carried before the field existed; or a child untyped of
+`2 ^ sizeBits` bytes with `sizeBits` in `[minUntypedSizeBits,
+maxUntypedSizeBits]`.  Anything else is `.invalidArgument`: every other kind is
+created by the in-place retype (`.lifecycleRetype`), and the carve exists for
+memory a thread is handed *as memory*. -/
+def carveRequestOf? (newType : KernelObjectType) (sizeBits : Nat) :
+    Except KernelError CarveRequest :=
+  match newType with
+  | .frame => if sizeBits = 0 then .ok .frame else .error .invalidArgument
+  | .untyped =>
+      if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
+        .ok (.untyped sizeBits)
+      else .error .invalidArgument
+  | _ => .error .invalidArgument
 
-Decode, then refuse any type but `.frame` (`.invalidArgument`): the in-place
-retype (`.lifecycleRetype`) is how this kernel creates its own kernel objects,
-and the carve exists for memory a thread is handed *as memory*.  The child id is
+/-- **WS-BP BP7.1**: a request the decode accepts is a frame or an untyped whose
+size lies in the carve's bounds — the only requests the arm ever hands the
+carve. -/
+theorem carveRequestOf?_ok (newType : KernelObjectType) (sizeBits : Nat)
+    (req : CarveRequest) (h : carveRequestOf? newType sizeBits = .ok req) :
+    (newType = .frame ∧ sizeBits = 0 ∧ req = .frame) ∨
+    (newType = .untyped ∧ minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits ∧
+      req = .untyped sizeBits) := by
+  cases newType <;> simp only [carveRequestOf?] at h <;> try cases h
+  · split at h
+    · rename_i hB; cases h; exact Or.inr ⟨rfl, hB.1, hB.2, rfl⟩
+    · cases h
+  · split at h
+    · cases h; exact Or.inl ⟨rfl, by assumption, rfl⟩
+    · cases h
+
+/-- **WS-BP BP7.1 (`v0.36.5`, child untypeds at slice 4, `v0.36.8`): the live
+`.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype` at the frame
+and untyped types.
+
+Decode, then build the carve request (`carveRequestOf?`: a frame, or a child
+untyped of a bounded size — anything else `.invalidArgument`).  The child id is
 a raw operand, so it passes `validateObjIdArg` — no reserved idle object and not
 the sentinel — before anything is resolved.  Then the two slots, then
-`untypedRetypeFrame`, whose own guards decide everything else. -/
+`untypedRetypeObject`, whose own guards decide everything else. -/
 def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) :
     Kernel Unit :=
   fun st =>
     match decodeUntypedRetypeArgs decoded with
     | .error e => .error e
     | .ok args =>
-      if args.newType ≠ .frame then .error .invalidArgument
-      else
+      match carveRequestOf? args.newType args.sizeBits with
+      | .error e => .error e
+      | .ok req =>
         match validateObjIdArg args.childId with
         | .error e => .error e
         | .ok vChild =>
           match resolveUntypedRetype tid decoded args st with
           | .error e => .error e
-          | .ok (src, dst) => untypedRetypeFrame src vChild.val dst st
+          | .ok (src, dst) => untypedRetypeObject src vChild.val dst req st
 
 /-- **WS-BP BP7.1**: what a successful `.untypedRetype` consists of — the typed
-decode at the frame kind, the validated child id, the resolved slots, and the
+decode, the carve request, the validated child id, the resolved slots, and the
 carve.  The case analysis has one owner, so the invariant and non-interference
 proofs read these equations. -/
 theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (st st' : SystemState)
     (h : untypedRetypeFromCap tid decoded st = .ok ((), st')) :
-    ∃ (args : UntypedRetypeArgs) (vChild : SeLe4n.ValidObjId) (src dst : CSpaceAddr),
+    ∃ (args : UntypedRetypeArgs) (req : CarveRequest) (vChild : SeLe4n.ValidObjId)
+      (src dst : CSpaceAddr),
       decodeUntypedRetypeArgs decoded = .ok args ∧
-      args.newType = .frame ∧
+      carveRequestOf? args.newType args.sizeBits = .ok req ∧
       validateObjIdArg args.childId = .ok vChild ∧
       resolveUntypedRetype tid decoded args st = .ok (src, dst) ∧
-      untypedRetypeFrame src vChild.val dst st = .ok ((), st') := by
+      untypedRetypeObject src vChild.val dst req st = .ok ((), st') := by
   unfold untypedRetypeFromCap at h
   cases hD : decodeUntypedRetypeArgs decoded with
   | error e => rw [hD] at h; cases h
   | ok args =>
     rw [hD] at h
     simp only at h
-    by_cases hT : args.newType = .frame
-    · rw [if_neg (by simpa using hT)] at h
+    cases hQ : carveRequestOf? args.newType args.sizeBits with
+    | error e => rw [hQ] at h; cases h
+    | ok req =>
+      rw [hQ] at h
+      simp only at h
       cases hV : validateObjIdArg args.childId with
       | error e => rw [hV] at h; cases h
       | ok vChild =>
@@ -4029,9 +4067,9 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (decoded : SyscallDecode
         | ok pr =>
           obtain ⟨src, dst⟩ := pr
           rw [hR] at h
-          exact ⟨args, vChild, src, dst, by first | exact hD | rfl, hT,
+          exact ⟨args, req, vChild, src, dst, by first | exact hD | rfl,
+            by first | exact hQ | rfl,
             by first | exact hV | rfl, by first | exact hR | rfl, h⟩
-    · rw [if_pos hT] at h; cases h
 
 /-- **WS-BP BP7.1 (the authority fact)**: a frame the resolver answers is one the
 caller holds a **readable capability** to, found at MR2's address in the caller's
@@ -4930,8 +4968,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
   case untypedRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      obtain ⟨_, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid decoded st st' hStep
-      exact untypedRetypeFrame_preserves_ipcInvariantFull _ _ _ st st' hObjInv hInv hCarve
+      obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid decoded st st' hStep
+      exact untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ st st' hObjInv hInv hCarve
     all_goals try cases hStep
   case untypedReset =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

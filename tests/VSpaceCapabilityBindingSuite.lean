@@ -78,6 +78,16 @@ because the defect lived in dispatch and only dispatch can witness it.
   recording capability is not retyped in place; and the boot refuses a
   configured record.  §5e's revocation witness inverts in the same cut: the
   revocation now removes the mapping the reset used to be the first to remove.
+* §5g — **WS-BP BP7.1 slice 4 (`v0.36.8`): an untyped carves child untypeds,
+  and a reset returns the whole subtree.**  `.untypedRetype` at the untyped tag
+  carves a child untyped of `2^sizeBits` bytes at the parent's watermark, with
+  its parent stamped and its memory left unwritten; the child carves a frame,
+  zeroed, which maps.  The in-place retype refuses to destroy the child.  After
+  one revocation of the parent capability — which destroys the child's
+  capability and the grandchild frame's with it — the parent's reset retires
+  the child and the frame together and unmaps the page, where the retired
+  frames-only reset (computed beside it) would refuse that state forever.
+  Every size the decode refuses is exercised.
 * §6 — the authorized positive paths still work (the gate is not a blanket
   denial).
 -/
@@ -109,12 +119,18 @@ open SeLe4n.Kernel.Architecture
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_maps_frame_base
 #check @SeLe4n.Kernel.frameMappingAdmissible_write
 #check @SeLe4n.Kernel.frameMappingAdmissible_device
-#check @SeLe4n.Kernel.untypedRetypeFrame
-#check @SeLe4n.Kernel.untypedRetypeFrame_ok_decompose
-#check @SeLe4n.Kernel.untypedRetypeFrame_ok_frame
+#check @SeLe4n.Kernel.untypedRetypeObject
+#check @SeLe4n.Kernel.untypedRetypeObject_ok_decompose
+#check @SeLe4n.Kernel.untypedRetypeObject_ok_frame
+#check @SeLe4n.Kernel.untypedRetypeObject_ok_untyped
 #check @SeLe4n.Kernel.untypedNextFrame_of_retype_ok
+#check @SeLe4n.Kernel.untypedNextChild_of_retype_ok
 #check @SeLe4n.Kernel.untypedRetypeFromCap_ok
-#check @SeLe4n.Kernel.untypedRetypeFrame_preserves_ipcInvariantFull
+#check @SeLe4n.Kernel.carveRequestOf?_ok
+#check @SeLe4n.Kernel.untypedRetypeObject_preserves_ipcInvariantFull
+#check @SeLe4n.Kernel.untypedCarvedSubtree_spec
+#check @SeLe4n.Kernel.untypedReset_ok_subtree_absent
+#check @SeLe4n.Kernel.untypedReset_ok_retired_pages_unmapped
 
 -- ============================================================================
 -- Scenario fixture
@@ -828,8 +844,135 @@ private def runResetChecks : IO Unit := do
   match storeObject carveUt (.untyped utWithObjChild) carveScenario with
   | .error _ => assertBool "the non-frame-child fixture stores" false
   | .ok ((), stObj) =>
-    assertBool "a reset whose child is not a frame is refused (revocationRequired)"
+    assertBool "a reset whose child is neither a frame nor an untyped is refused (revocationRequired)"
       (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner stObj))
+
+-- ============================================================================
+-- §5g  WS-BP BP7.1 slice 4 (`v0.36.8`) — child untypeds, and subtree resets
+-- ============================================================================
+
+/-- The untyped tag with a size in MR0's upper bits. -/
+private def untypedTagOfSize (sizeBits : Nat) : Nat := 5 + sizeBits * 256
+
+/-- The RETIRED reset guard (`v0.36.6`–`v0.36.7`): every **direct** child must be
+a frame.  Spelled here and nowhere else, so the witness below can show the state
+it would refuse forever. -/
+private def retiredFramesOnlyRetirable (st : SystemState) (ut : UntypedObject) : Bool :=
+  ut.children.all fun c => (st.getFrame? c.objId).isSome
+
+/-- `.lifecycleRetype` of `target` into an endpoint, invoked on the capability at
+`capSlot`. -/
+private def decodeInPlaceRetype (capSlot target : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat capSlot
+  , msgInfo   := { length := 3, extraCaps := 0, label := 0 }
+  , syscallId := .lifecycleRetype
+  , msgRegs   := #[SeLe4n.RegValue.ofNat target, SeLe4n.RegValue.ofNat 1,
+                   SeLe4n.RegValue.ofNat 64] }
+
+private def runChildUntypedChecks : IO Unit := do
+  IO.println "-- §5g `.untypedRetype` carves child untypeds, and a reset returns the subtree (WS-BP BP7.1)"
+  let st := carveScenario
+  let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
+    match r with | .error e' => e' == e | .ok _ => false
+  -- The sizes the decode refuses, before anything is resolved.
+  assertBool "a child untyped smaller than a page is refused (invalidArgument)"
+    (isErr .invalidArgument (dispatchSyscall
+      (decodeCarve slotUtRetype (untypedTagOfSize 11) 970 slotOwnCnRW 12) carveOwner st))
+  assertBool "a child untyped above seL4_MaxUntypedBits is refused (invalidArgument)"
+    (isErr .invalidArgument (dispatchSyscall
+      (decodeCarve slotUtRetype (untypedTagOfSize 48) 970 slotOwnCnRW 12) carveOwner st))
+  assertBool "a frame with a non-zero size is refused (invalidArgument) — a frame is one page"
+    (isErr .invalidArgument (dispatchSyscall
+      (decodeCarve slotUtRetype (frameTag + 12 * 256) 970 slotOwnCnRW 12) carveOwner st))
+  assertBool "a child larger than the parent's free region is refused (untypedRegionExhausted)"
+    (isErr .untypedRegionExhausted (dispatchSyscall
+      (decodeCarve slotUtRetype (untypedTagOfSize 14) 970 slotOwnCnRW 12) carveOwner st))
+  -- Carve a one-page child untyped into slot 12, a frame out of it into slot 13,
+  -- and map the frame.
+  match dispatchSyscall (decodeCarve slotUtRetype (untypedTagOfSize 12) 970 slotOwnCnRW 12)
+      carveOwner st with
+  | .error e => assertBool s!"the child-untyped carve succeeds (got {repr e})" false
+  | .ok ((), st1) => do
+    assertBool "the child untyped is the parent's first page, parent stamped, nothing carved"
+      ((st1.getUntyped? (SeLe4n.ObjId.ofNat 970)).map
+          (fun u => (u.regionBase.toNat, u.regionSize, u.parent, u.watermark,
+                     u.children.length, u.isDevice))
+        == some (carveUtBase, SeLe4n.pageBytes, some carveUt, 0, 0, false))
+    assertBool "the parent's watermark advances by the child's size"
+      (watermarkOf st1 carveUt == some SeLe4n.pageBytes)
+    assertBool "carving an untyped writes none of its memory (the frame carve zeroes a page)"
+      (SeLe4n.readMem st1.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0xAB)
+    assertBool "the destination holds a read/write/retype capability to the child"
+      (SystemState.lookupSlotCap st1 { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 }
+        == some (untypedCapability (SeLe4n.ObjId.ofNat 970)))
+    assertBool "the in-place retype refuses to destroy the carved untyped (revocationRequired)"
+      (isErr .revocationRequired (dispatchSyscall (decodeInPlaceRetype 12 970) carveOwner st1))
+    match runAll st1
+        [decodeCarve 12 frameTag 971 slotOwnCnRW 13,
+         decodeOwnMap 0x60000 13 permsRWUC] with
+    | .error e => assertBool s!"carving a frame from the child and mapping it succeeds (got {repr e})" false
+    | .ok st2 => do
+      assertBool "the grandchild frame is the child's first page"
+        (frameAt st2 971 == some { base := SeLe4n.PAddr.ofNat carveUtBase })
+      assertBool "and the frame carve zeroed it"
+        (SeLe4n.readMem st2.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0)
+      assertBool "and it maps"
+        (mappedPaddr st2 carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase)
+      assertBool "the child is exhausted after one page (untypedRegionExhausted)"
+        (isErr .untypedRegionExhausted
+          (dispatchSyscall (decodeCarve 12 frameTag 972 slotOwnCnRW 14) carveOwner st2))
+      assertBool "a reset of the parent while the child's capability lives is refused"
+        (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner st2))
+      -- One revocation of the parent capability reaches the child's capability
+      -- AND the grandchild frame's, which was derived from it.
+      match dispatchSyscall (decodeRevoke slotUtRetype) carveOwner st2 with
+      | .error e => assertBool s!"revoking the parent capability succeeds (got {repr e})" false
+      | .ok ((), stRev) => do
+        assertBool "the revocation removed the child's and the grandchild frame's capabilities"
+          (SystemState.lookupSlotCap stRev { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 }
+            == none &&
+           SystemState.lookupSlotCap stRev { cnode := carveCn, slot := SeLe4n.Slot.ofNat 13 }
+            == none)
+        -- THE RETIRED GUARD.  The parent's only child is an untyped, so the
+        -- frames-only reset refuses — and no capability to the child remains, so
+        -- nothing can ever reset the child first: the parent's memory would be
+        -- stranded for good.
+        assertBool "RETIRED: the frames-only reset guard refuses this state"
+          (match stRev.getUntyped? carveUt with
+            | some ut => !retiredFramesOnlyRetirable stRev ut
+            | none => false)
+        match dispatchSyscall (decodeReset slotUtRetype) carveOwner stRev with
+        | .error e => assertBool s!"the parent's reset retires the subtree (got {repr e})" false
+        | .ok ((), stReset) => do
+          assertBool "the child untyped and the grandchild frame are both retired"
+            ((stReset.objects[SeLe4n.ObjId.ofNat 970]?).isNone &&
+             (stReset.objects[SeLe4n.ObjId.ofNat 971]?).isNone)
+          assertBool "and the grandchild's page is mapped nowhere"
+            (mappedPaddr stReset carveAsid (SeLe4n.VAddr.ofNat 0x60000) == none)
+          assertBool "and the parent is empty again"
+            ((stReset.getUntyped? carveUt).map (fun u => (u.watermark, u.children.length))
+              == some (0, 0))
+          -- Both ids and the memory are reusable: carve a larger child in the same place.
+          match dispatchSyscall
+              (decodeCarve slotUtRetype (untypedTagOfSize 13) 971 slotOwnCnRW 12)
+              carveOwner stReset with
+          | .error e => assertBool s!"a carve after the subtree reset succeeds (got {repr e})" false
+          | .ok ((), stAgain) =>
+            assertBool "the next child reuses the region's start and a retired id"
+              ((stAgain.getUntyped? (SeLe4n.ObjId.ofNat 971)).map
+                  (fun u => (u.regionBase.toNat, u.regionSize))
+                == some (carveUtBase, 2 * SeLe4n.pageBytes))
+  -- A device untyped yields a device child, and that child a device frame.
+  match runAll st
+      [decodeCarve slotDevUt (untypedTagOfSize 12) 975 slotOwnCnRW 12,
+       decodeCarve 12 frameTag 976 slotOwnCnRW 13] with
+  | .error e => assertBool s!"a device child and its frame carve (got {repr e})" false
+  | .ok stD => do
+    assertBool "a device untyped's child untyped is a device untyped"
+      ((stD.getUntyped? (SeLe4n.ObjId.ofNat 975)).map (·.isDevice) == some true)
+    assertBool "and its frame is a device frame, left unscrubbed"
+      (frameAt stD 976 == some { base := SeLe4n.PAddr.ofNat carveDevBase, isDevice := true } &&
+       SeLe4n.readMem stD.machine (SeLe4n.PAddr.ofNat carveDevBase) == 0xCD)
 
 -- ============================================================================
 -- §5f  WS-BP BP7.1 (`v0.36.7`) — a frame capability owns the mapping it made
@@ -1006,6 +1149,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runFrameCapabilityChecks
   runCarveChecks
   runResetChecks
+  runChildUntypedChecks
   runFrameFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="

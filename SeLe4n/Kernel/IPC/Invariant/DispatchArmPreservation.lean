@@ -1544,15 +1544,17 @@ theorem storeObject_inertNonCNode_preserves_ipcInvariantFull
       hInv.passiveServerIdle)
     hCap hInv
 
-/-- **WS-BP BP7.1**: the carve of a frame out of an untyped preserves the bundle:
-the watermark advance rewrites an untyped in place, and the fresh frame lands at a
-key that held nothing (`retypeFromUntyped`'s collision guard). -/
-theorem retypeFromUntyped_frame_preserves_ipcInvariantFull
+/-- **WS-BP BP7.1**: a carve out of an untyped preserves the bundle: the watermark
+advance rewrites an untyped in place, and the fresh object — a frame or a child
+untyped (`CarveRequest.object`), both kinds the bundle does not read — lands at
+a key that held nothing (`retypeFromUntyped`'s collision guard). -/
+theorem retypeFromUntyped_carve_preserves_ipcInvariantFull
     (st st' : SystemState) (authority : CSpaceAddr)
-    (untypedId childId : SeLe4n.ObjId) (frame : FrameObject) (allocSize : Nat)
+    (untypedId childId : SeLe4n.ObjId) (ut₀ : UntypedObject) (req : CarveRequest)
+    (allocSize : Nat)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : retypeFromUntyped authority untypedId childId (.frame frame) allocSize st
-      = .ok ((), st')) :
+    (hStep : retypeFromUntyped authority untypedId childId (req.object untypedId ut₀)
+      allocSize st = .ok ((), st')) :
     ipcInvariantFull st' := by
   have hFresh := retypeFromUntyped_childId_fresh authority untypedId childId
     _ _ st st' hStep
@@ -1571,35 +1573,40 @@ theorem retypeFromUntyped_frame_preserves_ipcInvariantFull
     cases h : st.objects[childId]? with
     | none => rfl
     | some _ => rw [h] at hFresh; simp at hFresh
-  exact storeObject_inertNonCNode_preserves_ipcInvariantFull stUt st' childId (.frame frame)
-    hObjInvUt hInvUt (Or.inl hChildNone) trivial (fun _ h => KernelObject.noConfusion h) hStCh
+  exact storeObject_inertNonCNode_preserves_ipcInvariantFull stUt st' childId _
+    hObjInvUt hInvUt (Or.inl hChildNone) (by cases req <;> trivial)
+    (fun _ h => by cases req <;> exact KernelObject.noConfusion h) hStCh
 
-/-- **WS-BP BP7.1 (`v0.36.5`)**: the untyped carve preserves `ipcInvariantFull` —
-two inert stores, a scrub of machine memory the bundle does not read, a
-capability install carrying no badge, and the CDT edge. -/
-theorem untypedRetypeFrame_preserves_ipcInvariantFull
-    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (st st' : SystemState)
+/-- **WS-BP BP7.1 (`v0.36.5`, generalized at slice 4)**: the untyped carve
+preserves `ipcInvariantFull` — two inert stores, a scrub of machine memory the
+bundle does not read (or none, for a child untyped), a capability install
+carrying no badge, and the CDT edge. -/
+theorem untypedRetypeObject_preserves_ipcInvariantFull
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
+    (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : untypedRetypeFrame src childId dst st = .ok ((), st')) :
+    (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨_, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
-    untypedRetypeFrame_ok_decompose src dst childId st st' hStep
-  have hInv1 := retypeFromUntyped_frame_preserves_ipcInvariantFull st st1 src untypedId
-    childId _ _ hObjInv hInv hRt
+    untypedRetypeObject_ok_decompose src dst childId req st st' hStep
+  have hInv1 := retypeFromUntyped_carve_preserves_ipcInvariantFull st st1 src untypedId
+    childId ut req _ hObjInv hInv hRt
   have hObjInv1 : st1.objects.invExt := by
     obtain ⟨_, _, _, stL, stUt, _, _, _, _, hLk, _, _, hStUt, hStCh⟩ :=
       retypeFromUntyped_ok_decompose st st1 src untypedId childId _ _ hRt
     rw [cspaceLookupSlot_ok_state_eq st src _ stL hLk] at hStUt
     exact storeObject_preserves_objects_invExt _ _ _ _
       (storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt) hStCh
-  have hInvZ : ipcInvariantFull (carveZeroFrame st1 (untypedNextFrame ut)) :=
-    ipcInvariantFull_of_objects_scheduler_eq (carveZeroFrame_objects _ _)
-      (carveZeroFrame_scheduler _ _) hInv1
-  have hObjInvZ : (carveZeroFrame st1 (untypedNextFrame ut)).objects.invExt := by
-    rw [carveZeroFrame_objects]; exact hObjInv1
+  have hInvZ : ipcInvariantFull (req.scrub st1 ut) :=
+    ipcInvariantFull_of_objects_scheduler_eq (CarveRequest.scrub_objects _ _ _)
+      (CarveRequest.scrub_scheduler _ _ _) hInv1
+  have hObjInvZ : (req.scrub st1 ut).objects.invExt := by
+    rw [CarveRequest.scrub_objects]; exact hObjInv1
   exact cdtRecord_bundle_frame st2 src dst DerivationOp.retype
     (cspaceInsertSlot_preserves_ipcInvariantFull _ st2 dst _ hObjInvZ hInvZ
-      (fun b hb => by simp [frameCapability] at hb) hIns)
+      (fun b hb => by
+        cases req <;> simp [CarveRequest.capability, frameCapability, untypedCapability] at hb)
+      hIns)
 
 /-- **WS-BP BP7.1 slice 3 (`v0.36.6`)**: the untyped reset preserves
 `ipcInvariantFull`.  Every key it writes holds, on each side, nothing or a kind
@@ -4365,8 +4372,8 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
       cases hStep
       exact ⟨rfl, rfl⟩
   | untyped u =>
+      -- WS-BP BP7.1 slice 4: an untyped target is refused, as a frame is.
       cases hStep
-      exact ⟨rfl, rfl⟩
   | frame _ =>
       -- WS-BP BP7.1: a frame target is refused, so there is no `.ok` step.
       cases hStep

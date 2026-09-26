@@ -4293,21 +4293,22 @@ theorem unmapLivePages_framed (executingCore : CoreId) :
           exact ⟨hs2.trans hs1, hm2.trans hm1⟩
       · exact unmapLivePages_framed executingCore rest st st' h
 
-/-- WS-BP BP7.1 (slice 3): retiring frames writes the object table and its
-bookkeeping — never the scheduler, never the machine. -/
-theorem retireFrames_framed :
+/-- WS-BP BP7.1 (slice 3, carved subtrees at slice 4): retiring carved objects
+writes the object table and its bookkeeping — never the scheduler, never the
+machine. -/
+theorem retireCarvedObjects_framed :
     ∀ (ids : List SeLe4n.ObjId) (st : SystemState),
-      SchedulerMachineFramed st (retireFrames st ids)
+      SchedulerMachineFramed st (retireCarvedObjects st ids)
   | [], _ => ⟨rfl, rfl⟩
   | id :: rest, st => by
-      have hOne : SchedulerMachineFramed st (retireFrame st id) := by
-        unfold retireFrame; split <;> exact ⟨rfl, rfl⟩
-      obtain ⟨hs, hm⟩ := retireFrames_framed rest (retireFrame st id)
+      have hOne : SchedulerMachineFramed st (retireCarvedObject st id) := by
+        unfold retireCarvedObject; split <;> exact ⟨rfl, rfl⟩
+      obtain ⟨hs, hm⟩ := retireCarvedObjects_framed rest (retireCarvedObject st id)
       exact ⟨hs.trans hOne.1, hm.trans hOne.2⟩
 
 /-- WS-BP BP7.1 (slice 3) (**the live `.untypedReset` bound**): a reset writes
 **no core**.  Its unmap pass is the `.vspaceUnmap` arm's own transition, whose
-bound is already empty; retiring the carved frames and storing the rewound
+bound is already empty; retiring the carved subtree and storing the rewound
 untyped write the object table alone.  An executing core is taken only to
 initiate the shootdown rounds, exactly as the `.vspaceUnmap` arm takes it. -/
 theorem untypedReset_confinedToCores
@@ -4315,24 +4316,12 @@ theorem untypedReset_confinedToCores
     (hStep : untypedReset executingCore untypedId st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] := by
   apply observableSlotsConfinedToCores_nil_of_framed
-  unfold untypedReset at hStep
-  split at hStep
-  · cases hStep
-  · split at hStep
-    · cases hStep
-    · split at hStep
-      · cases hStep
-      · split at hStep
-        · cases hStep
-        · next st1 hUnmap =>
-          split at hStep
-          · cases hStep
-          · split at hStep
-            · cases hStep
-            · obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ st st1 hUnmap
-              obtain ⟨hs2, hm2⟩ := retireFrames_framed _ st1
-              exact ⟨(storeObject_scheduler_eq _ _ _ _ hStep).trans (hs2.trans hs1),
-                (storeObject_machine_eq _ _ _ _ hStep).trans (hm2.trans hm1)⟩
+  obtain ⟨_, ids, st1, -, -, -, -, -, -, hUnmap, -, -, hSt⟩ :=
+    untypedReset_ok_decompose executingCore untypedId st st' hStep
+  obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ st st1 hUnmap
+  obtain ⟨hs2, hm2⟩ := retireCarvedObjects_framed ids st1
+  exact ⟨(storeObject_scheduler_eq _ _ _ _ hSt).trans (hs2.trans hs1),
+    (storeObject_machine_eq _ _ _ _ hSt).trans (hm2.trans hm1)⟩
 
 /-- WS-BP BP7.1 (slice 3) (**the live `.untypedReset` arm, cross-core**): a
 reset is invisible on **every** core. -/
@@ -4521,10 +4510,11 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
-  | frame _ =>
-    -- WS-BP BP7.1: a frame target is refused, so there is no `.ok` post-state.
+  | frame _ | untyped _ =>
+    -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
+    -- an untyped one — so there is no `.ok` post-state.
     simp [lifecyclePreRetypeCleanup] at hOk
-  | notification _ | vspaceRoot _ | untyped _ =>
+  | notification _ | vspaceRoot _ =>
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
   | schedContext _ =>

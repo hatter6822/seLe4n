@@ -1429,8 +1429,8 @@ theorem lockSet_lifecycleRetype_size_le (a : ThreadId) (b c d : ObjId)
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 /-- **WS-BP BP7.1**: the carve's footprint is within the ceiling. -/
-theorem lockSet_untypedRetype_size_le (a : ThreadId) (b c d e : ObjId) :
-    (lockSet_untypedRetype a b c d e).size ≤ maxLockSetSize := by
+theorem lockSet_untypedRetype_size_le (a : ThreadId) (b c d e : ObjId) (f : Bool) :
+    (lockSet_untypedRetype a b c d e f).size ≤ maxLockSetSize := by
   unfold lockSet_untypedRetype maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
@@ -1635,7 +1635,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_cspaceMove a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_cspaceDelete a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d t, (lockSet_lifecycleRetype a b c d t).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e, (lockSet_untypedRetype a b c d e).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f, (lockSet_untypedRetype a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_vspaceMap a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize) ∧

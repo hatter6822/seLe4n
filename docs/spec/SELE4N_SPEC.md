@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.7` (`lakefile.toml`) |
+| **Package version** | `0.36.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 425,292 across 346 Lean files |
-| **Test LoC** | 86,511 across 71 Lean test suites |
-| **Proved declarations** | 14,097 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 425,794 across 346 Lean files |
+| **Test LoC** | 86,655 across 71 Lean test suites |
+| **Proved declarations** | 14,107 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6 (§8.10.2a); the rest of BP7, and BP8, not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4593,7 +4593,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   place (`.revocationRequired`) — permanently: a frame's memory returns
   through its untyped (the reset, below), as in seL4.
 - **The untyped carve** (`v0.36.5`, `.untypedRetype`, syscall 36): the one
-  source of frames.  `untypedRetypeFrame` carves the next page of an untyped
+  source of frames.  `untypedRetypeObject` (at `.frame`) carves the next page of an untyped
   the caller holds `.retype` on — `retypeFromUntyped` at
   `untypedNextFrame ut` (the base is the untyped's own region base plus its
   watermark, so the frame lies inside the untyped's memory and is
@@ -4605,29 +4605,47 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   untyped's slot, so revoking the untyped reaches the frame capability.
   `retypeFromUntyped` admits a device untyped for memory-backed kinds only.
   The arm preserves `ipcInvariantFull`
-  (`untypedRetypeFrame_preserves_ipcInvariantFull`) and declares a six-member
-  lock footprint (`lockSet_untypedRetype`, page lock included).  Carving
-  kinds other than frames is slice 4 (registered in
-  `docs/REGISTERED_DEBT.md` table B).
+  (`untypedRetypeObject_preserves_ipcInvariantFull`) and declares a six-member
+  lock footprint (`lockSet_untypedRetype`, the new object's key under the
+  kind it will hold — `carvedObjectLock`).
+- **Child untypeds** (`v0.36.8`, BP7.1 slice 4a): MR0 carries the object's
+  size as a power of two in bits `[8, 64)` beside the type tag (seL4's
+  `size_bits`); `carveRequestOf?` accepts `.frame` at size `0` and `.untyped`
+  at `[minUntypedSizeBits, maxUntypedSizeBits] = [12, 47]`, and refuses the
+  rest with `.invalidArgument`.  One carve, `untypedRetypeObject` over a
+  `CarveRequest`, makes both: a child untyped is `untypedNextChild` — the
+  region at the parent's watermark, of its kind, **parent stamped** — handed
+  back with read/write/retype (`untypedCapability`) and not written
+  (`untypedNextChild_of_retype_ok`, `untypedRetypeObject_ok_untyped`).  The
+  in-place retype refuses to destroy an untyped, as it refuses a frame.
+  Page-table objects are slice 4b (registered in `docs/REGISTERED_DEBT.md`
+  table B).
 - **The untyped reset** (`v0.36.6`, `.untypedReset`, syscall 37, `.retype`,
-  no message registers): seL4's `resetUntypedCap`.  Refused
-  (`.revocationRequired`) unless every carved child is a frame
-  (`untypedChildrenRetirable`) and no capability anywhere names one
-  (`untypedChildrenUnreferenced` — every CNode slot and every blocked
+  no message registers): seL4's `resetUntypedCap`.  Since `v0.36.8` it acts
+  on the untyped's **carved subtree** — every object carved from it at any
+  depth, derived by a bounded walk over the child lists
+  (`untypedCarvedSubtree`, proved to hold every child and to be closed by
+  `untypedCarvedSubtree_spec`; a walk that cannot finish is a refusal).
+  Refused (`.revocationRequired`) unless every member is a frame or an
+  untyped (`carvedSubtreeRetirable`) and no capability anywhere names one
+  (`carvedSubtreeUnreferenced` — every CNode slot and every blocked
   sender's parked message, decided over the whole object store, because the
   watermark is the untyped *object*'s and a derivation-free sibling copy of
   its capability would pass seL4's per-slot `ensureNoChildren`).  Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,
   instruction-cache broadcast — from a list collected on the pre-state and
-  checked afterwards (`untypedRegionUnmapped`, `.illegalState` otherwise);
-  the carved frames are **erased** with their index and metadata rows
-  (`retireFrame`, the one object-store erase, a no-op at any key that does
-  not hold a frame), so their ids and store capacity return; and the
+  checked afterwards (`untypedRegionUnmapped`, `.illegalState` otherwise,
+  and every frame of the subtree is decided to lie in the region,
+  `carvedSubtreeFramesInRegion`); the subtree is **erased** with its index
+  and metadata rows (`retireCarvedObject`, the one object-store erase, a
+  no-op at any key holding neither a frame nor an untyped), so its ids and
+  store capacity return; and the
   untyped's watermark and child list are cleared.  Nothing is zeroed here:
   the carve zeroes a RAM page before any capability to it exists.  Payoff:
   `untypedReset_ok_unmapped`, `untypedReset_ok_unreferenced`,
-  `untypedReset_ok_children_absent`, `untypedReset_ok_untyped`; bundle:
+  `untypedReset_ok_subtree_absent`, `untypedReset_ok_retired_pages_unmapped`,
+  `untypedReset_ok_untyped`; bundle:
   `untypedReset_preserves_ipcInvariantFull` (over
   `ipcReadViewAgreement.of_inertOrAbsentWrites`).  It declares no static
   lock footprint (the VSpace roots it writes are state-discovered and

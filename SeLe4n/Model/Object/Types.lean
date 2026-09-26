@@ -2601,10 +2601,12 @@ inductive SyscallId where
                            -- (seL4_TCB_SetSpace's fault_ep), validated at set time
   | cspaceRevoke           -- WS-RR RR8.16 (`v0.35.190`): revoke a capability's derivations
                            -- (seL4_CNode_Revoke), dispatched through `cspaceRevokeCdt`
-  | untypedRetype          -- WS-BP BP7.1 (`v0.36.5`): carve a frame out of an untyped the
-                           -- caller holds (seL4_Untyped_Retype), through `untypedRetypeFrame`
+  | untypedRetype          -- WS-BP BP7.1 (`v0.36.5`): carve a frame — or since slice 4
+                           -- (`v0.36.8`) a child untyped — out of an untyped the caller
+                           -- holds (seL4_Untyped_Retype), through `untypedRetypeObject`
   | untypedReset           -- WS-BP BP7.1 (`v0.36.6`): hand an untyped's memory back once no
-                           -- carved child is reachable (seL4's resetUntypedCap), through
+                           -- object of its carved subtree is reachable (seL4's
+                           -- resetUntypedCap), through
                            -- `untypedReset`
   deriving Repr, DecidableEq, Inhabited
 

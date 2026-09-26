@@ -1,3 +1,106 @@
+## v0.36.8 — WS-BP BP7.1 slice 4a: an untyped carves child untypeds, and a reset returns the whole subtree
+
+Slices 2 and 3 gave the untyped life cycle for frames: a carve mints one page
+(`.untypedRetype`), and a reset hands the memory back (`.untypedReset`).  A
+holder could not hand on *part* of its memory as memory, though.  seL4 does that
+by carving a smaller untyped, which the recipient carves in turn.  This cut adds
+that.  The reset retires everything carved from an untyped at any depth, which
+it has to: revoking the parent capability destroys the child's capabilities too,
+so a reset that asked each child to be reset first could never run.  Page-table
+objects are slice 4b (the next cut).
+
+**The ABI.**  `.untypedRetype`'s MR0 carries the object's size as a power of two
+in bits `[8, 64)` beside the type tag in bits `[0, 8)` — seL4's `size_bits`,
+which shares MR0 because all four argument registers are taken.  A frame's MR0
+is its tag alone, exactly as before.  `UntypedRetypeArgs.sizeBits` in Lean,
+`size_bits` in `sele4n-abi`, and `sele4n_sys::lifecycle::untyped_retype_untyped`
+is the new wrapper.  `carveRequestOf?` builds the request:
+
+* `.frame` with `sizeBits = 0`;
+* `.untyped` with `sizeBits` in `[12, 47]` (`minUntypedSizeBits`, one page, so
+  every carve keeps the parent's next base page-aligned; `maxUntypedSizeBits`,
+  seL4's `seL4_MaxUntypedBits` on AArch64);
+* anything else is `.invalidArgument`.
+
+**The carve.**  `untypedRetypeObject src childId dst req` replaces
+`untypedRetypeFrame` (deleted, tombstone at the new definition).  `CarveRequest`
+says what is carved — `.frame` or `.untyped b` — and supplies the object, its
+size, its capability and its memory write, so there is still one carve, and its
+guards are still `retypeFromUntyped`'s.
+
+* A child untyped is `untypedNextChild`: the region at the parent's watermark,
+  `2 ^ b` bytes, of the parent's memory kind, **with its parent stamped** — the
+  AN6-C.2 contract `retypeFromUntyped` has asked of every `.untyped` carve since
+  WS-AN, first honoured here.
+* Its capability is `untypedCapability`: read, write and retype, the rights the
+  root task's boot untypeds carry.
+* It writes no memory.  A frame carve zeroes its page, so scrubbing here would
+  scrub twice, and a device child's memory is MMIO.
+* `requiresPageAlignment .untyped` is `true`.
+* `untypedNextChild_of_retype_ok` and `untypedRetypeObject_ok_untyped` are the
+  payoff: the child lies inside its parent, page-aligned, of its kind, parent
+  stamped, nothing carved.  `untypedRetypeObject_ok_frame` is the frame payoff,
+  unchanged in content, and `untypedRetypeObject_preserves_ipcInvariantFull`
+  covers both kinds.
+* The footprint names the new object's key under the kind it will hold
+  (`carvedObjectLock`), so `lockSet_untypedRetype` gains a `childIsUntyped`
+  argument.
+
+**The in-place retype refuses to destroy an untyped** (`.revocationRequired`),
+as it has refused a frame since slice 1.  Replacing an untyped in place orphans
+everything carved from it, and for a child untyped it would leave the parent's
+child list naming a kernel object no reset can retire — one holder of the
+child's capability could wedge the parent's reset for good.  Before this cut the
+arm accepted an untyped target.  With frames only, that lost the holder's own
+memory and nothing else, since `retypeReplacementAdmissible` already refused a
+memory-backed replacement; it is closed in the cut that would have made it a
+wedge.  seL4 has no in-place retype of an untyped at all.
+
+**The reset retires the carved subtree.**  `untypedCarvedSubtree` walks the
+child lists — a bounded worklist, `carvedSubtreeWalk` — and
+`untypedCarvedSubtree_spec` proves the result contains every child and is closed
+(an untyped in it has all its own children in it).  A walk that runs out of fuel
+is a refusal, never a smaller subtree.  The reset then decides, over the
+subtree:
+
+* every member is a frame or an untyped (`carvedSubtreeRetirable`,
+  `.revocationRequired`);
+* every frame lies in the untyped's region (`carvedSubtreeFramesInRegion`,
+  `.illegalState`) — true of every reachable state and decided rather than
+  assumed, since it is what lets the region-wide unmap pass reach a frame at any
+  depth;
+* no capability anywhere names a member (`carvedSubtreeUnreferenced`,
+  `.revocationRequired`);
+* the subtree does not name the untyped itself (`.illegalState`).
+
+It unmaps the region as before and erases every member through
+`retireCarvedObject`, which replaces `retireFrame` (deleted) and erases a frame
+or an untyped and nothing else.  `untypedReset_ok_subtree_absent` replaces
+`untypedReset_ok_children_absent` (deleted), and
+`untypedReset_ok_retired_pages_unmapped` is new: no retired frame's page is
+mapped anywhere once the reset commits, whatever depth it was carved at.  The
+frame relation is `carvedRetireWrite`, `frameRetireWrite`'s successor.
+
+**Witness.**  `tests/VSpaceCapabilityBindingSuite.lean` §5g carves a one-page
+child untyped and checks it is unwritten, parent-stamped and handed back with
+`.retype`.  Then:
+
+* the child carves a zeroed frame, which maps;
+* the in-place retype of the child is refused;
+* the parent's reset is refused while the child's capability lives;
+* one revocation of the parent capability destroys the child's and the
+  grandchild frame's capabilities, and the parent's reset then retires both and
+  unmaps the page;
+* the **retired frames-only guard**, spelled in the suite and nowhere else, is
+  computed beside it and refuses that state — which, with no capability to the
+  child left, it would have refused forever.
+
+Every size the decode refuses is exercised, and a device untyped yields a device
+child and a device frame.  The Tier 3 anchors over the retired definitions are
+repointed, and one negative refuses every retired name tree-wide.
+`scripts/lean_store_read_census.py`'s write-primitive registry names
+`retireCarvedObject`.
+
 ## v0.36.7 — WS-BP BP7.1: a frame capability owns the mapping it made, so destroying it unmaps
 
 Slice 3 (`v0.36.6`) registered a divergence from seL4.  Revoking or deleting a

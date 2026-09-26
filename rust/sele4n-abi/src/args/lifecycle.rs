@@ -48,43 +48,60 @@ impl LifecycleRetypeArgs {
 }
 
 /// Arguments for `untypedRetype` (syscall 36) — seL4's `seL4_Untyped_Retype`.
-/// Register mapping: x2=newType tag, x3=childId, x4=destination CNode
-/// capability address, x5=destination slot.
+/// Register mapping: x2=newType tag in bits `[0, 8)` and the object's size as a
+/// power of two in bits `[8, 64)` (seL4's `size_bits`), x3=childId, x4=destination
+/// CNode capability address, x5=destination slot.
 ///
 /// Lean: `UntypedRetypeArgs` (SyscallArgDecode.lean), decoded by
 /// `decodeUntypedRetypeArgs`.  The syscall is invoked on the **untyped**
-/// capability; the kernel carves only [`TypeTag::Frame`] and refuses every
-/// other valid tag with `InvalidArgument`.
+/// capability; the kernel carves [`TypeTag::Frame`] (whose `size_bits` must be
+/// `0` — a frame is one page) and, since slice 4, [`TypeTag::Untyped`] of
+/// `2^size_bits` bytes with `size_bits` in [`MIN_UNTYPED_SIZE_BITS`,
+/// `MAX_UNTYPED_SIZE_BITS`]; anything else is `InvalidArgument`.
 ///
-/// WS-BP BP7.1 (`v0.36.5`).
+/// `size_bits` shares MR0 with the tag because all four argument registers are
+/// taken.  A frame's MR0 is its tag alone, exactly as before the field existed.
+/// `encode` keeps the low 56 bits of `size_bits`; every size the kernel accepts
+/// is far below that.
+///
+/// WS-BP BP7.1 (`v0.36.5`; `size_bits` at slice 4, `v0.36.8`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UntypedRetypeArgs {
     pub new_type: TypeTag,
+    pub size_bits: u64,
     pub child_id: ObjId,
     pub dst_cnode: CPtr,
     pub dst_slot: Slot,
 }
 
+/// The smallest child untyped a carve makes, as a power of two: one page.
+/// Lean: `minUntypedSizeBits`.
+pub const MIN_UNTYPED_SIZE_BITS: u64 = 12;
+/// The largest child untyped a carve makes, as a power of two — seL4's
+/// `seL4_MaxUntypedBits` on AArch64.  Lean: `maxUntypedSizeBits`.
+pub const MAX_UNTYPED_SIZE_BITS: u64 = 47;
+
 impl UntypedRetypeArgs {
     pub const fn encode(&self) -> [u64; 4] {
         [
-            self.new_type.to_u64(),
+            self.new_type.to_u64() | (self.size_bits << 8),
             self.child_id.raw(),
             self.dst_cnode.raw(),
             self.dst_slot.raw(),
         ]
     }
 
-    /// Decode from message registers. Requires 4 registers; `regs[0]` must be
-    /// a valid type tag (`InvalidTypeTag` otherwise), as the Lean decoder
-    /// requires.
+    /// Decode from message registers. Requires 4 registers; the low byte of
+    /// `regs[0]` must be a valid type tag (`InvalidTypeTag` otherwise), as the
+    /// Lean decoder requires, and the rest of the word is `size_bits`.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 4 {
             return Err(KernelError::InvalidMessageInfo);
         }
-        let new_type = TypeTag::from_u64(regs[0])?;
+        let new_type = TypeTag::from_u64(regs[0] & 0xFF)?;
         Ok(Self {
             new_type,
+            size_bits: regs[0] >> 8,
             child_id: ObjId::from(regs[1]),
             dst_cnode: CPtr::from(regs[2]),
             dst_slot: Slot::from(regs[3]),
@@ -100,11 +117,21 @@ mod tests {
     fn untyped_retype_roundtrip() {
         let args = UntypedRetypeArgs {
             new_type: TypeTag::Frame,
+            size_bits: 0,
             child_id: ObjId::from(77u64),
             dst_cnode: CPtr::from(3u64),
             dst_slot: Slot::from(12u64),
         };
         assert_eq!(UntypedRetypeArgs::decode(&args.encode()).unwrap(), args);
+        // A frame's MR0 is its tag alone.
+        assert_eq!(args.encode()[0], TypeTag::Frame.to_u64());
+        let child = UntypedRetypeArgs {
+            new_type: TypeTag::Untyped,
+            size_bits: 21,
+            ..args
+        };
+        assert_eq!(child.encode()[0], 5 | (21 << 8));
+        assert_eq!(UntypedRetypeArgs::decode(&child.encode()).unwrap(), child);
     }
 
     #[test]

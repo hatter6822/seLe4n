@@ -14,25 +14,34 @@ use sele4n_types::{CPtr, KernelResult, ObjId, Slot, SyscallId};
 ///
 /// Lean: the `.untypedRetype` arm (API.lean, `untypedRetypeFromCap`), WS-BP
 /// BP7.1.  Requires the `Retype` right on `untyped_cap`.  The kernel places the
-/// new object at the page on the untyped's watermark (a device untyped yields a
-/// device frame), zeroes a RAM page, stores it as object `child_id` — which must
-/// hold no object yet — and installs a capability to it (read, write, grant) at
+/// new object at the untyped's watermark, stores it as object `child_id` —
+/// which must hold no object yet — and installs a capability to it at
 /// `dst_slot` of the CNode `dst_cnode` names in the caller's CSpace; that
 /// capability must carry `Write` and the slot must be empty and addressable.
 ///
-/// Only [`TypeTag::Frame`] is carved; every other tag is `InvalidArgument`.  A
-/// frame is the object [`crate::vspace::vspace_map`] maps: this is the only way
-/// a thread comes to hold mappable memory.
+/// Two kinds are carved.  [`TypeTag::Frame`] with `size_bits = 0`: one page (a
+/// device untyped yields a device frame), zeroed if it is RAM, handed back with
+/// read, write and grant — the object [`crate::vspace::vspace_map`] maps, and
+/// the only way a thread comes to hold mappable memory.  [`TypeTag::Untyped`]
+/// with `size_bits` in [`MIN_UNTYPED_SIZE_BITS`, `MAX_UNTYPED_SIZE_BITS`]: a
+/// child untyped of `2^size_bits` bytes of the parent's memory kind, handed
+/// back with read, write and retype, from which the holder carves in turn.
+/// Every other combination is `InvalidArgument`.
+///
+/// [`MIN_UNTYPED_SIZE_BITS`]: sele4n_abi::args::MIN_UNTYPED_SIZE_BITS
+/// [`MAX_UNTYPED_SIZE_BITS`]: sele4n_abi::args::MAX_UNTYPED_SIZE_BITS
 #[inline]
 pub fn untyped_retype(
     untyped_cap: CPtr,
     type_tag: TypeTag,
+    size_bits: u64,
     child_id: ObjId,
     dst_cnode: CPtr,
     dst_slot: Slot,
 ) -> KernelResult<SyscallResponse> {
     let args = UntypedRetypeArgs {
         new_type: type_tag,
+        size_bits,
         child_id,
         dst_cnode,
         dst_slot,
@@ -52,18 +61,45 @@ pub fn untyped_retype_frame(
     dst_cnode: CPtr,
     dst_slot: Slot,
 ) -> KernelResult<SyscallResponse> {
-    untyped_retype(untyped_cap, TypeTag::Frame, child_id, dst_cnode, dst_slot)
+    untyped_retype(
+        untyped_cap,
+        TypeTag::Frame,
+        0,
+        child_id,
+        dst_cnode,
+        dst_slot,
+    )
+}
+
+/// Convenience: carve a child untyped of `2^size_bits` bytes out of
+/// `untyped_cap` (WS-BP BP7.1 slice 4).
+pub fn untyped_retype_untyped(
+    untyped_cap: CPtr,
+    size_bits: u64,
+    child_id: ObjId,
+    dst_cnode: CPtr,
+    dst_slot: Slot,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(
+        untyped_cap,
+        TypeTag::Untyped,
+        size_bits,
+        child_id,
+        dst_cnode,
+        dst_slot,
+    )
 }
 
 /// Hand an untyped's memory back to it — seL4's `resetUntypedCap`.
 ///
 /// Lean: the `.untypedReset` arm (API.lean, `untypedReset`), WS-BP BP7.1.
 /// Requires the `Retype` right on `untyped_cap`.  Refused with
-/// `RevocationRequired` while any carved object is not a frame or any
-/// capability anywhere still names one — revoke the untyped capability first.
-/// On success every mapping of a page in the untyped's region is gone, the
-/// carved frames no longer exist, and the next [`untyped_retype`] carves from
-/// the start of the region again.
+/// `RevocationRequired` while any capability anywhere still names an object
+/// carved from the untyped — at any depth, since a child untyped's own carves
+/// are the untyped's memory too — so revoke the untyped capability first.  On
+/// success every mapping of a page in the untyped's region is gone, every
+/// carved frame and child untyped no longer exists, and the next
+/// [`untyped_retype`] carves from the start of the region again.
 #[inline]
 pub fn untyped_reset(untyped_cap: CPtr) -> KernelResult<SyscallResponse> {
     invoke_syscall(SyscallRequest {

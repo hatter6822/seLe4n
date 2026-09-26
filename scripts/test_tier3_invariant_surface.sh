@@ -3981,30 +3981,43 @@ run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode ho
 # CDT child of the untyped's, only `.frame` is carved, and a device untyped
 # backs exactly the memory-backed kinds.
 run_check "INVARIANT" rg -n '^    \| \.object _ => untypedRetypeFromCap tid decoded$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*      if args\.newType ≠ \.frame then \.error \.invalidArgument' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*      match carveRequestOf\? args\.newType args\.sizeBits with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.frame => if sizeBits = 0 then \.ok \.frame else \.error \.invalidArgument\n  \| \.untyped =>\n      if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| _ => \.error \.invalidArgument' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*          capAddr       := args\.dstCNode\n          capDepth      := rootCn\.depth\n          requiredRight := \.write' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot decoded\.capAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeFrame[^\n]*(\n([ \t][^\n]*)?)*          let frame := untypedNextFrame ut\n          match retypeFromUntyped src untypedId childId \(\.frame frame\) SeLe4n\.pageBytes st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeFrame[^\n]*(\n([ \t][^\n]*)?)*            match cspaceInsertSlot dst \(frameCapability childId\) \(carveZeroFrame st1 frame\) with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeFrame[^\n]*(\n([ \t][^\n]*)?)*stDst\.cdt\.addEdge srcNode dstNode \.retype' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId ut\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match cspaceInsertSlot dst \(req\.capability childId\) \(req\.scrub st1 ut\) with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*stDst\.cdt\.addEdge srcNode dstNode \.retype' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def CarveRequest\.scrub[^\n]*\n  \| \.frame => carveZeroFrame st \(untypedNextFrame ut\)\n  \| \.untyped _ => st' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedNextChild[^\n]*(\n([ \t][^\n]*)?)*    parent := some parentId \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def requiresPageAlignment[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedNextChild_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_untyped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U '    \.error \.revocationRequired\n  \| \.untyped _ =>(\n([ \t][^\n]*)?)*    \.error \.revocationRequired\n  \| _ => \.ok st' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_negative_check "INVARIANT" rg -n '\buntypedRetypeFrame\b|\bretireFrames?\b|\bframeRetireWrite\b|\buntypedChildrenUnreferenced\b|\bcapNamesCarvedChild\b|\buntypedChildrenRetirable\b|\buntypedReset_ok_children_absent\b' SeLe4n tests
 run_check "INVARIANT" rg -n -U 'def untypedNextFrame \(ut : UntypedObject\) : FrameObject :=\n  \{ base := SeLe4n\.PAddr\.ofNat \(ut\.regionBase\.toNat \+ ut\.watermark\)\n    isDevice := ut\.isDevice \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def carveZeroFrame[^\n]*(\n([ \t][^\n]*)?)*  if frame\.isDevice then st\n  else \{ st with machine := SeLe4n\.zeroMemoryRange st\.machine frame\.base SeLe4n\.pageBytes \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^        else if ut\.isDevice && !newObj\.objectType\.memoryBacked then$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_negative_check "INVARIANT" rg -n 'ut\.isDevice && newObj\.objectType != \.untyped' SeLe4n
-run_check "INVARIANT" rg -n '^theorem untypedRetypeFrame_ok_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedNextFrame_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_pageAligned($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem untypedRetypeFrame_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem of_fresh_inert_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n -U 'case untypedRetype =>(\n([ \t][^\n]*)?)*      exact untypedRetypeFrame_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'case untypedRetype =>(\n([ \t][^\n]*)?)*      exact untypedRetypeObject_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype   => \.retype$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype         => 36$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n '^            Self::UntypedRetype => 4,$' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
-run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(pageLock childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childIsUntyped childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  if childIsUntyped then untypedLock oid else pageLock oid' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'the child untyped and the grandchild frame are both retired' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'RETIRED: the frames-only reset guard refuses this state' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'the carved RAM page is zeroed before any capability to it exists' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'and .\.vspaceMap. maps the CARVED page, writable' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP7.1 slice 3: memory returns to its untyped.  The live
@@ -4015,16 +4028,21 @@ run_check "INVARIANT" rg -n 'and .\.vspaceMap. maps the CARVED page, writable' t
 # the carved frames are ERASED (their ids and store capacity return) through
 # the one primitive that erases, which touches frames only.
 run_check "INVARIANT" rg -n -U '  \| \.untypedReset =>\n    some <\| match cap\.target with\n    \| \.object untypedId => fun st =>\n        untypedReset \(determineExecutingCore st tid\) untypedId st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*      if !untypedChildrenRetirable st ut then \.error \.revocationRequired\n      else if !untypedChildrenUnreferenced st ut then \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*        match unmapLivePages executingCore \(untypedRegionMappings st ut\) st with' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*          if !untypedRegionUnmapped st1 ut then \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*            storeObject untypedId \(\.untyped ut\.reset\)\n              \(retireFrames st1 \(ut\.children\.map \(·\.objId\)\)\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*      match untypedCarvedSubtree st ut with\n      \| none => \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*        else if !carvedSubtreeRetirable st ids then \.error \.revocationRequired\n        else if !carvedSubtreeFramesInRegion st ut ids then \.error \.illegalState\n        else if !carvedSubtreeUnreferenced st ids then \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def carvedSubtreeWalk[^\n]*(\n([ \t][^\n]*)?)*  \| 0, _ :: _, _ => none' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def carvedSubtreeWalk[^\n]*(\n([ \t][^\n]*)?)*      \| some u => carvedSubtreeWalk st fuel \(u\.children\.map \(·\.objId\) \+\+ rest\) \(id :: acc\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedCarvedSubtree_spec($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_ok_retired_pages_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*          match unmapLivePages executingCore \(untypedRegionMappings st ut\) st with' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*            if !untypedRegionUnmapped st1 ut then \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*              storeObject untypedId \(\.untyped ut\.reset\) \(retireCarvedObjects st1 ids\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n -U 'def unmapLivePages[^\n]*(\n([ \t][^\n]*)?)*      if mappedPageLive st p then\n        match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/Architecture/PageTeardown.lean
-run_check "INVARIANT" rg -n -U 'def retireFrame \(st : SystemState\)[^\n]*\n  match st\.getFrame\? id with\n  \| none => st' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def objectNamesCarvedChild[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb t =>\n      match t\.pendingMessage with' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*\n  if \(st\.getFrame\? id\)\.isSome \|\| \(st\.getUntyped\? id\)\.isSome then' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def objectNamesListed[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb t =>\n      match t\.pendingMessage with' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^theorem untypedReset_ok_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^theorem untypedReset_ok_unreferenced($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedReset_ok_children_absent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_ok_subtree_absent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^theorem untypedReset_ok_untyped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^theorem untypedReset_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem of_inertOrAbsentWrites($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
