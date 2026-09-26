@@ -51,8 +51,8 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 420,740 across 343 Lean files |
-| **Test LoC** | 85,588 across 71 Lean test suites |
+| **Production LoC** | 420,759 across 343 Lean files |
+| **Test LoC** | 85,605 across 71 Lean test suites |
 | **Proved declarations** | 13,928 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |

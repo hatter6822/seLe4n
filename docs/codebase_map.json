@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/nice-rubin-dzkos7",
-      "commit_sha": "1cf27f6302773cd9b165289990955b3bc0761bd0",
-      "tree_sha": "bd11b7eaaf9683522e41de706e9d8e35aa15d334",
-      "committed_at_utc": "2026-09-25T22:40:37+00:00"
+      "commit_sha": "a595526436a9d6e8c7b2ad3d4ffcb4e379f3c5fb",
+      "tree_sha": "9b202522accca7bbc142f0919d3d1bba74da1477",
+      "committed_at_utc": "2026-09-25T22:48:46+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "996ba5485ea4c8b3e3fdd6b4d0f80f54bde4a34e8bca93506e782e122af5c2eb"
+    "source_digest": "6361d89c111626c6685c4c38f15ad1b995ba728f4d4d02eb282f83d20e6d49bf"
   },
   "summary": {
     "module_count": 414,
@@ -27,9 +27,9 @@
     "version": "0.36.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 343,
-    "production_loc": 420740,
+    "production_loc": 420759,
     "test_files": 71,
-    "test_loc": 85588,
+    "test_loc": 85605,
     "proved_theorem_lemma_decls": 13928,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -10307,31 +10307,31 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 37,
+          "line": 38,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PageTableLevel",
-          "line": 49,
+          "line": 50,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "Shareability",
-          "line": 54,
+          "line": 55,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "AccessPermission",
-          "line": 62,
+          "line": 63,
           "called": []
         },
         {
           "kind": "structure",
           "name": "PageAttributes",
-          "line": 71,
+          "line": 72,
           "called": [
             "AccessPermission",
             "Shareability"
@@ -10339,32 +10339,32 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:82>",
-          "line": 82,
+          "name": "<anonymous:instance:83>",
+          "line": 83,
           "called": [
             "PageTableLevel"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:87>",
-          "line": 87,
+          "name": "<anonymous:instance:88>",
+          "line": 88,
           "called": [
             "Shareability"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:94>",
-          "line": 94,
+          "name": "<anonymous:instance:95>",
+          "line": 95,
           "called": [
             "AccessPermission"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:100>",
-          "line": 100,
+          "name": "<anonymous:instance:101>",
+          "line": 101,
           "called": [
             "PageAttributes"
           ]
@@ -10372,7 +10372,7 @@
         {
           "kind": "inductive",
           "name": "PageTableDescriptor",
-          "line": 115,
+          "line": 116,
           "called": [
             "PAddr",
             "PageAttributes"
@@ -10381,7 +10381,7 @@
         {
           "kind": "def",
           "name": "levelValid",
-          "line": 123,
+          "line": 124,
           "called": [
             "PageTableDescriptor",
             "PageTableLevel",
@@ -10391,7 +10391,7 @@
         {
           "kind": "def",
           "name": "encodeShareability",
-          "line": 139,
+          "line": 140,
           "called": [
             "Shareability"
           ]
@@ -10399,7 +10399,7 @@
         {
           "kind": "def",
           "name": "encodeAccessPermission",
-          "line": 146,
+          "line": 147,
           "called": [
             "AccessPermission"
           ]
@@ -10407,7 +10407,7 @@
         {
           "kind": "def",
           "name": "encodePageAttributes",
-          "line": 163,
+          "line": 164,
           "called": [
             "PageAttributes",
             "encodeAccessPermission",
@@ -10417,19 +10417,19 @@
         {
           "kind": "def",
           "name": "outputAddrMask",
-          "line": 176,
+          "line": 177,
           "called": []
         },
         {
           "kind": "def",
           "name": "tableAddrMask",
-          "line": 180,
+          "line": 181,
           "called": []
         },
         {
           "kind": "def",
           "name": "descriptorToUInt64",
-          "line": 183,
+          "line": 184,
           "called": [
             "PageTableDescriptor",
             "encodePageAttributes",
@@ -10440,7 +10440,7 @@
         {
           "kind": "def",
           "name": "decodeShareability",
-          "line": 201,
+          "line": 202,
           "called": [
             "Shareability",
             "toNat"
@@ -10449,7 +10449,7 @@
         {
           "kind": "def",
           "name": "decodeAccessPermission",
-          "line": 208,
+          "line": 209,
           "called": [
             "AccessPermission",
             "toNat"
@@ -10458,7 +10458,7 @@
         {
           "kind": "def",
           "name": "decodePageAttributes",
-          "line": 216,
+          "line": 217,
           "called": [
             "PageAttributes",
             "decodeAccessPermission",
@@ -10469,7 +10469,7 @@
         {
           "kind": "def",
           "name": "uint64ToDescriptor",
-          "line": 229,
+          "line": 230,
           "called": [
             "PageTableDescriptor",
             "PageTableLevel",
@@ -10484,7 +10484,7 @@
         {
           "kind": "def",
           "name": "AccessPermission.isReadOnly",
-          "line": 255,
+          "line": 256,
           "called": [
             "AccessPermission"
           ]
@@ -10492,7 +10492,7 @@
         {
           "kind": "def",
           "name": "descriptorWxCompliant",
-          "line": 263,
+          "line": 264,
           "called": [
             "PageTableDescriptor",
             "isReadOnly"
@@ -10501,7 +10501,7 @@
         {
           "kind": "def",
           "name": "descriptorWxCompliantDec",
-          "line": 270,
+          "line": 271,
           "called": [
             "PageTableDescriptor",
             "isReadOnly"
@@ -10510,7 +10510,7 @@
         {
           "kind": "def",
           "name": "toPagePermissions",
-          "line": 278,
+          "line": 279,
           "called": [
             "PageAttributes",
             "PagePermissions"
@@ -10519,7 +10519,7 @@
         {
           "kind": "theorem",
           "name": "hwDescriptor_wxCompliant_bridge",
-          "line": 291,
+          "line": 292,
           "called": [
             "AccessPermission.isReadOnly",
             "PageAttributes",
@@ -10531,7 +10531,7 @@
         {
           "kind": "def",
           "name": "l0Index",
-          "line": 305,
+          "line": 306,
           "called": [
             "VAddr",
             "toNat"
@@ -10540,7 +10540,7 @@
         {
           "kind": "def",
           "name": "l1Index",
-          "line": 309,
+          "line": 310,
           "called": [
             "VAddr",
             "toNat"
@@ -10549,7 +10549,7 @@
         {
           "kind": "def",
           "name": "l2Index",
-          "line": 313,
+          "line": 314,
           "called": [
             "VAddr",
             "toNat"
@@ -10558,7 +10558,7 @@
         {
           "kind": "def",
           "name": "l3Index",
-          "line": 317,
+          "line": 318,
           "called": [
             "VAddr",
             "toNat"
@@ -10567,7 +10567,7 @@
         {
           "kind": "def",
           "name": "pageOffset",
-          "line": 321,
+          "line": 322,
           "called": [
             "VAddr",
             "toNat"
@@ -10576,7 +10576,7 @@
         {
           "kind": "theorem",
           "name": "l0Index_lt",
-          "line": 325,
+          "line": 326,
           "called": [
             "VAddr",
             "l0Index"
@@ -10585,7 +10585,7 @@
         {
           "kind": "theorem",
           "name": "l1Index_lt",
-          "line": 329,
+          "line": 330,
           "called": [
             "VAddr",
             "l1Index"
@@ -10594,7 +10594,7 @@
         {
           "kind": "theorem",
           "name": "l2Index_lt",
-          "line": 333,
+          "line": 334,
           "called": [
             "VAddr",
             "l2Index"
@@ -10603,7 +10603,7 @@
         {
           "kind": "theorem",
           "name": "l3Index_lt",
-          "line": 337,
+          "line": 338,
           "called": [
             "VAddr",
             "l3Index"
@@ -10612,7 +10612,7 @@
         {
           "kind": "theorem",
           "name": "pageOffset_lt",
-          "line": 341,
+          "line": 342,
           "called": [
             "VAddr",
             "pageOffset"
@@ -10621,7 +10621,7 @@
         {
           "kind": "def",
           "name": "readUInt64",
-          "line": 350,
+          "line": 351,
           "called": [
             "Memory",
             "PAddr",
@@ -10633,7 +10633,7 @@
         {
           "kind": "def",
           "name": "readDescriptor",
-          "line": 363,
+          "line": 364,
           "called": [
             "Memory",
             "PAddr",
@@ -10650,7 +10650,7 @@
         {
           "kind": "def",
           "name": "blockOffset1G",
-          "line": 372,
+          "line": 373,
           "called": [
             "VAddr",
             "toNat"
@@ -10659,7 +10659,7 @@
         {
           "kind": "def",
           "name": "blockOffset2M",
-          "line": 376,
+          "line": 377,
           "called": [
             "VAddr",
             "toNat"
@@ -10668,7 +10668,7 @@
         {
           "kind": "def",
           "name": "pageTableWalk",
-          "line": 391,
+          "line": 392,
           "called": [
             "Memory",
             "PAddr",
@@ -10691,7 +10691,7 @@
         {
           "kind": "theorem",
           "name": "pageTableWalk_fault_on_non_table_l0",
-          "line": 429,
+          "line": 430,
           "called": [
             "Memory",
             "PAddr",
@@ -10706,7 +10706,7 @@
         {
           "kind": "def",
           "name": "pageTableWalkPerms",
-          "line": 439,
+          "line": 440,
           "called": [
             "Memory",
             "PAddr",
@@ -10720,7 +10720,7 @@
         {
           "kind": "theorem",
           "name": "pageTableWalkPerms_wx_bridge",
-          "line": 449,
+          "line": 450,
           "called": [
             "Memory",
             "PAddr",
@@ -10738,13 +10738,13 @@
         {
           "kind": "def",
           "name": "maxPageTableLevel",
-          "line": 468,
+          "line": 469,
           "called": []
         },
         {
           "kind": "def",
           "name": "pageTableWalkDepth",
-          "line": 479,
+          "line": 480,
           "called": [
             "Memory",
             "PAddr",
@@ -10761,7 +10761,7 @@
         {
           "kind": "theorem",
           "name": "pageTableWalk_depth_bound",
-          "line": 499,
+          "line": 500,
           "called": [
             "Memory",
             "PAddr",
@@ -10774,7 +10774,7 @@
         {
           "kind": "theorem",
           "name": "pageTableWalkDepth_some_of_pageTableWalk_some",
-          "line": 537,
+          "line": 538,
           "called": [
             "Memory",
             "PAddr",
@@ -10793,7 +10793,7 @@
         {
           "kind": "theorem",
           "name": "pageTableWalk_success_within_maxPageTableLevel",
-          "line": 577,
+          "line": 578,
           "called": [
             "Memory",
             "PAddr",
@@ -26015,13 +26015,13 @@
         {
           "kind": "def",
           "name": "physicalAddressBound",
-          "line": 68,
+          "line": 70,
           "called": []
         },
         {
           "kind": "def",
           "name": "physicalAddressBoundForConfig",
-          "line": 73,
+          "line": 78,
           "called": [
             "MachineConfig",
             "config"
@@ -26030,7 +26030,7 @@
         {
           "kind": "theorem",
           "name": "physicalAddressBoundForConfig_le_default",
-          "line": 77,
+          "line": 82,
           "called": [
             "MachineConfig",
             "config",
@@ -26041,7 +26041,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPage",
-          "line": 96,
+          "line": 101,
           "called": [
             "ASID",
             "Kernel",
@@ -26062,7 +26062,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageChecked",
-          "line": 122,
+          "line": 127,
           "called": [
             "ASID",
             "Kernel",
@@ -26081,7 +26081,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPage",
-          "line": 148,
+          "line": 153,
           "called": [
             "ASID",
             "Kernel",
@@ -26096,7 +26096,7 @@
         {
           "kind": "def",
           "name": "vspaceLookupFull",
-          "line": 159,
+          "line": 164,
           "called": [
             "ASID",
             "Kernel",
@@ -26112,7 +26112,7 @@
         {
           "kind": "def",
           "name": "vspaceLookup",
-          "line": 171,
+          "line": 176,
           "called": [
             "ASID",
             "Kernel",
@@ -26127,7 +26127,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageWithFlush",
-          "line": 201,
+          "line": 206,
           "called": [
             "ASID",
             "Kernel",
@@ -26143,7 +26143,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPageWithFlush",
-          "line": 220,
+          "line": 225,
           "called": [
             "ASID",
             "Kernel",
@@ -26156,7 +26156,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlush",
-          "line": 229,
+          "line": 234,
           "called": [
             "ASID",
             "Kernel",
@@ -26175,7 +26175,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlushPlatform",
-          "line": 245,
+          "line": 251,
           "called": [
             "ASID",
             "Kernel",
@@ -26196,7 +26196,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlushFromState",
-          "line": 260,
+          "line": 266,
           "called": [
             "ASID",
             "Kernel",
@@ -26214,7 +26214,7 @@
         {
           "kind": "theorem",
           "name": "checkedMapWrappers_reject_unaligned",
-          "line": 293,
+          "line": 299,
           "called": [
             "ASID",
             "MachineConfig",
@@ -26237,7 +26237,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlush_default_is_readOnly",
-          "line": 330,
+          "line": 336,
           "called": [
             "PagePermissions.readOnly",
             "wxCompliant"
@@ -26246,7 +26246,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByASID",
-          "line": 341,
+          "line": 347,
           "called": [
             "ASID",
             "Kernel",
@@ -26257,7 +26257,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByPage",
-          "line": 348,
+          "line": 354,
           "called": [
             "ASID",
             "Kernel",
@@ -26269,7 +26269,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByASID_state_frame",
-          "line": 352,
+          "line": 358,
           "called": [
             "ASID",
             "SystemState",
@@ -26280,7 +26280,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByPage_state_frame",
-          "line": 360,
+          "line": 366,
           "called": [
             "ASID",
             "SystemState",
@@ -26292,7 +26292,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByASID_tlbShootdown_eq",
-          "line": 380,
+          "line": 386,
           "called": [
             "ASID",
             "SystemState",
@@ -26303,7 +26303,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByPage_tlbShootdown_eq",
-          "line": 388,
+          "line": 394,
           "called": [
             "ASID",
             "SystemState",
@@ -26315,7 +26315,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_tlbShootdown_eq",
-          "line": 397,
+          "line": 403,
           "called": [
             "ASID",
             "SystemState",
@@ -26328,7 +26328,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_tlbShootdown_eq",
-          "line": 409,
+          "line": 415,
           "called": [
             "ASID",
             "PAddr",
@@ -26343,7 +26343,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_tlbShootdown_eq",
-          "line": 427,
+          "line": 433,
           "called": [
             "ASID",
             "SystemState",
@@ -26357,7 +26357,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_perCoreTlb_eq",
-          "line": 443,
+          "line": 449,
           "called": [
             "ASID",
             "SystemState",
@@ -26370,7 +26370,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_perCoreTlb_eq",
-          "line": 459,
+          "line": 465,
           "called": [
             "ASID",
             "SystemState",
@@ -26384,7 +26384,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_perCoreICache_eq",
-          "line": 478,
+          "line": 484,
           "called": [
             "ASID",
             "SystemState",
@@ -26397,7 +26397,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_perCoreICache_eq",
-          "line": 491,
+          "line": 497,
           "called": [
             "ASID",
             "SystemState",
@@ -26411,7 +26411,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageWithFlush_tlbShootdown_eq",
-          "line": 506,
+          "line": 512,
           "called": [
             "ASID",
             "PAddr",
@@ -26427,7 +26427,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq",
-          "line": 523,
+          "line": 529,
           "called": [
             "ASID",
             "PAddr",
@@ -26442,7 +26442,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_perCoreTlb_eq",
-          "line": 540,
+          "line": 546,
           "called": [
             "ASID",
             "PAddr",
@@ -26457,7 +26457,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageWithFlush_perCoreTlb_eq",
-          "line": 558,
+          "line": 564,
           "called": [
             "ASID",
             "PAddr",
@@ -26473,7 +26473,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_perCoreICache_eq",
-          "line": 575,
+          "line": 581,
           "called": [
             "ASID",
             "PAddr",
@@ -26488,7 +26488,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageWithFlush_perCoreICache_eq",
-          "line": 592,
+          "line": 598,
           "called": [
             "ASID",
             "PAddr",
@@ -26504,7 +26504,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_perCoreICache_eq",
-          "line": 609,
+          "line": 615,
           "called": [
             "ASID",
             "PAddr",
@@ -26519,7 +26519,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_perCoreTlb_eq",
-          "line": 629,
+          "line": 635,
           "called": [
             "ASID",
             "PAddr",
@@ -26534,7 +26534,7 @@
         {
           "kind": "def",
           "name": "vspaceAsidRootsUnique",
-          "line": 649,
+          "line": 655,
           "called": [
             "ObjId",
             "SystemState",
@@ -26545,7 +26545,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_some_implies_obj",
-          "line": 658,
+          "line": 664,
           "called": [
             "ASID",
             "ObjId",
@@ -26560,7 +26560,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_of_asidTable_entry",
-          "line": 697,
+          "line": 703,
           "called": [
             "ASID",
             "ObjId",
@@ -26574,7 +26574,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_tlb_eq",
-          "line": 718,
+          "line": 724,
           "called": [
             "ASID",
             "PAddr",
@@ -26592,7 +26592,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_tlb_eq",
-          "line": 741,
+          "line": 747,
           "called": [
             "ASID",
             "SystemState",
@@ -26608,7 +26608,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_some_facts",
-          "line": 759,
+          "line": 765,
           "called": [
             "ASID",
             "ObjId",
@@ -26623,7 +26623,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_entry_consistent_frame",
-          "line": 787,
+          "line": 793,
           "called": [
             "ASID",
             "ObjId",
@@ -26660,7 +26660,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_entry_consistent_frame",
-          "line": 900,
+          "line": 906,
           "called": [
             "ASID",
             "ObjId",
@@ -26697,7 +26697,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_resolveAsidRoot_isSome",
-          "line": 1001,
+          "line": 1007,
           "called": [
             "ASID",
             "SystemState",
@@ -26726,7 +26726,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_resolveAsidRoot_isSome",
-          "line": 1070,
+          "line": 1076,
           "called": [
             "ASID",
             "PAddr",
@@ -279768,13 +279768,13 @@
         {
           "kind": "def",
           "name": "gicSpiCount",
-          "line": 198,
+          "line": 208,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerPpiId",
-          "line": 202,
+          "line": 212,
           "called": [
             "Irq"
           ]
@@ -279782,7 +279782,7 @@
         {
           "kind": "def",
           "name": "virtualTimerPpiId",
-          "line": 205,
+          "line": 215,
           "called": [
             "Irq"
           ]
@@ -279790,7 +279790,7 @@
         {
           "kind": "def",
           "name": "mmioRegions",
-          "line": 224,
+          "line": 234,
           "called": [
             "MemoryRegion",
             "gicCpuInterfaceBase",
@@ -279802,7 +279802,7 @@
         {
           "kind": "def",
           "name": "requiredMmioWindows",
-          "line": 248,
+          "line": 258,
           "called": [
             "RequiredMmioWindow",
             "mmioRegions"
@@ -279811,7 +279811,7 @@
         {
           "kind": "theorem",
           "name": "requiredMmioWindows_regions_eq",
-          "line": 259,
+          "line": 269,
           "called": [
             "mmioRegions"
           ]
@@ -279819,7 +279819,7 @@
         {
           "kind": "theorem",
           "name": "requiredMmioWindows_compatible_nonempty",
-          "line": 265,
+          "line": 275,
           "called": [
             "all",
             "isEmpty"
@@ -279828,7 +279828,7 @@
         {
           "kind": "def",
           "name": "mmioRegionDisjointCheck",
-          "line": 271,
+          "line": 281,
           "called": [
             "all",
             "overlaps"
@@ -279837,7 +279837,7 @@
         {
           "kind": "theorem",
           "name": "mmioRegionDisjoint_holds",
-          "line": 280,
+          "line": 290,
           "called": [
             "mmioRegionDisjointCheck"
           ]
@@ -279845,7 +279845,7 @@
         {
           "kind": "def",
           "name": "mmioRegionsPairwiseDisjointCheck",
-          "line": 287,
+          "line": 297,
           "called": [
             "all",
             "overlaps"
@@ -279854,7 +279854,7 @@
         {
           "kind": "theorem",
           "name": "mmioRegionsPairwiseDisjoint_holds",
-          "line": 300,
+          "line": 310,
           "called": [
             "mmioRegionsPairwiseDisjointCheck"
           ]
@@ -279862,7 +279862,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfig_wellFormed",
-          "line": 307,
+          "line": 317,
           "called": [
             "wellFormed"
           ]
@@ -279870,7 +279870,7 @@
         {
           "kind": "def",
           "name": "rpi5DeviceTree",
-          "line": 362,
+          "line": 372,
           "called": [
             "DeviceTree",
             "DeviceTree.fromBoardConstants",
@@ -279887,7 +279887,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeviceTree_valid",
-          "line": 379,
+          "line": 389,
           "called": [
             "validate"
           ]
@@ -279895,7 +279895,7 @@
         {
           "kind": "def",
           "name": "rpi5Variants",
-          "line": 441,
+          "line": 451,
           "called": [
             "BCM2712Config"
           ]
@@ -279903,7 +279903,7 @@
         {
           "kind": "def",
           "name": "rpi5SmallestVariant",
-          "line": 460,
+          "line": 470,
           "called": [
             "BCM2712Config"
           ]
@@ -279911,7 +279911,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Variants_head",
-          "line": 462,
+          "line": 472,
           "called": [
             "head",
             "rpi5SmallestVariant"
@@ -279920,7 +279920,7 @@
         {
           "kind": "theorem",
           "name": "rpi5SmallestVariant_mem",
-          "line": 464,
+          "line": 474,
           "called": [
             "rpi5SmallestVariant",
             "rpi5Variants"
@@ -279929,7 +279929,7 @@
         {
           "kind": "theorem",
           "name": "bcm2712DefaultConfig_mem_rpi5Variants",
-          "line": 467,
+          "line": 477,
           "called": [
             "bcm2712DefaultConfig",
             "rpi5Variants"
@@ -279938,13 +279938,13 @@
         {
           "kind": "theorem",
           "name": "rpi5Variants_ascending",
-          "line": 471,
+          "line": 481,
           "called": []
         },
         {
           "kind": "def",
           "name": "rpi5MachineConfigForVariant",
-          "line": 479,
+          "line": 489,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -279955,7 +279955,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_default",
-          "line": 483,
+          "line": 493,
           "called": [
             "bcm2712DefaultConfig",
             "rpi5MachineConfig",
@@ -279965,7 +279965,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_declaredCoreCount",
-          "line": 488,
+          "line": 498,
           "called": [
             "BCM2712Config",
             "rpi5MachineConfigForVariant"
@@ -279974,7 +279974,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_kernelReserved",
-          "line": 493,
+          "line": 503,
           "called": [
             "BCM2712Config",
             "rpi5KernelReserved",
@@ -279984,7 +279984,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_physicalAddressWidth",
-          "line": 497,
+          "line": 507,
           "called": [
             "BCM2712Config",
             "rpi5MachineConfigForVariant"
@@ -279993,7 +279993,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Variants_wellFormed",
-          "line": 505,
+          "line": 515,
           "called": [
             "all",
             "rpi5MachineConfigForVariant",
@@ -280003,7 +280003,7 @@
         {
           "kind": "def",
           "name": "rpi5VariantsCoveredBy",
-          "line": 511,
+          "line": 521,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -280015,7 +280015,7 @@
         {
           "kind": "def",
           "name": "rpi5VariantFor",
-          "line": 523,
+          "line": 533,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -280027,7 +280027,7 @@
         {
           "kind": "def",
           "name": "rpi5BoundMachineConfig",
-          "line": 531,
+          "line": 541,
           "called": [
             "MachineConfig",
             "rpi5MachineConfigForVariant",
@@ -280037,7 +280037,7 @@
         {
           "kind": "theorem",
           "name": "mem_rpi5VariantsCoveredBy",
-          "line": 534,
+          "line": 544,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -280050,7 +280050,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_mem",
-          "line": 543,
+          "line": 553,
           "called": [
             "MachineConfig",
             "mem_rpi5VariantsCoveredBy",
@@ -280064,7 +280064,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_mem_family",
-          "line": 550,
+          "line": 560,
           "called": [
             "MachineConfig",
             "rpi5BoundMachineConfig",
@@ -280077,7 +280077,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_declaredCoreCount",
-          "line": 556,
+          "line": 566,
           "called": [
             "MachineConfig",
             "rpi5BoundMachineConfig"
@@ -280086,7 +280086,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_covers_of_getLast",
-          "line": 559,
+          "line": 569,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -280099,7 +280099,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_of_uncovered",
-          "line": 566,
+          "line": 576,
           "called": [
             "MachineConfig",
             "machineConfigCovers",
@@ -280113,7 +280113,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_covered_iff",
-          "line": 584,
+          "line": 594,
           "called": [
             "MachineConfig",
             "machineConfigCovers",
@@ -280131,7 +280131,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_maximal",
-          "line": 606,
+          "line": 616,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -280149,7 +280149,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_rpi5MachineConfig",
-          "line": 633,
+          "line": 643,
           "called": [
             "bcm2712DefaultConfig",
             "rpi5MachineConfig",
@@ -280159,7 +280159,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_rpi5MachineConfig",
-          "line": 637,
+          "line": 647,
           "called": [
             "rpi5BoundMachineConfig",
             "rpi5MachineConfig",
@@ -280170,7 +280170,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_defaultMachineConfig",
-          "line": 646,
+          "line": 656,
           "called": [
             "defaultMachineConfig",
             "rpi5SmallestVariant",
@@ -280180,7 +280180,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_one_gib",
-          "line": 653,
+          "line": 663,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -280191,7 +280191,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_two_gib",
-          "line": 659,
+          "line": 669,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -280202,7 +280202,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_eight_gib_two_banks",
-          "line": 676,
+          "line": 686,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -280213,7 +280213,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_foreign_base",
-          "line": 686,
+          "line": 696,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -280224,13 +280224,13 @@
         {
           "kind": "def",
           "name": "rpi5GuaranteedRamTop",
-          "line": 701,
+          "line": 711,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "rpi5GuaranteedRamTop_eq_smallest",
-          "line": 704,
+          "line": 714,
           "called": [
             "rpi5GuaranteedRamTop"
           ]
@@ -280238,7 +280238,7 @@
         {
           "kind": "def",
           "name": "bootRamExtensionsOf",
-          "line": 716,
+          "line": 726,
           "called": [
             "MemoryRegion",
             "endAddr",
@@ -280250,7 +280250,7 @@
         {
           "kind": "theorem",
           "name": "mem_bootRamExtensionsOf",
-          "line": 727,
+          "line": 737,
           "called": [
             "MemoryRegion",
             "bootRamExtensionsOf",
@@ -280262,7 +280262,7 @@
         {
           "kind": "theorem",
           "name": "bootRamExtensionsOf_covers",
-          "line": 749,
+          "line": 759,
           "called": [
             "MemoryRegion",
             "bootRamExtensionsOf",
@@ -280274,7 +280274,7 @@
         {
           "kind": "def",
           "name": "rpi5BootRamExtensions",
-          "line": 766,
+          "line": 776,
           "called": [
             "BCM2712Config",
             "bootRamExtensionsOf",
@@ -280284,7 +280284,7 @@
         {
           "kind": "def",
           "name": "rpi5BootRamExtensionsFor",
-          "line": 772,
+          "line": 782,
           "called": [
             "MachineConfig",
             "bootRamExtensionsOf",
@@ -280294,7 +280294,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootRamExtensionsFor_eq",
-          "line": 775,
+          "line": 785,
           "called": [
             "MachineConfig",
             "rpi5BootRamExtensions",
@@ -280305,7 +280305,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootRamExtensions_values",
-          "line": 781,
+          "line": 791,
           "called": [
             "rpi5BootRamExtensions"
           ]
@@ -280313,7 +280313,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootRamExtensions_admissible",
-          "line": 795,
+          "line": 805,
           "called": [
             "all",
             "rpi5BootRamExtensions"
@@ -283510,7 +283510,7 @@
         {
           "kind": "def",
           "name": "simMachineConfig",
-          "line": 157,
+          "line": 159,
           "called": [
             "MachineConfig",
             "simSubstantiveMemoryMap"
@@ -283519,7 +283519,7 @@
         {
           "kind": "def",
           "name": "simSingleCoreMachineConfig",
-          "line": 183,
+          "line": 185,
           "called": [
             "MachineConfig",
             "simMachineConfig"
@@ -283528,7 +283528,7 @@
         {
           "kind": "instance",
           "name": "simPlatformBinding",
-          "line": 194,
+          "line": 196,
           "called": [
             "PlatformBinding",
             "SimPlatform",
@@ -283544,13 +283544,13 @@
         {
           "kind": "structure",
           "name": "SimRestrictivePlatform",
-          "line": 229,
+          "line": 231,
           "called": []
         },
         {
           "kind": "instance",
           "name": "simRestrictivePlatformBinding",
-          "line": 242,
+          "line": 244,
           "called": [
             "PlatformBinding",
             "SimRestrictivePlatform",
@@ -283566,13 +283566,13 @@
         {
           "kind": "structure",
           "name": "SimSingleCorePlatform",
-          "line": 274,
+          "line": 276,
           "called": []
         },
         {
           "kind": "instance",
           "name": "simSingleCorePlatformBinding",
-          "line": 294,
+          "line": 296,
           "called": [
             "PlatformBinding",
             "SimSingleCorePlatform",
@@ -283588,7 +283588,7 @@
         {
           "kind": "theorem",
           "name": "simSubstantiveMemoryMap_eq_machineConfig",
-          "line": 330,
+          "line": 332,
           "called": [
             "simSubstantiveMemoryMap"
           ]
@@ -295031,10 +295031,12 @@
           "name": "bootMapTableLines",
           "line": 2352,
           "called": [
+            "RPi5Platform",
             "bootMapHex",
             "bootMapKindName",
             "bootMapProbes",
             "classifyAddress",
+            "declaredCores",
             "endAddr",
             "filter",
             "mmioRegions",
@@ -295048,7 +295050,7 @@
         {
           "kind": "def",
           "name": "bootMap_the_lean_map_is_the_shared_table",
-          "line": 2382,
+          "line": 2394,
           "called": [
             "bootMapTableLines",
             "checkSharedFixture"
@@ -295057,7 +295059,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2389,
+          "line": 2401,
           "called": [
             "ak9a_01_mmioRead32_rejects_unaligned",
             "ak9a_02_mmioRead64_rejects_unaligned",
@@ -311676,6 +311678,7 @@
             "insert",
             "length",
             "none",
+            "of",
             "ofNat",
             "rpi5MachineConfig",
             "runnable",
@@ -311701,7 +311704,7 @@
         {
           "kind": "def",
           "name": "runZ8SchedContextNegativeChecks",
-          "line": 4256,
+          "line": 4261,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -311724,7 +311727,7 @@
         {
           "kind": "def",
           "name": "runAC1BudgetFailClosedChecks",
-          "line": 4324,
+          "line": 4329,
           "called": [
             "ObjId",
             "SystemState",
@@ -311743,7 +311746,7 @@
         {
           "kind": "def",
           "name": "runAC1CdtTrackingChecks",
-          "line": 4380,
+          "line": 4385,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -311767,46 +311770,6 @@
         {
           "kind": "def",
           "name": "r1EpId",
-          "line": 4438,
-          "called": [
-            "ObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "r1CallerTid",
-          "line": 4439,
-          "called": [
-            "ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "r1ReceiverTid",
-          "line": 4440,
-          "called": [
-            "ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "r1CallerCNode",
-          "line": 4441,
-          "called": [
-            "ObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "r1ReceiverCNode",
-          "line": 4442,
-          "called": [
-            "ObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "r1TargetObj",
           "line": 4443,
           "called": [
             "ObjId"
@@ -311814,8 +311777,48 @@
         },
         {
           "kind": "def",
-          "name": "r1ReplyId",
+          "name": "r1CallerTid",
+          "line": 4444,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1ReceiverTid",
+          "line": 4445,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1CallerCNode",
           "line": 4446,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1ReceiverCNode",
+          "line": 4447,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1TargetObj",
+          "line": 4448,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1ReplyId",
+          "line": 4451,
           "called": [
             "ReplyId"
           ]
@@ -311823,7 +311826,7 @@
         {
           "kind": "def",
           "name": "r1Cap",
-          "line": 4448,
+          "line": 4453,
           "called": [
             "Capability",
             "badge",
@@ -311835,7 +311838,7 @@
         {
           "kind": "def",
           "name": "r1MsgWithCaps",
-          "line": 4453,
+          "line": 4458,
           "called": [
             "IpcMessage",
             "TransferCap.fromNode",
@@ -311847,7 +311850,7 @@
         {
           "kind": "def",
           "name": "r1EndpointRights",
-          "line": 4456,
+          "line": 4461,
           "called": [
             "AccessRightSet",
             "ofList"
@@ -311856,7 +311859,7 @@
         {
           "kind": "def",
           "name": "r1BaseState",
-          "line": 4459,
+          "line": 4464,
           "called": [
             "SystemState",
             "buildChecked",
@@ -311882,7 +311885,7 @@
         {
           "kind": "def",
           "name": "r1QueuedState",
-          "line": 4481,
+          "line": 4486,
           "called": [
             "KernelError",
             "SystemState",
@@ -311897,7 +311900,7 @@
         {
           "kind": "def",
           "name": "r1FaultyState",
-          "line": 4486,
+          "line": 4491,
           "called": [
             "SystemState",
             "erase",
@@ -311908,7 +311911,7 @@
         {
           "kind": "def",
           "name": "r1CheckHealthyState",
-          "line": 4489,
+          "line": 4494,
           "called": [
             "SystemState",
             "endpointCallWithCaps",
@@ -311924,7 +311927,7 @@
         {
           "kind": "def",
           "name": "r1CheckFaultyState",
-          "line": 4499,
+          "line": 4504,
           "called": [
             "SystemState",
             "endpointCallWithCaps",
@@ -311939,7 +311942,7 @@
         {
           "kind": "def",
           "name": "r1CheckLookupCspaceRoot",
-          "line": 4510,
+          "line": 4515,
           "called": [
             "SystemState",
             "lookupCspaceRoot",
@@ -311951,7 +311954,7 @@
         {
           "kind": "def",
           "name": "runR1IpcCallPathSymmetryChecks",
-          "line": 4540,
+          "line": 4545,
           "called": [
             "r1CheckFaultyState",
             "r1CheckHealthyState",
@@ -311964,7 +311967,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedScId",
-          "line": 4565,
+          "line": 4570,
           "called": [
             "SchedContextId"
           ]
@@ -311972,7 +311975,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedTid",
-          "line": 4567,
+          "line": 4572,
           "called": [
             "ThreadId"
           ]
@@ -311980,7 +311983,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedBoundState",
-          "line": 4569,
+          "line": 4574,
           "called": [
             "SystemState",
             "buildChecked",
@@ -311996,7 +311999,7 @@
         {
           "kind": "def",
           "name": "runR5EOrphanedSchedContextChecks",
-          "line": 4588,
+          "line": 4593,
           "called": [
             "KernelError",
             "SystemState",
@@ -312011,7 +312014,7 @@
         {
           "kind": "def",
           "name": "unguardedInsertSlot",
-          "line": 4624,
+          "line": 4629,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -312027,7 +312030,7 @@
         {
           "kind": "def",
           "name": "runWSRR8CSpaceSlotRangeChecks",
-          "line": 4644,
+          "line": 4649,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -312063,7 +312066,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 4743,
+          "line": 4748,
           "called": [
             "runAC1BudgetFailClosedChecks",
             "runAC1CdtTrackingChecks",

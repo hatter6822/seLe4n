@@ -1476,6 +1476,46 @@ BP7.11).
   than boots fewer PEs).  Nine earlier commits of this version carry a session
   trailer `CLAUDE.md` forbids; per its own remediation for pushed commits they
   are a one-time leak and every later commit complies.
+- **The audit's review (2026-09-26): the physical address width is the
+  Cortex-A76's 40 bits, and `TCR_EL1.IPS` is derived from the PE.**
+  `rpi5MachineConfig.physicalAddressWidth` read `44` — the bound on every
+  physical address the model admits (`MachineState.addrInRange`, the checked
+  VSpace map decode, `MachineConfig.wellFormed`) — and the HAL programmed a
+  constant 44-bit `IPS` under a comment claiming that matched the BCM2712.
+  The BCM2712's PEs are Cortex-A76 cores, whose `ID_AA64MMFR0_EL1.PARange`
+  (bits [3:0]) is `0b0010`, a 40-bit physical address space (TRM r4p1 §B2.58;
+  confirmed by the maintainer at review): the model admitted mappings in
+  `[2^40, 2^44)` that the PE answers with an Address size fault, and an `IPS`
+  wider than the implemented size is treated as the implemented size, which
+  is why nothing broke and the number could survive under every test.
+  `Board.lean` declares 40 and `check_physical_address_width.sh` holds it
+  there; `mmu::physical_address_size_of` decodes the field with the
+  architecture's whole table (a `const fn` over the raw register value, as
+  `tlbios_implemented` is, capped at the 48 bits an ARMv8.0-format descriptor
+  can name, a reserved encoding refused rather than rounded);
+  `enable_mmu` reads the register on the executing PE before it programs
+  translation, refuses a reserved encoding or a PE narrower than the tables'
+  reach (`BOOT_TABLE_PA_BITS_REQUIRED`, 39 bits — the span of the one level-0
+  entry they populate), bounds the table's own address by the PE's size, and
+  programs `tcr_el1_value(pa.ips)` — one function of the encoding, where a
+  constant stood.  The two sides are held together by running both: the Lean
+  suite writes `physicalAddressWidth` into `tests/fixtures/boot_map.expected`
+  and `the_lean_physical_address_width_is_the_pe_the_hal_programs_for` holds it
+  to the PE the HAL derives `IPS` for, and to the tables' reach (the HAL never
+  maps what the model refuses).  `NegativeStateSuite`'s width checks read the
+  binding rather than a literal, the cross-check row 11 expects `0b0010`, and
+  `test_hw_crosscheck.sh` — which would have *failed* every Raspberry Pi 5 by
+  expecting at least 44 — expects at least 40.
+- **The handoff's declared PE count is the binding's `coreCount`, read from
+  the same fixture.**  `LEAN_DECLARED_CORE_COUNT` was pinned to a literal `4`
+  beside a comment naming the binding; the Lean suite writes `declaredCores`
+  from `PlatformBinding.coreCount` and `boot.rs` reads it back through
+  `mmu::lean_boot_map_scalar`, the reader the width pin shares, so a binding
+  that changes its PE count fails the HAL's test rather than the first boot.
+- **BP7.11's design is decided** (the audit's review): the boot starts both
+  initial threads, one per domain, so no capability crosses the confinement
+  boundary; a starter capability in the root task's CNode and an inert witness
+  were both refused.  The plan row, the register and `CLAUDE.md` record it.
 
 Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.5, BP6.1..BP6.3; BP7.10 and BP7.11 registered by the audit)
 

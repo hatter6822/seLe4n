@@ -415,7 +415,8 @@ provides the organizational infrastructure for hardware binding:
   restricts IRQs to GIC-400 INTID range 0–223 (AI5-B).
 - **RPi5 platform contracts** (`Platform/RPi5/`) — BCM2712 memory map, GIC-400
   base addresses, ARM Generic Timer frequency, PL011 UART address, ARM64
-  machine config (64-bit registers, 48-bit VA, 44-bit PA, 4 KiB pages,
+  machine config (64-bit registers, 48-bit VA, 40-bit PA — the Cortex-A76's
+  `PARange`, corrected from `44` by the v0.36.2 audit — 4 KiB pages,
   16-bit ASID), and substantive runtime/boot/interrupt contracts:
   - **Runtime:** SP-preservation-or-context-switch register stability (not `True`),
     RAM-only memory access, timer monotonicity.

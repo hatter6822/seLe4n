@@ -102,13 +102,18 @@ const MAIR_VALUE: u64 = 0xFF | (0x44 << 16);
 // TCR_EL1 configuration (ARM ARM D17.2.136)
 // ---------------------------------------------------------------------------
 
-/// TCR_EL1 value for 48-bit VA, 4KiB granule, 44-bit PA (BCM2712):
+/// The `TCR_EL1` value this kernel programs: 48-bit VA, 4 KiB granule, and the
+/// intermediate physical address size `ips_encoding` — the executing PE's own,
+/// decoded from `ID_AA64MMFR0_EL1.PARange` by [`physical_address_size_of`]
+/// (the v0.36.2 audit; a constant 44-bit `IPS` stood here, see
+/// [`CORTEX_A76_PA_RANGE_FIELD`]):
 ///
 /// - T0SZ  = 16 (bits [5:0]):   48-bit VA for TTBR0 (64 - 48 = 16)
 /// - T1SZ  = 16 (bits [21:16]): 48-bit VA for TTBR1
 /// - TG0   = 0b00 (bits [15:14]): 4 KiB granule for TTBR0
 /// - TG1   = 0b10 (bits [31:30]): 4 KiB granule for TTBR1
-/// - IPS   = 0b100 (bits [34:32]): 44-bit PA (16 TB, matches BCM2712)
+/// - IPS   = `ips_encoding` (bits [34:32]): the PE's implemented PA size,
+///   `0b010` (40 bits) on the Cortex-A76
 /// - SH0   = 0b11 (bits [13:12]): Inner Shareable for TTBR0
 /// - SH1   = 0b11 (bits [29:28]): Inner Shareable for TTBR1
 /// - ORGN0 = 0b01 (bits [11:10]): Write-Back cacheable for TTBR0
@@ -130,12 +135,12 @@ const MAIR_VALUE: u64 = 0xFF | (0x44 << 16);
 /// granule (ARM ARM D8.3), which is why [`BootPageTables`] starts with a level-0
 /// table of Table descriptors rather than the level-1 block table that used to
 /// sit under TTBR0.
-const TCR_VALUE: u64 = {
+pub const fn tcr_el1_value(ips_encoding: u64) -> u64 {
     let t0sz: u64 = 16;
     let t1sz: u64 = 16 << 16;
     let tg0: u64 = 0b00 << 14; // 4 KiB
     let tg1: u64 = 0b10 << 30; // 4 KiB
-    let ips: u64 = 0b100 << 32; // 44-bit PA
+    let ips: u64 = (ips_encoding & 0b111) << 32;
     let sh0: u64 = 0b11 << 12; // Inner Shareable
     let sh1: u64 = 0b11 << 28; // Inner Shareable
     let orgn0: u64 = 0b01 << 10;
@@ -144,7 +149,147 @@ const TCR_VALUE: u64 = {
     let irgn1: u64 = 0b01 << 24;
     let epd1: u64 = 1 << 23; // WS-RR RR7.1: no TTBR1 table exists yet
     t0sz | t1sz | tg0 | tg1 | ips | sh0 | sh1 | orgn0 | irgn0 | orgn1 | irgn1 | epd1
-};
+}
+
+/// **The v0.36.2 audit**: what `ID_AA64MMFR0_EL1.PARange` — bits [3:0] of the
+/// AArch64 Memory Model Feature Register 0 (ARM ARM D19.2.64; Cortex-A76 TRM
+/// r4p1 §B2.58) — says this PE can address, and the `TCR_EL1.IPS` encoding the
+/// boot tables are walked under for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PhysicalAddressSize {
+    /// The implemented physical address size, in bits.
+    pub bits: u32,
+    /// The `IPS` encoding programmed for it: the PE's own size, capped at 48
+    /// bits — the boot tables are ARMv8.0-format descriptors whose output
+    /// address is bits [47:12], so a 52- or 56-bit PE (FEAT_LPA, FEAT_D128) is
+    /// walked at 48, which is already every address the tables can name.
+    pub ips: u64,
+}
+
+/// Decode `ID_AA64MMFR0_EL1.PARange`, bits [3:0].
+///
+/// | `PARange` | PA size | `IPS`   |
+/// |-----------|---------|---------|
+/// | `0b0000`  | 32 bits | `0b000` |
+/// | `0b0001`  | 36 bits | `0b001` |
+/// | `0b0010`  | 40 bits | `0b010` — the Cortex-A76, so every Raspberry Pi 5 |
+/// | `0b0011`  | 42 bits | `0b011` |
+/// | `0b0100`  | 44 bits | `0b100` |
+/// | `0b0101`  | 48 bits | `0b101` |
+/// | `0b0110`  | 52 bits | `0b101` (capped; see [`PhysicalAddressSize::ips`]) |
+/// | `0b0111`  | 56 bits | `0b101` (capped) |
+///
+/// A reserved encoding answers `None`: a PE reporting a size this table does
+/// not know is refused rather than rounded, since rounding down programs an
+/// `IPS` below what the PE addresses (every output address above it then
+/// faults) and rounding up programs a value the architecture reserves.
+///
+/// Split out as a `const fn` over the raw register value, as
+/// [`crate::tlb::tlbios_implemented`] is, so the field position and the table
+/// are pinned by host unit tests; only [`physical_address_size_of_this_pe_or_halt`]
+/// needs the PE.  The parameter is named for what the register *is* rather
+/// than spelled `id_aa64mmfr0_el1`, because `check_identifier_naming.py` reads
+/// `aa64…` as a workstream family followed by a code; the architectural
+/// spelling belongs in this docstring and in the `read_sysreg!` template.
+#[inline(always)]
+pub const fn physical_address_size_of(memory_model_features: u64) -> Option<PhysicalAddressSize> {
+    let (bits, ips) = match memory_model_features & 0xF {
+        0b0000 => (32, 0b000),
+        0b0001 => (36, 0b001),
+        0b0010 => (40, 0b010),
+        0b0011 => (42, 0b011),
+        0b0100 => (44, 0b100),
+        0b0101 => (48, 0b101),
+        0b0110 => (52, 0b101),
+        0b0111 => (56, 0b101),
+        _ => return None,
+    };
+    Some(PhysicalAddressSize { bits, ips })
+}
+
+/// `ID_AA64MMFR0_EL1.PARange` as the Cortex-A76 reports it — `0b0010`, a 40-bit
+/// physical address space (Cortex-A76 TRM r4p1 §B2.58) — so what every
+/// Raspberry Pi 5 PE reports, and what `Board.lean`'s
+/// `rpi5MachineConfig.physicalAddressWidth` (40) is held to through the shared
+/// boot-map fixture (`the_lean_physical_address_width_is_the_pe_the_hal_programs_for`).
+///
+/// Until the v0.36.2 audit this module programmed a constant 44-bit `IPS`
+/// under a comment claiming that matched the BCM2712, and the Lean model
+/// bounded every physical address by the same 44: no Cortex-A76 implements
+/// 44 bits, so the model admitted mappings in `[2^40, 2^44)` that the PE
+/// answers with an Address size fault.  An `IPS` wider than the implemented
+/// size is treated as the implemented size, which is why nothing broke — and
+/// why the wrong number could survive under every test.
+pub const CORTEX_A76_PA_RANGE_FIELD: u64 = 0b0010;
+
+/// The physical address size of the PE this kernel is built for.
+pub const CORTEX_A76_PHYSICAL_ADDRESS_SIZE: PhysicalAddressSize =
+    match physical_address_size_of(CORTEX_A76_PA_RANGE_FIELD) {
+        Some(size) => size,
+        None => panic!("the Cortex-A76's PARange is a defined encoding"),
+    };
+
+/// How many bits of physical address a PE must implement to produce every
+/// translation the boot tables can describe: [`BOOT_TABLE_REACH`] is the span of
+/// the one level-0 entry they populate, so a PE narrower than this could be
+/// handed an output address it cannot form.  Thirty-nine bits, which every
+/// defined `PARange` encoding from 40 up satisfies and 36 does not.
+pub const BOOT_TABLE_PA_BITS_REQUIRED: u32 = 64 - (BOOT_TABLE_REACH - 1).leading_zeros();
+
+// The PE this kernel is built for forms every address the tables can describe,
+// and the device window — the highest address the boot ever maps — is within
+// that reach.  Compile-time, so the relation holds in every build rather than
+// in the host tests alone.
+const _: () = assert!(CORTEX_A76_PHYSICAL_ADDRESS_SIZE.bits >= BOOT_TABLE_PA_BITS_REQUIRED);
+const _: () = assert!(DEVICE_WINDOW_TOP <= BOOT_TABLE_REACH);
+
+/// The physical address size of the executing PE, or a halt.
+///
+/// Refuses, through `halt`, a PE whose `PARange` is a reserved encoding or
+/// narrower than [`BOOT_TABLE_PA_BITS_REQUIRED`]: either is a PE the boot
+/// tables would ask for translations it cannot form.  `halt` is the caller's,
+/// as [`crate::cache::verify_cache_line_stride_or_halt`]'s is: the primary
+/// runs this before any secondary exists and a secondary parks itself, so
+/// both hand it [`crate::cpu::fatal_halt`] and the reason lives at the call.
+/// On the host there is no register to read, so the answer is the PE this
+/// kernel is built for ([`CORTEX_A76_PHYSICAL_ADDRESS_SIZE`]), which is what
+/// makes the host lane exercise the translation-control value the hardware
+/// programs rather than a stand-in.
+pub fn physical_address_size_of_this_pe_or_halt(halt: fn() -> !) -> PhysicalAddressSize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let features = crate::read_sysreg!("id_aa64mmfr0_el1");
+        let Some(size) = physical_address_size_of(features) else {
+            crate::kprintln!(
+                "[mmu] FATAL: ID_AA64MMFR0_EL1 = {features:#x}: PARange {:#06b} is a reserved \
+                 encoding; refusing to enable translation",
+                features & 0xF
+            );
+            halt();
+        };
+        if size.bits < BOOT_TABLE_PA_BITS_REQUIRED {
+            crate::kprintln!(
+                "[mmu] FATAL: this PE implements a {}-bit physical address space and the boot \
+                 tables describe {} bits; refusing to enable translation",
+                size.bits,
+                BOOT_TABLE_PA_BITS_REQUIRED
+            );
+            halt();
+        }
+        size
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = halt;
+        CORTEX_A76_PHYSICAL_ADDRESS_SIZE
+    }
+}
+
+/// The translation-control value at the Cortex-A76's size, for the host tests
+/// that pin every other field of [`tcr_el1_value`]; [`enable_mmu`] programs the
+/// value at the executing PE's own size.
+#[cfg(test)]
+const TCR_VALUE: u64 = tcr_el1_value(CORTEX_A76_PHYSICAL_ADDRESS_SIZE.ips);
 
 // ---------------------------------------------------------------------------
 // AK5-C (R-HAL-H03): SCTLR_EL1 full bitmap
@@ -719,8 +864,10 @@ const _: () = assert!(L2_BLOCK_SIZE == 1 << 21);
 // ---------------------------------------------------------------------------
 
 /// **WS-BP BP4.6**: one past the last address the boot tables can describe —
-/// the span of `l0[0]`, the only level-0 entry they populate (512 GiB, which
-/// the BCM2712's 44-bit physical address space never needs past 16 GiB).
+/// the span of `l0[0]`, the only level-0 entry they populate (512 GiB; the
+/// largest Raspberry Pi 5 has 16 GiB, and the Cortex-A76's 40-bit physical
+/// address space forms every address in it — [`BOOT_TABLE_PA_BITS_REQUIRED`]
+/// is the floor `enable_mmu` holds a PE to).
 pub const BOOT_TABLE_REACH: u64 = 1 << 39;
 
 /// **WS-BP BP4.6**: how many RAM extensions the boot map can record.  Every
@@ -1105,6 +1252,12 @@ const TTBR_BAADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
 ///    go through translation.
 #[allow(unsafe_code)]
 fn enable_mmu() {
+    // Step 0 (the v0.36.2 audit): what this PE can address, read off its own
+    // ID_AA64MMFR0_EL1.PARange, before any translation is programmed for it.
+    // A reserved encoding, or a PE narrower than the tables' reach, halts here
+    // — the primary before any secondary exists, a secondary parking itself.
+    let pa = physical_address_size_of_this_pe_or_halt(crate::cpu::fatal_halt);
+
     // Step 1: Invalidate stale TLB entries (cold reset / warm-reset safety).
     // `tlbi_vmalle1()` emits DSB ISH + ISB internally.
     crate::tlb::tlbi_vmalle1();
@@ -1119,16 +1272,17 @@ fn enable_mmu() {
     // guarantees this on every target (aarch64 production, x86_64
     // host); the runtime check is therefore portable.
     debug_assert!(pt_pa_raw & 0xFFF == 0, "BOOT_TABLES not 4 KiB-aligned");
-    // AK5-E.3: PA must be within the platform's physical address window
-    // (RPi5 BCM2712: 44-bit PA per AJ3-B).  Only checked on aarch64
-    // because on host x86_64 the kernel-image base address is set by
-    // the host loader and routinely exceeds 2^44 (e.g., 0x55... on a
-    // PIE binary), which would false-fault the assert.  WS-SM SM1.C.1
-    // exposed this in the per-core MMU helper tests.
+    // AK5-E.3: the table's PA must be one this PE can form — its own
+    // physical address size (`pa.bits`, 40 on the Cortex-A76; the bound read
+    // `44` until the v0.36.2 audit).  Only checked on aarch64 because on host
+    // x86_64 the kernel-image base address is set by the host loader and
+    // routinely exceeds 2^40 (e.g., 0x55... on a PIE binary), which would
+    // false-fault the assert.  WS-SM SM1.C.1 exposed this in the per-core MMU
+    // helper tests.
     #[cfg(target_arch = "aarch64")]
     debug_assert!(
-        pt_pa_raw != 0 && pt_pa_raw < (1usize << 44),
-        "BOOT_TABLES PA out of 44-bit range"
+        pt_pa_raw != 0 && (pt_pa_raw as u64) < (1u64 << pa.bits),
+        "BOOT_TABLES PA outside this PE's physical address space"
     );
 
     let pt_size = PageTableCell::size();
@@ -1152,7 +1306,7 @@ fn enable_mmu() {
     let ttbr_baaddr = (pt_pa_raw as u64) & TTBR_BAADDR_MASK;
     crate::registers::write_ttbr0_el1(ttbr_baaddr);
     crate::registers::write_ttbr1_el1(0);
-    crate::registers::write_tcr_el1(TCR_VALUE);
+    crate::registers::write_tcr_el1(tcr_el1_value(pa.ips));
     crate::registers::write_mair_el1(MAIR_VALUE);
 
     // Step 4: Serialize config writes.
@@ -1469,9 +1623,120 @@ mod tests {
     }
 
     #[test]
-    fn tcr_ips_44bit() {
-        // IPS in bits [34:32] = 0b100 → 44-bit PA (BCM2712)
-        assert_eq!((TCR_VALUE >> 32) & 0x7, 0b100);
+    fn tcr_ips_is_the_pe_physical_address_size() {
+        // IPS in bits [34:32] is the argument, and the Cortex-A76's is 0b010
+        // (40 bits) — the value the kernel programs on every Raspberry Pi 5.
+        assert_eq!((TCR_VALUE >> 32) & 0x7, 0b010);
+        for (field, ips) in [
+            (0b0000u64, 0b000u64),
+            (0b0001, 0b001),
+            (0b0010, 0b010),
+            (0b0011, 0b011),
+            (0b0100, 0b100),
+            (0b0101, 0b101),
+        ] {
+            let size = physical_address_size_of(field).expect("a defined PARange encoding");
+            assert_eq!(size.ips, ips, "PARange {field:#06b}");
+            assert_eq!(
+                (tcr_el1_value(size.ips) >> 32) & 0x7,
+                ips,
+                "PARange {field:#06b}"
+            );
+        }
+        // Only IPS moves with the argument.
+        assert_eq!(
+            tcr_el1_value(0b000) & !(0b111 << 32),
+            tcr_el1_value(0b101) & !(0b111 << 32)
+        );
+    }
+
+    /// The v0.36.2 audit: `ID_AA64MMFR0_EL1.PARange` (bits [3:0]) decodes to the
+    /// architecture's table, a 52- or 56-bit PE is walked at 48, and a reserved
+    /// encoding is refused rather than rounded.
+    #[test]
+    fn physical_address_size_decodes_pa_range() {
+        let bits = |field: u64| physical_address_size_of(field).map(|s| s.bits);
+        assert_eq!(bits(0b0000), Some(32));
+        assert_eq!(bits(0b0001), Some(36));
+        assert_eq!(bits(0b0010), Some(40));
+        assert_eq!(bits(0b0011), Some(42));
+        assert_eq!(bits(0b0100), Some(44));
+        assert_eq!(bits(0b0101), Some(48));
+        assert_eq!(bits(0b0110), Some(52));
+        assert_eq!(bits(0b0111), Some(56));
+        for reserved in 0b1000..=0b1111u64 {
+            assert_eq!(
+                physical_address_size_of(reserved),
+                None,
+                "PARange {reserved:#06b}"
+            );
+        }
+        // Capped at the 48 bits an ARMv8.0-format descriptor can name.
+        assert_eq!(physical_address_size_of(0b0110).unwrap().ips, 0b101);
+        assert_eq!(physical_address_size_of(0b0111).unwrap().ips, 0b101);
+        // Only bits [3:0] are the field: the rest of the register is not read.
+        assert_eq!(
+            physical_address_size_of(0x0000_0000_0010_1122),
+            physical_address_size_of(0b0010),
+            "ASIDBits, BigEnd, SNSMem and the granule fields above PARange are ignored"
+        );
+        assert_eq!(
+            CORTEX_A76_PHYSICAL_ADDRESS_SIZE,
+            PhysicalAddressSize {
+                bits: 40,
+                ips: 0b010
+            }
+        );
+        assert_eq!(
+            physical_address_size_of_this_pe_or_halt(crate::cpu::fatal_halt),
+            CORTEX_A76_PHYSICAL_ADDRESS_SIZE,
+            "the host answers for the PE the kernel is built for"
+        );
+    }
+
+    /// The floor `enable_mmu` holds a PE to is the tables' reach: 39 bits,
+    /// which the next encoding below the Cortex-A76's (36 bits) does not clear.
+    /// That the Cortex-A76 clears it, and that the device window is within the
+    /// reach, are compile-time assertions beside `BOOT_TABLE_PA_BITS_REQUIRED`.
+    #[test]
+    fn the_boot_tables_reach_is_the_floor_a_pe_is_held_to() {
+        assert_eq!(BOOT_TABLE_PA_BITS_REQUIRED, 39);
+        assert_eq!(1u64 << BOOT_TABLE_PA_BITS_REQUIRED, BOOT_TABLE_REACH);
+        for (field, admitted) in [
+            (0b0000u64, false),
+            (0b0001, false),
+            (0b0010, true),
+            (0b0101, true),
+        ] {
+            let bits = physical_address_size_of(field).unwrap().bits;
+            assert_eq!(
+                bits >= BOOT_TABLE_PA_BITS_REQUIRED,
+                admitted,
+                "PARange {field:#06b}"
+            );
+        }
+    }
+
+    /// The v0.36.2 audit: the width the Lean binding declares
+    /// (`rpi5MachineConfig.physicalAddressWidth`, carried by the shared fixture's
+    /// `physicalAddressWidth` line) is the PE's own PARange — the model bounds
+    /// every physical address it admits by it, so a model wider than the PE
+    /// admits mappings the PE answers with an Address size fault (the `44`
+    /// this held until the audit).  And everything the boot tables can
+    /// describe is inside the model's bound, so the HAL never maps what the
+    /// model refuses.
+    #[test]
+    fn the_lean_physical_address_width_is_the_pe_the_hal_programs_for() {
+        let lean_width = lean_boot_map_scalar("physicalAddressWidth");
+        assert_eq!(
+            lean_width,
+            u64::from(CORTEX_A76_PHYSICAL_ADDRESS_SIZE.bits),
+            "tests/fixtures/boot_map.expected's physicalAddressWidth is the Cortex-A76's PARange"
+        );
+        assert!(
+            BOOT_TABLE_REACH <= 1u64 << lean_width,
+            "every address the boot tables can describe is one the Lean model admits"
+        );
     }
 
     #[test]
@@ -1785,6 +2050,31 @@ pub(crate) fn lean_mmio_window(name: &str) -> (u64, u64) {
     found.unwrap_or_else(|| panic!("no `mmio {name}` line in the boot-map table"))
 }
 
+/// **The v0.36.2 audit**: a single-valued line of the shared boot-map table —
+/// `physicalAddressWidth <bits>` (read back against the PE's `PARange` above)
+/// and `declaredCores <n>` (read back by `boot.rs` against the handoff's
+/// `LEAN_DECLARED_CORE_COUNT`) — as `tests/Ak9PlatformSuite.lean` writes it
+/// into `tests/fixtures/boot_map.expected`.  Exactly one line carries `key`,
+/// and it carries exactly one hexadecimal value.
+#[cfg(test)]
+pub(crate) fn lean_boot_map_scalar(key: &str) -> u64 {
+    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+    let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
+    let mut found = None;
+    for line in LEAN_TABLE.lines() {
+        let mut cols = line.split_whitespace();
+        if cols.next() == Some(key) {
+            let value = hex(cols
+                .next()
+                .unwrap_or_else(|| panic!("a `{key}` line carries a value")));
+            assert!(cols.next().is_none(), "a `{key}` line carries one value");
+            assert!(found.is_none(), "two `{key}` lines in the boot-map table");
+            found = Some(value);
+        }
+    }
+    found.unwrap_or_else(|| panic!("no `{key}` line in the boot-map table"))
+}
+
 #[cfg(test)]
 mod boot_map_tests {
     use super::*;
@@ -1939,6 +2229,11 @@ mod boot_map_tests {
                 // The BCM2712 address-map correction: the MMIO windows, which
                 // `lean_mmio_window` reads for the UART and GIC tests.
                 ["mmio", _, _, _] => {}
+                // The v0.36.2 audit: the binding's physical address width and
+                // declared PE count, which `lean_boot_map_scalar` reads for
+                // `the_lean_physical_address_width_is_the_pe_the_hal_programs_for`
+                // and `boot.rs`'s core-count pin.
+                ["physicalAddressWidth", _] | ["declaredCores", _] => {}
                 _ => panic!("unrecognised boot-map line {line:?}"),
             }
         }

@@ -80,13 +80,18 @@ if [[ -r /proc/cpuinfo ]]; then
     PA_BITS=$(grep -o 'address sizes.*physical' /proc/cpuinfo | head -1 | grep -o '[0-9]*' | head -1 || true)
 fi
 if [[ -n "${PA_BITS}" ]]; then
-    if [[ "${PA_BITS}" -ge 44 ]]; then
-        log_section "TRACE" "PASS: Physical address width = ${PA_BITS} bits (Board.lean: 44)"
+    # The v0.36.2 audit: Board.lean declares 40 (the Cortex-A76's PARange);
+    # the PE must implement at least what the model bounds by, and a wider PE
+    # is the safe direction (the model then refuses addresses the PE could
+    # form).  The `44` this compared against would have FAILED on every
+    # Raspberry Pi 5.
+    if [[ "${PA_BITS}" -ge 40 ]]; then
+        log_section "TRACE" "PASS: Physical address width = ${PA_BITS} bits (Board.lean: 40)"
     else
-        record_failure "TRACE" "Physical address width = ${PA_BITS} bits, expected >= 44"
+        record_failure "TRACE" "Physical address width = ${PA_BITS} bits, expected >= 40"
     fi
 else
-    record_skip "TRACE" "physical address width (Board.lean 44) — /proc/cpuinfo unreadable or carries no address-sizes line"
+    record_skip "TRACE" "physical address width (Board.lean 40) — /proc/cpuinfo unreadable or carries no address-sizes line"
 fi
 
 # Check 4: Page size

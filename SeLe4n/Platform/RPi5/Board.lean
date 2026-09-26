@@ -167,7 +167,17 @@ def rpi5MachineConfig : SeLe4n.MachineConfig :=
   {
     registerWidth := 64
     virtualAddressWidth := 48
-    physicalAddressWidth := 44   -- BCM2712 supports 44-bit PA
+    -- The v0.36.2 audit: the BCM2712's PEs are Cortex-A76 cores, whose
+    -- `ID_AA64MMFR0_EL1.PARange` is `0b0010` — a 40-bit physical address
+    -- space (Cortex-A76 TRM r4p1 §B2.58).  This field bounds every physical
+    -- address the kernel admits (`MachineState.addrInRange`, the checked
+    -- VSpace map decode, `MachineConfig.wellFormed`), so it is the PE's
+    -- value and not a wider one: the `44` carried from AJ3-B admitted
+    -- mappings in `[2^40, 2^44)` that the PE answers with an Address size
+    -- fault.  The HAL derives `TCR_EL1.IPS` from the same register at
+    -- `enable_mmu` and the shared boot-map fixture holds the two together
+    -- (`tests/fixtures/boot_map.expected`, `physicalAddressWidth`).
+    physicalAddressWidth := 40
     pageSize := 4096             -- 4 KiB granule (standard)
     maxASID := 65536             -- 16-bit ASID with TTBR.ASID
     memoryMap := rpi5MemoryMap
@@ -323,7 +333,7 @@ tracks validation status.
 | `uart0Base` | 0x10_7D00_1000 | `bcm2712.dtsi` `uart0: serial@7d001000` (UART10, the debug header) through the `soc` window | Cross-checked |
 | `rpi5MemoryMapForConfig` RAM | `[0, ramSize)` | `bcm2712.dtsi` `axi` `ranges <0x00 0 0x00 0 0x10 0>` — DRAM contiguous from 0 | Cross-checked |
 | `timerFrequencyHz` | 54 MHz | RPi5 crystal; CNTFRQ_EL0 | Carried over |
-| `rpi5MachineConfig.physicalAddressWidth` | 44-bit | Cortex-A76 PARange | Carried over |
+| `rpi5MachineConfig.physicalAddressWidth` | 40-bit | Cortex-A76 TRM r4p1 §B2.58: `ID_AA64MMFR0_EL1.PARange = 0b0010` (the `44` carried over from AJ3-B was corrected by the v0.36.2 audit; the HAL derives `TCR_EL1.IPS` from the register, BP8.1 reads it back) | Cross-checked |
 | `gicSpiCount`, `timerPpiId`, `virtualTimerPpiId` | 192, 30, 27 | ARM GIC architecture; RPi kernel DTS | Carried over |
 
 **The BCM2712 address-map correction (v0.36.2).**  Until that version this

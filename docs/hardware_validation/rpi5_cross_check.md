@@ -29,7 +29,7 @@ Constants are verified using one of:
 | 8 | `timerPpiId` | `30` | *pending* | PENDING | Timer interrupt fires on INTID 30 |
 | 9 | `registerWidth` | `64` | 64 | VERIFIED | ARM64 architecture invariant |
 | 10 | `virtualAddressWidth` | `48` | *pending* | PENDING | Read ID_AA64MMFR0_EL1.PARange |
-| 11 | `physicalAddressWidth` | `44` | *pending* | PENDING | Read ID_AA64MMFR0_EL1.PARange |
+| 11 | `physicalAddressWidth` | `40` (the Cortex-A76 TRM r4p1 §B2.58 documents `ID_AA64MMFR0_EL1.PARange = 0b0010`; the `44` this row carried was corrected by the v0.36.2 audit, which also made the HAL derive `TCR_EL1.IPS` from the register) | *pending* | PENDING | Read ID_AA64MMFR0_EL1.PARange (bits [3:0]); expect `0b0010` |
 | 12 | `pageSize` | `4096` | 4096 | VERIFIED | ARM64 4KiB granule (standard) |
 | 13 | `maxASID` | `65536` | *pending* | PENDING | Read ID_AA64MMFR0_EL1.ASIDBits |
 

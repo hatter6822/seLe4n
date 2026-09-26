@@ -96,8 +96,8 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 |------|-----|
 | **버전** | `0.36.2` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 343개 파일, 420,740줄 |
-| **테스트 Lean LoC** | 71개 테스트 스위트, 85,588줄 |
+| **프로덕션 Lean LoC** | 343개 파일, 420,759줄 |
+| **테스트 Lean LoC** | 71개 테스트 스위트, 85,605줄 |
 | **증명된 선언** | 13,928개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **정식 감사** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — 1.0 이전 종합 감사 (202건 발견; WS-AK AK1–AK10 으로 해결됨; 보관됨) |

@@ -8,13 +8,15 @@
 # AN7-B (H-15): repo-wide audit of `physicalAddressWidth` values.
 #
 # Per the target-platform contract:
-#   - RPi5 / BCM2712     : 44 bits (hardware limit)
+#   - RPi5 / BCM2712     : 40 bits (Cortex-A76 `ID_AA64MMFR0_EL1.PARange = 0b0010`;
+#                          TRM r4p1 §B2.58 — the v0.36.2 audit corrected the `44`
+#                          AJ3-B had carried, which no Cortex-A76 implements)
 #   - Sim platform        : 52 bits (ARMv8 LPA max)
 #   - Generic / abstract  : 52 bits (matches ARMv8 max)
 #   - Test probes         : explicit per-test value (0, 64, etc.) for bounds tests
 #
 # The audit enforces:
-#   1. The RPi5 board definition supplies exactly 44.
+#   1. The RPi5 board definition supplies exactly 40.
 #   2. The Sim platform contract supplies exactly 52.
 #   3. The `defaultMachineConfig` supplies exactly 52.
 #   4. No source file contains `physicalAddressWidth := 48` (a common ARMv8
@@ -142,9 +144,9 @@ require_width_binding() {
   fi
 }
 
-# 1. RPi5 Board.lean must bind 44.
-require_width_binding SeLe4n/Platform/RPi5/Board.lean 44 \
-  "RPi5/Board.lean must declare physicalAddressWidth := 44 (BCM2712 hardware limit)."
+# 1. RPi5 Board.lean must bind 40.
+require_width_binding SeLe4n/Platform/RPi5/Board.lean 40 \
+  "RPi5/Board.lean must declare physicalAddressWidth := 40 (the Cortex-A76's PARange; BCM2712)."
 
 # 2. Sim Contract.lean must bind 52.
 require_width_binding SeLe4n/Platform/Sim/Contract.lean 52 \
@@ -235,6 +237,6 @@ if [ "${LD_END}" != "0x40000000" ]; then
   fail "${LINK_LD}'s RAM region ends at ${LD_END}, not at mmu.rs's GUARANTEED_RAM_TOP (0x40000000): the linker would place the image where the boot map does not cover it."
 fi
 
-echo "AN7-B: physicalAddressWidth audit clean (RPi5=44, Sim=52, default=52; no ':= 48' anywhere)."
+echo "AN7-B: physicalAddressWidth audit clean (RPi5=40, Sim=52, default=52; no ':= 48' anywhere)."
 echo "WS-BP BP2.6: link.ld's RAM region ends at mmu.rs's GUARANTEED_RAM_TOP (the boot map itself is driven through the Lean map: WS-BP BP0.4)."
 exit 0

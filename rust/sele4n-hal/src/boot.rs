@@ -30,8 +30,12 @@ const KERNEL_VERSION: &str = "0.36.2";
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
 /// Pinned against `SeLe4n/Platform/RPi5/Board.lean`'s
-/// `rpi5MachineConfig.declaredCoreCount` and `rpi5PlatformBinding.coreCount`,
-/// which `PlatformBinding.declaredCoreCountAgrees` holds equal.  The Lean side
+/// `rpi5MachineConfig.declaredCoreCount` and the RPi5 binding's `coreCount`,
+/// which `PlatformBinding.declaredCoreCountAgrees` holds equal — and, since
+/// the v0.36.2 audit, held to that `coreCount` by running both sides: the Lean
+/// suite writes it into `tests/fixtures/boot_map.expected` (`declaredCores`)
+/// and `lean_declared_core_count_matches_the_rpi5_binding` reads it back,
+/// where a literal `4` beside a comment naming the binding stood.  The Lean side
 /// installs idle threads on exactly this many cores and bounds
 /// `.tcbSetAffinity` by the same number, so a handoff to a narrower machine is
 /// refused at Phase 7 rather than stranding threads on PEs that do not exist.
@@ -759,9 +763,13 @@ mod tests {
             (crate::smp::MAX_SECONDARY_CORES + 1) as u32,
             "the handoff's declared PE count must be the topology the HAL brings up"
         );
+        // The v0.36.2 audit: the binding's `coreCount`, as the shared boot-map
+        // fixture carries it, rather than a literal beside a comment naming it.
         assert_eq!(
-            LEAN_DECLARED_CORE_COUNT, 4,
-            "RPi5Platform declares coreCount := 4"
+            u64::from(LEAN_DECLARED_CORE_COUNT),
+            crate::mmu::lean_boot_map_scalar("declaredCores"),
+            "the handoff's declared PE count is the Lean binding's coreCount, as \
+             tests/fixtures/boot_map.expected's declaredCores line carries it"
         );
     }
 

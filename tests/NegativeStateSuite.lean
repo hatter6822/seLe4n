@@ -4088,10 +4088,14 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     SeLe4n.Platform.Boot.bootFromPlatform { irqTable := [], initialObjects := [] }
   let rpi5Config := SeLe4n.Platform.RPi5.rpi5MachineConfig
   let withPA : IntermediateState := SeLe4n.Platform.Boot.applyMachineConfig bootedState rpi5Config
-  if withPA.state.machine.physicalAddressWidth == 44 then
-    IO.println "positive check passed [X2-D-01]: applyMachineConfig sets RPi5 PA width to 44"
+  -- The v0.36.2 audit: the RPi5 width is the Cortex-A76's 40 bits (it read 44
+  -- until then), and this check reads it off the binding rather than a literal,
+  -- so it measures the propagation and not the number.
+  let rpi5Width := rpi5Config.physicalAddressWidth
+  if withPA.state.machine.physicalAddressWidth == rpi5Width && rpi5Width == 40 then
+    IO.println "positive check passed [X2-D-01]: applyMachineConfig sets the RPi5 PA width (the Cortex-A76's 40 bits)"
   else
-    throw <| IO.userError s!"expected PA width 44, got {withPA.state.machine.physicalAddressWidth}"
+    throw <| IO.userError s!"expected the RPi5 PA width (40), got {withPA.state.machine.physicalAddressWidth} of binding {rpi5Width}"
 
   -- X2-D: default PA width is 52
   if bootedState.state.machine.physicalAddressWidth == 52 then
@@ -4099,13 +4103,14 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   else
     throw <| IO.userError s!"expected default PA width 52, got {bootedState.state.machine.physicalAddressWidth}"
 
-  -- AC4-A/A-04: vspaceMapPageCheckedWithFlushFromState rejects address at 2^44
-  -- on RPi5 config (44-bit PA). This verifies that the state-aware production
-  -- entry point enforces platform-specific bounds, closing the [2^44, 2^52) gap.
+  -- AC4-A/A-04: vspaceMapPageCheckedWithFlushFromState rejects the first address
+  -- beyond the RPi5 width (2^40 since the v0.36.2 audit; the boundary is read off
+  -- the binding).  This verifies that the state-aware production entry point
+  -- enforces platform-specific bounds, closing the [2^width, 2^52) gap.
   let asidAC4 : SeLe4n.ASID := ⟨1⟩
   let vaddrAC4 : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0x1000)
   let rootOid : SeLe4n.ObjId := ⟨500⟩
-  let paddrAtBoundary : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^44))  -- first address beyond 44-bit range
+  let paddrAtBoundary : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^rpi5Width))  -- first address beyond the declared range
   let stRpi5 : SystemState :=
     { withPA.state with
       objects := withPA.state.objects.insert rootOid
@@ -4115,24 +4120,24 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     asidAC4 vaddrAC4 paddrAtBoundary default stRpi5
   match resultReject with
   | .error .addressOutOfBounds =>
-    IO.println "positive check passed [AC4-A-01]: state-aware map rejects PA at 2^44 on RPi5 (44-bit)"
+    IO.println "positive check passed [AC4-A-01]: state-aware map rejects PA at 2^width on RPi5 (40-bit)"
   | .error e =>
     throw <| IO.userError s!"expected addressOutOfBounds, got {repr e}"
   | .ok _ =>
-    throw <| IO.userError "state-aware map should reject PA at 2^44 on 44-bit platform"
+    throw <| IO.userError "state-aware map should reject PA at 2^width on the 40-bit platform"
 
-  -- AC4-A/A-04: address just below the 44-bit boundary should be accepted.
-  -- PR #845 review (P2): was `2^44 - 1`, which is all-ones and therefore never
+  -- AC4-A/A-04: address just below the declared boundary should be accepted.
+  -- PR #845 review (P2): was `2^width - 1`, which is all-ones and therefore never
   -- page-aligned; the state-aware map now rejects unaligned physical addresses,
-  -- so this uses the largest page-aligned PA below the 44-bit bound.
-  let paddrJustBelow : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^44 - 4096))
+  -- so this uses the largest page-aligned PA below the declared bound.
+  let paddrJustBelow : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^rpi5Width - 4096))
   let resultAccept := SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushFromState
     asidAC4 vaddrAC4 paddrJustBelow default stRpi5
   match resultAccept with
   | .ok _ =>
-    IO.println "positive check passed [AC4-A-02]: state-aware map accepts the largest page-aligned PA below 2^44 on RPi5"
+    IO.println "positive check passed [AC4-A-02]: state-aware map accepts the largest page-aligned PA below 2^width on RPi5"
   | .error e =>
-    throw <| IO.userError s!"expected ok for PA just below 44-bit bound, got {repr e}"
+    throw <| IO.userError s!"expected ok for PA just below the declared bound, got {repr e}"
 
   -- X2-I / WS-SM SM8.B (PR #861 review round 15): `scheduleChecked` on a
   -- malformed run queue now *skips* the entry instead of returning

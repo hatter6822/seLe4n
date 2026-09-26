@@ -7856,7 +7856,9 @@ boot halts; the corpus carries the account (`eight_gib_rpi5_firmware`),
 derives the deployment's first-gigabyte RAM (declared, mapped and handed to
 the root task — BP3.2's `[256 MiB, 1 GiB)` untypeds would otherwise cover the
 firmware's memory) from the account.  And nothing starts the root task or the
-untrusted witness (**BP7.11**).  (11) **Gates**: `check_link_script.py`
+untrusted witness (**BP7.11** — decided at the audit's review: the boot starts
+both, one per domain, so no capability crosses the confinement boundary).
+(11) **Gates**: `check_link_script.py`
 witnesses name whole `ASSERT` messages, one per conjunct;
 `check_dtb_corpus_consumers.py` pins the comparison rather than the call;
 `build_lean_aarch64_archive.py` reads the reachable link's exit status;
@@ -7864,7 +7866,29 @@ witnesses name whole `ASSERT` messages, one per conjunct;
 SVE predicate registers; `test_qemu.sh` builds the real image and SKIPs
 unless `QEMU_MACHINE` names a machine, since QEMU models no BCM2712 — and on
 the Lean-linked image `smp_enabled=false` or `smp_max_cores` below four halts
-at Phase 7 rather than booting fewer PEs.
+at Phase 7 rather than booting fewer PEs.  (12) **The physical address width
+is the Cortex-A76's 40 bits, and `TCR_EL1.IPS` is derived from the PE**
+(the audit's review): `rpi5MachineConfig.physicalAddressWidth` read `44` —
+the bound on every physical address the model admits (`addrInRange`, the
+checked VSpace map decode, `MachineConfig.wellFormed`) — and the HAL
+programmed a constant 44-bit `IPS` under a comment claiming that matched the
+BCM2712, while the Cortex-A76's `ID_AA64MMFR0_EL1.PARange` (bits [3:0]) is
+`0b0010`, 40 bits (TRM r4p1 §B2.58): the model admitted mappings in
+`[2^40, 2^44)` that the PE answers with an Address size fault, and an `IPS`
+wider than the implemented size is treated as the implemented size, which is
+why nothing broke.  `Board.lean` declares 40, `check_physical_address_width.sh`
+holds it there, `enable_mmu` reads the register on the executing PE
+(`mmu::physical_address_size_of`, a `const fn` over the raw value with the
+architecture's whole table, capped at the 48 bits an ARMv8.0 descriptor can
+name) and refuses a reserved encoding or a PE narrower than the tables'
+reach (`BOOT_TABLE_PA_BITS_REQUIRED`, 39 bits) before programming
+`tcr_el1_value(pa.ips)`, and the two sides are held together by running both:
+the Lean suite writes `physicalAddressWidth` into
+`tests/fixtures/boot_map.expected` and the HAL's
+`the_lean_physical_address_width_is_the_pe_the_hal_programs_for` holds it to
+the PE it derives `IPS` for.  (13) **The handoff's declared PE count is the
+binding's `coreCount`, read from the same fixture** (`declaredCores`) rather
+than a literal `4` beside a comment naming it.
 
 **The RPi5 binding is the BCM2712's address map** (`v0.36.2`, found while
 scoping BP5.4).  Until then the model and the HAL both carried the **BCM2711**'s

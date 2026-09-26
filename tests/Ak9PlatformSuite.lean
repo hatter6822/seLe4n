@@ -2357,6 +2357,18 @@ private def bootMapTableLines : List String :=
     -- `scripts/check_link_script.py` against `link.ld`'s `KERNEL_RESERVED_END`.
     :: rpi5MachineConfig.kernelReserved.map (fun r =>
         s!"kernelReserved {bootMapHex r.base.toNat} {bootMapHex r.endAddr}")
+    -- The v0.36.2 audit: the physical address width the binding declares, as
+    -- `physicalAddressWidth <bits>` — read back by the HAL's
+    -- `the_lean_physical_address_width_is_the_pe_the_hal_programs_for`, which
+    -- holds it to the Cortex-A76 `ID_AA64MMFR0_EL1.PARange` the HAL derives
+    -- `TCR_EL1.IPS` from, so the model's bound and the PE's are compared by
+    -- running both rather than by two literals each claiming the board.
+    ++ [s!"physicalAddressWidth {bootMapHex rpi5MachineConfig.physicalAddressWidth}"]
+    -- ...and the PE count the binding declares, as `declaredCores <n>` — read
+    -- back by `boot.rs`'s `lean_declared_core_count_matches_the_rpi5_binding`,
+    -- so the handoff's `LEAN_DECLARED_CORE_COUNT` is the binding's `coreCount`
+    -- rather than a literal beside a comment naming it.
+    ++ [s!"declaredCores {bootMapHex (SeLe4n.Platform.PlatformBinding.coreCount (platform := SeLe4n.Platform.RPi5.RPi5Platform))}"]
     -- The BCM2712 address-map correction (v0.36.2): the MMIO windows the
     -- binding programs, as `mmio <name> <base> <size>`, taken from
     -- `mmioRegions` in order — read back by the HAL's UART and GIC tests, so

@@ -21499,6 +21499,27 @@ run_check "INVARIANT" rg -n '^mmio gicc 0x107fffa000 0x2000$' tests/fixtures/boo
 run_check "INVARIANT" rg -n '^pub\(crate\) fn lean_mmio_window\(name: &str\) -> \(u64, u64\) \{$' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n 'crate::mmu::lean_mmio_window\("uart"\)' rust/sele4n-hal/src/uart.rs
 run_check "INVARIANT" rg -n 'crate::mmu::lean_mmio_window\(name\)' rust/sele4n-hal/src/gic.rs
+# The v0.36.2 audit's review: the physical address width is the Cortex-A76's
+# 40 bits (`ID_AA64MMFR0_EL1.PARange = 0b0010`), declared once in Board.lean,
+# carried by the shared boot-map fixture, and held to the PE the HAL derives
+# `TCR_EL1.IPS` from — the HAL reads the register on the executing PE before it
+# programs translation, and the handoff's declared PE count is read from the
+# same fixture rather than from a literal.  Each positive is the relation (the
+# probe's result reaching `write_tcr_el1`, the fixture value reaching the
+# assertion); the negatives refuse the retired constants coming back.
+run_check "INVARIANT" rg -n '^    physicalAddressWidth := 40$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^physicalAddressWidth 0x28$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n '^declaredCores 0x4$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n '^pub const fn physical_address_size_of\(memory_model_features: u64\) -> Option<PhysicalAddressSize> \{$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^pub const CORTEX_A76_PA_RANGE_FIELD: u64 = 0b0010;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^pub const BOOT_TABLE_PA_BITS_REQUIRED: u32 = 64 - \(BOOT_TABLE_REACH - 1\)\.leading_zeros\(\);$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^    let pa = physical_address_size_of_this_pe_or_halt\(crate::cpu::fatal_halt\);$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^    crate::registers::write_tcr_el1\(tcr_el1_value\(pa\.ips\)\);$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n 'lean_boot_map_scalar\("physicalAddressWidth"\)' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n 'crate::mmu::lean_boot_map_scalar\("declaredCores"\)' rust/sele4n-hal/src/boot.rs
+run_negative_check "INVARIANT" rg -n 'write_tcr_el1\(TCR_VALUE\)|0b100 << 32|1usize << 44' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n 'LEAN_DECLARED_CORE_COUNT, 4,' rust/sele4n-hal/src/boot.rs
+run_negative_check "INVARIANT" rg -n 'physicalAddressWidth := 44' SeLe4n/ tests/
 run_negative_check "INVARIANT" rg -n -i '0xFE20_?1000|0xFF84_?[12]000|0xFE00_?0000|0xFF85_?0000' SeLe4n/Platform/RPi5/Board.lean rust/sele4n-hal/src/uart.rs rust/sele4n-hal/src/gic.rs rust/sele4n-hal/src/boot.rs rust/sele4n-hal/link.ld
 run_negative_check "INVARIANT" rg -n '^def peripheralBaseLow' SeLe4n/
 run_negative_check "INVARIANT" rg -n 'the_boot_map_boundaries_mirror_the_lean_memory_map|LEAN_DEVICE_EXTENT_TOP' rust/sele4n-hal/src/
