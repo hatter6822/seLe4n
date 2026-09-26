@@ -42,6 +42,15 @@ The first draft's control failed on exactly that, which is why it is there.
 rule reading `deviceBackable`, the witness and the theorem; a negative refuses
 the device rule reading `memoryBacked` again.
 
+**A test that relied on the retired retype moved to the production path that
+remains.**  `tests/SmpTlbShootdownSuite.lean`'s round-window-width group needed
+one commit that opens two shootdown rounds, and got it by retyping a live VSpace
+root into a different one (two ASIDs, two rounds).  That retype is refused now.
+The full run found it; the reset's and the finalising revocation's shared page
+teardown (`unmapLivePages`) over two live mappings is a two-round commit too, so
+the group drives that instead.  It also asserts the old retype is refused, so
+the group says why it moved.
+
 Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP7.1)
 
 ## v0.36.8 — WS-BP BP7.1 slice 4a: an untyped carves child untypeds, and a reset returns the whole subtree
