@@ -281,26 +281,15 @@ pub extern "C" fn secondary_entry() {
     // host stub: no-op
 }
 
-/// AN9-J: bring up all secondary cores listed in `mpidr_table`.
+/// **PR #889 review round 23**: how many of the first `expected` PEs `serves`,
+/// polled until they all do or `timeout_ticks` have elapsed on `now`.
 ///
-/// Inner form taking explicit state references so unit tests can
-/// substitute local atomics and avoid cargo's parallel-test global
-/// state race.  Production callers go through
-/// [`bring_up_secondaries`] which threads the global statics.
-///
-/// Behaviour:
-///   1. If `enabled.load(Acquire) == false`, returns 0 (no-op).
-///   2. Otherwise, issues PSCI `CPU_ON` for each secondary with
-///      `entry_point = secondary_entry` and `context_id` = index+1.
-///   3. Sets `core_ready[idx+1] = true` for each successful core.
-///   4. Stores online count into `online_count`.
-///   5. On aarch64, broadcasts SEV so secondaries parked in `wfe`
-///      wake immediately.
-///
-/// Returns the number of secondaries successfully brought up.
-/// **PR #889 review round 23**: how many of the first `expected` PEs have
-/// published [`CORE_IRQ_READY`], polled until they all have or `timeout_ticks`
-/// have elapsed on `now`.
+/// **WS-BP BP6.3**: the question is whether a PE *serves the kernel*, and the
+/// production predicate is [`core_serves`] — the PE published
+/// [`CORE_IRQ_READY`] **and** marked itself Lean-ready.  The first cut counted
+/// the IRQ flag alone, which a PE that unmasked interrupts with its seams still
+/// dormant satisfies.  The predicate is a parameter so the bound is testable
+/// on the host without touching the process-global flags.
 ///
 /// `bring_up_secondaries` returns the number of PSCI `CPU_ON` calls that were
 /// accepted, which is a *proxy* for "this PE will service kernel work": it is
@@ -322,18 +311,15 @@ pub extern "C" fn secondary_entry() {
 /// conclusion and written it down; this is that pattern, for the same reason.
 /// The clock is injected so the bound is testable on the host, exactly as the
 /// shootdown wait does it.
-pub fn irq_ready_core_count_within_in<C: FnMut() -> u64>(
+pub fn serving_core_count_within_in<C: FnMut() -> u64, S: Fn(usize) -> bool>(
     expected: u32,
     timeout_ticks: u64,
     mut now: C,
+    serves: S,
 ) -> u32 {
     let expected = (expected as usize).min(CORE_IRQ_READY.len());
-    let ready_now = |expected: usize| -> u32 {
-        CORE_IRQ_READY[..expected]
-            .iter()
-            .filter(|flag| flag.load(Ordering::Acquire))
-            .count() as u32
-    };
+    let ready_now =
+        |expected: usize| -> u32 { (0..expected).filter(|&c| serves(c)).count() as u32 };
     let start = now();
     loop {
         let ready = ready_now(expected);
@@ -350,18 +336,77 @@ pub fn irq_ready_core_count_within_in<C: FnMut() -> u64>(
     }
 }
 
-/// **PR #889 review round 23**: the production form, clocked by the generic
-/// timer (`CNTPCT_EL0`) — the same clock the shootdown's bounded wait uses.
-pub fn irq_ready_core_count_within(expected: u32, timeout_ticks: u64) -> u32 {
-    irq_ready_core_count_within_in(expected, timeout_ticks, crate::timer::read_counter)
+/// **WS-BP BP6.3**: does core `c` serve the kernel?  It has marked itself
+/// Lean-ready (`lean_ready::become_ready_or_halt`, before its `enable_irq`)
+/// **and** published [`CORE_IRQ_READY`] (after it).  Both are its own writes,
+/// both `Release`, and both are read here with `Acquire`.  A core outside the
+/// flag array serves nothing.
+pub fn core_serves(c: usize) -> bool {
+    core_serves_in(&CORE_IRQ_READY, crate::lean_ready::ready_mask(), c)
 }
 
+/// [`core_serves`] over the two facts it reads, so the conjunction is decided
+/// on values a test owns: a core serves when it is inside the IRQ-ready
+/// array, IRQ-ready there, **and** marked in the Lean-readiness mask
+/// (`lean_ready::mask_marks`).  The v0.36.2 audit: the production form had
+/// no witness for its second conjunct — no host test could put a core in the
+/// IRQ-ready-but-not-Lean-ready state on the shared flags — so deleting
+/// `lean_ready(c)` from it passed every test.
+pub fn core_serves_in(irq_ready: &[AtomicBool], lean_ready_mask: u8, c: usize) -> bool {
+    c < irq_ready.len()
+        && irq_ready[c].load(Ordering::Acquire)
+        && crate::lean_ready::mask_marks(lean_ready_mask, c)
+}
+
+/// The two halves of [`core_serves`] — `(IRQ-ready, Lean-ready)` — for the
+/// Phase-7 refusal's diagnostic, which names the half a PE is short of.
+pub fn core_readiness(c: usize) -> (bool, bool) {
+    (
+        c < CORE_IRQ_READY.len() && CORE_IRQ_READY[c].load(Ordering::Acquire),
+        crate::lean_ready::lean_ready(c),
+    )
+}
+
+/// **WS-BP BP6.3**: the production form, clocked by the generic timer
+/// (`CNTPCT_EL0`) — the same clock the shootdown's bounded wait uses — and
+/// asking [`core_serves`].  The boot core's Phase-7 refusal reads it.
+pub fn serving_core_count_within(expected: u32, timeout_ticks: u64) -> u32 {
+    serving_core_count_within_in(
+        expected,
+        timeout_ticks,
+        crate::timer::read_counter,
+        core_serves,
+    )
+}
+
+/// AN9-J: bring up all secondary cores listed in `mpidr_table`.
+///
+/// Inner form taking explicit state references so unit tests can
+/// substitute local atomics and avoid cargo's parallel-test global
+/// state race.  Production callers go through
+/// [`bring_up_secondaries`] which threads the global statics.
+///
+/// Behaviour:
+///   1. If `enabled.load(Acquire) == false`, returns 0 (no-op).
+///   2. Otherwise, issues PSCI `CPU_ON` for each secondary with
+///      `entry_point = secondary_entry` and `context_id` = index+1.
+///   3. Sets `core_ready[idx+1] = true` for each successful core.
+///   4. Stores online count into `online_count`.
+///   5. On aarch64, broadcasts SEV so secondaries parked in `wfe`
+///      wake immediately.
+///
+/// Returns the number of secondaries successfully brought up.
 pub fn bring_up_secondaries_inner(
+    permit: crate::lean_entry::SecondaryReleasePermit,
     enabled: &AtomicBool,
     core_ready: &[AtomicBool],
     online_count: &AtomicU32,
     mpidr_table: &[u64],
 ) -> u32 {
+    // WS-BP BP4.2: the permit is the proof that the kernel-state install (if
+    // the image links one) has completed; it is consumed by the release it
+    // licenses and carries no data.
+    let crate::lean_entry::SecondaryReleasePermit { .. } = permit;
     if !enabled.load(Ordering::Acquire) {
         return 0;
     }
@@ -421,8 +466,9 @@ pub fn bring_up_secondaries_inner(
 /// state to avoid global-state races under parallel cargo test.
 ///
 /// Returns the number of secondaries successfully brought up.
-pub fn bring_up_secondaries() -> u32 {
+pub fn bring_up_secondaries(permit: crate::lean_entry::SecondaryReleasePermit) -> u32 {
     bring_up_secondaries_inner(
+        permit,
         &SMP_ENABLED,
         &CORE_READY,
         &SECONDARY_CORES_ONLINE,
@@ -471,8 +517,12 @@ pub fn bring_up_secondaries() -> u32 {
 /// refactors should NOT collapse them into one with a default
 /// argument since `bring_up_secondaries` is already in the public
 /// API and renaming it would break downstream consumers.
-pub fn bring_up_secondaries_with_limit(max_cores: usize) -> u32 {
+pub fn bring_up_secondaries_with_limit(
+    permit: crate::lean_entry::SecondaryReleasePermit,
+    max_cores: usize,
+) -> u32 {
     bring_up_secondaries_with_limit_inner(
+        permit,
         max_cores,
         &SMP_ENABLED,
         &CORE_READY,
@@ -496,6 +546,7 @@ pub fn bring_up_secondaries_with_limit(max_cores: usize) -> u32 {
 /// plus the `apply_cmdline_and_start_smp_inner` companion in
 /// `cmdline.rs`.
 pub(crate) fn bring_up_secondaries_with_limit_inner(
+    permit: crate::lean_entry::SecondaryReleasePermit,
     max_cores: usize,
     enabled: &AtomicBool,
     core_ready: &[AtomicBool],
@@ -511,7 +562,7 @@ pub(crate) fn bring_up_secondaries_with_limit_inner(
     // (length == MAX_SECONDARY_CORES) and the cap is a no-op.
     let take = secondaries_to_spawn.min(mpidr_table.len());
     let table = &mpidr_table[..take];
-    bring_up_secondaries_inner(enabled, core_ready, online_count, table)
+    bring_up_secondaries_inner(permit, enabled, core_ready, online_count, table)
 }
 
 /// **WS-SM SM1.C.5 / audit-pass-1** (defense-in-depth): validate a
@@ -616,17 +667,23 @@ pub(crate) const fn validate_secondary_context_id(context_id: u64) -> Option<usi
 ///      Failure (CntfrqNotProgrammed) is fatal for this core — we
 ///      log and halt the secondary while leaving primary +
 ///      already-initialised secondaries running.
-///   6. **Lean kernel bring-up entry**:
+///   6. **Per-PE readiness** ([`crate::lean_ready::become_ready_or_halt`],
+///      WS-BP BP6.1/BP6.2): the per-core Lean runtime handshake — this PE is
+///      the core it names, translates, runs on its own stack slot, and the
+///      kernel heap serves it — then the core marks itself ready.  A refusal
+///      parks this PE, and the boot core's bounded readiness wait halts the
+///      system (BP6.3).
+///   7. **Lean kernel bring-up entry**:
 ///      `lean_secondary_kernel_main(core_id)` (emitted by Lean from
 ///      `SeLe4n.Kernel.SecondaryEntry`) — the core's first reschedule.
 ///      Runs inside `kernel_entry::with_kernel_entry` and with IRQs
 ///      still masked (the non-reentrant-lock discipline), committing
 ///      the verified `handleRescheduleSgiOnCore` transition that
 ///      establishes this core's `currentOnCore`.
-///   7. **IRQ unmask** ([`crate::interrupts::enable_irq`]): clear
+///   8. **IRQ unmask** ([`crate::interrupts::enable_irq`]): clear
 ///      PSTATE.I so the GIC may deliver interrupts to this PE; then
 ///      publish `CORE_IRQ_READY` (shootdown-target eligibility).
-///   8. **Interrupt-driven idle**: the core parks in a WFE loop; every
+///   9. **Interrupt-driven idle**: the core parks in a WFE loop; every
 ///      subsequent kernel entry on this core is an interrupt — per-core
 ///      timer ticks and `.reschedule` SGIs through
 ///      `trap.rs::handle_irq_per_core` under the kernel-entry lock.
@@ -706,6 +763,10 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // -----------------------------------------------------------------
     crate::mmu::init_mmu_secondary(core_id);
     crate::kprintln!("[smp] core {core_id}: MMU enabled (WXN, SA, SA0, EIS, EOS)");
+    // The v0.36.2 audit: this PE's `CTR_EL0` admits the cache-maintenance
+    // stride, or this PE parks and the boot core's Phase-7 wait counts it
+    // short.
+    crate::cache::verify_cache_line_stride_or_halt(crate::cpu::fatal_halt);
 
     // -----------------------------------------------------------------
     // Step 2 — Exception vectors.
@@ -717,6 +778,9 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // -----------------------------------------------------------------
     crate::boot::install_exception_vectors();
     crate::kprintln!("[smp] core {core_id}: VBAR_EL1 installed");
+    // The v0.36.2 audit: an SError on this PE is reported and halts from here
+    // on (`trap::handle_serror`), as on the boot core.
+    crate::interrupts::enable_serror();
 
     // -----------------------------------------------------------------
     // Step 3 — GIC CPU interface.
@@ -749,6 +813,30 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
         "[smp] core {core_id}: timer armed at {} Hz",
         crate::timer::DEFAULT_TICK_HZ
     );
+
+    // -----------------------------------------------------------------
+    // Step 4b — per-PE Lean runtime handshake, then readiness (WS-BP
+    // BP6.1/BP6.2).
+    //
+    // The per-image half of the handshake — the library initializer and
+    // the kernel install — ran once on the boot core, and happened-before
+    // this PE through the `CORE_READY` release it just acquired.  What is
+    // left is per-PE: this PE is the core it names, it translates, it runs
+    // on its own stack slot, and the kernel heap serves it
+    // (`lean_ready::initialise_core_runtime`).  The core is then marked
+    // ready **on itself**, before the bring-up entry below consults the gate
+    // and before Step 6 unmasks IRQs, so no interrupt is ever taken here in
+    // the degraded Rust-only mode once the kernel exists.
+    //
+    // A refused handshake parks this PE (`cpu::fatal_halt`): it never
+    // publishes `CORE_IRQ_READY`, so the boot core's bounded readiness wait
+    // counts it short and halts the system (WS-BP BP6.3) — the boot fails
+    // rather than running a kernel this PE cannot serve.  `build.rs`
+    // (`readiness_publication_status`) holds this statement after the timer
+    // arm and before `enable_irq`.
+    // -----------------------------------------------------------------
+    #[cfg(feature = "hw_target")]
+    crate::lean_ready::become_ready_or_halt(core_idx, crate::cpu::fatal_halt);
 
     // -----------------------------------------------------------------
     // Step 5 — Lean kernel bring-up entry (the core's first reschedule).
@@ -787,14 +875,12 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // -----------------------------------------------------------------
     #[cfg(feature = "hw_target")]
     {
-        // Lean-runtime readiness gate: SM10.1's image initialization runs
-        // this core's per-core Lean runtime init earlier in this function
-        // and marks the core ready; until that work exists, no core is
-        // ever ready and the bring-up entry is skipped — a PE must never
-        // enter a Lean runtime it has not initialized.  A skipped entry
-        // leaves `currentOnCore` at its boot value (`none`, the legacy
-        // idle representation); the core's first ready-side scheduling
-        // point performs the deferred first reschedule.
+        // Lean-runtime readiness gate: Step 4b ran this PE's per-core
+        // handshake and marked it ready, so on the image the gate passes.
+        // It stays because a PE must never enter a Lean runtime it has not
+        // initialized, and the gate is where `build.rs` checks that; a PE
+        // that marked itself and still reads not-ready has a broken mask,
+        // and parks rather than skip its first reschedule.
         //
         // PR #887 review round 6: the readiness gate is the EXECUTING PE's.
         // `core_idx` is the PSCI context id the primary passed, validated
@@ -820,27 +906,35 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
                 /// its Lean runtime is initialised (`lean_ready` checked on
                 /// *this* PE).  `core_id` must equal the executing PE's
                 /// `TPIDR_EL1`, which the caller asserts.
-                fn lean_secondary_kernel_main(core_id: u64);
+                fn lean_secondary_kernel_main(core_id: u64) -> crate::lean_runtime::LeanBaseIoUnit;
             }
             // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted
             // C-callable wrapper for `SeLe4n.Kernel.secondaryKernelMain`.
             // The function takes one u64 argument (the PSCI context_id)
-            // and returns `()` — the call is total and never unwinds
+            // and returns its `BaseIO Unit` value, `lean_box(0)` — the call is total and never unwinds
             // across the FFI boundary (Lean's `BaseIO` never throws under
             // `panic = "abort"`).  The verified step decodes the id
             // fail-closed, so even an out-of-range context_id commits
             // nothing.  This core's Lean runtime is initialized (the
             // `lean_ready` gate just checked).
-            crate::kernel_entry::with_kernel_entry(core_idx, || unsafe {
-                lean_secondary_kernel_main(core_id);
+            let res = crate::kernel_entry::with_kernel_entry(core_idx, || unsafe {
+                lean_secondary_kernel_main(core_id)
             });
+            // The export returns its `BaseIO Unit` value, `lean_box(0)`,
+            // checked outside the bracket so a malformed one halts this PE
+            // without holding the kernel-entry lock
+            // (`lean_runtime::discharge_base_io`).
+            // SAFETY: `res` is the value the export just returned; if it is
+            // a heap object this caller owns its one reference.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_secondary_kernel_main") };
             crate::kprintln!(
                 "[smp] core {core_id}: kernel bring-up entry complete (first reschedule)"
             );
         } else {
             crate::kprintln!(
-                "[smp] core {core_id}: kernel bring-up entry deferred (Lean runtime not ready)"
+                "[smp] core {core_id}: FATAL: not ready after marking itself; halting this core"
             );
+            crate::cpu::fatal_halt();
         }
     }
     #[cfg(not(feature = "hw_target"))]
@@ -913,33 +1007,39 @@ mod tests {
         }
     }
 
+    /// Cores `< n` serve; the rest never do.
+    fn first_serve(n: usize) -> impl Fn(usize) -> bool {
+        move |c| c < n
+    }
+
     #[test]
-    fn irq_ready_wait_returns_on_timeout_when_a_core_never_publishes() {
-        // Ask for more cores than can ever be ready in this process: the boot
-        // core is `true` by construction, the rest are only set by their own
-        // `secondary_entry`, which no host test runs.
-        let ready = super::irq_ready_core_count_within_in(
+    fn serving_wait_returns_on_timeout_when_a_core_never_serves() {
+        let ready = super::serving_core_count_within_in(
             super::CORE_IRQ_READY.len() as u32,
             8,
             ticking_clock(),
+            first_serve(3),
         );
-        assert!(
-            (ready as usize) < super::CORE_IRQ_READY.len(),
+        assert_eq!(
+            ready, 3,
             "the wait must return the honest short count on timeout, not hang \
              or report success"
         );
     }
 
     #[test]
-    fn irq_ready_wait_returns_immediately_when_every_expected_core_is_ready() {
-        // The boot core alone: `CORE_IRQ_READY[0]` is `true` from primary boot,
-        // so this must not consult the clock at all beyond the initial read.
+    fn serving_wait_returns_immediately_when_every_expected_core_serves() {
         let mut reads = 0u64;
-        let ready = super::irq_ready_core_count_within_in(1, u64::MAX, || {
-            reads += 1;
-            reads
-        });
-        assert_eq!(ready, 1, "the boot core is IRQ-ready from primary boot");
+        let ready = super::serving_core_count_within_in(
+            4,
+            u64::MAX,
+            || {
+                reads += 1;
+                reads
+            },
+            first_serve(4),
+        );
+        assert_eq!(ready, 4);
         assert!(
             reads <= 1,
             "a satisfied wait must not spin: the common case costs one pass"
@@ -947,30 +1047,87 @@ mod tests {
     }
 
     #[test]
-    fn irq_ready_wait_clamps_expected_to_the_flag_array() {
-        // A caller asking for more PEs than the model has must not index out of
-        // bounds; the count returned is over the flags that exist.
-        let ready = super::irq_ready_core_count_within_in(
+    fn serving_wait_clamps_expected_to_the_flag_array() {
+        // A caller asking for more PEs than the model has must not ask the
+        // predicate about a core outside the flag array.
+        let ready = super::serving_core_count_within_in(
             super::CORE_IRQ_READY.len() as u32 + 8,
             4,
             ticking_clock(),
+            |c| {
+                assert!(c < super::CORE_IRQ_READY.len(), "asked about core {c}");
+                true
+            },
         );
-        assert!((ready as usize) <= super::CORE_IRQ_READY.len());
+        assert_eq!(ready as usize, super::CORE_IRQ_READY.len());
     }
 
     #[test]
-    fn irq_ready_wait_with_a_zero_timeout_still_terminates() {
-        // The degenerate budget: one poll, then the final read.  A wait that
-        // needed a positive budget to terminate would hang here.
-        let ready = super::irq_ready_core_count_within_in(
-            super::CORE_IRQ_READY.len() as u32,
-            0,
-            ticking_clock(),
+    fn serving_wait_with_a_zero_timeout_still_terminates() {
+        let ready = super::serving_core_count_within_in(4, 0, ticking_clock(), first_serve(0));
+        assert_eq!(ready, 0);
+    }
+
+    #[test]
+    fn a_straggler_that_serves_by_the_deadline_is_counted() {
+        // Core 3 starts serving on the fourth clock read: the wait must see it
+        // rather than refuse a topology that completed in time.
+        let clock = core::cell::Cell::new(0u64);
+        let ready = super::serving_core_count_within_in(
+            4,
+            100,
+            || {
+                clock.set(clock.get() + 1);
+                clock.get()
+            },
+            |c| c < 3 || clock.get() >= 4,
         );
-        assert!((ready as usize) < super::CORE_IRQ_READY.len());
+        assert_eq!(ready, 4);
+    }
+
+    /// The v0.36.2 audit: the conjunction decided on flags this test owns.
+    /// An IRQ-ready core that is not Lean-ready does not serve; marking it
+    /// Lean-ready makes it serve; a Lean-ready core that is not IRQ-ready
+    /// does not serve; and a core outside the array serves whatever the mask
+    /// says.  A mutation dropping either conjunct fails one of the first
+    /// three.
+    #[test]
+    fn serving_is_the_conjunction_of_irq_and_lean_readiness() {
+        let irq = [
+            AtomicBool::new(true),
+            AtomicBool::new(true),
+            AtomicBool::new(false),
+        ];
+        assert!(
+            !super::core_serves_in(&irq, 0b001, 1),
+            "IRQ-ready, not Lean-ready"
+        );
+        assert!(super::core_serves_in(&irq, 0b011, 1), "both halves");
+        assert!(
+            !super::core_serves_in(&irq, 0b111, 2),
+            "Lean-ready, not IRQ-ready"
+        );
+        assert!(!super::core_serves_in(&irq, 0xff, 3), "outside the array");
+        assert!(super::core_serves_in(&irq, 0b001, 0));
+    }
+
+    #[test]
+    fn an_irq_ready_core_that_is_not_lean_ready_does_not_serve() {
+        // WS-BP BP6.3: the production predicate asks both flags.  Core 0 is
+        // IRQ-ready from primary boot; cores 4 and 5 of the readiness mask are
+        // never marked by any test, and are outside the flag array, so they
+        // serve nothing whatever the mask says.
+        assert!(super::CORE_IRQ_READY[0].load(Ordering::Acquire));
+        assert!(!super::core_serves(super::CORE_IRQ_READY.len()));
+        assert!(!super::core_serves(usize::MAX));
+        // A secondary never published IRQ-readiness in a host test.
+        for c in 1..super::CORE_IRQ_READY.len() {
+            assert!(!super::core_serves(c), "core {c} cannot serve on the host");
+        }
     }
 
     use super::*;
+    use crate::lean_entry::SecondaryReleasePermit;
 
     // AN9-J test discipline: the inner-state-injection refactor
     // eliminates global-state races.  Each test allocates its own
@@ -1004,7 +1161,13 @@ mod tests {
     fn bring_up_secondaries_returns_zero_when_disabled() {
         // AN9-J: with `enabled = false`, no PSCI calls are issued.
         let (enabled, ready, count) = fresh_local_state();
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
         assert_eq!(online, 0);
         assert_eq!(count.load(Ordering::Acquire), 0);
     }
@@ -1046,7 +1209,13 @@ mod tests {
         // returning Success, all 3 secondaries come online.
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
         assert_eq!(online, MAX_SECONDARY_CORES as u32);
         assert_eq!(count.load(Ordering::Acquire), MAX_SECONDARY_CORES as u32);
         // Each secondary's ready flag should now be true.  Iterate
@@ -1068,7 +1237,13 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let small_table: [u64; 1] = [0x0001];
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &small_table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &small_table,
+        );
         assert_eq!(online, 1);
         assert!(ready[1].load(Ordering::Acquire));
         // Cores 2 and 3 untouched.
@@ -1513,7 +1688,13 @@ mod tests {
         enabled.store(true, Ordering::Release);
         // Use the inner helper so we don't touch the global state.
         let empty_table: [u64; 0] = [];
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &empty_table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &empty_table,
+        );
         assert_eq!(online, 0);
         // No CORE_READY flips on secondaries.
         assert!(!ready[1].load(Ordering::Acquire));
@@ -1539,7 +1720,13 @@ mod tests {
         let secondaries_to_spawn = limit.min(MAX_SECONDARY_CORES + 1).saturating_sub(1);
         let table = &SECONDARY_MPIDR_TABLE[..secondaries_to_spawn];
         assert_eq!(table.len(), 1);
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            table,
+        );
         assert_eq!(online, 1);
         assert!(
             ready[1].load(Ordering::Acquire),
@@ -1564,7 +1751,13 @@ mod tests {
         let secondaries_to_spawn = limit.min(MAX_SECONDARY_CORES + 1).saturating_sub(1);
         let table = &SECONDARY_MPIDR_TABLE[..secondaries_to_spawn];
         assert_eq!(table.len(), 2);
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            table,
+        );
         assert_eq!(online, 2);
         assert!(ready[1].load(Ordering::Acquire));
         assert!(ready[2].load(Ordering::Acquire));
@@ -1581,7 +1774,13 @@ mod tests {
         let secondaries_to_spawn = limit.min(MAX_SECONDARY_CORES + 1).saturating_sub(1);
         let table = &SECONDARY_MPIDR_TABLE[..secondaries_to_spawn];
         assert_eq!(table.len(), MAX_SECONDARY_CORES);
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            table,
+        );
         assert_eq!(online, MAX_SECONDARY_CORES as u32);
         // Iterate over `ready[1..=MAX_SECONDARY_CORES]` via
         // `enumerate().skip(1).take(MAX_SECONDARY_CORES)` to keep
@@ -1616,17 +1815,23 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         // Leave enabled = false (the default for fresh_local_state).
         let table = &SECONDARY_MPIDR_TABLE[..2];
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            table,
+        );
         assert_eq!(online, 0);
     }
 
     #[test]
     fn with_limit_function_resolves_via_crate_smp() {
         // SM1.D.6: the public function exists and has the documented
-        // signature `fn(usize) -> u32`.  Pinning the signature at the
-        // type-system level catches a future PR that renames or
-        // re-types it.
-        let _: fn(usize) -> u32 = bring_up_secondaries_with_limit;
+        // signature `fn(SecondaryReleasePermit, usize) -> u32` (the permit
+        // since WS-BP BP4.2).  Pinning the signature at the type-system level
+        // catches a future PR that renames or re-types it.
+        let _: fn(SecondaryReleasePermit, usize) -> u32 = bring_up_secondaries_with_limit;
     }
 
     #[test]
@@ -1642,7 +1847,7 @@ mod tests {
         // result behaviour: with max_cores = 1, secondaries_to_spawn
         // = 0 and the inner loop is empty regardless of the
         // SMP_ENABLED state.
-        let result = bring_up_secondaries_with_limit(1);
+        let result = bring_up_secondaries_with_limit(SecondaryReleasePermit::no_lean_kernel(), 1);
         assert_eq!(result, 0);
     }
 
@@ -1661,6 +1866,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             0,
             &enabled,
             &ready,
@@ -1679,6 +1885,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             1,
             &enabled,
             &ready,
@@ -1694,6 +1901,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             2,
             &enabled,
             &ready,
@@ -1711,6 +1919,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             MAX_SECONDARY_CORES + 1,
             &enabled,
             &ready,
@@ -1732,6 +1941,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             999,
             &enabled,
             &ready,
@@ -1747,6 +1957,7 @@ mod tests {
         let (enabled, ready, count) = fresh_local_state();
         // Leave enabled = false.
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             MAX_SECONDARY_CORES + 1,
             &enabled,
             &ready,
@@ -1775,6 +1986,7 @@ mod tests {
         enabled.store(true, Ordering::Release);
         let short_table: [u64; 1] = [0x0001];
         let online = bring_up_secondaries_with_limit_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
             MAX_SECONDARY_CORES + 1, // request all but only 1 in table
             &enabled,
             &ready,
@@ -1787,9 +1999,18 @@ mod tests {
 
     #[test]
     fn inner_function_signature_pin() {
-        // SM1.D.6 audit-pass-1: pin the inner-helper ABI.
-        let _: fn(usize, &AtomicBool, &[AtomicBool], &AtomicU32, &[u64]) -> u32 =
-            bring_up_secondaries_with_limit_inner;
+        // SM1.D.6 audit-pass-1: pin the inner-helper ABI.  The shared
+        // bring-up state is one alias, so the pin names every parameter
+        // without a type the linter calls too complex to read.
+        type SharedBringUpState<'a> = (&'a AtomicBool, &'a [AtomicBool], &'a AtomicU32, &'a [u64]);
+        fn pinned(
+            permit: SecondaryReleasePermit,
+            max_cores: usize,
+            (enabled, ready, online, table): SharedBringUpState<'_>,
+        ) -> u32 {
+            bring_up_secondaries_with_limit_inner(permit, max_cores, enabled, ready, online, table)
+        }
+        let _ = pinned;
     }
 
     // ========================================================================
@@ -1915,7 +2136,13 @@ mod tests {
         enabled.store(true, Ordering::Release);
 
         // Round 1: bring up all secondaries.
-        let online1 = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        let online1 = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
         assert_eq!(online1, MAX_SECONDARY_CORES as u32);
         for (idx, slot) in ready.iter().enumerate().skip(1) {
             assert!(
@@ -1935,7 +2162,13 @@ mod tests {
         // to `true` in round 1 must remain `true` after round 2,
         // because the bring-up loop only writes `true` on the
         // success branch and never clears the flag.
-        let online2 = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        let online2 = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
         assert_eq!(online2, MAX_SECONDARY_CORES as u32);
         for (idx, slot) in ready.iter().enumerate().skip(1) {
             assert!(
@@ -2016,6 +2249,7 @@ mod tests {
             let (enabled, ready, count) = fresh_local_state();
             enabled.store(true, Ordering::Release);
             let online = bring_up_secondaries_with_limit_inner(
+                SecondaryReleasePermit::no_lean_kernel(),
                 limit,
                 &enabled,
                 &ready,
@@ -2040,7 +2274,13 @@ mod tests {
         // Step 1: bring up all secondaries with local state.
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
-        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        let online = bring_up_secondaries_inner(
+            SecondaryReleasePermit::no_lean_kernel(),
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
         assert_eq!(online, MAX_SECONDARY_CORES as u32);
 
         // Step 2: validate every primary-emitted context_id.

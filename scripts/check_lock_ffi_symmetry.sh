@@ -31,6 +31,17 @@
 # sides calling one symbol at two arities, which links and then reads a
 # garbage register.
 #
+# **What this gate does not decide** (WS-BP BP0).  It is a NOMINAL
+# reconciliation: it proves the two sides name the same symbols at the same
+# types, and says nothing about whether they compute the same function — a
+# Rust body that ignores its argument, or answers the wrong holder, passes every
+# check here.  "Symmetric" above means the declarations agree, not the
+# behaviour.  The behavioural agreement for the lock is a different gate: the
+# Tier-5 cross-language oracle (`scripts/test_tier5_cross_language.sh`) drives
+# one trace through the Lean spec and the deployed Rust lock and compares whole
+# outputs, identity line by identity line.  Read a PASS here as "the surface
+# links", never as "the implementations agree".
+#
 # Exit codes:
 #   0 — both sides agree on the FFI surface.
 #   1 — Lean declares an FFI symbol the Rust side doesn't export.
@@ -211,13 +222,21 @@ rust_flat="$(tr '\n' ' ' < "${FFI_RUST}")"
 
 # Rust ABI spelling → Lean spelling.  Extend here when a new width is
 # bound; the check refuses anything not listed.
+#
+# A Lean `BaseIO Unit` crosses the C boundary as `lean_object*` holding
+# `lean_box(0)` — Lean 4.28 returns the value itself, with no world and no
+# `IO` result — so its Rust spelling is `Obj` (`lean_runtime::base_io_unit()`),
+# and a Rust function returning NOTHING is the defect the post-BP4.5 ABI audit
+# found (the caller reads whatever `x0` held as an object reference).  An empty
+# or `()` return therefore maps to nothing Lean spells.
 map_rust_type() {
   case "$1" in
     u64) echo "UInt64" ;;
     u32) echo "UInt32" ;;
     u8) echo "UInt8" ;;
     bool) echo "Bool" ;;
-    '()' | '') echo "Unit" ;;
+    Obj) echo "Unit" ;;
+    '()' | '') echo "NO-RETURN(a Lean BaseIO Unit binding must return lean_box(0))" ;;
     *) echo "UNMAPPED($1)" ;;
   esac
 }
@@ -244,7 +263,9 @@ for sym in "${EXPECTED_SYMBOLS[@]}"; do
   fi
   rust_param_list="${rust_sig%%)*}"
   mapfile -t rust_params_raw < <(printf '%s' "${rust_param_list}" | grep -oP ':\s*\K[[:alnum:]_()]+' || true)
-  rust_ret_raw="$(printf '%s' "${rust_sig}" | grep -oP -- '->\s*\K[[:alnum:]_()]+' | head -1 || true)"
+  # The return type's last path segment: `crate::lean_runtime::Obj` is `Obj`.
+  rust_ret_raw="$(printf '%s' "${rust_sig}" | grep -oP -- '->\s*\K[[:alnum:]_():]+' | head -1 || true)"
+  rust_ret_raw="${rust_ret_raw##*::}"
 
   rust_params=()
   for raw in "${rust_params_raw[@]}"; do

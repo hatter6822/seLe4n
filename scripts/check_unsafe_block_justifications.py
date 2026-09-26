@@ -125,10 +125,23 @@ KW_FN = rust_code_view.keyword("fn")
 IDENT_START = rust_code_view.ident_start()
 IDENT = rust_code_view.ident()
 
+# **A `macro_rules!` template declaring `unsafe … fn $name` is a declaration
+# site, keyed by its metavariable** (the `v0.36.2` audit).  The Lean runtime's
+# C-ABI exports are minted by four templates (`export_apply`, `borrowed2`,
+# `compare`, `narrow`); each expansion is a `pub unsafe extern "C" fn` whose
+# documentation is the template's own `///` lines, so the template is where the
+# `# Safety` section lives and where the obligation is decided once for every
+# name it mints.  A metavariable is not an identifier, so before this the
+# keyword scan found the token, no known form accepted the position, and the
+# gate failed the file — the fail-CLOSED branch, so nothing was silently passed,
+# but a decision was missing.  `MACRO_NAME` is the `$` the template spells its
+# name with; every form below admits it exactly where an identifier may start.
+MACRO_NAME = r"(?:\$)?"
+
 UNSAFE_SITE = re.compile(
     KW_UNSAFE + r"\s*\{"                                       # a block
     r"|" + KW_UNSAFE + r"\s+(?:" + KW_EXTERN + r"\s+" + ABI + r"\s+)?"
-    + KW_FN + r"\s+(?:r#)?" + IDENT_START,                      # a declaration
+    + KW_FN + r"\s+(?:r#)?" + MACRO_NAME + IDENT_START,         # a declaration
     re.UNICODE,
 )
 
@@ -149,7 +162,7 @@ UNSAFE_SITE = re.compile(
 UNSAFE_KNOWN_FORMS = [
     (re.compile(KW_UNSAFE + r"\s*\{"), "block"),
     (re.compile(KW_UNSAFE + r"\s+(?:" + KW_EXTERN + r"\s+" + ABI + r"\s+)?"
-                 + KW_FN + r"\s+(?:r#)?" + IDENT_START, re.UNICODE),
+                 + KW_FN + r"\s+(?:r#)?" + MACRO_NAME + IDENT_START, re.UNICODE),
      "declaration"),
     # `unsafe impl` / `unsafe trait` are not operations: they assert a trait
     # contract, which carries its own review story and no per-site obligation.
@@ -1321,7 +1334,7 @@ def justification_run(raw: str, view: str, at: int, is_declaration: bool,
 
 UNSAFE_FN_NAME = re.compile(
     KW_UNSAFE + r"\s+(?:" + KW_EXTERN + r"\s+" + ABI + r"\s+)?"
-    + KW_FN + r"\s+(?:r#)?(?P<name>" + IDENT + r")", re.UNICODE)
+    + KW_FN + r"\s+(?:r#)?(?P<name>" + MACRO_NAME + IDENT + r")", re.UNICODE)
 
 
 #: A foreign function item inside a foreign block, and the `safe` opt-out.
@@ -1656,6 +1669,35 @@ unsafe fn f() {}
 ///
 /// The caller holds the lock this reads.
 unsafe fn f() {}
+"""),
+    # A `macro_rules!` template is one declaration site for every name it
+    # mints (the v0.36.2 audit): its `///` lines are the expansions' docs.
+    ("a macro template's `unsafe fn $name` needs a `# Safety` section too", False, """
+macro_rules! exports {
+    ($($name:ident;)+) => {$(
+        #[no_mangle]
+        pub unsafe extern "C" fn $name(o: Obj) {
+            // SAFETY: the caller passes a live object.
+            unsafe { g(o) }
+        }
+    )+};
+}
+"""),
+    ("a justified macro-template declaration", True, """
+macro_rules! exports {
+    ($($name:ident;)+) => {$(
+        /// An export minted by `exports`.
+        ///
+        /// # Safety
+        ///
+        /// The caller passes a live object.
+        #[no_mangle]
+        pub unsafe extern "C" fn $name(o: Obj) {
+            // SAFETY: the caller passes a live object.
+            unsafe { g(o) }
+        }
+    )+};
+}
 """),
     # THE ABI-QUALIFIER CASE.  `pub unsafe extern "C" fn` is the ordinary FFI
     # spelling, and requiring `fn` immediately after `unsafe` made it not a site
@@ -2696,6 +2738,19 @@ unsafe auto trait Wild {}
         ("a plain `unsafe` block is a recognised form", """
 fn f() { unsafe { g() } }
 """, True),
+        # A template's metavariable name is a declaration form (the v0.36.2
+        # audit): the gate used to refuse the file, which is fail-closed but is
+        # not a decision.
+        ("a macro template's `unsafe extern \"C\" fn $name` is a declaration form", """
+macro_rules! exports {
+    ($($name:ident;)+) => {$(
+        /// # Safety
+        ///
+        /// The caller passes a live object.
+        pub unsafe extern "C" fn $name(o: Obj) {}
+    )+};
+}
+""", True),
         # **Rust 2024's unsafe ATTRIBUTE is a form, not an unknown**
         # (PR #895 review round 9).  The keyword scan found the token, no entry
         # accepted the position, and the gate failed the whole file -- the
@@ -2814,7 +2869,7 @@ def main(argv: list[str]) -> int:
     print("      authority: rustc (`clippy::undocumented_unsafe_blocks`) and rustdoc "
           "(`clippy::missing_safety_doc`), denied at the `sele4n-hal` / `sele4n-abi` "
           "crate roots and run with `-D warnings` on both the host and "
-          "`aarch64-unknown-none` lanes.")
+          "`aarch64-unknown-none-softfloat` lanes.")
     print("      heading verdict: a CANONICAL SPELLING — the heading's content must "
           "BE one of " + ", ".join(sorted(SAFETY_HEADING_TITLES)) + ", and every "
           "inline form is refused rather than rendered.  Deciding what markup "

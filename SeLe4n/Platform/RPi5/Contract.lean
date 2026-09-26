@@ -34,10 +34,10 @@ This is the first hardware target for seLe4n.
 
 - **SoC**: Broadcom BCM2712, quad-core ARM Cortex-A76 @ 2.4 GHz
 - **Architecture**: ARMv8.2-A (AArch64)
-- **RAM**: Up to 8 GB LPDDR4X (4 GB modeled here)
+- **RAM**: 1, 2, 4, 8 or 16 GB LPDDR4X, contiguous from address 0 (all five variants modeled)
 - **Interrupt controller**: GIC-400 (ARM Generic Interrupt Controller v2)
 - **Timer**: ARM Generic Timer, 54 MHz crystal
-- **Debug**: PL011 UART at 0xFE201000
+- **Debug**: PL011 UART10 at 0x10_7D00_1000 (the SoC-bus window `0x10_7C00_0000`)
 
 ## Status
 

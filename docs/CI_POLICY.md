@@ -18,6 +18,13 @@ These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job
 - `test-full` (after test-smoke): `./scripts/test_tier3_invariant_surface.sh`
 - `test-rust` (`Rust ABI Tests`): `./scripts/test_rust.sh` — workspace tests (incl. `--features std`), ABI conformance suite, `cargo fmt --check`, all-targets clippy. Runs on every PR/push alongside the Lean lanes.
 
+The hardware target has two lanes of its own, also on every PR/push:
+
+- `test-aarch64-cross` (`aarch64 Cross Build`): `./scripts/test_aarch64_cross_build.sh` — `sele4n-hal` for `aarch64-unknown-none-softfloat` in both profiles, the three `.S` sources verified assembled, the cross target linted with `-D warnings`, the release objects disassembled by `scripts/check_fp_simd_free_objects.py`, and (WS-BP BP2.1) a probe linked under `link.ld` by `scripts/check_link_script.py`, which checks the Lean heap arena's placement and the section boundaries the boot map reads (WS-BP BP2.6) on the ELF and proves each of the script's `ASSERT`s live by mutation; and (WS-BP BP5.1) step [7/7] links `sele4n-kernel` — the bare-metal image, its Rust half — in both profiles and runs `scripts/check_kernel_image.py` on the release one.
+- `test-lean-aarch64-archive` (`Lean aarch64 Archive`, WS-BP BP1): `./scripts/test_lean_aarch64_archive.sh` — `libsele4n.a`, the kernel's Lean object code for the same target, built from the elaborator's closure of `SeLe4n` by `scripts/build_lean_aarch64_archive.py` and checked there (closure, allocator configuration, per-module initializers, stdlib fidelity, attributed unresolved symbols, no FP/SIMD register); then `check_kernel_entry_exports.py --require-cross` decides the kernel-entry reconciliation on it and the host archive together.  Since BP2.2 the builder also links the archive with `--gc-sections` from its initializer and every production `@[export]`, and requires every symbol that link leaves undefined to be a global function of the HAL's rlib (the kernel's Lean runtime included) or of `compiler_builtins`.  Then (WS-BP BP5.2–BP5.4) it links the Lean kernel into `sele4n-kernel`, checks the image with `check_kernel_image.py --lean-kernel` and the FP/SIMD gate, cuts `kernel8.img` / `config.txt` with `scripts/build_rpi5_image.sh` and publishes the image's size and section map.  Uploads the archive, `libsele4n.unresolved`, and the `rpi5-kernel-image` artifact.
+
+`scripts/check_aarch64_cross_target.py` (Tier 0) requires both jobs to execute their scripts and install the toolchain components they read object code with.
+
 `scripts/test_tier2_determinism.sh` (mandatory Tier 2) runs in the PR-time
 smoke job as of v0.34.0, alongside the trace and negative-state checks;
 the nightly workflow (§2) additionally runs the repeat-run replay family.

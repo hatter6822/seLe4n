@@ -196,14 +196,14 @@ theorem memoryRegionCovered_sound (regions : List SeLe4n.MemoryRegion)
   · exact memoryRegionCoveredByUnion_sound regions r hUnion a hLo hHi
 
 /-- **PR #892 review round 2 — the finding's own shape**: the RPi5's 4 GiB low
-aperture reported as two adjacent `reg` entries is covered.  Decided, so the
+RAM reported as two adjacent `reg` entries is covered.  Decided, so the
 walk is exercised on the numbers a bootloader produces rather than on a
 symbolic pair. -/
 theorem memoryRegionCovered_split_low_aperture :
     memoryRegionCovered
       [ { base := SeLe4n.PAddr.ofNat 0, size := 0x40000000, kind := .ram },
-        { base := SeLe4n.PAddr.ofNat 0x40000000, size := 0xBC000000, kind := .ram } ]
-      { base := SeLe4n.PAddr.ofNat 0, size := 0xFC000000, kind := .ram } = true := by
+        { base := SeLe4n.PAddr.ofNat 0x40000000, size := 0xC0000000, kind := .ram } ]
+      { base := SeLe4n.PAddr.ofNat 0, size := 0x100000000, kind := .ram } = true := by
   decide
 
 /-- **PR #892 review round 2 (the negative)**: a gap between the pieces is not
@@ -212,8 +212,8 @@ contains. -/
 theorem memoryRegionCovered_gap_refused :
     memoryRegionCovered
       [ { base := SeLe4n.PAddr.ofNat 0, size := 0x40000000, kind := .ram },
-        { base := SeLe4n.PAddr.ofNat 0x40200000, size := 0xBBE00000, kind := .ram } ]
-      { base := SeLe4n.PAddr.ofNat 0, size := 0xFC000000, kind := .ram } = false := by
+        { base := SeLe4n.PAddr.ofNat 0x40200000, size := 0xBFE00000, kind := .ram } ]
+      { base := SeLe4n.PAddr.ofNat 0, size := 0x100000000, kind := .ram } = false := by
   decide
 
 /-- **PR #892 review round 2**: does the board `board` describes have all the

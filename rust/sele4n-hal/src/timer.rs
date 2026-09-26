@@ -430,8 +430,9 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
     // 2. Re-arm the per-core comparator for the next tick.
     reprogram_timer();
     // 3. Drive the Lean per-core scheduler timer tick (hardware only),
-    // gated on this core's Lean-runtime readiness: until SM10.1's image
-    // initialization marks the core ready (`lean_ready::mark_lean_ready`),
+    // gated on this core's Lean-runtime readiness: until the core marks
+    // itself ready (`lean_ready::become_ready_or_halt`, WS-BP BP6 — which it
+    // does before it unmasks IRQs, so on the image this arm is not taken),
     // the ISR is the record-and-rearm seam only — a PE must never enter
     // the Lean runtime it has not initialized (the constraint
     // shootdown.rs has always stated, now structural).
@@ -441,7 +442,7 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
             // SAFETY: `lean_per_core_timer_tick` is the C-callable wrapper the
             // Lean compiler emits for `Kernel.perCoreTimerTickEntry`
             // (`@[export lean_per_core_timer_tick]`).  It takes a `u64` core id
-            // and returns no value; calling it is sound from EL1 kernel context
+            // and returns its `BaseIO Unit` value, `lean_box(0)`; calling it is sound from EL1 kernel context
             // after the per-core hardware init has completed AND this core's
             // Lean runtime is initialized (the `lean_ready` gate just checked).
             extern "C" {
@@ -452,7 +453,7 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
                 /// (`lean_ready` checked on *this* PE).  `core_id` must be the
                 /// executing PE's own id: the tick charges that core's budget
                 /// and re-buckets its run queue.
-                fn lean_per_core_timer_tick(core_id: u64);
+                fn lean_per_core_timer_tick(core_id: u64) -> crate::lean_runtime::LeanBaseIoUnit;
             }
             // WS-SM SM5.I: the tick commits kernel state through the same
             // `modifyGetKernelState` read-then-write the syscall path uses,
@@ -468,9 +469,16 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
             // this core's Lean runtime is initialized (the readiness gate above
             // established that) and inside the kernel-entry bracket, which
             // serialises its `IO.Ref` commit against every other entry.
-            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
-                lean_per_core_timer_tick(core_id);
+            let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_per_core_timer_tick(core_id)
             });
+            // The export returns its `BaseIO Unit` value, `lean_box(0)`,
+            // checked outside the bracket so a malformed one halts this PE
+            // without holding the kernel-entry lock
+            // (`lean_runtime::discharge_base_io`).
+            // SAFETY: `res` is the value the export just returned; if it is
+            // a heap object this caller owns its one reference.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_per_core_timer_tick") };
         }
     }
 }
@@ -896,7 +904,8 @@ mod tests {
         );
         // SAFETY: host-side unit test — no gated seam is compiled to call
         // Lean here (`hw_target` off), so the readiness promise is vacuous.
-        unsafe { crate::lean_ready::mark_lean_ready(0) };
+        let ready = unsafe { crate::lean_ready::LeanRuntimeReadyOnCore::assume_initialised(0) };
+        crate::lean_ready::mark_lean_ready(ready);
         // Post-readiness: STILL no ISR-side advance — the shadow moves only
         // with the Lean entry's committed clock advance, which the host
         // build does not run.

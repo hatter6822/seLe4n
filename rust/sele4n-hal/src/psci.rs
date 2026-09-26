@@ -67,16 +67,30 @@
 //! | -8   | [`PsciResult::Disabled`]      | Target PE disabled (e.g. by errata workaround).    |
 //! | other| [`PsciResult::Unknown`]       | Vendor extension or undocumented code.             |
 //!
-//! ## HVC vs. SMC dispatch
+//! ## HVC vs. SMC dispatch — the conduit follows the entry level
 //!
-//! RPi5 firmware (`armstub8-rpi5`) exposes PSCI at EL2 via the `hvc #0`
-//! instruction; SMC dispatches go to the secure monitor at EL3 which is
-//! not configured for PSCI on this platform.  All wrappers in this
-//! module hard-code `hvc #0` because seLe4n's only v1.0.0 hardware
-//! target uses HVC.  A future port to a system that exposes PSCI via
-//! `smc #0` would parameterise the conduit through `PlatformBinding`;
-//! that parameterisation is post-1.0 work and is tracked in
-//! `docs/planning/SMP_RUST_HAL_PLAN.md` as a SM1 closure item.
+//! Every wrapper reaches the firmware through [`psci_call`], which issues
+//! `smc #0` or `hvc #0` according to [`Conduit`], chosen once by
+//! [`select_conduit`] from the level `boot.S` was entered at
+//! (WS-BP BP5.5):
+//!
+//! - **Entered at EL2** (the Raspberry Pi 5): `boot.S`'s `.L_enter_el1`
+//!   drops to EL1 and installs nothing at EL2, so an `hvc` from EL1 would
+//!   be taken to an EL2 with no vector table.  The only firmware left is
+//!   at EL3, reached by `smc` (HCR_EL2.TSC = 0, so it is not trapped).
+//!   This is a fact about the drop, not about any one firmware.
+//! - **Entered at EL1** (QEMU `virt` without `virtualization=on`): the
+//!   level above may be a hypervisor or the emulator's PSCI, which QEMU
+//!   services on `hvc` in that configuration; `hvc #0` is kept.
+//!
+//! Before BP5.5 every wrapper hard-coded `hvc #0` on the stated ground
+//! that the RPi5 firmware serves PSCI at EL2.  It cannot: the firmware
+//! hands EL2 to the kernel, so an `hvc` from the kernel was taken at EL2
+//! through a vector table nothing had installed — from EL2 itself before
+//! the drop existed, and from EL1 after it.  The platform-neutral answer — the device tree's
+//! `/psci` `method` property — is the conduit's authority on an EL1 entry
+//! and is registered debt; an EL2 entry leaves no alternative to `smc`.
+//! A call made before [`select_conduit`] halts the PE rather than guess.
 //!
 //! ## On host
 //!
@@ -194,6 +208,128 @@ pub const PSCI_FN_SYSTEM_OFF: u32 = 0x8400_0008;
 pub const PSCI_FN_SYSTEM_RESET: u32 = 0x8400_0009;
 
 // ============================================================================
+// The conduit (WS-BP BP5.5)
+// ============================================================================
+
+/// The instruction a PSCI call is made with (ARM DEN0022D §5.2, SMCCC).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Conduit {
+    /// `hvc #0` — PSCI served by the level above an EL1 entry.
+    Hvc,
+    /// `smc #0` — PSCI served by the EL3 firmware.
+    Smc,
+}
+
+/// `CurrentEL` as `boot.S`'s `.L_enter_el1` reports it for an EL1 entry.
+pub const CURRENT_EL_EL1: u64 = 0x4;
+
+/// `CurrentEL` as `boot.S`'s `.L_enter_el1` reports it for an EL2 entry.
+pub const CURRENT_EL_EL2: u64 = 0x8;
+
+/// The conduit an entry level implies, or `None` for a value `boot.S`
+/// never reports (it halts an entry at any other level).
+///
+/// An EL2 entry is vacated by the drop, so nothing can service an `hvc`
+/// and `smc` to the EL3 firmware is the only conduit; an EL1 entry keeps
+/// `hvc`.  See the module docs.
+#[must_use]
+pub const fn conduit_for_entry_el(entry_el: u64) -> Option<Conduit> {
+    match entry_el {
+        CURRENT_EL_EL1 => Some(Conduit::Hvc),
+        CURRENT_EL_EL2 => Some(Conduit::Smc),
+        _ => None,
+    }
+}
+
+const CONDUIT_UNSELECTED: u8 = 0;
+const CONDUIT_HVC: u8 = 1;
+const CONDUIT_SMC: u8 = 2;
+
+/// The selected conduit, written once by [`select_conduit`] on the boot
+/// core before any PSCI call and before any secondary exists.
+static CONDUIT: core::sync::atomic::AtomicU8 =
+    core::sync::atomic::AtomicU8::new(CONDUIT_UNSELECTED);
+
+/// Choose the conduit from the level the boot core was entered at.
+///
+/// Returns the conduit chosen, or `None` — selecting nothing — for an
+/// entry level `boot.S` never reports.  Called by `rust_boot_main` with
+/// the value `boot.S` passes in `x1`.
+pub fn select_conduit(entry_el: u64) -> Option<Conduit> {
+    let conduit = conduit_for_entry_el(entry_el)?;
+    let word = match conduit {
+        Conduit::Hvc => CONDUIT_HVC,
+        Conduit::Smc => CONDUIT_SMC,
+    };
+    CONDUIT.store(word, core::sync::atomic::Ordering::Release);
+    Some(conduit)
+}
+
+/// The selected conduit, or `None` before [`select_conduit`] ran.
+#[must_use]
+pub fn selected_conduit() -> Option<Conduit> {
+    match CONDUIT.load(core::sync::atomic::Ordering::Acquire) {
+        CONDUIT_HVC => Some(Conduit::Hvc),
+        CONDUIT_SMC => Some(Conduit::Smc),
+        _ => None,
+    }
+}
+
+/// Make one PSCI call through the selected conduit: `x0` carries the
+/// function id, `x1`–`x3` the arguments, and the result comes back in
+/// `x0` (ARM DEN0022D §5.2.1, SMCCC).  Unused arguments are passed as 0,
+/// which every PSCI function ignores.  A call before [`select_conduit`]
+/// halts the PE: guessing the conduit would trap to a level with no
+/// handler.
+///
+/// # Safety
+///
+/// The caller must be at EL1 and must satisfy the PSCI function's own
+/// contract — for `CPU_ON`, that `a2` is the physical address of code
+/// that may run on the target PE; for `CPU_OFF`, `SYSTEM_OFF` and
+/// `SYSTEM_RESET`, that nothing this PE still holds is lost by its not
+/// returning.  Every caller-saved register is clobbered.
+#[cfg(target_arch = "aarch64")]
+unsafe fn psci_call(function_id: u32, a1: u64, a2: u64, a3: u64) -> u64 {
+    let ret: u64;
+    match selected_conduit() {
+        Some(Conduit::Smc) => {
+            // SAFETY: `smc #0` with the SMCCC register convention; the
+            // caller's contract covers the function's effect, and
+            // `clobber_abi("C")` without `preserves_flags` covers what
+            // the firmware may change.
+            unsafe {
+                core::arch::asm!(
+                    "smc #0",
+                    inlateout("x0") function_id as u64 => ret,
+                    in("x1") a1,
+                    in("x2") a2,
+                    in("x3") a3,
+                    clobber_abi("C"),
+                    options(nostack)
+                );
+            }
+        }
+        Some(Conduit::Hvc) => {
+            // SAFETY: as for the `smc` arm, with `hvc #0`.
+            unsafe {
+                core::arch::asm!(
+                    "hvc #0",
+                    inlateout("x0") function_id as u64 => ret,
+                    in("x1") a1,
+                    in("x2") a2,
+                    in("x3") a3,
+                    clobber_abi("C"),
+                    options(nostack)
+                );
+            }
+        }
+        None => crate::cpu::fatal_halt(),
+    }
+    ret
+}
+
+// ============================================================================
 // AN9-J.1 (DEF-R-HAL-L20) — cpu_on (pre-existing PSCI wrapper)
 // ============================================================================
 
@@ -235,27 +371,12 @@ pub fn cpu_on(target_mpidr: u64, entry_point: usize, context_id: u64) -> PsciRes
 
     #[cfg(target_arch = "aarch64")]
     {
-        let ret: i32;
-        // SAFETY: `hvc #0` is a defined hypervisor call.  Per ARM
-        // DEN0022D, registers x0..x3 carry the PSCI call arguments;
-        // the return value comes back in x0.  We mark every C-ABI
-        // caller-saved register as clobbered via `clobber_abi("C")`
-        // (which covers x0..x18 plus x29/x30) and omit the
-        // `preserves_flags` option so the compiler does not assume
-        // PSTATE.NZCV survives the HVC.
-        unsafe {
-            core::arch::asm!(
-                "hvc #0",
-                in("x0") PSCI_FN_CPU_ON as u64,
-                in("x1") target_mpidr,
-                in("x2") entry_point as u64,
-                in("x3") context_id,
-                lateout("x0") ret,
-                clobber_abi("C"),
-                options(nostack)
-            );
-        }
-        PsciResult::from_raw(ret)
+        let entry = entry_point as u64;
+        // SAFETY: CPU_ON's contract — `entry_point` is `secondary_entry`,
+        // code that may run on the target PE, and the `dsb osh` above has
+        // published everything it reads.
+        let ret = unsafe { psci_call(PSCI_FN_CPU_ON, target_mpidr, entry, context_id) };
+        PsciResult::from_raw(ret as i32)
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
@@ -308,22 +429,11 @@ pub fn cpu_off() -> PsciResult {
 
     #[cfg(target_arch = "aarch64")]
     {
-        let ret: i32;
-        // SAFETY: HVC #0 with PSCI calling convention.  Caller
-        // guarantees the PE has nothing to lose by powering down
-        // (caller has hand-off state to another core, e.g., the
-        // BKL has been released and the per-core run queue is
-        // empty).
-        unsafe {
-            core::arch::asm!(
-                "hvc #0",
-                in("x0") PSCI_FN_CPU_OFF as u64,
-                lateout("x0") ret,
-                clobber_abi("C"),
-                options(nostack)
-            );
-        }
-        PsciResult::from_raw(ret)
+        // SAFETY: the caller guarantees the PE has nothing to lose by
+        // powering down (hand-off state to another core, e.g., the BKL
+        // released and the per-core run queue empty).
+        let ret = unsafe { psci_call(PSCI_FN_CPU_OFF, 0, 0, 0) };
+        PsciResult::from_raw(ret as i32)
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
@@ -438,23 +548,18 @@ pub fn affinity_info(
 
     #[cfg(target_arch = "aarch64")]
     {
-        let ret: i32;
-        // SAFETY: HVC #0 with PSCI calling convention.  Per ARM
-        // DEN0022D §5.1.5, x1 carries target_affinity (MPIDR mask),
-        // x2 carries lowest_affinity_level; return value comes back
-        // in x0.
-        unsafe {
-            core::arch::asm!(
-                "hvc #0",
-                in("x0") PSCI_FN_AFFINITY_INFO as u64,
-                in("x1") target_affinity,
-                in("x2") lowest_affinity_level as u64,
-                lateout("x0") ret,
-                clobber_abi("C"),
-                options(nostack)
-            );
-        }
-        decode_affinity_info_result(ret)
+        // SAFETY: AFFINITY_INFO is a query (DEN0022D §5.1.5): x1 carries
+        // the target affinity (MPIDR mask), x2 the lowest affinity level,
+        // and no state is transferred.
+        let ret = unsafe {
+            psci_call(
+                PSCI_FN_AFFINITY_INFO,
+                target_affinity,
+                lowest_affinity_level as u64,
+                0,
+            )
+        };
+        decode_affinity_info_result(ret as i32)
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
@@ -504,18 +609,11 @@ pub fn system_off() -> ! {
 
     #[cfg(target_arch = "aarch64")]
     {
-        // SAFETY: HVC #0 with PSCI calling convention.  Per DEN0022D
-        // §5.1.9 a conforming firmware does not return; a non-
-        // conforming firmware may return `NOT_SUPPORTED`, in which
-        // case we fall through to the spin loop below.
-        unsafe {
-            core::arch::asm!(
-                "hvc #0",
-                in("x0") PSCI_FN_SYSTEM_OFF as u64,
-                clobber_abi("C"),
-                options(nostack)
-            );
-        }
+        // SAFETY: per DEN0022D §5.1.9 a conforming firmware does not
+        // return; a non-conforming one may return `NOT_SUPPORTED`, in
+        // which case the spin loop below parks the PE.  The `dsb osh`
+        // above has published everything the system leaves behind.
+        let _ = unsafe { psci_call(PSCI_FN_SYSTEM_OFF, 0, 0, 0) };
     }
 
     // Spin-park.  Reached only if (a) the HVC firmware does not
@@ -558,19 +656,11 @@ pub fn system_reset() -> ! {
 
     #[cfg(target_arch = "aarch64")]
     {
-        // SAFETY: HVC #0 with PSCI calling convention.  Per DEN0022D
-        // §5.1.10 a conforming firmware does not return; a non-
-        // conforming firmware may return NOT_SUPPORTED, in which case
-        // we fall through to the spin loop below (same defensive
-        // pattern as `system_off`).
-        unsafe {
-            core::arch::asm!(
-                "hvc #0",
-                in("x0") PSCI_FN_SYSTEM_RESET as u64,
-                clobber_abi("C"),
-                options(nostack)
-            );
-        }
+        // SAFETY: per DEN0022D §5.1.10 a conforming firmware does not
+        // return; a non-conforming one may return NOT_SUPPORTED, in
+        // which case the spin loop below parks the PE (the `system_off`
+        // pattern).
+        let _ = unsafe { psci_call(PSCI_FN_SYSTEM_RESET, 0, 0, 0) };
     }
 
     // Spin-park.  Reached only if firmware doesn't implement
@@ -643,20 +733,10 @@ impl PsciVersion {
 pub fn psci_version() -> PsciVersion {
     #[cfg(target_arch = "aarch64")]
     {
-        let raw: u32;
-        // SAFETY: HVC #0 with PSCI calling convention.  Per DEN0022D
-        // §5.1.1 the call always returns; the 32-bit version word
-        // comes back in x0.
-        unsafe {
-            core::arch::asm!(
-                "hvc #0",
-                in("x0") PSCI_FN_PSCI_VERSION as u64,
-                lateout("x0") raw,
-                clobber_abi("C"),
-                options(nostack)
-            );
-        }
-        PsciVersion::from_raw(raw)
+        // SAFETY: PSCI_VERSION is a query that always returns
+        // (DEN0022D §5.1.1); the 32-bit version word comes back in x0.
+        let raw = unsafe { psci_call(PSCI_FN_PSCI_VERSION, 0, 0, 0) };
+        PsciVersion::from_raw(raw as u32)
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
@@ -749,20 +829,10 @@ pub const fn decode_migrate_info_type_result(raw: i32) -> Result<MigrateInfoType
 pub fn migrate_info_type() -> Result<MigrateInfoType, PsciResult> {
     #[cfg(target_arch = "aarch64")]
     {
-        let ret: i32;
-        // SAFETY: HVC #0 with PSCI calling convention.  Per DEN0022D
-        // §5.1.7 the call has no arguments beyond the function id;
-        // the migration-type word comes back in x0.
-        unsafe {
-            core::arch::asm!(
-                "hvc #0",
-                in("x0") PSCI_FN_MIGRATE_INFO_TYPE as u64,
-                lateout("x0") ret,
-                clobber_abi("C"),
-                options(nostack)
-            );
-        }
-        decode_migrate_info_type_result(ret)
+        // SAFETY: MIGRATE_INFO_TYPE is a query with no arguments beyond
+        // the function id (DEN0022D §5.1.7).
+        let ret = unsafe { psci_call(PSCI_FN_MIGRATE_INFO_TYPE, 0, 0, 0) };
+        decode_migrate_info_type_result(ret as i32)
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
@@ -1701,5 +1771,50 @@ mod tests {
         // SM1.A.4: structural check — `system_reset : fn() -> !`.
         // See `system_off_signature_is_diverging` for rationale.
         let _f: fn() -> ! = system_reset;
+    }
+
+    // ------------------------------------------------------------------------
+    // WS-BP BP5.5 — the conduit follows the entry level
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn an_el2_entry_calls_the_el3_firmware() {
+        // The drop leaves nothing at EL2, so `hvc` has no provider.
+        assert_eq!(conduit_for_entry_el(CURRENT_EL_EL2), Some(Conduit::Smc));
+    }
+
+    #[test]
+    fn an_el1_entry_keeps_hvc() {
+        assert_eq!(conduit_for_entry_el(CURRENT_EL_EL1), Some(Conduit::Hvc));
+    }
+
+    #[test]
+    fn a_level_boot_s_never_reports_selects_nothing() {
+        // EL0 (0x0), EL3 (0xC) and a value with bits outside [3:2] set:
+        // `boot.S` halts each before `rust_boot_main`, so none may pick a
+        // conduit here either.
+        for el in [0x0u64, 0xC, 0x5, 0x10, u64::MAX] {
+            assert_eq!(conduit_for_entry_el(el), None, "{el:#x}");
+        }
+    }
+
+    #[test]
+    fn the_reported_levels_are_current_el_encodings() {
+        // CurrentEL[3:2] is the level (ARM ARM D19.2.29): EL1 is 0b01,
+        // EL2 is 0b10.  `boot.S` compares against the same encodings.
+        assert_eq!((CURRENT_EL_EL1 >> 2) & 0x3, 1);
+        assert_eq!((CURRENT_EL_EL2 >> 2) & 0x3, 2);
+    }
+
+    #[test]
+    fn selecting_records_the_conduit_and_an_unknown_level_changes_nothing() {
+        // The only test that writes the process-wide selection; it
+        // restores the EL1 answer the host lane has always modelled.
+        assert_eq!(select_conduit(CURRENT_EL_EL2), Some(Conduit::Smc));
+        assert_eq!(selected_conduit(), Some(Conduit::Smc));
+        assert_eq!(select_conduit(0xC), None);
+        assert_eq!(selected_conduit(), Some(Conduit::Smc));
+        assert_eq!(select_conduit(CURRENT_EL_EL1), Some(Conduit::Hvc));
+        assert_eq!(selected_conduit(), Some(Conduit::Hvc));
     }
 }

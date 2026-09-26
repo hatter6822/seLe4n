@@ -173,7 +173,7 @@ const MOCK_ERROR_FRAME_X1: u64 = {
 ///
 /// The two variants are held to one signature by CI building both targets
 /// (`scripts/test_rust.sh` for the host, `scripts/test_aarch64_cross_build.sh`
-/// for `aarch64-unknown-none`); a change to one alone fails the other.
+/// for `aarch64-unknown-none-softfloat`); a change to one alone fails the other.
 #[cfg(not(target_arch = "aarch64"))]
 #[inline(always)]
 #[allow(unsafe_code)]

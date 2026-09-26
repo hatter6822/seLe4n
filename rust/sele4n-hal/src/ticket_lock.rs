@@ -25,18 +25,21 @@
 //!
 //! ## ARM ARM citations
 //!
-//! * `next_ticket.fetch_add(1, Acquire)` — `LDADDA` (ARM ARM C6.2.116):
-//!   atomic load + add + store with acquire semantics.  Captures the
-//!   ticket atomically; on ARMv8.1-A LSE this is one instruction.
+//! * `next_ticket.fetch_add(1, Acquire)` — an `LDAXR`/`STXR` loop (ARM ARM
+//!   C6.2.142 / C6.2.335) on the kernel's target, `aarch64-unknown-none-softfloat`,
+//!   whose baseline is ARMv8.0-A with no LSE: an exclusive-monitor
+//!   read-modify-write with acquire semantics, which the local monitor
+//!   completes only on Normal cacheable memory (`uart::ticket_lock_usable`
+//!   is why the console lock is not taken with translation off).  With
+//!   `+lse` it would be the single `LDADDA` (C6.2.116).
 //! * `serving.load(Acquire)` — `LDAR` (ARM ARM C6.2.142): acquire-load
 //!   that synchronises-with the release-store that produced the value.
 //!   The acquire-load establishes a happens-before edge from the prior
 //!   holder's critical section to the new holder.
-//! * `serving.fetch_add(1, Release)` — `LDADDL` (ARM ARM C6.2.116) with
-//!   the LDADD-family (load-modify-return-store) semantics matching
-//!   Rust's `fetch_add`-returning-prior contract:
-//!   release-store that publishes every prior write on the releasing
-//!   core to any acquire-load that observes the new value.
+//! * `serving.fetch_add(1, Release)` — the same loop with `STLXR`
+//!   (`LDADDL` under LSE): a release-store that publishes every prior write
+//!   on the releasing core to any acquire-load that observes the new value,
+//!   returning the prior value as Rust's `fetch_add` contract requires.
 //! * `sev` — `SEV` (ARM ARM C6.2.243): hint instruction that sets the
 //!   local event register on every PE in the inner-shareable domain.
 //!   Wakes spin-waiters parked on `wfe`.

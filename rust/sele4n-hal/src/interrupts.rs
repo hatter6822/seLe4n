@@ -106,6 +106,37 @@ pub fn enable_irq() {
     }
 }
 
+/// Unmask SError (clear PSTATE.A; keep D/I/F unchanged).
+///
+/// **The v0.36.2 audit**: `.L_enter_el1` reaches EL1 with every DAIF bit set
+/// and [`enable_irq`] clears `I` alone, so until this existed an asynchronous
+/// external abort — the response to an MMIO access no device answers, which
+/// is exactly what a wrong board constant produces — stayed pending and
+/// silent for the life of the boot.  Each PE calls this once, right after it
+/// installs its vector table (`boot.rs` Phase 2, `smp.rs` Step 2): from then
+/// on an SError is taken through `trap.rs::handle_serror`, which reports it
+/// and halts, so a bad address fails loudly on the first-boot readback
+/// rather than never.  `disable_interrupts` / `restore_interrupts` save and
+/// restore the whole mask, so a critical section neither loses nor keeps
+/// this.
+///
+/// ARM ARM C5.2.5: DAIFClr bit 2 is `A`.
+#[inline(always)]
+pub fn enable_serror() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: DAIFClr clears interrupt mask bits.  Clearing A enables
+        // SError delivery, which is safe once VBAR_EL1 names a table whose
+        // SError entries reach `handle_serror`. (ARM ARM C5.2.5)
+        unsafe {
+            core::arch::asm!(
+                "msr daifclr, #0x4",
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+    }
+}
+
 /// Execute a closure with all interrupts disabled.
 ///
 /// Saves the current DAIF state, masks all interrupts, executes the

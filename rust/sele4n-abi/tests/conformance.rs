@@ -2080,6 +2080,113 @@ fn return_shape_mirror_matches_the_lean_table() {
     );
 }
 
+/// **WS-BP BP0.3**: the `MessageInfo` layout, the syscall register assignment
+/// and the ABI's bounds, rendered
+/// from *this* crate's encoder and constants and compared against the table
+/// `tests/SyscallReturnAbiSuite.lean` emits from the Lean definitions
+/// (`tests/fixtures/abi_layout.expected`).
+///
+/// The layout is measured rather than restated, on both sides by one rule:
+/// decode each bit `2^j` alone; the field that comes back non-zero, holding
+/// `2^(j - shift)` and re-encoding to the same word, owns the bit, and a bit
+/// the decoder refuses is `reserved`.  So a shift or a width changed in either
+/// encoder changes that side's rendering and fails here or in the Lean suite —
+/// where the literal assertions this replaces (`MAX_LABEL == 1_048_575` and its
+/// siblings) stayed green whatever Lean did.
+#[test]
+fn abi_layout_matches_the_lean_table() {
+    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/abi_layout.expected");
+    fn owner(j: u32) -> &'static str {
+        let word = 1u64 << j;
+        let Ok(mi) = MessageInfo::decode(word) else {
+            return "reserved";
+        };
+        if mi.encode() != Ok(word) {
+            return "inconsistent";
+        }
+        match (mi.length() != 0, mi.extra_caps() != 0, mi.label() != 0) {
+            (true, false, false) => "length",
+            (false, true, false) => "extraCaps",
+            (false, false, true) => "label",
+            _ => "inconsistent",
+        }
+    }
+    let mut rendered = std::string::String::new();
+    rendered.push_str("# ABI layout: MessageInfo fields and bounds (Lean/Rust cross-check)\n");
+    for j in 0..64 {
+        rendered.push_str(&std::format!("bit {j} {}\n", owner(j)));
+    }
+    for field in ["length", "extraCaps", "label"] {
+        let bits: std::vec::Vec<u32> = (0..64).filter(|&j| owner(j) == field).collect();
+        let line = match (bits.first(), bits.last()) {
+            (Some(&lo), Some(&hi)) if bits.len() as u32 == hi - lo + 1 => {
+                std::format!("field {field} shift {lo} width {}", bits.len())
+            }
+            (Some(_), Some(_)) => std::format!("field {field} noncontiguous"),
+            _ => std::format!("field {field} absent"),
+        };
+        rendered.push_str(&line);
+        rendered.push('\n');
+    }
+    // Which register carries each field, measured from the encoder: a request
+    // whose fields are distinct sentinels is encoded, and each sentinel's array
+    // position is mapped to the register `trap::raw_syscall` binds it to —
+    // `inout("x0") regs[0]` .. `inout("x5") regs[5]`, `in("x7") regs[6]`.
+    const ARRAY_TO_REGISTER: [u64; 7] = [0, 1, 2, 3, 4, 5, 7];
+    let msg_info = MessageInfo::new(0, 0, 0x777).expect("a valid label");
+    let request = SyscallRequest {
+        cap_addr: CPtr::from(0xC0DE_0000u64),
+        msg_info,
+        msg_regs: [0xA000_0000, 0xA000_0001, 0xA000_0002, 0xA000_0003],
+        syscall_id: SyscallId::CspaceRevoke,
+    };
+    let regs = encode_syscall(&request).expect("the request encodes");
+    let register_of = |value: u64| -> u64 {
+        let positions: std::vec::Vec<usize> =
+            (0..regs.len()).filter(|&i| regs[i] == value).collect();
+        assert_eq!(
+            positions.len(),
+            1,
+            "sentinel {value:#x} must occupy one slot"
+        );
+        ARRAY_TO_REGISTER[positions[0]]
+    };
+    rendered.push_str(&std::format!(
+        "register capPtr x{}\n",
+        register_of(0xC0DE_0000)
+    ));
+    rendered.push_str(&std::format!(
+        "register msgInfo x{}\n",
+        register_of(msg_info.encode().expect("encodes"))
+    ));
+    for (i, sentinel) in request.msg_regs.iter().enumerate() {
+        rendered.push_str(&std::format!(
+            "register msgReg{i} x{}\n",
+            register_of(*sentinel)
+        ));
+    }
+    rendered.push_str(&std::format!(
+        "register syscallNum x{}\n",
+        register_of(SyscallId::CspaceRevoke.to_u64())
+    ));
+    rendered.push_str(&std::format!(
+        "maxMessageRegisters {}\n",
+        message_info::MAX_MSG_LENGTH
+    ));
+    rendered.push_str(&std::format!(
+        "maxExtraCaps {}\n",
+        message_info::MAX_EXTRA_CAPS
+    ));
+    rendered.push_str(&std::format!("maxLabel {}\n", message_info::MAX_LABEL));
+    rendered.push_str(&std::format!("errorLabelBase {ERROR_LABEL_BASE}\n"));
+    rendered.push_str(&std::format!("syscallAbiVersion {SYSCALL_ABI_VERSION}\n"));
+    assert_eq!(
+        rendered, LEAN_TABLE,
+        "the Rust MessageInfo layout or ABI bounds disagree with the Lean table; \
+         the userspace encoder and the kernel decoder must be the same function"
+    );
+}
+
 /// WS-RA RA.D.4: exactly seven syscalls are value-returning — the five the
 /// plan §1.3 enumerates plus WS-SM SM9.A's two audit accessors — pinned by
 /// iteration over every variant, mirroring Lean's

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.1-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.2-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,11 +86,11 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.36.1` |
+| **Version** | `0.36.2` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 417,841 across 340 files |
-| **Test Lean LoC** | 84,834 across 70 test suites |
-| **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 420,759 across 343 files |
+| **Test Lean LoC** | 85,605 across 71 test suites |
+| **Proved declarations** | 13,928 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
@@ -147,8 +147,10 @@ halves of the same crate: on the host every `#[cfg(target_arch = "aarch64")]`
 block is removed before rustc or clippy sees it, so the host lane cannot see
 the 67 cfg-gated blocks, 57 `asm!` sites or three `.S` sources that make up
 most of the HAL. The cross lane builds `sele4n-hal` for
-`aarch64-unknown-none` in both profiles, verifies the assembly sources really
-assembled, and lints the cross target — and it is a build rather than a
+`aarch64-unknown-none-softfloat` in both profiles, verifies the assembly
+sources really assembled, lints the cross target, and disassembles the release
+objects to prove they use no FP/SIMD register — the kernel is FP-free and traps
+FP/SIMD at EL1 from its first instruction — and it is a build rather than a
 `cargo check`, because `check` stops before code generation and never reaches
 an assembler.
 
@@ -269,10 +271,12 @@ can now act.
 
 **SM10 is blocked on WS-BP** (the bare-metal boot path,
 [`SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)), which became
-SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 43 sub-tasks
-across nine phases, none started — aarch64 Lean object code, bare-metal runtime
-hosting, the RPi5 deployment, the image, per-core readiness, the context
-restore, and first boot. Then **SM10** (release closure → v1.0.0).
+SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 50 sub-tasks
+across nine phases — cross-implementation agreement, aarch64 Lean object
+code, bare-metal runtime hosting, the RPi5 deployment, the boot seam, the
+image and per-core readiness (BP0–BP6, all landed at v0.36.2), then the
+context restore (BP7) and first boot (BP8), which remain. Then **SM10**
+(release closure → v1.0.0).
 
 Closed beside RR7 is **WS-LC** (lock datatype completion,
 [`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)):

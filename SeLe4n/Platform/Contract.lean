@@ -331,6 +331,14 @@ theorem PlatformBinding.declaredCores_length [PlatformBinding platform] :
   simp only [List.length_take, SeLe4n.Kernel.Concurrency.allCores, List.length_finRange]
   exact Nat.min_eq_left (PlatformBinding.coreCountLe (platform := platform))
 
+/-- **WS-BP BP3.5**: the declared cores are distinct — a prefix of `allCores`,
+    which is.  The idle fold's per-core equations need it, so the invariant
+    bundle of the state a binding's boot installs rests on it. -/
+theorem PlatformBinding.declaredCores_nodup [PlatformBinding platform] :
+    (PlatformBinding.declaredCores (platform := platform)).Nodup := by
+  unfold PlatformBinding.declaredCores
+  exact (List.take_sublist _ _).nodup SeLe4n.Kernel.Concurrency.allCores_nodup
+
 /-- PR #889 review round 5: a model core is declared iff its index is below
     the declared count. -/
 theorem PlatformBinding.mem_declaredCores_iff [PlatformBinding platform]

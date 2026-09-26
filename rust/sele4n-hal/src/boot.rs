@@ -8,26 +8,39 @@
 //!           TPIDR_EL1 is set and before any code consumes per-core state)
 //! Phase 2: MMU initialization → VBAR_EL1 setup
 //! Phase 3: GIC-400 + ARM Generic Timer initialization (AG5)
-//! Phase 4: TPIDR_EL1 setup → IRQ enable
-//! Phase 5: WS-SM SM1.D — DTB cmdline parse → secondary-core bring-up
+//! Phase 4: TPIDR_EL1 setup (IRQs stay masked — WS-BP BP6.2)
+//! Phase 5: WS-BP BP4.1–BP4.5 — Lean library initialization → the device
+//!          tree copied into a Lean `ByteArray` → the kernel-state install
+//!          (`lean_kernel_main`) → the image's loaded bytes cleaned to the
+//!          Point of Unification, on the boot core alone → the boot core's
+//!          per-PE runtime handshake and readiness (WS-BP BP6.1/BP6.2) →
+//!          IRQ enable
+//! Phase 6: WS-SM SM1.D — DTB cmdline parse → secondary-core bring-up
 //!          (`smp_enabled=true` is the default again since v0.32.142,
 //!           when SM5.I serialised kernel entry; see
-//!           `cmdline::CmdlineConfig::default`)
-//! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
+//!           `cmdline::CmdlineConfig::default`).  The bring-up consumes the
+//!          `SecondaryReleasePermit` Phase 5 returns, so it cannot run first.
+//! Phase 7: handoff summary → the PE-topology refusal: every declared PE
+//!          must serve the kernel (Lean-ready and IRQ-ready) within the
+//!          bounded window, or the system halts (WS-BP BP6.3)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.36.1";
+const KERNEL_VERSION: &str = "0.36.2";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
 /// Pinned against `SeLe4n/Platform/RPi5/Board.lean`'s
-/// `rpi5MachineConfig.declaredCoreCount` and `rpi5PlatformBinding.coreCount`,
-/// which `PlatformBinding.declaredCoreCountAgrees` holds equal.  The Lean side
+/// `rpi5MachineConfig.declaredCoreCount` and the RPi5 binding's `coreCount`,
+/// which `PlatformBinding.declaredCoreCountAgrees` holds equal — and, since
+/// the v0.36.2 audit, held to that `coreCount` by running both sides: the Lean
+/// suite writes it into `tests/fixtures/boot_map.expected` (`declaredCores`)
+/// and `lean_declared_core_count_matches_the_rpi5_binding` reads it back,
+/// where a literal `4` beside a comment naming the binding stood.  The Lean side
 /// installs idle threads on exactly this many cores and bounds
 /// `.tcbSetAffinity` by the same number, so a handoff to a narrower machine is
-/// refused at Phase 6 rather than stranding threads on PEs that do not exist.
+/// refused at Phase 7 rather than stranding threads on PEs that do not exist.
 ///
-/// Compiled where it is read: the Phase-6 handoff below is `hw_target`-only,
+/// Compiled where it is read: the Phase-7 refusal below is `hw_target`-only,
 /// and `lean_declared_core_count_matches_the_rpi5_binding` pins it under
 /// `cfg(test)`.  Without the gate the default host profile warns it is dead,
 /// which is true of that profile and of no other.
@@ -35,20 +48,35 @@ const KERNEL_VERSION: &str = "0.36.1";
 const LEAN_DECLARED_CORE_COUNT: u32 = 4;
 
 /// **PR #889 review round 23**: how long the handoff waits for every declared
-/// PE to publish `CORE_IRQ_READY` before refusing the topology.
+/// PE to serve the kernel before refusing the topology.
 ///
 /// Bounded on purpose: a secondary that never publishes must make the boot
 /// *fail*, not hang, so the wait has a ceiling and the refusal below is what
-/// runs when it expires.  The unit is `wfe_bounded` ticks, the same clock the
-/// shootdown protocol's bounded waits use.
+/// runs when it expires.  The unit is `wfe_bounded` ticks (10 ms each), the
+/// same clock the shootdown protocol's bounded waits use.
+///
+/// **One second, derived rather than picked** (the v0.36.2 audit).  Before a
+/// secondary publishes it runs its MMU, vector, GIC and timer setup, the
+/// per-PE handshake, the kernel bring-up entry under the kernel-entry lock —
+/// which the boot core's 1 kHz tick contends — and about 390 bytes of console
+/// traffic, which at 115 200 baud 8N1 (86.8 µs a byte) is ≈ 34 ms per PE and,
+/// serialised through the one console lock with the boot core's own Phase-6
+/// and Phase-7 lines, ≈ 100 ms for three PEs.  The previous window, 160 ms,
+/// left a healthy board a margin under 2× from console traffic alone.  A
+/// generous window costs nothing on a healthy boot, which ends the wait the
+/// moment the last PE serves, and is paid only on a boot that fails anyway.
 ///
 /// `hw_target`-only for the same reason as `LEAN_DECLARED_CORE_COUNT`: its one
-/// reader is the Phase-6 handoff.
+/// reader is the Phase-7 refusal.
 #[cfg(feature = "hw_target")]
-const SECONDARY_READY_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS * 16;
+const SECONDARY_READY_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS * 100;
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
-/// stack setup. Receives the DTB pointer from U-Boot in x0.
+/// stack setup. Receives the DTB pointer from the firmware in x0, and in x1
+/// the `CurrentEL` value the firmware entered `_start` at (`0x4` for EL1,
+/// `0x8` for EL2), which `boot.S`'s `.L_enter_el1` reports after dropping
+/// to EL1 (WS-BP BP5.5).  The entry level selects the PSCI conduit before
+/// anything can make a PSCI call (`psci::select_conduit`).
 ///
 /// This function must never return. If the kernel main returns (which it
 /// shouldn't), we enter an infinite WFE loop.
@@ -60,7 +88,7 @@ const SECONDARY_READY_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS
 /// function, `boot.S` must be updated in lockstep — `cargo build` would
 /// fail with an unresolved-symbol error before any binary is produced.
 #[no_mangle]
-pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
+pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // -----------------------------------------------------------------------
     // Phase 1: UART initialization, boot banner, per-CPU data verification
     //
@@ -76,7 +104,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // Pre-SM1.D the check ran in Phase 4 (just before TPIDR_EL1 write);
     // moving it earlier:
     //   1. Surfaces a regressed initialiser earlier (Phase 1 vs Phase 4).
-    //   2. Lets Phase 5's `apply_cmdline_and_start_smp` rely on the
+    //   2. Lets Phase 6's `apply_cmdline_and_start_smp` rely on the
     //      invariant having been verified at boot start.
     // -----------------------------------------------------------------------
     crate::uart::init_boot_uart();
@@ -85,9 +113,23 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     crate::kprintln!("  ARM64 / BCM2712 / Cortex-A76");
     crate::kprintln!();
 
-    // Report current exception level
+    // Report the level the firmware entered at and the level the kernel
+    // runs at, then select the PSCI conduit the entry level implies.  An
+    // entry level `boot.S` never reports cannot pick a conduit; the core
+    // halts rather than guess (WS-BP BP5.5).
     let el = crate::registers::read_current_el();
-    crate::kprintln!("[boot] Current exception level: EL{}", el);
+    crate::kprintln!(
+        "[boot] Entered at EL{}, running at EL{}",
+        (entry_el >> 2) & 0x3,
+        el
+    );
+    match crate::psci::select_conduit(entry_el) {
+        Some(conduit) => crate::kprintln!("[boot] PSCI conduit: {:?}", conduit),
+        None => {
+            crate::kprintln!("[boot] FATAL: unrecognised entry level {:#x}", entry_el);
+            crate::cpu::fatal_halt();
+        }
+    }
 
     // SM1.D.5: per-CPU data verification before any subsequent phase.
     // The check is platform-independent (host stubs run identically),
@@ -139,15 +181,14 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // Phase 2: MMU initialization
     // -----------------------------------------------------------------------
     crate::kprintln!("[boot] Configuring MMU...");
-    // **WS-RR RR7.1**: the device tree pointer sizes the identity map.  RAM
-    // above the 4 GiB boundary is mapped only on a board whose `/memory` node
-    // claims it, and absent DRAM below `mmu::LOW_RAM_TOP` is not mapped at
-    // all — Normal memory is speculatively accessible, so mapping DRAM that
-    // is not installed is not a harmless over-approximation.
+    // **WS-BP BP2.6**: the identity map is built from the image's layout and
+    // board constants — nothing is parsed before translation is enabled.  The
+    // device-tree pointer is only checked: the window a reader may dereference
+    // must lie in guaranteed RAM and outside the image.
     crate::mmu::init_mmu(dtb_ptr);
     crate::kprintln!(
-        "[boot] MMU enabled (identity map, RAM top {:#x})",
-        crate::mmu::boot_ram_top()
+        "[boot] MMU enabled (identity map, guaranteed RAM to {:#x})",
+        crate::mmu::GUARANTEED_RAM_TOP
     );
 
     // Set VBAR_EL1 to exception vector table.  WS-SM SM1.C.2 extracted
@@ -156,6 +197,13 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // now uses the same code path the secondaries do.
     install_exception_vectors();
     crate::kprintln!("[boot] VBAR_EL1 set to exception vector table");
+    // The v0.36.2 audit: with the vectors installed, an asynchronous external
+    // abort is reported and halts (`trap::handle_serror`) rather than staying
+    // pending and silent for the life of the boot.
+    crate::interrupts::enable_serror();
+    // ...and the cache-maintenance stride this HAL assumes is checked against
+    // the PE's own `CTR_EL0` rather than trusted from the TRM.
+    crate::cache::verify_cache_line_stride_or_halt(crate::cpu::fatal_halt);
 
     // -----------------------------------------------------------------------
     // Phase 3: GIC-400 and timer initialization (AG5)
@@ -218,7 +266,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     crate::kprintln!("[boot] Timer initialized (54 MHz counter, 1ms ticks)");
 
     // -----------------------------------------------------------------------
-    // Phase 4: TPIDR_EL1 setup → IRQ enable
+    // Phase 4: TPIDR_EL1 setup (the IRQ enable moved after Phase 5, BP6.2)
     //
     // WS-SM SM0.N / SM1.B (closes SMP-M4): set TPIDR_EL1 on the boot core.
     //
@@ -253,7 +301,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // (SVC, page fault from a user-mode caller) lands in
     // `handle_synchronous_exception` and would dereference an
     // uninitialised TPIDR_EL1 if it fired before Phase 4.  EL0 code
-    // does not run until the Lean kernel handoff in Phase 6, which
+    // does not run until the Lean kernel installs its state in Phase 5, which
     // is well after Phase 4 — the ordering is safe by construction.
     //
     // EL1-originated synchronous exceptions (kernel bug: misaligned
@@ -293,13 +341,62 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
         crate::kprintln!("[boot] current_core_id_from_tpidr() = {}", live_id);
     }
 
-    // Enable IRQ delivery now that GIC, timer, and per-core base
-    // register (TPIDR_EL1) are configured.
+    // WS-BP BP6.2: IRQ delivery is NOT enabled here any more.  The boot core
+    // unmasks only after Phase 5 has installed the kernel state and the core
+    // has marked itself Lean-ready, which is the order every secondary keeps
+    // too — so no PE takes an interrupt in the degraded, Rust-only mode once
+    // the kernel exists.  Nothing in Phase 5 waits on an interrupt: the timer
+    // armed in Phase 3 pends until the unmask, and a shootdown's initiator
+    // never needs its own acknowledgment.
+
+    // -----------------------------------------------------------------------
+    // Phase 5: the kernel-state install (WS-BP BP4.1/BP4.2)
+    //
+    // `lean_kernel_main` writes the whole kernel state and the labeling
+    // context outside every lock bracket (`kernel_entry.rs`).  It therefore
+    // runs here, on the boot core alone, **before** Phase 6 releases any
+    // secondary — so no bracketed committer exists while it runs, and the
+    // lost-commit shape a concurrent secondary tick would produce cannot
+    // occur.  The ordering is a type, not a comment: the bring-up consumes a
+    // `SecondaryReleasePermit`, and on an image that links the Lean kernel the
+    // only one is what `enter_lean_kernel` returns after the install.  An
+    // image with no Lean kernel (`hw_target` off: the host lane, the QEMU
+    // HAL-only boots) has no install to order and uses `no_lean_kernel`.
+    //
+    // A refused boot does not return: `lean_kernel_main` is the device-tree
+    // boot with its failure handled
+    // (`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`, WS-BP BP4.4), which
+    // halts the system inside the call on a blob the verified parser refuses,
+    // on a board that is not a Raspberry Pi 5, and on a refused boot.  The
+    // firmware's blob reaches it as a `ByteArray` the HAL copies (BP4.3).
+    // -----------------------------------------------------------------------
+    #[cfg(feature = "hw_target")]
+    let secondary_release = {
+        // WS-BP BP2.3/BP2.4: initialize the Lean library, halting the system
+        // if it refuses, then enter the kernel with the proof that it ran.
+        let initialised = crate::lean_entry::initialise_lean_library();
+        let permit = crate::lean_entry::enter_lean_kernel(initialised, dtb_ptr);
+        crate::kprintln!("[boot] Phase 5: kernel state installed");
+        permit
+    };
+    #[cfg(not(feature = "hw_target"))]
+    let secondary_release = crate::lean_entry::SecondaryReleasePermit::no_lean_kernel();
+
+    // WS-BP BP6.1/BP6.2: the boot core's per-PE runtime handshake, then its
+    // readiness, then — and only then — IRQ delivery.  The per-image half ran
+    // just above (`enter_lean_kernel` publishes the install); the per-PE half
+    // checks that this PE is core 0, translates, runs on the boot stack, and
+    // that the kernel heap serves it.  A refusal halts the system: no
+    // secondary has been released, and a boot core that cannot serve the
+    // kernel is a boot that failed.  `build.rs` (`readiness_publication_status`)
+    // holds this statement after the install and before `enable_irq`.
+    #[cfg(feature = "hw_target")]
+    crate::lean_ready::become_ready_or_halt(0, crate::gic::halt_all);
     crate::interrupts::enable_irq();
     crate::kprintln!("[boot] IRQ delivery enabled");
 
     // -----------------------------------------------------------------------
-    // Phase 5: WS-SM SM1.D — DTB cmdline parse + secondary-core bring-up
+    // Phase 6: WS-SM SM1.D — DTB cmdline parse + secondary-core bring-up
     //
     // SM1.D.1: parse the kernel command-line from the DTB's
     // `/chosen/bootargs` property (or use defaults if the DTB is
@@ -328,8 +425,8 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // parked in the boot.S `.L_secondary_spin` loop forever and only
     // the boot core ran kernel code.  Post-SM1.D, and with SM5.I's
     // kernel-entry lock live since v0.32.142, all 4 RPi5 cores are
-    // online by default by the time the Lean kernel main runs; an
-    // operator opts out with `smp_enabled=false`.
+    // online by default once the kernel state is installed; an operator opts
+    // out with `smp_enabled=false`.
     // -----------------------------------------------------------------------
     let cmdline_cfg = crate::cmdline::parse_cmdline_from_dtb(dtb_ptr);
     crate::kprintln!(
@@ -345,24 +442,24 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // always in sync with the parsed cmdline (defense against a
     // future bug where the disabled-branch forgets to commit the
     // false state to the atomic).
-    let online = crate::cmdline::apply_cmdline_and_start_smp(&cmdline_cfg);
+    let online = crate::cmdline::apply_cmdline_and_start_smp(&cmdline_cfg, secondary_release);
     if cmdline_cfg.smp_enabled {
         crate::kprintln!(
-            "[boot] Phase 5: {} secondary core(s) online (max requested: {})",
+            "[boot] Phase 6: {} secondary core(s) online (max requested: {})",
             online,
             cmdline_cfg.smp_max_cores
         );
     } else {
-        crate::kprintln!("[boot] Phase 5: SMP disabled by cmdline (single-core boot)");
+        crate::kprintln!("[boot] Phase 6: SMP disabled by cmdline (single-core boot)");
     }
 
     // -----------------------------------------------------------------------
-    // Phase 6: Handoff summary + Lean kernel entry
+    // Phase 7: Handoff summary + the topology refusal
     // -----------------------------------------------------------------------
     crate::kprintln!();
     crate::kprintln!("[boot] Hardware initialization complete:");
-    crate::kprintln!("  UART   : PL011 @ 0xFE201000 (115200 8N1)");
-    crate::kprintln!("  MMU    : identity map (3 GiB RAM + 1 GiB device)");
+    crate::kprintln!("  UART   : PL011 UART10 @ 0x10_7D00_1000 (115200 8N1)");
+    crate::kprintln!("  MMU    : identity map (guaranteed RAM + device window)");
     crate::kprintln!("  VBAR   : exception vectors installed");
     crate::kprintln!("  GIC    : GIC-400 distributor + CPU interface");
     crate::kprintln!("  Timer  : 1000 Hz (54 MHz / 54000 counts per tick)");
@@ -376,11 +473,16 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
         cmdline_cfg.smp_max_cores
     );
     crate::kprintln!();
-    crate::kprintln!("[boot] Boot complete, entering kernel");
+    crate::kprintln!("[boot] Boot complete");
 
-    // AG7-A: Lean kernel entry via FFI bridge.
-    // On hardware builds, `lean_kernel_main` is provided by the linked Lean
-    // object. On simulation/test builds, it falls through to idle_loop().
+    // WS-BP BP4.2 / BP6.3: the topology refusal, now that the secondaries have
+    // had their bounded window to publish readiness.  It is the runtime half of
+    // "no seam is left dormant": every PE the linked kernel declares must have
+    // marked itself Lean-ready and unmasked its IRQs within the window, or the
+    // boot halts the system rather than running a kernel one core cannot
+    // serve.  No EL0 thread has run yet — the first dispatch is a scheduling
+    // point this refusal precedes on every core but the ones already serving —
+    // so a mismatch halts before anything is served to user space.
     #[cfg(feature = "hw_target")]
     {
         // PR #889 review round 21: the linked Lean kernel declares its PE count
@@ -394,7 +496,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
         // SGI sent to a PE that cannot take it — and reports success.
         //
         // The two numbers are not reconcilable at this seam: `lean_kernel_main`
-        // takes the DTB pointer and nothing else, and a kernel that adapts its
+        // takes the device tree and nothing else, and a kernel that adapts its
         // topology at runtime is SM10.1's to build.  So the mismatch is
         // refused rather than papered over, which is what this whole cut is
         // about.  An operator who wants fewer PEs declares a binding with that
@@ -412,18 +514,35 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
         // IRQ-serviceable set — so this waits for it, bounded, rather than
         // trusting the proxy.  A core that never publishes leaves
         // `running_cores` short and the topology refusal below fires.
-        let running_cores = crate::smp::irq_ready_core_count_within(
+        //
+        // WS-BP BP6.3: and it waits for **Lean** readiness too
+        // (`smp::core_serves`).  IRQ-readiness alone is satisfied by a PE that
+        // unmasked interrupts with every gated seam still dormant, which is
+        // exactly the kernel "one core cannot serve".
+        let running_cores = crate::smp::serving_core_count_within(
             LEAN_DECLARED_CORE_COUNT,
             SECONDARY_READY_TIMEOUT_TICKS,
         );
         if running_cores != LEAN_DECLARED_CORE_COUNT {
             crate::kprintln!(
-                "[boot] FATAL: {} PE(s) IRQ-ready but the linked Lean kernel declares {} \
+                "[boot] FATAL: {} PE(s) serving the kernel but the linked Lean kernel declares {} \
                  ({} PSCI CPU_ON call(s) succeeded)",
                 running_cores,
                 LEAN_DECLARED_CORE_COUNT,
                 1 + online
             );
+            // The v0.36.2 audit: name the PE and the half it is short of, so
+            // a board with one dead core reports which one and whether it
+            // failed before its handshake (no Lean readiness) or before it
+            // unmasked (no IRQ readiness).
+            for core in 0..LEAN_DECLARED_CORE_COUNT as usize {
+                let (irq_ready, lean_ready) = crate::smp::core_readiness(core);
+                if !(irq_ready && lean_ready) {
+                    crate::kprintln!(
+                        "[boot]   PE {core}: IRQ-ready {irq_ready}, Lean-ready {lean_ready}"
+                    );
+                }
+            }
             // PR #889 review round 22: `halt_all`, not `fatal_halt`.  This
             // condition is reached *after* the secondaries that did start have
             // entered `rust_secondary_main`, unmasked IRQs and begun servicing
@@ -436,20 +555,6 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
             // for a per-PE fault — the VBAR check below is one.
             crate::gic::halt_all();
         }
-        extern "C" {
-            /// # Safety
-            ///
-            /// The primary PE's one-time boot install, and the only Lean upcall
-            /// that runs *outside* the readiness gate — it is the call that
-            /// initialises the runtime the gate stands for, so it must happen
-            /// exactly once, on the boot core, before any other Lean upcall on
-            /// any PE.  `dtb_ptr` must be the firmware's device-tree pointer.
-            fn lean_kernel_main(dtb_ptr: u64);
-        }
-        // SAFETY: lean_kernel_main is the Lean-compiled entry point linked from
-        // libsele4n.a. The DTB pointer from U-Boot is passed through. The
-        // function should not return; if it does, we fall through to idle.
-        unsafe { lean_kernel_main(dtb_ptr) };
     }
 
     // Idle fallback: enter WFE loop when no kernel main is linked (simulation)
@@ -622,28 +727,28 @@ mod tests {
     }
 
     // =====================================================================
-    // WS-SM SM1.D — Phase 5 wiring tests
+    // WS-SM SM1.D — Phase 6 wiring tests
     //
     // We cannot call `rust_boot_main` from host tests (it's `-> !` and
     // would attempt UART writes / MMIO that abort on host).  These tests
-    // verify the Phase 5 helpers — `parse_cmdline_from_dtb` and
+    // verify the Phase 6 helpers — `parse_cmdline_from_dtb` and
     // `apply_cmdline_and_start_smp` — resolve through the `crate::cmdline`
     // module path, and that `KERNEL_VERSION` stays in sync with
     // `lakefile.toml`.
     //
-    // The textual presence of the Phase 5 call sites inside
+    // The textual presence of the Phase 6 call sites inside
     // `rust_boot_main` is enforced at build time by
     // `scan_boot_rs_calls_cmdline_smp_startup` in `build.rs`.
     // =====================================================================
 
     #[test]
     fn kernel_version_string_matches_lakefile() {
-        // SM1.D: Phase 5 banner uses `KERNEL_VERSION`; pin it at the
+        // SM1.D: the Phase 1 banner uses `KERNEL_VERSION`; pin it at the
         // current SM2.A landing version (v0.31.9).  A future bump must
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.36.1");
+        assert_eq!(KERNEL_VERSION, "0.36.2");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is
@@ -658,9 +763,13 @@ mod tests {
             (crate::smp::MAX_SECONDARY_CORES + 1) as u32,
             "the handoff's declared PE count must be the topology the HAL brings up"
         );
+        // The v0.36.2 audit: the binding's `coreCount`, as the shared boot-map
+        // fixture carries it, rather than a literal beside a comment naming it.
         assert_eq!(
-            LEAN_DECLARED_CORE_COUNT, 4,
-            "RPi5Platform declares coreCount := 4"
+            u64::from(LEAN_DECLARED_CORE_COUNT),
+            crate::mmu::lean_boot_map_scalar("declaredCores"),
+            "the handoff's declared PE count is the Lean binding's coreCount, as \
+             tests/fixtures/boot_map.expected's declaredCores line carries it"
         );
     }
 
@@ -675,11 +784,13 @@ mod tests {
 
     #[test]
     fn apply_cmdline_resolves_via_crate_cmdline() {
-        // SM1.D: the Phase-5 SMP-start helper resolves through
-        // `crate::cmdline::apply_cmdline_and_start_smp` and accepts
-        // a `&CmdlineConfig`.
-        let _: fn(&crate::cmdline::CmdlineConfig) -> u32 =
-            crate::cmdline::apply_cmdline_and_start_smp;
+        // SM1.D: the Phase-6 SMP-start helper resolves through
+        // `crate::cmdline::apply_cmdline_and_start_smp` and accepts a
+        // `&CmdlineConfig` and the release permit (WS-BP BP4.2).
+        let _: fn(
+            &crate::cmdline::CmdlineConfig,
+            crate::lean_entry::SecondaryReleasePermit,
+        ) -> u32 = crate::cmdline::apply_cmdline_and_start_smp;
     }
 
     #[test]
@@ -694,7 +805,7 @@ mod tests {
         let cfg = crate::cmdline::parse_cmdline_from_dtb(0);
         assert!(
             cfg.smp_enabled,
-            "Phase 5 default enables SMP now that SM5.I has landed (SM1.D.3)"
+            "Phase 6 default enables SMP now that SM5.I has landed (SM1.D.3)"
         );
     }
 
@@ -706,7 +817,7 @@ mod tests {
         assert_eq!(
             cfg.smp_max_cores,
             crate::smp::MAX_SECONDARY_CORES + 1,
-            "Phase 5 default must be smp_max_cores=4 (SM1.D.6 / RPi5)"
+            "Phase 6 default must be smp_max_cores=4 (SM1.D.6 / RPi5)"
         );
     }
 }

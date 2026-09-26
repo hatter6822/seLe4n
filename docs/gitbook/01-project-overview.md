@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.1): 417,841 lines of production Lean across 340 files, 84,834 lines across 70 Lean test suites,
-13,815 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.36.2): 420,759 lines of production Lean across 343 files, 85,605 lines across 71 Lean test suites,
+13,928 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -66,8 +66,76 @@ it had made false.
 
 **SM10 — release closure at v1.0.0 — is blocked on WS-BP**, the bare-metal boot
 path ([`SMP_BOOT_PATH_PLAN.md`](../planning/SMP_BOOT_PATH_PLAN.md)), which
-became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 43
-sub-tasks across nine phases, none started.
+became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 50
+sub-tasks across nine phases.  **BP0 landed at v0.36.2**: the three Lean/Rust
+pairs — the device-tree readers, the ABI encoder and decoder, the boot map and
+the Lean memory map — are driven through shared fixtures, so a divergence fails
+a gate rather than waiting for a reviewer.  In the same version the kernel became
+**FP-free**: the HAL builds for `aarch64-unknown-none-softfloat`, both boot
+entries trap FP/SIMD at EL0 and EL1 from their first instruction, and the cross
+gate disassembles the release objects to prove it; user FP/SIMD traps until
+threads carry an FP context (BP7.9).  **BP1 landed at v0.36.2 as well**: the
+kernel's Lean object code is built for the target as `libsele4n.a` from the
+elaborator's closure of `SeLe4n`, compiled freestanding and soft-float, with
+every unresolved symbol attributed to its provider and the kernel-entry gate
+deciding on both archives (the `Lean aarch64 Archive` CI lane).  **BP2.1** gave
+the Lean runtime its heap: one arena the linker script places (64 MiB, asserted
+to fit the smallest board) and an allocator in the HAL behind `lean.h`'s
+small-object API, whose state is all out of band so it never touches the memory
+it serves and refuses every invalid free.  **BP2.2** gave the kernel its own
+Lean runtime, written in Rust so the image carries no C++: every symbol the
+archive's reachable link needs (144, 118 of them the runtime's; 145 since BP4.6) is provided, each
+one faithful to upstream, answering for a machine with no operating system, or
+halting; 9 215 results computed on upstream's runtime are recomputed by the
+kernel's, and a Tier 1 census proves no kernel entry reaches the environmental
+answers.  **BP2.3/BP2.4** run the Lean library initializer before the kernel
+is entered — the entry takes a token only a successful initialization
+constructs, so the order is checked by the compiler — and halt the whole
+system if it fails.  **BP2.6** builds the boot map from linker symbols and
+board constants — the image's text read-only and executable at EL1 alone, its
+read-only data and everything else never executable, the guaranteed first GiB of RAM and the
+device window — so nothing parses the device tree before the MMU is on.
+**BP3.1–BP3.4** give the hardware boot a deployment to install: a root task
+with its own address space, an interrupt notification and untypeds over the
+guaranteed gigabyte minus the kernel's reserved extent, and an untrusted
+initial thread, with no capability between them.  The boot now admits a
+thread's VSpace root (registering its ASID), refuses an untyped over memory it
+may not describe, and every gate of the checked boot on this configuration is
+decided by evaluation, so the hardware entry provably boots it.  **BP3.5**
+proves the proof-layer invariant bundle of the state that boot installs — for
+every configuration the checked boot accepts, the RPi5 deployment an instance —
+through one argument the unchecked boot now shares, and made the checked boot
+refuse a CNode holding a reply capability or an out-of-range badge, which it
+had admitted.  **BP4.1** writes the hardware boot entry, `lean_kernel_main`,
+and **BP4.2** runs it before any secondary core is released — enforced by a
+permit type the bring-up consumes and only the install returns.  **BP4.3**
+copies the firmware's device tree into a Lean `ByteArray`, and **BP4.4** makes
+the entry the device-tree boot on it: a board that is not a Raspberry Pi 5
+halts every core, and an accepted one boots the deployment on its own RAM
+variant, which is proved for all five.  **BP4.5** cleans the image's loaded
+bytes to the Point of Unification before any thread can fetch, so an initial
+task's code is fetched as the firmware loaded it.  **BP4.6** maps the RAM a
+larger board has above the guaranteed gigabyte, once the verified parse has
+chosen the variant, and seals the boot map before any secondary is released,
+and **BP4.7** hands that RAM to the root task as untypeds, so on every board no
+RAM outside the kernel's reserved extent is left unowned.  **BP5.1** makes the
+kernel one bare-metal binary, `sele4n-kernel`, entered at `_start` under
+`link.ld` and checked as an image by `scripts/check_kernel_image.py`; its panic
+handler halts the system.  **BP5.2** links the Lean kernel into that image with
+`--gc-sections`, rooted at the same symbols as the archive lane's reachable
+link, and runs the FP/SIMD gate over the linked image.  **BP5.3** packages it
+for the firmware: `scripts/build_rpi5_image.sh` writes `kernel8.img` and a
+`config.txt` pinning the load address to the image's entry and the device tree
+to a window `link.ld` places inside the kernel's reserved extent, and checks
+both against the image.  **BP5.4** publishes the image's size and section map
+with every CI run.  **BP5.5** handles the firmware's EL2 entry: both boot entries
+drop to EL1 through one routine `build.rs` pins item for item, with FP/SIMD left
+untrapped at EL2 so the EL1 trap fires, and the PSCI conduit follows the entry
+level (`smc` after an EL2 entry, where nothing is left to take an `hvc`).
+**BP6** makes the dormant seams live: every PE runs a per-PE runtime handshake
+and marks itself ready before it unmasks IRQs, and the boot halts unless every
+declared PE serves the kernel (IRQ-ready and Lean-ready) within a bounded
+window.  BP7..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

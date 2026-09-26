@@ -76,15 +76,15 @@ else
   warn "QEMU not installed; hardware tests will skip"
 fi
 
-# 3. Rust toolchain + aarch64-unknown-none target
+# 3. Rust toolchain + aarch64-unknown-none-softfloat target
 if command -v rustup &>/dev/null; then
-  info "Ensuring aarch64-unknown-none Rust target (pinned toolchain)"
+  info "Ensuring aarch64-unknown-none-softfloat Rust target (pinned toolchain)"
   # Run from rust/ so rust-toolchain.toml's pinned toolchain applies;
   # from the repo root the target would land in the default toolchain.
-  if (cd "${REPO_ROOT}/rust" && rustup target add aarch64-unknown-none 2>&1 | tail -2); then
-    pass "Rust aarch64-unknown-none target available on the pinned toolchain"
+  if (cd "${REPO_ROOT}/rust" && rustup target add aarch64-unknown-none-softfloat 2>&1 | tail -2); then
+    pass "Rust aarch64-unknown-none-softfloat target available on the pinned toolchain"
   else
-    warn "Could not add aarch64-unknown-none to the pinned toolchain; cross-builds under rust/ will fail until it is installed"
+    warn "Could not add aarch64-unknown-none-softfloat to the pinned toolchain; cross-builds under rust/ will fail until it is installed"
   fi
 else
   warn "rustup not installed; install via:"

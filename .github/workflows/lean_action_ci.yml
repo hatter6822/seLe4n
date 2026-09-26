@@ -316,7 +316,7 @@ jobs:
     runs-on: ubuntu-latest
 
     # WS-RR RR1.7: the kernel HAL's real deployment target is
-    # `aarch64-unknown-none`, and until this job existed nothing in the
+    # `aarch64-unknown-none-softfloat`, and until this job existed nothing in the
     # tree or in CI ever compiled it.  67 cfg-gated blocks, 57 `asm!`
     # sites and all three `.S` files had zero compile coverage; SM10.1
     # would have been the first thing to compile them while also being
@@ -346,11 +346,13 @@ jobs:
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: 1.94.1
-          # `clippy` is not optional here: step [4/4] of the gate lints
+          # `clippy` is not optional here: step [4/5] of the gate lints
           # the cross target with `-D warnings`, which is the only lane
           # that sees inside `#[cfg(target_arch = "aarch64")]` blocks.
-          components: clippy
-          targets: aarch64-unknown-none
+          # `llvm-tools` supplies the pinned `llvm-objdump` step [5/5]
+          # disassembles the objects with to prove them FP/SIMD-free.
+          components: clippy, llvm-tools
+          targets: aarch64-unknown-none-softfloat
 
       - name: Cache Cargo registry and build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -370,5 +372,91 @@ jobs:
       # runs exactly what a developer runs locally — including the
       # release build, the check that all three `.S` files really
       # assembled, and the cross-target clippy pass.
-      - name: Build sele4n-hal for aarch64-unknown-none
+      - name: Build sele4n-hal for aarch64-unknown-none-softfloat
         run: ./scripts/test_aarch64_cross_build.sh
+
+  test-lean-aarch64-archive:
+    name: Lean aarch64 Archive
+    runs-on: ubuntu-latest
+
+    # WS-BP BP1: the kernel's Lean object code for the hardware target.
+    # `aarch64 Cross Build` compiles the HAL; nothing compiled the Lean half
+    # for the image until this job.  It builds `libsele4n.a` from the
+    # production closure's C (the elaborator's `SeLe4n` closure, checked
+    # against Lake and the staged allowlist), compiled freestanding with the
+    # soft-float ABI the HAL uses, and then decides the kernel-entry
+    # reconciliation on it as well as on the host archive.  The builder's own
+    # checks -- one initializer per module, the stdlib against the
+    # toolchain's objects, the small-allocator configuration, no FP/SIMD
+    # register operand -- are in its module docs.
+    #
+    # The C compiler is the Lean toolchain's own clang; rustup's `llvm-tools`
+    # supplies the `llvm-nm` / `llvm-objdump` the archive is read with.  The
+    # regenerated stdlib C is cached under `.lake/build` keyed by the
+    # toolchain, so only the first run on a new toolchain pays for it.
+    #
+    # WS-BP BP5.2: the lane's last step links the kernel image with the Lean
+    # kernel in it -- `libsele4n.a` and the roots script the builder writes,
+    # under `--gc-sections` -- and checks and disassembles that image.
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore Lean and Lake caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.elan
+            .lake/packages
+            .lake/build
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-aarch64-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh', 'rust/sele4n-hal/lean_include/lean/config.h') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-aarch64-
+            ${{ runner.os }}-${{ runner.arch }}-lean-
+
+      - name: Setup Lean toolchain
+        run: ./scripts/setup_lean_env.sh --skip-test-deps
+
+      # `targets:` mirrors `rust/rust-toolchain.toml` as the cross job's does:
+      # the lane builds `sele4n-hal` for the target (the HAL-provided symbol
+      # census and the image), so the target is stated here rather than left
+      # to rustup's first-use install.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+          components: llvm-tools
+          targets: aarch64-unknown-none-softfloat
+
+      - name: Build and reconcile the kernel's Lean archive for aarch64
+        run: ./scripts/test_lean_aarch64_archive.sh
+
+      # BP2.2 derives the libc and runtime surface from this report rather
+      # than from a guessed list, so the archive and its unresolved set are
+      # kept with the run.
+      - name: Upload the archive and its unresolved-symbol report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lean-aarch64-archive
+          path: |
+            .lake/build/aarch64-unknown-none-softfloat/libsele4n.a
+            .lake/build/aarch64-unknown-none-softfloat/libsele4n.unresolved
+            .lake/build/aarch64-unknown-none-softfloat/libsele4n.roots.ld
+          if-no-files-found: warn
+
+      # WS-BP BP5.4: the image the firmware would boot, and the size and
+      # section map `scripts/kernel_image_report.py` published to this run's
+      # step summary, kept with the run so a regression in either is visible
+      # here rather than on the board.
+      - name: Upload the kernel image, its boot files and its size report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rpi5-kernel-image
+          path: |
+            rust/target/aarch64-unknown-none-softfloat/release/sele4n-kernel
+            .lake/build/rpi5-image/kernel8.img
+            .lake/build/rpi5-image/config.txt
+            .lake/build/rpi5-image/kernel-image-report.json
+          if-no-files-found: warn

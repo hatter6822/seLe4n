@@ -40,6 +40,8 @@
 //!   SM5.I serialised kernel entry at v0.32.142)
 //! - `per_cpu` — Per-CPU data block + TPIDR_EL1 accessors
 //!   (WS-SM SM1.B; closes SMP-M4)
+//! - `lean_heap` — the Lean heap: the linker-placed arena and the
+//!   allocator behind `lean.h`'s small-object API (WS-BP BP2.1)
 
 #![no_std]
 // HAL crate requires unsafe code for hardware instructions (MRS/MSR, MMIO,
@@ -49,11 +51,11 @@
 //
 // An `unsafe fn` is a contract on the CALLER; edition 2021 additionally makes
 // its body an implicit unsafe context, which would let a hardware operation
-// sit in one of these thirteen functions with no block and no `// SAFETY:`
+// sit in one of these functions with no block and no `// SAFETY:`
 // comment — the discipline above says every unsafe block carries one, and
 // without this lint that sentence is unenforceable exactly where the hardware
 // access happens. The crate already writes the blocks explicitly on both the
-// host and `aarch64-unknown-none`; denying the lint is what keeps it doing so,
+// host and `aarch64-unknown-none-softfloat`; denying the lint is what keeps it doing so,
 // and it is edition 2024's default, so the behaviour is acquired here
 // deliberately rather than at some future edition bump.
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -80,8 +82,9 @@
 //
 // **The cross lane is where the block lint has teeth.**  Most of this crate is
 // `#[cfg(target_arch = "aarch64")]`, so the host lane compiles those blocks out
-// and the lint cannot see them: deleting a real `// SAFETY:` comment produces 0
-// findings on the host and 2 on `aarch64-unknown-none`.  Both lanes run clippy
+// and the lint cannot see them: deleting the real `// SAFETY:` comment above
+// `cpu::wfe`'s `asm!` produces 0 findings on the host and 1 on
+// `aarch64-unknown-none-softfloat` (re-measured at v0.36.2).  Both lanes run clippy
 // with `-D warnings`, and the cross one is `scripts/test_aarch64_cross_build.sh`.
 //
 // What the lints do NOT cover, and what the scanner therefore still owns: a
@@ -326,9 +329,10 @@ pub mod lock_bridge;
 // the constraint shootdown.rs states in prose ("a reentrant per-core
 // Lean runtime … does not exist"): every Rust seam that would call into
 // Lean consults `lean_ready(core_id)` and degrades to a fail-closed
-// alternative until SM10.1's image initialization marks the core ready.
-// No core is ready at boot; nothing in the tree marks one yet — the
-// seams are wired, dormant, and cannot fire early.
+// alternative until the core is marked ready.  No core is ready at boot;
+// since WS-BP BP6 each PE marks itself, through
+// `lean_ready::become_ready_or_halt`, after its own per-PE runtime handshake
+// and before it unmasks IRQs, so a seam cannot fire on a PE early.
 //
 // WS-RR RR5.6/RR5.7: the seam list is **derived, not enumerated**.  This
 // comment used to name three seams — the timer ISR, the reschedule SGI
@@ -343,3 +347,25 @@ pub mod lock_bridge;
 // `feature = "hw_target"`, so a host build compiles no call path to a
 // bare-metal symbol at all.
 pub mod lean_ready;
+
+// WS-BP BP2.1: the Lean heap.  The arena is the linker's `.lean_heap` section
+// and the allocator serves `lean.h`'s small-object API (`lean_alloc_small`,
+// `lean_free_small`, `lean_small_mem_size`, exported under `hw_target`) and the
+// general `malloc`-shaped interface the runtime below allocates through, from
+// the same arena.  All allocator state is out of band, so it never dereferences
+// the memory it hands out.
+pub mod lean_heap;
+
+// WS-BP BP2.2: the kernel's own Lean runtime — objects, closures, big numbers,
+// strings, arrays, `ST.Ref` — over the heap above.  Its C entry points are
+// exported under `hw_target`; the set it must provide is derived from the Lean
+// archive's link and checked by the archive lane.
+pub mod lean_runtime;
+
+// WS-BP BP2.3/BP2.4: the primary's entry into the Lean kernel.  The library
+// initializer runs first, its `IO` result is checked, and a refusal halts the
+// system.  `lean_kernel_main` is reachable only by handing over the token a
+// successful initialization returns, so the order is a type rather than a
+// convention.  WS-BP BP4.2: the entry returns the `SecondaryReleasePermit` every
+// secondary bring-up consumes, so the install precedes the release by a type too.
+pub mod lean_entry;

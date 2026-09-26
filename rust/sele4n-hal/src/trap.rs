@@ -17,6 +17,16 @@
 ///
 /// Total size: 36 × 8 = 288 bytes, 16-byte aligned.
 ///
+/// **No FP/SIMD register is saved, and that is sound only because the
+/// kernel touches none.**  Both boot entries trap FP/SIMD at EL0 and EL1
+/// (`CPACR_EL1 := 0`, pinned by `build.rs`'s `scan_fp_trap_prologue`), the
+/// crate is built for `aarch64-unknown-none-softfloat`, and
+/// `scripts/check_fp_simd_free_objects.py` proves the release objects use
+/// no vector register.  Kernel code that touched one would halt at EL1 —
+/// and, were the trap ever lifted, would overwrite the interrupted thread's
+/// `q0`–`q31`, which nothing here would restore.  Per-thread FP state is
+/// WS-BP BP7.9's.
+///
 /// AK5-F (R-HAL-H04 / HIGH): ESR_EL1 and FAR_EL1 are saved at exception
 /// entry so that handlers read a STABLE snapshot rather than the live
 /// register. A nested exception (e.g., SError during data-abort handling)
@@ -382,7 +392,7 @@ fn halt_on_kernel_abort(frame: &TrapFrame, esr: u64) -> ! {
 /// `sync_class_mirrors_lean_ec_table` — and the routing then reaches the
 /// seams' fail-closed halves (`deliver_fault`'s status frame), which is the
 /// documented pre-readiness behaviour of the whole fault path.  Reachable
-/// only on the primary before the image target marks it ready: no other core
+/// on no core since WS-BP BP6 marks each one ready before it unmasks IRQs: no core
 /// runs EL0 code without a Lean runtime, and an EL1-origin exception halts
 /// before classification (`halt_if_kernel_origin`).  `build.rs` pins the
 /// relation — the Lean call sits after the gate in this body, the mirror is
@@ -484,7 +494,7 @@ fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
 /// frame, straight back onto the instruction that faulted, which is precisely
 /// the defect RR4 exists to remove.  So the interim behaviour is to stop:
 /// `fatal_halt` after a diagnostic, rather than spin.  The halt is
-/// unreachable at `v0.34.x` (no core sets `lean_ready`), and SM10.1 replaces
+/// reachable since WS-BP BP6 marks each core ready, and the context restore replaces
 /// it with the successor install — it is the seam's occupant, not its
 /// contract.
 ///
@@ -549,7 +559,7 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
                     x7: u64,
                     sp_el0: u64,
                     lr: u64,
-                );
+                ) -> crate::lean_runtime::LeanBaseIoUnit;
             }
             let (esr, elr, spsr, far) =
                 (frame.esr_el1, frame.elr_el1, frame.spsr_el1, frame.far_el1);
@@ -558,16 +568,23 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
             // SAFETY: `lean_handle_fault` is the C-callable wrapper the Lean
             // compiler emits for `Kernel.faultEntry`
             // (`@[export lean_handle_fault]`).  It takes fifteen `u64`s and
-            // returns no value; calling it is sound from EL1 exception context
+            // returns its `BaseIO Unit` value, `lean_box(0)`; calling it is sound from EL1 exception context
             // once this core's Lean runtime is initialized (the gate just
             // checked) and inside the kernel-entry lock (taken below), which is
             // what serialises its `IO.Ref` commit.
-            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+            let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
                 lean_handle_fault(
                     core_id, esr, elr, spsr, far, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
                     sp_el0, g[30],
-                );
+                )
             });
+            // The export returns its `BaseIO Unit` value, `lean_box(0)`,
+            // checked outside the bracket so a malformed one halts this PE
+            // without holding the kernel-entry lock
+            // (`lean_runtime::discharge_base_io`).
+            // SAFETY: `res` is the value the export just returned; if it is
+            // a heap object this caller owns its one reference.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_handle_fault") };
             crate::kprintln!(
                 "[core {}] fault delivered; halting pending the SM10.1 context restore (ESR=0x{:016x} ELR=0x{:016x})",
                 core_id,
@@ -695,7 +712,7 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
                     x7: u64,
                     sp_el0: u64,
                     lr: u64,
-                );
+                ) -> crate::lean_runtime::LeanBaseIoUnit;
             }
             let (esr, elr, spsr, far) =
                 (frame.esr_el1, frame.elr_el1, frame.spsr_el1, frame.far_el1);
@@ -703,17 +720,24 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
             let sp_el0 = frame.sp_el0;
             // SAFETY: `lean_handle_unknown_syscall` is the C-callable wrapper
             // the Lean compiler emits for `Kernel.unknownSyscallEntry`
-            // (`@[export lean_handle_unknown_syscall]`).  Fifteen `u64`s, no
-            // return value; sound from EL1 exception context once this core's
+            // (`@[export lean_handle_unknown_syscall]`).  Fifteen `u64`s and
+            // its `BaseIO Unit` value, `lean_box(0)`; sound from EL1 exception context once this core's
             // Lean runtime is initialized (the gate just checked) and inside
             // the kernel-entry lock (taken below), which serialises its
             // `IO.Ref` commit.
-            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+            let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
                 lean_handle_unknown_syscall(
                     core_id, esr, elr, spsr, far, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
                     sp_el0, g[30],
-                );
+                )
             });
+            // The export returns its `BaseIO Unit` value, `lean_box(0)`,
+            // checked outside the bracket so a malformed one halts this PE
+            // without holding the kernel-entry lock
+            // (`lean_runtime::discharge_base_io`).
+            // SAFETY: `res` is the value the export just returned; if it is
+            // a heap object this caller owns its one reference.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_handle_unknown_syscall") };
             crate::kprintln!(
                 "[core {}] unknown syscall delivered; halting pending the SM10.1 context restore (x7=0x{:x} ELR=0x{:016x})",
                 core_id,
@@ -1098,7 +1122,7 @@ fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
             // SAFETY: `lean_per_core_reschedule` is the C-callable wrapper the
             // Lean compiler emits for `Kernel.perCoreRescheduleEntry`
             // (`@[export lean_per_core_reschedule]`).  It takes a `u64` core id
-            // and returns no value; calling it is sound from EL1 IRQ context
+            // and returns its `BaseIO Unit` value, `lean_box(0)`; calling it is sound from EL1 IRQ context
             // after per-core hardware init has completed (the SGI can only be
             // taken once `enable_irq` ran on this core, which is after the
             // bring-up entry established this core's scheduler state) AND this
@@ -1110,7 +1134,7 @@ fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
                 /// `enable_irq` (so the `.reschedule` SGI can be taken at all)
                 /// and whose Lean runtime is initialised — `lean_ready` checked
                 /// on *this* PE.  `core_id` must be the executing PE's own id.
-                fn lean_per_core_reschedule(core_id: u64);
+                fn lean_per_core_reschedule(core_id: u64) -> crate::lean_runtime::LeanBaseIoUnit;
             }
             // SAFETY: `lean_per_core_reschedule` is the Lean-emitted
             // `extern "C"` entry declared just above; calling it is sound from
@@ -1118,9 +1142,16 @@ fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
             // core's per-core hardware init has completed and its Lean runtime
             // is initialized -- and inside the kernel-entry bracket, which
             // serialises its `IO.Ref` commit against every other entry.
-            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
-                lean_per_core_reschedule(core_id);
+            let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_per_core_reschedule(core_id)
             });
+            // The export returns its `BaseIO Unit` value, `lean_box(0)`,
+            // checked outside the bracket so a malformed one halts this PE
+            // without holding the kernel-entry lock
+            // (`lean_runtime::discharge_base_io`).
+            // SAFETY: `res` is the value the export just returned; if it is
+            // a heap object this caller owns its one reference.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_per_core_reschedule") };
         }
     }
     #[cfg(not(feature = "hw_target"))]
@@ -1153,9 +1184,25 @@ pub unsafe fn register_reschedule_sgi_handler() {
 /// `trap.S::__el0_serror_entry` / `__el1_serror_entry` now branch to `b .`
 /// after `bl handle_serror` (instead of the previously-dead `restore_context`
 /// fall-through) so the core halts in place if divergence is ever violated.
+///
+/// **The v0.36.2 audit**: SError is unmasked on every PE once its vectors
+/// are installed (`interrupts::enable_serror`), so this handler is reachable,
+/// and it reports through the console's **unlocked** writer: the interrupted
+/// context on this PE may hold the console lock — a store to an MMIO address
+/// no device answers is the commonest SError source, and that store is a
+/// console write as often as not — and taking the lock here would spin on
+/// it forever, silently.  The syndrome and the return address are printed
+/// because they are what a wrong board constant leaves behind.
 #[no_mangle]
-pub extern "C" fn handle_serror(_frame: &mut TrapFrame) -> ! {
-    crate::kprintln!("FATAL: SError exception");
+pub extern "C" fn handle_serror(frame: &mut TrapFrame) -> ! {
+    use core::fmt::Write;
+    let (esr, elr) = (frame.esr_el1, frame.elr_el1);
+    crate::uart::with_boot_uart_unlocked_for_fatal(|uart| {
+        let _ = writeln!(
+            uart,
+            "FATAL: SError exception (ESR_EL1 = {esr:#x}, ELR_EL1 = {elr:#x})"
+        );
+    });
     loop {
         crate::cpu::wfe();
     }

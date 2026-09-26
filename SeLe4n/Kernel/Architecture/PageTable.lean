@@ -14,7 +14,8 @@ import SeLe4n.Model.Object
 # ARMv8 Page Table Descriptor Format and Walk (AG6-A/AG6-B)
 
 Implements the ARMv8-A 4-level page table model for the seLe4n microkernel.
-Hardware target: Raspberry Pi 5 (BCM2712, Cortex-A76, 48-bit VA, 44-bit PA,
+Hardware target: Raspberry Pi 5 (BCM2712, Cortex-A76, 48-bit VA, 40-bit PA —
+`ID_AA64MMFR0_EL1.PARange = 0b0010`, corrected from 44 by the v0.36.2 audit —
 4 KiB granule).
 
 ## Design

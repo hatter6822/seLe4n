@@ -12,6 +12,7 @@ import SeLe4n.Machine
 import SeLe4n.Model.Object
 import SeLe4n.Platform.Boot
 import SeLe4n.Platform.RPi5.Board
+import SeLe4n.Platform.RPi5.Deployment
 import SeLe4n.Platform.RPi5.MmioAdapter
 import SeLe4n.Platform.RPi5.BootContract
 import SeLe4n.Platform.RPi5.RuntimeContract
@@ -110,14 +111,13 @@ def ak9d_01_range_within_gic_dist : IO Unit := do
     (isDeviceRangeWithinRegion gicDistributorBase 4 = true)
 
 /-- AK9-D: `isDeviceRangeWithinRegion` rejects a range that straddles the
-    end of the RPi5 peripheral `.device` window into the following
-    `.reserved` region. The peripheral window is
-    `[0xFE000000, 0xFF850000)` in `rpi5MachineConfig.memoryMap`; a read
+    end of the RPi5 peripheral `.device` window into the unmapped space
+    above it. The window is `[0x10_7C00_0000, 0x10_8000_0000)` in
+    `rpi5MachineConfig.memoryMap` (the BCM2712 SoC-bus window); a read
     starting 4 bytes before the end would extend past it. -/
 def ak9d_02_range_crosses_boundary : IO Unit := do
-  -- Peripheral window end = 0xFE000000 + 0x01850000 = 0xFF850000.
-  -- Start 4 bytes before end, ask for 16 bytes → crosses into reserved.
-  let addr : PAddr := PAddr.ofNat 0xFF84FFFC
+  -- Start 4 bytes before the window's end, ask for 16 bytes → crosses out.
+  let addr : PAddr := PAddr.ofNat (socPeripheralBase.toNat + socPeripheralSize - 4)
   expect "AK9-D-02 cross-region range rejected"
     (isDeviceRangeWithinRegion addr 16 = false)
 
@@ -391,7 +391,7 @@ def ak9a_07_mmioRead32_positive_success : IO Unit := do
 
 /-- AK9-A: `mmioRead64` positive success at an 8-byte aligned GIC-CPU address. -/
 def ak9a_08_mmioRead64_positive_success : IO Unit := do
-  let addr : PAddr := gicCpuInterfaceBase  -- 0xFF842000 is 8-byte aligned
+  let addr : PAddr := gicCpuInterfaceBase  -- 0x10_7FFF_A000 is 8-byte aligned
   let st : SystemState := default
   expect "AK9-A-08 mmioRead64 positive success at GIC CPU iface"
     (match mmioRead64 addr st with
@@ -738,7 +738,8 @@ def review5_untranslatable_address_is_refused : IO Unit := do
 
 /-- **PR #892 review round 5**: a node the firmware marked `disabled` is
 hardware that is not there, and the classifier drops it — the Lean twin of the
-round-4 `status` filter in `cmdline::find_ram_top_in_dtb`.  `okay` and `ok` are
+round-4 `status` filter in the Rust `/memory` walker (retired at WS-BP BP2.6).
+`okay` and `ok` are
 the two operational spellings; every other value withholds the node. -/
 def review5_disabled_peripheral_is_not_discovered : IO Unit := do
   let disabled := extractPeripherals
@@ -916,8 +917,8 @@ private def assembleDtb (structBlock : Array UInt8) : ByteArray :=
 entry of `regions` (base, size), plus the three MMIO windows the RPi5 binding
 programs.  Several pairs is how the firmware reports a board whose RAM is not
 one contiguous run — every RPi5 above 2 GiB. -/
-private def boardDtbRegions (regions : List (Nat × Nat)) (withMmio : Bool := true) :
-    ByteArray :=
+private def boardDtbRegions (regions : List (Nat × Nat)) (withMmio : Bool := true)
+    (uartSize : Nat := 0x200) : ByteArray :=
   let regPairs := regions.foldl (fun acc r => acc ++ be64 r.1 ++ be64 r.2) #[]
   let memoryNode :=
     fdtBeginNode "memory@0"
@@ -926,15 +927,19 @@ private def boardDtbRegions (regions : List (Nat × Nat)) (withMmio : Bool := tr
       ++ fdtEndNodeTok
   let peripherals :=
     if withMmio then
-      peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
-        ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000 "arm,gic-400"
-        ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000 "arm,gic-400"
+      peripheralNode "serial@107d001000" 0x107D001000 uartSize "arm,pl011"
+        ++ peripheralNode "interrupt-controller@107fff9000" 0x107FFF9000 0x1000 "arm,gic-400"
+        ++ peripheralNode "interrupt-controller@107fffa000" 0x107FFFA000 0x2000 "arm,gic-400"
     else #[]
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
 
-/-- A device tree for a board with `ramSize` bytes of RAM starting at 0. -/
-private def boardDtb (ramSize : Nat) (withMmio : Bool := true) : ByteArray :=
-  boardDtbRegions [(0, ramSize)] withMmio
+/-- A device tree for a board with `ramSize` bytes of RAM starting at 0.  The
+UART node's register block defaults to the `0x200` bytes `bcm2712.dtsi`
+declares for `serial@7d001000`; `uartSize` is how the aperture witness below
+narrows and widens it. -/
+private def boardDtb (ramSize : Nat) (withMmio : Bool := true) (uartSize : Nat := 0x200) :
+    ByteArray :=
+  boardDtbRegions [(0, ramSize)] withMmio uartSize
 
 /-- **PR #892 review round 9**: `assembleDtb` with a real **memory reservation
 block** (§5.3) between the header and the structure block, and with the header's
@@ -1031,12 +1036,12 @@ private def canonicalStructBlock : Array UInt8 :=
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
-      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
       ++ fdtEndNodeTok
   let peripherals :=
-    peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
-      ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000 "arm,gic-400"
-      ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000 "arm,gic-400"
+    peripheralNode "serial@107d001000" 0x107D001000 0x200 "arm,pl011"
+      ++ peripheralNode "interrupt-controller@107fff9000" 0x107FFF9000 0x1000 "arm,gic-400"
+      ++ peripheralNode "interrupt-controller@107fffa000" 0x107FFFA000 0x2000 "arm,gic-400"
   fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ peripherals
     ++ fdtEndNodeTok ++ fdtEndTok
 
@@ -1072,7 +1077,7 @@ its own `#address-cells` governs its children and it has none. -/
 private def memoryNamedRootDtb : ByteArray :=
   assembleDtb (fdtBeginNode "memory@0"
     ++ fdtProp deviceTypeNameOff (fdtString "memory")
-    ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+    ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
     ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- **PR #892 review round 7**: two root-level siblings — a well-formed root
@@ -1081,7 +1086,7 @@ private def twoRootDtb : ByteArray :=
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
-      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
       ++ fdtEndNodeTok
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ fdtEndNodeTok
     ++ fdtBeginNode "memory@40000000"
@@ -1112,12 +1117,12 @@ private def unterminatedBoardDtb : ByteArray :=
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
-      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
       ++ fdtEndNodeTok
   let peripherals :=
-    peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
-      ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000 "arm,gic-400"
-      ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000 "arm,gic-400"
+    peripheralNode "serial@107d001000" 0x107D001000 0x200 "arm,pl011"
+      ++ peripheralNode "interrupt-controller@107fff9000" 0x107FFF9000 0x1000 "arm,gic-400"
+      ++ peripheralNode "interrupt-controller@107fffa000" 0x107FFFA000 0x2000 "arm,gic-400"
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ peripherals)
 
 /-- **PR #892 review round 5**: the canonical board with an **unknown** token
@@ -1126,7 +1131,7 @@ private def unknownTokenBoardDtb : ByteArray :=
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
-      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
       ++ fdtEndNodeTok
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ be32 0x000000FF ++ fdtEndNodeTok ++ fdtEndTok)
 
@@ -1136,13 +1141,13 @@ private def boardDtbWithMemoryStatus (status : String) : ByteArray :=
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
-      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
       ++ fdtProp statusNameOff (fdtString status)
       ++ fdtEndNodeTok
   let peripherals :=
-    peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
-      ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000 "arm,gic-400"
-      ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000 "arm,gic-400"
+    peripheralNode "serial@107d001000" 0x107D001000 0x200 "arm,pl011"
+      ++ peripheralNode "interrupt-controller@107fff9000" 0x107FFF9000 0x1000 "arm,gic-400"
+      ++ peripheralNode "interrupt-controller@107fffa000" 0x107FFFA000 0x2000 "arm,gic-400"
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- **PR #892 review round 6**: a board whose interrupt controller declares both
@@ -1154,16 +1159,16 @@ private def singleGicNodeBoardDtb : ByteArray :=
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
-      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
       ++ fdtEndNodeTok
   let gicNode :=
-    fdtBeginNode "interrupt-controller@ff841000"
+    fdtBeginNode "interrupt-controller@107fff9000"
       ++ fdtProp regNameOff
-        (be64 0xFF841000 ++ be64 0x1000 ++ be64 0xFF842000 ++ be64 0x2000)
+        (be64 0x107FFF9000 ++ be64 0x1000 ++ be64 0x107FFFA000 ++ be64 0x2000)
       ++ fdtProp compatibleNameOff (fdtString "arm,gic-400")
       ++ fdtEndNodeTok
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode
-    ++ peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
+    ++ peripheralNode "serial@107d001000" 0x107D001000 0x200 "arm,pl011"
     ++ gicNode ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- **PR #892 review round 9**: the canonical board's nodes, as a reusable body. -/
@@ -1173,15 +1178,15 @@ private def canonicalBodyWithMemory (memReg : Array UInt8) : Array UInt8 :=
         ++ fdtProp deviceTypeNameOff (fdtString "memory")
         ++ fdtProp regNameOff memReg
         ++ fdtEndNodeTok)
-    ++ peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
-    ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000 "arm,gic-400"
-    ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000 "arm,gic-400"
+    ++ peripheralNode "serial@107d001000" 0x107D001000 0x200 "arm,pl011"
+    ++ peripheralNode "interrupt-controller@107fff9000" 0x107FFF9000 0x1000 "arm,gic-400"
+    ++ peripheralNode "interrupt-controller@107fffa000" 0x107FFFA000 0x2000 "arm,gic-400"
     ++ fdtEndNodeTok ++ fdtEndTok
 
 /-- **PR #892 review round 9**: a board declaring the full low aperture and
 reserving 16 MiB of it in the **header's** reservation block (§5.3). -/
 private def headerReservedBoardDtb : ByteArray :=
-  assembleDtbReserving (canonicalBodyWithMemory (be64 0 ++ be64 0xFC000000))
+  assembleDtbReserving (canonicalBodyWithMemory (be64 0 ++ be64 0x100000000))
     [(0xF0000000, 0x1000000)]
 
 /-- **PR #892 review round 9**: the same carve-out declared the other way — a
@@ -1197,18 +1202,18 @@ private def reservedMemoryNodeBoardDtb : ByteArray :=
   assembleDtb (fdtBeginNode "" ++ rootCellProperties
     ++ (fdtBeginNode "memory@0"
         ++ fdtProp deviceTypeNameOff (fdtString "memory")
-        ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+        ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
         ++ fdtEndNodeTok)
     ++ reservedNode
-    ++ peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
-    ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000 "arm,gic-400"
-    ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000 "arm,gic-400"
+    ++ peripheralNode "serial@107d001000" 0x107D001000 0x200 "arm,pl011"
+    ++ peripheralNode "interrupt-controller@107fff9000" 0x107FFF9000 0x1000 "arm,gic-400"
+    ++ peripheralNode "interrupt-controller@107fffa000" 0x107FFFA000 0x2000 "arm,gic-400"
     ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- **PR #892 review round 9**: a blob demanding a newer parser than this one
 (`lastCompVersion = 18`). -/
 private def futureVersionBoardDtb : ByteArray :=
-  assembleDtbReserving (canonicalBodyWithMemory (be64 0 ++ be64 0xFC000000)) [] 18
+  assembleDtbReserving (canonicalBodyWithMemory (be64 0 ++ be64 0x100000000)) [] 18
 
 /-- **PR #892 review round 9**: the root declares `#size-cells` **after** its
 `/memory` child, which §5.4.2 forbids and which the two readers resolve
@@ -1218,7 +1223,7 @@ private def latePropertyBoardDtb : ByteArray :=
     ++ fdtProp addressCellsNameOff (be32 2)
     ++ (fdtBeginNode "memory@0"
         ++ fdtProp deviceTypeNameOff (fdtString "memory")
-        ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+        ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
         ++ fdtEndNodeTok)
     ++ fdtProp sizeCellsNameOff (be32 2)
     ++ fdtEndNodeTok ++ fdtEndTok)
@@ -1230,7 +1235,7 @@ private def duplicateStatusBoardDtb : ByteArray :=
   assembleDtb (fdtBeginNode "" ++ rootCellProperties
     ++ (fdtBeginNode "memory@0"
         ++ fdtProp deviceTypeNameOff (fdtString "memory")
-        ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+        ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
         ++ fdtProp statusNameOff (fdtString "okay")
         ++ fdtProp statusNameOff (fdtString "disabled")
         ++ fdtEndNodeTok)
@@ -1247,12 +1252,12 @@ private def wrongDevicesAtRightWindowsDtb : ByteArray :=
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
-      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
       ++ fdtEndNodeTok
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode
-    ++ peripheralNode "framebuffer@fe201000" 0xFE201000 0x1000 "simple-framebuffer"
-    ++ peripheralNode "mailbox@ff841000" 0xFF841000 0x1000 "brcm,bcm2835-mbox"
-    ++ peripheralNode "mailbox@ff842000" 0xFF842000 0x2000 "brcm,bcm2835-mbox"
+    ++ peripheralNode "framebuffer@107d001000" 0x107D001000 0x1000 "simple-framebuffer"
+    ++ peripheralNode "mailbox@107fff9000" 0x107FFF9000 0x1000 "brcm,bcm2835-mbox"
+    ++ peripheralNode "mailbox@107fffa000" 0x107FFFA000 0x2000 "brcm,bcm2835-mbox"
     ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- **PR #892 review round 5 audit**: a board that reports its RAM as **two**
@@ -1266,11 +1271,11 @@ private def twoMemoryNodeDtb : ByteArray :=
       ++ fdtProp regNameOff (be64 base ++ be64 size)
       ++ fdtEndNodeTok
   let peripherals :=
-    peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
-      ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000 "arm,gic-400"
-      ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000 "arm,gic-400"
+    peripheralNode "serial@107d001000" 0x107D001000 0x200 "arm,pl011"
+      ++ peripheralNode "interrupt-controller@107fff9000" 0x107FFF9000 0x1000 "arm,gic-400"
+      ++ peripheralNode "interrupt-controller@107fffa000" 0x107FFFA000 0x2000 "arm,gic-400"
   assembleDtb (fdtBeginNode "" ++ rootCellProperties
-    ++ node "memory@0" 0 0xFC000000
+    ++ node "memory@0" 0 0x100000000
     ++ node "memory@100000000" 0x100000000 0x100000000
     ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
 
@@ -1285,9 +1290,9 @@ private def singleCellBoardDtb : ByteArray :=
       ++ fdtProp regNameOff (be32 0 ++ be32 0xFC000000)
       ++ fdtEndNodeTok
   let peripherals :=
-    peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
-      ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000 "arm,gic-400"
-      ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000 "arm,gic-400"
+    peripheralNode "serial@107d001000" 0x107D001000 0x200 "arm,pl011"
+      ++ peripheralNode "interrupt-controller@107fff9000" 0x107FFF9000 0x1000 "arm,gic-400"
+      ++ peripheralNode "interrupt-controller@107fffa000" 0x107FFFA000 0x2000 "arm,gic-400"
   assembleDtb (fdtBeginNode "" ++ rootCells ++ memoryNode ++ peripherals
     ++ fdtEndNodeTok ++ fdtEndTok)
 
@@ -1297,7 +1302,7 @@ private def truncatedRegBoardDtb : ByteArray :=
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
-      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000 ++ be64 0x100000000)
+      ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000 ++ be64 0x100000000)
       ++ fdtEndNodeTok
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode
     ++ fdtEndNodeTok ++ fdtEndTok)
@@ -1308,7 +1313,7 @@ private def emptyUnitAddressDtb : ByteArray :=
   let memoryNode :=
     fdtBeginNode "memory@"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
-      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
       ++ fdtEndNodeTok
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode
     ++ fdtEndNodeTok ++ fdtEndTok)
@@ -1320,7 +1325,7 @@ private def reservedMemoryOnlyDtb : ByteArray :=
     fdtBeginNode "reserved-memory"
       ++ fdtBeginNode "memory@0"
         ++ fdtProp deviceTypeNameOff (fdtString "memory")
-        ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+        ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
         ++ fdtEndNodeTok
       ++ fdtEndNodeTok
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ carveOut ++ fdtEndNodeTok ++ fdtEndTok)
@@ -1334,11 +1339,25 @@ private def boundMapOf (config : PlatformConfig) : List MemoryRegion :=
 private def variantMap (gib : Nat) : List MemoryRegion :=
   rpi5MemoryMapForConfig { ramSize := gib * 1024 * 1024 * 1024 }
 
+/-- WS-BP BP4.4: the hardware entry's decision on a blob, run without a runtime —
+`lean_kernel_main` is `bootAndInitialiseRPi5FromDtbOrHalt` on the deployment
+(`RPi5.kernelMain`), so this is its pure half: the bridge, then the checked
+idle-thread boot on the binding's cores.  `none` is the halt. -/
+private def kernelEntryBoot? (blob : ByteArray) : Option (PlatformConfig × IntermediateState) :=
+  match rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjectsFor none with
+  | .error _ => none
+  | .ok config =>
+      match bootFromPlatformCheckedWithIdleThreadsFor
+          (PlatformBinding.declaredCores (platform := RPi5Platform))
+          (bindPlatformConfig RPi5Platform config) with
+      | .error _ => none
+      | .ok ist => some (config, ist)
+
 /-- WS-RR RR7.27: the fixture blob parses — the precondition every case below
 rests on, asserted separately so a broken fixture is distinguishable from a
 broken check. -/
 def deviceTreeBridge_01_fixture_blob_parses : IO Unit := do
-  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) rpi5MachineConfig.physicalAddressWidth with
+  match DeviceTree.fromDtbFull (boardDtb 0x100000000) rpi5MachineConfig.physicalAddressWidth with
   | .error _ => expect "RR7.27-01 fixture blob parses" false
   | .ok dt =>
       expect "RR7.27-01 fixture blob parses" true
@@ -1351,7 +1370,7 @@ def deviceTreeBridge_01_fixture_blob_parses : IO Unit := do
 configuration carries the device tree's machine map plus the caller's
 deployment half. -/
 def deviceTreeBridge_02_matching_board_accepted : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x100000000) [] (fun _ => []) none with
   | .error _ => expect "RR7.27-02 matching board accepted" false
   | .ok config =>
       expect "RR7.27-02 matching board accepted" true
@@ -1368,7 +1387,7 @@ PR #892 review round 2 moved the bar from the fixed 4 GiB map to the family's
 smallest member — 512 MiB is short of every Raspberry Pi 5 ever shipped, where
 1 GiB (the old fixture) is a board this image is built for. -/
 def deviceTreeBridge_03_short_ram_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) [] (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       expect "RR7.27-03 short-RAM board refused" true
   | _ => expect "RR7.27-03 short-RAM board refused" false
@@ -1377,7 +1396,7 @@ def deviceTreeBridge_03_short_ram_refused : IO Unit := do
 binding programs is refused — the half a RAM-only check would miss.  Same RAM,
 same header; only the peripheral nodes are gone. -/
 def deviceTreeBridge_04_missing_mmio_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000 (withMmio := false)) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x100000000 (withMmio := false)) [] (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       expect "RR7.27-04 board without the binding's MMIO refused" true
   | _ => expect "RR7.27-04 board without the binding's MMIO refused" false
@@ -1385,7 +1404,7 @@ def deviceTreeBridge_04_missing_mmio_refused : IO Unit := do
 /-- WS-RR RR7.27: an unparseable blob is refused as such, not as a mismatched
 board — the two refusals mean different things to an operator. -/
 def deviceTreeBridge_05_unparseable_blob_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (ByteArray.mk #[0x00, 0x01, 0x02, 0x03]) [] [] none with
+  match rpi5PlatformConfigFromDtb (ByteArray.mk #[0x00, 0x01, 0x02, 0x03]) [] (fun _ => []) none with
   | .error (.unparseableBlob _) =>
       expect "RR7.27-05 unparseable blob refused as unparseable" true
   | _ => expect "RR7.27-05 unparseable blob refused as unparseable" false
@@ -1394,7 +1413,7 @@ def deviceTreeBridge_05_unparseable_blob_refused : IO Unit := do
 peripheral list fails a non-empty MMIO demand, which is what a truncated blob
 produces. -/
 def deviceTreeBridge_06_coverage_is_refusable : IO Unit := do
-  match DeviceTree.fromDtbFull (boardDtb 0xFC000000 (withMmio := false))
+  match DeviceTree.fromDtbFull (boardDtb 0x100000000 (withMmio := false))
       rpi5MachineConfig.physicalAddressWidth with
   | .error _ => expect "RR7.27-06 no-peripheral blob parses" false
   | .ok dt =>
@@ -1409,13 +1428,13 @@ def deviceTreeBridge_06_coverage_is_refusable : IO Unit := do
 Raspberry Pi 5 are accepted, and the hardware boot binds each board's **own**
 variant, not the 4 GiB map the bridge used to demand of every board. -/
 def deviceTreeBridge_07_small_variants_bind_their_own_map : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x40000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x40000000) [] (fun _ => []) none with
   | .error _ => expect "PR892-07 1 GiB board accepted" false
   | .ok config =>
       expect "PR892-07 1 GiB board accepted" true
       expect "PR892-07 1 GiB board binds the 1 GiB variant"
         (decide (boundMapOf config = variantMap 1))
-  match rpi5PlatformConfigFromDtb (boardDtb 0x80000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x80000000) [] (fun _ => []) none with
   | .error _ => expect "PR892-07 2 GiB board accepted" false
   | .ok config =>
       expect "PR892-07 2 GiB board accepted" true
@@ -1428,19 +1447,20 @@ def deviceTreeBridge_07_small_variants_bind_their_own_map : IO Unit := do
 configuration — the selection is the largest covered variant, and the 8 GiB
 member needs RAM above 4 GiB this board does not report. -/
 def deviceTreeBridge_08_canonical_board_binds_canonical_map : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x100000000) [] (fun _ => []) none with
   | .error _ => expect "PR892-08 4 GiB board accepted" false
   | .ok config =>
       expect "PR892-08 4 GiB board binds the canonical map"
         (decide (boundMapOf config = rpi5MachineConfig.memoryMap))
 
-/-- PR #892 review round 2: an 8 GiB board as its firmware reports it — the low
-aperture and the remainder relocated above the 4 GiB boundary, 64 MiB more than
-the model's high region — binds the 8 GiB variant, whose map is contained in
-the report.  Two `reg` pairs, so the fixture is the shape a real blob has. -/
-def deviceTreeBridge_09_eight_gib_as_reported : IO Unit := do
-  let blob := boardDtbRegions [(0, 0xFC000000), (0x100000000, 0x104000000)]
-  match rpi5PlatformConfigFromDtb blob [] [] none with
+/-- PR #892 review round 2: an 8 GiB board reported as two banks either side of
+the 4 GiB boundary binds the 8 GiB variant, whose one RAM region the union of
+the two covers.  (Until the BCM2712 address-map correction this was the BCM2711
+shape — a low aperture ending at `0xFC00_0000` and 64 MiB relocated above 4 GiB
+— which the BCM2712 does not have.) -/
+def deviceTreeBridge_09_eight_gib_two_banks : IO Unit := do
+  let blob := boardDtbRegions [(0, 0x100000000), (0x100000000, 0x100000000)]
+  match rpi5PlatformConfigFromDtb blob [] (fun _ => []) none with
   | .error _ => expect "PR892-09 8 GiB board accepted" false
   | .ok config =>
       expect "PR892-09 config carries both reported regions"
@@ -1452,7 +1472,7 @@ def deviceTreeBridge_09_eight_gib_as_reported : IO Unit := do
 covers — 3 GiB is accepted and runs on the 2 GiB map.  The lost-resource
 direction: the boot declares less RAM than the board has and never more. -/
 def deviceTreeBridge_10_between_variants_binds_largest_covered : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0xC0000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0xC0000000) [] (fun _ => []) none with
   | .error _ => expect "PR892-10 3 GiB board accepted" false
   | .ok config =>
       expect "PR892-10 3 GiB board binds the 2 GiB variant"
@@ -1463,7 +1483,7 @@ of RAM at a foreign base covers no variant — the binding checks *where* the
 RAM is, not how much — so the board is refused, not bound the 4 GiB map over
 memory the BCM2712 does not put there. -/
 def deviceTreeBridge_11_foreign_base_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtbRegions [(0x40000000, 0x100000000)]) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtbRegions [(0x40000000, 0x100000000)]) [] (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       expect "PR892-11 RAM at a foreign base refused" true
   | _ => expect "PR892-11 RAM at a foreign base refused" false
@@ -1472,8 +1492,8 @@ def deviceTreeBridge_11_foreign_base_refused : IO Unit := do
 a 4 GiB board reported as two adjacent halves binds the canonical map, where
 the single-entry reading refused it. -/
 def deviceTreeBridge_12_split_aperture_binds_canonical_map : IO Unit := do
-  let blob := boardDtbRegions [(0, 0x80000000), (0x80000000, 0x7C000000)]
-  match rpi5PlatformConfigFromDtb blob [] [] none with
+  let blob := boardDtbRegions [(0, 0x80000000), (0x80000000, 0x80000000)]
+  match rpi5PlatformConfigFromDtb blob [] (fun _ => []) none with
   | .error _ => expect "PR892-12 split-aperture board accepted" false
   | .ok config =>
       expect "PR892-12 split-aperture board binds the canonical map"
@@ -1483,8 +1503,8 @@ def deviceTreeBridge_12_split_aperture_binds_canonical_map : IO Unit := do
   -- cover — the 2 GiB one, whose aperture lies entirely in the first half.
   -- The walk stops at the gap (`memoryRegionCovered_gap_refused`); what the
   -- boot does with that is the lost-resource direction, never a false claim.
-  let gapped := boardDtbRegions [(0, 0x80000000), (0x80200000, 0x7BE00000)]
-  match rpi5PlatformConfigFromDtb gapped [] [] none with
+  let gapped := boardDtbRegions [(0, 0x80000000), (0x80200000, 0x7FE00000)]
+  match rpi5PlatformConfigFromDtb gapped [] (fun _ => []) none with
   | .error _ => expect "PR892-12 NEGATIVE: a gapped board still boots on what it covers" false
   | .ok config =>
       expect "PR892-12 NEGATIVE: a gap between the halves refuses the 4 GiB member"
@@ -1520,10 +1540,10 @@ def deviceTreeBridge_22_every_register_block_is_a_window : IO Unit := do
   | .error _ => expect "RR892-22 the single-GIC-node board parses" false
   | .ok dt =>
     expect "RR892-22 the distributor window is present"
-      (dt.peripherals.any (fun d => d.base.toNat == 0xFF841000))
+      (dt.peripherals.any (fun d => d.base.toNat == 0x107FFF9000))
     expect "RR892-22 the CPU-interface window is present too"
-      (dt.peripherals.any (fun d => d.base.toNat == 0xFF842000 && d.size == 0x2000))
-  match rpi5PlatformConfigFromDtb singleGicNodeBoardDtb [] [] none with
+      (dt.peripherals.any (fun d => d.base.toNat == 0x107FFFA000 && d.size == 0x2000))
+  match rpi5PlatformConfigFromDtb singleGicNodeBoardDtb [] (fun _ => []) none with
   | .ok _ => expect "RR892-22 the board is accepted" true
   | .error _ => expect "RR892-22 the board is accepted" false
 
@@ -1574,7 +1594,7 @@ def deviceTreeBridge_18_every_memory_node_contributes : IO Unit := do
       (ram.any (fun r => r.base.toNat == 0x100000000))
   -- And the bridge binds the variant the two nodes together cover, not the one
   -- the first node alone would: 8 GiB, whose map the binding installs.
-  match rpi5PlatformConfigFromDtb twoMemoryNodeDtb [] [] none with
+  match rpi5PlatformConfigFromDtb twoMemoryNodeDtb [] (fun _ => []) none with
   | .error _ => expect "RR892-18 the two-node board is accepted" false
   | .ok config =>
     expect "RR892-18 the bound map is the 8 GiB variant's"
@@ -1593,7 +1613,7 @@ def deviceTreeBridge_19_root_cell_widths_are_honoured : IO Unit := do
       (ram.any (fun r => r.base.toNat == 0 && r.size == 0xFC000000))
 
 /-- **PR #892 review round 5 audit**: a `reg` that is not a whole number of
-pairs fails the whole query closed, as `fold_memory_reg` does — rather than
+pairs fails the whole query closed, as the retired Rust walker's did — rather than
 contributing the entries before the partial one. -/
 def deviceTreeBridge_20_partial_reg_pair_refused : IO Unit := do
   match DeviceTree.fromDtbFull truncatedRegBoardDtb rpi5MachineConfig.physicalAddressWidth with
@@ -1615,13 +1635,13 @@ is the relation.  Before this cut `parseFdtNodes` returned the nodes it had
 collected and `fromDtbFull` reported `.ok`, so the bridge decided RAM and MMIO
 coverage from a prefix nothing had validated. -/
 def deviceTreeBridge_14_unterminated_blob_refused : IO Unit := do
-  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) rpi5MachineConfig.physicalAddressWidth with
+  match DeviceTree.fromDtbFull (boardDtb 0x100000000) rpi5MachineConfig.physicalAddressWidth with
   | .ok _ => pure ()
   | .error _ => expect "RR892-14 the intact fixture still parses" false
   match DeviceTree.fromDtbFull unterminatedBoardDtb rpi5MachineConfig.physicalAddressWidth with
   | .ok _ => expect "RR892-14 an unterminated structure block is refused" false
   | .error _ => expect "RR892-14 an unterminated structure block is refused" true
-  match rpi5PlatformConfigFromDtb unterminatedBoardDtb [] [] none with
+  match rpi5PlatformConfigFromDtb unterminatedBoardDtb [] (fun _ => []) none with
   | .ok _ => expect "RR892-14 the bridge refuses it too" false
   | .error _ => expect "RR892-14 the bridge refuses it too" true
 
@@ -1643,14 +1663,14 @@ def deviceTreeBridge_16_disabled_memory_refused : IO Unit := do
     | .ok _ => expect "RR892-16 a withheld memory node is refused" false
     | .error _ => expect "RR892-16 a withheld memory node is refused" true
   for status in ["okay", "ok"] do
-    match rpi5PlatformConfigFromDtb (boardDtbWithMemoryStatus status) [] [] none with
+    match rpi5PlatformConfigFromDtb (boardDtbWithMemoryStatus status) [] (fun _ => []) none with
     | .ok _ => expect "RR892-16 an operational memory node is accepted" true
     | .error _ => expect "RR892-16 an operational memory node is accepted" false
 
 /-- **PR #892 review round 5**: a `memory@…` under `/reserved-memory` is a
 carve-out at depth 2, not an aperture, and is not read as the machine's RAM —
-the depth restriction `cmdline::find_ram_top_in_dtb` has always applied and the
-Lean selector did not. -/
+the depth restriction the Rust `/memory` walker applied (retired at WS-BP BP2.6)
+and the Lean selector did not. -/
 def deviceTreeBridge_17_reserved_memory_child_is_not_ram : IO Unit := do
   match DeviceTree.fromDtbFull reservedMemoryOnlyDtb rpi5MachineConfig.physicalAddressWidth with
   | .ok _ => expect "RR892-17 a reserved-memory child is not the machine's RAM" false
@@ -1662,7 +1682,7 @@ belongs there, not by whatever happens to occupy the address.
 def review8_mmio_windows_require_the_right_devices : IO Unit := do
   let width := rpi5MachineConfig.physicalAddressWidth
   -- The control: the canonical board declares `arm,pl011` and `arm,gic-400`.
-  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) width with
+  match DeviceTree.fromDtbFull (boardDtb 0x100000000) width with
   | .error _ => expect "review8 the canonical board still parses" false
   | .ok dt =>
     expect "review8 the canonical board's devices cover the binding's windows"
@@ -1686,9 +1706,181 @@ def review8_mmio_windows_require_the_right_devices : IO Unit := do
     expect "NEGATIVE review8 the wrong devices do not satisfy the binding"
       (!deviceTreeCoversMmioRegions dt requiredMmioWindows)
   -- And the bridge refuses the board rather than binding it.
-  match rpi5PlatformConfigFromDtb wrongDevicesAtRightWindowsDtb [] [] none with
+  match rpi5PlatformConfigFromDtb wrongDevicesAtRightWindowsDtb [] (fun _ => []) none with
   | .ok _ => expect "NEGATIVE review8 the bridge refuses the wrong-device board" false
   | .error _ => expect "NEGATIVE review8 the bridge refuses the wrong-device board" true
+
+/-- **The `v0.36.2` audit**: the binding's UART window is the register block
+the device tree declares — `bcm2712.dtsi`'s `serial@7d001000` is
+`reg = <0x7d001000 0x200>` — and not the PL011's nominal 4 KiB page.
+`deviceTreeCoversMmioRegions` requires the board's block to *contain* the
+window, so a `0x1000` window against the board's `0x200` block was refused and
+the boot halted on every real board; no fixture could show it because every
+fixture's UART node was built from the binding's own constant.  Three boards
+decide it: the dtsi's block is accepted, a wider block is accepted (a window
+inside a larger aperture is still inside it), and a block narrower than the
+window is refused as `.boardDoesNotMatchBinding` — which is what the retired
+`0x1000` window did to the real board. -/
+def uartWindowIsTheDeviceTreesRegisterBlock : IO Unit := do
+  expect "audit the binding's UART window is the dtsi's 0x200 block"
+    (decide (requiredMmioWindows.head?.map (·.region.size) = some 0x200))
+  let verdict (uartSize : Nat) : Bool :=
+    match rpi5PlatformConfigFromDtb (boardDtb 0x100000000 (uartSize := uartSize))
+        [] (fun _ => []) none with
+    | .ok _ => true
+    | .error _ => false
+  expect "audit the board's own 0x200 UART block is accepted" (verdict 0x200)
+  expect "audit a wider UART block (0x1000) is accepted" (verdict 0x1000)
+  expect "NEGATIVE audit a UART block narrower than the window (0x100) is refused"
+    (!verdict 0x100)
+  match rpi5PlatformConfigFromDtb (boardDtb 0x100000000 (uartSize := 0x100))
+      [] (fun _ => []) none with
+  | .error .boardDoesNotMatchBinding =>
+      expect "NEGATIVE audit the narrow block is refused as a board mismatch" true
+  | _ => expect "NEGATIVE audit the narrow block is refused as a board mismatch" false
+
+/-- **The `v0.36.2` audit**: a `ranges` walk that runs out of fuel refuses,
+rather than answering the prefix it had parsed — a partial translation table
+is exactly the fail-open shape `parseFdtRanges`'s own docstring retires for a
+partial *entry*.  Unreachable at the default fuel (`bytes.size / 4 + 1`: one
+unit per entry, which is at least one 4-byte cell, plus the one unit the walk
+spends observing the property's end); this drives the exhaustion arm directly,
+with the retired reading computed beside it, and pins that the end costs a
+unit — three entries need four. -/
+def rangesWalkStarvedOfFuelRefuses : IO Unit := do
+  let entry (c p l : Nat) : Array UInt8 := be64 c ++ be64 p ++ be64 l
+  let bytes := ByteArray.mk (entry 0 0x1000 0x100 ++ entry 0x100 0x2000 0x100
+    ++ entry 0x200 0x3000 0x100)
+  -- `FdtRangeEntry` derives no `DecidableEq`; compare the entries' fields.
+  let fields (r : Option (List FdtRangeEntry)) : Option (List (Nat × Nat × Nat)) :=
+    r.map (·.map fun e => (e.childBase, e.parentBase, e.length))
+  let whole := fields (parseFdtRanges bytes 2 2 2)
+  expect "audit the whole ranges property parses to three entries"
+    (whole == some [(0, 0x1000, 0x100), (0x100, 0x2000, 0x100), (0x200, 0x3000, 0x100)])
+  -- The retired reading: the prefix the two units of fuel reached.
+  let retiredPrefix := whole.map (·.take 2)
+  expect "audit the retired reading would answer a two-entry prefix"
+    (retiredPrefix == some [(0, 0x1000, 0x100), (0x100, 0x2000, 0x100)])
+  expect "NEGATIVE audit a walk starved of fuel refuses the whole property"
+    (parseFdtRanges bytes 2 2 2 (fuel := 2)).isNone
+  -- Three entries parsed and the end never observed is still exhaustion.
+  expect "NEGATIVE audit fuel for the entries alone leaves the end unobserved"
+    (parseFdtRanges bytes 2 2 2 (fuel := 3)).isNone
+  expect "audit one unit per entry plus one for the end is enough"
+    (fields (parseFdtRanges bytes 2 2 2 (fuel := 4)) == whole)
+
+/-- **The `v0.36.2` audit**: a boot untyped is *pristine* — nothing carved
+(`watermark = 0`, `children = []`) and no ancestry (`parent = none`).
+`bootSafeUntypedCheck` accepted every record, so a configuration could ship a
+watermark at the region's end (nothing retypeable) or children naming objects
+the boot never created; the check, the `bootSafeObject` clause and the
+soundness bridge now carry the three conditions.  Each negative moves exactly
+one field off the pristine control. -/
+def bootUntypedMustBePristine : IO Unit := do
+  let pristine : UntypedObject :=
+    { regionBase := PAddr.ofNat 0x10000000, regionSize := 0x1000 }
+  expect "audit a pristine boot untyped is admitted"
+    (bootSafeObjectCheck (.untyped pristine))
+  expect "NEGATIVE audit a boot untyped with a nonzero watermark is refused"
+    (!bootSafeObjectCheck (.untyped { pristine with watermark := 1 }))
+  expect "NEGATIVE audit a boot untyped with a child is refused"
+    (!bootSafeObjectCheck (.untyped
+      { pristine with children := [{ objId := ObjId.ofNat 60, offset := 0, size := 0x100 }] }))
+  expect "NEGATIVE audit a boot untyped with a parent is refused"
+    (!bootSafeObjectCheck (.untyped { pristine with parent := some (ObjId.ofNat 6) }))
+  -- The deployment's own untypeds are pristine, so the clause costs it nothing.
+  expect "audit every RPi5 deployment untyped is pristine"
+    (rpi5Variants.all fun v =>
+      (rpi5InitialObjectsFor v).all fun e =>
+        match e.obj with
+        | .untyped ut => bootSafeUntypedCheck ut
+        | _ => true)
+
+/-- **The `v0.36.2` audit, registered rather than fixed** (register table B;
+plan row BP7.10): a Raspberry Pi 5's firmware reports its RAM as three ranges
+— `[0, 0x80000)`, `[0x80000, 0x3fc00000)` and `[0x40000000, top)` — withholding
+a few MiB at the top of the first gigabyte for itself (Pi 5 8 GiB Rev 1.1 and
+CM5 4 GiB Rev 1.0 accounts read 2026-09-25: `0x3fbfffff` and `0x3fafffff`).
+The binding's variants each declare `[0, ramSize)` whole, and
+`machineConfigCovers` requires every declared RAM byte to be in the account,
+so **no variant is covered** and the bridge refuses the real board — the boot
+halts before any state is installed.  Fail-closed, not a hole; what closes it
+is deriving the deployment's first-gigabyte RAM from the account (BP7.10),
+which also keeps the root task's boot untypeds off the firmware's memory.
+This witness pins the refusal so the closure cannot land without flipping it,
+and the shared corpus carries the same account as `eight_gib_rpi5_firmware`. -/
+def realFirmwareAccountIsRefusedUntilDerived : IO Unit := do
+  let firmwareAccount : List (Nat × Nat) :=
+    [(0, 0x80000), (0x80000, 0x3fb80000), (0x40000000, 0x1c0000000)]
+  let blob := boardDtbRegions firmwareAccount
+  match DeviceTree.fromDtbFull blob rpi5MachineConfig.physicalAddressWidth with
+  | .error _ => expect "audit the firmware's account parses" false
+  | .ok dt =>
+      expect "audit the firmware's account covers no variant"
+        (decide (rpi5VariantsCoveredBy dt.machineConfig = []))
+  match rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjectsFor none with
+  | .error .boardDoesNotMatchBinding =>
+      expect "REGISTERED audit the real firmware account is refused (BP7.10 flips this)" true
+  | _ => expect "REGISTERED audit the real firmware account is refused (BP7.10 flips this)" false
+
+/-- The number of RAM regions above the guaranteed gigabyte each fixture
+variant has, written by hand from `rpi5MemoryMapForConfig` rather than
+computed, so the check below compares the derivation against the map.  One on
+every board above the gigabyte: the BCM2712's DRAM is contiguous from 0. -/
+private def ramUntypedCount : Nat → Nat
+  | 1 => 0
+  | _ => 1
+
+/-- **WS-BP BP4.4**: the deployment the hardware entry installs boots on every
+board the device tree describes — 1, 2, 3 (bound as 2), 4 and 8 GiB — binding
+that board's own variant and installing both separation witnesses, and a board
+the bridge refuses boots nothing.  `kernelMain_installs` is the theorem; this
+runs it on the fixture boards, so a deployment that booted only on the smallest
+variant (which is all BP3 proved) would fail here on the first larger one. -/
+def kernelEntry_boots_the_deployment_on_every_variant : IO Unit := do
+  let boards : List (String × ByteArray × Nat) :=
+    [ ("1 GiB", boardDtb 0x40000000, 1), ("2 GiB", boardDtb 0x80000000, 2),
+      ("3 GiB", boardDtb 0xC0000000, 2), ("4 GiB", boardDtb 0x100000000, 4),
+      ("8 GiB", boardDtbRegions [(0, 0x100000000), (0x100000000, 0x100000000)], 8) ]
+  for (name, blob, gib) in boards do
+    match kernelEntryBoot? blob with
+    | none => expect s!"BP4.4 the entry boots the deployment on a {name} board" false
+    | some (config, ist) =>
+        expect s!"BP4.4 the entry boots the deployment on a {name} board" true
+        expect s!"BP4.4 the {name} board boots on the {gib} GiB variant"
+          (decide (boundMapOf config = variantMap gib))
+        expect s!"BP4.4 the {name} board installs both separation witnesses"
+          (declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := RPi5Platform)))
+        -- WS-BP BP4.7: the RAM the boot maps above the gigabyte is the RAM the
+        -- root task owns — one installed untyped per extension of the bound
+        -- variant, over exactly that extension, named by the root CNode at
+        -- slot `7 + i`, and no untyped id past the last.
+        let exts := rpi5BootRamExtensions (rpi5VariantFor config.machineConfig)
+        expect s!"BP4.7 the {name} board has {ramUntypedCount gib} RAM untyped(s) above 1 GiB"
+          (decide (exts.length = ramUntypedCount gib))
+        let rootSlots : List (SeLe4n.Slot × Capability) :=
+          match ist.state.objects[rpi5RootTaskCNodeId]? with
+          | some (.cnode cn) => cn.slots.toList
+          | _ => []
+        for (e, i) in exts.zipIdx do
+          let installed := match ist.state.objects[rpi5RootTaskRamUntypedId i]? with
+            | some (.untyped ut) =>
+                decide (ut.regionBase.toNat = e.1) && decide (ut.regionSize = e.2) && !ut.isDevice
+            | _ => false
+          expect s!"BP4.7 the {name} board installs untyped {i} over its extension {i}" installed
+          expect s!"BP4.7 the {name} root CNode names untyped {i} at slot {7 + i} with retype"
+            (rootSlots.any fun (sl, cap) =>
+              decide (sl = rpi5RootTaskRamUntypedSlot i) &&
+                decide (cap.target = .object (rpi5RootTaskRamUntypedId i)) &&
+                cap.rights.mem .retype)
+        expect s!"BP4.7 the {name} board installs no RAM untyped past the last extension"
+          (ist.state.objects[rpi5RootTaskRamUntypedId exts.length]?).isNone
+  expect "BP4.4 NEGATIVE: a board short of the smallest variant boots nothing"
+    (kernelEntryBoot? (boardDtb 0x20000000)).isNone
+  expect "BP4.4 NEGATIVE: an empty blob — what the HAL hands over for an unreadable pointer — boots nothing"
+    (kernelEntryBoot? ByteArray.empty).isNone
+  expect "BP4.4 NEGATIVE: a board without the binding's MMIO boots nothing"
+    (kernelEntryBoot? (boardDtb 0x100000000 (withMmio := false))).isNone
 
 /-- **PR #892 review round 7**: the four bounds findings and the validation one,
 each on a blob that keeps every byte the accepting parser read.
@@ -1701,7 +1893,7 @@ block they name — and these fixtures are its witnesses. -/
 def review7_declared_block_extents_are_enforced : IO Unit := do
   let width := rpi5MachineConfig.physicalAddressWidth
   -- The control: the same structure block, honestly declared, is accepted.
-  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) width with
+  match DeviceTree.fromDtbFull (boardDtb 0x100000000) width with
   | .ok _ => expect "review7 the honestly-declared board is still accepted" true
   | .error _ => expect "review7 the honestly-declared board is still accepted" false
   -- R7-1: the terminator sits outside the declared structure block.
@@ -1717,7 +1909,7 @@ def review7_declared_block_extents_are_enforced : IO Unit := do
   -- nothing about the extent.  Parsed at one explicit, generous budget, the
   -- honest blob is accepted and both mutated ones are still refused.
   let fuelProbes : List (String × ByteArray × Bool) :=
-    [ ("the honest board", boardDtb 0xFC000000, true)
+    [ ("the honest board", boardDtb 0x100000000, true)
     , ("a short struct block", terminatorOutsideStructBlockDtb, false)
     , ("a short strings block", nameOutsideStringsBlockDtb, false) ]
   for probe in fuelProbes do
@@ -1751,7 +1943,7 @@ def review7_declared_block_extents_are_enforced : IO Unit := do
   | .ok _ => expect "NEGATIVE review7 an overlapping memory map is refused" false
   | .error _ => expect "NEGATIVE review7 an overlapping memory map is refused" true
   -- ...and every accepted tree satisfies it, which is the positive half.
-  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) width with
+  match DeviceTree.fromDtbFull (boardDtb 0x100000000) width with
   | .ok dt => expect "review7 an accepted device tree validates" dt.validate
   | .error _ => expect "review7 an accepted device tree validates" false
 
@@ -1762,14 +1954,14 @@ def review9_parser_conformance_and_reservations : IO Unit := do
   let width := rpi5MachineConfig.physicalAddressWidth
   -- The control: the canonical board, and the same board built through the
   -- reservation-aware assembler with no reservations, are both accepted.
-  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) width with
+  match DeviceTree.fromDtbFull (boardDtb 0x100000000) width with
   | .ok _ => expect "review9 the canonical board is accepted" true
   | .error _ => expect "review9 the canonical board is accepted" false
   match DeviceTree.fromDtbFull
-      (assembleDtbReserving (canonicalBodyWithMemory (be64 0 ++ be64 0xFC000000)) []) width with
+      (assembleDtbReserving (canonicalBodyWithMemory (be64 0 ++ be64 0x100000000)) []) width with
   | .ok dt =>
     expect "review9 a real but empty reservation block changes nothing"
-      (dt.machineConfig.memoryMap.any (fun r => r.kind == .ram && r.size == 0xFC000000))
+      (dt.machineConfig.memoryMap.any (fun r => r.kind == .ram && r.size == 0x100000000))
   | .error _ => expect "review9 a real but empty reservation block changes nothing" false
   -- A blob demanding a newer parser is refused (§5.1 header compatibility).
   match DeviceTree.fromDtbFull futureVersionBoardDtb width with
@@ -1808,7 +2000,7 @@ def review9_parser_conformance_and_reservations : IO Unit := do
   --
   -- Each mutation below is **preserving**: every reservation byte the accepted
   -- fixture carries is still there, and only the relation moves.
-  let reservedBody := canonicalBodyWithMemory (be64 0 ++ be64 0xFC000000)
+  let reservedBody := canonicalBodyWithMemory (be64 0 ++ be64 0x100000000)
   -- (a) the control: terminated, and the carve-out is honoured.
   match DeviceTree.fromDtbFull
       (assembleDtbReserving reservedBody [(0xF0000000, 0x1000000)]) width with
@@ -1859,7 +2051,7 @@ def review9_parser_conformance_and_reservations : IO Unit := do
     assembleDtb (fdtBeginNode "" ++ rootCellProperties
       ++ (fdtBeginNode "memory@0"
           ++ fdtProp deviceTypeNameOff (fdtString "memory")
-          ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+          ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
           ++ fdtEndNodeTok)
       ++ reservedChild regBytes
       ++ fdtEndNodeTok ++ fdtEndTok)
@@ -1893,7 +2085,7 @@ def review9_parser_conformance_and_reservations : IO Unit := do
     assembleDtb (fdtBeginNode "" ++ rootCellProperties
       ++ (fdtBeginNode "memory@0"
           ++ fdtProp deviceTypeNameOff (fdtString "memory")
-          ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+          ++ fdtProp regNameOff (be64 0 ++ be64 0x100000000)
           ++ fdtEndNodeTok)
       ++ rsvSibling "reserved-memory" "firmware@a0000000" 0xA0000000
       ++ rsvSibling secondName "firmware@b0000000" 0xB0000000
@@ -1989,6 +2181,220 @@ def review9_runtime_contract_follows_the_installed_map : IO Unit := do
   expect "NEGATIVE review9 the restrictive contract agrees on the small board"
     (!@decide _ (rpi5RuntimeContractRestrictive.memoryAccessAllowedDecidable (stFor small) twoGiB))
 
+/-! ## WS-BP BP0.1 — the shared device-tree fixture corpus
+
+`tests/fixtures/dtb/` holds blobs the Rust walk's suite
+(`rust/sele4n-hal/src/cmdline.rs`, `dtb_corpus_tests`) consumes too, against one
+hand-written manifest rendered by `scripts/generate_dtb_corpus.py`.  Every
+fixture the manifest names is read here through the production parse path: its
+`structure` verdict is the question both sides answer (the Rust side's
+`fdt_structure_check`, which the bootargs reader runs first), and its `/memory`
+extents are this parser's alone — WS-BP BP2.6 retired the Rust `/memory` walk.
+A refusal added to either side alone fails that side's assertion rather than
+passing silently.  Every divergence is collected before the check fails, so one
+run names all of them. -/
+
+private def dtbCorpusDir : System.FilePath := "tests/fixtures/dtb"
+
+private def corpusHexDigit? (c : Char) : Option Nat :=
+  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
+  else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+  else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+  else none
+
+/-- A corpus `.dtb.hex` file's bytes: `#` starts a comment, whitespace is
+ignored, and every other hex digit pair is one byte. -/
+private def parseCorpusHex (text : String) : Except String ByteArray := do
+  let mut digits : Array Nat := #[]
+  for line in text.splitOn "\n" do
+    let code := (line.splitOn "#").headD ""
+    for c in code.toList do
+      if c.isWhitespace then continue
+      match corpusHexDigit? c with
+      | some d => digits := digits.push d
+      | none => throw s!"bad hex digit {repr c}"
+  if digits.size % 2 != 0 then throw "odd number of hex digits"
+  let mut bytes := ByteArray.empty
+  for i in [0:digits.size / 2] do
+    bytes := bytes.push (UInt8.ofNat (digits[2 * i]! * 16 + digits[2 * i + 1]!))
+  return bytes
+
+private def parseCorpusNat? (s : String) : Option Nat :=
+  let digits := (s.trimAscii.toString.dropPrefix "0x").toString
+  if digits.isEmpty then none
+  else digits.toList.foldl
+    (fun acc c => match acc, corpusHexDigit? c with
+      | some a, some d => some (a * 16 + d)
+      | _, _ => none) (some 0)
+
+/-- A manifest `regions` cell: `refused` is `none`, `-` is `some []`.  The
+outer `Option` is the manifest's own well-formedness. -/
+private def parseCorpusRegions? (s : String) : Option (Option (List (Nat × Nat))) :=
+  match s.trimAscii.toString with
+  | "refused" => some none
+  | "-" => some (some [])
+  | list =>
+    (list.splitOn ",").foldr
+      (fun pair acc => match acc, pair.splitOn "+" with
+        | some (some rest), [b, sz] =>
+          match parseCorpusNat? b, parseCorpusNat? sz with
+          | some base, some size => some (some ((base, size) :: rest))
+          | _, _ => none
+        | _, _ => none)
+      (some (some []))
+
+/-- The Lean parser's answer to the corpus question: the extents of every
+operational top-level `/memory` node, through exactly the steps
+`DeviceTree.fromDtbFull` takes before it subtracts reservations — the header,
+the whole structure block, the single root, then `memoryRegionsFromNodes`. -/
+def corpusDeclaredRegions (blob : ByteArray) : Option (List (Nat × Nat)) :=
+  match parseAndValidateFdtHeader blob with
+  | none => none
+  | some hdr =>
+    match parseFdtNodes blob hdr with
+    | .error _ => none
+    | .ok nodes =>
+      match fdtRoot? nodes with
+      | none => none
+      | some root => (memoryRegionsFromNodes root).map (·.map fun r => (r.base, r.size))
+
+/-- The Lean parser's answer to the structural question both sides share: the
+header validates, the structure block parses whole, and it holds a single
+unnamed root — the steps `corpusDeclaredRegions` takes before it looks for
+memory. -/
+def corpusStructureReadable (blob : ByteArray) : Bool :=
+  match parseAndValidateFdtHeader blob with
+  | none => false
+  | some hdr =>
+    match parseFdtNodes blob hdr with
+    | .error _ => false
+    | .ok nodes => (fdtRoot? nodes).isSome
+
+def dtbCorpus_every_fixture_agrees_with_the_manifest : IO Unit := do
+  let manifest ← IO.FS.readFile (dtbCorpusDir / "MANIFEST")
+  let rows := (manifest.splitOn "\n").filter fun l => !l.trimAscii.isEmpty && !l.startsWith "#"
+  let mut failures : Array String := #[]
+  let mut checked := 0
+  for row in rows do
+    match row.splitOn "|" |>.map (fun (x : String) => x.trimAscii.toString) with
+    | [name, structureCell, regionsCell] =>
+      let hexText ← IO.FS.readFile (dtbCorpusDir / s!"{name}.dtb.hex")
+      let readable? : Option Bool := match structureCell with
+        | "readable" => some true
+        | "refused" => some false
+        | _ => none
+      match parseCorpusHex hexText, readable?, parseCorpusRegions? regionsCell with
+      | .error e, _, _ => failures := failures.push s!"{name}: {e}"
+      | _, none, _ => failures := failures.push s!"{name}: malformed structure cell {structureCell}"
+      | _, _, none => failures := failures.push s!"{name}: malformed regions cell {regionsCell}"
+      | .ok blob, some readable, some expected =>
+        checked := checked + 1
+        let gotReadable := corpusStructureReadable blob
+        if gotReadable != readable then
+          failures := failures.push s!"{name}: structure {gotReadable}, manifest {readable}"
+        let got := corpusDeclaredRegions blob
+        if got != expected then
+          failures := failures.push s!"{name}: regions {repr got}, manifest {repr expected}"
+        -- A blob refused structurally declares no regions.
+        if !readable && expected.isSome then
+          failures := failures.push s!"{name}: refused structure with regions"
+    | _ => failures := failures.push s!"malformed manifest row: {row}"
+  for f in failures do IO.println s!"  corpus divergence: {f}"
+  expect s!"WS-BP BP0.1 corpus: {checked} fixtures agree with the manifest"
+    (failures.isEmpty && checked == rows.length && checked > 0)
+  -- WS-BP BP0.2: the manifest names exactly the fixtures on disk, so a blob
+  -- added to the directory without a row — which no suite would read — fails
+  -- here as it fails the Rust suite's identical check.
+  let entries ← dtbCorpusDir.readDir
+  let onDisk := (entries.toList.filterMap fun e =>
+    if e.fileName.endsWith ".dtb.hex" then some (e.fileName.dropEnd 8).toString else none)
+  let named := rows.filterMap fun row => (row.splitOn "|").head?.map (·.trimAscii.toString)
+  expect "WS-BP BP0.2 corpus: every fixture on disk has a manifest row, and no more"
+    (onDisk.mergeSort (· ≤ ·) == named.mergeSort (· ≤ ·))
+
+/-! ## WS-BP BP0.4 — the boot-map pair, driven rather than mirrored
+
+`rust/sele4n-hal/src/mmu.rs`'s `boot_mapping_for` is what the boot translation
+tables install, and `rpi5MemoryMapForConfig` is the project's canonical BCM2712
+map.  They were held together by one Rust test asserting four hand-copied
+boundary literals and a comment saying the boundaries "mirror" the Lean map, and
+by a shell gate that regex-parsed the Lean source.  This table is emitted from
+the Lean map itself: for every RAM variant, the regions it declares and the kind
+`classifyAddress` gives at every probe — each region boundary and the byte below
+it, address 0, and one address far above every map.  The Rust suite
+(`mmu::tests::the_boot_map_agrees_with_the_lean_map`) pushes the same probes,
+and its own boundary constants, through `boot_mapping_for` and through a walk of
+the tables it builds, and requires the kind the Lean map gives.
+
+**WS-BP BP4.6**: each variant also carries its `extend` lines — the RAM the boot
+maps above the guaranteed gigabyte once the verified parse has chosen that
+variant (`rpi5BootRamExtensions`).  The Rust suite applies them to its tables
+and requires the extended Normal window to be **exactly** that variant's RAM,
+on every variant rather than the smallest alone. -/
+
+private def bootMapHex (n : Nat) : String :=
+  "0x" ++ String.ofList (Nat.toDigits 16 n)
+
+private def bootMapKindName : SeLe4n.MemoryKind → String
+  | .ram => "ram"
+  | .device => "device"
+  | .reserved => "reserved"
+
+/-- One address far above every variant's map (256 GiB), so the table also
+says what lies past the last region. -/
+private def bootMapFarProbe : Nat := 0x4000000000
+
+private def bootMapProbes (map : List SeLe4n.MemoryRegion) : List Nat :=
+  let edges := map.flatMap fun r => [r.base.toNat, r.endAddr]
+  let points := 0 :: bootMapFarProbe :: edges.flatMap fun b => if b == 0 then [0] else [b - 1, b]
+  (points.mergeSort (· ≤ ·)).eraseDups
+
+private def bootMapTableLines : List String :=
+  "# RPi5 boot map: the Lean memory map per RAM variant, and its kind at every probe (Lean/Rust cross-check)"
+    -- WS-BP BP3.2: the kernel's reserved extent the bound machine configuration
+    -- carries, as `kernelReserved <base> <end>` — read back by the HAL's
+    -- `the_kernel_reserved_extent_is_the_lean_and_linker_one` and by
+    -- `scripts/check_link_script.py` against `link.ld`'s `KERNEL_RESERVED_END`.
+    :: rpi5MachineConfig.kernelReserved.map (fun r =>
+        s!"kernelReserved {bootMapHex r.base.toNat} {bootMapHex r.endAddr}")
+    -- The v0.36.2 audit: the physical address width the binding declares, as
+    -- `physicalAddressWidth <bits>` — read back by the HAL's
+    -- `the_lean_physical_address_width_is_the_pe_the_hal_programs_for`, which
+    -- holds it to the Cortex-A76 `ID_AA64MMFR0_EL1.PARange` the HAL derives
+    -- `TCR_EL1.IPS` from, so the model's bound and the PE's are compared by
+    -- running both rather than by two literals each claiming the board.
+    ++ [s!"physicalAddressWidth {bootMapHex rpi5MachineConfig.physicalAddressWidth}"]
+    -- ...and the PE count the binding declares, as `declaredCores <n>` — read
+    -- back by `boot.rs`'s `lean_declared_core_count_matches_the_rpi5_binding`,
+    -- so the handoff's `LEAN_DECLARED_CORE_COUNT` is the binding's `coreCount`
+    -- rather than a literal beside a comment naming it.
+    ++ [s!"declaredCores {bootMapHex (SeLe4n.Platform.PlatformBinding.coreCount (platform := SeLe4n.Platform.RPi5.RPi5Platform))}"]
+    -- The BCM2712 address-map correction (v0.36.2): the MMIO windows the
+    -- binding programs, as `mmio <name> <base> <size>`, taken from
+    -- `mmioRegions` in order — read back by the HAL's UART and GIC tests, so
+    -- `UART0_BASE`, `GICD_BASE` and `GICC_BASE` are compared with the Lean
+    -- constants by running both rather than by a literal beside a comment.
+    ++ (["uart", "gicd", "gicc"].zip mmioRegions).map (fun (name, r) =>
+        s!"mmio {name} {bootMapHex r.base.toNat} {bootMapHex r.size}")
+    ++ rpi5Variants.flatMap fun v =>
+      let map := rpi5MemoryMapForConfig v
+      let ramTop := (map.filter (·.kind == .ram)).foldl (fun acc r => max acc r.endAddr) 0
+      s!"variant {bootMapHex v.ramSize} ramTop {bootMapHex ramTop}"
+        :: map.map (fun r =>
+            s!"region {bootMapHex r.base.toNat} {bootMapHex r.size} {bootMapKindName r.kind}")
+        -- WS-BP BP4.6: what the boot maps above the guaranteed gigabyte on this
+        -- variant, as `extend <base> <size>` — the HAL's test applies each to
+        -- its tables through `mmu::extend_boot_tables` and then requires the
+        -- Normal window to be exactly this variant's RAM.
+        ++ (rpi5BootRamExtensions v).map (fun e =>
+            s!"extend {bootMapHex e.1} {bootMapHex e.2}")
+        ++ (bootMapProbes map).map fun a =>
+            s!"probe {bootMapHex a} {bootMapKindName (classifyAddress (SeLe4n.PAddr.ofNat a) map)}"
+
+def bootMap_the_lean_map_is_the_shared_table : IO Unit :=
+  checkSharedFixture "WS-BP BP0.4 boot map" "tests/fixtures/boot_map.expected"
+    "rust/sele4n-hal/src/mmu.rs" bootMapTableLines
+
 end SeLe4n.Testing.Ak9PlatformSuite
 
 open SeLe4n.Testing.Ak9PlatformSuite in
@@ -2055,7 +2461,7 @@ def main : IO Unit := do
   -- PR #892 review round 2: the binding installs the board's own RAM variant
   deviceTreeBridge_07_small_variants_bind_their_own_map
   deviceTreeBridge_08_canonical_board_binds_canonical_map
-  deviceTreeBridge_09_eight_gib_as_reported
+  deviceTreeBridge_09_eight_gib_two_banks
   deviceTreeBridge_10_between_variants_binds_largest_covered
   deviceTreeBridge_11_foreign_base_refused
   deviceTreeBridge_12_split_aperture_binds_canonical_map
@@ -2067,6 +2473,10 @@ def main : IO Unit := do
   review7_partial_ranges_tuple_maps_nothing
   review7_declared_block_extents_are_enforced
   review8_mmio_windows_require_the_right_devices
+  uartWindowIsTheDeviceTreesRegisterBlock
+  rangesWalkStarvedOfFuelRefuses
+  bootUntypedMustBePristine
+  realFirmwareAccountIsRefusedUntilDerived
   review9_parser_conformance_and_reservations
   review9_runtime_contract_follows_the_installed_map
   deviceTreeBridge_18_every_memory_node_contributes
@@ -2075,5 +2485,8 @@ def main : IO Unit := do
   deviceTreeBridge_21_empty_unit_address_is_not_memory
   deviceTreeBridge_22_every_register_block_is_a_window
   deviceTreeBridge_23_extent_past_the_window_is_refused
+  dtbCorpus_every_fixture_agrees_with_the_manifest
+  bootMap_the_lean_map_is_the_shared_table
+  kernelEntry_boots_the_deployment_on_every_variant
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

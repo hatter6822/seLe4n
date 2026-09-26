@@ -52,7 +52,7 @@
 //! access to `kernelStateRef`; it does not make the Lean runtime exist
 //! on a PE.  Every hardware seam above therefore also consults the
 //! per-core readiness gate ([`crate::lean_ready`]) before its Lean
-//! call — a core SM10.1's initialization has not marked ready refuses
+//! call — a core that has not marked itself ready (WS-BP BP6) refuses
 //! instead of entering a runtime it never initialized.
 //!
 //! **WS-RR RR5.6/RR5.7**: that sentence was false when it was written.
@@ -75,13 +75,15 @@
 //! not-ready core would never be preempted again
 //! ([`crate::svc_dispatch`]'s `halt_syscall_before_lean_ready`).
 //!
-//! `lean_kernel_main` (the primary's boot seam, owed by the SM10.1
-//! image target) is the one committing path outside the bracket today.
-//! Phase 6 runs it after Phase 5 has released the secondaries, so its
-//! `initialiseKernelState` install would race their bracketed ticks:
-//! SM10.1 MUST either order the install before secondary release or
-//! take this bracket around it (recorded in
-//! `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`).
+//! `lean_kernel_main` (the primary's boot install, WS-BP BP4.1) is the one
+//! committing path outside the bracket.  It needs none, and the reason is an
+//! ordering rather than a lock: `rust_boot_main` runs it in Phase 5, on the
+//! boot core alone, and the secondaries are released only in Phase 6 by a
+//! bring-up that consumes the `SecondaryReleasePermit` the install returns
+//! (`lean_entry.rs`, WS-BP BP4.2).  So no bracketed committer exists while
+//! the install writes, and the lost-commit shape a concurrent tick would have
+//! produced — the option-1 closure `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`
+//! §3 records — is closed by construction.
 //!
 //! `syscall_dispatch_inner` and `suspend_thread_inner` were the legacy
 //! boot-pinned seams the cross-core entries replaced.  **Both exports

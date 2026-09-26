@@ -91,7 +91,7 @@ The `Platform/` namespace provides:
 - `Platform/Sim/` — `SimPlatform` with permissive runtime, trivially-true boot,
   64-bit idealized machine config with 256 MiB RAM region
 - `Platform/RPi5/` — `RPi5Platform` with BCM2712 memory map, GIC-400 constants,
-  ARM64 config (44-bit PA, 16-bit ASID), RAM-only memory access contract
+  ARM64 config (40-bit PA — the Cortex-A76's `PARange`, corrected from `44` by the v0.36.2 audit — 16-bit ASID), RAM-only memory access contract
 
 ## What was NOT changed
 

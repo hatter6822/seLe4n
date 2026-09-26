@@ -1,0 +1,80 @@
+# ABI layout: MessageInfo fields and bounds (Lean/Rust cross-check)
+bit 0 length
+bit 1 length
+bit 2 length
+bit 3 length
+bit 4 length
+bit 5 length
+bit 6 length
+bit 7 extraCaps
+bit 8 extraCaps
+bit 9 label
+bit 10 label
+bit 11 label
+bit 12 label
+bit 13 label
+bit 14 label
+bit 15 label
+bit 16 label
+bit 17 label
+bit 18 label
+bit 19 label
+bit 20 label
+bit 21 label
+bit 22 label
+bit 23 label
+bit 24 label
+bit 25 label
+bit 26 label
+bit 27 label
+bit 28 label
+bit 29 reserved
+bit 30 reserved
+bit 31 reserved
+bit 32 reserved
+bit 33 reserved
+bit 34 reserved
+bit 35 reserved
+bit 36 reserved
+bit 37 reserved
+bit 38 reserved
+bit 39 reserved
+bit 40 reserved
+bit 41 reserved
+bit 42 reserved
+bit 43 reserved
+bit 44 reserved
+bit 45 reserved
+bit 46 reserved
+bit 47 reserved
+bit 48 reserved
+bit 49 reserved
+bit 50 reserved
+bit 51 reserved
+bit 52 reserved
+bit 53 reserved
+bit 54 reserved
+bit 55 reserved
+bit 56 reserved
+bit 57 reserved
+bit 58 reserved
+bit 59 reserved
+bit 60 reserved
+bit 61 reserved
+bit 62 reserved
+bit 63 reserved
+field length shift 0 width 7
+field extraCaps shift 7 width 2
+field label shift 9 width 20
+register capPtr x0
+register msgInfo x1
+register msgReg0 x2
+register msgReg1 x3
+register msgReg2 x4
+register msgReg3 x5
+register syscallNum x7
+maxMessageRegisters 120
+maxExtraCaps 3
+maxLabel 1048575
+errorLabelBase 1048320
+syscallAbiVersion 3

@@ -132,4 +132,34 @@ accidental interference when suites are run independently.
 
 Suites with overlapping ranges run independently and do not share state. -/
 
+/-- **WS-BP BP0.3/BP0.4**: compare a table this suite emits from Lean
+definitions against a checked-in fixture **both** sides of a Lean/Rust pair
+read.  The Rust side renders the same table from its own definitions and
+compares against the same bytes (`include_str!`), so a change on either side
+fails on that side and the diff names the line.
+
+One helper for every such table (the return-shape table, the ABI layout, the
+boot map), because the comparison is one relation: exact bytes, the whole file,
+the live table printed on mismatch so a deliberate change can be regenerated
+from the output, and a missing fixture a failure rather than a skip. -/
+def checkSharedFixture (title path rustConsumer : String) (lines : List String) :
+    IO Unit := do
+  IO.println s!"--- {title} (Lean/Rust shared fixture) ---"
+  let expected := String.intercalate "\n" lines ++ "\n"
+  if !(← System.FilePath.pathExists path) then
+    IO.println s!"  FAIL: shared fixture {path} not found"
+    throw (IO.userError s!"missing fixture {path}")
+  let actual ← IO.FS.readFile path
+  if actual == expected then
+    IO.println s!"  PASS: the Lean table matches {path}"
+    IO.println s!"        ({rustConsumer} asserts the same bytes)"
+  else
+    IO.println s!"  FAIL: the Lean table differs from {path}"
+    IO.println "        the live table is:"
+    for l in lines do
+      IO.println s!"          {l}"
+    IO.println s!"        regenerate BOTH sides deliberately — {rustConsumer}"
+    IO.println "        reads the same file."
+    throw (IO.userError s!"shared fixture mismatch: {path}")
+
 end SeLe4n.Testing

@@ -960,10 +960,11 @@ Devicetree Specification v0.4 §2.3.4: an absent `status` means `okay`; `okay`
 and `ok` say the node is operational; `disabled`, `reserved`, `fail` and
 `fail-sss` say it is not.  The verdict is decided on the **operational** side —
 the side the specification's list is closed on — so a value the specification
-does not define withholds the node rather than being read as available.  This
-is the Lean twin of `cmdline::find_ram_top_in_dtb`'s `status_ok`, and it is here
-because that round-4 fix was applied to the Rust parser and not swept to the
-Lean one, which the boot bridge also reads. -/
+does not define withholds the node rather than being read as available.  It
+was written as the Lean twin of the Rust `/memory` walker's `status_ok`, because
+that round-4 fix had been applied to the Rust parser and not swept to the Lean
+one, which the boot bridge also reads.  WS-BP BP2.6 retired the Rust walker, so
+this is now the only reading of a memory node's availability. -/
 def FdtNode.statusIsOperational (node : FdtNode) : Bool :=
   match node.findProperty "status" with
   | none => true
@@ -988,15 +989,15 @@ def readFdtCells (bytes : ByteArray) (offset count : Nat) : Option Nat :=
       (some 0)
 
 /-- **PR #892 review round 5 audit**: `#address-cells` when a node declares
-none — 2, Devicetree Specification v0.4 §2.3.5, and the value
-`cmdline::FDT_DEFAULT_ADDRESS_CELLS` uses on the Rust side. -/
+none — 2, Devicetree Specification v0.4 §2.3.5, and the value the Rust
+`/memory` walker used until WS-BP BP2.6 retired it. -/
 def fdtDefaultAddressCells : Nat := 2
 
 /-- **PR #892 review round 5 audit**: `#size-cells` when a node declares none —
-**1**, §2.3.5, and `cmdline::FDT_DEFAULT_SIZE_CELLS`.
+**1**, §2.3.5.
 
-It was 2 here for one cut, which is a divergence from both the specification and
-the Rust walker that reads the same blob: a root declaring `#address-cells` and
+It was 2 here for one cut, which was a divergence from both the specification and
+the Rust `/memory` walker that then read the same blob (retired at WS-BP BP2.6): a root declaring `#address-cells` and
 no `#size-cells` had its children's `reg` read at a different stride on the two
 sides. -/
 def fdtDefaultSizeCells : Nat := 1
@@ -1040,10 +1041,21 @@ which is why this answers `Option`.  It used to return the complete prefix, so a
 translation and a peripheral falling in the first window satisfied
 `deviceTreeCoversMmioRegions` — the RPi5 bridge would bind a malformed blob.
 That is the identical fail-open shape the `v0.34.115` audit closed on the memory
-`reg` path (`extractMemoryRegionsChecked`, against `fold_memory_reg`'s
-`value_len.is_multiple_of(pair_bytes)`); this is its unswept sibling, and the
+`reg` path (`extractMemoryRegionsChecked`, against the Rust walker's
+whole-pairs test, since retired); this is its unswept sibling, and the
 rule it broke is this project's own: *when a fix names a relation, grep for
-every other place that asks it*. -/
+every other place that asks it*.
+
+**And exhaustion refuses too** (the `v0.36.2` audit).  `go`'s zero-fuel arm
+answered the prefix it had parsed, which is the same fail-open shape one arm
+over: a translation table missing its tail maps a peripheral falling in a
+later window to nothing, and `deviceTreeCoversMmioRegions` then decides the
+board on a partial table.  Unreachable at the default fuel: the walk spends
+one unit per entry and one more observing the property's end, an entry is at
+least one 4-byte cell, and `fdtWholeEntryCount` has already required the
+property to be a whole number of entries — so `bytes.size / 4 + 1` always
+reaches the end.  The arm is therefore a contract on callers passing less, and
+`Ak9PlatformSuite`'s `rangesWalkStarvedOfFuelRefuses` drives it directly. -/
 def parseFdtRanges (bytes : ByteArray) (childAddressCells parentAddressCells childSizeCells : Nat)
     (fuel : Nat := bytes.size / 4 + 1) : Option (List FdtRangeEntry) :=
   match fdtWholeEntryCount bytes ((childAddressCells + parentAddressCells + childSizeCells) * 4) with
@@ -1051,7 +1063,7 @@ def parseFdtRanges (bytes : ByteArray) (childAddressCells parentAddressCells chi
   | some _ => go 0 fuel []
 where
   go (offset : Nat) : Nat → List FdtRangeEntry → Option (List FdtRangeEntry)
-  | 0, acc => some acc.reverse
+  | 0, _ => none
   | fuel + 1, acc =>
     let entrySize := (childAddressCells + parentAddressCells + childSizeCells) * 4
     if entrySize == 0 || offset + entrySize > bytes.size then some acc.reverse
@@ -1162,6 +1174,27 @@ def FdtAddressContext.forChildren (parent : FdtAddressContext) (node : FdtNode) 
               | some parentAddr => parent.translate parentAddr size
               | none => none }
 
+/-- **WS-BP BP0.1**: the deepest node nesting this parser reads — the root is
+at depth 1.  Held equal to the Rust walker's `FDT_MAX_DEPTH`, because the shared
+device-tree corpus (`tests/fixtures/dtb/`) found the two disagreeing: a blob
+nested 33 deep was refused there and read here.  No board's device tree comes
+near it; production trees nest about six deep. -/
+def fdtMaxDepth : Nat := 32
+
+mutual
+/-- **WS-BP BP0.1**: does `node`, counted as one level, nest within `budget`
+levels?  A node with no budget left is refused; its children share one level
+less. -/
+def FdtNode.withinDepth : Nat → FdtNode → Bool
+  | 0, _ => false
+  | budget + 1, ⟨_, _, children⟩ => fdtNodesWithinDepth budget children
+
+/-- **WS-BP BP0.1**: does every node of `nodes` nest within `budget` levels? -/
+def fdtNodesWithinDepth : Nat → List FdtNode → Bool
+  | _, [] => true
+  | budget, node :: rest => node.withinDepth budget && fdtNodesWithinDepth budget rest
+end
+
 /-- X4-A/H-7: Fuel-bounded generic FDT structure block traversal.
     Parses the FDT structure block into a tree of `FdtNode` values.
     Returns the root node containing all device nodes, properties, and children.
@@ -1192,7 +1225,7 @@ def FdtAddressContext.forChildren (parent : FdtAddressContext) (node : FdtNode) 
 -- `parseFdtNodes` reported `.ok`.  A blob carrying a well-formed `/memory` node
 -- and then truncated therefore parsed, and `rpi5PlatformConfigFromDtb` decided
 -- RAM and MMIO coverage from a prefix nothing had validated.  That is the same
--- incomplete-walk trust the Rust `find_ram_top_in_dtb` had in round 1, in the
+-- incomplete-walk trust the Rust `/memory` walker had in round 1, in the
 -- parser that now feeds the same boot path — the sibling this project's own
 -- rule says to sweep for when a relation is fixed at one site.
 def parseFdtNodes (blob : ByteArray) (hdr : FdtHeader)
@@ -1201,7 +1234,12 @@ def parseFdtNodes (blob : ByteArray) (hdr : FdtHeader)
   | none => .error .malformedBlob -- The header declares blocks the blob does not hold
   | some v =>
     match go v v.structStart fuel with
-    | .ok (nodes, _, true) => .ok nodes
+    -- WS-BP BP0.1: and the tree nests no deeper than `fdtMaxDepth`, the bound
+    -- the Rust walker has always applied.  Checked once over the finished tree
+    -- rather than threaded through the walk, so every consumer of this parse
+    -- inherits it and the walk's own recursion is unchanged.
+    | .ok (nodes, _, true) =>
+      if fdtNodesWithinDepth fdtMaxDepth nodes then .ok nodes else .error .malformedBlob
     | .ok (_, _, false) => .error .malformedBlob
     | .error e => .error e
 where
@@ -1256,15 +1294,15 @@ where
   -- properties, then child nodes.  This parser accepted a property *after* a
   -- child and appended it to the node's list, so a root that placed
   -- `#size-cells` after its `/memory` child had that value applied
-  -- retrospectively to a `reg` already parsed — while `find_ram_top_in_dtb`
-  -- folds the memory node at its `FDT_END_NODE`, before the late property
-  -- exists, and reads the same `reg` at the specification's defaults.  Two
-  -- readers, one blob, different RAM.
+  -- retrospectively to a `reg` already parsed — while the Rust `/memory`
+  -- walker (retired at WS-BP BP2.6) folded the memory node at its
+  -- `FDT_END_NODE`, before the late property existed, and read the same `reg`
+  -- at the specification's defaults.  Two readers, one blob, different RAM.
 
   -- Duplicate names are the same shape one level down: §2.2.4 gives a node's
   -- properties unique names, and where a blob breaks that, `findProperty`
-  -- answers the **first** occurrence while the Rust walker updates its verdict
-  -- at every one and so answers the **last**.  A `status` of `okay` followed by
+  -- answers the **first** occurrence while the Rust `/memory` walker updated
+  -- its verdict at every one and so answered the **last**.  A `status` of `okay` followed by
   -- `disabled` was therefore operational here and withheld there.  Rejecting
   -- the duplicate is better than picking a side: neither answer is the blob's
   -- meaning, because the blob has none.
@@ -1343,7 +1381,8 @@ where
 
 /-- **PR #892 review round 5**: does this node describe RAM?
 
-The name test plus the `device_type` test the Rust walker applies — a node named
+The name test plus the `device_type` test the retired Rust `/memory` walker
+applied — a node named
 `memory@…` that declares some other device type is not memory.  Availability is
 a separate question (`statusIsOperational`), asked beside this one wherever a
 memory node is selected. -/
@@ -1367,7 +1406,7 @@ It mattered because the memory selector read that list directly: a blob whose
 root was named `memory@0` was picked as the machine's RAM, at the
 specification's default cell widths rather than any it declared, and a blob with
 root-level peripheral siblings was bound by the RPi5 bridge.  The Rust walker
-recognises memory at depth 1 only and refuses both shapes, so this is the same
+recognised memory at depth 1 only and refused both shapes, so this was the same
 one-question-two-answers divergence WS-XV registers. -/
 def fdtRoot? (nodes : List FdtNode) : Option FdtNode :=
   match nodes with
@@ -1382,19 +1421,20 @@ the machine does not have: the node must describe memory (`isMemoryNode`), it
 must be operational (`statusIsOperational` — firmware marks a withheld bank
 `disabled`, and folding its `reg` maps DRAM that is not there), and it must sit
 at the **top level**, so a `memory@…` under `/reserved-memory` — a carve-out,
-not an aperture — is not read as the machine's RAM.  All three are the filters
-`cmdline::find_ram_top_in_dtb` applies on the Rust side.
+not an aperture — is not read as the machine's RAM.  All three were the filters
+the Rust `/memory` walker applied until WS-BP BP2.6 retired it; this is now the
+only reader of a blob's RAM.
 
 Searched among the **root's children** — depth 1, which is where §3 of the
-specification puts the machine's memory and the only depth
-`cmdline::find_ram_top_in_dtb` recognises.  Taking the root as an argument
+specification puts the machine's memory and the only depth the retired Rust
+walker recognised.  Taking the root as an argument
 rather than the top-level list is what closes PR #892 review round 7's finding:
 the list form treated a root *named* `memory@0` as ordinary RAM, and its own
 `#address-cells` then never applied to anything.  The widths are the root's,
 since `#address-cells` and `#size-cells` govern a node's children.
 
 **Every** node, not the first (PR #892 review round 5 audit).  The Rust walker
-folds each `/memory` node's extents into one store as it passes them, so a board
+folded each `/memory` node's extents into one store as it passed them, so a board
 reporting its low aperture and its high bank as two `/memory` nodes — a shape
 the specification allows and firmware uses — was read whole on that side and
 truncated to its first node here.  The two implementations answered "which
@@ -1415,29 +1455,76 @@ of them each needs. -/
 def memoryNodeReg? (root : FdtNode) : Option ByteArray :=
   (memoryNodesWithCells root).findSome? (fun entry => entry.1.findProperty "reg")
 
+/-- **WS-BP BP0.1**: one past the largest address a 64-bit extent may reach.
+An extent must *end* below it: no 64-bit physical address reaches past it. -/
+def fdtAddressLimit : Nat := 2 ^ 64
+
 /-- **PR #892 review round 5 audit**: read a `/memory` node's `reg` at the given
 cell widths, refusing one that is not a whole number of (address, size) pairs.
 
 `extractMemoryRegionsGeneral` *truncates* a trailing partial entry, which is the
 fail-open direction: a `reg` the Rust walker rejects outright
-(`fold_memory_reg`'s `value_len.is_multiple_of(pair_bytes)`) would have
-contributed the entries before it here.  A malformed `reg` fails the whole query
-closed, on both sides. -/
+(its `value_len.is_multiple_of(pair_bytes)` test) would have contributed the
+entries before it here.  A malformed `reg` fails the whole query closed. -/
 def extractMemoryRegionsChecked (regBytes : ByteArray)
     (addressCells sizeCells : Nat) : Option (List FdtMemoryRegion) :=
   match fdtWholeEntryCount regBytes ((addressCells + sizeCells) * 4) with
   | none => none
-  | some _ => some (extractMemoryRegionsGeneral regBytes addressCells sizeCells)
+  | some count =>
+    let regions := extractMemoryRegionsGeneral regBytes addressCells sizeCells
+    -- WS-BP BP0.1: every entry the count promises, or none.  The whole-pairs
+    -- test above says the *bytes* divide evenly; it does not say each tuple is
+    -- readable, and `extractMemoryRegionsGeneral` stops at the first one that
+    -- is not — at a cell width `readCells` does not support (three, or zero),
+    -- it stopped at the first and returned `[]`, so a `reg` the Rust walker
+    -- refused read here as "this node declares no memory".  The shared corpus
+    -- (`three_address_cells`, `zero_size_cells`) found it.
+    --
+    -- And no extent may end at or past 2^64: such a `reg` describes memory no
+    -- 64-bit physical address reaches, and the Rust walker refused it
+    -- (`base.checked_add(size)`).  Here it was a region whose `Nat` end only the
+    -- later physical-width check happened to refuse.
+    if regions.length == count && regions.all (fun r => r.base + r.size < fdtAddressLimit)
+    then some regions else none
+
+/-- **WS-BP BP0.1**: how many `/memory` extents a device tree may report before
+it is refused.  It was held equal to the Rust walker's fixed extent store
+until WS-BP BP2.6 retired that walker, after the shared corpus found the two
+sides disagreeing about a blob reporting seventeen: refused there, read here.
+A Raspberry Pi 5 reports at most two, and refusing is the fail-closed answer,
+since the alternative is reading part of the report. -/
+def fdtMaxMemoryExtents : Nat := 16
+
+/-- **WS-BP BP0.1**: a node's `#address-cells` and `#size-cells`, where
+declared, are each one `<u32>` (§2.3.5).
+
+`FdtNode.addressCells` reads the first four bytes of whatever the property
+holds and falls back to the default when it holds fewer, so an eight-byte value
+had its tail ignored and a two-byte one read as the default — while the Rust
+walker read four bytes from the value's start whatever its length, borrowing the
+next token's bytes for a short one.  Three readings of one malformed property;
+the shared corpus (`short_cells_property`, `long_cells_property`) found them,
+and both readers refuse it now. -/
+def FdtNode.cellPropertiesWellFormed (node : FdtNode) : Bool :=
+  let fourBytes := fun (name : String) =>
+    match node.findProperty name with
+    | none => true
+    | some bytes => bytes.size == 4
+  fourBytes "#address-cells" && fourBytes "#size-cells"
 
 /-- **PR #892 review round 5 audit**: the memory regions a parsed tree declares —
 every available top-level `/memory` node's `reg`, read at the cell widths its
 parent declares, refused whole if any of them is malformed.
 
-This is the single answer the boot path takes, and the Lean counterpart of the
-Rust walker's extent store: same node filters, same cell widths, same
-whole-pairs refusal, and the same accumulation across nodes. -/
+This is the single answer the boot path takes.  Until WS-BP BP2.6 it had a
+Rust counterpart, the `/memory` walker the boot map was sized from, held to the
+same node filters, cell widths, whole-pairs refusal and accumulation across
+nodes by the shared corpus; that walker is retired, so this is the only one. -/
 def memoryRegionsFromNodes (root : FdtNode) : Option (List FdtMemoryRegion) :=
-  (memoryNodesWithCells root).foldl
+  -- WS-BP BP0.1: the widths the fold reads must themselves be well formed, and
+  -- the answer is refused past the extent capacity (`fdtMaxMemoryExtents`).
+  if !root.cellPropertiesWellFormed then none else
+  match (memoryNodesWithCells root).foldl
     (fun acc entry =>
       match acc with
       | none => none
@@ -1448,7 +1535,9 @@ def memoryRegionsFromNodes (root : FdtNode) : Option (List FdtMemoryRegion) :=
           match extractMemoryRegionsChecked regBytes entry.2.1 entry.2.2 with
           | none => none
           | some more => some (regions ++ more))
-    (some [])
+    (some []) with
+  | some regions => if regions.length ≤ fdtMaxMemoryExtents then some regions else none
+  | none => none
 
 /-- **PR #892 review round 9**: the `/reserved-memory` node's carve-outs.
 
@@ -1471,6 +1560,10 @@ def fdtReservedRanges (root : FdtNode) : Option (List (Nat × Nat)) :=
   match root.children.find? (fun n => n.name == "reserved-memory") with
   | none => some []
   | some reserved =>
+    -- WS-BP BP0.1: the carve-outs are read at the node's declared widths, so a
+    -- malformed width is a reservation set this parser cannot read — a refusal,
+    -- for the reason the entries below are: this list is a set of subtractions.
+    if !reserved.cellPropertiesWellFormed then none else
     reserved.children.foldl
       (fun acc child =>
         match acc with
@@ -1530,8 +1623,8 @@ def subtractReservations (regions : List FdtMemoryRegion)
     answered twice — "is this structure block readable" and "which node is the
     machine's RAM" — and the two answers had diverged: this walk accepted a
     blob whose memory node parsed before the structure ran out, and it applied
-    neither the `status` filter nor the top-level restriction that
-    `cmdline::find_ram_top_in_dtb` applies.  Both questions now have one
+    neither the `status` filter nor the top-level restriction the Rust walker
+    applied.  Both questions now have one
     answer each, `parseFdtNodes` and `memoryNodeReg?`, so the standalone API
     and the boot path cannot disagree about a blob.
 

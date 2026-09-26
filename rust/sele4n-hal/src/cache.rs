@@ -22,7 +22,59 @@ use crate::barriers;
 
 /// Cortex-A76 cache line size in bytes (from CTR_EL0).
 /// ARM Cortex-A76 TRM: D-cache line = 64 bytes, I-cache line = 64 bytes.
+///
+/// Every by-VA maintenance loop in this module steps by this constant, and
+/// the constant is a claim about the PE: `verify_cache_line_stride_or_halt`
+/// reads `CTR_EL0` on each PE at boot and refuses one whose lines are
+/// smaller (the v0.36.2 audit).
 pub const CACHE_LINE_SIZE: u64 = 64;
+
+/// **The v0.36.2 audit**: the line sizes `CTR_EL0` reports, `(D-cache,
+/// I-cache)` in bytes.  `DminLine` is bits `[19:16]` and `IminLine` bits
+/// `[3:0]`, each the log2 of the line size in words (ARM ARM D17.2.20).
+#[must_use]
+pub const fn line_sizes_of_ctr(ctr: u64) -> (u64, u64) {
+    (4 << ((ctr >> 16) & 0xf), 4 << (ctr & 0xf))
+}
+
+/// Whether a PE with cache type register `ctr` is one the loops in this
+/// module reach every line of.  They step by [`CACHE_LINE_SIZE`], which
+/// misses lines only when the PE's are **smaller** — stepping 64 bytes over
+/// 32-byte lines skips every other one — while a larger line is cleaned or
+/// invalidated by whichever address the loop lands in it.  So the relation
+/// is a floor, on both caches: `DC CVAU` / `DC CIVAC` walk data lines and
+/// `IC IVAU` instruction lines.
+#[must_use]
+pub const fn line_size_admits_stride(ctr: u64) -> bool {
+    let (dcache, icache) = line_sizes_of_ctr(ctr);
+    dcache >= CACHE_LINE_SIZE && icache >= CACHE_LINE_SIZE
+}
+
+/// Refuse the executing PE unless its cache lines admit this module's stride
+/// ([`line_size_admits_stride`]).  Run once per PE after its MMU is on
+/// (`boot.rs` Phase 2, `smp.rs` Step 1); `halt` is the PE's fail-closed
+/// barrier.  On a host there is no `CTR_EL0` to read (the register macro
+/// answers zero), so the check is a no-op there and the relation is pinned
+/// by the tests instead.
+pub fn verify_cache_line_stride_or_halt(halt: fn() -> !) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let ctr = crate::registers::read_ctr_el0();
+        if !line_size_admits_stride(ctr) {
+            let (dcache, icache) = line_sizes_of_ctr(ctr);
+            crate::kprintln!(
+                "[cache] FATAL: CTR_EL0 = {ctr:#x}: D-cache line {dcache} B, I-cache line \
+                 {icache} B, smaller than the {CACHE_LINE_SIZE} B stride the maintenance \
+                 loops assume"
+            );
+            halt();
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = halt;
+    }
+}
 
 /// Clean and Invalidate by VA to Point of Coherency (DC CIVAC).
 ///
@@ -489,6 +541,40 @@ pub fn apply_icache_invalidation(op: ICacheInvalidation) {
     }
 }
 
+/// **WS-BP BP4.5**: the operand the boot owes over the image's loaded extent —
+/// clean `[base, base + size)` to the Point of Unification, then invalidate
+/// every instruction cache in the domain.
+///
+/// Lean model: `Architecture.bootImageIcacheOp`, which discharges the
+/// `.bootImageLoad` clean-to-PoU obligation
+/// (`bootImageIcacheOp_discharges_obligation`); its FFI encoding is op tag 3,
+/// the tag [`decode_icache_invalidation`] maps to this variant.
+#[must_use]
+pub const fn boot_image_icache_operand(extent: (u64, u64)) -> ICacheInvalidation {
+    ICacheInvalidation::CleanRangeIallu(extent.0, extent.1)
+}
+
+/// **WS-BP BP4.5**: clean the image's loaded bytes to the Point of Unification
+/// and drop every instruction line in the domain, before any thread can fetch.
+///
+/// An initial task's code is carried in the image, and the firmware wrote those
+/// bytes through a data path this PE's instruction fetches do not read: until
+/// they are cleaned to the PoU and the instruction caches are invalidated, a
+/// fetch may observe stale content.  The extent is
+/// [`crate::mmu::boot_image_loaded_extent`]; memory a thread receives any other
+/// way comes from an untyped through a re-type, which cleans it itself.
+///
+/// Routed through [`apply_icache_invalidation`], so an extent outside the
+/// identity map halts the PE rather than maintaining an address the kernel does
+/// not mean.  The image lies in guaranteed RAM (`link.ld`), so a linked image
+/// cannot reach that refusal.  Called by `lean_entry::enter_lean_kernel` after
+/// the install and before it mints the secondary-release permit.
+pub fn clean_boot_image_to_pou() {
+    apply_icache_invalidation(boot_image_icache_operand(
+        crate::mmu::boot_image_loaded_extent(),
+    ));
+}
+
 /// AN8-D (RUST-M07): Pure memory-ordering fence (no cache-line side effect).
 ///
 /// Issues a DSB ISH so that all preceding memory operations from the
@@ -608,6 +694,38 @@ pub unsafe fn clean_pagetable_range(addr: usize, len: usize) {
 
 #[cfg(test)]
 mod tests {
+    /// The v0.36.2 audit: the Cortex-A76's `CTR_EL0` (`0x8444C004`: PIPT,
+    /// 64-byte lines on both caches) admits the stride; a PE with 32-byte
+    /// lines on either cache is refused, and one with 128-byte lines is
+    /// admitted, because over-stepping misses lines and under-stepping does
+    /// not.
+    #[test]
+    fn the_cache_line_stride_is_a_floor_on_both_caches() {
+        const A76: u64 = 0x8444_C004;
+        assert_eq!(super::line_sizes_of_ctr(A76), (64, 64));
+        assert!(super::line_size_admits_stride(A76));
+        assert!(
+            !super::line_size_admits_stride(0x8443_C004),
+            "32-byte D-cache lines"
+        );
+        assert!(
+            !super::line_size_admits_stride(0x8444_C003),
+            "32-byte I-cache lines"
+        );
+        assert!(
+            super::line_size_admits_stride(0x8445_C005),
+            "128-byte lines are reached"
+        );
+        assert_eq!(super::line_sizes_of_ctr(0), (4, 4));
+        assert!(
+            !super::line_size_admits_stride(0),
+            "an unread register admits nothing"
+        );
+        // The host has no register to read, so the production check is inert
+        // there; it must return rather than call the barrier.
+        super::verify_cache_line_stride_or_halt(|| panic!("the host check must not halt"));
+    }
+
     use super::*;
 
     #[test]
@@ -956,13 +1074,13 @@ mod tests {
 mod identity_map_operand_tests {
     use super::*;
 
-    /// An address inside the low RAM aperture the boot tables map Normal.
+    /// An address inside the guaranteed RAM the boot tables map Normal.
     const IN_WINDOW: u64 = 0x0010_0000;
     /// An address inside the BCM2712 peripheral window — mapped Device, so
     /// `IC IVAU` against it maintains nothing the kernel meant.
-    const IN_DEVICE_WINDOW: u64 = 0xFE20_1000;
-    /// An address above the RAM top a 4 GiB board reports — unmapped, so the
-    /// instruction takes a translation fault at EL1.
+    const IN_DEVICE_WINDOW: u64 = 0x10_7D00_1000;
+    /// An address above the guaranteed RAM the boot tables map — unmapped, so
+    /// the instruction takes a translation fault at EL1.
     const ABOVE_RAM: u64 = 0x1_0000_0000;
 
     #[test]
@@ -1008,12 +1126,12 @@ mod identity_map_operand_tests {
         // the extent is the page, not the byte.  An address in the last page
         // of RAM is in range; one just past the RAM top is not, even though
         // its containing page starts inside RAM.
-        let last_page = crate::mmu::LOW_RAM_TOP - PAGE_SIZE;
+        let last_page = crate::mmu::GUARANTEED_RAM_TOP - PAGE_SIZE;
         assert!(icache_operand_within_identity_map(
             ICacheInvalidation::IvauPage(last_page + 0x40)
         ));
         assert!(!icache_operand_within_identity_map(
-            ICacheInvalidation::IvauPage(crate::mmu::LOW_RAM_TOP)
+            ICacheInvalidation::IvauPage(crate::mmu::GUARANTEED_RAM_TOP)
         ));
     }
 
@@ -1021,7 +1139,7 @@ mod identity_map_operand_tests {
     fn a_range_that_starts_in_ram_and_runs_past_its_end_is_refused() {
         // The relation a base-address check would miss.  The base is a
         // perfectly good RAM frame; the range is not.
-        let base = crate::mmu::LOW_RAM_TOP - PAGE_SIZE;
+        let base = crate::mmu::GUARANTEED_RAM_TOP - PAGE_SIZE;
         assert!(icache_operand_within_identity_map(
             ICacheInvalidation::CleanRangeIallu(base, PAGE_SIZE)
         ));
@@ -1052,5 +1170,47 @@ mod identity_map_operand_tests {
         // pass for a function that halted unconditionally.
         apply_icache_invalidation(ICacheInvalidation::IvauPage(IN_WINDOW));
         apply_icache_invalidation(ICacheInvalidation::Iallu);
+    }
+
+    // ------------------------------------------------------------------
+    // WS-BP BP4.5 — the boot image's clean-to-PoU
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn the_boot_operand_is_the_range_clean_over_the_extent_it_is_given() {
+        // The operand the Lean model says discharges `.bootImageLoad`
+        // (`bootImageIcacheOp`, op tag 3) — a clean over the whole extent, not
+        // the bare invalidate, which cleans nothing.
+        let extent = (0x8_0000, 0x20_0000);
+        assert_eq!(
+            boot_image_icache_operand(extent),
+            ICacheInvalidation::CleanRangeIallu(0x8_0000, 0x20_0000)
+        );
+        assert_eq!(
+            decode_icache_invalidation(3, extent.0, extent.1),
+            Some(boot_image_icache_operand(extent))
+        );
+        assert_ne!(boot_image_icache_operand(extent), ICacheInvalidation::Iallu);
+    }
+
+    #[test]
+    fn a_boot_image_in_guaranteed_ram_is_maintainable() {
+        // `link.ld` places the image in guaranteed RAM, so the fail-closed
+        // refusal is unreachable for a linked image; an extent that ran past it
+        // would halt rather than be under-maintained.
+        assert!(icache_operand_within_identity_map(
+            boot_image_icache_operand((0x8_0000, 0x20_0000))
+        ));
+        assert!(!icache_operand_within_identity_map(
+            boot_image_icache_operand((ABOVE_RAM, PAGE_SIZE))
+        ));
+    }
+
+    #[test]
+    fn the_boot_clean_runs_on_the_host() {
+        // The host has no link script, so the extent is empty and the call is
+        // the bare domain-wide invalidate — it must not halt.
+        assert_eq!(crate::mmu::boot_image_loaded_extent(), (0, 0));
+        clean_boot_image_to_pou();
     }
 }

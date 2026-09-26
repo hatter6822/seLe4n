@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.1-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.2-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -96,11 +96,11 @@ de preuve de Lean 4 :
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.36.1` |
+| **Version** | `0.36.2` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 417 841 réparties sur 340 fichiers |
-| **LoC Lean de test** | 84 834 réparties sur 70 suites de tests |
-| **Déclarations prouvées** | 13 815 déclarations theorem/lemma (zéro sorry/axiom) |
+| **LoC Lean de production** | 420 759 réparties sur 343 fichiers |
+| **LoC Lean de test** | 85 605 réparties sur 71 suites de tests |
+| **Déclarations prouvées** | 13 928 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Audit canonique** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — audit complet pré-1.0 (202 résultats ; corrigés par WS-AK AK1–AK10 ; archivé) |
 | **Dernier audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — audit de préparation pré-1.0 réalisé après la clôture de WS-AN (succède au désormais archivé [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), corrigé par WS-AN AN0–AN12). WS-RC R0..R5 LANDED en v0.31.2 ; WS-RC R6..R14 absorbés dans WS-SM selon la cartographie d'absorption SM0.Q.1 (voir [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Plan du flux de travail actif : [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
@@ -237,7 +237,7 @@ de la déclassification (SM9, clôturée à la v0.33.100). La phase restante est
 **SM10** (clôture de la version → v1.0.0). Le flux de travail sur l'ABI de
 retour des appels système (**WS-RA**) est terminé.
 
-**WS-RR** (préparation de la version SMP), la phase de remédiation pré-1.0, est **terminée en v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)) : RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) et **RR4 — gestion des fautes : IPC de faute complet avec redémarrage par réponse (v0.34.44)**, qui empêche la reprise d'un thread fautif sur l'instruction fautive : la faute est enregistrée dans le TCB, délivrée au point d'entrée `faultHandler` du thread via la chaîne d'appel inter-cœurs active, puis traitée par une réponse qui redémarre le thread à un PC choisi ou l'abandonne. RR5–RR8 ont également abouti (RR8 en v0.35.203). **SM10 est désormais bloquée par WS-BP** (le chemin d'amorçage bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), qui est le contenu de SM10.1 et dont aucune sous-tâche n'a commencé ; puis **SM10** (clôture de la version → v1.0.0).
+**WS-RR** (préparation de la version SMP), la phase de remédiation pré-1.0, est **terminée en v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)) : RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) et **RR4 — gestion des fautes : IPC de faute complet avec redémarrage par réponse (v0.34.44)**, qui empêche la reprise d'un thread fautif sur l'instruction fautive : la faute est enregistrée dans le TCB, délivrée au point d'entrée `faultHandler` du thread via la chaîne d'appel inter-cœurs active, puis traitée par une réponse qui redémarre le thread à un PC choisi ou l'abandonne. RR5–RR8 ont également abouti (RR8 en v0.35.203). **SM10 est désormais bloquée par WS-BP** (le chemin d'amorçage bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), qui est le contenu de SM10.1 et dont les sept premières phases, BP0 à BP6, sont terminées en v0.36.2 (BP7 et BP8 restent) ; puis **SM10** (clôture de la version → v1.0.0).
 
 Plan directeur : [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 avec les plans par phase dans `docs/planning/SMP_*.md`. Le registre canonique

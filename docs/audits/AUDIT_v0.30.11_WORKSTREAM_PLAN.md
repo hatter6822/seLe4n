@@ -1139,7 +1139,8 @@ conjunction of decidable predicates (`asid = 0`, `wxCompliant`,
 instance exists or add one.
 
 Verify the soundness theorem `bootSafeObjectCheck_sound_structural`
-(at `Platform/Boot.lean`) is updated to admit the new
+(at `Platform/Boot.lean`; renamed `bootSafeObjectCheck_sound` and made whole
+at WS-BP BP3.5) is updated to admit the new
 VSpaceRoot arm: the existing theorem proves `bootSafeObjectCheck =
 true → bootSafeObject obj`; with the new arm, it must additionally
 prove `decide (bootSafeVSpaceRoot vsr) = true → bootSafeVSpaceRoot vsr`,

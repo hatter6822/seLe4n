@@ -71,7 +71,7 @@ the gate.** The hook is the backstop, not the first line.
 ### Rust
 
 ```bash
-rustup target add aarch64-unknown-none   # RR1.1 added this to rust-toolchain.toml
+rustup target add aarch64-unknown-none-softfloat   # listed in rust-toolchain.toml, with llvm-tools
 ```
 
 `rust/rust-toolchain.toml` pins the toolchain, and rustup's directory override
@@ -158,20 +158,166 @@ mismatch too.
 ```bash
 ./scripts/test_rust.sh                 # host: build, tests, fmt, clippy
 ./scripts/test_aarch64_cross_build.sh  # the kernel's real target
+./scripts/test_lean_aarch64_archive.sh # the kernel's Lean for that target
 ```
 
 **Run the cross build after any change under `rust/`.** The tier scripts and
 `test_rust.sh` compile the *host* target, where every
 `#[cfg(target_arch = "aarch64")]` block is removed before rustc or clippy sees
 it — so the hardware half of the HAL, which is most of it, is invisible to
-them. The cross gate builds `sele4n-hal` for `aarch64-unknown-none` in both
-profiles, verifies `boot.S` / `vectors.S` / `trap.S` actually assembled, and
-lints the cross target with `-D warnings`. It runs in CI as the
+them. The cross gate builds `sele4n-hal` for `aarch64-unknown-none-softfloat`
+in both profiles, verifies `boot.S` / `vectors.S` / `trap.S` actually
+assembled, lints the cross target with `-D warnings`, disassembles the
+release objects with `scripts/check_fp_simd_free_objects.py`, and (WS-BP BP2.1)
+links a probe under `link.ld` with `scripts/check_link_script.py` — nothing else
+links the script before the image exists, so its Lean heap arena, the section
+boundaries the boot map reads (`__text_end`, `__rodata_start`, `__rodata_end`)
+and every `ASSERT` are checked on an ELF and each assertion is proved live by
+mutation.
+
+**The boot map is built from constants** (WS-BP BP2.6): `mmu::init_mmu` reads
+no device tree.  It maps the guaranteed first GiB of RAM (`GUARANTEED_RAM_TOP`)
+and the device window, with the image's text read-only and executable at EL1,
+its read-only data read-only and never executable, and everything else
+writable and never executable.  `boot_mapping_for` is the one answer to what an
+address is mapped as, and `boot_map_tests` walks every table against it and
+against `tests/fixtures/boot_map.expected`.  A section added to `link.ld`
+between `.text` and `.rodata` fails `__rodata_start == __text_end`; section
+boundary symbols are assigned *inside* their sections, since lld attaches a
+location-counter change between sections to the following one.
+**The kernel's reserved extent** (WS-BP BP3.2) is one number in three places —
+`link.ld`'s `KERNEL_RESERVED_END`, `mmu::KERNEL_RESERVED_END` and the Lean
+`rpi5KernelReservedEnd` — held together through the fixture's `kernelReserved`
+line; the image must end inside it (an `ASSERT`) and so must the device-tree
+window, and the boot refuses an untyped over it.  Moving it is a three-file
+change that the HAL test and `check_link_script.py` refuse to see half done.
+It runs in CI as the
 `aarch64 Cross Build` job.
+
+**The Lean half has its own lane** (WS-BP BP1): `test_lean_aarch64_archive.sh`
+builds `libsele4n.a` — the elaborator's closure of `SeLe4n`, compiled
+freestanding and soft-float by the Lean toolchain's clang — and decides the
+kernel-entry reconciliation on it as well as on the host archive.  The first run
+on a new toolchain regenerates the stdlib C (several minutes, cached under
+`.lake/build/aarch64-unknown-none-softfloat/`).  It fails when a production
+module imports `Lean.*` or a staged module, when a generated file carries a
+warning outside the generator's two known shapes, or when the archive references
+a symbol no provider accounts for, or when the HAL's object code for the target
+does not define a symbol the archive attributes to it; `libsele4n.unresolved`
+lists what the archive needs, by provider.
+
+**The Lean heap** (WS-BP BP2.1) is `rust/sele4n-hal/src/lean_heap.rs` over
+`link.ld`'s `.lean_heap` section: one arena, sized by `LEAN_HEAP_SIZE`, serving
+`lean.h`'s small-allocator API and a general `malloc`-shaped interface.  Its state
+lives in the arena's metadata pages and never inside an object, so keep it there;
+`Heap::check_invariants` states the invariants and the host witness suite
+(`cargo test -p sele4n-hal lean_heap`) runs it after every mutation.
+
+**The Lean runtime** (WS-BP BP2.2) is `rust/sele4n-hal/src/lean_runtime/`: the
+kernel's own, in Rust, providing every symbol the archive's reachable link needs
+(the lane's step [7/8] links it and names any gap).  A symbol added to it is
+faithful to upstream, environmental or fail-closed, and says which in its
+docstring.  A primitive that computes gets lines in
+`tests/LeanRuntimeConformanceSuite.lean`, whose fixture upstream's runtime
+produces (`lake exe lean_runtime_conformance_suite --emit >
+tests/fixtures/lean_runtime_conformance.expected` regenerates it; then refresh
+the `.sha256`) and `cargo test -p sele4n-hal lean_runtime`
+recomputes.  An environmental or fail-closed one joins
+`io::UNPROVIDED_SEMANTICS` and `RuntimeEnvironmentCensus`'s list together; a Rust
+test holds them equal.  A helper that dereferences an object pointer it was
+handed is an `unsafe fn` with a `# Safety` section, private ones included.
+
+**Entering the Lean kernel** (WS-BP BP2.3/BP2.4) is
+`rust/sele4n-hal/src/lean_entry.rs`: the library initializer runs once, its
+`IO` result is checked, and a refusal halts the system.  `lean_kernel_main` is
+reachable only through `enter_lean_kernel`, which consumes the
+`LeanLibraryInitialised` token a successful initialization returns; a new Lean
+entry on the primary takes that token too, rather than declaring its own
+`extern`.  A HAL-declared `initialize_…` symbol is Lean code to `build.rs`'s
+readiness scan, so a call to one must be registered in
+`LEAN_UPCALLS_OUTSIDE_THE_GATE` or sit behind the gate.
+
+**The boot entry and its ordering** (WS-BP BP4.1/BP4.2).  `lean_kernel_main` is
+`SeLe4n.Platform.RPi5.kernelMain`, exactly the halting device-tree boot of the
+deployment on the `ByteArray` the HAL copies from the firmware's blob (BP4.3/BP4.4);
+`SeLe4n/Testing/BootEntryContract.lean` refuses any other shape — a fixed or
+edited blob included — and refuses its absence.  The deployment is
+`rpi5PlatformConfigFor board`, proved to boot on every RAM variant, so a change
+to it that breaks any variant fails to elaborate.  Releasing a secondary consumes a
+`lean_entry::SecondaryReleasePermit`: with `hw_target` the only one is what
+`enter_lean_kernel` returns after the install, and `no_lean_kernel()` is for
+images and tests that link no kernel.  A new bring-up path takes the permit too
+— it is how the install is kept ahead of every secondary without a lock.
+**The boot map grows once, before the seal** (BP4.6): the accepting arm maps the
+verified variant's RAM above the guaranteed gigabyte through
+`ffiExtendBootRamMap` before the install, and `enter_lean_kernel` seals the map
+(`mmu::seal_boot_map`) before it mints the permit.  Extend the boot tables only
+through `mmu::extend_boot_ram_map` — it writes invalid entries only, decides every
+refusal first, and widens `is_boot_cacheable_range` by the same record — and never
+after the seal.
+**The deployment's objects are a function of the variant** (BP4.7):
+`rpi5PlatformConfigFromDtb` applies `initialObjectsFor` to the variant its parse
+selected, and the RPi5 deployment's root-task untypeds over RAM above the
+gigabyte are derived from `rpi5BootRamExtensions v` — add RAM by changing the
+variant's memory map, never by listing untypeds per board.
+**The kernel image is one bare-metal binary** (BP5.1): `sele4n-kernel`
+(`rust/sele4n-hal/src/bin/sele4n_kernel.rs`) is built with
+`cargo build --release --target aarch64-unknown-none-softfloat -p sele4n-hal
+--features kernel_image --bin sele4n-kernel` from `rust/`, laid out by
+`link.ld` (the build script passes `-T` to that binary alone), and checked by
+`scripts/check_kernel_image.py` in the cross lane's step [7/7].  Its panic
+handler is `gic::halt_all`.  That lane builds it without `hw_target`, so it is
+the HAL half alone.
+**With `hw_target` the image carries the Lean kernel** (BP5.2): the build script
+links `.lake/build/aarch64-unknown-none-softfloat/libsele4n.a` and the
+`libsele4n.roots.ld` the archive builder writes beside it, with
+`--gc-sections`, so build the archive first (`scripts/test_lean_aarch64_archive.sh`
+does both, then runs `check_kernel_image.py --lean-kernel` and the FP/SIMD gate
+over the linked image).  A missing archive fails the link naming the path.
+**The firmware's boot files** (BP5.3): `./scripts/build_rpi5_image.sh [ELF
+[OUT]]` writes `kernel8.img` and `config.txt` to `.lake/build/rpi5-image/`
+from that image (the archive lane's step [5/5] does this).  Copy both to the
+SD card's boot partition.  `config.txt` is generated — its `kernel_address` is
+the image's entry and its `device_tree_address` / `device_tree_end` are
+`link.ld`'s `.dtb_window` — and `rpi5_boot_files.py check` refuses a key it
+does not set, so add a firmware option there, not by hand.  The script ends by
+printing the image's size and section map (`kernel_image_report.py`, BP5.4),
+which CI appends to the job summary and uploads with the boot files.
+**Both boot entries reach EL1 through `boot.S`'s `.L_enter_el1`** (BP5.5):
+the RPi5 firmware enters at EL2 and QEMU's `virt` at EL1.  The routine is pinned
+item for item by `build.rs`'s `EL1_ENTRY_ROUTINE`, so change the two together,
+and no other code may name an EL2 register.  PSCI calls go through
+`psci::psci_call`, whose conduit `rust_boot_main` selects from the entry level;
+never write an `hvc` or `smc` of your own.
+**A core is marked Lean-ready only by `lean_ready::become_ready_or_halt`**
+(BP6), which runs the per-PE handshake and hands its token to the safe
+`mark_lean_ready`; each PE calls it on itself before its one `enable_irq`, and
+`build.rs` (`readiness_publication_status`) refuses any other caller or order.
+A host test that needs a ready core uses the `unsafe`
+`LeanRuntimeReadyOnCore::assume_initialised`.
+Lean 4.28 returns an `IO`/`BaseIO` function's value directly (no world, no
+result wrapper): declare a `BaseIO Unit` export `-> lean_runtime::LeanBaseIoUnit`
+and hand the value to `lean_runtime::discharge_base_io`; only a module
+initializer returns an `IO` result (`lean_runtime::LeanIoResult`).  A HAL
+definition of a `BaseIO Unit` `@[extern]` returns `lean_runtime::base_io_unit()`.
+`check_kernel_entry_exports.py` checks both directions against the C prototypes
+the Lean compiler generated.
 
 **`cargo check` is not a substitute.** It stops before code generation, so it
 never hands an `asm!` template to an assembler. The first real cross build
 found six defects and three lints; four of the defects were `check`-clean.
+
+**The kernel is FP-free, and the target is what makes it so.** `boot.S` traps
+FP/SIMD at EL0 and EL1 from each entry's first instruction and the trap frame
+saves general-purpose registers only, so kernel code must never touch a vector
+register. The hard-float `aarch64-unknown-none` target lets the compiler use
+them for zeroing, copies and spills — it put 129 such instructions in the HAL —
+so the HAL builds for `aarch64-unknown-none-softfloat`, and the cross gate's
+step [5/7] checks the generated code rather than trusting the flag. Do not
+write `neon`/`fp-armv8` target features, FP inline assembly or a second
+`CPACR_EL1` write: `build.rs` and the disassembly gate refuse all three. User
+FP/SIMD traps and is delivered as a fault until per-thread FP state lands
+(WS-BP BP7.9).
 
 ### Concurrency model checking and miri
 
@@ -603,6 +749,26 @@ State the rationale in the PR body and in the CHANGELOG entry: what transition
 changed, why the new trace is correct, and what would have been wrong about
 keeping the old one. A fixture updated to make a test pass is a defect.
 
+**Two-sided fixtures** (WS-BP BP0, `v0.36.2`) are read by a Lean suite *and* a
+Rust suite, so a change to one is a claim about both implementations:
+
+```bash
+./scripts/generate_dtb_corpus.py            # tests/fixtures/dtb/: edit a CASE, never a .dtb.hex
+lake exe syscall_return_abi_suite           # prints the live abi_layout.expected on mismatch
+lake exe ak9_platform_suite                 # prints the live boot_map.expected on mismatch
+(cd rust && cargo test --all --features std,host_tools)   # the Rust side of all three
+```
+
+Expectations for the device-tree corpus are written by hand in the generator's
+case table — per blob, whether its structure is readable and which memory
+regions it declares (or that the region read refuses it); the two tables are emitted by Lean and must then be matched by the
+Rust side, never edited to match it.  A divergence one of them exposes is fixed
+on the side that is wrong.  `boot_map.expected` also carries the RPi5's MMIO windows
+(`mmio uart|gicd|gicc`, from `mmioRegions`), which the HAL's UART and GIC tests
+read, so a driver base that drifts from `Board.lean` fails there — the
+literal-beside-a-comment tests they replaced agreed with `Board.lean` while
+both carried the BCM2711's addresses (spec §6.2.14).
+
 ### Generated artefacts
 
 ```bash
@@ -759,6 +925,7 @@ lake env lean --run tests/<Suite>.lean       # interpret a suite
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh   # tiers 0-4
 ./scripts/test_rust.sh                       # host Rust
 ./scripts/test_aarch64_cross_build.sh        # cross target (after any rust/ change)
+./scripts/test_lean_aarch64_archive.sh       # the kernel's Lean for the cross target
 ./scripts/test_tier5_cross_language.sh       # Lean <-> Rust lock oracle
 SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh   # gate honesty
 

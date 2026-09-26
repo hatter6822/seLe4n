@@ -2153,6 +2153,71 @@ theorem RHTable.get_some_slot_entry [BEq α] [Hashable α] [LawfulBEq α]
     (idealIndex k t.capacity t.hCapPos) k 0
     t.slots t.capacity t.hSlotsLen t.hCapPos v hGet
 
+/-- **WS-BP BP3.5**: a conjunction folded over a table from `true` holds of
+    every entry the table resolves.  A runtime check over a whole table is
+    naturally such a fold, while an invariant is stated per lookup; this is the
+    bridge between the two — the boot's VSpace-root checks
+    (`VSpaceBoot.bootSafeVSpaceRoot_mappingsSafe`) and its per-capability CNode
+    check (`Boot.bootSafeCnodeCheck`) both read through it.  Needs no `invExt`:
+    every entry `get?` returns sits in a slot the fold visits. -/
+theorem RHTable.fold_and_true_of_get? {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool)
+    (hFold : t.fold true (fun acc k v => acc && f k v) = true)
+    {k : α} {v : β} (hGet : t.get? k = some v) : f k v = true := by
+  obtain ⟨p, hp, e, hSlot, hKey, hVal⟩ := RHTable.get_some_slot_entry t k v hGet
+  have hKeyEq : e.key = k := eq_of_beq hKey
+  have hSlots : ∀ (l : List (Option (RHEntry α β))) (acc : Bool),
+      l.foldl (fun acc slot => match slot with
+        | none => acc | some e => acc && f e.key e.value) acc = true →
+      acc = true ∧ ∀ e, some e ∈ l → f e.key e.value = true := by
+    intro l
+    induction l with
+    | nil => intro acc h; exact ⟨h, fun _ h => by cases h⟩
+    | cons hd tl ih =>
+      intro acc h
+      simp only [List.foldl_cons] at h
+      cases hd with
+      | none =>
+        obtain ⟨h1, h2⟩ := ih acc h
+        exact ⟨h1, fun e he => by
+          rcases List.mem_cons.mp he with he | he
+          · cases he
+          · exact h2 e he⟩
+      | some e0 =>
+        obtain ⟨h1, h2⟩ := ih _ h
+        rw [Bool.and_eq_true] at h1
+        exact ⟨h1.1, fun e he => by
+          rcases List.mem_cons.mp he with he | he
+          · cases he; exact h1.2
+          · exact h2 e he⟩
+  unfold RHTable.fold at hFold
+  rw [← Array.foldl_toList] at hFold
+  have hMem : some e ∈ t.slots.toList := by
+    rw [← hSlot]; exact Array.getElem_mem_toList _
+  have hE := (hSlots _ _ hFold).2 e hMem
+  rw [hKeyEq, hVal] at hE
+  exact hE
+
+/-- **WS-BP BP3.5**: a table whose size is zero resolves no key.  Needs
+    `invExt`, whose well-formedness conjunct ties the size to the occupied
+    slots. -/
+theorem RHTable.get?_none_of_size_zero {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (hExt : t.invExt) (hSize : t.size = 0) (k : α) :
+    t.get? k = none := by
+  cases hGet : t.get? k with
+  | none => rfl
+  | some v =>
+    exfalso
+    obtain ⟨p, hp, e, hSlot, _, _⟩ := RHTable.get_some_slot_entry t k v hGet
+    have hCount := hExt.1.sizeCount
+    rw [hSize] at hCount
+    unfold countOccupied at hCount
+    have hMem : some e ∈ t.slots.toList := by
+      rw [← hSlot]; exact Array.getElem_mem_toList _
+    have hPos : 0 < t.slots.toList.countP (·.isSome) :=
+      List.countP_pos_iff.mpr ⟨some e, hMem, rfl⟩
+    omega
+
 theorem RHTable.insertNoResize_get_eq [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β)
     (hExt : t.invExt) (hSizeLt : t.size < t.capacity) :

@@ -319,7 +319,6 @@ MACHINERY_PINS = {
     ("SeLe4n/Model/Object/PerObjectLockInventory.lean", "macro_rules"): 1,
     ("SeLe4n/Model/Object/PerObjectLockInventory.lean", "syntax"): 1,
     ("SeLe4n/Platform/FFI.lean", "initialize"): 2,
-    ("SeLe4n/Prelude.lean", "initialize"): 1,
     # PR #889 review round 17: the boot entry's contract, decided over the
     # elaborated environment.  One `run_cmd`; it mints no declaration.
     ("SeLe4n/Testing/BootEntryContract.lean", "run_cmd"): 1,
@@ -354,6 +353,11 @@ MACHINERY_PINS = {
     # reconciliation and the per-entry discipline check; it mints no
     # declaration.
     ("SeLe4n/Testing/ExportCommitDisciplineCensus.lean", "run_cmd"): 1,
+    # WS-BP BP2.2: the runtime-environment census, decided over the elaborated
+    # environment.  One `run_cmd` -- the witnesses and the walk from every
+    # production `@[export]` through bodies and `implemented_by`; it mints no
+    # declaration.
+    ("SeLe4n/Testing/RuntimeEnvironmentCensus.lean", "run_cmd"): 1,
     # WS-RR RR7.18: the lock-footprint bound census, decided over the elaborated
     # environment.  One `run_cmd` -- it derives the `LockSet` footprint set and
     # compares each bound's TYPE against the definition's own telescope; it

@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.36.1"
+version = "0.36.2"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -637,3 +637,9 @@ root = "tests.SmpInformationFlowSuite"
 [[lean_exe]]
 name = "fault_handling_suite"
 root = "tests.FaultHandlingSuite"
+
+# WS-BP BP2.2: the kernel's Rust Lean runtime is held to upstream's by a shared
+# fixture this suite computes on upstream's runtime (see the module docs).
+[[lean_exe]]
+name = "lean_runtime_conformance_suite"
+root = "tests.LeanRuntimeConformanceSuite"

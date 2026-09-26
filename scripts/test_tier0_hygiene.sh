@@ -478,6 +478,15 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_lifecycle_internal_allowlist.sh"
 # `Checked` variants that propagate DeviceTreeParseError / Option MemoryKind.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_devicetree_legacy_consumers.sh"
 
+# WS-BP BP0.1/BP0.2: the shared device-tree corpus (`tests/fixtures/dtb/`) is
+# fresh against its generator, every blob has a manifest row, and both the Rust
+# walker's suite and the Lean parser's suite are wired to consume all of it —
+# so a case added to one side alone fails here, before any build.  WS-BP BP2.6
+# retired the Rust `/memory` walk and retargeted the corpus onto the structure
+# check the bootargs reader still runs, so the gate stays.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_dtb_corpus_consumers.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_dtb_corpus_consumers.py"
+
 # AN7-B (H-15): audit every `physicalAddressWidth := N` binding so that
 # platform-specific values are explicit and correct (RPi5 = 44, Sim = 52,
 # defaults = 52; no `:= 48` VA/PA confusion anywhere).
@@ -508,6 +517,37 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_lock_ffi_symmetry.sh"
 # that under-reaches reports PASS.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py"
+
+# The FP/SIMD disassembly gate the cross build runs over the kernel's
+# release objects (`test_aarch64_cross_build.sh` step [5/7]) and the release
+# kernel image (step [7/7]).  Tier 0 runs
+# before any build, so here it pins the scanner only: its operand reading,
+# and its refusal of input it cannot decide, are what make a PASS on the
+# objects mean the kernel touches no FP/SIMD register.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_fp_simd_free_objects.py" --self-test
+# WS-BP BP1: the kernel's Lean archive builder.  The build itself needs the
+# toolchain and runs in the `Lean aarch64 Archive` CI lane
+# (`test_lean_aarch64_archive.sh`); its checks -- the closure classification,
+# the allocator-configuration relation, the per-archive symbol relations and
+# the stdlib fidelity comparison -- are pure and self-tested here.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/build_lean_aarch64_archive.py" --self-test
+# WS-BP BP2.1: the linker-script probe the cross build runs as step [6/7].
+# Tier 0 has no linker, so it pins the pure half: the arena relations over
+# synthetic symbol tables, and that every ASSERT witness still matches the
+# real `link.ld` exactly once -- a script edit that orphans a witness would
+# otherwise leave that ASSERT unproved while the cross lane stays green.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_link_script.py" --self-test
+# WS-BP BP5.1: the kernel-image gate the cross build runs as step [7/7].
+# Tier 0 has no image, so it pins the pure half: each relation over a
+# synthetic ELF that keeps every section and symbol and breaks that relation,
+# and that the real `link.ld` parses into the section list the cases assume.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_kernel_image.py" --self-test
+# WS-BP BP5.3: the boot-file check the archive lane runs as step [5/5].  Tier 0
+# has no image, so it pins the pure half: each relation between `kernel8.img`,
+# `config.txt` and a synthetic image, broken one at a time with both files
+# kept present and well-formed.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/rpi5_boot_files.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/kernel_image_report.py" --self-test
 
 # WS-RR RR1.9: the TLBI broadcast discipline `SMP_RUST_HAL_PLAN.md` §4.4
 # said tier 0 enforced.  It did not, and the sketch in §5.6 would not have

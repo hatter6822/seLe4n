@@ -49,13 +49,13 @@ run_check "BUILD" lake build SeLe4n.Platform.Staged
 run_check "BUILD" lake build SeLe4n.Testing.IpcDethreadingEnvironmentCensus
 
 # PR #889 review round 17: the hardware boot entry's contract, decided by the
-# elaborator.  `SM10.1` writes the declaration carrying `@[export
-# lean_kernel_main]`; this module requires it to boot through
+# elaborator.  The declaration carrying `@[export lean_kernel_main]` is
+# `SeLe4n.Platform.RPi5.kernelMain` (WS-BP BP4.1); this module requires it to boot through
 # `bootAndInitialiseRPi5OrHalt` and to install kernel state no other way, over
 # the elaborated environment rather than over Lean source text.  Building it IS
-# the check -- its `run_cmd` throws -- and its four witnesses (one compliant
-# entry, three token-preserving deviations) keep it decisive while the entry is
-# still unwritten.  It replaces eleven review rounds of regular expressions in
+# the check -- its `run_cmd` throws, including when no entry exists -- and its
+# witnesses (compliant entries and token-preserving deviations) keep it decisive
+# on inputs other than the one live entry.  It replaces eleven review rounds of regular expressions in
 # `check_kernel_entry_exports.py`, each of which read one more Lean spelling
 # wrongly; a resolved constant has one definition and no spelling.
 run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
@@ -77,6 +77,16 @@ run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
 # passing vacuously, and the bare-commit one is the shape the row exists to
 # catch.  Today: seven committing seams, two of them bracketed.
 run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
+
+# WS-BP BP2.2: the kernel's Lean runtime answers a few primitives without an
+# operating system -- zero entropy, no file system -- and refuses floating-point
+# formatting and `pow`.  Each is sound only if no kernel entry uses the answer.
+# This census walks everything every production `@[export]` reaches, through
+# bodies and `implemented_by`, and fails if the walk meets `IO.stdGenRef` or a
+# constant implemented by one of those symbols.  Building it IS the check; its
+# witnesses (a generator read, a fail-closed call through a helper, one through
+# `implemented_by`, and a clean body) keep it decisive.
+run_check "BUILD" lake build SeLe4n.Testing.RuntimeEnvironmentCensus
 
 # v0.35.114: which declarations carry a body has ONE answer.  Four of the
 # censuses below derive a domain from the environment and each has to decide it

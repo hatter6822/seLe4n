@@ -1,3 +1,1524 @@
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2, BP5.3, BP5.4, BP5.5 and BP6: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places, with its size and section map published by every CI run, and the RPi5 binding corrected from the BCM2711's address map to the BCM2712's, and both boot entries dropped to EL1 from the firmware's EL2 with the PSCI conduit following the entry level, and every PE marking itself Lean-ready after its own per-PE runtime handshake and before it unmasks IRQs, with the boot halting unless every declared PE serves the kernel
+
+WS-BP's first phase.  Three questions are answered on both sides of the
+Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
+and registers carry a syscall's fields, and what the boot map installs at an
+address — and every gate reconciling them was nominal: it compared declarations,
+never behaviour.  Each pair now shares one checked-in artefact that both sides
+drive their own implementation against, and a divergence fails the side that
+diverged.  Where the fixtures found the two sides disagreeing, the side that was
+wrong was fixed; nothing was recorded as an accepted difference.
+
+**BP0.1 — the shared device-tree corpus.**  `tests/fixtures/dtb/` holds 59 blobs
+(58 until the audit below added the real Raspberry Pi 5 firmware account)
+as annotated hex and a `MANIFEST` stating each one's `/memory` extents (or
+`refused`, or none) and the RAM top they imply.  The expectations are written by
+hand in `scripts/generate_dtb_corpus.py`'s case table, beside the case that
+produces them; the script renders bytes and never computes an expectation, since
+a third implementation of the walk would make the manifest agree with whatever it
+believes.  `cmdline::dtb_corpus_tests::every_corpus_fixture_agrees_with_the_manifest`
+and `tests/Ak9PlatformSuite.lean`'s `dtbCorpus_every_fixture_agrees_with_the_manifest`
+read every row, and each asserts at run time that the manifest names exactly the
+blobs on disk.  The Lean side answers through the production path —
+`parseAndValidateFdtHeader`, `parseFdtNodes`, `fdtRoot?`, `memoryRegionsFromNodes`
+— and cross-checks each manifest RAM top with `memoryRegionCoveredByUnion`, the
+predicate the RPi5 bridge validates a board with.
+
+Its first run found **thirteen divergences on the Rust side and eight on the Lean
+side**:
+
+- *Rust, structure.*  The walks accepted a named root, a second top-level node, a
+  property before the root, a property after a child (so a late `#size-cells`
+  changed nothing already folded), a repeated property (the last `reg` or `status`
+  won), a repeated sibling (two `memory@0` nodes both folded), and names of any
+  length — all refused by the Lean parser.  `fdt_structure_check` is the Rust
+  counterpart of `parseFdtNodes`' refusals, run first by **both** Rust walks (the
+  `/memory` walk and the `bootargs` search), over a new `FdtLayout` view that is
+  the counterpart of `FdtBlob.of?`.  Duplicate detection rescans the node's earlier
+  properties or siblings rather than allocating, and the docstring states the
+  quadratic cost and why it is acceptable on an interim, firmware-supplied path.
+- *Rust, walk bound.*  A fixed fuel of 4096 tokens refused a structure block the
+  Lean parser reads whole — and a real board's device tree is within an order of
+  magnitude of that.  `FDT_WALK_FUEL` is retired: every token advances the offset
+  by at least four bytes, so `fdt_token_bound` (the block's size over four, the
+  Lean parser's derived fuel) cannot run out before the block does.
+- *Rust, header and cells.*  A reservation block starting past `totalsize` was
+  accepted, and so was a structure or strings block starting exactly *at* it —
+  Lean's `FdtHeader.isValid` requires both offsets strictly inside the blob, so an
+  empty strings block at `totalsize` read as a valid header on one side only
+  (`empty_strings_block_at_totalsize`); and `#address-cells` / `#size-cells` were read as four bytes from the
+  value's start whatever its length, borrowing the next token for a short value.
+- *Lean, extents.*  `extractMemoryRegionsChecked` checked that a `reg`'s bytes
+  divided into whole tuples and then let `extractMemoryRegionsGeneral` stop at the
+  first unreadable one, so a three-cell or zero-cell width read as "this node
+  declares no memory"; it now requires every tuple the count promises.  An extent
+  ending at or past 2^64 was a `Nat` only a later physical-width check refused;
+  it is refused where it is read.  More than sixteen extents were read where the
+  Rust store refuses them (`fdtMaxMemoryExtents`, held equal to
+  `MAX_MEMORY_EXTENTS`).
+- *Lean, cells and depth.*  A cell-width property of any length but four bytes is
+  refused (`FdtNode.cellPropertiesWellFormed`, also swept onto
+  `fdtReservedRanges`, where an unreadable width is a set of subtractions this
+  parser cannot read).  `parseFdtNodes` bounds nesting at `fdtMaxDepth = 32`, the
+  Rust walker's `FDT_MAX_DEPTH`, checked once over the finished tree so every
+  consumer inherits it.
+
+Two further findings while landing it.  `a_memory_node_buried_under_exhausted_fuel_is_refused`
+had passed **vacuously**: its rebuild copied the 40-byte header into the new
+structure block, so the walk refused `0xD00DFEED` as an unknown first token and
+the assertion held for a reason unrelated to its name.  It is
+`a_memory_node_behind_a_long_nop_run_is_read_whole` now (retired with the Rust
+`/memory` walk at BP2.6), sliced from the block's
+own start, asserting the structure check accepts it first.  And the `bootargs`
+search shares the new check, which the corpus alone could not show; two `/chosen`
+fixtures that are refused, and an assertion that a refused blob yields no command
+line, make removing the check from that walk fail.
+
+**BP0.2 — both sides consume every fixture.**  `scripts/check_dtb_corpus_consumers.py`
+(Tier 0) holds the corpus fresh against its generator with no orphaned blob, every
+blob to a manifest row and every row to a blob, the Rust consumer a `#[test]` with
+nothing between it and its `fn` (so no `#[ignore]`) inside the `#[cfg(test)]`
+module and driving both walks, the Lean runner a statement of `main`'s own body,
+and both suites run by a gate.  Every read goes through the code views, and its
+fifteen-case self-test keeps each token and breaks only the relation.
+
+**BP0.3 — the ABI layout, stated once.**  `tests/fixtures/abi_layout.expected`
+is emitted by `tests/SyscallReturnAbiSuite.lean` and rendered by
+`rust/sele4n-abi/tests/conformance.rs::abi_layout_matches_the_lean_table` against
+the same bytes.  The field layout is **measured, not restated**, on both sides by
+one rule — decode each bit `2^j` alone, and the field that comes back holding
+`2^(j - shift)` and re-encoding to the same word owns it — so a changed shift or
+width in either decoder changes that side's table.  It also carries which register
+each syscall field travels in (from `arm64DefaultLayout` on the Lean side, from
+encoding a request of distinct sentinels on the Rust side), the half of the pair
+the register listed as hand-transcribed, and the bounds `maxMessageRegisters`,
+`maxExtraCaps`, `maxLabel`, `errorLabelBase` and `syscallAbiVersion`.  Mutating
+the Rust label shift, or swapping two register slots, fails it.  The compile-time
+pins in `message_info.rs` stay, with a comment that no longer claims they read the
+Lean model.  The comparison is `SeLe4n.Testing.checkSharedFixture`, and the
+return-shape table moved onto it: one helper, one relation.
+
+**BP0.4 — the boot map, driven rather than mirrored.**  `tests/fixtures/boot_map.expected`
+is emitted by `tests/Ak9PlatformSuite.lean` from `rpi5MemoryMapForConfig`: for
+every RAM variant, its regions and the kind `classifyAddress` gives at every
+boundary probe.  `mmu::boot_map_tests::the_boot_map_agrees_with_the_lean_map`
+replaces `the_boot_map_boundaries_mirror_the_lean_memory_map` and pushes the same
+probes — plus every boundary constant of the Rust map and the byte below it —
+through `boot_mapping_for` and a walk of the tables `populate_boot_tables` builds.
+Its first run closed the one remaining divergence: `DEVICE_WINDOW_TOP` was
+`0xFFA0_0000`, the Lean device extent rounded up to a 2 MiB block, so
+`[0xFF85_0000, 0xFFA0_0000)` — space the Lean map reserves — was mapped Device, a
+difference `check_physical_address_width.sh` accepted as a designed tolerance.
+`DEVICE_WINDOW_TOP` is `0xFF85_0000` now and the block straddling it
+(`DEVICE_TAIL_BLOCK_BASE`) is described by a level-3 table of 4 KiB pages; the
+boot tables are seven 4 KiB tables (`BOOT_TABLE_COUNT`), and the test walk follows
+level-3 page descriptors.  The retired `Board.lean` regex scan, its boundary pins
+and the `LEAN_DEVICE_EXTENT_TOP` literal are deleted from
+`check_physical_address_width.sh`, which keeps the width audit and the linker's
+half (`link.ld` ends at `LOW_RAM_TOP`), and which now installs one `EXIT` trap for
+both of its temporaries — a second `trap … EXIT` had replaced the first.
+
+**The acceptance's last clause.**  `check_lock_ffi_symmetry.sh` states what it
+does not decide: it is a nominal reconciliation of symbols and types, and the
+behavioural agreement for the lock is the Tier-5 cross-language oracle.
+
+Also: `check_identifier_naming.py` classifies the two new file types (`.hex`
+rendered blobs are not scanned; the corpus `MANIFEST` is scanned as config), and
+`tests/fixtures/README.md` indexes both new fixtures with their consumers and
+documents the corpus.
+
+**BP1.1 preparation — the elaborator leaves the production closure.**  The
+`@[documented_obligation]` tag attribute was registered with `initialize` and
+put `import Lean.Attributes` in `SeLe4n/Prelude.lean`, so Lean's elaborator —
+its module initialisers and its object code — was part of the closure BP1.1
+compiles for a freestanding `aarch64-unknown-none` image, for a no-op marker.
+The marker is now a type: a documented caller obligation is a declaration of
+type `DocumentedObligation` (one value, `.recorded`), found by type rather than
+by attribute.  Its one user, `resolveCapAddress_caller_rights_obligation`, is
+retyped.  The import had been carrying one more elaborator dependency: `API.lean`'s
+`register_option sele4n.debug.noisyResolution` — also an `initialize` — which
+**nothing read**, while its docstring said it flipped production callers to the
+gated extra-cap resolver.  It is retired, the texts describing it say what is
+true (every dispatch arm takes seL4's silent drop, and `PartialResolution = 51`
+is produced by nothing), and the missing opt-in — a deployment *constant*, since
+an option exists only at elaboration time — is registered in table C.  The
+de-threading gate's machinery pin on the Prelude's `initialize` goes with it.
+After this cut the closure imports only `Init` and `Std.Data.HashMap` /
+`Std.Data.HashSet` outside the project.
+
+**The kernel is FP-free, and FP/SIMD traps at EL1** — found while scoping BP1.2
+and reported as a security finding before it was fixed.  Rust's
+`aarch64-unknown-none` enables `neon` and `fp-armv8`, and the HAL built for it
+carried **129** FP/SIMD instructions (vector zeroing in `fdt_structure_check`,
+`d8`–`d15` spills in `bring_up_secondaries_inner`, …), while `trap.S` saves
+general-purpose registers only and nothing in the tree wrote `CPACR_EL1`.  On
+hardware the kernel would therefore either trap on its own first vector
+instruction with no handler, or — with FP access left enabled by firmware —
+silently overwrite the interrupted thread's `q0`–`q31` on every trap, a
+corruption and cross-thread leak channel.  Latent: no core runs the Lean
+runtime yet.  Four changes:
+
+- **The HAL builds for `aarch64-unknown-none-softfloat`** — `rust-toolchain.toml`
+  (which also gains the `llvm-tools` component), the cross gate, the CI job and
+  every script naming the target — so FP-freedom is a property of code
+  generation, as it is for seL4's kernel.
+- **Both boot entries write `msr cpacr_el1, xzr` then `isb` as their first
+  instructions at EL1**, trapping FP/SIMD/SVE/SME at EL0 and EL1 before anything
+  else runs on the PE at that level (the audit below moved the pair after
+  `.L_enter_el1`'s drop, since at EL2 the encoding may name `CPTR_EL2`).
+  `build.rs`'s `scan_fp_trap_prologue` requires exactly that prologue at `_start`
+  and `secondary_entry` and refuses any other write to `CPACR_EL1`, in either
+  spelling (`S3_0_C1_C0_2`), in any `.S` file or `asm!` template; its self-test
+  has thirteen token-preserving cases and all nine mutations of the scanner are
+  caught.
+- **`scripts/check_fp_simd_free_objects.py` is the evidence rather than the
+  flag**: the cross gate's new step [5/5] disassembles the release rlib and the
+  assembly archive with the toolchain-pinned `llvm-objdump` and refuses any
+  FP/SIMD/SVE register operand or `FPCR`/`FPSR` access, reading operands only
+  (symbols and comments dropped) and refusing input that is not AArch64 ELF or
+  yields no instructions.  25 self-test cases, in Tier 0; two mutations were
+  missed on the first run — the symbol strip and the lookahead had no witness —
+  and each gained one (`<d8>`, `at s1e1r`).  PASS on the softfloat objects, FAIL
+  with all 129 findings on the hard-float build.
+- **`check_aarch64_cross_target.py` requires the new step as a relation**:
+  executed (not echoed), over exactly the two release objects of this target,
+  with `clippy` and `llvm-tools` in both the toolchain file and the CI job.  And
+  it found a hole older than this cut: under `set -e` a command followed by
+  `&&` or `||` is exempt from errexit, so `cargo build … || true` kept every
+  token the gate checked while discarding the build's failure.
+  `shell_command_list` now records the operator ending each command and the
+  gate refuses `&&`/`||` after any load-bearing command.  Ten new cases (68 in
+  all).
+
+The cost is stated rather than hidden: the architecture has no encoding that
+traps EL1 alone, so a **user** FP instruction now traps too, and is delivered as
+a `userException` fault (EC `0x07`) until threads carry an FP context.  Two
+plan rows and three table B rows record what remains: **BP7.9**, per-thread
+FP/SIMD state with seL4's lazy switch; **BP5.5**, the EL2-to-EL1 drop `boot.S`
+lacks (the RPi5 firmware enters at EL2, and `CPTR_EL2` must not trap FP there);
+and BP5.2 now runs the disassembly gate over the **linked image**, because the
+target's own `compiler_builtins` is not FP-free — seven functions use `d`/`v`
+registers and `__negdf2` takes a hard-float `d0` argument no soft-float caller
+supplies.  WS-BP is 45 sub-tasks.  The `lib.rs` lint measurement was re-run on
+the new target (0 host findings, 1 cross) rather than carried over.
+
+**BP1 — the kernel's Lean object code for `aarch64-unknown-none`.**
+`scripts/build_lean_aarch64_archive.py` builds `libsele4n.a` — the archive
+`rust/sele4n-hal/src/boot.rs` has always asserted is linked — and every set it
+depends on is derived and then checked against an independent answer:
+
+- *The closure is the elaborator's* (BP1.1): a probe prints
+  `Environment.header.moduleNames` of `SeLe4n` — 258 package and 609 stdlib
+  modules — and the build refuses unless the package half equals Lake's
+  `SeLe4n:modules`, nothing outside `SeLe4n`/`Init`/`Std` appears (the
+  elaborator left the closure in this same version, above), and it is disjoint
+  from the staged allowlist and `SeLe4n.Testing`.  Package C is Lake's module
+  `c` facet over exactly those modules; `lakefile.toml` cannot declare a custom
+  target, so the plan row's file column is corrected rather than satisfied.
+  Stdlib C is regenerated with the toolchain's own `lean -c` — it ships
+  `libInit.a`/`libStd.a` for the host and no C — and cached per toolchain hash.
+- *The compile* (BP1.2) is the toolchain's own clang with `-ffreestanding
+  -nostdlibinc -mgeneral-regs-only -mabi=aapcs-soft -mstrict-align
+  -mno-outline-atomics -fno-pic`, matching Rust's `aarch64-unknown-none-softfloat`
+  (`+v8a,+strict-align,-neon`, static relocation).  `-mabi=aapcs-soft` was
+  measured necessary, not chosen for tidiness: clang 19 refuses a `double`
+  parameter under `-mgeneral-regs-only` without it.  `lean.h`'s allocator is
+  selected by `rust/sele4n-hal/lean_include/lean/config.h` — the toolchain's
+  file with `LEAN_MIMALLOC` replaced by `LEAN_SMALL_ALLOCATOR`, held to exactly
+  that relation (a macro the toolchain adds stops the build) and confirmed on the
+  objects, which call `lean_alloc_small` and no `mi_*` symbol.
+- *Every warning is understood, per instance.*  `-Wall -Wextra -Werror` stopped
+  the first build.  Two shapes, both the
+  generator's by construction: an IR temporary `x_N` bound to a discarded
+  `BaseIO Unit` result (the scalar `lean_box(0)`, so no reference count is owed
+  — the generated header disables this diagnostic for GCC, and its clang branch
+  predates clang's implementation), and the unused `res` of `Init.Prelude`'s
+  initializer, which has no imports to check.  Rather than disable them, the two
+  are warnings and a census classifies every line of stderr: 87 and 1 on the
+  whole closure, and a diagnostic of any other kind — or either kind in another
+  shape (`count`, `x_3` as an unused variable, a `note:`) — fails the module.
+  The census's first run caught its own defect: clang's `N warnings generated.`
+  summary read as an unexplained line, so the compile runs with
+  `-fno-caret-diagnostics` and every stderr line must be a diagnostic or that
+  summary.
+- *The archive is checked, not trusted* (BP1.3): one initializer per object and
+  per closure module, every initializer referenced defined, no symbol defined
+  twice, and **each of the 609 regenerated stdlib modules defines exactly the
+  global symbols the toolchain's own object for it defines** — the evidence
+  that regeneration reproduced the toolchain's library rather than a drifted
+  re-elaboration.  The first run refused on a real defect in the comparison:
+  `libInit.a` holds two members named `Grind.o` (`Init/Grind` and
+  `Init/Data/String/Grind`), and keyed by name they merged into one object
+  defining two initializers; units are keyed by member *instance* now.
+  `scripts/check_fp_simd_free_objects.py` then reads 3,670,048 instructions and
+  finds no FP/SIMD register operand.
+- *Its unresolved set is attributed, not listed*: each of the 381 symbols is
+  assigned to a provider derived from that provider's own object code or
+  declarations — 1 to the small allocator (`lean_alloc_small`, which the
+  mimalloc host runtime does not define), 221 to `libleanrt.a`, 80 to Rust's
+  `compiler_builtins` for the target (the soft-float helpers and most of libm),
+  73 to the HAL (the production modules' `@[extern]`s, refused if any other
+  provider also defines one), and 6 to stdlib `@[extern]`s no provider supplies
+  (`acosh`, `asinh`, `atanh` and their `f` forms).  An unattributed symbol stops
+  the build.  The measurement worth keeping: **the kernel's Lean objects call no
+  libc symbol at all**, so BP2.2's libc surface is the runtime's, and it is
+  measured when BP2 builds the runtime — whose sources the toolchain does not
+  ship (recorded in the BP2.2 row).  `libsele4n.unresolved` is BP2.2's input.
+- *The lane* is `scripts/test_lean_aarch64_archive.sh` (the host static archive,
+  the cross archive, then the reconciliation) in a new CI job, `Lean aarch64
+  Archive`, which uploads the archive and its report.
+  `check_aarch64_cross_target.py` holds it as relations: the lane executes the
+  builder (not echoed, not `--self-test`), runs the reconciliation with
+  `--require-cross` on the same command and after the build, discards neither
+  failure with `&&`/`||`, keeps `set -e` and `pipefail`, and some workflow job
+  executes it with `llvm-tools` installed.  Eleven preserving cases.  Extending
+  the gate's job matcher to a second script found a shadowing bug in the
+  extension itself — `job_runs_gate`'s loop variable was named like the new
+  parameter, so every job matched every script — which the existing clean
+  baseline caught.
+- *BP1.4*: `check_kernel_entry_exports.py` decides on both archives through one
+  owner, `combine_archive_definitions`: a requirement is met where **every**
+  archive defines it, an exemption is stale where **any** does, and
+  `--require-cross` makes an absent cross archive a failure instead of a
+  narrower check.  That reading is fail-closed for a stale cross archive.  Three
+  mutations (each direction of the combination, and the exemption's reading)
+  are each caught by the new cases.  Executed: all 8 HAL kernel-entry
+  declarations are defined in both archives.
+
+`check_fp_simd_free_objects.py` gained `rust_llvm_tool`, the one owner for which
+LLVM binutil a gate reads object code with, and its docstring's reference to
+the image-level run is corrected to BP5.2.  Both new scripts self-test in Tier 0
+(51 and 95 cases at BP1; the builder's is 57 after BP2.1's provider cases).
+
+**BP2.1 — the Lean heap: an arena the linker places, and the allocator behind
+`lean.h`'s small-object API.**  `rust/sele4n-hal/src/lean_heap.rs` is the one
+heap every Lean allocation on the target is served from.
+
+- *The arena is a link-time constant.*  `link.ld` places a `NOLOAD` section
+  `.lean_heap` of `LEAN_HEAP_SIZE` (64 MiB) above the image and both stack
+  regions, named by `__lean_heap_start` / `__lean_heap_end`, and three `ASSERT`s
+  refuse an arena that is not whole pages, not page-aligned, or not inside the
+  smallest Raspberry Pi 5's `[0, 1 GiB)`.  No firmware value or device-tree field
+  sizes it; the allocator derives its whole layout from the two symbols,
+  carving its metadata from the arena's leading pages and proving (by test) that
+  the layout is maximal and disjoint.
+- *The contract.*  The HAL exports `lean_alloc_small`, `lean_free_small` and
+  `lean_small_mem_size` under `hw_target`, with the 512 size classes indexed
+  exactly as `lean_get_slot_idx` indexes them, and a general `malloc`-shaped
+  interface — any size, any power-of-two alignment up to a page — over the same
+  arena, for the runtime's big-object path and BP2.2's libc surface.  One heap,
+  one exhaustion condition.  A size that is not its slot's size is a fault, not a
+  rounding: `lean.h` computes both from one aligned size.
+- *All allocator state is out of band.*  A page map, a free-page bitmap and a
+  per-page occupancy bitmap live in the metadata pages, and no allocator state is
+  stored inside an object.  So the allocator never reads or writes the memory it
+  serves — the only `unsafe` in the module forms the metadata slices, once —
+  every free is validated in release builds (outside the arena, a free page, off
+  an object boundary, and **a double free** are each refused rather than
+  corrupting a free list), and every operation is bounded: eight words of one
+  page's occupancy map per small allocation, a bitmap scan from the first word
+  with a free page per page run.  A small page whose last object is freed
+  returns to the pool, so memory is not pinned to the class that first used it;
+  freed runs coalesce by construction, since freeness is a bit per page.  The C
+  entry points halt on a refusal and on exhaustion — `lean.h`'s inline paths do
+  not test the result — after releasing the heap's leaf lock.
+- *One heap for every core*, behind a leaf `TicketLock`, taken into service on
+  first use under that lock.  Kernel entry is already serialised; the lock is
+  there so the allocator's soundness does not depend on it (the boot install runs
+  outside the entry lock).
+- *The witnesses* (BP2.5's allocator half): `Heap::check_invariants` states five
+  invariants and the host suite runs it after every mutation — the layout, every
+  size class, every alignment to a page, capacity and page recycling, every
+  refused free, run coalescing, a run that must not span a fully-used bitmap
+  word, exhaustion and recovery on a private heap and on the kernel heap, and a
+  30 000-step random trace against a model of the live set.  Ten
+  token-preserving mutations of the allocator are each caught; the first run of
+  that set missed two, which were fixed rather than excused: the hint invariant
+  was one-sided (now exact: the first word with a free page), and a bound on the
+  full-word skip was implied by the bitmap invariant, so it was deleted rather
+  than kept as a condition no input could reach.
+
+What the arena changed around it:
+
+- *The linker script is read by a tool for the first time.*  Nothing links
+  `link.ld` until BP5 builds the image, so its sections and `ASSERT`s were text.
+  `scripts/check_link_script.py` — the cross lane's new step [6/6] — links the
+  release assembly archive's real `.text.boot` under the script with `rust-lld`,
+  checks the arena's relations on the ELF's symbol table, and proves each
+  `ASSERT` live by mutating the script until it fires with its own message.  Its
+  pure half self-tests in Tier 0 (nine cases, including that every mutation still
+  matches the script), and `check_aarch64_cross_target.py` requires the step —
+  executed, over this target's release archive, its failure not discarded (three
+  new preserving cases, each confirmed caught only by the new requirement).
+- *The boot map covers the arena*: `mmu::image_ranges` includes it, so
+  translation is never enabled over tables that leave the heap unmapped.
+- *And a device tree inside the image is refused.*  The firmware places the blob
+  by the image **file**'s size, and `.bss`, both stacks and the arena are
+  `NOLOAD` past the file's end — so a blob placed there is zeroed by `boot.S` or
+  overwritten by the first Lean allocation before the boot seam reads it.
+  `init_mmu` now refuses a pointer whose dereferenced range overlaps any of them
+  (`mmu::dtb_disjoint_from_image`), and BP2.6's map keeps that refusal.
+- *The Lean lane checks its providers.*  BP1 attributed 1 symbol to the
+  allocator and 73 to the HAL by declaration; step [7/8] of the builder now
+  builds `sele4n-hal` for the target (the rlib path read off cargo's own
+  artifact message, never a glob) and requires every symbol in both classes,
+  and the whole small-allocator API, to be a global **function** of it — all 74
+  are.  A symbol the HAL defines only as data does not count.
+
+**Registered, not fixed: a boot untyped is not checked against the memory it
+may describe.**  Placing the arena showed that `bootSafeUntypedCheck` accepts
+every region and `untypedRegionsDisjoint` relates untypeds only to each other,
+so no boot refusal stops an untyped over the kernel image, the stacks, the
+arena, or a device window.  Not attacker-reachable — untypeds come only from the
+integrator's compiled-in `initialObjects`, never from the device tree — so it is
+a misconfiguration class and a model gap against seL4, which removes the kernel
+image from the root task's untypeds.  Registered in `docs/REGISTERED_DEBT.md`
+table B with its remedy (a binding-declared reserved extent held to `link.ld`,
+and a `PlatformConfig.wellFormed` conjunct), owned by BP3.2, which chooses the
+first untypeds any configuration carries.
+
+**BP2.2 — the kernel's Lean runtime is its own, in Rust**
+(`rust/sele4n-hal/src/lean_runtime/`).  The Lean code BP1 compiles calls into
+Lean's runtime (`libleanrt`): about forty thousand lines of C++ over the
+standard library, threads and an operating system, shipped pre-built for the
+host alone.  The maintainer chose to keep C++ out of the image, so the kernel
+provides the part of that runtime its objects actually reach, in Rust, over
+BP2.1's heap.  Object layouts are byte-identical to `lean.h`'s and pinned by
+`const` assertions.
+
+- *The surface is derived, not chosen.*  The archive lane links `libsele4n.a`
+  with `rust-lld --gc-sections`, rooted at the library initializer and every
+  production `@[export]`, and every symbol that link leaves undefined must be a
+  global function of the HAL's rlib or of `compiler_builtins`: **144** are
+  needed, **118** of them the runtime's.  The first probe measured 62 because it
+  rooted at `initialize_SeLe4n`, which does not exist — the initializer is
+  package-prefixed (`initialize_seLe4n_SeLe4n`), and a missing root links
+  silently.  Of the whole archive's 381 unresolved symbols, **111** are
+  unreachable by that link and the runtime omits them, so BP5.2's image link
+  must use `--gc-sections` over the same roots; the plan row carries it.
+- *Each symbol says what it is.*  **Faithful** ones are ported from `lean4` at
+  the toolchain's commit: reference counting with an iterative release that
+  threads its to-do list through the dying objects' headers (a 200 000-cell list
+  is freed without recursion), persistence over a heap-chunked stack, closures
+  at every arity with one algorithm for exact, under- and over-application,
+  arrays, byte arrays, strings with upstream's UTF-8 recovery, `ST.Ref`, name
+  and sharing hashes (MurmurHash64A, and `mix_hash`'s own quirk kept), and
+  arbitrary-precision `Nat`/`Int` over 64-bit limbs — Knuth's Algorithm D for
+  division, with a debug assertion that it corrects at most twice (Theorem B),
+  which is what made the one otherwise-equivalent mutant decidable.
+  **Environmental** ones answer for a machine with no operating system:
+  platform queries, `Lean.githash` (held to `lean --githash` by the lane),
+  zero-byte entropy, temporary files failing with `unsupportedOperation`.
+  **Fail-closed** ones halt: `Float` formatting, `scaleB`, and `pow`/`powf`, the
+  last two overriding `compiler_builtins`' libm port by the linker's own rule —
+  that port is **weak**, which the lane checks, since a strong one would be a
+  duplicate definition.
+- *Upstream is the oracle.*  `tests/LeanRuntimeConformanceSuite.lean` computes
+  **9 215** results on upstream's own runtime — every representation edge of
+  `Nat` and `Int`, both signs, zero divisors, every UTF-8 width and every
+  malformed shape — and holds `tests/fixtures/lean_runtime_conformance.expected`
+  to them through `checkSharedFixture`.  `lean_runtime::conformance` reads the
+  same file and recomputes every line with the kernel's runtime, running each
+  mutating string operation on an exclusive and on a shared argument, checking
+  every numeric result canonical (a big `Nat` exceeds the small bound, a big
+  `Int` lies outside `i32`) and ending leak-free.  Fourteen token-preserving
+  mutations are caught.  The four the first run missed were closed rather than
+  excused — three by new cases (a surrogate decode, a truncated `set`, an
+  in-place push) and the fourth, a skipped normalization that changes only the
+  running time, by the correction-count assertion above — and one mutant, a
+  length argument the next statement overwrites, is equivalent and dropped
+  rather than counted.
+- *What the environmental answers rest on is proved.*
+  `SeLe4n/Testing/RuntimeEnvironmentCensus.lean` (Tier 1) walks everything
+  every production `@[export]` reaches — through bodies **and**
+  `implemented_by`, which is what compiled code calls — and fails if it meets
+  `IO.stdGenRef` (the generator the zero entropy would seed) or a constant
+  implemented by one of the nine unprovided symbols.  Four witnesses keep it
+  decisive, and a Rust test holds its list equal to
+  `io::UNPROVIDED_SEMANTICS`.  The walk is fuelled, and exhaustion counts as a
+  failure.
+- *The runtime never calls back into the program it serves.*  `build.rs`'s
+  readiness scanner refused the first draft's call to Lean's exported `IO.Error`
+  builder, so the constructor is built directly and its tag is pinned by the
+  fixture.
+- *No object is multi-threaded, and no task or promise exists.*  Every path that
+  would meet one halts.  `panic!` returns `default` and reports, because that is
+  what the proofs describe.
+- *A function that dereferences a pointer it was handed is an `unsafe fn`.*  The
+  first cut carried fifteen safe helpers whose comments read *every caller
+  passes a live …* — a caller's promise inside a safe signature.  No gate saw
+  it: `clippy::not_unsafe_ptr_arg_deref` covers `pub` functions only, and the
+  justification scanner asks whether a block is commented, not whether the
+  comment discharges anything.  Each one now states its contract in a
+  `# Safety` section, and its callers discharge it at their own `unsafe`
+  blocks.  Found while replacing two macros that generated `unsafe fn`s the
+  scanner (correctly) refused to read, and it found one aliasing hazard in
+  passing: `append` formed `&mut` records of both arguments at once, and the
+  two may be one string.  Helpers over state they own stay safe.
+- *One upstream defect, unreachable, not copied.*  Upstream's
+  `lean_string_utf8_extract` returns its borrowed argument without a new
+  reference when a position is too big to be a scalar — a reference-count error
+  on a string of 2^63 bytes.  The kernel's returns it with the reference the
+  contract asks for.
+
+Wired into the tiers: the census builds in Tier 1, the conformance suite runs in
+Tier 2, and the archive lane's step [7/8] performs the reachable link.  BP2.3
+changes as a consequence: this runtime needs no module initialization of its
+own, so the boot seam calls the library initializer directly.
+
+**BP2.3/BP2.4 — the library initializer runs first, and the order is a type**
+(`rust/sele4n-hal/src/lean_entry.rs`).  Every Lean module compiles to an
+initializer that must run before its definitions are used; the library root's,
+`initialize_seLe4n_SeLe4n`, initializes the whole kernel, and nothing called it.
+
+- **Entering the kernel requires proof of initialization.**
+  `lean_kernel_main` is now reachable only through `enter_lean_kernel`, which
+  consumes a `LeanLibraryInitialised` token.  Only a successful
+  `initialise_with` constructs one; the token has a private field and is
+  neither `Clone` nor `Copy`.  Entering the kernel uninitialised, or twice from
+  one initialization, is a compile error rather than a scanner finding.
+- **A second initialization is refused before it runs.**  The guard is set
+  before the initializer is called, because Lean's generated initializer marks
+  itself done before it calls anything: a retry after a failure would report
+  success without redoing what failed.
+- **Success is exactly an `IO` `ok`.**  A heap constructor of tag 0 is success
+  and tag 1 is an error.  A scalar or any other tag is refused as malformed,
+  never read as success.  The result's reference is released on every path.
+  The error is not read, because reading it would call back into Lean.
+- **Failure halts the system, not the PE (BP2.4).**  The row named
+  `cpu::fatal_halt()`; it is `gic::halt_all()`.  The secondaries are already
+  running and servicing interrupts by then, so halting only the boot PE would
+  leave them working for a kernel that was never entered.  The topology refusal
+  beside it halts the same way, for the same reason.
+- **The derivation sees it.**  `build.rs`'s readiness scan collected
+  HAL-declared Lean symbols by their `lean_` prefix, so a declared
+  `initialize_…` symbol would have been a Lean upcall no gate could attribute.
+  `is_hal_declared_lean_symbol` now covers both conventions.  It is shared with
+  the `link_name` alias scan, which asked the same question with its own copy
+  of the test.
+  - The initializer call is the second entry in `LEAN_UPCALLS_OUTSIDE_THE_GATE`.
+  - Dropping the new prefix from the predicate fails the build through that
+    entry.
+  - `check_kernel_entry_exports.py` now requires both archives to define the
+    initializer; they do.
+- **Not called.**  Upstream's `lean_initialize_runtime_module` and
+  `lean_io_mark_end_initialization` are not called.  The kernel's runtime has no
+  per-thread heap, task manager or initialization flag, and the reachable link
+  names neither function.
+- **Tests.**  Seven host tests cover `ok`, error, scalar and foreign-tag
+  results, refusal of a second run after success and after failure (the
+  initializer is not called again), and the release of exactly the one
+  reference handed over.
+
+BP2.5's two halves landed with BP2.1 and BP2.2.
+
+**BP2.6 — the boot map is built from constants, and nothing is parsed before
+the MMU is on.**  `init_mmu` used to parse the firmware's device tree before
+translation was enabled — an attacker-influenced parser running with no memory
+protection and no recovery but a halt — to learn a RAM *size* the boot map did
+not need.  It reads nothing of the blob now.
+
+- **What is mapped.**  The guaranteed first GiB of RAM (`GUARANTEED_RAM_TOP`,
+  `0x4000_0000`: the smallest shipped board, and `link.ld`'s `RAM` region, which
+  ends there) and the device window, both from board constants; the image's
+  permission boundaries from linker symbols (`_start`, `__text_end`,
+  `__rodata_end`).  `boot_mapping_for(addr, &layout)` is the one answer to what an
+  address is mapped as, and `is_boot_cacheable_range` is a stateless `const`
+  check against it — the mutable RAM-top the cache maintenance read is gone.
+  RAM above the first GiB is left unmapped until BP4.3 has verified the board;
+  mapping it is the new **BP4.6**.
+- **W^X, and a latent boot-blocking defect.**  The old map installed one
+  descriptor for all of RAM: writable, and with `PXN` clear so the image could
+  run — while `enable_mmu` sets `SCTLR_EL1.WXN`, which makes every writable page
+  non-executable.  The first instruction fetched after translation was enabled
+  would therefore have faulted.  Latent (nothing boots the image yet), not a
+  security exposure, and closed: text is read-only and executable at EL1 alone
+  (`BLOCK_KERNEL_TEXT`), read-only data is read-only and never executable
+  (`BLOCK_KERNEL_RODATA`), and everything else is writable and never executable
+  (`BLOCK_NORMAL` carries `PXN`).  The image's GiB is refined through three L3
+  tables so the boundaries fall on pages; eight tables in all.
+- **The device tree is placed, not parsed.**  `dtb_window(dtb_ptr)` is the
+  `MAX_DTB_SIZE` bytes any reader may dereference, decided from the pointer
+  alone, and `dtb_window_admissible` requires it inside guaranteed RAM and
+  disjoint from the image, its stacks and the Lean heap arena; `init_mmu` halts
+  the core otherwise, and on an image layout the tables cannot describe.
+- **Retired.**  The Rust `/memory` walker and everything it fed:
+  `ram_top_from_dtb`, `ram_top_from_blob`, `dtb_extent_from_dtb`,
+  `dtb_dereferenced_range`, `clamp_ram_top`, `boot_ram_top`,
+  `boot_critical_ranges_mapped`, `LOW_RAM_TOP`, `HIGH_RAM_BASE` and
+  `UNDESCRIBED_RAM_TOP`, with their tests.  Tier 3 refuses each coming back, and
+  refuses `init_mmu` calling into `cmdline` at all.
+- **The corpus is retargeted, not retired.**  The pair it tied still exists: the
+  bootargs reader the QEMU lanes use runs behind a Rust structure check.  The
+  `MANIFEST` is `name | structure | regions`: the `structure` column holds the
+  Rust check and the Lean parser to one verdict on all 59 blobs (23 refused),
+  and `regions` is the Lean parser's alone (8 readable blobs whose regions it
+  refuses).  `check_dtb_corpus_consumers.py` follows the new Rust calls.
+- **`link.ld`.**  `.text` and `.rodata` end page-aligned, the boundary symbols
+  are assigned *inside* their sections — lld attaches a location-counter change
+  between sections to the following section, so a symbol assigned between them
+  moved with any section inserted there — and four new `ASSERT`s hold the
+  layout, among them `__rodata_start == __text_end`.  `check_link_script.py`
+  proves each live by mutation, an inserted section included.
+- **A gate that could not see a `const fn`.**  The claim index's new row names
+  `boot_mapping_for` and `dtb_window_admissible`, and
+  `check_claim_evidence_citations.py` reported both as missing artefacts: its
+  Rust declaration pattern matched `const` and captured `fn` as the name,
+  consuming the `fn` that declares the function, so no `const fn` in the tree
+  had ever been a declaration to it.  It failed closed and no earlier row cited
+  one, so nothing had passed wrongly.  The pattern is a zero-width lookahead now
+  (every keyword position is tried, and `static mut` skips its `mut`), with
+  four self-test cases: `const fn`, `const unsafe fn` and `static mut`
+  declarations resolve, and a renamed `const fn` still fails.
+- **Tests.**  `boot_map_tests` walks every table entry against
+  `boot_mapping_for`, checks W^X on every page of the guaranteed GiB, checks
+  inclusion against `tests/fixtures/boot_map.expected`, and covers the L3 slot
+  assignment, layout well-formedness and the device-tree window.
+
+
+**BP3 — the RPi5 deployment the hardware boot installs.**  Register finding 44
+was that there was no `rpi5PlatformConfig`, no root task and no initial
+objects, so the boot seam had nothing to boot.
+`SeLe4n/Platform/RPi5/Deployment.lean` (in the library root) is that
+configuration, and the proof that it boots.
+
+- **The configuration (BP3.1, BP3.2).**  The caller's half of a
+  `PlatformConfig`; `bindPlatformConfig` supplies the binding's boot root and
+  binds the machine configuration from the board account, which is the smallest
+  board's.  There are two domains, as `confinedDeploymentLabeling` declares them,
+  each with one initial thread, its CNode and its own VSpace:
+  - the root task, at the lower witness `2`: CNode `3`, VSpace `4` on ASID 1, an
+    interrupt notification `5`, and untypeds `6` and `7` over
+    `[256 MiB, 512 MiB)` and `[512 MiB, 1 GiB)`;
+  - the untrusted initial thread, at the upper witness `0x10_0000`, with CNode
+    and VSpace (ASID 2) beside it.
+
+  Each CNode names only its own domain's objects, since the labeling forbids a
+  flow either way.  The IRQ table routes every SPI the contract supports (INTIDs
+  32–223) to the root task's notification, badged by INTID.  SGIs (the kernel's
+  inter-processor channel) and PPIs (per-core, the timer among them) are not
+  delegated.  Both threads are `.Inactive`, as the boot requires.
+- **A root task gets an address space of its own — the boot admits a
+  configured VSpace root.**  The checked boot refused *every* VSpace root in
+  `initialObjects` (`noVSpaceRootsInInitialObjects`) because
+  `Builder.createObject` did not register an ASID, so the only VSpace the boot
+  could install was the kernel's EL1-only map.  That refusal stood in for a
+  missing write, and the write is made now:
+  - `createBootObject` is the one install step. It is `createObject` plus the
+    ASID registration the runtime store performs (`bootEntryAsidTable`), and
+    both `foldObjects` and `installBootVSpaceRoot` are it.
+  - The retired gate is replaced at the same cascade position by
+    `bootVSpaceAsidsDistinct`: no two roots the boot installs share an ASID,
+    because a registration is an insert and a collision would re-point the first
+    root's ASID at the second.
+  - A configured root is checked as a *thread's* by
+    `bootSafeUserVSpaceRootCheck`: a user ASID (`1 ≤ asid ≤ maxAsidValue`) and
+    **no mappings**.  A configured mapping would name physical memory no boot
+    check places, the kernel image among it.
+  - `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot` and its Prop mirror said the
+    sweep admits the kernel's root. They were true only while the sweep's
+    `.vspaceRoot` arm was dead code. They are replaced by the opposite facts,
+    `bootSafeObjectCheck_refuses_rpi5BootVSpaceRoot` and
+    `not_bootSafeObject_rpi5BootVSpaceRoot`: a configuration cannot hand a
+    thread the kernel's translation map.
+- **A boot untyped describes only memory it may (closes table B's row).**
+  `untypedPlacementRespected` is `PlatformConfig.wellFormed`'s **seventh**
+  conjunct, with its own diagnostic. Every boot untyped must satisfy three
+  conditions:
+  - it lies inside one declared region of its own kind (a normal untyped in
+    `.ram`, a device untyped in `.device`);
+  - it overlaps nothing in the new `MachineConfig.kernelReserved`;
+  - it is disjoint from every other boot untyped.
+
+  The last is the runtime check of the config-level `untypedRegionsDisjoint`
+  that the proof bridge took as a hypothesis nothing on the live path decided
+  (`untypedPlacementRespected_untypedRegionsDisjoint`,
+  `PlatformConfig.wellFormed_untypedRegionsDisjoint`).
+- **The kernel's reserved extent is one number in three places.**
+  `[0, 0x1000_0000)` covers the firmware stub, the image, both stacks, the Lean
+  heap arena and the device-tree window.
+  - The three places are `rpi5KernelReservedEnd` (Lean, carried by every RPi5
+    variant's machine configuration), `link.ld`'s `KERNEL_RESERVED_END` and
+    `mmu::KERNEL_RESERVED_END`.
+  - `tests/Ak9PlatformSuite.lean` writes the Lean value into
+    `tests/fixtures/boot_map.expected` as a `kernelReserved` line.
+  - The HAL's `the_kernel_reserved_extent_is_the_lean_and_linker_one` and
+    `scripts/check_link_script.py` hold the other two to it.
+  - Two new `ASSERT`s refuse an image that outgrows the extent and an extent
+    past the smallest board, and both are proved live by mutation.
+  - `dtb_window_admissible` now requires the device-tree window inside the
+    reserved extent rather than anywhere in the guaranteed gigabyte, so no boot
+    untyped can describe the blob. BP5.3's `config.txt` places it there.
+- **Every gate discharged by evaluation (BP3.3), with no `native_decide`.**
+  - `natKeysNoDup` runs an opaque hash set the kernel cannot reduce, so
+    `irqsUnique_eq_transparent` and `objectIdsUnique_eq_transparent` prove the
+    boot's O(n) duplicate checks equal their transparent O(n²) forms.
+  - After that rewrite, `rpi5BoundPlatformConfig_wellFormed` (all seven
+    conjuncts) and the nine other gates are `decide`.
+  - `rpi5BoundPlatformConfig_checked` pins the checked boot's success arm, and
+    `rpi5BoundPlatformConfig_boot` pins the idle-thread boot's.
+- **Every configured object is in the boot state (new, general).**
+  `bootFromPlatformChecked_ok_objects_of_mem` and its idle-boot sibling are
+  built on `foldObjects_objects_of_mem`, `foldObjects_objects_ne` and
+  `PlatformConfig.wellFormed_objectIds_pairwise`. A deployment's threads, root
+  task and untypeds are therefore read off the configuration rather than
+  evaluated out of the boot.
+- **The witnesses are installed (BP3.4) — the acceptance.**
+  `rpi5DeploymentBootState_witnessesInstalled` shows both threads the labeling
+  separates are TCBs of the boot state, so every refusal arm is unreachable.
+  `bootAndInitialiseRPi5_rpi5PlatformConfig` states that the hardware entry
+  commits the state and the labeling and returns `.ok`.
+  `bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig` states that the halting entry
+  the boot seam calls is exactly the two installs and never reaches
+  `ffiFatalHaltAll`. Its proof is `rfl`: `BaseIO` has no `LawfulMonad` instance
+  in this toolchain, but its bind reduces.
+- **The production boot state's proof-layer bundle (BP3.5).**  Until this cut
+  `bootFromPlatform_proofLayerInvariantBundle_general` and
+  `bootToRuntime_invariantBridge_general` were stated over the *unchecked*
+  `bootFromPlatform` of a configuration carrying no VSpace root. The RPi5 boot
+  installs the binding's root (since WS-RC R3) and, since this cut, a thread's,
+  and the checked boot then enqueues idle threads. So no theorem stated the
+  sixteen-conjunct bundle of the state the hardware boot installs; a docstring
+  recorded that as a "post-R3 hardening item" and nothing registered it.
+  - **One argument, two instances.** `proofLayerInvariantBundle_of_bootShape`
+    proves the bundle of any *boot-shaped* state:
+    - every object satisfies `bootObjectShape` (`bootSafeObject` with a queued
+      TCB and a mapping VSpace root admitted);
+    - the fields boot leaves alone are their defaults (`bootQuiescentFields`);
+    - the ASID table is consistent with the roots;
+    - the untyped regions are disjoint;
+    - the scheduler supplies its own run-queue facts.
+
+    The 550-line proof inside the unchecked theorem is now this lemma, and
+    that theorem is its first instance.
+  - **The production boot's theorem.**
+    `bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle` is
+    the second instance: the checked, idle-enqueued boot of every configuration
+    the checked boot accepts, over every duplicate-free core list.
+    `bootToRuntime_invariantBridge_checked` adds the freeze, and
+    `rpi5DeploymentBootState_invariantBridge` is stated of the state
+    `bootAndInitialiseRPi5OrHalt` installs. Each hypothesis is discharged from
+    the boot itself:
+    - the shapes from the object and root checks and the idle TCB's defaults
+      (`bootSafeVSpaceRoot_mappingsSafe` reads the root's three fold-checks
+      back per mapping);
+    - the ASID table by induction over the install fold, from the id and ASID
+      gates;
+    - the untyped regions from `wellFormed`'s placement conjunct;
+    - the run-queue facts from the fold: on the boot core, its idle thread at
+      priority `0`, or nothing (both decided on the closed queue term).
+  - **Helpers.** Two generic table facts join the Robin Hood library:
+    `RHTable.fold_and_true_of_get?` (a conjunction folded from `true` holds of
+    every entry `get?` returns) and `RHTable.get?_none_of_size_zero`.
+    `PlatformBinding.declaredCores_nodup` is new, and
+    `bootEntryAsid?` names the per-entry ASID that the ASID gate and the proof
+    both read.
+- **A gap the proof found in the checked boot, closed.** `bootSafeCnodeCheck`
+  looked at a CNode's shape and at nothing its slots held. A configuration
+  whose CNode held a reply capability was therefore accepted, and so was one
+  whose CNode held a capability with an out-of-range badge. A boot reply
+  capability can only dangle, because reply capabilities are minted at runtime
+  from retyped Reply objects. The installed state then violated
+  `replyCapPointsToValidReply` and `capabilityBadgesWellFormed`, clauses
+  `bootSafeObject` states and the bundle reads.
+  - The soundness bridge `bootSafeObjectCheck_sound_structural` was partial.
+    Its docstring said the badge clause was "checked at the Prop level" by the
+    boot bridge, but that bridge *assumed* it (`PlatformConfig.bootSafe`), and
+    no boot path established it.
+  - Low severity: the configuration is the integrator's, not attacker-supplied.
+    It is still a false-assurance gap in the gate the production boot relies
+    on.
+  - `bootSafeCapCheck` now refuses both, per capability, through the fold
+    lemma. `bootSafeObjectCheck_sound` (the renamed bridge) concludes every
+    conjunct of `bootSafeObject`.
+  - The RPi5 deployment's `decide`-checked gates still pass: its CNodes hold
+    unbadged object capabilities.
+- **The boot entry exists (BP4.1).** `SeLe4n.Platform.RPi5.kernelMain`, in the
+  new root-imported module `SeLe4n/Platform/RPi5/KernelMain.lean`, carries
+  `@[export lean_kernel_main]` and is exactly
+  `Platform.FFI.bootAndInitialiseRPi5OrHalt rpi5PlatformConfig`.
+  - `SeLe4n/Testing/BootEntryContract.lean` accepts it by the head-directed
+    reduction.  Since the entry exists, the contract now **refuses** an
+    environment with none; it used to log itself vacuous there.
+  - `kernelMain_installs` states the program: the deployment's boot state and
+    the binding's labeling installed, the halt arm never taken.
+  - `check_kernel_entry_exports.py`'s `EXPECTED_UNRESOLVED` is empty.  The
+    aarch64 archive lane reports all 10 HAL kernel-entry declarations defined in
+    both archives.  The reachable link, rooted at the initializer and the nine
+    kernel exports, still needs 144 runtime symbols, so the boot path adds none.
+  - The export-commit census records the eighth committing seam as unbracketed,
+    with the ordering below as its reason.  The reachability census's pin
+    loses the nineteen boot-path transformers a committing export now reaches:
+    the boot builder, the checked and unchecked boots, the idle enqueue and the
+    platform entries.
+- **The install precedes the secondaries, as a type (BP4.2).**
+  - Before this cut, `rust_boot_main` released the secondaries in Phase 5 and
+    ran the unbracketed install in Phase 6.  The install is one write of the
+    whole kernel state, so a secondary's bracketed tick in between could have
+    had its commit overwritten: the lost-commit shape `kernel_entry.rs`
+    recorded as an SM10.1 obligation.
+  - The library initializer and the install now run in Phase 5, the release in
+    Phase 6, and the PE-topology refusal in Phase 7.  The refusal still halts
+    the system before anything is served, since no core is lean-ready until
+    BP6.
+  - `smp::bring_up_secondaries_inner` is what every bring-up path reaches, and
+    it consumes a `lean_entry::SecondaryReleasePermit` by value.  The permit is
+    neither `Clone` nor `Copy` and its field is private.  With `hw_target` the
+    only permit is what `enter_lean_kernel` returns after `lean_kernel_main`.
+    `SecondaryReleasePermit::no_lean_kernel` exists only on images that link no
+    kernel, and in tests.  So releasing a secondary before the install does not
+    compile.
+  - `apply_cmdline_and_start_smp`, `bring_up_secondaries` and
+    `bring_up_secondaries_with_limit` take the permit too, and their signature
+    pins moved with them.
+  - Stale prose swept: `kernel_entry.rs`, `lean_ready.rs` (which said the
+    install "marks the boot core ready"; nothing does, until BP6), the
+    `build.rs` exemption reason, the `modifyGetKernelState` docstring, and the
+    closure plan's §3 obligation, now recorded as discharged.
+  - The boot summary no longer claims a "3 GiB RAM" identity map, which BP2.6
+    had already made false.
+- **The C boundary read the way Lean 4.28 emits it — BP4.1's audit, and the
+  correction the post-BP4.5 ABI audit made to it (latent; reported as a
+  possible vulnerability).**  Six HAL declarations of `BaseIO Unit` exports
+  (`lean_kernel_main`, `lean_per_core_timer_tick`, `lean_per_core_reschedule`,
+  `lean_secondary_kernel_main`, `lean_handle_fault`,
+  `lean_handle_unknown_syscall`) declared no return while the generated C
+  returns `lean_object*`.
+  - BP4.1 fixed the declarations and read the value as an owned `IO` result
+    constructor, recording a per-call heap leak.  **That reading was wrong**:
+    Lean 4.28 passes no world argument and wraps no result, so only a module
+    initializer (`initialize_*`) returns an `IO` constructor, and a `BaseIO
+    Unit` export returns `lean_box(0)` — there was no leak.  The discharge BP4.1
+    added refused that scalar as malformed and halted, so the first tick,
+    reschedule, fault or bring-up on a ready core would have halted the PE and
+    the boot entry the system.
+  - The declarations return `lean_runtime::LeanBaseIoUnit` (`#[must_use]`,
+    `#[repr(transparent)]`), and `discharge_base_io` accepts exactly
+    `lean_box(0)`, releasing and halting on anything else.  The initializer
+    keeps `LeanIoResult`, classified by `consume_io_result`.
+  - **The other direction was unchecked too.**  Thirty-three HAL definitions of
+    `BaseIO Unit` `@[extern]` bindings — the TLB, cache, SGI, timer, MMIO, lock
+    and shootdown primitives — returned nothing while the generated C declares
+    each `lean_object* f(…)` and returns or `lean_dec`s the value, so the caller
+    read whatever was left in `x0` as an object reference.  Each returns
+    `lean_runtime::base_io_unit()` now.  `lean_byte_array_copy_slice` takes its
+    `uint8_t` flag as `u8` rather than `bool`.
+  - `scripts/check_kernel_entry_exports.py` holds every HAL declaration of a
+    Lean-generated symbol **and** every HAL definition the generated C calls
+    (100 of them) to the prototype the compiler wrote under `.lake/build/ir`;
+    the return spelling is decided per symbol (`export_return_spelling`), a
+    `lean_object*` binding may return `!` when it never returns, and a
+    `uint8_t` return may be `bool` but a parameter may not.  The self-test
+    keeps each symbol and moves one type per case, the retired `IO`-result
+    reading included; eight token-preserving mutations of the gate were each
+    caught.
+  - `SeLe4n/Testing/ExportCommitDisciplineCensus.lean` proves every project
+    `@[export]` (nine) returns `Unit` or a C scalar, in `BaseIO` or bare — which
+    is what makes "a boxed export result is `lean_box(0)`" sound — with five
+    witnesses, three of them refusals (a boxed `BaseIO Nat`, a pure `Nat`, an
+    `IO Unit`).
+  - `lean_runtime` tests: a thousand `lean_box(0)` values discharge with no
+    allocation, and an `IO` constructor or another scalar halts.
+- **BP4.3/BP4.4 — the device tree reaches Lean, and the entry boots on it.**
+  `lean_kernel_main` took the DTB pointer and did not read it, and booted a
+  deployment whose board account was fixed at the smallest Raspberry Pi 5, so
+  the board-versus-binding check WS-RR RR7.27 built had no hardware caller.
+  - The HAL copies the firmware's blob onto the kernel's Lean heap
+    (`lean_entry::enter_lean_kernel`, through `cmdline::dtb_blob_from_ptr` inside
+    the window `init_mmu` admitted, and `lean_runtime::array::byte_array_of`) and
+    hands the `ByteArray`'s one reference to `lean_kernel_main`, now declared
+    `fn(dtb: Obj) -> LeanBaseIoUnit` and held to the compiler's C by the link gate.
+    A pointer that yields no blob is handed over **empty** rather than refused
+    in Rust, so the verified parser owns the refusal.
+  - `kernelMain (dtb : ByteArray)` is `bootAndInitialiseRPi5FromDtbOrHalt` on it.
+    `kernelMain_refuses`: a blob the parser refuses, or a board that does not
+    cover the binding's RAM and MMIO, halts every PE.  `kernelMain_installs`: an
+    accepted board installs the deployment's state on the variant its account
+    selects, read off `rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree` (new).
+  - `BootEntryContract.lean`'s `approvedBootCall` is the device-tree wrapper and
+    the entry's type `ByteArray → BaseIO Unit`, and the blob must be the entry's
+    own parameter.  New refused witnesses: a fixed blob, an edited copy, and the
+    retired `bootAndInitialiseRPi5OrHalt` call.  Making the parameter check
+    return `true` fails the build on the fixed-blob witness.
+  - **The deployment is proved on every board, not one.**  The device tree now
+    selects the RAM variant, so BP3's proofs at the smallest board would have
+    described a boot the entry no longer performs.  `rpi5PlatformConfigFor board`
+    and `rpi5BoundPlatformConfigAt v` replace `rpi5PlatformConfig` /
+    `rpi5BoundPlatformConfig` / `rpi5DeploymentBootState` (retired, with a
+    Tier 3 negative) — and with them the BP3 theorems named above:
+    `rpi5BoundPlatformConfig_wellFormed` / `_checked` / `_boot` are
+    `rpi5BoundPlatformConfigAt_wellFormed` / `_checked` / `_boot`,
+    `rpi5DeploymentBootState_witnessesInstalled` is
+    `rpi5DeploymentBootStateAt_witnessesInstalled`,
+    `rpi5DeploymentBootState_invariantBridge` is
+    `rpi5DeploymentBootStateAt_invariantBridge`, and
+    `bootAndInitialiseRPi5_rpi5PlatformConfig` /
+    `bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig` are their `…For` forms;
+    every gate is decided on each of the five variants,
+    `bootAndInitialiseRPi5_rpi5PlatformConfigFor` holds for every account
+    (`rpi5VariantFor_mem`), and the invariant bridge is stated per variant.
+  - `tests/Ak9PlatformSuite.lean` `kernelEntry_boots_the_deployment_on_every_variant`
+    runs the entry's pure half on 1, 2, 3, 4 and 8 GiB device trees — each boots
+    on its own variant (3 GiB on the 2 GiB map) with both separation witnesses
+    installed — and refuses a short board, a board without the binding's MMIO,
+    and the empty blob.  `lean_runtime` and `lean_entry` tests: the copy holds
+    the bytes, is freed with its last reference, and an unreadable pointer
+    becomes the empty array.
+- **BP4.5 — the boot image is cleaned to the Point of Unification before any
+  thread can fetch** (SM7.D deferred item 4).  `.bootImageLoad` was the one
+  kernel code-write site that emitted no clean-to-PoU, pinned by
+  `kernelCodeWriteSites_emission_pending`: SM7.D deferred it because the builder
+  names no extent, and the extent is the link's.
+  - The extent is the image's loaded bytes, `link.ld`'s new
+    `[_start, __image_load_end)`, the end assigned inside `.data` and held
+    between `__rodata_end` and `__bss_start` by an `ASSERT` that
+    `scripts/check_link_script.py` proves live by mutation (and whose relation
+    the gate checks on the linked symbol table).  Everything else the boot writes
+    is kernel-reserved, never mapped to a thread; memory a thread receives
+    otherwise comes through a re-type, which cleans it itself.
+  - `mmu::boot_image_loaded_extent` reads it; `cache::boot_image_icache_operand`
+    is `CleanRangeIallu` over it (op tag 3); `cache::clean_boot_image_to_pou`
+    applies it through `apply_icache_invalidation`, which halts on an extent
+    outside the identity map.  `lean_entry::enter_lean_kernel` calls it after
+    the install and immediately before minting the `SecondaryReleasePermit`, so
+    the permit now also certifies a clean image.
+  - Lean: `Architecture.bootImageIcacheOp` with
+    `bootImageIcacheOp_discharges_obligation` and `_isDomainWide`;
+    `kernelCodeWriteEmitted .bootImageLoad = true`; and
+    `kernelCodeWriteSites_all_emitted` replaces the retired partition marker
+    (Tier 3 negative).
+  - Tests: `tests/SmpCacheMaintenanceSuite.lean` §3.11 asserts both sites emit,
+    the boot operand discharges the obligation over an image extent and crosses
+    the FFI as tag 3, with a bare `IC IALLUIS` as the control that does not; HAL
+    tests pin the operand to the tag-3 decode and the identity-map refusal, and
+    run the clean on the host.  The Tier 3 ordering anchor fails on a clean moved
+    after the permit and on a commented-out one.
+- **BP4.6 — the verified board's RAM above the guaranteed gigabyte is mapped,
+  and the boot map is sealed before a secondary exists.**  BP2.6's map covers
+  `[0, 1 GiB)` on every board, so on a 2–16 GiB board the rest was unmapped: lost,
+  not falsely claimed, and cache maintenance there failed closed.
+  - Lean derives the extent: `bootRamExtensionsOf` is every RAM region of a map
+    above `rpi5GuaranteedRamTop`, clipped to it and non-empty.
+    `mem_bootRamExtensionsOf` and `bootRamExtensionsOf_covers` prove it is
+    exactly that RAM, in both directions.  The first proof found a zero-size
+    region above the gigabyte would have produced an empty extension, so the
+    filter asks that the clipped region be non-empty.
+    `rpi5BootRamExtensionsFor board` reads the map of the variant the binding
+    installs.  `rpi5BootRamExtensions_values` evaluates all five variants, and
+    `rpi5BootRamExtensions_admissible` proves each extension is 2 MiB aligned
+    and inside the tables' 512 GiB.
+  - The device-tree wrapper's accepting arm runs `extendBootRamMap` over those
+    extensions and then the install; `_accepted` and `kernelMain_installs` state
+    that program.  Each region crosses as `ffiExtendBootRamMap base size`.
+  - The HAL: `mmu::extend_boot_tables` validates every block, then writes; a
+    refusal (`RamExtensionRefusal`, nine kinds) leaves the tables byte-identical.
+    It writes 1 GiB level-1 blocks, plus 2 MiB blocks in the device window's
+    gigabyte, which alone has a level-2 table.  Every block is Normal, writable
+    and never executable, and goes only into an invalid entry: no
+    break-before-make and no TLB invalidation.  The table extent is then cleaned
+    to the PoC, because a secondary enables translation with its cache off, and
+    one `DSB ISH` + `ISB` follows.
+  - `extend_boot_ram_map` records each region after the barrier.
+    `is_boot_cacheable_range` is now the union `ram_range_covered` over
+    guaranteed RAM and that record, and is no longer a `const fn`.
+  - `ffi_extend_boot_ram_map` halts the system on any refusal.
+    `enter_lean_kernel` calls `mmu::seal_boot_map` immediately before minting
+    the `SecondaryReleasePermit`, and a later extension is refused `Sealed`.
+  - Tests: `tests/fixtures/boot_map.expected` gains each variant's `extend`
+    lines. The HAL's `the_boot_map_agrees_with_the_lean_map` applies them and
+    requires the extended Normal window to equal exactly that variant's RAM, on
+    every variant, by walking the tables and through `ram_range_covered`. Three
+    unit tests cover the refusals (nothing written), no remapping, and the
+    union.
+  - Mutation checks: mapping the extension executable fails the fixture test,
+    and so does letting the union admit one byte below an extension.
+  - The aarch64 archive now references 382 symbols it does not define (74 of
+    them HAL), and the reachable link needs 145.
+  - What it does not do: hand the RAM to anyone.  The deployment's untypeds are
+    fixed before the variant is known, so making them a function of the variant
+    is **BP4.7**, added to the plan by this cut (48 sub-tasks).
+- **BP4.7 — the RAM the boot maps above the gigabyte is handed to the root
+  task.**
+  - The bridge takes the objects as a function of the variant.
+    `rpi5PlatformConfigFromDtb` and `bootAndInitialiseRPi5FromDtbOrHalt` take
+    `initialObjectsFor : BCM2712Config → List ObjectEntry` and apply it to
+    `rpi5VariantFor dt.machineConfig`, the variant the board check just read.
+    `kernelMain` passes `rpi5InitialObjectsFor`.
+  - The untypeds are derived, not listed. `rpi5RootTaskRamUntypeds v` is one
+    normal-memory untyped per `rpi5BootRamExtensions v` entry, at id `8 + i`
+    and root-CNode slot `7 + i`. `rpi5RootTaskRamUntypeds_regions` states the
+    regions are exactly the extensions BP4.6 maps. That is two untypeds on the
+    8 and 16 GiB boards, one on 2 and 4 GiB, and none on 1 GiB — as the row
+    read when it landed; since the BCM2712 address-map correction DRAM is
+    contiguous from 0 and every board above the gigabyte has exactly one.
+  - Every gate is decided per variant again, by evaluation.
+    `rpi5RootTaskCNodeFor_slotsAddressable` is new: the boot bounds a CNode's
+    slot count and not its indices, so every root-CNode slot is shown to be
+    below sixteen.
+  - `rpi5InitialObjectsFor_covers_ram` states the direction the placement
+    conjunct cannot: every RAM address outside the kernel's reserved extent
+    lies in some root-task untyped, on every board.
+    `rpi5DeploymentBootStateAt_ramUntypedInstalled` states that the boot
+    installs each one.
+  - `BootEntryContract.lean`'s `approvedBootCall` is unchanged. Its witnesses
+    take the wrapper's new argument, which is data like the rest.
+  - Retired: the variant-independent `rpi5InitialObjects` and
+    `rpi5RootTaskCNode`, refused by a Tier 3 negative.
+  - Tests: `tests/Ak9PlatformSuite.lean` checks, on 1, 2, 3, 4 and 8 GiB device
+    trees, each installed RAM untyped against its extension and its root-CNode
+    capability (with `retype`). It also checks that no untyped id exists past
+    the last extension.
+- **BP5.1 — the kernel image is one bare-metal binary.**
+  - `sele4n-kernel` (`rust/sele4n-hal/src/bin/sele4n_kernel.rs`) is `no_std` /
+    `no_main`. It requires the new `kernel_image` feature, so no ordinary build
+    of the HAL links it. On a hosted target it is a program that refuses to run,
+    which keeps `cargo clippy --all-targets --all-features` building.
+  - The HAL's build script passes `-T link.ld` to that binary's link alone,
+    only when `target_os = "none"`. The image's ELF entry is `boot.S`'s `_start`.
+  - Its `#[panic_handler]` is `gic::halt_all`, the system-wide barrier every
+    boot-fatal refusal uses. It prints nothing, because the UART writer takes a
+    lock the panicking core may hold. `shootdown.rs`'s two comments saying the
+    tree has no panic handler are corrected.
+  - `scripts/check_kernel_image.py` checks the linked release image, as the
+    cross lane's new step [7/7].
+    - It is an AArch64 executable, entered at `_start`, at `link.ld`'s `ORIGIN`
+      and at `.text.boot`'s first byte.
+    - Nothing is undefined, weak symbols included.
+    - Every allocated section is one `link.ld` names, in its order and of its
+      kind. A `NOLOAD` section holds no file bytes and lies at or after
+      `__bss_start`. Every other section lies inside `[_start,
+      __image_load_end)`.
+    - `__exception_vectors` is `.text.vectors`' 2 KiB-aligned first byte, and
+      `boot.S`'s branch targets are text.
+    - `check_link_script`'s layout relations hold of the image's own symbols.
+  - The section list is read from `link.ld`, not written into the gate. The
+    self-test has fourteen single-relation cases, and the script parses into the
+    shape they assume. Mutating each check out fails its case.
+  - The FP/SIMD gate reads the linked image. The release image is 10,053
+    instructions with no FP/SIMD register operand; `compiler_builtins`' FP
+    helpers are not in this link.
+  - `check_aarch64_cross_target.py` requires the release image build with its
+    feature (never `--all-features`), both image checks over exactly the release
+    path, and a cross clippy lane covering the binary. That lane is now
+    `--features hw_target,kernel_image --lib --bins`. Twelve new
+    token-preserving cases; the self-test has 92.
+  - The image is built without `hw_target`, which names the Lean kernel's
+    symbols that nothing yet provides. It boots the Rust half
+    (`SecondaryReleasePermit::no_lean_kernel`); linking `libsele4n.a` is the
+    next row.
+  - The plan's BP5.3 row now pins `kernel_address` to `link.ld`'s load address,
+    rather than relying on the firmware's default.
+- **BP5.2 — the image carries the Lean kernel.**
+  - `scripts/build_lean_aarch64_archive.py` writes `libsele4n.roots.ld` beside
+    the archive: one `EXTERN(...)` naming the library initializer, then every
+    production `@[export]`. Its own reachable link now reads that file, in
+    place of a list of `--undefined` flags, so the runtime-surface proof and
+    the image link take one root set. The renderer and the parser both refuse
+    anything that is not distinct C identifiers in exactly that shape.
+  - With `hw_target`, on a bare-metal target, `build.rs` passes the archive,
+    the roots script and `--gc-sections` to the `sele4n-kernel` link. It names
+    them by path, so a missing input stops the link with the file it could not
+    open. The three paths are constants, and the builder's self-test holds them
+    equal to its own output paths.
+  - `scripts/test_lean_aarch64_archive.sh` gains step [4/4]. After the
+    archive, it removes the stale image and builds it release with
+    `hw_target,kernel_image`. It then runs `check_kernel_image.py --lean-kernel`
+    over the image, and then the FP/SIMD gate.
+  - `check_kernel_image.py --lean-kernel ROOTS` also requires three things: the
+    roots begin with the library initializer, they name `lean_kernel_main`,
+    and every root is the image's text. There are five new single-relation
+    cases; the self-test has 20.
+  - Measured at `v0.36.2`: the linked image has ten roots, all text, and
+    nothing undefined. Its loaded bytes are `0x4b48a4`. It is 1,204,787
+    instructions with no FP/SIMD register operand, so none of
+    `compiler_builtins`' FP-using members is in the kernel. The registered debt
+    row for them is closed.
+  - `check_aarch64_cross_target.py` holds the lane to four relations: both
+    features on one release image build, run after the archive build; the
+    image check with the builder's roots script, over the release image; the FP
+    gate over the release image; and each check after the image build. None
+    may be exempted from `set -e`. There are ten new token-preserving cases;
+    the self-test has 102.
+  - The gate's shell expander now resolves a value that names another variable
+    (`ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"`) to a
+    fixpoint. One pass in length order had left it half-substituted. The lane
+    fixture carries that shape, and reverting to one pass fails the clean
+    baseline.
+  - The CI job uploads the roots script with the archive. Four Tier 3 anchors
+    pin the link: both inputs, `--gc-sections`, the reachable link reading the
+    roots script, and the lane's `--lean-kernel` check. Each was verified by a
+    mutation that keeps its tokens.
+  - The cross lane still builds the image without `hw_target`, because it
+    builds no Lean. Its comments, and the forward-looking "until BP5.2" notes in
+    the binary, `Cargo.toml`, `check_link_script.py` and
+    `check_fp_simd_free_objects.py`, now say which lane owns which image.
+- **BP5.3 — the Raspberry Pi 5 boot files.** `scripts/build_rpi5_image.sh`
+  writes `kernel8.img` and `config.txt` from the Lean-linked release image and
+  checks both against it. This is the deliverable the release cut's `SM10.1.1`
+  names.
+  - **The device tree's window is placed by `link.ld`.** A new `NOLOAD`
+    section, `.dtb_window`, sits after the Lean heap. It is `DTB_WINDOW_SIZE`
+    bytes (2 MiB), which the HAL's test holds equal to `cmdline::MAX_DTB_SIZE`,
+    the extent `mmu::dtb_window` takes from the pointer. Three new `ASSERT`s
+    require it to be that size on a page, after the heap, and inside the
+    kernel's reserved extent. Those are the two conditions
+    `dtb_window_admissible` refuses a device tree without, so the address
+    `config.txt` pins is one `init_mmu` accepts by construction, rather than
+    one a script computed. `check_link_script.py` checks the relation on the
+    probe link (its seventh), and proves each new `ASSERT` live with a mutation
+    of its own.
+  - **`kernel8.img` is cut, then checked.** The toolchain's
+    `llvm-objcopy -O binary` cuts the file. `scripts/rpi5_boot_files.py` then
+    rebuilds the loaded extent `[_start, __image_load_end)` from the ELF's own
+    section headers and requires the two to be byte-identical. That gives two
+    implementations of "which bytes are the image". `check_kernel_image.py`'s
+    `Section` now records each section's file offset for this.
+  - **`config.txt` sets five keys, each derived from the image:**
+    - `arm_64bit=1` and `kernel=kernel8.img`;
+    - `kernel_address`, which must equal the image's entry, `_start` and
+      `link.ld`'s `ORIGIN`, so the firmware's default load address is never
+      used;
+    - `device_tree_address` and `device_tree_end`, which must be the linker's
+      window: `DTB_WINDOW_SIZE` bytes, 8-byte aligned, inside the reserved
+      extent the Lean side states, and outside `[_start, __lean_heap_end)`.
+      `device_tree_end` bounds what the firmware may write to what every reader
+      bounds what it reads by.
+  - **The check refuses what it cannot vouch for:** an unknown key, a key set
+    twice, a missing key, and a conditional `[...]` section. Any of those could
+    make the firmware load the kernel, or write the blob, somewhere the check
+    did not look.
+  - **Packaging is always followed by checking.** `package` writes the files
+    and then runs `check`; `check` alone re-verifies files already on disk. The
+    shell entry first runs `check_kernel_image.py --lean-kernel`, so a HAL-only
+    image, or one the last archive build did not link, is refused rather than
+    packaged.
+  - **The archive lane packages the image it linked** as its new step [5/5],
+    writing `.lake/build/rpi5-image/`. `check_aarch64_cross_target.py` requires
+    that step to run over the release image, after the image build, and not
+    exempted from `set -e`. There are four new token-preserving cases; the
+    self-test has 106.
+  - **Measured on the real image.** `kernel8.img` is 0x4b5030 bytes, entered
+    at 0x80000, with the device tree pinned to `[0x45b5000, 0x47b5000)`.
+    Changing one byte of the file, or moving `kernel_address` to the firmware's
+    0x200000 default, is refused.
+  - `rpi5_boot_files.py --self-test` (17 cases, each keeping both files present
+    and well-formed and breaking one relation) runs in Tier 0. Eleven Tier 3
+    anchors pin the section, two of its `ASSERT`s, the write-then-check order,
+    the window and entry relations, the unknown-key refusal, the shell's
+    check-before-package order, the lane step and the HAL test.
+- **Tests.**
+  - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
+    admitted with its ASID registered, beside the binding's; ASID collisions are
+    refused both between configured roots and against the binding's root, with a
+    distinct-ASID control; a root on ASID 0 or carrying a mapping is refused.
+  - TPH-015g/h/i and `An9HardwareBindingSuite` R3-5 are restated to the inverted
+    per-object fact.
+  - TPH-015q (BP3.5): a configured CNode holding a reply capability is
+    refused, by the object check and by the checked boot; the same CNode
+    holding an object capability boots (control). The badge half has no
+    runtime witness, because every public `Badge` constructor yields a valid
+    badge. Reverting the check is caught when the build fails:
+    `bootSafeObjectCheck_sound` stops elaborating.
+
+**The RPi5 binding is the BCM2712's address map, not the BCM2711's.**  Found
+while scoping BP5.4, and a false-assurance gap in the sense `CLAUDE.md`'s
+vulnerability rule names: the model and the HAL both described the Raspberry
+Pi 4's SoC — a UART at `0xFE20_1000` clocked at 48 MHz, a GIC-400 at
+`0xFF84_1000` / `0xFF84_2000`, a device window `[0xFE00_0000, 0xFF85_0000)`,
+RAM capped at `0xFC00_0000` beneath a "GPU carve-out" — and `Board.lean`'s
+address checklist marked every one of them **Validated** against the BCM2712.
+On the BCM2712 each of those addresses is DRAM.  On hardware the image would
+have written its console and programmed its interrupt controller by storing to
+memory, the GIC self-check would have halted every boot (or, had it read back,
+the kernel would have run with no interrupts), and the 115200-baud divisor was
+computed for a clock five times the real one.  No gate could catch it: nothing
+reads a datasheet, and both sides of every Lean/Rust comparison carried the same
+wrong numbers, compared as a literal beside a comment naming the other side.
+Cross-checked now against `arch/arm64/boot/dts/broadcom/bcm2712.dtsi` and
+`bcm2712-rpi-5-b.dts` in `raspberrypi/linux` branch `rpi-6.6.y`:
+
+- `SeLe4n/Platform/RPi5/Board.lean`: `rpi5MemoryMapForConfig` is two regions —
+  RAM `[0, ramSize)` (the BCM2712's DRAM is contiguous from 0; `axi` `ranges`)
+  and the SoC-bus window `socPeripheralBase` (`0x10_7C00_0000`, 64 MiB; `soc`
+  `ranges`) as the one device region.  `uart0Base` is UART10 (`serial@7d001000`,
+  the debug header) at `0x10_7D00_1000`; `gicDistributorBase` /
+  `gicCpuInterfaceBase` are `0x10_7FFF_9000` / `0x10_7FFF_A000`.
+  `peripheralBaseLow` is retired with a tombstone.  The two checklist tables
+  are one, marked *cross-checked* against the named source rather than
+  *validated*, with a paragraph recording the false marks.
+  `rpi5BootRamExtensions_values` is re-evaluated (one extension per board above
+  the gigabyte), `rpi5VariantFor_eight_gib_as_reported` — the BCM2711's
+  relocated-bank shape — becomes `rpi5VariantFor_eight_gib_two_banks`, and
+  `MemoryCoverage`'s two walk witnesses move to a 4 GiB aperture.
+- `rust/sele4n-hal/src/mmu.rs`: `DEVICE_WINDOW_BASE` / `DEVICE_WINDOW_TOP` are
+  the SoC-bus window, in the L1 slot for gigabyte 65, block aligned at both
+  ends, so the device-tail L3 table the BCM2711 window needed is **deleted**
+  (`BootPageTables` is seven 4 KiB tables).  The BCM2711 addresses are asserted
+  *unmapped*.
+- `rust/sele4n-hal/src/uart.rs`: `UART0_BASE` is `0x10_7D00_1000` and
+  `UART_CLOCK_HZ` is `clk_uart`'s 9.216 MHz, so 115200 baud is `IBRD = 5,
+  FBRD = 0` exactly.  `rust/sele4n-hal/src/gic.rs`: `GICD_BASE` /
+  `GICC_BASE` are the BCM2712's; the self-check and SGI-register address tests
+  follow.
+- **The drivers are compared with the Lean model by running both.**
+  `tests/Ak9PlatformSuite.lean` writes `mmio uart|gicd|gicc <base> <size>`
+  lines into `tests/fixtures/boot_map.expected` from `mmioRegions`;
+  `mmu::lean_mmio_window` reads them, and the UART and GIC tests require each
+  base to equal the Lean one and lie inside the device window.  The fixture is
+  regenerated (the variants' regions, extensions and probes all moved).
+- `tests/Ak9PlatformSuite.lean`'s board device trees carry the BCM2712's
+  nodes and a 4 GiB board reports `[0, 4 GiB)`; the one-cell and corpus parser
+  fixtures, which test the parser rather than the board, are unchanged.
+- `scripts/test_hw_crosscheck.sh` searched `/proc/device-tree` for the
+  BCM2711's nodes, which a Raspberry Pi 5 never carries, so both checks were
+  skips on every run; it searches for the BCM2712's by name now.
+- Tier 3: positives over the new constants, the fixture's `mmio` lines
+  and the drivers' reads of them, and negatives refusing the tail table and any
+  BCM2711 address returning as a live constant.
+- What this does **not** establish is what a real board's firmware reports.
+  The maps follow the device-tree source; BP8.1's first-boot readback confirms
+  them, and its plan row now records that QEMU has no BCM2712 machine, so the
+  image's constant device map meets no device under QEMU.
+
+**BP5.4 — the image's size and section map are published with every run.**
+`scripts/kernel_image_report.py` (new) is `scripts/build_rpi5_image.sh`'s last
+step, so the `Lean aarch64 Archive` job reports, on each run, the size of
+`kernel8.img` — read from the file and required to equal the image's loaded
+extent `[_start, __image_load_end)`, so a file that is not the image is refused
+rather than reported — the loaded section bytes, the text bytes, the alignment
+padding, the `NOLOAD` bytes, how much of `[0, KERNEL_RESERVED_END)` the image
+uses up to `__dtb_window_end`, and every allocated section's extent, size and
+kind.  The Markdown is appended to the run's step summary (never overwritten:
+other steps write there too) and written as `kernel-image-report.json` beside
+the boot files; `.github/workflows/lean_action_ci.yml` uploads the ELF,
+`kernel8.img`, `config.txt` and the JSON as the `rpi5-kernel-image` artifact.
+On this tree: `kernel8.img` is `0x4b5030` bytes (4.71 MiB, 4.60 MiB of it
+text), and the image places its last byte at 28.0% of the reserved extent.
+The report's self-test (Tier 0) refuses a flat image one page short and one
+page long, an image with no device-tree window and one with no section, and
+checks the step summary is appended to; Tier 3 pins the file-size relation,
+the append and the upload.
+
+**BP5.5 — every boot entry reaches EL1, and the PSCI conduit follows the
+level it came from.**  The RPi5 firmware enters a 64-bit kernel at EL2; `boot.S`
+never read `CurrentEL`.  Both `_start` and `secondary_entry` now call
+`.L_enter_el1` — as the item after the FP-trap prologue when this landed, and as
+their first item since the audit below put the prologue after the drop.  The
+routine uses no
+stack and preserves `x0`, so the DTB pointer and the PSCI context id cross it.
+It masks DAIF and reads `CurrentEL`, then:
+
+- **EL1**: returns.
+- **Any level but EL1 or EL2**: halts.
+- **EL2**: programs the registers below, then `eret`s to EL1h with DAIF masked
+  (`SPSR_EL2 = 0x3C5`, `ELR_EL2 = x30`).  It returns the entry level, which
+  `_start` passes to `rust_boot_main` as a new second argument, `entry_el`.
+
+What the EL2 path writes:
+
+- `HCR_EL2 = RW` alone, then an `isb`, so the non-VHE layout the rest is
+  written in takes effect.
+- `CPTR_EL2 = 0x33FF`.  `TFP = 0`, so FP/SIMD is not trapped to EL2 and the
+  `CPACR_EL1` trap the prologue sets is the one that fires.
+- `CNTHCTL_EL2 = 0x3` and `CNTVOFF_EL2 = 0`.
+
+Three registers the plan row did not name are also written, each for a reason
+recorded at the routine:
+
+- `VPIDR_EL2` / `VMPIDR_EL2` are set to the real `MIDR_EL1` / `MPIDR_EL1`.  An
+  EL1 read of MPIDR returns `VMPIDR_EL2`, its reset value is UNKNOWN, and
+  `_start`'s core-id check and every `current_core_id` read depend on it.
+- `MDCR_EL2` is set to `HPMN` alone, so the PMU `profiling.rs` uses is not
+  trapped to EL2.
+- `SCTLR_EL1` is set to a known MMU-off, little-endian value, since the kernel
+  runs with translation off until `init_mmu`.
+
+`build.rs`'s `scan_el1_entry`, beside `scan_fp_trap_prologue`, pins:
+
+- the call's position in both entries;
+- `_start`'s hand-off of the entry level;
+- the routine item for item (`EL1_ENTRY_ROUTINE`, which ends the file).
+
+It refuses a write to any EL2 register — by name, or by an `S3_4_…` encoding —
+anywhere else in assembly or Rust code.  Its self-test keeps every token and
+breaks a relation: a moved call, an unkept or unpassed level, `TFP` set, EL1t
+or unmasked interrupts in `SPSR_EL2`, a reordered `HCR_EL2` write, a missing
+`isb` or `VMPIDR_EL2` write, an EL3 entry falling into the EL2 path, a halt
+that returns, a statement past the routine, a third caller, and writers in
+`boot.S`, another `.S` file, an encoding and an `asm!` template.
+
+**Found while landing it: the PSCI conduit.**  Every PSCI wrapper hard-coded
+`hvc #0`, on the stated ground that the RPi5 firmware serves PSCI at EL2.  It
+cannot: the firmware hands EL2 to the kernel, so an `hvc` was taken at EL2
+through a vector table nothing had installed — from EL2 itself before this
+cut, and from EL1 after the drop.  `CPU_ON` could therefore never have reached
+the firmware on the board.  Unobservable until now, because nothing boots on
+hardware.
+
+The fix:
+
+- Every call now goes through `psci::psci_call`, which issues `smc #0` or
+  `hvc #0` according to `psci::Conduit`.
+- `rust_boot_main` selects the conduit from `entry_el` before anything can call
+  PSCI: `smc` after an EL2 entry, where nothing is left at EL2, and `hvc` after
+  an EL1 entry, which is QEMU `virt`'s default.  An unrecognised level halts.
+- A PSCI call made before the selection halts.
+- A Tier 3 negative refuses the retired inline template.
+
+Reading the conduit from the device tree's `/psci` `method` on an EL1 entry is
+registered debt (`docs/REGISTERED_DEBT.md`).  The same cut corrects
+`SMP_PANIC_HANG_REMEDIATION_PLAN.md`'s claim that the RPi5 is HVC-only.
+
+No current harness reaches the EL2 path, because QEMU's `virt` machine enters at
+EL1 unless `virtualization=on`; BP8.1 runs QEMU both ways.  The cross build's
+disassembly shows the call in both entries, the `eret`, and the `smc`/`hvc`
+pair behind the conduit.  Two formatting slips the BCM2712 correction left in
+`ffi.rs` and `mmu.rs` tests, which failed `test_rust.sh`'s `cargo fmt` check,
+are fixed in the same cut.
+
+**BP6 — every PE marks itself ready, and a boot one PE cannot serve halts.**
+The five seams behind the per-core `lean_ready` gate were wired end to end and
+dormant, because no core was ever marked ready.  They are live now.
+
+*BP6.1, the per-PE handshake.*  The library initializer and the install are
+per-image and run once on the boot core.  `enter_lean_kernel` now publishes
+their completion (`lean_ready::publish_kernel_installed`, `Release`) before it
+mints the release permit.  The kernel's runtime has no per-thread heap, task
+manager or stack guard, so what is per-PE is the PE's own posture.
+`lean_ready::initialise_core_runtime_with` checks, in order:
+
+1. the call runs on the core it names (`TPIDR_EL1`), once per core;
+2. the install happened-before (`Acquire`);
+3. the PE translates (`SCTLR_EL1.M`), since the heap lock is an
+   exclusive-monitor atomic;
+4. the PE runs on its own stack slot (`own_stack_extent`);
+5. the kernel heap serves an allocation and a free from it.
+
+Success mints a `LeanRuntimeReadyOnCore` token, neither `Clone` nor `Copy`.
+
+*BP6.2, the mark.*  `mark_lean_ready` is now safe and consumes the token.  The
+`unsafe fn mark_lean_ready(core_id)`, whose safety contract was the readiness
+promise itself, is retired.  Host tests use the `unsafe`
+`LeanRuntimeReadyOnCore::assume_initialised` instead.
+`lean_ready::become_ready_or_halt` is the one caller:
+
+- `rust_secondary_main` calls it after the timer arm and before the bring-up
+  entry and `enable_irq`, and parks the PE on a refusal.
+- `rust_boot_main` calls it after the Phase 5 install, and halts the system on a
+  refusal.
+
+The boot core's `enable_irq` moved from Phase 4 to after its mark.  So no PE
+takes an interrupt in the degraded, Rust-only mode once the kernel exists.  The
+bring-up entry's not-ready arm now parks the PE, since reaching it means the mask
+is broken.
+
+*BP6.3, the refusal.*  Phase 7 now waits for cores that serve the kernel.
+`smp::core_serves` means IRQ-ready **and** Lean-ready, and the count is taken
+through `serving_core_count_within`.  The boot halts the system unless every
+declared PE serves.  The retired `irq_ready_core_count_within` counted the IRQ
+flag alone, which a PE with every seam dormant satisfies.
+`build.rs`'s `readiness_publication_status` holds three relations:
+
+- **The marks.** Each is a hardware-only top-level statement with its pinned
+  halt, placed after its dependencies and before its PE's one `enable_irq`.
+- **The refusal.** It follows the bring-up.  The wait is followed at once by an
+  `if` on the shortfall, whose block ends in the system halt, with no `else`.
+- **The callers (derived).** Nothing else calls `mark_lean_ready` or
+  `become_ready_or_halt`.
+
+The self-test refuses fourteen token-preserving mutations, and each of ten
+mutations of the checker is caught by it.
+
+What BP6 does not do is return anyone to EL0.  The delivered-fault and
+capability-fault halts are now reachable.  They stay the seam's occupant until
+BP7's context restore installs a successor.  All four PEs publishing readiness
+under QEMU, and a withheld PE failing the boot, is the first-boot phase's run
+to tick.
+
+**The `v0.36.2` audit of BP0–BP6** — every file this version touched was re-read
+against its own prose, with the documentation treated as a claim to check rather
+than a description to trust, and nine findings were code.  Nothing was recorded
+as an accepted difference: what was wrong was fixed, and the two findings whose
+fix is a design are registered with their evidence and scheduled (BP7.10,
+BP7.11).
+
+- **The FP-trap prologue ran before the PE had left EL2.**  `boot.S` wrote
+  `msr cpacr_el1, xzr` as each entry's first instruction and only then called
+  `.L_enter_el1`.  `HCR_EL2.E2H` is UNKNOWN at reset, and with it set an EL2
+  write to that encoding names `CPTR_EL2` (the VHE register redirection) —
+  `CPACR_EL1` stayed UNKNOWN and the trap the whole FP-free argument rests on
+  was never written on the firmware's EL2 entry.  Both entries call
+  `.L_enter_el1` **first** now and write the prologue once it has returned at
+  EL1; `build.rs`'s `fp_trap_prologue_status` and `el1_entry_status` require
+  that order (a prologue ahead of the call, and a call not first, are named
+  refusals, mutation-tested), and the Tier 3 anchors pin the sequence in
+  `boot.S` itself.
+- **The boot console took a ticket lock with translation off.**  The console
+  lock's `fetch_add` is an `LDAXR`/`STXR` loop on the LSE-less softfloat target,
+  and an exclusive access to Device memory with `SCTLR_EL1.M = 0` never
+  succeeds on the BCM271x (no global monitor), so the first `kprintln!` before
+  `enable_mmu` could spin forever.  `uart::with_boot_uart` now bypasses the
+  lock while the executing PE does not translate (`ticket_lock_usable`, read
+  from `SCTLR_EL1`; interrupts masked for the write instead), and the per-PE
+  readiness handshake asks the translation question *before* it touches its
+  once-per-core guard, so a PE refused there leaves the guard clear and a later
+  handshake can succeed.
+- **A runtime `fatal` and a heap exhaustion parked one PE.**  Both halt the
+  system (`gic::halt_all`) now: a kernel whose runtime has failed on one core
+  must not go on serving from the others.
+- **SError was never unmasked.**  Every PE enables it right after installing
+  its vectors (`interrupts::enable_serror`), and `handle_serror` reports the
+  syndrome through the unlocked console writer before parking — an
+  asynchronous external abort used to be pending, silently, until something
+  else unmasked it.
+- **The cache-line stride was assumed.**  `cache::verify_cache_line_stride_or_halt`
+  reads `CTR_EL0` on every PE and halts if either the data or the instruction
+  minimum line is smaller than the stride the maintenance loops use
+  (`line_sizes_of_ctr`, `line_size_admits_stride`; the A76's `0x8444C004` gives
+  64/64).
+- **The Phase-7 readiness window was 160 ms and unexplained.**  It is one
+  second, derived from what a secondary does before it publishes — its MMU, GIC
+  and timer setup, the handshake, the bring-up entry under the contended
+  kernel-entry lock, and ≈ 390 bytes of console traffic at 115 200 baud — and
+  the refusal names each short PE and the half (IRQ-ready, Lean-ready) it lacks
+  (`smp::core_readiness`).  `smp::core_serves_in` is the pure conjunction with a
+  witness of its own, so a mutation making it read one flag fails a test.
+- **The Lean runtime's ShareCommon compared big naturals by usable size.**  Two
+  equal `mpz` objects with different reserved capacities hashed and compared
+  differently, so the persistence pass could keep two copies of one value —
+  or, worse, the equality could hold on bytes past a value's size.  `sharecommon_eq`
+  compares tag and `(neg, limbs[..size])` before any size read, and
+  `sharecommon_hash` folds the same limbs; `alloc_ctor` zeroes the trailing pad
+  word, which `lean_alloc_ctor_memory`'s contract requires and the comparison
+  reads.  Both are pinned by `sharecommon_equality_implies_equal_hashes`.
+- **The runtime's C-ABI exports dereferenced a pointer inside a safe signature.**
+  Every export that reads an object it is handed — forty-two written out and
+  the four `macro_rules!` templates that mint the rest — is
+  `pub unsafe extern "C" fn` with a `# Safety` section now — a caller's
+  promise inside a safe signature is one the compiler lets any safe caller
+  break, and the justification scanner counted the `// SAFETY:` comment as a
+  discharge.  The release profile carries `overflow-checks = true`: a wrapped
+  index in the runtime is a memory-safety bug, not a performance question.
+- **The binding's UART window was four times the device tree's block.**
+  `mmioRegions` asked for `0x1000` bytes at `uart0Base` while `bcm2712.dtsi`
+  declares `serial@7d001000` as `reg = <0x7d001000 0x200>`, and
+  `deviceTreeCoversMmioRegions` requires the board's block to contain the
+  window — so every real board was refused (`.boardDoesNotMatchBinding`) and
+  `kernelMain` halted every PE before installing anything.  No fixture could
+  show it because every fixture's UART node was built from the binding's own
+  constant.  The window is `0x200` (every register the driver touches lies
+  below `0x048`), the fixtures carry the device tree's block,
+  `tests/fixtures/boot_map.expected` reads `mmio uart 0x107d001000 0x200`, and
+  `uartWindowIsTheDeviceTreesRegisterBlock` decides all three apertures — the
+  board's, a wider one (accepted) and a narrower one (refused).
+- **The real firmware account is refused — registered, not fixed.**  A
+  Raspberry Pi 5 reports its RAM as `[0, 0x80000)`, `[0x80000, 0x3FC00000)`
+  and `[0x40000000, top)`, withholding the top of the first gigabyte for the
+  firmware by an amount that varies per board; the variants declare
+  `[0, ramSize)` whole, so `rpi5VariantsCoveredBy` is empty on every real
+  account and the bridge refuses the board.  Fail-closed, and it also guards a
+  second hazard — BP3.2's `[256 MiB, 1 GiB)` boot untypeds would otherwise
+  hand the root task the firmware's memory.  The remedy is the account itself
+  (plan row **BP7.10**; register table B), the corpus gained the account as
+  `eight_gib_rpi5_firmware` (and the BCM2711-shaped fixture that carried the
+  name `eight_gib_as_firmware_reports_it` is `eight_gib_bcm2711_relocated_bank`),
+  and `realFirmwareAccountIsRefusedUntilDerived` pins the refusal so the closure
+  cannot land without flipping it.  Its sibling finding — nothing starts the
+  root task, and the untrusted witness can never run — is **BP7.11**.
+- **A boot untyped was checked for nothing.**  `bootSafeUntypedCheck` was
+  `true` and `bootSafeObject` had no untyped clause, so a configuration could
+  ship a watermark at the region's end or children naming objects the boot
+  never created.  A boot untyped is pristine now — `watermark = 0`,
+  `children = []`, `parent = none` — in the check, the Prop (a trailing
+  conjunct, so no projection moved) and `bootSafeObjectCheck_sound`, with
+  `bootUntypedMustBePristine` moving one field at a time off the control and
+  showing the deployment's own untypeds pass.
+- **A fuel-starved `ranges` walk answered its prefix.**  `parseFdtRanges.go`'s
+  zero-fuel arm returned the entries parsed so far — the partial-table shape
+  its own docstring retires for a partial entry.  It refuses now; unreachable
+  at the default fuel, whose `+ 1` is the unit the walk spends observing the
+  property's end, which `rangesWalkStarvedOfFuelRefuses` pins (three entries
+  need four units).
+- **Gates.**  `build_lean_aarch64_archive.py`'s reachable link refused to read
+  its exit status, so a link killed by a signal answered "nothing unresolved";
+  it refuses a status that disagrees with what it found.  `check_link_script.py`
+  matched an `ASSERT` message by a fragment two asserts share, so one was
+  deletable with the gate reporting it live; every witness names its whole
+  message and each conjoined assert has a witness per conjunct (34/34).
+  `check_dtb_corpus_consumers.py` decided "the suite compares" by the presence
+  of the call; it pins the comparison itself — the name bound to the check is
+  the name tested against the manifest — with the call-kept, comparison-dropped
+  mutations (20 cases).  `check_fp_simd_free_objects.py` counted an `<unknown>`
+  mnemonic as clean and knew no SVE predicate register or SVE/SME control
+  mnemonic; it refuses the first and covers the rest, and prints the objdump it
+  used.  `test_qemu.sh` named a binary that cannot exist (`sele4n-hal` is a
+  library): it builds the real image (`sele4n-kernel`, `kernel_image`) and
+  SKIPs unless `QEMU_MACHINE` names a machine, because QEMU models no BCM2712
+  — an honest NOT RUN in place of a permanent one.  The archive CI job installs
+  its `targets:` explicitly.  Three Tier 3 anchors were presence checks (a
+  negative scoped by indentation, two unbounded gaps) and are relations.
+  `build.rs`: `_start` may not name `x20` between keeping the entry level and
+  passing it; the readiness derivation counts whole-word references so a
+  non-call reference to a Lean upcall is refused; a `#[cfg(test)]` attaches to
+  the item it decorates; a preprocessor line or `.include` in a scanned `.S`
+  is refused; an EL2 register is recognised by its `_el2` suffix and its
+  `S3_4_` encoding; the `enter_lean_kernel` call is pinned rather than a
+  binding's name; a second `rust_secondary_main` definition is refused — each
+  with a token-preserving mutation.
+- **Documentation.**  Every stale claim the audit found is corrected: the
+  retired BP3 theorem names in the plan, spec and register; `HARDWARE_TESTING.md`
+  and `CI_POLICY.md`, which described a tree with no image; the BCM2711 values
+  in `rpi5_cross_check.md`; the README and the eleven locales, which named only
+  BP0 and BP1 as landed; the `48` sub-task count (now 50); the figures that moved
+  at BP4.6 (382 / 74 / 145, 258 package modules); the plan's acceptance boxes;
+  and the in-code comments in `link.ld`, `lean_heap.rs`, `smp.rs`, `FFI.lean`
+  and `cmdline.rs` (whose table now says the Lean-linked image halts rather
+  than boots fewer PEs).  Nine earlier commits of this version carry a session
+  trailer `CLAUDE.md` forbids; per its own remediation for pushed commits they
+  are a one-time leak and every later commit complies.
+- **The audit's review (2026-09-26): the physical address width is the
+  Cortex-A76's 40 bits, and `TCR_EL1.IPS` is derived from the PE.**
+  `rpi5MachineConfig.physicalAddressWidth` read `44` — the bound on every
+  physical address the model admits (`MachineState.addrInRange`, the checked
+  VSpace map decode, `MachineConfig.wellFormed`) — and the HAL programmed a
+  constant 44-bit `IPS` under a comment claiming that matched the BCM2712.
+  The BCM2712's PEs are Cortex-A76 cores, whose `ID_AA64MMFR0_EL1.PARange`
+  (bits [3:0]) is `0b0010`, a 40-bit physical address space (TRM r4p1 §B2.58;
+  confirmed by the maintainer at review): the model admitted mappings in
+  `[2^40, 2^44)` that the PE answers with an Address size fault, and an `IPS`
+  wider than the implemented size is treated as the implemented size, which
+  is why nothing broke and the number could survive under every test.
+  `Board.lean` declares 40 and `check_physical_address_width.sh` holds it
+  there; `mmu::physical_address_size_of` decodes the field with the
+  architecture's whole table (a `const fn` over the raw register value, as
+  `tlbios_implemented` is, capped at the 48 bits an ARMv8.0-format descriptor
+  can name, a reserved encoding refused rather than rounded);
+  `enable_mmu` reads the register on the executing PE before it programs
+  translation, refuses a reserved encoding or a PE narrower than the tables'
+  reach (`BOOT_TABLE_PA_BITS_REQUIRED`, 39 bits — the span of the one level-0
+  entry they populate), bounds the table's own address by the PE's size, and
+  programs `tcr_el1_value(pa.ips)` — one function of the encoding, where a
+  constant stood.  The two sides are held together by running both: the Lean
+  suite writes `physicalAddressWidth` into `tests/fixtures/boot_map.expected`
+  and `the_lean_physical_address_width_is_the_pe_the_hal_programs_for` holds it
+  to the PE the HAL derives `IPS` for, and to the tables' reach (the HAL never
+  maps what the model refuses).  `NegativeStateSuite`'s width checks read the
+  binding rather than a literal, the cross-check row 11 expects `0b0010`, and
+  `test_hw_crosscheck.sh` — which would have *failed* every Raspberry Pi 5 by
+  expecting at least 44 — expects at least 40.
+- **The handoff's declared PE count is the binding's `coreCount`, read from
+  the same fixture.**  `LEAN_DECLARED_CORE_COUNT` was pinned to a literal `4`
+  beside a comment naming the binding; the Lean suite writes `declaredCores`
+  from `PlatformBinding.coreCount` and `boot.rs` reads it back through
+  `mmu::lean_boot_map_scalar`, the reader the width pin shares, so a binding
+  that changes its PE count fails the HAL's test rather than the first boot.
+- **BP7.11's design is decided** (the audit's review): the boot starts both
+  initial threads, one per domain, so no capability crosses the confinement
+  boundary; a starter capability in the root task's CNode and an inert witness
+  were both refused.  The plan row, the register and `CLAUDE.md` record it.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5, BP4.1..BP4.7, BP5.1..BP5.5, BP6.1..BP6.3; BP7.10 and BP7.11 registered by the audit)
+
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 
 Two P1 findings from Codex's review of PR #900, both verified on the tree before

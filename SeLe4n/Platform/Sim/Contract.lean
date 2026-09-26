@@ -150,10 +150,12 @@ structure SimPlatform where
     U8-A/U-L16: Memory map uses the shared `simSubstantiveMemoryMap` definition
     from `RuntimeContract.lean` to eliminate duplication.
     AJ-L11: `physicalAddressWidth := 52` intentionally diverges from RPi5's
-    44-bit PA width (Board.lean:122). The simulation platform uses the maximum
-    ARMv8-A PA width to avoid false negatives in address validation tests.
-    RPi5-specific PA bounds checking uses `Board.bcm2712PhysicalAddressWidth`
-    (44 bits) via the RPi5 platform contract. -/
+    40-bit PA width (`rpi5MachineConfig.physicalAddressWidth`, the Cortex-A76's
+    `PARange`; 44 until the v0.36.2 audit). The simulation platform uses the
+    maximum ARMv8-A PA width to avoid false negatives in address validation
+    tests. RPi5-specific PA bounds checking reads the RPi5 binding's
+    `rpi5MachineConfig.physicalAddressWidth` (40 bits) via the RPi5 platform
+    contract. -/
 def simMachineConfig : SeLe4n.MachineConfig :=
   {
     registerWidth := 64

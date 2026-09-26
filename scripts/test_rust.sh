@@ -117,7 +117,7 @@ run_cargo_step() {
 # `--features host_tools` is load-bearing in both steps below.  WS-RR
 # RR1.3 gave `src/bin/rw_lock_oracle.rs` — the Tier-5 correspondence
 # oracle, a `std` host tool — a `required-features` gate, so that the
-# bare-metal `aarch64-unknown-none` build does not try to compile it.
+# bare-metal `aarch64-unknown-none-softfloat` build does not try to compile it.
 # A `required-features` target is not merely skipped from the build:
 # `cargo test` does not run its `#[cfg(test)]` module either, so
 # without the flag here the oracle's test module silently stops running and

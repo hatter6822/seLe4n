@@ -64,12 +64,17 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
     only. Internal helpers that use this constant do not need platform-specific
     bounds because they are never called directly from user-facing dispatch.
     Production dispatch always routes through `st.machine.physicalAddressWidth`,
-    which resolves to the platform's actual PA width (e.g., 44 for BCM2712). -/
+    which resolves to the platform's actual PA width (40 on the BCM2712, whose
+    Cortex-A76 PEs report `ID_AA64MMFR0_EL1.PARange = 0b0010`; the binding said
+    44 until the v0.36.2 audit). -/
 def physicalAddressBound : Nat := 2^52
 
 /-- U2-D/U-H07: Platform-specific physical address bound derived from `MachineConfig`.
-    BCM2712 (RPi5) uses 44-bit PA, meaning addresses in [2^44, 2^52) pass the default
-    model bound but are invalid on hardware. This function provides the platform bound. -/
+    The BCM2712 (RPi5) has a 40-bit PA — its Cortex-A76 PEs report
+    `ID_AA64MMFR0_EL1.PARange = 0b0010` — meaning addresses in [2^40, 2^52) pass the
+    default model bound but are invalid on hardware (the binding declared 44 until the
+    v0.36.2 audit, admitting [2^40, 2^44) the PE answers with an Address size fault).
+    This function provides the platform bound. -/
 def physicalAddressBoundForConfig (config : MachineConfig) : Nat :=
   2^config.physicalAddressWidth
 
@@ -239,7 +244,8 @@ def vspaceMapPageCheckedWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
 
 /-- U2-D/U-H07: **Platform-aware production entry point** — bounds-checked map with TLB flush
     using platform-specific physical address width from `MachineConfig`.
-    BCM2712 (RPi5) uses 44-bit PA, meaning addresses in [2^44, 2^52) are rejected
+    The BCM2712 (RPi5) has a 40-bit PA (its Cortex-A76's `PARange`; the binding said
+    44 until the v0.36.2 audit), meaning addresses in [2^40, 2^52) are rejected
     by this function but accepted by the default `vspaceMapPageCheckedWithFlush`.
     Use this function when a `MachineConfig` is available (runtime dispatch paths). -/
 def vspaceMapPageCheckedWithFlushPlatform (config : MachineConfig)

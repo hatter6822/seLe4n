@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.1-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.2-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -69,11 +69,11 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 
 | السمة | القيمة |
 |-------|--------|
-| **الإصدار** | `0.36.1` |
+| **الإصدار** | `0.36.2` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
-| **أسطر Lean الإنتاجية** | 417,841 عبر 340 ملفًا |
-| **أسطر Lean للاختبارات** | 84,834 عبر 70 مجموعة اختبار |
-| **الإعلانات المُبرهَنة** | 13,815 إعلانًا theorem/lemma (صفر sorry/axiom) |
+| **أسطر Lean الإنتاجية** | 420,759 عبر 343 ملفًا |
+| **أسطر Lean للاختبارات** | 85,605 عبر 71 مجموعة اختبار |
+| **الإعلانات المُبرهَنة** | 13,928 إعلانًا theorem/lemma (صفر sorry/axiom) |
 | **العتاد المستهدف** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **التدقيق القياسي** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — تدقيق شامل ما قبل الإصدار 1.0 (202 نتيجة؛ تمت المعالجة بواسطة WS-AK AK1–AK10؛ مؤرشف) |
 | **آخر تدقيق** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — تدقيق جاهزية ما قبل الإصدار 1.0 أُجري بعد إغلاق WS-AN (يخلف [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) المؤرشف الآن والذي عولج بواسطة WS-AN AN0–AN12). WS-RC R0..R5 أُنجز في v0.31.2؛ WS-RC R6..R14 استُوعب في WS-SM وفق خريطة الاستيعاب SM0.Q.1 (انظر [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). خطة تيار العمل النشطة: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
@@ -207,7 +207,7 @@ Raspberry Pi 5. أُنجزت المراحل SM0–SM9 — الأنماط الت�
 المرحلة المتبقية هي **SM10** (إغلاق الإصدار ← v1.0.0). أما تيار عمل
 ABI الخاص بإرجاع استدعاءات النظام (**WS-RA**) فمكتمل.
 
-**WS-RR** (جاهزية إصدار SMP)، وهي مرحلة المعالجة السابقة للإصدار 1.0، **مكتملة في v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26)، RR1 (v0.34.41)، RR2 (v0.34.42)، RR3 (v0.34.43)، و**RR4 — معالجة الأعطال: IPC كامل للأعطال مع إعادة تشغيل قائمة على الرد (v0.34.44)**، التي تمنع استئناف الخيط المعطوب عند التعليمة التي سبّبت العطل: يُسجَّل العطل في TCB، ويُسلَّم إلى نقطة نهاية `faultHandler` الخاصة بالخيط عبر سلسلة الاستدعاء الحيّة عبر الأنوية، ويُعالَج برد يعيد تشغيل الخيط عند PC مختار أو يتخلّى عنه. واكتملت RR5–RR8 كذلك (RR8 في v0.35.203). أصبحت **SM10 محجوبة الآن بـ WS-BP** (مسار الإقلاع على المعدن العاري، [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md))، وهو محتوى SM10.1 ولم تبدأ فيه أي مهمة فرعية، ثم **SM10** (إغلاق الإصدار ← v1.0.0).
+**WS-RR** (جاهزية إصدار SMP)، وهي مرحلة المعالجة السابقة للإصدار 1.0، **مكتملة في v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26)، RR1 (v0.34.41)، RR2 (v0.34.42)، RR3 (v0.34.43)، و**RR4 — معالجة الأعطال: IPC كامل للأعطال مع إعادة تشغيل قائمة على الرد (v0.34.44)**، التي تمنع استئناف الخيط المعطوب عند التعليمة التي سبّبت العطل: يُسجَّل العطل في TCB، ويُسلَّم إلى نقطة نهاية `faultHandler` الخاصة بالخيط عبر سلسلة الاستدعاء الحيّة عبر الأنوية، ويُعالَج برد يعيد تشغيل الخيط عند PC مختار أو يتخلّى عنه. واكتملت RR5–RR8 كذلك (RR8 في v0.35.203). أصبحت **SM10 محجوبة الآن بـ WS-BP** (مسار الإقلاع على المعدن العاري، [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md))، وهو محتوى SM10.1 واكتملت مراحله السبع الأولى BP0 إلى BP6 في v0.36.2، وتبقّت BP7 وBP8، ثم **SM10** (إغلاق الإصدار ← v1.0.0).
 
 الخطة الرئيسية: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)،
 مع خطط لكل مرحلة في `docs/planning/SMP_*.md`. السجل القياسي لكل مرحلة —

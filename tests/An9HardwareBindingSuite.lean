@@ -235,11 +235,13 @@ def main : IO Unit := do
       failLine "wsrc_r3_bootFromPlatformChecked_succeeds_with_rpi5_bootVSpace"
         s!"boot failed: {e}"
 
-  -- R3-5: bootSafeObjectCheck admits the canonical RPi5 boot VSpace.
-  expect "wsrc_r3_bootSafeObjectCheck_admits_rpi5BootVSpaceRoot"
-    (SeLe4n.Platform.Boot.bootSafeObjectCheck
+  -- R3-5 (WS-BP BP3.2): the configured-object sweep refuses the kernel's
+  -- boot VSpace — it is admitted where the binding installs it (R3-4), and
+  -- the sweep asks a thread's question.
+  expect "rpi5_boot_vspace_refused_as_a_configured_object"
+    (!SeLe4n.Platform.Boot.bootSafeObjectCheck
       (KernelObject.vspaceRoot SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot))
-    "bootSafeObjectCheck must admit rpi5BootVSpaceRoot"
+    "bootSafeObjectCheck must refuse rpi5BootVSpaceRoot as a configured object"
 
   -- All AN9 + WS-RC R3 substantive surface anchors verified.
   IO.println ""

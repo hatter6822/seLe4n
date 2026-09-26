@@ -2,8 +2,12 @@
 //! GIC-400 interrupt controller driver for Raspberry Pi 5.
 //!
 //! Base addresses (from Board.lean):
-//! - GICD (distributor):   0xFF841000
-//! - GICC (CPU interface): 0xFF842000
+//! - GICD (distributor):   0x10_7FFF_9000
+//! - GICC (CPU interface): 0x10_7FFF_A000
+//!
+//! (`bcm2712.dtsi`'s `interrupt-controller@7fff9000`.  **The BCM2712
+//! address-map correction, v0.36.2**: these were `0xFF84_1000` /
+//! `0xFF84_2000`, the BCM2711's, which on the BCM2712 are DRAM.)
 //!
 //! Implements AG5-A (distributor init), AG5-B (CPU interface init),
 //! AG5-C (acknowledge/dispatch/EOI).
@@ -85,11 +89,13 @@
 // Constants
 // ============================================================================
 
-/// GIC-400 Distributor base address (from Board.lean `gicDistributorBase`).
-pub const GICD_BASE: usize = 0xFF841000;
+/// GIC-400 Distributor base address (Board.lean `gicDistributorBase`, held to
+/// it by `tests/fixtures/boot_map.expected`'s `mmio gicd` line).
+pub const GICD_BASE: usize = 0x10_7FFF_9000;
 
-/// GIC-400 CPU Interface base address (from Board.lean `gicCpuInterfaceBase`).
-pub const GICC_BASE: usize = 0xFF842000;
+/// GIC-400 CPU Interface base address (Board.lean `gicCpuInterfaceBase`, held
+/// to it by the fixture's `mmio gicc` line).
+pub const GICC_BASE: usize = 0x10_7FFF_A000;
 
 /// Timer PPI interrupt ID (non-secure physical timer, INTID 30).
 /// Matches Lean `timerPpiId` and `timerInterruptId`.
@@ -523,7 +529,7 @@ const SELF_CHECK_EXPECTED: u32 = 0x0101_0101;
 /// Under `cfg(all(target_arch = "aarch64", not(test)))` (production
 /// kernel builds) this performs a real volatile MMIO read. On other
 /// configurations — including `cargo test` on aarch64 hosts where the
-/// `0xFF841820` address is not mapped — it returns 0 to keep the test
+/// `0x10_7FFF_9820` address is not mapped — it returns 0 to keep the test
 /// suite pointer-safe. `self_check_distributor` correctly treats the
 /// 0-return as a mismatch and skips the WFE-loop on the same gate.
 #[inline(always)]
@@ -1311,11 +1317,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn gic_addresses_match_board_lean() {
-        // Board.lean: gicDistributorBase : PAddr := ⟨0xFF841000⟩
-        assert_eq!(GICD_BASE, 0xFF841000);
-        // Board.lean: gicCpuInterfaceBase : PAddr := ⟨0xFF842000⟩
-        assert_eq!(GICC_BASE, 0xFF842000);
+    fn gic_addresses_are_the_lean_ones_inside_the_device_window() {
+        // Read from the fixture the Lean suite writes (`mmio gicd` / `mmio
+        // gicc`), so the two sides are compared by running both.
+        for (name, base) in [("gicd", GICD_BASE), ("gicc", GICC_BASE)] {
+            let (lean_base, size) = crate::mmu::lean_mmio_window(name);
+            assert_eq!(base as u64, lean_base, "{name}");
+            assert!(crate::mmu::DEVICE_WINDOW_BASE <= lean_base, "{name}");
+            assert!(lean_base + size <= crate::mmu::DEVICE_WINDOW_TOP, "{name}");
+        }
     }
 
     #[test]
@@ -1655,16 +1665,16 @@ mod tests {
         // The address computed by `read_self_check_target` must equal
         // `base + ITARGETSR_BASE + TARGET_INDEX * 4`. We verify against
         // a concrete BCM2712 base.
-        let base = GICD_BASE; // 0xFF841000
+        let base = GICD_BASE; // 0x10_7FFF_9000
         let expected = base + gicd::ITARGETSR_BASE + SELF_CHECK_TARGET_INDEX * 4;
         assert_eq!(
             expected,
-            0xFF841000 + 0x800 + 8 * 4,
+            0x10_7FFF_9000 + 0x800 + 8 * 4,
             "self-check address arithmetic regressed"
         );
         assert_eq!(
-            expected, 0xFF841820,
-            "self-check should target ITARGETSR[8] @ 0xFF841820 \
+            expected, 0x10_7FFF_9820,
+            "self-check should target ITARGETSR[8] @ 0x10_7FFF_9820 \
              on BCM2712"
         );
     }
@@ -2358,10 +2368,10 @@ mod tests {
         // Sanity: GICD_BASE + gicd::SGIR resolves to the BCM2712
         // GICD_SGIR MMIO address.
         let addr = GICD_BASE + gicd::SGIR;
-        assert_eq!(addr, 0xFF841000 + 0xF00);
+        assert_eq!(addr, 0x10_7FFF_9000 + 0xF00);
         assert_eq!(
-            addr, 0xFF841F00,
-            "GICD_SGIR must be at 0xFF841F00 on BCM2712"
+            addr, 0x10_7FFF_9F00,
+            "GICD_SGIR must be at 0x10_7FFF_9F00 on BCM2712"
         );
     }
 

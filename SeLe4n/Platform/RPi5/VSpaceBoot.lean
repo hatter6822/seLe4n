@@ -266,8 +266,8 @@ theorem rpi5BootVSpaceRoot_wxCompliant :
 
 /-- **AN7-D.2.2**: The canonical RPi5 boot root's mapped physical
     addresses all fit within the BCM2712 44-bit PA space.  Every base
-    (kernel text 0x80000, data 0x180000, stack 0x200000, UART0 0xFE201000,
-    GIC dist 0xFF841000, GIC CPU 0xFF842000) is well below 2^44 ≈
+    (kernel text 0x80000, data 0x180000, stack 0x200000, UART10 0x10_7D00_1000,
+    GIC dist 0x10_7FFF_9000, GIC CPU 0x10_7FFF_A000) is well below 2^44 ≈
     1.76e13.  Discharged by `decide` on the finite six-element fold. -/
 theorem rpi5BootVSpaceRoot_paddrBounded :
     VSpaceRootPaddrBounded rpi5BootVSpaceRoot := by
@@ -392,6 +392,53 @@ theorem rpi5BootVSpaceRoot_bootSafeCheck :
   (bootSafeVSpaceRootCheck_iff rpi5BootVSpaceRoot).mpr rpi5BootVSpaceRoot_bootSafe
 
 -- ============================================================================
+-- WS-BP BP3.2 — a configured (user) VSpace root at boot
+-- ============================================================================
+
+/-- **WS-BP BP3.2**: a VSpace root a boot configuration may install for a
+    thread — the root task's, or any other boot thread's — as opposed to the
+    binding's own boot root (`bootSafeVSpaceRoot`).
+
+    Two conditions, and why each differs from the kernel root's:
+
+    * **Its ASID is a user ASID**, `1 ≤ asid ≤ maxAsidValue`.  ASID 0 is the
+      kernel's (`rpi5BootVSpaceRoot_asid`), and the boot refuses two roots on
+      one ASID (`Boot.bootVSpaceAsidsDistinct`), so a user root on ASID 0 would
+      be refused anyway; saying so here names the fault.
+    * **It maps nothing.**  The kernel root must map something — an empty table
+      cannot serve the first instruction fetch after the MMU is enabled — but a
+      thread's address space is populated by the thread, from frames it retypes
+      out of its own untypeds.  A configured mapping would name physical memory
+      no boot check has placed: it could map the kernel image, or a frame an
+      untyped also describes, and nothing here could see either.  Refusing every
+      mapping is exact rather than conservative for the root task this
+      configuration boots, which has no image to map until the bootable image
+      exists, and a later cut that maps one widens this predicate with the
+      placement check its frames need. -/
+def bootSafeUserVSpaceRoot (root : VSpaceRoot) : Prop :=
+  0 < root.asid.val ∧ root.asid.val ≤ maxAsidValue ∧ root.mappings.size = 0
+
+/-- **WS-BP BP3.2**: the Bool form the boot's object sweep evaluates. -/
+def bootSafeUserVSpaceRootCheck (root : VSpaceRoot) : Bool :=
+  decide (0 < root.asid.val) && decide (root.asid.val ≤ maxAsidValue) &&
+    decide (root.mappings.size = 0)
+
+/-- **WS-BP BP3.2**: the Bool check decides the predicate. -/
+theorem bootSafeUserVSpaceRootCheck_iff (root : VSpaceRoot) :
+    bootSafeUserVSpaceRootCheck root = true ↔ bootSafeUserVSpaceRoot root := by
+  unfold bootSafeUserVSpaceRootCheck bootSafeUserVSpaceRoot
+  simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc]
+
+/-- **WS-BP BP3.2**: the kernel's own boot root is not a user root — its ASID
+    is the kernel's.  So the two checks cannot be substituted for each other,
+    and a configuration cannot pass the kernel's map off as a thread's. -/
+theorem rpi5BootVSpaceRoot_not_bootSafeUser :
+    bootSafeUserVSpaceRootCheck rpi5BootVSpaceRoot = false := by
+  unfold bootSafeUserVSpaceRootCheck
+  rw [rpi5BootVSpaceRoot_asid]
+  decide
+
+-- ============================================================================
 -- WS-RC R3 — RHTable.invExt witness for the boot root's mappings
 -- ============================================================================
 
@@ -413,5 +460,54 @@ theorem rpi5BootVSpaceRoot_mappings_invExt :
         RHTable.insert_preserves_invExt _ _ _ <|
         RHTable.insert_preserves_invExt _ _ _ <|
         RHTable.empty_invExt 16 (by omega)
+
+
+-- ============================================================================
+-- WS-BP BP3.5 — what a boot root's checks say about each mapping
+-- ============================================================================
+
+/-- **WS-BP BP3.5**: what the invariant bundle reads of a VSpace root the boot
+    installs — every mapping W^X-compliant, below the ARMv8 LPA bound `2^52`
+    (`boundedAddressTranslation`'s default), at a canonical virtual address.
+
+    Both kinds of boot root satisfy it, for different reasons: the binding's
+    because its checks say so of every mapping
+    (`bootSafeVSpaceRoot_mappingsSafe`), a thread's because it maps nothing
+    (`bootSafeUserVSpaceRoot_mappingsSafe`).  So the bundle's three
+    per-mapping conjuncts are one argument over the boot state, not one per
+    kind of root. -/
+def bootVSpaceRootMappingsSafe (root : VSpaceRoot) : Prop :=
+  ∀ (v : VAddr) (p : PAddr) (perms : PagePermissions),
+    root.mappings[v]? = some (p, perms) →
+      perms.wxCompliant = true ∧ p.toNat < 2^52 ∧ v.isCanonical = true
+
+/-- **WS-BP BP3.5**: the binding's boot root satisfies the per-mapping facts —
+    each of its three mapping checks is a fold, read back per lookup by
+    `RHTable.fold_and_true_of_get?`, and the BCM2712's 44-bit physical address space
+    lies below the LPA bound. -/
+theorem bootSafeVSpaceRoot_mappingsSafe {root : VSpaceRoot}
+    (h : bootSafeVSpaceRoot root) : bootVSpaceRootMappingsSafe root := by
+  obtain ⟨_, hWx, _, hPa, hVa⟩ := h
+  intro v p perms hMap
+  rw [RHTable_getElem?_eq_get?] at hMap
+  have hWx' := RHTable.fold_and_true_of_get? root.mappings
+    (fun _ (entry : PAddr × PagePermissions) => entry.2.wxCompliant) hWx hMap
+  have hPa' := RHTable.fold_and_true_of_get? root.mappings
+    (fun _ (entry : PAddr × PagePermissions) => decide (entry.1.toNat < 2^44)) hPa hMap
+  have hVa' := RHTable.fold_and_true_of_get? root.mappings
+    (fun (vaddr : VAddr) (_ : PAddr × PagePermissions) => VAddr.isCanonical vaddr) hVa hMap
+  simp only [decide_eq_true_eq] at hPa'
+  exact ⟨hWx', by omega, hVa'⟩
+
+/-- **WS-BP BP3.5**: a thread's boot root satisfies the per-mapping facts
+    vacuously — it maps nothing, and a well-formed empty table resolves no
+    address. -/
+theorem bootSafeUserVSpaceRoot_mappingsSafe {root : VSpaceRoot}
+    (h : bootSafeUserVSpaceRoot root) (hExt : root.mappings.invExt) :
+    bootVSpaceRootMappingsSafe root := by
+  intro v p perms hMap
+  rw [RHTable_getElem?_eq_get?,
+    RHTable.get?_none_of_size_zero root.mappings hExt h.2.2 v] at hMap
+  cases hMap
 
 end SeLe4n.Platform.RPi5.VSpaceBoot

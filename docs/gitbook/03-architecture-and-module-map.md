@@ -538,7 +538,8 @@ determinism. See `Service/Operations.lean` for the full design rationale.
 - `SeLe4n/Platform/RPi5/{Board,RuntimeContract,BootContract,Contract}.lean`
   - Raspberry Pi 5 platform binding (`RPi5Platform`) with BCM2712 memory map,
     GIC-400/ARM Generic Timer constants, ARM64 machine config (64-bit, 48-bit
-    VA, 44-bit PA, 4 KiB pages, 16-bit ASID), and RAM-only memory access
+    VA, 40-bit PA — the Cortex-A76's `PARange`, corrected from `44` by the
+    v0.36.2 audit — 4 KiB pages, 16-bit ASID), and RAM-only memory access
     contract. Boot and interrupt contracts are H3-prep stubs.
 
 ### Information-flow subsystem

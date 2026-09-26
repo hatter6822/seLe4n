@@ -137,7 +137,10 @@ open SeLe4n.Kernel.Concurrency
 #check @dischargesPoUClean
 #check @dischargesPoUClean_isDomainWide
 #check @kernelCodeWriteEmitted
-#check @kernelCodeWriteSites_emission_pending
+#check @kernelCodeWriteSites_all_emitted
+#check @bootImageIcacheOp
+#check @bootImageIcacheOp_discharges_obligation
+#check @bootImageIcacheOp_isDomainWide
 
 -- SM7.D.1 typed operand + FFI encoding:
 #check @ICacheInvalidation
@@ -800,14 +803,25 @@ private def runCodeWriteObligationChecks : IO Unit := do
   assertBool "the canonical D→I sequence covers the barriers the obligation names"
     (armv8DCacheToICacheSequence.covers CacheBarrierKind.dsb_ish &&
      armv8DCacheToICacheSequence.covers CacheBarrierKind.isb)
-  -- The emission partition: the re-type's clean is live, boot's is not.
+  -- The emission partition: both sites emit since WS-BP BP4.5.
   assertBool "the re-type site's clean-to-PoU is EMITTED by a live transition"
     (kernelCodeWriteEmitted .retypeScrub)
-  assertBool "the boot-image site's emission is still pending (SM10.1)"
-    (!(kernelCodeWriteEmitted .bootImageLoad))
-  assertBool "exactly one site still owes an emission"
-    (kernelCodeWriteSites.filter (fun s => !kernelCodeWriteEmitted s) ==
-      [KernelCodeWriteSite.bootImageLoad])
+  assertBool "the boot-image site's clean-to-PoU is EMITTED by the boot seam (BP4.5)"
+    (kernelCodeWriteEmitted .bootImageLoad)
+  assertBool "no site still owes an emission"
+    (kernelCodeWriteSites.all kernelCodeWriteEmitted)
+  -- The boot's operand discharges the obligation over the extent it names, and
+  -- a bare `.iallu` over the same extent does not — the CONTROL that makes the
+  -- first assertion about the clean rather than about the invalidate.
+  let imageBase := SeLe4n.PAddr.ofNat 0x80000
+  let imageSize := 0x20_0000
+  assertBool "the boot operand discharges .bootImageLoad over the image extent"
+    (dischargesPoUClean (bootImageIcacheOp imageBase imageSize) imageBase imageSize)
+  assertBool "CONTROL: a bare IC IALLUIS does NOT discharge it (no clean to PoU)"
+    (!(dischargesPoUClean ICacheInvalidation.iallu imageBase imageSize))
+  assertBool "the boot operand crosses the FFI as op tag 3 with the extent"
+    ((bootImageIcacheOp imageBase imageSize).toOpTag == 3 &&
+     (bootImageIcacheOp imageBase imageSize).toSize == UInt64.ofNat imageSize)
 
 -- ----------------------------------------------------------------------------
 -- §3.12  SM7.D — the user-facing code-publication path

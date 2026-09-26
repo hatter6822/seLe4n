@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.1-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.36.2-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -96,11 +96,11 @@ security model) от seL4, вводя при этом архитектурные
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.36.1` |
+| **Версия** | `0.36.2` |
 | **Тулчейн Lean** | `v4.28.0` |
-| **Продуктовый код (Lean LoC)** | 417 841 строка в 340 файлах |
-| **Тестовый код (Lean LoC)** | 84 834 строки в 70 тест-сьютах |
-| **Доказанные декларации** | 13 815 деклараций theorem/lemma (ноль sorry/axiom) |
+| **Продуктовый код (Lean LoC)** | 420 759 строк в 343 файлах |
+| **Тестовый код (Lean LoC)** | 85 605 строк в 71 тест-сьюте |
+| **Доказанные декларации** | 13 928 деклараций theorem/lemma (ноль sorry/axiom) |
 | **Целевое оборудование** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Канонический аудит** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — комплексный предрелизный аудит 1.0 (202 результата; устранены WS-AK AK1–AK10; в архиве) |
 | **Последний аудит** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — аудит готовности перед 1.0, выполненный после закрытия WS-AN (сменяет ныне архивированный [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), замечания которого устранены WS-AN AN0–AN12). WS-RC R0..R5 LANDED в v0.31.2; WS-RC R6..R14 поглощены WS-SM согласно карте поглощения SM0.Q.1 (см. [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Активный план рабочего потока: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
@@ -235,7 +235,7 @@ SMP-микроядром на Raspberry Pi 5. Фазы SM0–SM9 заверше�
 на v0.33.100). Оставшаяся фаза — **SM10** (закрытие релиза → v1.0.0).
 Рабочий поток по ABI возврата системных вызовов (**WS-RA**) завершён.
 
-**WS-RR** (готовность SMP-релиза) — фаза устранения замечаний перед 1.0 — **завершена в v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) и **RR4 — обработка отказов: полный fault-IPC с перезапуском по ответу (v0.34.44)**, который не даёт потоку с отказом возобновиться на вызвавшей отказ инструкции: отказ записывается в TCB, доставляется на конечную точку `faultHandler` потока по живой межъядерной цепочке call и обрабатывается ответом, который перезапускает поток с выбранного PC либо отбрасывает его. RR5–RR8 также завершены (RR8 — в v0.35.203). Теперь **SM10 заблокирована WS-BP** (путь загрузки на «голом железе», [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)) — это содержимое SM10.1, ни одна подзадача не начата; затем **SM10** (закрытие релиза → v1.0.0).
+**WS-RR** (готовность SMP-релиза) — фаза устранения замечаний перед 1.0 — **завершена в v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) и **RR4 — обработка отказов: полный fault-IPC с перезапуском по ответу (v0.34.44)**, который не даёт потоку с отказом возобновиться на вызвавшей отказ инструкции: отказ записывается в TCB, доставляется на конечную точку `faultHandler` потока по живой межъядерной цепочке call и обрабатывается ответом, который перезапускает поток с выбранного PC либо отбрасывает его. RR5–RR8 также завершены (RR8 — в v0.35.203). Теперь **SM10 заблокирована WS-BP** (путь загрузки на «голом железе», [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)) — это содержимое SM10.1, первые семь фаз, BP0–BP6, завершены в v0.36.2 (остаются BP7 и BP8); затем **SM10** (закрытие релиза → v1.0.0).
 
 Мастер-план: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 пофазные планы — в `docs/planning/SMP_*.md`. Канонической пофазной записью —

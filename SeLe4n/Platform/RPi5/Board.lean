@@ -36,7 +36,7 @@ workstream.
      CI hygiene check `scripts/check_bcm2712_freshness.sh` warns when this
      date is older than one calendar year.  Update in the same commit when
      you re-verify BCM2712 constants against upstream documentation. -->
-<!-- BCM2712_DATASHEET_VERIFIED: 2026-04-24 -->
+<!-- BCM2712_DATASHEET_VERIFIED: 2026-09-25 -->
 -/
 
 namespace SeLe4n.Platform.RPi5
@@ -45,23 +45,46 @@ namespace SeLe4n.Platform.RPi5
 -- BCM2712 physical address map
 -- ============================================================================
 
-/-- BCM2712 low-peripheral base address (legacy 32-bit peripheral window). -/
-def peripheralBaseLow : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0xFE000000)
+/- **Tombstone**: `peripheralBaseLow` (`0xFE00_0000`) is retired.  It was the
+BCM2711's (Raspberry Pi 4's) legacy 32-bit peripheral window, which the BCM2712
+does not have: on the Raspberry Pi 5 the SoC bus appears in the CPU's physical
+address space at `socPeripheralBase` below, and the low four gigabytes are
+DRAM.  Every address this module carried for the UART and the GIC-400 was in
+that retired window (see `CHANGELOG.md` v0.36.2, the BCM2712 address-map
+correction). -/
 
-/-- BCM2712 high-peripheral base address (new peripherals in BCM2712). -/
+/-- BCM2712 high-peripheral base address: the start of the 64 GiB `axi`
+window above DRAM (`bcm2712.dtsi`'s `axi` node maps `0x10_0000_0000` 1:1),
+inside which the SoC bus, the GIC-400 and RP1's PCIe apertures sit. -/
 def peripheralBaseHigh : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x1000000000)
 
-/-- GIC-400 distributor base address. -/
-def gicDistributorBase : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0xFF841000)
+/-- **The BCM2712 address-map correction (v0.36.2)**: where the SoC bus
+appears to the CPU.  `bcm2712.dtsi`'s `soc` node carries
+`ranges = <0x7c000000 0x10 0x7c000000 0x04000000>` — the 64 MiB of bus
+addresses `[0x7C00_0000, 0x8000_0000)` at CPU physical `0x10_7C00_0000` — and
+UART10 and the GIC-400 both sit inside it. -/
+def socPeripheralBase : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x107C000000)
 
-/-- GIC-400 CPU interface base address. -/
-def gicCpuInterfaceBase : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0xFF842000)
+/-- The size of the SoC-bus window at `socPeripheralBase`: 64 MiB. -/
+def socPeripheralSize : Nat := 0x04000000
+
+/-- GIC-400 distributor base address: `bcm2712.dtsi`'s
+`interrupt-controller@7fff9000`, first `reg` block `<0x10 0x7fff9000 0x0 0x1000>`. -/
+def gicDistributorBase : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x107FFF9000)
+
+/-- GIC-400 CPU interface base address: the same node's second `reg` block,
+`<0x10 0x7fffa000 0x0 0x2000>`. -/
+def gicCpuInterfaceBase : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x107FFFA000)
 
 /-- ARM Generic Timer frequency (54 MHz crystal on RPi5). -/
 def timerFrequencyHz : Nat := 54000000
 
-/-- UART0 (PL011) base address for debug console. -/
-def uart0Base : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0xFE201000)
+/-- The debug console's PL011 base address: BCM2712 UART10 — the one on the
+Raspberry Pi 5's three-pin debug header, labelled `uart0` in `bcm2712.dtsi`
+(`serial@7d001000`, `reg = <0x7d001000 0x200>` on the SoC bus, so CPU physical
+`0x10_7D00_1000` through the `soc` window).  The UARTs on GPIO 14/15 are RP1's,
+behind PCIe, and are not the kernel's console. -/
+def uart0Base : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x107D001000)
 
 -- ============================================================================
 -- RPi5 memory map
@@ -81,46 +104,31 @@ def bcm2712DefaultConfig : BCM2712Config := {}
 
 /-- V4-D/M-HW-3: Physical memory map parameterized by board RAM size.
 
-    Regions are listed from low to high address:
-    1. RAM: 0x0000_0000 – 0xFC00_0000 (usable before peripherals, capped at 4032 MiB)
-    2. GPU/VideoCore: 0xFC00_0000 – 0xFE00_0000 (32 MiB reserved for GPU firmware)
-    3. Low peripherals: 0xFE00_0000 – 0xFF84_FFFF (legacy BCM2712 + GIC-400)
-    4. Reserved: 0xFF85_0000 – 0xFFFF_FFFF (above GIC, to 4 GB boundary)
-    5. High peripherals: 0x10_0000_0000+ (BCM2712-specific, not modeled yet)
+    Two regions, low to high:
+    1. RAM: `[0, ramSize)` — the BCM2712's DRAM is contiguous from address 0
+       (`bcm2712.dtsi`'s `axi` node maps `[0, 0x10_0000_0000)` 1:1 to DRAM),
+       on every variant, 1 GiB through 16 GiB.
+    2. The SoC-bus window `[socPeripheralBase, + socPeripheralSize)`
+       (`0x10_7C00_0000`, 64 MiB), which holds UART10 and the GIC-400.
 
-    For boards with > 4 GB RAM, additional RAM regions above 4 GB are appended.
-    The low RAM region is always capped at 0xFC00_0000 (peripheral boundary).
-
-    The map **under-declares** by design (PR #892 review round 2): the firmware
-    relocates the 64 MiB the peripheral window displaces to just above the
-    4 GiB boundary (a 4 GiB board reports `[0x1_0000_0000, 0x1_0400_0000)`
-    as well), and this map does not claim it, so every variant's map is
-    contained in what its board reports — the direction the coverage check
-    `rpi5VariantFor` decides by requires. -/
+    **The BCM2712 address-map correction (v0.36.2)**: this map was the
+    BCM2711's until then — RAM capped at `0xFC00_0000`, a "GPU carve-out" at
+    `0xFC00_0000`, a device window `[0xFE00_0000, 0xFF85_0000)` holding the UART
+    and the GIC, and a reserved tail to the 4 GiB boundary.  None of that is the
+    Raspberry Pi 5: on the BCM2712 those addresses are DRAM, so the image would
+    have programmed its UART and its interrupt controller by writing to memory,
+    and declared 64 MiB of a 4 GiB board's RAM as something else.  What the
+    firmware itself reserves inside DRAM is its business to say, and it says it
+    through the device tree's reservation block and `/reserved-memory`, which
+    `DeviceTree.fromDtbFull` subtracts. -/
 def rpi5MemoryMapForConfig (config : BCM2712Config) : List SeLe4n.MemoryRegion :=
-  let peripheralBoundary := 0xFC000000
-  let lowRamSize := min config.ramSize peripheralBoundary
-  let baseRegions :=
-    [ { base := (SeLe4n.PAddr.ofNat 0x00000000)
-        size := lowRamSize
-        kind := .ram }
-    , { base := (SeLe4n.PAddr.ofNat 0xFC000000)
-        size := 0x02000000  -- 32 MiB GPU/VideoCore firmware region
-        kind := .reserved }
-    , { base := (SeLe4n.PAddr.ofNat 0xFE000000)
-        size := 0x01850000  -- ~24.3 MiB peripheral window (legacy + GIC-400)
-        kind := .device }
-    , { base := (SeLe4n.PAddr.ofNat 0xFF850000)
-        size := 0x007B0000  -- reserved region above GIC to 4 GB boundary
-        kind := .reserved }
-    ]
-  if config.ramSize > 0x100000000 then
-    -- 8 GB and 16 GB models: additional RAM above the 4 GB boundary
-    baseRegions ++ [{ base := (SeLe4n.PAddr.ofNat 0x100000000)
-                      size := config.ramSize - 0x100000000
-                      kind := .ram }]
-  else
-    baseRegions
+  [ { base := (SeLe4n.PAddr.ofNat 0x00000000)
+      size := config.ramSize
+      kind := .ram }
+  , { base := socPeripheralBase
+      size := socPeripheralSize
+      kind := .device }
+  ]
 
 /-- Standard Raspberry Pi 5 physical memory map (4 GB model).
     V4-D: Now delegates to `rpi5MemoryMapForConfig` with default config. -/
@@ -131,12 +139,45 @@ def rpi5MemoryMap : List SeLe4n.MemoryRegion :=
 -- ARM64 architectural constants
 -- ============================================================================
 
+/-- **WS-BP BP3.2**: the end of the kernel's reserved extent on the RPi5 —
+    `[0, rpi5KernelReservedEnd)` holds the firmware's stub below the image
+    (`_start` is `0x80000`), the image, both stack regions, the Lean heap
+    arena, and the window the image build places the device tree in.
+
+    256 MiB, inside the guaranteed gigabyte.  The same number is `link.ld`'s
+    `KERNEL_RESERVED_END` — whose `ASSERT` refuses an image that outgrows it —
+    and the HAL's `mmu::KERNEL_RESERVED_END`, which refuses a device tree
+    outside it; `tests/Ak9PlatformSuite.lean` writes this constant into
+    `tests/fixtures/boot_map.expected`, and the HAL's test and
+    `scripts/check_link_script.py` read it back, so the three cannot drift. -/
+def rpi5KernelReservedEnd : Nat := 0x1000_0000
+
+/-- **WS-BP BP3.2**: the kernel's reserved extent as a region list — what the
+    boot refuses a boot untyped over (`Boot.untypedClearOfKernel`). -/
+def rpi5KernelReserved : List SeLe4n.MemoryRegion :=
+  [{ base := SeLe4n.PAddr.ofNat 0, size := rpi5KernelReservedEnd, kind := .reserved }]
+
+/-- **WS-BP BP3.2**: the reserved extent lies inside the RAM every Raspberry
+    Pi 5 has — the smallest board's gigabyte. -/
+theorem rpi5KernelReservedEnd_le_guaranteedRam : rpi5KernelReservedEnd ≤ 0x4000_0000 := by
+  decide
+
 /-- ARMv8-A machine configuration for Raspberry Pi 5. -/
 def rpi5MachineConfig : SeLe4n.MachineConfig :=
   {
     registerWidth := 64
     virtualAddressWidth := 48
-    physicalAddressWidth := 44   -- BCM2712 supports 44-bit PA
+    -- The v0.36.2 audit: the BCM2712's PEs are Cortex-A76 cores, whose
+    -- `ID_AA64MMFR0_EL1.PARange` is `0b0010` — a 40-bit physical address
+    -- space (Cortex-A76 TRM r4p1 §B2.58).  This field bounds every physical
+    -- address the kernel admits (`MachineState.addrInRange`, the checked
+    -- VSpace map decode, `MachineConfig.wellFormed`), so it is the PE's
+    -- value and not a wider one: the `44` carried from AJ3-B admitted
+    -- mappings in `[2^40, 2^44)` that the PE answers with an Address size
+    -- fault.  The HAL derives `TCR_EL1.IPS` from the same register at
+    -- `enable_mmu` and the shared boot-map fixture holds the two together
+    -- (`tests/fixtures/boot_map.expected`, `physicalAddressWidth`).
+    physicalAddressWidth := 40
     pageSize := 4096             -- 4 KiB granule (standard)
     maxASID := 65536             -- 16-bit ASID with TTBR.ASID
     memoryMap := rpi5MemoryMap
@@ -146,6 +187,9 @@ def rpi5MachineConfig : SeLe4n.MachineConfig :=
     -- holds the two together, and this is the copy the *live* affinity
     -- transitions read out of `SystemState.machine`.
     declaredCoreCount := 4
+    -- WS-BP BP3.2: the kernel's reserved extent, identical on every variant
+    -- (`rpi5MachineConfigForVariant` keeps it), since it is the image's.
+    kernelReserved := rpi5KernelReserved
   }
 
 -- ============================================================================
@@ -175,9 +219,20 @@ def virtualTimerPpiId : SeLe4n.Irq := ⟨27⟩
 -- ============================================================================
 
 /-- Known MMIO peripheral regions on BCM2712 that must not overlap with RAM.
-    Each region covers a specific hardware peripheral's register space. -/
+    Each region covers a specific hardware peripheral's register space, and
+    each is **the register block the device tree declares**, because
+    `deviceTreeCoversMmioRegions` requires the board's block to *contain* the
+    window: a window wider than the block is refused, and the boot halts.
+
+    The UART window is therefore `0x200` bytes, `bcm2712.dtsi`'s
+    `serial@7d001000` `reg = <0x7d001000 0x200>`, not the PL011's nominal
+    4 KiB register page (the `v0.36.2` audit found `0x1000` here against the
+    `0x200` the same file quotes three sections above, which no fixture could
+    show because every fixture's UART node was built from this constant).
+    Every register the console driver touches — `UARTDR` through `UARTICR`,
+    offsets `0x000`–`0x044` — lies inside it. -/
 def mmioRegions : List SeLe4n.MemoryRegion :=
-  [ { base := uart0Base,            size := 0x1000, kind := .device }  -- PL011 UART
+  [ { base := uart0Base,            size := 0x200,  kind := .device }  -- PL011 UART10
   , { base := gicDistributorBase,   size := 0x1000, kind := .device }  -- GIC-400 distributor
   , { base := gicCpuInterfaceBase,  size := 0x2000, kind := .device }  -- GIC-400 CPU interface
   ]
@@ -246,11 +301,11 @@ def mmioRegionsPairwiseDisjointCheck : Bool :=
 
 /-- X4-D/M-10: Proof that RPi5 MMIO regions are pairwise disjoint.
     The 3 MMIO regions have non-overlapping address ranges:
-    - UART PL011:       [0xFE201000, 0xFE202000)
-    - GIC distributor:  [0xFF841000, 0xFF842000)
-    - GIC CPU interface: [0xFF842000, 0xFF844000)
-    Note: GIC distributor ends at 0xFF842000 and GIC CPU interface starts at
-    0xFF842000 — these are exactly adjacent (non-overlapping) by the strict
+    - UART10 PL011:      [0x10_7D00_1000, 0x10_7D00_1200)
+    - GIC distributor:   [0x10_7FFF_9000, 0x10_7FFF_A000)
+    - GIC CPU interface: [0x10_7FFF_A000, 0x10_7FFF_C000)
+    Note: GIC distributor ends at 0x10_7FFF_A000 and GIC CPU interface starts
+    at 0x10_7FFF_A000 — these are exactly adjacent (non-overlapping) by the strict
     less-than comparison in `overlaps`. -/
 theorem mmioRegionsPairwiseDisjoint_holds :
     mmioRegionsPairwiseDisjointCheck = true := by decide
@@ -269,22 +324,29 @@ every address constant in this module must be cross-referenced against the
 BCM2712 ARM Peripherals datasheet and ARM Cortex-A76 TRM. This checklist
 tracks validation status.
 
-| Constant | Expected Source | Datasheet Section | Validated? |
-|----------|----------------|-------------------|------------|
-| `peripheralBaseLow` (0xFE00_0000) | BCM2712 peripheral base | BCM2712 ARM Peripherals §1.2 Address Map — legacy peripheral window base | **Validated** |
-| `peripheralBaseHigh` (0x10_0000_0000) | BCM2712 high-peripheral window | BCM2712 ARM Peripherals §1.2 Address Map — 64-bit high-peripheral window | **Validated** |
-| `gicDistributorBase` (0xFF84_1000) | GIC-400 distributor | ARM GIC-400 TRM §4.1 — GICD base at RPi5 SoC offset; confirmed by `bcm2712-rpi-5-b.dts` | **Validated** |
-| `gicCpuInterfaceBase` (0xFF84_2000) | GIC-400 CPU interface | ARM GIC-400 TRM §4.1 — GICC base at RPi5 SoC offset; confirmed by `bcm2712-rpi-5-b.dts` | **Validated** |
-| `timerFrequencyHz` (54 MHz) | ARM Generic Timer CNTFRQ_EL0 | RPi5 crystal oscillator spec (54 MHz); confirmed by CNTFRQ_EL0 readout on live hardware | **Validated** |
-| `uart0Base` (0xFE20_1000) | PL011 UART0 | BCM2712 ARM Peripherals §2.1 UART — PL011 UART0 base (legacy window) | **Validated** |
-| `rpi5MemoryMap` RAM region (4032 MiB) | DRAM controller config | BCM2712 DRAM controller — 4 GB model with 64 MiB reserved for GPU/peripherals | **Validated** |
-| `rpi5MemoryMap` GPU region (32 MiB @ 0xFC00_0000) | VideoCore firmware reservation | Standard RPi firmware reservation (VideoCore VI) | **Validated** |
-| `rpi5MemoryMap` peripheral window (24.3 MiB) | Legacy peripheral range | BCM2712 ARM Peripherals §1.2 — legacy peripheral window including GIC-400 | **Validated** |
-| `rpi5MachineConfig.physicalAddressWidth` (44-bit) | BCM2712 PA width | BCM2712 ARM Peripherals §1.1 Overview — 44-bit PA (16 TB addressable) | **Validated** |
-| `gicSpiCount` (192) | GIC-400 SPI count | ARM GIC-400 TRM — BCM2712 implements 192 SPIs (INTIDs 32–223); confirmed by RPi kernel DTS | **Validated** |
-| `timerPpiId` (INTID 30) | NS physical timer PPI | ARM GIC Architecture Spec — Non-secure physical timer PPI (INTID 30) | **Validated** |
-| `virtualTimerPpiId` (INTID 27) | Virtual timer PPI | ARM GIC Architecture Spec — Virtual timer PPI (INTID 27) | **Validated** |
-| `mmioRegions` (3 regions) | UART + GIC register spaces | BCM2712 §2.1 (UART); ARM GIC-400 TRM §4.1 (GIC dist/CPU) | **Validated** |
+| Constant | Value | Source | Status |
+|----------|-------|--------|--------|
+| `peripheralBaseHigh` | 0x10_0000_0000 | `bcm2712.dtsi` `axi` node `ranges` (1:1 above DRAM) | Cross-checked |
+| `socPeripheralBase` / `socPeripheralSize` | 0x10_7C00_0000 / 64 MiB | `bcm2712.dtsi` `soc` node, `ranges = <0x7c000000 0x10 0x7c000000 0x04000000>` | Cross-checked |
+| `gicDistributorBase` | 0x10_7FFF_9000 | `bcm2712.dtsi` `interrupt-controller@7fff9000`, `reg` block 0 | Cross-checked |
+| `gicCpuInterfaceBase` | 0x10_7FFF_A000 | the same node, `reg` block 1 (8 KiB) | Cross-checked |
+| `uart0Base` | 0x10_7D00_1000 | `bcm2712.dtsi` `uart0: serial@7d001000` (UART10, the debug header) through the `soc` window | Cross-checked |
+| `rpi5MemoryMapForConfig` RAM | `[0, ramSize)` | `bcm2712.dtsi` `axi` `ranges <0x00 0 0x00 0 0x10 0>` — DRAM contiguous from 0 | Cross-checked |
+| `timerFrequencyHz` | 54 MHz | RPi5 crystal; CNTFRQ_EL0 | Carried over |
+| `rpi5MachineConfig.physicalAddressWidth` | 40-bit | Cortex-A76 TRM r4p1 §B2.58: `ID_AA64MMFR0_EL1.PARange = 0b0010` (the `44` carried over from AJ3-B was corrected by the v0.36.2 audit; the HAL derives `TCR_EL1.IPS` from the register, BP8.1 reads it back) | Cross-checked |
+| `gicSpiCount`, `timerPpiId`, `virtualTimerPpiId` | 192, 30, 27 | ARM GIC architecture; RPi kernel DTS | Carried over |
+
+**The BCM2712 address-map correction (v0.36.2).**  Until that version this
+table marked `peripheralBaseLow` (`0xFE00_0000`), a UART at `0xFE20_1000`, a
+GIC-400 at `0xFF84_1000` / `0xFF84_2000`, a RAM region capped at 4032 MiB and a
+"GPU carve-out" at `0xFC00_0000` **Validated** against the BCM2712.  Every one
+of those is the **BCM2711**'s (Raspberry Pi 4) map, and on the BCM2712 each of
+those addresses is DRAM.  The marks were false, and nothing in the tree could
+have caught them — no gate reads a datasheet.  The rows above are
+cross-checked against `arch/arm64/boot/dts/broadcom/bcm2712.dtsi` in the
+`raspberrypi/linux` tree, branch `rpi-6.6.y`, read 2026-09-25, and say so
+rather than claiming a datasheet this project does not have; a board-level
+readback (BP8.1) is what would promote them further.
 
 W4-A validation date: 2026-03-29. All constants cross-referenced against S6-G
 results below. See §S6-G for full datasheet citations and verification notes.
@@ -311,7 +373,7 @@ def rpi5DeviceTree : SeLe4n.Platform.DeviceTree :=
   SeLe4n.Platform.DeviceTree.fromBoardConstants
     "Raspberry Pi 5 (BCM2712 / ARM64)"
     rpi5MachineConfig
-    [ { name := "uart0", base := uart0Base, size := 0x1000 }
+    [ { name := "uart0", base := uart0Base, size := 0x200 }
     , { name := "gic-distributor", base := gicDistributorBase, size := 0x1000 }
     , { name := "gic-cpu-interface", base := gicCpuInterfaceBase, size := 0x2000 }
     ]
@@ -337,33 +399,10 @@ Each constant below has been cross-referenced against publicly available
 BCM2712 documentation, ARM Architecture Reference Manual (ARMv8-A), and
 the ARM GIC-400 Technical Reference Manual.
 
-### Validated Constants
+### Constants
 
-| Constant | Value | Reference | Status |
-|----------|-------|-----------|--------|
-| `peripheralBaseLow` | 0xFE00_0000 | BCM2712 §1.2 Address Map — legacy peripheral window base | **Validated** |
-| `peripheralBaseHigh` | 0x10_0000_0000 | BCM2712 §1.2 — high-peripheral window (64-bit) | **Validated** |
-| `gicDistributorBase` | 0xFF84_1000 | ARM GIC-400 TRM §4.1 — GICD base at RPi5 SoC offset | **Validated** |
-| `gicCpuInterfaceBase` | 0xFF84_2000 | ARM GIC-400 TRM §4.1 — GICC base at RPi5 SoC offset | **Validated** |
-| `timerFrequencyHz` | 54,000,000 Hz | RPi5 crystal oscillator spec (54 MHz) — sets CNTFRQ_EL0 | **Validated** |
-| `uart0Base` | 0xFE20_1000 | BCM2712 §2.1 UART — PL011 UART0 base (legacy window) | **Validated** |
-| `rpi5MachineConfig.registerWidth` | 64 | ARMv8-A spec — AArch64 64-bit registers | **Validated** |
-| `rpi5MachineConfig.virtualAddressWidth` | 48 | ARMv8-A — 48-bit VA with 4-level page tables | **Validated** |
-| `rpi5MachineConfig.physicalAddressWidth` | 44 | BCM2712 §1.1 — 44-bit PA (16 TB addressable) | **Validated** |
-| `rpi5MachineConfig.pageSize` | 4096 | ARM standard 4KB granule (TTBR_EL1.TG0 = 0b00) | **Validated** |
-| `rpi5MachineConfig.maxASID` | 65536 | ARMv8-A — 16-bit ASID field in TTBR1_EL1 | **Validated** |
-| `gicSpiCount` | 192 | ARM GIC-400 TRM — supports up to 480 interrupts (32 SGI+PPI + up to 448 SPI); BCM2712 implements 192 SPIs | **Validated** |
-| `timerPpiId` | INTID 30 | ARM GIC spec — Non-secure physical timer PPI (INTID 30) | **Validated** |
-| `virtualTimerPpiId` | INTID 27 | ARM GIC spec — Virtual timer PPI (INTID 27) | **Validated** |
-
-### Memory Map Validation
-
-| Region | Base | Size | Kind | Reference | Status |
-|--------|------|------|------|-----------|--------|
-| RAM | 0x0000_0000 | 4032 MiB | `.ram` | BCM2712 DRAM controller — 4 GB model with 64 MiB reserved | **Validated** |
-| GPU/VideoCore | 0xFC00_0000 | 32 MiB | `.reserved` | VideoCore firmware reservation (standard RPi configuration) | **Validated** |
-| Peripherals | 0xFE00_0000 | ~24.3 MiB | `.device` | Legacy peripheral window including GIC-400 | **Validated** |
-| Reserved | 0xFF85_0000 | ~7.7 MiB | `.reserved` | Above GIC to 4 GB boundary | **Validated** |
+See the table in §S5-F above, which is the one list; a second copy of it here
+is how the two came to disagree with the hardware together.
 
 ### MMIO Disjointness
 
@@ -378,10 +417,10 @@ well-formedness is proven via `rpi5MachineConfig_wellFormed` (`decide`).
    document, community reverse-engineering (Raspberry Pi forums), and the
    ARM architecture specifications.
 
-2. **GIC-400 addresses**: The GIC-400 is memory-mapped at a platform-specific
-   offset. The BCM2712 places the distributor at 0xFF841000 and CPU interface
-   at 0xFF842000, consistent with the RPi5 device tree source
-   (`bcm2712-rpi-5-b.dts`).
+2. **GIC-400 addresses**: the BCM2712 places the distributor at
+   `0x10_7FFF_9000` and the CPU interface at `0x10_7FFF_A000`
+   (`bcm2712.dtsi`, `interrupt-controller@7fff9000`, whose `reg` blocks carry
+   the `0x10` high cell explicitly).
 
 3. **Timer frequency**: 54 MHz is the RPi5's crystal oscillator frequency,
    confirmed by the `CNTFRQ_EL0` register value observed on live hardware.
@@ -458,6 +497,11 @@ theorem rpi5MachineConfigForVariant_default :
 `bindMachineConfig_declaredCoreCount` obligation is discharged by. -/
 theorem rpi5MachineConfigForVariant_declaredCoreCount (v : BCM2712Config) :
     (rpi5MachineConfigForVariant v).declaredCoreCount = 4 := rfl
+
+/-- **WS-BP BP3.2**: every member reserves the kernel's extent — it is the
+image's, not the board's. -/
+theorem rpi5MachineConfigForVariant_kernelReserved (v : BCM2712Config) :
+    (rpi5MachineConfigForVariant v).kernelReserved = rpi5KernelReserved := rfl
 
 /-- Every member has the BCM2712's physical address width. -/
 theorem rpi5MachineConfigForVariant_physicalAddressWidth (v : BCM2712Config) :
@@ -628,16 +672,22 @@ theorem rpi5VariantFor_two_gib :
       { ramSize := 2 * 1024 * 1024 * 1024 } := by
   decide
 
-/-- **PR #892 review round 2**: an 8 GiB board as its firmware reports it —
-the low aperture below the peripheral window and the rest relocated above the
-4 GiB boundary, 64 MiB larger than the model's high region — binds the 8 GiB
-member: the model's map is contained in the report, which is all coverage
-asks. -/
-theorem rpi5VariantFor_eight_gib_as_reported :
+/-- **PR #892 review round 2**: an 8 GiB board reported as two banks either
+side of the 4 GiB boundary binds the 8 GiB member: the model's one RAM region is
+covered by the *union* of the two, which is all coverage asks.
+
+(**The BCM2712 address-map correction, v0.36.2**: this was
+`rpi5VariantFor_eight_gib_as_reported`, over a low bank ending at
+`0xFC00_0000` and a high one 64 MiB larger than 4 GiB — the BCM2711's
+relocation of the RAM its peripheral window displaced.  The BCM2712 has no such
+window below 4 GiB, so a board reporting that shape would now leave
+`[0xFC00_0000, 4 GiB)` uncovered and bind a smaller variant, which is the
+fail-safe direction.) -/
+theorem rpi5VariantFor_eight_gib_two_banks :
     rpi5VariantFor { rpi5MachineConfig with
         memoryMap :=
-          [ { base := SeLe4n.PAddr.ofNat 0, size := 0xFC000000, kind := .ram },
-            { base := SeLe4n.PAddr.ofNat 0x100000000, size := 0x104000000, kind := .ram } ] } =
+          [ { base := SeLe4n.PAddr.ofNat 0, size := 0x100000000, kind := .ram },
+            { base := SeLe4n.PAddr.ofNat 0x100000000, size := 0x100000000, kind := .ram } ] } =
       { ramSize := 8 * 1024 * 1024 * 1024 } := by
   decide
 
@@ -647,6 +697,114 @@ theorem rpi5VariantFor_foreign_base :
     rpi5VariantsCoveredBy { rpi5MachineConfig with
         memoryMap := [{ base := SeLe4n.PAddr.ofNat 0x40000000, size := 0x100000000, kind := .ram }] }
       = [] := by
+  decide
+
+-- ============================================================================
+-- WS-BP BP4.6 — the verified board's RAM above the guaranteed gigabyte
+-- ============================================================================
+
+/-- **WS-BP BP4.6**: one past the RAM every Raspberry Pi 5 has — the smallest
+variant's gigabyte.  The HAL's boot map describes `[0, rpi5GuaranteedRamTop)`
+from constants before anything is parsed (`mmu::GUARANTEED_RAM_TOP`, WS-BP
+BP2.6); everything a larger board has above it is mapped only once the verified
+device-tree parse has chosen the variant (`bootRamExtensionsOf`). -/
+def rpi5GuaranteedRamTop : Nat := 0x4000_0000
+
+/-- The guaranteed gigabyte is the smallest variant's RAM. -/
+theorem rpi5GuaranteedRamTop_eq_smallest : rpi5GuaranteedRamTop = rpi5SmallestVariant.ramSize :=
+  rfl
+
+/-- **WS-BP BP4.6**: the RAM a memory map declares above the guaranteed
+gigabyte, one `(base, size)` per RAM region that reaches past it, clipped from
+below to `rpi5GuaranteedRamTop` — and only where what is left is non-empty, so no
+extension maps nothing (the HAL refuses an empty one).
+
+Derived from the map rather than listed per variant, so a variant whose map
+changes changes what the boot maps with it; `mem_bootRamExtensionsOf` and
+`bootRamExtensionsOf_covers` state that the result is exactly the map's RAM
+above the gigabyte, in both directions. -/
+def bootRamExtensionsOf (map : List SeLe4n.MemoryRegion) : List (Nat × Nat) :=
+  map.filterMap fun r =>
+    if r.kind = .ram ∧ max r.base.toNat rpi5GuaranteedRamTop < r.endAddr then
+      some (max r.base.toNat rpi5GuaranteedRamTop,
+        r.endAddr - max r.base.toNat rpi5GuaranteedRamTop)
+    else none
+
+/-- **WS-BP BP4.6 (soundness)**: every extension is RAM — inside one RAM
+region of the map, ending where it ends — non-empty, and above the guaranteed
+gigabyte.  So the boot never maps as Normal memory an address the verified map
+does not call RAM. -/
+theorem mem_bootRamExtensionsOf (map : List SeLe4n.MemoryRegion) (e : Nat × Nat)
+    (h : e ∈ bootRamExtensionsOf map) :
+    ∃ r ∈ map, r.kind = .ram ∧ r.base.toNat ≤ e.1 ∧ e.1 + e.2 = r.endAddr ∧
+      rpi5GuaranteedRamTop ≤ e.1 ∧ 0 < e.2 := by
+  unfold bootRamExtensionsOf at h
+  rw [List.mem_filterMap] at h
+  obtain ⟨r, hr, hsome⟩ := h
+  by_cases hc : r.kind = .ram ∧ max r.base.toNat rpi5GuaranteedRamTop < r.endAddr
+  · rw [if_pos hc] at hsome
+    cases hsome
+    have hg := hc.2
+    refine ⟨r, hr, hc.1, Nat.le_max_left _ _, ?_, Nat.le_max_right _ _, ?_⟩
+    · simp only
+      omega
+    · simp only
+      omega
+  · rw [if_neg hc] at hsome
+    cases hsome
+
+/-- **WS-BP BP4.6 (completeness)**: every RAM address of the map above the
+guaranteed gigabyte lies in some extension — so on a board whose variant the
+parse selected, no RAM the verified map declares is left unmapped. -/
+theorem bootRamExtensionsOf_covers (map : List SeLe4n.MemoryRegion)
+    (r : SeLe4n.MemoryRegion) (hr : r ∈ map) (hk : r.kind = .ram) (a : Nat)
+    (hlo : r.base.toNat ≤ a) (hhi : a < r.endAddr) (hg : rpi5GuaranteedRamTop ≤ a) :
+    ∃ e ∈ bootRamExtensionsOf map, e.1 ≤ a ∧ a < e.1 + e.2 := by
+  have hc : r.kind = .ram ∧ max r.base.toNat rpi5GuaranteedRamTop < r.endAddr :=
+    ⟨hk, Nat.max_lt.mpr ⟨by omega, by omega⟩⟩
+  refine ⟨(max r.base.toNat rpi5GuaranteedRamTop,
+      r.endAddr - max r.base.toNat rpi5GuaranteedRamTop), ?_, ?_, ?_⟩
+  · unfold bootRamExtensionsOf
+    exact List.mem_filterMap.mpr ⟨r, hr, by rw [if_pos hc]⟩
+  · simp only
+    omega
+  · simp only
+    omega
+
+/-- **WS-BP BP4.6**: the extensions of variant `v` — what the boot maps above
+the guaranteed gigabyte on a board of that variant. -/
+def rpi5BootRamExtensions (v : BCM2712Config) : List (Nat × Nat) :=
+  bootRamExtensionsOf (rpi5MemoryMapForConfig v)
+
+/-- **WS-BP BP4.6**: the extensions the boot maps for a board account — those
+of the variant the binding installs for it, so the map the HAL builds and the
+memory map the boot state carries are one variant's. -/
+def rpi5BootRamExtensionsFor (board : SeLe4n.MachineConfig) : List (Nat × Nat) :=
+  bootRamExtensionsOf (rpi5BoundMachineConfig board).memoryMap
+
+theorem rpi5BootRamExtensionsFor_eq (board : SeLe4n.MachineConfig) :
+    rpi5BootRamExtensionsFor board = rpi5BootRamExtensions (rpi5VariantFor board) := rfl
+
+/-- **WS-BP BP4.6**: the five variants' extensions, evaluated — nothing on the
+1 GiB board, and on every other board one region: all of its DRAM above the
+guaranteed gigabyte, since the BCM2712's DRAM is contiguous from 0. -/
+theorem rpi5BootRamExtensions_values :
+    rpi5Variants.map rpi5BootRamExtensions =
+      [ [],
+        [(0x4000_0000, 0x4000_0000)],
+        [(0x4000_0000, 0xC000_0000)],
+        [(0x4000_0000, 0x1_C000_0000)],
+        [(0x4000_0000, 0x3_C000_0000)] ] := by
+  decide
+
+/-- **WS-BP BP4.6**: every extension of every variant is what the HAL's
+extension accepts — both ends on a 2 MiB boundary (the smallest block it
+writes), and the whole of it below the 512 GiB the boot tables reach
+(`mmu::BOOT_TABLE_REACH`).  A variant that broke either would be refused on
+hardware with the system halted; this is the theorem that it cannot. -/
+theorem rpi5BootRamExtensions_admissible :
+    rpi5Variants.all (fun v => (rpi5BootRamExtensions v).all fun e =>
+      e.1 % 0x20_0000 == 0 && (e.1 + e.2) % 0x20_0000 == 0 && e.1 + e.2 ≤ 2 ^ 39) = true := by
   decide
 
 end SeLe4n.Platform.RPi5

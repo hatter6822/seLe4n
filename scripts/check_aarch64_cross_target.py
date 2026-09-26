@@ -12,7 +12,7 @@ all three ``.S`` files had zero compile coverage.  RR1 built that coverage;
 this gate keeps it, because every way of losing it again is silent:
 
 1. **TOOLCHAIN** -- ``rust/rust-toolchain.toml`` must list
-   ``aarch64-unknown-none`` under ``targets``.  Dropping it does not fail
+   ``aarch64-unknown-none-softfloat`` under ``targets``.  Dropping it does not fail
    anything on a machine that already has the target installed; it fails on
    the next fresh clone, and on a CI runner it fails as a missing ``core``,
    which reads as a source defect.
@@ -81,7 +81,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rust_code_view as _shared_rust_view  # noqa: E402
 
-CROSS_TARGET = "aarch64-unknown-none"
+CROSS_TARGET = "aarch64-unknown-none-softfloat"
 GATE_SCRIPT = "scripts/test_aarch64_cross_build.sh"
 TOOLCHAIN_FILE = "rust/rust-toolchain.toml"
 WORKFLOW_FILE = ".github/workflows/lean_action_ci.yml"
@@ -93,6 +93,47 @@ HOST_LANE = "scripts/test_rust.sh"
 # rather than silently uncovered -- the same hole a hand-written wrapper
 # list had in the TLBI gate (PR #883 review round 4).
 ASM_SOURCES = ("src/boot.S", "src/vectors.S", "src/trap.S")
+# The disassembly gate the cross gate must run over its RELEASE objects, and
+# the two objects it must be handed, as bash receives them after expansion.
+# Canonical spellings: the gate script writes them, so they are required
+# exactly rather than reasoned about.
+FP_CHECK_SCRIPT = "scripts/check_fp_simd_free_objects.py"
+FP_CHECKED_OBJECTS = (
+    f"target/{CROSS_TARGET}/release/deps/libsele4n_hal-*.rlib",
+    f"target/{CROSS_TARGET}/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a",
+)
+# WS-BP BP2.1: the linker-script gate, over the RELEASE assembly archive of
+# THIS target -- the real `.text.boot` the probe link places under `link.ld`.
+LINK_CHECK_SCRIPT = "scripts/check_link_script.py"
+LINK_CHECKED_ARCHIVE = FP_CHECKED_OBJECTS[1]
+# WS-BP BP5.1: the kernel image -- the one final bare-metal binary in the tree
+# -- its feature, the RELEASE image's path as bash receives it after expansion,
+# and the gate that asks the image the questions only a real link answers.  An
+# image build is a cross `cargo build` naming `--bin` IMAGE_BIN; every other
+# cross build is a library build and keeps the library's rules.
+IMAGE_BIN = "sele4n-kernel"
+IMAGE_FEATURE = "kernel_image"
+IMAGE_PATH = f"target/{CROSS_TARGET}/release/{IMAGE_BIN}"
+IMAGE_CHECK_SCRIPT = "scripts/check_kernel_image.py"
+# Toolchain components the gate needs: clippy for the cross lint lane,
+# llvm-tools for the pinned llvm-objdump the FP/SIMD check disassembles with.
+REQUIRED_COMPONENTS = ("clippy", "llvm-tools")
+# WS-BP BP1: the kernel's Lean object code for the same target.  The lane
+# script builds the cross archive and then decides the kernel-entry
+# reconciliation on it; it reads object code with llvm-tools' llvm-nm and
+# llvm-objdump, so its job must install that component too.
+LEAN_ARCHIVE_LANE = "scripts/test_lean_aarch64_archive.sh"
+LEAN_ARCHIVE_BUILDER = "scripts/build_lean_aarch64_archive.py"
+ENTRY_GATE = "scripts/check_kernel_entry_exports.py"
+ENTRY_GATE_CROSS_FLAG = "--require-cross"
+# WS-BP BP5.2: the lane's last step links the Lean kernel into the image and
+# checks it.  The roots script is the builder's output, named by its tail so
+# the check does not depend on how the lane spells the repository root.
+LEAN_KERNEL_FLAG = "--lean-kernel"
+LEAN_ROOTS_TAIL = f".lake/build/{CROSS_TARGET}/libsele4n.roots.ld"
+# WS-BP BP5.3: and cuts the Raspberry Pi 5 boot files from that image.
+BOOT_FILES_SCRIPT = "scripts/build_rpi5_image.sh"
+LEAN_ARCHIVE_COMPONENTS = ("llvm-tools",)
 HAL_CRATE = "rust/sele4n-hal"
 ORACLE_PKG = "sele4n-hal"
 ORACLE_BIN = "rw_lock_oracle"
@@ -203,10 +244,19 @@ def expand_shell_vars(code: str) -> str:
         values.setdefault(name, value)
     for name in reassigned:
         del values[name]
-    for name in sorted(values, key=len, reverse=True):
-        code = code.replace(f"${{{name}}}", values[name]).replace(
-            f"${name}", values[name]
-        )
+    # A value may itself name a variable (`DIR="${ROOT}/.lake/${TARGET}"`),
+    # and one pass in length order inserts it after the shorter-named ones
+    # were already substituted.  So repeat to a fixpoint, bounded by the
+    # number of names: a chain resolves within that many passes, and a cycle
+    # is left unresolved, which fails the checks.
+    for _ in range(len(values) + 1):
+        before = code
+        for name in sorted(values, key=len, reverse=True):
+            code = code.replace(f"${{{name}}}", values[name]).replace(
+                f"${name}", values[name]
+            )
+        if code == before:
+            break
     return code
 
 
@@ -233,6 +283,25 @@ def expand_shell_vars(code: str) -> str:
 
 def shell_commands(script: str) -> list[str]:
     """Split a comment-stripped, variable-expanded script into commands.
+
+    The projection of `shell_command_list`, which also records the operator
+    that ends each command; see there.
+    """
+    return [command for command, _ in shell_command_list(script)]
+
+
+# Operators after which a failing command does not stop a `set -e` script:
+# bash exempts every command of an `&&` / `||` list but the last.  A
+# load-bearing command followed by one is run and its failure discarded, so
+# `cargo build ... || true` and `check ... && echo ok` both kept every token
+# the checks below look for while the gate could no longer fail on them.
+ERREXIT_EXEMPTING_OPERATORS = ("&&", "||")
+
+
+def shell_command_list(script: str) -> list[tuple[str, str]]:
+    """Split a comment-stripped, variable-expanded script into commands,
+    each with the operator that ends it (`;`, newline, `|`, `&&`, `||`, or
+    `""` at the end of the script).
 
     Backslash-continuations are joined first, so a command wrapped across
     lines is read whole -- the cross gate's `cargo clippy` invocation is
@@ -273,19 +342,23 @@ def shell_commands(script: str) -> list[str]:
             index += 1
             continue
         if joined.startswith("&&", index) or joined.startswith("||", index):
-            commands.append("".join(current))
+            commands.append(("".join(current), joined[index : index + 2]))
             current = []
             index += 2
             continue
         if char in ";\n|":
-            commands.append("".join(current))
+            commands.append(("".join(current), char))
             current = []
             index += 1
             continue
         current.append(char)
         index += 1
-    commands.append("".join(current))
-    return [command.strip() for command in commands if command.strip()]
+    commands.append(("".join(current), ""))
+    return [
+        (command.strip(), operator)
+        for command, operator in commands
+        if command.strip()
+    ]
 
 
 def argv_of(command: str) -> list[str]:
@@ -293,7 +366,7 @@ def argv_of(command: str) -> list[str]:
 
     `shlex`, not `split()` plus `strip("\"'")`.  Quotes must be resolved by
     the same rules that produced them: `--target "${CROSS_TARGET}"` expands
-    to `--target "aarch64-unknown-none"`, so the quotes survive expansion
+    to `--target "aarch64-unknown-none-softfloat"`, so the quotes survive expansion
     and a naive comparison fails; and a quoted value CONTAINING A SPACE --
     `RUSTFLAGS="-D warnings" ./gate.sh` -- splits into two tokens under
     whitespace splitting, which pushed the real command word out of
@@ -469,7 +542,7 @@ def cargo_invocations(script: str, subcommand: str) -> list[list[str]]:
 
     Command position, not "a `cargo` token somewhere in the command".  The
     first version scanned every token, so `echo cargo build --target
-    aarch64-unknown-none --features hw_target` satisfied the check that the
+    aarch64-unknown-none-softfloat --features hw_target` satisfied the check that the
     gate script builds the cross target in both profiles -- CI would have
     run `echo` while Tier 0 reported the AArch64 surface compiled (PR #883
     review round 4).  That is the same defect as the `run: echo ./gate.sh`
@@ -658,19 +731,36 @@ def check_toolchain(root: str) -> list[str]:
             f"installs it on first use from rust/; without it a fresh clone "
             f"fails the aarch64 gate with a missing `core` crate."
         ]
-    # Exact ELEMENTS, not a substring of the array text.
-    # `targets = ["aarch64-unknown-none-softfloat"]` is a real and
-    # different target that contains the triple as a prefix, so a
-    # substring test passes while rustup installs something the gate
-    # script never builds for.
-    elements = re.findall(r'"([^"]*)"|\'([^\']*)\'', match.group(1))
-    listed = {a or b for a, b in elements}
+    # Exact ELEMENTS, not a substring of the array text.  A substring
+    # test is satisfied by any triple that contains this one -- and by
+    # `aarch64-unknown-none-softfloat-foo` -- while rustup installs
+    # something the gate script never builds for; and the hard-float
+    # `aarch64-unknown-none`, a prefix of the triple, is the FP-enabled
+    # target this gate exists to keep the kernel off.
+    listed = toml_array_elements(match.group(1))
+    problems: list[str] = []
     if CROSS_TARGET not in listed:
-        return [
+        problems.append(
             f"{TOOLCHAIN_FILE}: `targets` does not list `{CROSS_TARGET}` "
             f"as an element (found: {sorted(listed) or match.group(1).strip()})."
-        ]
-    return []
+        )
+    components = re.search(r"components\s*=\s*\[(.*?)\]", code, re.DOTALL)
+    have = toml_array_elements(components.group(1)) if components else set()
+    missing = [c for c in REQUIRED_COMPONENTS if c not in have]
+    if missing:
+        problems.append(
+            f"{TOOLCHAIN_FILE}: `components` does not list "
+            f"{', '.join(f'`{c}`' for c in missing)} as an element. The "
+            f"cross gate lints with clippy and disassembles with the "
+            f"pinned llvm-tools `llvm-objdump`; without them rustup does "
+            f"not install either on a fresh clone."
+        )
+    return problems
+
+
+def toml_array_elements(body: str) -> set[str]:
+    """The string elements of a TOML array body, quotes resolved."""
+    return {a or b for a, b in re.findall(r'"([^"]*)"|\'([^\']*)\'', body)}
 
 
 # `set` short flags, by the long name shell uses for them.
@@ -754,6 +844,31 @@ def check_gate_script(root: str) -> list[str]:
             f"or codegen error -- which is the defect class this gate "
             f"exists for -- and a build for any other target compiles none "
             f"of the cross surface."
+        )
+    # WS-BP BP5.1: the image build is its own lane.  It links the HAL under
+    # `link.ld` into `IMAGE_BIN`.  Here it is built without `hw_target`: with
+    # the feature `build.rs` links the Lean archive, which this lane does not
+    # build -- the Lean archive lane links and checks that image (BP5.2,
+    # `check_lean_archive_lane`) -- so the library's rules below are asked of
+    # the library builds alone.
+    images = [argv for argv in targeted if IMAGE_BIN in option_values(argv, "bin")]
+    targeted = [argv for argv in targeted if argv not in images]
+    released_images = [
+        argv
+        for argv in images
+        if ("--release" in argv or "release" in option_values(argv, "profile"))
+        and IMAGE_FEATURE in option_values(argv, "features")
+        and "--all-features" not in argv
+    ]
+    if not released_images:
+        problems.append(
+            f"{GATE_SCRIPT}: no cross `cargo build --release --target "
+            f"{CROSS_TARGET} --features {IMAGE_FEATURE} --bin {IMAGE_BIN}`; "
+            f"found {[' '.join(a) for a in images] or 'no image build'}. "
+            f"The kernel image is the one link that resolves every symbol "
+            f"the HAL names and lays it out under `link.ld`, and the deployed "
+            f"image is a release build.  `--all-features` would enable "
+            f"`host_tools`, which is not a bare-metal feature."
         )
     unfeatured = [
         argv
@@ -843,6 +958,24 @@ def check_gate_script(root: str) -> list[str]:
             f"lane has them removed before rustc or clippy runs -- so "
             f"without it the cross surface is compiled but never linted."
         )
+    # WS-BP BP5.1: the image's `#[panic_handler]` exists on the bare-metal
+    # target alone, so the cross clippy lane is the only one that can lint it.
+    # A lane that names the feature but restricts itself to the library
+    # (`--lib` alone) lints none of it.
+    def lints_image(argv: list[str]) -> bool:
+        if IMAGE_FEATURE not in option_values(argv, "features") and "--all-features" not in argv:
+            return False
+        kinds = [flag for flag in argv if flag in TARGET_KIND_FLAGS + ("--lib", "--bins", "--bin")]
+        return (not kinds or "--bins" in argv or "--all-targets" in argv
+                or IMAGE_BIN in option_values(argv, "bin"))
+
+    if lints and not any(lints_image(argv) for argv in lints):
+        problems.append(
+            f"{GATE_SCRIPT}: no cross `cargo clippy` lints the kernel image "
+            f"(`--features {IMAGE_FEATURE}` with its binary selected): "
+            f"{[' '.join(a) for a in lints]}. Its panic handler is compiled "
+            f"for the bare-metal target only, which no host lane reaches."
+        )
     for argv in lints:
         if (
             "hw_target" not in option_values(argv, "features")
@@ -869,6 +1002,95 @@ def check_gate_script(root: str) -> list[str]:
                 f"`-- -D warnings`, so a lint on the aarch64 surface is "
                 f"merely reported and the step still exits 0: "
                 f"{' '.join(argv)!r}"
+            )
+
+    # The FP/SIMD disassembly.  `boot.S` traps FP/SIMD at EL1 and the trap
+    # frame saves general-purpose registers only, so the kernel's objects
+    # must carry no FP/SIMD register operand; the softfloat target makes
+    # that a property of code generation and this step checks it on what
+    # was generated.  The relation, not the token: the check must be
+    # EXECUTED (not echoed), over the RELEASE objects of THIS target -- a
+    # debug build, or a hard-float build left elsewhere in `target/`,
+    # proves nothing about what is deployed -- and handed both the Rust
+    # code and the assembly.
+    wrappers = executing_wrappers(code)
+
+    def gate_runs(script: str) -> list[list[str]]:
+        """The argument lists of every EXECUTED run of `script`."""
+        runs: list[list[str]] = []
+        for command in shell_commands(code):
+            argv = executed_argv(command, wrappers)
+            if argv and argv[0] in ("python3", "python") and len(argv) > 1:
+                argv = argv[1:]
+            if argv and argv[0].endswith(script):
+                runs.append(argv[1:])
+        return runs
+
+    fp_runs = gate_runs(FP_CHECK_SCRIPT)
+    if not any(set(FP_CHECKED_OBJECTS) <= set(args) for args in fp_runs):
+        problems.append(
+            f"{GATE_SCRIPT}: no executed `{FP_CHECK_SCRIPT}` over both "
+            f"release objects of {CROSS_TARGET} "
+            f"({' and '.join(FP_CHECKED_OBJECTS)}); found "
+            f"{fp_runs or 'no invocation'}. `boot.S` traps FP/SIMD at EL1 "
+            f"and the trap frame saves no vector register, so an FP "
+            f"instruction in the deployed objects is a kernel halt or a "
+            f"silent clobber of user state."
+        )
+
+    # WS-BP BP2.1: the linker script is linked by nothing else until the
+    # kernel image exists, so the probe link is the only tool that reads it.
+    # Executed, and over the RELEASE assembly archive of THIS target: the
+    # probe places the real `.text.boot` under the script.
+    link_runs = gate_runs(LINK_CHECK_SCRIPT)
+    if not any(args == [LINK_CHECKED_ARCHIVE] for args in link_runs):
+        problems.append(
+            f"{GATE_SCRIPT}: no executed `{LINK_CHECK_SCRIPT}` over "
+            f"{LINK_CHECKED_ARCHIVE}; found {link_runs or 'no invocation'}. "
+            f"`link.ld` places the Lean heap arena and asserts it fits the "
+            f"smallest board, and nothing else links it before the kernel "
+            f"image exists."
+        )
+
+    # WS-BP BP5.1: the image the release build produced is checked as an
+    # image and disassembled.  Executed, and over exactly the RELEASE image of
+    # THIS target: a debug image is not what is deployed.
+    image_runs = gate_runs(IMAGE_CHECK_SCRIPT)
+    if not any(args == [IMAGE_PATH] for args in image_runs):
+        problems.append(
+            f"{GATE_SCRIPT}: no executed `{IMAGE_CHECK_SCRIPT}` over "
+            f"{IMAGE_PATH}; found {image_runs or 'no invocation'}. It is what "
+            f"proves the image is entered at `_start`, leaves nothing "
+            f"undefined, and holds only the sections `link.ld` names."
+        )
+    if not any(IMAGE_PATH in args for args in fp_runs):
+        problems.append(
+            f"{GATE_SCRIPT}: no executed `{FP_CHECK_SCRIPT}` over the "
+            f"release image {IMAGE_PATH}; found {fp_runs or 'no invocation'}. "
+            f"The target's `compiler_builtins` is not FP-free, so only the "
+            f"linked image shows which of its members the link pulled in."
+        )
+
+    # A load-bearing command must be able to FAIL the script.  Under
+    # `set -e` a command followed by `&&` or `||` is exempt from errexit, so
+    # it runs, its failure is discarded, and every token above stays put.
+    for command, operator in shell_command_list(code):
+        argv = executed_argv(command, wrappers)
+        load_bearing = (
+            argv[:1] == ["cargo"]
+            and argv[1:2] in (["build"], ["clippy"])
+            and CROSS_TARGET in option_values(argv, "target")
+        ) or any(
+            token.endswith(FP_CHECK_SCRIPT)
+            or token.endswith(LINK_CHECK_SCRIPT)
+            or token.endswith(IMAGE_CHECK_SCRIPT)
+            for token in argv[:2]
+        )
+        if load_bearing and operator in ERREXIT_EXEMPTING_OPERATORS:
+            problems.append(
+                f"{GATE_SCRIPT}: `{command}` is followed by `{operator}`, "
+                f"which exempts it from `set -e`: it runs and its failure "
+                f"is discarded."
             )
 
     # Failure propagation. Every command above is load-bearing, and bash
@@ -981,11 +1203,11 @@ def run_scripts(body: str) -> list[str]:
     return scripts
 
 
-def _names_gate(token: str) -> bool:
-    """Is `token` a path referring to the gate script?"""
-    basename = os.path.basename(GATE_SCRIPT)
+def _names_gate(token: str, script: str = GATE_SCRIPT) -> bool:
+    """Is `token` a path referring to the gate script (or to `script`)?"""
+    basename = os.path.basename(script)
     return (
-        token.lstrip("./") == GATE_SCRIPT.lstrip("./")
+        token.lstrip("./") == script.lstrip("./")
         or token.endswith("/" + basename)
         or token == basename
     )
@@ -1000,7 +1222,7 @@ def _names_gate(token: str) -> bool:
 NON_EXECUTING_SHELL_OPTIONS = frozenset("n")
 
 
-def interpreter_executes(argv: list[str]) -> bool:
+def interpreter_executes(argv: list[str], script: str = GATE_SCRIPT) -> bool:
     """Does this interpreter invocation actually run the gate script?
 
     Options are read as options -- short clusters expanded, `--` ending
@@ -1032,22 +1254,199 @@ def interpreter_executes(argv: list[str]) -> bool:
             index += 1
             continue
         break
-    return any(_names_gate(token) for token in argv[index:])
+    return any(_names_gate(token, script) for token in argv[index:])
 
 
-def job_runs_gate(body: str) -> bool:
-    """Does some `run:` step of this job actually execute the gate script?"""
+def job_runs_gate(body: str, gate: str = GATE_SCRIPT) -> bool:
+    """Does some `run:` step of this job actually execute the gate script
+    (or the script `gate` names)?"""
     for script in run_scripts(body):
         wrappers = executing_wrappers(script)
         for command in shell_commands(script):
             argv = executed_argv(command, wrappers)
             if not argv:
                 continue
-            if _names_gate(argv[0]):
+            if _names_gate(argv[0], gate):
                 return True
-            if argv[0] in SCRIPT_INTERPRETERS and interpreter_executes(argv):
+            if argv[0] in SCRIPT_INTERPRETERS and interpreter_executes(argv, gate):
                 return True
     return False
+
+
+def check_lean_archive_lane(root: str) -> list[str]:
+    """The lane builds the cross archive, then reconciles the kernel entries on
+    it, and a failure of either fails the lane.
+
+    Relations rather than tokens: each script must be EXECUTED (not echoed,
+    not `--self-test`, which builds and decides nothing), the reconciliation
+    must carry `--require-cross` on the same command (an absent archive is
+    otherwise a narrower check that passes), it must run AFTER the build (a
+    reconciliation read before the archive is written decides on the last
+    run's), and neither may be exempted from `set -e` by `&&` / `||`.
+
+    WS-BP BP5.2: and then the kernel image with the Lean kernel in it.  A
+    release cross `cargo build` of `IMAGE_BIN` with BOTH `hw_target` (which
+    is what makes `build.rs` link the archive) and `IMAGE_FEATURE` on the
+    same command, after the archive build (an image linked before it links
+    the last run's archive); `IMAGE_CHECK_SCRIPT` with `--lean-kernel`
+    naming the builder's roots script, over `IMAGE_PATH`, after the image
+    build; and the FP/SIMD gate over `IMAGE_PATH`, after the image build.
+
+    WS-BP BP5.3: and `BOOT_FILES_SCRIPT` over `IMAGE_PATH`, after the image
+    build -- boot files cut before the link are cut from a previous run's
+    image.  Each executed and none exempted from `set -e`."""
+    text = read(root, LEAN_ARCHIVE_LANE)
+    if text is None:
+        return [f"{LEAN_ARCHIVE_LANE}: missing. It is the one place the kernel's "
+                f"Lean archive for {CROSS_TARGET} is built and reconciled."]
+    problems: list[str] = []
+    if not os.access(os.path.join(root, LEAN_ARCHIVE_LANE), os.X_OK):
+        problems.append(f"{LEAN_ARCHIVE_LANE}: not executable (chmod +x).")
+    code = expand_shell_vars(code_view(text))
+    wrappers = executing_wrappers(code)
+    builds: list[int] = []
+    reconciles: list[int] = []
+    images: list[int] = []
+    image_checks: list[int] = []
+    image_fp: list[int] = []
+    boot_files: list[int] = []
+    for position, (command, operator) in enumerate(shell_command_list(code)):
+        argv = executed_argv(command, wrappers)
+        image_build = (
+            argv[:2] == ["cargo", "build"]
+            and CROSS_TARGET in option_values(argv, "target")
+            and IMAGE_BIN in option_values(argv, "bin")
+            and ("--release" in argv or "release" in option_values(argv, "profile"))
+            and {"hw_target", IMAGE_FEATURE}
+            <= {f for v in option_values(argv, "features") for f in v.replace(",", " ").split()}
+            and "--all-features" not in argv
+        )
+        if image_build:
+            images.append(position)
+            if operator in ERREXIT_EXEMPTING_OPERATORS:
+                problems.append(
+                    f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
+                    f"which exempts it from `set -e`: it runs and its failure is "
+                    f"discarded."
+                )
+            continue
+        if argv and argv[0] in ("python3", "python") and len(argv) > 1:
+            argv = argv[1:]
+        if not argv or "--self-test" in argv[1:]:
+            continue
+        builder = argv[0].endswith(LEAN_ARCHIVE_BUILDER.split("/")[-1])
+        gate = argv[0].endswith(ENTRY_GATE.split("/")[-1])
+        image_gate = argv[0].endswith(IMAGE_CHECK_SCRIPT.split("/")[-1])
+        fp_gate = argv[0].endswith(FP_CHECK_SCRIPT.split("/")[-1])
+        packager = argv[0].endswith(BOOT_FILES_SCRIPT.split("/")[-1])
+        if packager and argv[1:2] == [IMAGE_PATH]:
+            boot_files.append(position)
+        if builder:
+            builds.append(position)
+        if gate and ENTRY_GATE_CROSS_FLAG in argv[1:]:
+            reconciles.append(position)
+        roots = option_values(argv, LEAN_KERNEL_FLAG.lstrip("-"))
+        if (image_gate and argv[-1:] == [IMAGE_PATH] and len(roots) == 1
+                and roots[0].endswith(LEAN_ROOTS_TAIL)):
+            image_checks.append(position)
+        if fp_gate and argv[1:] == [IMAGE_PATH]:
+            image_fp.append(position)
+        if ((builder or gate or image_gate or fp_gate or packager)
+                and operator in ERREXIT_EXEMPTING_OPERATORS):
+            problems.append(
+                f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
+                f"which exempts it from `set -e`: it runs and its failure is "
+                f"discarded."
+            )
+    if not builds:
+        problems.append(f"{LEAN_ARCHIVE_LANE}: no executed `{LEAN_ARCHIVE_BUILDER}`.")
+    if not reconciles:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `{ENTRY_GATE} {ENTRY_GATE_CROSS_FLAG}`. "
+            f"Without the flag an absent cross archive narrows the check to the "
+            f"host archive and passes."
+        )
+    if builds and reconciles and max(reconciles) < min(builds):
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: the reconciliation runs before the archive is "
+            f"built, so it decides on whatever a previous run left behind."
+        )
+    if not images:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `cargo build --release --target "
+            f"{CROSS_TARGET} --features hw_target,{IMAGE_FEATURE} --bin {IMAGE_BIN}`. "
+            f"`hw_target` is what makes `build.rs` link the Lean archive into the "
+            f"image; without it the image carries the HAL alone."
+        )
+    elif builds and min(images) < max(builds):
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: the kernel image is linked before the archive is "
+            f"built, so it carries whatever archive a previous run left behind."
+        )
+    if not image_checks:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `{IMAGE_CHECK_SCRIPT} {LEAN_KERNEL_FLAG} "
+            f"<...{LEAN_ROOTS_TAIL}> {IMAGE_PATH}`. It is what proves every root of "
+            f"the link is the image's text."
+        )
+    if not image_fp:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `{FP_CHECK_SCRIPT} {IMAGE_PATH}`. Only "
+            f"the linked image decides which `compiler_builtins` members the kernel "
+            f"carries, and some of them are not FP-free."
+        )
+    if not boot_files:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `{BOOT_FILES_SCRIPT} {IMAGE_PATH} ...`. "
+            f"The boot files the release cut ships are cut from the image the lane "
+            f"linked and checked, and nowhere else."
+        )
+    if images and any(p < min(images) for p in image_checks + image_fp + boot_files):
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: the image is checked before it is linked, so the "
+            f"check reads a previous run's image."
+        )
+    enabled = shell_option_state(code)
+    if not (enabled.get("errexit") and enabled.get("pipefail")):
+        problems.append(f"{LEAN_ARCHIVE_LANE}: needs `set -e` and `set -o pipefail`.")
+    return problems
+
+
+def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, str]]:
+    """WS-BP BP5.2: token-preserving mutations of the lane's image step."""
+    build = (f"cargo build --release --target {CROSS_TARGET} -p sele4n-hal "
+             f"--features hw_target,{IMAGE_FEATURE} --bin {IMAGE_BIN}\n")
+    check = (f'python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" {LEAN_KERNEL_FLAG} '
+             f'"${{ARCHIVE_DIR}}/libsele4n.roots.ld" {IMAGE_PATH}\n')
+    fp = f'python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}\n'
+    pack = (f'"${{PROJECT_ROOT}}/{BOOT_FILES_SCRIPT}" {IMAGE_PATH} '
+            f'"${{PROJECT_ROOT}}/.lake/build/rpi5-image"\n')
+    assert build in lane and check in lane and fp in lane and pack in lane
+    return [
+        ("lane links the image without hw_target",
+         lane.replace(build, build.replace("hw_target,", "") + "echo hw_target\n")),
+        ("lane links a debug image", lane.replace(build, build.replace("--release ", ""))),
+        ("lane links the image before it builds the archive",
+         lane.replace(builder_line, "").replace(build, build + builder_line)),
+        ("lane checks the image without the Lean kernel's roots",
+         lane.replace(check, check.replace(f"{LEAN_KERNEL_FLAG} ", "--roots "))),
+        ("lane checks the image against another roots file",
+         lane.replace(check, check.replace("libsele4n.roots.ld", "libsele4n.unresolved"))),
+        ("lane checks the image before it links it", lane.replace(build + check, check + build)),
+        ("lane disassembles the archive rather than the image",
+         lane.replace(fp, fp.replace(IMAGE_PATH, '"${ARCHIVE_DIR}/libsele4n.a"'))),
+        ("lane names the roots script under a directory it re-points",
+         lane.replace('ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"\n',
+                      'ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"\n'
+                      'ARCHIVE_DIR="/tmp"\n')),
+        ("lane discards the image check's failure", lane.replace(check, check.rstrip("\n") + " || true\n")),
+        ("lane discards the image link's failure", lane.replace(build, build.rstrip("\n") + " || true\n")),
+        ("lane echoes the boot-file packaging", lane.replace(pack, "echo " + pack)),
+        ("lane packages the debug image",
+         lane.replace(pack, pack.replace("/release/", "/debug/"))),
+        ("lane packages before it links", lane.replace(build, pack + build).replace(fp + pack, fp)),
+        ("lane discards the packaging's failure", lane.replace(pack, pack.rstrip("\n") + " || true\n")),
+    ]
 
 
 def check_workflow(root: str) -> list[str]:
@@ -1061,7 +1460,7 @@ def check_workflow(root: str) -> list[str]:
     # A job runs the gate only if the script sits in an EXECUTABLE COMMAND
     # POSITION of a `run:` script.  Two weaker forms both passed before:
     # matching the path anywhere in the job body is satisfied by a step
-    # *name* ("Build sele4n-hal for aarch64-unknown-none" is one line from
+    # *name* ("Build sele4n-hal for aarch64-unknown-none-softfloat" is one line from
     # "replaced ./scripts/test_aarch64_cross_build.sh"), and matching it
     # anywhere in a `run:` value is satisfied by `run: echo
     # ./scripts/test_aarch64_cross_build.sh`, which executes nothing (PR
@@ -1081,15 +1480,58 @@ def check_workflow(root: str) -> list[str]:
     problems: list[str] = []
     # Matched as a `targets:` KEY carrying the triple, not as the triple
     # appearing anywhere in the job.  The step that runs the gate is named
-    # "Build sele4n-hal for aarch64-unknown-none", so a substring search
+    # "Build sele4n-hal for aarch64-unknown-none-softfloat", so a substring search
     # over the job body is satisfied by a step *name* and would report the
     # target installed after the `targets:` input was deleted -- which is
     # exactly what a first version of this check did.
     targets_key = re.compile(
         rf"^\s*targets\s*:\s*.*\b{re.escape(CROSS_TARGET)}\b", re.MULTILINE
     )
+    components_key = re.compile(r"^\s*components\s*:\s*(.*)$", re.MULTILINE)
+
+    def declared_components(body: str) -> set[str]:
+        return {
+            item.strip()
+            for match in components_key.finditer(body)
+            for item in match.group(1).split(",")
+        }
+
+    lean_runners = [
+        name for name, body in jobs.items()
+        if job_runs_gate("\n".join(body), LEAN_ARCHIVE_LANE)
+    ]
+    if not lean_runners:
+        problems.append(
+            f"{WORKFLOW_FILE}: no job runs `{LEAN_ARCHIVE_LANE}`. The kernel's "
+            f"Lean object code for {CROSS_TARGET} would go unbuilt, and the "
+            f"kernel-entry reconciliation would be decided on the host "
+            f"archive alone."
+        )
+    for name in lean_runners:
+        missing = [
+            c for c in LEAN_ARCHIVE_COMPONENTS
+            if c not in declared_components("\n".join(jobs[name]))
+        ]
+        if missing:
+            problems.append(
+                f"{WORKFLOW_FILE}: job `{name}` runs `{LEAN_ARCHIVE_LANE}` but "
+                f"its rust-toolchain step does not install "
+                f"{', '.join(f'`{c}`' for c in missing)}: the archive's "
+                f"symbols and instructions are read with llvm-tools' llvm-nm "
+                f"and llvm-objdump."
+            )
     for name in runners:
         body = "\n".join(jobs[name])
+        declared = declared_components(body)
+        missing = [c for c in REQUIRED_COMPONENTS if c not in declared]
+        if missing:
+            problems.append(
+                f"{WORKFLOW_FILE}: job `{name}` runs the aarch64 gate but "
+                f"its rust-toolchain step does not install "
+                f"{', '.join(f'`{c}`' for c in missing)} (`components:` "
+                f"is an exact comma-separated list). The gate lints with "
+                f"clippy and disassembles with llvm-tools' llvm-objdump."
+            )
         if not targets_key.search(body):
             problems.append(
                 f"{WORKFLOW_FILE}: job `{name}` runs the aarch64 gate but "
@@ -1375,6 +1817,7 @@ def run_checks(root: str) -> list[str]:
     problems += check_workflow(root)
     problems += check_build_script(root)
     problems += check_host_lane(root)
+    problems += check_lean_archive_lane(root)
     return problems
 
 
@@ -1390,7 +1833,7 @@ def run_checks(root: str) -> list[str]:
 GOOD_TOOLCHAIN = f"""# comment naming {CROSS_TARGET} must not satisfy the gate
 [toolchain]
 channel = "1.94.1"
-components = ["clippy", "rustfmt"]
+components = ["clippy", "rustfmt", "llvm-tools"]
 targets = ["{CROSS_TARGET}"]
 profile = "minimal"
 """
@@ -1413,7 +1856,18 @@ set -euo pipefail
 CROSS_TARGET="{CROSS_TARGET}"
 cargo build --target "$CROSS_TARGET" -p sele4n-hal --features hw_target
 cargo build --release --target "$CROSS_TARGET" -p sele4n-hal --features hw_target
-cargo clippy --target "$CROSS_TARGET" -p sele4n-hal --features hw_target -- -D warnings
+cargo clippy --target "$CROSS_TARGET" -p sele4n-hal --features hw_target,{IMAGE_FEATURE} --lib --bins -- -D warnings
+python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" \\
+    target/"${{CROSS_TARGET}}"/release/deps/libsele4n_hal-*.rlib \\
+    target/"${{CROSS_TARGET}}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a
+python3 "${{PROJECT_ROOT}}/{LINK_CHECK_SCRIPT}" \\
+    target/"${{CROSS_TARGET}}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a
+IMAGE_BIN="{IMAGE_BIN}"
+cargo build --release --target "$CROSS_TARGET" -p sele4n-hal --features {IMAGE_FEATURE} --bin "$IMAGE_BIN"
+python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" \\
+    target/"${{CROSS_TARGET}}"/release/"${{IMAGE_BIN}}"
+python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" \\
+    target/"${{CROSS_TARGET}}"/release/"${{IMAGE_BIN}}"
 """
 
 GOOD_WORKFLOW = f"""name: CI
@@ -1429,9 +1883,32 @@ jobs:
       - uses: dtolnay/rust-toolchain@0000000000000000000000000000000000000000
         with:
           toolchain: 1.94.1
+          components: clippy, llvm-tools
           targets: {CROSS_TARGET}
       - name: Build sele4n-hal for {CROSS_TARGET}
         run: ./{GATE_SCRIPT}
+  test-lean-aarch64-archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@0000000000000000000000000000000000000000
+        with:
+          toolchain: 1.94.1
+          components: llvm-tools
+      - name: Build and reconcile {LEAN_ARCHIVE_LANE}
+        run: ./{LEAN_ARCHIVE_LANE}
+"""
+
+GOOD_LEAN_LANE = f"""#!/usr/bin/env bash
+set -euo pipefail
+CROSS_TARGET="{CROSS_TARGET}"
+ARCHIVE_DIR="${{PROJECT_ROOT}}/.lake/build/${{CROSS_TARGET}}"
+lake build SeLe4n:static
+python3 "${{SCRIPT_DIR}}/{LEAN_ARCHIVE_BUILDER.split('/')[-1]}"
+python3 "${{SCRIPT_DIR}}/{ENTRY_GATE.split('/')[-1]}" {ENTRY_GATE_CROSS_FLAG}
+cargo build --release --target {CROSS_TARGET} -p sele4n-hal --features hw_target,{IMAGE_FEATURE} --bin {IMAGE_BIN}
+python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" {LEAN_KERNEL_FLAG} "${{ARCHIVE_DIR}}/libsele4n.roots.ld" {IMAGE_PATH}
+python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}
+"${{PROJECT_ROOT}}/{BOOT_FILES_SCRIPT}" {IMAGE_PATH} "${{PROJECT_ROOT}}/.lake/build/rpi5-image"
 """
 
 GOOD_HOST_LANE = """#!/usr/bin/env bash
@@ -1466,9 +1943,10 @@ def write_tree(root: str, files: dict[str, str]) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(content)
-    gate = os.path.join(root, GATE_SCRIPT)
-    if os.path.exists(gate):
-        os.chmod(gate, 0o755)
+    for script in (GATE_SCRIPT, LEAN_ARCHIVE_LANE):
+        path = os.path.join(root, script)
+        if os.path.exists(path):
+            os.chmod(path, 0o755)
 
 
 def baseline() -> dict[str, str]:
@@ -1478,12 +1956,13 @@ def baseline() -> dict[str, str]:
         WORKFLOW_FILE: GOOD_WORKFLOW,
         BUILD_SCRIPT: GOOD_BUILD_RS,
         HOST_LANE: GOOD_HOST_LANE,
+        LEAN_ARCHIVE_LANE: GOOD_LEAN_LANE,
     }
 
 
 # The checks `run_checks` performs, by id.  Each must be exercised by at
 # least one PRESERVING negative case below; the harness enforces it.
-CHECKS = ("toolchain", "gate_script", "workflow", "build_script", "host_lane")
+CHECKS = ("toolchain", "gate_script", "workflow", "build_script", "host_lane", "lean_archive_lane")
 
 
 class Case:
@@ -2002,7 +2481,8 @@ def self_test() -> int:
     # clippy, so a lint on the aarch64 surface no longer fails the step.
     deny_before_separator = baseline()
     deny_before_separator[GATE_SCRIPT] = GOOD_GATE.replace(
-        "--features hw_target -- -D warnings", "-D warnings --features hw_target"
+        f"--features hw_target,{IMAGE_FEATURE} --lib --bins -- -D warnings",
+        f"-D warnings --features hw_target,{IMAGE_FEATURE} --lib --bins",
     )
     cases.append(
         Case(
@@ -2279,12 +2759,136 @@ def self_test() -> int:
         )
     )
 
+    # --- The FP/SIMD disassembly step, and the components it needs. ---
+    # Each keeps the check-script token and breaks one relation.
+    fp_line = f'python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" \\\n'
+    for label, mutated in [
+        ("the FP check is echoed, not run",
+         GOOD_GATE.replace(fp_line, "echo " + fp_line)),
+        ("the FP check reads the debug objects",
+         GOOD_GATE.replace("/release/deps/", "/debug/deps/")),
+        ("the FP check reads the hard-float build",
+         GOOD_GATE.replace('target/"${CROSS_TARGET}"/release/build',
+                           "target/aarch64-unknown-none/release/build")),
+        ("the FP check is not handed the assembly",
+         GOOD_GATE.replace(" \\\n    target/\"${CROSS_TARGET}\"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a", "")),
+        ("the FP check's failure is discarded by `|| true`",
+         GOOD_GATE.replace("libsele4n_hal_asm.a\n", "libsele4n_hal_asm.a || true\n")),
+        ("the cross release build is exempted from errexit by `&&`",
+         GOOD_GATE.replace("--release --target \"$CROSS_TARGET\" -p sele4n-hal --features hw_target\n",
+                           "--release --target \"$CROSS_TARGET\" -p sele4n-hal --features hw_target && echo built\n")),
+    ]:
+        fixture = baseline()
+        fixture[GATE_SCRIPT] = mutated
+        cases.append(Case(label, fixture, True, check="gate_script", mutation="preserving"))
+    # --- The linker-script probe.  Each keeps the check-script token. ---
+    link_line = f'python3 "${{PROJECT_ROOT}}/{LINK_CHECK_SCRIPT}" \\\n'
+    link_tail = link_line + '    target/"${CROSS_TARGET}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a\n'
+    assert GOOD_GATE.count(link_tail) == 1
+    for label, replacement in [
+        ("the link-script check is echoed, not run", "echo " + link_tail),
+        ("the link-script check reads the debug archive", link_tail.replace("/release/", "/debug/")),
+        ("the link-script check's failure is discarded by `|| true`",
+         link_tail.replace("asm.a\n", "asm.a || true\n")),
+    ]:
+        fixture = baseline()
+        fixture[GATE_SCRIPT] = GOOD_GATE.replace(link_tail, replacement)
+        cases.append(Case(label, fixture, True, check="gate_script", mutation="preserving"))
+    # --- WS-BP BP5.1: the kernel image.  Each keeps the image's tokens. ---
+    image_build = (f'cargo build --release --target "$CROSS_TARGET" -p sele4n-hal '
+                   f'--features {IMAGE_FEATURE} --bin "$IMAGE_BIN"\n')
+    image_check = (f'python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" \\\n'
+                   f'    target/"${{CROSS_TARGET}}"/release/"${{IMAGE_BIN}}"\n')
+    image_fp = (f'python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" \\\n'
+                f'    target/"${{CROSS_TARGET}}"/release/"${{IMAGE_BIN}}"\n')
+    for text in (image_build, image_check, image_fp):
+        assert GOOD_GATE.count(text) == 1, text
+    image_cases = [
+        ("the image is never built", image_build, "", "deleting"),
+        ("the image is built in debug only",
+         image_build, image_build.replace("--release ", ""), "preserving"),
+        ("the image is built without its feature",
+         image_build, image_build.replace(IMAGE_FEATURE, "other"), "preserving"),
+        ("the image is built with --all-features",
+         image_build, image_build.replace(f"--features {IMAGE_FEATURE}", "--all-features"),
+         "preserving"),
+        ("the image build names another binary",
+         image_build, image_build.replace('--bin "$IMAGE_BIN"', "--bin rw_lock_oracle"),
+         "preserving"),
+        ("the image is built for the host",
+         image_build, image_build.replace('--target "$CROSS_TARGET" ', ""), "preserving"),
+        ("the image check is echoed, not run", image_check, "echo " + image_check, "preserving"),
+        ("the image check reads the debug image",
+         image_check, image_check.replace("/release/", "/debug/"), "preserving"),
+        ("the image check's failure is discarded by `|| true`",
+         image_check, image_check.replace('"\n', '" || true\n'), "preserving"),
+        ("the FP check never reads the image",
+         image_fp, image_fp.replace("/release/", "/debug/"), "preserving"),
+    ]
+    image_clippy = f"--features hw_target,{IMAGE_FEATURE} --lib --bins"
+    assert GOOD_GATE.count(image_clippy) == 1
+    image_cases += [
+        ("the cross clippy lane lints the library alone",
+         image_clippy, f"--features hw_target,{IMAGE_FEATURE} --lib", "preserving"),
+        ("the cross clippy lane drops the image's feature",
+         image_clippy, "--features hw_target --lib --bins", "preserving"),
+    ]
+    for label, old, new, mutation in image_cases:
+        fixture = baseline()
+        fixture[GATE_SCRIPT] = GOOD_GATE.replace(old, new)
+        cases.append(Case(label, fixture, True, check="gate_script", mutation=mutation))
+    for label, old, new, target in [
+        ("the toolchain drops llvm-tools",
+         '"clippy", "rustfmt", "llvm-tools"', '"clippy", "rustfmt"', TOOLCHAIN_FILE),
+        ("the toolchain names llvm-tools only in a comment",
+         'components = ["clippy", "rustfmt", "llvm-tools"]',
+         'components = ["clippy", "rustfmt"]  # llvm-tools', TOOLCHAIN_FILE),
+        ("the toolchain lists the hard-float target",
+         f'targets = ["{CROSS_TARGET}"]', 'targets = ["aarch64-unknown-none"]', TOOLCHAIN_FILE),
+        ("the CI job installs clippy but not llvm-tools",
+         "components: clippy, llvm-tools", "components: clippy, llvm-tools-preview", WORKFLOW_FILE),
+    ]:
+        fixture = baseline()
+        base = fixture[target]
+        assert old in base, label
+        fixture[target] = base.replace(old, new)
+        check = "toolchain" if target == TOOLCHAIN_FILE else "workflow"
+        cases.append(Case(label, fixture, True, check=check, mutation="preserving"))
+
     # A case expected to be CAUGHT must actually differ from the clean
     # baseline.  A mutation that silently no-ops -- because the string it
     # replaced is not in the fixture -- produces a case that asserts
     # nothing while reading as coverage.  That happened here once already,
     # so it is checked rather than trusted.
     clean = baseline()
+    # WS-BP BP1: the Lean archive lane.  Every case keeps the tokens.
+    lane = GOOD_LEAN_LANE
+    builder_line = f'python3 "${{SCRIPT_DIR}}/{LEAN_ARCHIVE_BUILDER.split("/")[-1]}"\n'
+    gate_line = f'python3 "${{SCRIPT_DIR}}/{ENTRY_GATE.split("/")[-1]}" {ENTRY_GATE_CROSS_FLAG}\n'
+    for label, mutated in [
+        ("lane echoes the builder", lane.replace(builder_line, "echo " + builder_line)),
+        ("lane runs the builder's self-test only",
+         lane.replace(builder_line, builder_line.replace('"\n', '" --self-test\n'))),
+        ("lane keeps --require-cross on another command",
+         lane.replace(gate_line, gate_line.replace(f" {ENTRY_GATE_CROSS_FLAG}", "")
+                      + f"echo {ENTRY_GATE_CROSS_FLAG}\n")),
+        ("lane reconciles before it builds", lane.replace(builder_line + gate_line, gate_line + builder_line)),
+        ("lane discards the reconciliation's failure", lane.replace(gate_line, gate_line.rstrip("\n") + " || true\n")),
+        ("lane turns errexit back off", lane + "set +e\n"),
+    ] + _lean_image_lane_mutations(lane, builder_line):
+        files = baseline()
+        files[LEAN_ARCHIVE_LANE] = mutated
+        cases.append(Case(label, files, True, check="lean_archive_lane", mutation="preserving"))
+    files = baseline()
+    files[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(f"run: ./{LEAN_ARCHIVE_LANE}", f"run: echo ./{LEAN_ARCHIVE_LANE}")
+    cases.append(Case("workflow echoes the Lean archive lane", files, True, check="workflow", mutation="preserving"))
+    files = baseline()
+    files[WORKFLOW_FILE] = GOOD_WORKFLOW.replace("          components: llvm-tools\n", "          components: clippy\n")
+    cases.append(Case("Lean archive job lacks llvm-tools", files, True, check="workflow", mutation="preserving"))
+    files = baseline()
+    del files[LEAN_ARCHIVE_LANE]
+    cases.append(Case("Lean archive lane missing", files, True, check="lean_archive_lane"))
+
     failures = 0
     for case in cases:
         if case.expect and case.files == clean:

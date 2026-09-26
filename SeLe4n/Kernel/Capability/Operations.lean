@@ -316,10 +316,10 @@ satisfy this obligation by checking rights at the operation layer
 (`cspaceMint`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`) before
 dereferencing the resolved slot.
 
-**AN4-F.1 (CAP-M01)**: tagged with `@[documented_obligation]` and given
-a `Unit` body (marker constant, not a vacuous Prop). Grep the codebase
-with `@\[documented_obligation\]` to enumerate all such caller contracts. -/
-@[documented_obligation] def resolveCapAddress_caller_rights_obligation : Unit := ()
+**AN4-F.1 (CAP-M01)**: typed `DocumentedObligation` (a marker constant,
+not a vacuous Prop). Search the codebase for `: DocumentedObligation` to
+enumerate every such caller contract. -/
+def resolveCapAddress_caller_rights_obligation : DocumentedObligation := .recorded
 
 /-- WS-H13/H-01 (deliverable 10): If `resolveCapAddress` succeeds, the returned
 slot reference points to a valid CNode.

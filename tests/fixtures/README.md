@@ -26,7 +26,10 @@ explicit hash refresh in the same commit.
 | `declassification_taint.expected` | `declassification_taint.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM9.E.3 — the taint-side acceptance trace: the causal chain (a downgrade tags its target, an ORDINARY delivery carries the tag, the next downgrade's snapshot names its predecessor), the three load-bearing negative verdicts (a domain-only detector's false positive, an object-adjacency detector's false negative, two same-domain subjects distinguished by their snapshots), the lifecycle case (a retyped subject's later downgrade names nothing), saturation's upward over-approximation, and the monitor's readable causality verdict with its snapshot-stripped negative control) |
 | `syscall_return_abi.expected` | `syscall_return_abi.expected.sha256` | `tests/SyscallReturnAbiSuite.lean` (WS-RA RA.E.4 — the deterministic return-ABI trace, computed from the live `syscallDispatchFromAbi` decisions: the ABI version, a `Unit` syscall's zero frame decoding as a value, the signal-before-wait badge delivered in `x0`, the blocked outcome's tag, an ABI-mismatch error riding the offset `x1` label, the all-56-discriminant label round trip, the full-width badge frame, and WS-SM SM9.A.10's two audit accessors returning their computed word rather than the caller's own `x0`.  Any change in the return convention — the frame layout, the label offset, the outcome tags — diverges the fixture) |
 | `syscall_return_shape.expected` | `syscall_return_shape.expected.sha256` | `tests/SyscallReturnAbiSuite.lean` **and** `rust/sele4n-abi/tests/conformance.rs` (WS-RR RR7.17 — the `<id> <shape>` return-shape table, asserted byte-for-byte on both sides of the ABI, so the Lean `syscallReturnShape` and the Rust mirror cannot disagree about what a syscall returns; regenerate BOTH deliberately) |
-| `qemu_boot_expected.txt` | *(none — see below)* | `scripts/test_qemu.sh` (AG9-A — two-column `CHECK_NAME` / `expected_fragment` rows, each a substring the QEMU boot log must contain, checked in order).  It carries **no** `.sha256` companion deliberately: the gate SKIPs before launching QEMU until the SM10.1 binary target exists, so nothing compares it yet and a hash would pin it against itself and nothing else — the very shape this file warns about below.  When the boot path lands, the companion lands with it. |
+| `abi_layout.expected` | `abi_layout.expected.sha256` | `tests/SyscallReturnAbiSuite.lean` **and** `rust/sele4n-abi/tests/conformance.rs` (WS-BP BP0.3 — the `MessageInfo` field layout, the syscall register assignment and the ABI's bounds: every bit of the word's owner, measured by decoding that bit alone and requiring the round trip, then each field's shift and width, the register each syscall field travels in (from `arm64DefaultLayout`; the Rust side encodes a request of distinct sentinels), `maxMessageRegisters`, `maxExtraCaps`, `maxLabel`, `errorLabelBase` and `syscallAbiVersion`.  The Lean suite emits it from the kernel's decoder and constants and the Rust suite renders it from the userspace encoder, and both compare against these bytes, so a layout change on either side fails on that side; regenerate BOTH deliberately) |
+| `lean_runtime_conformance.expected` | `lean_runtime_conformance.expected.sha256` | `tests/LeanRuntimeConformanceSuite.lean` **and** `rust/sele4n-hal/src/lean_runtime/conformance.rs` (WS-BP BP2.2 — the kernel's Rust Lean runtime held to upstream's: 9 215 results of the arbitrary-precision `Nat`/`Int` primitives, the string and UTF-8 primitives, the two hash functions and two environment facts, over a corpus at every representation edge.  The Lean suite computes every line on upstream's runtime and compares them with these bytes; the Rust suite recomputes every line with the kernel's runtime.  Regenerate with `lake exe lean_runtime_conformance_suite --emit > tests/fixtures/lean_runtime_conformance.expected`, never by hand, and refresh the checksum) |
+| `boot_map.expected` | `boot_map.expected.sha256` | `tests/Ak9PlatformSuite.lean` **and** `rust/sele4n-hal/src/mmu.rs` (WS-BP BP0.4 — the RPi5 boot map, driven rather than mirrored: for every RAM variant, the regions `rpi5MemoryMapForConfig` declares and the kind `classifyAddress` gives at each boundary probe.  The Lean suite emits it from the Lean map; `mmu::boot_map_tests::the_boot_map_agrees_with_the_lean_map` pushes the same probes, and every boundary constant of the Rust map, through `boot_mapping_for` and a walk of the tables it builds, and requires the Lean map's kind — RAM Normal, device Device, reserved unmapped.  Its first run closed the device window's 2 MiB round-up over space the Lean map reserves.  WS-BP BP3.2 added the `kernelReserved` line — the kernel's reserved extent the bound machine configuration carries — which `mmu::tests::the_kernel_reserved_extent_is_the_lean_and_linker_one` and `scripts/check_link_script.py` hold to `mmu::KERNEL_RESERVED_END` and to `link.ld`'s `KERNEL_RESERVED_END`.  WS-BP BP4.6 added the per-variant `extend` lines — the RAM above the guaranteed gigabyte the HAL maps after the verified parse, which `mmu::boot_map_tests` applies and requires to make the Normal window exactly the variant's RAM — and the BCM2712 address-map correction the three `mmio` lines (`uart`, `gicd`, `gicc`), which `uart.rs` and `gic.rs` read through `mmu::lean_mmio_window` so the drivers' bases and windows are the Lean binding's; the `v0.36.2` audit set the UART window to the device tree's `0x200` block.  The audit's review added two single-valued lines, both read through `mmu::lean_boot_map_scalar`: `physicalAddressWidth` — `rpi5MachineConfig.physicalAddressWidth`, which `mmu::tests::the_lean_physical_address_width_is_the_pe_the_hal_programs_for` holds to the Cortex-A76 `PARange` the HAL derives `TCR_EL1.IPS` from — and `declaredCores` — the RPi5 binding's `coreCount`, which `rust/sele4n-hal/src/boot.rs`'s `lean_declared_core_count_matches_the_rpi5_binding` holds `LEAN_DECLARED_CORE_COUNT` to) |
+| `qemu_boot_expected.txt` | *(none — see below)* | `scripts/test_qemu.sh` (AG9-A — two-column `CHECK_NAME` / `expected_fragment` rows, each a substring the QEMU boot log must contain, checked in order).  It carries **no** `.sha256` companion deliberately: the gate builds the image (`sele4n-kernel`, since BP5.1) and SKIPs before launching QEMU unless `QEMU_MACHINE` names a machine — QEMU models no BCM2712, and WS-BP BP8.1 owns the machine — so nothing compares it yet and a hash would pin it against itself and nothing else — the very shape this file warns about below.  When the boot path lands, the companion lands with it. |
 
 **One fixture per row, and the `Hash` cell holds only that fixture's own
 companion.**  `scripts/scenario_catalog.py check-fixture-index` enforces that
@@ -80,6 +83,39 @@ than a file quietly treated as golden output; and each row's
 `expected_trace_fragment` must name **that row's own** scenario id, because a
 fragment naming a different one is evidence for the wrong assertion.  Those last
 two are checked in Tier 0, before any build.
+
+## The shared device-tree corpus (`dtb/`)
+
+`tests/fixtures/dtb/` is **input**, not golden output: 59 device-tree blobs as
+annotated hex (`<name>.dtb.hex`) and a `MANIFEST` stating, for each, whether its
+structure is readable and the memory regions it declares — or that the region
+read refuses it (WS-BP BP0.1).  Both readers of a device tree consume **all** of
+it against the one manifest — the Rust structure checks in
+`rust/sele4n-hal/src/cmdline.rs` (`dtb_corpus_tests`, over `fdt_layout` and
+`fdt_structure_check`) and the Lean parser in `tests/Ak9PlatformSuite.lean`
+(`dtbCorpus_every_fixture_agrees_with_the_manifest`), which answers both
+columns — so a filter added to one side alone fails that side's assertion
+instead of passing silently.  Its first run found thirteen divergences on the
+Rust side and eight on the Lean side, all fixed on the side that was wrong.
+
+The expectations are **hand-written** in `scripts/generate_dtb_corpus.py`'s case
+table beside the case that produces them; the script renders the bytes and the
+manifest and never computes an expectation, because a third implementation of
+the walk would make the manifest agree with whatever it believes.  Edit a case
+there and run `./scripts/generate_dtb_corpus.py`; never edit a `.dtb.hex` or the
+`MANIFEST` by hand.  Tier 0's `scripts/check_dtb_corpus_consumers.py` (WS-BP
+BP0.2) refuses a stale render, a blob with no manifest row, and a consumer that
+stops reading the corpus; both suites also assert at run time that the manifest
+names exactly the blobs on disk.  No `.sha256` companion: the generator's
+`--check` already pins every byte against its source.
+
+**What it ties since WS-BP BP2.6.**  The boot map is built from linker symbols
+and board constants, so the Rust `/memory` walker is gone and the Lean parse is
+the blob's only reading of memory.  The corpus stays because the pair it ties
+still exists: the Rust side keeps a structure check — the bootargs reader the
+QEMU lanes use runs behind it — and the `structure` column holds that check and
+the Lean parser to one verdict on every blob.  The `regions` column is the Lean
+parser's alone.
 
 ## Regeneration workflow (when a fixture changes intentionally)
 

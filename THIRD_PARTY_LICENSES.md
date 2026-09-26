@@ -187,7 +187,7 @@ third-party MMIO crate, to minimize the runtime attack surface.
 `rust/sele4n-hal/Cargo.toml`, so Cargo resolves it **only** when the crate is
 compiled with `RUSTFLAGS='--cfg loom'`.  That configuration is set by
 `scripts/test_loom_queued_rw_lock.sh` and by nothing else: a plain
-`cargo build`, `cargo test`, `cargo clippy`, the `aarch64-unknown-none` cross
+`cargo build`, `cargo test`, `cargo clippy`, the `aarch64-unknown-none-softfloat` cross
 build and every kernel image resolve no `loom` at all.  It is therefore
 neither a runtime dependency nor a build-script dependency — it is a
 verification tool that replaces `core::sync::atomic` with its own instrumented

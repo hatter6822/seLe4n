@@ -5,9 +5,21 @@ hardware binding is closed at the **proof and code** layers; what follows are
 the **runtime validation** steps that must be performed on a board or in QEMU
 before the binding can be called validated.
 
-**These steps need artefacts SM10.1 has not produced yet** — there is no
-bootable image, so the procedures below are the contract they will be run
-against rather than a procedure you can run today.
+**The image exists since v0.36.2 (WS-BP BP5)**:
+`./scripts/test_lean_aarch64_archive.sh` builds `sele4n-kernel` with the Lean
+kernel linked in and `./scripts/build_rpi5_image.sh` cuts `kernel8.img` +
+`config.txt` to `.lake/build/rpi5-image/`; CI publishes them as the
+`rpi5-kernel-image` artifact.  What has not run yet is a **boot** of that
+image (WS-BP BP8): QEMU ships no machine that models the BCM2712 the image
+programs, and the first board boot is BP8.3.  The procedures below are
+therefore still the contract those runs will be held to, and two things the
+`v0.36.2` audit found must be read before the first one: the binding refuses
+every real board's firmware memory account until plan row BP7.10 derives the
+deployment's RAM from it, and on the Lean-linked image the Phase-7 topology
+refusal halts the system unless every declared PE serves the kernel — so
+`smp_enabled=false` and `smp_max_cores` below the binding's four are not a
+partial bring-up on that image but a halt (they remain a partial bring-up on
+the HAL-only image, which links no Lean kernel).
 
 The Lean kernel + Rust HAL build, link, and pass every host unit test
 without any of the steps below.  These steps verify that the **emitted
@@ -86,7 +98,7 @@ sudo apt install openocd
 # Rust stable (the repo pins the toolchain via rust/rust-toolchain.toml).
 # Run the target-add from rust/ so the pinned toolchain override applies —
 # from the repo root it would land in your default toolchain instead.
-(cd rust && rustup target add aarch64-unknown-none)
+(cd rust && rustup target add aarch64-unknown-none-softfloat && rustup component add llvm-tools)
 
 # Lean 4.28.0 (already installed via setup_lean_env.sh)
 ./scripts/setup_lean_env.sh
@@ -116,17 +128,15 @@ For maximum confidence (real silicon validation):
   USB-to-serial adapter on the host.
 - **Power**: 27 W USB-C PD (Pi 5 official supply).
 
-Building the deployable image (`kernel8.img` + `config.txt`) is **SM10.1
-scope** — the image-packaging script (`scripts/build_rpi5_image.sh`) is
-registered debt tracked in
-[`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`](planning/SMP_RELEASE_CLOSURE_PLAN.md)
-(SM10.1 ships the bootable image). There is **no interim manual path**:
-`sele4n-hal` currently builds as a library crate (no `[[bin]]` target, no
-`main.rs`), so `cargo build -p sele4n-hal` produces an `.rlib` for the
-linker, not a flashable kernel binary — the bootable ELF target, its
-linker script, and the image packaging all arrive together with SM10.1.
-Once they land, flash the packaged image to the SD card and boot the
-board.  All Section 2 tests
+The deployable image (`kernel8.img` + `config.txt`) is built by
+`./scripts/build_rpi5_image.sh` (WS-BP BP5.3, v0.36.2) from the
+`sele4n-kernel` binary the Lean archive lane links under `link.ld`
+(`rust/sele4n-hal/src/bin/sele4n_kernel.rs`, `--features
+hw_target,kernel_image`); `cargo build -p sele4n-hal` alone still produces
+only the HAL's `.rlib`.  Copy the two files to the SD card's boot partition
+and boot the board — the first time that is done is WS-BP BP8.3, after BP7.10
+has made the binding accept the firmware's memory account.  All Section 2
+tests
 that require real silicon (TLB coherence, OSH multi-cluster,
 PMCCNTR_EL0 timing) execute on this path.
 
@@ -141,10 +151,11 @@ and emits the canonical `dsb ishst → dc cvac → dsb ish → tlbi → dsb ish
 → isb → ic iallu` sequence, subsequent instruction fetches must see
 the new mapping.
 
-**Procedure** (the script currently **self-skips** — it needs the SM10.1
-kernel image; registered debt SM10.3.14 in
-`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` — so the steps below describe
-the run once it is wired):
+**Procedure** (the script currently **self-skips** — the image exists since
+BP5, but no QEMU machine models the BCM2712 it programs, and the script is a
+stub registered as SM10.3.14 in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`
+until WS-BP BP8.1 supplies the machine — so the steps below describe the run
+once it is wired):
 
 ```bash
 # 1. Boot the kernel under QEMU with virt machine (8 GB RAM).
@@ -190,10 +201,11 @@ cargo test --manifest-path rust/Cargo.toml -p sele4n-hal barriers
 ```
 
 > `scripts/test_qemu_tlb_cache_coherence.sh` exists but is a
-> **self-skipping stub** until the SM10.1 image pipeline lands (registered
-> as SM10.3.14 in `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`) — it
-> reports `[SKIP]` unconditionally today and exits `SELE4N_SKIP_EXIT`
-> (77), so it can never be mistaken for coherence coverage.
+> **self-skipping stub** until WS-BP BP8.1 gives QEMU a machine the image
+> boots on (registered as SM10.3.14 in
+> `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`) — it reports `[SKIP]`
+> unconditionally today and exits `SELE4N_SKIP_EXIT` (77), so it can never
+> be mistaken for coherence coverage.
 
 > **Planned** — the dedicated instruction-trace audit
 > (`scripts/test_qemu_tlb_barrier_audit.sh`) is registered SM10.3 debt
@@ -372,7 +384,12 @@ than `dsb ish` (both should be ≈ 30 ns on Cortex-A76).
 ### 4.8 AN9-J — SMP secondary-core bring-up
 
 **What we're checking:** with SMP enabled (the default), all 4 cores reach
-their per-core `core_ready` flag and execute concurrent kernel work.
+their per-core `core_ready` flag and execute concurrent kernel work.  On the
+Lean-linked image that is not optional: since BP6 the boot core's Phase 7
+halts the system unless every PE the binding declares (four on the RPi5) is
+IRQ-ready **and** Lean-ready within one second, so `smp_enabled=false` or an
+`smp_max_cores` below four halts that image rather than booting fewer cores
+(`rust/sele4n-hal/src/boot.rs`, the `hw_target` refusal).
 
 **Procedure:**
 
@@ -409,18 +426,20 @@ EL2 or enable PSCI in the firmware build.
 `PerCpuData` slot in the `PER_CPU_DATA` array, so a per-core
 identifier lookup is a single `mrs xN, tpidr_el1` instruction.
 
-**Boot core (always reachable, even with `smp_enabled=false` on the
-kernel command line):**
+**Boot core (always reachable on the HAL-only image, even with
+`smp_enabled=false` on the kernel command line; on the Lean-linked image
+`smp_enabled=false` halts at Phase 7, see §4.8):**
 
 ```bash
 # QEMU boot — primary core only.
 ./scripts/test_qemu.sh
 ```
 
-> Note: until SM10.1 lands the `sele4n-hal` bootable binary target, this
-> script SKIPs gracefully at its kernel-binary check (the crate builds as
-> a library today). Once the binary exists and QEMU runs, the assertions
-> are **hard failures**: empty serial output, a missing boot banner, or
+> Note: the script builds the real image (`sele4n-kernel`, BP5.1) and then
+> SKIPs unless `QEMU_MACHINE` names a machine, because QEMU models no
+> BCM2712 and the image's console and GIC are the BCM2712's (WS-BP BP8.1
+> owns the machine).  Once it runs, the assertions are **hard failures**:
+> empty serial output, a missing boot banner, or
 > any fragment of `tests/fixtures/qemu_boot_expected.txt` absent from the
 > boot log fails the script — a hung kernel cannot soft-pass.
 
@@ -536,9 +555,9 @@ checklist before tagging:
         `NIGHTLY_ENABLE_EXPERIMENTAL=1` is what makes Tier 4 run at all, and
         without it the tier reports NOT RUN and strict mode fails — which is
         the intended behaviour, since a strict run that never reached the
-        gates certifies nothing. Run this after SM10.1.1 produces the
-        bootable image; before that image exists the gates report NOT RUN and
-        this box cannot be ticked.
+        gates certifies nothing. The image exists since v0.36.2 (BP5); run
+        this once WS-BP BP8.1 gives the QEMU lanes a machine that boots it —
+        until then the gates report NOT RUN and this box cannot be ticked.
   - [ ] §4.1 — TLB+Cache coherency (AN9-A)
   - [ ] §4.2 — TLBI bracket audit (AN9-B)
   - [ ] §4.3 — `suspendThread` atomicity (AN9-D)

@@ -46,9 +46,10 @@ a theorem, not a benchmark — and the CNode radix tree gets the same treatment.
 
 ## 6. Hardware and build
 
-The HAL compiles and generates code for `aarch64-unknown-none` in both
-profiles, with the three assembly sources verified to have assembled and clippy
-denied on the cross target. Broadcast TLB maintenance is confined and gated. No
+The HAL compiles and generates code for `aarch64-unknown-none-softfloat` in
+both profiles, with the three assembly sources verified to have assembled,
+clippy denied on the cross target, and the release objects proven to use no
+FP/SIMD register. Broadcast TLB maintenance is confined and gated. No
 third-party code is linked into the runtime kernel binary.
 
 ## 7. Process

@@ -1547,7 +1547,7 @@ theorem arm64_regCount_valid :
     with the ARM64 architecture. -/
 theorem machineConfig_registerCount_default_eq_arm64GPRCount :
     ({ registerWidth := 64, virtualAddressWidth := 48,
-       physicalAddressWidth := 44, pageSize := 4096,
+       physicalAddressWidth := 40, pageSize := 4096,
        maxASID := 65536, memoryMap := [] } : MachineConfig).registerCount
     = RegName.arm64GPRCount := rfl
 
