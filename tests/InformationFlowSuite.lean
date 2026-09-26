@@ -867,8 +867,8 @@ def runInformationFlowChecks : IO Unit := do
   -- beside it is the single-CNode primitive that composite opens with, and
   -- naming *that* one would be a boundary entry for an inner step while the
   -- seam a capability actually reaches is the composite).
-  expect "enforcement boundary: total 45 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 45)
+  expect "enforcement boundary: total 46 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 46)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
@@ -1447,12 +1447,12 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-RR RR8.16 (`v0.35.190`): 27 → 28 with `cspaceRevokeCdt`, capability-only
   -- because the `.cspaceRevoke` arm's authority is the invoked CNode's write
   -- right and no information-flow policy is consulted.
-  expect "enforcement boundary has 28 capability-only"
-    (coCount = 28)
+  expect "enforcement boundary has 29 capability-only"
+    (coCount = 29)
   expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "enforcement boundary total is 45"
-    (boundary.length = 45)
+  expect "enforcement boundary total is 46"
+    (boundary.length = 46)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1552,8 +1552,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 45 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 45)
+  expect "enforcementBoundaryExtended has 46 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 46)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

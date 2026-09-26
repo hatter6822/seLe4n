@@ -8,7 +8,7 @@
 //!
 //! ## Mirror discipline
 //!
-//! `SyscallId` here mirrors the 36-variant enum in
+//! `SyscallId` here mirrors the 37-variant enum in
 //! `sele4n-types/src/syscall.rs`.  We do NOT depend on `sele4n-types`
 //! in the runtime build (the HAL crate is the lowest-level workspace
 //! member with zero runtime dependencies, by design — see
@@ -82,7 +82,7 @@ impl DispatchError {
     }
 }
 
-/// AN9-F: 35-variant syscall ID enum mirroring
+/// AN9-F: 37-variant syscall ID enum mirroring
 /// `sele4n-types::SyscallId`.  Discriminants align with the Lean
 /// `SyscallId.toNat` encoding so a `u64` syscall id read from the
 /// trap frame's `x7` register decodes identically on both sides.
@@ -145,14 +145,19 @@ pub enum SyscallId {
     /// in the named slot (seL4's `seL4_CNode_Revoke`).  The source slot itself
     /// survives — revocation destroys derivations, not the capability.
     CspaceRevoke = 35,
+    /// WS-BP BP7.1 (`v0.36.5`): carve a frame out of an untyped the caller
+    /// holds (seL4's `seL4_Untyped_Retype`); invoked on the untyped
+    /// capability, x2..x5 = type tag, child object id, destination CNode
+    /// capability address, destination slot.
+    UntypedRetype = 36,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 36;
+    pub const COUNT: u32 = 37;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
-    /// outside the valid 0..=33 range with `None`.
+    /// outside the valid `0..COUNT` range with `None`.
     pub const fn from_u32(v: u32) -> Option<Self> {
         match v {
             0 => Some(Self::Send),
@@ -191,6 +196,7 @@ impl SyscallId {
             33 => Some(Self::DeclassifySignal),
             34 => Some(Self::TcbSetFaultHandler),
             35 => Some(Self::CspaceRevoke),
+            36 => Some(Self::UntypedRetype),
             _ => None,
         }
     }
@@ -229,6 +235,9 @@ impl SyscallId {
             // WS-RR RR8.16: the revoke takes the delete's argument layout —
             // x2 = the slot of the invoked CNode whose derivations go.
             Self::CspaceRevoke => 1,
+            // WS-BP BP7.1: type tag, child id, destination CNode, destination
+            // slot — all four inline message registers.
+            Self::UntypedRetype => 4,
             Self::LifecycleRetype => 3,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
@@ -1220,7 +1229,10 @@ mod tests {
         // WS-RR RR8.16: the revoke takes the delete's one-register layout.
         assert_eq!(SyscallId::CspaceRevoke.min_inline_args(), 1);
         assert_eq!(SyscallId::from_u32(35), Some(SyscallId::CspaceRevoke));
-        assert_eq!(SyscallId::from_u32(36), None);
+        // WS-BP BP7.1: the carve takes all four inline registers.
+        assert_eq!(SyscallId::UntypedRetype.min_inline_args(), 4);
+        assert_eq!(SyscallId::from_u32(36), Some(SyscallId::UntypedRetype));
+        assert_eq!(SyscallId::from_u32(37), None);
     }
 
     // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid

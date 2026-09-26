@@ -1,3 +1,99 @@
+## v0.36.5 — WS-BP BP7.1, slice 2: the untyped carve — `.untypedRetype` is the one source of frames
+
+Slice 1 made `.vspaceMap` map only memory the caller holds a frame capability
+for, and then no reachable state held a frame: the boot refuses a configured
+one, the in-place retype refuses a memory-backed replacement, and nothing else
+minted one.  So the mapping arm was sound and unusable.  This slice adds
+seL4's `seL4_Untyped_Retype` at the frame type, so a thread that holds memory
+as an untyped can hand itself pages.
+
+**The syscall.**  `SyscallId.untypedRetype` is discriminant `36`
+(`SyscallId.count` 37), capability-gated on `.retype` over the untyped.  Its
+four message registers (`UntypedRetypeArgs`: type tag, child id, destination
+CNode address, destination slot) decode with the error, round-trip and
+insufficient-register theorems every arm carries; any type but `.frame` is
+refused `.invalidArgument` — the in-place `.lifecycleRetype` is how the kernel
+creates its own objects, and the carve exists for memory a thread is handed
+*as memory*.  The child id is a raw operand and passes `validateObjIdArg`
+first.  The destination CNode is resolved through the caller's CSpace with
+`.write` (`resolveUntypedRetype`).
+
+**The transition** (`untypedRetypeFrame`, `Lifecycle/Operations/ScrubAndUntyped.lean`):
+
+- the frame is `untypedNextFrame ut` — the untyped's region base plus its
+  watermark, device flag inherited — and `untypedNextFrame_of_retype_ok` proves
+  that a successful carve's base lies in the untyped's region and is
+  page-aligned, so the frame names memory the untyped owned;
+- `retypeFromUntyped` advances the watermark and stores the frame at the child
+  id; its device rule now admits a device untyped for **memory-backed** kinds
+  (a device frame), where it used to refuse every kind but an untyped;
+- a RAM frame's page is zeroed before any capability to it exists
+  (`carveZeroFrame`, `carveZeroFrame_zeroed`); a device frame is not written,
+  because writing a device register is not zeroing it;
+- the frame capability (read, write, grant) goes into an empty slot through
+  `cspaceInsertSlot`, so the radix and occupancy guards apply;
+- the derivation is recorded as a new `DerivationOp.retype` edge from the
+  untyped's slot, so revoking the untyped reaches the frame capability.
+
+`untypedRetypeFrame_ok_decompose` and `untypedRetypeFrame_ok_frame` state what
+a successful carve did.
+
+**Invariants and footprints.**  `untypedRetypeFrame_preserves_ipcInvariantFull`
+covers the arm, and `dispatchCapabilityOnly_preserves_ipcInvariantFull` gains
+the case.  It rests on two framework additions: `ipcReadInert` classifies a
+frame as inert (no IPC conjunct reads one), and
+`ipcReadViewAgreement.of_fresh_inert_write` handles a store at a key that held
+nothing.  `lockSet_untypedRetype` declares six members, the new `pageLock`
+among them, with its size bound and kind consistency; `permittedKinds
+.untypedRetype` is `[.tcb, .cnode, .untyped, .page, .objStore]`.  The scheduler
+domain declares no footprint for it, because the carve writes no scheduler
+state.  `retypeFromUntyped` is now reachable, so it leaves the reachability
+census's pin.
+
+**The tables that enumerate syscalls** moved with the count:
+
+- the enforcement boundary (46 entries, capability-only `untypedRetypeFromCap`);
+- the per-core covert-channel catalogue (61);
+- the return shape (`.unit`, with `syscall_return_shape.expected` regenerated);
+- the refusal-seam class (`.exempt`);
+- the capability-fault phase (send);
+- the frozen coverage (`false`, because a carve stores into a fresh key and so
+  needs an append);
+- the taint classification (`.inert`);
+- the lock-set inventory (115 entries).
+
+The phase theorem manifest is 1140 entries and 922 theorems, and the
+de-threaded bundle family is 199.
+
+**Rust.**  The ABI mirrors the syscall in three places:
+
+- `UntypedRetype = 36` and the `Retype` right in `sele4n-types`;
+- the HAL's dispatch mirror, which needs four inline arguments;
+- `UntypedRetypeArgs` in `sele4n-abi`.
+
+`sele4n-sys` gains `untyped_retype` and `untyped_retype_frame`, and the
+conformance suite covers the new syscall's round-trip, boundary and return
+shape.
+
+**Tests.**  `tests/VSpaceCapabilityBindingSuite.lean` §5d drives the live arm.
+It carves a RAM frame and asserts the page is zeroed and the capability
+installed, maps that frame through `.vspaceMap`, and carves a second frame at
+the advanced watermark.  It also carves a device frame and asserts its page is
+left as it was.  Each refusal is driven too:
+
+- a non-frame type and an unknown type tag;
+- an untyped capability lacking `.retype`;
+- a destination CNode capability lacking `.write`;
+- a `.retype` capability to a non-untyped object;
+- an occupied slot;
+- a child id that already holds an object, and the sentinel;
+- a fourth carve of a three-page untyped.  Twenty-seven Tier 3 anchors pin the
+slice, mutation-tested.
+
+**Registered.**  Frame destroy (with unmapping) and untyped reset are slice 3;
+carving kinds other than frames — page tables, child untypeds — is slice 4.
+Both are rows in `docs/REGISTERED_DEBT.md` table B.
+
 ## v0.36.4 — WS-BP BP7.1, slice 1: frames — memory is authority, and `.vspaceMap` maps only a frame the caller holds
 
 BP7.1 gives the model's VSpace root a translation-table physical base, and a

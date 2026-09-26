@@ -174,8 +174,8 @@ theorem scrubObjectMemory_establishes_memoryZeroed
 
 Deterministic branch contract:
 1. The source object must exist and be an `UntypedObject` (`untypedTypeMismatch` otherwise).
-2. Device untypeds cannot back typed kernel objects except other untypeds
-   (`untypedDeviceRestriction` if violated).
+2. Device untypeds cannot back typed kernel objects except the memory-backed
+   kinds — other untypeds and frames (`untypedDeviceRestriction` if violated).
 3. The allocation size must be at least `objectTypeAllocSize` for the target type
    (`untypedAllocSizeTooSmall` otherwise).
 4. S5-G: For VSpace roots and CNodes, the allocation base address
@@ -215,7 +215,12 @@ def retypeFromUntyped
         else if ut.children.any (fun c => c.objId == childId) then
           .error .childIdCollision
         -- Device untypeds cannot back typed kernel objects (except other untypeds)
-        else if ut.isDevice && newObj.objectType != .untyped then
+        -- WS-BP BP7.1 (`v0.36.5`): a device untyped backs exactly the
+        -- memory-backed kinds — a child untyped, and a **frame**, which is how
+        -- a driver is handed MMIO — and nothing the kernel itself reads.  This
+        -- is seL4's rule (`Untyped_Retype` on a device untyped yields frames
+        -- and untypeds only); it read `!= .untyped` while no frame existed.
+        else if ut.isDevice && !newObj.objectType.memoryBacked then
           .error .untypedDeviceRestriction
         -- Allocation size must be at least the minimum for the target object type
         else if allocSize < objectTypeAllocSize newObj.objectType then
@@ -343,7 +348,7 @@ theorem retypeFromUntyped_ok_decompose
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     ∃ ut ut' cap stLookup stUt offset,
       st.objects[untypedId]? = some (.untyped ut) ∧
-      (ut.isDevice = false ∨ newObj.objectType = .untyped) ∧
+      (ut.isDevice = false ∨ newObj.objectType.memoryBacked = true) ∧
       ¬(allocSize < objectTypeAllocSize newObj.objectType) ∧
       cspaceLookupSlot authority st = .ok (cap, stLookup) ∧
       lifecycleRetypeAuthority cap untypedId = true ∧
@@ -419,16 +424,14 @@ theorem retypeFromUntyped_ok_decompose
                                 simp [hStoreUt] at hStep
                                 exact ⟨ut, ut', cap, stLookup, stUt, offset, rfl, Or.inl hDevBool, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
                     · simp [hAuth] at hStep
-          · -- ut.isDevice = true: need objectType check
-            by_cases hObjType : newObj.objectType = KernelObjectType.untyped
-            · -- objectType = untyped: device check passes
-              have hBne : (newObj.objectType != KernelObjectType.untyped) = false := by
-                simp [bne, hObjType]
-              simp [hBne] at hStep
+          · -- ut.isDevice = true: the target must be memory-backed
+            -- (WS-BP BP7.1: an untyped or a frame).
+            by_cases hObjType : newObj.objectType.memoryBacked = true
+            · simp only [hObjType, Bool.not_true, Bool.and_false, Bool.false_eq_true,
+                ↓reduceIte] at hStep
               by_cases hAllocSz : allocSize < objectTypeAllocSize newObj.objectType
               · simp [hAllocSz] at hStep
               · simp only [hAllocSz, ↓reduceIte] at hStep
-                -- S5-G: split on alignment condition
                 split at hStep
                 · simp at hStep
                 · cases hLookup : cspaceLookupSlot authority st with
@@ -443,7 +446,6 @@ theorem retypeFromUntyped_ok_decompose
                         | some result =>
                             rcases result with ⟨ut', offset⟩
                             simp [hAlloc] at hStep
-                            -- U-H02: split on post-allocation alignment check
                             split at hStep
                             · simp at hStep
                             · cases hStoreUt : storeObject untypedId (.untyped ut') stLookup with
@@ -454,10 +456,8 @@ theorem retypeFromUntyped_ok_decompose
                                   exact ⟨ut, ut', cap, stLookup, stUt, offset,
                                     rfl, Or.inr hObjType, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
                       · simp [hAuth] at hStep
-            · -- objectType != untyped: device restriction fires -> contradiction
-              have hBne : (newObj.objectType != KernelObjectType.untyped) = true := by
-                simp [bne, hObjType]
-              simp [hBne] at hStep
+            · -- not memory-backed: device restriction fires -> contradiction
+              simp [hObjType] at hStep
 
 /-- AN4-G.4 (LIF-M04): **retype atomicity under sequential semantics.**
 The `retypeFromUntyped` primitive performs two mutations back-to-back: the
@@ -526,7 +526,7 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
     (hNeSelf : childId ≠ untypedId)
     (hNoCollision : st.objects[childId]?.isSome = false)
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
-    (hNotDev : ut.isDevice = false ∨ newObj.objectType = .untyped)
+    (hNotDev : ut.isDevice = false ∨ newObj.objectType.memoryBacked = true)
     (hSmall : allocSize < objectTypeAllocSize newObj.objectType) :
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedAllocSizeTooSmall := by
@@ -535,11 +535,10 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
   simp [hObj, hCapF, hNeSelf, hNoCollision, hFreshChildren]
   cases hNotDev with
   | inl hFalse => simp [hFalse, hSmall]
-  | inr hUt =>
-      rw [hUt] at hSmall
+  | inr hMB =>
       by_cases hDevBool : ut.isDevice
-      · simp [hDevBool, hUt, hSmall]
-      · simp [hDevBool, hUt, hSmall]
+      · simp [hDevBool, hMB, hSmall]
+      · simp [hDevBool, hSmall]
 
 /-- WS-F2: `retypeFromUntyped` returns `untypedRegionExhausted` when allocation cannot fit.
 S5-G: Alignment check must pass (or type doesn't require it) for this error to be reached. -/
@@ -552,7 +551,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (hNeSelf : childId ≠ untypedId)
     (hNoCollision : st.objects[childId]?.isSome = false)
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
-    (hNotDev : ut.isDevice = false ∨ newObj.objectType = .untyped)
+    (hNotDev : ut.isDevice = false ∨ newObj.objectType.memoryBacked = true)
     (hAllocSzOk : ¬(allocSize < objectTypeAllocSize newObj.objectType))
     (hAlignOk : (requiresPageAlignment newObj.objectType && !allocationBasePageAligned ut) = false)
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
@@ -567,11 +566,9 @@ theorem retypeFromUntyped_error_regionExhausted
   | inl hFalse =>
       simp only [hFalse, Bool.false_and, Bool.false_eq_true, ↓reduceIte, hAllocSzOk, hAlignOk,
         ↓reduceIte, hLookup, hAuth, hNoFit]
-  | inr hUt =>
+  | inr hMB =>
       by_cases hDevBool : ut.isDevice
-      · have hBne : (newObj.objectType != KernelObjectType.untyped) = false := by
-          simp [bne, hUt]
-        simp only [hDevBool, hBne, Bool.true_and, Bool.false_eq_true, ↓reduceIte,
+      · simp only [hDevBool, hMB, Bool.not_true, Bool.true_and, Bool.false_eq_true, ↓reduceIte,
           hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
       · simp only [hDevBool, Bool.false_and, Bool.false_eq_true, ↓reduceIte,
           hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
@@ -823,6 +820,274 @@ theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps
                         · simpa using hDelete
                         · exact hLookup
                         · simpa [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete, hLookup] using hStep
+
+
+-- ============================================================================
+-- WS-BP BP7.1 (`v0.36.5`): the untyped carve that mints frames
+-- ============================================================================
+
+/-- **WS-BP BP7.1: the frame an untyped's next page would be.**
+
+The page at the untyped's current watermark — `regionBase + watermark` —
+carrying the untyped's own device flag.  One definition, read by the carve that
+creates the frame and by every statement about which memory it names, so the
+two cannot describe different pages.  seL4's `Untyped_Retype` places a frame at
+the untyped's free pointer the same way; a device untyped yields a device frame,
+which is how a driver is handed MMIO. -/
+def untypedNextFrame (ut : UntypedObject) : FrameObject :=
+  { base := SeLe4n.PAddr.ofNat (ut.regionBase.toNat + ut.watermark)
+    isDevice := ut.isDevice }
+
+/-- **WS-BP BP7.1: the capability a carve hands back for a frame.**  Read,
+write and grant — the rights a frame capability's holder can exercise (map
+readable, map writable, hand the frame on).  `.retype` is absent because a
+frame is not retyped; its memory returns to its untyped (BP7.1 slice 3). -/
+def frameCapability (frameId : SeLe4n.ObjId) : Capability :=
+  { target := .object frameId
+    rights := AccessRightSet.ofList [.read, .write, .grant] }
+
+/-- **WS-BP BP7.1: the memory write a carve performs.**  A RAM frame's page is
+zeroed before any capability to it exists, so the memory a thread is handed
+reveals nothing that was there before — firmware scratch, boot data, a previous
+owner.  A **device** frame is not touched: its page is MMIO, where a store is a
+command to a device rather than a scrub. -/
+def carveZeroFrame (st : SystemState) (frame : FrameObject) : SystemState :=
+  if frame.isDevice then st
+  else { st with machine := SeLe4n.zeroMemoryRange st.machine frame.base SeLe4n.pageBytes }
+
+/-- **WS-BP BP7.1 (`v0.36.5`): carve one frame out of an untyped the caller holds
+— seL4's `Untyped_Retype` at the frame object type.**
+
+`src` is the slot of the untyped capability the syscall was invoked on, `childId`
+the object id the frame takes, and `dst` the empty slot its capability goes to.
+Four steps, and every refusal commits nothing:
+
+1. **The carve** is `retypeFromUntyped` at `untypedNextFrame ut` and one page —
+   so the authority check (`lifecycleRetypeAuthority`: the capability names this
+   untyped and carries `.retype`), the capacity, fresh-id and self-overwrite
+   guards, the device rule (a device untyped backs memory-backed kinds only),
+   page alignment and the watermark advance are the primitive's own, not a second
+   copy.  The frame's base is the untyped's watermark before the advance, which
+   is the offset `allocate` records for the child.
+2. **The scrub**: a RAM frame's page is zeroed (`carveZeroFrame`).
+3. **The capability**: `frameCapability childId` is installed at `dst` through
+   `cspaceInsertSlot`, the one install primitive, so the destination must be an
+   empty slot its CNode can address.
+4. **The derivation**: the new capability is recorded as a CDT child of the
+   untyped capability (`DerivationOp.retype`), so revoking the untyped
+   capability reaches it — the edge every other install path records.
+
+This is the only path that creates a frame on a live state: the in-place retype
+refuses memory-backed kinds and the boot refuses configured frames, so every
+frame in a reachable state was carved from an untyped by a holder of a
+capability to it. -/
+def untypedRetypeFrame (src : CSpaceAddr) (childId : SeLe4n.ObjId)
+    (dst : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot src st with
+    | .error e => .error e
+    | .ok (utCap, _) =>
+      match utCap.target with
+      | .object untypedId =>
+        match st.getUntyped? untypedId with
+        | none => .error .untypedTypeMismatch
+        | some ut =>
+          let frame := untypedNextFrame ut
+          match retypeFromUntyped src untypedId childId (.frame frame) SeLe4n.pageBytes st with
+          | .error e => .error e
+          | .ok ((), st1) =>
+            match cspaceInsertSlot dst (frameCapability childId) (carveZeroFrame st1 frame) with
+            | .error e => .error e
+            | .ok ((), st2) =>
+              let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st2 src
+              let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
+              .ok ((), { stDst with cdt := stDst.cdt.addEdge srcNode dstNode .retype })
+      | _ => .error .invalidCapability
+
+
+/-- **WS-BP BP7.1**: a successful carve of a page-aligned kind found the
+untyped's watermark on a page boundary — the primitive's S5-G guard, read back.
+It is what makes the base of a carved frame a page a descriptor can name. -/
+theorem retypeFromUntyped_ok_pageAligned
+    (st st' : SystemState) (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject) (allocSize : Nat)
+    (ut : UntypedObject)
+    (hObj : st.objects[untypedId]? = some (.untyped ut))
+    (hReq : requiresPageAlignment newObj.objectType = true)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    allocationBasePageAligned ut = true := by
+  cases hA : allocationBasePageAligned ut
+  · exfalso
+    unfold retypeFromUntyped SystemState.getObject? at hStep
+    simp only [hObj, hReq, hA, Bool.not_false, Bool.and_true, ↓reduceIte] at hStep
+    repeat (split at hStep <;> (try cases hStep))
+    all_goals cases hStep
+  · rfl
+
+
+/-- **WS-BP BP7.1: what a successful carve consists of** — the four steps of
+`untypedRetypeFrame`, read back.  The capability lookup returns the state it
+was given, so every later step runs from `st` itself.  One owner for the case
+analysis, so the invariant proofs that consume a carve read these equations
+rather than re-running the operation's `match`. -/
+theorem untypedRetypeFrame_ok_decompose
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (st st' : SystemState)
+    (hStep : untypedRetypeFrame src childId dst st = .ok ((), st')) :
+    ∃ (utCap : Capability) (untypedId : SeLe4n.ObjId) (ut : UntypedObject)
+      (st1 st2 : SystemState),
+      cspaceLookupSlot src st = .ok (utCap, st) ∧
+      utCap.target = .object untypedId ∧
+      st.getUntyped? untypedId = some ut ∧
+      retypeFromUntyped src untypedId childId (.frame (untypedNextFrame ut))
+        SeLe4n.pageBytes st = .ok ((), st1) ∧
+      cspaceInsertSlot dst (frameCapability childId)
+        (carveZeroFrame st1 (untypedNextFrame ut)) = .ok ((), st2) ∧
+      st' = (let p1 := SystemState.ensureCdtNodeForSlot st2 src
+             let p2 := SystemState.ensureCdtNodeForSlot p1.snd dst
+             { p2.snd with cdt := p2.snd.cdt.addEdge p1.fst p2.fst .retype }) := by
+  unfold untypedRetypeFrame at hStep
+  cases hLk : cspaceLookupSlot src st with
+  | error e => rw [hLk] at hStep; cases hStep
+  | ok pair =>
+    obtain ⟨utCap, stL⟩ := pair
+    have hStL : stL = st := cspaceLookupSlot_ok_state_eq st src utCap stL hLk
+    subst hStL
+    rw [hLk] at hStep
+    simp only at hStep
+    cases hTgt : utCap.target with
+    | object untypedId =>
+      rw [hTgt] at hStep
+      simp only at hStep
+      cases hUt : stL.getUntyped? untypedId with
+      | none => rw [hUt] at hStep; cases hStep
+      | some ut =>
+        rw [hUt] at hStep
+        simp only at hStep
+        cases hRt : retypeFromUntyped src untypedId childId (.frame (untypedNextFrame ut))
+            SeLe4n.pageBytes stL with
+        | error e => rw [hRt] at hStep; cases hStep
+        | ok p1 =>
+          obtain ⟨_, st1⟩ := p1
+          rw [hRt] at hStep
+          simp only at hStep
+          cases hIns : cspaceInsertSlot dst (frameCapability childId)
+              (carveZeroFrame st1 (untypedNextFrame ut)) with
+          | error e => rw [hIns] at hStep; cases hStep
+          | ok p2 =>
+            obtain ⟨_, st2⟩ := p2
+            rw [hIns] at hStep
+            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+            exact ⟨utCap, untypedId, ut, st1, st2, by first | exact hLk | rfl,
+              by first | exact hTgt | rfl, by first | exact hUt | rfl,
+              by first | exact hRt | rfl, by first | exact hIns | rfl, hStep.symm⟩
+    | _ => rw [hTgt] at hStep; cases hStep
+
+/-- **WS-BP BP7.1: the carved frame's page is inside its untyped, on a page
+boundary, and of its untyped's memory kind.**  The whole of what "memory is
+authority" asks of a carve: the frame names one page the untyped owned
+(`[regionBase, regionBase + regionSize)`), a descriptor can name it, and a
+device untyped cannot be turned into RAM or the reverse. -/
+theorem untypedNextFrame_of_retype_ok
+    (st st' : SystemState) (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject)
+    (hObj : st.objects[untypedId]? = some (.untyped ut))
+    (hStep : retypeFromUntyped authority untypedId childId
+      (.frame (untypedNextFrame ut)) SeLe4n.pageBytes st = .ok ((), st')) :
+    ut.regionBase.toNat ≤ (untypedNextFrame ut).base.toNat ∧
+    (untypedNextFrame ut).base.toNat + SeLe4n.pageBytes ≤
+      ut.regionBase.toNat + ut.regionSize ∧
+    (untypedNextFrame ut).wellFormed ∧
+    (untypedNextFrame ut).isDevice = ut.isDevice := by
+  obtain ⟨ut₀, ut', _, _, _, offset, hObj₀, _, _, _, _, hAlloc, _, _⟩ :=
+    retypeFromUntyped_ok_decompose st st' authority untypedId childId _ _ hStep
+  rw [hObj] at hObj₀
+  have hEq : ut₀ = ut := by cases hObj₀; rfl
+  subst hEq
+  have hAligned := retypeFromUntyped_ok_pageAligned st st' authority untypedId childId
+    _ _ ut₀ hObj rfl hStep
+  have hCan := ((UntypedObject.allocate_some_iff ut₀ childId _ _).mp hAlloc).1
+  simp only [UntypedObject.canAllocate, Bool.and_eq_true, decide_eq_true_eq] at hCan
+  simp only [allocationBasePageAligned, beq_iff_eq] at hAligned
+  refine ⟨?_, ?_, ?_, rfl⟩
+  · show ut₀.regionBase.toNat ≤ ut₀.regionBase.toNat + ut₀.watermark
+    omega
+  · show ut₀.regionBase.toNat + ut₀.watermark + SeLe4n.pageBytes ≤ _
+    omega
+  · show (ut₀.regionBase.toNat + ut₀.watermark) % SeLe4n.pageBytes = 0
+    simpa [SeLe4n.pageBytes] using hAligned
+
+
+/-- **WS-BP BP7.1**: the scrub moves no object. -/
+@[simp] theorem carveZeroFrame_objects (st : SystemState) (frame : FrameObject) :
+    (carveZeroFrame st frame).objects = st.objects := by
+  unfold carveZeroFrame; split <;> rfl
+
+/-- **WS-BP BP7.1**: ...and no scheduler state. -/
+@[simp] theorem carveZeroFrame_scheduler (st : SystemState) (frame : FrameObject) :
+    (carveZeroFrame st frame).scheduler = st.scheduler := by
+  unfold carveZeroFrame; split <;> rfl
+
+/-- **WS-BP BP7.1**: ...and every other field but `machine` — the record is the
+input with the machine's memory rewritten, or the input itself. -/
+theorem carveZeroFrame_eq (st : SystemState) (frame : FrameObject) :
+    carveZeroFrame st frame = { st with machine := (carveZeroFrame st frame).machine } := by
+  unfold carveZeroFrame; split <;> rfl
+
+/-- **WS-BP BP7.1**: a RAM frame's page is zero after the scrub. -/
+theorem carveZeroFrame_zeroed (st : SystemState) (frame : FrameObject)
+    (hRam : frame.isDevice = false) :
+    SeLe4n.memoryZeroed (carveZeroFrame st frame).machine frame.base SeLe4n.pageBytes := by
+  unfold carveZeroFrame
+  simp only [hRam, Bool.false_eq_true, ↓reduceIte]
+  exact SeLe4n.zeroMemoryRange_establishes_memoryZeroed st.machine _ _
+
+/-- **WS-BP BP7.1: the carve's payoff** — after a successful carve the store holds
+the frame at the child id, that frame is the page at the untyped's watermark, and
+the destination CNode holds the frame capability at the destination slot.  With
+`untypedNextFrame_of_retype_ok` this is the whole claim: the caller now holds a
+capability to one page of memory its untyped owned, and no other. -/
+theorem untypedRetypeFrame_ok_frame
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeFrame src childId dst st = .ok ((), st')) :
+    ∃ (untypedId : SeLe4n.ObjId) (ut : UntypedObject),
+      st.objects[untypedId]? = some (.untyped ut) ∧
+      st'.getFrame? childId = some (untypedNextFrame ut) ∧
+      ut.regionBase.toNat ≤ (untypedNextFrame ut).base.toNat ∧
+      (untypedNextFrame ut).base.toNat + SeLe4n.pageBytes ≤
+        ut.regionBase.toNat + ut.regionSize ∧
+      (untypedNextFrame ut).wellFormed ∧
+      (untypedNextFrame ut).isDevice = ut.isDevice ∧
+      ∃ cn : CNode, st'.objects[dst.cnode]? =
+        some (.cnode (cn.insert dst.slot (frameCapability childId))) := by
+  obtain ⟨_, untypedId, ut, st1, st2, _, _, hUt, hRt, hIns, rfl⟩ :=
+    untypedRetypeFrame_ok_decompose src dst childId st st' hStep
+  have hObj : st.objects[untypedId]? = some (.untyped ut) := by
+    unfold SystemState.getUntyped? at hUt
+    split at hUt
+    · rename_i u hU; cases hUt; exact hU
+    · cases hUt
+  obtain ⟨_, ut', _, stL, stUt, _, _, _, _, hLkR, _, _, hStUt, hStCh⟩ :=
+    retypeFromUntyped_ok_decompose st st1 src untypedId childId _ _ hRt
+  have hStL : stL = st := cspaceLookupSlot_ok_state_eq st src _ stL hLkR
+  rw [hStL] at hStUt
+  have hInvUt := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt
+  have hInv1 := storeObject_preserves_objects_invExt _ _ _ _ hInvUt hStCh
+  have hAt1 : st1.objects[childId]? = some (.frame (untypedNextFrame ut)) :=
+    storeObject_objects_eq _ _ _ _ hInvUt hStCh
+  have hInvZ : (carveZeroFrame st1 (untypedNextFrame ut)).objects.invExt := by
+    rw [carveZeroFrame_objects]; exact hInv1
+  obtain ⟨cn, hCnPre, hCnPost⟩ := cspaceInsertSlot_objects_eq _ _ _ _ hInvZ hIns
+  have hNe : childId ≠ dst.cnode := by
+    intro h; rw [carveZeroFrame_objects, ← h, hAt1] at hCnPre; cases hCnPre
+  have hAt2 : st2.objects[childId]? = some (.frame (untypedNextFrame ut)) := by
+    rw [cspaceInsertSlot_preserves_objects_ne _ _ _ _ _ hNe hInvZ hIns,
+      carveZeroFrame_objects]; exact hAt1
+  obtain ⟨hLo, hHi, hWf, hDev⟩ := untypedNextFrame_of_retype_ok st st1 src untypedId childId
+    ut hObj hRt
+  refine ⟨untypedId, ut, hObj, ?_, hLo, hHi, hWf, hDev, ?_⟩
+  · simp only [SystemState.getFrame?, SystemState.ensureCdtNodeForSlot_objects_eq, hAt2]
+  · exact ⟨cn, by simp only [SystemState.ensureCdtNodeForSlot_objects_eq, hCnPost]⟩
 
 
 

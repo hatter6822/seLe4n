@@ -241,6 +241,14 @@ def enforcementBoundary : List EnforcementClass :=
   -- while the seam a capability actually reaches is the composite that walks the
   -- derivation tree across arbitrary CSpaces.
   , .capabilityOnly "cspaceRevokeCdt"
+  -- **WS-BP BP7.1 (`v0.36.5`)**: the untyped carve, named at the transition the
+  -- live `.untypedRetype` arm calls — the decode, the two slot resolutions and
+  -- `untypedRetypeFrame` behind them.  Capability-only: the authority is the
+  -- untyped capability (its `.retype` right) and a writable capability to the
+  -- destination CNode, and nothing flows between labelled principals — the
+  -- carved memory is fresh and a RAM page is zeroed before any capability to it
+  -- exists.
+  , .capabilityOnly "untypedRetypeFromCap"
   -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
@@ -382,6 +390,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceDelete => "cspaceDeleteSlot"
   | .cspaceRevoke => "cspaceRevokeCdt"
   | .lifecycleRetype => "lifecycleRetypeObject"
+  | .untypedRetype => "untypedRetypeFromCap"
   | .vspaceMap => "vspaceMapPageCheckedWithShootdownFromState"
   | .vspaceUnmap => "vspaceUnmapPageWithShootdown"
   | .serviceRegister => "registerServiceChecked"

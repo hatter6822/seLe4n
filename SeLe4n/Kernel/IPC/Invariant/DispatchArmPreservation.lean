@@ -1485,6 +1485,109 @@ theorem mintReplyCapWithCdt_preserves_ipcInvariantFull
     exact cdtRecord_bundle_frame stM src dst DerivationOp.mint
       (mintReplyCap_preserves_ipcInvariantFull st stM src dst hObjInv hInv hMint)
 
+/-- **WS-BP BP7.1 (`v0.36.5`)**: a store at a key that held **no** object, or an
+IPC-inert one, of an IPC-inert object that is not a CNode moves nothing any
+conjunct reads.  The read view agrees (`of_fresh_inert_write` /
+`of_single_inert_write`), the scheduler is framed, and the badge clause — the one
+conjunct that reads CNodes — loses at most a CNode and gains none.  The two
+stores an untyped carve performs (the untyped's watermark advance, the fresh
+frame) are both this shape. -/
+theorem storeObject_inertNonCNode_preserves_ipcInvariantFull
+    (st st' : SystemState) (key : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hPre : st.objects[key]? = none ∨ ipcReadInert st.objects[key]?)
+    (hObj : ipcReadInert (some obj)) (hNotCn : ∀ cn, obj ≠ .cnode cn)
+    (hStep : storeObject key obj st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  have hAt : st'.objects[key]? = some obj := storeObject_objects_eq _ _ _ _ hObjInv hStep
+  have hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid h => storeObject_objects_ne _ _ _ _ _ h hObjInv hStep
+  have hSched := storeObject_scheduler_eq _ _ _ _ hStep
+  have hView : ipcReadViewAgreement st st' := by
+    rcases hPre with hNone | hIn
+    · exact ipcReadViewAgreement.of_fresh_inert_write hNe hNone (by rw [hAt]; exact hObj)
+    · exact ipcReadViewAgreement.of_single_inert_write hNe hIn (by rw [hAt]; exact hObj)
+  have hNotTcb : ∀ t, obj ≠ .tcb t := by
+    intro t h; subst h; simp [ipcReadInert] at hObj
+  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
+    intro tid tcb' h
+    by_cases hK : tid.toObjId = key
+    · rw [hK, hAt] at h
+      exact absurd (Option.some.inj h) (hNotTcb tcb')
+    · rw [hNe _ hK] at h
+      exact ⟨tcb', h, rfl, rfl⟩
+  have hCap : capabilityBadgesWellFormed st' := by
+    intro oid cn slot cap badge hCn hLk hB
+    by_cases hK : oid = key
+    · rw [hK, hAt] at hCn
+      exact absurd (Option.some.inj hCn) (hNotCn cn)
+    · rw [hNe _ hK] at hCn
+      exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
+  exact ipcInvariantFull_of_readViewAgreement hView
+    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
+      hInv.passiveServerIdle)
+    hCap hInv
+
+/-- **WS-BP BP7.1**: the carve of a frame out of an untyped preserves the bundle:
+the watermark advance rewrites an untyped in place, and the fresh frame lands at a
+key that held nothing (`retypeFromUntyped`'s collision guard). -/
+theorem retypeFromUntyped_frame_preserves_ipcInvariantFull
+    (st st' : SystemState) (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (frame : FrameObject) (allocSize : Nat)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : retypeFromUntyped authority untypedId childId (.frame frame) allocSize st
+      = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  have hFresh := retypeFromUntyped_childId_fresh authority untypedId childId
+    _ _ st st' hStep
+  obtain ⟨ut, ut', cap, stL, stUt, _, hUt, _, _, hLk, _, _, hStUt, hStCh⟩ :=
+    retypeFromUntyped_ok_decompose st st' authority untypedId childId _ _ hStep
+  have hStL : stL = st := cspaceLookupSlot_ok_state_eq st authority cap stL hLk
+  rw [hStL] at hStUt
+  have hNe : childId ≠ untypedId := by
+    intro h; rw [h, hUt] at hFresh; simp at hFresh
+  have hInvUt := storeObject_inertNonCNode_preserves_ipcInvariantFull st stUt untypedId
+    (.untyped ut') hObjInv hInv (Or.inr (by rw [hUt]; trivial)) trivial
+    (fun _ h => KernelObject.noConfusion h) hStUt
+  have hObjInvUt := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt
+  have hChildNone : stUt.objects[childId]? = none := by
+    rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStUt]
+    cases h : st.objects[childId]? with
+    | none => rfl
+    | some _ => rw [h] at hFresh; simp at hFresh
+  exact storeObject_inertNonCNode_preserves_ipcInvariantFull stUt st' childId (.frame frame)
+    hObjInvUt hInvUt (Or.inl hChildNone) trivial (fun _ h => KernelObject.noConfusion h) hStCh
+
+/-- **WS-BP BP7.1 (`v0.36.5`)**: the untyped carve preserves `ipcInvariantFull` —
+two inert stores, a scrub of machine memory the bundle does not read, a
+capability install carrying no badge, and the CDT edge. -/
+theorem untypedRetypeFrame_preserves_ipcInvariantFull
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : untypedRetypeFrame src childId dst st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨_, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
+    untypedRetypeFrame_ok_decompose src dst childId st st' hStep
+  have hInv1 := retypeFromUntyped_frame_preserves_ipcInvariantFull st st1 src untypedId
+    childId _ _ hObjInv hInv hRt
+  have hObjInv1 : st1.objects.invExt := by
+    obtain ⟨_, _, _, stL, stUt, _, _, _, _, hLk, _, _, hStUt, hStCh⟩ :=
+      retypeFromUntyped_ok_decompose st st1 src untypedId childId _ _ hRt
+    rw [cspaceLookupSlot_ok_state_eq st src _ stL hLk] at hStUt
+    exact storeObject_preserves_objects_invExt _ _ _ _
+      (storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt) hStCh
+  have hInvZ : ipcInvariantFull (carveZeroFrame st1 (untypedNextFrame ut)) :=
+    ipcInvariantFull_of_objects_scheduler_eq (carveZeroFrame_objects _ _)
+      (carveZeroFrame_scheduler _ _) hInv1
+  have hObjInvZ : (carveZeroFrame st1 (untypedNextFrame ut)).objects.invExt := by
+    rw [carveZeroFrame_objects]; exact hObjInv1
+  exact cdtRecord_bundle_frame st2 src dst DerivationOp.retype
+    (cspaceInsertSlot_preserves_ipcInvariantFull _ st2 dst _ hObjInvZ hInvZ
+      (fun b hb => by simp [frameCapability] at hb) hIns)
+
 -- ============================================================================
 -- §10  Sched-context arm (`.schedContextConfigure`)
 -- ============================================================================

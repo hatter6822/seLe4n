@@ -1205,6 +1205,11 @@ inductive DerivationOp where
   | mint
   | copy
   | ipcTransfer
+  /-- **WS-BP BP7.1 (`v0.36.5`)**: a capability to an object carved out of an
+  untyped, recorded as a child of the untyped capability that authorised the
+  carve — seL4's `Untyped_Retype`, whose new capabilities are CDT children of
+  the untyped's.  Revoking the untyped capability therefore reaches them. -/
+  | retype
   deriving Repr, DecidableEq
 
 -- `CdtNodeId` and its instances live in `Model/Object/Types.lean`, beside

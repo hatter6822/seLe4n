@@ -1151,7 +1151,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.returnDonatedSchedContextValid
   , `SeLe4n.Kernel.retypeAsidRoundFold
   , `SeLe4n.Kernel.retypeAsidRoundStep
-  , `SeLe4n.Kernel.retypeFromUntyped
   , `SeLe4n.Kernel.revokeCdtReportingOutcome
   , `SeLe4n.Kernel.revokeCdtReportingStep
   , `SeLe4n.Kernel.revokeCdtStreamingTraversal

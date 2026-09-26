@@ -77,6 +77,9 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
   -- WS-RR RR8.16: cspaceRevoke=35 (`seL4_CNode_Revoke`)
   let r35 := decodeSyscallId ⟨35⟩
   expect "cspaceRevoke=35" (isOkEq r35 .cspaceRevoke)
+  -- WS-BP BP7.1: untypedRetype=36 (`seL4_Untyped_Retype`, frames)
+  let r36 := decodeSyscallId ⟨36⟩
+  expect "untypedRetype=36" (isOkEq r36 .untypedRetype)
   -- WS-SM SM7.D: vspaceUnifyInstruction=29 (the code-publication path)
   let r29 := decodeSyscallId ⟨29⟩
   expect "vspaceUnifyInstruction=29" (isOkEq r29 .vspaceUnifyInstruction)
@@ -94,24 +97,25 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
-  -- First invalid: 36 (WS-RR RR8.16 added cspaceRevoke at 35, on top of the
+  -- First invalid: 37 (WS-BP BP7.1 added untypedRetype at 36, on top of
+  -- WS-RR RR8.16's cspaceRevoke at 35, the
   -- PR #887 review round's tcbSetFaultHandler at 34, WS-SM SM9.C's
   -- declassifySignal at 33, SM9.A's auditRead at 31 and auditDrain at 32,
   -- SM8.C's declassify at 30, SM7.D's vspaceUnifyInstruction at 29 and
   -- PR #822 Phase H's mintReplyCap at 28)
-  let r36 := decodeSyscallId ⟨36⟩
-  expect "invalid=36" (isErrEq r36 .invalidSyscallNumber)
+  let r37 := decodeSyscallId ⟨37⟩
+  expect "invalid=37" (isErrEq r37 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 35/36 (WS-RR RR8.16:
-cspaceRevoke=35 is the last valid). -/
+/-- RD-003: decodeSyscallId — boundary edge 36/37 (WS-BP BP7.1:
+untypedRetype=36 is the last valid). -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
-  let r35 := decodeSyscallId ⟨35⟩
   let r36 := decodeSyscallId ⟨36⟩
-  expect "boundary=35 ok (cspaceRevoke)" (isOkEq r35 .cspaceRevoke)
-  expect "boundary=36 err" (!r36.isOk)
+  let r37 := decodeSyscallId ⟨37⟩
+  expect "boundary=36 ok (untypedRetype)" (isOkEq r36 .untypedRetype)
+  expect "boundary=37 err" (!r37.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do

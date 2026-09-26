@@ -862,15 +862,15 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 113 := by decide
+example : lockSetTheorems.length = 115 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 35 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 36 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 35 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 36 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -1844,8 +1844,8 @@ private def runLookupFixtureChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 113"
-    (decide (lockSetTheorems.length = 113))
+  assertBool "lockSetTheorems.length = 115"
+    (decide (lockSetTheorems.length = 115))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
   -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than

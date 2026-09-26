@@ -4,7 +4,7 @@
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 109–115.
 
 use super::type_tag::TypeTag;
-use sele4n_types::{KernelError, KernelResult, ObjId};
+use sele4n_types::{CPtr, KernelError, KernelResult, ObjId, Slot};
 
 /// Arguments for `lifecycleRetype` (syscall 8).
 /// Register mapping: x2=targetObj, x3=newType tag, x4=size hint.
@@ -47,9 +47,77 @@ impl LifecycleRetypeArgs {
     }
 }
 
+/// Arguments for `untypedRetype` (syscall 36) — seL4's `seL4_Untyped_Retype`.
+/// Register mapping: x2=newType tag, x3=childId, x4=destination CNode
+/// capability address, x5=destination slot.
+///
+/// Lean: `UntypedRetypeArgs` (SyscallArgDecode.lean), decoded by
+/// `decodeUntypedRetypeArgs`.  The syscall is invoked on the **untyped**
+/// capability; the kernel carves only [`TypeTag::Frame`] and refuses every
+/// other valid tag with `InvalidArgument`.
+///
+/// WS-BP BP7.1 (`v0.36.5`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UntypedRetypeArgs {
+    pub new_type: TypeTag,
+    pub child_id: ObjId,
+    pub dst_cnode: CPtr,
+    pub dst_slot: Slot,
+}
+
+impl UntypedRetypeArgs {
+    pub const fn encode(&self) -> [u64; 4] {
+        [
+            self.new_type.to_u64(),
+            self.child_id.raw(),
+            self.dst_cnode.raw(),
+            self.dst_slot.raw(),
+        ]
+    }
+
+    /// Decode from message registers. Requires 4 registers; `regs[0]` must be
+    /// a valid type tag (`InvalidTypeTag` otherwise), as the Lean decoder
+    /// requires.
+    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
+        if regs.len() < 4 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        let new_type = TypeTag::from_u64(regs[0])?;
+        Ok(Self {
+            new_type,
+            child_id: ObjId::from(regs[1]),
+            dst_cnode: CPtr::from(regs[2]),
+            dst_slot: Slot::from(regs[3]),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn untyped_retype_roundtrip() {
+        let args = UntypedRetypeArgs {
+            new_type: TypeTag::Frame,
+            child_id: ObjId::from(77u64),
+            dst_cnode: CPtr::from(3u64),
+            dst_slot: Slot::from(12u64),
+        };
+        assert_eq!(UntypedRetypeArgs::decode(&args.encode()).unwrap(), args);
+    }
+
+    #[test]
+    fn untyped_retype_insufficient_regs_and_bad_tag() {
+        assert_eq!(
+            UntypedRetypeArgs::decode(&[8, 1, 2]),
+            Err(KernelError::InvalidMessageInfo)
+        );
+        assert_eq!(
+            UntypedRetypeArgs::decode(&[9, 1, 2, 3]),
+            Err(KernelError::InvalidTypeTag)
+        );
+    }
 
     #[test]
     fn roundtrip() {

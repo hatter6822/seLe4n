@@ -376,6 +376,12 @@ ObjId. -/
 @[inline] def untypedLock (oid : ObjId) : LockId :=
   ⟨.untyped, oid⟩
 
+/-- **WS-BP BP7.1 (`v0.36.5`)**: build the LockId for a page frame at the given
+ObjId — the lock hierarchy's `page` kind (level 9), which frame objects made
+real. -/
+@[inline] def pageLock (oid : ObjId) : LockId :=
+  ⟨.page, oid⟩
+
 /-- WS-SM SM3.A.10 / PR #870 round 7: **the SystemState-level lock**, as a
 declarable footprint member.
 
@@ -1372,6 +1378,27 @@ def lockSet_lifecycleRetype (callerTid : ThreadId)
        (cnodeLock dstCnodeObjId, .write),
        (stateLevelLock, .write)])
     (targetLock.map (fun l => (l, AccessMode.write)))
+
+/-- **WS-BP BP7.1 (`v0.36.5`)**: `lockSet` for `untypedRetype` — the carve
+that mints a frame.
+
+Caller TCB (read) and CSpace root (read) for the two capability resolutions; the
+untyped (write — its watermark advances and its child list grows); the **new
+frame's key** (write — the object store gains it, and naming the key is what
+serialises two carves racing for one child id); the destination CNode (write —
+the frame capability goes in); and `stateLevelLock` (write) for the CDT edge and
+the object index the carve extends, unconditional because a successful carve
+always writes both.  Every member is named by the operands, so unlike the
+in-place retype there is no state-resolved optional member. -/
+def lockSet_untypedRetype (callerTid : ThreadId)
+    (cnodeRootObjId untypedObjId childObjId dstCnodeObjId : ObjId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .read),
+     (cnodeLock cnodeRootObjId, .read),
+     (untypedLock untypedObjId, .write),
+     (pageLock childObjId, .write),
+     (cnodeLock dstCnodeObjId, .write),
+     (stateLevelLock, .write)]
 
 /-! ## VSpace syscalls (2 transitions) -/
 
@@ -4315,6 +4342,11 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- statically, and pretending otherwise is what makes a footprint false.
   | .cspaceRevoke =>
       [.tcb, .cnode, .objStore]
+  -- **WS-BP BP7.1 (`v0.36.5`)**: the carve reads the caller and its CSpace
+  -- root, writes the untyped, the new frame's key, the destination CNode, and
+  -- the CDT / object index through `stateLevelLock`.
+  | .untypedRetype =>
+      [.tcb, .cnode, .untyped, .page, .objStore]
   -- Lifecycle.  **Every kind, for the reason `.declassify` admits every kind**
   -- (PR #873 round 7): SM9.D.12 makes the retype the arm that *clears*
   -- provenance at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
@@ -4472,7 +4504,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap
-  | .lifecycleRetype
+  | .lifecycleRetype | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
@@ -5873,6 +5905,27 @@ theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
         exact absurd hMem (by intro h; cases h))
     (by intro pp _
         exact permittedKinds_lifecycleRetype_admits_every_kind pp.fst.kind)
+
+/-- **WS-BP BP7.1** — WS-SM SM3.B.4 for `.untypedRetype`. -/
+theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
+    (cnRoot untypedId childId dstCn : ObjId) :
+    ∀ p ∈ (lockSet_untypedRetype callerTid cnRoot untypedId childId dstCn).pairs,
+      p.fst.kind ∈ permittedKinds .untypedRetype :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [pageLock]; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
+        exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 (PR #873 round 7): **and the members the retype itself takes
 are still exactly five.**

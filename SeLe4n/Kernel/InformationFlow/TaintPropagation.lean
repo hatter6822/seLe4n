@@ -172,6 +172,14 @@ def contentFlowClass : SyscallId → ContentFlowClass
   | .declassifySignal => .movesContent
   -- WS-SM SM9.D.12: a retype re-purposes the object at the same id.
   | .lifecycleRetype => .clearsProvenance
+  -- **WS-BP BP7.1 (`v0.36.5`)**: the untyped carve is inert, and not on the
+  -- retype's ground.  It re-purposes nothing: the child id must hold no object
+  -- (`retypeFromUntyped`'s collision guards), so there is no predecessor whose
+  -- provenance a replacement could inherit and nothing to clear.  Its writes are
+  -- the untyped's watermark, the fresh frame, one capability in the destination
+  -- CNode and the CDT — none a content-tracked field — and a RAM frame's page is
+  -- zeroed, which moves no principal's bytes anywhere.
+  | .untypedRetype => .inert
   -- CSpace: both slots live in the capability's own CNode (verified at the
   -- arms), so any edge would be a self-loop.
   | .cspaceCopy => .inert
@@ -272,7 +280,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .cspaceCopy | .cspaceMove | .cspaceMint | .cspaceDelete | .mintReplyCap => false
   | .cspaceRevoke => false
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => false
-  | .lifecycleRetype => false
+  | .lifecycleRetype | .untypedRetype => false
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority => false
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler => false
   | .tcbBindNotification | .tcbUnbindNotification => false
@@ -845,6 +853,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
         | .object nid => waitTaintEdges tid nid
         | _ => []
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
+  | .untypedRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
@@ -1021,6 +1030,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait | .declassifySignal
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
+  | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
@@ -1056,6 +1066,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
         | _ => []
     | .send | .receive | .call | .reply | .replyRecv | .notificationWait
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
+  | .untypedRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
@@ -1127,6 +1138,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
         | _ => []
     | .send | .receive | .call | .reply | .replyRecv
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
+  | .untypedRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority

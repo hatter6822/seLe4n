@@ -274,6 +274,10 @@ def syscallReturnShape : SyscallId → ReturnShape
   -- authority over, so returning it would make the CDT's shape readable
   -- from a slot the caller merely owns.
   | .cspaceRevoke          => .unit
+  -- **WS-BP BP7.1 (`v0.36.5`)**: a carve returns nothing — seL4's
+  -- `seL4_Untyped_Retype` returns only an error code; what it produced is the
+  -- capability it installed at the slot the caller named.
+  | .untypedRetype         => .unit
   | .lifecycleRetype       => .unit
   | .vspaceMap             => .unit
   | .vspaceUnmap           => .unit

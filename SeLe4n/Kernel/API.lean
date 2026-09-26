@@ -3197,6 +3197,10 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- authority, and revocation hands out none.
   | .cspaceRevoke    => .write
   | .lifecycleRetype => .retype
+  -- **WS-BP BP7.1 (`v0.36.5`)**: a carve is a retype of the untyped's memory,
+  -- so it takes the retype right — the one `lifecycleRetypeAuthority` checks
+  -- inside `retypeFromUntyped` too, so the gate and the primitive agree.
+  | .untypedRetype   => .retype
   | .vspaceMap       => .write
   | .vspaceUnmap     => .write
   -- WS-SM SM7.D: publishing freshly-written code requires the **write** right
@@ -3275,6 +3279,10 @@ def syscallChecksTargetFirst : SyscallId → Bool
   -- wrong-kind refusal to sequence ahead of the rights gate.
   | .cspaceRevoke    => false
   | .lifecycleRetype => false
+  -- **WS-BP BP7.1 (`v0.36.5`)**: classic order.  An untyped capability is an
+  -- ordinary `.object` capability, so there is no wrong-kind refusal to
+  -- sequence ahead of the rights gate.
+  | .untypedRetype   => false
   | .vspaceMap       => false
   | .vspaceUnmap     => false
   | .vspaceUnifyInstruction => false
@@ -3913,6 +3921,106 @@ def resolveVSpaceMapFrame (callerTid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
           | some frame => .ok (frameCap, frame)
         | _ => .error .invalidCapability
 
+/-- **WS-BP BP7.1 (`v0.36.5`): the two slots a carve names, resolved through the
+caller's own CSpace.**
+
+The *source* is the slot the syscall's own capability was resolved from — the
+caller's CSpace root, the invoked address, the root's depth, which is exactly the
+resolution `syscallResolveCap` performed — so the untyped capability the carve
+checks and records its derivation from is the one the caller presented.  The
+*destination* CNode is MR2, resolved with `.write`, as `resolveVSpaceMapFrame`
+resolves its frame: a carve installs a capability, and installing into a CNode is
+writing it, so a caller can deposit the new capability only in a CNode it holds a
+writable capability to.  The destination slot is MR3 verbatim — the install
+primitive refuses an index its CNode cannot address. -/
+def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (args : UntypedRetypeArgs) (st : SystemState) :
+    Except KernelError (CSpaceAddr × CSpaceAddr) :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some callerTcb =>
+    match st.getCNode? callerTcb.cspaceRoot with
+    | none => .error .invalidCapability
+    | some rootCn =>
+      match resolveCapAddress callerTcb.cspaceRoot decoded.capAddr rootCn.depth st with
+      | .error e => .error e
+      | .ok src =>
+        let dstGate : SyscallGate := {
+          callerId      := callerTid
+          cspaceRoot    := callerTcb.cspaceRoot
+          capAddr       := args.dstCNode
+          capDepth      := rootCn.depth
+          requiredRight := .write
+        }
+        match syscallLookupCap dstGate st with
+        | .error e => .error e
+        | .ok (dstCap, _) =>
+          match dstCap.target with
+          | .object cnodeId =>
+            match st.getCNode? cnodeId with
+            | none => .error .invalidCapability
+            | some _ => .ok (src, { cnode := cnodeId, slot := args.dstSlot })
+          | _ => .error .invalidCapability
+
+/-- **WS-BP BP7.1 (`v0.36.5`): the live `.untypedRetype` arm's transition** — seL4's
+`seL4_Untyped_Retype` at the frame type.
+
+Decode, then refuse any type but `.frame` (`.invalidArgument`): the in-place
+retype (`.lifecycleRetype`) is how this kernel creates its own kernel objects,
+and the carve exists for memory a thread is handed *as memory*.  The child id is
+a raw operand, so it passes `validateObjIdArg` — no reserved idle object and not
+the sentinel — before anything is resolved.  Then the two slots, then
+`untypedRetypeFrame`, whose own guards decide everything else. -/
+def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) :
+    Kernel Unit :=
+  fun st =>
+    match decodeUntypedRetypeArgs decoded with
+    | .error e => .error e
+    | .ok args =>
+      if args.newType ≠ .frame then .error .invalidArgument
+      else
+        match validateObjIdArg args.childId with
+        | .error e => .error e
+        | .ok vChild =>
+          match resolveUntypedRetype tid decoded args st with
+          | .error e => .error e
+          | .ok (src, dst) => untypedRetypeFrame src vChild.val dst st
+
+/-- **WS-BP BP7.1**: what a successful `.untypedRetype` consists of — the typed
+decode at the frame kind, the validated child id, the resolved slots, and the
+carve.  The case analysis has one owner, so the invariant and non-interference
+proofs read these equations. -/
+theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (st st' : SystemState)
+    (h : untypedRetypeFromCap tid decoded st = .ok ((), st')) :
+    ∃ (args : UntypedRetypeArgs) (vChild : SeLe4n.ValidObjId) (src dst : CSpaceAddr),
+      decodeUntypedRetypeArgs decoded = .ok args ∧
+      args.newType = .frame ∧
+      validateObjIdArg args.childId = .ok vChild ∧
+      resolveUntypedRetype tid decoded args st = .ok (src, dst) ∧
+      untypedRetypeFrame src vChild.val dst st = .ok ((), st') := by
+  unfold untypedRetypeFromCap at h
+  cases hD : decodeUntypedRetypeArgs decoded with
+  | error e => rw [hD] at h; cases h
+  | ok args =>
+    rw [hD] at h
+    simp only at h
+    by_cases hT : args.newType = .frame
+    · rw [if_neg (by simpa using hT)] at h
+      cases hV : validateObjIdArg args.childId with
+      | error e => rw [hV] at h; cases h
+      | ok vChild =>
+        rw [hV] at h
+        simp only at h
+        cases hR : resolveUntypedRetype tid decoded args st with
+        | error e => rw [hR] at h; cases h
+        | ok pr =>
+          obtain ⟨src, dst⟩ := pr
+          rw [hR] at h
+          exact ⟨args, vChild, src, dst, by first | exact hD | rfl, hT,
+            by first | exact hV | rfl, by first | exact hR | rfl, h⟩
+    · rw [if_pos hT] at h; cases h
+
 /-- **WS-BP BP7.1 (the authority fact)**: a frame the resolver answers is one the
 caller holds a **readable capability** to, found at MR2's address in the caller's
 own CSpace, and it is a frame the store holds at the capability's target.  The
@@ -4190,6 +4298,16 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- (`perCoreICache ∉ projectState`).
             lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
               (determineExecutingCore st tid) cap args.targetObj newObj st
+    | _ => fun _ => .error .invalidCapability
+  -- **WS-BP BP7.1 (`v0.36.5`)**: `seL4_Untyped_Retype`, at the frame type —
+  -- the only path by which a frame comes to exist on a live state, and so the
+  -- only way memory reaches a thread: the caller presents an untyped
+  -- capability, names a fresh object id and an empty slot in a CNode it can
+  -- write, and receives a capability to the page at the untyped's watermark.
+  -- `.vspaceMap` maps that page and no other.
+  | .untypedRetype =>
+    some <| match cap.target with
+    | .object _ => untypedRetypeFromCap tid decoded
     | _ => fun _ => .error .invalidCapability
   | .vspaceMap =>
     some <| match cap.target with
@@ -4694,6 +4812,12 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | ok args =>
           simp only [hDec] at hStep
           exact mintReplyCapWithCdt_preserves_ipcInvariantFull st st' _ _ hObjInv hInv hStep
+    all_goals try cases hStep
+  case untypedRetype =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object _ =>
+      obtain ⟨_, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid decoded st st' hStep
+      exact untypedRetypeFrame_preserves_ipcInvariantFull _ _ _ st st' hObjInv hInv hCarve
     all_goals try cases hStep
   case lifecycleRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -6611,7 +6735,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
-            .cspaceRevoke] : List SyscallId) := by
+            .cspaceRevoke, .untypedRetype] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -6633,7 +6757,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
-            .cspaceRevoke] : List SyscallId) := by
+            .cspaceRevoke, .untypedRetype] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated

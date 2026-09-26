@@ -1029,14 +1029,18 @@ theorem removeCallerReplyFrame_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
 conjuncts read.  CNode *content* is read by exactly one clause —
 `capabilityBadgesWellFormed` — which the master transport below therefore takes
 as an explicit obligation for the target state; no conjunct reads a VSpaceRoot
-or a piece of untyped memory at all.  `none` is deliberately **not** inert: a
-transition that deletes or creates an object of a read kind must not slip
-through this frame, so only a rewrite that keeps the oid on a non-read kind on
-*both* sides qualifies. -/
+or a piece of untyped memory at all — nor a **frame** (WS-BP BP7.1), which is a
+page of memory a thread maps, not a structure any conjunct walks.  `none` is
+deliberately **not** inert: a transition that deletes or creates an object of a
+read kind must not slip through this frame, so only a rewrite that keeps the oid
+on a non-read kind on *both* sides qualifies — and the one creation that is
+sound, an absent key becoming a non-read kind, has its own lemma
+(`of_fresh_inert_write`) rather than a widening of this predicate. -/
 def ipcReadInert : Option KernelObject → Prop
   | some (.cnode _) => True
   | some (.vspaceRoot _) => True
   | some (.untyped _) => True
+  | some (.frame _) => True
   | _ => False
 
 /-- Pointwise agreement on every object kind the IPC bundle's conjuncts read
@@ -1116,6 +1120,34 @@ theorem of_single_inert_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
     by_cases hEq : oid = key
     · subst hEq; exact Or.inr ⟨h1, h2⟩
     · exact Or.inl (hNe oid hEq)
+
+/-- **WS-BP BP7.1**: the creation instance — a key that held **no** object and
+now holds one of a non-read kind.  Sound for the reason `ipcReadInert` excludes
+`none` on both sides: a read-kind lookup is `some` of that kind, which neither an
+absent key nor a non-read object is, so every read-kind lookup agrees.  The shape
+of the frame an untyped carve creates. -/
+theorem of_fresh_inert_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → s2.objects[oid]? = s1.objects[oid]?)
+    (h1 : s1.objects[key]? = none) (h2 : ipcReadInert s2.objects[key]?) :
+    ipcReadViewAgreement s1 s2 := by
+  have step : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), ¬ ipcReadInert (some o) →
+      (s2.objects[oid]? = some o ↔ s1.objects[oid]? = some o) := by
+    intro oid o hNotInert
+    by_cases hK : oid = key
+    · subst hK
+      rw [h1]
+      constructor
+      · intro hx; rw [hx] at h2; exact absurd h2 hNotInert
+      · intro hx; cases hx
+    · rw [hNe oid hK]
+  exact ⟨fun oid t => step oid (.tcb t) (by simp [ipcReadInert]),
+         fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert]),
+         fun oid ntfn hObj =>
+           ⟨ntfn, (step oid (.notification ntfn) (by simp [ipcReadInert])).mp hObj,
+             rfl, rfl, rfl⟩,
+         fun oid r => step oid (.reply r) (by simp [ipcReadInert]),
+         fun oid sc hSc =>
+           ⟨sc, (step oid (.schedContext sc) (by simp [ipcReadInert])).mpr hSc, rfl⟩⟩
 
 /-- A single notification rewrite preserving queue content — `state`,
 `waitingThreads`, `pendingBadge`; `boundTCB` and the lock word are free —

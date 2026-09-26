@@ -5,7 +5,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 36 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 37 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -109,11 +109,22 @@ pub enum SyscallId {
     /// delete's argument layout (one message register naming the slot), since
     /// both name one slot of the invoked CNode.
     CspaceRevoke = 35,
+    /// WS-BP BP7.1 (`v0.36.5`): carve a frame out of an untyped the caller
+    /// holds — seL4's `seL4_Untyped_Retype` at the frame type.
+    ///
+    /// Invoked on the **untyped** capability (`Retype` right).  `x2` is the
+    /// object type (only the frame tag, 8, is carved), `x3` the object id the
+    /// frame takes, `x4` the address of a writable capability to the
+    /// destination CNode and `x5` the empty slot the new frame capability goes
+    /// to.  The frame is the page at the untyped's watermark, a device untyped
+    /// yields a device frame, and a RAM page is zeroed before the capability
+    /// exists.  The only way a frame — and so mappable memory — comes to exist.
+    UntypedRetype = 36,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 36;
+    pub const COUNT: usize = 37;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -155,6 +166,7 @@ impl SyscallId {
             33 => Some(Self::DeclassifySignal),
             34 => Some(Self::TcbSetFaultHandler),
             35 => Some(Self::CspaceRevoke),
+            36 => Some(Self::UntypedRetype),
             _ => None,
         }
     }
@@ -180,6 +192,8 @@ impl SyscallId {
             // (mint/copy/move), and destroying one is not that authority.
             Self::CspaceRevoke => AccessRight::Write,
             Self::LifecycleRetype => AccessRight::Retype,
+            // WS-BP BP7.1: a carve is a retype of the untyped's memory.
+            Self::UntypedRetype => AccessRight::Retype,
             Self::VSpaceMap | Self::VSpaceUnmap => AccessRight::Write,
             Self::ServiceRegister | Self::ServiceRevoke => AccessRight::Write,
             Self::ServiceQuery => AccessRight::Read,
@@ -380,8 +394,20 @@ mod tests {
         // earlier discriminant is unchanged.
         assert_eq!(SyscallId::CspaceRevoke.to_u64(), 35);
         assert_eq!(SyscallId::from_u64(35), Some(SyscallId::CspaceRevoke));
-        assert_eq!(SyscallId::COUNT, 36);
         assert_eq!(SyscallId::CspaceRevoke.required_right(), AccessRight::Write);
+    }
+
+    #[test]
+    fn untyped_retype_discriminant() {
+        // WS-BP BP7.1 (`v0.36.5`): `seL4_Untyped_Retype`, appended so every
+        // earlier discriminant is unchanged.
+        assert_eq!(SyscallId::UntypedRetype.to_u64(), 36);
+        assert_eq!(SyscallId::from_u64(36), Some(SyscallId::UntypedRetype));
+        assert_eq!(SyscallId::COUNT, 37);
+        assert_eq!(
+            SyscallId::UntypedRetype.required_right(),
+            AccessRight::Retype
+        );
     }
 
     #[test]
