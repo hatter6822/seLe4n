@@ -435,7 +435,7 @@ opaque ffiFatalHaltAll : BaseIO Unit
     Normal RAM — writable, never executable — and widen the HAL's cacheable
     window to the same extent.  The HAL writes only descriptors its boot tables
     leave invalid, so no break-before-make and no TLB invalidation is needed;
-    a range it cannot map (unaligned, below the guaranteed gigabyte, over an
+    a range it cannot map (unaligned, inside the kernel's reserved extent, over an
     already-valid entry, or after the boot map is sealed) **halts the system**
     rather than returning, since a kernel that went on would hold memory it
     cannot address.  Called only by `extendBootRamMap`, on the extensions the
@@ -1507,12 +1507,12 @@ def rpi5PlatformConfigFromDtb (blob : ByteArray)
 /-- **WS-BP BP4.6**: map every extension of the verified board's RAM, in order.
 
 The extensions are `rpi5BootRamExtensionsFor` of the accepted configuration's
-board account: the RAM regions, above the guaranteed gigabyte, of the variant
-the binding installs for that account — the same variant whose memory map the
+board account: the RAM regions, outside the kernel's reserved extent (WS-BP
+BP7.10), of the configuration the binding installs for that account — the same variant whose memory map the
 boot state carries (`rpi5BootRamExtensionsFor_eq`), so the RAM the HAL maps and
 the RAM the kernel's model declares are one map.  `mem_bootRamExtensionsOf`
 proves every extension is RAM of that map and `bootRamExtensionsOf_covers`
-that every RAM address of it above the gigabyte is in some extension;
+that every RAM address of it outside the kernel's extent is in some extension;
 `rpi5BootRamExtensions_admissible` that each is one the HAL accepts. -/
 def extendBootRamMap (extensions : List (Nat × Nat)) : BaseIO Unit :=
   extensions.forM fun e => ffiExtendBootRamMap (UInt64.ofNat e.1) (UInt64.ofNat e.2)
@@ -1533,15 +1533,16 @@ carry an effectful prologue, and since WS-BP BP4.4 it is that contract's
 `approvedBootCall`: `lean_kernel_main` is this wrapper on the firmware's blob,
 which the HAL copies into a `ByteArray` on the kernel's Lean heap (BP4.3).
 
-**WS-BP BP4.6**: an accepted board's RAM above the guaranteed gigabyte is mapped
-first (`extendBootRamMap`), before the boot state is installed — the variant is
+**WS-BP BP4.6, BP7.10**: an accepted board's RAM outside the kernel's reserved
+extent — the first gigabyte's part the firmware reports, and everything above
+the gigabyte — is mapped first (`extendBootRamMap`), before the boot state is installed — the variant is
 known from the verified parse and from nothing earlier, and every secondary is
 still parked, so the boot tables have one writer.  The install then boots on the
 same variant.
 
 **WS-BP BP4.7**: and the objects it boots are that variant's
 (`rpi5PlatformConfigFromDtb`'s `initialObjectsFor`), so the RAM the HAL maps
-above the gigabyte and the untypeds that describe it are read off one variant. -/
+and the untypeds that describe it are read off one configuration. -/
 def bootAndInitialiseRPi5FromDtbOrHalt (blob : ByteArray)
     (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
@@ -1569,8 +1570,8 @@ theorem bootAndInitialiseRPi5FromDtbOrHalt_unparseable (blob : ByteArray)
 
 /-- **WS-RR RR7.27**: an accepted board boots through the checked entry and
 nothing else — the property that makes this wrapper safe to name from the boot
-entry contract.  **WS-BP BP4.6**: preceded by mapping that board's RAM above the
-guaranteed gigabyte, and by nothing else. -/
+entry contract.  **WS-BP BP4.6**: preceded by mapping that board's RAM outside
+the kernel's reserved extent (WS-BP BP7.10), and by nothing else. -/
 theorem bootAndInitialiseRPi5FromDtbOrHalt_accepted (blob : ByteArray)
     (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
@@ -1619,7 +1620,8 @@ theorem rpi5PlatformConfigFromDtb_refuses_uncovered_family (blob : ByteArray)
       SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
     (hNone : ∀ v ∈ SeLe4n.Platform.RPi5.rpi5Variants,
       SeLe4n.Platform.Boot.machineConfigCovers dt.machineConfig
-        (SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant v) = false) :
+        (SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant
+          { v with lowRamTop := SeLe4n.Platform.RPi5.rpi5LowRamTopFor dt.machineConfig }) = false) :
     rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot
       = .error .boardDoesNotMatchBinding := by
   apply rpi5PlatformConfigFromDtb_refuses_foreign_board blob irqTable initialObjectsFor
@@ -1800,12 +1802,15 @@ theorem bootAndInitialiseRPi5_bound_config (config : PlatformConfig) :
     (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
         SeLe4n.Platform.RPi5.rpi5BoundMachineConfig config.machineConfig := ⟨rfl, rfl⟩
 
-/-- **PR #892 review round 2**: round 7's guarantee in the form that survives a
-family — whatever the caller's configuration describes, the hardware boot's
-machine configuration is a member of the RPi5's declared variants.  A caller
-selects among them; it cannot describe hardware outside them. -/
+/-- **PR #892 review round 2, WS-BP BP7.10**: round 7's guarantee in the form
+that survives a family — whatever the caller's configuration describes, the
+hardware boot's machine configuration is an admissible cut of one of the RPi5's
+declared variants: a member's RAM above the first gigabyte, and at most its
+first gigabyte below.  A caller selects among them; it cannot describe hardware
+outside them, and the first-gigabyte top only ever declares less than the
+member. -/
 theorem bootAndInitialiseRPi5_bound_config_mem_family (config : PlatformConfig) :
-    ∃ v ∈ SeLe4n.Platform.RPi5.rpi5Variants,
+    ∃ v, v.Admissible ∧
       (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
         SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant v :=
   SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_mem_family config.machineConfig

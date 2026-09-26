@@ -224,10 +224,11 @@ def c_eight_gib_bcm2711_relocated_bank() -> Fdt:
 # rest of the first gigabyte up to 0x3FC0_0000 -- the firmware keeps the top
 # 4 MiB for itself -- and everything above 1 GiB.  DRAM is contiguous across
 # the 4 GiB boundary on the BCM2712, so there is no relocated bank.  The RPi5
-# binding's variants declare `[0, ramSize)` whole, so no variant is covered by
-# this account and the bridge refuses it; the Lean witness
-# `realFirmwareAccountIsRefusedUntilDerived` pins that until plan row BP7.10
-# derives the deployment's first-gigabyte RAM from the account.
+# binding's variants declared `[0, ramSize)` whole, so until plan row BP7.10 no
+# variant was covered by this account and the bridge refused it; BP7.10 reads
+# the first gigabyte's RAM off the account, and the Lean witness
+# `realFirmwareAccountBindsTheReportedRam` boots it bound to the 8 GiB member
+# cut at `0x3FC00000`.
 def c_eight_gib_rpi5_firmware() -> Fdt:
     return close(memory(root(), "memory@0", (0, 0x8_0000), (0x8_0000, 0x3FB8_0000),
                         (0x4000_0000, 0x1_C000_0000)))

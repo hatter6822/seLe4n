@@ -1111,6 +1111,85 @@ def wellFormed (cfg : MachineConfig) : Bool :=
   && cfg.physicalAddressWidth > 0
   && cfg.memoryMap.all (·.endAddr ≤ 2 ^ cfg.physicalAddressWidth)
 
+/-- **WS-BP BP7.10**: `r'` is a non-empty sub-range of `r`. -/
+def regionNonEmptyWithin (r' r : MemoryRegion) : Prop :=
+  0 < r'.size ∧ r.base.toNat ≤ r'.base.toNat ∧ r'.endAddr ≤ r.endAddr
+
+/-- **WS-BP BP7.10**: `rs'` is `rs` with each region replaced, position by
+position, by a non-empty sub-range of itself. -/
+def regionsNonEmptyWithin : List MemoryRegion → List MemoryRegion → Prop
+  | [], [] => True
+  | r' :: rs', r :: rs => regionNonEmptyWithin r' r ∧ regionsNonEmptyWithin rs' rs
+  | _, _ => False
+
+/-- Shrinking two regions cannot make them overlap. -/
+private theorem not_overlaps_of_within {r r' x x' : MemoryRegion}
+    (hr : regionNonEmptyWithin r' r) (hx : regionNonEmptyWithin x' x)
+    (h : (!r.overlaps x) = true) : (!r'.overlaps x') = true := by
+  unfold regionNonEmptyWithin MemoryRegion.endAddr at hr hx
+  simp only [MemoryRegion.overlaps, MemoryRegion.endAddr, Bool.not_eq_true',
+    Bool.and_eq_false_iff, decide_eq_false_iff_not, Nat.not_lt] at h ⊢
+  omega
+
+private theorem all_not_overlaps_of_within {r r' : MemoryRegion} (hr : regionNonEmptyWithin r' r) :
+    ∀ (rs' rs : List MemoryRegion), regionsNonEmptyWithin rs' rs →
+      rs.all (fun x => !r.overlaps x) = true → rs'.all (fun x => !r'.overlaps x) = true
+  | [], [], _, _ => rfl
+  | x' :: rs', x :: rs, hw, h => by
+    simp only [regionsNonEmptyWithin] at hw
+    simp only [List.all_cons, Bool.and_eq_true] at h ⊢
+    exact ⟨not_overlaps_of_within hr hw.1 h.1, all_not_overlaps_of_within hr rs' rs hw.2 h.2⟩
+  | [], _ :: _, hw, _ => hw.elim
+  | _ :: _, [], hw, _ => hw.elim
+
+private theorem noOverlapAux_of_within :
+    ∀ (rs' rs : List MemoryRegion), regionsNonEmptyWithin rs' rs →
+      noOverlapAux rs = true → noOverlapAux rs' = true
+  | [], [], _, _ => rfl
+  | x' :: rs', x :: rs, hw, h => by
+    simp only [regionsNonEmptyWithin] at hw
+    simp only [noOverlapAux, Bool.and_eq_true] at h ⊢
+    exact ⟨all_not_overlaps_of_within hw.1 rs' rs hw.2 h.1, noOverlapAux_of_within rs' rs hw.2 h.2⟩
+  | [], _ :: _, hw, _ => hw.elim
+  | _ :: _, [], hw, _ => hw.elim
+
+/-- Every region of `rs'` lies inside its partner in `rs`. -/
+private theorem exists_within_of_mem :
+    ∀ (rs' rs : List MemoryRegion), regionsNonEmptyWithin rs' rs →
+      ∀ r' ∈ rs', ∃ r ∈ rs, regionNonEmptyWithin r' r
+  | [], [], _, _, h => nomatch h
+  | x' :: rs', x :: rs, hw, r', hr' => by
+    simp only [regionsNonEmptyWithin] at hw
+    rcases List.mem_cons.mp hr' with rfl | hIn
+    · exact ⟨x, List.mem_cons_self .., hw.1⟩
+    · obtain ⟨r, hr, h⟩ := exists_within_of_mem rs' rs hw.2 r' hIn
+      exact ⟨r, List.mem_cons_of_mem _ hr, h⟩
+  | [], _ :: _, hw, _, _ => hw.elim
+  | _ :: _, [], hw, _, _ => hw.elim
+
+/-- **WS-BP BP7.10**: a well-formed configuration stays well-formed when each
+of its regions is replaced by a non-empty sub-range of itself — positive sizes,
+no overlap and the address-width bound are all inherited from the wider
+regions.  What lets a platform whose declared RAM is cut short by a board's
+own account (the RPi5's first gigabyte, `rpi5MachineConfigForVariant`) reuse
+the well-formedness it decides once on the uncut map. -/
+theorem wellFormed_of_within (cfg : MachineConfig) (map' : List MemoryRegion)
+    (hWithin : regionsNonEmptyWithin map' cfg.memoryMap)
+    (hWf : cfg.wellFormed = true) : ({ cfg with memoryMap := map' }).wellFormed = true := by
+  unfold wellFormed at hWf ⊢
+  simp only [Bool.and_eq_true] at hWf ⊢
+  obtain ⟨⟨⟨⟨⟨⟨_, hNo⟩, hPow⟩, hReg⟩, hVa⟩, hPa⟩, hEnd⟩ := hWf
+  refine ⟨⟨⟨⟨⟨⟨?_, noOverlapAux_of_within _ _ hWithin hNo⟩, hPow⟩, hReg⟩, hVa⟩, hPa⟩, ?_⟩
+  · rw [List.all_eq_true]
+    intro r' hr'
+    obtain ⟨r, _, hw⟩ := exists_within_of_mem _ _ hWithin r' hr'
+    exact decide_eq_true hw.1
+  · rw [List.all_eq_true] at hEnd ⊢
+    intro r' hr'
+    obtain ⟨r, hr, hw⟩ := exists_within_of_mem _ _ hWithin r' hr'
+    have := of_decide_eq_true (hEnd r hr)
+    exact decide_eq_true (Nat.le_trans hw.2.2 this)
+
 end MachineConfig
 
 -- ============================================================================

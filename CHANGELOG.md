@@ -1,3 +1,83 @@
+## v0.36.3 — WS-BP BP7.10: the first gigabyte's RAM is read off the firmware's account, and the constant boot map is the kernel's reserved extent
+
+The `v0.36.2` audit found that no real Raspberry Pi 5 boots.  The firmware
+writes `/memory@0` as `[0, 0x80000)`, `[0x80000, 0x3FC00000)` and
+`[0x40000000, top)` on a Pi 5 8 GiB Rev 1.1 (`[0x80000, 0x3FB00000)` on a CM5
+4 GiB Rev 1.0), withholding the top of the first gigabyte for itself by a
+board- and firmware-dependent amount.  Every variant declared `[0, ramSize)`
+whole and `machineConfigCovers` requires every declared RAM byte to be in the
+account, so no variant was covered and the bridge refused every real board —
+fail-closed — and two hazards sat behind the refusal: the HAL's constant boot
+map described `[0, 1 GiB)`, the withheld top included, as the kernel's own
+writable RAM before any account was read, and the root task's
+`[256 MiB, 1 GiB)` untypeds would have handed it authority to retype VideoCore
+memory had a board been accepted.
+
+**The Lean model.**  `BCM2712Config.lowRamTop` (default the gigabyte's top, so
+every member of `rpi5Variants` is unchanged) ends the first RAM region
+`rpi5MemoryMapForConfig` declares.  `rpi5LowRamTopFor` derives it from an
+account — the RAM prefix from `0` (`ramPrefixTop`, the union reading's own
+cursor, with `ramPrefixTop_sound` and `memoryRegionCovered_of_le_coverReach`),
+capped at the gigabyte and rounded **down** to the 2 MiB granule the HAL
+extends by, or the floor (the kernel's reserved extent plus one granule) when
+the account reaches less — and `rpi5VariantFor` binds the covered member cut to
+it (`rpi5RamVariantFor` is the member choice).  Decided on the real accounts:
+`rpi5VariantFor_rpi5_firmware_account` binds `{8 GiB, 0x3FC00000}`,
+`rpi5VariantFor_cm5_firmware_account` `{4 GiB, 0x3FA00000}`, and
+`rpi5VariantFor_kernel_extent_not_ram` refuses an account that does not report
+the kernel's extent as RAM.  Every deployment theorem is restated over
+`BCM2712Config.Admissible` (the uncut form a member, the top admissible;
+`rpi5VariantFor_admissible` replaces `rpi5VariantFor_mem`), and because
+`decide` cannot range over a symbolic top the gates are factored rather than
+enumerated: `PlatformConfig.withoutExtents` erases every untyped extent and the
+memory map, every well-formedness conjunct but the untyped placement is
+invariant under it (`PlatformConfig.wellFormed_of_withoutExtents`), so it is
+decided once on the uncut member; the placement is proved symbolically, and the
+machine configuration's well-formedness by `MachineConfig.wellFormed_of_within`
+(shrinking regions preserves it).
+
+**One list for mapped, declared and owned.**  `bootRamExtensionsOf` clips at
+the kernel's extent (`bootRamExtensionOf?`), not the gigabyte, and the root
+task holds one untyped per extension (`rpi5RootTaskUntypeds`, ids `6 + i`,
+slots `5 + i`), so the firmware's withheld memory is in neither the model, the
+boot map, the cacheable window nor any untyped.  Retired, with tombstones and
+Tier 3 negatives: `rpi5GuaranteedRamTop` (now `rpi5FirstGigabyteTop`, an upper
+bound), the two fixed first-gigabyte untypeds and the `rpi5RootTaskRamUntyped*`
+names, `rpi5VariantFor_mem`, `rpi5VariantFor_of_uncovered` (now
+`rpi5RamVariantFor_of_uncovered`) and
+`rpi5DeploymentBootStateAt_ramUntypedInstalled` (now `…_untypedInstalled`).
+`rpi5BootRamExtensions_admissible` proves, over every admissible configuration,
+that each extension is one the HAL accepts.
+
+**The HAL.**  `GUARANTEED_RAM_TOP` is retired: the constant Normal window is
+`[0, KERNEL_RESERVED_END)`, `ram_range_covered`'s constant interval is the same,
+and `link.ld`'s RAM region ends there (`LENGTH = 0xFF80000`, held by a new
+`ASSERT` beside two that split the reserved extent's conjuncts — whole 2 MiB
+blocks, inside the first gigabyte — each proved live by
+`scripts/check_link_script.py`; the redundant "smallest RPi5's 1 GiB" assertion
+is gone).  `extend_boot_tables` writes 2 MiB blocks into the first gigabyte's
+own level-2 table through `level2_table`, one answer for both passes, and
+refuses a range starting inside the extent
+(`RamExtensionRefusal::InsideKernelReserved`, was `BelowGuaranteedRam`).
+`MAX_RAM_EXTENSIONS` stays four; a board needs two.
+
+**Tests.**  `tests/fixtures/boot_map.expected` carries the five variants and
+three firmware-cut configurations (`variant <ramSize> lowRamTop <t>`), and the
+HAL test requires the constant window to be exactly the extent and each
+extended window to be exactly its configuration's RAM, the withheld top
+unmapped — mutation-checked against a first-gigabyte constant window, a
+first-gigabyte cacheable interval and a first gigabyte with no level-2 table.
+`realFirmwareAccountIsRefusedUntilDerived` is flipped to
+`realFirmwareAccountBindsTheReportedRam`, which boots the real account end to
+end; RR7.27-03's short-RAM board is now one below the floor, beside a 512 MiB
+board that declares exactly the RAM it reported.
+
+**Deviation from the plan row, recorded in it:** the row said
+`GUARANTEED_RAM_TOP` "becomes an upper bound"; it is retired instead, because
+the constant map itself described withheld memory.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 BP7.10
+
 ## v0.36.2 — WS-BP BP0, BP1, BP2, BP3, BP4, BP5.1, BP5.2, BP5.3, BP5.4, BP5.5 and BP6: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch and the verified board's RAM above the guaranteed gigabyte mapped before the boot map is sealed and handed to the root task as untypeds, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions, and the kernel links as one bare-metal image entered at `_start` under `link.ld`, with the Lean kernel linked into it from the roots its runtime proof is about and the FP/SIMD gate run over the result, and packaged for the firmware as `kernel8.img` and a `config.txt` that pins the load address to the image's entry and the device tree to a window `link.ld` places, with its size and section map published by every CI run, and the RPi5 binding corrected from the BCM2711's address map to the BCM2712's, and both boot entries dropped to EL1 from the firmware's EL2 with the PSCI conduit following the entry level, and every PE marking itself Lean-ready after its own per-PE runtime handshake and before it unmasks IRQs, with the boot halting unless every declared PE serves the kernel
 
 WS-BP's first phase.  Three questions are answered on both sides of the

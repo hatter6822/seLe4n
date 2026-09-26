@@ -1380,17 +1380,27 @@ def deviceTreeBridge_02_matching_board_accepted : IO Unit := do
         (config.irqTable.isEmpty && config.initialObjects.isEmpty
           && config.bootVSpaceRoot.isNone)
 
-/-- WS-RR RR7.27: a board with less RAM than the **smallest** variant the
-binding declares is refused.  The mutation that finds a vacuous check: the blob
-is well formed, the peripherals are all there, and only the RAM extent differs.
-PR #892 review round 2 moved the bar from the fixed 4 GiB map to the family's
-smallest member — 512 MiB is short of every Raspberry Pi 5 ever shipped, where
-1 GiB (the old fixture) is a board this image is built for. -/
+/-- WS-RR RR7.27: a board with less RAM than the deployment stands on is
+refused.  The mutation that finds a vacuous check: the blob is well formed, the
+peripherals are all there, and only the RAM extent differs.  PR #892 review
+round 2 moved the bar from the fixed 4 GiB map to the family's smallest member;
+**WS-BP BP7.10** moves it to what the deployment actually needs from the first
+gigabyte — the kernel's reserved extent and one granule past it
+(`rpi5LowRamTopFloor`) — because the first gigabyte's RAM is now read off the
+account rather than assumed.  A board reporting exactly the kernel's extent
+(256 MiB) is refused; one reporting 512 MiB is bound the smallest member cut to
+the 512 MiB it reported, so it declares nothing it was not told is RAM. -/
 def deviceTreeBridge_03_short_ram_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x10000000) [] (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
-      expect "RR7.27-03 short-RAM board refused" true
-  | _ => expect "RR7.27-03 short-RAM board refused" false
+      expect "RR7.27-03 a board short of the first-gigabyte floor is refused" true
+  | _ => expect "RR7.27-03 a board short of the first-gigabyte floor is refused" false
+  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) [] (fun _ => []) none with
+  | .ok config =>
+      expect "RR7.27-03 a 512 MiB board declares exactly the RAM it reported"
+        (decide (boundMapOf config =
+          rpi5MemoryMapForConfig { rpi5SmallestVariant with lowRamTop := 0x20000000 }))
+  | .error _ => expect "RR7.27-03 a 512 MiB board declares exactly the RAM it reported" false
 
 /-- WS-RR RR7.27: a board whose device tree discovered none of the MMIO the
 binding programs is refused — the half a RAM-only check would miss.  Same RAM,
@@ -1519,8 +1529,12 @@ def deviceTreeBridge_13_direct_path_fallback_is_smallest : IO Unit := do
   let bare : PlatformConfig :=
     { irqTable := [], initialObjects := [],
       machineConfig := defaultMachineConfig, bootVSpaceRoot := none }
-  expect "PR892-13 an empty account binds the smallest variant"
-    (decide (boundMapOf bare = rpi5MemoryMapForConfig rpi5SmallestVariant))
+  -- WS-BP BP7.10: an account reporting no RAM from `0` binds the smallest
+  -- variant at the admissible floor — the least first-gigabyte RAM the
+  -- deployment stands on.
+  expect "PR892-13 an empty account binds the smallest variant at the floor"
+    (decide (boundMapOf bare =
+      rpi5MemoryMapForConfig { rpi5SmallestVariant with lowRamTop := rpi5LowRamTopFloor }))
   expect "PR892-13 NEGATIVE: an empty account is not bound the 4 GiB default"
     (decide (boundMapOf bare ≠ rpi5MachineConfig.memoryMap))
   let canonical : PlatformConfig := { bare with machineConfig := rpi5MachineConfig }
@@ -1796,40 +1810,57 @@ def bootUntypedMustBePristine : IO Unit := do
         | .untyped ut => bootSafeUntypedCheck ut
         | _ => true)
 
-/-- **The `v0.36.2` audit, registered rather than fixed** (register table B;
-plan row BP7.10): a Raspberry Pi 5's firmware reports its RAM as three ranges
-— `[0, 0x80000)`, `[0x80000, 0x3fc00000)` and `[0x40000000, top)` — withholding
-a few MiB at the top of the first gigabyte for itself (Pi 5 8 GiB Rev 1.1 and
-CM5 4 GiB Rev 1.0 accounts read 2026-09-25: `0x3fbfffff` and `0x3fafffff`).
-The binding's variants each declare `[0, ramSize)` whole, and
-`machineConfigCovers` requires every declared RAM byte to be in the account,
-so **no variant is covered** and the bridge refuses the real board — the boot
-halts before any state is installed.  Fail-closed, not a hole; what closes it
-is deriving the deployment's first-gigabyte RAM from the account (BP7.10),
-which also keeps the root task's boot untypeds off the firmware's memory.
-This witness pins the refusal so the closure cannot land without flipping it,
-and the shared corpus carries the same account as `eight_gib_rpi5_firmware`. -/
-def realFirmwareAccountIsRefusedUntilDerived : IO Unit := do
+/-- **WS-BP BP7.10** — the `v0.36.2` audit's finding, closed.  A Raspberry Pi
+5's firmware reports its RAM as three ranges — `[0, 0x80000)`,
+`[0x80000, 0x3fc00000)` and `[0x40000000, top)` — withholding a few MiB at the
+top of the first gigabyte for itself (Pi 5 8 GiB Rev 1.1 and CM5 4 GiB Rev 1.0
+accounts read 2026-09-25: `0x3fbfffff` and `0x3fafffff`).  Until this row every
+variant declared `[0, ramSize)` whole, so no variant was covered and the bridge
+refused every real board.  The deployment's first-gigabyte RAM is now derived
+from the account (`rpi5LowRamTopFor`), so the board is accepted, bound to the
+8 GiB member cut at `0x3fc00000`, and the root task's untypeds describe the
+reported RAM outside the kernel's extent and nothing the firmware kept.  The
+negative is the retired reading: the uncut members are covered by none of the
+account's ranges.  The shared corpus carries the same account as
+`eight_gib_rpi5_firmware`. -/
+def realFirmwareAccountBindsTheReportedRam : IO Unit := do
   let firmwareAccount : List (Nat × Nat) :=
     [(0, 0x80000), (0x80000, 0x3fb80000), (0x40000000, 0x1c0000000)]
   let blob := boardDtbRegions firmwareAccount
+  let cut : BCM2712Config := { ramSize := 8 * 1024 * 1024 * 1024, lowRamTop := 0x3fc00000 }
   match DeviceTree.fromDtbFull blob rpi5MachineConfig.physicalAddressWidth with
-  | .error _ => expect "audit the firmware's account parses" false
+  | .error _ => expect "BP7.10 the firmware's account parses" false
   | .ok dt =>
-      expect "audit the firmware's account covers no variant"
-        (decide (rpi5VariantsCoveredBy dt.machineConfig = []))
-  match rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjectsFor none with
-  | .error .boardDoesNotMatchBinding =>
-      expect "REGISTERED audit the real firmware account is refused (BP7.10 flips this)" true
-  | _ => expect "REGISTERED audit the real firmware account is refused (BP7.10 flips this)" false
+      expect "BP7.10 the firmware's account binds the 8 GiB member cut at 0x3fc00000"
+        (decide (rpi5VariantFor dt.machineConfig = cut))
+      expect "BP7.10 NEGATIVE the firmware's account covers no uncut variant"
+        (rpi5Variants.all fun v =>
+          !machineConfigCovers dt.machineConfig (rpi5MachineConfigForVariant v))
+  match kernelEntryBoot? blob with
+  | none => expect "BP7.10 the entry boots the deployment on the real firmware account" false
+  | some (config, ist) =>
+      expect "BP7.10 the entry boots the deployment on the real firmware account" true
+      expect "BP7.10 the bound map is the cut member's"
+        (decide (boundMapOf config = rpi5MemoryMapForConfig cut))
+      expect "BP7.10 the bound map declares the withheld top of the first gigabyte as no RAM"
+        (decide (classifyAddress (PAddr.ofNat 0x3fc00000) (boundMapOf config) ≠ .ram))
+      let untypeds : List (Nat × Nat) :=
+        (List.range 3).filterMap fun i =>
+          match ist.state.objects[rpi5RootTaskUntypedId i]? with
+          | some (.untyped ut) => some (ut.regionBase.toNat, ut.regionSize)
+          | _ => none
+      expect "BP7.10 the root task owns exactly the reported RAM outside the kernel's extent"
+        (decide (untypeds = [(0x10000000, 0x3fc00000 - 0x10000000),
+          (0x40000000, 0x200000000 - 0x40000000)]))
 
-/-- The number of RAM regions above the guaranteed gigabyte each fixture
+/-- The number of RAM regions outside the kernel's reserved extent each fixture
 variant has, written by hand from `rpi5MemoryMapForConfig` rather than
 computed, so the check below compares the derivation against the map.  One on
-every board above the gigabyte: the BCM2712's DRAM is contiguous from 0. -/
+every board — the first gigabyte past the extent (WS-BP BP7.10) — and a second
+on every board above the gigabyte: the BCM2712's DRAM is contiguous from 0. -/
 private def ramUntypedCount : Nat → Nat
-  | 1 => 0
-  | _ => 1
+  | 1 => 1
+  | _ => 2
 
 /-- **WS-BP BP4.4**: the deployment the hardware entry installs boots on every
 board the device tree describes — 1, 2, 3 (bound as 2), 4 and 8 GiB — binding
@@ -1851,32 +1882,32 @@ def kernelEntry_boots_the_deployment_on_every_variant : IO Unit := do
           (decide (boundMapOf config = variantMap gib))
         expect s!"BP4.4 the {name} board installs both separation witnesses"
           (declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := RPi5Platform)))
-        -- WS-BP BP4.7: the RAM the boot maps above the gigabyte is the RAM the
-        -- root task owns — one installed untyped per extension of the bound
-        -- variant, over exactly that extension, named by the root CNode at
-        -- slot `7 + i`, and no untyped id past the last.
+        -- WS-BP BP4.7, BP7.10: the RAM the boot maps outside the kernel's
+        -- extent is the RAM the root task owns — one installed untyped per
+        -- extension of the bound variant, over exactly that extension, named
+        -- by the root CNode at slot `5 + i`, and no untyped id past the last.
         let exts := rpi5BootRamExtensions (rpi5VariantFor config.machineConfig)
-        expect s!"BP4.7 the {name} board has {ramUntypedCount gib} RAM untyped(s) above 1 GiB"
+        expect s!"BP4.7 the {name} board has {ramUntypedCount gib} RAM untyped(s) outside the kernel's extent"
           (decide (exts.length = ramUntypedCount gib))
         let rootSlots : List (SeLe4n.Slot × Capability) :=
           match ist.state.objects[rpi5RootTaskCNodeId]? with
           | some (.cnode cn) => cn.slots.toList
           | _ => []
         for (e, i) in exts.zipIdx do
-          let installed := match ist.state.objects[rpi5RootTaskRamUntypedId i]? with
+          let installed := match ist.state.objects[rpi5RootTaskUntypedId i]? with
             | some (.untyped ut) =>
                 decide (ut.regionBase.toNat = e.1) && decide (ut.regionSize = e.2) && !ut.isDevice
             | _ => false
           expect s!"BP4.7 the {name} board installs untyped {i} over its extension {i}" installed
-          expect s!"BP4.7 the {name} root CNode names untyped {i} at slot {7 + i} with retype"
+          expect s!"BP4.7 the {name} root CNode names untyped {i} at slot {5 + i} with retype"
             (rootSlots.any fun (sl, cap) =>
-              decide (sl = rpi5RootTaskRamUntypedSlot i) &&
-                decide (cap.target = .object (rpi5RootTaskRamUntypedId i)) &&
+              decide (sl = rpi5RootTaskUntypedSlot i) &&
+                decide (cap.target = .object (rpi5RootTaskUntypedId i)) &&
                 cap.rights.mem .retype)
         expect s!"BP4.7 the {name} board installs no RAM untyped past the last extension"
-          (ist.state.objects[rpi5RootTaskRamUntypedId exts.length]?).isNone
-  expect "BP4.4 NEGATIVE: a board short of the smallest variant boots nothing"
-    (kernelEntryBoot? (boardDtb 0x20000000)).isNone
+          (ist.state.objects[rpi5RootTaskUntypedId exts.length]?).isNone
+  expect "BP4.4 NEGATIVE: a board short of the first-gigabyte floor boots nothing"
+    (kernelEntryBoot? (boardDtb 0x10000000)).isNone
   expect "BP4.4 NEGATIVE: an empty blob — what the HAL hands over for an unreadable pointer — boots nothing"
     (kernelEntryBoot? ByteArray.empty).isNone
   expect "BP4.4 NEGATIVE: a board without the binding's MMIO boots nothing"
@@ -2349,8 +2380,32 @@ private def bootMapProbes (map : List SeLe4n.MemoryRegion) : List Nat :=
   let points := 0 :: bootMapFarProbe :: edges.flatMap fun b => if b == 0 then [0] else [b - 1, b]
   (points.mergeSort (· ≤ ·)).eraseDups
 
+/-- **WS-BP BP7.10**: the configurations the shared boot-map table carries —
+every member of `rpi5Variants` (uncut: its first gigabyte whole), and the cut
+configurations the firmware accounts in this suite bind: a Raspberry Pi 5
+8 GiB's (`rpi5VariantFor_rpi5_firmware_account`), a CM5 4 GiB's, rounded down
+off the granule (`rpi5VariantFor_cm5_firmware_account`), and the admissible
+floor on the smallest board, so the HAL is driven over the narrowest
+first-gigabyte extension the deployment admits as well as the widest. -/
+private def bootMapConfigurations : List BCM2712Config :=
+  rpi5Variants ++
+    [ { ramSize := 8 * 1024 * 1024 * 1024, lowRamTop := 0x3FC00000 },
+      { ramSize := 4 * 1024 * 1024 * 1024, lowRamTop := 0x3FA00000 },
+      { rpi5SmallestVariant with lowRamTop := rpi5LowRamTopFloor } ]
+
+/-- Every configuration the table carries is one the deployment admits, so
+the HAL is never driven over a map the boot would refuse. -/
+private theorem bootMapConfigurations_admissible :
+    ∀ v ∈ bootMapConfigurations, v.Admissible := by
+  intro v hv
+  simp only [bootMapConfigurations, List.mem_append, List.mem_cons, List.not_mem_nil,
+    or_false] at hv
+  rcases hv with hv | hv | hv | hv
+  · exact rpi5Variants_admissible v hv
+  all_goals subst hv; exact ⟨by decide, by decide⟩
+
 private def bootMapTableLines : List String :=
-  "# RPi5 boot map: the Lean memory map per RAM variant, and its kind at every probe (Lean/Rust cross-check)"
+  "# RPi5 boot map: the Lean memory map per RAM configuration (every variant, and firmware-cut ones), and its kind at every probe (Lean/Rust cross-check)"
     -- WS-BP BP3.2: the kernel's reserved extent the bound machine configuration
     -- carries, as `kernelReserved <base> <end>` — read back by the HAL's
     -- `the_kernel_reserved_extent_is_the_lean_and_linker_one` and by
@@ -2376,16 +2431,17 @@ private def bootMapTableLines : List String :=
     -- constants by running both rather than by a literal beside a comment.
     ++ (["uart", "gicd", "gicc"].zip mmioRegions).map (fun (name, r) =>
         s!"mmio {name} {bootMapHex r.base.toNat} {bootMapHex r.size}")
-    ++ rpi5Variants.flatMap fun v =>
+    ++ bootMapConfigurations.flatMap fun v =>
       let map := rpi5MemoryMapForConfig v
-      let ramTop := (map.filter (·.kind == .ram)).foldl (fun acc r => max acc r.endAddr) 0
-      s!"variant {bootMapHex v.ramSize} ramTop {bootMapHex ramTop}"
+      s!"variant {bootMapHex v.ramSize} lowRamTop {bootMapHex v.lowRamTop}"
         :: map.map (fun r =>
             s!"region {bootMapHex r.base.toNat} {bootMapHex r.size} {bootMapKindName r.kind}")
-        -- WS-BP BP4.6: what the boot maps above the guaranteed gigabyte on this
-        -- variant, as `extend <base> <size>` — the HAL's test applies each to
-        -- its tables through `mmu::extend_boot_tables` and then requires the
-        -- Normal window to be exactly this variant's RAM.
+        -- WS-BP BP4.6, BP7.10: what the boot maps outside the kernel's reserved
+        -- extent on this configuration, as `extend <base> <size>` — the HAL's
+        -- test applies each to its tables through `mmu::extend_boot_tables`
+        -- and then requires the Normal window to be exactly this
+        -- configuration's RAM, the firmware's withheld top of the first
+        -- gigabyte unmapped.
         ++ (rpi5BootRamExtensions v).map (fun e =>
             s!"extend {bootMapHex e.1} {bootMapHex e.2}")
         ++ (bootMapProbes map).map fun a =>
@@ -2476,7 +2532,7 @@ def main : IO Unit := do
   uartWindowIsTheDeviceTreesRegisterBlock
   rangesWalkStarvedOfFuelRefuses
   bootUntypedMustBePristine
-  realFirmwareAccountIsRefusedUntilDerived
+  realFirmwareAccountBindsTheReportedRam
   review9_parser_conformance_and_reservations
   review9_runtime_contract_follows_the_installed_map
   deviceTreeBridge_18_every_memory_node_contributes

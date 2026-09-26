@@ -3831,10 +3831,20 @@ run_negative_check "INVARIANT" rg -n '\b(UNDESCRIBED_RAM_TOP|BOOT_TABLE_COVERAGE
 run_negative_check "INVARIANT" rg -U -n '^pub fn init_mmu\(dtb_ptr: u64\) \{[^\n]*(\n([ \t][^\n]*)?)*crate::cmdline::' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n -U '^pub fn init_mmu\(dtb_ptr: u64\) \{\n    let layout = image_layout\(\);\n    if !layout\.is_well_formed\(\) \{\n(([ \t][^\n]*)?\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    if !dtb_window_admissible\(dtb_window\(dtb_ptr\), kernel_extent\(\)\) \{\n(([ \t][^\n]*)?\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(&layout\);' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n '^pub const GUARANTEED_RAM_TOP: u64 = 0x4000_0000;$' rust/sele4n-hal/src/mmu.rs
-# The cacheable window is the guaranteed interval unioned with the RAM BP4.6
-# records: `ram_range_covered` starts from guaranteed RAM whatever the record.
-run_check "INVARIANT" rg -n -U '^pub const fn ram_range_covered\(base: u64, size: u64, extensions: &\[\(u64, u64\)\]\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?        if cursor < GUARANTEED_RAM_TOP \{\n            next = Some\(GUARANTEED_RAM_TOP\);' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP7.10: the constant Normal window is the kernel's reserved extent —
+# `boot_mapping_for` maps Normal below `KERNEL_RESERVED_END` and nowhere else —
+# and the cacheable window is that interval unioned with the RAM BP4.6 records.
+# NEGATIVE: the retired first-gigabyte constant, which described the top of the
+# gigabyte the firmware keeps for itself as the kernel's own writable RAM.
+run_check "INVARIANT" rg -n -U '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{\n    if addr < KERNEL_RESERVED_END \{' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n '\bGUARANTEED_RAM_TOP\b' rust/sele4n-hal/src/
+run_check "INVARIANT" rg -n -U '^pub const fn ram_range_covered\(base: u64, size: u64, extensions: &\[\(u64, u64\)\]\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?        if cursor < KERNEL_RESERVED_END \{\n            next = Some\(KERNEL_RESERVED_END\);' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP7.10: the first gigabyte is extended in 2 MiB blocks through its own
+# level-2 table, one answer for both passes of `extend_boot_tables`, and an
+# extension reaching back into the kernel's extent is refused.
+run_check "INVARIANT" rg -n -U '^fn level2_table\(tables: &mut BootPageTables, g: usize\) -> Option<&mut \[u64; TABLE_ENTRIES\]> \{\n    if g == 0 \{\n        Some\(&mut tables\.l2_ram\)\n    \} else if g == DEVICE_GIB \{\n        Some\(&mut tables\.l2_device\)' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^    if base < KERNEL_RESERVED_END \{\n        return Err\(RamExtensionRefusal::InsideKernelReserved\);' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n '\bBelowGuaranteedRam\b' rust/sele4n-hal/src/
 # The device tree's window is the readers' own bound, taken from the pointer,
 # and admitted only inside the kernel's reserved extent (WS-BP BP3.2) and
 # outside the image.
@@ -3882,7 +3892,12 @@ run_check "INVARIANT" rg -n '^def rpi5KernelReservedEnd : Nat := 0x1000_0000$' S
 run_check "INVARIANT" rg -n '^pub const KERNEL_RESERVED_END: u64 = 0x1000_0000;$' rust/sele4n-hal/src/mmu.rs
 run_prose_check "INVARIANT" rg -n '^KERNEL_RESERVED_END = 0x10000000;$' rust/sele4n-hal/link.ld
 run_prose_check "INVARIANT" rg -n -F 'ASSERT(__lean_heap_end <= KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
-run_prose_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END % 4096 == 0 && KERNEL_RESERVED_END <= 0x40000000,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END % 0x200000 == 0,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END <= 0x40000000,' rust/sele4n-hal/link.ld
+# WS-BP BP7.10: the linker's RAM region IS the kernel's reserved extent.
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(ORIGIN(RAM) + LENGTH(RAM) == KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n '^    RAM \(rwx\) : ORIGIN = 0x80000, LENGTH = 0xFF80000$' rust/sele4n-hal/link.ld
+run_prose_negative_check "INVARIANT" rg -n -F "smallest RPi5's 1 GiB" rust/sele4n-hal/link.ld
 run_check "INVARIANT" rg -n 'fn the_kernel_reserved_extent_is_the_lean_and_linker_one\(\)' rust/sele4n-hal/src/mmu.rs
 # BP3.3/BP3.4 — the deployment config boots, installs both separation
 # witnesses, and is what the hardware entry boots.
@@ -3891,7 +3906,7 @@ run_check "INVARIANT" rg -n '^theorem rpi5BoundPlatformConfigAt_checked($|[ ({:\
 run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_witnessesInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^    ∀ v ∈ rpi5Variants, \(rpi5BoundPlatformConfigAt v\)\.wellFormed = true := by$' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -n '^  have hv := rpi5VariantFor_mem board$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^  have hv := rpi5VariantFor_admissible board$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5PlatformConfigFromDtb_deployment_ok($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # NEGATIVE: the single-board deployment BP4.4 retired — it proved the boot on
@@ -4354,8 +4369,9 @@ run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase size with' SeLe4n
 # the end of the window it started in.
 run_negative_check "INVARIANT" rg -n -U 'decide \(r\.childBase ≤ addr ∧ addr < r\.childBase \+ r\.length\)' SeLe4n/Platform/DeviceTree.lean
 # PR #892 review round 6's fallback top (`UNDESCRIBED_RAM_TOP`, 1 GiB) is the
-# boot map's ONLY RAM since WS-BP BP2.6 — `GUARANTEED_RAM_TOP`, anchored with the
-# map above; the fallback and the parsed top it fell back from are retired.
+# boot map's ONLY RAM since WS-BP BP2.6 — `GUARANTEED_RAM_TOP`, itself retired
+# at WS-BP BP7.10 for the kernel's reserved extent (anchored with the map
+# above); the fallback and the parsed top it fell back from are retired.
 # The round's Lean surface resolves.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Platform.DeviceTree
@@ -4978,7 +4994,12 @@ run_check "INVARIANT" rg -n 'fn test_clean_range_pou_line_coverage' rust/sele4n-
 # only invalid entries after deciding every refusal, widens the cacheable window
 # by the same record, and refuses once sealed.  The seal precedes the permit
 # (the BP4.5 anchor above holds that order).
-run_check "INVARIANT" rg -U -n '^def bootRamExtensionsOf \(map : List SeLe4n\.MemoryRegion\) : List \(Nat × Nat\) :=\n  map\.filterMap fun r =>\n    if r\.kind = \.ram ∧ max r\.base\.toNat rpi5GuaranteedRamTop < r\.endAddr then' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -U -n '^def bootRamExtensionsOf \(map : List SeLe4n\.MemoryRegion\) : List \(Nat × Nat\) :=\n  map\.filterMap bootRamExtensionOf\?$' SeLe4n/Platform/RPi5/Board.lean
+# WS-BP BP7.10: an extension is clipped at the kernel's extent, never at the
+# first gigabyte — so the part of the gigabyte the firmware reports is mapped
+# and handed to the root task, and the part it withholds is neither.
+run_check "INVARIANT" rg -U -n '^def bootRamExtensionOf\? \(r : SeLe4n\.MemoryRegion\) : Option \(Nat × Nat\) :=\n  if r\.kind = \.ram ∧ max r\.base\.toNat rpi5KernelReservedEnd < r\.endAddr then' SeLe4n/Platform/RPi5/Board.lean
+run_negative_check "INVARIANT" rg -n '\brpi5GuaranteedRamTop\b' SeLe4n/ tests/
 run_check "INVARIANT" rg -U -n '^def rpi5BootRamExtensionsFor \(board : SeLe4n\.MachineConfig\) : List \(Nat × Nat\) :=\n  bootRamExtensionsOf \(rpi5BoundMachineConfig board\)\.memoryMap$' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^theorem mem_bootRamExtensionsOf($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^theorem bootRamExtensionsOf_covers($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
@@ -4995,18 +5016,23 @@ run_check "INVARIANT" rg -U -n '^pub extern "C" fn ffi_extend_boot_ram_map\(base
 run_check "INVARIANT" rg -n 'fn a_refused_extension_writes_nothing' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '\["extend", base, size\] => variants' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^extend 0x40000000 0x3c0000000$' tests/fixtures/boot_map.expected
+# WS-BP BP7.10: the table carries the real firmware's cut configuration, whose
+# first extension stops where the firmware said its RAM ends.
+run_check "INVARIANT" rg -U -n '^variant 0x200000000 lowRamTop 0x3fc00000\n(region [^\n]*\n)*extend 0x10000000 0x2fc00000$' tests/fixtures/boot_map.expected
 # WS-BP BP4.7: the RAM the boot maps above the gigabyte is handed to the root
 # task.  The deployment's objects are a function of the variant, the bridge
 # applies it to the variant its parse selected, the RAM untypeds are DERIVED
 # from the same extensions BP4.6 maps, and the coverage and installation
 # theorems exist.  The retired variant-independent object list must not return.
 run_check "INVARIANT" rg -U -n '^        \.ok \(SeLe4n\.Platform\.Boot\.PlatformConfig\.fromDeviceTree dt irqTable\n          \(initialObjectsFor \(SeLe4n\.Platform\.RPi5\.rpi5VariantFor dt\.machineConfig\)\)$' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -U -n '^def rpi5RootTaskRamUntypeds \(v : BCM2712Config\) : List \(SeLe4n\.ObjId × UntypedObject\) :=\n  \(rpi5BootRamExtensions v\)\.mapIdx fun i e =>$' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -U -n '^def rpi5InitialObjectsFor \(v : BCM2712Config\) : List ObjectEntry :=[^\n]*(\n([ \t][^\n]*)?)*?  \(rpi5RootTaskRamUntypeds v\)\.map fun u => untypedEntry u\.1 u\.2$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -U -n '^def rpi5RootTaskUntypeds \(v : BCM2712Config\) : List \(SeLe4n\.ObjId × UntypedObject\) :=\n  \(rpi5BootRamExtensions v\)\.mapIdx fun i e =>$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -U -n '^def rpi5InitialObjectsFor \(v : BCM2712Config\) : List ObjectEntry :=[^\n]*(\n([ \t][^\n]*)?)*?  \(rpi5RootTaskUntypeds v\)\.map fun u => untypedEntry u\.1 u\.2$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -U -n '^def rpi5PlatformConfigFor \(board : SeLe4n\.MachineConfig\) : PlatformConfig :=\n  \{ irqTable := rpi5IrqTable\n    initialObjects := rpi5InitialObjectsFor \(rpi5VariantFor board\)$' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -n '^theorem rpi5RootTaskRamUntypeds_regions($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5RootTaskUntypeds_regions($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5InitialObjectsFor_covers_ram($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_ramUntypedInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_untypedInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+# WS-BP BP7.10: the retired split of the root task's RAM at the first gigabyte.
+run_negative_check "INVARIANT" rg -n '\b(rpi5RootTaskRamUntypeds|rpi5RootTaskRamUntypedId|rpi5RootTaskRamUntypedSlot|rpi5DeploymentBootStateAt_ramUntypedInstalled)\b' SeLe4n tests
 run_check "INVARIANT" rg -n '^theorem rpi5RootTaskCNodeFor_slotsAddressable($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_negative_check "INVARIANT" rg -n '\brpi5InitialObjects\b|\brpi5RootTaskCNode\b' SeLe4n tests
 # WS-BP BP5.1: the kernel image is one bare-metal binary, gated behind its own
@@ -14269,9 +14295,10 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.RPi5.rpi5VariantsCoveredBy
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor
 #check @SeLe4n.Platform.RPi5.rpi5BoundMachineConfig
-#check @SeLe4n.Platform.RPi5.rpi5VariantFor_mem
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_admissible
+#check @SeLe4n.Platform.RPi5.rpi5RamVariantFor_mem
 #check @SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_mem_family
-#check @SeLe4n.Platform.RPi5.rpi5VariantFor_of_uncovered
+#check @SeLe4n.Platform.RPi5.rpi5RamVariantFor_of_uncovered
 #check @SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_covered_iff
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_maximal
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_rpi5MachineConfig
@@ -14281,6 +14308,19 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_two_gib
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_eight_gib_two_banks
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_foreign_base
+-- The first gigabyte RAM top is read off the firmware account.
+#check @SeLe4n.Platform.RPi5.rpi5LowRamTopFor
+#check @SeLe4n.Platform.RPi5.rpi5LowRamTopFor_admissible
+#check @SeLe4n.Platform.RPi5.rpi5LowRamTopFor_le_prefix
+#check @SeLe4n.Platform.RPi5.rpi5LowRamTop_covered
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_rpi5_firmware_account
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_cm5_firmware_account
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_kernel_extent_not_ram
+#check @SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant_wellFormed
+#check @ramPrefixTop_sound
+#check @memoryRegionCovered_of_le_coverReach
+#check @SeLe4n.MachineConfig.wellFormed_of_within
+#check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_of_withoutExtents
 #check @SeLe4n.Platform.RPi5.rpi5_bindMachineConfig
 #check @SeLe4n.Platform.PlatformBinding.bindMachineConfig
 #check @SeLe4n.Platform.PlatformBinding.bindMachineConfig_declaredCoreCount
@@ -14319,7 +14359,9 @@ run_check "INVARIANT" rg -n '^def memoryRegionCoveredByUnion($|[ ({:\[\]])' SeLe
 run_check "INVARIANT" rg -n -U 'r\.endAddr ≤ q\.endAddr\) \|\|\n  memoryRegionCoveredByUnion regions r' SeLe4n/Platform/Boot/MemoryCoverage.lean
 run_negative_check "INVARIANT" rg -n -U 'r\.endAddr ≤ q\.endAddr\) &&\n  memoryRegionCoveredByUnion regions r' SeLe4n/Platform/Boot/MemoryCoverage.lean
 run_check "INVARIANT" rg -n '^import SeLe4n.Platform.Boot.MemoryCoverage' SeLe4n/Platform/RPi5/Board.lean
-run_check "INVARIANT" rg -n -U 'def rpi5VariantsCoveredBy \(board : SeLe4n\.MachineConfig\) : List BCM2712Config :=\n  rpi5Variants\.filter fun v =>\n    SeLe4n\.Platform\.Boot\.machineConfigCovers board \(rpi5MachineConfigForVariant v\)' SeLe4n/Platform/RPi5/Board.lean
+# WS-BP BP7.10: each member is judged CUT to the account's first-gigabyte top,
+# so the firmware's withheld top of the gigabyte refuses no board.
+run_check "INVARIANT" rg -n -U 'def rpi5VariantsCoveredBy \(board : SeLe4n\.MachineConfig\) : List BCM2712Config :=\n  rpi5Variants\.filter fun v =>\n    SeLe4n\.Platform\.Boot\.machineConfigCovers board\n      \(rpi5MachineConfigForVariant \{ v with lowRamTop := rpi5LowRamTopFor board \}\)' SeLe4n/Platform/RPi5/Board.lean
 
 # WS-SM SM5.C — cross-core wake via SGI surface anchors.  Covers the SM5.C
 # production transitions (`enqueueRunnableOnCore` / `determineTargetCore` /
@@ -21493,7 +21535,8 @@ run_check "INVARIANT" rg -n '^def socPeripheralBase : SeLe4n\.PAddr := \(SeLe4n\
 run_check "INVARIANT" rg -n '^mmio uart 0x107d001000 0x200$' tests/fixtures/boot_map.expected
 run_check "INVARIANT" rg -n '^  \[ \{ base := uart0Base,            size := 0x200,  kind := \.device \}' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^  uartWindowIsTheDeviceTreesRegisterBlock$' tests/
-run_check "INVARIANT" rg -n '^  realFirmwareAccountIsRefusedUntilDerived$' tests/
+run_check "INVARIANT" rg -n '^  realFirmwareAccountBindsTheReportedRam$' tests/
+run_negative_check "INVARIANT" rg -n '\brealFirmwareAccountIsRefusedUntilDerived\b' tests/
 run_check "INVARIANT" rg -n '^mmio gicd 0x107fff9000 0x1000$' tests/fixtures/boot_map.expected
 run_check "INVARIANT" rg -n '^mmio gicc 0x107fffa000 0x2000$' tests/fixtures/boot_map.expected
 run_check "INVARIANT" rg -n '^pub\(crate\) fn lean_mmio_window\(name: &str\) -> \(u64, u64\) \{$' rust/sele4n-hal/src/mmu.rs

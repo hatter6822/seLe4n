@@ -90,45 +90,150 @@ def uart0Base : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x107D001000)
 -- RPi5 memory map
 -- ============================================================================
 
-/-- V4-D/M-HW-3: BCM2712 board configuration. Parameterizes RAM size
-    to support the 1, 2, 4, 8 and 16 GiB RPi5 variants (`rpi5Variants`).
-    Peripheral regions remain fixed (BCM2712-determined). -/
+/-- **WS-BP BP4.6, renamed at BP7.10**: the top of the first gigabyte —
+`0x4000_0000`, the smallest variant's RAM size and the boundary above which a
+board's RAM is the variant's (`bootRamExtensionsOf` names it on the HAL's side).
+
+**WS-BP BP7.10**: this was `rpi5GuaranteedRamTop`, "one past the RAM every
+Raspberry Pi 5 has", and that was false: a Raspberry Pi 5's firmware keeps the
+top few MiB of the first gigabyte for itself and reports the rest as RAM
+(`[0x80000, 0x3FC00000)` on a Pi 5 8 GiB Rev 1.1, `[0x80000, 0x3FB00000)` on a
+CM5 4 GiB Rev 1.0).  So no RAM beyond the kernel's own extent is guaranteed; the
+first gigabyte is an **upper bound** on the RAM the account may give the
+deployment below the variant's part (`rpi5LowRamTopAdmissible`), and how much of
+it the deployment declares is read off the account (`rpi5LowRamTopFor`). -/
+def rpi5FirstGigabyteTop : Nat := 0x4000_0000
+
+/- **Tombstone (WS-BP BP7.10)**: `rpi5GuaranteedRamTop` is `rpi5FirstGigabyteTop`
+above; the rename retires the claim the old name made. -/
+
+/-- **WS-BP BP3.2**: the end of the kernel's reserved extent on the RPi5 —
+    `[0, rpi5KernelReservedEnd)` holds the firmware's stub below the image
+    (`_start` is `0x80000`), the image, both stack regions, the Lean heap
+    arena, and the window the image build places the device tree in.
+
+    256 MiB, inside the first gigabyte.  The same number is `link.ld`'s
+    `KERNEL_RESERVED_END` — whose `ASSERT` refuses an image that outgrows it —
+    and the HAL's `mmu::KERNEL_RESERVED_END`, which refuses a device tree
+    outside it and (**WS-BP BP7.10**) is the only RAM the HAL's boot map
+    describes before the verified parse; `tests/Ak9PlatformSuite.lean` writes
+    this constant into `tests/fixtures/boot_map.expected`, and the HAL's test
+    and `scripts/check_link_script.py` read it back, so the three cannot
+    drift. -/
+def rpi5KernelReservedEnd : Nat := 0x1000_0000
+
+/-- **WS-BP BP7.10**: the granule the deployment's first-gigabyte RAM is
+    declared in — 2 MiB, the smallest block the HAL's boot map extends by
+    (`mmu::extend_boot_tables`), so every byte the model calls RAM is a byte
+    the boot map can describe as RAM and no byte beyond it. -/
+def rpi5LowRamGranule : Nat := 0x20_0000
+
+/-- **WS-BP BP7.10**: the least first-gigabyte RAM top the deployment admits —
+    the kernel's reserved extent and one granule for the root task.  An account
+    that does not reach it does not have the RAM the image already occupies,
+    and is refused. -/
+def rpi5LowRamTopFloor : Nat := rpi5KernelReservedEnd + rpi5LowRamGranule
+
+/-- **WS-BP BP7.10**: a first-gigabyte RAM top the deployment can boot on — at
+    least the floor (the kernel's extent lies inside the account's RAM, and the
+    root task gets a non-empty untyped past it), at most the first gigabyte,
+    and on a granule boundary. -/
+def rpi5LowRamTopAdmissible (t : Nat) : Bool :=
+  decide (rpi5LowRamTopFloor ≤ t) && decide (t ≤ rpi5FirstGigabyteTop) &&
+    t % rpi5LowRamGranule == 0
+
+theorem rpi5LowRamTopAdmissible_iff (t : Nat) :
+    rpi5LowRamTopAdmissible t = true ↔
+      rpi5LowRamTopFloor ≤ t ∧ t ≤ rpi5FirstGigabyteTop ∧ t % rpi5LowRamGranule = 0 := by
+  simp [rpi5LowRamTopAdmissible, and_assoc]
+
+/-- The floor is itself admissible — the fallback below is always a top the
+    deployment boots on. -/
+theorem rpi5LowRamTopFloor_admissible : rpi5LowRamTopAdmissible rpi5LowRamTopFloor = true := by
+  decide
+
+/-- The whole first gigabyte is admissible — the top a board that reports all
+    of it binds. -/
+theorem rpi5FirstGigabyteTop_admissible :
+    rpi5LowRamTopAdmissible rpi5FirstGigabyteTop = true := by
+  decide
+
+/-- **WS-BP BP3.2**: the reserved extent lies below every admissible top, so
+    the kernel's image is inside the RAM the deployment declares. -/
+theorem rpi5KernelReservedEnd_lt_of_admissible (t : Nat)
+    (h : rpi5LowRamTopAdmissible t = true) : rpi5KernelReservedEnd < t := by
+  have := ((rpi5LowRamTopAdmissible_iff t).mp h).1
+  unfold rpi5LowRamTopFloor rpi5LowRamGranule at this
+  omega
+
+/- **Tombstone (WS-BP BP7.10)**: `rpi5KernelReservedEnd_le_guaranteedRam` is
+`rpi5KernelReservedEnd_lt_of_admissible` above — the reserved extent is below the
+account's first-gigabyte RAM, which is what the old theorem's "guaranteed" RAM
+was standing in for. -/
+
+/-- V4-D/M-HW-3: BCM2712 board configuration — the board's RAM, as the
+    deployment declares it.
+
+    `ramSize` selects the variant (1, 2, 4, 8 or 16 GiB, `rpi5Variants`) and
+    fixes the RAM **above** the first gigabyte.  `lowRamTop` (**WS-BP BP7.10**)
+    is how much of the first gigabyte is RAM: the firmware keeps the top of it
+    for itself and the amount varies by board and firmware, so it is read off
+    the board's account (`rpi5LowRamTopFor`) rather than assumed.  Its default,
+    the whole gigabyte, is what the five family members carry. -/
 structure BCM2712Config where
-  /-- Total RAM size in bytes. RPi5 ships in 1, 2, 4, 8 and 16 GiB variants.
-      The RAM region spans from 0x0000_0000 to `ramSize` minus peripheral offset. -/
+  /-- Total RAM size in bytes. RPi5 ships in 1, 2, 4, 8 and 16 GiB variants. -/
   ramSize : Nat := 4 * 1024 * 1024 * 1024  -- Default: 4 GB
+  /-- **WS-BP BP7.10**: one past the RAM the deployment declares in the first
+      gigabyte, `[0, lowRamTop)`. -/
+  lowRamTop : Nat := rpi5FirstGigabyteTop
   deriving Repr, DecidableEq
 
 /-- V4-D: Default BCM2712 configuration (4 GB model). -/
 def bcm2712DefaultConfig : BCM2712Config := {}
 
-/-- V4-D/M-HW-3: Physical memory map parameterized by board RAM size.
+/-- **WS-BP BP7.10**: the family member a configuration is cut from — the same
+    RAM size with the whole first gigabyte. -/
+def BCM2712Config.uncut (v : BCM2712Config) : BCM2712Config :=
+  { v with lowRamTop := rpi5FirstGigabyteTop }
 
-    Two regions, low to high:
-    1. RAM: `[0, ramSize)` — the BCM2712's DRAM is contiguous from address 0
-       (`bcm2712.dtsi`'s `axi` node maps `[0, 0x10_0000_0000)` 1:1 to DRAM),
-       on every variant, 1 GiB through 16 GiB.
-    2. The SoC-bus window `[socPeripheralBase, + socPeripheralSize)`
+/-- V4-D/M-HW-3, WS-BP BP7.10: Physical memory map of a board configuration.
+
+    Three regions, low to high:
+    1. RAM `[0, lowRamTop)` — the part of the first gigabyte the firmware
+       reports as RAM (**WS-BP BP7.10**; the whole gigabyte on the family
+       members, the account's own on a bound board).
+    2. RAM `[rpi5FirstGigabyteTop, ramSize)`, on every variant larger than the
+       first gigabyte — the BCM2712's DRAM is contiguous from 0
+       (`bcm2712.dtsi`'s `axi` node maps `[0, 0x10_0000_0000)` 1:1 to DRAM).
+    3. The SoC-bus window `[socPeripheralBase, + socPeripheralSize)`
        (`0x10_7C00_0000`, 64 MiB), which holds UART10 and the GIC-400.
+
+    **WS-BP BP7.10**: until then the map was `[0, ramSize)` whole, and no
+    real board's firmware account covered it — the firmware withholds the top
+    of the first gigabyte — so every real board was refused.  The first
+    gigabyte is now its own region, cut where the account says, and the gap
+    between it and the variant's part is memory the deployment does not
+    declare, map or hand to anyone.
 
     **The BCM2712 address-map correction (v0.36.2)**: this map was the
     BCM2711's until then — RAM capped at `0xFC00_0000`, a "GPU carve-out" at
     `0xFC00_0000`, a device window `[0xFE00_0000, 0xFF85_0000)` holding the UART
     and the GIC, and a reserved tail to the 4 GiB boundary.  None of that is the
-    Raspberry Pi 5: on the BCM2712 those addresses are DRAM, so the image would
-    have programmed its UART and its interrupt controller by writing to memory,
-    and declared 64 MiB of a 4 GiB board's RAM as something else.  What the
-    firmware itself reserves inside DRAM is its business to say, and it says it
-    through the device tree's reservation block and `/reserved-memory`, which
-    `DeviceTree.fromDtbFull` subtracts. -/
+    Raspberry Pi 5: on the BCM2712 those addresses are DRAM.  What the firmware
+    itself reserves inside DRAM it says through the device tree's reservation
+    block and `/reserved-memory`, which `DeviceTree.fromDtbFull` subtracts. -/
 def rpi5MemoryMapForConfig (config : BCM2712Config) : List SeLe4n.MemoryRegion :=
   [ { base := (SeLe4n.PAddr.ofNat 0x00000000)
-      size := config.ramSize
-      kind := .ram }
-  , { base := socPeripheralBase
+      size := config.lowRamTop
+      kind := .ram } ] ++
+  (if rpi5FirstGigabyteTop < config.ramSize then
+    [ { base := SeLe4n.PAddr.ofNat rpi5FirstGigabyteTop
+        size := config.ramSize - rpi5FirstGigabyteTop
+        kind := .ram } ]
+  else []) ++
+  [ { base := socPeripheralBase
       size := socPeripheralSize
-      kind := .device }
-  ]
+      kind := .device } ]
 
 /-- Standard Raspberry Pi 5 physical memory map (4 GB model).
     V4-D: Now delegates to `rpi5MemoryMapForConfig` with default config. -/
@@ -139,28 +244,10 @@ def rpi5MemoryMap : List SeLe4n.MemoryRegion :=
 -- ARM64 architectural constants
 -- ============================================================================
 
-/-- **WS-BP BP3.2**: the end of the kernel's reserved extent on the RPi5 —
-    `[0, rpi5KernelReservedEnd)` holds the firmware's stub below the image
-    (`_start` is `0x80000`), the image, both stack regions, the Lean heap
-    arena, and the window the image build places the device tree in.
-
-    256 MiB, inside the guaranteed gigabyte.  The same number is `link.ld`'s
-    `KERNEL_RESERVED_END` — whose `ASSERT` refuses an image that outgrows it —
-    and the HAL's `mmu::KERNEL_RESERVED_END`, which refuses a device tree
-    outside it; `tests/Ak9PlatformSuite.lean` writes this constant into
-    `tests/fixtures/boot_map.expected`, and the HAL's test and
-    `scripts/check_link_script.py` read it back, so the three cannot drift. -/
-def rpi5KernelReservedEnd : Nat := 0x1000_0000
-
 /-- **WS-BP BP3.2**: the kernel's reserved extent as a region list — what the
     boot refuses a boot untyped over (`Boot.untypedClearOfKernel`). -/
 def rpi5KernelReserved : List SeLe4n.MemoryRegion :=
   [{ base := SeLe4n.PAddr.ofNat 0, size := rpi5KernelReservedEnd, kind := .reserved }]
-
-/-- **WS-BP BP3.2**: the reserved extent lies inside the RAM every Raspberry
-    Pi 5 has — the smallest board's gigabyte. -/
-theorem rpi5KernelReservedEnd_le_guaranteedRam : rpi5KernelReservedEnd ≤ 0x4000_0000 := by
-  decide
 
 /-- ARMv8-A machine configuration for Raspberry Pi 5. -/
 def rpi5MachineConfig : SeLe4n.MachineConfig :=
@@ -482,6 +569,31 @@ theorem rpi5Variants_ascending :
     rpi5Variants.Pairwise (fun a b => a.ramSize ≤ b.ramSize) := by
   decide
 
+/-- **WS-BP BP7.10**: every family member declares the whole first gigabyte —
+    each is its own uncut form. -/
+theorem rpi5Variants_uncut : ∀ v ∈ rpi5Variants, v.uncut = v := by decide
+
+/-- **WS-BP BP7.10**: a board configuration the deployment boots on — cut from
+    a family member, at an admissible first-gigabyte top.  Every family member
+    is one (`rpi5Variants_admissible`), and so is every configuration the
+    binding selects for a board account (`rpi5VariantFor_admissible`). -/
+def BCM2712Config.Admissible (v : BCM2712Config) : Prop :=
+  v.uncut ∈ rpi5Variants ∧ rpi5LowRamTopAdmissible v.lowRamTop = true
+
+theorem rpi5Variants_admissible (v : BCM2712Config) (hv : v ∈ rpi5Variants) : v.Admissible := by
+  refine ⟨(rpi5Variants_uncut v hv).symm ▸ hv, ?_⟩
+  have h : v.lowRamTop = rpi5FirstGigabyteTop := by
+    rw [← rpi5Variants_uncut v hv]; rfl
+  rw [h]; exact rpi5FirstGigabyteTop_admissible
+
+/-- A configuration cut from family member `m` at admissible top `t` is
+    admissible. -/
+theorem admissible_of_mem_cut (m : BCM2712Config) (hm : m ∈ rpi5Variants) (t : Nat)
+    (ht : rpi5LowRamTopAdmissible t = true) : ({ m with lowRamTop := t } : BCM2712Config).Admissible := by
+  refine ⟨?_, ht⟩
+  have : ({ m with lowRamTop := t } : BCM2712Config).uncut = m.uncut := rfl
+  rw [this, rpi5Variants_uncut m hm]; exact hm
+
 /-- **PR #892 review round 2**: a variant's machine configuration — the
 canonical one with that variant's memory map.  Everything but the map is the
 BCM2712's and identical across the family: the address widths, the page size,
@@ -516,24 +628,128 @@ theorem rpi5Variants_wellFormed :
     rpi5Variants.all (fun v => (rpi5MachineConfigForVariant v).wellFormed) = true := by
   decide
 
-/-- **PR #892 review round 2**: the variants a board account covers, in the
-family's ascending order — decided by the bridge's own predicate. -/
+/-- **WS-BP BP7.10**: a configuration's map is its uncut member's, with the
+    first-gigabyte region cut to `lowRamTop` and nothing else changed — so
+    region by region a non-empty sub-range, whenever the top is admissible. -/
+theorem rpi5MemoryMapForConfig_within_uncut (v : BCM2712Config)
+    (h : rpi5LowRamTopAdmissible v.lowRamTop = true) :
+    SeLe4n.MachineConfig.regionsNonEmptyWithin (rpi5MemoryMapForConfig v)
+      (rpi5MemoryMapForConfig v.uncut) := by
+  have hKre := rpi5KernelReservedEnd_lt_of_admissible _ h
+  have hTop := ((rpi5LowRamTopAdmissible_iff _).mp h).2.1
+  unfold rpi5KernelReservedEnd at hKre
+  have hRefl : ∀ r : SeLe4n.MemoryRegion, 0 < r.size →
+      SeLe4n.MachineConfig.regionNonEmptyWithin r r := fun r hr =>
+    ⟨hr, Nat.le_refl _, Nat.le_refl _⟩
+  unfold rpi5MemoryMapForConfig BCM2712Config.uncut
+  simp only [List.cons_append, List.nil_append]
+  refine ⟨⟨by show 0 < v.lowRamTop; omega, Nat.le_refl _, ?_⟩, ?_⟩
+  · simp only [SeLe4n.MemoryRegion.endAddr]
+    unfold rpi5FirstGigabyteTop at hTop ⊢
+    simpa using hTop
+  · split
+    · rename_i hGt
+      exact ⟨hRefl _ (by simp; omega), hRefl _ (by decide), trivial⟩
+    · exact ⟨hRefl _ (by decide), trivial⟩
+
+/-- **WS-BP BP7.10**: every admissible configuration is a well-formed machine
+    configuration — its map is its family member's, cut in the first gigabyte,
+    and cutting a region preserves well-formedness
+    (`MachineConfig.wellFormed_of_within`). -/
+theorem rpi5MachineConfigForVariant_wellFormed (v : BCM2712Config) (hv : v.Admissible) :
+    (rpi5MachineConfigForVariant v).wellFormed = true :=
+  SeLe4n.MachineConfig.wellFormed_of_within (rpi5MachineConfigForVariant v.uncut)
+    (rpi5MemoryMapForConfig v) (rpi5MemoryMapForConfig_within_uncut v hv.2)
+    (List.all_eq_true.mp rpi5Variants_wellFormed _ hv.1)
+
+-- ============================================================================
+-- WS-BP BP7.10 — the first gigabyte's RAM, read off the account
+-- ============================================================================
+
+/-- **WS-BP BP7.10**: the first-gigabyte RAM top the deployment declares on a
+board account: how far the account reports RAM contiguously from `0`
+(`Boot.ramPrefixTop`), clipped to the first gigabyte and rounded **down** to the
+granule — and, when that is not admissible, the floor.
+
+Rounding down and clipping are the fail-safe directions: each declares less
+than the account reports, never more.  The fallback is the floor for the same
+reason `rpi5SmallestVariant` is the smallest: an account that does not reach
+the floor is either not a board's (the harness passes `defaultMachineConfig`,
+whose map is empty) or a board the bridge refuses before this top is used
+(`rpi5LowRamTop_covered` is the converse — an account reaching the floor is
+always covered to the top it binds). -/
+def rpi5LowRamTopFor (board : SeLe4n.MachineConfig) : Nat :=
+  let reach := min (SeLe4n.Platform.Boot.ramPrefixTop board) rpi5FirstGigabyteTop
+  let t := reach - reach % rpi5LowRamGranule
+  if rpi5LowRamTopAdmissible t then t else rpi5LowRamTopFloor
+
+/-- **WS-BP BP7.10**: whatever the account, the top is admissible. -/
+theorem rpi5LowRamTopFor_admissible (board : SeLe4n.MachineConfig) :
+    rpi5LowRamTopAdmissible (rpi5LowRamTopFor board) = true := by
+  unfold rpi5LowRamTopFor
+  dsimp only
+  split
+  · assumption
+  · exact rpi5LowRamTopFloor_admissible
+
+/-- **WS-BP BP7.10 (soundness)**: an account that reaches the floor binds a top
+it reports — every address below the bound top is RAM the account reports as
+RAM, so the deployment never declares first-gigabyte memory the firmware kept
+for itself. -/
+theorem rpi5LowRamTopFor_le_prefix (board : SeLe4n.MachineConfig)
+    (h : rpi5LowRamTopFloor ≤ SeLe4n.Platform.Boot.ramPrefixTop board) :
+    rpi5LowRamTopFor board ≤ SeLe4n.Platform.Boot.ramPrefixTop board := by
+  unfold rpi5LowRamTopFor
+  dsimp only
+  split
+  · omega
+  · exact h
+
+/-- **WS-BP BP7.10 (the payoff)**: an account that reaches the floor covers the
+first-gigabyte region it binds — so the first gigabyte never refuses a board
+whose firmware reports the kernel's extent as RAM, however much of the gigabyte
+it withholds.  The union reading does the work, so an account that cuts the
+gigabyte into pieces (`[0, 0x80000)` and `[0x80000, …)` on a Raspberry Pi 5) is
+covered as well as one reporting it whole. -/
+theorem rpi5LowRamTop_covered (board : SeLe4n.MachineConfig)
+    (h : rpi5LowRamTopFloor ≤ SeLe4n.Platform.Boot.ramPrefixTop board) :
+    SeLe4n.Platform.Boot.memoryRegionCovered board.memoryMap
+      { base := SeLe4n.PAddr.ofNat 0, size := rpi5LowRamTopFor board, kind := .ram } = true := by
+  apply SeLe4n.Platform.Boot.memoryRegionCovered_of_le_coverReach
+  · rfl
+  · simp only [SeLe4n.MemoryRegion.endAddr]
+    have := rpi5LowRamTopFor_le_prefix board h
+    unfold SeLe4n.Platform.Boot.ramPrefixTop at this
+    simpa [SeLe4n.PAddr.ofNat, SeLe4n.PAddr.toNat] using this
+
+/-- **PR #892 review round 2, WS-BP BP7.10**: the family members a board
+account covers, in the family's ascending order — decided by the bridge's own
+predicate, on each member cut to the account's first-gigabyte top. -/
 def rpi5VariantsCoveredBy (board : SeLe4n.MachineConfig) : List BCM2712Config :=
   rpi5Variants.filter fun v =>
-    SeLe4n.Platform.Boot.machineConfigCovers board (rpi5MachineConfigForVariant v)
+    SeLe4n.Platform.Boot.machineConfigCovers board
+      (rpi5MachineConfigForVariant { v with lowRamTop := rpi5LowRamTopFor board })
 
-/-- **PR #892 review round 2**: the variant the binding installs for a board
-account — the **largest** the account covers, and `rpi5SmallestVariant` when it
-covers none (see that definition for why the fallback is the smallest).
+/-- **PR #892 review round 2**: the family member a board account selects — the
+**largest** the account covers, and `rpi5SmallestVariant` when it covers none
+(see that definition for why the fallback is the smallest).
 
 "Largest covered" rather than "the account's total RAM size" is the relation
 rather than the presence check: a board reporting 4 GiB at a foreign base
 covers no variant and is refused by the bridge, where a size derivation would
 have bound the 4 GiB map over memory that is not there. -/
-def rpi5VariantFor (board : SeLe4n.MachineConfig) : BCM2712Config :=
+def rpi5RamVariantFor (board : SeLe4n.MachineConfig) : BCM2712Config :=
   match (rpi5VariantsCoveredBy board).getLast? with
   | some v => v
   | none => rpi5SmallestVariant
+
+/-- **WS-BP BP7.10**: the configuration the binding installs for a board
+account — the member it selects (`rpi5RamVariantFor`), cut to the account's
+first-gigabyte top (`rpi5LowRamTopFor`).  The variant is chosen by the RAM the
+account reports above the first gigabyte; the first gigabyte is the account's
+own. -/
+def rpi5VariantFor (board : SeLe4n.MachineConfig) : BCM2712Config :=
+  { rpi5RamVariantFor board with lowRamTop := rpi5LowRamTopFor board }
 
 /-- **PR #892 review round 2**: the machine configuration the RPi5 binding
 installs for a board account — `PlatformBinding.bindMachineConfig` at
@@ -544,22 +760,36 @@ def rpi5BoundMachineConfig (board : SeLe4n.MachineConfig) : SeLe4n.MachineConfig
 theorem mem_rpi5VariantsCoveredBy (board : SeLe4n.MachineConfig) (v : BCM2712Config) :
     v ∈ rpi5VariantsCoveredBy board ↔
       v ∈ rpi5Variants ∧
-        SeLe4n.Platform.Boot.machineConfigCovers board (rpi5MachineConfigForVariant v) = true :=
+        SeLe4n.Platform.Boot.machineConfigCovers board
+          (rpi5MachineConfigForVariant { v with lowRamTop := rpi5LowRamTopFor board }) = true :=
   List.mem_filter
 
-/-- **PR #892 review round 2**: whatever the account, the binding installs a
-member of its declared family — a caller's configuration selects among the
-variants and can never become the machine configuration itself. -/
-theorem rpi5VariantFor_mem (board : SeLe4n.MachineConfig) :
-    rpi5VariantFor board ∈ rpi5Variants := by
-  unfold rpi5VariantFor
+/-- **PR #892 review round 2**: whatever the account, the member selected is one
+of the family's — a caller's configuration selects among the variants and can
+never become the machine configuration itself. -/
+theorem rpi5RamVariantFor_mem (board : SeLe4n.MachineConfig) :
+    rpi5RamVariantFor board ∈ rpi5Variants := by
+  unfold rpi5RamVariantFor
   cases h : (rpi5VariantsCoveredBy board).getLast? with
   | none => exact rpi5SmallestVariant_mem
   | some v => exact ((mem_rpi5VariantsCoveredBy board v).mp (List.mem_of_getLast? h)).1
 
+/-- **WS-BP BP7.10**: whatever the account, the configuration the binding
+installs is admissible — a family member cut to an admissible top.  Every
+deployment theorem is stated over admissible configurations, which is why it
+holds of every account. -/
+theorem rpi5VariantFor_admissible (board : SeLe4n.MachineConfig) :
+    (rpi5VariantFor board).Admissible :=
+  admissible_of_mem_cut _ (rpi5RamVariantFor_mem board) _ (rpi5LowRamTopFor_admissible board)
+
+/- **Tombstone (WS-BP BP7.10)**: `rpi5VariantFor_mem` is
+`rpi5RamVariantFor_mem` (the member selected) and `rpi5VariantFor_admissible`
+(the configuration installed): the installed configuration is no longer a
+family member, since its first gigabyte is the account's. -/
+
 theorem rpi5BoundMachineConfig_mem_family (board : SeLe4n.MachineConfig) :
-    ∃ v ∈ rpi5Variants, rpi5BoundMachineConfig board = rpi5MachineConfigForVariant v :=
-  ⟨rpi5VariantFor board, rpi5VariantFor_mem board, rfl⟩
+    ∃ v, v.Admissible ∧ rpi5BoundMachineConfig board = rpi5MachineConfigForVariant v :=
+  ⟨rpi5VariantFor board, rpi5VariantFor_admissible board, rfl⟩
 
 /-- The bound configuration declares the BCM2712's four PEs, whatever the
 account. -/
@@ -568,38 +798,44 @@ theorem rpi5BoundMachineConfig_declaredCoreCount (board : SeLe4n.MachineConfig) 
 
 theorem rpi5VariantFor_covers_of_getLast? (board : SeLe4n.MachineConfig) (v : BCM2712Config)
     (h : (rpi5VariantsCoveredBy board).getLast? = some v) :
-    SeLe4n.Platform.Boot.machineConfigCovers board (rpi5MachineConfigForVariant v) = true :=
+    SeLe4n.Platform.Boot.machineConfigCovers board
+      (rpi5MachineConfigForVariant { v with lowRamTop := rpi5LowRamTopFor board }) = true :=
   ((mem_rpi5VariantsCoveredBy board v).mp (List.mem_of_getLast? h)).2
 
 /-- **PR #892 review round 2**: an account covering no variant binds the
 smallest — the fallback, stated. -/
-theorem rpi5VariantFor_of_uncovered (board : SeLe4n.MachineConfig)
+theorem rpi5RamVariantFor_of_uncovered (board : SeLe4n.MachineConfig)
     (h : ∀ v ∈ rpi5Variants,
-      SeLe4n.Platform.Boot.machineConfigCovers board (rpi5MachineConfigForVariant v) = false) :
-    rpi5VariantFor board = rpi5SmallestVariant := by
-  unfold rpi5VariantFor
+      SeLe4n.Platform.Boot.machineConfigCovers board
+        (rpi5MachineConfigForVariant { v with lowRamTop := rpi5LowRamTopFor board }) = false) :
+    rpi5RamVariantFor board = rpi5SmallestVariant := by
+  unfold rpi5RamVariantFor
   have hNil : rpi5VariantsCoveredBy board = [] :=
     List.filter_eq_nil_iff.mpr (fun v hv hc => by rw [h v hv] at hc; exact Bool.false_ne_true hc)
   rw [hNil]
   rfl
 
+/- **Tombstone (WS-BP BP7.10)**: `rpi5VariantFor_of_uncovered` is
+`rpi5RamVariantFor_of_uncovered` above — the fallback picks the member; the
+first gigabyte is the account's either way. -/
+
 /-- **PR #892 review round 2 — the bridge's check, characterised**: the account
 covers the configuration the binding installs for it **iff** it covers some
-variant at all.  Forwards, the bound configuration is itself a member;
-backwards, a covered member makes the covered list non-empty and its last
-entry is what the binding installs.  This is why `rpi5PlatformConfigFromDtb`
-can validate the board against `rpi5BoundMachineConfig` alone: on every
-account it accepts, the boot installs a configuration the board covers, and
-on every account it refuses, no variant would have done. -/
+member cut to its own first-gigabyte top.  Forwards, the bound configuration is
+itself such a cut; backwards, a covered member makes the covered list non-empty
+and its last entry is what the binding installs.  This is why
+`rpi5PlatformConfigFromDtb` can validate the board against
+`rpi5BoundMachineConfig` alone. -/
 theorem rpi5BoundMachineConfig_covered_iff (board : SeLe4n.MachineConfig) :
     SeLe4n.Platform.Boot.machineConfigCovers board (rpi5BoundMachineConfig board) = true ↔
       ∃ v ∈ rpi5Variants,
-        SeLe4n.Platform.Boot.machineConfigCovers board (rpi5MachineConfigForVariant v) = true := by
+        SeLe4n.Platform.Boot.machineConfigCovers board
+          (rpi5MachineConfigForVariant { v with lowRamTop := rpi5LowRamTopFor board }) = true := by
   constructor
   · intro h
-    exact ⟨rpi5VariantFor board, rpi5VariantFor_mem board, h⟩
+    exact ⟨rpi5RamVariantFor board, rpi5RamVariantFor_mem board, h⟩
   · rintro ⟨v, hv, hc⟩
-    unfold rpi5BoundMachineConfig rpi5VariantFor
+    unfold rpi5BoundMachineConfig rpi5VariantFor rpi5RamVariantFor
     have hMem : v ∈ rpi5VariantsCoveredBy board := (mem_rpi5VariantsCoveredBy board v).mpr ⟨hv, hc⟩
     cases hLast : (rpi5VariantsCoveredBy board).getLast? with
     | none =>
@@ -608,16 +844,18 @@ theorem rpi5BoundMachineConfig_covered_iff (board : SeLe4n.MachineConfig) :
         cases hMem
     | some w => exact rpi5VariantFor_covers_of_getLast? board w hLast
 
-/-- **PR #892 review round 2**: the selection is maximal — no covered variant
+/-- **PR #892 review round 2**: the selection is maximal — no covered member
 has more RAM than the one installed, so the kernel runs on all the RAM the
 board is known to have among the sizes the binding declares.  The ascending
 listing (`rpi5Variants_ascending`) survives the filter, and the last entry of
 an ascending list bounds every entry. -/
 theorem rpi5VariantFor_maximal (board : SeLe4n.MachineConfig) (v : BCM2712Config)
     (hv : v ∈ rpi5Variants)
-    (hc : SeLe4n.Platform.Boot.machineConfigCovers board (rpi5MachineConfigForVariant v) = true) :
+    (hc : SeLe4n.Platform.Boot.machineConfigCovers board
+      (rpi5MachineConfigForVariant { v with lowRamTop := rpi5LowRamTopFor board }) = true) :
     v.ramSize ≤ (rpi5VariantFor board).ramSize := by
-  unfold rpi5VariantFor
+  show v.ramSize ≤ (rpi5RamVariantFor board).ramSize
+  unfold rpi5RamVariantFor
   have hMem : v ∈ rpi5VariantsCoveredBy board := (mem_rpi5VariantsCoveredBy board v).mpr ⟨hv, hc⟩
   have hSorted : (rpi5VariantsCoveredBy board).Pairwise (fun a b => a.ramSize ≤ b.ramSize) :=
     rpi5Variants_ascending.filter _
@@ -638,8 +876,9 @@ theorem rpi5VariantFor_maximal (board : SeLe4n.MachineConfig) (v : BCM2712Config
 
 /-- **PR #892 review round 2**: the canonical 4 GiB account binds the canonical
 configuration — the 8 and 16 GiB members need RAM above 4 GiB it does not
-report, and the 4 GiB member is the largest of the three it covers.  Decided,
-so the whole selection runs on the binding's own numbers. -/
+report, the 4 GiB member is the largest of the three it covers, and (WS-BP
+BP7.10) it reports the whole first gigabyte.  Decided, so the whole selection
+runs on the binding's own numbers. -/
 theorem rpi5VariantFor_rpi5MachineConfig :
     rpi5VariantFor rpi5MachineConfig = bcm2712DefaultConfig := by
   decide
@@ -650,11 +889,13 @@ theorem rpi5BoundMachineConfig_rpi5MachineConfig :
   rw [rpi5VariantFor_rpi5MachineConfig]
   exact rpi5MachineConfigForVariant_default
 
-/-- **PR #892 review round 2**: the model's default configuration reports no
-memory at all, so it covers no variant and binds the smallest — the direct
-boot path's fallback, exercised on the account the harness actually passes. -/
+/-- **PR #892 review round 2, WS-BP BP7.10**: the model's default configuration
+reports no memory at all, so it covers no variant and binds the smallest, at
+the floor — the direct boot path's fallback, exercised on the account the
+harness actually passes. -/
 theorem rpi5VariantFor_defaultMachineConfig :
-    rpi5VariantFor SeLe4n.defaultMachineConfig = rpi5SmallestVariant := by
+    rpi5VariantFor SeLe4n.defaultMachineConfig =
+      { rpi5SmallestVariant with lowRamTop := rpi5LowRamTopFloor } := by
   decide
 
 /-- **PR #892 review round 2 — the finding's own boards**: a 1 GiB board's
@@ -673,16 +914,8 @@ theorem rpi5VariantFor_two_gib :
   decide
 
 /-- **PR #892 review round 2**: an 8 GiB board reported as two banks either
-side of the 4 GiB boundary binds the 8 GiB member: the model's one RAM region is
-covered by the *union* of the two, which is all coverage asks.
-
-(**The BCM2712 address-map correction, v0.36.2**: this was
-`rpi5VariantFor_eight_gib_as_reported`, over a low bank ending at
-`0xFC00_0000` and a high one 64 MiB larger than 4 GiB — the BCM2711's
-relocation of the RAM its peripheral window displaced.  The BCM2712 has no such
-window below 4 GiB, so a board reporting that shape would now leave
-`[0xFC00_0000, 4 GiB)` uncovered and bind a smaller variant, which is the
-fail-safe direction.) -/
+side of the 4 GiB boundary binds the 8 GiB member: the model's RAM regions are
+covered by the *union* of the two, which is all coverage asks. -/
 theorem rpi5VariantFor_eight_gib_two_banks :
     rpi5VariantFor { rpi5MachineConfig with
         memoryMap :=
@@ -692,56 +925,140 @@ theorem rpi5VariantFor_eight_gib_two_banks :
   decide
 
 /-- **PR #892 review round 2 (the negative)**: 4 GiB of RAM at a foreign base
-covers no variant — a size derivation would have accepted it. -/
+covers no variant — a size derivation would have accepted it.  (WS-BP BP7.10:
+it reports no RAM from `0`, so its first gigabyte is the floor, which it does
+not cover either.) -/
 theorem rpi5VariantFor_foreign_base :
     rpi5VariantsCoveredBy { rpi5MachineConfig with
         memoryMap := [{ base := SeLe4n.PAddr.ofNat 0x40000000, size := 0x100000000, kind := .ram }] }
       = [] := by
   decide
 
+/-- **WS-BP BP7.10 — the finding's own board**: the account a Raspberry Pi 5
+8 GiB Rev 1.1's firmware writes (`[0, 0x80000)`, `[0x80000, 0x3FC00000)`,
+`[0x40000000, 0x200000000)`, read 2026-09-25) binds the 8 GiB member cut to
+`0x3FC00000` — the four MiB the firmware keeps are neither declared nor
+covered.  Until this row that account covered no variant and the boot
+halted. -/
+theorem rpi5VariantFor_rpi5_firmware_account :
+    rpi5VariantFor { rpi5MachineConfig with
+        memoryMap :=
+          [ { base := SeLe4n.PAddr.ofNat 0, size := 0x80000, kind := .ram },
+            { base := SeLe4n.PAddr.ofNat 0x80000, size := 0x3FB80000, kind := .ram },
+            { base := SeLe4n.PAddr.ofNat 0x40000000, size := 0x1C0000000, kind := .ram } ] } =
+      { ramSize := 8 * 1024 * 1024 * 1024, lowRamTop := 0x3FC00000 } := by
+  decide
+
+/-- **WS-BP BP7.10**: a CM5 4 GiB Rev 1.0's account (`[0x80000, 0x3FB00000)`
+below the gigabyte) ends off the granule, and binds the 4 GiB member cut to
+`0x3FA00000` — rounded **down**, so the half-granule the account reports past
+it is declared nowhere rather than claimed. -/
+theorem rpi5VariantFor_cm5_firmware_account :
+    rpi5VariantFor { rpi5MachineConfig with
+        memoryMap :=
+          [ { base := SeLe4n.PAddr.ofNat 0, size := 0x80000, kind := .ram },
+            { base := SeLe4n.PAddr.ofNat 0x80000, size := 0x3FA80000, kind := .ram },
+            { base := SeLe4n.PAddr.ofNat 0x40000000, size := 0xC0000000, kind := .ram } ] } =
+      { ramSize := 4 * 1024 * 1024 * 1024, lowRamTop := 0x3FA00000 } := by
+  decide
+
+/-- **WS-BP BP7.10 (the negative)**: an account whose RAM begins past the
+kernel's extent — a firmware reservation over the image, say — reaches less
+than the floor from `0`, so it binds the floor and covers no member: the board
+is refused rather than booted over memory the account does not call RAM. -/
+theorem rpi5VariantFor_kernel_extent_not_ram :
+    rpi5VariantsCoveredBy { rpi5MachineConfig with
+        memoryMap :=
+          [ { base := SeLe4n.PAddr.ofNat 0, size := 0x8000000, kind := .ram },
+            { base := SeLe4n.PAddr.ofNat 0x8200000, size := 0x37E00000, kind := .ram } ] }
+      = [] := by
+  decide
+
 -- ============================================================================
--- WS-BP BP4.6 — the verified board's RAM above the guaranteed gigabyte
+-- WS-BP BP4.6, re-derived at BP7.10 — the RAM the boot maps after the parse
 -- ============================================================================
 
-/-- **WS-BP BP4.6**: one past the RAM every Raspberry Pi 5 has — the smallest
-variant's gigabyte.  The HAL's boot map describes `[0, rpi5GuaranteedRamTop)`
-from constants before anything is parsed (`mmu::GUARANTEED_RAM_TOP`, WS-BP
-BP2.6); everything a larger board has above it is mapped only once the verified
-device-tree parse has chosen the variant (`bootRamExtensionsOf`). -/
-def rpi5GuaranteedRamTop : Nat := 0x4000_0000
-
-/-- The guaranteed gigabyte is the smallest variant's RAM. -/
-theorem rpi5GuaranteedRamTop_eq_smallest : rpi5GuaranteedRamTop = rpi5SmallestVariant.ramSize :=
+/-- **WS-BP BP4.6, BP7.10**: the first gigabyte's top is the smallest variant's
+    size — the most first-gigabyte RAM any configuration declares. -/
+theorem rpi5FirstGigabyteTop_eq_smallest : rpi5FirstGigabyteTop = rpi5SmallestVariant.ramSize :=
   rfl
 
-/-- **WS-BP BP4.6**: the RAM a memory map declares above the guaranteed
-gigabyte, one `(base, size)` per RAM region that reaches past it, clipped from
-below to `rpi5GuaranteedRamTop` — and only where what is left is non-empty, so no
-extension maps nothing (the HAL refuses an empty one).
+/-- **WS-BP BP7.10**: one region's contribution to `bootRamExtensionsOf` — its
+part outside the kernel's reserved extent, when it is RAM and that part is
+non-empty. -/
+def bootRamExtensionOf? (r : SeLe4n.MemoryRegion) : Option (Nat × Nat) :=
+  if r.kind = .ram ∧ max r.base.toNat rpi5KernelReservedEnd < r.endAddr then
+    some (max r.base.toNat rpi5KernelReservedEnd,
+      r.endAddr - max r.base.toNat rpi5KernelReservedEnd)
+  else none
 
-Derived from the map rather than listed per variant, so a variant whose map
-changes changes what the boot maps with it; `mem_bootRamExtensionsOf` and
-`bootRamExtensionsOf_covers` state that the result is exactly the map's RAM
-above the gigabyte, in both directions. -/
+/-- A RAM region from `0` past the kernel's extent contributes the part past
+it. -/
+theorem bootRamExtensionOf?_low (t : Nat) (h : rpi5KernelReservedEnd < t) :
+    bootRamExtensionOf? { base := SeLe4n.PAddr.ofNat 0, size := t, kind := .ram } =
+      some (rpi5KernelReservedEnd, t - rpi5KernelReservedEnd) := by
+  have hm : max (SeLe4n.PAddr.ofNat 0).toNat rpi5KernelReservedEnd = rpi5KernelReservedEnd :=
+    Nat.max_eq_right (Nat.zero_le _)
+  unfold bootRamExtensionOf?
+  rw [hm, if_pos ⟨rfl, by show rpi5KernelReservedEnd < 0 + t; omega⟩]
+  have h0 : (SeLe4n.PAddr.ofNat 0).toNat = 0 := rfl
+  simp only [SeLe4n.MemoryRegion.endAddr, h0, Nat.zero_add]
+
+/-- A RAM region from the first gigabyte's top contributes all of itself. -/
+theorem bootRamExtensionOf?_high (s : Nat) (h : rpi5FirstGigabyteTop < s) :
+    bootRamExtensionOf?
+        { base := SeLe4n.PAddr.ofNat rpi5FirstGigabyteTop, size := s - rpi5FirstGigabyteTop, kind := .ram } =
+      some (rpi5FirstGigabyteTop, s - rpi5FirstGigabyteTop) := by
+  have hle : rpi5KernelReservedEnd ≤ rpi5FirstGigabyteTop := by
+    unfold rpi5KernelReservedEnd rpi5FirstGigabyteTop; omega
+  have hm : max (SeLe4n.PAddr.ofNat rpi5FirstGigabyteTop).toNat rpi5KernelReservedEnd =
+      rpi5FirstGigabyteTop := Nat.max_eq_left hle
+  unfold bootRamExtensionOf?
+  rw [hm, if_pos ⟨rfl, by
+    show rpi5FirstGigabyteTop < rpi5FirstGigabyteTop + (s - rpi5FirstGigabyteTop); omega⟩]
+  have h1 : (SeLe4n.PAddr.ofNat rpi5FirstGigabyteTop).toNat = rpi5FirstGigabyteTop := rfl
+  simp only [SeLe4n.MemoryRegion.endAddr, h1, Option.some.injEq, Prod.mk.injEq, true_and]
+  omega
+
+/-- A device region contributes nothing. -/
+theorem bootRamExtensionOf?_device :
+    bootRamExtensionOf? { base := socPeripheralBase, size := socPeripheralSize, kind := .device } =
+      none := by
+  unfold bootRamExtensionOf?
+  exact if_neg (fun hc => nomatch hc.1)
+
+/-- **WS-BP BP4.6, re-derived at BP7.10**: the RAM a memory map declares
+outside the kernel's reserved extent, one `(base, size)` per RAM region that
+reaches past it, clipped from below to `rpi5KernelReservedEnd` — and only where
+what is left is non-empty, so no extension maps nothing (the HAL refuses an
+empty one).
+
+**WS-BP BP7.10**: this clipped at the first gigabyte, because the HAL's boot
+map described `[0, 1 GiB)` from constants — memory a real board's firmware
+keeps the top of.  The boot map's constant RAM is the kernel's own extent now,
+so everything else the board has, first gigabyte included, is mapped from this
+list once the verified parse has read it — and the same list is the root
+task's untypeds (`rpi5RootTaskUntypeds`), so the RAM the boot maps, the RAM
+the model declares outside the kernel, and the RAM the root task owns are one
+derivation.  `mem_bootRamExtensionsOf` and `bootRamExtensionsOf_covers` state
+that the result is exactly the map's RAM outside the kernel, in both
+directions. -/
 def bootRamExtensionsOf (map : List SeLe4n.MemoryRegion) : List (Nat × Nat) :=
-  map.filterMap fun r =>
-    if r.kind = .ram ∧ max r.base.toNat rpi5GuaranteedRamTop < r.endAddr then
-      some (max r.base.toNat rpi5GuaranteedRamTop,
-        r.endAddr - max r.base.toNat rpi5GuaranteedRamTop)
-    else none
+  map.filterMap bootRamExtensionOf?
 
 /-- **WS-BP BP4.6 (soundness)**: every extension is RAM — inside one RAM
-region of the map, ending where it ends — non-empty, and above the guaranteed
-gigabyte.  So the boot never maps as Normal memory an address the verified map
-does not call RAM. -/
+region of the map, ending where it ends — non-empty, and clear of the kernel's
+reserved extent.  So the boot never maps as Normal memory an address the
+verified map does not call RAM, and never re-maps the kernel's own. -/
 theorem mem_bootRamExtensionsOf (map : List SeLe4n.MemoryRegion) (e : Nat × Nat)
     (h : e ∈ bootRamExtensionsOf map) :
     ∃ r ∈ map, r.kind = .ram ∧ r.base.toNat ≤ e.1 ∧ e.1 + e.2 = r.endAddr ∧
-      rpi5GuaranteedRamTop ≤ e.1 ∧ 0 < e.2 := by
+      rpi5KernelReservedEnd ≤ e.1 ∧ 0 < e.2 := by
   unfold bootRamExtensionsOf at h
   rw [List.mem_filterMap] at h
   obtain ⟨r, hr, hsome⟩ := h
-  by_cases hc : r.kind = .ram ∧ max r.base.toNat rpi5GuaranteedRamTop < r.endAddr
+  unfold bootRamExtensionOf? at hsome
+  by_cases hc : r.kind = .ram ∧ max r.base.toNat rpi5KernelReservedEnd < r.endAddr
   · rw [if_pos hc] at hsome
     cases hsome
     have hg := hc.2
@@ -753,58 +1070,130 @@ theorem mem_bootRamExtensionsOf (map : List SeLe4n.MemoryRegion) (e : Nat × Nat
   · rw [if_neg hc] at hsome
     cases hsome
 
-/-- **WS-BP BP4.6 (completeness)**: every RAM address of the map above the
-guaranteed gigabyte lies in some extension — so on a board whose variant the
-parse selected, no RAM the verified map declares is left unmapped. -/
+/-- **WS-BP BP4.6 (completeness)**: every RAM address of the map outside the
+kernel's reserved extent lies in some extension — so on a board whose account
+the parse accepted, no RAM the verified map declares is left unmapped. -/
 theorem bootRamExtensionsOf_covers (map : List SeLe4n.MemoryRegion)
     (r : SeLe4n.MemoryRegion) (hr : r ∈ map) (hk : r.kind = .ram) (a : Nat)
-    (hlo : r.base.toNat ≤ a) (hhi : a < r.endAddr) (hg : rpi5GuaranteedRamTop ≤ a) :
+    (hlo : r.base.toNat ≤ a) (hhi : a < r.endAddr) (hg : rpi5KernelReservedEnd ≤ a) :
     ∃ e ∈ bootRamExtensionsOf map, e.1 ≤ a ∧ a < e.1 + e.2 := by
-  have hc : r.kind = .ram ∧ max r.base.toNat rpi5GuaranteedRamTop < r.endAddr :=
+  have hc : r.kind = .ram ∧ max r.base.toNat rpi5KernelReservedEnd < r.endAddr :=
     ⟨hk, Nat.max_lt.mpr ⟨by omega, by omega⟩⟩
-  refine ⟨(max r.base.toNat rpi5GuaranteedRamTop,
-      r.endAddr - max r.base.toNat rpi5GuaranteedRamTop), ?_, ?_, ?_⟩
+  refine ⟨(max r.base.toNat rpi5KernelReservedEnd,
+      r.endAddr - max r.base.toNat rpi5KernelReservedEnd), ?_, ?_, ?_⟩
   · unfold bootRamExtensionsOf
-    exact List.mem_filterMap.mpr ⟨r, hr, by rw [if_pos hc]⟩
+    exact List.mem_filterMap.mpr ⟨r, hr, by unfold bootRamExtensionOf?; rw [if_pos hc]⟩
   · simp only
     omega
   · simp only
     omega
 
-/-- **WS-BP BP4.6**: the extensions of variant `v` — what the boot maps above
-the guaranteed gigabyte on a board of that variant. -/
+/-- **WS-BP BP4.6**: the extensions of configuration `v` — what the boot maps
+outside the kernel's extent on a board bound to it. -/
 def rpi5BootRamExtensions (v : BCM2712Config) : List (Nat × Nat) :=
   bootRamExtensionsOf (rpi5MemoryMapForConfig v)
 
 /-- **WS-BP BP4.6**: the extensions the boot maps for a board account — those
-of the variant the binding installs for it, so the map the HAL builds and the
-memory map the boot state carries are one variant's. -/
+of the configuration the binding installs for it, so the map the HAL builds and
+the memory map the boot state carries are one configuration's. -/
 def rpi5BootRamExtensionsFor (board : SeLe4n.MachineConfig) : List (Nat × Nat) :=
   bootRamExtensionsOf (rpi5BoundMachineConfig board).memoryMap
 
 theorem rpi5BootRamExtensionsFor_eq (board : SeLe4n.MachineConfig) :
     rpi5BootRamExtensionsFor board = rpi5BootRamExtensions (rpi5VariantFor board) := rfl
 
-/-- **WS-BP BP4.6**: the five variants' extensions, evaluated — nothing on the
-1 GiB board, and on every other board one region: all of its DRAM above the
-guaranteed gigabyte, since the BCM2712's DRAM is contiguous from 0. -/
+/-- **WS-BP BP7.10**: a configuration's map on a board larger than the first
+gigabyte — the three regions, in closed form. -/
+theorem rpi5MemoryMapForConfig_of_gt (v : BCM2712Config) (hG : rpi5FirstGigabyteTop < v.ramSize) :
+    rpi5MemoryMapForConfig v =
+      [ { base := SeLe4n.PAddr.ofNat 0, size := v.lowRamTop, kind := .ram },
+        { base := SeLe4n.PAddr.ofNat rpi5FirstGigabyteTop,
+          size := v.ramSize - rpi5FirstGigabyteTop, kind := .ram },
+        { base := socPeripheralBase, size := socPeripheralSize, kind := .device } ] := by
+  unfold rpi5MemoryMapForConfig; rw [if_pos hG]; rfl
+
+/-- **WS-BP BP7.10**: ...and on the 1 GiB board, which has no RAM above it. -/
+theorem rpi5MemoryMapForConfig_of_le (v : BCM2712Config) (hG : ¬ rpi5FirstGigabyteTop < v.ramSize) :
+    rpi5MemoryMapForConfig v =
+      [ { base := SeLe4n.PAddr.ofNat 0, size := v.lowRamTop, kind := .ram },
+        { base := socPeripheralBase, size := socPeripheralSize, kind := .device } ] := by
+  unfold rpi5MemoryMapForConfig; rw [if_neg hG]; rfl
+
+/-- **WS-BP BP7.10**: the extensions of a configuration whose first-gigabyte
+top lies past the kernel's extent, in closed form — the first gigabyte's RAM
+outside the kernel, then the variant's RAM above the gigabyte when it has any. -/
+theorem rpi5BootRamExtensions_eq (v : BCM2712Config)
+    (h : rpi5KernelReservedEnd < v.lowRamTop) :
+    rpi5BootRamExtensions v =
+      [(rpi5KernelReservedEnd, v.lowRamTop - rpi5KernelReservedEnd)] ++
+        (if rpi5FirstGigabyteTop < v.ramSize then
+          [(rpi5FirstGigabyteTop, v.ramSize - rpi5FirstGigabyteTop)] else []) := by
+  -- Rewritten to closed forms rather than `split` + `simp`: `simp`ing through
+  -- the unfolded `if` builds a proof term the kernel rejects with "deep
+  -- recursion", while each closed-form rewrite is a small, checked step.
+  unfold rpi5BootRamExtensions bootRamExtensionsOf
+  by_cases hG : rpi5FirstGigabyteTop < v.ramSize
+  · rw [rpi5MemoryMapForConfig_of_gt v hG, if_pos hG, List.filterMap_cons,
+      bootRamExtensionOf?_low _ h, List.filterMap_cons, bootRamExtensionOf?_high _ hG,
+      List.filterMap_cons, bootRamExtensionOf?_device]
+    rfl
+  · rw [rpi5MemoryMapForConfig_of_le v hG, if_neg hG, List.filterMap_cons,
+      bootRamExtensionOf?_low _ h, List.filterMap_cons, bootRamExtensionOf?_device]
+    rfl
+
+/-- **WS-BP BP4.6, BP7.10**: the five members' extensions, evaluated — the
+first gigabyte outside the kernel on every board, and on every board above the
+gigabyte one more region: all of its DRAM above it, since the BCM2712's DRAM is
+contiguous from 0. -/
 theorem rpi5BootRamExtensions_values :
     rpi5Variants.map rpi5BootRamExtensions =
-      [ [],
-        [(0x4000_0000, 0x4000_0000)],
-        [(0x4000_0000, 0xC000_0000)],
-        [(0x4000_0000, 0x1_C000_0000)],
-        [(0x4000_0000, 0x3_C000_0000)] ] := by
+      [ [(0x1000_0000, 0x3000_0000)],
+        [(0x1000_0000, 0x3000_0000), (0x4000_0000, 0x4000_0000)],
+        [(0x1000_0000, 0x3000_0000), (0x4000_0000, 0xC000_0000)],
+        [(0x1000_0000, 0x3000_0000), (0x4000_0000, 0x1_C000_0000)],
+        [(0x1000_0000, 0x3000_0000), (0x4000_0000, 0x3_C000_0000)] ] := by
   decide
 
-/-- **WS-BP BP4.6**: every extension of every variant is what the HAL's
-extension accepts — both ends on a 2 MiB boundary (the smallest block it
-writes), and the whole of it below the 512 GiB the boot tables reach
-(`mmu::BOOT_TABLE_REACH`).  A variant that broke either would be refused on
-hardware with the system halted; this is the theorem that it cannot. -/
-theorem rpi5BootRamExtensions_admissible :
-    rpi5Variants.all (fun v => (rpi5BootRamExtensions v).all fun e =>
-      e.1 % 0x20_0000 == 0 && (e.1 + e.2) % 0x20_0000 == 0 && e.1 + e.2 ≤ 2 ^ 39) = true := by
-  decide
+/-- **WS-BP BP7.10**: an extension the HAL's `mmu::extend_boot_tables` accepts —
+both ends on a 2 MiB boundary (the smallest block it writes), clear of the
+kernel's reserved extent (which the constant boot map describes with the
+image's own permissions), below the 512 GiB the boot tables reach
+(`mmu::BOOT_TABLE_REACH`), and either inside the first gigabyte (which has a
+level-2 table, so it takes 2 MiB blocks) or whole gigabytes (a 1 GiB block
+each).  Stated as the HAL's own refusal list, so a theorem over it is a theorem
+that no refusal fires. -/
+def rpi5BootRamExtensionAccepted (e : Nat × Nat) : Bool :=
+  0 < e.2 && e.1 % 0x20_0000 == 0 && (e.1 + e.2) % 0x20_0000 == 0 &&
+    decide (rpi5KernelReservedEnd ≤ e.1) && decide (e.1 + e.2 ≤ 2 ^ 39) &&
+    (decide (e.1 + e.2 ≤ rpi5FirstGigabyteTop) ||
+      (e.1 % 0x4000_0000 == 0 && (e.1 + e.2) % 0x4000_0000 == 0))
+
+/-- **WS-BP BP4.6, BP7.10**: every extension of every admissible configuration
+is one the HAL accepts — the first-gigabyte one because its top is on the
+granule and at most the gigabyte, the other because every family size is whole
+gigabytes.  A configuration that broke this would be refused on hardware with
+the system halted; this is the theorem that none the binding installs can. -/
+theorem rpi5BootRamExtensions_admissible (v : BCM2712Config) (hv : v.Admissible) :
+    (rpi5BootRamExtensions v).all rpi5BootRamExtensionAccepted = true := by
+  obtain ⟨hMem, hTop⟩ := hv
+  have hKre := rpi5KernelReservedEnd_lt_of_admissible _ hTop
+  obtain ⟨_, hLe, hMod⟩ := (rpi5LowRamTopAdmissible_iff _).mp hTop
+  have hLow : rpi5BootRamExtensionAccepted
+      (rpi5KernelReservedEnd, v.lowRamTop - rpi5KernelReservedEnd) = true := by
+    unfold rpi5BootRamExtensionAccepted rpi5LowRamTopFloor rpi5LowRamGranule
+      rpi5KernelReservedEnd rpi5FirstGigabyteTop at *
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq, and_true,
+      Nat.reducePow]
+    omega
+  have hHigh : rpi5FirstGigabyteTop < v.ramSize → rpi5BootRamExtensionAccepted
+      (rpi5FirstGigabyteTop, v.ramSize - rpi5FirstGigabyteTop) = true := by
+    have hSize : v.ramSize = v.uncut.ramSize := rfl
+    rw [hSize]
+    simp only [rpi5Variants, List.mem_cons, List.not_mem_nil, or_false] at hMem
+    rcases hMem with h | h | h | h | h <;> rw [h] <;> decide
+  rw [rpi5BootRamExtensions_eq v hKre]
+  by_cases hG : rpi5FirstGigabyteTop < v.ramSize
+  · simp [hG, hLow, hHigh hG]
+  · simp [hG, hLow]
 
 end SeLe4n.Platform.RPi5

@@ -1,13 +1,14 @@
-# RPi5 boot map: the Lean memory map per RAM variant, and its kind at every probe (Lean/Rust cross-check)
+# RPi5 boot map: the Lean memory map per RAM configuration (every variant, and firmware-cut ones), and its kind at every probe (Lean/Rust cross-check)
 kernelReserved 0x0 0x10000000
 physicalAddressWidth 0x28
 declaredCores 0x4
 mmio uart 0x107d001000 0x200
 mmio gicd 0x107fff9000 0x1000
 mmio gicc 0x107fffa000 0x2000
-variant 0x40000000 ramTop 0x40000000
+variant 0x40000000 lowRamTop 0x40000000
 region 0x0 0x40000000 ram
 region 0x107c000000 0x4000000 device
+extend 0x10000000 0x30000000
 probe 0x0 ram
 probe 0x3fffffff ram
 probe 0x40000000 reserved
@@ -16,11 +17,15 @@ probe 0x107c000000 device
 probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
-variant 0x80000000 ramTop 0x80000000
-region 0x0 0x80000000 ram
+variant 0x80000000 lowRamTop 0x40000000
+region 0x0 0x40000000 ram
+region 0x40000000 0x40000000 ram
 region 0x107c000000 0x4000000 device
+extend 0x10000000 0x30000000
 extend 0x40000000 0x40000000
 probe 0x0 ram
+probe 0x3fffffff ram
+probe 0x40000000 ram
 probe 0x7fffffff ram
 probe 0x80000000 reserved
 probe 0x107bffffff reserved
@@ -28,11 +33,15 @@ probe 0x107c000000 device
 probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
-variant 0x100000000 ramTop 0x100000000
-region 0x0 0x100000000 ram
+variant 0x100000000 lowRamTop 0x40000000
+region 0x0 0x40000000 ram
+region 0x40000000 0xc0000000 ram
 region 0x107c000000 0x4000000 device
+extend 0x10000000 0x30000000
 extend 0x40000000 0xc0000000
 probe 0x0 ram
+probe 0x3fffffff ram
+probe 0x40000000 ram
 probe 0xffffffff ram
 probe 0x100000000 reserved
 probe 0x107bffffff reserved
@@ -40,11 +49,15 @@ probe 0x107c000000 device
 probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
-variant 0x200000000 ramTop 0x200000000
-region 0x0 0x200000000 ram
+variant 0x200000000 lowRamTop 0x40000000
+region 0x0 0x40000000 ram
+region 0x40000000 0x1c0000000 ram
 region 0x107c000000 0x4000000 device
+extend 0x10000000 0x30000000
 extend 0x40000000 0x1c0000000
 probe 0x0 ram
+probe 0x3fffffff ram
+probe 0x40000000 ram
 probe 0x1ffffffff ram
 probe 0x200000000 reserved
 probe 0x107bffffff reserved
@@ -52,13 +65,65 @@ probe 0x107c000000 device
 probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
-variant 0x400000000 ramTop 0x400000000
-region 0x0 0x400000000 ram
+variant 0x400000000 lowRamTop 0x40000000
+region 0x0 0x40000000 ram
+region 0x40000000 0x3c0000000 ram
 region 0x107c000000 0x4000000 device
+extend 0x10000000 0x30000000
 extend 0x40000000 0x3c0000000
 probe 0x0 ram
+probe 0x3fffffff ram
+probe 0x40000000 ram
 probe 0x3ffffffff ram
 probe 0x400000000 reserved
+probe 0x107bffffff reserved
+probe 0x107c000000 device
+probe 0x107fffffff device
+probe 0x1080000000 reserved
+probe 0x4000000000 reserved
+variant 0x200000000 lowRamTop 0x3fc00000
+region 0x0 0x3fc00000 ram
+region 0x40000000 0x1c0000000 ram
+region 0x107c000000 0x4000000 device
+extend 0x10000000 0x2fc00000
+extend 0x40000000 0x1c0000000
+probe 0x0 ram
+probe 0x3fbfffff ram
+probe 0x3fc00000 reserved
+probe 0x3fffffff reserved
+probe 0x40000000 ram
+probe 0x1ffffffff ram
+probe 0x200000000 reserved
+probe 0x107bffffff reserved
+probe 0x107c000000 device
+probe 0x107fffffff device
+probe 0x1080000000 reserved
+probe 0x4000000000 reserved
+variant 0x100000000 lowRamTop 0x3fa00000
+region 0x0 0x3fa00000 ram
+region 0x40000000 0xc0000000 ram
+region 0x107c000000 0x4000000 device
+extend 0x10000000 0x2fa00000
+extend 0x40000000 0xc0000000
+probe 0x0 ram
+probe 0x3f9fffff ram
+probe 0x3fa00000 reserved
+probe 0x3fffffff reserved
+probe 0x40000000 ram
+probe 0xffffffff ram
+probe 0x100000000 reserved
+probe 0x107bffffff reserved
+probe 0x107c000000 device
+probe 0x107fffffff device
+probe 0x1080000000 reserved
+probe 0x4000000000 reserved
+variant 0x40000000 lowRamTop 0x10200000
+region 0x0 0x10200000 ram
+region 0x107c000000 0x4000000 device
+extend 0x10000000 0x200000
+probe 0x0 ram
+probe 0x101fffff ram
+probe 0x10200000 reserved
 probe 0x107bffffff reserved
 probe 0x107c000000 device
 probe 0x107fffffff device

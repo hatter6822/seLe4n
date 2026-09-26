@@ -233,7 +233,7 @@ pub fn enter_lean_kernel(
         fn lean_kernel_main(dtb: Obj) -> lean_runtime::LeanBaseIoUnit;
     }
     // SAFETY: `init_mmu` admitted `mmu::dtb_window(dtb_ptr)` — `MAX_DTB_SIZE`
-    // bytes from the pointer, inside the guaranteed RAM the boot map covers and
+    // bytes from the pointer, inside the kernel's reserved extent the boot map covers and
     // outside the image — so every slice `dtb_blob_from_ptr` can form lies in
     // mapped, readable memory nothing writes during boot.
     #[cfg(target_arch = "aarch64")]

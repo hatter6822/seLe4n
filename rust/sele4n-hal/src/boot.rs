@@ -25,7 +25,7 @@
 //!          bounded window, or the system halts (WS-BP BP6.3)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.36.2";
+const KERNEL_VERSION: &str = "0.36.3";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -184,11 +184,11 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // **WS-BP BP2.6**: the identity map is built from the image's layout and
     // board constants — nothing is parsed before translation is enabled.  The
     // device-tree pointer is only checked: the window a reader may dereference
-    // must lie in guaranteed RAM and outside the image.
+    // must lie in the kernel's reserved extent and outside the image.
     crate::mmu::init_mmu(dtb_ptr);
     crate::kprintln!(
-        "[boot] MMU enabled (identity map, guaranteed RAM to {:#x})",
-        crate::mmu::GUARANTEED_RAM_TOP
+        "[boot] MMU enabled (identity map, kernel extent to {:#x})",
+        crate::mmu::KERNEL_RESERVED_END
     );
 
     // Set VBAR_EL1 to exception vector table.  WS-SM SM1.C.2 extracted
@@ -459,7 +459,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     crate::kprintln!();
     crate::kprintln!("[boot] Hardware initialization complete:");
     crate::kprintln!("  UART   : PL011 UART10 @ 0x10_7D00_1000 (115200 8N1)");
-    crate::kprintln!("  MMU    : identity map (guaranteed RAM + device window)");
+    crate::kprintln!("  MMU    : identity map (kernel extent + device window; board RAM after the verified parse)");
     crate::kprintln!("  VBAR   : exception vectors installed");
     crate::kprintln!("  GIC    : GIC-400 distributor + CPU interface");
     crate::kprintln!("  Timer  : 1000 Hz (54 MHz / 54000 counts per tick)");
@@ -748,7 +748,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.36.2");
+        assert_eq!(KERNEL_VERSION, "0.36.3");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

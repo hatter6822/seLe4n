@@ -3973,6 +3973,192 @@ def bootAffinitiesDeclared
       simp [SeLe4n.Kernel.Concurrency.mem_allCores c]
   | _ => rfl
 
+-- ============================================================================
+-- WS-BP BP7.10 — the boot's gates that do not read memory extents
+-- ============================================================================
+
+/-- **WS-BP BP7.10**: an untyped with its physical extent forgotten — every
+    other field (the carve state, the children, the parent, the device flag)
+    kept. -/
+def untypedWithoutExtent (ut : UntypedObject) : UntypedObject :=
+  { ut with regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 0 }
+
+/-- **WS-BP BP7.10**: a kernel object with its untyped extent forgotten, and
+    every other object unchanged. -/
+def objectWithoutUntypedExtent : KernelObject → KernelObject
+  | .untyped ut => .untyped (untypedWithoutExtent ut)
+  | obj => obj
+
+theorem objectWithoutUntypedExtent_eq_cnode {obj : KernelObject} {cn : CNode}
+    (h : objectWithoutUntypedExtent obj = .cnode cn) : obj = .cnode cn := by
+  cases obj <;> first | exact h | cases h
+
+theorem objectWithoutUntypedExtent_eq_vspaceRoot {obj : KernelObject} {vs : VSpaceRoot}
+    (h : objectWithoutUntypedExtent obj = .vspaceRoot vs) : obj = .vspaceRoot vs := by
+  cases obj <;> first | exact h | cases h
+
+/-- **WS-BP BP7.10**: a boot entry with its untyped extent forgotten. -/
+def ObjectEntry.withoutUntypedExtent (e : ObjectEntry) : ObjectEntry where
+  id := e.id
+  obj := objectWithoutUntypedExtent e.obj
+  hSlots := fun cn h => e.hSlots cn (objectWithoutUntypedExtent_eq_cnode h)
+  hMappings := fun vs h => e.hMappings vs (objectWithoutUntypedExtent_eq_vspaceRoot h)
+
+/-- **WS-BP BP7.10**: a configuration with every untyped's extent and the
+memory map forgotten.
+
+What it is for: every gate of the checked boot but two reads a configuration
+only through this projection — the object ids, kinds and non-extent fields,
+the IRQ table, the boot root, the PE count and the address width.  The two
+that read what it forgets are the untyped placement (`untypedPlacementRespected`)
+and the machine configuration's own well-formedness.  So a deployment whose
+untyped extents and memory map are read off a board's account passes every
+other gate on every account exactly when it passes them on one — which is how
+the RPi5 deployment's gates, decided by evaluation on the five RAM variants,
+hold at every first-gigabyte top the firmware may report (WS-BP BP7.10,
+`rpi5BoundPlatformConfigAt_withoutExtents`). -/
+def PlatformConfig.withoutExtents (c : PlatformConfig) : PlatformConfig :=
+  { c with
+    initialObjects := c.initialObjects.map ObjectEntry.withoutUntypedExtent
+    machineConfig := { c.machineConfig with memoryMap := [] } }
+
+@[simp] theorem ObjectEntry.withoutUntypedExtent_id (e : ObjectEntry) :
+    e.withoutUntypedExtent.id = e.id := rfl
+
+@[simp] theorem ObjectEntry.withoutUntypedExtent_obj (e : ObjectEntry) :
+    e.withoutUntypedExtent.obj = objectWithoutUntypedExtent e.obj := rfl
+
+private theorem all_withoutUntypedExtent {f : ObjectEntry → Bool} (objs : List ObjectEntry)
+    (hf : ∀ e, f e.withoutUntypedExtent = f e) :
+    (objs.map ObjectEntry.withoutUntypedExtent).all f = objs.all f := by
+  rw [List.all_map]
+  congr 1
+  funext e
+  exact hf e
+
+theorem irqsUnique_withoutExtents (c : PlatformConfig) :
+    irqsUnique c.withoutExtents.irqTable = irqsUnique c.irqTable := rfl
+
+theorem objectIdsUnique_withoutExtents (c : PlatformConfig) :
+    objectIdsUnique c.withoutExtents.initialObjects = objectIdsUnique c.initialObjects := by
+  unfold objectIdsUnique PlatformConfig.withoutExtents
+  simp only [List.map_map]
+  rfl
+
+theorem idleSlotsReserved_withoutExtents (c : PlatformConfig) :
+    idleSlotsReserved c.withoutExtents = idleSlotsReserved c := by
+  unfold idleSlotsReserved PlatformConfig.withoutExtents
+  simp only
+  rw [all_withoutUntypedExtent]
+  intro e
+  simp only [ObjectEntry.withoutUntypedExtent_id, ObjectEntry.withoutUntypedExtent_obj]
+  cases e.obj <;> rfl
+
+theorem embeddedIdentitiesMatchSlots_withoutExtents (c : PlatformConfig) :
+    embeddedIdentitiesMatchSlots c.withoutExtents = embeddedIdentitiesMatchSlots c := by
+  unfold embeddedIdentitiesMatchSlots tcbIdentitiesMatchSlots schedContextIdentitiesMatchSlots
+    replyIdentitiesMatchSlots PlatformConfig.withoutExtents
+  simp only
+  rw [all_withoutUntypedExtent, all_withoutUntypedExtent, all_withoutUntypedExtent] <;>
+    (intro e
+     simp only [ObjectEntry.withoutUntypedExtent_id, ObjectEntry.withoutUntypedExtent_obj]
+     cases e.obj <;> rfl)
+
+theorem objectBudgetRespected_withoutExtents (c : PlatformConfig) :
+    objectBudgetRespected c.withoutExtents = objectBudgetRespected c := by
+  unfold objectBudgetRespected PlatformConfig.withoutExtents
+  simp only [List.length_map]
+
+theorem declaredCoreCountInRange_withoutExtents (c : PlatformConfig) :
+    declaredCoreCountInRange c.withoutExtents = declaredCoreCountInRange c := rfl
+
+theorem bootSafe_withoutExtents (c : PlatformConfig) :
+    c.withoutExtents.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) =
+      c.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) := by
+  unfold PlatformConfig.withoutExtents
+  simp only
+  rw [all_withoutUntypedExtent]
+  intro e
+  simp only [ObjectEntry.withoutUntypedExtent_obj]
+  cases e.obj <;> rfl
+
+theorem bootVSpaceAsidsDistinct_withoutExtents (c : PlatformConfig) :
+    bootVSpaceAsidsDistinct c.withoutExtents = bootVSpaceAsidsDistinct c := by
+  unfold bootVSpaceAsidsDistinct bootVSpaceAsids PlatformConfig.withoutExtents
+  simp only [List.filterMap_map]
+  have : (bootEntryAsid? ∘ ObjectEntry.withoutUntypedExtent) = bootEntryAsid? := by
+    funext e
+    simp only [Function.comp_apply]
+    unfold bootEntryAsid?
+    simp only [ObjectEntry.withoutUntypedExtent_obj]
+    cases e.obj <;> rfl
+  rw [this]
+
+theorem irqHandlersReferenceNotifications_withoutExtents (c : PlatformConfig) :
+    irqHandlersReferenceNotifications c.withoutExtents = irqHandlersReferenceNotifications c := by
+  unfold irqHandlersReferenceNotifications PlatformConfig.withoutExtents
+  simp only [List.find?_map]
+  congr 1
+  funext irq
+  have hComp : ((fun entry : ObjectEntry => entry.id == irq.handler) ∘
+      ObjectEntry.withoutUntypedExtent) = (fun entry => entry.id == irq.handler) := rfl
+  rw [hComp]
+  cases c.initialObjects.find? (fun entry => entry.id == irq.handler) with
+  | none => rfl
+  | some e =>
+      simp only [Option.map_some, ObjectEntry.withoutUntypedExtent_obj]
+      cases e.obj <;> rfl
+
+theorem bootVSpaceRootObjIdDistinct_withoutExtents (c : PlatformConfig) :
+    bootVSpaceRootObjIdDistinct c.withoutExtents = bootVSpaceRootObjIdDistinct c := by
+  unfold bootVSpaceRootObjIdDistinct PlatformConfig.withoutExtents
+  simp only [List.any_map]
+  rfl
+
+theorem bootVSpaceRootObjIdNonSentinel_withoutExtents (c : PlatformConfig) :
+    bootVSpaceRootObjIdNonSentinel c.withoutExtents = bootVSpaceRootObjIdNonSentinel c := rfl
+
+theorem bootVSpaceRootSafe_withoutExtents (c : PlatformConfig) :
+    bootVSpaceRootSafe c.withoutExtents = bootVSpaceRootSafe c := rfl
+
+theorem bootAffinitiesDeclared_withoutExtents (cores : List SeLe4n.Kernel.Concurrency.CoreId)
+    (c : PlatformConfig) :
+    bootAffinitiesDeclared cores c.withoutExtents = bootAffinitiesDeclared cores c := by
+  unfold bootAffinitiesDeclared PlatformConfig.withoutExtents
+  simp only
+  rw [all_withoutUntypedExtent]
+  intro e
+  simp only [ObjectEntry.withoutUntypedExtent_obj]
+  cases e.obj <;> rfl
+
+theorem physicalAddressWidth_withoutExtents (c : PlatformConfig) :
+    c.withoutExtents.machineConfig.physicalAddressWidth = c.machineConfig.physicalAddressWidth :=
+  rfl
+
+/-- **WS-BP BP7.10**: well-formedness transfers along the projection, given the
+    one conjunct it forgets — so a configuration agreeing with a well-formed
+    one on everything but its extents is well-formed exactly when its own
+    untypeds are placed. -/
+theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
+    (hEq : c.withoutExtents = c'.withoutExtents) (hWf : c'.wellFormed = true)
+    (hPlace : untypedPlacementRespected c = true) : c.wellFormed = true := by
+  have h1 := irqsUnique_withoutExtents c
+  have h2 := objectIdsUnique_withoutExtents c
+  have h3 := idleSlotsReserved_withoutExtents c
+  have h4 := embeddedIdentitiesMatchSlots_withoutExtents c
+  have h5 := objectBudgetRespected_withoutExtents c
+  have h6 := declaredCoreCountInRange_withoutExtents c
+  rw [hEq, irqsUnique_withoutExtents] at h1
+  rw [hEq, objectIdsUnique_withoutExtents] at h2
+  rw [hEq, idleSlotsReserved_withoutExtents] at h3
+  rw [hEq, embeddedIdentitiesMatchSlots_withoutExtents] at h4
+  rw [hEq, objectBudgetRespected_withoutExtents] at h5
+  rw [hEq, declaredCoreCountInRange_withoutExtents] at h6
+  unfold PlatformConfig.wellFormed at hWf ⊢
+  simp only [Bool.and_eq_true] at hWf ⊢
+  obtain ⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩ := hWf
+  exact ⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩
+
 /-- PR #889 review round 3: the idle enqueue over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
     the model's `allCores`.  A single-core binding (`SimSingleCorePlatform`,

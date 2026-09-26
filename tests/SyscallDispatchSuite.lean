@@ -1167,8 +1167,10 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
   -- count is the binding's on every member.
   expect "sd056_bare_account_binds_the_smallest_variant"
     (decide (bound.machineConfig.memoryMap =
-      SeLe4n.Platform.RPi5.rpi5MemoryMapForConfig SeLe4n.Platform.RPi5.rpi5SmallestVariant))
-    "an account describing no memory must bind the smallest RPi5 variant, not the 4 GiB default"
+      SeLe4n.Platform.RPi5.rpi5MemoryMapForConfig
+        { SeLe4n.Platform.RPi5.rpi5SmallestVariant with
+            lowRamTop := SeLe4n.Platform.RPi5.rpi5LowRamTopFloor }))
+    "an account describing no memory must bind the smallest RPi5 variant at the first-gigabyte floor, not the 4 GiB default"
   expect "sd056_bound_config_declares_the_binding_core_count"
     (bound.machineConfig.declaredCoreCount == 4)
     "every member of the RPi5 family must declare the binding's four PEs"

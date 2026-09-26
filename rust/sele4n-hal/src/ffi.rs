@@ -676,8 +676,8 @@ pub extern "C" fn ffi_fatal_halt_all() -> ! {
 /// Normal RAM and widen the cacheable window to match
 /// ([`crate::mmu::extend_boot_ram_map`]).
 ///
-/// The verified Lean boot calls it once per RAM region, above the guaranteed
-/// gigabyte, of the variant the device tree selected — before the boot state is
+/// The verified Lean boot calls it once per RAM region outside the kernel's
+/// reserved extent (WS-BP BP7.10), of the configuration the device tree selected — before the boot state is
 /// installed and before any secondary exists.  A refusal is a disagreement
 /// between the verified map and the tables this image built, which no caller
 /// can recover from, so it halts the system rather than returning: a kernel
@@ -2548,6 +2548,6 @@ mod tests {
     fn cleaning_a_pagetable_range_that_runs_past_the_ram_top_halts() {
         // The base is a good RAM frame and the range is not — the relation a
         // base-address check would miss.
-        clean_pagetable_range_within_identity_map(crate::mmu::GUARANTEED_RAM_TOP - 0x1000, 0x2000);
+        clean_pagetable_range_within_identity_map(crate::mmu::KERNEL_RESERVED_END - 0x1000, 0x2000);
     }
 }

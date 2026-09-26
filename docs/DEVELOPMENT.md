@@ -176,8 +176,9 @@ and every `ASSERT` are checked on an ELF and each assertion is proved live by
 mutation.
 
 **The boot map is built from constants** (WS-BP BP2.6): `mmu::init_mmu` reads
-no device tree.  It maps the guaranteed first GiB of RAM (`GUARANTEED_RAM_TOP`)
-and the device window, with the image's text read-only and executable at EL1,
+no device tree.  It maps the kernel's reserved extent (`KERNEL_RESERVED_END`;
+the first gigabyte until WS-BP BP7.10, whose top the firmware withholds) and the
+device window, with the image's text read-only and executable at EL1,
 its read-only data read-only and never executable, and everything else
 writable and never executable.  `boot_mapping_for` is the one answer to what an
 address is mapped as, and `boot_map_tests` walks every table against it and
@@ -249,7 +250,8 @@ to it that breaks any variant fails to elaborate.  Releasing a secondary consume
 images and tests that link no kernel.  A new bring-up path takes the permit too
 — it is how the install is kept ahead of every secondary without a lock.
 **The boot map grows once, before the seal** (BP4.6): the accepting arm maps the
-verified variant's RAM above the guaranteed gigabyte through
+verified configuration's RAM outside the kernel's extent (BP7.10: the first
+gigabyte's part as far as the firmware reports it, then everything above) through
 `ffiExtendBootRamMap` before the install, and `enter_lean_kernel` seals the map
 (`mmu::seal_boot_map`) before it mints the permit.  Extend the boot tables only
 through `mmu::extend_boot_ram_map` — it writes invalid entries only, decides every

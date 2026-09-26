@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.2.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.3.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,15 +222,15 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~82966 lines)
+- `CHANGELOG.md` (~83088 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23845 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12507 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~9221 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8709 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8235 lines)
-- `docs/spec/SELE4N_SPEC.md` (~8118 lines)
-- `SeLe4n/Platform/Boot.lean` (~7313 lines)
+- `docs/spec/SELE4N_SPEC.md` (~8180 lines)
+- `SeLe4n/Platform/Boot.lean` (~7499 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6360 lines)
 - `SeLe4n/Model/State.lean` (~6153 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5753 lines)
@@ -240,7 +240,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5402 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5389 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
-- `tests/NegativeStateSuite.lean` (~4770 lines)
+- `tests/NegativeStateSuite.lean` (~4775 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4450 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
@@ -250,7 +250,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3843 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `SeLe4n/Platform/FFI.lean` (~3694 lines)
+- `SeLe4n/Platform/FFI.lean` (~3699 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3477 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3389 lines)
@@ -281,11 +281,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2604 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
+- `tests/Ak9PlatformSuite.lean` (~2548 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2512 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2504 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2484 lines)
-- `tests/Ak9PlatformSuite.lean` (~2480 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `tests/ModelIntegritySuite.lean` (~2456 lines)
@@ -301,7 +301,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Prelude.lean` (~2201 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2176 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
-- `tests/SyscallDispatchSuite.lean` (~2112 lines)
+- `tests/SyscallDispatchSuite.lean` (~2114 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2086 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2066 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2057 lines)
@@ -377,9 +377,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1242 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1240 lines)
+- `SeLe4n/Machine.lean` (~1223 lines)
 - `SeLe4n/Kernel/SchedContext/Operations.lean` (~1210 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~1207 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
+- `SeLe4n/Platform/RPi5/Board.lean` (~1199 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1185 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1184 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
@@ -389,8 +391,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean` (~1161 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
-- `SeLe4n/Machine.lean` (~1144 lines)
-- `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
+- `SeLe4n/Kernel/Architecture/VSpace.lean` (~1148 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (~1132 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1121 lines)
@@ -410,7 +411,7 @@ To find files that need pagination today, run:
 - `tests/DeadlockFreedomSuite.lean` (~1008 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
-- `docs/DEVELOPMENT.md` (~975 lines)
+- `docs/DEVELOPMENT.md` (~977 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~973 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~964 lines)
@@ -453,7 +454,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
-- `SeLe4n/Platform/RPi5/Board.lean` (~800 lines)
+- `SeLe4n/Platform/RPi5/Deployment.lean` (~802 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -7148,7 +7149,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7159,7 +7160,10 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots), and **BP5.3** (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it), and **BP5.4** (the image's size and section map published with every CI run), and **BP5.5** (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level), and **BP6** (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel); BP7..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots), and **BP5.3** (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it), and **BP5.4** (the image's size and section map published with every CI run), and **BP5.5** (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level), and **BP6** (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel); and **BP7.10**
+landed at `v0.36.3` (the first gigabyte's RAM read off the firmware's account,
+and the HAL's constant boot map shrunk to the kernel's reserved extent); the
+rest of BP7, and BP8, have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7314,8 +7318,8 @@ allocator feature must keep its state in the metadata pages, never inside an
 object.  (4) **The C entry points halt** on a refusal and on exhaustion, after
 releasing the heap's leaf lock — `lean.h`'s inline paths do not test the result,
 so there is no error to return.  (5) **The boot map covers the arena, and a
-device tree inside the image is refused**: the arena lies in the guaranteed RAM
-the map covers, and `init_mmu` refuses a device-tree window overlapping
+device tree inside the image is refused**: the arena lies in the kernel's
+reserved extent, the RAM the constant map covers (BP7.10), and `init_mmu` refuses a device-tree window overlapping
 `[_start, __lean_heap_end)` (`mmu::kernel_extent`, `dtb_disjoint_from_image`) — the firmware places the blob by the image *file*'s
 size, and everything past it is `NOLOAD`.  Placing the arena also found that no
 boot refusal stops an untyped over kernel memory (`bootSafeUntypedCheck` accepts
@@ -7403,12 +7407,17 @@ names neither.
 translation is on** (`v0.36.2`, `rust/sele4n-hal/src/mmu.rs`, `link.ld`).  Five
 things new code must respect.  (1) **The map is a function of the address and
 the image's layout, nothing else** (`boot_mapping_for(addr, layout)`):
-`[0, GUARANTEED_RAM_TOP)` — the 1 GiB every Raspberry Pi 5 has — is Normal, the
-device window Device, everything else unmapped.  The driven BP0.4 test requires
-every Normal address to be RAM in **every** variant's Lean map and the Normal
-window to equal the smallest variant's RAM.  RAM above the gigabyte is BP4.6's,
-mapped after the verified Lean parse (the BP4.6 paragraph below); before that
-nothing past the gigabyte is Normal and cache maintenance there fails closed.  (2) **W^X at EL1**: the text `[_start, __text_end)`
+`[0, KERNEL_RESERVED_END)` — the kernel's reserved extent — is Normal, the
+device window Device, everything else unmapped.  (Until **BP7.10** the Normal
+window was `[0, GUARANTEED_RAM_TOP)`, the first gigabyte, "the 1 GiB every
+Raspberry Pi 5 has"; no board's firmware reports it whole, so the constant is
+retired.)  The driven BP0.4 test requires every Normal address to be RAM in
+**every** configuration's Lean map and the Normal window to equal the kernel's
+extent the table declares.  Every other byte of RAM — the rest of the first
+gigabyte as far as the firmware reports it, and everything above it — is
+BP4.6's, mapped after the verified Lean parse (the BP4.6 and BP7.10 paragraphs
+below); before that nothing past the extent is Normal and cache maintenance
+there fails closed.  (2) **W^X at EL1**: the text `[_start, __text_end)`
 is read-only and executable, the read-only data read-only and never executable,
 and every writable page never executable.  The retired single Normal descriptor
 was writable and PXN-clear while `SCTLR_EL1.WXN` is set — which makes a writable
@@ -7422,12 +7431,12 @@ the section that follows, so a boundary written there moves with the gap it
 exists to detect.  `__rodata_start == __text_end` is an `ASSERT`, so no orphan
 section can land between them and be mapped executable, and
 `scripts/check_link_script.py` proves each boundary `ASSERT` live by mutation.
-`link.ld`'s RAM region ends at `GUARANTEED_RAM_TOP`, so the linker cannot place
-the image where the map does not reach.  (4) **`init_mmu` reads nothing of the
+`link.ld`'s RAM region ends at `KERNEL_RESERVED_END` (an `ASSERT` since BP7.10),
+so the linker cannot place the image where the map does not reach.  (4) **`init_mmu` reads nothing of the
 blob** (a Tier 3 negative refuses any `cmdline` call in its body).  It only
 checks that `dtb_window` — `MAX_DTB_SIZE` from the pointer, the bound every
-reader enforces before forming a slice — lies in guaranteed RAM and outside
-`[_start, __lean_heap_end)`, and refuses otherwise; BP5.3's `config.txt` pins
+reader enforces before forming a slice — lies in the kernel's reserved extent
+and outside `[_start, __lean_heap_end)`, and refuses otherwise; BP5.3's `config.txt` pins
 the placement to `link.ld`'s `.dtb_window`.  (5) **The bootargs reader stays, in Rust, with translation on**:
 it is a Rust-only question with no Lean counterpart, and the QEMU lanes use it.
 So "is this structure block readable" is still two-sided, and the shared corpus
@@ -7442,8 +7451,9 @@ and the RAM-top constants.
 `SeLe4n/Platform/RPi5/Deployment.lean`, in the library root).
 The deployment (`rpi5PlatformConfigFor`, over a board account) has two domains as `confinedDeploymentLabeling` declares
 them. The root task sits at the lower witness `2`, with its CNode, a VSpace on
-ASID 1, the notification every SPI signals, and untypeds over
-`[256 MiB, 1 GiB)`. The untrusted initial thread sits at the upper witness
+ASID 1, the notification every SPI signals, and untypeds over the board's RAM
+outside the kernel's extent (`[256 MiB, 1 GiB)` until BP7.10, which cut them to
+the firmware's account). The untrusted initial thread sits at the upper witness
 `0x10_0000`, with its own CNode and VSpace on ASID 2. No capability crosses the
 boundary. Six things new code must respect.
 
@@ -7604,37 +7614,39 @@ so no secondary is released, and the boot core reaches no scheduling point,
 before the clean; a Tier 3 anchor holds the order, and a clean moved after the
 permit or commented out fails it.  Observing the clean on hardware is BP8.1's.
 
-**BP4.6 — the verified board's RAM above the guaranteed gigabyte is mapped,
-and the boot map is sealed before a secondary exists** (`v0.36.2`).  Five things
+**BP4.6 — the verified board's RAM outside the kernel's extent is mapped, and
+the boot map is sealed before a secondary exists** (`v0.36.2`; its lower bound
+moved from the first gigabyte to the kernel's extent at BP7.10).  Five things
 new code must respect.  (1) **Lean decides the extent, and derives it**: the
 device-tree wrapper's accepting arm runs `extendBootRamMap
 (rpi5BootRamExtensionsFor config.machineConfig)` before the install, and
-`bootRamExtensionsOf` is every RAM region of the *bound* variant's map above
-`rpi5GuaranteedRamTop`, clipped to it — `mem_bootRamExtensionsOf` and
+`bootRamExtensionsOf` is every RAM region of the *bound* configuration's map
+past `rpi5KernelReservedEnd`, clipped to it (`bootRamExtensionOf?`) — `mem_bootRamExtensionsOf` and
 `bootRamExtensionsOf_covers` prove it is exactly that RAM in both directions, so
 the RAM the HAL maps and the RAM the installed state's machine configuration
 declares are one variant's.  A new variant changes its memory map, never a list.
 (2) **The HAL writes only invalid entries, and decides every refusal first**:
 `mmu::extend_boot_tables` is two passes over one per-gigabyte walk — validate,
 then write — so a refused range (`RamExtensionRefusal`) leaves the tables
-byte-identical; it writes 1 GiB level-1 blocks, and 2 MiB blocks in the device
-window's gigabyte (the only one with a level-2 table), all Normal, writable and
-never executable.  Never rewriting a valid descriptor is what makes the change
+byte-identical; it writes 1 GiB level-1 blocks, and 2 MiB blocks in a
+gigabyte that has a level-2 table (`level2_table`: the first gigabyte since
+BP7.10, and the device window's), all Normal, writable and never executable.  Never rewriting a valid descriptor is what makes the change
 safe with no break-before-make and no TLB invalidation (a faulting translation
 is never cached); the table extent is cleaned to the PoC, as `enable_mmu` does, so a
 secondary enabling translation with its cache off reads it, then one `DSB ISH` + `ISB`; a partial gigabyte outside
-the device window is refused rather than given a table.  (3) **The cacheable
+those two is refused rather than given a table.  (3) **The cacheable
 window moves with the tables, by one call**: `extend_boot_ram_map` records each
 region after the barrier and `is_boot_cacheable_range` is the union
-`ram_range_covered` over guaranteed RAM and the record — no longer a `const fn`.
+`ram_range_covered` over the kernel's extent and the record — no longer a `const fn`.
 (4) **The boot map is sealed before the permit**: `enter_lean_kernel` calls
 `mmu::seal_boot_map` immediately before it mints the `SecondaryReleasePermit`,
 and every later extension is refused `Sealed`, so the tables have one writer;
 a refusal of any kind halts the system (`ffi_extend_boot_ram_map` →
 `gic::halt_all`).  (5) **It is driven, not mirrored**:
-`tests/fixtures/boot_map.expected` carries each variant's `extend` lines, and the
-HAL test applies them and requires the extended Normal window to be **exactly**
-that variant's RAM on every variant.  What BP4.6 does *not* do is hand the RAM to
+`tests/fixtures/boot_map.expected` carries each configuration's `extend` lines,
+and the HAL test applies them and requires the extended Normal window to be
+**exactly** that configuration's RAM on every configuration — the firmware-cut
+ones included, whose withheld top of the gigabyte stays unmapped.  What BP4.6 does *not* do is hand the RAM to
 anyone; that is BP4.7's (the paragraph below).
 
 **BP4.7 — the RAM the boot maps is the RAM the root task owns** (`v0.36.2`).
@@ -7646,17 +7658,19 @@ the RPi5 deployment's is `rpi5InitialObjectsFor v`; a caller whose objects do
 not depend on the board passes a constant function.  The variant-independent
 `rpi5InitialObjects` and `rpi5RootTaskCNode` are retired, with a Tier 3
 negative.  (2) **The untypeds are derived from the extensions, never listed**:
-`rpi5RootTaskRamUntypeds v` is one normal-memory untyped per
-`rpi5BootRamExtensions v` entry, at id `8 + i` and root-CNode slot `7 + i`, and
-`rpi5RootTaskRamUntypeds_regions` states its regions **are** the RAM BP4.6 maps.
+`rpi5RootTaskUntypeds v` is one normal-memory untyped per
+`rpi5BootRamExtensions v` entry, at id `6 + i` and root-CNode slot `5 + i`
+(since BP7.10, which retired the two fixed first-gigabyte untypeds and the
+`RamUntyped` names), and `rpi5RootTaskUntypeds_regions` states its regions
+**are** the RAM BP4.6 maps.
 (3) **The boot bounds a CNode's slot count, not its indices**, so
 `rpi5RootTaskCNodeFor_slotsAddressable` decides per variant that every root-CNode
-slot is below sixteen; nine extensions fit, and a variant needing more must
+slot is below sixteen; eleven extensions fit, and a variant needing more must
 widen the root CNode's radix.  (4) **The coverage is the direction the placement
 conjunct cannot state**: `untypedPlacementRespected` bounds the untypeds from
 above, and `rpi5InitialObjectsFor_covers_ram` says every RAM address outside the
 kernel's reserved extent lies in some root-task untyped, on every board, with
-`rpi5DeploymentBootStateAt_ramUntypedInstalled` that the boot installs each.
+`rpi5DeploymentBootStateAt_untypedInstalled` that the boot installs each.
 `BootEntryContract.lean`'s `approvedBootCall` did not move; the object function
 is data like the rest of the wrapper's arguments.
 
@@ -7851,11 +7865,10 @@ registered with their evidence and scheduled**: a real Raspberry Pi 5 firmware
 memory account — `[0, 0x80000)`, `[0x80000, 0x3FC00000)`, `[0x40000000, top)`,
 the top of the first gigabyte withheld by a board-dependent amount — covers
 no `[0, ramSize)` variant, so the bridge refuses every real board and the
-boot halts; the corpus carries the account (`eight_gib_rpi5_firmware`),
-`realFirmwareAccountIsRefusedUntilDerived` pins the refusal, and **BP7.10**
-derives the deployment's first-gigabyte RAM (declared, mapped and handed to
-the root task — BP3.2's `[256 MiB, 1 GiB)` untypeds would otherwise cover the
-firmware's memory) from the account.  And nothing starts the root task or the
+boot halts; the corpus carries the account (`eight_gib_rpi5_firmware`), and
+**BP7.10** (`v0.36.3`, the paragraph below) derives the deployment's
+first-gigabyte RAM from it — `realFirmwareAccountBindsTheReportedRam` is the
+flipped witness.  And nothing starts the root task or the
 untrusted witness (**BP7.11** — decided at the audit's review: the boot starts
 both, one per domain, so no capability crosses the confinement boundary).
 (11) **Gates**: `check_link_script.py`
@@ -7889,6 +7902,40 @@ the Lean suite writes `physicalAddressWidth` into
 the PE it derives `IPS` for.  (13) **The handoff's declared PE count is the
 binding's `coreCount`, read from the same fixture** (`declaredCores`) rather
 than a literal `4` beside a comment naming it.
+
+**BP7.10 — the first gigabyte's RAM is read off the firmware's account, and
+the constant boot map is the kernel's extent alone** (`v0.36.3`).  Six things
+new code must respect.  (1) **A configuration carries its first-gigabyte top**:
+`BCM2712Config.lowRamTop` (default `rpi5FirstGigabyteTop`, so every member of
+`rpi5Variants` is the uncut form it was) ends the first RAM region
+`rpi5MemoryMapForConfig` declares, and `rpi5VariantFor` binds the covered member
+cut to `rpi5LowRamTopFor board` — the account's RAM prefix from `0`
+(`ramPrefixTop`, the union reading's own cursor), capped at the gigabyte and
+rounded **down** to the 2 MiB granule, or the floor when it reaches less.  The
+real Pi 5 8 GiB account binds `{8 GiB, 0x3FC00000}`; a CM5's rounds to
+`0x3FA00000`; an account reporting less than the floor (the kernel's extent plus
+one granule) is refused.  (2) **A theorem about a deployed configuration is
+stated over `v.Admissible`**, never `v ∈ rpi5Variants` — the uncut form a member,
+the top admissible (`rpi5VariantFor_admissible`, which replaces
+`rpi5VariantFor_mem`).  (3) **A gate `decide` cannot reach is factored, not
+enumerated**: every well-formedness conjunct but the untyped placement is
+invariant under `PlatformConfig.withoutExtents` (extent erasure), so it is
+decided once on the uncut member; the placement is proved symbolically and the
+machine config's well-formedness by `MachineConfig.wellFormed_of_within`.  (4)
+**The HAL maps nothing past the kernel's extent from constants**:
+`GUARANTEED_RAM_TOP` is retired (a Tier 3 negative refuses it), the constant
+Normal window is `[0, KERNEL_RESERVED_END)`, `link.ld`'s RAM region ends there
+(`ASSERT`), and an extension may not start inside it
+(`RamExtensionRefusal::InsideKernelReserved`).  The first gigabyte's reported
+part is an extension like any other, written in 2 MiB blocks into `l2_ram`.  (5)
+**What is mapped, declared and owned is one list**: `bootRamExtensionsOf`
+clips at the extent, and the root task holds one untyped per extension — so the
+firmware's withheld top of the gigabyte is neither in the model, the boot map,
+the cacheable window nor any untyped.  (6) **The shared fixture carries cut
+configurations**: `tests/fixtures/boot_map.expected` has the five variants and
+three firmware-cut configurations, each line `variant <ramSize> lowRamTop <t>`,
+and the HAL test requires the constant window to be the extent and each
+extended window to be exactly its configuration's RAM.
 
 **The RPi5 binding is the BCM2712's address map** (`v0.36.2`, found while
 scoping BP5.4).  Until then the model and the HAL both carried the **BCM2711**'s

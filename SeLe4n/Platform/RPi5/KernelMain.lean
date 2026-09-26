@@ -60,12 +60,13 @@ theorem kernelMain_refuses (dtb : ByteArray) (e : Platform.FFI.DeviceTreeBootRef
 boot state on the variant the board's account selects, and the binding's
 labeling context, and nothing else — the halting boot's halt arm is never taken
 on it (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`, over every
-account).  **WS-BP BP4.6**: first it maps that variant's RAM above the
-guaranteed gigabyte — the same variant the installed state is of.  **WS-BP
-BP4.7**: and the installed state's objects are that variant's too
-(`rpi5InitialObjectsFor`), so the RAM just mapped is the RAM the root task's
-untypeds describe (`rpi5RootTaskRamUntypeds_regions`,
-`rpi5DeploymentBootStateAt_ramUntypedInstalled`). -/
+account).  **WS-BP BP4.6**: first it maps that configuration's RAM outside the
+kernel's reserved extent (since BP7.10, the first gigabyte's part the firmware
+reported as well as the variant's above it) — the same configuration the
+installed state is of.  **WS-BP BP4.7**: and the installed state's objects are
+that configuration's too (`rpi5InitialObjectsFor`), so the RAM just mapped is
+the RAM the root task's untypeds describe (`rpi5RootTaskUntypeds_regions`,
+`rpi5DeploymentBootStateAt_untypedInstalled`). -/
 theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformConfig)
     (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5IrqTable rpi5InitialObjectsFor none =
       .ok config) :
@@ -88,6 +89,6 @@ invariant bundle, whichever variant the device tree selected. -/
 theorem kernelMain_installs_invariantBundle (config : Platform.Boot.PlatformConfig) :
     SeLe4n.Kernel.Architecture.proofLayerInvariantBundle
       (rpi5DeploymentBootStateAt (rpi5VariantFor config.machineConfig)).state :=
-  (rpi5DeploymentBootStateAt_invariantBridge _ (rpi5VariantFor_mem _)).1
+  (rpi5DeploymentBootStateAt_invariantBridge _ (rpi5VariantFor_admissible _)).1
 
 end SeLe4n.Platform.RPi5

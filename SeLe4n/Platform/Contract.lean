@@ -169,12 +169,13 @@ class PlatformBinding (platform : Type) where
       the binding's declared configurations and never becomes one: the caller
       of the direct entry still cannot describe hardware the image does not run
       on (PR #889 review round 7), and on the RPi5 the bound configuration is a
-      member of `rpi5Variants` whatever the account says
-      (`rpi5BoundMachineConfig_mem_family`).  Selecting a *smaller* member is
-      the lost-resource direction and never a false claim; selecting a larger
-      one requires the account to cover it, and on the production path the
-      account is the board's device tree, validated by the bridge against this
-      very function (`rpi5PlatformConfigFromDtb`). -/
+      member of `rpi5Variants` — cut, since WS-BP BP7.10, to the first-gigabyte
+      RAM the account reports, which can only shrink it — whatever the account
+      says (`rpi5BoundMachineConfig_mem_family`).  Selecting a *smaller* member
+      or a lower cut is the lost-resource direction and never a false claim;
+      selecting a larger one requires the account to cover it, and on the
+      production path the account is the board's device tree, validated by the
+      bridge against this very function (`rpi5PlatformConfigFromDtb`). -/
   bindMachineConfig : SeLe4n.MachineConfig → SeLe4n.MachineConfig := fun _ => machineConfig
   /-- **PR #892 review round 2**: every configuration the binding can install
       declares the binding's PE count — `declaredCoreCountAgrees` extended over

@@ -1,10 +1,14 @@
 /* seLe4n Kernel Linker Script for Raspberry Pi 5
  *
  * Memory layout:
- *   0x00000000 – 0x40000000 : RAM every Raspberry Pi 5 has (the smallest
- *                             board's 1 GiB) — the image, arena included,
- *                             must lie inside it, because it is the RAM the
- *                             boot map covers (`mmu::GUARANTEED_RAM_TOP`)
+ *   0x00000000 – 0x10000000 : the kernel's reserved extent
+ *                             (`KERNEL_RESERVED_END`) — the image, arena and
+ *                             device-tree window included, must lie inside it,
+ *                             because it is the only RAM the boot map covers
+ *                             before the verified parse (WS-BP BP7.10: the
+ *                             rest of the first gigabyte is RAM only as far as
+ *                             the firmware reports it, and the firmware keeps
+ *                             its top for itself)
  *   0x107C000000 – 0x1080000000 : the BCM2712 SoC-bus window (UART10 +
  *                             GIC-400), mapped Device by the boot tables;
  *                             DRAM is contiguous from 0 below it
@@ -22,7 +26,7 @@ ENTRY(_start)
  * Lean runtime is served from `.lean_heap` below and from nothing else, so the
  * heap is exactly this big on every board and no firmware or device tree can
  * change it.  Raising it is this one line; the ASSERTs at the end refuse a
- * value the smallest Raspberry Pi 5 cannot hold. */
+ * value the kernel's reserved extent cannot hold. */
 LEAN_HEAP_SIZE = 64M;
 
 /* WS-BP BP3.2: the end of the kernel's reserved extent [0, KERNEL_RESERVED_END)
@@ -45,7 +49,7 @@ DTB_WINDOW_SIZE = 0x200000;
 
 MEMORY
 {
-    RAM (rwx) : ORIGIN = 0x80000, LENGTH = 0x3FF80000
+    RAM (rwx) : ORIGIN = 0x80000, LENGTH = 0xFF80000
 }
 
 SECTIONS
@@ -154,8 +158,8 @@ SECTIONS
      * metadata byte it reads and never reads the pages it serves.  4 KiB
      * aligned, because the allocator's pages are MMU granules.  Its bounds are
      * the only way the Rust side learns the extent
-     * (`lean_heap::arena_extent`); it lies inside the guaranteed gigabyte the
-     * boot map covers (`mmu::GUARANTEED_RAM_TOP`, asserted below), and
+     * (`lean_heap::arena_extent`); it lies inside the kernel's reserved extent,
+     * the RAM the boot map covers before the verified parse (asserted below), and
      * `mmu::kernel_extent` keeps the device-tree window off it, so translation
      * is never enabled over tables that leave the heap unmapped. */
     .lean_heap (NOLOAD) : ALIGN(4096) {
@@ -188,19 +192,24 @@ SECTIONS
     }
 }
 
-/* WS-BP BP2.1: the arena is a whole number of pages, and the whole image —
- * arena included — ends inside the smallest Raspberry Pi 5's RAM, which is
- * [0, 1 GiB) (`rpi5Variants` in SeLe4n/Platform/RPi5/Board.lean, and
- * `mmu::GUARANTEED_RAM_TOP`, the RAM the boot map covers).  A heap that does
- * not fit is a link error, never a boot-time surprise. */
+/* WS-BP BP2.1: the arena is a whole number of pages.  A heap that does not
+ * fit is a link error, never a boot-time surprise. */
 ASSERT(LEAN_HEAP_SIZE % 4096 == 0, "LEAN_HEAP_SIZE must be a whole number of 4 KiB pages")
 ASSERT(__lean_heap_start % 4096 == 0, "the Lean heap arena must be 4 KiB aligned")
-ASSERT(__lean_heap_end <= 0x40000000, "the image, Lean heap included, must end inside the smallest RPi5's 1 GiB of RAM")
 
 /* WS-BP BP3.2: the whole image, arena included, lies inside the kernel's
- * reserved extent, which is page aligned and inside the guaranteed RAM. */
+ * reserved extent.  WS-BP BP7.10: the extent is whole 2 MiB blocks inside the
+ * first gigabyte — the level-2 table the boot map describes it with, and the
+ * block an extension past it starts on (`mmu::extend_boot_tables`) — and the
+ * RAM region the linker may place anything in ends exactly there, so the
+ * linker itself cannot put a byte of the image where the boot map does not
+ * reach.  (The retired assertion that the heap ends inside "the smallest
+ * RPi5's 1 GiB" is implied by these, and claimed a gigabyte no board's
+ * firmware reports whole.) */
 ASSERT(__lean_heap_end <= KERNEL_RESERVED_END, "the image, Lean heap included, must end inside the kernel's reserved extent")
-ASSERT(KERNEL_RESERVED_END % 4096 == 0 && KERNEL_RESERVED_END <= 0x40000000, "the kernel's reserved extent must be whole pages inside the smallest RPi5's RAM")
+ASSERT(KERNEL_RESERVED_END % 0x200000 == 0, "the kernel's reserved extent must be whole 2 MiB blocks")
+ASSERT(KERNEL_RESERVED_END <= 0x40000000, "the kernel's reserved extent must lie inside the first gigabyte")
+ASSERT(ORIGIN(RAM) + LENGTH(RAM) == KERNEL_RESERVED_END, "link.ld's RAM region must end exactly at the kernel's reserved extent")
 
 /* WS-BP BP5.3: the device tree's window is the size every reader bounds a
  * blob by, on a page, after the Lean heap and inside the reserved extent --

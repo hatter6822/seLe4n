@@ -16,15 +16,16 @@ relations the Rust side depends on:
      allocation on the board);
   2. the arena lies above the image and both stack regions, so it overlaps
      nothing the boot writes;
-  3. the arena ends inside the smallest Raspberry Pi 5's RAM, `[0, 1 GiB)`;
+  3. (WS-BP BP7.10) the kernel's reserved extent is whole 2 MiB blocks inside
+     the first gigabyte, the level-2 table the boot map describes it with;
   4. (WS-BP BP2.6) the boot map's permission boundaries `_start`, `__text_end`
      and `__rodata_end` are page aligned and ordered, and the read-only data
      begins where the text ends (`__rodata_start`) — which
      `mmu::ImageLayout::is_well_formed` requires of the layout it builds tables
      from;
   5. (WS-BP BP3.2) the arena ends inside the kernel's reserved extent
-     `[0, KERNEL_RESERVED_END)`, which is page aligned inside the smallest
-     board's RAM, and `KERNEL_RESERVED_END` is the number the Lean side states
+     `[0, KERNEL_RESERVED_END)`, and `KERNEL_RESERVED_END` is the number the
+     Lean side states
      — read from the line `tests/Ak9PlatformSuite.lean` writes into
      `tests/fixtures/boot_map.expected`, so the extent the boot refuses
      untypeds over is the extent this link actually reserved;
@@ -42,8 +43,9 @@ resolve (WS-BP BP5.1, BP5.2).
 
 Each of the script's `ASSERT`s is then proved *live* rather than present: the
 script is mutated so exactly that assertion's relation breaks — a size that is
-not a whole page, an arena that is not page-aligned, an arena too big for the
-smallest board, and (BP2.6) each permission boundary moved off its page, or a
+not a whole page, an arena that is not page-aligned, (BP7.10) a reserved extent
+off a 2 MiB block, one past the first gigabyte and a RAM region that does not
+end at it, and (BP2.6) each permission boundary moved off its page, or a
 section placed between the text and the read-only data, and (BP4.5) a loaded
 extent that runs into the NOLOAD sections, and (BP5.3) a device-tree window of
 the wrong size, one moved into the heap, and one past the reserved extent — and
@@ -77,9 +79,12 @@ from check_fp_simd_free_objects import Unreadable, rust_llvm_tool  # noqa: E402
 
 LINK_SCRIPT = REPO / "rust" / "sele4n-hal" / "link.ld"
 PAGE = 4096
-# The smallest Raspberry Pi 5 is the 1 GiB board, whose RAM is [0, 1 GiB):
-# `rpi5Variants` in SeLe4n/Platform/RPi5/Board.lean.
-SMALLEST_BOARD_RAM_TOP = 0x4000_0000
+# WS-BP BP7.10: the kernel's reserved extent is described by the boot map's
+# level-2 table for the first gigabyte, in 2 MiB blocks (`mmu::KERNEL_RESERVED_END`'s
+# compile-time assertion).  `SMALLEST_BOARD_RAM_TOP` is retired: no board's
+# firmware reports its first gigabyte whole, so it bounded nothing real.
+FIRST_GIGABYTE_TOP = 0x4000_0000
+L2_BLOCK = 0x20_0000
 BOOT_MAP_FIXTURE = REPO / "tests" / "fixtures" / "boot_map.expected"
 
 
@@ -112,13 +117,8 @@ ASSERTION_WITNESSES = (
         "must be 4 KiB aligned",
     ),
     (
-        "an arena too big for the smallest board",
-        (("LEAN_HEAP_SIZE = 64M;", "LEAN_HEAP_SIZE = 1024M;"),),
-        "smallest RPi5's 1 GiB",
-    ),
-    (
         "kernel text that starts off a page",
-        (("ORIGIN = 0x80000, LENGTH = 0x3FF80000", "ORIGIN = 0x80010, LENGTH = 0x3FF7FFF0"),),
+        (("ORIGIN = 0x80000, LENGTH = 0xFF80000", "ORIGIN = 0x80010, LENGTH = 0xFF7FFF0"),),
         "must start on a 4 KiB page",
     ),
     (
@@ -153,9 +153,9 @@ ASSERTION_WITNESSES = (
         "the image, Lean heap included, must end inside the kernel's reserved extent",
     ),
     (
-        "a reserved extent off a page",
-        (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x10000800;"),),
-        "the kernel's reserved extent must be whole pages inside the smallest RPi5's RAM",
+        "a reserved extent off a 2 MiB block",
+        (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x10001000;"),),
+        "the kernel's reserved extent must be whole 2 MiB blocks",
     ),
     (
         "a device-tree window of the wrong size",
@@ -190,9 +190,14 @@ ASSERTION_WITNESSES = (
         "the loaded image must run from the text through the initialised data",
     ),
     (
-        "a reserved extent past the smallest board",
+        "a reserved extent past the first gigabyte",
         (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x50000000;"),),
-        "whole pages inside the smallest RPi5's RAM",
+        "the kernel's reserved extent must lie inside the first gigabyte",
+    ),
+    (
+        "a RAM region that ends short of the reserved extent",
+        (("ORIGIN = 0x80000, LENGTH = 0xFF80000", "ORIGIN = 0x80000, LENGTH = 0xFF7F000"),),
+        "link.ld's RAM region must end exactly at the kernel's reserved extent",
     ),
 )
 
@@ -252,9 +257,6 @@ def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
     if start < below or start < table["_start"]:
         problems.append(f"the arena starts at {start:#x}, inside the image or its stacks "
                         f"(which end at {below:#x})")
-    if end > SMALLEST_BOARD_RAM_TOP:
-        problems.append(f"the arena ends at {end:#x}, past the smallest board's RAM "
-                        f"({SMALLEST_BOARD_RAM_TOP:#x})")
     text_start, text_end, rodata_end = (table["_start"], table["__text_end"],
                                         table["__rodata_end"])
     if text_start % PAGE or text_end % PAGE or rodata_end % PAGE:
@@ -274,6 +276,9 @@ def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
                         f"[{rodata_end:#x}, {table['__bss_start']:#x}] (the read-only data's "
                         f"end to the NOLOAD sections' start)")
     reserved_end = table["KERNEL_RESERVED_END"]
+    if reserved_end % L2_BLOCK or reserved_end > FIRST_GIGABYTE_TOP:
+        problems.append(f"the kernel's reserved extent ends at {reserved_end:#x}, not on a "
+                        f"2 MiB block inside the first gigabyte ({FIRST_GIGABYTE_TOP:#x})")
     if reserved != (0, reserved_end):
         problems.append(f"link.ld reserves [0, {reserved_end:#x}), the Lean side "
                         f"[{reserved[0]:#x}, {reserved[1]:#x})")
@@ -330,12 +335,10 @@ def self_test() -> int:
         ("an arena inside the secondary stacks", {"__lean_heap_start": 0xC0000,
                                                   "__lean_heap_end": 0xC0000 + 0x400_0000},
          "inside the image or its stacks"),
-        ("an arena past the smallest board", {"__lean_heap_start": 0x3FF0_0000,
-                                               "__lean_heap_end": 0x43F0_0000,
-                                               "__dtb_window_start": 0x43F0_0000,
-                                               "__dtb_window_end": 0x4410_0000,
-                                               "KERNEL_RESERVED_END": 0x5000_0000},
-         "past the smallest"),
+        ("a reserved extent past the first gigabyte", {"KERNEL_RESERVED_END": 0x5000_0000},
+         "not on a 2 MiB block inside the first gigabyte"),
+        ("a reserved extent off a 2 MiB block", {"KERNEL_RESERVED_END": 0x1000_1000},
+         "not on a 2 MiB block inside the first gigabyte"),
         ("a missing symbol", {"__lean_heap_end": None}, "defines no __lean_heap_end"),
         ("a text end off its page", {"__text_end": 0x81008, "__rodata_start": 0x81008},
          "not all 4 KiB aligned"),
@@ -410,7 +413,8 @@ def main(argv: list[str]) -> int:
             if problems:
                 raise GateFailure("; ".join(problems))
             print(f"  link.ld: arena [{table['__lean_heap_start']:#x}, "
-                  f"{table['__lean_heap_end']:#x}) above the image and stacks, inside 1 GiB")
+                  f"{table['__lean_heap_end']:#x}) above the image and stacks, inside the "
+                  f"reserved extent [0, {table['KERNEL_RESERVED_END']:#x})")
             text = LINK_SCRIPT.read_text()
             for name, edits, message in ASSERTION_WITNESSES:
                 mutated = work / "mutated.ld"
