@@ -50,6 +50,12 @@ because the defect lived in dispatch and only dispatch can witness it.
   mapping proven still present.
 * §4 — `.vspaceUnifyInstruction`: same, plus the no-maintenance-emitted check.
 * §5 — `.vspaceMap`: same, proving no mapping is installed.
+* §5b — physical-address alignment, now of a frame's own `base`.
+* §5c — **WS-BP BP7.1: authority over the address space is not authority over
+  the memory.**  `.vspaceMap`'s MR2 names a frame *capability*; the page mapped
+  is that frame's `base`, never a register value.  The retired reading — MR2 as
+  a raw physical address — is refused, and every other way to name memory
+  without holding it is too.
 * §6 — the authorized positive paths still work (the gate is not a blanket
   denial).
 -/
@@ -75,6 +81,12 @@ open SeLe4n.Kernel.Architecture
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceUnifyInstruction_delegates
+#check @SeLe4n.Kernel.resolveVSpaceMapFrame_ok_authorised
+#check @SeLe4n.Kernel.vspaceMapFromFrameCap_ok
+#check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_requires_frame_cap
+#check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_maps_frame_base
+#check @SeLe4n.Kernel.frameMappingAdmissible_write
+#check @SeLe4n.Kernel.frameMappingAdmissible_device
 
 -- ============================================================================
 -- Scenario fixture
@@ -114,16 +126,46 @@ private def victimRootCap : Capability :=
   { target := .object victimVsp,
     rights := AccessRightSet.ofList [.read, .write] }
 
-/-- Build the scenario with `cap` in the attacker's CSpace at slot 0, and an
-executable page already mapped in the *victim's* address space. -/
+-- WS-BP BP7.1: the frames the attacker's CSpace holds capabilities to.  A
+-- mapping names one of these by capability; its address is the frame's `base`.
+private def frameA   : SeLe4n.ObjId := ⟨910⟩  -- ordinary memory at 0xA0000
+private def frameDev : SeLe4n.ObjId := ⟨911⟩  -- a device page at 0xB0000
+private def frameOdd : SeLe4n.ObjId := ⟨912⟩  -- an unaligned base (defence in depth)
+private def frameABase : Nat := 0xA0000
+
+private def frameCapTo (f : SeLe4n.ObjId) (rs : List AccessRight) : Capability :=
+  { target := .object f, rights := AccessRightSet.ofList rs }
+
+/-- The attacker's CSpace slots beside the capability under test at slot 0. -/
+private def slotFrameRO     : Nat := 1  -- read-only cap to frame A
+private def slotFrameRW     : Nat := 2  -- read-write cap to frame A
+private def slotFrameNoRead : Nat := 3  -- write-only cap to frame A (no `.read`)
+private def slotFrameDev    : Nat := 4  -- read-only cap to the device frame
+private def slotFrameOdd    : Nat := 5  -- read-only cap to the unaligned frame
+private def slotNotFrame    : Nat := 6  -- a readable cap to a non-frame (the attacker's TCB)
+private def slotEmpty       : Nat := 7  -- nothing
+
+/-- Build the scenario with `cap` in the attacker's CSpace at slot 0, frame
+capabilities at slots 1–6 (WS-BP BP7.1), and an executable page already mapped
+in the *victim's* address space. -/
 private def scenario (cap : Capability) : Option SystemState :=
   let base :=
     (BootstrapBuilder.empty
       |>.withObject victimVsp (.vspaceRoot { asid := victimAsid, mappings := {} })
       |>.withObject attackerVsp (.vspaceRoot { asid := attackerAsid, mappings := {} })
+      |>.withObject frameA (.frame { base := SeLe4n.PAddr.ofNat frameABase })
+      |>.withObject frameDev (.frame { base := SeLe4n.PAddr.ofNat 0xB0000, isDevice := true })
+      |>.withObject frameOdd (.frame { base := SeLe4n.PAddr.ofNat 0xA0001 })
       |>.withObject attackerCn (.cnode
           { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-            slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, cap)] })
+            slots := SeLe4n.UniqueSlotMap.ofListWF
+              [(SeLe4n.Slot.ofNat 0, cap),
+               (SeLe4n.Slot.ofNat slotFrameRO, frameCapTo frameA [.read]),
+               (SeLe4n.Slot.ofNat slotFrameRW, frameCapTo frameA [.read, .write]),
+               (SeLe4n.Slot.ofNat slotFrameNoRead, frameCapTo frameA [.write]),
+               (SeLe4n.Slot.ofNat slotFrameDev, frameCapTo frameDev [.read]),
+               (SeLe4n.Slot.ofNat slotFrameOdd, frameCapTo frameOdd [.read]),
+               (SeLe4n.Slot.ofNat slotNotFrame, frameCapTo attacker.toObjId [.read])] })
       |>.withObject attacker.toObjId (.tcb
           { tid := attacker, priority := ⟨40⟩, domain := ⟨0⟩,
             cspaceRoot := attackerCn, vspaceRoot := attackerVsp,
@@ -143,14 +185,30 @@ private def decode2 (sid : SeLe4n.Model.SyscallId) (asid vaddr : Nat) :
   , syscallId := sid
   , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat vaddr] }
 
-/-- Four-register decode (asid, vaddr, paddr, perms) — the `.vspaceMap` shape.
-Permissions `0b11001` = read + user + cacheable (W^X-compliant). -/
-private def decodeMap (asid vaddr paddr : Nat) : SyscallDecodeResult :=
+/-- Permission words (bit 0 read, 1 write, 2 execute, 3 user, 4 cacheable). -/
+private def permsRUC  : Nat := 25  -- read + user + cacheable (W^X-compliant)
+private def permsRWUC : Nat := 27  -- read + write + user + cacheable
+private def permsRXU  : Nat := 13  -- read + execute + user (uncached)
+private def permsRU   : Nat := 9   -- read + user (uncached, non-executable)
+
+/-- Four-register decode (asid, vaddr, frame capability address, perms) — the
+`.vspaceMap` shape.  WS-BP BP7.1: MR2 is the address of a **frame capability**
+in the caller's CSpace, never a physical address. -/
+private def decodeMap (asid vaddr frameSlot : Nat) (perms : Nat := permsRUC) :
+    SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat 0
   , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
   , syscallId := .vspaceMap
   , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat vaddr,
-                   SeLe4n.RegValue.ofNat paddr, SeLe4n.RegValue.ofNat 25] }
+                   SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
+
+/-- The physical address `vaddr` translates to in the address space bound to
+`asid`, if any. -/
+private def mappedPaddr (st : SystemState) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) : Option Nat :=
+  match resolveAsidRoot st asid with
+  | some (_, root) => (VSpaceRoot.lookup root vaddr).map (fun p => p.1.toNat)
+  | none           => none
 
 private def assertBool (label : String) (b : Bool) : IO Unit :=
   if b then IO.println s!"  PASS: {label}"
@@ -259,7 +317,7 @@ private def runUnifyBindingChecks : IO Unit := do
 
 private def runMapBindingChecks : IO Unit := do
   IO.println "-- §5 `.vspaceMap` capability binding"
-  let d := decodeMap 7 0x50000 0xA0000
+  let d := decodeMap 7 0x50000 slotFrameRO
   match scenario unrelatedCap with
   | none => assertBool "the exploit scenario builds" false
   | some st => do
@@ -281,7 +339,7 @@ private def runMapBindingChecks : IO Unit := do
   | none => assertBool "the unbound-ASID scenario builds" false
   | some st =>
     assertBool "an UNBOUND ASID is refused with illegalAuthority (no oracle)"
-      (isIllegalAuthority (dispatchSyscall (decodeMap 9 0x50000 0xA0000) attacker st))
+      (isIllegalAuthority (dispatchSyscall (decodeMap 9 0x50000 slotFrameRO) attacker st))
 
 -- ============================================================================
 -- §6  The authorized paths still work — the gate is not a blanket denial
@@ -292,7 +350,10 @@ private def runMapBindingChecks : IO Unit := do
 -- ============================================================================
 
 /-- **PR #845 review (P2)**: a page mapping's physical address must be page
-aligned.  ARMv8 page descriptors carry only the aligned base
+aligned.  WS-BP BP7.1: that address is a frame's own `base`; the kernel never
+builds an unaligned frame (`FrameObject.wellFormed`), so the unaligned frame
+here is planted by the fixture and the map wrapper's guard is the defence in
+depth that still refuses it.  ARMv8 page descriptors carry only the aligned base
 (`PageTable.descriptorToUInt64` masks the low bits) and both HAL cache
 maintenance loops round their operand down to the containing page — so
 accepting an unaligned PA and silently rounding would make the model's recorded
@@ -304,21 +365,17 @@ private def runAlignmentChecks : IO Unit := do
   | none => assertBool "the alignment scenario builds" false
   | some st => do
     -- One byte past a page boundary: rejected, and nothing is installed.
-    let r := dispatchSyscall (decodeMap 7 0x50000 0xA0001) attacker st
+    let r := dispatchSyscall (decodeMap 7 0x50000 slotFrameOdd) attacker st
     assertBool "an unaligned PA is refused (alignmentError)"
       (match r with | .error .alignmentError => true | _ => false)
     assertBool "and no mapping is installed for it"
       (match r with
         | .error _ => !(stillMapped st victimAsid freshVaddr)
         | .ok ((), st') => !(stillMapped st' victimAsid freshVaddr))
-    -- Sub-page-aligned but not page-aligned (64-byte cache-line aligned).
-    assertBool "a cache-line-aligned but not page-aligned PA is also refused"
-      (match dispatchSyscall (decodeMap 7 0x50000 0xA0040) attacker st with
-        | .error .alignmentError => true | _ => false)
     -- The aligned neighbour of the same page succeeds, so the guard rejects
     -- exactly misalignment rather than the address range.
     assertBool "the page-aligned base of the same page is accepted"
-      (match dispatchSyscall (decodeMap 7 0x50000 0xA0000) attacker st with
+      (match dispatchSyscall (decodeMap 7 0x50000 slotFrameRO) attacker st with
         | .ok ((), st') => stillMapped st' victimAsid freshVaddr
         | .error _ => false)
     -- The guard is authority-independent: an unauthorized caller is still
@@ -327,8 +384,78 @@ private def runAlignmentChecks : IO Unit := do
     | none => assertBool "the unauthorized-alignment scenario builds" false
     | some stU =>
       assertBool "authority is checked before alignment (illegalAuthority wins)"
-        (match dispatchSyscall (decodeMap 7 0x50000 0xA0001) attacker stU with
+        (match dispatchSyscall (decodeMap 7 0x50000 slotFrameOdd) attacker stU with
           | .error .illegalAuthority => true | _ => false)
+
+-- ============================================================================
+-- §5c  WS-BP BP7.1 — authority over the address space is not authority over
+--      the memory
+-- ============================================================================
+
+/-- The caller here holds the **victim's own VSpace root capability** — full
+authority over that address space, which is exactly what PR #845's binding asks
+for — and every check below is still refused unless MR2 names a frame the caller
+holds.  Before `v0.36.4` MR2 was a raw physical address: that one capability was
+authority over every page of physical memory, the kernel image included. -/
+private def runFrameCapabilityChecks : IO Unit := do
+  IO.println "-- §5c `.vspaceMap` maps a frame the caller HOLDS (WS-BP BP7.1)"
+  match scenario victimRootCap with
+  | none => assertBool "the frame-capability scenario builds" false
+  | some st => do
+    let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
+      match r with | .error e' => e' == e | .ok _ => false
+    let nothingMapped (r : Except KernelError (Unit × SystemState)) : Bool :=
+      match r with
+      | .error _ => !(stillMapped st victimAsid freshVaddr)
+      | .ok ((), st') => !(stillMapped st' victimAsid freshVaddr)
+    -- The retired reading: MR2 as the raw physical address of the frame's page.
+    -- `0xA0000` is a CSpace *address* now; it masks to slot 0, which holds a
+    -- VSpace-root capability, not a frame — refused, and nothing is mapped.
+    let rRaw := dispatchSyscall (decodeMap 7 0x50000 frameABase) attacker st
+    assertBool "the RETIRED reading (MR2 = a raw physical address) maps nothing"
+      (isErr .invalidCapability rRaw && nothingMapped rRaw)
+    -- Naming memory without holding a frame capability, every other way.
+    let rNotFrame := dispatchSyscall (decodeMap 7 0x50000 slotNotFrame) attacker st
+    assertBool "a capability to a non-frame object is refused (invalidCapability)"
+      (isErr .invalidCapability rNotFrame && nothingMapped rNotFrame)
+    let rEmpty := dispatchSyscall (decodeMap 7 0x50000 slotEmpty) attacker st
+    assertBool "an empty CSpace slot is refused (invalidCapability)"
+      (isErr .invalidCapability rEmpty && nothingMapped rEmpty)
+    let rNoRead := dispatchSyscall (decodeMap 7 0x50000 slotFrameNoRead) attacker st
+    assertBool "a frame capability without `.read` is refused (illegalAuthority)"
+      (isErr .illegalAuthority rNoRead && nothingMapped rNoRead)
+    -- The capability bounds the mapping's access.
+    let rWriteRO := dispatchSyscall (decodeMap 7 0x50000 slotFrameRO permsRWUC) attacker st
+    assertBool "a WRITABLE mapping through a read-only frame cap is refused (illegalAuthority)"
+      (isErr .illegalAuthority rWriteRO && nothingMapped rWriteRO)
+    assertBool "a writable mapping through a read-write frame cap is installed"
+      (match dispatchSyscall (decodeMap 7 0x50000 slotFrameRW permsRWUC) attacker st with
+        | .ok ((), st') => mappedPaddr st' victimAsid freshVaddr == some frameABase
+        | .error _ => false)
+    -- A device frame is mapped neither executable nor cacheable.
+    let rDevX := dispatchSyscall (decodeMap 7 0x50000 slotFrameDev permsRXU) attacker st
+    assertBool "an EXECUTABLE mapping of a device frame is refused (policyDenied)"
+      (isErr .policyDenied rDevX && nothingMapped rDevX)
+    let rDevC := dispatchSyscall (decodeMap 7 0x50000 slotFrameDev permsRUC) attacker st
+    assertBool "a CACHEABLE mapping of a device frame is refused (policyDenied)"
+      (isErr .policyDenied rDevC && nothingMapped rDevC)
+    assertBool "an uncached, non-executable mapping of a device frame is installed"
+      (match dispatchSyscall (decodeMap 7 0x50000 slotFrameDev permsRU) attacker st with
+        | .ok ((), st') => mappedPaddr st' victimAsid freshVaddr == some 0xB0000
+        | .error _ => false)
+    -- The address mapped is the frame's own, and nothing the caller wrote.
+    assertBool "the page mapped is the frame's `base`, not a register value"
+      (match dispatchSyscall (decodeMap 7 0x50000 slotFrameRO) attacker st with
+        | .ok ((), st') => mappedPaddr st' victimAsid freshVaddr == some frameABase
+        | .error _ => false)
+  -- The address-space binding still runs first: an unrelated capability is
+  -- refused for AUTHORITY even when MR2 names a frame the caller holds.
+  match scenario unrelatedCap with
+  | none => assertBool "the unrelated-cap frame scenario builds" false
+  | some stU =>
+    assertBool "a held frame does not substitute for address-space authority"
+      (match dispatchSyscall (decodeMap 7 0x50000 slotFrameRO) attacker stU with
+        | .error .illegalAuthority => true | _ => false)
 
 private def runAuthorizedChecks : IO Unit := do
   IO.println "-- §6 authorized callers still succeed"
@@ -351,7 +478,7 @@ private def runAuthorizedChecks : IO Unit := do
       assertBool "and records the unify operand for the victim's page"
         (st'.pendingIcacheMaintenance == [ICacheInvalidation.unifyPage victimPaddr])
     -- `.vspaceMap` into the address space the capability names.
-    match dispatchSyscall (decodeMap 7 0x50000 0xA0000) attacker st with
+    match dispatchSyscall (decodeMap 7 0x50000 slotFrameRO) attacker st with
     | .error _ => assertBool "authorized `.vspaceMap` succeeds" false
     | .ok ((), st') => do
       assertBool "authorized `.vspaceMap` succeeds" true
@@ -362,7 +489,7 @@ private def runAuthorizedChecks : IO Unit := do
   | none => assertBool "the own-AS scenario builds" false
   | some st =>
     assertBool "a caller may map into its OWN address space with its own root cap"
-      (match dispatchSyscall (decodeMap 5 0x50000 0xA0000) attacker st with
+      (match dispatchSyscall (decodeMap 5 0x50000 slotFrameRO) attacker st with
         | .ok ((), st') => stillMapped st' attackerAsid freshVaddr
         | .error _ => false)
 
@@ -375,6 +502,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runUnifyBindingChecks
   runMapBindingChecks
   runAlignmentChecks
+  runFrameCapabilityChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."

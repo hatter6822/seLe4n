@@ -1223,9 +1223,9 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
                           · exact applySyscallTaint_objects _ _ _
                           · exact applySyscallTaint_scheduler _ _ _
               | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-              | schedContext _ | reply _ => simp only [hRoot] at hStep; cases hStep
+              | schedContext _ | reply _ | frame _ => simp only [hRoot] at hStep; cases hStep
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp only [hT] at hStep; cases hStep
+      | schedContext _ | reply _ | frame _ => simp only [hT] at hStep; cases hStep
 
 
 /-! ## §6  The flow-checked dispatch tier (WS-RR RR3.22, third item)
@@ -1753,9 +1753,9 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
                               · exact applySyscallTaint_objects _ _ _
                               · exact applySyscallTaint_scheduler _ _ _
               | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-              | schedContext _ | reply _ => simp only [hRoot] at hStep; cases hStep
+              | schedContext _ | reply _ | frame _ => simp only [hRoot] at hStep; cases hStep
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp only [hT] at hStep; cases hStep
+      | schedContext _ | reply _ | frame _ => simp only [hT] at hStep; cases hStep
 
 
 /-! ## §7  The packs are inhabited (non-vacuity witnesses)

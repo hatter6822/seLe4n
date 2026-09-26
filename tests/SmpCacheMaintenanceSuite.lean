@@ -647,7 +647,7 @@ private def runLiveRetypeChecks : IO Unit := do
         rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
     match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
         core0 authCap udVsp
-        (.untyped { regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 4096 })
+        (.endpoint {})  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
         stAll with
     | .error _ => assertBool "the live retype seam commits" false
     | .ok ((), stPost) => do
@@ -777,7 +777,7 @@ private def runLedgerChecks : IO Unit := do
         rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
     match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
         core0 authCap udVsp
-        (.untyped { regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 4096 })
+        (.endpoint {})  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
         stAll with
     | .error _ => assertBool "the retype seam commits" false
     | .ok ((), stPost) =>
@@ -1083,7 +1083,7 @@ private def runRetypeCleanToPoUChecks : IO Unit := do
       allCores.foldl (fun st c => icFetchOnCore st c lineExec) stWithCap
     match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache
         core0 { cnode := udCn, slot := SeLe4n.Slot.ofNat 0 } udVsp
-        (.untyped { regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 4096 })
+        (.endpoint {})  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
         stAll with
     | .error _ => assertBool "the CSpaceAddr retype seam commits" false
     | .ok ((), stPost) => do

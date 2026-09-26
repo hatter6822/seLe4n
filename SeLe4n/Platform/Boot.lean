@@ -920,6 +920,13 @@ def vspaceRootReferencesReservedIdleSlot (vsr : VSpaceRoot) : Bool :=
   match vsr with
   | ⟨_asid, _mappings, _lock⟩ => false
 
+/-- **WS-BP BP7.1**: a **frame** — a physical address, a memory kind and a lock —
+    holds no object, thread or scheduling-context id.  By inspection of the
+    constructor's fields, pinned by arity like the VSpace root above. -/
+def frameReferencesReservedIdleSlot (f : FrameObject) : Bool :=
+  match f with
+  | ⟨_base, _isDevice, _lock⟩ => false
+
 /-- PR #889 review round 8 (the round-6 check, pinned by arity): a boot
     **untyped** whose allocation record names an idle slot as a child, or whose
     ancestry names one as its parent, would keep user-supplied metadata about
@@ -992,6 +999,7 @@ def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
   | .untyped ut => untypedReferencesReservedIdleSlot ut
   | .schedContext sc => schedContextReferencesReservedIdleSlot sc
   | .reply r => replyReferencesReservedIdleSlot r
+  | .frame f => frameReferencesReservedIdleSlot f
 
 /-- **WS-RR RR5.13** (PR #889 review): the per-core idle object slots
     `[idleThreadIdBase, idleThreadIdBase + numCores)` are **reserved** — no
@@ -1829,6 +1837,14 @@ def bootSafeObjectCheck (obj : KernelObject) : Bool :=
   | .untyped ut => bootSafeUntypedCheck ut
   | .schedContext sc => bootSafeSchedContextCheck sc
   | .reply r => bootSafeReplyCheck r
+  -- **WS-BP BP7.1: a configured frame is refused.**  A frame is authority over
+  -- the page at its `base`, so admitting one would hand whoever holds its
+  -- capability memory no boot check has placed — the same hazard
+  -- `untypedPlacementRespected` closes for untypeds, which is why frames are
+  -- carved from those untypeds rather than configured beside them.  A
+  -- deployment that needs frames at boot (a root task's image) widens this
+  -- with a placement check of its own, never by admitting them unchecked.
+  | .frame _ => false
 
 set_option maxHeartbeats 400000 in
 /-- AJ3-C (M-16), completed at **WS-BP BP3.5**: `bootSafeObjectCheck = true`
@@ -1841,7 +1857,7 @@ set_option maxHeartbeats 400000 in
     the boot invariant bridge".  It was not — that bridge *assumed* it — so the
     production boot installed CNodes no theorem had checked.  `bootSafeCapCheck`
     decides both clauses, and this theorem is now whole. -/
-theorem bootSafeObjectCheck_sound (obj : KernelObject)
+private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     (h : bootSafeObjectCheck obj = true) :
     -- Endpoints: empty queues
     (∀ ep, obj = .endpoint ep →
@@ -1977,6 +1993,54 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
             ⟨hRepLen, ?_⟩, ?_⟩
     · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepPos r hr)
     · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepBound r hr)
+  | frame _ =>
+    -- WS-BP BP7.1: the check refuses every configured frame.
+    simp [bootSafeObjectCheck] at h
+
+/-- **WS-BP BP7.1**: `bootSafeObjectCheck` refuses every frame — the executable
+half of `bootSafeObject`'s last conjunct. -/
+theorem bootSafeObjectCheck_not_frame (obj : KernelObject)
+    (h : bootSafeObjectCheck obj = true) : ∀ f, obj ≠ .frame f := by
+  intro f hf; subst hf; simp [bootSafeObjectCheck] at h
+
+/-- AJ3-C (M-16), completed at **WS-BP BP3.5**, and at **WS-BP BP7.1** for the
+    frame refusal: `bootSafeObjectCheck = true` implies every conjunct of
+    `bootSafeObject` — the conclusion is that predicate's body, stated here
+    because the predicate is defined further down. -/
+theorem bootSafeObjectCheck_sound (obj : KernelObject)
+    (h : bootSafeObjectCheck obj = true) :
+    (∀ ep, obj = .endpoint ep →
+      ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
+      ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
+    (∀ notif, obj = .notification notif →
+      notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
+    (∀ cn, obj = .cnode cn →
+      cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
+      (cn.bitsConsumed > 0 → cn.wellFormed) ∧
+      (∀ slot cap badge, cn.lookup slot = some cap →
+        cap.badge = some badge → badge.valid) ∧
+      (∀ slot cap rid, cn.lookup slot = some cap →
+        cap.target ≠ .replyCap rid)) ∧
+    (∀ tcb, obj = .tcb tcb →
+      tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
+      tcb.queueNext = none ∧ tcb.queuePrev = none ∧ tcb.queuePPrev = none ∧
+      tcb.timeoutBudget = none ∧
+      tcb.schedContextBinding = .unbound ∧
+      tcb.replyObject = none ∧
+      tcb.pendingReceiveReply = none ∧
+      tcb.threadState = .Inactive) ∧
+    (∀ vs, obj = .vspaceRoot vs →
+      SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
+    (∀ sc, obj = .schedContext sc →
+      schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
+      sc.donationOrigin = none) ∧
+    (∀ r, obj = .reply r →
+      r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
+    (∀ ut, obj = .untyped ut →
+      ut.watermark = 0 ∧ ut.children = [] ∧ ut.parent = none) ∧
+    (∀ f, obj ≠ .frame f) := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := bootSafeObjectCheck_sound_core obj h
+  exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, bootSafeObjectCheck_not_frame obj h⟩
 
 -- ============================================================================
 -- WS-RC R3 (DEEP-BOOT-01) — Boot-safety admission witness theorems
@@ -5149,7 +5213,12 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- these fields.  Stated at the end so every positional projection into
   -- this conjunction is unchanged.
   (∀ ut, obj = .untyped ut →
-    ut.watermark = 0 ∧ ut.children = [] ∧ ut.parent = none)
+    ut.watermark = 0 ∧ ut.children = [] ∧ ut.parent = none) ∧
+  -- **WS-BP BP7.1**: and no boot object is a frame.  A frame is authority over
+  -- the page at its `base`; the executable check refuses every configured one
+  -- (`bootSafeObjectCheck`'s `.frame` arm), and this is that refusal's Prop
+  -- side, stated in the same cut so the two cannot answer differently.
+  (∀ f, obj ≠ .frame f)
 
 /-- V4-A4: A PlatformConfig is boot-safe if all initial objects satisfy
     boot safety constraints. This is the standard precondition for

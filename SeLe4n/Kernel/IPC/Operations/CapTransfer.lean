@@ -1022,14 +1022,14 @@ theorem ipcUnwrapCaps_getTcb?_eq (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId
                 x.toObjId tcb hObjInv hStep hT'] at hT
               exact absurd hT (by simp)
           | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-          | reply _ => rfl
+          | reply _ | frame _ => rfl
   | some obj =>
       cases obj with
       | tcb tcb =>
           rw [ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase grantRight st st'
             summary x.toObjId tcb hT hObjInv hStep]
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-      | reply _ =>
+      | reply _ | frame _ =>
           cases hT' : st'.objects[x.toObjId]? with
           | none => rfl
           | some obj' =>
@@ -1039,6 +1039,6 @@ theorem ipcUnwrapCaps_getTcb?_eq (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId
                     summary x.toObjId tcb' hObjInv hStep hT'] at hT
                   exact absurd hT (by simp)
               | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-              | schedContext _ | reply _ => rfl
+              | schedContext _ | reply _ | frame _ => rfl
 
 end SeLe4n.Kernel

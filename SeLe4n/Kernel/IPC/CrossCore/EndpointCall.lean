@@ -1258,7 +1258,7 @@ theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-    | reply _ => simp [hObj] at hStep
+    | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -1364,7 +1364,7 @@ theorem endpointQueueEnqueue_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-    | reply _ => simp [hObj] at hStep
+    | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hLk : lookupTcb st tid with
@@ -1648,7 +1648,7 @@ theorem endpointQueuePopHead_getSchedContext?_eq (endpointId : SeLe4n.ObjId)
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-    | reply _ => simp [hObj] at hStep
+    | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -1721,7 +1721,7 @@ theorem endpointQueueEnqueue_getSchedContext?_eq (endpointId : SeLe4n.ObjId)
   | none => simp [hObj] at hStep
   | some obj => cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-    | reply _ => simp [hObj] at hStep
+    | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hLk : lookupTcb st tid with
@@ -1874,7 +1874,7 @@ theorem ipcUnwrapCaps_getSchedContext?_eq (msg : IpcMessage)
       | schedContext sc =>
         rw [ipcUnwrapCaps_preserves_schedContext_objects msg receiverRoot slotBase grantRight
           st st' summary scId.toObjId sc hPre hObjInv hStep]
-      | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | reply _ | endpoint _ =>
+      | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | reply _ | endpoint _ | frame _ =>
         rw [hRoot] at hPre ⊢
         rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg receiverRoot slotBase grantRight
           st st' summary hObjInv hStep with hOrig | ⟨cn', hCn⟩

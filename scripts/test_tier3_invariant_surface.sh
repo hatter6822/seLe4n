@@ -3942,8 +3942,37 @@ run_negative_check "INVARIANT" rg -n 'bootSafeObjectCheck_sound_structural' SeLe
 run_check "INVARIANT" rg -n '^    ut\.watermark == 0 && ut\.children\.isEmpty && ut\.parent\.isNone$' SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n -U 'def bootSafeUntypedCheck[^\n]*(\n([ \t][^\n]*)?)*=> true' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U 'def bootSafeObject \(obj : KernelObject\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*  \(∀ ut, obj = \.untyped ut →\n    ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\)' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U 'theorem bootSafeObjectCheck_sound \(obj : KernelObject\)[^\n]*(\n([ \t][^\n]*)?)*    \(∀ ut, obj = \.untyped ut →\n      ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\) := by' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'theorem bootSafeObjectCheck_sound \(obj : KernelObject\)[^\n]*(\n([ \t][^\n]*)?)*    \(∀ ut, obj = \.untyped ut →\n      ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\) ∧\n    \(∀ f, obj ≠ \.frame f\) := by' SeLe4n/Platform/Boot.lean
+# WS-BP BP7.1: a boot configuration may not carry a frame — a frame is memory
+# authority, and no boot check places one.  The check refuses it, the Prop
+# states it, and the soundness bridge concludes it; the negative refuses the
+# arm admitting one.
+run_check "INVARIANT" rg -n '^  \| \.frame _ => false$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  \(∀ f, obj ≠ \.frame f\)$' SeLe4n/Platform/Boot.lean
+run_negative_check "INVARIANT" rg -n -U 'def bootSafeObjectCheck[^\n]*(\n([ \t][^\n]*)?)*\| \.frame _ => true' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  bootUntypedMustBePristine$' tests/
+# WS-BP BP7.1 slice 1: memory is authority.  `.vspaceMap`'s MR2 is a frame
+# capability resolved with `.read` through the caller's own CSpace, and the arm
+# maps through the one named definition; the retired raw-address decode and the
+# page-lock refutation must not come back as code.
+run_check "INVARIANT" rg -n '^def resolveVSpaceMapFrame \(callerTid' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?)*        capAddr       := args\.frame\n        capDepth      := rootCn\.depth\n        requiredRight := \.read' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?)*          match st\.getFrame\? frameObjId with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  if perms\.write && !frameCap\.hasRight \.write then \.error \.illegalAuthority$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  else if frame\.isDevice && \(perms\.execute \|\| perms\.cacheable\) then \.error \.policyDenied$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*\(determineExecutingCore st tid\) args\.asid args\.vaddr frame\.base perms st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^              vspaceMapFromFrameCap tid args st$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_requires_frame_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_maps_frame_base($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n 'decodeVSpaceMapArgsChecked' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'lockKind_ne_page' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'args\.paddr|paddr := PAddr\.ofNat r2' SeLe4n/Kernel
+# Nothing but an untyped mints memory authority: an in-place retype refuses a
+# memory-backed replacement, and the pre-retype cleanup refuses a frame.
+run_check "INVARIANT" rg -n '^    newObj\.objectType\.memoryBacked = false$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n -U 'def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*  \| \.frame _ =>(\n([ \t][^\n]*)?)*\n    \.error \.revocationRequired\n  \| _ => \.ok st' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n -U 'def memoryBacked : KernelObjectType → Bool[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true(\n([ \t][^\n]*)?)*  \| \.frame => true' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode holding a reply capability' tests/TwoPhaseArchSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
@@ -12926,7 +12955,7 @@ import SeLe4n.Model.Object.PerObjectLockInventory
 #check @SeLe4n.Model.KernelObject.objectLockOf_exists
 #check @SeLe4n.Model.KernelObject.objectType_and_lockOf_total
 #check @SeLe4n.Model.KernelObject.objectLockOf_consistent_with_type
-#check @SeLe4n.Model.KernelObjectType.variants_count_exactly_eight
+#check @SeLe4n.Model.KernelObjectType.variants_count_exactly_nine
 #check @SeLe4n.Model.KernelObjectType.variants_total
 -- Inventory aggregator.
 #check @SeLe4n.Model.PerObjectLockCategory

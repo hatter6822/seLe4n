@@ -1099,7 +1099,7 @@ theorem notificationSignal_confinedToBootCore (st st' : SystemState)
             refine observableSlotsConfinedToCore_trans
               (storeTcbIpcStateAndMessage_confinedToCore st1 st2 waiter _ _ bootCoreId hStore2) ?_
             exact ensureRunnable_confinedToBootCore st2 waiter
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at hStep
 
 /-- SM8.B.3: `notificationWait` writes only the boot core. -/
@@ -1156,7 +1156,7 @@ theorem notificationWait_confinedToBootCore (st st' : SystemState)
                     (storeTcbIpcStateAndMessage_fromTcb_confinedToCore st1 st2 waiter tcb _ _
                       bootCoreId hStore2) ?_
                   exact removeRunnable_confinedToBootCore st2 waiter
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at hStep
 
 /-- SM8.B.3: `endpointSendDual` writes only the boot core. -/
@@ -1215,7 +1215,7 @@ theorem endpointSendDual_confinedToBootCore (st st' : SystemState)
             refine observableSlotsConfinedToCore_trans
               (storeTcbIpcStateAndMessage_confinedToCore st1 st2 sender _ _ bootCoreId hStore) ?_
             exact removeRunnable_confinedToBootCore st2 sender
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at hStep
 
 
@@ -1388,7 +1388,7 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
                         hStash) ?_
                     exact removeRunnable_confinedToBootCore pairS.2 receiver
                 · simp at hStep
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at hStep
 
 /-- SM8.B.3: `endpointCall` writes only the boot core. -/
@@ -1457,7 +1457,7 @@ theorem endpointCall_confinedToBootCore (st st' : SystemState)
             refine observableSlotsConfinedToCore_trans
               (storeTcbIpcStateAndMessage_confinedToCore st1 st2 caller _ _ bootCoreId hStore) ?_
             exact removeRunnable_confinedToBootCore st2 caller
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at hStep
 
 /-- SM8.B.3: `endpointReply` writes only the boot core. -/
@@ -1607,7 +1607,7 @@ theorem cspaceDeleteSlotCore_confinedToCore (st st' : SystemState) (addr : CSpac
         refine observableSlotsConfinedToCore_trans
           (storeObject_confinedToCore st pair.2 addr.cnode _ c₀ hStore) ?_
         exact detachSlotFromCdt_confinedToCore pair.2 addr c₀
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at hStep
 
 /-- SM8.B.3: `cspaceDeleteSlot` writes only the object store and the CDT. -/
@@ -1735,7 +1735,7 @@ theorem cspaceRevoke_confinedToCore (st st' : SystemState) (addr : CSpaceAddr) (
       | cnode cn =>
         simp only [hObj] at hStep
         exact storeObject_confinedToCore st st' addr.cnode _ c₀ hStep
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
 
 /-- SM8.B.3: `cspaceMutate` writes only the object store. -/
@@ -1762,7 +1762,7 @@ theorem cspaceMutate_confinedToCore (st st' : SystemState) (addr : CSpaceAddr)
             simp only [hObj] at hStep
             exact storeObject_confinedToCore st st' addr.cnode _ c₀ hStep
           | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-          | schedContext _ | reply _ => simp [hObj] at hStep
+          | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
       · simp at hStep
 
 /-- SM8.B.3: `lifecycleRetypeObject` writes only the object store (it installs

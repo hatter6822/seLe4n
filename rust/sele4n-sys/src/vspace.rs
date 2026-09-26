@@ -7,11 +7,25 @@ use sele4n_abi::args::{PagePerms, VSpaceMapArgs, VSpaceUnifyInstructionArgs, VSp
 use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
 #[cfg(test)]
 use sele4n_types::KernelError;
-use sele4n_types::{Asid, CPtr, KernelResult, PAddr, SyscallId, VAddr};
+use sele4n_types::{Asid, CPtr, KernelResult, SyscallId, VAddr};
 
-/// Map a physical page into a virtual address space.
+/// Map a frame into a virtual address space.
 ///
-/// Lean: `apiVspaceMap` (API.lean) — requires `.write` right on `vspace_cap`.
+/// Lean: the `.vspaceMap` arm of `dispatchCapabilityOnly` (API.lean), through
+/// `vspaceMapFromFrameCap`.
+///
+/// **Authority (WS-BP BP7.1).**  Two capabilities, each for what it governs.
+/// `vspace_cap` must carry `.write` and name the VSpace root bound to `asid` —
+/// authority over the address space.  `frame_cap` is the address, in the
+/// caller's own CSpace, of a capability to the **frame** being mapped —
+/// authority over the memory.  The page installed is that frame's own base;
+/// no physical address crosses this interface, so a caller can map only memory
+/// it holds a frame capability for.  The frame capability must carry `.read`
+/// (every mapping is at least readable), and `.write` as well for a writable
+/// mapping (`IllegalAuthority` otherwise).  A **device** frame may be mapped
+/// neither executable nor cacheable (`PolicyDenied`): clear
+/// `PagePerms::CACHEABLE` for it.  A capability to anything but a frame, or an
+/// empty slot, is `InvalidCapability`.
 ///
 /// Enforces W^X: the WRITE and EXECUTE permission bits cannot both be set.
 /// Returns `PolicyDenied` if the W^X constraint is violated.
@@ -20,7 +34,7 @@ pub fn vspace_map(
     vspace_cap: CPtr,
     asid: Asid,
     vaddr: VAddr,
-    paddr: PAddr,
+    frame_cap: CPtr,
     perms: PagePerms,
 ) -> KernelResult<SyscallResponse> {
     // W^X pre-check (client-side, before syscall)
@@ -29,7 +43,7 @@ pub fn vspace_map(
     let args = VSpaceMapArgs {
         asid,
         vaddr,
-        paddr,
+        frame: frame_cap,
         perms,
     };
     let encoded = args.encode();
@@ -112,9 +126,9 @@ pub fn vspace_map_read_only(
     vspace_cap: CPtr,
     asid: Asid,
     vaddr: VAddr,
-    paddr: PAddr,
+    frame_cap: CPtr,
 ) -> KernelResult<SyscallResponse> {
-    vspace_map(vspace_cap, asid, vaddr, paddr, PagePerms::READ)
+    vspace_map(vspace_cap, asid, vaddr, frame_cap, PagePerms::READ)
 }
 
 /// Convenience: map a read-write page.
@@ -122,13 +136,13 @@ pub fn vspace_map_read_write(
     vspace_cap: CPtr,
     asid: Asid,
     vaddr: VAddr,
-    paddr: PAddr,
+    frame_cap: CPtr,
 ) -> KernelResult<SyscallResponse> {
     vspace_map(
         vspace_cap,
         asid,
         vaddr,
-        paddr,
+        frame_cap,
         PagePerms::READ | PagePerms::WRITE,
     )
 }
@@ -138,13 +152,13 @@ pub fn vspace_map_read_execute(
     vspace_cap: CPtr,
     asid: Asid,
     vaddr: VAddr,
-    paddr: PAddr,
+    frame_cap: CPtr,
 ) -> KernelResult<SyscallResponse> {
     vspace_map(
         vspace_cap,
         asid,
         vaddr,
-        paddr,
+        frame_cap,
         PagePerms::READ | PagePerms::EXECUTE,
     )
 }
@@ -160,7 +174,7 @@ mod tests {
             CPtr::from(1u64),
             Asid::from(1u64),
             VAddr::from(0x1000u64),
-            PAddr::from(0x2000u64),
+            CPtr::from(2u64),
             wx,
         );
         assert_eq!(result, Err(KernelError::PolicyDenied));

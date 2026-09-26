@@ -58,7 +58,7 @@ theorem endpointQueueRemoveDual_preserves_objects_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp
     | endpoint ep =>
       simp only []
       cases hLookup : lookupTcb st tid with

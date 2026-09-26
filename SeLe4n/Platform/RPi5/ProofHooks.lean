@@ -146,7 +146,8 @@ private theorem registerContextStable_writeRegister_contextMatch
       simp only [Bool.and_eq_true] at hStable
       exact hStable.1.1.1.1.1
     | some (.endpoint _) | some (.notification _) | some (.cnode _) |
-      some (.vspaceRoot _) | some (.schedContext _) | some (.untyped _) | some (.reply _) | none =>
+      some (.vspaceRoot _) | some (.schedContext _) | some (.untyped _) | some (.reply _) |
+      some (.frame _) | none =>
       trivial
 
 open SeLe4n.Kernel in

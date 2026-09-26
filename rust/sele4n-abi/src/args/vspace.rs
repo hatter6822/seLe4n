@@ -4,10 +4,16 @@
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 117–131.
 
 use crate::args::PagePerms;
-use sele4n_types::{Asid, KernelError, KernelResult, PAddr, VAddr};
+use sele4n_types::{Asid, CPtr, KernelError, KernelResult, VAddr};
 
 /// Arguments for `vspaceMap` (syscall 9).
-/// Register mapping: x2=asid, x3=vaddr, x4=paddr, x5=perms word.
+/// Register mapping: x2=asid, x3=vaddr, x4=frame capability address, x5=perms word.
+///
+/// WS-BP BP7.1: `frame` is the address, in the caller's CSpace, of a
+/// capability to the **frame** being mapped — never a physical address.  The
+/// kernel maps that frame's own base, so holding the capability is the
+/// authority over the memory (seL4's `seL4_ARM_Page_Map` is an invocation of a
+/// frame capability for the same reason).
 ///
 /// T3-C/M-NEW-10: The `perms` field is typed as `PagePerms` (validated 5-bit
 /// bitmask) instead of raw `u64`. The decode method rejects invalid permission
@@ -19,7 +25,7 @@ use sele4n_types::{Asid, KernelError, KernelResult, PAddr, VAddr};
 pub struct VSpaceMapArgs {
     pub asid: Asid,
     pub vaddr: VAddr,
-    pub paddr: PAddr,
+    pub frame: CPtr,
     pub perms: PagePerms,
 }
 
@@ -28,7 +34,7 @@ impl VSpaceMapArgs {
         [
             self.asid.raw(),
             self.vaddr.raw(),
-            self.paddr.raw(),
+            self.frame.raw(),
             self.perms.raw() as u64,
         ]
     }
@@ -46,7 +52,7 @@ impl VSpaceMapArgs {
         Ok(Self {
             asid: Asid::from(regs[0]),
             vaddr: VAddr::from(regs[1]),
-            paddr: PAddr::from(regs[2]),
+            frame: CPtr::from(regs[2]),
             perms,
         })
     }
@@ -98,7 +104,7 @@ mod tests {
         let args = VSpaceMapArgs {
             asid: Asid::from(1u64),
             vaddr: VAddr::from(0x1000u64),
-            paddr: PAddr::from(0x2000u64),
+            frame: CPtr::from(3u64),
             perms: PagePerms::try_from(0x07u64).unwrap(),
         };
         assert_eq!(VSpaceMapArgs::decode(&args.encode()).unwrap(), args);

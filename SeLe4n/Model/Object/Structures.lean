@@ -477,6 +477,43 @@ theorem lookup_unmapPage_ne
 
 end VSpaceRoot
 
+/-- **WS-BP BP7.1**: a **frame** — one page of physical memory a thread may be
+given access to.
+
+Physical memory is authority: an address space maps a page only by presenting a
+capability to the frame that owns it, and the physical address the mapping
+installs is the frame's `base`, never a value the caller supplies.  Until this
+object existed `.vspaceMap` took the physical address from a message register,
+checked against nothing but the physical-address width, alignment and the
+device-execute rule, so a holder of any writable VSpace capability could map the
+kernel image, the Lean heap holding every kernel object, another domain's RAM or
+the interrupt controller — latent only because no mapping reached hardware yet.
+
+A frame is exactly one `pageBytes` page, page-aligned (`wellFormed`), and never
+changes after creation: `base` and `isDevice` are fixed at the carve that makes
+it.  `isDevice` records that the page is MMIO rather than RAM, which the mapping
+path turns into "never executable, never cacheable".  `lock` is the per-object
+lock word every kernel object carries — the lock hierarchy's `page` kind
+(level 9), which this object makes real. -/
+structure FrameObject where
+  base : SeLe4n.PAddr
+  isDevice : Bool := false
+  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
+  deriving Repr, DecidableEq
+
+namespace FrameObject
+
+/-- **WS-BP BP7.1**: a frame's base is page-aligned — the only shape a page
+descriptor can name, and the one every carve that creates a frame produces. -/
+def wellFormed (f : FrameObject) : Prop :=
+  f.base.toNat % SeLe4n.pageBytes = 0
+
+instance (f : FrameObject) : Decidable f.wellFormed :=
+  inferInstanceAs (Decidable (_ = _))
+
+end FrameObject
+
 /-- WS-G6/WS-H7: `BEq` instance for `VSpaceRoot` using entry-wise comparison on the
 HashMap-backed mappings. Two VSpaceRoots are equal iff their ASID and all
 mapping entries agree (same size + every key maps to the same value).
@@ -2693,6 +2730,8 @@ inductive KernelObject where
   | untyped (u : UntypedObject)
   | schedContext (sc : SeLe4n.Kernel.SchedContext)
   | reply (r : SeLe4n.Kernel.Reply)
+  /-- **WS-BP BP7.1**: a page of physical memory; see `FrameObject`. -/
+  | frame (f : FrameObject)
   deriving Repr
 
 /-- WS-G5: Manual `BEq` for `KernelObject` dispatching to constituent `BEq`
@@ -2707,6 +2746,7 @@ instance : BEq KernelObject where
     | .untyped a, .untyped b => a == b
     | .schedContext a, .schedContext b => a == b
     | .reply a, .reply b => a == b
+    | .frame a, .frame b => a == b
     | _, _ => false
 
 inductive KernelObjectType where
@@ -2718,6 +2758,7 @@ inductive KernelObjectType where
   | untyped
   | schedContext
   | reply
+  | frame
   deriving Repr, DecidableEq
 
 namespace KernelObjectType
@@ -2733,6 +2774,7 @@ def toNat : KernelObjectType → Nat
   | .untyped => 5
   | .schedContext => 6
   | .reply => 7
+  | .frame => 8
 
 /-- R7-E/L-10: Decode a numeric type tag to `KernelObjectType`.
     Returns `none` for unrecognized tags, ensuring only valid types are accepted. -/
@@ -2745,7 +2787,8 @@ def ofNat? : Nat → Option KernelObjectType
   | 5 => some .untyped
   | 6 => some .schedContext
   | 7 => some .reply
-  | _ + 8 => none
+  | 8 => some .frame
+  | _ + 9 => none
 
 /-- R7-E/L-10: `ofNat?` is a left inverse of `toNat`. -/
 theorem ofNat_toNat (t : KernelObjectType) : ofNat? t.toNat = some t := by
@@ -2754,6 +2797,34 @@ theorem ofNat_toNat (t : KernelObjectType) : ofNat? t.toNat = some t := by
 /-- R7-E/L-10: `toNat` is injective. -/
 theorem toNat_injective {a b : KernelObjectType} (h : a.toNat = b.toNat) : a = b := by
   cases a <;> cases b <;> simp [toNat] at h <;> rfl
+
+/-- **WS-BP BP7.1: the kinds whose object *is* authority over physical memory.**
+
+An untyped object names a region of memory it may be carved into, and a frame
+names the page a mapping of it installs; a capability to either is authority
+over the memory itself, not over a kernel data structure.  seL4 creates both
+only from memory the kernel already accounts for — the boot hands out the
+initial untypeds, and every frame is carved out of one — so neither may be
+created from nothing.  That is exactly what an in-place retype would do: it
+replaces an object with a fresh value whose fields the caller chooses, so a
+retype to `.untyped` or `.frame` would forge a region or a page at an address no
+authority covered (`objectOfKernelType .untyped` builds an untyped at physical
+address `0` with a caller-chosen size).  `retypeReplacementAdmissible` refuses
+both kinds by this predicate.
+
+Enumerated constructor by constructor, with no wildcard: a kind added to
+`KernelObjectType` fails to elaborate here until it is classified, where a
+wildcard would classify it as not memory-backed — the fail-open direction. -/
+def memoryBacked : KernelObjectType → Bool
+  | .tcb => false
+  | .endpoint => false
+  | .notification => false
+  | .cnode => false
+  | .vspaceRoot => false
+  | .untyped => true
+  | .schedContext => false
+  | .reply => false
+  | .frame => true
 
 end KernelObjectType
 
@@ -2768,6 +2839,7 @@ def objectType : KernelObject → KernelObjectType
   | .untyped _ => .untyped
   | .schedContext _ => .schedContext
   | .reply _ => .reply
+  | .frame _ => .frame
 
 /-- WS-SM SM3.A.10: per-object lock state projection.
 
@@ -2797,6 +2869,7 @@ def objectLockOf : KernelObject → SeLe4n.Kernel.Concurrency.RwLockState
   | .untyped u      => u.lock
   | .schedContext s => s.lock
   | .reply r        => r.lock
+  | .frame f        => f.lock
 
 /-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.tcb`.
 
@@ -2834,6 +2907,10 @@ case-analysis on `KernelObject`. -/
 @[simp] theorem objectLockOf_reply (r : SeLe4n.Kernel.Reply) :
     objectLockOf (.reply r) = r.lock := rfl
 
+/-- WS-BP BP7.1: per-variant unfold lemma for `objectLockOf` on `.frame`. -/
+@[simp] theorem objectLockOf_frame (f : FrameObject) :
+    objectLockOf (.frame f) = f.lock := rfl
+
 -- ============================================================================
 -- WS-SM SM8.D — the lock **setter**, and the lock-erased content
 -- ============================================================================
@@ -2863,6 +2940,7 @@ def setLock (obj : KernelObject) (l : SeLe4n.Kernel.Concurrency.RwLockState) :
   | .untyped u       => .untyped       { u with lock := l }
   | .schedContext sc => .schedContext  { sc with lock := l }
   | .reply r         => .reply         { r with lock := l }
+  | .frame f         => .frame         { f with lock := l }
 
 /-- WS-SM SM8.D: the **lock-erased content** of a kernel object — everything
 about it except which cores are holding or waiting for it.
@@ -2972,50 +3050,42 @@ theorem objectLockOf_consistent_with_type (obj : KernelObject) :
     | .vspaceRoot v   => objectType obj = .vspaceRoot   ∧ objectLockOf obj = v.lock
     | .untyped u      => objectType obj = .untyped      ∧ objectLockOf obj = u.lock
     | .schedContext s => objectType obj = .schedContext ∧ objectLockOf obj = s.lock
-    | .reply r        => objectType obj = .reply        ∧ objectLockOf obj = r.lock := by
+    | .reply r        => objectType obj = .reply        ∧ objectLockOf obj = r.lock
+    | .frame f        => objectType obj = .frame        ∧ objectLockOf obj = f.lock := by
   cases obj <;> exact ⟨rfl, rfl⟩
 
 end KernelObject
 
 namespace KernelObjectType
 
-/-- WS-SM SM6.D: the seLe4n `KernelObjectType` enumeration has
-**exactly 8 variants**, now including the first-class `reply` object
-(was 7 — SM3.A.5 deferred Reply to TCB state; this workstream promotes
-it to a real kernel object).  SM3.A.8 (Page) remains N/A — pages are
-inline mapping entries in `VSpaceRoot.mappings`, not a separate object.
+/-- WS-SM SM6.D, WS-BP BP7.1: the seLe4n `KernelObjectType` enumeration has
+**exactly 9 variants** — the first-class `reply` object (SM6.D), and the
+`frame` (WS-BP BP7.1), which retires SM3.A.8's "Page is N/A" decision: while
+`.vspaceMap` took a raw physical address, a page needed no object; once
+physical memory is authority it does, and the lock hierarchy's `page` kind
+(level 9) is that object's lock.
 
-This is the structural enforcement that locks down the remaining N/A
-decision: a future workstream that adds a `Page` variant (or any further
-kind) would fail this exhaustivity witness, forcing the decision to be
-revisited rather than silently slipping past.
-
-The `_count` form pins the cardinality; the `variants_total` form
-enumerates each variant explicitly so a renamed-variant refactor fails
-the surface check. -/
-theorem variants_count_exactly_eight :
+This witness was written to force exactly that revisit: a kind added without
+updating it fails here.  The `_count` form pins the cardinality; the
+`variants_total` form enumerates each variant explicitly so a renamed-variant
+refactor fails the surface check. -/
+theorem variants_count_exactly_nine :
     let variants : List KernelObjectType :=
-      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext, .reply]
-    variants.length = 8 ∧ variants.Nodup := by
+      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext, .reply,
+        .frame]
+    variants.length = 9 ∧ variants.Nodup := by
   refine ⟨rfl, ?_⟩
   decide
 
-/-- WS-SM SM6.D: every `KernelObjectType` value is one of the 8
-enumerated variants.  Total-case witness for the kind tag — pairs with
-`variants_count_exactly_eight` to lock down the remaining N/A decision
-for Page (SM3.A.8). -/
+/- **Tombstone (WS-BP BP7.1)**: `variants_count_exactly_eight` is
+`variants_count_exactly_nine` above — the `frame` kind is the ninth. -/
+
+/-- WS-SM SM6.D, WS-BP BP7.1: every `KernelObjectType` value is one of the 9
+enumerated variants. -/
 theorem variants_total (k : KernelObjectType) :
     k = .tcb ∨ k = .endpoint ∨ k = .notification ∨ k = .cnode ∨
-    k = .vspaceRoot ∨ k = .untyped ∨ k = .schedContext ∨ k = .reply := by
-  cases k
-  · exact Or.inl rfl
-  · exact Or.inr (Or.inl rfl)
-  · exact Or.inr (Or.inr (Or.inl rfl))
-  · exact Or.inr (Or.inr (Or.inr (Or.inl rfl)))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl)))))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl))))))
+    k = .vspaceRoot ∨ k = .untyped ∨ k = .schedContext ∨ k = .reply ∨ k = .frame := by
+  cases k <;> simp
 
 end KernelObjectType
 
@@ -3034,7 +3104,8 @@ at construction time:
   tracked by `asidTableInvariant`).
 - **Untyped**: always well-formed (size constraints are enforced by the allocator).
 - **SchedContext**: must start with **no bound thread** (`v0.35.184`, see below).
-- **Reply**: must start inert (WS-SM SM6.D, see below). -/
+- **Reply**: must start inert (WS-SM SM6.D, see below).
+- **Frame**: page-aligned (WS-BP BP7.1, `FrameObject.wellFormed`). -/
 def wellFormed (obj : KernelObject)
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) : Prop :=
   match obj with
@@ -3063,6 +3134,7 @@ def wellFormed (obj : KernelObject)
   -- `newObj.wellFormed`) could install a Reply that bypasses the
   -- `linkCallerReply` / `replyCallerLinkage` setup path and seed a stale/in-use link.
   | .reply r => r.caller = none ∧ r.prev = none ∧ r.next = none
+  | .frame f => f.wellFormed
 
 /-- **`v0.35.187`: an object's own embedded identity IS the key it is stored at.**
 
@@ -3082,7 +3154,7 @@ the agreement the boot enforces; the two retype wrappers refuse it now
 dispatch stamps the target's identity with `withIdentity` below.
 
 The match has **no** wildcard: a kernel object that starts carrying its own id
-must be classified here, rather than silently answering `true`.  The five that
+must be classified here, rather than silently answering `true`.  The six that
 carry none answer `true` because the question does not arise for them, which is
 a different fact from "not checked". -/
 def embeddedIdentityMatches (obj : KernelObject) (key : SeLe4n.ObjId) : Bool :=
@@ -3095,6 +3167,7 @@ def embeddedIdentityMatches (obj : KernelObject) (key : SeLe4n.ObjId) : Bool :=
   | .cnode _ => true
   | .vspaceRoot _ => true
   | .untyped _ => true
+  | .frame _ => true
 
 /-- **`v0.35.187`: stamp an object with the identity of the slot it is stored at.**
 
@@ -3105,7 +3178,7 @@ the replacement that the retype's other guards and the dispatch payoff's
 `boundThread`, a Reply's `caller` and stack links — survives it unchanged, which
 is what `withIdentity_preserves_*` below state rather than leave to inspection.
 
-The five kinds that carry no identity are returned untouched, and `.tcb` /
+The six kinds that carry no identity are returned untouched, and `.tcb` /
 `.schedContext` / `.reply` are written out rather than matched with a wildcard,
 for the reason `embeddedIdentityMatches` gives. -/
 def withIdentity (obj : KernelObject) (key : SeLe4n.ObjId) : KernelObject :=
@@ -3118,6 +3191,7 @@ def withIdentity (obj : KernelObject) (key : SeLe4n.ObjId) : KernelObject :=
   | .cnode c => .cnode c
   | .vspaceRoot v => .vspaceRoot v
   | .untyped u => .untyped u
+  | .frame f => .frame f
 
 /-- **`v0.35.187`**: stamping satisfies the guard — so the refusal is one a
 caller can meet, which is what keeps it a discipline rather than a wall. -/
@@ -3150,6 +3224,7 @@ instance (obj : KernelObject)
   | .cnode _ => exact inferInstance
   | .reply _ => exact inferInstance
   | .schedContext _ => exact inferInstance
+  | .frame _ => exact inferInstance
   | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _ =>
     exact instDecidableTrue
 
@@ -3162,7 +3237,7 @@ before installing an object (`lifecycleRetype`) cannot tell the two apart. -/
 @[simp] theorem eraseLock_wellFormed (obj : KernelObject)
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
     obj.eraseLock.wellFormed objects ↔ obj.wellFormed objects := by
-  cases obj <;> simp [wellFormed, eraseLock, setLock, CNode.guardBounded]
+  cases obj <;> simp [wellFormed, eraseLock, setLock, CNode.guardBounded] <;> exact Iff.rfl
 
 end KernelObject
 

@@ -705,7 +705,7 @@ theorem endpointSendDual_passiveServerIdleFrameOnCore
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -773,7 +773,7 @@ theorem endpointReceiveDual_passiveServerIdleFrameOnCore
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -925,7 +925,7 @@ theorem endpointCall_passiveServerIdleFrameOnCore
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep

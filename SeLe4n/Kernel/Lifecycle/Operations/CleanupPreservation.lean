@@ -1866,6 +1866,17 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- `schedContextUnbind`'s own primitives.
     if sc.scReply.isSome then .error .revocationRequired
     else .ok (releaseSchedContextBinding st (SeLe4n.SchedContextId.ofObjId target) sc)
+  | .frame _ =>
+    -- **WS-BP BP7.1: a frame cannot be retyped in place.**  A frame *is* a page
+    -- of physical memory, and a VSpace mapping of it records that memory's
+    -- address (`frame.base`), not the object's id.  Replacing the object would
+    -- leave every such mapping naming memory the kernel no longer accounts for
+    -- as that frame — a mapping outliving the authority that created it, which
+    -- is the use-after-free seL4 closes by unmapping a frame when its last
+    -- capability is deleted.  Until the frame-destroy path does the same, the
+    -- refusal is unconditional: `.revocationRequired`, the error this path uses
+    -- for "clear this precondition first".
+    .error .revocationRequired
   | _ => .ok st
 
 /-- **WS-OD OD5.4 / `v0.35.4`: a Reply that is a reply-stack frame cannot be
@@ -2134,6 +2145,9 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; exact h
+  | frame _ =>
+    -- WS-BP BP7.1: a frame target is refused (vacuous on `.ok`).
+    simp [lifecyclePreRetypeCleanup] at hOk
 
 /-- WS-SM SM7.B: the pre-retype cleanup pipeline never touches the
 TLB-shootdown state — every step (the reservation arm: an unbind or a
@@ -2198,6 +2212,8 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; rfl
+  | frame _ =>
+    simp [lifecyclePreRetypeCleanup] at hOk
 
 namespace Internal
 
@@ -2442,7 +2458,7 @@ theorem endpointQueueRemove_ok_getEndpoint?
     cases obj with
     | endpoint ep =>
       exact ⟨ep, (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj⟩
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
       exact absurd hStep (by simp)
 

@@ -162,9 +162,9 @@ Dispatches on `l.kind`:
   level table lock; no per-object lookup needed).
 * Modeled kind (`.tcb`, `.endpoint`, …): use `LockId.lookup` to
   resolve the object's lock state, then check the mode.
-* N/A kind (`.reply`, `.page`): vacuously `False` (SM3.A.5 /
-  SM3.A.8 — no kernel object exists for these kinds, so no lock
-  can be held).
+  Every kind but `.objStore` is modeled: SM6.D promoted `.reply` and
+  WS-BP BP7.1 `.page` (a frame of physical memory) to first-class
+  kernel objects, so neither N/A decision stands.
 
 This matches the plan §5.3 SM3.C.4 pseudocode exactly, with the
 SM3.B.2 `LockId.lookup` providing the unified accessor. -/
@@ -172,9 +172,8 @@ def lockHeld (c : CoreId) (l : LockId) (mode : AccessMode)
     (s : SystemState) : Prop :=
   match l.kind with
   | .objStore => s.objStoreLock.coreHolds c mode
-  | .page => False   -- SM3.A.8 N/A (pages inline in VSpaceRoot.mappings)
   | .tcb | .endpoint | .notification | .cnode
-  | .vspaceRoot | .untyped | .schedContext | .reply =>
+  | .vspaceRoot | .untyped | .schedContext | .reply | .page =>
       match LockId.lookup s l with
       | some (lockState, _) => lockState.coreHolds c mode
       | none => False
@@ -201,12 +200,18 @@ theorem lockHeld_reply (c : CoreId) (oid : SeLe4n.ObjId)
     rw [LockId.lookup_reply, hAbsent]; rfl
   simp [lockHeld, hLook]
 
-/-- WS-SM SM3.C.4: `lockHeld` on `.page` is always `False`. -/
-@[simp] theorem lockHeld_page (c : CoreId) (oid : SeLe4n.ObjId)
-    (mode : AccessMode) (s : SystemState) :
+/-- WS-BP BP7.1: the `.page` lock is not held when no frame is present at
+`oid` — `getFrame?` misses, so `lockHeld` falls through the modeled (lookup)
+branch to `False`.  A frame is a first-class kernel object, so the former
+unconditional `¬ lockHeld .page` is replaced by this absence-conditioned form,
+exactly as SM6.D replaced `.reply`'s. -/
+theorem lockHeld_page (c : CoreId) (oid : SeLe4n.ObjId)
+    (mode : AccessMode) (s : SystemState)
+    (hAbsent : s.getFrame? oid = none) :
     ¬ lockHeld c ⟨.page, oid⟩ mode s := by
-  unfold lockHeld
-  cases mode <;> exact id
+  have hLook : LockId.lookup s ⟨.page, oid⟩ = none := by
+    rw [LockId.lookup_page, hAbsent]; rfl
+  simp [lockHeld, hLook]
 
 -- ============================================================================
 -- §2 — Lock-set held predicate (plan §5.3 SM3.C.4)
@@ -333,17 +338,22 @@ theorem default_getReply?_none (replyId : SeLe4n.ReplyId) :
   unfold SystemState.getReply?
   rw [default_objects_get?_none replyId.toObjId]
 
+/-- WS-BP BP7.1: the default state holds no frame. -/
+theorem default_getFrame?_none (oid : SeLe4n.ObjId) :
+    (default : SystemState).getFrame? oid = none := by
+  unfold SystemState.getFrame?
+  rw [default_objects_get?_none oid]
+
 /-- WS-SM SM3.C.4: on the default SystemState, `LockId.lookup` returns
 `none` for every modeled-kind LockId (the underlying object is
-absent), and trivially returns `none` for the `.objStore` / `.reply` /
-`.page` arms. -/
+absent), and trivially returns `none` for the `.objStore` arm. -/
 theorem default_lookup_none (l : LockId) :
     LockId.lookup (default : SystemState) l = none := by
   unfold LockId.lookup
   cases l.kind <;> simp [default_getTcb?_none, default_getEndpoint?_none,
     default_getNotification?_none, default_getCNode?_none,
     default_getVSpaceRoot?_none, default_getUntyped?_none,
-    default_getSchedContext?_none, default_getReply?_none]
+    default_getSchedContext?_none, default_getReply?_none, default_getFrame?_none]
 
 /-- WS-SM SM3.C.4: on the default SystemState (every lock `.unheld`),
 NO core holds any lock.
@@ -387,11 +397,8 @@ theorem lockSetHeld_default_iff_empty (c : CoreId) (S : LockSet) :
         | write =>
           rw [hM] at hHead
           simp [RwLockState.unheld] at hHead
-      | page =>
-        rw [hK] at hHead
-        exact hHead
       | tcb | endpoint | notification | cnode
-      | vspaceRoot | untyped | schedContext | reply =>
+      | vspaceRoot | untyped | schedContext | reply | page =>
         all_goals (
           rw [hK] at hHead
           simp only at hHead
@@ -441,7 +448,8 @@ theorem LockId.lookup_eq_of_objects_getElem?_eq (s s' : SystemState) (l : LockId
   | objStore => rfl
   | reply =>
       simp only [SystemState.getReply?, hObjIdRp, h]
-  | page => rfl
+  | page =>
+      simp only [SystemState.getFrame?, h]
   | tcb =>
       simp only [SystemState.getTcb?, hObjIdTcb, h]
   | endpoint =>
@@ -511,9 +519,8 @@ theorem acquireLockOnObject_objects_getElem?_of_ne (s : SystemState)
   unfold acquireLockOnObject
   cases l.kind with
   | objStore => rfl
-  | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals exact updateObjectLockAt_objects_getElem?_of_ne s l _ oid hExt hNe
 
 /-- WS-SM SM3.C.8 foundation: after `updateObjectLockAt s l op` on a present,
@@ -582,8 +589,6 @@ theorem acquireLockOnObject_establishes_lockHeld_modeled
   -- The lock id names a modeled kind (its kind is the kind of a real object).
   have hNeObjStore : l.kind ≠ .objStore := by
     rw [← hKind]; exact KernelObject.lockKind_ne_objStore o
-  have hNePage : l.kind ≠ .page := by
-    rw [← hKind]; exact KernelObject.lockKind_ne_page o
   -- The modeled branch of `acquireLockOnObject` is `updateObjectLockAt`
   -- (WS-SM SM6.D: `.reply` is now a modeled kind, not an N/A no-op).
   have hAcq : acquireLockOnObject s core l mode
@@ -591,9 +596,8 @@ theorem acquireLockOnObject_establishes_lockHeld_modeled
     unfold acquireLockOnObject
     cases hk : l.kind with
     | objStore => exact absurd hk hNeObjStore
-    | page => exact absurd hk hNePage
     | tcb | endpoint | notification | cnode
-    | vspaceRoot | untyped | schedContext | reply => all_goals rfl
+    | vspaceRoot | untyped | schedContext | reply | page => all_goals rfl
   rw [hAcq]
   -- The post-acquire lookup recovers the lock-advanced object.
   have hLookup' := updateObjectLockAt_lookup_self s l (mode.toAcquireOp core) o
@@ -601,9 +605,8 @@ theorem acquireLockOnObject_establishes_lockHeld_modeled
   unfold lockHeld
   cases hk : l.kind with
   | objStore => exact absurd hk hNeObjStore
-  | page => exact absurd hk hNePage
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals (
         rw [hLookup']
         show (KernelObject.objectLockOf
@@ -778,9 +781,8 @@ themselves carry nothing. -/
 def lockQueued (c : CoreId) (l : LockId) (s : SystemState) : Prop :=
   match l.kind with
   | .objStore => c ∈ s.objStoreLock.waiters.map Prod.fst
-  | .page => False   -- SM3.A.8 N/A (pages inline in VSpaceRoot.mappings)
   | .tcb | .endpoint | .notification | .cnode
-  | .vspaceRoot | .untyped | .schedContext | .reply =>
+  | .vspaceRoot | .untyped | .schedContext | .reply | .page =>
       match LockId.lookup s l with
       | some (lockState, _) => c ∈ lockState.waiters.map Prod.fst
       | none => False
@@ -792,11 +794,14 @@ instance lockQueued_decidable (c : CoreId) (l : LockId) (s : SystemState) :
   cases l.kind <;> first | exact inferInstance |
     (cases LockId.lookup s l <;> exact inferInstance)
 
-/-- **WS-LC LC4.3**: nothing is ever queued on a `.page` lock. -/
-@[simp] theorem lockQueued_page (c : CoreId) (oid : SeLe4n.ObjId) (s : SystemState) :
+/-- **WS-BP BP7.1**: nothing is queued on a `.page` lock where no frame is
+present (was unconditional under the SM3.A.8 N/A decision). -/
+theorem lockQueued_page (c : CoreId) (oid : SeLe4n.ObjId) (s : SystemState)
+    (hAbsent : s.getFrame? oid = none) :
     ¬ lockQueued c ⟨.page, oid⟩ s := by
-  unfold lockQueued
-  exact id
+  have hLook : LockId.lookup s ⟨.page, oid⟩ = none := by
+    rw [LockId.lookup_page, hAbsent]; rfl
+  simp [lockQueued, hLook]
 
 /-- **WS-LC LC4.3**: an update at *any* lock cannot enqueue a core the
 operation itself never enqueues.
@@ -825,9 +830,8 @@ theorem lockQueued_updateObjectLockAt_of_never_enqueues
   | objStore =>
       rw [updateObjectLockAt_preserves_objStoreLock s l' op]
       exact fun h hPost => h hPost
-  | page => exact fun _ hPost => hPost
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals (
       intro h hPost
       revert hPost
@@ -892,9 +896,8 @@ theorem cancelLockOnObject_withdraws (s : SystemState) (core : CoreId)
   cases hK : l.kind with
   | objStore =>
       exact rwLock_cancel_not_queued s.objStoreLock core
-  | page => exact id
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals (
       cases hLook : LockId.lookup s l with
       | none =>
@@ -930,9 +933,8 @@ theorem lockQueued_objStoreLock_applyOp_of_never_enqueues
   unfold lockQueued
   cases l.kind with
   | objStore => exact fun h => hOp _ h
-  | page => exact fun _ hPost => hPost
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals (
         rw [LockId.lookup_eq_of_objects_getElem?_eq s
           { s with objStoreLock := s.objStoreLock.applyOp op } l rfl]
@@ -948,9 +950,8 @@ theorem cancelLockOnObject_preserves_not_queued (c core : CoreId) (l l' : LockId
   | objStore =>
       exact lockQueued_objStoreLock_applyOp_of_never_enqueues c l _ s
         (fun r hr => rwLock_cancel_preserves_not_queued r c core hr) h
-  | page => exact h
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals (
         show ¬ lockQueued c l (updateObjectLockAt s l' (m.toCancelOp core))
         exact lockQueued_updateObjectLockAt_of_never_enqueues c l l' _ s hExt
@@ -968,9 +969,8 @@ theorem releaseLockOnObject_preserves_not_queued (c core : CoreId) (l l' : LockI
   | objStore =>
       exact lockQueued_objStoreLock_applyOp_of_never_enqueues c l _ s
         (fun r hr => rwLock_release_preserves_not_queued r c core m hr) h
-  | page => exact h
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals (
         show ¬ lockQueued c l (updateObjectLockAt s l' (m.toReleaseOp core))
         exact lockQueued_updateObjectLockAt_of_never_enqueues c l l' _ s hExt

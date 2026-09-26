@@ -584,7 +584,7 @@ theorem schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly
           simp only at hPreInv
           exact hPreInv hOtherBind
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ | reply _ => simp
+        | schedContext _ | reply _ | frame _ => simp
 
 /-- WS-RC R5.G.3 (DEEP-SCH-06): `schedContextConfigure` preserves
     `boundThreadDomainConsistent`.

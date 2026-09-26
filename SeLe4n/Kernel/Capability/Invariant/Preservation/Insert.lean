@@ -173,7 +173,7 @@ theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
   | none => simp [hPre] at hStep
   | some preObj =>
     cases preObj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hPre] at hStep
     | cnode cn =>
       simp only [hPre] at hStep

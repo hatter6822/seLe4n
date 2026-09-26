@@ -465,7 +465,7 @@ private theorem cmwpFoldBody_optPriorityVal (st : SystemState)
       | none => simp [optPriorityVal]
       | some m => simp [optPriorityVal]
     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [optPriorityVal]
+      | schedContext _ | reply _ | frame _ => simp [optPriorityVal]
 
 /-- WS-SM SM5.F.1: one per-core fold step never exceeds the corresponding global
 step (it either matches it, on-core, or leaves the accumulator unchanged). -/

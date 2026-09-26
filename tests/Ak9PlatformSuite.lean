@@ -1783,6 +1783,27 @@ def rangesWalkStarvedOfFuelRefuses : IO Unit := do
   expect "audit one unit per entry plus one for the end is enough"
     (fields (parseFdtRanges bytes 2 2 2 (fuel := 4)) == whole)
 
+/-- **WS-BP BP7.1**: a configured frame is refused at boot.  A frame is
+authority over the page at its `base`, so admitting one would hand whoever holds
+its capability memory no boot check has placed; frames are carved from the
+boot's untypeds instead.  The CONTROL is the aligned, ordinary-memory frame the
+kernel *would* build — refused all the same, because the refusal is about the
+kind, not the frame's shape — and the Prop side (`bootSafeObject`'s last
+conjunct) is the same answer, by `bootSafeObjectCheck_not_frame`. -/
+def bootRefusesConfiguredFrames : IO Unit := do
+  let frame : FrameObject := { base := PAddr.ofNat 0x10000000 }
+  expect "BP7.1 the frame is well formed (page aligned)" (decide frame.wellFormed)
+  expect "NEGATIVE BP7.1 a configured frame is refused by the boot check"
+    (!bootSafeObjectCheck (.frame frame))
+  expect "NEGATIVE BP7.1 a configured device frame is refused too"
+    (!bootSafeObjectCheck (.frame { frame with isDevice := true }))
+  expect "BP7.1 no RPi5 deployment object is a frame"
+    (rpi5Variants.all fun v =>
+      (rpi5InitialObjectsFor v).all fun e =>
+        match e.obj with
+        | .frame _ => false
+        | _ => true)
+
 /-- **The `v0.36.2` audit**: a boot untyped is *pristine* — nothing carved
 (`watermark = 0`, `children = []`) and no ancestry (`parent = none`).
 `bootSafeUntypedCheck` accepted every record, so a configuration could ship a
@@ -2532,6 +2553,7 @@ def main : IO Unit := do
   uartWindowIsTheDeviceTreesRegisterBlock
   rangesWalkStarvedOfFuelRefuses
   bootUntypedMustBePristine
+  bootRefusesConfiguredFrames
   realFirmwareAccountBindsTheReportedRam
   review9_parser_conformance_and_reservations
   review9_runtime_contract_follows_the_installed_map

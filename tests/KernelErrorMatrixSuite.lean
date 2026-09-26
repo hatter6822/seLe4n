@@ -707,18 +707,25 @@ private def row_invalidSyscallArgument_perms : KernelErrorRejection :=
       runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
         (mkDecoded #[rv 0, rv 0x1000, rv 0, rv 64]) 65536) }
 
-/-- Row: `decodeVSpaceMapArgsChecked` rejects PA ≥ 2^width with
-`.addressOutOfBounds` (AK3-E / A-M01). -/
+/-- Row: the production map wrapper rejects a physical address at or above the
+platform's PA window with `.addressOutOfBounds`.  WS-BP BP7.1 retired AK3-E's
+decode-time bound (`decodeVSpaceMapArgsChecked`) with the physical-address
+operand it bounded — MR2 is a frame capability now — so the bound this row pins
+is the one that applies to a resolved frame's `base`, inside
+`vspaceMapPageCheckedWithFlushFromState`, checked before the ASID is resolved. -/
 private def row_addressOutOfBounds_paddr : KernelErrorRejection :=
-  { syscall       := "decodeVSpaceMapArgsChecked"
+  { syscall       := "vspaceMapPageCheckedWithFlushFromState"
     expectedError := .addressOutOfBounds
     scenarioTag   := "AN11A.5.addressOutOfBounds.paddr_over_width"
-    scenarioDesc  := "AK3-E (A-M01): defense-in-depth checked decode" ++
-                     " rejects PAs at or above the platform's PA window" ++
-                     " (here, maxPA = 2^44 RPi5)"
+    scenarioDesc  := "the production map wrapper rejects a physical" ++
+                     " address at or above the platform's PA window" ++
+                     " (the bound a resolved frame's base is held to)"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgsChecked
-        (mkDecoded #[rv 0, rv 0x1000, rv (2^44), rv 0]) 65536 (2^44)) }
+      let st : SystemState := default
+      runUnit (SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushFromState
+        (SeLe4n.ASID.ofNat 1) (SeLe4n.VAddr.ofNat 0x1000)
+        (SeLe4n.PAddr.ofNat (2 ^ st.machine.physicalAddressWidth))
+        PagePermissions.readOnly st) }
 
 /-- Row: `dispatchException .fiq` returns `.notSupported`. -/
 private def row_notSupported_fiq : KernelErrorRejection :=

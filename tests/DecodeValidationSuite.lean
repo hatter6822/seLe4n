@@ -14,9 +14,13 @@ open SeLe4n.Model
 
 /-! # AK3-E + AK3-J: Decode-time validation regression tests
 
-Focused coverage for the two decode wrapper functions introduced in AK3:
+Focused coverage for the decode-time validation introduced in AK3:
 
-- `decodeVSpaceMapArgsChecked` (AK3-E / A-M01) — PA bounds check
+- the VSpace map decode (AK3-E / A-M01).  WS-BP BP7.1 retired AK3-E's
+  `decodeVSpaceMapArgsChecked`: MR2 is a frame capability address now, so
+  there is no decoded physical address to bound — the bound applies to the
+  resolved frame's `base` inside the production map wrapper.  T01–T03 pin the
+  decode's new contract.
 - `decodeSchedContextConfigureArgsChecked` (AK3-J / A-M07) — priority,
   domain, budget, period validation
 
@@ -37,42 +41,41 @@ def stubOf (vals : Array Nat) : SyscallDecodeResult :=
     syscallId := .send
     msgRegs := vals.map (fun v => ⟨v⟩) }
 
-/-- T01: AK3-E — checked decode rejects PA ≥ 2^44 (RPi5 physical limit)
-    with `.addressOutOfBounds`. -/
-def test_t01_checked_rejects_high_pa : IO Unit := do
+/-- T01: WS-BP BP7.1 — a value in MR2 above the physical-address window is a
+    frame **capability address**, so the decode carries it rather than refusing
+    it: the retired decode-time PA bound would have read it as an address. -/
+def test_t01_high_mr2_is_a_capability_address : IO Unit := do
   let maxASID := 65536
-  let maxPA   := 2 ^ 44  -- BCM2712 / RPi5
-  -- asid=1, vaddr=0x1000, paddr=2^44+1 (out of bounds), perms=1 (read-only)
   let stub := stubOf #[1, 0x1000, (2^44) + 1, 1]
-  match decodeVSpaceMapArgsChecked stub maxASID maxPA with
-  | .error .addressOutOfBounds =>
-    IO.println "check passed [checked rejects PA ≥ 2^44]"
-  | .error e =>
-    throw <| IO.userError s!"T01: expected addressOutOfBounds, got {toString e}"
-  | .ok _ =>
-    throw <| IO.userError "T01: expected error, got ok"
-
-/-- T02: AK3-E — checked decode accepts PA < 2^44. -/
-def test_t02_checked_accepts_low_pa : IO Unit := do
-  let maxASID := 65536
-  let maxPA   := 2 ^ 44
-  let stub := stubOf #[1, 0x1000, 0x2000, 1]
-  match decodeVSpaceMapArgsChecked stub maxASID maxPA with
+  match decodeVSpaceMapArgs stub maxASID with
   | .ok args =>
-    expectCond "decode-validation" "paddr in range" (args.paddr.toNat == 0x2000)
+    expectCond "decode-validation" "MR2 carried as a frame capability address"
+      (args.frame == SeLe4n.CPtr.ofNat ((2^44) + 1))
+  | .error e =>
+    throw <| IO.userError s!"T01: expected ok, got {toString e}"
+
+/-- T02: WS-BP BP7.1 — the decode carries MR2 verbatim as the frame capability
+    address, beside the ASID, virtual address and permissions. -/
+def test_t02_decode_carries_frame_cptr : IO Unit := do
+  let maxASID := 65536
+  let stub := stubOf #[1, 0x1000, 3, 1]
+  match decodeVSpaceMapArgs stub maxASID with
+  | .ok args =>
+    expectCond "decode-validation" "frame cptr = MR2" (args.frame == SeLe4n.CPtr.ofNat 3)
+    expectCond "decode-validation" "vaddr = MR1" (args.vaddr.toNat == 0x1000)
   | .error e =>
     throw <| IO.userError s!"T02: expected ok, got {toString e}"
 
-/-- T03: AK3-E — boundary at exactly 2^44 is rejected (≥ maxPA). -/
-def test_t03_checked_boundary_rejected : IO Unit := do
+/-- T03: the bound the decode still owns — a virtual address at exactly 2^48 is
+    non-canonical and rejected with `.addressOutOfBounds`. -/
+def test_t03_noncanonical_vaddr_boundary_rejected : IO Unit := do
   let maxASID := 65536
-  let maxPA   := 2 ^ 44
-  let stub := stubOf #[1, 0x1000, 2^44, 1]
-  match decodeVSpaceMapArgsChecked stub maxASID maxPA with
+  let stub := stubOf #[1, 2^48, 3, 1]
+  match decodeVSpaceMapArgs stub maxASID with
   | .error .addressOutOfBounds =>
-    IO.println "check passed [PA = 2^44 rejected (≥ bound)]"
+    IO.println "check passed [VAddr = 2^48 rejected (non-canonical)]"
   | _ =>
-    throw <| IO.userError "T03: expected addressOutOfBounds at boundary"
+    throw <| IO.userError "T03: expected addressOutOfBounds at the canonical boundary"
 
 /-- T04: AK3-J — checked schedContextConfigure rejects priority > 255. -/
 def test_t04_sc_rejects_high_priority : IO Unit := do
@@ -137,9 +140,9 @@ def test_t09_sc_boundary_accepted : IO Unit := do
 /-- Running entry. -/
 def runAllTests : IO Unit := do
   IO.println "=== AK3-E + AK3-J Decode Validation regression suite ==="
-  test_t01_checked_rejects_high_pa
-  test_t02_checked_accepts_low_pa
-  test_t03_checked_boundary_rejected
+  test_t01_high_mr2_is_a_capability_address
+  test_t02_decode_carries_frame_cptr
+  test_t03_noncanonical_vaddr_boundary_rejected
   test_t04_sc_rejects_high_priority
   test_t05_sc_rejects_high_domain
   test_t06_sc_rejects_zero_budget

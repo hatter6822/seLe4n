@@ -990,7 +990,14 @@ def main() -> int:
     # everywhere else); measured cost of the extra level is ~0.1 s on the whole
     # 34-syscall scan, because `routeBootHits` emits each (head, argument) pair
     # once rather than once per path.
-    depth = 3
+    #
+    # WS-BP BP7.1 raised it from 3 to 4 for the same reason: the `.vspaceMap`
+    # arm now reaches `vspaceMapFromFrameCap` — the frame-capability
+    # resolution — in front of the per-core map wrapper that used to be its
+    # root, so at depth 3 the walk would stop one level shallower inside that
+    # wrapper than it did before.  Measured on the whole scan: no new finding,
+    # no measurable time.
+    depth = 4
     listing = "--list" in sys.argv
     if "--depth" in sys.argv:
         depth = int(sys.argv[sys.argv.index("--depth") + 1])
@@ -1322,7 +1329,7 @@ def main() -> int:
             print(f"  {sid:24s} -> {op}")
 
     print(f"[per-core-routing] {len(percore)} syscalls, reach depth {depth} "
-          f"(arm -> seam/operation -> helper -> helper), "
+          f"(arm -> seam/operation -> helper -> ...), "
           f"{len(allow)} allowlisted exception(s)")
     if findings:
         print("[per-core-routing] FAIL: a live syscall arm can reach a boot-pinned "

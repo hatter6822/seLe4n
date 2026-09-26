@@ -614,7 +614,7 @@ theorem endpointQueuePopHead_preserves_queueNextBlockingConsistent
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -699,7 +699,7 @@ theorem endpointQueueEnqueue_preserves_queueNextBlockingConsistent
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -1304,7 +1304,7 @@ theorem endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -2066,7 +2066,7 @@ theorem endpointQueuePopHead_preserves_queueNextTargetBlocked
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -2142,7 +2142,7 @@ theorem endpointQueuePopHead_popped_queuePrev_none
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep

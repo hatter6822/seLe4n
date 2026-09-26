@@ -245,7 +245,7 @@ fn xval_010_vspace_map() {
     let args = vspace::VSpaceMapArgs {
         asid: Asid::from(1u64),
         vaddr: VAddr::from(0x1000u64),
-        paddr: PAddr::from(0x2000u64),
+        frame: CPtr::from(0x2000u64), // WS-BP BP7.1: a frame capability address
         perms: PagePerms::try_from(0x05u64).unwrap(), // read|execute
     };
     let encoded = args.encode();
@@ -260,7 +260,7 @@ fn xval_010_vspace_map() {
         &[
             (2, 1, "x2=asid"),
             (3, 0x1000, "x3=vaddr"),
-            (4, 0x2000, "x4=paddr"),
+            (4, 0x2000, "x4=frame capability address"),
             (5, 0x05, "x5=perms"),
             (6, 9, "x7=SyscallId::VSpaceMap"),
         ],
@@ -561,14 +561,15 @@ fn kernel_error_exhaustive_roundtrip() {
     assert!(KernelError::from_u32(58).is_none());
 }
 
-/// Verify TypeTag roundtrip for all 8 variants (0–7, including SchedContext + Reply).
+/// Verify TypeTag roundtrip for all 9 variants (0–8, including SchedContext,
+/// Reply and — WS-BP BP7.1 — Frame).
 #[test]
 fn type_tag_exhaustive_roundtrip() {
-    for i in 0..=7u64 {
+    for i in 0..=8u64 {
         let tag = TypeTag::from_u64(i).expect("valid type tag");
         assert_eq!(tag.to_u64(), i);
     }
-    assert!(TypeTag::from_u64(8).is_err());
+    assert!(TypeTag::from_u64(9).is_err());
 }
 
 /// Verify all CSpace arg structures roundtrip.
@@ -692,7 +693,7 @@ fn vspace_map_args_perms_roundtrip() {
         let args = vspace::VSpaceMapArgs {
             asid: Asid::from(1u64),
             vaddr: VAddr::from(0x1000u64),
-            paddr: PAddr::from(0x2000u64),
+            frame: CPtr::from(3u64),
             perms: PagePerms::try_from(perm_val).unwrap(),
         };
         let decoded = vspace::VSpaceMapArgs::decode(&args.encode()).unwrap();
@@ -989,9 +990,9 @@ fn thread_on_different_core_decode() {
 /// V1-C (M-RS-1): LifecycleRetypeArgs rejects invalid type tags at decode.
 #[test]
 fn lifecycle_retype_invalid_type_tag() {
-    // Type tag 8 (first invalid, after Reply = 7)
+    // Type tag 9 (first invalid, after Frame = 8 — WS-BP BP7.1)
     assert_eq!(
-        lifecycle::LifecycleRetypeArgs::decode(&[42, 8, 0]),
+        lifecycle::LifecycleRetypeArgs::decode(&[42, 9, 0]),
         Err(KernelError::InvalidTypeTag)
     );
 
@@ -1447,10 +1448,12 @@ fn lifecycle_retype_sched_context() {
     assert_eq!(decoded.new_type, TypeTag::SchedContext);
 }
 
-/// AA1-G-2 / WS-SM SM6.D: TypeTag boundary — 8 is first invalid value (Reply = 7).
+/// AA1-G-2 / WS-SM SM6.D / WS-BP BP7.1: TypeTag boundary — 9 is the first
+/// invalid value (Frame = 8).
 #[test]
 fn type_tag_boundary() {
-    assert_eq!(TypeTag::from_u64(8), Err(KernelError::InvalidTypeTag));
+    assert_eq!(TypeTag::from_u64(8), Ok(TypeTag::Frame));
+    assert_eq!(TypeTag::from_u64(9), Err(KernelError::InvalidTypeTag));
     assert_eq!(
         TypeTag::from_u64(u64::MAX),
         Err(KernelError::InvalidTypeTag)
@@ -2388,7 +2391,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         cap,
         Asid::from(1u64),
         VAddr::from(0x1000u64),
-        PAddr::from(0x2000u64),
+        CPtr::from(2u64),
     );
     assert_clears("vspace_map", SyscallId::VSpaceMap);
     let _ = sele4n_sys::vspace::vspace_unmap(cap, Asid::from(1u64), VAddr::from(0x1000u64));

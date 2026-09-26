@@ -305,11 +305,16 @@ private def sad007_lifecycleRetypeInvalidType : IO Unit := do
 
 /-- SAD-008: decodeVSpaceMapArgs — valid decode. -/
 private def sad008_vspaceMap : IO Unit := do
-  -- ASID < 65536, VAddr < 2^48, PAddr arbitrary, perms valid (< 32)
+  -- ASID < 65536, VAddr < 2^48, frame CPtr arbitrary, perms valid (< 32)
   -- AH3-C: Pass ARM64 default maxASID (65536) to parameterized decode
+  -- WS-BP BP7.1: MR2 decodes as a frame capability address, carried verbatim.
   let stub := mkStub #[⟨1⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨1⟩]
   let result := decodeVSpaceMapArgs stub 65536
   expect "SAD-008a vspace map ok" result.isOk
+  expect "SAD-008b MR2 is the frame capability address"
+    (match result with
+     | .ok args => args.frame == SeLe4n.CPtr.ofNat 0x2000
+     | .error _ => false)
 
 /-- SAD-009: decodeVSpaceMapArgs — invalid ASID (>= 65536). -/
 private def sad009_vspaceMapInvalidAsid : IO Unit := do
@@ -502,28 +507,24 @@ private def sad027_noArgDecoders : IO Unit := do
   expect "SAD-027c suspend" (decodeSuspendArgs stub).isOk
   expect "SAD-027d resume" (decodeResumeArgs stub).isOk
 
-/-- SAD-028: validateVSpaceMapPermsForMemoryKind — device+execute rejection. -/
+/-- SAD-028: validateVSpaceMapPermsForMemoryKind — device+execute rejection.
+    WS-BP BP7.1: the check reads a physical address and a permission set — the
+    address is the resolved frame's `base`, not a decoded operand. -/
 private def sad028_validateVSpaceMapPermsDeviceExec : IO Unit := do
   -- PagePermissions.ofNat: bit 0=read, 1=write, 2=execute, 3=user, 4=cacheable
-  -- Construct args with execute=true, placed in a device region
-  let args : VSpaceMapArgs :=
-    { asid := ASID.ofNat 1, vaddr := VAddr.ofNat 0x1000
-      paddr := PAddr.ofNat 0x80000, perms := { execute := true } }
+  let pa := PAddr.ofNat 0x80000
   let deviceRegion : MemoryRegion :=
     { base := PAddr.ofNat 0x80000, size := 0x1000, kind := .device }
   -- Device + execute should be rejected
-  let result := validateVSpaceMapPermsForMemoryKind args [deviceRegion]
+  let result := validateVSpaceMapPermsForMemoryKind pa { execute := true } [deviceRegion]
   expect "SAD-028a device+exec rejected" (!result.isOk)
   -- Device + no execute should be accepted
-  let argsNoExec : VSpaceMapArgs :=
-    { asid := ASID.ofNat 1, vaddr := VAddr.ofNat 0x1000
-      paddr := PAddr.ofNat 0x80000, perms := { read := true } }
-  let resultOk := validateVSpaceMapPermsForMemoryKind argsNoExec [deviceRegion]
+  let resultOk := validateVSpaceMapPermsForMemoryKind pa { read := true } [deviceRegion]
   expect "SAD-028b device+read ok" resultOk.isOk
   -- RAM + execute should be accepted
   let ramRegion : MemoryRegion :=
     { base := PAddr.ofNat 0x80000, size := 0x1000, kind := .ram }
-  let resultRam := validateVSpaceMapPermsForMemoryKind args [ramRegion]
+  let resultRam := validateVSpaceMapPermsForMemoryKind pa { execute := true } [ramRegion]
   expect "SAD-028c ram+exec ok" resultRam.isOk
 
 /-- SAD-029: decodeExtraCapAddrs — basic and truncation behavior. -/

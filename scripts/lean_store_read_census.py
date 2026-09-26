@@ -1544,7 +1544,7 @@ ACCESSOR_BODIES = {
     ("SeLe4n/Model/State.lean", d): "live object-store accessor"
     for d in ("getObject?", "getObjectType?", "getTcb?", "getEndpoint?",
               "getNotification?", "getCNode?", "getVSpaceRoot?", "getUntyped?",
-              "getSchedContext?", "getReply?",
+              "getSchedContext?", "getReply?", "getFrame?",
               "getTcbWitnessed?", "getSchedContextWitnessed?",
               "getEndpointWitnessed?", "getNotificationWitnessed?",
               "lookupObject", "lookupCNode", "lookupVSpaceRoot")

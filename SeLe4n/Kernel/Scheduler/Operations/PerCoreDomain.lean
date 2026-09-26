@@ -478,7 +478,7 @@ private theorem chooseBestRunnableBy_result_eligible_aux
           · exact Or.inl hprops
           · exact Or.inr hb
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ =>
+      | schedContext _ | reply _ | frame _ =>
         rw [hObj] at h
         rcases ih _ rt rp rd h with hprops | hb
         · exact Or.inl hprops

@@ -72,8 +72,9 @@ mod tests {
     // V1-C: Invalid type tag values must be rejected
     #[test]
     fn invalid_type_tag_rejected() {
+        // WS-BP BP7.1: 9 is the first invalid tag (Frame = 8).
         assert_eq!(
-            LifecycleRetypeArgs::decode(&[42, 8, 0]),
+            LifecycleRetypeArgs::decode(&[42, 9, 0]),
             Err(KernelError::InvalidTypeTag)
         );
         assert_eq!(

@@ -42,15 +42,15 @@ which extracts the ObjId from the LockId itself and uses it as
 both the lookup key and the LockId's `objId` component.
 
 The Lean elaborator's pattern-match exhaustivity check on
-`KernelObject` (an 8-variant inductive, now including the first-class
-`reply` object) is the structural enforcement that a future variant
-addition — for example a post-1.0 `Page` kernel object — forces the
-per-variant `lockKind` arm to be added in the same PR (otherwise this
-module fails to elaborate).  This is the SM3.A.8 (Page) N/A decision's
-SM3.B-layer enforcement counterpart, analogous to the
-`KernelObjectType.variants_count_exactly_eight` pin in the SM3.A
-inventory.  (SM3.A.5 Reply is no longer N/A — WS-SM SM6.D promotes it
-to a real object with `LockKind.reply` at hierarchy level 6.)
+`KernelObject` (a 9-variant inductive, now including the first-class
+`reply` and `frame` objects) is the structural enforcement that a future
+variant addition forces the per-variant `lockKind` arm to be added in the
+same PR (otherwise this module fails to elaborate), analogous to the
+`KernelObjectType.variants_count_exactly_nine` pin in the SM3.A
+inventory.  Neither N/A decision stands any more: SM3.A.5 Reply became a
+real object with `LockKind.reply` at hierarchy level 6 (WS-SM SM6.D), and
+SM3.A.8 Page a real object with `LockKind.page` at level 9 when a frame of
+physical memory became something a mapping must name (WS-BP BP7.1).
 -/
 
 namespace SeLe4n.Model
@@ -77,6 +77,7 @@ Total per-variant case dispatch.  The mapping is:
 | `.notification`        | `.notification`   | 5                |
 | `.schedContext`        | `.schedContext`   | 7                |
 | `.vspaceRoot`          | `.vspaceRoot`     | 8                |
+| `.frame`               | `.page`           | 9                |
 
 Note the level gap between `.notification` (5) and `.schedContext`
 (7): level 6 is reserved for `LockKind.reply`, which seLe4n does
@@ -96,6 +97,7 @@ def lockKind : KernelObject → LockKind
   | .untyped _      => .untyped
   | .schedContext _ => .schedContext
   | .reply _        => .reply
+  | .frame _        => .page
 
 /-- WS-SM SM3.B.1: per-variant `@[simp]` unfold lemma for `.tcb`. -/
 @[simp] theorem lockKind_tcb (t : TCB) :
@@ -129,6 +131,12 @@ def lockKind : KernelObject → LockKind
 @[simp] theorem lockKind_reply (r : SeLe4n.Kernel.Reply) :
     (KernelObject.reply r).lockKind = .reply := rfl
 
+/-- WS-BP BP7.1: per-variant `@[simp]` unfold lemma for `.frame`.  A frame's
+lock is the hierarchy's `.page` level (9) — the deepest, so a mapping that
+holds the VSpace root it writes (level 8) acquires the frame it maps last. -/
+@[simp] theorem lockKind_frame (f : FrameObject) :
+    (KernelObject.frame f).lockKind = .page := rfl
+
 /-- WS-SM SM3.B.1: totality witness — `lockKind` is defined for every
 `KernelObject`.  Trivial (every total function returns a value of
 its codomain), but consumed by SM3.C as the "every object has a
@@ -138,13 +146,14 @@ theorem lockKind_exists (obj : KernelObject) :
     ∃ k : LockKind, obj.lockKind = k :=
   ⟨obj.lockKind, rfl⟩
 
-/-- WS-SM SM3.B.1 audit-pass-2 (updated WS-SM SM6.D): substantive
-co-domain witness — `lockKind` returns one of the eight kernel-object
+/-- WS-SM SM3.B.1 audit-pass-2 (updated WS-SM SM6.D, WS-BP BP7.1): substantive
+co-domain witness — `lockKind` returns one of the nine kernel-object
 kinds (`.tcb`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`,
-`.untyped`, `.schedContext`, `.reply`).  It NEVER returns `.objStore`
-or `.page` — the two `LockKind` variants that have no corresponding
-kernel-object struct in seLe4n's model (`.objStore` is the table-level
-lock; pages are inline `VSpaceRoot.mappings` entries).
+`.untyped`, `.schedContext`, `.reply`, `.page`).  It NEVER returns
+`.objStore` — the one `LockKind` variant with no corresponding
+kernel-object struct (it is the table-level lock).  `.page` joined the
+modeled kinds at WS-BP BP7.1, when a frame of physical memory became a
+kernel object a mapping must name.
 
 This is the substantive counterpart to `lockKind_exists`: it tells
 consumers something useful (the actual range of `lockKind`) rather
@@ -155,7 +164,8 @@ theorem lockKind_in_modeledKinds (obj : KernelObject) :
     obj.lockKind = .tcb ∨ obj.lockKind = .endpoint ∨
     obj.lockKind = .notification ∨ obj.lockKind = .cnode ∨
     obj.lockKind = .vspaceRoot ∨ obj.lockKind = .untyped ∨
-    obj.lockKind = .schedContext ∨ obj.lockKind = .reply := by
+    obj.lockKind = .schedContext ∨ obj.lockKind = .reply ∨
+    obj.lockKind = .page := by
   cases obj
   case tcb _ => exact Or.inl rfl
   case endpoint _ => exact Or.inr (Or.inl rfl)
@@ -168,7 +178,9 @@ theorem lockKind_in_modeledKinds (obj : KernelObject) :
   case schedContext _ =>
     exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))))
   case reply _ =>
-    exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl))))))
+    exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl)))))))
+  case frame _ =>
+    exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl)))))))
 
 /-- WS-SM SM3.B.1 audit-pass-2: `lockKind` is NEVER `.objStore`.
 
@@ -186,11 +198,11 @@ theorem lockKind_ne_objStore (obj : KernelObject) :
 -- Its single-core / cross-core consumers resolve the `.reply` lock instead
 -- of discharging it as impossible.
 
-/-- WS-SM SM3.B.1 audit-pass-2: `lockKind` is NEVER `.page`
-(SM3.A.8 N/A — page mappings stored inline in VSpaceRoot.mappings). -/
-theorem lockKind_ne_page (obj : KernelObject) :
-    obj.lockKind ≠ .page := by
-  cases obj <;> intro h <;> cases h
+-- WS-BP BP7.1: `lockKind_ne_page` removed — `.page` is now a real
+-- kernel-object kind (`KernelObject.frame` → `LockKind.page`, hierarchy level
+-- 9), so the former "never .page" pin is false by construction, exactly as
+-- SM6.D found for `.reply`.  Its consumers resolve the `.page` lock through
+-- `getFrame?` instead of discharging it as impossible.
 
 /-- WS-SM SM3.B.1: agreement with `objectType` — the kind tag
 projection is in lock-step with the type tag projection.
@@ -209,7 +221,8 @@ theorem lockKind_eq_of_objectType (obj : KernelObject) :
     | .vspaceRoot   => obj.lockKind = .vspaceRoot
     | .untyped      => obj.lockKind = .untyped
     | .schedContext => obj.lockKind = .schedContext
-    | .reply        => obj.lockKind = .reply := by
+    | .reply        => obj.lockKind = .reply
+    | .frame        => obj.lockKind = .page := by
   cases obj <;> rfl
 
 end KernelObject
@@ -301,9 +314,7 @@ Returns:
 * `none` otherwise — either the object is absent, the kind does
   not match, or the kind is one that does NOT correspond to a
   per-object struct in seLe4n's model (`.objStore` — the
-  SystemState-level table lock; `.reply` and `.page` — kinds
-  reserved for future-modeled objects, N/A at v1.0.0 per SM3.A.5 /
-  SM3.A.8).
+  SystemState-level table lock).
 
 The kind-mismatch case prevents a class of capability-confusion
 errors where a code path holding a `LockId.mk .tcb tid.toObjId`
@@ -357,8 +368,11 @@ def lookup (s : SystemState) (l : LockId) :
   | .reply =>
       (s.getReply? ⟨l.objId.val⟩).map
         (fun (r : SeLe4n.Kernel.Reply) => (r.lock, KernelObject.reply r))
-  -- SM3.A.8: Page is N/A (mappings stored inline in VSpaceRoot.mappings).
-  | .page => none
+  -- WS-BP BP7.1: a frame of physical memory is a first-class kernel object —
+  -- dispatch to its per-object lock via `getFrame?` (hierarchy level 9).
+  | .page =>
+      (s.getFrame? l.objId).map
+        (fun (f : FrameObject) => (f.lock, KernelObject.frame f))
 
 /-- WS-SM SM3.B.2: lookup at a present ObjId with matching kind returns
 `some` carrying the abstract lock state and the object.
@@ -430,6 +444,12 @@ theorem lookup_some_of_kindMatch (s : SystemState) (l : LockId)
         exact SeLe4n.ObjId.ofNat_toNat l.objId
       rw [hObjIdEq, hPresent]
       subst hVar; simp
+  | frame f =>
+      have hKindPg : l.kind = .page := by rw [← hKind]; subst hVar; rfl
+      rw [hKindPg]
+      simp only [SystemState.getFrame?]
+      rw [hPresent]
+      subst hVar; simp
 
 /-- WS-SM SM3.B.2: `lookup`-`fromObject` round-trip — looking up a
 `LockId` built from a present object recovers the object and its
@@ -462,10 +482,14 @@ object kinds. -/
       (s.getReply? ⟨oid.val⟩).map
         (fun (r : SeLe4n.Kernel.Reply) => (r.lock, KernelObject.reply r)) := rfl
 
-/-- WS-SM SM3.B.2: lookup at the `.page` kind is always `none`
-(SM3.A.8 N/A decision). -/
+/-- WS-BP BP7.1: lookup at the `.page` kind dispatches to the frame's
+per-object lock via `getFrame?` (was a fail-closed `none` under the SM3.A.8
+N/A decision, when a page was an inline `VSpaceRoot.mappings` entry rather
+than an object).  Mirrors SM6.D's `lookup_reply`. -/
 @[simp] theorem lookup_page (s : SystemState) (oid : SeLe4n.ObjId) :
-    LockId.lookup s ⟨.page, oid⟩ = none := rfl
+    LockId.lookup s ⟨.page, oid⟩ =
+      (s.getFrame? oid).map
+        (fun (f : FrameObject) => (f.lock, KernelObject.frame f)) := rfl
 
 /-- WS-SM SM3.B.2: if `lookup` returns `some (st, o)`, the LockId's
 kind matches the object's kind.  This is the "consistent kind"
@@ -487,7 +511,15 @@ theorem lookup_kindMatch (s : SystemState) (l : LockId)
           simp at hLookup
           obtain ⟨_, hoEq⟩ := hLookup
           rw [← hoEq]; rfl
-  | page => rw [hK] at hLookup; cases hLookup
+  | page =>
+      rw [hK] at hLookup
+      cases hG : s.getFrame? l.objId with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some f =>
+          rw [hG] at hLookup
+          simp at hLookup
+          obtain ⟨_, hoEq⟩ := hLookup
+          rw [← hoEq]; rfl
   | tcb =>
       rw [hK] at hLookup
       cases hG : s.getTcb? ⟨l.objId.val⟩ with
@@ -570,7 +602,15 @@ theorem lookup_lockState_eq (s : SystemState) (l : LockId)
           simp at hLookup
           obtain ⟨hSt, hO⟩ := hLookup
           rw [← hSt, ← hO]; rfl
-  | page => rw [hK] at hLookup; cases hLookup
+  | page =>
+      rw [hK] at hLookup
+      cases hG : s.getFrame? l.objId with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some f =>
+          rw [hG] at hLookup
+          simp at hLookup
+          obtain ⟨hSt, hO⟩ := hLookup
+          rw [← hSt, ← hO]; rfl
   | tcb =>
       rw [hK] at hLookup
       cases hG : s.getTcb? ⟨l.objId.val⟩ with
@@ -662,7 +702,15 @@ theorem lookup_object_eq (s : SystemState) (l : LockId)
   unfold LockId.lookup at hLookup
   cases hK : l.kind with
   | objStore => rw [hK] at hLookup; cases hLookup
-  | page => rw [hK] at hLookup; cases hLookup
+  | page =>
+      rw [hK] at hLookup
+      cases hG : s.getFrame? l.objId with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some f =>
+          rw [hG] at hLookup; simp at hLookup
+          obtain ⟨_, hO⟩ := hLookup
+          rw [← hO]
+          exact (SystemState.getFrame?_eq_some_iff s l.objId f).mp hG
   | tcb =>
       rw [hK] at hLookup
       cases hG : s.getTcb? ⟨l.objId.val⟩ with

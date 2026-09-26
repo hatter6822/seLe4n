@@ -1101,13 +1101,13 @@ theorem cspaceRevoke_preserves_lowEquivalent
       | none => simp [hL₁, hC₁] at hStep₁
       | some o₁ =>
         cases o₁ with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL₁, hC₁] at hStep₁
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hL₁, hC₁] at hStep₁
         | cnode cn₁ =>
           cases hC₂ : s₂.objects[addr.cnode]? with
           | none => simp [hL₂, hC₂] at hStep₂
           | some o₂ =>
             cases o₂ with
-            | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL₂, hC₂] at hStep₂
+            | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hL₂, hC₂] at hStep₂
             | cnode cn₂ =>
               simp [hL₁, hC₁, storeObject] at hStep₁
               simp [hL₂, hC₂, storeObject] at hStep₂
@@ -1216,7 +1216,7 @@ theorem notificationSignal_projection_preserved
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | notification ntfn =>
       simp [hObj] at hStep
       -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
@@ -1299,7 +1299,7 @@ theorem notificationWait_projection_preserved
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | notification ntfn =>
       simp [hObj] at hStep
       cases hBadge : ntfn.pendingBadge with

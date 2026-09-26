@@ -1,3 +1,75 @@
+## v0.36.4 — WS-BP BP7.1, slice 1: frames — memory is authority, and `.vspaceMap` maps only a frame the caller holds
+
+BP7.1 gives the model's VSpace root a translation-table physical base, and a
+base a PE can be told to use is a page the kernel owns — so the row opens with
+seL4's memory-as-authority model, and scoping it found that the model had none.
+
+**The vulnerability (severity High; reported before the fix).**  `.vspaceMap`
+read MR2 as a raw physical address.  PR #845's binding had closed *which
+address space* a caller may write — the capability must name the VSpace root
+bound to the ASID — but *which memory* it maps was the register value, so a
+writable capability to one's own VSpace root was authority over every page of
+physical memory: the kernel image, another address space's pages and the
+device window.  The W^X, PA-width and memory-kind checks all passed on such a
+request, because none of them is a question about authority.
+
+**The fix.**
+- `FrameObject` (`base : PAddr`, `isDevice`, `lock`; well-formed when `base` is
+  page-aligned) is the ninth kernel object — `KernelObject.frame`,
+  `KernelObjectType.frame`, retype tag `8` on both sides of the ABI
+  (`sele4n-abi`'s `TypeTag::Frame`).  Its lock is `LockKind.page`, which becomes
+  a modelled kind as `Reply` did at SM6.D: acquire, release, withdraw, held and
+  queued all read and write the frame's own lock word, and
+  `lockKind_ne_page` is deleted (tombstone; `lockKind_frame` replaces it).
+  `getFrame?` joins the typed accessors; the frozen store carries
+  `FrozenKernelObject.frame`; the projection strips only the lock.
+- MR2 is the address of a **frame capability** in the caller's CSpace
+  (`VSpaceMapArgs.frame : CPtr`), resolved with `.read`
+  (`resolveVSpaceMapFrame`, `resolveVSpaceMapFrame_ok_authorised`).  The page
+  installed is the frame's own `base`
+  (`dispatchWithCap_vspaceMap_maps_frame_base`), and the arm refuses without a
+  frame capability (`dispatchWithCap_vspaceMap_requires_frame_cap`).
+- `frameMappingAdmissible`: a writable mapping needs `.write` on the frame
+  capability (`.illegalAuthority` — refused, not silently narrowed), and a device
+  frame maps neither executable nor cacheable (`.policyDenied`).
+- `vspaceMapFromFrameCap` is the arm past its address-space check, and
+  `vspaceMapFromFrameCap_ok` the one decomposition every consumer reads.
+- **Nothing else mints or destroys memory authority.**
+  `KernelObjectType.memoryBacked` names the two kinds that are physical memory
+  (untyped, frame); `retypeReplacementAdmissible` gains a third conjunct, so an
+  in-place retype refuses a memory-backed replacement (`.illegalState`); the
+  boot refuses a configured frame (`bootSafeObjectCheck`'s `.frame` arm,
+  `bootSafeObject`'s last conjunct, `bootSafeObjectCheck_not_frame`); and the
+  pre-retype cleanup refuses to destroy one (`.revocationRequired`) until frame
+  destroy can unmap it.
+- `decodeVSpaceMapArgsChecked` and its two theorems are **retired** with the
+  physical-address operand they bounded (tombstone); the PA-width bound on the
+  frame's `base` is `vspaceMapPageCheckedWithFlushFromState`'s, and W^X is
+  refused at the decode (`PagePermissions.ofNat?`).  `VSpaceBoot.lean`'s
+  four-layer W^X list named the retired decode as layer 1, which never checked
+  W^X; it now names the decode that does.
+- `sele4n-sys`'s `vspace_map` and its three conveniences take `frame_cap`.
+
+**The cost, registered.**  No reachable state holds a frame yet, so
+`.vspaceMap` succeeds on none — fail-closed, and deliberate: the only sound
+source of a frame is an untyped the caller holds.  The live untyped carve is
+BP7.1's second slice (`docs/REGISTERED_DEBT.md` table B), frame destroy with
+unmap its third, page-table objects its fourth.
+
+**Witnesses.**  `tests/VSpaceCapabilityBindingSuite.lean` §5c drives the
+retired raw-address reading beside the live arm on a hand-built frame, plus a
+non-frame capability, an empty slot, a capability without `.read`, a writable
+request through a read-only frame capability, a device frame mapped executable
+and cacheable, the successes, and a held frame without address-space authority.
+`SyscallDispatchSuite` SD-061 drives the retype's memory-backed refusal for
+tags `5` and `8` against a control, and a frame target's `.revocationRequired`;
+`Ak9PlatformSuite`'s `bootRefusesConfiguredFrames` the boot refusal.  The
+trace harness's KSD-005 now maps through a frame capability, and the golden
+trace is byte-identical.  The per-object lock inventory is 40 entries (nine
+variants); the WS-SM manifest is 921 theorems in 1138 entries.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md BP7.1
+
 ## v0.36.3 — WS-BP BP7.10: the first gigabyte's RAM is read off the firmware's account, and the constant boot map is the kernel's reserved extent
 
 The `v0.36.2` audit found that no real Raspberry Pi 5 boots.  The firmware

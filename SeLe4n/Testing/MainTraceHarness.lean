@@ -1710,25 +1710,46 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
         let objKind := stRetyped.getObjectType? ksdRetypeTargetId
         IO.println s!"[KSD-004] lifecycle retype via decoded regs new type: {reprStr objKind}"
 
-  -- KSD-005: VSpace map via decoded registers — success path
+  -- KSD-005: VSpace map via decoded registers — success path.
+  -- WS-BP BP7.1: MR2 is a frame CAPABILITY address, not a physical address.
+  -- The caller's CSpace holds a readable capability to a frame at slot 0, and
+  -- the mapping installs that frame's own `base` (8192) — the printed address
+  -- is the frame's, reached through the arm's own resolution
+  -- (`vspaceMapFromFrameCap`), never a register value.
   let ksdAsid : SeLe4n.ASID := ⟨10⟩
   let ksdVspaceId : SeLe4n.ObjId := ⟨603⟩
+  let ksdMapCaller : SeLe4n.ThreadId := ⟨604⟩
+  let ksdMapCnode : SeLe4n.ObjId := ⟨605⟩
+  let ksdFrameId : SeLe4n.ObjId := ⟨606⟩
+  let ksdFrameCap : Capability :=
+    { target := .object ksdFrameId, rights := AccessRightSet.ofList [.read] }
   let stVspace : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject ksdVspaceId (.vspaceRoot { asid := ksdAsid, mappings := {} })
       |>.withLifecycleObjectType ksdVspaceId .vspaceRoot
+      |>.withObject ksdMapCaller.toObjId (.tcb {
+          tid := ksdMapCaller, priority := ⟨10⟩, domain := ⟨0⟩,
+          cspaceRoot := ksdMapCnode, vspaceRoot := ksdVspaceId,
+          ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withLifecycleObjectType ksdMapCaller.toObjId .tcb
+      |>.withObject ksdMapCnode (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, ksdFrameCap)] })
+      |>.withLifecycleObjectType ksdMapCnode .cnode
+      |>.withObject ksdFrameId (.frame { base := SeLe4n.PAddr.ofNat 8192 })
+      |>.withLifecycleObjectType ksdFrameId .frame
       |>.buildChecked)
   let vspaceDecoded : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .vspaceMap
-    msgRegs := #[⟨10⟩, ⟨4096⟩, ⟨8192⟩, ⟨1⟩]  -- asid=10, vaddr=4096, paddr=8192, perms=1(read)
+    msgRegs := #[⟨10⟩, ⟨4096⟩, ⟨0⟩, ⟨1⟩]  -- asid=10, vaddr=4096, frame cap at slot 0, perms=1(read)
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs vspaceDecoded 65536 with
   | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
   | .ok mapArgs =>
     -- S6-A/T6-C: perms are now typed as PagePermissions (validated at decode)
-    match (SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlush mapArgs.asid mapArgs.vaddr mapArgs.paddr mapArgs.perms) stVspace with
+    match SeLe4n.Kernel.vspaceMapFromFrameCap ksdMapCaller mapArgs stVspace with
     | .error e => IO.println s!"[KSD-005] vspaceMap dispatch error: {reprStr e}"
     | .ok (_, stMapped) =>
       match SeLe4n.Kernel.Architecture.vspaceLookup mapArgs.asid mapArgs.vaddr stMapped with

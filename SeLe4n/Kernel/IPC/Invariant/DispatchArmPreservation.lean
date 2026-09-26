@@ -941,7 +941,7 @@ private theorem cspaceDeleteSlotCore_shape
           exact storeObject_preserves_objects_invExt st st1 addr.cnode
             (.cnode (cn.remove addr.slot)) hObjInv hStore
     | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ | reply _ => simp [hObj] at hStep
+    | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
 
 /-- `cspaceDeleteSlotCore` preserves the whole bundle: removal shrinks the
 CNode's lookups, so the badge clause carries from the pre-state. -/
@@ -1036,7 +1036,7 @@ private theorem cspaceRevoke_shape
     | some obj =>
       cases obj with
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hL, hC] at hStep
+      | schedContext _ | reply _ | frame _ => simp [hL, hC] at hStep
       | cnode cn =>
         simp only [hL, hC] at hStep
         exact ⟨cn, parent, rfl,
@@ -2999,6 +2999,7 @@ def retypeReplacementFresh : KernelObject → Prop
   | .schedContext _ => True
   | .vspaceRoot _ => True
   | .untyped _ => True
+  | .frame _ => True
 
 /-- The live dispatch arm's replacement builder is pristine per
 `retypeReplacementFresh`, for every object kind and size hint. -/
@@ -3905,7 +3906,7 @@ private theorem removeFromAllEndpointQueues_id_of_unqueued
             ((SystemState.getEndpoint?_eq_some_iff st oid ep).mpr hEp), hG]
           rfl
       | tcb _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rfl)
+      | schedContext _ | reply _ | frame _ => rfl)
 
 /-- The victim waits on no notification, so the wait-list sweep is the
 literal identity. -/
@@ -3929,7 +3930,7 @@ private theorem removeFromAllNotificationWaitLists_id_of_no_waits
             ((SystemState.getNotification?_eq_some_iff st oid n).mpr hN), hC]
           rfl
       | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rfl)
+      | schedContext _ | reply _ | frame _ => rfl)
 
 /-- **WS-HP HP10.5**: the reservation-origin scrub is the identity when no
 scheduling context records this thread as an origin — the pack's
@@ -3958,7 +3959,7 @@ private theorem clearDonationOriginReferences_id_of_no_origin
           simp only [hC]
           rfl
       | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
-      | notification _ | reply _ => rfl)
+      | notification _ | reply _ | frame _ => rfl)
 
 -- `v0.35.164`: `cleanupDonatedSchedContext_ok_of_not_donated` is gone — the
 -- pipeline's first step is `cancelDonationArmOnCore`, which dispatches on the
@@ -4072,6 +4073,9 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
   | untyped u =>
       cases hStep
       exact ⟨rfl, rfl⟩
+  | frame _ =>
+      -- WS-BP BP7.1: a frame target is refused, so there is no `.ok` step.
+      cases hStep
   | schedContext sc =>
       -- `v0.35.165`: this arm is now UNREACHABLE under the pack, and that is the
       -- honest discharge rather than an accident of the arm being the identity.

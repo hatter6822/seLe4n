@@ -367,6 +367,12 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       .vspaceRoot { v with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
   | .untyped u =>
       .untyped { u with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  -- WS-BP BP7.1: a frame's `base` and `isDevice` are its observable identity —
+  -- *which* physical memory the object is — and are gated, like every other
+  -- field, by `objectObservable` on the frame's own key.  Only the lock is
+  -- plumbing, stripped for SM8.B.4's reason above.
+  | .frame f =>
+      .frame { f with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
 
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
 observationally equivalent results to filtering once.

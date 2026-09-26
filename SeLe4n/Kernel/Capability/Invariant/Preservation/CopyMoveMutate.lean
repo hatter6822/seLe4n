@@ -284,7 +284,7 @@ theorem cspaceMutate_preserves_replyCapPointsToValidReply
       | none => simp_all
       | some preObj =>
         cases preObj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp_all
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp_all
         | cnode preCn =>
           simp only [hPre] at hStep
           cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot
@@ -363,7 +363,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
         | none => simp_all
         | some preObj =>
           cases preObj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp_all
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp_all
           | cnode preCn =>
             simp only [hPre] at hStep
             cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot

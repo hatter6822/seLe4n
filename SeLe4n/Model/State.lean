@@ -2701,7 +2701,7 @@ theorem storeObject_asidTable_vspaceRoot_ne
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
     | tcb _ | cnode _ | endpoint _ | notification _ | untyped _
-    | schedContext _ | reply _ =>
+    | schedContext _ | reply _ | frame _ =>
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
 
@@ -2725,6 +2725,7 @@ theorem storeObject_asidTable_non_vspaceRoot
   | untyped _ => rfl
   | schedContext _ => rfl
   | reply _ => rfl
+  | frame _ => rfl
 
 /-- WS-G2: objectIndex and objectIndexSet contain the same ids. -/
 def objectIndexSetSync (st : SystemState) : Prop :=
@@ -2921,6 +2922,16 @@ def getVSpaceRoot? (st : SystemState) (id : SeLe4n.ObjId) : Option VSpaceRoot :=
   | some (.vspaceRoot root) => some root
   | _                       => none
 
+/-- Read a frame — a page of physical memory the kernel handed out as an
+object — from the global object store.  The kind-checked member of the
+AL2-A / AN10-B typed-accessor family for `KernelObject.frame`: a mapping is
+authorised by presenting a capability to one, and its physical address is
+the frame's own `base` rather than a number a caller supplies. -/
+def getFrame? (st : SystemState) (id : SeLe4n.ObjId) : Option FrameObject :=
+  match st.objects[id]? with
+  | some (.frame f) => some f
+  | _               => none
+
 /-- **WS-SM SM8.B**: read a stored object from the global object store without
 discriminating its variant — the most general member of the AL2-A / AN10-B
 typed-accessor family.
@@ -3080,6 +3091,11 @@ theorem getCNode?_frame {st st' : SystemState} (h : st'.objects = st.objects)
 theorem getVSpaceRoot?_frame {st st' : SystemState} (h : st'.objects = st.objects)
     (id : SeLe4n.ObjId) : st'.getVSpaceRoot? id = st.getVSpaceRoot? id := by
   unfold getVSpaceRoot?; rw [h]
+
+/-- A step that preserves the object table preserves every frame read. -/
+theorem getFrame?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (id : SeLe4n.ObjId) : st'.getFrame? id = st.getFrame? id := by
+  unfold getFrame?; rw [h]
 
 /-- A step that preserves the object table preserves every kind-agnostic read. -/
 theorem getObject?_frame {st st' : SystemState} (h : st'.objects = st.objects)
@@ -4653,6 +4669,20 @@ theorem getVSpaceRoot?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
     · intro h; cases h
     · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
 
+/-- `getFrame?` returns `some f` iff the store holds exactly
+`KernelObject.frame f` at `id`. -/
+theorem getFrame?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
+    (f : FrameObject) :
+    st.getFrame? id = some f ↔ st.objects[id]? = some (.frame f) := by
+  unfold getFrame?
+  split
+  · rename_i f' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
 /-- AL2-B (audit remediation): `getTcb?` returns `none` iff the stored
 object at `tid.toObjId` is either absent or is not of the `.tcb`
 variant. This is the complement of `getTcb?_eq_some_iff` and completes
@@ -5167,6 +5197,7 @@ def KernelObjectType.rewriteNeutral : KernelObjectType → Bool
   | .untyped => true
   | .schedContext => true
   | .reply => true
+  | .frame => true
 
 /-- `storeObject` never refuses: it is `.ok` at the bookkeeping-carrying record
 by definition.  Stated so a pure spelling of the store can *eliminate* its error

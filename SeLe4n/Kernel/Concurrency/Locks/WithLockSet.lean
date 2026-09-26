@@ -159,8 +159,8 @@ success/failure flag is encoded into the state itself: a failed
 acquire enqueues the requester into `waiters` rather than mutating
 `writerHeld`/`readers`).
 
-The seven per-variant cases mirror `KernelObject.objectLockOf`'s
-seven cases (one per `LockKind` that corresponds to a modeled
+The nine per-variant cases mirror `KernelObject.objectLockOf`'s
+nine cases (one per `LockKind` that corresponds to a modeled
 object struct).  The `objectLockOf` simp lemmas (SM3.A.10) reduce
 each post-state's `objectLockOf` projection to the inner
 `applyOp` result.
@@ -181,6 +181,7 @@ def KernelObject.updateLock (obj : KernelObject) (op : RwLockOp) :
   | .untyped u      => .untyped      { u with lock := u.lock.applyOp op }
   | .schedContext sc => .schedContext { sc with lock := sc.lock.applyOp op }
   | .reply r        => .reply        { r with lock := r.lock.applyOp op }
+  | .frame f        => .frame        { f with lock := f.lock.applyOp op }
 
 /-- WS-SM SM3.C.2: per-variant `@[simp]` unfold for `.tcb`. -/
 @[simp] theorem KernelObject.updateLock_tcb (t : TCB) (op : RwLockOp) :
@@ -223,6 +224,12 @@ def KernelObject.updateLock (obj : KernelObject) (op : RwLockOp) :
     (r : SeLe4n.Kernel.Reply) (op : RwLockOp) :
     KernelObject.updateLock (.reply r) op =
       .reply { r with lock := r.lock.applyOp op } := rfl
+
+/-- WS-BP BP7.1: per-variant `@[simp]` unfold for `.frame`. -/
+@[simp] theorem KernelObject.updateLock_frame
+    (f : FrameObject) (op : RwLockOp) :
+    KernelObject.updateLock (.frame f) op =
+      .frame { f with lock := f.lock.applyOp op } := rfl
 
 /-- WS-SM SM3.C.2: `updateLock` preserves the kernel-object kind tag.
 
@@ -369,16 +376,14 @@ acquiring `CoreId`, locate the object identified by `l` and update
 its lock state by applying `(toAcquireOp mode core)` via
 `KernelObject.updateLock`.
 
-The four control-flow branches:
+The two control-flow branches:
 
 * `l.kind = .objStore`: update the SystemState-level
   `objStoreLock` field directly via `RwLockState.applyOp`.  This
   is the table-level lock at hierarchy level 0 (top of the SM0.I
   ladder).
-* `l.kind = .page`: SM3.A.8 N/A — no kernel-object struct exists
-  (page mappings are inline in `VSpaceRoot.mappings`), return state
-  unchanged (fail-closed).
-* `l.kind ∈ {modeled kinds}` (now including `.reply`, WS-SM SM6.D):
+* `l.kind ∈ {modeled kinds}` (now including `.reply`, WS-SM SM6.D, and
+  `.page` — a frame of physical memory, WS-BP BP7.1):
   route through `updateObjectLockAt`,
   which uses `LockId.lookup` to require that an object is present
   at `l.objId` **and** its variant matches `l.kind`.  If so, the
@@ -399,9 +404,8 @@ def acquireLockOnObject (s : SystemState) (core : CoreId)
   match l.kind with
   | .objStore =>
       { s with objStoreLock := s.objStoreLock.applyOp (mode.toAcquireOp core) }
-  | .page => s    -- SM3.A.8 N/A
   | .tcb | .endpoint | .notification | .cnode
-  | .vspaceRoot | .untyped | .schedContext | .reply =>
+  | .vspaceRoot | .untyped | .schedContext | .reply | .page =>
       updateObjectLockAt s l (mode.toAcquireOp core)
 
 /-- WS-SM SM3.C.2: `releaseLockOnObject` — the SM3.C.1 release
@@ -414,16 +418,15 @@ def releaseLockOnObject (s : SystemState) (core : CoreId)
   match l.kind with
   | .objStore =>
       { s with objStoreLock := s.objStoreLock.applyOp (mode.toReleaseOp core) }
-  | .page => s    -- SM3.A.8 N/A
   | .tcb | .endpoint | .notification | .cnode
-  | .vspaceRoot | .untyped | .schedContext | .reply =>
+  | .vspaceRoot | .untyped | .schedContext | .reply | .page =>
       updateObjectLockAt s l (mode.toReleaseOp core)
 
 /-- **WS-LC LC4.1**: `cancelLockOnObject` — the per-object **withdrawal**.
 
 Third sibling of `acquireLockOnObject` / `releaseLockOnObject`, with the
 same kind dispatch: `.objStore` advances the state-level lock word
-directly, `.page` is the SM3.A.8 no-op, and the nine modeled kinds route
+directly, and the nine modeled kinds (`.page` among them since WS-BP BP7.1) route
 through `updateObjectLockAt`, which is where the fail-closed kind check
 lives (an absent object, or one whose variant does not match `l.kind`,
 leaves the state unchanged).
@@ -439,9 +442,8 @@ def cancelLockOnObject (s : SystemState) (core : CoreId)
   match l.kind with
   | .objStore =>
       { s with objStoreLock := s.objStoreLock.applyOp (mode.toCancelOp core) }
-  | .page => s    -- SM3.A.8 N/A
   | .tcb | .endpoint | .notification | .cnode
-  | .vspaceRoot | .untyped | .schedContext | .reply =>
+  | .vspaceRoot | .untyped | .schedContext | .reply | .page =>
       updateObjectLockAt s l (mode.toCancelOp core)
 
 /-- WS-SM SM3.A.10 / PR #870 round 7: the SystemState-level singleton's
@@ -467,11 +469,15 @@ theorem acquireLockOnObject_reply (s : SystemState) (core : CoreId)
       updateObjectLockAt s ⟨.reply, oid⟩ (m.toAcquireOp core) := by
   unfold acquireLockOnObject; rfl
 
-/-- WS-SM SM3.C.2: `acquireLockOnObject` on a `.page` LockId is
-identity (SM3.A.8 N/A — page mappings stored in VSpaceRoot.mappings). -/
-@[simp] theorem acquireLockOnObject_page (s : SystemState) (core : CoreId)
+/-- WS-BP BP7.1: `acquireLockOnObject` on a `.page` LockId routes through
+`updateObjectLockAt` — a frame is a first-class kernel object (hierarchy level
+9), so its per-object lock is acquired like any modeled kind (was an identity
+no-op under the former SM3.A.8 N/A decision).  Mirrors SM6.D's
+`acquireLockOnObject_reply`. -/
+theorem acquireLockOnObject_page (s : SystemState) (core : CoreId)
     (oid : SeLe4n.ObjId) (m : AccessMode) :
-    acquireLockOnObject s core ⟨.page, oid⟩ m = s := by
+    acquireLockOnObject s core ⟨.page, oid⟩ m =
+      updateObjectLockAt s ⟨.page, oid⟩ (m.toAcquireOp core) := by
   unfold acquireLockOnObject; rfl
 
 /-- WS-SM SM6.D: `releaseLockOnObject` on a `.reply` LockId routes through
@@ -482,11 +488,12 @@ theorem releaseLockOnObject_reply (s : SystemState) (core : CoreId)
       updateObjectLockAt s ⟨.reply, oid⟩ (m.toReleaseOp core) := by
   unfold releaseLockOnObject; rfl
 
-/-- WS-SM SM3.C.2: `releaseLockOnObject` on a `.page` LockId is
-identity. -/
-@[simp] theorem releaseLockOnObject_page (s : SystemState) (core : CoreId)
+/-- WS-BP BP7.1: `releaseLockOnObject` on a `.page` LockId routes through
+`updateObjectLockAt` (symmetric to `acquireLockOnObject_page`). -/
+theorem releaseLockOnObject_page (s : SystemState) (core : CoreId)
     (oid : SeLe4n.ObjId) (m : AccessMode) :
-    releaseLockOnObject s core ⟨.page, oid⟩ m = s := by
+    releaseLockOnObject s core ⟨.page, oid⟩ m =
+      updateObjectLockAt s ⟨.page, oid⟩ (m.toReleaseOp core) := by
   unfold releaseLockOnObject; rfl
 
 /-- **WS-LC LC4.1**: `cancelLockOnObject` on a `.reply` LockId routes through
@@ -640,10 +647,12 @@ theorem cancelLockOnObject_preserves_invExt (s : SystemState)
   unfold cancelLockOnObject
   cases l.kind <;> first | exact hInv | exact updateObjectLockAt_preserves_invExt s l _ hInv
 
-/-- **WS-LC LC4.1**: `cancelLockOnObject` on a `.page` LockId is identity. -/
-@[simp] theorem cancelLockOnObject_page (s : SystemState) (core : CoreId)
+/-- WS-BP BP7.1: `cancelLockOnObject` on a `.page` LockId routes through
+`updateObjectLockAt` (symmetric to `acquireLockOnObject_page`). -/
+theorem cancelLockOnObject_page (s : SystemState) (core : CoreId)
     (oid : SeLe4n.ObjId) (m : AccessMode) :
-    cancelLockOnObject s core ⟨.page, oid⟩ m = s := by
+    cancelLockOnObject s core ⟨.page, oid⟩ m =
+      updateObjectLockAt s ⟨.page, oid⟩ (m.toCancelOp core) := by
   unfold cancelLockOnObject; rfl
 
 -- ============================================================================
@@ -692,9 +701,8 @@ theorem acquireLockOnObject_preserves_objStoreLock_of_modeled
   unfold acquireLockOnObject
   cases hK : l.kind with
   | objStore => exact absurd hK hKind
-  | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
 
 /-- WS-SM SM3.C.8 foundation: releasing a per-object lock preserves
@@ -706,9 +714,8 @@ theorem releaseLockOnObject_preserves_objStoreLock_of_modeled
   unfold releaseLockOnObject
   cases hK : l.kind with
   | objStore => exact absurd hK hKind
-  | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
 
 /-- **WS-LC LC4.5**: and the withdrawal, the third sibling. -/
@@ -719,9 +726,8 @@ theorem cancelLockOnObject_preserves_objStoreLock_of_modeled
   unfold cancelLockOnObject
   cases hK : l.kind with
   | objStore => exact absurd hK hKind
-  | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
 
 /-- WS-SM SM7.B: `updateObjectAt` frames the TLB-shootdown state (a
@@ -751,9 +757,8 @@ theorem acquireLockOnObject_tlbShootdown_eq (s : SystemState)
   unfold acquireLockOnObject
   cases l.kind with
   | objStore => rfl
-  | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_tlbShootdown_eq s l _
 
 /-- WS-SM SM7.B: releasing any lock frames the TLB-shootdown state
@@ -764,9 +769,8 @@ theorem releaseLockOnObject_tlbShootdown_eq (s : SystemState)
   unfold releaseLockOnObject
   cases l.kind with
   | objStore => rfl
-  | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_tlbShootdown_eq s l _
 
 /-- **WS-LC LC4.2**: and the withdrawal primitive. -/
@@ -776,9 +780,8 @@ theorem cancelLockOnObject_tlbShootdown_eq (s : SystemState)
   unfold cancelLockOnObject
   cases l.kind with
   | objStore => rfl
-  | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
+  | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_tlbShootdown_eq s l _
 
 /-- WS-SM SM7.B.8 foundation (substantive): `updateObjectAt` with a

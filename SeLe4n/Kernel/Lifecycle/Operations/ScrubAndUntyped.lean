@@ -47,14 +47,19 @@ def objectTypeAllocSize : KernelObjectType → Nat
   | .untyped => 4096
   | .schedContext => 256
   | .reply => 64
+  -- WS-BP BP7.1: a frame is one page of the memory it is carved from.
+  | .frame => SeLe4n.pageBytes
 
 /-- S5-G: Predicate for object types that require page-aligned allocation bases.
-VSpace roots and CNodes back page-table structures on ARM64, so their backing
-memory must start on a 4KB page boundary. This matches seL4's alignment
+VSpace roots and CNodes back page-table structures on ARM64, and a frame is
+itself a page a mapping names by address, so their backing memory must start on
+a 4KB page boundary. This matches seL4's alignment
 requirement for page-table objects (seL4_PageTableObject, seL4_VSpaceObject). -/
 def requiresPageAlignment : KernelObjectType → Bool
   | .vspaceRoot => true
   | .cnode => true
+  -- WS-BP BP7.1: a frame is mapped by address, and a mapping names a page.
+  | .frame => true
   | _ => false
 
 /-- S5-G: Check whether the untyped allocation base (regionBase + watermark)
@@ -285,7 +290,7 @@ theorem retypeFromUntyped_capacity_gated
       split at hOk
       · simp at hOk
       · rename_i hLt; exact Nat.lt_of_not_le hLt
-    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ =>
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ =>
       simp at hOk
 
 /-- AJ2-D (M-09): Allocation freshness — if `retypeFromUntyped` succeeds, the
@@ -322,7 +327,7 @@ theorem retypeFromUntyped_childId_fresh
           cases hColl : st.objects[childId]?.isSome
           · rfl
           · simp [hColl] at hOk
-    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ =>
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ =>
       simp at hOk
 
 /-- WS-F2: Decomposition of a successful `retypeFromUntyped` into constituent steps.
@@ -356,7 +361,7 @@ theorem retypeFromUntyped_ok_decompose
       | cnode _ => simp [hObj] at hStep
       | vspaceRoot _ => simp [hObj] at hStep
       | schedContext _ => simp [hObj] at hStep
-      | reply _ => simp [hObj] at hStep
+      | reply _ | frame _ => simp [hObj] at hStep
       | untyped ut =>
           simp only [hObj] at hStep
           -- S4-B: Discharge capacity check
@@ -508,7 +513,7 @@ theorem retypeFromUntyped_error_typeMismatch
   | cnode _ => simp [hObj]
   | vspaceRoot _ => simp [hObj]
   | schedContext _ => simp [hObj]
-  | reply _ => simp [hObj]
+  | reply _ | frame _ => simp [hObj]
 
 
 /-- WS-F2: `retypeFromUntyped` returns `untypedAllocSizeTooSmall` when allocSize is insufficient. -/

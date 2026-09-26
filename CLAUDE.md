@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.3.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.4.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7149,7 +7149,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7162,8 +7162,9 @@ image, per-core readiness, the context restore, and first boot — with an accep
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
 `v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs), and **BP4.1**/**BP4.2** (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type), and **BP4.3**/**BP4.4** (the firmware's device tree reaching Lean, and the entry booting on it), and **BP4.5** (the boot image cleaned to the Point of Unification before any thread can fetch), and **BP4.6** (the verified board's RAM mapped above the guaranteed gigabyte), and **BP4.7** (that RAM handed to the root task as untypeds), and **BP5.1** (the kernel image, a bare-metal binary entered at `_start` under `link.ld`), and **BP5.2** (the Lean kernel linked into that image, under `--gc-sections` from the archive lane's own roots), and **BP5.3** (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it), and **BP5.4** (the image's size and section map published with every CI run), and **BP5.5** (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level), and **BP6** (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel); and **BP7.10**
 landed at `v0.36.3` (the first gigabyte's RAM read off the firmware's account,
-and the HAL's constant boot map shrunk to the kernel's reserved extent); the
-rest of BP7, and BP8, have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+and the HAL's constant boot map shrunk to the kernel's reserved extent), and
+**BP7.1**'s first slice at `v0.36.4` (frames: memory as authority, closing a
+raw-physical-address `.vspaceMap`); the rest of BP7, and BP8, have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7958,6 +7959,38 @@ so the boot map's device-tail L3 table is deleted and a Tier 3 negative refuses
 it returning.  (4) **Cross-checked is not validated**: the constants are the
 device-tree source's (`raspberrypi/linux` `rpi-6.6.y`, read 2026-09-25), and
 what a real board's firmware reports is BP8.1's readback to confirm.
+
+**BP7.1, slice 1 — memory is authority, and `.vspaceMap` maps only a frame the
+caller holds** (`v0.36.4`).  A table base a PE can be told to use is a page the
+kernel owns, so BP7.1 opens with seL4's memory-as-authority model: `FrameObject`
+(`base`, `isDevice`, its lock) is the ninth kernel-object kind
+(`KernelObjectType.frame`, retype tag `8`), locked at `LockKind.page`, now a
+modelled kind.  Scoping it found a **High**-severity vulnerability, reported
+before the fix: `.vspaceMap` read MR2 as a raw physical address, so one
+VSpace-root capability was authority over every page of physical memory, the
+kernel image included.  Five things new code must respect.  (1) **No physical
+address crosses the ABI**: MR2 is a frame-capability address in the caller's
+CSpace (`VSpaceMapArgs.frame`), resolved with `.read` by `resolveVSpaceMapFrame`,
+and the page installed is the frame's own `base`; `vspaceMapFromFrameCap` is the
+one definition the arm and its theorems read, and `vspaceMapFromFrameCap_ok` its
+decomposition.  (2) **The frame capability bounds the mapping**
+(`frameMappingAdmissible`): a writable mapping needs `.write` on it
+(`.illegalAuthority`, refused rather than silently narrowed) and a device frame
+maps neither executable nor cacheable (`.policyDenied`).  (3) **Nothing mints
+memory authority except an untyped**: an in-place retype refuses a
+memory-backed replacement (`KernelObjectType.memoryBacked`,
+`retypeReplacementAdmissible`'s third conjunct, `.illegalState`), the boot
+refuses a configured frame (`bootSafeObjectCheck`'s `.frame` arm,
+`bootSafeObject`'s last conjunct), and the pre-retype cleanup refuses to destroy
+one (`.revocationRequired`) until slice 3 can unmap it.  So **no reachable state
+holds a frame and `.vspaceMap` succeeds on none** — the fail-closed cost,
+registered, until slice 2's live untyped carve.  (4) **`decodeVSpaceMapArgsChecked`
+is retired** with the operand it bounded; the PA-width bound on the frame's
+`base` is `vspaceMapPageCheckedWithFlushFromState`'s, and W^X is refused at the
+decode (`PagePermissions.ofNat?`).  (5) **The retired reading lives in the
+witness**: `tests/VSpaceCapabilityBindingSuite.lean` §5c drives a raw-address
+MR2 beside the live arm, and a frame held without address-space authority is
+still refused.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
@@ -13140,12 +13173,12 @@ code may assume:
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
   phase SM0..SM10, each naming the theorem inventories that phase owns.  Those
-  inventories hold **1135 entries**, of which **919 are theorems**: the
-  inventories register a phase's whole surface, so 216 entries are `def`s —
+  inventories hold **1138 entries**, of which **921 are theorems**: the
+  inventories register a phase's whole surface, so 217 entries are `def`s —
   lock-set footprints, PIP chain-start markers, per-core invariant predicates,
   WCRT cost functions — and
   every inventory's construction macro proves only that the name *resolves*,
-  never that its type is a `Prop`.  **Quote 919, and quote it as theorems; 1135
+  never that its type is a `Prop`.  **Quote 921, and quote it as theorems; 1138
   is the entry count.**  A `List.length` cannot tell the two apart, so the
   propositionality census at the end of that module resolves each identifier
   against the environment and fails elaboration on drift.  **Eight of the eleven

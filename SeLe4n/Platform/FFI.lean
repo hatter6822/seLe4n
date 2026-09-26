@@ -3669,7 +3669,7 @@ theorem writeFfiRegistersToTcb_id_when_not_tcb
       | vspaceRoot _ => rfl
       | untyped _ => rfl
       | schedContext _ => rfl
-      | reply _ => rfl
+      | reply _ | frame _ => rfl
   unfold writeFfiRegistersToTcb
   exact SystemState.updateTcb_eq_self_of_none hNone _
 
@@ -3694,6 +3694,6 @@ theorem readReturnValue_zero_when_not_tcb
     | vspaceRoot _ => rfl
     | untyped _ => rfl
     | schedContext _ => rfl
-    | reply _ => rfl
+    | reply _ | frame _ => rfl
 
 end SeLe4n.Platform.FFI

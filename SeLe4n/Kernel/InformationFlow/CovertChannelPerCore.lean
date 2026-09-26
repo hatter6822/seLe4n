@@ -133,7 +133,10 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
   -- operation it replaced (initiator-atomic TLB drain, I-cache maintenance).
   -- Leaving them out let the per-core table report a cross-core surface of
   -- seven when the live one is twelve.
-  , .capabilityOnly "vspaceMapPageCheckedWithShootdownFromStatePerCore"
+  -- WS-BP BP7.1: the `.vspaceMap` arm now reaches `vspaceMapFromFrameCap` —
+  -- the frame-capability resolution in front of the same per-core shootdown
+  -- wrapper, which the routing walk reaches from it.
+  , .capabilityOnly "vspaceMapFromFrameCap"
   , .capabilityOnly "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
   , .capabilityOnly "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache"
   -- PR #861 review round 12: the priority-control arms were boot-pinned twice
@@ -242,7 +245,7 @@ def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .tcbSuspend          => "suspendThreadOnCore"
   | .send                => "endpointSendCrossCoreDispatchChecked"
   | .tcbResume           => "resumeThreadOnCoreLive"
-  | .vspaceMap           => "vspaceMapPageCheckedWithShootdownFromStatePerCore"
+  | .vspaceMap           => "vspaceMapFromFrameCap"
   | .vspaceUnmap         => "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
   | .lifecycleRetype     => "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache"
   | .tcbSetPriority      => "setPriorityOnCore"

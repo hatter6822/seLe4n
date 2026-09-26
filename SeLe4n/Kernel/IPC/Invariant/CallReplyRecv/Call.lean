@@ -57,7 +57,7 @@ theorem endpointCall_preserves_ipcInvariant
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -129,7 +129,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -303,7 +303,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -558,7 +558,7 @@ theorem endpointCall_blocked_stays_blocked
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with

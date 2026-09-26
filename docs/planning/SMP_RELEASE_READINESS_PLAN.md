@@ -1318,7 +1318,7 @@ row produces, silently unticked, reads exactly like a box nobody checked.
 - [x] The SM10 theorem tally includes SM9 and is generated, not hand-summed.
       — **v0.34.26** (RR0.5, RR0.6).  Re-measured:
       `scripts/generate_smp_theorem_manifest.py --check` reports 11 phases,
-      16 inventories, 1135 entries of which 919 are theorems, 16 more in the
+      16 inventories, 1138 entries of which 921 are theorems, 16 more in the
       assumption ledgers.
 - [x] Every live SMP dispatch arm carries an `ipcInvariantFull` bundle.
       — transitions at **v0.34.42** (RR2), the two top-level payoffs at

@@ -71,7 +71,8 @@ makes it a discipline a caller can meet rather than a wall; the live dispatch
 stamps with it. -/
 def retypeReplacementAdmissible (newObj : KernelObject) (target : SeLe4n.ObjId)
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) : Prop :=
-  newObj.wellFormed objects ∧ newObj.embeddedIdentityMatches target = true
+  newObj.wellFormed objects ∧ newObj.embeddedIdentityMatches target = true ∧
+    newObj.objectType.memoryBacked = false
 
 instance (newObj : KernelObject) (target : SeLe4n.ObjId)
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
@@ -79,13 +80,14 @@ instance (newObj : KernelObject) (target : SeLe4n.ObjId)
   unfold retypeReplacementAdmissible; exact inferInstance
 
 /-- **`v0.35.187`**: a stamped replacement is admissible exactly when it is
-well-formed — so the identity half costs a caller that stamps nothing, which is
-what keeps the guard from refusing valid retypes. -/
+well-formed and — since WS-BP BP7.1 — of a kind that is not memory authority —
+so the identity half costs a caller that stamps nothing, which is what keeps
+the guard from refusing valid retypes. -/
 @[simp] theorem retypeReplacementAdmissible_withIdentity (newObj : KernelObject)
     (target : SeLe4n.ObjId)
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
     retypeReplacementAdmissible (newObj.withIdentity target) target objects ↔
-      newObj.wellFormed objects := by
+      newObj.wellFormed objects ∧ newObj.objectType.memoryBacked = false := by
   simp [retypeReplacementAdmissible]
 
 /-- **`v0.35.187`**: admissibility entails well-formedness, so every existing
@@ -102,7 +104,16 @@ theorem retypeReplacementAdmissible.identity {newObj : KernelObject}
     {target : SeLe4n.ObjId}
     {objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject}
     (h : retypeReplacementAdmissible newObj target objects) :
-    newObj.embeddedIdentityMatches target = true := h.2
+    newObj.embeddedIdentityMatches target = true := h.2.1
+
+/-- **WS-BP BP7.1**: and the replacement is not memory authority — an in-place
+retype never creates an untyped region or a frame, because both would be
+authority over physical memory no existing capability covered. -/
+theorem retypeReplacementAdmissible.notMemoryBacked {newObj : KernelObject}
+    {target : SeLe4n.ObjId}
+    {objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject}
+    (h : retypeReplacementAdmissible newObj target objects) :
+    newObj.objectType.memoryBacked = false := h.2.2
 
 /-- WS-H2/S6-C: Safe lifecycle retype with reference cleanup and memory scrubbing.
     Composes three phases:
@@ -131,8 +142,9 @@ def lifecycleRetypeWithCleanup
     (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
-    -- T5-D: Validate the replacement before proceeding -- well-formedness, and
-    -- (`v0.35.187`) that its own embedded identity is the slot it will occupy.
+    -- T5-D: Validate the replacement before proceeding -- well-formedness,
+    -- (`v0.35.187`) that its own embedded identity is the slot it will occupy,
+    -- and (WS-BP BP7.1) that it is not memory authority minted from nothing.
     if ¬ retypeReplacementAdmissible newObj target st.objects then
       .error .illegalState
     else
@@ -212,7 +224,8 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
 /-- WS-K-D: Map a raw type tag and size hint to a default `KernelObject`.
 
 Tag encoding follows `KernelObjectType` ordinal order:
-- 0 = TCB, 1 = Endpoint, 2 = Notification, 3 = CNode, 4 = VSpaceRoot, 5 = Untyped.
+- 0 = TCB, 1 = Endpoint, 2 = Notification, 3 = CNode, 4 = VSpaceRoot, 5 = Untyped,
+  6 = SchedContext, 7 = Reply, 8 = Frame.
 
 The size hint is used only for untyped objects (as `regionSize`); other types
 ignore it. All constructed objects use field defaults — the retype operation
@@ -258,7 +271,11 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
   -- `objectOfKernelType` + `KernelObjectType.ofNat?` + the Rust ABI (tags 0–7,
   -- including SchedContext = 6 and the first-class Reply = 7).
   | 7 => .ok (.reply (SeLe4n.Kernel.Reply.empty SeLe4n.ReplyId.sentinel))
-  | _ + 8 => .error .invalidTypeTag
+  -- WS-BP BP7.1: tag 8 is a frame.  Built at physical address 0 — a value the
+  -- retype's admissibility guard refuses (`KernelObjectType.memoryBacked`), since
+  -- a frame is carved from an untyped and never minted in place.
+  | 8 => .ok (.frame { base := SeLe4n.PAddr.ofNat 0 })
+  | _ + 9 => .error .invalidTypeTag
 
 /-- R7-E/L-10: Typed version of `objectOfTypeTag` that takes `KernelObjectType` directly.
     Eliminates the invalid-tag error path since the type is already validated.
@@ -296,6 +313,9 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
     }
   | .schedContext => .schedContext (SeLe4n.Kernel.SchedContext.empty SeLe4n.SchedContextId.sentinel)
   | .reply => .reply (SeLe4n.Kernel.Reply.empty SeLe4n.ReplyId.sentinel)
+  -- WS-BP BP7.1: see `objectOfTypeTag`'s tag 8 — refused by the admissibility
+  -- guard, which is what keeps this placeholder address from ever being stored.
+  | .frame => .frame { base := SeLe4n.PAddr.ofNat 0 }
 
 -- ============================================================================
 -- WS-K-D: lifecycleRetypeDirect — pre-resolved authority variant
@@ -403,8 +423,9 @@ def lifecycleRetypeDirectWithCleanup
     (authCap : Capability) (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
-    -- T5-D: Validate the replacement before proceeding -- well-formedness, and
-    -- (`v0.35.187`) that its own embedded identity is the slot it will occupy.
+    -- T5-D: Validate the replacement before proceeding -- well-formedness,
+    -- (`v0.35.187`) that its own embedded identity is the slot it will occupy,
+    -- and (WS-BP BP7.1) that it is not memory authority minted from nothing.
     if ¬ retypeReplacementAdmissible newObj target st.objects then
       .error .illegalState
     else
@@ -1527,7 +1548,7 @@ private theorem resolveAsidRoot_facts_local
         subst hId; subst hRoot
         exact ⟨rfl, hO, hEq⟩
       | tcb _ | endpoint _ | notification _ | cnode _ | untyped _
-      | schedContext _ | reply _ => simp [hO] at h
+      | schedContext _ | reply _ | frame _ => simp [hO] at h
 
 /-- WS-SM SM7.F.4(b)(iii): for a `.vspaceRoot` target the pre-retype cleanup
 pipeline is the identity — every `lifecyclePreRetypeCleanup` arm keys off a
@@ -1645,7 +1666,7 @@ private theorem retypeStoreObject_tlbEntryConsistent_frame
         rw [hMid, hScrAsid, herase]
         exact hTbl
     | tcb _ | endpoint _ | notification _ | cnode _ | untyped _
-    | schedContext _ | reply _ =>
+    | schedContext _ | reply _ | frame _ =>
         have hAt := storeObject_asidTable_non_vspaceRoot stScr stB target _
           (by intro nr h; cases h) hStore
         simp only [hObjTargetScr] at hAt

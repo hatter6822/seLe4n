@@ -2752,6 +2752,10 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     (extraObjects : List (SeLe4n.ObjId × SeLe4n.Model.KernelObject))
     (args : List (Nat × Nat))  -- (register index, value) for x2-x5
     (lifecycleTypes : List (SeLe4n.ObjId × SeLe4n.Model.KernelObjectType) := [])
+    -- WS-BP BP7.1: further capabilities in the caller's CNode, beside the one at
+    -- `capAddr` — an extra operand an arm resolves through the caller's CSpace
+    -- (a `.vspaceMap`'s frame capability, MR2) must be *held* there.
+    (extraSlots : List (Nat × Capability) := [])
     : SeLe4n.Model.SystemState := Id.run do
   let tid : SeLe4n.ThreadId := ⟨500⟩
   let cnodeId : SeLe4n.ObjId := ⟨501⟩
@@ -2773,9 +2777,9 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     |>.withObject targetId (match extraObjects with | (_, obj) :: _ => obj | [] => .endpoint {})
     |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+        slots := SeLe4n.UniqueSlotMap.ofListWF (
           (SeLe4n.Slot.ofNat capAddr, ({ target := .object targetId, rights := capRights, badge := none } : Capability))
-        ]
+          :: extraSlots.map (fun (n, c) => (SeLe4n.Slot.ofNat n, c)))
     })
     |>.withObject vsId (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
     |>.withLifecycleObjectType tid.toObjId .tcb
@@ -2885,12 +2889,18 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   -- Distinct from the `⟨502⟩` root `buildSyscallState` always installs at ASID 1.
   let chainAsid : SeLe4n.ASID := ⟨2⟩
   let vsRoot : SeLe4n.Model.VSpaceRoot := { asid := chainAsid, mappings := {} }
-  -- === vspaceMap (syscallId=9): x2=asid(2), x3=vaddr(0x2000), x4=paddr(0x3000), x5=perms(1=readOnly) ===
+  -- === vspaceMap (syscallId=9): x2=asid(2), x3=vaddr(0x2000), x4=frame cap(slot 1), x5=perms(1=readOnly) ===
+  -- WS-BP BP7.1: MR2 is the address of a frame capability in the caller's CSpace;
+  -- the page mapped is that frame's own `base` (0x3000), not a register value.
+  let frameId : SeLe4n.ObjId := ⟨701⟩
+  let frameCap : Capability :=
+    { target := .object frameId, rights := AccessRightSet.ofList [.read], badge := none }
   let stMap := buildSyscallState 9 0 vsId
     (AccessRightSet.ofList [.read, .write])
-    [(vsId, .vspaceRoot vsRoot)]
-    [(2, 2), (3, 0x2000), (4, 0x3000), (5, 1)]
-    [(vsId, .vspaceRoot)]
+    [(vsId, .vspaceRoot vsRoot), (frameId, .frame { base := SeLe4n.PAddr.ofNat 0x3000 })]
+    [(2, 2), (3, 0x2000), (4, 1), (5, 1)]
+    [(vsId, .vspaceRoot), (frameId, .frame)]
+    [(1, frameCap)]
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMap with
   | .ok (_, stAfter) =>
     -- Verify the mapping was created

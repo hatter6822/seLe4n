@@ -120,7 +120,7 @@ private theorem schedule_preserves_queueCurrentConsistent
                   | cnode cn => simp [hChoose, hObj] at hStep
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
                   | untyped ut => simp [hChoose, hObj] at hStep
-                  | schedContext _ | reply _ => simp [hChoose, hObj] at hStep
+                  | schedContext _ | reply _ | frame _ => simp [hChoose, hObj] at hStep
 
 /-- S3-G/U-M09: `schedule` preserves `RunQueue.wellFormed`.
     Uses `remove_preserves_wellFormed` for the dequeue path. -/
@@ -166,7 +166,7 @@ theorem schedule_preserves_runQueueWellFormed
                       · have hSchedOk' : ¬((stChoose.scheduler.runQueueOnCore bootCoreId).contains tid = true ∧ tcb.domain = (stChoose.scheduler.activeDomainOnCore bootCoreId)) := by
                           simpa [RunQueue.mem_iff_contains] using hSchedOk
                         simp [hChoose, hObj, hSchedOk'] at hStep
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                       simp [hChoose, hObj] at hStep
 
 /-- WS-H12b: `schedule` preserves `schedulerWellFormed`. -/
@@ -210,7 +210,7 @@ theorem handleYield_preserves_runQueueWellFormed
         rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
         exact hwfMid
       | endpoint _ | notification _ | cnode _
-      | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
 
 /-- audit-pass-9 (PR #801, reviewer comment 2): `timerTick` preserves
@@ -392,7 +392,7 @@ private theorem schedule_preserves_runQueueUnique
                   | cnode cn => simp [hChoose, hObj] at hStep
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
                   | untyped ut => simp [hChoose, hObj] at hStep
-                  | schedContext _ | reply _ => simp [hChoose, hObj] at hStep
+                  | schedContext _ | reply _ | frame _ => simp [hChoose, hObj] at hStep
 
 private theorem schedule_preserves_currentThreadValid
     (st st' : SystemState)
@@ -435,7 +435,7 @@ private theorem schedule_preserves_currentThreadValid
                   | cnode cn => simp [hChoose, hObj] at hStep
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
                   | untyped ut => simp [hChoose, hObj] at hStep
-                  | schedContext _ | reply _ => simp [hChoose, hObj] at hStep
+                  | schedContext _ | reply _ | frame _ => simp [hChoose, hObj] at hStep
 
 private theorem schedule_preserves_currentThreadInActiveDomain
     (st st' : SystemState)
@@ -483,7 +483,7 @@ private theorem schedule_preserves_currentThreadInActiveDomain
                   | cnode cn => simp [hChoose, hObj] at hStep
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
                   | untyped ut => simp [hChoose, hObj] at hStep
-                  | schedContext _ | reply _ => simp [hChoose, hObj] at hStep
+                  | schedContext _ | reply _ | frame _ => simp [hChoose, hObj] at hStep
 
 /-- WS-H12b: `handleYield` preserves `queueCurrentConsistent`.
 Re-enqueue + schedule re-establishes the invariant. -/
@@ -505,7 +505,7 @@ private theorem handleYield_preserves_queueCurrentConsistent
       | tcb tcb =>
         simp only [hObj] at hStep
         exact schedule_preserves_queueCurrentConsistent _ st' hStep
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
 
 theorem handleYield_preserves_wellFormed
     (st st' : SystemState)
@@ -556,7 +556,7 @@ private theorem handleYield_preserves_runQueueUnique
           RunQueue.toList_rotateToBack_nodup _ tid hInsertNodup hInsertMem
         exact schedule_preserves_runQueueUnique _ st' (by
           simp [runQueueUnique, SchedulerState.runnable]; exact hRotatedNodup) hStep
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
 
 private theorem handleYield_preserves_currentThreadValid
     (st st' : SystemState)
@@ -579,7 +579,7 @@ private theorem handleYield_preserves_currentThreadValid
         -- The intermediate state has st.objects unchanged (only scheduler changes)
         apply schedule_preserves_currentThreadValid _ st' _ hStep
         exact hObjInv
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
 
 private theorem handleYield_preserves_currentThreadInActiveDomain
     (st st' : SystemState)
@@ -601,7 +601,7 @@ private theorem handleYield_preserves_currentThreadInActiveDomain
         simp only [hObj] at hStep
         apply schedule_preserves_currentThreadInActiveDomain _ st' _ hStep
         exact hObjInv
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
 
 theorem chooseThread_preserves_schedulerInvariantBundle
     (st st' : SystemState)
@@ -685,7 +685,7 @@ private theorem switchDomain_preserves_schedulerInvariantBundle
                   simp [queueCurrentConsistent, hCur] at hqcc
                   intro h; exact hqcc ((RunQueue.mem_toList_iff_mem (st.scheduler.runQueueOnCore bootCoreId) curTid).2 h)
                 exact insert_preserves_nodup (st.scheduler.runQueueOnCore bootCoreId) curTid (curTcb.boostedPriority) hRQU hNotMem
-              | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => exact hRQU
+              | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => exact hRQU
         · simp [currentThreadValid]
 
 /-- M-05/WS-E6: `scheduleDomain` preserves the active-domain current-thread
@@ -1039,7 +1039,7 @@ private theorem schedule_preserves_timeSlicePositive
                             tcb.domain = (stChoose.scheduler.activeDomainOnCore bootCoreId)) := by
                           simpa [RunQueue.mem_iff_contains] using hOk
                         simp [hChoose, hObj, hOk'] at hStep
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                       simp [hChoose, hObj] at hStep
 
 /-- WS-H6/WS-H12b: `handleYield` preserves `timeSlicePositive`.
@@ -1089,7 +1089,7 @@ private theorem handleYield_preserves_timeSlicePositive
         let stMid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid) }
         have hObjInvMid : stMid.objects.invExt := hObjInv
         exact schedule_preserves_timeSlicePositive stMid st' hInvMid hObjInvMid hStep
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
 
 /-- WS-H6/WS-H12b: `switchDomain` preserves `timeSlicePositive`.
 Re-enqueues the current thread (if any) before switching domains. -/
@@ -1145,7 +1145,7 @@ private theorem switchDomain_preserves_timeSlicePositive
                 | some obj' =>
                   rw [hTcb'] at hLook; cases hLook; dsimp only
                   rw [hTSlice]; exact hCurTS
-            | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+            | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
               exact hSaveTS t (by simp [SchedulerState.runnable]; exact hMem)
 
 /-- WS-H6: If two ThreadIds are not equal, their ObjIds are BEq-false.
@@ -1295,7 +1295,7 @@ private theorem schedule_preserves_currentTimeSlicePositive
                             tcb.domain = (stChoose.scheduler.activeDomainOnCore bootCoreId)) := by
                           simpa [RunQueue.mem_iff_contains] using hOk
                         simp [hChoose, hObj, hOk'] at hStep
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                       simp [hChoose, hObj] at hStep
 
 /-- WS-H12b: `handleYield` preserves `currentTimeSlicePositive`. -/
@@ -1339,7 +1339,7 @@ private theorem handleYield_preserves_currentTimeSlicePositive
         let stMid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (tcb.boostedPriority)).rotateToBack tid) }
         have hObjInvMid : stMid.objects.invExt := hObjInv
         exact schedule_preserves_currentTimeSlicePositive stMid st' hInvMid hObjInvMid hStep
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
 
 /-- WS-H12b: `switchDomain` preserves `currentTimeSlicePositive`.
 Domain switch sets `current := none`, so the predicate is trivially True. -/
@@ -1518,7 +1518,7 @@ theorem switchDomain_preserves_runnableThreadsAreTCBs
                 exact bridge tid (hInv tid (by simp [SchedulerState.runnable]; exact hMem))
             | some obj =>
                 cases obj with
-                | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                     simp [hCur, hObj] at hMem
                     exact bridge tid (hInv tid (by simp [SchedulerState.runnable]; exact hMem))
                 | tcb tcb =>
@@ -1580,7 +1580,7 @@ theorem schedule_preserves_runnableThreadsAreTCBs
               | none => simp [hObj] at hStep
               | some obj =>
                   cases obj with
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                       simp [hObj] at hStep
                   | tcb tcb =>
                       simp only [hObj] at hStep
@@ -1633,7 +1633,7 @@ theorem handleYield_preserves_runnableThreadsAreTCBs
       | none => simp [hCur, hObj] at hStep
       | some obj =>
           cases obj with
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
               simp [hCur, hObj] at hStep
           | tcb tcb =>
               simp only [hCur, hObj] at hStep
@@ -1840,7 +1840,7 @@ private theorem switchDomain_preserves_schedulerPriorityMatch
             hPMSave (by rw [hRQEq, saveOutgoingContext_scheduler]) hObjEq
         | some obj =>
           cases obj with
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
             have hRQEq : (st'.scheduler.runQueueOnCore bootCoreId) = (st.scheduler.runQueueOnCore bootCoreId) := by
               subst hSt; simp [hCur, hCurObj]
             exact schedulerPriorityMatch_of_runQueue_objects_eq (saveOutgoingContext st) st'
@@ -1955,7 +1955,7 @@ theorem schedule_preserves_domainTimeRemainingPositive
                   tcb.domain = (stChoose.scheduler.activeDomainOnCore bootCoreId)) := by
                 simpa [RunQueue.mem_iff_contains] using hOk
               simp [hChoose, hObj, hOk'] at hStep
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
             simp [hChoose, hObj] at hStep
 
 /-- V5-H: `handleYield` preserves `domainTimeRemainingPositive`.
@@ -1983,7 +1983,7 @@ theorem handleYield_preserves_domainTimeRemainingPositive
         · -- domainTimeRemainingPositive of intermediate state
           unfold domainTimeRemainingPositive at *; simp; exact hInv
         · exact hObjInv
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
 
 /-- V5-H: `timerTick` preserves `domainTimeRemainingPositive`.
@@ -2273,7 +2273,7 @@ theorem chooseBestRunnableBy_result_fields
                       | false =>
                           simp only [hBeat] at hOk
                           exact ih (some (initTid, initPrio, initDl)) hOk hInit
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
               simp only [hHdObj] at hOk; exact ih init hOk hInit
 
 /-- WS-H6: Result of `chooseBestRunnableBy` (init = none) is a member of the scanned list. -/
@@ -2335,7 +2335,7 @@ private theorem chooseBestRunnableBy_result_mem_aux
               simp only [hBeat] at hOk
               have := ih (some (initTid, initPrio, initDl)) hOk hAllTl
               exact this.elim (fun h => Or.inl (List.mem_cons.mpr (Or.inr h))) Or.inr
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp only [hHdObj] at hOk
         exact (ih init hOk hAllTl).elim
           (fun h => Or.inl (List.mem_cons.mpr (Or.inr h))) Or.inr
@@ -2448,7 +2448,7 @@ private theorem chooseBestInBucket_edf_bridge
               have hNoBetter := hOpt t hMemList tcb hTObjGet (eligOfDom tcb htDom)
               rw [htPrio] at hNoBetter
               exact noBetter_implies_edf tcbSel.deadline tcb.deadline tcbSel.priority hNoBetter
-            | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp
+            | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp
     | some triple =>
       -- ── Bucket success ──
       simp only [hBucket] at hResult
@@ -2507,7 +2507,7 @@ private theorem chooseBestInBucket_edf_bridge
           have hNoBetter := hOpt t hTInBucket tcb hTObjGet (eligOfDom tcb htDom)
           rw [htPrio] at hNoBetter
           exact noBetter_implies_edf tcbSel.deadline tcb.deadline tcbSel.priority hNoBetter
-        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp
+        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp
 
 /-- WS-H6/WS-H12b: `schedule` preserves `edfCurrentHasEarliestDeadline`.
 
@@ -2609,7 +2609,7 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
                       (fun tcb h => by rw [hObjT] at h; cases h) hObjInv
                     rw [hSame, hObjT]; simp [hObjT] at hBridgeT ⊢
           · exfalso; simp [hSchedOk] at hStep
-        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
           simp [hObj] at hStep
 
 -- W2-H (L-3): 1.6M heartbeats — highest in the codebase. Inherent complexity:
@@ -2706,7 +2706,7 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
           show RunQueue.wellFormed ((st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid)).runQueueOnCore bootCoreId)
           rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]; exact hwf'
         exact schedule_preserves_edfCurrentHasEarliestDeadline st_mid st' hwfMid hpm' hAllTcb' (show st_mid.objects.invExt from hObjInv) hStep
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
 
 -- W2-H (L-3): 800K heartbeats — timerTick composes domain time decrement +
 -- conditional reschedule. Same structural complexity as handleYield above but
@@ -2897,7 +2897,7 @@ private theorem schedule_preserves_contextMatchesCurrent
                   tcb.domain = (stChoose.scheduler.activeDomainOnCore bootCoreId)) := by
                 simpa [RunQueue.mem_iff_contains] using hOk
               simp [hChoose, hObj, hOk'] at hStep
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
             simp [hChoose, hObj] at hStep
 
 /-- WS-H12c/H-03: `handleYield` preserves `contextMatchesCurrent`.
@@ -2922,7 +2922,7 @@ private theorem handleYield_preserves_contextMatchesCurrent
         simp only [hObj] at hStep
         apply schedule_preserves_contextMatchesCurrent _ st' _ hStep
         exact hObjInv
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
 
 /-- WS-H12c/H-03: `timerTick` preserves `contextMatchesCurrent`.
@@ -3085,7 +3085,7 @@ private theorem schedule_preserves_schedulerPriorityMatch
         | none => simp [hObj] at hStep
         | some obj =>
           cases obj with
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
             simp [hObj] at hStep
           | tcb tcb =>
             simp only [hObj] at hStep
@@ -3166,7 +3166,7 @@ private theorem handleYield_preserves_schedulerPriorityMatch
     | none => simp [hCur, hObj] at hStep
     | some obj =>
       cases obj with
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hCur, hObj] at hStep
       | tcb curTcb =>
         simp only [hCur, hObj] at hStep
@@ -3423,7 +3423,7 @@ theorem switchDomain_preserves_runQueueWellFormed
         | some obj =>
           cases obj with
           | tcb tcb => exact RunQueue.insert_preserves_wellFormed _ hwf _ _
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
             exact hwf
 
 /-- audit-pass-9 (PR #801, reviewer comment 2): `scheduleDomain` preserves

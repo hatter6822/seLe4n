@@ -250,7 +250,7 @@ example : (withLockSet LockSet.empty bootCoreId
     (default : SystemState)).snd = 42 := by
   rw [withLockSet_empty]
 
-/-! ## §2.4 SM3.C.4 — lockHeld on .reply / .page LockIds is False -/
+/-! ## §2.4 SM3.C.4 — lockHeld on .reply / .page LockIds is False where no object is present -/
 
 example : ¬ lockHeld bootCoreId ⟨.reply, SeLe4n.ObjId.ofNat 0⟩ .write
     (default : SystemState) :=
@@ -258,7 +258,7 @@ example : ¬ lockHeld bootCoreId ⟨.reply, SeLe4n.ObjId.ofNat 0⟩ .write
 
 example : ¬ lockHeld bootCoreId ⟨.page, SeLe4n.ObjId.ofNat 0⟩ .read
     (default : SystemState) :=
-  lockHeld_page _ _ _ _
+  lockHeld_page _ _ _ _ (default_getFrame?_none _)
 
 -- ============================================================================
 -- §3 — Ordering properties (decidable on concrete examples)

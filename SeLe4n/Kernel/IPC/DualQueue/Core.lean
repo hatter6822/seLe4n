@@ -611,7 +611,7 @@ theorem endpointQueuePopHead_preserves_objects_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -673,7 +673,7 @@ theorem endpointQueuePopHead_kindPreservingWrite
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -737,7 +737,7 @@ theorem endpointQueuePopHead_cdt_eq
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -799,7 +799,7 @@ theorem endpointQueueEnqueue_preserves_objects_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st tid with
@@ -853,7 +853,7 @@ theorem endpointQueueEnqueue_kindPreservingWrite
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -914,7 +914,7 @@ theorem endpointQueueEnqueue_cdt_eq
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -1079,7 +1079,7 @@ theorem endpointQueueRemove_scheduler_eq
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -1102,7 +1102,7 @@ theorem endpointQueueRemove_machine
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -1127,7 +1127,7 @@ theorem endpointQueueRemove_serviceRegistry_eq
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -1153,7 +1153,7 @@ theorem endpointQueueRemove_preserves_objects_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -1268,7 +1268,7 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at h
     | endpoint ep =>
       simp only [hObj] at h
@@ -1311,7 +1311,7 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
                     simp only []
                     exact FieldRefines.insert_link_update f st.objects st.objects
                       nextTid.toObjId nt _ hInv (FieldRefines.rfl_self f st.objects) hN1 (hLinkFree _ _ _ _).symm
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                     simp only []; exact FieldRefines.rfl_self f st.objects
             | some prevTid =>
               simp only []
@@ -1326,7 +1326,7 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
                     simp only []
                     exact FieldRefines.insert_link_update f st.objects st.objects
                       prevTid.toObjId pt _ hInv (FieldRefines.rfl_self f st.objects) hP1 (hLinkFree _ _ _ _).symm
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                     simp only []; exact FieldRefines.rfl_self f st.objects
               | some nextTid =>
                 simp only []
@@ -1341,7 +1341,7 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
                       simp only []
                       exact FieldRefines.insert_link_update f st.objects st.objects
                         nextTid.toObjId nt _ hInv (FieldRefines.rfl_self f st.objects) hN1 (hLinkFree _ _ _ _).symm
-                    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                       simp only []; exact FieldRefines.rfl_self f st.objects
                 | some pobj => cases pobj with
                   | tcb pt =>
@@ -1365,9 +1365,9 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
                           (st.objects.insert prevTid.toObjId
                             (.tcb { pt with queueNext := some nextTid }))
                           nextTid.toObjId nt _ hT1 hR1 hN1 (hLinkFree _ _ _ _).symm
-                      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                         simp only []; exact hR1
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                     simp only []
                     -- objs₁ = st.objects (predecessor lookup is not a TCB)
                     cases hN1 : st.objects[nextTid.toObjId]? with
@@ -1377,7 +1377,7 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
                         simp only []
                         exact FieldRefines.insert_link_update f st.objects st.objects
                           nextTid.toObjId nt _ hInv (FieldRefines.rfl_self f st.objects) hN1 (hLinkFree _ _ _ _).symm
-                      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+                      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
                         simp only []; exact FieldRefines.rfl_self f st.objects
           · -- hSide (endpoint update): vacuous, base holds .endpoint at endpointId.
             intro x hx
@@ -1484,7 +1484,7 @@ theorem endpointQueueRemove_getTcb_backward_upToField {α : Type} (f : TCB → �
     cases hObj : st.objects[endpointId]? with
     | none => simp [hObj] at h
     | some obj => cases obj with
-      | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at h
       | endpoint ep =>
         simp only [hObj] at h
@@ -1564,7 +1564,7 @@ theorem endpointQueueRemove_unwritten_kind_backward
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at h
     | endpoint ep =>
       simp only [hObj] at h
@@ -1687,7 +1687,7 @@ theorem endpointQueueRemove_unwritten_kind_forward
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at h
     | endpoint ep =>
       simp only [hObj] at h
@@ -1790,7 +1790,7 @@ theorem endpointQueueRemove_objects_present_backward
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at h
     | endpoint ep =>
       simp only [hObj] at h
@@ -1828,7 +1828,7 @@ theorem endpointQueueRemove_objectIndexSet_eq
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp [hObj] at h
     | endpoint ep =>
       simp only [hObj] at h

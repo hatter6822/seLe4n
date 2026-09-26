@@ -445,7 +445,7 @@ theorem endpointSendDual_preserves_ipcInvariant
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -565,7 +565,7 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -690,7 +690,7 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -889,7 +889,7 @@ theorem endpointReceiveDual_preserves_ipcInvariant
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.sendQ.head with
@@ -1302,7 +1302,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.sendQ.head with
@@ -1625,7 +1625,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.sendQ.head with
@@ -2047,7 +2047,7 @@ theorem ipcUnwrapCaps_preserves_ipcInvariant
         have hEq : KernelObject.notification ntfn' = KernelObject.notification ntfn :=
           Option.some.inj (hPreserved.symm.trans hObj)
         cases hEq; exact hInv receiverRoot ntfn hR
-      | cnode _ | tcb _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      | cnode _ | tcb _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         have hNotNtfn : ∀ ntfn, st.objects[receiverRoot]? ≠ some (.notification ntfn) := by
           simp [hR]
         exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn msg receiverRoot
@@ -2071,7 +2071,7 @@ theorem endpointSendDual_preserves_objects_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -2126,7 +2126,7 @@ theorem endpointReceiveDual_preserves_objects_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.sendQ.head with

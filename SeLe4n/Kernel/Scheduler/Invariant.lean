@@ -1225,7 +1225,7 @@ theorem objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent
           simp only at hAtPair
           exact hAtPair hBind
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ | reply _ => simp
+        | schedContext _ | reply _ | frame _ => simp
 
 /-- WS-RC R5.G.3 / Phase P2: A joint update that rewrites a SchedContext's
     `domain` to `⟨domain⟩` AND rewrites its bound TCB's `domain` to
@@ -1404,6 +1404,6 @@ theorem objects_update_sync_domain_preserves_boundThreadDomainConsistent
               rw [hLookScId]
               exact hPreSubBind
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-          | schedContext _ | reply _ => simp
+          | schedContext _ | reply _ | frame _ => simp
 
 end SeLe4n.Kernel

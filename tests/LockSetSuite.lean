@@ -61,7 +61,7 @@ open SeLe4n.Kernel.Concurrency
 #check @KernelObject.lockKind_in_modeledKinds
 #check @KernelObject.lockKind_ne_objStore
 #check @KernelObject.lockKind_reply
-#check @KernelObject.lockKind_ne_page
+#check @KernelObject.lockKind_frame
 #check @LockId.fromObject
 #check @LockId.fromObject_kind
 #check @LockId.fromObject_objId
@@ -487,7 +487,8 @@ example :
   decide
 
 /-! ### LockId.lookup on the empty SystemState for `.objStore`/`.reply`/`.page`
-returns none — fail-closed for N/A kinds. -/
+returns none — the table-level kind has no object, and the empty state holds no
+Reply and no frame (both are modeled kinds since SM6.D / WS-BP BP7.1). -/
 
 example :
     LockId.lookup (default : SystemState) ⟨.objStore, ObjId.ofNat 0⟩ = none := by
@@ -1757,7 +1758,7 @@ private def runCanonicalSortRuntimeChecks : IO Unit := do
 private def runLockKindCoDomainChecks : IO Unit := do
   IO.println "--- §14 lockKind co-domain (audit-pass-2) ---"
   -- Audit-pass-2: substantive co-domain claim — lockKind returns one
-  -- of the 7 modeled kinds, never .objStore / .reply / .page.
+  -- of the modeled kinds, and neither of these two objects is a Reply or a frame.
   let ep : KernelObject := KernelObject.endpoint ({} : Endpoint)
   let u : KernelObject := KernelObject.untyped
     { regionBase := PAddr.ofNat 0, regionSize := 4096 }
@@ -1829,8 +1830,17 @@ private def runLookupFixtureChecks : IO Unit := do
     (decide (LockId.lookup s ⟨.objStore, ObjId.ofNat 0⟩ = none))
   assertBool "LockId.lookup at (.reply, 0): none (SM3.A.5 N/A)"
     (decide (LockId.lookup s ⟨.reply, ObjId.ofNat 0⟩ = none))
-  assertBool "LockId.lookup at (.page, 0): none (SM3.A.8 N/A)"
+  assertBool "LockId.lookup at (.page, 0): none (no frame at 0)"
     (decide (LockId.lookup s ⟨.page, ObjId.ofNat 0⟩ = none))
+  -- WS-BP BP7.1: `.page` is a modeled kind — a frame's lock resolves.
+  let frameObj : KernelObject := .frame { base := PAddr.ofNat 0x8000 }
+  assertBool "frame.lockKind = .page (WS-BP BP7.1)"
+    (decide (frameObj.lockKind = .page))
+  let sFrame : SystemState :=
+    { (default : SystemState) with
+        objects := (default : SystemState).objects.insert (ObjId.ofNat 77) frameObj }
+  assertBool "LockId.lookup at (.page, 77): the frame's lock"
+    ((LockId.lookup sFrame ⟨.page, ObjId.ofNat 77⟩).isSome)
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"

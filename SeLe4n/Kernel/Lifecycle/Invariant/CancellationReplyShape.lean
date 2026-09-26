@@ -867,7 +867,7 @@ theorem abortPendingIpcOnEndpoint_other_tcb_eq
           cases obj with
           | endpoint ep => exact ⟨ep, rfl⟩
           | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-          | reply _ => rw [hObj] at hRem; exact absurd hRem (by simp)
+          | reply _ | frame _ => rw [hObj] at hRem; exact absurd hRem (by simp)
       obtain ⟨ep, hEp⟩ := hEp
       rw [hEqK, hEp] at hPre
       exact absurd hPre (by simp)

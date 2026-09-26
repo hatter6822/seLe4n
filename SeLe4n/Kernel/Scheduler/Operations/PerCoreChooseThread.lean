@@ -1209,7 +1209,7 @@ private theorem chooseBestRunnableBy_some_ne_ok_none
           · simp only [hElig, hBetter, if_true] at h; exact ih _ h
         · simp only [hElig] at h; exact ih _ h
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rw [hObj] at h; exact ih _ h
+      | schedContext _ | reply _ | frame _ => rw [hObj] at h; exact ih _ h
 
 /-- SM5.A.4 helper: a fold starting from `none` that returns `.ok none`
 witnesses that **every** scanned TCB was ineligible.  (A non-TCB entry
@@ -1255,7 +1255,7 @@ theorem chooseBestRunnableBy_none_no_eligible
           · simp only [hHdElig] at hHdReduce
             exact ih hHdReduce tid hMemTl tcb hObjTid
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ | reply _ =>
+        | schedContext _ | reply _ | frame _ =>
           rw [hHdObj] at hHdReduce
           exact ih hHdReduce tid hMemTl tcb hObjTid
 
@@ -1384,7 +1384,7 @@ private theorem chooseBestRunnableBy_result_mem_aux
           · exact Or.inl (List.mem_cons_of_mem _ hTl)
           · exact Or.inr hb
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ =>
+      | schedContext _ | reply _ | frame _ =>
         rw [hObj] at h
         rcases ih _ rt rp rd h with hTl | hb
         · exact Or.inl (List.mem_cons_of_mem _ hTl)

@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.3` (`lakefile.toml`) |
+| **Package version** | `0.36.4` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 421,705 across 343 Lean files |
-| **Test LoC** | 85,663 across 71 Lean test suites |
-| **Proved declarations** | 13,993 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 422,300 across 343 Lean files |
+| **Test LoC** | 85,915 across 71 Lean test suites |
+| **Proved declarations** | 14,011 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17); the rest of BP7, and BP8, not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2299,7 +2299,9 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    * **Substantive co-domain theorems**: `KernelObject.lockKind_exists`
      is genuinely trivial; audit-pass-2 adds 4 useful co-domain
      theorems: `lockKind_in_modeledKinds`, `lockKind_ne_objStore`,
-     `lockKind_ne_reply`, `lockKind_ne_page`.  These tell SM3.C
+     `lockKind_ne_reply`, `lockKind_ne_page` (the last retired at
+     WS-BP BP7.1, `v0.36.4`, when `.page` became the frame object's
+     modelled kind — `lockKind_frame` replaced it).  These tell SM3.C
      consumers that a `KernelObject`-derived `LockId` will never
      refer to a SystemState-level or N/A kind.
    * **Donation-path scope** (initial audit-pass-2 form was
@@ -4563,6 +4565,36 @@ behavior on ARM64).
 **Fix**: The `.vspaceMap` dispatch in `dispatchCapabilityOnly` now calls
 `validateVSpaceMapPermsForMemoryKind` after decode and before mapping. Device
 regions with `perms.execute = true` return `.error .policyDenied`.
+
+### 8.10.2a Frames: `.vspaceMap` maps only memory the caller holds (WS-BP BP7.1, v0.36.4)
+
+Before `v0.36.4` MR2 of `.vspaceMap` was a raw physical address, so a writable
+capability to one's own VSpace root was authority over every page of physical
+memory — the kernel image, other address spaces and device windows included
+(severity High; closed in the cut that reported it).  The model now carries
+seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
+`lock`; well-formed when `base` is page-aligned) is the ninth kernel object
+(`KernelObjectType.frame`, retype tag `8`), locked at `LockKind.page`.
+
+- **ABI**: MR2 is the address of a frame capability in the caller's CSpace
+  (`VSpaceMapArgs.frame : CPtr`), resolved with `.read`
+  (`resolveVSpaceMapFrame`); the page installed is the frame's own `base`.
+- **Rights**: a writable mapping needs `.write` on the frame capability
+  (`.illegalAuthority`), and a device frame maps neither executable nor
+  cacheable (`.policyDenied`) — `frameMappingAdmissible`.
+- **Composition**: `vspaceMapFromFrameCap` is the arm past its address-space
+  check; `dispatchWithCap_vspaceMap_requires_frame_cap` and
+  `dispatchWithCap_vspaceMap_maps_frame_base` state the two claims.
+- **No other source of memory authority**: an in-place retype refuses a
+  memory-backed replacement (`KernelObjectType.memoryBacked`,
+  `retypeReplacementAdmissible`), the boot refuses a configured frame
+  (`bootSafeObject`), and the pre-retype cleanup refuses to destroy one
+  (`.revocationRequired`) until frame destroy can unmap it.  Consequently no
+  reachable state holds a frame yet; the live untyped carve that mints one is
+  the next slice of BP7.1 (registered in `docs/REGISTERED_DEBT.md` table B).
+- `decodeVSpaceMapArgsChecked` is retired with the physical-address operand
+  it bounded; the PA-width bound on the frame's `base` is
+  `vspaceMapPageCheckedWithFlushFromState`'s.
 
 ### 8.10.3 seL4 Divergence: CNode Intermediate Rights
 `resolveCapAddress` (Operations.lean) does NOT check `Read` rights

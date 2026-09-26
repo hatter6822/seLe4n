@@ -44,7 +44,7 @@ weakness.  SM2.D can adopt the same pattern in a future audit-pass.
 
 ## Category breakdown
 
-* `.fieldDefault` — the seven per-object lock field declarations
+* `.fieldDefault` — the nine per-object lock field declarations
   (SM3.A.1..A.9).
 * `.projection` — the `objectLockOf` / `FrozenKernelObject.objectLockOf`
   projections plus their per-variant simp lemmas (SM3.A.10).
@@ -54,7 +54,8 @@ weakness.  SM2.D can adopt the same pattern in a future audit-pass.
   storeObject preservation witnesses.
 * `.consistency` — the audit-pass-5 `objectLockOf` totality /
   consistency witnesses + the `KernelObjectType` variants count
-  pinning the Reply (SM3.A.5) / Page (SM3.A.8) N/A decisions.
+  (nine since WS-BP BP7.1 retired the SM3.A.8 Page N/A decision, as
+  SM6.D retired SM3.A.5's for Reply).
 
 ## Adding a new SM3.A theorem
 
@@ -183,7 +184,7 @@ a regression that renames or removes a theorem fails this
 module's build at the elaboration step, before any test or
 runtime check is reached. -/
 def perObjectLockTheorems : List PerObjectLockTheorem :=
-  [-- §1 fieldDefault (8 entries — SM3.A.1..A.9 lock fields + Reply)
+  [-- §1 fieldDefault (9 entries — SM3.A.1..A.9 lock fields + Reply + Frame)
     polt! "TCB carries a per-object RwLockState lock field"
       TCB.lock .fieldDefault,
     polt! "Endpoint carries a per-object RwLockState lock field"
@@ -200,7 +201,9 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
       VSpaceRoot.lock .fieldDefault,
     polt! "Reply carries a per-object RwLockState lock field"
       SeLe4n.Kernel.Reply.lock .fieldDefault,
-    -- §2 projection (11 entries — objectLockOf def + 8 KernelObject unfolds + FrozenKernelObject.objectLockOf def + frozen .reply unfold)
+    polt! "FrameObject carries a per-object RwLockState lock field"
+      FrameObject.lock .fieldDefault,
+    -- §2 projection (13 entries — objectLockOf def + 9 KernelObject unfolds + FrozenKernelObject.objectLockOf def + frozen .reply / .frame unfolds)
     polt! "KernelObject.objectLockOf projects the per-variant lock"
       KernelObject.objectLockOf .projection,
     polt! "objectLockOf on .tcb reduces to t.lock"
@@ -219,10 +222,14 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
       KernelObject.objectLockOf_schedContext .projection,
     polt! "objectLockOf on .reply reduces to r.lock"
       KernelObject.objectLockOf_reply .projection,
+    polt! "objectLockOf on .frame reduces to f.lock"
+      KernelObject.objectLockOf_frame .projection,
     polt! "FrozenKernelObject.objectLockOf projects the frozen per-variant lock"
       FrozenKernelObject.objectLockOf .projection,
     polt! "FrozenKernelObject.objectLockOf on .reply reduces to r.lock"
       FrozenKernelObject.objectLockOf_reply .projection,
+    polt! "FrozenKernelObject.objectLockOf on .frame reduces to f.lock"
+      FrozenKernelObject.objectLockOf_frame .projection,
     -- §3 defaultState (5 entries — 4 SM3.A.11 + objStoreLock unheld)
     polt! "Default SystemState has objStoreLock = .unheld"
       default_objStoreLock_unheld .defaultState,
@@ -258,27 +265,28 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
       KernelObject.objectType_and_lockOf_total .consistency,
     polt! "objectLockOf is consistent with the kind tag"
       KernelObject.objectLockOf_consistent_with_type .consistency,
-    polt! "KernelObjectType has exactly 8 variants (reply now a real object; locks down Page N/A)"
-      KernelObjectType.variants_count_exactly_eight .consistency,
-    polt! "KernelObjectType variants_total — every value is one of the 8 enumerated kinds"
+    polt! "KernelObjectType has exactly 9 variants (reply and frame now real objects)"
+      KernelObjectType.variants_count_exactly_nine .consistency,
+    polt! "KernelObjectType variants_total — every value is one of the 9 enumerated kinds"
       KernelObjectType.variants_total .consistency]
 
-/-- WS-SM SM3.A audit-pass-5: the inventory has exactly 37 entries (WS-SM SM6.D:
+/-- WS-SM SM3.A audit-pass-5: the inventory has exactly 40 entries (WS-SM SM6.D:
 +3 for the first-class Reply object — `Reply.lock`, `KernelObject.objectLockOf_reply`,
-`FrozenKernelObject.objectLockOf_reply`).
+`FrozenKernelObject.objectLockOf_reply`; WS-BP BP7.1: +3 for the frame object,
+the same three).
 A regression that adds a new SM3.A theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem perObjectLockTheorems_count :
-    perObjectLockTheorems.length = 37 := by decide
+    perObjectLockTheorems.length = 40 := by decide
 
-/-- WS-SM SM3.A audit-pass-5: 8 entries in the `fieldDefault` category (+Reply). -/
+/-- WS-SM SM3.A audit-pass-5: 9 entries in the `fieldDefault` category (+Reply, +Frame). -/
 theorem perObjectLockTheorems_fieldDefault_count :
-    (perObjectLockTheorems.filter (fun t => t.category == .fieldDefault)).length = 8 := by
+    (perObjectLockTheorems.filter (fun t => t.category == .fieldDefault)).length = 9 := by
   decide
 
-/-- WS-SM SM3.A audit-pass-5: 11 entries in the `projection` category (+Reply unfolds). -/
+/-- WS-SM SM3.A audit-pass-5: 13 entries in the `projection` category (+Reply, +Frame unfolds). -/
 theorem perObjectLockTheorems_projection_count :
-    (perObjectLockTheorems.filter (fun t => t.category == .projection)).length = 11 := by
+    (perObjectLockTheorems.filter (fun t => t.category == .projection)).length = 13 := by
   decide
 
 /-- WS-SM SM3.A audit-pass-5: 5 entries in the `defaultState` category. -/

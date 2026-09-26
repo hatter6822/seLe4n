@@ -4182,6 +4182,30 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_crossCoreNonInterferen
     (vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores executingCore asid
       vaddr paddr perms st st' hStep) hShared
 
+/-- **WS-BP BP7.1**: the live `.vspaceMap` arm past its address-space check —
+the frame-capability resolution in front of the per-core map — writes **no
+core**.  The resolution and both admission checks are reads, so the arm's
+post-state is the per-core map's (`vspaceMapFromFrameCap_ok`), and the bound is
+the per-core map's own. -/
+theorem vspaceMapFromFrameCap_confinedToCores
+    (tid : SeLe4n.ThreadId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState)
+    (hStep : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨_, frame, -, -, -, hMap⟩ := vspaceMapFromFrameCap_ok tid args st st' hStep
+  exact vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores _ _ _
+    frame.base _ st st' hMap
+
+/-- **WS-BP BP7.1**: the live `.vspaceMap` arm, cross-core — a frame mapping is
+invisible on every core, stated at the definition the arm runs. -/
+theorem vspaceMapFromFrameCap_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver)
+    (tid : SeLe4n.ThreadId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState) (c : CoreId)
+    (hStep : vspaceMapFromFrameCap tid args st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (vspaceMapFromFrameCap_confinedToCores tid args st st' hStep) hShared
+
 /-- SM8.B.2: the I-cache broadcast seam writes only `perCoreICache` and the
 maintenance ledger, so it frames whatever its wrapped transition frames. -/
 theorem withIcacheBroadcast_framed
@@ -4360,6 +4384,9 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
+  | frame _ =>
+    -- WS-BP BP7.1: a frame target is refused, so there is no `.ok` post-state.
+    simp [lifecyclePreRetypeCleanup] at hOk
   | notification _ | vspaceRoot _ | untyped _ =>
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
@@ -5419,7 +5446,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .setPriorityDispatch => niName! setPriorityOnCore_crossCoreNonInterference
   | .setMCPriorityDispatch => niName! setMCPriorityOnCore_crossCoreNonInterference
   | .vspaceMapDispatch =>
-      niName! vspaceMapPageCheckedWithShootdownFromStatePerCore_crossCoreNonInterference
+      niName! vspaceMapFromFrameCap_crossCoreNonInterference
   | .vspaceUnmapDispatch =>
       niName! vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
   | .lifecycleRetypeDispatch =>

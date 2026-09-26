@@ -458,7 +458,7 @@ theorem currentBudgetPositiveOnCore_bootCore_iff (st : SystemState) :
           cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
           | none => simp [h2]
           | some objSc => cases objSc <;> simp [h2]
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [h]
 
 /-- Boot-core bridge for `budgetPositiveOnCore`.  Same pattern as
@@ -487,7 +487,7 @@ theorem budgetPositiveOnCore_bootCore_iff (st : SystemState) :
         cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
         | none => simp [h2]
         | some objSc => cases objSc <;> simp [h2]
-    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
       simp
 
 theorem replenishmentPipelineOrderOnCore_bootCore_iff (st : SystemState) :

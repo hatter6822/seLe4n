@@ -155,14 +155,14 @@ def lockSetTheorems : List LockSetTheorem :=
       SeLe4n.Model.KernelObject.lockKind_schedContext .projection,
     lkst! "lockKind agrees with objectType per variant"
       SeLe4n.Model.KernelObject.lockKind_eq_of_objectType .projection,
-    lkst! "lockKind is one of the 8 modeled kinds (excludes objStore/page)"
+    lkst! "lockKind is one of the 9 modeled kinds (excludes objStore)"
       SeLe4n.Model.KernelObject.lockKind_in_modeledKinds .projection,
     lkst! "lockKind ≠ .objStore (SystemState-level lock is separate)"
       SeLe4n.Model.KernelObject.lockKind_ne_objStore .projection,
     lkst! "lockKind on .reply reduces to .reply (WS-SM SM6.D first-class Reply)"
       SeLe4n.Model.KernelObject.lockKind_reply .projection,
-    lkst! "lockKind ≠ .page (SM3.A.8 N/A)"
-      SeLe4n.Model.KernelObject.lockKind_ne_page .projection,
+    lkst! "lockKind on .frame reduces to .page (WS-BP BP7.1 first-class frame)"
+      SeLe4n.Model.KernelObject.lockKind_frame .projection,
     lkst! "LockId.fromObject builds LockId from ObjId + KernelObject"
       SeLe4n.Model.LockId.fromObject .projection,
     lkst! "LockId.lookup resolves a LockId against a SystemState"
@@ -179,7 +179,7 @@ def lockSetTheorems : List LockSetTheorem :=
       SeLe4n.Model.LockId.lookup_objStore .projection,
     lkst! "LockId.lookup_reply: WS-SM SM6.D dispatches to the Reply per-object lock"
       SeLe4n.Model.LockId.lookup_reply .projection,
-    lkst! "LockId.lookup_page: SM3.A.8 N/A kind fails closed"
+    lkst! "LockId.lookup_page: WS-BP BP7.1 dispatches to the frame per-object lock"
       SeLe4n.Model.LockId.lookup_page .projection,
     -- §2 lockSet — per-transition declarations (25 entries — one per SyscallId variant)
     lkst! "lockSet for endpointSend"
@@ -402,7 +402,8 @@ theorem lockSetTheorems_count :
 
 /-- WS-SM SM3.B: 22 entries in the `projection` category
 (lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
- + lockKind_in_modeledKinds + 3 lockKind_ne_<NA-kind> + LockId.fromObject
+ + lockKind_in_modeledKinds + lockKind_ne_objStore + lockKind_reply + lockKind_frame
+ + LockId.fromObject
  + LockId.lookup + 4 lookup structural theorems + 3 fail-closed N/A
  witnesses). -/
 theorem lockSetTheorems_projection_count :

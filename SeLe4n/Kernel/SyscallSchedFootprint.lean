@@ -1535,6 +1535,10 @@ theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne (st st' : SystemState)
       split at h
       · exact absurd h (by simp)
       · injection h with h; subst h; rfl
+  | frame _ =>
+      -- WS-BP BP7.1: a frame target is refused, so there is no `.ok` step.
+      subst hC
+      simp at h
   | _ =>
       subst hC
       simp only at h

@@ -725,7 +725,7 @@ private theorem restoreIncomingContext_preserves_projection
       | cnode _ => simp_all
       | vspaceRoot _ => simp_all
       | untyped _ => simp_all
-      | schedContext _ | reply _ => simp_all
+      | schedContext _ | reply _ | frame _ => simp_all
 
 /-- WS-H12c: projectObjects depends only on the objects field. -/
 private theorem projectObjects_ext_objects
@@ -1130,7 +1130,7 @@ theorem cspaceDeleteSlotCore_preserves_projection
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | cnode cn =>
       simp only [hObj] at hStep
       cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
@@ -1197,7 +1197,7 @@ theorem cspaceRevoke_preserves_projection
     | none => simp [hL, hC] at hStep
     | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL, hC] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hL, hC] at hStep
       | cnode cn =>
         simp [hL, hC, storeObject] at hStep; cases hStep
         simp only [projectState]; congr 1
@@ -1446,7 +1446,7 @@ theorem endpointQueuePopHead_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -1525,7 +1525,7 @@ theorem endpointQueueEnqueue_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st tid with
@@ -1623,7 +1623,7 @@ theorem endpointSendDual_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hRecvHead : ep.receiveQ.head with
@@ -1819,7 +1819,7 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -1919,7 +1919,7 @@ theorem endpointReceiveDual_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hSendHead : ep.sendQ.head with
@@ -2276,7 +2276,7 @@ theorem endpointCall_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hRecvHead : ep.receiveQ.head with
@@ -3048,7 +3048,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
       | none => simp [hL, hC] at hRevoke
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL, hC] at hRevoke
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hL, hC] at hRevoke
         | cnode cn =>
           simp [hL, hC, storeObject] at hRevoke; cases hRevoke
           exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
@@ -3063,7 +3063,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
       | none => simp [hObj] at hDelete
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hDelete
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ => simp [hObj] at hDelete
         | cnode cn =>
           simp only [hObj] at hDelete
           cases hSt : storeObject cleanup.cnode (.cnode (cn.remove cleanup.slot)) stRevoked with
@@ -3662,7 +3662,7 @@ theorem queueNeighbourPatch_preserves_projection_high
           exact objects_insert_preserves_projection_high ctx observer
             { st with objects := objs } nid.toObjId (.tcb (upd t)) (hHigh nid hN) hInv
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rfl
+      | schedContext _ | reply _ | frame _ => rfl
 
 /-- **WS-RR RR8.8 (`v0.35.193`)**: `endpointSpliceHigh` names the predecessor
 through `queuePPrev`; the single removal reads `queuePrev`.  Under RR8.3's

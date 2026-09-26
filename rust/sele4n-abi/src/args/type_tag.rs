@@ -8,7 +8,7 @@ use sele4n_types::{KernelError, KernelResult};
 
 /// Kernel object type tag for retype operations.
 ///
-/// 8 variants (0–7), matching `KernelObjectType` in Lean.
+/// 9 variants (0–8), matching `KernelObjectType` in Lean.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u64)]
 pub enum TypeTag {
@@ -22,10 +22,15 @@ pub enum TypeTag {
     SchedContext = 6,
     /// WS-SM SM6.D: first-class Reply object (seL4-MCS)
     Reply = 7,
+    /// WS-BP BP7.1: a frame — one page of physical memory, the object a
+    /// `vspace_map` names by capability.  Decodable so the tag set matches the
+    /// kernel's; an in-place retype to it is refused (a frame is carved from an
+    /// untyped, never minted), as is a retype to `Untyped`.
+    Frame = 8,
 }
 
 impl TypeTag {
-    /// Convert from a raw u64. Returns `InvalidTypeTag` for values > 7.
+    /// Convert from a raw u64. Returns `InvalidTypeTag` for values > 8.
     pub const fn from_u64(v: u64) -> KernelResult<Self> {
         match v {
             0 => Ok(Self::Tcb),
@@ -36,6 +41,7 @@ impl TypeTag {
             5 => Ok(Self::Untyped),
             6 => Ok(Self::SchedContext),
             7 => Ok(Self::Reply),
+            8 => Ok(Self::Frame),
             _ => Err(KernelError::InvalidTypeTag),
         }
     }
@@ -53,7 +59,7 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        for i in 0..=7u64 {
+        for i in 0..=8u64 {
             let tag = TypeTag::from_u64(i).unwrap();
             assert_eq!(tag.to_u64(), i);
         }
@@ -61,7 +67,7 @@ mod tests {
 
     #[test]
     fn out_of_range() {
-        assert_eq!(TypeTag::from_u64(8), Err(KernelError::InvalidTypeTag));
+        assert_eq!(TypeTag::from_u64(9), Err(KernelError::InvalidTypeTag));
     }
 
     #[test]
@@ -74,5 +80,11 @@ mod tests {
     fn reply_discriminant() {
         assert_eq!(TypeTag::Reply.to_u64(), 7);
         assert_eq!(TypeTag::from_u64(7).unwrap(), TypeTag::Reply);
+    }
+
+    #[test]
+    fn frame_discriminant() {
+        assert_eq!(TypeTag::Frame.to_u64(), 8);
+        assert_eq!(TypeTag::from_u64(8).unwrap(), TypeTag::Frame);
     }
 }

@@ -51,7 +51,7 @@
         {
           "name": "perObjectLockTheorems",
           "module": "SeLe4n/Model/Object/PerObjectLockInventory.lean",
-          "count": 37
+          "count": 40
         },
         {
           "name": "lockSetTheorems",
@@ -74,8 +74,8 @@
           "count": 111
         }
       ],
-      "entryCount": 425,
-      "theoremCount": 285
+      "entryCount": 428,
+      "theoremCount": 287
     },
     {
       "phase": "SM4",
@@ -188,10 +188,10 @@
       "theoremCount": 0
     }
   ],
-  "entryTotal": 1135,
-  "theoremTotal": 919,
+  "entryTotal": 1138,
+  "theoremTotal": 921,
   "ledgerEntryTotal": 16,
-  "registeredEntryTotal": 1151,
+  "registeredEntryTotal": 1154,
   "theoremInventoryCount": 14,
   "ledgerInventoryCount": 2
 }

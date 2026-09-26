@@ -71,7 +71,8 @@ time.
 
 AK3-B and AK5-C enumerate the four-layer W^X defense:
 
-1. **API-layer** — `decodeVSpaceMapArgsChecked` rejects W+X perms at the ABI.
+1. **API-layer** — `decodeVSpaceMapArgs` rejects W+X perms at the ABI, through
+   `PagePermissions.ofNat?` (`.invalidSyscallArgument`).
 2. **VSpace backend** — `vspaceMapPage` returns `.error .policyDenied` on
    non-compliant permissions.
 3. **Page-table encoder** — `pageTableDescriptorToPerms` rejects W+X descriptor
