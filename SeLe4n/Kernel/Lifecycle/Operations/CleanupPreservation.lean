@@ -1867,15 +1867,20 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     if sc.scReply.isSome then .error .revocationRequired
     else .ok (releaseSchedContextBinding st (SeLe4n.SchedContextId.ofObjId target) sc)
   | .frame _ =>
-    -- **WS-BP BP7.1: a frame cannot be retyped in place.**  A frame *is* a page
-    -- of physical memory, and a VSpace mapping of it records that memory's
-    -- address (`frame.base`), not the object's id.  Replacing the object would
-    -- leave every such mapping naming memory the kernel no longer accounts for
-    -- as that frame — a mapping outliving the authority that created it, which
-    -- is the use-after-free seL4 closes by unmapping a frame when its last
-    -- capability is deleted.  Until the frame-destroy path does the same, the
-    -- refusal is unconditional: `.revocationRequired`, the error this path uses
-    -- for "clear this precondition first".
+    -- **WS-BP BP7.1: a frame cannot be retyped in place, and that is final.**
+    -- A frame *is* a page of physical memory, and a VSpace mapping of it
+    -- records that memory's address (`frame.base`), not the object's id.
+    -- Replacing the object would leave every such mapping naming memory the
+    -- kernel no longer accounts for — a mapping outliving the authority that
+    -- created it.  Nor would an unmap here be the right repair: turning a page
+    -- of an untyped's memory into a kernel object in place would leave that
+    -- memory counted by the untyped's watermark and named by nothing.  Memory
+    -- goes back where it came from, as in seL4: a frame is destroyed by the
+    -- **untyped reset** (`untypedReset`, `v0.36.6`), which removes every mapping
+    -- of the region, erases the frames and returns the pages to the untyped
+    -- once no capability names them.  `.revocationRequired` is the error this
+    -- path uses for "clear this precondition first" — here, revoke the untyped
+    -- capability and reset it.
     .error .revocationRequired
   | _ => .ok st
 

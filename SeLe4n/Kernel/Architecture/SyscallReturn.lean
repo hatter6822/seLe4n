@@ -278,6 +278,9 @@ def syscallReturnShape : SyscallId → ReturnShape
   -- `seL4_Untyped_Retype` returns only an error code; what it produced is the
   -- capability it installed at the slot the caller named.
   | .untypedRetype         => .unit
+  -- **WS-BP BP7.1 (`v0.36.6`)**: a reset returns nothing — what it produced is
+  -- the untyped's memory, which the next carve hands out.
+  | .untypedReset          => .unit
   | .lifecycleRetype       => .unit
   | .vspaceMap             => .unit
   | .vspaceUnmap           => .unit

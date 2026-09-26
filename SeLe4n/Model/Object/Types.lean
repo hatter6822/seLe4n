@@ -2560,6 +2560,9 @@ inductive SyscallId where
                            -- (seL4_CNode_Revoke), dispatched through `cspaceRevokeCdt`
   | untypedRetype          -- WS-BP BP7.1 (`v0.36.5`): carve a frame out of an untyped the
                            -- caller holds (seL4_Untyped_Retype), through `untypedRetypeFrame`
+  | untypedReset           -- WS-BP BP7.1 (`v0.36.6`): hand an untyped's memory back once no
+                           -- carved child is reachable (seL4's resetUntypedCap), through
+                           -- `untypedReset`
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -2604,9 +2607,10 @@ namespace SyscallId
   | .tcbSetFaultHandler    => 34
   | .cspaceRevoke          => 35
   | .untypedRetype         => 36
+  | .untypedReset          => 37
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 37
+def count : Nat := 38
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -2648,6 +2652,7 @@ def count : Nat := 37
   | 34 => some .tcbSetFaultHandler
   | 35 => some .cspaceRevoke
   | 36 => some .untypedRetype
+  | 37 => some .untypedReset
   | _  => none
 
 instance : ToString SyscallId where
@@ -2689,6 +2694,7 @@ instance : ToString SyscallId where
     | .tcbSetFaultHandler    => "tcbSetFaultHandler"
     | .cspaceRevoke          => "cspaceRevoke"
     | .untypedRetype         => "untypedRetype"
+    | .untypedReset          => "untypedReset"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -2706,7 +2712,7 @@ def all : List SyscallId :=
   , .tcbBindNotification, .tcbUnbindNotification
   , .mintReplyCap, .vspaceUnifyInstruction, .declassify
   , .auditRead, .auditDrain, .declassifySignal, .tcbSetFaultHandler
-  , .cspaceRevoke, .untypedRetype ]
+  , .cspaceRevoke, .untypedRetype, .untypedReset ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -2738,9 +2744,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 | 33 | 34 | 35 | 36 =>
+  | 31 | 32 | 33 | 34 | 35 | 36 | 37 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 37 => intro s h; simp [ofNat?] at h
+  | n + 38 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

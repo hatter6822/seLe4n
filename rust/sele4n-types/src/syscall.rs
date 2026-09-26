@@ -5,7 +5,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 37 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 38 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -120,11 +120,22 @@ pub enum SyscallId {
     /// yields a device frame, and a RAM page is zeroed before the capability
     /// exists.  The only way a frame — and so mappable memory — comes to exist.
     UntypedRetype = 36,
+    /// WS-BP BP7.1 (`v0.36.6`): hand an untyped's memory back to it — seL4's
+    /// `resetUntypedCap`.
+    ///
+    /// Invoked on the **untyped** capability (`Retype` right), with no message
+    /// registers.  Refused unless every object carved from the untyped is a
+    /// frame and no capability anywhere — in a CNode or in a blocked sender's
+    /// message — names one: revoke the untyped capability first.  Every mapping
+    /// of a page in the untyped's region is then removed (with the TLB and
+    /// instruction-cache maintenance `VSpaceUnmap` performs), the carved frames
+    /// cease to exist, and the watermark returns to zero.
+    UntypedReset = 37,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 37;
+    pub const COUNT: usize = 38;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -167,6 +178,7 @@ impl SyscallId {
             34 => Some(Self::TcbSetFaultHandler),
             35 => Some(Self::CspaceRevoke),
             36 => Some(Self::UntypedRetype),
+            37 => Some(Self::UntypedReset),
             _ => None,
         }
     }
@@ -194,6 +206,8 @@ impl SyscallId {
             Self::LifecycleRetype => AccessRight::Retype,
             // WS-BP BP7.1: a carve is a retype of the untyped's memory.
             Self::UntypedRetype => AccessRight::Retype,
+            // WS-BP BP7.1: a reset is authority over the untyped's memory.
+            Self::UntypedReset => AccessRight::Retype,
             Self::VSpaceMap | Self::VSpaceUnmap => AccessRight::Write,
             Self::ServiceRegister | Self::ServiceRevoke => AccessRight::Write,
             Self::ServiceQuery => AccessRight::Read,
@@ -403,9 +417,22 @@ mod tests {
         // earlier discriminant is unchanged.
         assert_eq!(SyscallId::UntypedRetype.to_u64(), 36);
         assert_eq!(SyscallId::from_u64(36), Some(SyscallId::UntypedRetype));
-        assert_eq!(SyscallId::COUNT, 37);
         assert_eq!(
             SyscallId::UntypedRetype.required_right(),
+            AccessRight::Retype
+        );
+    }
+
+    #[test]
+    fn untyped_reset_discriminant() {
+        // WS-BP BP7.1 (`v0.36.6`): the untyped reset, appended so every earlier
+        // discriminant is unchanged.
+        assert_eq!(SyscallId::UntypedReset.to_u64(), 37);
+        assert_eq!(SyscallId::from_u64(37), Some(SyscallId::UntypedReset));
+        assert_eq!(SyscallId::from_u64(38), None);
+        assert_eq!(SyscallId::COUNT, 38);
+        assert_eq!(
+            SyscallId::UntypedReset.required_right(),
             AccessRight::Retype
         );
     }

@@ -1149,6 +1149,40 @@ theorem of_fresh_inert_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
          fun oid sc hSc =>
            ⟨sc, (step oid (.schedContext sc) (by simp [ipcReadInert])).mpr hSc, rfl⟩⟩
 
+/-- **WS-BP BP7.1 slice 3**: the general form of the two instances above — every
+rewritten key holds, on **each** side independently, either nothing or a kind
+outside the read view.  Covers creation (absent → inert), rewriting (inert →
+inert) and **erasure** (inert → absent) at once, which is the shape an untyped
+reset induces: VSpace roots rewritten, frames erased, the untyped rewritten. -/
+theorem of_inertOrAbsentWrites {s1 s2 : SystemState}
+    (h : ∀ oid : SeLe4n.ObjId,
+      s2.objects[oid]? = s1.objects[oid]? ∨
+      ((s1.objects[oid]? = none ∨ ipcReadInert s1.objects[oid]?) ∧
+       (s2.objects[oid]? = none ∨ ipcReadInert s2.objects[oid]?))) :
+    ipcReadViewAgreement s1 s2 := by
+  have step : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), ¬ ipcReadInert (some o) →
+      (s2.objects[oid]? = some o ↔ s1.objects[oid]? = some o) := by
+    intro oid o hNotInert
+    rcases h oid with hEq | ⟨h1, h2⟩
+    · rw [hEq]
+    · constructor
+      · intro hx; rw [hx] at h2
+        rcases h2 with h2 | h2
+        · cases h2
+        · exact absurd h2 hNotInert
+      · intro hx; rw [hx] at h1
+        rcases h1 with h1 | h1
+        · cases h1
+        · exact absurd h1 hNotInert
+  exact ⟨fun oid t => step oid (.tcb t) (by simp [ipcReadInert]),
+         fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert]),
+         fun oid ntfn hObj =>
+           ⟨ntfn, (step oid (.notification ntfn) (by simp [ipcReadInert])).mp hObj,
+             rfl, rfl, rfl⟩,
+         fun oid r => step oid (.reply r) (by simp [ipcReadInert]),
+         fun oid sc hSc =>
+           ⟨sc, (step oid (.schedContext sc) (by simp [ipcReadInert])).mpr hSc, rfl⟩⟩
+
 /-- A single notification rewrite preserving queue content — `state`,
 `waitingThreads`, `pendingBadge`; `boundTCB` and the lock word are free —
 is read-view agreement.  The `.tcbBindNotification` /

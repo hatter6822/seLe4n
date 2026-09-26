@@ -77,7 +77,7 @@ Safe high-level wrappers across the syscall surface:
 |-----------|-----------|
 | IPC | `endpoint_send`, `endpoint_receive`, `endpoint_receive_with_reply`, `endpoint_call`, `endpoint_reply`, `notification_signal`, `notification_wait` (returns the signalled badge since WS-RA v0.33.37), `endpoint_reply_recv` (+ `_checked`) |
 | CSpace | `cspace_mint`, `cspace_copy`, `cspace_move`, `cspace_delete`, `cspace_revoke`, `mint_reply_cap` |
-| Lifecycle | `untyped_retype` (+ `untyped_retype_frame`: carve the next page of an untyped into a frame, BP7.1 v0.36.5), `lifecycle_retype`, `retype_tcb`, `retype_endpoint`, `retype_notification`, `retype_cnode`, `retype_vspace_root` |
+| Lifecycle | `untyped_retype` (+ `untyped_retype_frame`: carve the next page of an untyped into a frame, BP7.1 v0.36.5), `untyped_reset` (hand an untyped's memory back once no capability names a carved frame, BP7.1 v0.36.6), `lifecycle_retype`, `retype_tcb`, `retype_endpoint`, `retype_notification`, `retype_cnode`, `retype_vspace_root` |
 | VSpace | `vspace_map` (W^X pre-check; + `_read_only` / `_read_write` / `_read_execute` presets), `vspace_unmap`, `vspace_unify_instruction` |
 | Service | `service_register`, `service_revoke`, `service_query` (returns the resolved service id since WS-RA v0.33.37) |
 | SchedContext | `sched_context_configure`, `sched_context_bind`, `sched_context_unbind` |

@@ -249,6 +249,13 @@ def enforcementBoundary : List EnforcementClass :=
   -- carved memory is fresh and a RAM page is zeroed before any capability to it
   -- exists.
   , .capabilityOnly "untypedRetypeFromCap"
+  -- **WS-BP BP7.1 (`v0.36.6`)**: the untyped reset, the transition the live
+  -- `.untypedReset` arm calls.  Capability-only: the authority is the untyped
+  -- capability's `.retype` right — authority over the memory it hands back —
+  -- and the reset refuses unless no capability anywhere names a carved child,
+  -- so no principal loses a capability it holds.  What it removes is mappings
+  -- whose capabilities are already gone, and frames no capability names.
+  , .capabilityOnly "untypedReset"
   -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
@@ -391,6 +398,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceRevoke => "cspaceRevokeCdt"
   | .lifecycleRetype => "lifecycleRetypeObject"
   | .untypedRetype => "untypedRetypeFromCap"
+  | .untypedReset => "untypedReset"
   | .vspaceMap => "vspaceMapPageCheckedWithShootdownFromState"
   | .vspaceUnmap => "vspaceUnmapPageWithShootdown"
   | .serviceRegister => "registerServiceChecked"

@@ -60,6 +60,13 @@ because the defect lived in dispatch and only dispatch can witness it.
   `.untypedRetype` mints a frame out of an untyped the caller holds, at the
   untyped's watermark, zeroed if it is RAM; `.vspaceMap` then maps exactly that
   page.  Every refusal the carve owns is exercised.
+* §5e — **WS-BP BP7.1 (`v0.36.6`): memory returns to its untyped.**
+  `.untypedReset` refuses while any capability names a carved frame — including
+  one reached only through a **sibling copy** of the untyped capability, which a
+  per-slot "no derivations" test would miss — and after `.cspaceRevoke` it
+  removes every mapping of the region (an unrelated mapping survives), retires
+  the frames and resets the watermark, so the next carve reuses both the page,
+  zeroed again, and the child id.
 * §6 — the authorized positive paths still work (the gate is not a blanket
   denial).
 -/
@@ -495,6 +502,7 @@ private def slotUtNoRetype : Nat := 3  -- the untyped, WITHOUT `.retype`
 private def slotDevUt     : Nat := 4   -- the device untyped, with `.retype`
 private def slotOwnCnRO   : Nat := 5   -- a read-only capability to the CSpace root
 private def slotVspRetype : Nat := 6   -- a `.retype`-bearing capability to a NON-untyped
+private def slotOwnCnGrant : Nat := 7  -- a grant-bearing capability to the CSpace root (§5e copies)
 private def slotCarved    : Nat := 8   -- where each carve installs its frame capability
 
 /-- The carve scenario, with one non-zero byte at each untyped's base so the
@@ -517,7 +525,8 @@ private def carveScenario : SystemState :=
                (SeLe4n.Slot.ofNat slotUtNoRetype, frameCapTo carveUt [.read, .write]),
                (SeLe4n.Slot.ofNat slotDevUt, frameCapTo carveDevUt [.read, .write, .retype]),
                (SeLe4n.Slot.ofNat slotOwnCnRO, frameCapTo carveCn [.read]),
-               (SeLe4n.Slot.ofNat slotVspRetype, frameCapTo carveVsp [.read, .retype])] })
+               (SeLe4n.Slot.ofNat slotVspRetype, frameCapTo carveVsp [.read, .retype]),
+               (SeLe4n.Slot.ofNat slotOwnCnGrant, frameCapTo carveCn [.read, .write, .grant])] })
       |>.withObject carveOwner.toObjId (.tcb
           { tid := carveOwner, priority := ⟨40⟩, domain := ⟨0⟩,
             cspaceRoot := carveCn, vspaceRoot := carveVsp,
@@ -650,6 +659,146 @@ private def runCarveChecks : IO Unit := do
     (refused (dispatchSyscall (decodeCarve slotUtNoRetype frameTag 953 slotOwnCnRW slotCarved)
       carveOwner st))
 
+-- ============================================================================
+-- §5e  WS-BP BP7.1 (`v0.36.6`) — memory returns to its untyped
+-- ============================================================================
+
+/-- `.untypedReset`, invoked on the capability at `utSlot`; no message registers. -/
+private def decodeReset (utSlot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat utSlot
+  , msgInfo   := { length := 0, extraCaps := 0, label := 0 }
+  , syscallId := .untypedReset
+  , msgRegs   := #[] }
+
+/-- `.cspaceRevoke` of `slot` in the owner's CSpace root, invoked on the
+writable root capability. -/
+private def decodeRevoke (slot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat slotOwnCnRW
+  , msgInfo   := { length := 1, extraCaps := 0, label := 0 }
+  , syscallId := .cspaceRevoke
+  , msgRegs   := #[SeLe4n.RegValue.ofNat slot] }
+
+/-- `.cspaceCopy` of `src` to `dst` in the owner's CSpace root, invoked on the
+grant-bearing root capability. -/
+private def decodeCopy (src dst : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat slotOwnCnGrant
+  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+  , syscallId := .cspaceCopy
+  , msgRegs   := #[SeLe4n.RegValue.ofNat src, SeLe4n.RegValue.ofNat dst] }
+
+/-- Run a list of dispatches in order, stopping at the first refusal. -/
+private def runAll (st : SystemState) :
+    List SyscallDecodeResult → Except KernelError SystemState
+  | [] => .ok st
+  | d :: ds => match dispatchSyscall d carveOwner st with
+    | .error e => .error e
+    | .ok ((), st') => runAll st' ds
+
+private def runResetChecks : IO Unit := do
+  IO.println "-- §5e `.untypedReset` hands an untyped's memory back (WS-BP BP7.1)"
+  let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
+    match r with | .error e' => e' == e | .ok _ => false
+  -- Carve two frames, map the first, and map a DEVICE frame from the other
+  -- untyped: the reset must remove the first mapping and keep the device one.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
+       decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9,
+       decodeOwnMap 0x60000 slotCarved permsRWUC,
+       decodeCarve slotDevUt frameTag 952 slotOwnCnRW 11,
+       decodeOwnMap 0x70000 11 11] with
+  | .error e => assertBool s!"the carve-and-map setup succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "setup: the carved page is mapped at 0x60000"
+      (mappedPaddr st carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase)
+    assertBool "setup: the device page is mapped at 0x70000"
+      (mappedPaddr st carveAsid (SeLe4n.VAddr.ofNat 0x70000) == some carveDevBase)
+    -- While a capability to a carved frame survives, the reset is refused.
+    assertBool "a reset while the frame capabilities survive is refused (revocationRequired)"
+      (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner st))
+    assertBool "a reset without `.retype` over the untyped is refused (illegalAuthority)"
+      (isErr .illegalAuthority (dispatchSyscall (decodeReset slotUtNoRetype) carveOwner st))
+    assertBool "a `.retype` capability to a non-untyped is refused (untypedTypeMismatch)"
+      (isErr .untypedTypeMismatch (dispatchSyscall (decodeReset slotVspRetype) carveOwner st))
+    -- THE SIBLING COPY.  Copy the untyped capability to slot 10: the copy is a
+    -- CDT child of slot 0 and has no derivations of its own, so a per-slot
+    -- "no children" test on it would pass — while the frames carved through
+    -- slot 0 are still named by slots 8 and 9.  The reset asks the objects.
+    match dispatchSyscall (decodeCopy slotUtRetype 10) carveOwner st with
+    | .error e => assertBool s!"copying the untyped capability succeeds (got {repr e})" false
+    | .ok ((), stCopy) =>
+      assertBool "a reset through a derivation-free SIBLING copy is still refused"
+        (isErr .revocationRequired (dispatchSyscall (decodeReset 10) carveOwner stCopy))
+    -- An in-flight capability counts: a blocked sender parking a transfer
+    -- capability to a carved frame keeps the reset refused even with every
+    -- slot cleared.
+    match dispatchSyscall (decodeRevoke slotUtRetype) carveOwner st with
+    | .error e => assertBool s!"revoking the untyped capability succeeds (got {repr e})" false
+    | .ok ((), stRev) => do
+      assertBool "revocation removed both frame capabilities"
+        (SystemState.lookupSlotCap stRev { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotCarved }
+          == none &&
+         SystemState.lookupSlotCap stRev { cnode := carveCn, slot := SeLe4n.Slot.ofNat 9 } == none)
+      assertBool "but the mapping of the carved page is still there (a mapping records memory)"
+        (mappedPaddr stRev carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase)
+      let inFlight : TCB :=
+        { tid := ⟨990⟩, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := carveCn,
+          vspaceRoot := carveVsp, ipcBuffer := SeLe4n.VAddr.ofNat 8192,
+          ipcState := .ready,
+          pendingMessage := some
+            { registers := #[],
+              caps := #[TransferCap.fromNode (frameCapability (SeLe4n.ObjId.ofNat 950)) 0] } }
+      match storeObject (SeLe4n.ObjId.ofNat 990) (.tcb inFlight) stRev with
+      | .error _ => assertBool "the in-flight fixture stores" false
+      | .ok ((), stFly) =>
+        assertBool "a capability parked in a blocked sender's message keeps the reset refused"
+          (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner stFly))
+      -- A thread wrote through its mapping before the revocation: the next
+      -- owner of the page must not see it.
+      let stDirty := { stRev with
+        machine := SeLe4n.writeMem stRev.machine (SeLe4n.PAddr.ofNat carveUtBase) 0x5A }
+      match dispatchSyscall (decodeReset slotUtRetype) carveOwner stDirty with
+      | .error e => assertBool s!"the reset after revocation succeeds (got {repr e})" false
+      | .ok ((), stReset) => do
+        assertBool "the reset removes the mapping of the region's page"
+          (mappedPaddr stReset carveAsid (SeLe4n.VAddr.ofNat 0x60000) == none)
+        assertBool "and leaves the mapping of a page OUTSIDE the region alone"
+          (mappedPaddr stReset carveAsid (SeLe4n.VAddr.ofNat 0x70000) == some carveDevBase)
+        assertBool "the carved frames are retired from the object store"
+          ((stReset.objects[SeLe4n.ObjId.ofNat 950]?).isNone &&
+           (stReset.objects[SeLe4n.ObjId.ofNat 951]?).isNone)
+        assertBool "the device frame, carved from ANOTHER untyped, is untouched"
+          (frameAt stReset 952 == some { base := SeLe4n.PAddr.ofNat carveDevBase, isDevice := true })
+        assertBool "the untyped's watermark and child list are cleared"
+          ((stReset.getUntyped? carveUt).map (fun u => (u.watermark, u.children.length))
+            == some (0, 0))
+        -- The memory and the id are both reusable, and the page is scrubbed
+        -- again before any capability to it exists.
+        match dispatchSyscall (decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved)
+            carveOwner stReset with
+        | .error e => assertBool s!"a carve after the reset succeeds (got {repr e})" false
+        | .ok ((), stAgain) => do
+          assertBool "the next carve reuses the region's first page and the retired child id"
+            (frameAt stAgain 950 == some { base := SeLe4n.PAddr.ofNat carveUtBase })
+          assertBool "and the page is zeroed again — the previous owner's write is gone"
+            (SeLe4n.readMem stAgain.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0)
+        -- A reset with nothing carved is a no-op success.
+        match dispatchSyscall (decodeReset slotUtRetype) carveOwner stReset with
+        | .error e => assertBool s!"a second reset of an empty untyped succeeds (got {repr e})" false
+        | .ok ((), stTwice) =>
+          assertBool "a second reset leaves the untyped empty"
+            ((stTwice.getUntyped? carveUt).map (·.watermark) == some 0)
+  -- A child that is not a frame cannot be retired: an untyped whose child list
+  -- names a kernel object keeps its memory.
+  let utWithObjChild : UntypedObject :=
+    { regionBase := SeLe4n.PAddr.ofNat carveUtBase, regionSize := 0x3000,
+      watermark := SeLe4n.pageBytes,
+      children := [{ objId := carveVsp, offset := 0, size := SeLe4n.pageBytes }] }
+  match storeObject carveUt (.untyped utWithObjChild) carveScenario with
+  | .error _ => assertBool "the non-frame-child fixture stores" false
+  | .ok ((), stObj) =>
+    assertBool "a reset whose child is not a frame is refused (revocationRequired)"
+      (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner stObj))
+
 private def runAuthorizedChecks : IO Unit := do
   IO.println "-- §6 authorized callers still succeed"
   -- `.vspaceUnmap` with genuine authority over the victim's address space.
@@ -697,6 +846,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runAlignmentChecks
   runFrameCapabilityChecks
   runCarveChecks
+  runResetChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."

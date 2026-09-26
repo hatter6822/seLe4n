@@ -1143,10 +1143,10 @@ fn kernel_error_variant_count() {
 /// SM9.A.6 added AuditRead at 31 and AuditDrain at 32; WS-SM SM9.C.8 added
 /// DeclassifySignal at 33; PR #887's review round added TcbSetFaultHandler at
 /// 34; WS-RR RR8.16 added CspaceRevoke at 35; WS-BP BP7.1 added UntypedRetype at
-/// 36).
+/// 36 and UntypedReset at 37).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 37;
+    const SYSCALL_COUNT: u64 = 38;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1291,7 +1291,8 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 37 (WS-BP BP7.1 added UntypedRetype, on top of
+/// AA1-B-5: COUNT is updated to 38 (WS-BP BP7.1 added UntypedRetype and
+/// UntypedReset, on top of
 /// WS-RR RR8.16's CspaceRevoke, on top of
 /// PR #887's review round's TcbSetFaultHandler, WS-SM SM9.C.8's
 /// DeclassifySignal, WS-SM SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's
@@ -1299,7 +1300,7 @@ fn sched_context_boundary() {
 /// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 37);
+    assert_eq!(SyscallId::COUNT, 38);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1593,7 +1594,18 @@ fn untyped_retype_roundtrip() {
     assert_eq!(sid, SyscallId::UntypedRetype);
     assert_eq!(sid.to_u64(), 36);
     assert_eq!(sid.required_right(), AccessRight::Retype);
-    assert_eq!(SyscallId::COUNT, 37);
+}
+
+/// WS-BP BP7.1: UntypedReset roundtrip (discriminant 37) — the reset takes the
+/// retype right, authority over the untyped's memory.
+#[test]
+fn untyped_reset_roundtrip() {
+    use sele4n_types::rights::AccessRight;
+    let sid = SyscallId::from_u64(37).expect("UntypedReset must exist");
+    assert_eq!(sid, SyscallId::UntypedReset);
+    assert_eq!(sid.to_u64(), 37);
+    assert_eq!(sid.required_right(), AccessRight::Retype);
+    assert_eq!(SyscallId::COUNT, 38);
 }
 
 /// WS-SM SM6.B: TcbBindNotification roundtrip (discriminant 26).
@@ -1655,13 +1667,13 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 37 is out of range for SyscallId
-/// (WS-BP BP7.1 added UntypedRetype, moving the boundary from 36 to 37).
+/// D6-D5: Boundary — discriminant 38 is out of range for SyscallId
+/// (WS-BP BP7.1 added UntypedReset, moving the boundary from 37 to 38).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(36).is_some()); // Last valid
-    assert!(SyscallId::from_u64(37).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 37);
+    assert!(SyscallId::from_u64(37).is_some()); // Last valid
+    assert!(SyscallId::from_u64(38).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 38);
 }
 
 /// WS-SM SM9.A.6: AuditRead roundtrip (discriminant 31).
@@ -1930,7 +1942,7 @@ enum ReturnShape {
 }
 
 /// The mirror of `Architecture.syscallReturnShape` — total over the same
-/// 37 variants (`SyscallId` here is `sele4n-types`', whose count pin is
+/// 38 variants (`SyscallId` here is `sele4n-types`', whose count pin is
 /// `syscall_id_variant_count`).
 ///
 /// **WS-RR RR7.17: no wildcard.**  This match had a `_ => ReturnShape::Unit`
@@ -1977,6 +1989,9 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         // WS-BP BP7.1: a carve returns nothing — what it produced is the
         // capability it installed at the slot the caller named.
         | SyscallId::UntypedRetype
+        // WS-BP BP7.1: a reset returns nothing — what it produced is the
+        // untyped's memory, which the next carve hands out.
+        | SyscallId::UntypedReset
         | SyscallId::LifecycleRetype
         | SyscallId::VSpaceMap
         | SyscallId::VSpaceUnmap
@@ -2412,6 +2427,8 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         "untyped_retype (untyped_retype_frame)",
         SyscallId::UntypedRetype,
     );
+    let _ = sele4n_sys::lifecycle::untyped_reset(cap);
+    assert_clears("untyped_reset", SyscallId::UntypedReset);
 
     let _ = sele4n_sys::vspace::vspace_map_read_only(
         cap,

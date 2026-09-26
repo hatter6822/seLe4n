@@ -1588,6 +1588,51 @@ theorem untypedRetypeFrame_preserves_ipcInvariantFull
     (cspaceInsertSlot_preserves_ipcInvariantFull _ st2 dst _ hObjInvZ hInvZ
       (fun b hb => by simp [frameCapability] at hb) hIns)
 
+/-- **WS-BP BP7.1 slice 3 (`v0.36.6`)**: the untyped reset preserves
+`ipcInvariantFull`.  Every key it writes holds, on each side, nothing or a kind
+the bundle does not read — VSpace roots (the unmap pass), frames (erased) and
+the untyped (its watermark reset) — so the read view agrees
+(`of_inertOrAbsentWrites`); the scheduler is framed; and no CNode or TCB is
+written, which carries the badge clause and the passive-server clause. -/
+theorem untypedReset_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : untypedReset ec untypedId st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨-, hSched, hW⟩ := untypedReset_ok_frame ec untypedId st st' hObjInv hStep
+  have hTouched : ∀ o : Option KernelObject, resetTouched o → o = none ∨ ipcReadInert o := by
+    intro o h
+    cases o with
+    | none => exact Or.inl rfl
+    | some obj =>
+      right
+      cases obj <;> first | trivial | exact absurd h (by simp [resetTouched])
+  have hView : ipcReadViewAgreement st st' :=
+    ipcReadViewAgreement.of_inertOrAbsentWrites fun oid => by
+      rcases hW oid with e | ⟨t1, t2⟩
+      · exact Or.inl e
+      · exact Or.inr ⟨hTouched _ t1, hTouched _ t2⟩
+  -- a CNode or TCB in the post-state is the pre-state's, unchanged
+  have hBackObj : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), ¬ resetTouched (some o) →
+      st'.objects[oid]? = some o → st.objects[oid]? = some o := by
+    intro oid o hNT hPost
+    rcases hW oid with e | ⟨_, t2⟩
+    · rw [← e]; exact hPost
+    · rw [hPost] at t2; exact absurd t2 hNT
+  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding :=
+    fun tid tcb' h => ⟨tcb', hBackObj _ _ (by simp [resetTouched]) h, rfl, rfl⟩
+  have hCap : capabilityBadgesWellFormed st' := by
+    intro oid cn slot cap badge hCn hLk hB
+    exact hInv.badgeWellFormed.2 oid cn slot cap badge
+      (hBackObj _ _ (by simp [resetTouched]) hCn) hLk hB
+  exact ipcInvariantFull_of_readViewAgreement hView
+    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
+      hInv.passiveServerIdle)
+    hCap hInv
+
 -- ============================================================================
 -- §10  Sched-context arm (`.schedContextConfigure`)
 -- ============================================================================

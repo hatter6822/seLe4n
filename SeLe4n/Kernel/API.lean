@@ -3201,6 +3201,9 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- so it takes the retype right — the one `lifecycleRetypeAuthority` checks
   -- inside `retypeFromUntyped` too, so the gate and the primitive agree.
   | .untypedRetype   => .retype
+  -- **WS-BP BP7.1 (`v0.36.6`)**: a reset hands the untyped's memory back to it,
+  -- which is authority over that memory — the retype right, as for the carve.
+  | .untypedReset    => .retype
   | .vspaceMap       => .write
   | .vspaceUnmap     => .write
   -- WS-SM SM7.D: publishing freshly-written code requires the **write** right
@@ -3283,6 +3286,7 @@ def syscallChecksTargetFirst : SyscallId → Bool
   -- ordinary `.object` capability, so there is no wrong-kind refusal to
   -- sequence ahead of the rights gate.
   | .untypedRetype   => false
+  | .untypedReset    => false
   | .vspaceMap       => false
   | .vspaceUnmap     => false
   | .vspaceUnifyInstruction => false
@@ -4309,6 +4313,17 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     some <| match cap.target with
     | .object _ => untypedRetypeFromCap tid decoded
     | _ => fun _ => .error .invalidCapability
+  -- **WS-BP BP7.1 (`v0.36.6`)**: seL4's `resetUntypedCap` — the untyped's memory
+  -- returns to it once no capability names any carved child.  Every mapping of
+  -- the region is removed through the `.vspaceUnmap` arm's own transition, with
+  -- the invoking thread's core as the initiator of each shootdown round, and the
+  -- carved frames are retired.  Takes no message registers: the capability is
+  -- the whole operand.
+  | .untypedReset =>
+    some <| match cap.target with
+    | .object untypedId => fun st =>
+        untypedReset (determineExecutingCore st tid) untypedId st
+    | _ => fun _ => .error .invalidCapability
   | .vspaceMap =>
     some <| match cap.target with
     | .object _ =>
@@ -4818,6 +4833,11 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     case object _ =>
       obtain ⟨_, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid decoded st st' hStep
       exact untypedRetypeFrame_preserves_ipcInvariantFull _ _ _ st st' hObjInv hInv hCarve
+    all_goals try cases hStep
+  case untypedReset =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object _ =>
+      exact untypedReset_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
     all_goals try cases hStep
   case lifecycleRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -6735,7 +6755,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
-            .cspaceRevoke, .untypedRetype] : List SyscallId) := by
+            .cspaceRevoke, .untypedRetype, .untypedReset] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -6757,7 +6777,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
-            .cspaceRevoke, .untypedRetype] : List SyscallId) := by
+            .cspaceRevoke, .untypedRetype, .untypedReset] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -7181,6 +7201,20 @@ theorem dispatchWithCap_vspaceUnmap_delegates
       Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
         (determineExecutingCore st tid) args.asid args.vaddr st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+
+/-- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm *is* `untypedReset` at
+the invoking thread's executing core and the untyped the capability names — the
+same core the `.vspaceUnmap` arm initiates its shootdown rounds on, so the
+reset's unmaps and an ordinary unmap cannot disagree about who drives the round.
+The arm decodes no message register: the capability is the whole operand. -/
+theorem dispatchWithCap_untypedReset_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .untypedReset)
+    (hTarget : cap.target = .object untypedId) :
+    dispatchWithCap decoded tid gate cap st =
+      untypedReset (determineExecutingCore st tid) untypedId st := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================
 -- PR #845 review (P1) — the fail-closed duals of the three VSpace delegations
@@ -9440,6 +9474,16 @@ def syscallDelegates : SyscallId → Prop
            | .ok (n, st') =>
                .ok ((), Architecture.writeReturnFrameToTcb st' tid
                  (Architecture.returnFrameOfWord n.toUInt64)))
+  -- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm.  No decode and no
+  -- authority conjunct beyond the dispatcher's own `.retype` right check: the
+  -- reset's refusals are its own, and the conclusion names the whole operation.
+  | .untypedReset =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState),
+        decoded.syscallId = .untypedReset →
+        cap.target = .object untypedId →
+        dispatchWithCap decoded tid gate cap st =
+          untypedReset (determineExecutingCore st tid) untypedId st
   | _ => False
 
 /-- The `.receive` obligation, discharged. -/
@@ -9506,6 +9550,12 @@ theorem syscallDelegates_vspaceUnmap : syscallDelegates .vspaceUnmap := by
   intro decoded tid gate cap objId args st hSyscall hTarget hDecode hAuth
   exact dispatchWithCap_vspaceUnmap_delegates decoded tid gate cap objId args st
     hSyscall hTarget hDecode hAuth
+
+/-- WS-BP BP7.1 (slice 3): the `.untypedReset` obligation, discharged. -/
+theorem syscallDelegates_untypedReset : syscallDelegates .untypedReset := by
+  intro decoded tid gate cap untypedId st hSyscall hTarget
+  exact dispatchWithCap_untypedReset_delegates decoded tid gate cap untypedId st
+    hSyscall hTarget
 
 /-- The `.send` obligation, discharged. -/
 theorem syscallDelegates_send : syscallDelegates .send := by

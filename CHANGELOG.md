@@ -1,3 +1,154 @@
+## v0.36.6 — WS-BP BP7.1, slice 3: the untyped reset — `.untypedReset` returns an untyped's memory
+
+After slice 2 a thread could carve frames from an untyped and map them, but the
+memory could never come back: the in-place retype refuses a frame target, and
+nothing reset an untyped's watermark.  This slice adds seL4's `resetUntypedCap`
+as its own syscall, so an untyped's holder can reclaim its memory once no
+capability names anything carved from it.
+
+**The syscall.**  `SyscallId.untypedReset` is discriminant `37`
+(`SyscallId.count` 38).  It is invoked on an untyped capability carrying
+`.retype` and takes no message registers.  The live arm is
+`untypedReset (determineExecutingCore st tid) untypedId`, in the new module
+`SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean`.
+
+**What it refuses, and why the check covers the whole store.**  The reset
+answers `.revocationRequired` in two cases:
+
+* some carved child is not a frame (`untypedChildrenRetirable`);
+* some capability anywhere names a carved child
+  (`untypedChildrenUnreferenced`).  "Anywhere" means every CNode slot, plus
+  the transfer capabilities a blocked sender has parked in its message.
+
+seL4 keeps a free index on each untyped capability, so there `ensureNoChildren`
+on the invoked slot is enough.  This model keeps the watermark on the untyped
+*object*, shared by every copy of its capability.  A per-slot test would
+therefore pass a derivation-free sibling copy while frames carved through the
+original are still named.  So the check is a fold over the object table, and
+`RHTable.fold_and_true_of_get?` turns that fold into a statement about every key
+the table resolves.
+
+**What it writes.**
+
+1. **Every mapping of a page in the region, removed.**  A mapping records a
+   physical address, not an object, so deleting a frame's last capability
+   leaves its mappings in place.  The reset collects `(asid, vaddr)` pairs from
+   the pre-state (`untypedRegionMappings`).  It removes each one through the
+   `.vspaceUnmap` arm's own verified transition,
+   `vspaceUnmapPageWithShootdownAndIcacheBroadcast` (`untypedResetUnmap`): the
+   page-table erase, the local flush, the `.vae1` shootdown round, the
+   initiator's per-core drain, and the instruction-cache broadcast for an
+   executable page.  The result is **checked**, not trusted: if any mapping of
+   the region survives (`untypedRegionUnmapped`), the reset refuses with
+   `.illegalState` rather than handing the page out again.
+2. **Every carved frame, erased.**  `retireFrame` is the one primitive in the
+   tree that erases an object from the store.  It removes the object, its
+   index row, its index-set entry and its type metadata, and it is a no-op at
+   any key that does not hold a frame.  Erasing frees each child's object id
+   and store capacity.  Leaving dead frames behind would leave them unreachable
+   but still occupying store slots, so a holder of one small untyped could
+   exhaust the global object store by carving and resetting in a loop.
+   `retireFrame` is registered in `WRITE_PRIMITIVE_BODIES`
+   (`scripts/lean_store_read_census.py`), and `STORE_WRITE_CODE` stays at zero.
+3. **The watermark and child list, cleared** (`UntypedObject.reset`, the
+   model's existing definition, whose `reset_wellFormed` already holds).
+
+The reset zeroes no memory.  The carve zeroes a RAM page before any capability
+to it exists, so a page is scrubbed exactly when it is handed out.
+
+**Theorems.**
+
+* `untypedReset_ok_decompose` owns the case analysis.
+* `untypedReset_ok_unmapped`: no VSpace root maps a page of the region.
+* `untypedReset_ok_unreferenced`: no CNode slot and no parked message names a
+  former child.
+* `untypedReset_ok_children_absent`: every carved child is gone from the store.
+* `untypedReset_ok_untyped`: the untyped holds `ut.reset`.
+* `untypedReset_ok_frame`: every key is unchanged, or of a kind the reset
+  touches on both sides, and the scheduler is unchanged.
+* `untypedReset_preserves_ipcInvariantFull` (`DispatchArmPreservation.lean`),
+  wired into `dispatchCapabilityOnly_preserves_ipcInvariantFull`.  It rests on
+  the new `ipcReadViewAgreement.of_inertOrAbsentWrites`, the general
+  read-view frame in which a key may go from inert to **absent**.
+
+The frames the reset composes are stated once each: `vspaceUnmapPage_ok_frame`,
+`vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame`,
+`untypedResetUnmap_ok_frame`, `retireFrame_frame` and `retireFrames_frame`,
+over two relations (`vspaceRootOnlyWrite`, `frameRetireWrite`).
+
+**Lock domains.**  The reset declares **no** static lock footprint, for
+`.cspaceRevoke`'s reason: the VSpace roots it writes are the ones the state says
+map the region, a set nothing bounds.  `permittedKinds .untypedReset` lists the
+kinds a future declaration may contain, and `declaresStaticLockFootprint_false_iff`
+now names two arms.  The reset writes no scheduler slot, so it sits in the
+scheduler domain's `none` group.
+
+**Cross-core non-interference.**  The arm takes an executing core, so the
+per-core routing gate requires an entry in the cross-core inventory, and it has
+one rather than a waiver: `CrossCoreTransition.untypedResetDispatch`, with an
+**empty** write set (`untypedReset_confinedToCores`, composed from
+`untypedResetUnmap_framed` — each step is the `.vspaceUnmap` arm's transition —
+and `retireFrames_framed`) and `untypedReset_crossCoreNonInterference`.  The
+live-arm claim is backed by a delegation proof
+(`dispatchWithCap_untypedReset_delegates`, `syscallDelegates_untypedReset`), not
+a reading of the arm, so the inventory is 31 transitions, 23 live arms and 15
+delegation-backed.  The information-flow fixture's boundary, audit-ABI and taint
+lines move by exactly the one arm (`canonical 47`, `syscalls=38`, `inert=29`),
+and the suite's name-distinctness check now compares against the inventory's own
+length rather than a literal.
+
+**The frame arm of the pre-retype cleanup.**  This arm stays refused, and its
+comment now says the refusal is final rather than "until slice 3".  An unmap
+there would be the wrong repair: turning a page of an untyped's memory into a
+kernel object in place would leave that memory counted by the watermark and
+named by nothing.  Memory goes back through its untyped, as in seL4.
+
+**Registered, not closed.**  Revoking a frame capability does not unmap the
+frame (new row, `docs/REGISTERED_DEBT.md` table B, owner BP7.1 slice 4).  Until
+the holder resets the untyped, the thread keeps its mapping.  No other thread
+can reach the page meanwhile, because the page is not handed out again until the
+reset has removed every mapping, so there is no cross-thread leak.  It does
+diverge from seL4, where deleting the capability that made a mapping unmaps it.
+The fix is for a mapping to record the capability that made it, which is the
+page-table slice's representation change.  The slice-4 row also records that
+the reset retires frames only, so carving child untypeds and page tables must
+teach the reset to retire them too.
+
+**ABI mirror.**
+
+* `SyscallId::UntypedReset = 37` in `sele4n-types` and the HAL (`COUNT` 38;
+  the HAL's `min_inline_args` is 0).
+* `sele4n_sys::lifecycle::untyped_reset`.
+* The return-shape table on both sides (`.unit`), with
+  `tests/fixtures/syscall_return_shape.expected` regenerated.
+* `frozenOpCoverage` is `false`: the reset removes keys, and a `FrozenMap` has
+  no `erase`.
+* The rest are `.inert` / `.exempt` / send-phase: the refusal seam, the
+  content-flow class, the enforcement boundary (`capabilityOnly
+  "untypedReset"`: 47 canonical, 62 per-core), and the capability-fault phase.
+
+**Witnesses.**  `tests/VSpaceCapabilityBindingSuite.lean` §5e drives the whole
+cycle through the live `dispatchSyscall`: carve, map, refuse, revoke, reset,
+carve again.  It checks that:
+
+* the reset is refused while the frame capabilities survive;
+* it is refused through a derivation-free **sibling copy** of the untyped
+  capability — the decisive case;
+* it is refused while a transfer capability to a carved frame is parked in a
+  blocked sender's message;
+* revocation alone leaves the mapping in place;
+* the reset removes the region's mapping and keeps a mapping of a device page
+  from another untyped;
+* the carved frames are erased and the watermark is zero;
+* the next carve reuses the same page and the same child id, with the previous
+  owner's write zeroed;
+* a child that is not a frame keeps the reset refused.
+
+Twenty-three Tier 3 anchors pin the arm, the refusals, the unmap route, the
+check, the erase and the theorems.
+
+Refs: `docs/planning/SMP_BOOT_PATH_PLAN.md` (BP7.1)
+
 ## v0.36.5 — WS-BP BP7.1, slice 2: the untyped carve — `.untypedRetype` is the one source of frames
 
 Slice 1 made `.vspaceMap` map only memory the caller holds a frame capability

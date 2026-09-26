@@ -2,7 +2,8 @@
 //! Lifecycle operations — retype with type tag validation.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiLifecycleRetype`, and the
-//! `.untypedRetype` arm (`untypedRetypeFromCap`).
+//! `.untypedRetype` arm (`untypedRetypeFromCap`), and the `.untypedReset` arm
+//! (`untypedReset`).
 
 use sele4n_abi::args::{LifecycleRetypeArgs, TypeTag, UntypedRetypeArgs};
 use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
@@ -52,6 +53,25 @@ pub fn untyped_retype_frame(
     dst_slot: Slot,
 ) -> KernelResult<SyscallResponse> {
     untyped_retype(untyped_cap, TypeTag::Frame, child_id, dst_cnode, dst_slot)
+}
+
+/// Hand an untyped's memory back to it — seL4's `resetUntypedCap`.
+///
+/// Lean: the `.untypedReset` arm (API.lean, `untypedReset`), WS-BP BP7.1.
+/// Requires the `Retype` right on `untyped_cap`.  Refused with
+/// `RevocationRequired` while any carved object is not a frame or any
+/// capability anywhere still names one — revoke the untyped capability first.
+/// On success every mapping of a page in the untyped's region is gone, the
+/// carved frames no longer exist, and the next [`untyped_retype`] carves from
+/// the start of the region again.
+#[inline]
+pub fn untyped_reset(untyped_cap: CPtr) -> KernelResult<SyscallResponse> {
+    invoke_syscall(SyscallRequest {
+        cap_addr: untyped_cap,
+        msg_info: MessageInfo::new_const(0, 0, 0),
+        msg_regs: [0; 4],
+        syscall_id: SyscallId::UntypedReset,
+    })
 }
 
 /// Retype an untyped memory object into a specific kernel object type.

@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.5` (`lakefile.toml`) |
+| **Package version** | `0.36.6` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 423,001 across 343 Lean files |
-| **Test LoC** | 86,115 across 71 Lean test suites |
-| **Proved declarations** | 14,028 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 423,960 across 344 Lean files |
+| **Test LoC** | 86,280 across 71 Lean test suites |
+| **Proved declarations** | 14,056 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1 and 2 (frame capabilities, and the untyped carve that mints them)** at v0.36.4 and v0.36.5 (§8.10.2a); the rest of BP7, and BP8, not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6 (§8.10.2a); the rest of BP7, and BP8, not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -2809,7 +2809,7 @@ abstract Lean kernel model to concrete ARM64 hardware:
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Lean Kernel Model (pure functions, machine-checked)     │
-│  - Transitions: SeLe4n/Kernel/API.lean (37 syscalls)     │
+│  - Transitions: SeLe4n/Kernel/API.lean (38 syscalls)     │
 │  - Invariants: cross-subsystem, IPC, scheduler, etc.     │
 ├──────────────────────────────────────────────────────────┤
 │  FFI Bridge (@[extern] declarations)                     │
@@ -3120,7 +3120,8 @@ instruction is precisely the livelock RR4 exists to remove.
   preserves `ipcInvariantFull`, `objects.invExt` and the low projection, and
   is mirrored in `sele4n-types` / `sele4n-abi` / `sele4n-sys`
   (`tcb_set_fault_handler`; 36 syscalls since WS-RR RR8.16 added
-  `.cspaceRevoke`, and 37 since WS-BP BP7.1 added `.untypedRetype`).
+  `.cspaceRevoke`, 37 since WS-BP BP7.1 added `.untypedRetype`, and 38 since
+  it added `.untypedReset`).
 - A current-EL abort (EC `0x25`/`0x21`) or an EL1-origin frame was delivered
   as the current *user* thread's fault, carrying the kernel's register window
   to a handler whose reply would `eret` into the kernel frame.  The syndromes
@@ -4588,8 +4589,9 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
 - **No other source of memory authority**: an in-place retype refuses a
   memory-backed replacement (`KernelObjectType.memoryBacked`,
   `retypeReplacementAdmissible`), the boot refuses a configured frame
-  (`bootSafeObject`), and the pre-retype cleanup refuses to destroy one
-  (`.revocationRequired`) until frame destroy can unmap it.
+  (`bootSafeObject`), and the pre-retype cleanup refuses to destroy one in
+  place (`.revocationRequired`) — permanently: a frame's memory returns
+  through its untyped (the reset, below), as in seL4.
 - **The untyped carve** (`v0.36.5`, `.untypedRetype`, syscall 36): the one
   source of frames.  `untypedRetypeFrame` carves the next page of an untyped
   the caller holds `.retype` on — `retypeFromUntyped` at
@@ -4604,10 +4606,35 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   `retypeFromUntyped` admits a device untyped for memory-backed kinds only.
   The arm preserves `ipcInvariantFull`
   (`untypedRetypeFrame_preserves_ipcInvariantFull`) and declares a six-member
-  lock footprint (`lockSet_untypedRetype`, page lock included).  Frame
-  destroy with unmapping and untyped reset are slice 3; carving kinds other
-  than frames is slice 4 (both registered in `docs/REGISTERED_DEBT.md`
-  table B).
+  lock footprint (`lockSet_untypedRetype`, page lock included).  Carving
+  kinds other than frames is slice 4 (registered in
+  `docs/REGISTERED_DEBT.md` table B).
+- **The untyped reset** (`v0.36.6`, `.untypedReset`, syscall 37, `.retype`,
+  no message registers): seL4's `resetUntypedCap`.  Refused
+  (`.revocationRequired`) unless every carved child is a frame
+  (`untypedChildrenRetirable`) and no capability anywhere names one
+  (`untypedChildrenUnreferenced` — every CNode slot and every blocked
+  sender's parked message, decided over the whole object store, because the
+  watermark is the untyped *object*'s and a derivation-free sibling copy of
+  its capability would pass seL4's per-slot `ensureNoChildren`).  Then every
+  mapping of a page meeting the region is removed through the `.vspaceUnmap`
+  arm's own transition — TLB flush, shootdown round, initiator drain,
+  instruction-cache broadcast — from a list collected on the pre-state and
+  checked afterwards (`untypedRegionUnmapped`, `.illegalState` otherwise);
+  the carved frames are **erased** with their index and metadata rows
+  (`retireFrame`, the one object-store erase, a no-op at any key that does
+  not hold a frame), so their ids and store capacity return; and the
+  untyped's watermark and child list are cleared.  Nothing is zeroed here:
+  the carve zeroes a RAM page before any capability to it exists.  Payoff:
+  `untypedReset_ok_unmapped`, `untypedReset_ok_unreferenced`,
+  `untypedReset_ok_children_absent`, `untypedReset_ok_untyped`; bundle:
+  `untypedReset_preserves_ipcInvariantFull` (over
+  `ipcReadViewAgreement.of_inertOrAbsentWrites`).  It declares no static
+  lock footprint (the VSpace roots it writes are state-discovered and
+  unbounded, `.cspaceRevoke`'s reason) and writes no scheduler slot.
+  **Divergence, registered**: revoking a frame capability does not unmap
+  it — the mapping persists until the reset — where seL4 unmaps when the
+  capability that made the mapping is deleted (owner: slice 4).
 - `decodeVSpaceMapArgsChecked` is retired with the physical-address operand
   it bounded; the PA-width bound on the frame's `base` is
   `vspaceMapPageCheckedWithFlushFromState`'s.
@@ -5222,7 +5249,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **199** statements in the family (the
+bound on a post-state across all **200** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
@@ -7979,7 +8006,7 @@ a decided equality can never be read as observable equality.
 > the composed `.replyRecv` — each of which wakes a thread on a remote home core.
 > All three now have a write set, a confinement lemma and a non-interference
 > instantiation, taking the cross-core inventory to twenty-one (fourteen live arms) — later rounds
-> have taken it to thirty transitions and twenty-two live arms, per the current
+> have taken it to thirty-one transitions and twenty-three live arms, per the current
 > `crossCoreNiTheorem_count` / `crossCoreTransitionIsLiveArm_count` (§2's
 > machine-checked inventory supersedes narrative figures); the live `.call` arm
 > is bounded in its own right; the accepted-covert-channel classification is tied

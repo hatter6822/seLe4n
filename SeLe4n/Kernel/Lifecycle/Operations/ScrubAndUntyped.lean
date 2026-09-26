@@ -841,7 +841,7 @@ def untypedNextFrame (ut : UntypedObject) : FrameObject :=
 /-- **WS-BP BP7.1: the capability a carve hands back for a frame.**  Read,
 write and grant — the rights a frame capability's holder can exercise (map
 readable, map writable, hand the frame on).  `.retype` is absent because a
-frame is not retyped; its memory returns to its untyped (BP7.1 slice 3). -/
+frame is not retyped; its memory returns to its untyped (`untypedReset`). -/
 def frameCapability (frameId : SeLe4n.ObjId) : Capability :=
   { target := .object frameId
     rights := AccessRightSet.ofList [.read, .write, .grant] }

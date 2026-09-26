@@ -4347,6 +4347,16 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- the CDT / object index through `stateLevelLock`.
   | .untypedRetype =>
       [.tcb, .cnode, .untyped, .page, .objStore]
+  -- **WS-BP BP7.1 (`v0.36.6`)**: the reset reads the caller and its CSpace root,
+  -- writes the untyped, retires frames (their `page` locks), rewrites every VSpace
+  -- root that maps a page of the region, and writes the object index through
+  -- `stateLevelLock`.  It declares **no** static footprint, for `.cspaceRevoke`'s
+  -- reason: the VSpace roots it must write are the ones the state says map the
+  -- region — a set nothing bounds, while a `LockSet` is capped at
+  -- `maxLockSetSize` — so this list says which kinds a future declaration may
+  -- contain.
+  | .untypedReset =>
+      [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore]
   -- Lifecycle.  **Every kind, for the reason `.declassify` admits every kind**
   -- (PR #873 round 7): SM9.D.12 makes the retype the arm that *clears*
   -- provenance at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
@@ -4500,7 +4510,7 @@ than inheriting a default; and it is what `lockSet_consistent_aggregate_covers_e
 is stated over, so the inventory's coverage claim names the set it actually
 covers instead of an off-by-one against `SyscallId.count`. -/
 def declaresStaticLockFootprint : SyscallId → Bool
-  | .cspaceRevoke => false
+  | .cspaceRevoke | .untypedReset => false
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap
@@ -4513,10 +4523,13 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal | .auditRead | .auditDrain => true
 
-/-- **The exemption is exactly one arm**, so a second undeclared syscall is a
-decision somebody has to write down rather than a number that quietly moves. -/
+/-- **The exemption is exactly two arms**, each an unbounded state-discovered
+walk — `.cspaceRevoke`'s derivation tree and `.untypedReset`'s VSpace roots — so
+a third undeclared syscall is a decision somebody has to write down rather than
+a number that quietly moves. -/
 theorem declaresStaticLockFootprint_false_iff (sid : SyscallId) :
-    declaresStaticLockFootprint sid = false ↔ sid = .cspaceRevoke := by
+    declaresStaticLockFootprint sid = false ↔
+      sid = .cspaceRevoke ∨ sid = .untypedReset := by
   cases sid <;> simp [declaresStaticLockFootprint]
 
 /-- WS-SM SM3.B.4 (PR #873 round 6): **the kind inventory admits any target.**

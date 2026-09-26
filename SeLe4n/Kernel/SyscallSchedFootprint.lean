@@ -2171,7 +2171,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
                     (schedLockSet_endpointReplyRecvOnCore epId ops.caller rid prevCaller msg
                       receiver.cspaceRoot slotBase executingCore st)
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
-  | .untypedRetype
+  | .untypedRetype | .untypedReset
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
@@ -2190,16 +2190,20 @@ footprint without listing it here breaks
 still answers `none` is refused by that arm's own `_isSome_iff`, which states
 the exact operands under which it declares.
 
-There are `SyscallId.count = 37` arms; **sixteen** declare and twenty-one
-answer `none`.  *Which* of those twenty-one write a scheduler slot at all is this
+There are `SyscallId.count = 38` arms; **sixteen** declare and twenty-two
+answer `none`.  *Which* of those twenty-two write a scheduler slot at all is this
 enumeration's own open question — the arms above are the ones WS-RR RR8.12's
-sequence identified, and a twenty-second found to write one is a footprint to
+sequence identified, and a twenty-third found to write one is a footprint to
 declare rather than a row to move.  `.cspaceRevoke` (`v0.35.190`) is in the
 `none` group for the same reason its `.cspaceDelete` sibling is: the revocation
 family writes CNodes, the derivation tree and in-flight messages, and no
 run-queue or replenish-queue slot on any core.  `.untypedRetype` (`v0.36.5`) is
 there too: a carve writes an untyped, a fresh frame, one CNode slot, the CDT and
-a page of machine memory — no scheduler field at all. -/
+a page of machine memory — no scheduler field at all.  `.untypedReset` (`v0.36.6`)
+writes VSpace roots, TLB, shootdown and instruction-cache state, erased frames
+and the untyped — the `.vspaceUnmap` arm's writes, per mapping, and no run-queue
+or replenish-queue slot on any core (`untypedReset_ok_frame`: the scheduler is
+unchanged). -/
 def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetAffinity
@@ -2208,7 +2212,7 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .notificationSignal | .notificationWait
   | .send | .receive | .call | .reply | .replyRecv => true
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
-  | .untypedRetype
+  | .untypedRetype | .untypedReset
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery

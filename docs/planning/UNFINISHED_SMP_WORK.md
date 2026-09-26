@@ -1481,7 +1481,7 @@ SM8 covers per-core observable state (SM8.A), per-core and cross-core non-interf
 - The round-35 claim that scripts/per_core_routing_allowlist.json reaches zero is true at HEAD: the file contains exactly `[]`, and scripts/check_live_arm_per_core_routing.py (1286 lines) exists as the Tier-0 gate.
 - SM8.B's registered debt (a) is genuinely closed in production code, not just in prose: LabelingContext.endpointPolicy exists with a no-override default (SeLe4n/Kernel/InformationFlow/Policy.lean (LabelingContext)) and endpointFlowGate has 29 call sites across API.lean, EndpointSend.lean, EndpointCallDispatch.lean and Enforcement/Wrappers.lean, with endpointFlowGate_implies_securityFlowsTo taking no hypothesis.
 - The UncoveredLockDomain registry is durable, owned, and enforced: inductive UncoveredLockDomain (SeLe4n/Kernel/InformationFlow/FineLockFlow.lean (UncoveredLockDomain)) carries schedulerDomain / dynamicPipChain / queueOwnershipProtocol / capTransferReceiverCnode, with UncoveredLockDomain.mem_all, all_nodup and declaredFootprintUncoveredDomains_complete forcing registration -- and docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md is the live cl…
-- The residual live-arm evidence gap is a tracked quantity in Lean, not prose: crossCoreLiveArmDelegationBacked_count = 14 and crossCoreLiveArm_readOffTheArm_count = 8 (SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean (crossCoreLiveArmDelegationBacked_count), (crossCoreLiveArm_readOffTheArm_count)) against crossCoreTransitionIsLiveArm_count = 22 ( (crossCoreTransitionIsLiveArm_count)), so the read-off-the-arm residual cannot silently drift.
+- The residual live-arm evidence gap is a tracked quantity in Lean, not prose: crossCoreLiveArmDelegationBacked_count = 15 and crossCoreLiveArm_readOffTheArm_count = 8 (SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean (crossCoreLiveArmDelegationBacked_count), (crossCoreLiveArm_readOffTheArm_count)) against crossCoreTransitionIsLiveArm_count = 23 ( (crossCoreTransitionIsLiveArm_count)), so the read-off-the-arm residual cannot silently drift.
 
 ### `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`
 
@@ -1658,7 +1658,7 @@ RR3.24/RR3.25 composed them: `dispatchCapabilityOnly_preserves_ipcInvariantFull`
 surface they compose), all under pre-state quiescence packs.  The pending
 register [`ipc_dethreading_pending.txt`](ipc_dethreading_pending.txt) is empty
 and the gate, which checks it in both directions, reports **zero** conjuncts
-bound on a post-state across all **199** statements in the family, with the
+bound on a post-state across all **200** statements in the family, with the
 conjunct set and the bundle family both derived from the sources, and prints its
 end-to-end PASS line.  The family grew from sixty-five with the per-arm and
 checked tiers, and later cuts.  (`syscallDispatch` named

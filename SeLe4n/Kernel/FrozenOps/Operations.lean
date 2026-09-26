@@ -1937,6 +1937,9 @@ def frozenOpCoverage : SyscallId → Bool
   | .untypedRetype => false   -- WS-BP BP7.1 (`v0.36.5`): adds a key (the carved
                              -- frame) and a CDT node, which the frozen phase's
                              -- fixed key set cannot — as for `lifecycleRetype`.
+  | .untypedReset => false    -- WS-BP BP7.1 (`v0.36.6`): *removes* keys (the retired
+                             -- frames), and the frozen object store is a
+                             -- `FrozenMap` with no `erase`.
   | .vspaceMap => true        -- frozenVspaceLookup (read-only in frozen phase)
   | .vspaceUnmap => true      -- frozenVspaceLookup (read-only in frozen phase)
   | .serviceRegister => false -- builder-only (adds service)
@@ -1965,8 +1968,8 @@ def frozenOpCoverage : SyscallId → Bool
   | .auditDrain => false             -- WS-SM SM9.A.13: removes a prefix of the mounted audit trail — a *shrinking* write, and the frozen snapshot is a record rather than a running system, so nothing may remove entries from it
 
 /-- S3-L/Z8-H/D1/D2/D3: Exactly 20 SyscallId arms have frozen operation coverage.
-    The 17 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
-    cspaceRevoke, lifecycleRetype, untypedRetype, serviceRegister, serviceRevoke,
+    The 18 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
+    cspaceRevoke, lifecycleRetype, untypedRetype, untypedReset, serviceRegister, serviceRevoke,
     mintReplyCap) plus the
     runtime-scheduler `tcbSetAffinity` (WS-SM SM5.H.4), the production-only
     notification-binding ops (tcbBind/UnbindNotification, WS-SM SM6.B), the
@@ -1981,7 +1984,7 @@ theorem frozenOpCoverage_count :
     (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
        .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
-       .cspaceRevoke, .untypedRetype,
+       .cspaceRevoke, .untypedRetype, .untypedReset,
        .notificationSignal, .notificationWait, .replyRecv,
        .schedContextConfigure, .schedContextBind, .schedContextUnbind,
        .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
@@ -1992,7 +1995,7 @@ theorem frozenOpCoverage_count :
          frozenOpCoverage).length = 20) := by
   decide
 
-/-- S3-L/D1/D2/D3: All 37 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L/D1/D2/D3: All 38 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

@@ -1566,8 +1566,11 @@ ACCESSOR_BODIES = {
 }
 
 #: The declarations that write an object table RAW by design (`v0.35.76`) —
-#: the five store primitives every other executable write goes through, and
-#: one planted witness.  Reconciled in both directions, exactly as
+#: the store primitives every other executable write goes through, and one
+#: planted witness.  WS-BP BP7.1 (`v0.36.6`) added the only primitive that
+#: *removes* a key, `retireFrame`: an erase is not a store, and it is a no-op
+#: at any key that does not hold a frame, so no other kind can be erased
+#: through it.  Reconciled in both directions, exactly as
 #: `ACCESSOR_BODIES` is: an entry that no longer writes raw is a stale
 #: exemption, and a raw write anywhere else is a `STORE_WRITE_CODE` violation.
 #:
@@ -1589,6 +1592,8 @@ WRITE_PRIMITIVE_BODIES = {
         "lock-domain read-modify-write; kind-agnostic, so not a rewrite",
     ("SeLe4n/Kernel/FrozenOps/Core.lean", "frozenWithObjectStored"):
         "the frozen surface's one store, over `FrozenMap.set`",
+    ("SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean", "retireFrame"):
+        "the one object-store erase: a frame, with its index and metadata rows",
     ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "censusWitnessRawTableWrite"):
         "the reply-stack write census's planted raw-table witness",
 }
