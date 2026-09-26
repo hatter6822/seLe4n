@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.8.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.9.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7150,7 +7150,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -8186,6 +8186,23 @@ frame's page mapped anywhere, whatever depth it was carved at), beside
 spelled in the suite and computed beside the live reset on the state it would
 have refused forever.  **Page-table objects are slice 4b**, the base BP7.2
 installs; `carveRequestOf?` still refuses them.
+
+**A VSpace root is memory, and is never created in place** (`v0.36.9`,
+found while scoping slice 4b and reported before the fix).  The in-place retype
+built a root at ASID `0` — the boot VSpace root's — and nothing checked the ASID
+was free, so `storeObject` moved the ASID table's entry to the caller's root
+while the owner's was still stored: `vspaceAsidRootsUnique` and
+`asidTableConsistent` false on a reachable state, and every root so made sharing
+one TLB tag.  Three things new code must respect.  (1) **`memoryBacked` holds of
+`.vspaceRoot`**, so `retypeReplacementAdmissible` refuses it, as seL4 creates a
+VSpace only from an untyped.  (2) **Which kinds a device untyped backs is
+`deviceBackable`** (untypeds and frames), a separate question from
+`memoryBacked`, because a table must be RAM — a table walk reading a device
+reads a register.  (3) **No runtime path creates an address space** until slice
+4b carves a root from a RAM untyped with a physical table base and an ASID the
+kernel checks is free; the cost is registered.  The witness is
+`tests/VSpaceCapabilityBindingSuite.lean` §5h, with the retired guard computed
+beside the live one.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

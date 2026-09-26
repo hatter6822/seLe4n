@@ -2839,8 +2839,46 @@ both kinds by this predicate.
 
 Enumerated constructor by constructor, with no wildcard: a kind added to
 `KernelObjectType` fails to elaborate here until it is classified, where a
-wildcard would classify it as not memory-backed — the fail-open direction. -/
+wildcard would classify it as not memory-backed — the fail-open direction.
+
+**A VSpace root is memory-backed** (`v0.36.9`).  A translation table is a page
+of memory the kernel owns and a PE walks, and seL4 creates one only from an
+untyped (`seL4_ARM_VSpaceObject`).  Until this version the in-place retype
+could create one, and it did so at ASID `0` — the ASID the boot VSpace root
+holds — with nothing checking the ASID was free, so `storeObject` moved the ASID
+table's entry from the kernel's own root to the caller's and two live roots
+shared one TLB tag (`tests/VSpaceCapabilityBindingSuite.lean` §5h is the
+witness).  Classifying the kind here is what makes the retype refuse it; a
+root's carve from an untyped, with a fresh ASID and a physical table base, is
+the next slice of BP7.1. -/
 def memoryBacked : KernelObjectType → Bool
+  | .tcb => false
+  | .endpoint => false
+  | .notification => false
+  | .cnode => false
+  | .vspaceRoot => true
+  | .untyped => true
+  | .schedContext => false
+  | .reply => false
+  | .frame => true
+
+/-- **WS-BP BP7.1: the kinds a DEVICE untyped may back.**
+
+A device untyped names MMIO, and a store to it is a command to a device, not a
+write to memory.  So it backs exactly what hands that MMIO on — a child untyped,
+and a frame, which is how a driver is given its registers — and nothing the
+kernel itself reads or writes as data.  That is seL4's rule (`Untyped_Retype`
+on a device untyped yields frames and untypeds only).
+
+It is **not** `memoryBacked`, and the difference is a VSpace root: a translation
+table is memory the kernel owns and walks, so it may come only from an untyped
+(`memoryBacked`), and it must be RAM, since a table walk reading a device would
+read a register.  Keeping the two questions apart is what lets the first grow a
+kind without widening the second.
+
+Enumerated constructor by constructor, with no wildcard, for `memoryBacked`'s
+reason: a kind a wildcard answered would be admitted to MMIO by default. -/
+def deviceBackable : KernelObjectType → Bool
   | .tcb => false
   | .endpoint => false
   | .notification => false

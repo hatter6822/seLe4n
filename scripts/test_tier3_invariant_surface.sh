@@ -4000,7 +4000,16 @@ run_check "INVARIANT" rg -n -U '    \.error \.revocationRequired\n  \| \.untyped
 run_negative_check "INVARIANT" rg -n '\buntypedRetypeFrame\b|\bretireFrames?\b|\bframeRetireWrite\b|\buntypedChildrenUnreferenced\b|\bcapNamesCarvedChild\b|\buntypedChildrenRetirable\b|\buntypedReset_ok_children_absent\b' SeLe4n tests
 run_check "INVARIANT" rg -n -U 'def untypedNextFrame \(ut : UntypedObject\) : FrameObject :=\n  \{ base := SeLe4n\.PAddr\.ofNat \(ut\.regionBase\.toNat \+ ut\.watermark\)\n    isDevice := ut\.isDevice \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def carveZeroFrame[^\n]*(\n([ \t][^\n]*)?)*  if frame\.isDevice then st\n  else \{ st with machine := SeLe4n\.zeroMemoryRange st\.machine frame\.base SeLe4n\.pageBytes \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^        else if ut\.isDevice && !newObj\.objectType\.memoryBacked then$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^        else if ut\.isDevice && !newObj\.objectType\.deviceBackable then$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# v0.36.9: a VSpace root is memory-backed (the in-place retype refuses to create
+# one, which is what closed the ASID-0 collision), and a device untyped still
+# backs only untypeds and frames — a table must be RAM.
+run_check "INVARIANT" rg -n -U 'def memoryBacked : KernelObjectType → Bool[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot => true' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n -U 'def deviceBackable : KernelObjectType → Bool[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot => false(\n([ \t][^\n]*)?)*  \| \.untyped => true(\n([ \t][^\n]*)?)*  \| \.frame => true' SeLe4n/Model/Object/Structures.lean
+run_negative_check "INVARIANT" rg -n 'ut\.isDevice && !newObj\.objectType\.memoryBacked' SeLe4n
+run_check "INVARIANT" rg -n 'the live .\.lifecycleRetype. into a VSpace root is refused \(illegalState\)' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n '^  runInPlaceVSpaceRootChecks$' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n '^theorem retypeReplacementAdmissible_refuses_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_negative_check "INVARIANT" rg -n 'ut\.isDevice && newObj\.objectType != \.untyped' SeLe4n
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedNextFrame_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean

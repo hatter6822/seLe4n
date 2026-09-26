@@ -219,12 +219,14 @@ def retypeFromUntyped
         else if ut.children.any (fun c => c.objId == childId) then
           .error .childIdCollision
         -- Device untypeds cannot back typed kernel objects (except other untypeds)
-        -- WS-BP BP7.1 (`v0.36.5`): a device untyped backs exactly the
-        -- memory-backed kinds — a child untyped, and a **frame**, which is how
-        -- a driver is handed MMIO — and nothing the kernel itself reads.  This
-        -- is seL4's rule (`Untyped_Retype` on a device untyped yields frames
-        -- and untypeds only); it read `!= .untyped` while no frame existed.
-        else if ut.isDevice && !newObj.objectType.memoryBacked then
+        -- WS-BP BP7.1 (`v0.36.5`): a device untyped backs exactly a child
+        -- untyped and a **frame**, which is how a driver is handed MMIO — and
+        -- nothing the kernel itself reads.  This is seL4's rule
+        -- (`Untyped_Retype` on a device untyped yields frames and untypeds
+        -- only); it read `!= .untyped` while no frame existed, and
+        -- `!memoryBacked` until `v0.36.9` made a VSpace root memory-backed — a
+        -- table is memory, and must be RAM (`deviceBackable`).
+        else if ut.isDevice && !newObj.objectType.deviceBackable then
           .error .untypedDeviceRestriction
         -- Allocation size must be at least the minimum for the target object type
         else if allocSize < objectTypeAllocSize newObj.objectType then
@@ -354,7 +356,7 @@ theorem retypeFromUntyped_ok_decompose
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     ∃ ut ut' cap stLookup stUt offset,
       st.objects[untypedId]? = some (.untyped ut) ∧
-      (ut.isDevice = false ∨ newObj.objectType.memoryBacked = true) ∧
+      (ut.isDevice = false ∨ newObj.objectType.deviceBackable = true) ∧
       ¬(allocSize < objectTypeAllocSize newObj.objectType) ∧
       cspaceLookupSlot authority st = .ok (cap, stLookup) ∧
       lifecycleRetypeAuthority cap untypedId = true ∧
@@ -430,9 +432,9 @@ theorem retypeFromUntyped_ok_decompose
                                 simp [hStoreUt] at hStep
                                 exact ⟨ut, ut', cap, stLookup, stUt, offset, rfl, Or.inl hDevBool, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
                     · simp [hAuth] at hStep
-          · -- ut.isDevice = true: the target must be memory-backed
-            -- (WS-BP BP7.1: an untyped or a frame).
-            by_cases hObjType : newObj.objectType.memoryBacked = true
+          · -- ut.isDevice = true: the target must be device-backable
+            -- (WS-BP BP7.1: an untyped or a frame; `deviceBackable`).
+            by_cases hObjType : newObj.objectType.deviceBackable = true
             · simp only [hObjType, Bool.not_true, Bool.and_false, Bool.false_eq_true,
                 ↓reduceIte] at hStep
               by_cases hAllocSz : allocSize < objectTypeAllocSize newObj.objectType
@@ -532,7 +534,7 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
     (hNeSelf : childId ≠ untypedId)
     (hNoCollision : st.objects[childId]?.isSome = false)
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
-    (hNotDev : ut.isDevice = false ∨ newObj.objectType.memoryBacked = true)
+    (hNotDev : ut.isDevice = false ∨ newObj.objectType.deviceBackable = true)
     (hSmall : allocSize < objectTypeAllocSize newObj.objectType) :
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedAllocSizeTooSmall := by
@@ -557,7 +559,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (hNeSelf : childId ≠ untypedId)
     (hNoCollision : st.objects[childId]?.isSome = false)
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
-    (hNotDev : ut.isDevice = false ∨ newObj.objectType.memoryBacked = true)
+    (hNotDev : ut.isDevice = false ∨ newObj.objectType.deviceBackable = true)
     (hAllocSzOk : ¬(allocSize < objectTypeAllocSize newObj.objectType))
     (hAlignOk : (requiresPageAlignment newObj.objectType && !allocationBasePageAligned ut) = false)
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))

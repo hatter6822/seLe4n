@@ -88,6 +88,13 @@ because the defect lived in dispatch and only dispatch can witness it.
   the child and the frame together and unmaps the page, where the retired
   frames-only reset (computed beside it) would refuse that state forever.
   Every size the decode refuses is exercised.
+* §5h — **`v0.36.9`: a VSpace root is never created in place.**  The in-place
+  retype built a root at ASID `0` — the boot VSpace root's — and nothing checked
+  the ASID was free, so the ASID table's entry moved to the caller's root while
+  the owner's was still stored.  The retired guard is computed beside the live
+  one on a state holding an ASID-`0` root; the live `.lifecycleRetype` refuses
+  the kind (`KernelObjectType.memoryBacked`), and the same retype into an
+  endpoint is the control.
 * §6 — the authorized positive paths still work (the gate is not a blanket
   denial).
 -/
@@ -999,6 +1006,77 @@ private def recordAt (st : SystemState) (slot : Nat) : Option FrameMapping :=
   (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot }).bind
     (·.mapping)
 
+-- ============================================================================
+-- §5h  `v0.36.9` — a VSpace root is never created in place
+-- ============================================================================
+
+/-- A root at ASID `0`, the ASID the boot VSpace root holds, stored at `950`. -/
+private def asidZeroRootId : SeLe4n.ObjId := ⟨950⟩
+
+/-- §5g's scenario with an ASID-`0` root registered in the ASID table, as the
+boot's own root is, and the lifecycle metadata the retype's first check reads
+recorded for the target root (the builder records none), so a refusal below is
+the kind's and not a metadata mismatch. -/
+private def asidZeroScenario : SystemState :=
+  let base := { carveScenario with
+    lifecycle := { carveScenario.lifecycle with
+      objectTypes := carveScenario.lifecycle.objectTypes.insert carveVsp .vspaceRoot } }
+  match storeObject asidZeroRootId
+      (.vspaceRoot { asid := SeLe4n.ASID.ofNat 0, mappings := {} }) base with
+  | .ok ((), st) => st
+  | .error _ => base
+
+/-- `.lifecycleRetype` of `target` into the kind at `tag`, invoked on the
+capability at `capSlot`. -/
+private def decodeInPlaceRetypeTo (capSlot target tag : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat capSlot
+  , msgInfo   := { length := 3, extraCaps := 0, label := 0 }
+  , syscallId := .lifecycleRetype
+  , msgRegs   := #[SeLe4n.RegValue.ofNat target, SeLe4n.RegValue.ofNat tag,
+                   SeLe4n.RegValue.ofNat 64] }
+
+/-- The RETIRED admissibility guard (`v0.36.4`–`v0.36.8`): well-formed, the
+slot's identity, and not an untyped or a frame — a VSpace root passed it.
+Spelled here and nowhere else, so the witness can show what it admitted. -/
+private def retiredAdmissible (newObj : KernelObject) (target : SeLe4n.ObjId)
+    (st : SystemState) : Bool :=
+  decide (newObj.wellFormed st.objects) && newObj.embeddedIdentityMatches target &&
+    !(newObj.objectType == .untyped || newObj.objectType == .frame)
+
+private def runInPlaceVSpaceRootChecks : IO Unit := do
+  IO.println "-- §5h a VSpace root is never created in place (v0.36.9)"
+  let st := asidZeroScenario
+  let zero := SeLe4n.ASID.ofNat 0
+  assertBool "setup: ASID 0 is registered to the ASID-0 root"
+    (st.asidTable[zero]? == some asidZeroRootId)
+  let replacement := objectOfKernelType .vspaceRoot 64
+  assertBool "the replacement a retype to a VSpace root builds carries ASID 0"
+    (match replacement with | .vspaceRoot r => r.asid == zero | _ => false)
+  -- The retired guard admitted it, and the store it guarded took ASID 0.
+  assertBool "RETIRED: the pre-v0.36.9 guard admits the replacement"
+    (retiredAdmissible replacement carveVsp st)
+  match storeObject carveVsp replacement st with
+  | .error _ => assertBool "RETIRED: the store succeeds" false
+  | .ok ((), stBad) =>
+    assertBool "RETIRED: ASID 0 now resolves to the caller's root, and the ASID-0 root is still stored"
+      (stBad.asidTable[zero]? == some carveVsp &&
+        (stBad.getVSpaceRoot? asidZeroRootId).isSome)
+  -- The live arm refuses it, and changes nothing.
+  assertBool "the live guard refuses a VSpace-root replacement"
+    (!decide (retypeReplacementAdmissible replacement carveVsp st.objects))
+  match dispatchSyscall (decodeInPlaceRetypeTo slotVspRetype carveVsp.toNat 4) carveOwner st with
+  | .ok _ => assertBool "the live `.lifecycleRetype` into a VSpace root is refused" false
+  | .error e =>
+    assertBool "the live `.lifecycleRetype` into a VSpace root is refused (illegalState)"
+      (e == .illegalState)
+  -- CONTROL: the same capability, the same target, another kind succeeds, so the
+  -- refusal is about the kind and not the authority.
+  match dispatchSyscall (decodeInPlaceRetypeTo slotVspRetype carveVsp.toNat 1) carveOwner st with
+  | .error e => assertBool s!"CONTROL: the same retype into an endpoint succeeds (got {repr e})" false
+  | .ok ((), stOk) =>
+    assertBool "CONTROL: the same retype into an endpoint succeeds, and ASID 0 stays the ASID-0 root's"
+      ((stOk.getEndpoint? carveVsp).isSome && stOk.asidTable[zero]? == some asidZeroRootId)
+
 private def runFrameFinaliseChecks : IO Unit := do
   IO.println "-- §5f a frame capability owns the mapping it made (WS-BP BP7.1)"
   let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
@@ -1150,6 +1228,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runCarveChecks
   runResetChecks
   runChildUntypedChecks
+  runInPlaceVSpaceRootChecks
   runFrameFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="

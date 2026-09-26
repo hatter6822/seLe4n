@@ -115,6 +115,18 @@ theorem retypeReplacementAdmissible.notMemoryBacked {newObj : KernelObject}
     (h : retypeReplacementAdmissible newObj target objects) :
     newObj.objectType.memoryBacked = false := h.2.2
 
+/-- **`v0.36.9`: an in-place retype never creates a VSpace root.**  A root is a
+translation table, which is memory (`KernelObjectType.memoryBacked`), and the
+retype's own builder made one at ASID `0` — the boot VSpace root's — with no
+check that the ASID was free, so `storeObject` took the ASID table's entry for
+the caller's root.  Whatever its ASID, no VSpace-root replacement is admissible. -/
+theorem retypeReplacementAdmissible_refuses_vspaceRoot (root : VSpaceRoot)
+    (target : SeLe4n.ObjId)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    ¬ retypeReplacementAdmissible (.vspaceRoot root) target objects := fun h => by
+  have := h.notMemoryBacked
+  simp [KernelObject.objectType, KernelObjectType.memoryBacked] at this
+
 /-- WS-H2/S6-C: Safe lifecycle retype with reference cleanup and memory scrubbing.
     Composes three phases:
     1. `lifecyclePreRetypeCleanup` — TCB scheduler dequeue + CNode CDT detach
@@ -256,6 +268,10 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
       depth := 0, guardWidth := 0, guardValue := 0,
       radixWidth := 0, slots := SeLe4n.UniqueSlotMap.empty
     })
+  -- `v0.36.9`: a VSpace root built here carries ASID 0, the boot VSpace root's
+  -- ASID, and the retype's admissibility guard refuses it
+  -- (`KernelObjectType.memoryBacked`): a translation table is memory, carved
+  -- from an untyped, never minted in place at an ASID nobody checked was free.
   | 4 => .ok (.vspaceRoot {
       asid := SeLe4n.ASID.ofNat 0, mappings := {}
     })

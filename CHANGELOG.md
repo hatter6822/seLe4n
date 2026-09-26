@@ -1,3 +1,49 @@
+## v0.36.9 — A VSpace root is never created in place (the ASID-0 collision, closed)
+
+Scoping BP7.1 slice 4b (VSpace roots and page tables carved from untypeds)
+found a vulnerability, reported before this fix.  The in-place retype — the
+live `.lifecycleRetype` arm — could create a VSpace root, and its builder
+(`objectOfKernelType .vspaceRoot`) sets `asid := 0`, the ASID the boot VSpace
+root holds.  `retypeReplacementAdmissible` asked nothing about the ASID, and
+`storeObject` inserts a new root's ASID into the ASID table unconditionally.  So
+a holder of any `.retype` capability moved ASID 0's entry from the kernel's boot
+root to its own while the boot root was still stored.  `vspaceAsidRootsUnique`
+and `asidTableConsistent` were false on a reachable state, `resolveAsidRoot 0`
+named the caller's root, and every root created this way shared one TLB tag with
+every other.  Severity: High in the model; latent on hardware, because nothing
+installs a root on the MMU until BP7.2.
+
+**The fix is seL4's rule: a translation table is memory.**
+`KernelObjectType.memoryBacked` now holds of `.vspaceRoot`, so the retype's
+admissibility guard refuses a VSpace-root replacement at any ASID (`.illegalState`),
+as seL4 creates a VSpace only from an untyped.
+`retypeReplacementAdmissible_refuses_vspaceRoot` states it.  Which kinds a
+**device** untyped may back becomes its own question,
+`KernelObjectType.deviceBackable` (untypeds and frames), used by
+`retypeFromUntyped`'s device rule: a table must be RAM, so making a root
+memory-backed must not let MMIO back one.
+
+**The cost is registered.**  No runtime path creates an address space until
+slice 4b carves a root from a RAM untyped: one zeroed page as its physical table
+base, and an ASID the kernel checks is free.  Only the boot creates roots until
+then.
+
+**Witness.**  `tests/VSpaceCapabilityBindingSuite.lean` §5h puts an ASID-0 root
+in the ASID table and computes the retired guard beside the live one.  The
+retired guard admits the replacement, and its store moves ASID 0 to the caller's
+root while the owner's is still stored; the live `.lifecycleRetype` is refused.
+The control is the same capability retyping the same target into an endpoint,
+which succeeds and leaves ASID 0 where it was.  Reverting the classification
+fails the witness (checked by mutation).  The scenario records lifecycle metadata
+for the target, so the refusal is the kind's rather than a metadata mismatch.
+The first draft's control failed on exactly that, which is why it is there.
+
+**Gates.**  Tier 3 anchors pin the classification in both predicates, the device
+rule reading `deviceBackable`, the witness and the theorem; a negative refuses
+the device rule reading `memoryBacked` again.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP7.1)
+
 ## v0.36.8 — WS-BP BP7.1 slice 4a: an untyped carves child untypeds, and a reset returns the whole subtree
 
 Slices 2 and 3 gave the untyped life cycle for frames: a carve mints one page
