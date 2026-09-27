@@ -3253,6 +3253,10 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- **WS-BP BP7.1 (`v0.36.11`)**: setting a thread's roots is configuring the
   -- thread — the write right on its TCB, like every thread-configuration arm.
   | .tcbSetSpace           => .write
+  -- **WS-BP BP7.1 (`v0.36.12`)**: installing or removing a page table changes
+  -- the table object — the write right on the table capability.
+  | .pageTableMap          => .write
+  | .pageTableUnmap        => .write
   | .tcbBindNotification   => .write
   | .tcbUnbindNotification => .write
   -- PR #822 Phase H: deriving a reply cap from the object cap to a Reply requires
@@ -3318,6 +3322,8 @@ def syscallChecksTargetFirst : SyscallId → Bool
   | .tcbSetAffinity        => false
   | .tcbSetFaultHandler    => false
   | .tcbSetSpace           => false
+  | .pageTableMap          => false
+  | .pageTableUnmap        => false
   | .tcbBindNotification   => false
   | .tcbUnbindNotification => false
   | .mintReplyCap          => false
@@ -4134,6 +4140,8 @@ def carveRequestOf? (st : SystemState) (newType : KernelObjectType) (sizeBits : 
     Except KernelError CarveRequest :=
   match newType with
   | .frame => if sizeBits = 0 then .ok .frame else .error .invalidArgument
+  -- WS-BP BP7.1 (`v0.36.12`): a page table is one page, like a frame.
+  | .pageTable => if sizeBits = 0 then .ok .pageTable else .error .invalidArgument
   | .untyped =>
       if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
         .ok (.untyped sizeBits)
@@ -4147,15 +4155,17 @@ def carveRequestOf? (st : SystemState) (newType : KernelObjectType) (sizeBits : 
   | _ => .error .invalidArgument
 
 /-- **WS-BP BP7.1**: a request the decode accepts is a frame or an untyped whose
-size lies in the carve's bounds, or (slice 4b) a VSpace root under an ASID
-`freshAsid?` answered — the only requests the arm ever hands the carve. -/
+size lies in the carve's bounds, (slice 4b) a VSpace root under an ASID
+`freshAsid?` answered, or (`v0.36.12`) a page table — the only requests the arm
+ever hands the carve. -/
 theorem carveRequestOf?_ok (st : SystemState) (newType : KernelObjectType) (sizeBits : Nat)
     (req : CarveRequest) (h : carveRequestOf? st newType sizeBits = .ok req) :
     (newType = .frame ∧ sizeBits = 0 ∧ req = .frame) ∨
     (newType = .untyped ∧ minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits ∧
       req = .untyped sizeBits) ∨
     (newType = .vspaceRoot ∧ sizeBits = 0 ∧
-      ∃ asid, freshAsid? st = some asid ∧ req = .vspaceRoot asid) := by
+      ∃ asid, freshAsid? st = some asid ∧ req = .vspaceRoot asid) ∨
+    (newType = .pageTable ∧ sizeBits = 0 ∧ req = .pageTable) := by
   cases newType <;> simp only [carveRequestOf?] at h <;> try cases h
   · by_cases hB : sizeBits = 0
     · simp only [hB, ↓reduceIte] at h
@@ -4163,13 +4173,16 @@ theorem carveRequestOf?_ok (st : SystemState) (newType : KernelObjectType) (size
       | none => rw [hF] at h; cases h
       | some asid =>
         rw [hF] at h; cases h
-        exact Or.inr (Or.inr ⟨rfl, hB, asid, rfl, rfl⟩)
+        exact Or.inr (Or.inr (Or.inl ⟨rfl, hB, asid, rfl, rfl⟩))
     · simp [hB] at h
   · split at h
     · rename_i hB; cases h; exact Or.inr (Or.inl ⟨rfl, hB.1, hB.2, rfl⟩)
     · cases h
   · split at h
     · cases h; exact Or.inl ⟨rfl, by assumption, rfl⟩
+    · cases h
+  · split at h
+    · cases h; exact Or.inr (Or.inr (Or.inr ⟨rfl, by assumption, rfl⟩))
     · cases h
 
 /-- **WS-BP BP7.1 (`v0.36.5`, child untypeds at slice 4, `v0.36.8`): the live
@@ -4376,6 +4389,11 @@ def vspaceMapFromFrameCap (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs) : Kerne
         -- which carries no record.  A record gone stale (its address space
         -- unmapped the address, or was destroyed) is simply overwritten.
         if capabilityMappingLive st frameCap then .error .invalidCapability
+        -- WS-BP BP7.1 (`v0.36.12`): a carved address space maps a frame only
+        -- where every level of its walk is present — seL4's
+        -- `seL4_FailedLookup` from `seL4_ARM_Page_Map` when a table is missing.
+        else if !Architecture.asidTranslationReady st args.asid args.vaddr then
+          .error .translationFault
         else
         -- AH1-D (M-01 fix): Validate permissions against memory kind before mapping.
         -- Device regions must not receive execute permission (undefined on ARM64).
@@ -4415,6 +4433,7 @@ theorem vspaceMapFromFrameCap_ok (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
       resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame) ∧
       frameMappingAdmissible frameCap frame args.perms = .ok () ∧
       capabilityMappingLive st frameCap = false ∧
+      Architecture.asidTranslationReady st args.asid args.vaddr = true ∧
       validateVSpaceMapPermsForMemoryKind frame.base args.perms st.machine.memoryMap
         = .ok args.perms ∧
       Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
@@ -4438,6 +4457,10 @@ theorem vspaceMapFromFrameCap_ok (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
       cases hLive : capabilityMappingLive st frameCap
       · rw [hLive] at h
         simp only [Bool.false_eq_true, ↓reduceIte] at h
+        cases hReady : Architecture.asidTranslationReady st args.asid args.vaddr
+        · rw [hReady] at h; simp at h
+        rw [hReady] at h
+        simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
         cases hV : validateVSpaceMapPermsForMemoryKind frame.base args.perms
             st.machine.memoryMap with
         | error e => rw [hV] at h; cases h
@@ -4453,7 +4476,7 @@ theorem vspaceMapFromFrameCap_ok (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
             obtain ⟨u, st1⟩ := pr; cases u
             rw [hM] at h
             exact ⟨frameSlot, frameCap, frame, st1, by first | exact hR | rfl,
-              by first | exact hA | rfl, hLive, hV, by first | exact hM | rfl, h⟩
+              by first | exact hA | rfl, hLive, rfl, hV, by first | exact hM | rfl, h⟩
       · rw [hLive] at h; simp at h
 
 /-- **WS-BP BP7.1 (`v0.36.7`): a successful mapping records itself on the
@@ -4466,7 +4489,7 @@ theorem vspaceMapFromFrameCap_ok_records (tid : SeLe4n.ThreadId) (args : VSpaceM
       SystemState.lookupSlotCap st frameSlot = some frameCap ∧
       SystemState.lookupSlotCap st' frameSlot =
         some { frameCap with mapping := some { asid := args.asid, vaddr := args.vaddr } } := by
-  obtain ⟨frameSlot, frameCap, frame, st1, hR, -, -, -, hMap, hRec⟩ :=
+  obtain ⟨frameSlot, frameCap, frame, st1, hR, -, -, -, -, hMap, hRec⟩ :=
     vspaceMapFromFrameCap_ok tid args st st' h
   obtain ⟨_, _, _, _, _, _, _, _, _, -, hSlotCap⟩ :=
     resolveVSpaceMapFrame_ok_authorised tid args st frameSlot frameCap frame hR
@@ -5050,6 +5073,25 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
     | _ => fun _ => .error .invalidCapability
+  -- **WS-BP BP7.1 (`v0.36.12`)**: `seL4_ARM_PageTable_Map` — the table from the
+  -- invoked capability (with the write right), the address space from MR0
+  -- resolved through the *caller's* CSpace with `.write`, the address from MR1.
+  | .pageTableMap =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match Architecture.SyscallArgDecode.decodePageTableMapArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          match resolveCallerCapObject tid args.vspaceRoot .write st with
+          | .error e => .error e
+          | .ok (_, rootId) => Architecture.pageTableMap objId rootId args.vaddr st
+    | _ => fun _ => .error .invalidCapability
+  -- **WS-BP BP7.1 (`v0.36.12`)**: `seL4_ARM_PageTable_Unmap` — the table from the
+  -- invoked capability; the address space is the one its own record names.
+  | .pageTableUnmap =>
+    some <| match cap.target with
+    | .object objId => fun st => Architecture.pageTableUnmap objId st
+    | _ => fun _ => .error .invalidCapability
   | _ => none
 
 /-- WS-RR RR3.23: the pre-state quiescence facts `dispatchCapabilityOnly`'s
@@ -5185,7 +5227,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          · obtain ⟨_, _, _, st1, _, _, _, _, hMap, hRec⟩ :=
+          · obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, hRec⟩ :=
               vspaceMapFromFrameCap_ok tid args st st' hStep
             exact (cspaceRecordFrameMapping_preserves_ipcInvariantFull _ _ st1 st'
               (vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1
@@ -5537,6 +5579,27 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       cases hStep
                       exact setThreadSpace_preserves_ipcInvariantFull st st' vtid cn vr
                         hObjInv hInv hSet
+    all_goals try cases hStep
+  case pageTableMap =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : Architecture.SyscallArgDecode.decodePageTableMapArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hR : resolveCallerCapObject tid args.vspaceRoot .write st with
+          | error e => simp only [hR] at hStep; cases hStep
+          | ok p =>
+              obtain ⟨_, rootId⟩ := p
+              simp only [hR] at hStep
+              exact pageTableMap_preserves_ipcInvariantFull objId rootId args.vaddr st st'
+                hObjInv hInv hStep
+    all_goals try cases hStep
+  case pageTableUnmap =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      exact pageTableUnmap_preserves_ipcInvariantFull objId st st' hObjInv hInv hStep
     all_goals try cases hStep
 
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
@@ -7106,7 +7169,8 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
-            .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace] : List SyscallId) := by
+            .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
+            .pageTableMap, .pageTableUnmap] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -7128,7 +7192,8 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
-            .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace] : List SyscallId) := by
+            .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
+            .pageTableMap, .pageTableUnmap] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -7656,7 +7721,7 @@ theorem dispatchWithCap_vspaceMap_maps_frame_base
         = .ok ((), st') := by
   rw [dispatchWithCap_vspaceMap_delegates decoded tid gate cap objId args st
     hSyscall hTarget hDecode hAuth] at hOk
-  obtain ⟨frameSlot, frameCap, frame, st1, hR, _, _, _, hMap, hRec⟩ :=
+  obtain ⟨frameSlot, frameCap, frame, st1, hR, _, _, _, _, hMap, hRec⟩ :=
     vspaceMapFromFrameCap_ok tid args st st' hOk
   exact ⟨frameSlot, frameCap, frame, st1, hR, hMap, hRec⟩
 

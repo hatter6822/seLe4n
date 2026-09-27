@@ -291,7 +291,9 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
   -- retype's admissibility guard refuses (`KernelObjectType.memoryBacked`), since
   -- a frame is carved from an untyped and never minted in place.
   | 8 => .ok (.frame { base := SeLe4n.PAddr.ofNat 0 })
-  | _ + 9 => .error .invalidTypeTag
+  -- WS-BP BP7.1 (`v0.36.12`): tag 9 is a page table, refused in place the same way.
+  | 9 => .ok (.pageTable { base := SeLe4n.PAddr.ofNat 0 })
+  | _ + 10 => .error .invalidTypeTag
 
 /-- R7-E/L-10: Typed version of `objectOfTypeTag` that takes `KernelObjectType` directly.
     Eliminates the invalid-tag error path since the type is already validated.
@@ -332,6 +334,8 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
   -- WS-BP BP7.1: see `objectOfTypeTag`'s tag 8 — refused by the admissibility
   -- guard, which is what keeps this placeholder address from ever being stored.
   | .frame => .frame { base := SeLe4n.PAddr.ofNat 0 }
+  -- WS-BP BP7.1 (`v0.36.12`): the same, for a page table.
+  | .pageTable => .pageTable { base := SeLe4n.PAddr.ofNat 0 }
 
 -- ============================================================================
 -- WS-K-D: lifecycleRetypeDirect — pre-resolved authority variant
@@ -1564,7 +1568,7 @@ private theorem resolveAsidRoot_facts_local
         subst hId; subst hRoot
         exact ⟨rfl, hO, hEq⟩
       | tcb _ | endpoint _ | notification _ | cnode _ | untyped _
-      | schedContext _ | reply _ | frame _ => simp [hO] at h
+      | schedContext _ | reply _ | frame _ | pageTable _ => simp [hO] at h
 
 /-- WS-SM SM7.F.4(b)(iii): for a `.vspaceRoot` target the pre-retype cleanup
 pipeline is the identity — every `lifecyclePreRetypeCleanup` arm keys off a
@@ -1682,7 +1686,7 @@ private theorem retypeStoreObject_tlbEntryConsistent_frame
         rw [hMid, hScrAsid, herase]
         exact hTbl
     | tcb _ | endpoint _ | notification _ | cnode _ | untyped _
-    | schedContext _ | reply _ | frame _ =>
+    | schedContext _ | reply _ | frame _ | pageTable _ =>
         have hAt := storeObject_asidTable_non_vspaceRoot stScr stB target _
           (by intro nr h; cases h) hStore
         simp only [hObjTargetScr] at hAt

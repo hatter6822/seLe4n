@@ -165,7 +165,7 @@ theorem dualQueueEndpointWellFormed_of_getElem_eq {s1 s2 : SystemState}
     | endpoint ep =>
       exact fun h => ⟨intrusiveQueueWellFormed_of_getElem_eq hEq h.1,
                       intrusiveQueueWellFormed_of_getElem_eq hEq h.2⟩
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ =>
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       exact fun _ => trivial
 
 /-- WS-SM SM6.A.1: the dual-queue system invariant is preserved by any state
@@ -773,7 +773,7 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
   | some obj =>
     cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-    | reply _ | frame _ => simp
+    | reply _ | frame _ | pageTable _ => simp
     | endpoint ep =>
       simp only []
       cases hL : lookupTcb s1 tid with
@@ -1041,6 +1041,7 @@ def ipcReadInert : Option KernelObject → Prop
   | some (.vspaceRoot _) => True
   | some (.untyped _) => True
   | some (.frame _) => True
+  | some (.pageTable _) => True
   | _ => False
 
 /-- Pointwise agreement on every object kind the IPC bundle's conjuncts read
@@ -1355,7 +1356,7 @@ theorem dualQueueEndpointWellFormed_of_readViewAgreement {s1 s2 : SystemState}
       rw [(hView.endpoint _ _).mp hObj] at h
       exact ⟨intrusiveQueueWellFormed_of_readViewAgreement hView h.1,
              intrusiveQueueWellFormed_of_readViewAgreement hView h.2⟩
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ =>
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       trivial
 
 /-- Read-view transport of the dual-queue system invariant. -/

@@ -301,6 +301,8 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .tcbSetAffinity        => .unit
   | .tcbSetFaultHandler    => .unit
   | .tcbSetSpace           => .unit
+  | .pageTableMap          => .unit
+  | .pageTableUnmap        => .unit
   | .tcbBindNotification   => .unit
   | .tcbUnbindNotification => .unit
   | .mintReplyCap          => .unit

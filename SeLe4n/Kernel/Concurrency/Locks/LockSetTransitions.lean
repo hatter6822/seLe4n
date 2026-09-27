@@ -1355,7 +1355,14 @@ removes that mapping before it returns (seL4's `finaliseCap` → `unmapPage`), s
 it writes the root the record's ASID resolves to.  A capability carries at most
 one record, so this is one optional member, resolved from the state as
 `lockSet_lifecycleRetype`'s target lock is; `none` — a capability with no live
-record — is definitionally the pre-BP7.1 footprint. -/
+record — is definitionally the pre-BP7.1 footprint.
+
+**`v0.36.12`**: a page-table capability's root goes in the same member.  When the
+delete destroys a table's last capability, the finalisation takes the table out
+of the root it is installed in (`finaliseDestroyedCapabilities`), writing that
+root — its table slots, and the mappings beneath the table — and nothing else:
+the tables it takes out keep a stale record rather than being written.  A
+capability is a frame's or a table's, never both, so the member stays one. -/
 def lockSet_cspaceDelete (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetCnodeObjId : ObjId)
     (unmappedRootObjId : Option ObjId := none) : LockSet :=
@@ -4146,6 +4153,36 @@ def lockSet_tcbSetSpace (callerTid : ThreadId)
       (newVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read))))
     (queueOwnerMember queueOwner)
 
+/-- **WS-BP BP7.1 (`v0.36.12`): `lockSet` for `pageTableMap`.**
+
+`pageTableMap` writes two objects — the table (its `installedIn` record, under
+its `page` lock) and the address space it installs in (the new slot, under its
+`vspaceRoot` lock) — after resolving, through the **caller's** CSpace root, the
+table capability it was invoked through and the root capability MR0 names.  The
+root is `none` when that lookup fails, since the operation then refuses before
+writing it. -/
+def lockSet_pageTableMap (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (tableObjId : ObjId) (rootObjId : Option ObjId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (pageLock tableObjId, .write)])
+    (rootObjId.map (fun r => (vspaceRootLock r, .write)))
+
+/-- **WS-BP BP7.1 (`v0.36.12`): `lockSet` for `pageTableUnmap`.**  The same four
+objects, with the root read off the table's own install record rather than off a
+capability: `none` for a table installed nowhere, which the operation leaves as
+it is. -/
+def lockSet_pageTableUnmap (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (tableObjId : ObjId) (rootObjId : Option ObjId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (pageLock tableObjId, .write)])
+    (rootObjId.map (fun r => (vspaceRootLock r, .write)))
+
 -- ============================================================================
 -- SM3.B.3 (audit-pass-5) — PIP-chain-walk start markers
 -- ============================================================================
@@ -4598,6 +4635,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- reads the new CSpace root (a CNode) and the new VSpace root.
   | .tcbSetSpace =>
       [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]
+  -- **WS-BP BP7.1 (`v0.36.12`)**: the page-table operations write the table
+  -- (a `page` lock) and the address space it installs in.
+  | .pageTableMap | .pageTableUnmap =>
+      [.tcb, .cnode, .page, .vspaceRoot]
   -- WS-SM SM6.B: bind/unbind a notification to a TCB.  Both the notification
   -- (write — `boundTCB`) and the bound TCB (write — `boundNotification`) are in
   -- the footprint, plus the CNode (read) covering the capability resolution.
@@ -4629,7 +4670,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal | .auditRead | .auditDrain => true
 
@@ -6572,5 +6613,44 @@ theorem lockSet_consistent_tcbSetSpace (callerTid : ThreadId)
           | none => simp at hpp
           | some vsr => simp at hpp; rw [← hpp]; simp; decide))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
+
+/-- WS-BP BP7.1 (`v0.36.12`), for `.pageTableMap`: the base three locks plus the
+optional write of the address space. -/
+theorem lockSet_consistent_pageTableMap (callerTid : ThreadId)
+    (cnRoot table : ObjId) (root : Option ObjId) :
+    ∀ p ∈ (lockSet_pageTableMap callerTid cnRoot table root).pairs,
+      p.fst.kind ∈ permittedKinds .pageTableMap :=
+  lockSet_consistent_base_plus_opt _ _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases root with
+        | none => simp at hpp
+        | some r => simp at hpp; rw [← hpp]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds])
+
+/-- WS-BP BP7.1 (`v0.36.12`), for `.pageTableUnmap`: the same shape. -/
+theorem lockSet_consistent_pageTableUnmap (callerTid : ThreadId)
+    (cnRoot table : ObjId) (root : Option ObjId) :
+    ∀ p ∈ (lockSet_pageTableUnmap callerTid cnRoot table root).pairs,
+      p.fst.kind ∈ permittedKinds .pageTableUnmap :=
+  lockSet_consistent_base_plus_opt _ _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases root with
+        | none => simp at hpp
+        | some r => simp at hpp; rw [← hpp]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds])
 
 end SeLe4n.Kernel.Concurrency

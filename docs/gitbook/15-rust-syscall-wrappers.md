@@ -78,7 +78,7 @@ Safe high-level wrappers across the syscall surface:
 | IPC | `endpoint_send`, `endpoint_receive`, `endpoint_receive_with_reply`, `endpoint_call`, `endpoint_reply`, `notification_signal`, `notification_wait` (returns the signalled badge since WS-RA v0.33.37), `endpoint_reply_recv` (+ `_checked`) |
 | CSpace | `cspace_mint`, `cspace_copy`, `cspace_move`, `cspace_delete`, `cspace_revoke`, `mint_reply_cap` |
 | Lifecycle | `untyped_retype` (+ `untyped_retype_frame`: carve the next page of an untyped into a frame, BP7.1 v0.36.5), `untyped_reset` (hand an untyped's memory back once no capability names a carved frame, BP7.1 v0.36.6), `lifecycle_retype`, `retype_tcb`, `retype_endpoint`, `retype_notification`, `retype_cnode`, `retype_vspace_root` |
-| VSpace | `vspace_map` (W^X pre-check; + `_read_only` / `_read_write` / `_read_execute` presets), `vspace_unmap`, `vspace_unify_instruction` |
+| VSpace | `vspace_map` (W^X pre-check; + `_read_only` / `_read_write` / `_read_execute` presets), `vspace_unmap`, `vspace_unify_instruction`, `page_table_map` / `page_table_unmap` (install and remove an intermediate page table; a carved address space maps a frame only where its walk is complete, BP7.1 v0.36.12) |
 | Service | `service_register`, `service_revoke`, `service_query` (returns the resolved service id since WS-RA v0.33.37) |
 | SchedContext | `sched_context_configure`, `sched_context_bind`, `sched_context_unbind` |
 | TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer`, `tcb_set_affinity`, `tcb_set_fault_handler`, `tcb_set_space` (put a suspended thread in a CSpace and a VSpace root the caller holds, BP7.1 v0.36.11), `tcb_bind_notification`, `tcb_unbind_notification` |

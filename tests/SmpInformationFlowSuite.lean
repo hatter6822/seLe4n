@@ -5483,9 +5483,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "65 entries: 50 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-RR RR8.16's revocation, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, and the space change) + 15 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 65) &&
-     decide (enforcementBoundaryExtended.length = 50) &&
+  assertBool "67 entries: 52 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-RR RR8.16's revocation, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, and the two page-table operations) + 15 cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 67) &&
+     decide (enforcementBoundaryExtended.length = 52) &&
      decide (crossCoreEnforcementEntries.length = 15))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -9755,7 +9755,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "both audit syscalls are in the ABI, with different required rights"
     (decide (SyscallId.auditRead.toNat = 31) &&
      decide (SyscallId.auditDrain.toNat = 32) &&
-     decide (SyscallId.count = 39) &&
+     decide (SyscallId.count = 41) &&
      decide (syscallRequiredRight .auditRead = AccessRight.read) &&
      decide (syscallRequiredRight .auditDrain = AccessRight.write))
   assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
@@ -10382,9 +10382,9 @@ private def runDeclassifiedSignalDefaultChecks : IO Unit := do
 /-- §11.6  SM9.C.8 / SM9.C.9 — the ABI, the live arm and the registries. -/
 private def runDeclassifiedSignalAbiChecks : IO Unit := do
   IO.println "--- §11.6 SM9.C.8 the syscall, end to end ---"
-  assertBool "the syscall is in the ABI at 33, count 39, requiring the notification's write right"
+  assertBool "the syscall is in the ABI at 33, count 41, requiring the notification's write right"
     (decide (SyscallId.declassifySignal.toNat = 33) &&
-     decide (SyscallId.count = 39) &&
+     decide (SyscallId.count = 41) &&
      decide (SyscallId.ofNat? 33 = some SyscallId.declassifySignal) &&
      decide (syscallRequiredRight .declassifySignal = AccessRight.write))
   -- The same right the ordinary signal needs: the declassification gates sit

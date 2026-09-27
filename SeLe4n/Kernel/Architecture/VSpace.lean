@@ -48,6 +48,15 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
     | none => none
   | none => none
 
+/-- **WS-BP BP7.1 (`v0.36.12`): the address space `asid` names can take a mapping
+at `vaddr`** — its root's walk is complete there (`VSpaceRoot.translationReady`).
+An ASID that resolves to no root answers `true`: that case is the mapping's own
+refusal to make (`.asidNotBound`), not this one's. -/
+def asidTranslationReady (st : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Bool :=
+  match resolveAsidRoot st asid with
+  | some (_, root) => root.translationReady vaddr
+  | none => true
+
 /-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit LPA maximum).
     Used as the upper bound for model-level reasoning. Platform-specific bounds
     (e.g., 44-bit for BCM2712) are enforced via `physicalAddressBoundForConfig`.
@@ -693,7 +702,7 @@ theorem resolveAsidRoot_some_implies_obj
           | notification _ => simp [hObj] at hResolve
           | untyped _ => simp [hObj] at hResolve
           | schedContext _ => simp [hObj] at hResolve
-          | reply _ | frame _ => simp [hObj] at hResolve
+          | reply _ | frame _ | pageTable _ => simp [hObj] at hResolve
 
 /-- WS-G3/F-P06: Characterization lemma — given the ASID table entry and object-store
     evidence, `resolveAsidRoot` returns exactly the expected root.

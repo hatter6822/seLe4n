@@ -330,4 +330,44 @@ theorem unmapLivePages_ok_frame (ec : Concurrency.CoreId) :
           exact ⟨hInv2, hW1.trans hW2, hS2.trans hS1⟩
       · exact unmapLivePages_ok_frame ec rest st st' hInv hStep
 
+-- ============================================================================
+-- §3  Does any capability still name an object?
+-- ============================================================================
+--
+-- Asked by the untyped reset (no capability may name a retired object) and by
+-- capability finalisation (a page table whose last capability is destroyed
+-- leaves its address space).  Moved here from `UntypedReset.lean` at
+-- `v0.36.12` so both askers reach one answer.
+
+/-- **Does this capability name an object in the subtree?**  Only an `.object`
+target names an object; a CNode-slot, reply or audit-trail target names none. -/
+def capNamesListed (ids : List SeLe4n.ObjId) (cap : Capability) : Bool :=
+  match cap.target with
+  | .object id => ids.contains id
+  | _ => false
+
+/-- **Does this stored object hold a capability naming an object in the
+subtree?**  The two places a capability lives: a CNode slot, and the message a
+blocked sender has parked (its transfer capabilities install at the receiver
+later, so they are authority in flight).  No other object kind holds a
+`Capability`. -/
+def objectNamesListed (ids : List SeLe4n.ObjId) : KernelObject → Bool
+  | .cnode cn => !(cn.slots.fold true (fun acc _ cap => acc && !capNamesListed ids cap))
+  | .tcb t =>
+      -- Slice 4b (`v0.36.10`): a thread's address space is named by its TCB's
+      -- `vspaceRoot` field, not by a capability, so a carved root a thread
+      -- still runs in is reached without one.
+      ids.contains t.vspaceRoot ||
+      match t.pendingMessage with
+      | some msg => msg.caps.any (fun tc => capNamesListed ids tc.cap)
+      | none => false
+  | _ => false
+
+/-- **The whole-store check: no capability anywhere names an object in the
+subtree.**  A conjunction folded over the object table, which is what makes the
+payoff (`untypedReset_ok_unreferenced`) a statement about every key the table
+resolves rather than about the keys an index happens to list. -/
+def carvedSubtreeUnreferenced (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
+  st.objects.fold true (fun acc _ o => acc && !objectNamesListed ids o)
+
 end SeLe4n.Kernel

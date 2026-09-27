@@ -1938,4 +1938,36 @@ theorem decodeSetSpaceArgs_roundtrip (args : SetSpaceArgs) :
   simp [decodeSetSpaceArgs, encodeSetSpaceArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat, SeLe4n.CPtr.toNat]
 
+-- ============================================================================
+-- WS-BP BP7.1 (`v0.36.12`): page-table install decode (`pageTableMap`)
+-- ============================================================================
+
+/-- WS-BP BP7.1 (`v0.36.12`): per-syscall argument structure for `pageTableMap`
+    — seL4's `seL4_ARM_PageTable_Map`.  Register mapping: x2 = the address, in
+    the caller's CSpace, of a capability to the **address space** the table is
+    installed in (a VSpace root); x3 = a virtual address whose walk the table
+    serves.  The table comes from the invoked capability. -/
+structure PageTableMapArgs where
+  vspaceRoot : SeLe4n.CPtr
+  vaddr : SeLe4n.VAddr
+  deriving Repr, DecidableEq
+
+/-- WS-BP BP7.1: decode `pageTableMap` arguments.  Requires 2 message registers. -/
+def decodePageTableMapArgs (decoded : SyscallDecodeResult)
+    : Except KernelError PageTableMapArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  pure { vspaceRoot := SeLe4n.CPtr.ofNat r0.val, vaddr := SeLe4n.VAddr.ofNat r1.val }
+
+/-- WS-BP BP7.1: encode `pageTableMap` arguments into message registers. -/
+@[inline] def encodePageTableMapArgs (args : PageTableMapArgs) : Array RegValue :=
+  #[⟨args.vspaceRoot.toNat⟩, ⟨args.vaddr.toNat⟩]
+
+/-- WS-BP BP7.1: PageTableMapArgs decode round-trip. -/
+theorem decodePageTableMapArgs_roundtrip (args : PageTableMapArgs) :
+    decodePageTableMapArgs (stubDecoded (encodePageTableMapArgs args)) = .ok args := by
+  simp [decodePageTableMapArgs, encodePageTableMapArgs, stubDecoded, requireMsgReg, Bind.bind,
+        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat, SeLe4n.CPtr.toNat,
+        SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat]
+
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

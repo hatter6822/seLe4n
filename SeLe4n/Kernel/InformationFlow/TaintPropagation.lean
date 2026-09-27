@@ -223,6 +223,8 @@ def contentFlowClass : SyscallId → ContentFlowClass
   | .tcbSetAffinity => .inert
   | .tcbSetFaultHandler => .inert
   | .tcbSetSpace => .inert
+  | .pageTableMap => .inert
+  | .pageTableUnmap => .inert
   | .tcbBindNotification => .inert
   | .tcbUnbindNotification => .inert
   | .schedContextBind => .inert
@@ -290,7 +292,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => false
   | .lifecycleRetype | .untypedRetype | .untypedReset => false
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority => false
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace => false
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap => false
   | .tcbBindNotification | .tcbUnbindNotification => false
   | .schedContextBind | .schedContextUnbind | .schedContextConfigure => false
   | .serviceRegister | .serviceRevoke | .serviceQuery => false
@@ -865,7 +867,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .tcbBindNotification
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
     | .declassify | .auditRead | .auditDrain => []
 
@@ -1042,7 +1044,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
   | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .tcbBindNotification
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
   | .auditRead | .auditDrain => []
 
@@ -1078,7 +1080,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .tcbBindNotification
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
     | .declassify | .auditRead | .auditDrain => []
 
@@ -1150,7 +1152,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .tcbBindNotification
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
     | .declassify | .auditRead | .auditDrain => []
 

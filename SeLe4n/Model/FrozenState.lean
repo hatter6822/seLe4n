@@ -299,6 +299,9 @@ structure FrozenVSpaceRoot where
   /-- WS-BP BP7.1 slice 4b: the runtime root's table page, forwarded verbatim
       by `freezeVSpaceRoot`. -/
   tableBase : Option SeLe4n.PAddr := none
+  /-- WS-BP BP7.1 (`v0.36.12`): the runtime root's intermediate tables,
+      forwarded verbatim by `freezeVSpaceRoot`. -/
+  tables : List PageTableSlot := []
   /-- WS-SM SM3.A.7: per-VSpaceRoot lock state forwarded from the runtime
       representation through `freezeVSpaceRoot`. -/
   lock     : SeLe4n.Kernel.Concurrency.RwLockState :=
@@ -336,6 +339,9 @@ inductive FrozenKernelObject where
   | schedContext (sc : SeLe4n.Kernel.SchedContext)
   | reply (r : SeLe4n.Kernel.Reply)
   | frame (f : FrameObject)
+  /-- WS-BP BP7.1 (`v0.36.12`): an intermediate translation table, passed
+      through verbatim. -/
+  | pageTable (p : PageTableObject)
 
 /-- Q5-B: Extract the object type from a frozen kernel object. -/
 def FrozenKernelObject.objectType : FrozenKernelObject → KernelObjectType
@@ -348,6 +354,7 @@ def FrozenKernelObject.objectType : FrozenKernelObject → KernelObjectType
   | .schedContext _ => .schedContext
   | .reply _ => .reply
   | .frame _ => .frame
+  | .pageTable _ => .pageTable
 
 /-- Q5-B: Frozen kernel object preserves the type tag of the source object. -/
 theorem FrozenKernelObject.objectType_tcb (t : TCB) :
@@ -393,6 +400,7 @@ def FrozenKernelObject.objectLockOf :
   | .schedContext s => s.lock
   | .reply r        => r.lock
   | .frame f        => f.lock
+  | .pageTable p    => p.lock
 
 /-- WS-SM SM3.A.10 audit-pass-2: per-variant unfold lemma for
 `FrozenKernelObject.objectLockOf` on `.tcb`. -/
@@ -438,6 +446,11 @@ def FrozenKernelObject.objectLockOf :
 `FrozenKernelObject.objectLockOf` on `.frame`. -/
 @[simp] theorem FrozenKernelObject.objectLockOf_frame (f : FrameObject) :
     (FrozenKernelObject.frame f).objectLockOf = f.lock := rfl
+
+/-- WS-BP BP7.1 (`v0.36.12`): per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.pageTable`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_pageTable (p : PageTableObject) :
+    (FrozenKernelObject.pageTable p).objectLockOf = p.lock := rfl
 
 -- ============================================================================
 -- Q5-B: FrozenSchedulerState
@@ -637,6 +650,8 @@ def freezeVSpaceRoot (vs : VSpaceRoot) : FrozenVSpaceRoot :=
     mappings := freezeMap vs.mappings
     -- WS-BP BP7.1 slice 4b: forward the table page.
     tableBase := vs.tableBase
+    -- WS-BP BP7.1 (`v0.36.12`): forward the intermediate tables.
+    tables := vs.tables
     -- WS-SM SM3.A.7: forward the runtime lock state into the frozen view.
     lock := vs.lock }
 
@@ -653,6 +668,7 @@ def freezeObject (obj : KernelObject) : FrozenKernelObject :=
   | .schedContext sc => .schedContext sc
   | .reply r => .reply r
   | .frame f => .frame f
+  | .pageTable p => .pageTable p
 
 /-- Q5-C: `freezeObject` preserves the object type tag. -/
 theorem freezeObject_preserves_type (obj : KernelObject) :

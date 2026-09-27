@@ -113,6 +113,25 @@ pub fn untyped_retype_vspace_root(
     )
 }
 
+/// Convenience: carve an intermediate page table — one zeroed page — out of
+/// `untyped_cap` (WS-BP BP7.1), to install with
+/// [`crate::vspace::page_table_map`].
+pub fn untyped_retype_page_table(
+    untyped_cap: CPtr,
+    child_id: ObjId,
+    dst_cnode: CPtr,
+    dst_slot: Slot,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(
+        untyped_cap,
+        TypeTag::PageTable,
+        0,
+        child_id,
+        dst_cnode,
+        dst_slot,
+    )
+}
+
 /// Hand an untyped's memory back to it — seL4's `resetUntypedCap`.
 ///
 /// Lean: the `.untypedReset` arm (API.lean, `untypedReset`), WS-BP BP7.1.

@@ -1537,7 +1537,7 @@ theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne (st st' : SystemState)
       split at h
       · exact absurd h (by simp)
       · injection h with h; subst h; rfl
-  | frame _ | untyped _ =>
+  | frame _ | pageTable _ | untyped _ =>
       -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
       -- an untyped one — so there is no `.ok` step.
       subst hC
@@ -2178,7 +2178,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .tcbSetSpace
+  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .auditRead | .auditDrain => none
@@ -2193,10 +2193,10 @@ footprint without listing it here breaks
 still answers `none` is refused by that arm's own `_isSome_iff`, which states
 the exact operands under which it declares.
 
-There are `SyscallId.count = 39` arms; **sixteen** declare and twenty-three
-answer `none`.  *Which* of those twenty-three write a scheduler slot at all is this
+There are `SyscallId.count = 41` arms; **sixteen** declare and twenty-five
+answer `none`.  *Which* of those twenty-five write a scheduler slot at all is this
 enumeration's own open question — the arms above are the ones WS-RR RR8.12's
-sequence identified, and a twenty-fourth found to write one is a footprint to
+sequence identified, and a twenty-sixth found to write one is a footprint to
 declare rather than a row to move.  `.cspaceRevoke` (`v0.35.190`) is in the
 `none` group for the same reason its `.cspaceDelete` sibling is: the revocation
 family writes CNodes, the derivation tree and in-flight messages, and no
@@ -2221,7 +2221,7 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .tcbSetSpace
+  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .auditRead | .auditDrain => false

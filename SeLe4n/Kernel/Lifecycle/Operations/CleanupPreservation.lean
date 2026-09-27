@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations.Cleanup
+import SeLe4n.Kernel.Architecture.PageTableInstall
 -- WS-SM SM6.E: `returnDonatedSchedContext_preserves_objects_invExt` (AI4-A),
 -- consumed by `cleanupDonatedSchedContext_preserves_objects_invExt`.
 import SeLe4n.Kernel.IPC.Invariant.Defs
@@ -1807,7 +1808,12 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- first.
     if cnodeHasDerivationParentSlot st target cn then
       .error .revocationRequired
-    else if cn.holdsFrameMappingRecord then
+    --
+    -- WS-BP BP7.1 (`v0.36.12`): nor a capability naming an installed page
+    -- table — destroying the last one owes taking the table out of its address
+    -- space (`finaliseDestroyedCapabilities`), which only the finalising delete
+    -- and revocation perform.
+    else if cn.holdsFrameMappingRecord || Architecture.cnodeHoldsInstalledPageTableCap st cn then
       .error .revocationRequired
     else
       .ok (detachCNodeSlots st target cn)
@@ -1891,6 +1897,12 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- once no capability names them.  `.revocationRequired` is the error this
     -- path uses for "clear this precondition first" — here, revoke the untyped
     -- capability and reset it.
+    .error .revocationRequired
+  | .pageTable _ =>
+    -- **WS-BP BP7.1 (`v0.36.12`): nor can a page table**, for the frame's reason
+    -- and one more: a table is a page an address space's slot may name, so
+    -- replacing it in place would leave that slot naming a kernel object that is
+    -- not a table.  It returns to its untyped through the reset.
     .error .revocationRequired
   | .untyped _ =>
     -- **WS-BP BP7.1 slice 4 (`v0.36.8`): nor can an untyped, for the same
@@ -2178,7 +2190,7 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; exact h
-  | frame _ =>
+  | frame _ | pageTable _ =>
     -- WS-BP BP7.1: a frame target is refused (vacuous on `.ok`).
     simp [lifecyclePreRetypeCleanup] at hOk
 
@@ -2249,7 +2261,7 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; rfl
-  | frame _ =>
+  | frame _ | pageTable _ =>
     simp [lifecyclePreRetypeCleanup] at hOk
 
 namespace Internal
@@ -2495,7 +2507,7 @@ theorem endpointQueueRemove_ok_getEndpoint?
     cases obj with
     | endpoint ep =>
       exact ⟨ep, (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj⟩
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
       exact absurd hStep (by simp)
 

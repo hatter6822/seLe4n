@@ -261,6 +261,6 @@ theorem ipcBufferReadMr_reads_only_caller_tcb
       | vspaceRoot _ => rfl
       | untyped _ => rfl
       | schedContext _ => rfl
-      | reply _ | frame _ => rfl
+      | reply _ | frame _ | pageTable _ => rfl
 
 end SeLe4n.Kernel.Architecture.IpcBufferRead

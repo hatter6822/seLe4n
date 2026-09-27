@@ -184,7 +184,7 @@ a regression that renames or removes a theorem fails this
 module's build at the elaboration step, before any test or
 runtime check is reached. -/
 def perObjectLockTheorems : List PerObjectLockTheorem :=
-  [-- §1 fieldDefault (9 entries — SM3.A.1..A.9 lock fields + Reply + Frame)
+  [-- §1 fieldDefault (10 entries — SM3.A.1..A.9 lock fields + Reply + Frame + PageTable)
     polt! "TCB carries a per-object RwLockState lock field"
       TCB.lock .fieldDefault,
     polt! "Endpoint carries a per-object RwLockState lock field"
@@ -203,7 +203,9 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
       SeLe4n.Kernel.Reply.lock .fieldDefault,
     polt! "FrameObject carries a per-object RwLockState lock field"
       FrameObject.lock .fieldDefault,
-    -- §2 projection (13 entries — objectLockOf def + 9 KernelObject unfolds + FrozenKernelObject.objectLockOf def + frozen .reply / .frame unfolds)
+    polt! "PageTableObject carries a per-object RwLockState lock field"
+      PageTableObject.lock .fieldDefault,
+    -- §2 projection (15 entries — objectLockOf def + 10 KernelObject unfolds + FrozenKernelObject.objectLockOf def + frozen .reply / .frame / .pageTable unfolds)
     polt! "KernelObject.objectLockOf projects the per-variant lock"
       KernelObject.objectLockOf .projection,
     polt! "objectLockOf on .tcb reduces to t.lock"
@@ -224,12 +226,16 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
       KernelObject.objectLockOf_reply .projection,
     polt! "objectLockOf on .frame reduces to f.lock"
       KernelObject.objectLockOf_frame .projection,
+    polt! "objectLockOf on .pageTable reduces to p.lock"
+      KernelObject.objectLockOf_pageTable .projection,
     polt! "FrozenKernelObject.objectLockOf projects the frozen per-variant lock"
       FrozenKernelObject.objectLockOf .projection,
     polt! "FrozenKernelObject.objectLockOf on .reply reduces to r.lock"
       FrozenKernelObject.objectLockOf_reply .projection,
     polt! "FrozenKernelObject.objectLockOf on .frame reduces to f.lock"
       FrozenKernelObject.objectLockOf_frame .projection,
+    polt! "FrozenKernelObject.objectLockOf on .pageTable reduces to p.lock"
+      FrozenKernelObject.objectLockOf_pageTable .projection,
     -- §3 defaultState (5 entries — 4 SM3.A.11 + objStoreLock unheld)
     polt! "Default SystemState has objStoreLock = .unheld"
       default_objStoreLock_unheld .defaultState,
@@ -265,28 +271,30 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
       KernelObject.objectType_and_lockOf_total .consistency,
     polt! "objectLockOf is consistent with the kind tag"
       KernelObject.objectLockOf_consistent_with_type .consistency,
-    polt! "KernelObjectType has exactly 9 variants (reply and frame now real objects)"
-      KernelObjectType.variants_count_exactly_nine .consistency,
-    polt! "KernelObjectType variants_total — every value is one of the 9 enumerated kinds"
+    polt! "KernelObjectType has exactly 10 variants (reply, frame and pageTable now real objects)"
+      KernelObjectType.variants_count_exactly_ten .consistency,
+    polt! "KernelObjectType variants_total — every value is one of the 10 enumerated kinds"
       KernelObjectType.variants_total .consistency]
 
-/-- WS-SM SM3.A audit-pass-5: the inventory has exactly 40 entries (WS-SM SM6.D:
+/-- WS-SM SM3.A audit-pass-5: the inventory has exactly 43 entries (WS-SM SM6.D:
 +3 for the first-class Reply object — `Reply.lock`, `KernelObject.objectLockOf_reply`,
 `FrozenKernelObject.objectLockOf_reply`; WS-BP BP7.1: +3 for the frame object,
-the same three).
+the same three, and at `v0.36.12` +3 for the page-table object).
 A regression that adds a new SM3.A theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem perObjectLockTheorems_count :
-    perObjectLockTheorems.length = 40 := by decide
+    perObjectLockTheorems.length = 43 := by decide
 
-/-- WS-SM SM3.A audit-pass-5: 9 entries in the `fieldDefault` category (+Reply, +Frame). -/
+/-- WS-SM SM3.A audit-pass-5: 10 entries in the `fieldDefault` category (+Reply, +Frame,
++PageTable). -/
 theorem perObjectLockTheorems_fieldDefault_count :
-    (perObjectLockTheorems.filter (fun t => t.category == .fieldDefault)).length = 9 := by
+    (perObjectLockTheorems.filter (fun t => t.category == .fieldDefault)).length = 10 := by
   decide
 
-/-- WS-SM SM3.A audit-pass-5: 13 entries in the `projection` category (+Reply, +Frame unfolds). -/
+/-- WS-SM SM3.A audit-pass-5: 15 entries in the `projection` category (+Reply, +Frame,
++PageTable unfolds). -/
 theorem perObjectLockTheorems_projection_count :
-    (perObjectLockTheorems.filter (fun t => t.category == .projection)).length = 13 := by
+    (perObjectLockTheorems.filter (fun t => t.category == .projection)).length = 15 := by
   decide
 
 /-- WS-SM SM3.A audit-pass-5: 5 entries in the `defaultState` category. -/

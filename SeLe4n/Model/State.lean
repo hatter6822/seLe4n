@@ -2701,7 +2701,7 @@ theorem storeObject_asidTable_vspaceRoot_ne
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
     | tcb _ | cnode _ | endpoint _ | notification _ | untyped _
-    | schedContext _ | reply _ | frame _ =>
+    | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
 
@@ -2726,6 +2726,7 @@ theorem storeObject_asidTable_non_vspaceRoot
   | schedContext _ => rfl
   | reply _ => rfl
   | frame _ => rfl
+  | pageTable _ => rfl
 
 /-- WS-G2: objectIndex and objectIndexSet contain the same ids. -/
 def objectIndexSetSync (st : SystemState) : Prop :=
@@ -2931,6 +2932,14 @@ def getFrame? (st : SystemState) (id : SeLe4n.ObjId) : Option FrameObject :=
   match st.objects[id]? with
   | some (.frame f) => some f
   | _               => none
+
+/-- **WS-BP BP7.1 (`v0.36.12`)**: read an intermediate translation table from the
+global object store — the kind-checked member of the typed-accessor family for
+`KernelObject.pageTable`. -/
+def getPageTable? (st : SystemState) (id : SeLe4n.ObjId) : Option PageTableObject :=
+  match st.objects[id]? with
+  | some (.pageTable p) => some p
+  | _                   => none
 
 /-- **WS-SM SM8.B**: read a stored object from the global object store without
 discriminating its variant — the most general member of the AL2-A / AN10-B
@@ -4683,6 +4692,55 @@ theorem getFrame?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
     · intro h; cases h
     · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
 
+/-- `getPageTable?` returns `some p` iff the store holds exactly
+`KernelObject.pageTable p` at `id`. -/
+theorem getPageTable?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
+    (p : PageTableObject) :
+    st.getPageTable? id = some p ↔ st.objects[id]? = some (.pageTable p) := by
+  unfold getPageTable?
+  split
+  · rename_i p' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- **WS-BP BP7.1 (`v0.36.12`): the object at `id` if it is a page** — a frame or
+a page table, the two kinds whose per-object lock is the hierarchy's `page`
+kind.  `LockId.lookup` reads its `.page` kind through this, so a page lock
+names either. -/
+def getPageObject? (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObject :=
+  match st.getFrame? id with
+  | some f => some (.frame f)
+  | none => (st.getPageTable? id).map KernelObject.pageTable
+
+/-- `getPageObject?` answers the stored object exactly when it is a frame or a
+page table. -/
+theorem getPageObject?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
+    (o : KernelObject) :
+    st.getPageObject? id = some o ↔
+      st.objects[id]? = some o ∧ ((∃ f, o = .frame f) ∨ (∃ p, o = .pageTable p)) := by
+  unfold getPageObject?
+  cases hF : st.getFrame? id with
+  | some f =>
+    have hAt := (getFrame?_eq_some_iff st id f).mp hF
+    constructor
+    · intro h; cases h; exact ⟨hAt, Or.inl ⟨f, rfl⟩⟩
+    · rintro ⟨h, -⟩; rw [hAt] at h; cases h; rfl
+  | none =>
+    cases hP : st.getPageTable? id with
+    | some p =>
+      have hAt := (getPageTable?_eq_some_iff st id p).mp hP
+      constructor
+      · intro h; cases h; exact ⟨hAt, Or.inr ⟨p, rfl⟩⟩
+      · rintro ⟨h, -⟩; rw [hAt] at h; cases h; rfl
+    | none =>
+      simp only [Option.map_none, reduceCtorEq, false_iff, not_and]
+      rintro h (⟨f, rfl⟩ | ⟨p, rfl⟩)
+      · rw [(getFrame?_eq_some_iff st id f).mpr h] at hF; cases hF
+      · rw [(getPageTable?_eq_some_iff st id p).mpr h] at hP; cases hP
+
 /-- AL2-B (audit remediation): `getTcb?` returns `none` iff the stored
 object at `tid.toObjId` is either absent or is not of the `.tcb`
 variant. This is the complement of `getTcb?_eq_some_iff` and completes
@@ -5198,6 +5256,7 @@ def KernelObjectType.rewriteNeutral : KernelObjectType → Bool
   | .schedContext => true
   | .reply => true
   | .frame => true
+  | .pageTable => true
 
 /-- `storeObject` never refuses: it is `.ok` at the bookkeeping-carrying record
 by definition.  Stated so a pure spelling of the store can *eliminate* its error
@@ -5276,6 +5335,12 @@ theorem rewriteAdmissible_untyped {st : SystemState} {id : SeLe4n.ObjId} {ut : U
     (h : st.getUntyped? id = some ut) (ut' : UntypedObject) :
     st.rewriteAdmissible id (.untyped ut') :=
   ⟨.untyped ut, (getUntyped?_eq_some_iff st id ut).mp h, rfl, rfl⟩
+
+/-- The typed rewrite of a page table is admissible where the store holds one. -/
+theorem rewriteAdmissible_pageTable {st : SystemState} {id : SeLe4n.ObjId}
+    {p : PageTableObject} (h : st.getPageTable? id = some p) (p' : PageTableObject) :
+    st.rewriteAdmissible id (.pageTable p') :=
+  ⟨.pageTable p, (getPageTable?_eq_some_iff st id p).mp h, rfl, rfl⟩
 
 -- What the rewrite writes, and what it leaves alone (definitional).
 

@@ -918,7 +918,7 @@ theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
     constructor's fields, and the pattern fails when a field is added. -/
 def vspaceRootReferencesReservedIdleSlot (vsr : VSpaceRoot) : Bool :=
   match vsr with
-  | ⟨_asid, _mappings, _tableBase, _lock⟩ => false
+  | ⟨_asid, _mappings, _tableBase, _tables, _lock⟩ => false
 
 /-- **WS-BP BP7.1**: a **frame** — a physical address, a memory kind and a lock —
     holds no object, thread or scheduling-context id.  By inspection of the
@@ -926,6 +926,15 @@ def vspaceRootReferencesReservedIdleSlot (vsr : VSpaceRoot) : Bool :=
 def frameReferencesReservedIdleSlot (f : FrameObject) : Bool :=
   match f with
   | ⟨_base, _isDevice, _lock⟩ => false
+
+/-- **WS-BP BP7.1 (`v0.36.12`)**: a **page table** holds its physical base, the
+    root it is installed in (an object id — which is why it is not `false` by
+    inspection) and a lock.  A configured page table is refused outright
+    (`bootSafeObjectCheck`), so this arm only has to say where the id sits. -/
+def pageTableReferencesReservedIdleSlot (p : PageTableObject) : Bool :=
+  match p with
+  | ⟨_base, installedIn, _lock⟩ =>
+    installedIn.any (fun i => SeLe4n.Kernel.isIdleObjId i.root)
 
 /-- PR #889 review round 8 (the round-6 check, pinned by arity): a boot
     **untyped** whose allocation record names an idle slot as a child, or whose
@@ -1000,6 +1009,7 @@ def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
   | .schedContext sc => schedContextReferencesReservedIdleSlot sc
   | .reply r => replyReferencesReservedIdleSlot r
   | .frame f => frameReferencesReservedIdleSlot f
+  | .pageTable p => pageTableReferencesReservedIdleSlot p
 
 /-- **WS-RR RR5.13** (PR #889 review): the per-core idle object slots
     `[idleThreadIdBase, idleThreadIdBase + numCores)` are **reserved** — no
@@ -1853,6 +1863,9 @@ def bootSafeObjectCheck (obj : KernelObject) : Bool :=
   -- deployment that needs frames at boot (a root task's image) widens this
   -- with a placement check of its own, never by admitting them unchecked.
   | .frame _ => false
+  -- **WS-BP BP7.1 (`v0.36.12`)**: and a configured page table, for the same
+  -- reason — a table page is memory, carved from an untyped.
+  | .pageTable _ => false
 
 set_option maxHeartbeats 400000 in
 /-- AJ3-C (M-16), completed at **WS-BP BP3.5**: `bootSafeObjectCheck = true`
@@ -2001,7 +2014,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
             ⟨hRepLen, ?_⟩, ?_⟩
     · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepPos r hr)
     · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepBound r hr)
-  | frame _ =>
+  | frame _ | pageTable _ =>
     -- WS-BP BP7.1: the check refuses every configured frame.
     simp [bootSafeObjectCheck] at h
 
@@ -2010,6 +2023,11 @@ half of `bootSafeObject`'s last conjunct. -/
 theorem bootSafeObjectCheck_not_frame (obj : KernelObject)
     (h : bootSafeObjectCheck obj = true) : ∀ f, obj ≠ .frame f := by
   intro f hf; subst hf; simp [bootSafeObjectCheck] at h
+
+/-- **WS-BP BP7.1 (`v0.36.12`)**: and every page table. -/
+theorem bootSafeObjectCheck_not_pageTable (obj : KernelObject)
+    (h : bootSafeObjectCheck obj = true) : ∀ p, obj ≠ .pageTable p := by
+  intro p hp; subst hp; simp [bootSafeObjectCheck] at h
 
 /-- AJ3-C (M-16), completed at **WS-BP BP3.5**, and at **WS-BP BP7.1** for the
     frame refusal: `bootSafeObjectCheck = true` implies every conjunct of
@@ -2046,9 +2064,10 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
     (∀ ut, obj = .untyped ut →
       ut.watermark = 0 ∧ ut.children = [] ∧ ut.parent = none) ∧
-    (∀ f, obj ≠ .frame f) := by
+    (∀ f, obj ≠ .frame f) ∧ (∀ p, obj ≠ .pageTable p) := by
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := bootSafeObjectCheck_sound_core obj h
-  exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, bootSafeObjectCheck_not_frame obj h⟩
+  exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, bootSafeObjectCheck_not_frame obj h,
+    bootSafeObjectCheck_not_pageTable obj h⟩
 
 -- ============================================================================
 -- WS-RC R3 (DEEP-BOOT-01) — Boot-safety admission witness theorems
@@ -5226,7 +5245,9 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- the page at its `base`; the executable check refuses every configured one
   -- (`bootSafeObjectCheck`'s `.frame` arm), and this is that refusal's Prop
   -- side, stated in the same cut so the two cannot answer differently.
-  (∀ f, obj ≠ .frame f)
+  (∀ f, obj ≠ .frame f) ∧
+  -- **WS-BP BP7.1 (`v0.36.12`)**: nor a page table, for the same reason.
+  (∀ p, obj ≠ .pageTable p)
 
 /-- V4-A4: A PlatformConfig is boot-safe if all initial objects satisfy
     boot safety constraints. This is the standard precondition for

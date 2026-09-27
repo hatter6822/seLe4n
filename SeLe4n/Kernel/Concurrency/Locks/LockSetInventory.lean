@@ -250,6 +250,10 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_tcbSetFaultHandler .lockSet,
     lkst! "lockSet for tcbSetSpace"
       lockSet_tcbSetSpace .lockSet,
+    lkst! "lockSet for pageTableMap"
+      lockSet_pageTableMap .lockSet,
+    lkst! "lockSet for pageTableUnmap"
+      lockSet_pageTableUnmap .lockSet,
     lkst! "lockSet for tcbBindNotification"
       lockSet_tcbBindNotification .lockSet,
     lkst! "lockSet for tcbUnbindNotification"
@@ -325,6 +329,10 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_tcbSetFaultHandler .consistency,
     lkst! "lockSet_consistent for tcbSetSpace"
       lockSet_consistent_tcbSetSpace .consistency,
+    lkst! "lockSet_consistent for pageTableMap"
+      lockSet_consistent_pageTableMap .consistency,
+    lkst! "lockSet_consistent for pageTableUnmap"
+      lockSet_consistent_pageTableUnmap .consistency,
     lkst! "lockSet_consistent for tcbBindNotification"
       lockSet_consistent_tcbBindNotification .consistency,
     lkst! "lockSet_consistent for tcbUnbindNotification"
@@ -379,7 +387,10 @@ def lockSetTheorems : List LockSetTheorem :=
     lkst! "pipChainStart for tcbSuspend (revert from the captured blocking server when reply-blocked)"
       pipChainStart_tcbSuspend .chainStart]
 
-/-- WS-SM SM3.B: the inventory has exactly 117 entries (WS-BP BP7.1's
+/-- WS-SM SM3.B: the inventory has exactly 121 entries (WS-BP BP7.1's
+`pageTableMap` and `pageTableUnmap` lockSet + consistency pairs — the page-table
+syscalls, whose footprint is the caller's TCB and CNode root read and the table
+and its address space written — on top of the 117 before them, which were its
 `tcbSetSpace` lockSet + consistency pair — the thread-space configuration
 syscall, whose footprint is the caller's and target's TCBs, the caller's CNode
 root, and the new CSpace and VSpace roots in *read* mode — on top of the
@@ -410,7 +421,7 @@ PR #822 Phase H's `mintReplyCap` pair, and SM6.B's `tcbBindNotification` /
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 117 := by decide
+    lockSetTheorems.length = 121 := by decide
 
 /-- WS-SM SM3.B: 22 entries in the `projection` category
 (lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
@@ -425,13 +436,13 @@ theorem lockSetTheorems_projection_count :
 /-- WS-SM SM3.B: 37 entries in the `lockSet` category (one per statically
 declared SyscallId variant). -/
 theorem lockSetTheorems_lockSet_count :
-    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 37 := by
+    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 39 := by
   decide
 
 /-- WS-SM SM3.B: 37 entries in the `consistency` category (one per statically
 declared SyscallId variant). -/
 theorem lockSetTheorems_consistency_count :
-    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 37 := by
+    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 39 := by
   decide
 
 /-- WS-SM SM3.B: 6 entries in the `acquireSort` category

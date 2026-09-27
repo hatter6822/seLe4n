@@ -4192,7 +4192,7 @@ theorem vspaceMapFromFrameCap_confinedToCores
     (tid : SeLe4n.ThreadId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState)
     (hStep : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] := by
-  obtain ⟨_, _, frame, st1, -, -, -, -, hMap, hRec⟩ := vspaceMapFromFrameCap_ok tid args st st' hStep
+  obtain ⟨_, _, frame, st1, -, -, -, -, -, hMap, hRec⟩ := vspaceMapFromFrameCap_ok tid args st st' hStep
   -- WS-BP BP7.1 (`v0.36.7`): the mapping record is one CNode store, which
   -- writes neither the scheduler nor the machine.
   obtain ⟨_, _, _, _, hStore⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st1 st' hRec
@@ -4316,7 +4316,7 @@ theorem untypedReset_confinedToCores
     (hStep : untypedReset executingCore untypedId st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] := by
   apply observableSlotsConfinedToCores_nil_of_framed
-  obtain ⟨_, ids, st1, -, -, -, -, -, -, hUnmap, -, -, -, -, hSt⟩ :=
+  obtain ⟨_, ids, st1, -, -, -, -, -, -, -, hUnmap, -, -, -, -, hSt⟩ :=
     untypedReset_ok_decompose executingCore untypedId st st' hStep
   obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ st st1 hUnmap
   obtain ⟨hs2, hm2⟩ := retireCarvedObjects_framed ids st1
@@ -4334,6 +4334,20 @@ theorem untypedReset_crossCoreNonInterference
   crossCoreNonInterference_ofCores ctx observer (by simp)
     (untypedReset_confinedToCores executingCore untypedId st st' hStep) hShared
 
+/-- WS-BP BP7.1 (`v0.36.12`): the finalisation a destroying capability
+operation owes — the page-table detach, stores to VSpace roots, and the page
+teardown, the `.vspaceUnmap` arm's own transition — writes no scheduler and no
+machine state. -/
+theorem finaliseDestroyedCapabilities_framed (executingCore : CoreId) (pre : SystemState)
+    (pages : List MappedPage) (st st' : SystemState)
+    (h : finaliseDestroyedCapabilities executingCore pre pages st = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  obtain ⟨st1, hD, hF, -⟩ := finaliseDestroyedCapabilities_ok executingCore pre pages st st' h
+  obtain ⟨hs1, hm1⟩ := detachPageTables_ok_scheduler_machine _ st st1 hD
+  obtain ⟨hs2, hm2⟩ :=
+    unmapLivePages_framed executingCore _ st1 st' (finaliseFramePages_ok _ _ _ _ hF).1
+  exact ⟨hs2.trans hs1, hm2.trans hm1⟩
+
 /-- WS-BP BP7.1 (`v0.36.7`): **the live `.cspaceDelete` arm writes no core.**  The
 delete writes a CNode and the CDT; the teardown that removes the destroyed frame
 capability's mapping is the `.vspaceUnmap` arm's own transition, whose rounds the
@@ -4344,8 +4358,7 @@ theorem cspaceDeleteSlotFinalising_confinedToCores
     observableSlotsConfinedToCores st st' [] := by
   obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok executingCore addr st st' hStep
   obtain ⟨hs1, hm1⟩ := cspaceDeleteSlot_scheduler_machine addr st st1 hD
-  obtain ⟨hs2, hm2⟩ :=
-    unmapLivePages_framed executingCore _ st1 st' (finaliseFramePages_ok _ _ _ _ hF).1
+  obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore st _ st1 st' hF
   exact observableSlotsConfinedToCores_nil_of_framed ⟨hs2.trans hs1, hm2.trans hm1⟩
 
 /-- WS-BP BP7.1 (`v0.36.7`) (**the live `.cspaceDelete` arm, cross-core**): a
@@ -4368,8 +4381,7 @@ theorem cspaceRevokeCdtFinalising_confinedToCores
     observableSlotsConfinedToCores st st' [] := by
   obtain ⟨pages, st1, hR, hF⟩ := cspaceRevokeCdtFinalising_ok executingCore addr st st' hStep
   obtain ⟨hs1, hm1⟩ := cspaceRevokeCdt_scheduler_machine addr st st1 pages hR
-  obtain ⟨hs2, hm2⟩ :=
-    unmapLivePages_framed executingCore _ st1 st' (finaliseFramePages_ok _ _ _ _ hF).1
+  obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore st _ st1 st' hF
   exact observableSlotsConfinedToCores_nil_of_framed ⟨hs2.trans hs1, hm2.trans hm1⟩
 
 /-- WS-BP BP7.1 (`v0.36.7`) (**the live `.cspaceRevoke` arm, cross-core**): a
@@ -4510,7 +4522,7 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
-  | frame _ | untyped _ =>
+  | frame _ | pageTable _ | untyped _ =>
     -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
     -- an untyped one — so there is no `.ok` post-state.
     simp [lifecyclePreRetypeCleanup] at hOk

@@ -2664,6 +2664,8 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .declassifySignal       => none
   | .tcbSetFaultHandler     => some false
   | .tcbSetSpace            => some false
+  | .pageTableMap           => some false
+  | .pageTableUnmap         => some false
 
 /-- The partition, pinned against the ledger rather than listed twice: a
 syscall returns its lookup failure exactly when the refusal seam records it.
@@ -3672,7 +3674,7 @@ theorem writeFfiRegistersToTcb_id_when_not_tcb
       | vspaceRoot _ => rfl
       | untyped _ => rfl
       | schedContext _ => rfl
-      | reply _ | frame _ => rfl
+      | reply _ | frame _ | pageTable _ => rfl
   unfold writeFfiRegistersToTcb
   exact SystemState.updateTcb_eq_self_of_none hNone _
 
@@ -3697,6 +3699,6 @@ theorem readReturnValue_zero_when_not_tcb
     | vspaceRoot _ => rfl
     | untyped _ => rfl
     | schedContext _ => rfl
-    | reply _ | frame _ => rfl
+    | reply _ | frame _ | pageTable _ => rfl
 
 end SeLe4n.Platform.FFI

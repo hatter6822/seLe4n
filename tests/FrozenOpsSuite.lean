@@ -503,6 +503,41 @@ private def fo013b_cspaceDeleteRefusesMappedFrameCap : IO Unit := do
   | .ok _ => expect "CONTROL: no record → the delete succeeds" true
   | .error _ => throw <| IO.userError "the record-free delete should succeed"
 
+/-- FO-013c (WS-BP BP7.1, `v0.36.12`): frozenCspaceDelete refuses a capability
+naming an **installed page table**.  The live delete takes the table out of its
+address space when that capability is the table's last
+(`finaliseDestroyedCapabilities`); this surface can neither detach a table nor
+decide *last*, so it refuses.  Two controls: the same capability once the root
+no longer holds the table (a stale record, which the live kernel reads as not
+installed), and a capability naming a table installed nowhere — both delete. -/
+private def fo013c_cspaceDeleteRefusesInstalledTableCap : IO Unit := do
+  let cap : Capability := { target := .object ⟨42⟩, rights := .ofNat 3, badge := none }
+  let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
+  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let inst : PageTableInstall := { root := ⟨20⟩, level := 1, index := 0 }
+  let table : PageTableObject := { base := SeLe4n.PAddr.ofNat 0x5000, installedIn := some inst }
+  let emptyMappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions) :=
+    SeLe4n.Kernel.RobinHood.RHTable.empty 16
+  let holding : FrozenVSpaceRoot :=
+    { asid := ⟨1⟩, mappings := freezeMap emptyMappings, tables := [inst.slotFor ⟨42⟩] }
+  let fst := mkFrozenState
+    [(⟨10⟩, .cnode cn), (⟨42⟩, .pageTable table), (⟨20⟩, .vspaceRoot holding)]
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fst with
+  | .ok _ => throw <| IO.userError "deleting an installed table's capability should be refused"
+  | .error e => expect "installed page table → revocationRequired" (e == .revocationRequired)
+  -- CONTROL: the root no longer holds the table — the record is stale.
+  let fstStale := mkFrozenState
+    [(⟨10⟩, .cnode cn), (⟨42⟩, .pageTable table), (⟨20⟩, .vspaceRoot { holding with tables := [] })]
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fstStale with
+  | .ok _ => expect "CONTROL: a stale record → the delete succeeds" true
+  | .error _ => throw <| IO.userError "the stale-record delete should succeed"
+  -- CONTROL: a table installed nowhere.
+  let fstFree := mkFrozenState
+    [(⟨10⟩, .cnode cn), (⟨42⟩, .pageTable { table with installedIn := none })]
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fstFree with
+  | .ok _ => expect "CONTROL: an uninstalled table → the delete succeeds" true
+  | .error _ => throw <| IO.userError "the uninstalled-table delete should succeed"
+
 -- ============================================================================
 -- TPH-014: Notification Signal/Wait
 -- ============================================================================
@@ -3165,6 +3200,7 @@ def main : IO Unit := do
   IO.println "--- TPH-013: Delete in Frozen ---"
   fo013_cspaceDelete
   fo013b_cspaceDeleteRefusesMappedFrameCap
+  fo013c_cspaceDeleteRefusesInstalledTableCap
   IO.println "--- TPH-014: Notification Signal/Wait ---"
   fo014_notificationSignal
   fo015_notificationWait

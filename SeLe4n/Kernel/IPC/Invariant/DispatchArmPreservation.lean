@@ -22,6 +22,7 @@ import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.Operations.Fault
 import SeLe4n.Kernel.Capability.FrameFinalise
 import SeLe4n.Kernel.Lifecycle.Operations.SetSpace
+import SeLe4n.Kernel.Architecture.PageTableInstall
 
 /-!
 # `ipcInvariantFull` bundles for the non-IPC dispatch arms
@@ -943,7 +944,7 @@ private theorem cspaceDeleteSlotCore_shape
           exact storeObject_preserves_objects_invExt st st1 addr.cnode
             (.cnode (cn.remove addr.slot)) hObjInv hStore
     | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ | reply _ | frame _ => simp [hObj] at hStep
+    | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
 
 /-- `cspaceDeleteSlotCore` preserves the whole bundle: removal shrinks the
 CNode's lookups, so the badge clause carries from the pre-state. -/
@@ -1050,7 +1051,7 @@ private theorem cspaceRevoke_shape
     | some obj =>
       cases obj with
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ | frame _ => simp [hL, hC] at hStep
+      | schedContext _ | reply _ | frame _ | pageTable _ => simp [hL, hC] at hStep
       | cnode cn =>
         simp only [hL, hC] at hStep
         exact ⟨cn, parent, rfl,
@@ -1607,7 +1608,7 @@ theorem untypedRetypeObject_preserves_ipcInvariantFull
     (cspaceInsertSlot_preserves_ipcInvariantFull _ st2 dst _ hObjInvZ hInvZ
       (fun b hb => by
         cases req <;> simp [CarveRequest.capability, frameCapability, untypedCapability,
-          vspaceRootCapability] at hb)
+          vspaceRootCapability, pageTableCapability] at hb)
       hIns)
 
 /-- **WS-BP BP7.1 slice 3 (`v0.36.6`)**: the untyped reset preserves
@@ -1713,6 +1714,17 @@ theorem finaliseFramePages_preserves_ipcInvariantFull
   obtain ⟨hExt, hW, hSched⟩ := finaliseFramePages_ok_frame ec pages st st' hObjInv hStep
   exact ⟨ipcInvariantFull_of_vspaceRootOnlyWrite hW hSched hInv, hExt⟩
 
+/-- **The whole finalisation preserves the bundle** — the table detach and the
+page teardown are both VSpace-root-only writes. -/
+theorem finaliseDestroyedCapabilities_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (pre : SystemState) (pages : List MappedPage)
+    (st st' : SystemState) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : finaliseDestroyedCapabilities ec pre pages st = .ok ((), st')) :
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
+  obtain ⟨hExt, hW, hSched⟩ :=
+    finaliseDestroyedCapabilities_ok_frame ec pre pages st st' hObjInv hStep
+  exact ⟨ipcInvariantFull_of_vspaceRootOnlyWrite hW hSched hInv, hExt⟩
+
 /-- `.cspaceDelete`: the finalising delete preserves the bundle — the delete's
 own theorem, then the teardown's. -/
 theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull
@@ -1721,7 +1733,7 @@ theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  exact (finaliseFramePages_preserves_ipcInvariantFull ec _ st1 st'
+  exact (finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec st _ st1 st'
     (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD)
     (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr hObjInv hInv hD) hF).1
 
@@ -1733,7 +1745,7 @@ theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
     (hStep : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨pages, st1, hR, hF⟩ := cspaceRevokeCdtFinalising_ok ec addr st st' hStep
-  exact (finaliseFramePages_preserves_ipcInvariantFull ec _ st1 st'
+  exact (finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec st _ st1 st'
     (cspaceRevokeCdt_preserves_objects_invExt st st1 addr pages hObjInv hInv hR)
     (cspaceRevokeCdt_preserves_ipcInvariantFull st st1 addr pages hObjInv hInv hR) hF).1
 
@@ -3301,6 +3313,7 @@ def retypeReplacementFresh : KernelObject → Prop
   | .vspaceRoot _ => True
   | .untyped _ => True
   | .frame _ => True
+  | .pageTable _ => True
 
 /-- The live dispatch arm's replacement builder is pristine per
 `retypeReplacementFresh`, for every object kind and size hint. -/
@@ -4207,7 +4220,7 @@ private theorem removeFromAllEndpointQueues_id_of_unqueued
             ((SystemState.getEndpoint?_eq_some_iff st oid ep).mpr hEp), hG]
           rfl
       | tcb _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ | frame _ => rfl)
+      | schedContext _ | reply _ | frame _ | pageTable _ => rfl)
 
 /-- The victim waits on no notification, so the wait-list sweep is the
 literal identity. -/
@@ -4231,7 +4244,7 @@ private theorem removeFromAllNotificationWaitLists_id_of_no_waits
             ((SystemState.getNotification?_eq_some_iff st oid n).mpr hN), hC]
           rfl
       | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ | frame _ => rfl)
+      | schedContext _ | reply _ | frame _ | pageTable _ => rfl)
 
 /-- **WS-HP HP10.5**: the reservation-origin scrub is the identity when no
 scheduling context records this thread as an origin — the pack's
@@ -4260,7 +4273,7 @@ private theorem clearDonationOriginReferences_id_of_no_origin
           simp only [hC]
           rfl
       | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
-      | notification _ | reply _ | frame _ => rfl)
+      | notification _ | reply _ | frame _ | pageTable _ => rfl)
 
 -- `v0.35.164`: `cleanupDonatedSchedContext_ok_of_not_donated` is gone — the
 -- pipeline's first step is `cancelDonationArmOnCore`, which dispatches on the
@@ -4376,7 +4389,7 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
   | untyped u =>
       -- WS-BP BP7.1 slice 4: an untyped target is refused, as a frame is.
       cases hStep
-  | frame _ =>
+  | frame _ | pageTable _ =>
       -- WS-BP BP7.1: a frame target is refused, so there is no `.ok` step.
       cases hStep
   | schedContext sc =>
@@ -4920,6 +4933,82 @@ theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull
             { tcb with faultHandler := some cptr } hObjInv hInv
             ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
             rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- **WS-BP BP7.1 (`v0.36.12`)**: installing a page table preserves
+`ipcInvariantFull` — two stores, a page table over a page table and a VSpace
+root over a VSpace root, both kinds the bundle does not read. -/
+theorem pageTableMap_preserves_ipcInvariantFull (tableId rootId : SeLe4n.ObjId)
+    (vaddr : SeLe4n.VAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.pageTableMap tableId rootId vaddr st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨table, root, level, st1, hT, hR, -, -, -, -, hS1, hS2⟩ :=
+    Architecture.pageTableMap_ok tableId rootId vaddr st st' hStep
+  have hT' := (SystemState.getPageTable?_eq_some_iff st tableId table).mp hT
+  have hR' := (SystemState.getVSpaceRoot?_eq_some_iff st rootId root).mp hR
+  have hInv1 := storeObject_inertNonCNode_preserves_ipcInvariantFull st st1 tableId _
+    hObjInv hInv (Or.inr (by rw [hT']; trivial)) (by trivial)
+    (fun _ h => KernelObject.noConfusion h) hS1
+  have hObjInv1 := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS1
+  have hNe : rootId ≠ tableId := by
+    intro hEq; subst hEq; rw [hT'] at hR'; cases hR'
+  have hR1 : st1.objects[rootId]? = some (.vspaceRoot root) := by
+    rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hS1]; exact hR'
+  exact storeObject_inertNonCNode_preserves_ipcInvariantFull st1 st' rootId _
+    hObjInv1 hInv1 (Or.inr (by rw [hR1]; trivial)) (by trivial)
+    (fun _ h => KernelObject.noConfusion h) hS2
+
+/-- **WS-BP BP7.1 (`v0.36.12`)**: removing a page table preserves
+`ipcInvariantFull`, for the same reason. -/
+theorem pageTableUnmap_preserves_ipcInvariantFull (tableId : SeLe4n.ObjId)
+    (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : Architecture.pageTableUnmap tableId st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  unfold Architecture.pageTableUnmap at hStep
+  cases hT : st.getPageTable? tableId with
+  | none => rw [hT] at hStep; cases hStep
+  | some table =>
+    rw [hT] at hStep
+    have hT' := (SystemState.getPageTable?_eq_some_iff st tableId table).mp hT
+    simp only at hStep
+    cases hI : table.installedIn with
+    | none => rw [hI] at hStep; cases hStep; exact hInv
+    | some inst =>
+      rw [hI] at hStep
+      simp only at hStep
+      cases hR : st.getVSpaceRoot? inst.root with
+      | none =>
+        rw [hR] at hStep
+        exact storeObject_inertNonCNode_preserves_ipcInvariantFull st st' tableId _
+          hObjInv hInv (Or.inr (by rw [hT']; trivial)) (by trivial)
+          (fun _ h => KernelObject.noConfusion h) hStep
+      | some root =>
+        rw [hR] at hStep
+        have hR' := (SystemState.getVSpaceRoot?_eq_some_iff st inst.root root).mp hR
+        simp only at hStep
+        split at hStep
+        · split at hStep
+          · cases hStep
+          · cases hS1 : storeObject tableId _ st with
+            | error e => rw [hS1] at hStep; cases hStep
+            | ok p =>
+              obtain ⟨⟨⟩, st1⟩ := p
+              rw [hS1] at hStep
+              have hInv1 := storeObject_inertNonCNode_preserves_ipcInvariantFull st st1 tableId _
+                hObjInv hInv (Or.inr (by rw [hT']; trivial)) (by trivial)
+                (fun _ h => KernelObject.noConfusion h) hS1
+              have hObjInv1 := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS1
+              have hNe : inst.root ≠ tableId := by
+                intro hEq; rw [hEq, hT'] at hR'; cases hR'
+              have hR1 : st1.objects[inst.root]? = some (.vspaceRoot root) := by
+                rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hS1]; exact hR'
+              exact storeObject_inertNonCNode_preserves_ipcInvariantFull st1 st' inst.root _
+                hObjInv1 hInv1 (Or.inr (by rw [hR1]; trivial)) (by trivial)
+                (fun _ h => KernelObject.noConfusion h) hStep
+        · exact storeObject_inertNonCNode_preserves_ipcInvariantFull st st' tableId _
+            hObjInv hInv (Or.inr (by rw [hT']; trivial)) (by trivial)
+            (fun _ h => KernelObject.noConfusion h) hStep
 
 /-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle.  It
 rewrites one TCB's `cspaceRoot` and `vspaceRoot`, neither of which any conjunct

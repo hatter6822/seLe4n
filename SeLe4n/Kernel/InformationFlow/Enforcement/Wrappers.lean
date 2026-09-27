@@ -302,6 +302,12 @@ def enforcementBoundary : List EnforcementClass :=
   -- CNode, `.write` on the VSpace root), and the write touches one TCB's two
   -- root fields of a suspended thread — no data crosses a label boundary.
   , .capabilityOnly "setThreadSpace"
+  -- **WS-BP BP7.1 (`v0.36.12`)**: intermediate page tables.  Capability-only:
+  -- the authority is the table capability's write right plus, for the install,
+  -- the caller's own `.write` capability to the address space — and what moves
+  -- is which page an address space's walk passes through, never data.
+  , .capabilityOnly "pageTableMap"
+  , .capabilityOnly "pageTableUnmap"
   -- WS-SM SM6.B: notification-binding capability-only operations (seL4
   -- NotificationBind / UnbindNotification — mutate the boundTCB ⇄ boundNotification
   -- relation; gated by the TCB capability, not an information-flow policy)
@@ -434,6 +440,8 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbSetAffinity => "setThreadCpuAffinity"
   | .tcbSetFaultHandler => "setThreadFaultHandlerOp"
   | .tcbSetSpace => "setThreadSpace"
+  | .pageTableMap => "pageTableMap"
+  | .pageTableUnmap => "pageTableUnmap"
   | .tcbBindNotification => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap => "mintReplyCapWithCdt"

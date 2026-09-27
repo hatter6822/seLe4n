@@ -373,6 +373,11 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   -- plumbing, stripped for SM8.B.4's reason above.
   | .frame f =>
       .frame { f with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  -- WS-BP BP7.1 (`v0.36.12`): a page table's `base` and `installedIn` are its
+  -- identity — which page, and which address-space slot names it — gated by
+  -- `objectObservable` on the table's own key, as a frame's are.
+  | .pageTable p =>
+      .pageTable { p with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
 
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
 observationally equivalent results to filtering once.

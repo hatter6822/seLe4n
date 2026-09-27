@@ -1,3 +1,103 @@
+## v0.36.12 — WS-BP BP7.1: intermediate page tables
+
+A carved address space owned its top-level table page and nothing below it, so
+the walk a PE takes through levels 1–3 had no pages to walk, and `.vspaceMap`
+mapped frames into carved roots with no translation behind them.  This cut adds
+seL4's `seL4_ARM_PageTable`.
+
+**The object.**  `KernelObject.pageTable` (`PageTableObject`: `base`,
+`installedIn`, its lock), `KernelObjectType.pageTable` (retype tag **9**), locked
+at `LockKind.page` beside frames — `LockId.lookup` at `.page` reads
+`getPageObject?`, which answers for either.  It is memory: carved from a RAM
+untyped only (`deviceBackable` is false), one page, zeroed before any capability
+to it exists (`CarveRequest.pageTable`, `carveRequestOf?` at size `0`), handed
+back read/write (`pageTableCapability`).  The in-place retype refuses it and the
+pre-retype cleanup refuses to destroy one; the boot refuses a configured one
+(`bootSafeObjectCheck`, `bootSafeObject`'s new last conjunct).
+
+**The two syscalls** (`Architecture/PageTableInstall.lean`).  `.pageTableMap`
+(discriminant **39**) is invoked on the table capability with `.write`; MR0 is
+the address, in the caller's CSpace, of a `.write` capability to the address
+space, MR1 a virtual address.  It installs the table at the **shallowest level
+the walk to that address is missing** (`VSpaceRoot.missingLevel?`), so a table
+is never installed beneath an absent one, and writes both sides of the install
+together — the table's `installedIn` record and the root's `tables` slot.  A
+table installs in one place (`.invalidCapability`), a boot-configured root owns
+no page for one (`.invalidArgument`), an address past `2^48` has no walk
+(`.addressOutOfBounds`), and a complete walk has no room (`.mappingConflict`).
+`.pageTableUnmap` (discriminant **40**, no message registers) removes the slot and
+clears the record, and refuses (`.revocationRequired`) while a mapping or a deeper
+table passes through the table (`pageTableInUse`); seL4 tears the subtree out
+instead, which would leave the frame capabilities' mapping records naming
+translations the root no longer holds.
+
+**`.vspaceMap` follows the walk.**  A carved root maps a frame only where all
+three levels are present (`Architecture.asidTranslationReady`, over
+`VSpaceRoot.translationReady`); otherwise `.translationFault`, seL4's failed
+lookup.  A boot-configured root has no table page and is unaffected, which is the
+still-open boot row.
+
+**The reset.**  Page tables are carved objects (`carvedAt`,
+`carvedSubtreeRetirable`, `retireCarvedObject`) and retire with their subtree.  A
+table and its address space name each other, so the reset refuses an install
+crossing the subtree's boundary (`carvedSubtreeInstallsClosed`,
+`.revocationRequired`) — a retired table in a surviving root, or a retired root
+holding a surviving table — since either leaves the survivor naming an id the
+next carve reuses.
+
+**Everywhere a syscall is classified**, as for `.tcbSetSpace`: return shape
+`.unit`, refusal ledger `.exempt`, cap-fault phase send, taint `.inert`, frozen
+coverage `false`, capability-only enforcement entries (canonical 52, per-core 67,
+capability-only 35), scheduler domain silent, static lock footprints
+`lockSet_pageTableMap` / `lockSet_pageTableUnmap` (caller TCB and CNode read, the
+table's `page` lock and the root's `vspaceRoot` lock written) with consistency
+theorems and size bounds (inventory 121), and `ipcInvariantFull` preserved
+(`pageTableMap_preserves_ipcInvariantFull`, `pageTableUnmap_preserves_ipcInvariantFull`).
+Rust mirrors it: `SyscallId::PageTableMap` / `PageTableUnmap` (count 41),
+`TypeTag::PageTable`, `PageTableMapArgs`, `sele4n_sys::vspace::page_table_map` /
+`page_table_unmap`, `sele4n_sys::lifecycle::untyped_retype_page_table`.
+
+**Witness.**  `tests/VSpaceCapabilityBindingSuite.lean` §5k carves a root, a frame
+and four tables, shows the frame refused at zero and two levels, installs the
+third and maps, refuses the fourth, refuses unmapping a table in use, unmaps, and
+then carves a table from a *child* untyped into the parent's root: the child's
+reset is refused on the boundary alone (with the control that nothing names the
+table), and the parent's reset retires everything.  Mutation-tested: making the
+boundary check vacuous fails the suite.  §5i's frame map into a carved root is
+now the `.translationFault` refusal.
+
+**Finalisation.**  Destroying a page table's **last** capability takes it out of
+its address space, with every mapping and every table beneath it — seL4's
+`finaliseCap` → `unmapPageTable` — so revoking authority over memory revokes the
+translations built on it.  `finaliseDestroyedCapabilities`
+(`Capability/FrameFinalise.lean`) is what the live `.cspaceDelete` and
+`.cspaceRevoke` arms now run after their destroying step: it finds the tables
+some capability named before the step and none names after it
+(`pageTablesOrphaned`, over the reset's own reference fold, which moved down to
+`Architecture/PageTeardown.lean` so both askers reach it), detaches each from its
+root (`detachPageTables`, `VSpaceRoot.withoutTablesBeneath`), removes the frame
+capabilities' recorded pages and the pages that translated through the detached
+tables through the `.vspaceUnmap` arm's own transition, and **decides** the result
+(`pageTablesDetached`).  Payoffs `finaliseDestroyedCapabilities_ok_tables` and
+`_ok_unmapped`; the bundle and the confinement results carry over
+(`finaliseDestroyedCapabilities_preserves_ipcInvariantFull`,
+`finaliseDestroyedCapabilities_framed`).  A table another capability still names
+is left installed.  The detach writes only roots, so the tables it takes out keep
+a **stale** record: the root is the truth (`pageTableInstallLive`), a stale record
+reads as installed nowhere, and `.pageTableMap`, `.pageTableUnmap` and the reset's
+boundary check all read it that way.  The in-place retype refuses a CNode holding
+a capability to an installed table (`cnodeHoldsInstalledPageTableCap`), and the
+frozen delete refuses every such capability (`frozenCapNamesInstalledPageTable`,
+FO-013c).  The §5k boundary scenario changed with it: revoking the child's
+capability now detaches the child's table, so the child resets alone; the reset's
+boundary is witnessed instead by a root carved from the child holding a table
+carved from the parent.  Mutation-tested in both directions: never orphaning fails
+the last-capability case, and ignoring surviving capabilities fails the copy case.
+
+**Registered.**  The page-table row is closed, and nothing new is registered.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP7.1)
+
 ## v0.36.11 — WS-BP BP7.1: a thread runs in a carved address space
 
 `v0.36.10` carved address spaces from untypeds and registered what it could not

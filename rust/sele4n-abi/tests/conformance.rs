@@ -561,15 +561,15 @@ fn kernel_error_exhaustive_roundtrip() {
     assert!(KernelError::from_u32(58).is_none());
 }
 
-/// Verify TypeTag roundtrip for all 9 variants (0–8, including SchedContext,
-/// Reply and — WS-BP BP7.1 — Frame).
+/// Verify TypeTag roundtrip for all 10 variants (0–9, including SchedContext,
+/// Reply and — WS-BP BP7.1 — Frame and PageTable).
 #[test]
 fn type_tag_exhaustive_roundtrip() {
-    for i in 0..=8u64 {
+    for i in 0..=9u64 {
         let tag = TypeTag::from_u64(i).expect("valid type tag");
         assert_eq!(tag.to_u64(), i);
     }
-    assert!(TypeTag::from_u64(9).is_err());
+    assert!(TypeTag::from_u64(10).is_err());
 }
 
 /// Verify all CSpace arg structures roundtrip.
@@ -990,9 +990,9 @@ fn thread_on_different_core_decode() {
 /// V1-C (M-RS-1): LifecycleRetypeArgs rejects invalid type tags at decode.
 #[test]
 fn lifecycle_retype_invalid_type_tag() {
-    // Type tag 9 (first invalid, after Frame = 8 — WS-BP BP7.1)
+    // Type tag 10 (first invalid, after PageTable = 9 — WS-BP BP7.1)
     assert_eq!(
-        lifecycle::LifecycleRetypeArgs::decode(&[42, 9, 0]),
+        lifecycle::LifecycleRetypeArgs::decode(&[42, 10, 0]),
         Err(KernelError::InvalidTypeTag)
     );
 
@@ -1143,10 +1143,11 @@ fn kernel_error_variant_count() {
 /// SM9.A.6 added AuditRead at 31 and AuditDrain at 32; WS-SM SM9.C.8 added
 /// DeclassifySignal at 33; PR #887's review round added TcbSetFaultHandler at
 /// 34; WS-RR RR8.16 added CspaceRevoke at 35; WS-BP BP7.1 added UntypedRetype at
-/// 36, UntypedReset at 37 and TcbSetSpace at 38).
+/// 36, UntypedReset at 37, TcbSetSpace at 38, and PageTableMap / PageTableUnmap
+/// at 39 and 40).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 39;
+    const SYSCALL_COUNT: u64 = 41;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1291,8 +1292,8 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 39 (WS-BP BP7.1 added UntypedRetype,
-/// UntypedReset and TcbSetSpace, on top of
+/// AA1-B-5: COUNT is updated to 41 (WS-BP BP7.1 added UntypedRetype,
+/// UntypedReset, TcbSetSpace, PageTableMap and PageTableUnmap, on top of
 /// WS-RR RR8.16's CspaceRevoke, on top of
 /// PR #887's review round's TcbSetFaultHandler, WS-SM SM9.C.8's
 /// DeclassifySignal, WS-SM SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's
@@ -1300,7 +1301,7 @@ fn sched_context_boundary() {
 /// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 39);
+    assert_eq!(SyscallId::COUNT, 41);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1451,12 +1452,13 @@ fn lifecycle_retype_sched_context() {
     assert_eq!(decoded.new_type, TypeTag::SchedContext);
 }
 
-/// AA1-G-2 / WS-SM SM6.D / WS-BP BP7.1: TypeTag boundary — 9 is the first
-/// invalid value (Frame = 8).
+/// AA1-G-2 / WS-SM SM6.D / WS-BP BP7.1: TypeTag boundary — 10 is the first
+/// invalid value (PageTable = 9).
 #[test]
 fn type_tag_boundary() {
     assert_eq!(TypeTag::from_u64(8), Ok(TypeTag::Frame));
-    assert_eq!(TypeTag::from_u64(9), Err(KernelError::InvalidTypeTag));
+    assert_eq!(TypeTag::from_u64(9), Ok(TypeTag::PageTable));
+    assert_eq!(TypeTag::from_u64(10), Err(KernelError::InvalidTypeTag));
     assert_eq!(
         TypeTag::from_u64(u64::MAX),
         Err(KernelError::InvalidTypeTag)
@@ -1616,7 +1618,21 @@ fn tcb_set_space_roundtrip() {
     assert_eq!(sid, SyscallId::TcbSetSpace);
     assert_eq!(sid.to_u64(), 38);
     assert_eq!(sid.required_right(), AccessRight::Write);
-    assert_eq!(SyscallId::COUNT, 39);
+}
+
+/// WS-BP BP7.1: PageTableMap / PageTableUnmap roundtrip (discriminants 39, 40)
+/// — installing or removing a table changes the table, so each takes the write
+/// right on the page-table capability.
+#[test]
+fn page_table_roundtrip() {
+    use sele4n_types::rights::AccessRight;
+    let map = SyscallId::from_u64(39).expect("PageTableMap must exist");
+    assert_eq!(map, SyscallId::PageTableMap);
+    assert_eq!(map.required_right(), AccessRight::Write);
+    let unmap = SyscallId::from_u64(40).expect("PageTableUnmap must exist");
+    assert_eq!(unmap, SyscallId::PageTableUnmap);
+    assert_eq!(unmap.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::COUNT, 41);
 }
 
 /// WS-SM SM6.B: TcbBindNotification roundtrip (discriminant 26).
@@ -1678,13 +1694,14 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 39 is out of range for SyscallId
-/// (WS-BP BP7.1 added TcbSetSpace, moving the boundary from 38 to 39).
+/// D6-D5: Boundary — discriminant 41 is out of range for SyscallId
+/// (WS-BP BP7.1 added PageTableMap and PageTableUnmap, moving the boundary
+/// from 39 to 41).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(38).is_some()); // Last valid
-    assert!(SyscallId::from_u64(39).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 39);
+    assert!(SyscallId::from_u64(40).is_some()); // Last valid
+    assert!(SyscallId::from_u64(41).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 41);
 }
 
 /// WS-SM SM9.A.6: AuditRead roundtrip (discriminant 31).
@@ -1953,7 +1970,7 @@ enum ReturnShape {
 }
 
 /// The mirror of `Architecture.syscallReturnShape` — total over the same
-/// 39 variants (`SyscallId` here is `sele4n-types`', whose count pin is
+/// 41 variants (`SyscallId` here is `sele4n-types`', whose count pin is
 /// `syscall_id_variant_count`).
 ///
 /// **WS-RR RR7.17: no wildcard.**  This match had a `_ => ReturnShape::Unit`
@@ -2005,6 +2022,9 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         | SyscallId::UntypedReset
         // WS-BP BP7.1: a space change returns nothing.
         | SyscallId::TcbSetSpace
+        // WS-BP BP7.1: installing or removing a page table returns nothing.
+        | SyscallId::PageTableMap
+        | SyscallId::PageTableUnmap
         | SyscallId::LifecycleRetype
         | SyscallId::VSpaceMap
         | SyscallId::VSpaceUnmap
@@ -2465,6 +2485,10 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     assert_clears("untyped_reset", SyscallId::UntypedReset);
     let _ = sele4n_sys::tcb::tcb_set_space(cap, cap, cap);
     assert_clears("tcb_set_space", SyscallId::TcbSetSpace);
+    let _ = sele4n_sys::vspace::page_table_map(cap, cap, VAddr::from(0x4000_0000u64));
+    assert_clears("page_table_map", SyscallId::PageTableMap);
+    let _ = sele4n_sys::vspace::page_table_unmap(cap);
+    assert_clears("page_table_unmap", SyscallId::PageTableUnmap);
 
     let _ = sele4n_sys::vspace::vspace_map_read_only(
         cap,

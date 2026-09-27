@@ -3942,13 +3942,13 @@ run_negative_check "INVARIANT" rg -n 'bootSafeObjectCheck_sound_structural' SeLe
 run_check "INVARIANT" rg -n '^    ut\.watermark == 0 && ut\.children\.isEmpty && ut\.parent\.isNone$' SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n -U 'def bootSafeUntypedCheck[^\n]*(\n([ \t][^\n]*)?)*=> true' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U 'def bootSafeObject \(obj : KernelObject\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*  \(∀ ut, obj = \.untyped ut →\n    ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\)' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U 'theorem bootSafeObjectCheck_sound \(obj : KernelObject\)[^\n]*(\n([ \t][^\n]*)?)*    \(∀ ut, obj = \.untyped ut →\n      ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\) ∧\n    \(∀ f, obj ≠ \.frame f\) := by' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'theorem bootSafeObjectCheck_sound \(obj : KernelObject\)[^\n]*(\n([ \t][^\n]*)?)*    \(∀ ut, obj = \.untyped ut →\n      ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\) ∧\n    \(∀ f, obj ≠ \.frame f\) ∧ \(∀ p, obj ≠ \.pageTable p\) := by' SeLe4n/Platform/Boot.lean
 # WS-BP BP7.1: a boot configuration may not carry a frame — a frame is memory
 # authority, and no boot check places one.  The check refuses it, the Prop
 # states it, and the soundness bridge concludes it; the negative refuses the
 # arm admitting one.
 run_check "INVARIANT" rg -n '^  \| \.frame _ => false$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^  \(∀ f, obj ≠ \.frame f\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  \(∀ f, obj ≠ \.frame f\) ∧$' SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n -U 'def bootSafeObjectCheck[^\n]*(\n([ \t][^\n]*)?)*\| \.frame _ => true' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  bootUntypedMustBePristine$' tests/
 # WS-BP BP7.1 slice 1: memory is authority.  `.vspaceMap`'s MR2 is a frame
@@ -3999,7 +3999,7 @@ run_check "INVARIANT" rg -n -U 'def freezeVSpaceRoot[^\n]*(\n([ \t][^\n]*)?)*   
 run_check "INVARIANT" rg -n 'the first root is registered under the least free ASID \(1\), not 0' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^  runCarvedRootChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype_vspace_root\($' rust/sele4n-sys/src/lifecycle.rs
-run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.frame => if sizeBits = 0 then \.ok \.frame else \.error \.invalidArgument\n  \| \.untyped =>\n      if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.frame => if sizeBits = 0 then \.ok \.frame else \.error \.invalidArgument\n[^\n]*\n  \| \.pageTable => if sizeBits = 0 then \.ok \.pageTable else \.error \.invalidArgument\n  \| \.untyped =>\n      if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| _ => \.error \.invalidArgument' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
@@ -4069,9 +4069,9 @@ run_check "INVARIANT" rg -n '^theorem untypedReset_ok_asids_released($|[ ({:\[\]
 run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*            if !untypedRegionUnmapped st1 ut then \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*              storeObject untypedId \(\.untyped ut\.reset\) \(retireCarvedObjects st1 ids\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n -U 'def unmapLivePages[^\n]*(\n([ \t][^\n]*)?)*      if mappedPageLive st p then\n        match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/Architecture/PageTeardown.lean
-run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*\n  if \(st\.getFrame\? id\)\.isSome \|\| \(st\.getUntyped\? id\)\.isSome \|\|\n      \(st\.getVSpaceRoot\? id\)\.isSome then' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*\n  if \(st\.getFrame\? id\)\.isSome \|\| \(st\.getUntyped\? id\)\.isSome \|\|\n      \(st\.getVSpaceRoot\? id\)\.isSome \|\| \(st\.getPageTable\? id\)\.isSome then' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*          \| some root => st\.asidTable\.erase root\.asid' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def objectNamesListed[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb t =>(\n([ \t][^\n]*)?)*      ids\.contains t\.vspaceRoot \|\|\n      match t\.pendingMessage with' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def objectNamesListed[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb t =>(\n([ \t][^\n]*)?)*      ids\.contains t\.vspaceRoot \|\|\n      match t\.pendingMessage with' SeLe4n/Kernel/Architecture/PageTeardown.lean
 run_check "INVARIANT" rg -n '^theorem untypedReset_ok_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^theorem untypedReset_ok_unreferenced($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^theorem untypedReset_ok_subtree_absent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
@@ -4095,8 +4095,8 @@ run_check "INVARIANT" rg -n -U '        if capabilityMappingLive st frameCap the
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*            cspaceRecordFrameMapping frameSlot \{ asid := args\.asid, vaddr := args\.vaddr \} st1' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,10}            cspaceDeleteSlotFinalising \(determineExecutingCore st tid\) addr st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,8}            cspaceRevokeCdtFinalising \(determineExecutingCore st tid\) addr st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceDeleteSlot addr st with\n    \| \.error e => \.error e\n    \| \.ok \(\(\), st1\) => finaliseFramePages executingCore \(slotMappedPages st addr\) st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceRevokeCdt addr st with\n    \| \.error e => \.error e\n    \| \.ok \(pages, st1\) => finaliseFramePages executingCore pages st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceDeleteSlot addr st with\n    \| \.error e => \.error e\n    \| \.ok \(\(\), st1\) =>\n      finaliseDestroyedCapabilities executingCore st \(slotMappedPages st addr\) st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceRevokeCdt addr st with\n    \| \.error e => \.error e\n    \| \.ok \(pages, st1\) => finaliseDestroyedCapabilities executingCore st pages st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # One revocation: the materialized fold REPORTS the page each destroyed
 # capability recorded, read from the slot it deletes, and there is no second
 # state-only fold beside it (the collecting duplicate was deleted, not pinned).
@@ -4107,9 +4107,9 @@ run_negative_check "INVARIANT" rg -n 'cspaceRevokeCdtCollecting|revokeCdtCollect
 run_check "INVARIANT" rg -n -U 'def finaliseFramePages[^\n]*(\n([ \t][^\n]*)?)*    match unmapLivePages executingCore pages st with(\n([ \t][^\n]*)?)*      if !livePagesCleared st1 pages then \.error \.illegalState' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '            match cspaceInsertSlot dst capNN\.val\.withoutMapping st. with' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '            match cspaceInsertSlot dstAddr cap\.withoutMapping st with' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n -U '    if cnodeHasDerivationParentSlot st target cn then\n      \.error \.revocationRequired\n    else if cn\.holdsFrameMappingRecord then\n      \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n -U '    if cnodeHasDerivationParentSlot st target cn then\n      \.error \.revocationRequired(\n[ \t]*(--[^\n]*)?)*\n    else if cn\.holdsFrameMappingRecord \|\| Architecture\.cnodeHoldsInstalledPageTableCap st cn then\n      \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n -U 'def bootSafeCapCheck[^\n]*(\n([ \t][^\n]*)?)*  cap\.mapping\.isNone' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U 'def frozenCspaceDelete[^\n]*(\n([ \t][^\n]*)?)*      if \(cn\.slots\.lookup slot\)\.any \(fun cap => cap\.mapping\.isSome\) then\n        \.error \.revocationRequired' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n -U 'def frozenCspaceDelete[^\n]*(\n([ \t][^\n]*)?)*      if \(cn\.slots\.lookup slot\)\.any\n          \(fun cap => cap\.mapping\.isSome \|\| frozenCapNamesInstalledPageTable st cap\) then\n        \.error \.revocationRequired' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_ok_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_ok_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_ok_records($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -4151,6 +4151,46 @@ run_check "INVARIANT" rg -n 'runSetSpaceChecks$' tests/VSpaceCapabilityBindingSu
 run_check "INVARIANT" rg -n 'a reset through a derivation-free SIBLING copy is still refused' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'a capability parked in a blocked sender.s message keeps the reset refused' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'and leaves the mapping of a page OUTSIDE the region alone' tests/VSpaceCapabilityBindingSuite.lean
+# WS-BP BP7.1 (v0.36.12): intermediate page tables.  A table installs at the
+# shallowest missing level, writes BOTH sides of the install, and a carved root
+# maps a frame only where its walk is complete.  The reset retires a page table
+# like any carved object and refuses an install crossing its subtree boundary.
+run_check "INVARIANT" rg -n -U 'def pageTableMap \(tableId rootId[^\n]*(\n([ \t][^\n]*)?)*        match root\.missingLevel\? vaddr with\n        \| none => \.error \.mappingConflict' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n -U 'def pageTableMap \(tableId rootId[^\n]*(\n([ \t][^\n]*)?)*          match storeObject tableId \(\.pageTable \(table\.installedAt rootId level index\)\) st with(\n([ \t][^\n]*)?)*            storeObject rootId \(\.vspaceRoot \(root\.withTableSlot level index tableId\)\) st1' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n -U 'def pageTableUnmap \(tableId[^\n]*(\n([ \t][^\n]*)?)*          if root\.tables\.contains \(inst\.slotFor tableId\) then\n            if pageTableInUse root inst then \.error \.revocationRequired' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n '^theorem pageTableMap_ok_installed($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n '^theorem pageTableUnmap_refuses_in_use($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n '^theorem pageTableMap_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem pageTableUnmap_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap [^\n]*(\n([ \t][^\n]*)?)*        else if !Architecture\.asidTranslationReady st args\.asid args\.vaddr then\n          \.error \.translationFault' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*        else if !carvedSubtreeInstallsClosed st ids then \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^  \| \.pageTableMap          => 39$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^  \| \.pageTableUnmap        => 40$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_pageTableMap($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_pageTableUnmap_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n 'runPageTableChecks$' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'so resetting the child alone is refused \(revocationRequired\)' tests/VSpaceCapabilityBindingSuite.lean
+# WS-BP BP7.1 (v0.36.12): destroying a table's LAST capability takes it out of
+# its address space (seL4's finaliseCap -> unmapPageTable).  Both destroying
+# arms run the one finalisation; the orphan set is "named before, named by none
+# after"; the root is the truth, so every reader asks the live question and the
+# record-only reading must not come back.
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising [^\n]*(\n([ \t][^\n]*)?)*      finaliseDestroyedCapabilities executingCore st \(slotMappedPages st addr\) st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^    \| \.ok \(pages, st1\) => finaliseDestroyedCapabilities executingCore st pages st1$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*        if Architecture\.pageTableInstallLive st id && !carvedSubtreeUnreferenced pre \[id\] &&\n            carvedSubtreeUnreferenced st \[id\] then \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def finaliseDestroyedCapabilities [^\n]*(\n([ \t][^\n]*)?)*        if !pageTablesDetached st2 orphans then \.error \.illegalState' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_ok_tables($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_framed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^      if pageTableInstallLive st tableId then \.error \.invalidCapability$' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_negative_check "INVARIANT" rg -n 'installedIn\.isSome then' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n '^        \| some inst => ids\.contains inst\.root \|\| !Architecture\.pageTableInstallLive st id$' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^    else if cn\.holdsFrameMappingRecord \|\| Architecture\.cnodeHoldsInstalledPageTableCap st cn then$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '\(fun cap => cap\.mapping\.isSome \|\| frozenCapNamesInstalledPageTable st cap\) then' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'deleting a table.s last capability takes it, and the two tables beneath it, out of the root' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'a table another capability still names stays installed, with everything beneath it' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'RETIRED: the bare revocation leaves the child.s table in the surviving root' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n '^  fo013c_cspaceDeleteRefusesInstalledTableCap$' tests/FrozenOpsSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
 # environment with no entry now that one exists, and the link gate has no
@@ -5849,8 +5889,8 @@ run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[
 # repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
 # the theorem without the sentence and this fails, which is the only mechanism
 # that has actually held.
-run_prose_check "INVARIANT" rg -n 'per-core boundary has 65 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 65' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_prose_check "INVARIANT" rg -n 'per-core boundary has 67 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -6593,7 +6633,7 @@ run_prose_negative_check "INVARIANT" rg -n 'classification table \([0-9]+ entrie
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 50' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 52' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -7074,7 +7114,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 50' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 52' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -7253,10 +7293,10 @@ run_check "INVARIANT" rg -n '31 => some \.auditRead' SeLe4n/Model/Object/Types.l
 run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.lean
 # The count anchors pin HEAD's value, not the value the cut above produced:
 # `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36.
-run_check "INVARIANT" rg -n '^def count : Nat := 39' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def count : Nat := 41' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 39;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 41;' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditFieldTooLarge = 55' rust/sele4n-types/src/error.rs
 
 # SM9.A.8: the safe wrappers.  Without them the syscalls are hand-encode-only,
@@ -7347,7 +7387,7 @@ run_prose_negative_check "INVARIANT" rg -n 'Partial readers are unchanged where 
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 65' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -7435,7 +7475,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=39' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=41' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -7655,7 +7695,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=39 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=41 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -7763,7 +7803,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 39' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 41' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
@@ -13132,7 +13172,7 @@ import SeLe4n.Model.Object.PerObjectLockInventory
 #check @SeLe4n.Model.KernelObject.objectLockOf_exists
 #check @SeLe4n.Model.KernelObject.objectType_and_lockOf_total
 #check @SeLe4n.Model.KernelObject.objectLockOf_consistent_with_type
-#check @SeLe4n.Model.KernelObjectType.variants_count_exactly_nine
+#check @SeLe4n.Model.KernelObjectType.variants_count_exactly_ten
 #check @SeLe4n.Model.KernelObjectType.variants_total
 -- Inventory aggregator.
 #check @SeLe4n.Model.PerObjectLockCategory

@@ -8,7 +8,7 @@
 //!
 //! ## Mirror discipline
 //!
-//! `SyscallId` here mirrors the 39-variant enum in
+//! `SyscallId` here mirrors the 41-variant enum in
 //! `sele4n-types/src/syscall.rs`.  We do NOT depend on `sele4n-types`
 //! in the runtime build (the HAL crate is the lowest-level workspace
 //! member with zero runtime dependencies, by design — see
@@ -82,7 +82,7 @@ impl DispatchError {
     }
 }
 
-/// AN9-F: 39-variant syscall ID enum mirroring
+/// AN9-F: 41-variant syscall ID enum mirroring
 /// `sele4n-types::SyscallId`.  Discriminants align with the Lean
 /// `SyscallId.toNat` encoding so a `u64` syscall id read from the
 /// trap frame's `x7` register decodes identically on both sides.
@@ -158,11 +158,18 @@ pub enum SyscallId {
     /// roots (seL4's `TCB_SetSpace`); x2/x3 = capability addresses of the two
     /// roots in the caller's CSpace.
     TcbSetSpace = 38,
+    /// WS-BP BP7.1 (`v0.36.12`): install an intermediate page table (seL4's
+    /// `seL4_ARM_PageTable_Map`); x2 = the address-space capability address,
+    /// x3 = the virtual address.
+    PageTableMap = 39,
+    /// WS-BP BP7.1 (`v0.36.12`): take one out (`seL4_ARM_PageTable_Unmap`); no
+    /// message registers.
+    PageTableUnmap = 40,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 39;
+    pub const COUNT: u32 = 41;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
     /// outside the valid `0..COUNT` range with `None`.
@@ -207,6 +214,8 @@ impl SyscallId {
             36 => Some(Self::UntypedRetype),
             37 => Some(Self::UntypedReset),
             38 => Some(Self::TcbSetSpace),
+            39 => Some(Self::PageTableMap),
+            40 => Some(Self::PageTableUnmap),
             _ => None,
         }
     }
@@ -252,6 +261,10 @@ impl SyscallId {
             Self::UntypedReset => 0,
             // WS-BP BP7.1: the two root capability addresses.
             Self::TcbSetSpace => 2,
+            // WS-BP BP7.1: the address-space capability address and the address.
+            Self::PageTableMap => 2,
+            // WS-BP BP7.1: the unmap's only operand is the invoked capability.
+            Self::PageTableUnmap => 0,
             Self::LifecycleRetype => 3,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
@@ -1252,7 +1265,12 @@ mod tests {
         // WS-BP BP7.1: the space change takes its two root addresses.
         assert_eq!(SyscallId::TcbSetSpace.min_inline_args(), 2);
         assert_eq!(SyscallId::from_u32(38), Some(SyscallId::TcbSetSpace));
-        assert_eq!(SyscallId::from_u32(39), None);
+        // WS-BP BP7.1: the page-table install takes two, its removal none.
+        assert_eq!(SyscallId::PageTableMap.min_inline_args(), 2);
+        assert_eq!(SyscallId::PageTableUnmap.min_inline_args(), 0);
+        assert_eq!(SyscallId::from_u32(39), Some(SyscallId::PageTableMap));
+        assert_eq!(SyscallId::from_u32(40), Some(SyscallId::PageTableUnmap));
+        assert_eq!(SyscallId::from_u32(41), None);
     }
 
     // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid

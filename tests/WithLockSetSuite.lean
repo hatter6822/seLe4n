@@ -258,7 +258,7 @@ example : ¬ lockHeld bootCoreId ⟨.reply, SeLe4n.ObjId.ofNat 0⟩ .write
 
 example : ¬ lockHeld bootCoreId ⟨.page, SeLe4n.ObjId.ofNat 0⟩ .read
     (default : SystemState) :=
-  lockHeld_page _ _ _ _ (default_getFrame?_none _)
+  lockHeld_page _ _ _ _ (default_getPageObject?_none _)
 
 -- ============================================================================
 -- §3 — Ordering properties (decidable on concrete examples)

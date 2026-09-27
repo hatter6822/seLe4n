@@ -49,6 +49,8 @@ def objectTypeAllocSize : KernelObjectType → Nat
   | .reply => 64
   -- WS-BP BP7.1: a frame is one page of the memory it is carved from.
   | .frame => SeLe4n.pageBytes
+  -- WS-BP BP7.1 (`v0.36.12`): so is a page table.
+  | .pageTable => SeLe4n.pageBytes
 
 /-- S5-G: Predicate for object types that require page-aligned allocation bases.
 VSpace roots and CNodes back page-table structures on ARM64, and a frame is
@@ -60,6 +62,8 @@ def requiresPageAlignment : KernelObjectType → Bool
   | .cnode => true
   -- WS-BP BP7.1: a frame is mapped by address, and a mapping names a page.
   | .frame => true
+  -- WS-BP BP7.1 (`v0.36.12`): a table descriptor names a page.
+  | .pageTable => true
   -- WS-BP BP7.1 slice 4 (`v0.36.8`): a carved untyped starts on a page, so
   -- every frame carved from it can too — the carve's size is a multiple of a
   -- page (`minUntypedSizeBits`), which keeps the parent's next base aligned.
@@ -303,7 +307,7 @@ theorem retypeFromUntyped_capacity_gated
       split at hOk
       · simp at hOk
       · rename_i hLt; exact Nat.lt_of_not_le hLt
-    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ =>
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp at hOk
 
 /-- AJ2-D (M-09): Allocation freshness — if `retypeFromUntyped` succeeds, the
@@ -340,7 +344,7 @@ theorem retypeFromUntyped_childId_fresh
           cases hColl : st.objects[childId]?.isSome
           · rfl
           · simp [hColl] at hOk
-    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ =>
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp at hOk
 
 /-- WS-F2: Decomposition of a successful `retypeFromUntyped` into constituent steps.
@@ -374,7 +378,7 @@ theorem retypeFromUntyped_ok_decompose
       | cnode _ => simp [hObj] at hStep
       | vspaceRoot _ => simp [hObj] at hStep
       | schedContext _ => simp [hObj] at hStep
-      | reply _ | frame _ => simp [hObj] at hStep
+      | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
       | untyped ut =>
           simp only [hObj] at hStep
           -- S4-B: Discharge capacity check
@@ -521,7 +525,7 @@ theorem retypeFromUntyped_error_typeMismatch
   | cnode _ => simp [hObj]
   | vspaceRoot _ => simp [hObj]
   | schedContext _ => simp [hObj]
-  | reply _ | frame _ => simp [hObj]
+  | reply _ | frame _ | pageTable _ => simp [hObj]
 
 
 /-- WS-F2: `retypeFromUntyped` returns `untypedAllocSizeTooSmall` when allocSize is insufficient. -/
@@ -920,7 +924,24 @@ inductive CarveRequest where
       chooses (`freshAsid?`) and the carve checks is free
       (`CarveRequest.admissible`). -/
   | vspaceRoot (asid : SeLe4n.ASID)
+  /-- **WS-BP BP7.1 (`v0.36.12`)**: an intermediate translation table — one page,
+      installed into an address space by `.pageTableMap`. -/
+  | pageTable
   deriving Repr, DecidableEq
+
+/-- **WS-BP BP7.1 (`v0.36.12`): the page table a carve makes** — installed
+nowhere, on the page at the untyped's watermark, the same page
+`untypedNextFrame` names. -/
+def untypedNextPageTable (ut : UntypedObject) : PageTableObject :=
+  { base := (untypedNextFrame ut).base }
+
+/-- **WS-BP BP7.1 (`v0.36.12`): the capability a carve hands back for a page
+table.**  Read and write — `.pageTableMap` and `.pageTableUnmap` ask `.write`.
+`.retype` is absent: a table's page returns through the reset, never through an
+in-place retype, which refuses a table outright. -/
+def pageTableCapability (tableId : SeLe4n.ObjId) : Capability :=
+  { target := .object tableId
+    rights := AccessRightSet.ofList [.read, .write] }
 
 /-- **WS-BP BP7.1 slice 4b (`v0.36.10`): the VSpace root a carve makes** — no
 mappings, registered under `asid`, and its **table base the page at the
@@ -960,6 +981,7 @@ def CarveRequest.admissible (st : SystemState) : CarveRequest → Bool
   | .vspaceRoot asid =>
       asid.toNat != 0 && decide (asid.toNat < st.machine.maxASID) &&
         (st.asidTable[asid]?).isNone
+  | .pageTable => true
 
 /-- The object a request carves out of `ut` (stored at `untypedId`). -/
 def CarveRequest.object (untypedId : SeLe4n.ObjId) (ut : UntypedObject) :
@@ -967,18 +989,21 @@ def CarveRequest.object (untypedId : SeLe4n.ObjId) (ut : UntypedObject) :
   | .frame => .frame (untypedNextFrame ut)
   | .untyped b => .untyped (untypedNextChild ut untypedId b)
   | .vspaceRoot asid => .vspaceRoot (untypedNextVSpaceRoot ut asid)
+  | .pageTable => .pageTable (untypedNextPageTable ut)
 
 /-- The bytes a request takes from the parent's region. -/
 def CarveRequest.size : CarveRequest → Nat
   | .frame => SeLe4n.pageBytes
   | .untyped b => 2 ^ b
   | .vspaceRoot _ => SeLe4n.pageBytes
+  | .pageTable => SeLe4n.pageBytes
 
 /-- The capability a request hands back for the carved object. -/
 def CarveRequest.capability (childId : SeLe4n.ObjId) : CarveRequest → Capability
   | .frame => frameCapability childId
   | .untyped _ => untypedCapability childId
   | .vspaceRoot _ => vspaceRootCapability childId
+  | .pageTable => pageTableCapability childId
 
 /-- The memory write a request performs.  A RAM frame's page is zeroed before
 any capability to it exists (`carveZeroFrame`).  A child untyped writes nothing:
@@ -992,6 +1017,11 @@ def CarveRequest.scrub (st : SystemState) (ut : UntypedObject) : CarveRequest �
   | .frame => carveZeroFrame st (untypedNextFrame ut)
   | .untyped _ => st
   | .vspaceRoot _ =>
+      { st with
+          machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut).base SeLe4n.pageBytes }
+  -- WS-BP BP7.1 (`v0.36.12`): a table page is zeroed for the root's reason — a
+  -- zeroed table holds only invalid descriptors.
+  | .pageTable =>
       { st with
           machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut).base SeLe4n.pageBytes }
 

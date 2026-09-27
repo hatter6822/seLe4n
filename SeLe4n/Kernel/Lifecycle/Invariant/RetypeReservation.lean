@@ -343,7 +343,7 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
       subst h
       exact releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp
         st (SeLe4n.SchedContextId.ofObjId target) sc hInv hCons
-  | frame _ | untyped _ =>
+  | frame _ | pageTable _ | untyped _ =>
     -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
     -- an untyped one — so there is no `.ok` post-state.
     subst hC; simp at h
@@ -605,7 +605,7 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
   | schedContext sc =>
     -- Excluded: the binding release refutes the invariant (above).
     exact absurd hC (hNotSc sc)
-  | frame _ | untyped _ =>
+  | frame _ | pageTable _ | untyped _ =>
     -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
     -- an untyped one — so there is no `.ok` post-state.
     subst hC; simp at h
@@ -801,7 +801,7 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
     · exact absurd h (by simp)
     · injection h with h; subst h
       exact releaseSchedContextBinding_preserves_objects_invExt _ _ sc hInv
-  | frame _ | untyped _ =>
+  | frame _ | pageTable _ | untyped _ =>
     -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
     -- an untyped one — so there is no `.ok` post-state.
     subst hC; simp at h
@@ -909,7 +909,7 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
     · injection h with h; subst h
       exact ⟨fun t hT => by rw [hStored] at hT; exact absurd hT (by simp),
              fun s0 hS => by rw [hStored] at hS; exact absurd hS (by simp)⟩
-  | frame _ | untyped _ =>
+  | frame _ | pageTable _ | untyped _ =>
     -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
     -- an untyped one — so there is no `.ok` post-state.
     subst hC; simp at h

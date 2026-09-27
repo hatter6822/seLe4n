@@ -182,6 +182,7 @@ def KernelObject.updateLock (obj : KernelObject) (op : RwLockOp) :
   | .schedContext sc => .schedContext { sc with lock := sc.lock.applyOp op }
   | .reply r        => .reply        { r with lock := r.lock.applyOp op }
   | .frame f        => .frame        { f with lock := f.lock.applyOp op }
+  | .pageTable p    => .pageTable    { p with lock := p.lock.applyOp op }
 
 /-- WS-SM SM3.C.2: per-variant `@[simp]` unfold for `.tcb`. -/
 @[simp] theorem KernelObject.updateLock_tcb (t : TCB) (op : RwLockOp) :
@@ -230,6 +231,12 @@ def KernelObject.updateLock (obj : KernelObject) (op : RwLockOp) :
     (f : FrameObject) (op : RwLockOp) :
     KernelObject.updateLock (.frame f) op =
       .frame { f with lock := f.lock.applyOp op } := rfl
+
+/-- WS-BP BP7.1 (`v0.36.12`): per-variant `@[simp]` unfold for `.pageTable`. -/
+@[simp] theorem KernelObject.updateLock_pageTable
+    (p : PageTableObject) (op : RwLockOp) :
+    KernelObject.updateLock (.pageTable p) op =
+      .pageTable { p with lock := p.lock.applyOp op } := rfl
 
 /-- WS-SM SM3.C.2: `updateLock` preserves the kernel-object kind tag.
 

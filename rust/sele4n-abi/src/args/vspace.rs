@@ -95,6 +95,35 @@ impl VSpaceUnmapArgs {
 /// (`SyscallArgDecode.lean`).
 pub type VSpaceUnifyInstructionArgs = VSpaceUnmapArgs;
 
+/// Arguments for `pageTableMap` (syscall 39) — seL4's `seL4_ARM_PageTable_Map`.
+/// Register mapping: x2 = the address, in the **caller's** CSpace, of a
+/// capability to the address space (held with `Write`); x3 = a virtual address
+/// whose walk the table serves.
+///
+/// Lean: `PageTableMapArgs` (SyscallArgDecode.lean, WS-BP BP7.1)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageTableMapArgs {
+    pub vspace_root: u64,
+    pub vaddr: u64,
+}
+
+impl PageTableMapArgs {
+    pub const fn encode(&self) -> [u64; 2] {
+        [self.vspace_root, self.vaddr]
+    }
+
+    /// Decode from message registers. Requires 2 registers.
+    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
+        if regs.len() < 2 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            vspace_root: regs[0],
+            vaddr: regs[1],
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,6 +158,19 @@ mod tests {
         assert_eq!(
             VSpaceUnifyInstructionArgs::decode(&args.encode()).unwrap(),
             args
+        );
+    }
+
+    #[test]
+    fn page_table_map_roundtrip() {
+        let args = PageTableMapArgs {
+            vspace_root: 0x31,
+            vaddr: 0x4000_0000,
+        };
+        assert_eq!(PageTableMapArgs::decode(&args.encode()).unwrap(), args);
+        assert_eq!(
+            PageTableMapArgs::decode(&[1]),
+            Err(KernelError::InvalidMessageInfo)
         );
     }
 

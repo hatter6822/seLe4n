@@ -5,7 +5,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 39 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 41 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -140,11 +140,24 @@ pub enum SyscallId {
     /// capability to the new VSpace root (held with `Write`).  Refused unless
     /// the target is suspended.
     TcbSetSpace = 38,
+    /// WS-BP BP7.1 (`v0.36.12`): install an intermediate page table — seL4's
+    /// `seL4_ARM_PageTable_Map`.
+    ///
+    /// Invoked on the **page-table** capability (`Write` right).  x2 = the
+    /// address, in the caller's CSpace, of a capability to the address space
+    /// (held with `Write`); x3 = a virtual address whose walk the table serves.
+    /// The table is installed at the shallowest level that walk is missing.
+    PageTableMap = 39,
+    /// WS-BP BP7.1 (`v0.36.12`): take an intermediate page table out of the
+    /// address space it is installed in — seL4's `seL4_ARM_PageTable_Unmap`.
+    /// Invoked on the page-table capability (`Write` right), with no message
+    /// registers; refused while anything still translates through the table.
+    PageTableUnmap = 40,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 39;
+    pub const COUNT: usize = 41;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -189,6 +202,8 @@ impl SyscallId {
             36 => Some(Self::UntypedRetype),
             37 => Some(Self::UntypedReset),
             38 => Some(Self::TcbSetSpace),
+            39 => Some(Self::PageTableMap),
+            40 => Some(Self::PageTableUnmap),
             _ => None,
         }
     }
@@ -220,6 +235,8 @@ impl SyscallId {
             Self::UntypedReset => AccessRight::Retype,
             // WS-BP BP7.1: setting a thread's roots configures the thread.
             Self::TcbSetSpace => AccessRight::Write,
+            // WS-BP BP7.1: installing or removing a table changes the table.
+            Self::PageTableMap | Self::PageTableUnmap => AccessRight::Write,
             Self::VSpaceMap | Self::VSpaceUnmap => AccessRight::Write,
             Self::ServiceRegister | Self::ServiceRevoke => AccessRight::Write,
             Self::ServiceQuery => AccessRight::Read,
@@ -442,8 +459,10 @@ mod tests {
         assert_eq!(SyscallId::UntypedReset.to_u64(), 37);
         assert_eq!(SyscallId::from_u64(37), Some(SyscallId::UntypedReset));
         assert_eq!(SyscallId::from_u64(38), Some(SyscallId::TcbSetSpace));
-        assert_eq!(SyscallId::from_u64(39), None);
-        assert_eq!(SyscallId::COUNT, 39);
+        assert_eq!(SyscallId::from_u64(39), Some(SyscallId::PageTableMap));
+        assert_eq!(SyscallId::from_u64(40), Some(SyscallId::PageTableUnmap));
+        assert_eq!(SyscallId::from_u64(41), None);
+        assert_eq!(SyscallId::COUNT, 41);
         assert_eq!(
             SyscallId::UntypedReset.required_right(),
             AccessRight::Retype

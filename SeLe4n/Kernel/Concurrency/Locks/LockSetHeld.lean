@@ -207,7 +207,7 @@ unconditional `¬ lockHeld .page` is replaced by this absence-conditioned form,
 exactly as SM6.D replaced `.reply`'s. -/
 theorem lockHeld_page (c : CoreId) (oid : SeLe4n.ObjId)
     (mode : AccessMode) (s : SystemState)
-    (hAbsent : s.getFrame? oid = none) :
+    (hAbsent : s.getPageObject? oid = none) :
     ¬ lockHeld c ⟨.page, oid⟩ mode s := by
   have hLook : LockId.lookup s ⟨.page, oid⟩ = none := by
     rw [LockId.lookup_page, hAbsent]; rfl
@@ -344,6 +344,13 @@ theorem default_getFrame?_none (oid : SeLe4n.ObjId) :
   unfold SystemState.getFrame?
   rw [default_objects_get?_none oid]
 
+/-- WS-BP BP7.1 (`v0.36.12`): the default state holds no page — no frame and no
+page table. -/
+theorem default_getPageObject?_none (oid : SeLe4n.ObjId) :
+    (default : SystemState).getPageObject? oid = none := by
+  unfold SystemState.getPageObject? SystemState.getFrame? SystemState.getPageTable?
+  rw [default_objects_get?_none oid]; rfl
+
 /-- WS-SM SM3.C.4: on the default SystemState, `LockId.lookup` returns
 `none` for every modeled-kind LockId (the underlying object is
 absent), and trivially returns `none` for the `.objStore` arm. -/
@@ -353,7 +360,7 @@ theorem default_lookup_none (l : LockId) :
   cases l.kind <;> simp [default_getTcb?_none, default_getEndpoint?_none,
     default_getNotification?_none, default_getCNode?_none,
     default_getVSpaceRoot?_none, default_getUntyped?_none,
-    default_getSchedContext?_none, default_getReply?_none, default_getFrame?_none]
+    default_getSchedContext?_none, default_getReply?_none, default_getPageObject?_none]
 
 /-- WS-SM SM3.C.4: on the default SystemState (every lock `.unheld`),
 NO core holds any lock.
@@ -449,7 +456,8 @@ theorem LockId.lookup_eq_of_objects_getElem?_eq (s s' : SystemState) (l : LockId
   | reply =>
       simp only [SystemState.getReply?, hObjIdRp, h]
   | page =>
-      simp only [SystemState.getFrame?, h]
+      simp only [SystemState.getPageObject?, SystemState.getFrame?,
+        SystemState.getPageTable?, h]
   | tcb =>
       simp only [SystemState.getTcb?, hObjIdTcb, h]
   | endpoint =>
@@ -797,7 +805,7 @@ instance lockQueued_decidable (c : CoreId) (l : LockId) (s : SystemState) :
 /-- **WS-BP BP7.1**: nothing is queued on a `.page` lock where no frame is
 present (was unconditional under the SM3.A.8 N/A decision). -/
 theorem lockQueued_page (c : CoreId) (oid : SeLe4n.ObjId) (s : SystemState)
-    (hAbsent : s.getFrame? oid = none) :
+    (hAbsent : s.getPageObject? oid = none) :
     ¬ lockQueued c ⟨.page, oid⟩ s := by
   have hLook : LockId.lookup s ⟨.page, oid⟩ = none := by
     rw [LockId.lookup_page, hAbsent]; rfl

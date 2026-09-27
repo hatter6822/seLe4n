@@ -663,7 +663,7 @@ private def runCarveChecks : IO Unit := do
       (dispatchSyscall (decodeCarve slotUtRetype 1 953 slotOwnCnRW slotCarved) carveOwner st))
   assertBool "an unknown type tag is refused (invalidTypeTag)"
     (isErr .invalidTypeTag
-      (dispatchSyscall (decodeCarve slotUtRetype 9 953 slotOwnCnRW slotCarved) carveOwner st))
+      (dispatchSyscall (decodeCarve slotUtRetype 10 953 slotOwnCnRW slotCarved) carveOwner st))
   assertBool "a destination CNode capability without `.write` is refused (illegalAuthority)"
     (isErr .illegalAuthority
       (dispatchSyscall (decodeCarve slotUtRetype frameTag 953 slotOwnCnRO slotCarved)
@@ -1119,9 +1119,8 @@ private def runCarvedRootChecks : IO Unit := do
   match runAll st
       [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
        decodeCarve slotUtRetype vspaceRootTag 981 slotOwnCnRW 13,
-       decodeCarve slotUtRetype frameTag 982 slotOwnCnRW 14,
-       decodeMapVia 12 1 0x70000 14 permsRWUC] with
-  | .error e => assertBool s!"carving two roots and a frame, and mapping it, succeeds (got {repr e})" false
+       decodeCarve slotUtRetype frameTag 982 slotOwnCnRW 14] with
+  | .error e => assertBool s!"carving two roots and a frame succeeds (got {repr e})" false
   | .ok st1 => do
     assertBool "the first root is registered under the least free ASID (1), not 0"
       ((rootAt st1 980).map (·.asid) == some one && st1.asidTable[one]? == some (SeLe4n.ObjId.ofNat 980))
@@ -1136,8 +1135,11 @@ private def runCarvedRootChecks : IO Unit := do
     assertBool "the destination holds a read/write capability to the root"
       (SystemState.lookupSlotCap st1 { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 }
         == some (vspaceRootCapability (SeLe4n.ObjId.ofNat 980)))
-    assertBool "the frame maps into the carved address space"
-      (mappedPaddr st1 one (SeLe4n.VAddr.ofNat 0x70000) == some (carveUtBase + 2 * SeLe4n.pageBytes))
+    -- `v0.36.12`: a carved address space holds no table below its root until
+    -- one is installed (§5k), so the frame has no walk to hang from.
+    assertBool "the frame is refused in a carved address space with no tables (translationFault)"
+      (isErr .translationFault (dispatchSyscall (decodeMapVia 12 1 0x70000 14 permsRWUC)
+        carveOwner st1))
     assertBool "a reset while the roots' capabilities live is refused (revocationRequired)"
       (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner st1))
     match dispatchSyscall (decodeRevoke slotUtRetype) carveOwner st1 with
@@ -1164,8 +1166,6 @@ private def runCarvedRootChecks : IO Unit := do
         assertBool "their ASIDs are released, and the boot root's is untouched"
           (stReset.asidTable[one]? == none && stReset.asidTable[SeLe4n.ASID.ofNat 2]? == none &&
            stReset.asidTable[carveAsid]? == some carveVsp)
-        assertBool "the carved address space's translation is gone"
-          (mappedPaddr stReset one (SeLe4n.VAddr.ofNat 0x70000) == none)
         match dispatchSyscall (decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12)
             carveOwner stReset with
         | .error e => assertBool s!"a root carve after the reset succeeds (got {repr e})" false
@@ -1415,6 +1415,223 @@ private def runSetSpaceChecks : IO Unit := do
              | .ok ((), s) => (s.objects[root]?).isNone
              | .error _ => false)
 
+-- ============================================================================
+-- §5k  WS-BP BP7.1 (`v0.36.12`) — intermediate page tables
+-- ============================================================================
+
+/-- The page-table tag. -/
+private def pageTableTag : Nat := 9
+
+/-- §5d's scenario with a sixteen-page untyped — room for a root, four tables,
+a frame and a child untyped — and a 32-slot CSpace root to hold their
+capabilities (slots 16..20 would be refused by a 16-slot root's radix). -/
+private def tableScenario : SystemState :=
+  let st := carveScenario
+  let st1 := match st.getUntyped? carveUt with
+    | some ut =>
+      match storeObject carveUt (.untyped { ut with regionSize := 0x10000 }) st with
+      | .ok ((), s) => s
+      | .error _ => st
+    | none => st
+  match st1.getCNode? carveCn with
+  | some cn =>
+    match storeObject carveCn (.cnode { cn with depth := 5, radixWidth := 5 }) st1 with
+    | .ok ((), s) => s
+    | .error _ => st1
+  | none => st1
+
+/-- `.pageTableMap` on the table capability at `tableSlot`: MR0 the address
+space's capability address, MR1 the virtual address. -/
+private def decodeTableMap (tableSlot rootSlot vaddr : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat tableSlot
+  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+  , syscallId := .pageTableMap
+  , msgRegs   := #[SeLe4n.RegValue.ofNat rootSlot, SeLe4n.RegValue.ofNat vaddr] }
+
+/-- `.pageTableUnmap` on the table capability at `tableSlot`. -/
+private def decodeTableUnmap (tableSlot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat tableSlot
+  , msgInfo   := { length := 0, extraCaps := 0, label := 0 }
+  , syscallId := .pageTableUnmap
+  , msgRegs   := #[] }
+
+/-- `.vspaceUnmap` through the root capability at `rootSlot`, under `asid`. -/
+private def decodeUnmapVia (rootSlot asid vaddr : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat rootSlot
+  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+  , syscallId := .vspaceUnmap
+  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat vaddr] }
+
+/-- Where the table at `oid` records itself installed. -/
+private def installOf (st : SystemState) (oid : Nat) : Option PageTableInstall :=
+  (st.getPageTable? (SeLe4n.ObjId.ofNat oid)).bind (·.installedIn)
+
+/-- The (level, table) slots a root holds. -/
+private def slotsOf (st : SystemState) (oid : Nat) : Option (List (Nat × Nat)) :=
+  (rootAt st oid).map (fun r => r.tables.map (fun s => (s.level, s.table.toNat)))
+
+private def runPageTableChecks : IO Unit := do
+  IO.println "-- §5k intermediate page tables: `.pageTableMap` / `.pageTableUnmap` (WS-BP BP7.1)"
+  let st := tableScenario
+  let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
+    match r with | .error e' => e' == e | .ok _ => false
+  let one := SeLe4n.ASID.ofNat 1
+  let va : Nat := 0x70000
+  assertBool "a page table with a non-zero size is refused (invalidArgument) — a table is one page"
+    (isErr .invalidArgument (dispatchSyscall
+      (decodeCarve slotUtRetype (pageTableTag + 256) 983 slotOwnCnRW 15) carveOwner st))
+  assertBool "a device untyped cannot back a page table (untypedDeviceRestriction)"
+    (isErr .untypedDeviceRestriction (dispatchSyscall
+      (decodeCarve slotDevUt pageTableTag 983 slotOwnCnRW 15) carveOwner st))
+  assertBool "a page table is never created in place (the in-place retype refuses it)"
+    ((dispatchSyscall (decodeInPlaceRetypeTo slotVspRetype 983 pageTableTag) carveOwner st).toOption.isNone)
+  match runAll st
+      [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
+       decodeCarve slotUtRetype frameTag 982 slotOwnCnRW 14,
+       decodeCarve slotUtRetype pageTableTag 983 slotOwnCnRW 15,
+       decodeCarve slotUtRetype pageTableTag 984 slotOwnCnRW 16,
+       decodeCarve slotUtRetype pageTableTag 985 slotOwnCnRW 17,
+       decodeCarve slotUtRetype pageTableTag 986 slotOwnCnRW 18] with
+  | .error e => assertBool s!"carving a root, a frame and four tables succeeds (got {repr e})" false
+  | .ok st1 => do
+    assertBool "a carved table is installed nowhere, and its page is zeroed"
+      (installOf st1 983 == none &&
+       ((st1.getPageTable? (SeLe4n.ObjId.ofNat 983)).map (·.base)).any
+         (fun b => SeLe4n.readMem st1.machine b == 0))
+    assertBool "the table capability is read/write"
+      (SystemState.lookupSlotCap st1 { cnode := carveCn, slot := SeLe4n.Slot.ofNat 15 }
+        == some (pageTableCapability (SeLe4n.ObjId.ofNat 983)))
+    assertBool "a frame is refused where the walk has no tables (translationFault)"
+      (isErr .translationFault (dispatchSyscall (decodeMapVia 12 1 va 14 permsRWUC) carveOwner st1))
+    assertBool "a table is refused in a boot-configured root, which owns no page (invalidArgument)"
+      (isErr .invalidArgument (dispatchSyscall (decodeTableMap 15 slotOwnVsp va) carveOwner st1))
+    assertBool "an address outside the 48-bit space has no walk (addressOutOfBounds)"
+      (isErr .addressOutOfBounds (dispatchSyscall (decodeTableMap 15 12 (2 ^ 48)) carveOwner st1))
+    assertBool "a root capability without .write is refused"
+      ((dispatchSyscall (decodeTableMap 15 slotOwnCnRO va) carveOwner st1).toOption.isNone)
+    match runAll st1 [decodeTableMap 15 12 va, decodeTableMap 16 12 va] with
+    | .error e => assertBool s!"installing two tables succeeds (got {repr e})" false
+    | .ok st2 => do
+      assertBool "they land at levels 1 and 2, shallowest first, and each records its slot"
+        (slotsOf st2 980 == some [(1, 983), (2, 984)] &&
+         (installOf st2 983).map (fun i => (i.root.toNat, i.level)) == some (980, 1) &&
+         (installOf st2 984).map (fun i => (i.root.toNat, i.level)) == some (980, 2))
+      assertBool "a table already installed is refused a second install (invalidCapability)"
+        (isErr .invalidCapability (dispatchSyscall (decodeTableMap 15 12 va) carveOwner st2))
+      assertBool "two levels are not a walk: the frame is still refused (translationFault)"
+        (isErr .translationFault (dispatchSyscall (decodeMapVia 12 1 va 14 permsRWUC) carveOwner st2))
+      match runAll st2 [decodeTableMap 17 12 va, decodeMapVia 12 1 va 14 permsRWUC] with
+      | .error e => assertBool s!"the third table completes the walk and the frame maps (got {repr e})" false
+      | .ok st3 => do
+        assertBool "the third table is at level 3, and the frame maps"
+          (slotsOf st3 980 == some [(1, 983), (2, 984), (3, 985)] &&
+           mappedPaddr st3 one (SeLe4n.VAddr.ofNat va) == some (carveUtBase + SeLe4n.pageBytes))
+        assertBool "a complete walk has no room for a fourth table (mappingConflict)"
+          (isErr .mappingConflict (dispatchSyscall (decodeTableMap 18 12 va) carveOwner st3))
+        assertBool "a table a mapping still passes through is not unmapped (revocationRequired)"
+          (isErr .revocationRequired (dispatchSyscall (decodeTableUnmap 17) carveOwner st3))
+        assertBool "nor one a deeper table is installed beneath (revocationRequired)"
+          (isErr .revocationRequired (dispatchSyscall (decodeTableUnmap 15) carveOwner st3))
+        assertBool "a reset while the capabilities live is refused (revocationRequired)"
+          (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner st3))
+        -- Finalisation (`finaliseDestroyedCapabilities`): destroying a page
+        -- table's LAST capability takes it out of its address space, with every
+        -- mapping and every table beneath it; destroying one of several leaves
+        -- it installed.
+        let at15 : CSpaceAddr := { cnode := carveCn, slot := SeLe4n.Slot.ofNat 15 }
+        match runAll st3 [decodeCopy 15 21, decodeDelete 21] with
+        | .error e => assertBool s!"copying the level-1 table capability, then deleting the copy, succeeds (got {repr e})" false
+        | .ok sCopy =>
+          assertBool "a table another capability still names stays installed, with everything beneath it"
+            (slotsOf sCopy 980 == slotsOf st3 980 &&
+             mappedPaddr sCopy one (SeLe4n.VAddr.ofNat va) == some (carveUtBase + SeLe4n.pageBytes))
+        match dispatchSyscall (decodeDelete 15) carveOwner st3 with
+        | .error e => assertBool s!"deleting the level-1 table's only capability succeeds (got {repr e})" false
+        | .ok ((), sDel) => do
+          assertBool "deleting a table's last capability takes it, and the two tables beneath it, out of the root"
+            (slotsOf sDel 980 == some [] &&
+             [983, 984, 985].all (fun n => !Architecture.pageTableInstallLive sDel (SeLe4n.ObjId.ofNat n)))
+          assertBool "...and the mapping whose walk passed through it"
+            (mappedPaddr sDel one (SeLe4n.VAddr.ofNat va) == none)
+          assertBool "RETIRED: the bare delete — no finalisation — left all three tables and the mapping in place"
+            (match cspaceDeleteSlot at15 st3 with
+             | .ok ((), r) => slotsOf r 980 == slotsOf st3 980 &&
+                 mappedPaddr r one (SeLe4n.VAddr.ofNat va) == some (carveUtBase + SeLe4n.pageBytes)
+             | .error _ => false)
+          assertBool "a table left with a stale record installs again, at the shallowest missing level"
+            (match dispatchSyscall (decodeTableMap 16 12 va) carveOwner sDel with
+             | .ok ((), r) => slotsOf r 980 == some [(1, 984)] &&
+                 (installOf r 984).map (·.level) == some 1
+             | .error _ => false)
+          assertBool "a CNode holding an installed table's capability is not retyped in place"
+            (match st3.objects[carveCn]? with
+             | some (.cnode cn) => Architecture.cnodeHoldsInstalledPageTableCap st3 cn
+             | _ => false)
+        match runAll st3 [decodeUnmapVia 12 1 va, decodeTableUnmap 17] with
+        | .error e => assertBool s!"unmapping the frame, then the level-3 table, succeeds (got {repr e})" false
+        | .ok st4 => do
+          assertBool "the level-3 slot is gone and the table is installed nowhere"
+            (slotsOf st4 980 == some [(1, 983), (2, 984)] && installOf st4 985 == none)
+          assertBool "unmapping a table installed nowhere succeeds and changes nothing"
+            (match dispatchSyscall (decodeTableUnmap 17) carveOwner st4 with
+             | .ok ((), s) => slotsOf s 980 == slotsOf st4 980 && installOf s 985 == none
+             | .error _ => false)
+          -- A table carved from a CHILD untyped and installed in the parent's
+          -- root: revoking the child's capability destroys the table's last
+          -- capability, so the table leaves the root and the child resets alone.
+          match runAll st4
+              [decodeCarve slotUtRetype (untypedTagOfSize 12) 990 slotOwnCnRW 19,
+               decodeCarve 19 pageTableTag 991 slotOwnCnRW 20,
+               decodeTableMap 20 12 (2 ^ 39)] with
+          | .error e => assertBool s!"carving a child untyped and a table from it, and installing it, succeeds (got {repr e})" false
+          | .ok stA => do
+            assertBool "RETIRED: the bare revocation leaves the child's table in the surviving root"
+              (match cspaceRevokeCdt { cnode := carveCn, slot := SeLe4n.Slot.ofNat 19 } stA with
+               | .ok (_, r) => (slotsOf r 980).any (·.contains (1, 991))
+               | .error _ => false)
+            match dispatchSyscall (decodeRevoke 19) carveOwner stA with
+            | .error e => assertBool s!"revoking the child's capability succeeds (got {repr e})" false
+            | .ok ((), st5) => do
+              let childIds := match st5.getUntyped? (SeLe4n.ObjId.ofNat 990) with
+                | some u => (untypedCarvedSubtree st5 u).getD []
+                | none => []
+              assertBool "the revocation took the child's table out of the parent's root"
+                (slotsOf st5 980 == slotsOf st4 980 &&
+                 !Architecture.pageTableInstallLive st5 (SeLe4n.ObjId.ofNat 991))
+              assertBool "so the child's subtree is unreferenced and closed"
+                (childIds == [SeLe4n.ObjId.ofNat 991] && carvedSubtreeUnreferenced st5 childIds &&
+                 carvedSubtreeInstallsClosed st5 childIds)
+              match dispatchSyscall (decodeReset 19) carveOwner st5 with
+              | .error e => assertBool s!"resetting the child alone succeeds (got {repr e})" false
+              | .ok ((), st5r) => do
+                assertBool "the child's table is retired and the parent's root is untouched"
+                  ((st5r.objects[SeLe4n.ObjId.ofNat 991]?).isNone && slotsOf st5r 980 == slotsOf st5 980)
+                -- The boundary the reset still enforces: an address space carved
+                -- from the child holding a table carved from the parent, whose
+                -- capability survives the child's revocation.
+                match runAll st5r
+                    [decodeCarve 19 vspaceRootTag 993 slotOwnCnRW 21,
+                     decodeCarve slotUtRetype pageTableTag 994 slotOwnCnRW 22,
+                     decodeTableMap 22 21 va,
+                     decodeRevoke 19] with
+                | .error e => assertBool s!"carving a root from the child, installing a parent table in it, and revoking the child succeeds (got {repr e})" false
+                | .ok st6 => do
+                  let childIds6 := match st6.getUntyped? (SeLe4n.ObjId.ofNat 990) with
+                    | some u => (untypedCarvedSubtree st6 u).getD []
+                    | none => []
+                  assertBool "CONTROL: nothing names the child's root any more (the refusal below is the boundary's)"
+                    (childIds6 == [SeLe4n.ObjId.ofNat 993] && carvedSubtreeUnreferenced st6 childIds6)
+                  assertBool "the child's subtree is not closed: its root holds a surviving table"
+                    (!carvedSubtreeInstallsClosed st6 childIds6)
+                  assertBool "so resetting the child alone is refused (revocationRequired)"
+                    (isErr .revocationRequired (dispatchSyscall (decodeReset 19) carveOwner st6))
+                  match runAll st6 [decodeRevoke slotUtRetype, decodeReset slotUtRetype] with
+                  | .error e => assertBool s!"CONTROL: the parent's reset, taking roots and tables together, succeeds (got {repr e})" false
+                  | .ok st7 =>
+                    assertBool "CONTROL: the roots, every table, the frame and the child are retired"
+                      ([980, 982, 983, 984, 985, 986, 990, 993, 994].all
+                        (fun n => (st7.objects[SeLe4n.ObjId.ofNat n]?).isNone))
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -1431,6 +1648,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runInPlaceVSpaceRootChecks
   runCarvedRootChecks
   runSetSpaceChecks
+  runPageTableChecks
   runFrameFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="

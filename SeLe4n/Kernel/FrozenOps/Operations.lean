@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.FrozenOps.Core
 import SeLe4n.Kernel.SchedContext.Budget
+import SeLe4n.Kernel.Architecture.PageTableInstall
 
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
@@ -1207,6 +1208,26 @@ def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     | some _ => .error .objectNotFound
     | none => .error .objectNotFound
 
+/-- WS-BP BP7.1 (`v0.36.12`): the frozen mirror of
+`Architecture.pageTableInstallLive` — the table's record names a root, and that
+root holds the slot the record names, for this table. -/
+def frozenPageTableInstallLive (st : FrozenSystemState) (id : SeLe4n.ObjId) : Bool :=
+  match st.getObject? id with
+  | some (.pageTable p) =>
+    match p.installedIn with
+    | some inst =>
+      match st.getObject? inst.root with
+      | some (.vspaceRoot root) => root.tables.contains (inst.slotFor id)
+      | _ => false
+    | none => false
+  | _ => false
+
+/-- WS-BP BP7.1 (`v0.36.12`): does the capability name an installed page table? -/
+def frozenCapNamesInstalledPageTable (st : FrozenSystemState) (cap : Capability) : Bool :=
+  match cap.target with
+  | .object id => frozenPageTableInstallLive st id
+  | _ => false
+
 /-- Q7-C3: Frozen CSpace delete — erase a capability from a frozen CNode.
 
 WS-BP BP7.1 (`v0.36.7`): a capability carrying a **mapping record** is refused
@@ -1216,13 +1237,20 @@ removes the recorded mapping before it returns — seL4's `finaliseCap` →
 erasing the slot here would leave a mapping whose frame capability is gone:
 the defect the live cut closes.  Refusing is the one sound mirror of a step
 the surface cannot model, and it can only refuse what the live kernel
-performs, never admit what it refuses. -/
+performs, never admit what it refuses.
+
+WS-BP BP7.1 (`v0.36.12`): a capability naming an **installed page table** is
+refused for the same reason.  The live delete takes the table out of its address
+space when the capability is the table's last (`finaliseDestroyedCapabilities`),
+which this surface cannot model either; it cannot even decide *last* cheaply, so
+it refuses every such capability — a subset of what the live kernel performs. -/
 def frozenCspaceDelete (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     : FrozenKernel Unit :=
   fun st =>
     match st.getObject? rootId with
     | some (.cnode cn) =>
-      if (cn.slots.lookup slot).any (fun cap => cap.mapping.isSome) then
+      if (cn.slots.lookup slot).any
+          (fun cap => cap.mapping.isSome || frozenCapNamesInstalledPageTable st cap) then
         .error .revocationRequired
       else
         let slots' := cn.slots.erase slot
@@ -1971,6 +1999,8 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbSetAffinity => false         -- WS-SM SM5.H.4: runtime scheduler op (run/replenish-queue migration)
   | .tcbSetFaultHandler => false     -- PR #887 review: production object-store op; no frozen-phase variant defined
   | .tcbSetSpace => false            -- WS-BP BP7.1 (`v0.36.11`): production object-store op; no frozen-phase variant defined
+  | .pageTableMap => false           -- WS-BP BP7.1 (`v0.36.12`): translation-table install; the frozen phase models no page-table objects' installs
+  | .pageTableUnmap => false         -- WS-BP BP7.1 (`v0.36.12`): ditto
   | .tcbBindNotification => false    -- WS-SM SM6.B: production object-store op; no frozen-phase variant defined
   | .tcbUnbindNotification => false  -- WS-SM SM6.B: ditto
   | .mintReplyCap => false           -- PR #822 Phase H: structural cap insertion (like cspaceCopy); builder-only, no frozen-phase variant
@@ -2004,7 +2034,8 @@ theorem frozenOpCoverage_count :
        .tcbSetIPCBuffer, .tcbSetAffinity,
        .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
        .vspaceUnifyInstruction, .declassify, .declassifySignal,
-       .auditRead, .auditDrain, .tcbSetFaultHandler, .tcbSetSpace].filter
+       .auditRead, .auditDrain, .tcbSetFaultHandler, .tcbSetSpace,
+       .pageTableMap, .pageTableUnmap].filter
          frozenOpCoverage).length = 20) := by
   decide
 
