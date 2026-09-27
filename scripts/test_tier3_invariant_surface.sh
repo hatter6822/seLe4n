@@ -3884,7 +3884,7 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # BP3.2 — the kernel's reserved extent, stated in three places and held equal.
@@ -4191,6 +4191,20 @@ run_check "INVARIANT" rg -n 'deleting a table.s last capability takes it, and th
 run_check "INVARIANT" rg -n 'a table another capability still names stays installed, with everything beneath it' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'RETIRED: the bare revocation leaves the child.s table in the surviving root' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^  fo013c_cspaceDeleteRefusesInstalledTableCap$' tests/FrozenOpsSuite.lean
+# WS-BP BP7.1 (v0.36.13): every configured address space owns a table page of
+# the binding's pool, and a root with no page maps nothing.
+run_check "INVARIANT" rg -n '^  root\.tableBase\.isSome && root\.walkComplete vaddr$' SeLe4n/Model/Object/Structures.lean
+run_negative_check "INVARIANT" rg -n 'root\.tableBase\.isNone \|\| root\.walkComplete' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^    untypedPlacementRespected config && bootRootTablesPlaced config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^   \(bootRootTablesPlaced config, bootRootTablesBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'def bootRootTablesPlaced [^\n]*(\n([ \t][^\n]*)?)*  decide \(\(configuredRootTableBases config\)\.filterMap id\)\.Nodup &&' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootRootTablesPlaced_withoutExtents($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    decide \(root\.mappings\.size = 0\) && root\.tables\.isEmpty$' SeLe4n/Platform/RPi5/VSpaceBoot.lean
+run_check "INVARIANT" rg -n '^    tableBase := some \(rpi5BootTablePage page\) \}$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^BOOT_TABLE_POOL_PAGES = 0x10;$' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n '^    crate::mmu::zero_boot_table_pool\(\);$' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n '^tablePool 0xfff0000 0x10$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n 'a root with no table page is refused, naming the pool' tests/SmpIdleSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
 # environment with no entry now that one exists, and the link gate has no

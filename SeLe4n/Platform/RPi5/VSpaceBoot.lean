@@ -417,18 +417,26 @@ theorem rpi5BootVSpaceRoot_bootSafeCheck :
       exists, and a later cut that maps one widens this predicate with the
       placement check its frames need. -/
 def bootSafeUserVSpaceRoot (root : VSpaceRoot) : Prop :=
-  0 < root.asid.val ∧ root.asid.val ≤ maxAsidValue ∧ root.mappings.size = 0
+  0 < root.asid.val ∧ root.asid.val ≤ maxAsidValue ∧ root.mappings.size = 0 ∧
+    root.tables = []
 
-/-- **WS-BP BP3.2**: the Bool form the boot's object sweep evaluates. -/
+/-- **WS-BP BP3.2**: the Bool form the boot's object sweep evaluates.
+
+    **WS-BP BP7.1**: and it holds no intermediate table — a configured table slot
+    would name a page-table object the boot does not create (the boot refuses
+    memory-backed objects), so the walk would pass through memory nothing owns.
+    Its *top-level* table page is placed by the configuration-level check
+    (`Platform.Boot.bootRootTablesPlaced`), since whether two roots share a page
+    is a question about the configuration, not about one root. -/
 def bootSafeUserVSpaceRootCheck (root : VSpaceRoot) : Bool :=
   decide (0 < root.asid.val) && decide (root.asid.val ≤ maxAsidValue) &&
-    decide (root.mappings.size = 0)
+    decide (root.mappings.size = 0) && root.tables.isEmpty
 
 /-- **WS-BP BP3.2**: the Bool check decides the predicate. -/
 theorem bootSafeUserVSpaceRootCheck_iff (root : VSpaceRoot) :
     bootSafeUserVSpaceRootCheck root = true ↔ bootSafeUserVSpaceRoot root := by
   unfold bootSafeUserVSpaceRootCheck bootSafeUserVSpaceRoot
-  simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc]
+  simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc, List.isEmpty_iff]
 
 /-- **WS-BP BP3.2**: the kernel's own boot root is not a user root — its ASID
     is the kernel's.  So the two checks cannot be substituted for each other,
@@ -508,7 +516,7 @@ theorem bootSafeUserVSpaceRoot_mappingsSafe {root : VSpaceRoot}
     bootVSpaceRootMappingsSafe root := by
   intro v p perms hMap
   rw [RHTable_getElem?_eq_get?,
-    RHTable.get?_none_of_size_zero root.mappings hExt h.2.2 v] at hMap
+    RHTable.get?_none_of_size_zero root.mappings hExt h.2.2.1 v] at hMap
   cases hMap
 
 end SeLe4n.Platform.RPi5.VSpaceBoot

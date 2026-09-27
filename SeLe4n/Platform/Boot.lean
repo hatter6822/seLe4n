@@ -1347,18 +1347,61 @@ theorem untypedPlacementRespected_untypedRegionsDisjoint (config : PlatformConfi
   · exact Or.inl hLe
   · exact Or.inr hLe
 
+/-- **WS-BP BP7.1**: the top-level table pages of the address spaces a
+    configuration declares — one per configured `.vspaceRoot`, `none` for a root
+    that names none. -/
+def configuredRootTableBases (config : PlatformConfig) : List (Option SeLe4n.PAddr) :=
+  config.initialObjects.filterMap (fun e =>
+    match e.obj with
+    | .vspaceRoot r => some r.tableBase
+    | _ => none)
+
+/-- **WS-BP BP7.1**: a pool page lies on a page boundary inside the kernel's
+    reserved extent, so no boot untyped describes it
+    (`untypedPlacementRespected`) and no thread can retype it out from under
+    the table it holds. -/
+def bootTablePoolPageAdmissible (mc : SeLe4n.MachineConfig) (p : SeLe4n.PAddr) : Bool :=
+  p.toNat % 4096 == 0 &&
+    mc.kernelReserved.any (fun r => decide (r.base.toNat ≤ p.toNat) && decide (p.toNat + 4096 ≤ r.endAddr))
+
+/-- **WS-BP BP7.1**: the eighth `wellFormed` conjunct — **every configured
+    address space owns a table page.**
+
+    A thread's root needs a page of RAM for a table walk to start at; without
+    one nothing can be mapped into it (`VSpaceRoot.translationReady`) and the
+    context restore has nothing to install.  A carved root is carved *on* its
+    page, and a configured root has no untyped to be carved from, so it takes a
+    page of the binding's pool (`MachineConfig.bootTablePool`).  Three
+    conditions: every configured root names a page of the pool; no two name the
+    same page, since two address spaces over one table are one address space;
+    and every pool page is admissible — page-aligned inside the kernel's
+    reserved extent.  A configuration that configures no root satisfies it
+    whatever its pool, which is every simulation binding. -/
+def bootRootTablesPlaced (config : PlatformConfig) : Bool :=
+  (configuredRootTableBases config).all (fun b =>
+    b.any (fun p => config.machineConfig.bootTablePool.contains p)) &&
+  decide ((configuredRootTableBases config).filterMap id).Nodup &&
+  config.machineConfig.bootTablePool.all (bootTablePoolPageAdmissible config.machineConfig)
+
+/-- The eighth conjunct's diagnostic. -/
+def bootRootTablesBootError : String :=
+  "boot: a configured VSpace root names no page of the binding's table-page pool, " ++
+    "two roots share a page, or a pool page lies outside the kernel's reserved extent " ++
+    "(WS-BP BP7.1)"
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
     under its own id, (round 18) leaves object-index room for the boot
     root and the per-core idle threads, (round 23) declares between one and
-    `numCores` PEs, and (WS-BP BP3.2) places every boot untyped over memory it
-    may describe. -/
+    `numCores` PEs, (WS-BP BP3.2) places every boot untyped over memory it
+    may describe, and (WS-BP BP7.1) gives every configured address space a
+    table page of its own. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
     idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
     objectBudgetRespected config && declaredCoreCountInRange config &&
-    untypedPlacementRespected config
+    untypedPlacementRespected config && bootRootTablesPlaced config
 
 /-- **PR #889 review round 23**: a well-formed config declares at least one PE
     and no more than the model has.  Zero is what this refuses: the derivation
@@ -1366,6 +1409,12 @@ def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
     and the first scheduling point would find nothing to select anywhere. -/
 theorem PlatformConfig.wellFormed_declaredCoreCountInRange (config : PlatformConfig)
     (h : config.wellFormed = true) : declaredCoreCountInRange config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
+/-- **WS-BP BP7.1**: a well-formed config gives every configured address space
+    a table page of its own. -/
+theorem PlatformConfig.wellFormed_bootRootTablesPlaced (config : PlatformConfig)
+    (h : config.wellFormed = true) : bootRootTablesPlaced config = true := by
   simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
 /-- **WS-BP BP3.2**: a well-formed config places every boot untyped over
@@ -1405,7 +1454,8 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (embeddedIdentitiesMatchSlots config, embeddedIdentityBootError),
    (objectBudgetRespected config, objectBudgetBootError),
    (declaredCoreCountInRange config, declaredCoreCountBootError),
-   (untypedPlacementRespected config, untypedPlacementBootError)]
+   (untypedPlacementRespected config, untypedPlacementBootError),
+   (bootRootTablesPlaced config, bootRootTablesBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
 def wellFormedDiagnostic (config : PlatformConfig) : String :=
@@ -4160,6 +4210,21 @@ theorem objectBudgetRespected_withoutExtents (c : PlatformConfig) :
   unfold objectBudgetRespected PlatformConfig.withoutExtents
   simp only [List.length_map]
 
+theorem configuredRootTableBases_withoutExtents (c : PlatformConfig) :
+    configuredRootTableBases c.withoutExtents = configuredRootTableBases c := by
+  unfold configuredRootTableBases PlatformConfig.withoutExtents
+  simp only [List.filterMap_map]
+  congr 1
+  funext e
+  simp only [Function.comp_apply, ObjectEntry.withoutUntypedExtent_obj]
+  cases e.obj <;> rfl
+
+theorem bootRootTablesPlaced_withoutExtents (c : PlatformConfig) :
+    bootRootTablesPlaced c.withoutExtents = bootRootTablesPlaced c := by
+  unfold bootRootTablesPlaced
+  rw [configuredRootTableBases_withoutExtents]
+  rfl
+
 theorem declaredCoreCountInRange_withoutExtents (c : PlatformConfig) :
     declaredCoreCountInRange c.withoutExtents = declaredCoreCountInRange c := rfl
 
@@ -4233,6 +4298,8 @@ theorem physicalAddressWidth_withoutExtents (c : PlatformConfig) :
 theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
     (hEq : c.withoutExtents = c'.withoutExtents) (hWf : c'.wellFormed = true)
     (hPlace : untypedPlacementRespected c = true) : c.wellFormed = true := by
+  have h7 := bootRootTablesPlaced_withoutExtents c
+  rw [hEq, bootRootTablesPlaced_withoutExtents] at h7
   have h1 := irqsUnique_withoutExtents c
   have h2 := objectIdsUnique_withoutExtents c
   have h3 := idleSlotsReserved_withoutExtents c
@@ -4247,8 +4314,8 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
   rw [hEq, declaredCoreCountInRange_withoutExtents] at h6
   unfold PlatformConfig.wellFormed at hWf ⊢
   simp only [Bool.and_eq_true] at hWf ⊢
-  obtain ⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩ := hWf
-  exact ⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩ := hWf
+  exact ⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩
 
 /-- PR #889 review round 3: the idle enqueue over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than

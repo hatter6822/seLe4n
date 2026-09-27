@@ -2893,7 +2893,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   let vsId : SeLe4n.ObjId := ⟨700⟩
   -- Distinct from the `⟨502⟩` root `buildSyscallState` always installs at ASID 1.
   let chainAsid : SeLe4n.ASID := ⟨2⟩
-  let vsRoot : SeLe4n.Model.VSpaceRoot := { asid := chainAsid, mappings := {} }
+  let vsRoot : SeLe4n.Model.VSpaceRoot := fixtureMappableRoot chainAsid
   -- === vspaceMap (syscallId=9): x2=asid(2), x3=vaddr(0x2000), x4=frame cap(slot 1), x5=perms(1=readOnly) ===
   -- WS-BP BP7.1: MR2 is the address of a frame capability in the caller's CSpace;
   -- the page mapped is that frame's own `base` (0x3000), not a register value.

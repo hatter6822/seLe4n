@@ -492,6 +492,57 @@ const _: () = assert!(
     KERNEL_RESERVED_END <= L1_BLOCK_SIZE && KERNEL_RESERVED_END.is_multiple_of(L2_BLOCK_SIZE)
 );
 
+/// **WS-BP BP7.1**: the number of 4 KiB pages in the boot's table-page pool —
+/// the pages the boot takes each configured address space's top-level table
+/// from.  `link.ld`'s `BOOT_TABLE_POOL_PAGES` and the Lean
+/// `rpi5BootTablePoolPages` state the same number (`tests::the_boot_table_pool_is_the_lean_and_linker_one`).
+pub const BOOT_TABLE_POOL_PAGES: u64 = 0x10;
+
+/// **WS-BP BP7.1**: the pool's first page — the pool ends exactly at
+/// [`KERNEL_RESERVED_END`], so it is the last memory of the kernel's reserved
+/// extent and no boot untyped can describe it.
+pub const BOOT_TABLE_POOL_BASE: u64 = KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096;
+
+const _: () = assert!(BOOT_TABLE_POOL_PAGES > 0 && BOOT_TABLE_POOL_BASE.is_multiple_of(4096));
+
+/// **WS-BP BP7.1**: zero the boot's table-page pool.
+///
+/// The pool is `NOLOAD`, so it holds whatever the RAM held; a configured
+/// address space's top-level table must start with no descriptor in it, or a
+/// thread would translate through whatever the previous boot left there.  Run
+/// on the boot core with translation on, before the Lean kernel is entered and
+/// so before any thread can be dispatched.  The extent written is the linker's
+/// `[__boot_table_pool_start, __boot_table_pool_end)`, which must be the
+/// constant pool — a link that placed it elsewhere halts rather than zeroing
+/// memory the model does not name.  The host has no pool and does nothing.
+pub fn zero_boot_table_pool() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" {
+            static __boot_table_pool_start: u8;
+            static __boot_table_pool_end: u8;
+        }
+        let start = &raw const __boot_table_pool_start as u64;
+        let end = &raw const __boot_table_pool_end as u64;
+        if start != BOOT_TABLE_POOL_BASE || end != KERNEL_RESERVED_END {
+            crate::gic::halt_all();
+        }
+        let words = (end - start) / 8;
+        let base = start as *mut u64;
+        for i in 0..words {
+            // SAFETY: `[start, end)` is the linker's NOLOAD pool, checked above
+            // to be the constant pool inside the kernel's reserved extent, which
+            // the boot map covers as Normal writable memory; nothing else
+            // references it before the Lean kernel is entered, and `i < words`
+            // keeps every store inside it.
+            unsafe { core::ptr::write_volatile(base.add(i as usize), 0) };
+        }
+        // SAFETY: a data synchronization barrier has no memory-safety
+        // precondition; it orders the stores above before any later table walk.
+        unsafe { core::arch::asm!("dsb ish", options(nostack, preserves_flags)) };
+    }
+}
+
 /// Base of the device (peripheral) window: the BCM2712's SoC-bus window,
 /// `bcm2712.dtsi`'s `soc` node `ranges = <0x7c000000 0x10 0x7c000000
 /// 0x04000000>` — bus addresses `[0x7C00_0000, 0x8000_0000)` at CPU physical
@@ -2280,6 +2331,9 @@ mod boot_map_tests {
                 // `the_lean_physical_address_width_is_the_pe_the_hal_programs_for`
                 // and `boot.rs`'s core-count pin.
                 ["physicalAddressWidth", _] | ["declaredCores", _] => {}
+                // WS-BP BP7.1: the boot table pool, which
+                // `the_boot_table_pool_is_the_lean_and_linker_one` reads.
+                ["tablePool", _, _] => {}
                 _ => panic!("unrecognised boot-map line {line:?}"),
             }
         }
@@ -2988,6 +3042,41 @@ mod boot_map_tests {
         }
         assert!(dtb_disjoint_from_image((0, 0), &image));
         assert!(!dtb_disjoint_from_image((u64::MAX - 4, 0x10), &image));
+    }
+
+    /// **WS-BP BP7.1**: the boot table-page pool is one pool in three places —
+    /// these constants, the Lean `rpi5BootTablePool*` (the fixture's
+    /// `tablePool <base> <pages>` line) and `link.ld`'s `BOOT_TABLE_POOL_PAGES`.
+    #[test]
+    fn the_boot_table_pool_is_the_lean_and_linker_one() {
+        const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+        const LINK_SCRIPT: &str = include_str!("../link.ld");
+        let lean: Vec<(u64, u64)> = LEAN_TABLE
+            .lines()
+            .filter_map(
+                |l| match l.split_whitespace().collect::<Vec<_>>().as_slice() {
+                    ["tablePool", base, pages] => Some((
+                        u64::from_str_radix(base.trim_start_matches("0x"), 16).expect("hex"),
+                        u64::from_str_radix(pages.trim_start_matches("0x"), 16).expect("hex"),
+                    )),
+                    _ => None,
+                },
+            )
+            .collect();
+        assert_eq!(
+            lean,
+            std::vec![(BOOT_TABLE_POOL_BASE, BOOT_TABLE_POOL_PAGES)],
+            "the Lean table-page pool"
+        );
+        let linker: Vec<u64> = LINK_SCRIPT
+            .lines()
+            .filter_map(|l| {
+                let rest = l.trim().strip_prefix("BOOT_TABLE_POOL_PAGES = ")?;
+                let hex = rest.strip_suffix(';')?.trim_start_matches("0x");
+                Some(u64::from_str_radix(hex, 16).expect("hex in link.ld"))
+            })
+            .collect();
+        assert_eq!(linker, std::vec![BOOT_TABLE_POOL_PAGES], "link.ld's pool");
     }
 
     /// **WS-BP BP3.2**: the reserved extent is one number in three places —

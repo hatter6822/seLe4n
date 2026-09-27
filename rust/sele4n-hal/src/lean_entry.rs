@@ -244,6 +244,8 @@ pub fn enter_lean_kernel(
         None
     };
     let dtb = device_tree_blob(blob);
+    // WS-BP BP7.1: the configured address spaces' table pages start empty.
+    crate::mmu::zero_boot_table_pool();
     // SAFETY: the token proves the library initializer ran and succeeded, and
     // it is consumed here, so this call happens at most once per
     // initialization.  `dtb` is the fresh `ByteArray` just built, whose one

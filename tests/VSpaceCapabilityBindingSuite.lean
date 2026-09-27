@@ -210,8 +210,8 @@ in the *victim's* address space. -/
 private def scenario (cap : Capability) : Option SystemState :=
   let base :=
     (BootstrapBuilder.empty
-      |>.withObject victimVsp (.vspaceRoot { asid := victimAsid, mappings := {} })
-      |>.withObject attackerVsp (.vspaceRoot { asid := attackerAsid, mappings := {} })
+      |>.withObject victimVsp (.vspaceRoot (fixtureMappableRoot victimAsid))
+      |>.withObject attackerVsp (.vspaceRoot (fixtureMappableRoot attackerAsid (SeLe4n.PAddr.ofNat 0x7E000)))
       |>.withObject frameA (.frame { base := SeLe4n.PAddr.ofNat frameABase })
       |>.withObject frameDev (.frame { base := SeLe4n.PAddr.ofNat 0xB0000, isDevice := true })
       |>.withObject frameOdd (.frame { base := SeLe4n.PAddr.ofNat 0xA0001 })
@@ -552,7 +552,7 @@ scrub — and its absence on a device page — is observable. -/
 private def carveScenario : SystemState :=
   let st :=
     (BootstrapBuilder.empty
-      |>.withObject carveVsp (.vspaceRoot { asid := carveAsid, mappings := {} })
+      |>.withObject carveVsp (.vspaceRoot (fixtureMappableRoot carveAsid (SeLe4n.PAddr.ofNat 0x7D000)))
       |>.withObject carveUt (.untyped
           { regionBase := SeLe4n.PAddr.ofNat carveUtBase, regionSize := 0x3000 })
       |>.withObject carveDevUt (.untyped
@@ -1503,8 +1503,16 @@ private def runPageTableChecks : IO Unit := do
         == some (pageTableCapability (SeLe4n.ObjId.ofNat 983)))
     assertBool "a frame is refused where the walk has no tables (translationFault)"
       (isErr .translationFault (dispatchSyscall (decodeMapVia 12 1 va 14 permsRWUC) carveOwner st1))
-    assertBool "a table is refused in a boot-configured root, which owns no page (invalidArgument)"
-      (isErr .invalidArgument (dispatchSyscall (decodeTableMap 15 slotOwnVsp va) carveOwner st1))
+    -- A root with no table page — the kernel's own boot root is the one such
+    -- root a booted kernel holds — has nowhere for a table to hang from.
+    assertBool "a table is refused in a root that owns no page (invalidArgument)"
+      (match storeObject carveVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 3, mappings := {} }) st1 with
+       | .ok ((), s) => isErr .invalidArgument (dispatchSyscall (decodeTableMap 15 slotOwnVsp va) carveOwner s)
+       | .error _ => false)
+    assertBool "...and a frame is refused there too (translationFault): no table, no walk"
+      (match storeObject carveVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 3, mappings := {} }) st1 with
+       | .ok ((), s) => isErr .translationFault (dispatchSyscall (decodeMapVia slotOwnVsp 3 va 14 permsRWUC) carveOwner s)
+       | .error _ => false)
     assertBool "an address outside the 48-bit space has no walk (addressOutOfBounds)"
       (isErr .addressOutOfBounds (dispatchSyscall (decodeTableMap 15 12 (2 ^ 48)) carveOwner st1))
     assertBool "a root capability without .write is refused"

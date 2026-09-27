@@ -185,9 +185,11 @@ def rpi5InitialCNode (slots : List (SeLe4n.Slot × Capability)) : CNode :=
     slots := SeLe4n.UniqueSlotMap.ofListWF slots }
 
 /-- An empty user address space on `asid` — what `bootSafeUserVSpaceRootCheck`
-    admits. -/
-def rpi5InitialVSpace (asid : SeLe4n.ASID) : VSpaceRoot :=
-  { asid := asid, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
+    admits — whose top-level table is the `page`-th page of the binding's
+    table-page pool (WS-BP BP7.1, `Platform.Boot.bootRootTablesPlaced`). -/
+def rpi5InitialVSpace (asid : SeLe4n.ASID) (page : Nat) : VSpaceRoot :=
+  { asid := asid, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+    tableBase := some (rpi5BootTablePage page) }
 
 /-- A normal-memory untyped over `[base, base + size)`, with nothing carved. -/
 def rpi5InitialUntyped (base size : Nat) : UntypedObject :=
@@ -284,8 +286,8 @@ private def cnodeEntry (id : SeLe4n.ObjId) (cn : CNode) : ObjectEntry :=
     hSlots := fun _ h => by cases h; exact CNode.slotsUnique_holds _
     hMappings := fun _ h => nomatch h }
 
-private def vspaceEntry (id : SeLe4n.ObjId) (asid : SeLe4n.ASID) : ObjectEntry :=
-  { id := id, obj := .vspaceRoot (rpi5InitialVSpace asid)
+private def vspaceEntry (id : SeLe4n.ObjId) (asid : SeLe4n.ASID) (page : Nat) : ObjectEntry :=
+  { id := id, obj := .vspaceRoot (rpi5InitialVSpace asid page)
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => by
       cases h; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega) }
@@ -325,12 +327,12 @@ def rpi5InitialObjectsFor (v : BCM2712Config) : List ObjectEntry :=
   [ tcbEntry rpi5RootTaskTcbId
       (rpi5InitialThread rpi5RootTaskTcbId rpi5RootTaskCNodeId rpi5RootTaskVSpaceId)
   , cnodeEntry rpi5RootTaskCNodeId (rpi5RootTaskCNodeFor v)
-  , vspaceEntry rpi5RootTaskVSpaceId rpi5RootTaskAsid
+  , vspaceEntry rpi5RootTaskVSpaceId rpi5RootTaskAsid 0
   , notificationEntry rpi5InterruptNotificationId
   , tcbEntry rpi5UntrustedTcbId
       (rpi5InitialThread rpi5UntrustedTcbId rpi5UntrustedCNodeId rpi5UntrustedVSpaceId)
   , cnodeEntry rpi5UntrustedCNodeId rpi5UntrustedCNode
-  , vspaceEntry rpi5UntrustedVSpaceId rpi5UntrustedAsid ] ++
+  , vspaceEntry rpi5UntrustedVSpaceId rpi5UntrustedAsid 1 ] ++
   (rpi5RootTaskUntypeds v).map fun u => untypedEntry u.1 u.2
 
 /-- **WS-BP BP3.1**: the IRQ table — every shared peripheral interrupt the

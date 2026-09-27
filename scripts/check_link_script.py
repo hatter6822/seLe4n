@@ -98,6 +98,17 @@ def lean_reserved_extent(text: str) -> tuple[int, int]:
                           f"{len(rows)} times; exactly one `kernelReserved base end` line")
     return int(rows[0][1], 16), int(rows[0][2], 16)
 
+def lean_table_pool(text: str) -> tuple[int, int]:
+    """The `tablePool <base> <pages>` line the Lean suite writes: the boot's
+    table-page pool (WS-BP BP7.1).  Exactly one."""
+    rows = [line.split() for line in text.splitlines()
+            if line.split()[:1] == ["tablePool"]]
+    if len(rows) != 1 or len(rows[0]) != 3:
+        raise GateFailure(f"{BOOT_MAP_FIXTURE} states the boot table-page pool "
+                          f"{len(rows)} times; exactly one `tablePool base pages` line")
+    return int(rows[0][1], 16), int(rows[0][2], 16)
+
+
 # The assertions, each with the one-edit mutation that must trip it and a
 # fragment of the message it must fail with.  Every edit is applied to the real
 # script and must match exactly once, so a script that stops matching the
@@ -195,6 +206,24 @@ ASSERTION_WITNESSES = (
         "the kernel's reserved extent must lie inside the first gigabyte",
     ),
     (
+        "a table-page pool that stops short of the reserved extent's end",
+        (("    .boot_table_pool (KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096) (NOLOAD) : {",
+          "    .boot_table_pool (KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096 - 4096) (NOLOAD) : {"),),
+        "the boot table-page pool must end exactly at the kernel's reserved extent",
+    ),
+    (
+        "a table-page pool off its page",
+        (("    .boot_table_pool (KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096) (NOLOAD) : {",
+          "    .boot_table_pool (KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096 + 8) (NOLOAD) : {"),
+         ("        . += BOOT_TABLE_POOL_PAGES * 4096;", "        . += BOOT_TABLE_POOL_PAGES * 4096 - 8;")),
+        "the boot table-page pool must be whole 4 KiB pages",
+    ),
+    (
+        "a table-page pool reaching into the device tree's window",
+        (("BOOT_TABLE_POOL_PAGES = 0x10;", "BOOT_TABLE_POOL_PAGES = 0xEF00;"),),
+        "the boot table-page pool must lie after the device tree's window",
+    ),
+    (
         "a RAM region that ends short of the reserved extent",
         (("ORIGIN = 0x80000, LENGTH = 0xFF80000", "ORIGIN = 0x80000, LENGTH = 0xFF7F000"),),
         "link.ld's RAM region must end exactly at the kernel's reserved extent",
@@ -235,14 +264,17 @@ def symbols(elf: Path) -> dict[str, int]:
     return table
 
 
-def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
-    """The six relations, over one link's symbol table and the reserved extent
-    the Lean side states."""
+def check_layout(table: dict[str, int], reserved: tuple[int, int],
+                 pool: tuple[int, int] | None = None) -> list[str]:
+    """The relations, over one link's symbol table, the reserved extent the Lean
+    side states and (WS-BP BP7.1) the table-page pool it states — `None` means
+    the link's own pool, for the self-test's cases whose subject is elsewhere."""
     need = ("_start", "__text_end", "__rodata_start", "__rodata_end", "__image_load_end",
             "__bss_start", "__bss_end",
             "__stack_top", "__smp_secondary_stack_top", "__lean_heap_start",
             "__lean_heap_end", "LEAN_HEAP_SIZE", "KERNEL_RESERVED_END",
-            "__dtb_window_start", "__dtb_window_end", "DTB_WINDOW_SIZE")
+            "__dtb_window_start", "__dtb_window_end", "DTB_WINDOW_SIZE",
+            "__boot_table_pool_start", "__boot_table_pool_end", "BOOT_TABLE_POOL_PAGES")
     missing = [n for n in need if n not in table]
     if missing:
         return [f"the link defines no {', '.join(missing)}"]
@@ -296,6 +328,21 @@ def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
         problems.append(f"the device tree's window [{dtb_start:#x}, {dtb_end:#x}) is not "
                         f"between the Lean heap's end ({end:#x}) and the reserved "
                         f"extent's ({reserved_end:#x})")
+    # WS-BP BP7.1: the table-page pool is the last whole pages of the reserved
+    # extent, after the device tree's window, and the pool the Lean side boots
+    # configured address spaces from.
+    pool_start, pool_end = table["__boot_table_pool_start"], table["__boot_table_pool_end"]
+    pages = table["BOOT_TABLE_POOL_PAGES"]
+    if pool_end != reserved_end or pool_start % PAGE or pool_end - pool_start != pages * PAGE:
+        problems.append(f"the table-page pool [{pool_start:#x}, {pool_end:#x}) is not "
+                        f"BOOT_TABLE_POOL_PAGES ({pages:#x}) pages ending at the reserved "
+                        f"extent's end ({reserved_end:#x})")
+    if pool_start < dtb_end:
+        problems.append(f"the table-page pool starts at {pool_start:#x}, inside the device "
+                        f"tree's window (which ends at {dtb_end:#x})")
+    if pool is not None and pool != (pool_start, pages):
+        problems.append(f"link.ld's table-page pool is ({pool_start:#x}, {pages:#x} pages), "
+                        f"the Lean side's ({pool[0]:#x}, {pool[1]:#x} pages)")
     return problems
 
 
@@ -317,6 +364,8 @@ _GOOD = {
     "KERNEL_RESERVED_END": 0x1000_0000,
     "__dtb_window_start": 0xC2000 + 0x400_0000, "__dtb_window_end": 0xC2000 + 0x420_0000,
     "DTB_WINDOW_SIZE": 0x20_0000,
+    "__boot_table_pool_start": 0x0FFF_0000, "__boot_table_pool_end": 0x1000_0000,
+    "BOOT_TABLE_POOL_PAGES": 0x10,
 }
 
 
@@ -336,9 +385,9 @@ def self_test() -> int:
                                                   "__lean_heap_end": 0xC0000 + 0x400_0000},
          "inside the image or its stacks"),
         ("a reserved extent past the first gigabyte", {"KERNEL_RESERVED_END": 0x5000_0000},
-         "not on a 2 MiB block inside the first gigabyte"),
+         ("not on a 2 MiB block inside the first gigabyte", "pages ending at the reserved extent's end")),
         ("a reserved extent off a 2 MiB block", {"KERNEL_RESERVED_END": 0x1000_1000},
-         "not on a 2 MiB block inside the first gigabyte"),
+         ("not on a 2 MiB block inside the first gigabyte", "pages ending at the reserved extent's end")),
         ("a missing symbol", {"__lean_heap_end": None}, "defines no __lean_heap_end"),
         ("a text end off its page", {"__text_end": 0x81008, "__rodata_start": 0x81008},
          "not all 4 KiB aligned"),
@@ -347,7 +396,7 @@ def self_test() -> int:
         ("a gap between the text and the read-only data", {"__rodata_start": 0x82000},
          "not where the text ends"),
         ("an arena past the reserved extent", {"KERNEL_RESERVED_END": 0x200_0000},
-         ("past the kernel's reserved extent", "between the Lean heap's end")),
+         ("past the kernel's reserved extent", "between the Lean heap's end", "pages ending at the reserved extent's end")),
         ("a loaded extent that stops inside the read-only data",
          {"__image_load_end": 0x81800}, "the loaded image ends"),
         ("a loaded extent that runs into .bss", {"__image_load_end": 0x83800},
@@ -364,7 +413,17 @@ def self_test() -> int:
          "between the Lean heap's end"),
         ("a device-tree window past the reserved extent",
          {"__dtb_window_start": 0x1000_0000, "__dtb_window_end": 0x1020_0000},
-         "between the Lean heap's end"),
+         ("between the Lean heap's end", "inside the device tree's window")),
+        ("a table-page pool that stops short of the extent",
+         {"__boot_table_pool_start": 0x0FFE_F000, "__boot_table_pool_end": 0x0FFF_F000},
+         "pages ending at the reserved extent's end"),
+        ("a table-page pool shorter than its constant",
+         {"__boot_table_pool_start": 0x0FFF_1000}, "pages ending at the reserved extent's end"),
+        ("a table-page pool inside the device tree's window",
+         {"__boot_table_pool_start": _GOOD["__dtb_window_end"] - PAGE,
+          "BOOT_TABLE_POOL_PAGES": (0x1000_0000 - _GOOD["__dtb_window_end"] + PAGE) // PAGE},
+         "inside the device tree's window"),
+        ("a Lean pool that differs", {}, "the Lean side's"),
     ]
     failures = 0
     for name, edits, expect in cases:
@@ -373,7 +432,10 @@ def self_test() -> int:
         # subject is that they differ.
         reserved = ((0, 0x2000_0000) if name == "a Lean extent that differs"
                     else (0, table.get("KERNEL_RESERVED_END", 0)))
-        problems = check_layout(table, reserved)
+        pool = ((0x0FFF_0000, 0x20) if name == "a Lean pool that differs"
+                else (table.get("__boot_table_pool_start", 0),
+                      table.get("BOOT_TABLE_POOL_PAGES", 0)))
+        problems = check_layout(table, reserved, pool)
         # A case names the one relation it breaks, or -- where breaking it
         # necessarily breaks a second (an arena past the reserved extent puts
         # the window after it past the extent too) -- each, in order.
@@ -409,7 +471,8 @@ def main(argv: list[str]) -> int:
             if linked.returncode != 0:
                 raise GateFailure(f"link.ld does not link:\n{linked.stderr}")
             table = symbols(work / "probe.elf")
-            problems = check_layout(table, lean_reserved_extent(BOOT_MAP_FIXTURE.read_text()))
+            fixture = BOOT_MAP_FIXTURE.read_text()
+            problems = check_layout(table, lean_reserved_extent(fixture), lean_table_pool(fixture))
             if problems:
                 raise GateFailure("; ".join(problems))
             print(f"  link.ld: arena [{table['__lean_heap_start']:#x}, "

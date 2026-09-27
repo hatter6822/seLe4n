@@ -2440,6 +2440,11 @@ private def bootMapTableLines : List String :=
     -- `TCR_EL1.IPS` from, so the model's bound and the PE's are compared by
     -- running both rather than by two literals each claiming the board.
     ++ [s!"physicalAddressWidth {bootMapHex rpi5MachineConfig.physicalAddressWidth}"]
+    -- WS-BP BP7.1: the table-page pool the boot takes each configured address
+    -- space's top-level table from, as `tablePool <base> <pages>` — read back by
+    -- the HAL's `the_boot_table_pool_is_the_lean_and_linker_one` and by
+    -- `scripts/check_link_script.py` against `link.ld`'s `.boot_table_pool`.
+    ++ [s!"tablePool {bootMapHex rpi5BootTablePoolBase} {bootMapHex rpi5BootTablePoolPages}"]
     -- ...and the PE count the binding declares, as `declaredCores <n>` — read
     -- back by `boot.rs`'s `lean_declared_core_count_matches_the_rpi5_binding`,
     -- so the handoff's `LEAN_DECLARED_CORE_COUNT` is the binding's `coreCount`
@@ -2467,6 +2472,20 @@ private def bootMapTableLines : List String :=
             s!"extend {bootMapHex e.1} {bootMapHex e.2}")
         ++ (bootMapProbes map).map fun a =>
             s!"probe {bootMapHex a} {bootMapKindName (classifyAddress (SeLe4n.PAddr.ofNat a) map)}"
+
+/-- **WS-BP BP7.1 (`v0.36.13`)**: the deployment's two address spaces take the
+first two pages of the pool, one each, on every variant — and the pool is the
+last sixteen pages of the kernel's reserved extent. -/
+def deployment_roots_own_distinct_pool_pages : IO Unit := do
+  for v in rpi5Variants do
+    let bases := SeLe4n.Platform.Boot.configuredRootTableBases (rpi5BoundPlatformConfigAt v)
+    unless bases == [some (rpi5BootTablePage 0), some (rpi5BootTablePage 1)] do
+      throw <| IO.userError s!"deployment roots' table pages on {v.ramSize}: {reprStr bases}"
+    unless SeLe4n.Platform.Boot.bootRootTablesPlaced (rpi5BoundPlatformConfigAt v) do
+      throw <| IO.userError s!"deployment on {v.ramSize}: bootRootTablesPlaced is false"
+  unless rpi5BootTablePoolBase + rpi5BootTablePoolPages * 4096 == rpi5KernelReservedEnd do
+    throw <| IO.userError "the pool does not end at the kernel's reserved extent"
+  IO.println "deployment roots own distinct pool pages on every variant: PASS"
 
 def bootMap_the_lean_map_is_the_shared_table : IO Unit :=
   checkSharedFixture "WS-BP BP0.4 boot map" "tests/fixtures/boot_map.expected"
@@ -2565,6 +2584,7 @@ def main : IO Unit := do
   deviceTreeBridge_23_extent_past_the_window_is_refused
   dtbCorpus_every_fixture_agrees_with_the_manifest
   bootMap_the_lean_map_is_the_shared_table
+  deployment_roots_own_distinct_pool_pages
   kernelEntry_boots_the_deployment_on_every_variant
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

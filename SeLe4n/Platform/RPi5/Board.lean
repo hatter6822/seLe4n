@@ -249,6 +249,26 @@ def rpi5MemoryMap : List SeLe4n.MemoryRegion :=
 def rpi5KernelReserved : List SeLe4n.MemoryRegion :=
   [{ base := SeLe4n.PAddr.ofNat 0, size := rpi5KernelReservedEnd, kind := .reserved }]
 
+/-- **WS-BP BP7.1**: the number of pages in the boot's table-page pool — the
+    same number as `link.ld`'s `BOOT_TABLE_POOL_PAGES` and the HAL's
+    `mmu::BOOT_TABLE_POOL_PAGES`, held together through
+    `tests/fixtures/boot_map.expected`'s `tablePool` line. -/
+def rpi5BootTablePoolPages : Nat := 16
+
+/-- **WS-BP BP7.1**: the pool's first page.  The pool is the last
+    `rpi5BootTablePoolPages` pages of the kernel's reserved extent, where
+    `link.ld` places `.boot_table_pool`. -/
+def rpi5BootTablePoolBase : Nat := rpi5KernelReservedEnd - rpi5BootTablePoolPages * 4096
+
+/-- **WS-BP BP7.1**: the pool's pages, in address order. -/
+def rpi5BootTablePool : List SeLe4n.PAddr :=
+  (List.range rpi5BootTablePoolPages).map
+    (fun i => SeLe4n.PAddr.ofNat (rpi5BootTablePoolBase + i * 4096))
+
+/-- **WS-BP BP7.1**: the `i`-th page of the pool. -/
+def rpi5BootTablePage (i : Nat) : SeLe4n.PAddr :=
+  SeLe4n.PAddr.ofNat (rpi5BootTablePoolBase + i * 4096)
+
 /-- ARMv8-A machine configuration for Raspberry Pi 5. -/
 def rpi5MachineConfig : SeLe4n.MachineConfig :=
   {
@@ -277,6 +297,8 @@ def rpi5MachineConfig : SeLe4n.MachineConfig :=
     -- WS-BP BP3.2: the kernel's reserved extent, identical on every variant
     -- (`rpi5MachineConfigForVariant` keeps it), since it is the image's.
     kernelReserved := rpi5KernelReserved
+    -- WS-BP BP7.1: the table-page pool, identical on every variant.
+    bootTablePool := rpi5BootTablePool
   }
 
 -- ============================================================================

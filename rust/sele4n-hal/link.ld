@@ -17,7 +17,8 @@
  * the address used by U-Boot and the RPi firmware bootloader).
  *
  * Section order: .text.boot → .text.vectors → .text → .rodata → .data → .bss
- *   → .stack → .smp_stacks → .lean_heap → .dtb_window (all NOLOAD from .bss)
+ *   → .stack → .smp_stacks → .lean_heap → .dtb_window → .boot_table_pool
+ *   (all NOLOAD from .bss)
  */
 
 ENTRY(_start)
@@ -46,6 +47,17 @@ KERNEL_RESERVED_END = 0x10000000;
  * inside the window is the whole of what the kernel may dereference.  The
  * HAL's test holds the two equal.  Hex on one line, as above. */
 DTB_WINDOW_SIZE = 0x200000;
+
+/* WS-BP BP7.1: the pool the boot takes each configured address space's
+ * top-level table page from — `BOOT_TABLE_POOL_PAGES` pages ending exactly at
+ * `KERNEL_RESERVED_END`, so the pool is the last memory of the kernel's
+ * reserved extent: no boot untyped describes it (BP3.2), and a thread's
+ * translation table can never be retyped out from under it.  The Lean
+ * `rpi5BootTablePoolBase` / `rpi5BootTablePoolPages` state the same pool and
+ * `tests/fixtures/boot_map.expected` carries it (`tablePool <base> <pages>`), so
+ * the HAL's test and scripts/check_link_script.py hold the three together.
+ * Hex on one line, as above. */
+BOOT_TABLE_POOL_PAGES = 0x10;
 
 MEMORY
 {
@@ -184,6 +196,16 @@ SECTIONS
         __dtb_window_end = .;
     } > RAM
 
+    /* WS-BP BP7.1: the boot's table-page pool, at the top of the reserved
+     * extent.  `NOLOAD`: the HAL zeroes it before the Lean kernel is
+     * entered (`mmu::zero_boot_table_pool`), so a configured address space's
+     * table starts empty whatever the RAM held. */
+    .boot_table_pool (KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096) (NOLOAD) : {
+        __boot_table_pool_start = .;
+        . += BOOT_TABLE_POOL_PAGES * 4096;
+        __boot_table_pool_end = .;
+    } > RAM
+
     /* Discard unneeded sections */
     /DISCARD/ : {
         *(.comment)
@@ -217,6 +239,12 @@ ASSERT(ORIGIN(RAM) + LENGTH(RAM) == KERNEL_RESERVED_END, "link.ld's RAM region m
 ASSERT(__dtb_window_end - __dtb_window_start == DTB_WINDOW_SIZE && __dtb_window_start % 4096 == 0, "the device tree's window must be DTB_WINDOW_SIZE bytes on a 4 KiB page")
 ASSERT(__dtb_window_start >= __lean_heap_end, "the device tree's window must lie after the Lean heap, outside the memory the image owns")
 ASSERT(__dtb_window_end <= KERNEL_RESERVED_END, "the device tree's window must end inside the kernel's reserved extent")
+
+/* WS-BP BP7.1: the table-page pool is whole pages ending exactly at the
+ * reserved extent's end, after everything else the image places. */
+ASSERT(__boot_table_pool_end == KERNEL_RESERVED_END, "the boot table-page pool must end exactly at the kernel's reserved extent")
+ASSERT(__boot_table_pool_start % 4096 == 0 && BOOT_TABLE_POOL_PAGES > 0, "the boot table-page pool must be whole 4 KiB pages")
+ASSERT(__boot_table_pool_start >= __dtb_window_end, "the boot table-page pool must lie after the device tree's window")
 
 /* WS-BP BP2.6: the permission boundaries `mmu::ImageLayout::is_well_formed`
  * requires — each on a page, the text non-empty and ahead of the read-only

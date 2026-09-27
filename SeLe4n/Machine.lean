@@ -1051,6 +1051,17 @@ structure MachineConfig where
       with no image (the simulation bindings, the trace harness) reserves
       nothing. -/
   kernelReserved : List MemoryRegion := []
+  /-- **WS-BP BP7.1**: the pages the boot takes each configured address space's
+      top-level translation table from.  A thread's root needs a page of RAM for
+      a table walk to start at (`VSpaceRoot.tableBase`); a root carved from an
+      untyped is carved *on* one, and a root the boot configures has no untyped
+      to be carved from, so the binding reserves a pool inside the kernel's
+      reserved extent and the boot requires every configured root to take a
+      distinct page of it (`Platform.Boot.bootRootTablesPlaced`).  On the RPi5
+      it is `link.ld`'s `.boot_table_pool`, which the HAL zeroes before the
+      Lean kernel is entered.  The default is empty: a configuration that
+      configures no address space needs none. -/
+  bootTablePool : List SeLe4n.PAddr := []
   deriving Repr
 
 /-- AH2-E: Default machine configuration for use as a `PlatformConfig` default.

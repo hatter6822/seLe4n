@@ -122,10 +122,23 @@ def parse_script(text: str) -> Script:
     if body is None:
         raise GateFailure(f"{LINK_SCRIPT} has no SECTIONS block")
     code = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), body.group(1), flags=re.DOTALL)
-    declared = tuple(
-        (m.group(1), m.group(2) is not None)
-        for m in re.finditer(r"^ {4}(\.[\w.]+)\s*(\(NOLOAD\))?\s*:", code, re.MULTILINE)
-    )
+    # An output section's header is `name [address] [(type)] :` (GNU ld
+    # "Output Section Description"); the address is an expression and may
+    # itself be parenthesised, as `.boot_table_pool`'s is.  One level of
+    # nesting inside it is admitted; a deeper one is refused below rather
+    # than dropped from the declared set.
+    header = re.compile(
+        r"^ {4}(\.[\w.]+)\s*"
+        r"(?:\((?!NOLOAD\))(?:[^()]|\([^()]*\))*\)\s*)?"
+        r"(\(NOLOAD\))?\s*:", re.MULTILINE)
+    declared = tuple((m.group(1), m.group(2) is not None) for m in header.finditer(code))
+    # Fail closed: every line that opens an output section must be one the
+    # header grammar read, or an unreadable header would leave its section
+    # out of the set every other check compares the image against.
+    opened = [m.group(1) for m in re.finditer(r"^ {4}(\.[\w.]+)\b[^\n]*\{", code, re.MULTILINE)]
+    if opened != [name for name, _ in declared]:
+        raise GateFailure(f"{LINK_SCRIPT} opens section(s) whose header this gate cannot read: "
+                          f"{sorted(set(opened) - {n for n, _ in declared})}")
     if not declared:
         raise GateFailure(f"{LINK_SCRIPT} declares no output section")
     return Script(int(origin.group(1), 16), declared)
@@ -232,7 +245,7 @@ def check_image(image: Image, script: Script, table: dict[str, int], undefined: 
 _SCRIPT = Script(0x80000, ((".text.boot", False), (".text.vectors", False), (".text", False),
                           (".rodata", False), (".data", False), (".bss", True),
                           (".stack", True), (".smp_stacks", True), (".lean_heap", True),
-                          (".dtb_window", True)))
+                          (".dtb_window", True), (".boot_table_pool", True)))
 _TABLE = {**_GOOD, "__exception_vectors": 0x80800, "rust_boot_main": 0x80900,
           "secondary_entry": 0x80100, "rust_secondary_main": 0x80a00}
 _IMAGE = Image(ET_EXEC, EM_AARCH64, 0x80000, (
@@ -246,6 +259,7 @@ _IMAGE = Image(ET_EXEC, EM_AARCH64, 0x80000, (
     Section(".smp_stacks", 0x91000, 0x30000, True, False),
     Section(".lean_heap", 0xC2000, 0x400_0000, True, False),
     Section(".dtb_window", 0x40C2000, 0x20_0000, True, False),
+    Section(".boot_table_pool", 0xFFF_0000, 0x1_0000, True, False),
 ))
 
 
@@ -327,7 +341,27 @@ def self_test() -> int:
     except GateFailure as e:
         failures += 1
         print(f"  FAIL link.ld: {e}", file=sys.stderr)
-    total = len(cases) + len(lean_cases) + 1
+    # The header grammar: an address expression is read, and a header the
+    # grammar cannot read is refused rather than left out of the set.
+    script_cases = [
+        ("an address-expression header",
+         "MEMORY { RAM : ORIGIN = 0x80000 }\nSECTIONS {\n    .a : {\n    }\n"
+         "    .b (END - (N * 4096)) (NOLOAD) : {\n    }\n}\n",
+         ((".a", False), (".b", True))),
+        ("a header nested past the grammar",
+         "MEMORY { RAM : ORIGIN = 0x80000 }\nSECTIONS {\n    .a : {\n    }\n"
+         "    .b (END - ((N * 4096))) (NOLOAD) : {\n    }\n}\n",
+         None),
+    ]
+    for name, text, expect in script_cases:
+        try:
+            got = parse_script(text).sections
+        except GateFailure:
+            got = None
+        if got != expect:
+            failures += 1
+            print(f"  FAIL {name}: {got}", file=sys.stderr)
+    total = len(cases) + len(lean_cases) + len(script_cases) + 1
     print(f"check_kernel_image self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
 

@@ -1725,7 +1725,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     { target := .object ksdFrameId, rights := AccessRightSet.ofList [.read] }
   let stVspace : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject ksdVspaceId (.vspaceRoot { asid := ksdAsid, mappings := {} })
+      |>.withObject ksdVspaceId (.vspaceRoot (fixtureMappableRoot ksdAsid))
       |>.withLifecycleObjectType ksdVspaceId .vspaceRoot
       |>.withObject ksdMapCaller.toObjId (.tcb {
           tid := ksdMapCaller, priority := ⟨10⟩, domain := ⟨0⟩,

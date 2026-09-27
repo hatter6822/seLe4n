@@ -737,12 +737,19 @@ private def tph015h_simBootVSpaceRoot : IO Unit := do
     (!bootSafeObjectCheck (KernelObject.vspaceRoot
       SeLe4n.Platform.Sim.simBootVSpaceRoot))
 
+/-- WS-BP BP7.1: the table page a configured root at `id` owns — one page of
+    the fixture's pool (`withRpi5Root`), distinct per id, since two roots over
+    one table would be one address space (`bootRootTablesPlaced`). -/
+private def fixtureTablePage (id : Nat) : SeLe4n.PAddr :=
+  SeLe4n.PAddr.ofNat (0x0FFF_0000 + (id % 16) * 4096)
+
 /-- WS-BP BP3.2: an empty user VSpace root on `asid`, as a configured entry
-    at `id`. -/
+    at `id` — owning its pool page since WS-BP BP7.1 (`v0.36.13`). -/
 private def userRootEntry (id asid : Nat) : ObjectEntry :=
   { id := SeLe4n.ObjId.ofNat id
     obj := KernelObject.vspaceRoot
-      { asid := SeLe4n.ASID.ofNat asid, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
+      { asid := SeLe4n.ASID.ofNat asid, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+        tableBase := some (fixtureTablePage id) }
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => by
       cases h; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega) }
@@ -750,7 +757,9 @@ private def userRootEntry (id asid : Nat) : ObjectEntry :=
 /-- WS-BP BP3.2: a config carrying the RPi5 binding root and `objs`. -/
 private def withRpi5Root (objs : List ObjectEntry) : PlatformConfig :=
   { irqTable := [], initialObjects := objs,
-    machineConfig := SeLe4n.defaultMachineConfig
+    machineConfig := { SeLe4n.defaultMachineConfig with
+      kernelReserved := [{ base := SeLe4n.PAddr.ofNat 0, size := 0x1000_0000, kind := .reserved }]
+      bootTablePool := (List.range 16).map fun i => SeLe4n.PAddr.ofNat (0x0FFF_0000 + i * 4096) }
     bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
 
 /-- TPH-015n (WS-BP BP3.2): a configured thread's VSpace root is admitted
@@ -793,6 +802,7 @@ private def tph015p_userRootShapeRefused : IO Unit := do
     { id := SeLe4n.ObjId.ofNat 9
       obj := KernelObject.vspaceRoot
         { asid := SeLe4n.ASID.ofNat 1
+          tableBase := some (fixtureTablePage 9)
           mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16
               : SeLe4n.Kernel.RobinHood.RHTable VAddr (PAddr × PagePermissions)).insert
             (VAddr.ofNat 0x1000)

@@ -252,11 +252,16 @@ level that is absent. -/
 def missingLevel? (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option Nat :=
   translationLevels.find? fun l => (root.slotAt? l (PageTableSlot.indexOf l vaddr)).isNone
 
-/-- **A frame may be mapped at `vaddr`**: the root is carved and its walk to
-`vaddr` is complete, or the root is one the boot configured, which owns no table
-page for the walk to hang from (WS-BP's boot-root debt row). -/
+/-- **A frame may be mapped at `vaddr`**: the root owns a top-level table page
+and its walk to `vaddr` is complete.  A root with no table page has nowhere for a
+walk to start, so nothing is mapped into it — fail-closed.  Since `v0.36.13`
+every root a thread can run in has one: a carved root's is the page it was
+carved on, and a root the boot configures takes one from the binding's
+table-page pool (`MachineConfig.bootTablePool`,
+`Platform.Boot.bootRootTablesPlaced`).  The one root without a page is the
+kernel's own boot root, which no capability maps into. -/
 def translationReady (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Bool :=
-  root.tableBase.isNone || root.walkComplete vaddr
+  root.tableBase.isSome && root.walkComplete vaddr
 
 theorem missingLevel?_none_iff_walkComplete (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) :
     root.missingLevel? vaddr = none ↔ root.walkComplete vaddr = true := by

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.12.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.13.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7152,7 +7152,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -8278,6 +8278,23 @@ writes only roots, so the tables it takes out keep a stale record, which reads a
 installed nowhere — `.pageTableMap` installs it again, `.pageTableUnmap` clears it,
 and the reset does not refuse it.  `tests/VSpaceCapabilityBindingSuite.lean` §5k is
 the witness.
+
+**Every configured address space owns a table page** (`v0.36.13`, completing
+BP7.1).  Three things new code must respect.  (1) **A root with no table page
+maps nothing**: `VSpaceRoot.translationReady` is `tableBase.isSome &&
+walkComplete`, so the kernel's own boot root — the one root without a page —
+takes no mapping, and a test fixture that means to exercise a map starts from
+`Testing.fixtureMappableRoot`.  (2) **A configured root's page comes from the
+binding's pool** (`MachineConfig.bootTablePool`): `bootRootTablesPlaced`,
+`PlatformConfig.wellFormed`'s eighth conjunct, requires every configured root to
+name a distinct pool page and every pool page to lie page-aligned inside the
+kernel's reserved extent, so no untyped describes it; a configured root also
+holds no intermediate table (`bootSafeUserVSpaceRootCheck`).  (3) **The pool is
+one pool in three places**: `rpi5BootTablePool*`, `link.ld`'s
+`.boot_table_pool` (the last sixteen pages of the reserved extent, `ASSERT`ed
+live by `scripts/check_link_script.py`) and `mmu::BOOT_TABLE_POOL_*`, held
+together by `tests/fixtures/boot_map.expected`'s `tablePool` line; the HAL zeroes
+it (`mmu::zero_boot_table_pool`) before the Lean kernel is entered.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

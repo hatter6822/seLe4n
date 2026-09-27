@@ -1,3 +1,58 @@
+## v0.36.13 — WS-BP BP7.1: every configured address space owns a table page
+
+A root the boot configured had no table page — its `tableBase` was `none` — so
+BP7.2 would have had nothing to install in `TTBR0_EL1` for a boot-configured
+thread, and `VSpaceRoot.translationReady` answered *ready* for such a root at
+every address, letting a frame be mapped into an address space with no table
+for a walk to start at.  This cut gives every configured root a page and makes
+a root without one fail closed.  It completes BP7.1.
+
+**The pool.**  `MachineConfig.bootTablePool` is the pages a binding reserves for
+configured roots' top-level tables.  On the RPi5 it is `link.ld`'s
+`.boot_table_pool` — `BOOT_TABLE_POOL_PAGES` (sixteen) pages ending exactly at
+`KERNEL_RESERVED_END`, after the device-tree window, three `ASSERT`s each proved
+live by `scripts/check_link_script.py` — and the Lean `rpi5BootTablePool` /
+`rpi5BootTablePage`; `tests/fixtures/boot_map.expected`'s new `tablePool` line
+holds the Lean, linker and HAL (`mmu::BOOT_TABLE_POOL_*`) copies together.  The
+pool is `NOLOAD`, so the HAL zeroes it (`mmu::zero_boot_table_pool`) before the
+Lean kernel is entered, refusing a link that placed it anywhere but the constant
+pool.
+
+**The check.**  `bootRootTablesPlaced` is `PlatformConfig.wellFormed`'s eighth
+conjunct, with its own diagnostic (`bootRootTablesBootError`): every configured
+`.vspaceRoot` names a page of the pool, no two share one, and every pool page is
+page-aligned inside the kernel's reserved extent, so no boot untyped describes
+it.  It is invariant under extent erasure (`bootRootTablesPlaced_withoutExtents`),
+so every per-variant gate carries over.  A configured root also holds no
+intermediate table (`bootSafeUserVSpaceRootCheck`), since a slot would name a
+page-table object the boot does not create.  The deployment's root task and
+untrusted thread take pool pages 0 and 1.
+
+**Two gates learned the pool.**  `scripts/check_kernel_image.py` read an output
+section's header as `name [(NOLOAD)] :`, so `.boot_table_pool`'s — which is placed
+by an address expression — was not in the declared set and the image check
+refused the section as one `link.ld` does not name.  It now reads GNU ld's
+`name [address] [(type)] :`, with one level of parenthesis inside the address,
+and **refuses** a line opening a section whose header it cannot read rather than
+leaving the section out of the set every other check compares the image against;
+two self-test cases pin both directions.  And the HAL's boot-map fixture reader
+accepts the `tablePool` line, which it had refused as unrecognised.
+
+**Fail-closed.**  `VSpaceRoot.translationReady` is now `tableBase.isSome &&
+walkComplete`: a root with no table page maps nothing, which on a booted kernel
+is exactly the kernel's own boot root.  Test fixtures that mean to exercise a
+map start from `Testing.fixtureMappableRoot` (a table page and a complete walk
+for the first 2 MiB); the trace output is byte-identical.
+
+**Witnesses.**  `tests/SmpIdleSuite.lean` refuses a root with no page, two roots
+on one page, a page outside the pool, a pool page outside the reserved extent
+and an unaligned pool page — each naming this conjunct — with a two-page
+control; `tests/Ak9PlatformSuite.lean` pins the deployment's pages on every
+variant; `tests/VSpaceCapabilityBindingSuite.lean` §5k refuses a table and a
+frame in a root with no page.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP7.1)
+
 ## v0.36.12 — WS-BP BP7.1: intermediate page tables
 
 A carved address space owned its top-level table page and nothing below it, so

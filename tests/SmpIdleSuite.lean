@@ -972,6 +972,50 @@ private def runDeclaredCoreCountChecks : IO Unit := do
   assertBool "a config declaring more PEs than the model has is refused"
     ((withCount (SeLe4n.Kernel.Concurrency.numCores + 1)).wellFormed == false)
 
+/-- **WS-BP BP7.1 (`v0.36.13`)**: every configured address space owns a table
+page of the binding's pool.  Each refusal names its own conjunct, and the
+control — two roots on two pool pages — is accepted, so the refusals are about
+the pages and not about configuring a root at all. -/
+private def poolRootEntry (id asid : Nat) (base : Option SeLe4n.PAddr) :
+    SeLe4n.Platform.Boot.ObjectEntry :=
+  { id := ⟨id⟩
+    obj := .vspaceRoot { asid := ⟨asid⟩, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16,
+                         tableBase := base }
+    hSlots := fun _ h => nomatch h
+    hMappings := fun _ h => by
+      cases h; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega) }
+
+private def runBootTablePoolChecks : IO Unit := do
+  IO.println "--- WS-BP BP7.1: every configured address space owns a pool page ---"
+  let page (i : Nat) : SeLe4n.PAddr := SeLe4n.PAddr.ofNat (0x0FFF_0000 + i * 4096)
+  let mc : SeLe4n.MachineConfig :=
+    { SeLe4n.defaultMachineConfig with
+      kernelReserved := [{ base := SeLe4n.PAddr.ofNat 0, size := 0x1000_0000, kind := .reserved }]
+      bootTablePool := [page 0, page 1] }
+  let withRoots (mc : SeLe4n.MachineConfig) (a b : Option SeLe4n.PAddr) :
+      SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], machineConfig := mc,
+      initialObjects := [poolRootEntry 100 1 a, poolRootEntry 101 2 b] }
+  let refusedHere (c : SeLe4n.Platform.Boot.PlatformConfig) : Bool :=
+    c.wellFormed == false &&
+      SeLe4n.Platform.Boot.wellFormedDiagnostic c == SeLe4n.Platform.Boot.bootRootTablesBootError
+  assertBool "CONTROL: two roots on two pool pages are well-formed"
+    ((withRoots mc (some (page 0)) (some (page 1))).wellFormed == true)
+  assertBool "a root with no table page is refused, naming the pool"
+    (refusedHere (withRoots mc (some (page 0)) none))
+  assertBool "two roots sharing one page are refused, naming the pool"
+    (refusedHere (withRoots mc (some (page 0)) (some (page 0))))
+  assertBool "a page outside the pool is refused, naming the pool"
+    (refusedHere (withRoots mc (some (page 0)) (some (page 2))))
+  assertBool "a pool page outside the kernel's reserved extent is refused, naming the pool"
+    (refusedHere (withRoots { mc with bootTablePool := [page 0, SeLe4n.PAddr.ofNat 0x2000_0000] }
+      (some (page 0)) (some (SeLe4n.PAddr.ofNat 0x2000_0000))))
+  assertBool "an unaligned pool page is refused, naming the pool"
+    (refusedHere (withRoots { mc with bootTablePool := [page 0, SeLe4n.PAddr.ofNat 0x0FFF_1008] }
+      (some (page 0)) (some (SeLe4n.PAddr.ofNat 0x0FFF_1008))))
+  assertBool "the refused config is refused by the checked boot"
+    ((SeLe4n.Platform.Boot.bootFromPlatformChecked (withRoots mc (some (page 0)) none)).isOk == false)
+
 /-- PR #889 review round 18: a successful boot must leave the object index
     inside `maxObjects`.  Nothing bounded the count before: the checked boot
     did not, and the idle fold adds one entry per core on top of it, so a
@@ -1107,6 +1151,7 @@ def runSmpIdleChecks : IO Unit := do
   runBootValidationParityChecks
   runObjectBudgetChecks
   runDeclaredCoreCountChecks
+  runBootTablePoolChecks
   runInactiveFlagChecks
   IO.println "===================================="
   IO.println "All SM5.E per-core idle thread checks PASS."
