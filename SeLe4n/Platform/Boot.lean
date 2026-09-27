@@ -913,12 +913,12 @@ theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
   rfl
 
 /-- PR #889 review round 8: a **VSpace root** — an ASID, a virtual-to-physical
-    map and a lock — holds no object, thread or scheduling-context id.  The
-    answer is by inspection of the constructor's fields, and the pattern fails
-    when a field is added. -/
+    map, its table's physical base (WS-BP BP7.1 slice 4b) and a lock — holds no
+    object, thread or scheduling-context id.  The answer is by inspection of the
+    constructor's fields, and the pattern fails when a field is added. -/
 def vspaceRootReferencesReservedIdleSlot (vsr : VSpaceRoot) : Bool :=
   match vsr with
-  | ⟨_asid, _mappings, _lock⟩ => false
+  | ⟨_asid, _mappings, _tableBase, _lock⟩ => false
 
 /-- **WS-BP BP7.1**: a **frame** — a physical address, a memory kind and a lock —
     holds no object, thread or scheduling-context id.  By inspection of the

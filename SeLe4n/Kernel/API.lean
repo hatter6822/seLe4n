@@ -3978,10 +3978,13 @@ def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (decoded : SyscallDecodeR
 requests.**  A frame, whose size is fixed, so its `sizeBits` must be `0` — the
 value a frame's MR0 carried before the field existed; or a child untyped of
 `2 ^ sizeBits` bytes with `sizeBits` in `[minUntypedSizeBits,
-maxUntypedSizeBits]`.  Anything else is `.invalidArgument`: every other kind is
-created by the in-place retype (`.lifecycleRetype`), and the carve exists for
-memory a thread is handed *as memory*. -/
-def carveRequestOf? (newType : KernelObjectType) (sizeBits : Nat) :
+maxUntypedSizeBits]`; or (slice 4b, `v0.36.10`) a VSpace root, one page, so
+its `sizeBits` must be `0`, registered under the least free ASID (`freshAsid?`;
+`.resourceExhausted` when every ASID is taken).  Anything else is
+`.invalidArgument`: every other kind is created by the in-place retype
+(`.lifecycleRetype`), and the carve exists for memory a thread is handed *as
+memory* — a translation table included. -/
+def carveRequestOf? (st : SystemState) (newType : KernelObjectType) (sizeBits : Nat) :
     Except KernelError CarveRequest :=
   match newType with
   | .frame => if sizeBits = 0 then .ok .frame else .error .invalidArgument
@@ -3989,19 +3992,35 @@ def carveRequestOf? (newType : KernelObjectType) (sizeBits : Nat) :
       if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
         .ok (.untyped sizeBits)
       else .error .invalidArgument
+  | .vspaceRoot =>
+      if sizeBits = 0 then
+        match freshAsid? st with
+        | some asid => .ok (.vspaceRoot asid)
+        | none => .error .resourceExhausted
+      else .error .invalidArgument
   | _ => .error .invalidArgument
 
 /-- **WS-BP BP7.1**: a request the decode accepts is a frame or an untyped whose
-size lies in the carve's bounds — the only requests the arm ever hands the
-carve. -/
-theorem carveRequestOf?_ok (newType : KernelObjectType) (sizeBits : Nat)
-    (req : CarveRequest) (h : carveRequestOf? newType sizeBits = .ok req) :
+size lies in the carve's bounds, or (slice 4b) a VSpace root under an ASID
+`freshAsid?` answered — the only requests the arm ever hands the carve. -/
+theorem carveRequestOf?_ok (st : SystemState) (newType : KernelObjectType) (sizeBits : Nat)
+    (req : CarveRequest) (h : carveRequestOf? st newType sizeBits = .ok req) :
     (newType = .frame ∧ sizeBits = 0 ∧ req = .frame) ∨
     (newType = .untyped ∧ minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits ∧
-      req = .untyped sizeBits) := by
+      req = .untyped sizeBits) ∨
+    (newType = .vspaceRoot ∧ sizeBits = 0 ∧
+      ∃ asid, freshAsid? st = some asid ∧ req = .vspaceRoot asid) := by
   cases newType <;> simp only [carveRequestOf?] at h <;> try cases h
+  · by_cases hB : sizeBits = 0
+    · simp only [hB, ↓reduceIte] at h
+      cases hF : freshAsid? st with
+      | none => rw [hF] at h; cases h
+      | some asid =>
+        rw [hF] at h; cases h
+        exact Or.inr (Or.inr ⟨rfl, hB, asid, rfl, rfl⟩)
+    · simp [hB] at h
   · split at h
-    · rename_i hB; cases h; exact Or.inr ⟨rfl, hB.1, hB.2, rfl⟩
+    · rename_i hB; cases h; exact Or.inr (Or.inl ⟨rfl, hB.1, hB.2, rfl⟩)
     · cases h
   · split at h
     · cases h; exact Or.inl ⟨rfl, by assumption, rfl⟩
@@ -4022,7 +4041,7 @@ def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     match decodeUntypedRetypeArgs decoded with
     | .error e => .error e
     | .ok args =>
-      match carveRequestOf? args.newType args.sizeBits with
+      match carveRequestOf? st args.newType args.sizeBits with
       | .error e => .error e
       | .ok req =>
         match validateObjIdArg args.childId with
@@ -4042,7 +4061,7 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (decoded : SyscallDecode
     ∃ (args : UntypedRetypeArgs) (req : CarveRequest) (vChild : SeLe4n.ValidObjId)
       (src dst : CSpaceAddr),
       decodeUntypedRetypeArgs decoded = .ok args ∧
-      carveRequestOf? args.newType args.sizeBits = .ok req ∧
+      carveRequestOf? st args.newType args.sizeBits = .ok req ∧
       validateObjIdArg args.childId = .ok vChild ∧
       resolveUntypedRetype tid decoded args st = .ok (src, dst) ∧
       untypedRetypeObject src vChild.val dst req st = .ok ((), st') := by
@@ -4052,7 +4071,7 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (decoded : SyscallDecode
   | ok args =>
     rw [hD] at h
     simp only at h
-    cases hQ : carveRequestOf? args.newType args.sizeBits with
+    cases hQ : carveRequestOf? st args.newType args.sizeBits with
     | error e => rw [hQ] at h; cases h
     | ok req =>
       rw [hQ] at h

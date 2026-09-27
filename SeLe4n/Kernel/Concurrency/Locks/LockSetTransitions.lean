@@ -383,11 +383,17 @@ real. -/
   ⟨.page, oid⟩
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`)**: the lock of an object a carve creates —
-a child untyped's `untyped` lock, a frame's `page` lock.  The carve writes the
-new object's key, so its footprint names that key under the kind the key will
-hold, which is what serialises it against every later operation on the object. -/
-@[inline] def carvedObjectLock (childIsUntyped : Bool) (oid : ObjId) : LockId :=
-  if childIsUntyped then untypedLock oid else pageLock oid
+a child untyped's `untyped` lock, a frame's `page` lock, and since slice 4b
+(`v0.36.10`) a VSpace root's `vspaceRoot` lock.  The carve writes the new
+object's key, so its footprint names that key under the kind the key will hold,
+which is what serialises it against every later operation on the object.  Keyed
+on the carved **kind** rather than a flag, so a kind the carve gains names its
+own lock rather than falling into another's. -/
+@[inline] def carvedObjectLock (childKind : KernelObjectType) (oid : ObjId) : LockId :=
+  match childKind with
+  | .untyped => untypedLock oid
+  | .vspaceRoot => vspaceRootLock oid
+  | _ => pageLock oid
 
 /-- WS-SM SM3.A.10 / PR #870 round 7: **the SystemState-level lock**, as a
 declarable footprint member.
@@ -1404,20 +1410,20 @@ Caller TCB (read) and CSpace root (read) for the two capability resolutions; the
 untyped (write — its watermark advances and its child list grows); the **new
 object's key** (write — the object store gains it, and naming the key is what
 serialises two carves racing for one child id), under the kind it will hold
-(`carvedObjectLock`: a frame's `page` lock, or since slice 4 a child untyped's
-`untyped` lock); the destination CNode (write — the new capability goes in); and
+(`carvedObjectLock`: a frame's `page` lock, since slice 4 a child untyped's
+`untyped` lock, and since slice 4b a VSpace root's `vspaceRoot` lock); the destination CNode (write — the new capability goes in); and
 `stateLevelLock` (write) for the CDT edge and the object index the carve
 extends, unconditional because a successful carve always writes both.  Every
 member is named by the operands, so unlike the in-place retype there is no
 state-resolved optional member. -/
 def lockSet_untypedRetype (callerTid : ThreadId)
     (cnodeRootObjId untypedObjId childObjId dstCnodeObjId : ObjId)
-    (childIsUntyped : Bool) : LockSet :=
+    (childKind : KernelObjectType) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
      (untypedLock untypedObjId, .write),
-     (carvedObjectLock childIsUntyped childObjId, .write),
+     (carvedObjectLock childKind childObjId, .write),
      (cnodeLock dstCnodeObjId, .write),
      (stateLevelLock, .write)]
 
@@ -4408,10 +4414,11 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .cspaceRevoke =>
       [.tcb, .cnode, .objStore, .vspaceRoot]
   -- **WS-BP BP7.1 (`v0.36.5`)**: the carve reads the caller and its CSpace
-  -- root, writes the untyped, the new frame's key, the destination CNode, and
-  -- the CDT / object index through `stateLevelLock`.
+  -- root, writes the untyped, the new object's key (a frame's `page`, a child
+  -- untyped, or since slice 4b a VSpace root), the destination CNode, and the
+  -- CDT / object index through `stateLevelLock`.
   | .untypedRetype =>
-      [.tcb, .cnode, .untyped, .page, .objStore]
+      [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore]
   -- **WS-BP BP7.1 (`v0.36.6`)**: the reset reads the caller and its CSpace root,
   -- writes the untyped, retires frames (their `page` locks), rewrites every VSpace
   -- root that maps a page of the region, and writes the object index through
@@ -5996,9 +6003,9 @@ theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
 
 /-- **WS-BP BP7.1** — WS-SM SM3.B.4 for `.untypedRetype`. -/
 theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
-    (cnRoot untypedId childId dstCn : ObjId) (childIsUntyped : Bool) :
+    (cnRoot untypedId childId dstCn : ObjId) (childKind : KernelObjectType) :
     ∀ p ∈ (lockSet_untypedRetype callerTid cnRoot untypedId childId dstCn
-      childIsUntyped).pairs,
+      childKind).pairs,
       p.fst.kind ∈ permittedKinds .untypedRetype :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
@@ -6009,7 +6016,8 @@ theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; cases childIsUntyped <;> simp [carvedObjectLock, pageLock, untypedLock] <;> decide
+        · rw [h]; cases childKind <;>
+            simp [carvedObjectLock, pageLock, untypedLock, vspaceRootLock] <;> decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem

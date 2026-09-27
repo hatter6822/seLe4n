@@ -95,6 +95,14 @@ because the defect lived in dispatch and only dispatch can witness it.
   one on a state holding an ASID-`0` root; the live `.lifecycleRetype` refuses
   the kind (`KernelObjectType.memoryBacked`), and the same retype into an
   endpoint is the control.
+* §5i — **WS-BP BP7.1 slice 4b (`v0.36.10`): an address space is carved
+  memory.**  `.untypedRetype` at the VSpace-root tag carves a root on a zeroed
+  page of its untyped, under the least free ASID — never `0`, never one another
+  root holds — with a read/write capability; a frame maps into it; a device
+  untyped cannot back one.  After one revocation the reset retires both roots
+  and the frame, removes the carved address space's translation and releases
+  both ASIDs, while a thread still running in a carved root refuses the reset;
+  the next carve reuses the released ASID and page.
 * §6 — the authorized positive paths still work (the gate is not a blanket
   denial).
 -/
@@ -1077,6 +1085,95 @@ private def runInPlaceVSpaceRootChecks : IO Unit := do
     assertBool "CONTROL: the same retype into an endpoint succeeds, and ASID 0 stays the ASID-0 root's"
       ((stOk.getEndpoint? carveVsp).isSome && stOk.asidTable[zero]? == some asidZeroRootId)
 
+-- ============================================================================
+-- §5i  WS-BP BP7.1 slice 4b (`v0.36.10`) — an address space is carved memory
+-- ============================================================================
+
+/-- The VSpace-root tag. -/
+private def vspaceRootTag : Nat := 4
+
+/-- `.vspaceMap` through the root capability at `rootSlot`, under `asid`. -/
+private def decodeMapVia (rootSlot asid vaddr frameSlot perms : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat rootSlot
+  , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
+  , syscallId := .vspaceMap
+  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat vaddr,
+                   SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
+
+/-- The root stored at `oid`, if one is. -/
+private def rootAt (st : SystemState) (oid : Nat) : Option VSpaceRoot :=
+  st.getVSpaceRoot? (SeLe4n.ObjId.ofNat oid)
+
+private def runCarvedRootChecks : IO Unit := do
+  IO.println "-- §5i `.untypedRetype` carves a VSpace root, and the reset retires it (WS-BP BP7.1)"
+  let st := carveScenario
+  let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
+    match r with | .error e' => e' == e | .ok _ => false
+  let one := SeLe4n.ASID.ofNat 1
+  assertBool "a VSpace root with a non-zero size is refused (invalidArgument) — a root is one page"
+    (isErr .invalidArgument (dispatchSyscall
+      (decodeCarve slotUtRetype (vspaceRootTag + 256) 980 slotOwnCnRW 12) carveOwner st))
+  assertBool "a device untyped cannot back a VSpace root (untypedDeviceRestriction) — a table is RAM"
+    (isErr .untypedDeviceRestriction (dispatchSyscall
+      (decodeCarve slotDevUt vspaceRootTag 980 slotOwnCnRW 12) carveOwner st))
+  match runAll st
+      [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
+       decodeCarve slotUtRetype vspaceRootTag 981 slotOwnCnRW 13,
+       decodeCarve slotUtRetype frameTag 982 slotOwnCnRW 14,
+       decodeMapVia 12 1 0x70000 14 permsRWUC] with
+  | .error e => assertBool s!"carving two roots and a frame, and mapping it, succeeds (got {repr e})" false
+  | .ok st1 => do
+    assertBool "the first root is registered under the least free ASID (1), not 0"
+      ((rootAt st1 980).map (·.asid) == some one && st1.asidTable[one]? == some (SeLe4n.ObjId.ofNat 980))
+    assertBool "the second root takes the next free ASID (2)"
+      ((rootAt st1 981).map (·.asid) == some (SeLe4n.ASID.ofNat 2))
+    assertBool "the boot-configured root keeps its own ASID"
+      (st1.asidTable[carveAsid]? == some carveVsp)
+    assertBool "the first root's table base is the untyped's first page"
+      ((rootAt st1 980).bind (·.tableBase) == some (SeLe4n.PAddr.ofNat carveUtBase))
+    assertBool "and the carve zeroed that page (it held 0xAB)"
+      (SeLe4n.readMem st1.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0)
+    assertBool "the destination holds a read/write capability to the root"
+      (SystemState.lookupSlotCap st1 { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 }
+        == some (vspaceRootCapability (SeLe4n.ObjId.ofNat 980)))
+    assertBool "the frame maps into the carved address space"
+      (mappedPaddr st1 one (SeLe4n.VAddr.ofNat 0x70000) == some (carveUtBase + 2 * SeLe4n.pageBytes))
+    assertBool "a reset while the roots' capabilities live is refused (revocationRequired)"
+      (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner st1))
+    match dispatchSyscall (decodeRevoke slotUtRetype) carveOwner st1 with
+    | .error e => assertBool s!"revoking the untyped capability succeeds (got {repr e})" false
+    | .ok ((), stRev) => do
+      -- A thread still running in a carved root names it without a capability.
+      let stUsed : SystemState :=
+        match stRev.getTcb? carveOwner with
+        | some t =>
+          match storeObject carveOwner.toObjId
+              (.tcb { t with vspaceRoot := SeLe4n.ObjId.ofNat 980 }) stRev with
+          | .ok ((), s) => s
+          | .error _ => stRev
+        | none => stRev
+      assertBool "a reset while a thread's vspaceRoot names a carved root is refused (revocationRequired)"
+        (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner stUsed))
+      match dispatchSyscall (decodeReset slotUtRetype) carveOwner stRev with
+      | .error e => assertBool s!"CONTROL: with no thread in it, the reset retires the roots (got {repr e})" false
+      | .ok ((), stReset) => do
+        assertBool "CONTROL: both roots and the frame are retired"
+          ((stReset.objects[SeLe4n.ObjId.ofNat 980]?).isNone &&
+           (stReset.objects[SeLe4n.ObjId.ofNat 981]?).isNone &&
+           (stReset.objects[SeLe4n.ObjId.ofNat 982]?).isNone)
+        assertBool "their ASIDs are released, and the boot root's is untouched"
+          (stReset.asidTable[one]? == none && stReset.asidTable[SeLe4n.ASID.ofNat 2]? == none &&
+           stReset.asidTable[carveAsid]? == some carveVsp)
+        assertBool "the carved address space's translation is gone"
+          (mappedPaddr stReset one (SeLe4n.VAddr.ofNat 0x70000) == none)
+        match dispatchSyscall (decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12)
+            carveOwner stReset with
+        | .error e => assertBool s!"a root carve after the reset succeeds (got {repr e})" false
+        | .ok ((), stAgain) =>
+          assertBool "the next root reuses the released ASID and the region's first page"
+            ((rootAt stAgain 980).map (fun r => (r.asid, r.tableBase))
+              == some (one, some (SeLe4n.PAddr.ofNat carveUtBase)))
+
 private def runFrameFinaliseChecks : IO Unit := do
   IO.println "-- §5f a frame capability owns the mapping it made (WS-BP BP7.1)"
   let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
@@ -1229,6 +1326,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runResetChecks
   runChildUntypedChecks
   runInPlaceVSpaceRootChecks
+  runCarvedRootChecks
   runFrameFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="

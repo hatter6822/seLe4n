@@ -57,7 +57,9 @@ impl LifecycleRetypeArgs {
 /// capability; the kernel carves [`TypeTag::Frame`] (whose `size_bits` must be
 /// `0` — a frame is one page) and, since slice 4, [`TypeTag::Untyped`] of
 /// `2^size_bits` bytes with `size_bits` in [`MIN_UNTYPED_SIZE_BITS`,
-/// `MAX_UNTYPED_SIZE_BITS`]; anything else is `InvalidArgument`.
+/// `MAX_UNTYPED_SIZE_BITS`], and since slice 4b [`TypeTag::VSpaceRoot`] (whose
+/// `size_bits` must be `0` — a root is one table page, registered under an ASID
+/// the kernel picks); anything else is `InvalidArgument`.
 ///
 /// `size_bits` shares MR0 with the tag because all four argument registers are
 /// taken.  A frame's MR0 is its tag alone, exactly as before the field existed.

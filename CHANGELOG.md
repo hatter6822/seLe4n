@@ -1,3 +1,64 @@
+## v0.36.10 — WS-BP BP7.1 slice 4b: an address space is carved memory
+
+`v0.36.9` closed the in-place retype's ASID-0 collision by refusing to create a
+VSpace root in place, and registered what that cost: no runtime path created an
+address space at all.  This cut gives the root a physical table page and makes it
+a carve from an untyped, as seL4 makes its VSpace object.
+
+**The carve.**  `.untypedRetype` at the VSpace-root tag, with `size_bits = 0`,
+carves a root on the page at the untyped's watermark (`untypedNextVSpaceRoot`).
+That page is zeroed, so a PE told to walk it translates nothing, and it is the
+root's top-level table: `VSpaceRoot.tableBase` is new, `some` exactly for a
+carved root and `none` for a boot-configured one.  The frozen mirror carries the
+field and the frozen/live agreement compares it.  The root is registered under
+the least free non-zero ASID below the machine's bound (`freshAsid?`).  Every
+ASID taken is `.resourceExhausted`.
+
+The carve does **not** trust the arm's choice.  `CarveRequest.admissible`
+re-decides that the ASID is non-zero, in range and free before anything is
+written.  The reason is that `storeObject` registers a root's ASID
+unconditionally, which is the mechanism `v0.36.9`'s defect ran on.  A device
+untyped cannot back a root (`deviceBackable`), so the table page is always RAM.
+The capability handed back is read/write (`vspaceRootCapability`).  The carve's
+lock footprint is keyed on the carved kind now (`carvedObjectLock`, a
+`KernelObjectType` where a flag stood), so a root names its own `vspaceRoot`
+lock.
+
+**The reset retires roots, and finalises them.**  A carved root is retirable.
+The reset refuses while any thread's `vspaceRoot` names one, because a thread
+reaches its address space by that field and not through a capability.  Every
+mapping a carved root holds is removed through the same verified unmap the
+region's pages go through (`carvedRootMappings`, over `untypedResetMappings`),
+with its shootdown, and the root is checked empty (`carvedRootsEmpty`).
+`retireCarvedObject` erases the root's ASID-table entry, and the reset decides
+afterwards that no entry names any retired object (`asidTableNamesNoneOf`).  So
+the ASID is free for the next carve and no lookup can reach an erased root.
+
+**Theorems.**  `untypedRetypeObject_ok_vspaceRoot` (the root is stored at the
+child id under an ASID that was free, its table page inside the untyped, aligned
+and RAM, and its capability installed), `untypedNextVSpaceRoot_of_retype_ok`,
+`freshAsid?_admissible`, `untypedRetypeObject_ok_admissible` and
+`untypedReset_ok_asids_released`.  The existing reset theorems carry the third
+retirable kind.
+
+**Witness.**  `tests/VSpaceCapabilityBindingSuite.lean` §5i carves two roots
+(ASIDs 1 and 2, never 0 and never the boot root's), a frame, and maps the frame
+into the first root.  A reset is refused while the capabilities live and, after
+the revocation, while a thread's `vspaceRoot` names a carved root.  The control
+reset retires both roots and the frame, removes the translation and releases
+both ASIDs, and the next carve reuses the released ASID and page.  Removing the
+thread-reference clause fails the witness (checked by mutation).
+
+**Rust.**  `sele4n_sys::lifecycle::untyped_retype_vspace_root`, driven by the
+conformance sweep; the ABI docs name the new kind.
+
+**Still owed before BP7.2, registered.**  A TCB-space operation (seL4's
+`TCB_SetSpace`), so a thread can run in a carved root; a table page for each
+boot-configured root; and intermediate page-table objects, since a carved root
+owns its top-level table and no level below it.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP7.1)
+
 ## v0.36.9 — A VSpace root is never created in place (the ASID-0 collision, closed)
 
 Scoping BP7.1 slice 4b (VSpace roots and page tables carved from untypeds)

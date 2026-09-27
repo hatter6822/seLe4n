@@ -4316,7 +4316,7 @@ theorem untypedReset_confinedToCores
     (hStep : untypedReset executingCore untypedId st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] := by
   apply observableSlotsConfinedToCores_nil_of_framed
-  obtain ⟨_, ids, st1, -, -, -, -, -, -, hUnmap, -, -, hSt⟩ :=
+  obtain ⟨_, ids, st1, -, -, -, -, -, -, hUnmap, -, -, -, -, hSt⟩ :=
     untypedReset_ok_decompose executingCore untypedId st st' hStep
   obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ st st1 hUnmap
   obtain ⟨hs2, hm2⟩ := retireCarvedObjects_framed ids st1

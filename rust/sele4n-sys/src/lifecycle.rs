@@ -26,7 +26,12 @@ use sele4n_types::{CPtr, KernelResult, ObjId, Slot, SyscallId};
 /// with `size_bits` in [`MIN_UNTYPED_SIZE_BITS`, `MAX_UNTYPED_SIZE_BITS`]: a
 /// child untyped of `2^size_bits` bytes of the parent's memory kind, handed
 /// back with read, write and retype, from which the holder carves in turn.
-/// Every other combination is `InvalidArgument`.
+/// [`TypeTag::VSpaceRoot`] with `size_bits = 0` (slice 4b): an address space —
+/// one zeroed RAM page holding its top-level translation table, registered
+/// under an ASID the kernel picks and checks is free (`ResourceExhausted` when
+/// every ASID is taken), handed back with read and write; a device untyped
+/// cannot back one (`UntypedDeviceRestriction`).  Every other combination is
+/// `InvalidArgument`.
 ///
 /// [`MIN_UNTYPED_SIZE_BITS`]: sele4n_abi::args::MIN_UNTYPED_SIZE_BITS
 /// [`MAX_UNTYPED_SIZE_BITS`]: sele4n_abi::args::MAX_UNTYPED_SIZE_BITS
@@ -84,6 +89,24 @@ pub fn untyped_retype_untyped(
         untyped_cap,
         TypeTag::Untyped,
         size_bits,
+        child_id,
+        dst_cnode,
+        dst_slot,
+    )
+}
+
+/// Convenience: carve an address space — a VSpace root on its own zeroed table
+/// page, under a fresh ASID — out of `untyped_cap` (WS-BP BP7.1 slice 4b).
+pub fn untyped_retype_vspace_root(
+    untyped_cap: CPtr,
+    child_id: ObjId,
+    dst_cnode: CPtr,
+    dst_slot: Slot,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(
+        untyped_cap,
+        TypeTag::VSpaceRoot,
+        0,
         child_id,
         dst_cnode,
         dst_slot,

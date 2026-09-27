@@ -172,6 +172,14 @@ WS-H11/H-02: Enriched with per-page permissions (read/write/execute/user/cacheab
 structure VSpaceRoot where
   asid : SeLe4n.ASID
   mappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
+  /-- **WS-BP BP7.1 slice 4b (`v0.36.10`): the physical page holding this
+      address space's top-level translation table** — what a PE is told to walk
+      (`TTBR0_EL1`, which BP7.2 installs).  `some` exactly for a root carved from
+      an untyped (`untypedRetypeObject` at `CarveRequest.vspaceRoot`), whose
+      page it is; `none` for a root the boot configured, which owns no page of
+      its own and so cannot be installed until the boot places one.  seL4's
+      VSpace object *is* this page. -/
+  tableBase : Option SeLe4n.PAddr := none
   /-- WS-SM SM3.A.7: per-VSpaceRoot reader-writer lock state.  Default
       `RwLockState.unheld` means a freshly-allocated VSpaceRoot starts
       with its lock available.  VSpace mutation paths (`vspaceMapPage`,

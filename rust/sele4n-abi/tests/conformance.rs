@@ -2438,6 +2438,16 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         "untyped_retype (untyped_retype_untyped)",
         SyscallId::UntypedRetype,
     );
+    let _ = sele4n_sys::lifecycle::untyped_retype_vspace_root(
+        cap,
+        ObjId::from(1u64),
+        CPtr::from(2u64),
+        Slot::from(3u64),
+    );
+    assert_clears(
+        "untyped_retype (untyped_retype_vspace_root)",
+        SyscallId::UntypedRetype,
+    );
     let _ = sele4n_sys::lifecycle::untyped_reset(cap);
     assert_clears("untyped_reset", SyscallId::UntypedReset);
 

@@ -90,8 +90,8 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
     .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, llock⟩) =>
       fd == ld && fgw == lgw && fgv == lgv && frw == lrw && flock == llock
         && frozenCNodeSlotsAgree fc lc
-  | .vspaceRoot (fv@⟨fasid, _fm, flock⟩), .vspaceRoot (lv@⟨lasid, _lm, llock⟩) =>
-      fasid == lasid && flock == llock && frozenVSpaceMappingsAgree fv lv
+  | .vspaceRoot (fv@⟨fasid, _fm, fbase, flock⟩), .vspaceRoot (lv@⟨lasid, _lm, lbase, llock⟩) =>
+      fasid == lasid && fbase == lbase && flock == llock && frozenVSpaceMappingsAgree fv lv
   | _, _ => false
 
 /-- State-level agreement over everything both phases model.

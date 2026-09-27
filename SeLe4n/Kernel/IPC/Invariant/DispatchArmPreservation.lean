@@ -1605,7 +1605,8 @@ theorem untypedRetypeObject_preserves_ipcInvariantFull
   exact cdtRecord_bundle_frame st2 src dst DerivationOp.retype
     (cspaceInsertSlot_preserves_ipcInvariantFull _ st2 dst _ hObjInvZ hInvZ
       (fun b hb => by
-        cases req <;> simp [CarveRequest.capability, frameCapability, untypedCapability] at hb)
+        cases req <;> simp [CarveRequest.capability, frameCapability, untypedCapability,
+          vspaceRootCapability] at hb)
       hIns)
 
 /-- **WS-BP BP7.1 slice 3 (`v0.36.6`)**: the untyped reset preserves

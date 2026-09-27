@@ -296,6 +296,9 @@ outside SM3.A scope. -/
 structure FrozenVSpaceRoot where
   asid     : SeLe4n.ASID
   mappings : FrozenMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
+  /-- WS-BP BP7.1 slice 4b: the runtime root's table page, forwarded verbatim
+      by `freezeVSpaceRoot`. -/
+  tableBase : Option SeLe4n.PAddr := none
   /-- WS-SM SM3.A.7: per-VSpaceRoot lock state forwarded from the runtime
       representation through `freezeVSpaceRoot`. -/
   lock     : SeLe4n.Kernel.Concurrency.RwLockState :=
@@ -632,6 +635,8 @@ so the frozen-phase representation preserves the per-object lock state. -/
 def freezeVSpaceRoot (vs : VSpaceRoot) : FrozenVSpaceRoot :=
   { asid := vs.asid
     mappings := freezeMap vs.mappings
+    -- WS-BP BP7.1 slice 4b: forward the table page.
+    tableBase := vs.tableBase
     -- WS-SM SM3.A.7: forward the runtime lock state into the frozen view.
     lock := vs.lock }
 

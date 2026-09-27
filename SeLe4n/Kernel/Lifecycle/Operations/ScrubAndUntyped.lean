@@ -915,32 +915,85 @@ primitive's. -/
 inductive CarveRequest where
   | frame
   | untyped (sizeBits : Nat)
+  /-- **WS-BP BP7.1 slice 4b (`v0.36.10`)**: a VSpace root — one page, its
+      top-level translation table — registered under `asid`, which the arm
+      chooses (`freshAsid?`) and the carve checks is free
+      (`CarveRequest.admissible`). -/
+  | vspaceRoot (asid : SeLe4n.ASID)
   deriving Repr, DecidableEq
+
+/-- **WS-BP BP7.1 slice 4b (`v0.36.10`): the VSpace root a carve makes** — no
+mappings, registered under `asid`, and its **table base the page at the
+untyped's watermark**, the same page `untypedNextFrame` names, so the root owns
+exactly one page its untyped owned.  seL4's VSpace object is that page. -/
+def untypedNextVSpaceRoot (ut : UntypedObject) (asid : SeLe4n.ASID) : VSpaceRoot :=
+  { asid := asid, mappings := {}, tableBase := some (untypedNextFrame ut).base }
+
+/-- **WS-BP BP7.1 slice 4b: the capability a carve hands back for a VSpace
+root.**  Read and write — the rights `.vspaceMap` and `.vspaceUnmap` ask of an
+address-space capability.  `.retype` is absent: a root's page returns to its
+untyped through the reset, never through an in-place retype, which refuses a
+root outright. -/
+def vspaceRootCapability (rootId : SeLe4n.ObjId) : Capability :=
+  { target := .object rootId
+    rights := AccessRightSet.ofList [.read, .write] }
+
+/-- **WS-BP BP7.1 slice 4b (`v0.36.10`): an ASID nothing holds.**  The least
+`n` in `[1, maxASID)` the ASID table does not map.  ASID `0` is never chosen —
+it is the boot VSpace root's, and ARM64 reserves it — and the bound is the
+machine's, the one `.vspaceMap`'s decode reads.  `none` when every ASID is
+taken.  A linear scan bounded by the ASID width, as seL4's `ASIDPool_Assign`
+scans its pool. -/
+def freshAsid? (st : SystemState) : Option SeLe4n.ASID :=
+  ((List.range st.machine.maxASID).find? fun n =>
+      n != 0 && (st.asidTable[SeLe4n.ASID.ofNat n]?).isNone).map SeLe4n.ASID.ofNat
+
+/-- **WS-BP BP7.1 slice 4b: is a request's own precondition met?**  A frame or a
+child untyped has none beyond the primitive's.  A VSpace root's ASID must be
+non-zero, below the machine's bound, and free in the ASID table — decided here,
+by the carve, rather than trusted of whoever chose it: `storeObject` inserts a
+root's ASID unconditionally, and an ASID already held would move its entry to
+the new root (the defect `v0.36.9` closed on the in-place retype). -/
+def CarveRequest.admissible (st : SystemState) : CarveRequest → Bool
+  | .frame => true
+  | .untyped _ => true
+  | .vspaceRoot asid =>
+      asid.toNat != 0 && decide (asid.toNat < st.machine.maxASID) &&
+        (st.asidTable[asid]?).isNone
 
 /-- The object a request carves out of `ut` (stored at `untypedId`). -/
 def CarveRequest.object (untypedId : SeLe4n.ObjId) (ut : UntypedObject) :
     CarveRequest → KernelObject
   | .frame => .frame (untypedNextFrame ut)
   | .untyped b => .untyped (untypedNextChild ut untypedId b)
+  | .vspaceRoot asid => .vspaceRoot (untypedNextVSpaceRoot ut asid)
 
 /-- The bytes a request takes from the parent's region. -/
 def CarveRequest.size : CarveRequest → Nat
   | .frame => SeLe4n.pageBytes
   | .untyped b => 2 ^ b
+  | .vspaceRoot _ => SeLe4n.pageBytes
 
 /-- The capability a request hands back for the carved object. -/
 def CarveRequest.capability (childId : SeLe4n.ObjId) : CarveRequest → Capability
   | .frame => frameCapability childId
   | .untyped _ => untypedCapability childId
+  | .vspaceRoot _ => vspaceRootCapability childId
 
 /-- The memory write a request performs.  A RAM frame's page is zeroed before
 any capability to it exists (`carveZeroFrame`).  A child untyped writes nothing:
 its memory is handed out only through its own carves, and each frame carve
 zeroes its page, so scrubbing here would scrub twice — and a device child's
-memory is MMIO, where a store is a command. -/
+memory is MMIO, where a store is a command.  A VSpace root's page is zeroed too
+(slice 4b): a zeroed table page is a table of invalid descriptors, so a PE told
+to walk it translates nothing — and a device untyped cannot back a root at all
+(`KernelObjectType.deviceBackable`), so the page is always RAM. -/
 def CarveRequest.scrub (st : SystemState) (ut : UntypedObject) : CarveRequest → SystemState
   | .frame => carveZeroFrame st (untypedNextFrame ut)
   | .untyped _ => st
+  | .vspaceRoot _ =>
+      { st with
+          machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut).base SeLe4n.pageBytes }
 
 /-- **WS-BP BP7.1 (`v0.36.5`, generalized at slice 4, `v0.36.8`): carve one object
 out of an untyped the caller holds — seL4's `Untyped_Retype`.**
@@ -977,6 +1030,7 @@ reachable state was carved from an untyped by a holder of a capability to it.
 def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
     (dst : CSpaceAddr) (req : CarveRequest) : Kernel Unit :=
   fun st =>
+    if !req.admissible st then .error .illegalState else
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (utCap, _) =>
@@ -1038,6 +1092,9 @@ theorem untypedRetypeObject_ok_decompose
              let p2 := SystemState.ensureCdtNodeForSlot p1.snd dst
              { p2.snd with cdt := p2.snd.cdt.addEdge p1.fst p2.fst .retype }) := by
   unfold untypedRetypeObject at hStep
+  cases hAdm : req.admissible st
+  · simp only [hAdm, Bool.not_false, ↓reduceIte] at hStep; cases hStep
+  simp only [hAdm, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hStep
   cases hLk : cspaceLookupSlot src st with
   | error e => rw [hLk] at hStep; cases hStep
   | ok pair =>
@@ -1073,6 +1130,39 @@ theorem untypedRetypeObject_ok_decompose
               by first | exact hRt | rfl, by first | exact hIns | rfl, hStep.symm⟩
     | _ => rw [hTgt] at hStep; cases hStep
 
+/-- **WS-BP BP7.1 slice 4b: a successful carve met its request's own
+precondition** — for a VSpace root, its ASID was non-zero, in range and free. -/
+theorem untypedRetypeObject_ok_admissible
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
+    (st st' : SystemState)
+    (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    req.admissible st = true := by
+  unfold untypedRetypeObject at hStep
+  cases hAdm : req.admissible st
+  · simp only [hAdm, Bool.not_false, ↓reduceIte] at hStep; cases hStep
+  · rfl
+
+/-- **WS-BP BP7.1 slice 4b: `freshAsid?` answers an ASID a VSpace-root carve
+admits** — non-zero, below the machine's bound, and free in the ASID table. -/
+theorem freshAsid?_admissible (st : SystemState) (asid : SeLe4n.ASID)
+    (h : freshAsid? st = some asid) :
+    (CarveRequest.vspaceRoot asid).admissible st = true := by
+  unfold freshAsid? at h
+  cases hF : (List.range st.machine.maxASID).find?
+      (fun n => n != 0 && (st.asidTable[SeLe4n.ASID.ofNat n]?).isNone) with
+  | none => rw [hF] at h; cases h
+  | some n =>
+    rw [hF] at h
+    simp only [Option.map_some, Option.some.injEq] at h
+    subst h
+    have hP := List.find?_some hF
+    have hMem := List.mem_of_find?_eq_some hF
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hP
+    have hLt : n < st.machine.maxASID := List.mem_range.mp hMem
+    simp only [CarveRequest.admissible, Bool.and_eq_true, bne_iff_ne, ne_eq,
+      decide_eq_true_eq]
+    exact ⟨⟨hP.1, hLt⟩, hP.2⟩
+
 /-- **WS-BP BP7.1: the carved frame's page is inside its untyped, on a page
 boundary, and of its untyped's memory kind.**  The whole of what "memory is
 authority" asks of a carve: the frame names one page the untyped owned
@@ -1107,6 +1197,44 @@ theorem untypedNextFrame_of_retype_ok
   · show (ut₀.regionBase.toNat + ut₀.watermark) % SeLe4n.pageBytes = 0
     simpa [SeLe4n.pageBytes] using hAligned
 
+
+/-- **WS-BP BP7.1 slice 4b (`v0.36.10`): a carved VSpace root's table page is
+inside its untyped, on a page boundary, and RAM.**  The root counterpart of
+`untypedNextFrame_of_retype_ok`: the page a PE will be told to walk is one page
+the untyped owned, a descriptor base can name it, and it is never MMIO — a
+device untyped cannot back a root (`KernelObjectType.deviceBackable`). -/
+theorem untypedNextVSpaceRoot_of_retype_ok
+    (st st' : SystemState) (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject) (asid : SeLe4n.ASID)
+    (hObj : st.objects[untypedId]? = some (.untyped ut))
+    (hStep : retypeFromUntyped authority untypedId childId
+      (.vspaceRoot (untypedNextVSpaceRoot ut asid)) SeLe4n.pageBytes st = .ok ((), st')) :
+    (untypedNextVSpaceRoot ut asid).tableBase = some (untypedNextFrame ut).base ∧
+    ut.regionBase.toNat ≤ (untypedNextFrame ut).base.toNat ∧
+    (untypedNextFrame ut).base.toNat + SeLe4n.pageBytes ≤
+      ut.regionBase.toNat + ut.regionSize ∧
+    (untypedNextFrame ut).base.toNat % SeLe4n.pageBytes = 0 ∧
+    ut.isDevice = false := by
+  obtain ⟨ut₀, ut', _, _, _, offset, hObj₀, hDev, _, _, _, hAlloc, _, _⟩ :=
+    retypeFromUntyped_ok_decompose st st' authority untypedId childId _ _ hStep
+  rw [hObj] at hObj₀
+  have hEq : ut₀ = ut := by cases hObj₀; rfl
+  subst hEq
+  have hAligned := retypeFromUntyped_ok_pageAligned st st' authority untypedId childId
+    _ _ ut₀ hObj rfl hStep
+  have hCan := ((UntypedObject.allocate_some_iff ut₀ childId _ _).mp hAlloc).1
+  simp only [UntypedObject.canAllocate, Bool.and_eq_true, decide_eq_true_eq] at hCan
+  simp only [allocationBasePageAligned, beq_iff_eq] at hAligned
+  refine ⟨rfl, ?_, ?_, ?_, ?_⟩
+  · show ut₀.regionBase.toNat ≤ ut₀.regionBase.toNat + ut₀.watermark
+    omega
+  · show ut₀.regionBase.toNat + ut₀.watermark + SeLe4n.pageBytes ≤ _
+    omega
+  · show (ut₀.regionBase.toNat + ut₀.watermark) % SeLe4n.pageBytes = 0
+    simpa [SeLe4n.pageBytes] using hAligned
+  · rcases hDev with h | h
+    · exact h
+    · simp [KernelObject.objectType, KernelObjectType.deviceBackable] at h
 
 /-- **WS-BP BP7.1**: the scrub moves no object. -/
 @[simp] theorem carveZeroFrame_objects (st : SystemState) (frame : FrameObject) :
@@ -1273,6 +1401,40 @@ theorem untypedRetypeObject_ok_untyped
   obtain ⟨hLo, hHi, hAl, hDev, hPar, -, -⟩ :=
     untypedNextChild_of_retype_ok st st1 src untypedId childId ut b hObj hRt
   exact ⟨untypedId, ut, hObj, hAt, hLo, hHi, hAl, hDev, hPar, hCn⟩
+
+/-- **WS-BP BP7.1 slice 4b (`v0.36.10`): a VSpace-root carve's payoff** — the
+store holds, at the child id, a root with no mappings, registered under an ASID
+that was non-zero, in range and **free in the ASID table before the carve**, and
+whose table base is a page inside the untyped, on a page boundary, of RAM; and
+the destination holds a read/write capability to it.  This is what the in-place
+retype could not say (`v0.36.9`): the root it built at ASID `0` took an entry
+another root held. -/
+theorem untypedRetypeObject_ok_vspaceRoot
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (asid : SeLe4n.ASID)
+    (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst (.vspaceRoot asid) st = .ok ((), st')) :
+    ∃ (untypedId : SeLe4n.ObjId) (ut : UntypedObject),
+      st.objects[untypedId]? = some (.untyped ut) ∧
+      st'.objects[childId]? = some (.vspaceRoot (untypedNextVSpaceRoot ut asid)) ∧
+      asid.toNat ≠ 0 ∧ asid.toNat < st.machine.maxASID ∧ st.asidTable[asid]? = none ∧
+      (untypedNextVSpaceRoot ut asid).tableBase = some (untypedNextFrame ut).base ∧
+      ut.regionBase.toNat ≤ (untypedNextFrame ut).base.toNat ∧
+      (untypedNextFrame ut).base.toNat + SeLe4n.pageBytes ≤
+        ut.regionBase.toNat + ut.regionSize ∧
+      (untypedNextFrame ut).base.toNat % SeLe4n.pageBytes = 0 ∧
+      ut.isDevice = false ∧
+      ∃ cn : CNode, st'.objects[dst.cnode]? =
+        some (.cnode (cn.insert dst.slot (vspaceRootCapability childId))) := by
+  have hAdm := untypedRetypeObject_ok_admissible src dst childId _ st st' hStep
+  simp only [CarveRequest.admissible, Bool.and_eq_true, bne_iff_ne, ne_eq,
+    decide_eq_true_eq, Option.isNone_iff_eq_none] at hAdm
+  obtain ⟨⟨hNz, hLt⟩, hFree⟩ := hAdm
+  obtain ⟨untypedId, ut, st1, hObj, hRt, hAt, hCn⟩ :=
+    untypedRetypeObject_ok_carved src dst childId (.vspaceRoot asid) st st' hObjInv hStep
+  obtain ⟨hTb, hLo, hHi, hAl, hDev⟩ :=
+    untypedNextVSpaceRoot_of_retype_ok st st1 src untypedId childId ut asid hObj hRt
+  exact ⟨untypedId, ut, hObj, hAt, hNz, hLt, hFree, hTb, hLo, hHi, hAl, hDev, hCn⟩
 
 
 

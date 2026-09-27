@@ -13,7 +13,8 @@ import SeLe4n.Kernel.Architecture.PageTeardown
 /-!
 # The untyped reset — memory returns to the untyped it was carved from
 
-**WS-BP BP7.1, slice 3 (`v0.36.6`); carved subtrees at slice 4 (`v0.36.8`).**
+**WS-BP BP7.1, slice 3 (`v0.36.6`); carved subtrees at slice 4 (`v0.36.8`);
+VSpace roots at slice 4b (`v0.36.10`).**
 Slice 2 made memory reachable only by a carve (`untypedRetypeObject`); this
 module is the other half of seL4's untyped life cycle, `resetUntypedCap`: once
 nothing can reach any object carved from an untyped, the untyped's memory is
@@ -65,13 +66,26 @@ parent's — and that too is decided (`carvedSubtreeFramesInRegion`), so the
 region-wide pass reaches a frame at any depth
 (`untypedReset_ok_retired_pages_unmapped`).
 
+A carved **VSpace root** (slice 4b) is reached two more ways, and both are
+closed before it is retired.  A thread names the address space it runs in by its
+TCB's `vspaceRoot` field rather than by a capability, so the whole-store check
+asks that too; and the root holds translations of its own, so every mapping it
+holds is removed through the same verified unmap (`carvedRootMappings`) — each
+with its shootdown — and the root's emptiness is checked
+(`carvedRootsEmpty`), so no TLB entry of its ASID survives it.  Its ASID-table
+entry is erased with it, and afterwards no entry names any retired object
+(`asidTableNamesNoneOf`, `untypedReset_ok_asids_released`), so the ASID is free
+for the next root carve.
+
 ## What the reset writes
 
-1. every mapping of a page meeting the region, removed (`unmapLivePages`, the
-   page teardown this reset shares with a frame capability's destruction);
+1. every mapping of a page meeting the region, and every mapping a carved
+   VSpace root holds, removed (`unmapLivePages` over `untypedResetMappings`,
+   the page teardown this reset shares with a frame capability's destruction);
 2. every object of the subtree **retired** — erased from the object store with
-   its index and metadata rows (`retireCarvedObject`), so its object id and its
-   store capacity return too.  Leaving a capless frame in the store would be
+   its index and metadata rows (`retireCarvedObject`), and a VSpace root with its
+   ASID-table entry, so its object id, its store capacity and its ASID return
+   too.  Leaving a capless frame in the store would be
    unreachable but would consume a store slot per carve, and a holder of one
    small untyped could then exhaust the global object store by carving and
    resetting in a loop;
@@ -84,15 +98,17 @@ out, whatever happened to it in between.
 
 ## What it refuses
 
-* an object of the subtree that is neither a frame nor an untyped
-  (`.revocationRequired`) — the carve makes only those two, and a kernel object
-  has no destroy operation that returns its memory;
-* an object of the subtree some capability still names (`.revocationRequired`) —
-  revoke the untyped capability (`.cspaceRevoke`), which reaches every
-  capability derived from it, then reset;
+* an object of the subtree that is not a frame, an untyped or a VSpace root
+  (`.revocationRequired`) — the carve makes only those three, and a kernel
+  object has no destroy operation that returns its memory;
+* an object of the subtree some capability still names, or a VSpace root some
+  thread still runs in (`.revocationRequired`) — revoke the untyped capability
+  (`.cspaceRevoke`), which reaches every capability derived from it, move the
+  thread, then reset;
 * a subtree walk that cannot finish, a subtree naming the untyped itself, a
-  frame of the subtree outside the region, a mapping of the region surviving
-  the unmap pass, or an object table without the headroom an erase needs
+  frame of the subtree outside the region, a mapping of the region or of a
+  carved root surviving the unmap pass, an object table without the headroom an
+  erase needs, or an ASID-table entry still naming a retired object
   (`.illegalState`) — none is reachable on a well-formed state, and each is
   decided rather than assumed.
 -/
@@ -233,11 +249,13 @@ theorem untypedCarvedSubtree_spec (st : SystemState) (ut : UntypedObject)
   exact ⟨fun c hc => hW _ (List.mem_map.mpr ⟨c, hc, rfl⟩),
     hC fun x hx => by cases hx⟩
 
-/-- **Every object in the subtree is retirable**: a frame or an untyped.  The
-reset retires memory and nothing else — a kernel object carved by the in-place
-path has no operation here that returns its memory. -/
+/-- **Every object in the subtree is retirable**: a frame, an untyped, or since
+slice 4b (`v0.36.10`) a VSpace root.  The reset retires memory and nothing else
+— a kernel object carved by the in-place path has no operation here that
+returns its memory. -/
 def carvedSubtreeRetirable (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
-  ids.all fun id => (st.getFrame? id).isSome || (st.getUntyped? id).isSome
+  ids.all fun id =>
+    (st.getFrame? id).isSome || (st.getUntyped? id).isSome || (st.getVSpaceRoot? id).isSome
 
 /-- **Every frame in the subtree lies in the untyped's region.**  What makes the
 region-wide unmap pass reach every retired page: a frame the carve placed
@@ -267,6 +285,10 @@ later, so they are authority in flight).  No other object kind holds a
 def objectNamesListed (ids : List SeLe4n.ObjId) : KernelObject → Bool
   | .cnode cn => !(cn.slots.fold true (fun acc _ cap => acc && !capNamesListed ids cap))
   | .tcb t =>
+      -- Slice 4b (`v0.36.10`): a thread's address space is named by its TCB's
+      -- `vspaceRoot` field, not by a capability, so a carved root a thread
+      -- still runs in is reached without one.
+      ids.contains t.vspaceRoot ||
       match t.pendingMessage with
       | some msg => msg.caps.any (fun tc => capNamesListed ids tc.cap)
       | none => false
@@ -308,6 +330,34 @@ def untypedRegionMappings (st : SystemState) (ut : UntypedObject) :
           else acc')
     | _ => acc)
 
+/-- **WS-BP BP7.1 slice 4b (`v0.36.10`): every mapping a VSpace root of the
+subtree holds.**  Retiring a root finalises it the way seL4 deletes a VSpace:
+every translation it holds is removed first, through the same verified unmap —
+so each one's TLB entries are shot down — rather than vanishing with the object
+and leaving its ASID's entries cached.  Collected from the pre-state and checked
+afterwards (`carvedRootsEmpty`). -/
+def carvedRootMappings (st : SystemState) (ids : List SeLe4n.ObjId) : List MappedPage :=
+  ids.foldr (fun id acc =>
+    match st.getVSpaceRoot? id with
+    | some root =>
+        root.mappings.fold acc (fun acc' v e =>
+          { asid := root.asid, vaddr := v, paddr := e.1 } :: acc')
+    | none => acc) []
+
+/-- **The mappings the reset's unmap pass removes**: every mapping of a page
+meeting the region, then every mapping a VSpace root of the subtree holds. -/
+def untypedResetMappings (st : SystemState) (ut : UntypedObject)
+    (ids : List SeLe4n.ObjId) : List MappedPage :=
+  untypedRegionMappings st ut ++ carvedRootMappings st ids
+
+/-- **Every VSpace root of the subtree maps nothing** — the unmap pass's result
+for the roots, decided. -/
+def carvedRootsEmpty (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
+  ids.all fun id =>
+    match st.getVSpaceRoot? id with
+    | some root => root.mappings.fold true (fun _ _ _ => false)
+    | none => true
+
 -- ============================================================================
 -- §2  The unmap pass
 -- ============================================================================
@@ -322,10 +372,12 @@ def untypedRegionMappings (st : SystemState) (ut : UntypedObject) :
 -- §3  Retiring a carved object
 -- ============================================================================
 
-/-- **Is the object at `oid` one a carve makes** — a frame or an untyped? -/
+/-- **Is the object at `oid` one a carve makes** — a frame, an untyped, or since
+slice 4b a VSpace root? -/
 def carvedAt (st : SystemState) (oid : SeLe4n.ObjId) : Prop :=
   (∃ f, st.objects[oid]? = some (KernelObject.frame f)) ∨
-    (∃ u, st.objects[oid]? = some (KernelObject.untyped u))
+    (∃ u, st.objects[oid]? = some (KernelObject.untyped u)) ∨
+    (∃ r, st.objects[oid]? = some (KernelObject.vspaceRoot r))
 
 /-- **Erase a carved object — a frame or an untyped — from the object store**,
 with its index row, its index-set entry and its object-type metadata.  A no-op
@@ -333,20 +385,36 @@ at a key holding anything else, so no other kind of object can be erased through
 it: an erased TCB, Reply or SchedContext would leave every structure naming it
 dangling, while a frame or an untyped is named only by capabilities, mappings
 and its parent's child list — which the reset has already shown to be gone, or
-is about to clear.  Neither kind registers an ASID, so the ASID table is
-untouched.
+is about to clear.  A VSpace root (slice 4b, `v0.36.10`) is named besides by
+its ASID-table entry and by the `vspaceRoot` field of a thread running in it:
+the reset has shown no thread does (`carvedSubtreeUnreferenced`), and the entry
+is erased here, so the root's ASID is free for the next carve.
 
 *Tombstone:* `retireFrame` (`v0.36.6`–`v0.36.7`) was this primitive at frames
 only; slice 4 (`v0.36.8`) retires child untypeds with the frames carved from
 them. -/
 def retireCarvedObject (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
-  if (st.getFrame? id).isSome || (st.getUntyped? id).isSome then
+  if (st.getFrame? id).isSome || (st.getUntyped? id).isSome ||
+      (st.getVSpaceRoot? id).isSome then
     { st with
         objects := st.objects.erase id
         objectIndex := st.objectIndex.filter (· != id)
         objectIndexSet := st.objectIndexSet.erase id
-        lifecycle := { objectTypes := st.lifecycle.objectTypes.erase id } }
+        lifecycle := { objectTypes := st.lifecycle.objectTypes.erase id }
+        asidTable :=
+          match st.getVSpaceRoot? id with
+          | some root => st.asidTable.erase root.asid
+          | none => st.asidTable }
   else st
+
+/-- **WS-BP BP7.1 slice 4b (`v0.36.10`): no ASID-table entry names a listed
+object.**  What a retired VSpace root's ASID release means: `retireCarvedObject`
+erases the entry at the root's own ASID, and this decides afterwards that no
+entry anywhere still names it — so an ASID-table lookup can never resolve to an
+object the reset erased, whatever the table held.  Decided rather than assumed,
+as the module's other results are. -/
+def asidTableNamesNoneOf (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
+  st.asidTable.fold true (fun acc _ oid => acc && !ids.contains oid)
 
 /-- Retire every listed carved object, in order. -/
 def retireCarvedObjects (st : SystemState) (ids : List SeLe4n.ObjId) : SystemState :=
@@ -356,11 +424,12 @@ def retireCarvedObjects (st : SystemState) (ids : List SeLe4n.ObjId) : SystemSta
 -- §4  The reset
 -- ============================================================================
 
-/-- **WS-BP BP7.1 slice 3 (`v0.36.6`), subtrees at slice 4 (`v0.36.8`): reset an
-untyped — seL4's `resetUntypedCap`.**
+/-- **WS-BP BP7.1 slice 3 (`v0.36.6`), subtrees at slice 4 (`v0.36.8`), VSpace
+roots at slice 4b (`v0.36.10`): reset an untyped — seL4's `resetUntypedCap`.**
 
-Six refusals, each committing nothing, then the three writes the module
-docstring lists.  `executingCore` is the core the invoking thread runs on; it is
+The refusals the module docstring lists — each before any write, or after the
+unmap pass as a decided check that commits nothing — then the three writes it
+lists.  `executingCore` is the core the invoking thread runs on; it is
 the initiator of every shootdown round the unmap pass posts. -/
 def untypedReset (executingCore : Concurrency.CoreId) (untypedId : SeLe4n.ObjId) : Kernel Unit :=
   fun st =>
@@ -375,11 +444,14 @@ def untypedReset (executingCore : Concurrency.CoreId) (untypedId : SeLe4n.ObjId)
         else if !carvedSubtreeFramesInRegion st ut ids then .error .illegalState
         else if !carvedSubtreeUnreferenced st ids then .error .revocationRequired
         else
-          match unmapLivePages executingCore (untypedRegionMappings st ut) st with
+          match unmapLivePages executingCore (untypedResetMappings st ut ids) st with
           | .error e => .error e
           | .ok ((), st1) =>
             if !untypedRegionUnmapped st1 ut then .error .illegalState
+            else if !carvedRootsEmpty st1 ids then .error .illegalState
             else if !decide (st1.objects.size < st1.objects.capacity) then .error .illegalState
+            else if !asidTableNamesNoneOf (retireCarvedObjects st1 ids) ids then
+              .error .illegalState
             else
               storeObject untypedId (.untyped ut.reset) (retireCarvedObjects st1 ids)
 
@@ -389,19 +461,26 @@ def untypedReset (executingCore : Concurrency.CoreId) (untypedId : SeLe4n.ObjId)
 
 /-- The retire's guard, read back: it fires exactly at a carved object. -/
 theorem retireCarvedObject_guard_iff (st : SystemState) (id : SeLe4n.ObjId) :
-    ((st.getFrame? id).isSome || (st.getUntyped? id).isSome) = true ↔ carvedAt st id := by
+    ((st.getFrame? id).isSome || (st.getUntyped? id).isSome ||
+      (st.getVSpaceRoot? id).isSome) = true ↔ carvedAt st id := by
   constructor
   · intro h
-    rcases Bool.or_eq_true_iff.mp h with hF | hU
-    · cases hG : st.getFrame? id with
-      | none => rw [hG] at hF; cases hF
-      | some f => exact Or.inl ⟨f, (SystemState.getFrame?_eq_some_iff st id f).mp hG⟩
-    · cases hG : st.getUntyped? id with
-      | none => rw [hG] at hU; cases hU
-      | some u => exact Or.inr ⟨u, (SystemState.getUntyped?_eq_some_iff st id u).mp hG⟩
-  · rintro (⟨f, hf⟩ | ⟨u, hu⟩)
+    rcases Bool.or_eq_true_iff.mp h with h' | hR
+    · rcases Bool.or_eq_true_iff.mp h' with hF | hU
+      · cases hG : st.getFrame? id with
+        | none => rw [hG] at hF; cases hF
+        | some f => exact Or.inl ⟨f, (SystemState.getFrame?_eq_some_iff st id f).mp hG⟩
+      · cases hG : st.getUntyped? id with
+        | none => rw [hG] at hU; cases hU
+        | some u => exact Or.inr (Or.inl ⟨u, (SystemState.getUntyped?_eq_some_iff st id u).mp hG⟩)
+    · cases hG : st.getVSpaceRoot? id with
+      | none => rw [hG] at hR; cases hR
+      | some r =>
+        exact Or.inr (Or.inr ⟨r, (SystemState.getVSpaceRoot?_eq_some_iff st id r).mp hG⟩)
+  · rintro (⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩)
     · simp [(SystemState.getFrame?_eq_some_iff st id f).mpr hf]
     · simp [(SystemState.getUntyped?_eq_some_iff st id u).mpr hu]
+    · simp [(SystemState.getVSpaceRoot?_eq_some_iff st id r).mpr hr]
 
 /-- **Retiring one carved object**: the key erased held a frame or an untyped;
 every other key is unchanged.  Stated with the headroom an erase needs
@@ -416,7 +495,8 @@ theorem retireCarvedObject_frame (st : SystemState) (id : SeLe4n.ObjId)
       (carvedAt st oid ∧ (retireCarvedObject st id).objects[oid]? = none)) ∧
     (st.objects[id]? = none ∨ carvedAt st id → (retireCarvedObject st id).objects[id]? = none) := by
   unfold retireCarvedObject
-  by_cases hC : ((st.getFrame? id).isSome || (st.getUntyped? id).isSome) = true
+  by_cases hC : ((st.getFrame? id).isSome || (st.getUntyped? id).isSome ||
+      (st.getVSpaceRoot? id).isSome) = true
   · rw [if_pos hC]
     have hAt := (retireCarvedObject_guard_iff st id).mp hC
     have hSelf : (st.objects.erase id)[id]? = none :=
@@ -501,9 +581,10 @@ theorem retireCarvedObjects_frame :
         have hN1 := hSelf1 hPre
         rcases hW2 id with e | ⟨hc, _⟩
         · rw [e]; exact hN1
-        · rcases hc with ⟨f, hf⟩ | ⟨u, hu⟩
+        · rcases hc with ⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩
           · rw [hN1] at hf; cases hf
           · rw [hN1] at hu; cases hu
+          · rw [hN1] at hr; cases hr
       · exact hNone2 id hTail hPre1
 
 -- ============================================================================
@@ -524,9 +605,11 @@ theorem untypedReset_ok_decompose (ec : Concurrency.CoreId) (untypedId : SeLe4n.
       carvedSubtreeRetirable st ids = true ∧
       carvedSubtreeFramesInRegion st ut ids = true ∧
       carvedSubtreeUnreferenced st ids = true ∧
-      unmapLivePages ec (untypedRegionMappings st ut) st = .ok ((), st1) ∧
+      unmapLivePages ec (untypedResetMappings st ut ids) st = .ok ((), st1) ∧
       untypedRegionUnmapped st1 ut = true ∧
+      carvedRootsEmpty st1 ids = true ∧
       st1.objects.size < st1.objects.capacity ∧
+      asidTableNamesNoneOf (retireCarvedObjects st1 ids) ids = true ∧
       storeObject untypedId (.untyped ut.reset) (retireCarvedObjects st1 ids) = .ok ((), st') := by
   unfold untypedReset at hStep
   cases hUt : st.getUntyped? untypedId with
@@ -548,7 +631,7 @@ theorem untypedReset_ok_decompose (ec : Concurrency.CoreId) (untypedId : SeLe4n.
         cases hU : carvedSubtreeUnreferenced st ids
         · simp [hK, hR, hG, hU] at hStep
         simp only [hK, hR, hG, hU, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hStep
-        cases hM : unmapLivePages ec (untypedRegionMappings st ut) st with
+        cases hM : unmapLivePages ec (untypedResetMappings st ut ids) st with
         | error e => rw [hM] at hStep; cases hStep
         | ok pr =>
           obtain ⟨u, st1⟩ := pr; cases u
@@ -556,11 +639,15 @@ theorem untypedReset_ok_decompose (ec : Concurrency.CoreId) (untypedId : SeLe4n.
           simp only at hStep
           cases hC : untypedRegionUnmapped st1 ut
           · simp [hC] at hStep
+          cases hE : carvedRootsEmpty st1 ids
+          · simp [hC, hE] at hStep
           by_cases hSz : st1.objects.size < st1.objects.capacity
-          · simp only [hC, hSz, decide_true, Bool.not_true, Bool.false_eq_true,
+          · cases hA : asidTableNamesNoneOf (retireCarvedObjects st1 ids) ids
+            · simp [hC, hE, hSz, hA] at hStep
+            simp only [hC, hE, hSz, hA, decide_true, Bool.not_true, Bool.false_eq_true,
               ↓reduceIte] at hStep
-            exact ⟨ut, ids, st1, rfl, hW, hK, hR, hG, hU, hM, hC, hSz, hStep⟩
-          · simp [hC, hSz] at hStep
+            exact ⟨ut, ids, st1, rfl, hW, hK, hR, hG, hU, hM, hC, hE, hSz, hA, hStep⟩
+          · simp [hC, hE, hSz] at hStep
 
 /-- Every member of the subtree is a carved object at its key, and none is the
 untyped's own key. -/
@@ -577,7 +664,7 @@ write. -/
 private theorem untypedReset_ok_frames {ec : Concurrency.CoreId}
     {st st1 : SystemState} {ut : UntypedObject} {ids : List SeLe4n.ObjId}
     (hObjInv : st.objects.invExt)
-    (hM : unmapLivePages ec (untypedRegionMappings st ut) st = .ok ((), st1))
+    (hM : unmapLivePages ec (untypedResetMappings st ut ids) st = .ok ((), st1))
     (hSz : st1.objects.size < st1.objects.capacity) :
     let st2 := retireCarvedObjects st1 ids
     st1.objects.invExt ∧ vspaceRootOnlyWrite st st1 ∧ st1.scheduler = st.scheduler ∧
@@ -594,10 +681,50 @@ theorem untypedReset_ok_untyped (ec : Concurrency.CoreId) (untypedId : SeLe4n.Ob
     (hStep : untypedReset ec untypedId st = .ok ((), st')) :
     ∃ ut, st.getUntyped? untypedId = some ut ∧
       st'.objects[untypedId]? = some (.untyped ut.reset) := by
-  obtain ⟨ut, ids, st1, hUt, -, -, -, -, -, hM, -, hSz, hSt⟩ :=
+  obtain ⟨ut, ids, st1, hUt, -, -, -, -, -, hM, -, -, hSz, -, hSt⟩ :=
     untypedReset_ok_decompose ec untypedId st st' hStep
   obtain ⟨-, -, -, hInv2, -, -, -⟩ := untypedReset_ok_frames (ids := ids) hObjInv hM hSz
   exact ⟨ut, hUt, storeObject_objects_eq _ _ _ _ hInv2 hSt⟩
+
+/-- **WS-BP BP7.1 slice 4b (`v0.36.10`): after a reset no ASID resolves to a
+retired object.**  A VSpace root of the subtree gave its ASID back: no entry of
+the ASID table names any member, so the next root carve may register that ASID
+and no lookup can reach the erased root.  The reset decides it on the retired
+state (`asidTableNamesNoneOf`), and the final write — storing the rewound
+untyped over an untyped — leaves the table as it was. -/
+theorem untypedReset_ok_asids_released (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjId)
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (hStep : untypedReset ec untypedId st = .ok ((), st')) :
+    ∃ ut ids, st.getUntyped? untypedId = some ut ∧ untypedCarvedSubtree st ut = some ids ∧
+      ∀ (asid : SeLe4n.ASID) (oid : SeLe4n.ObjId),
+        st'.asidTable.get? asid = some oid → oid ∉ ids := by
+  obtain ⟨ut, ids, st1, hUt, hWalk, hK, -, -, -, hM, -, -, hSz, hA, hSt⟩ :=
+    untypedReset_ok_decompose ec untypedId st st' hStep
+  obtain ⟨-, hW1, -, -, -, hW2, -⟩ := untypedReset_ok_frames (ids := ids) hObjInv hM hSz
+  have hUtAt := (SystemState.getUntyped?_eq_some_iff st untypedId ut).mp hUt
+  -- The key the final store writes held the untyped throughout: the unmap pass
+  -- rewrites VSpace roots only, and the retire erases listed keys only... or a
+  -- carved object it leaves in place; either way it is not a VSpace root.
+  have hAt1 : st1.objects[untypedId]? = some (.untyped ut) := by
+    rw [hW1.eq_of_not_root (fun r h => by rw [hUtAt] at h; cases h)]; exact hUtAt
+  have hNotRoot : ∀ r, (retireCarvedObjects st1 ids).objects[untypedId]? ≠
+      some (.vspaceRoot r) := by
+    intro r h
+    rcases hW2 untypedId with e | ⟨_, hn⟩
+    · rw [e, hAt1] at h; cases h
+    · rw [hn] at h; cases h
+  have hTable : st'.asidTable = (retireCarvedObjects st1 ids).asidTable := by
+    rw [storeObject_asidTable_non_vspaceRoot _ _ _ _ (fun r h => by cases h) hSt]
+    split
+    · rename_i oldRoot hOld; exact absurd hOld (hNotRoot oldRoot)
+    · rfl
+  refine ⟨ut, ids, hUt, hWalk, fun asid oid hGet hMem => ?_⟩
+  rw [hTable] at hGet
+  have hc := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get?
+    (retireCarvedObjects st1 ids).asidTable (fun _ oid => !ids.contains oid) hA hGet
+  simp only [Bool.not_eq_true'] at hc
+  have : ids.contains oid = true := List.contains_iff_mem.mpr hMem
+  rw [this] at hc; cases hc
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`): after a reset no object carved from the
 untyped exists, at any depth.**  The reset retired its carved subtree, which
@@ -616,7 +743,7 @@ theorem untypedReset_ok_subtree_absent (ec : Concurrency.CoreId) (untypedId : Se
       untypedCarvedSubtree st ut = some ids ∧
       (∀ c ∈ ut.children, c.objId ∈ ids) ∧ carvedSubtreeClosed st ids ∧
       ∀ id ∈ ids, st'.objects[id]? = none := by
-  obtain ⟨ut, ids, st1, hUt, hWalk, hK, hR, -, -, hM, -, hSz, hSt⟩ :=
+  obtain ⟨ut, ids, st1, hUt, hWalk, hK, hR, -, -, hM, -, -, hSz, -, hSt⟩ :=
     untypedReset_ok_decompose ec untypedId st st' hStep
   obtain ⟨-, hW1, -, hInv2, -, -, hN2⟩ :=
     untypedReset_ok_frames (ids := ids) hObjInv hM hSz
@@ -624,12 +751,12 @@ theorem untypedReset_ok_subtree_absent (ec : Concurrency.CoreId) (untypedId : Se
   refine ⟨ut, ids, hUt, hWalk, hKids, hClosed, fun id hId => ?_⟩
   obtain ⟨hNe, hC⟩ := subtree_member hK hR hId
   rw [storeObject_objects_ne _ _ _ _ _ hNe hInv2 hSt]
-  have hNotRoot : ∀ r, st.objects[id]? ≠ some (.vspaceRoot r) := by
-    intro r h; rcases hC with ⟨f, hf⟩ | ⟨u, hu⟩
-    · rw [hf] at h; cases h
-    · rw [hu] at h; cases h
+  -- The unmap pass keeps every key's object, or rewrites a VSpace root into a
+  -- VSpace root, so a carved member is still a carved object after it.
   have hC1 : carvedAt st1 id := by
-    unfold carvedAt; rw [hW1.eq_of_not_root hNotRoot]; exact hC
+    rcases hW1 id with e1 | ⟨_, ⟨r', hr'⟩⟩
+    · unfold carvedAt; rw [e1]; exact hC
+    · exact Or.inr (Or.inr ⟨r', hr'⟩)
   exact hN2 id hId (Or.inr hC1)
 
 /-- **After a reset no VSpace root maps a page of the region** — the check the
@@ -645,7 +772,7 @@ theorem untypedReset_ok_unmapped (ec : Concurrency.CoreId) (untypedId : SeLe4n.O
         (e : SeLe4n.PAddr × PagePermissions),
         st'.objects[oid]? = some (.vspaceRoot root) →
         root.mappings[v]? = some e → ut.regionMeetsPage e.1 = false := by
-  obtain ⟨ut, ids, st1, hUt, -, -, -, -, -, hM, hC, hSz, hSt⟩ :=
+  obtain ⟨ut, ids, st1, hUt, -, -, -, -, -, hM, hC, -, hSz, -, hSt⟩ :=
     untypedReset_ok_decompose ec untypedId st st' hStep
   obtain ⟨-, -, -, hInv2, -, hW2, -⟩ :=
     untypedReset_ok_frames (ids := ids) hObjInv hM hSz
@@ -674,7 +801,7 @@ theorem untypedReset_ok_retired_pages_unmapped (ec : Concurrency.CoreId)
           (e : SeLe4n.PAddr × PagePermissions),
           st'.objects[oid]? = some (.vspaceRoot root) → root.mappings[v]? = some e →
           e.1 ≠ f.base := by
-  obtain ⟨ut, ids, st1, hUt, hWalk, -, -, hG, -, -, -, -, -⟩ :=
+  obtain ⟨ut, ids, st1, hUt, hWalk, -, -, hG, -, -, -, -, -, -, -⟩ :=
     untypedReset_ok_decompose ec untypedId st st' hStep
   obtain ⟨ut', hUt', hUnm⟩ := untypedReset_ok_unmapped ec untypedId st st' hObjInv hStep
   rw [hUt] at hUt'; cases hUt'
@@ -701,7 +828,7 @@ theorem untypedReset_ok_unreferenced (ec : Concurrency.CoreId) (untypedId : SeLe
       (∀ (oid : SeLe4n.ObjId) (t : TCB) (msg : IpcMessage),
         st'.objects[oid]? = some (.tcb t) → t.pendingMessage = some msg →
         msg.caps.any (fun tc => capNamesListed ids tc.cap) = false) := by
-  obtain ⟨ut, ids, st1, hUt, hWalk, -, -, -, hRef, hM, -, hSz, hSt⟩ :=
+  obtain ⟨ut, ids, st1, hUt, hWalk, -, -, -, hRef, hM, -, -, hSz, -, hSt⟩ :=
     untypedReset_ok_decompose ec untypedId st st' hStep
   obtain ⟨-, hW1, -, hInv2, -, hW2, -⟩ :=
     untypedReset_ok_frames (ids := ids) hObjInv hM hSz
@@ -733,7 +860,8 @@ theorem untypedReset_ok_unreferenced (ec : Concurrency.CoreId) (untypedId : SeLe
   · intro oid t msg hT hMsg
     have hPre := hBack oid (.tcb t) (fun _ h => by cases h) (fun _ h => by cases h) hT
     have hN := hClean oid _ hPre
-    simpa [objectNamesListed, hMsg] using hN
+    simp only [objectNamesListed, hMsg, Bool.or_eq_false_iff] at hN
+    simpa using hN.2
 
 /-- **The object kinds a reset can touch**: an absent key, a VSpace root (the
 unmap pass), a frame or an untyped (the retire), and the untyped (the watermark
@@ -755,14 +883,15 @@ theorem untypedReset_ok_frame (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjI
     st'.objects.invExt ∧ st'.scheduler = st.scheduler ∧
     ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
       (resetTouched st.objects[oid]? ∧ resetTouched st'.objects[oid]?) := by
-  obtain ⟨ut, ids, st1, hUt, -, -, -, -, -, hM, -, hSz, hSt⟩ :=
+  obtain ⟨ut, ids, st1, hUt, -, -, -, -, -, hM, -, -, hSz, -, hSt⟩ :=
     untypedReset_ok_decompose ec untypedId st st' hStep
   obtain ⟨-, hW1, hS1, hInv2, hS2, hW2, -⟩ := untypedReset_ok_frames (ids := ids) hObjInv hM hSz
   have hUtAt := (SystemState.getUntyped?_eq_some_iff st untypedId ut).mp hUt
   have hCT : ∀ s oid, carvedAt s oid → resetTouched s.objects[oid]? := by
-    intro s oid h; rcases h with ⟨f, hf⟩ | ⟨u, hu⟩
+    intro s oid h; rcases h with ⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩
     · rw [hf]; trivial
     · rw [hu]; trivial
+    · rw [hr]; trivial
   refine ⟨storeObject_preserves_objects_invExt _ _ _ _ hInv2 hSt,
     (storeObject_scheduler_eq _ _ _ _ hSt).trans (hS2.trans hS1), fun oid => ?_⟩
   by_cases hK : oid = untypedId
