@@ -1122,6 +1122,14 @@ structure TCB where
       `seL4_Fault_NullFault`.  The default keeps every existing TCB
       construction and the boot trace byte-identical. -/
   pendingFault : Option ThreadFault := none
+  /-- **WS-BP BP7.9: the thread's saved FP/SIMD context** — `v0`–`v31`, `FPCR`,
+      `FPSR`.  Authoritative whenever no core's registers hold the thread's live
+      values (`MachineState.fpOwner`); while one does, this copy may be stale and
+      is brought up to date when that core releases the thread
+      (`Architecture.fpReleaseOnCore`).  Erased by `projectKernelObject`, like
+      `registerContext`: it is the thread's own state, and the lazy switch is
+      what keeps any other thread from reading it.  Zero for a fresh thread. -/
+  fpContext : SeLe4n.FpContext := default
   deriving Repr
 
 /-- **WS-OD OD3.9**: the link update a removal writes to the **predecessor** of
@@ -1324,7 +1332,10 @@ instance : BEq TCB where
     a.pendingReceiveReply == b.pendingReceiveReply &&
     -- WS-RR RR4: the outstanding fault participates in structural equality.
     -- `ThreadFault` derives `DecidableEq`, so its `==` agrees with `=`.
-    a.pendingFault == b.pendingFault
+    a.pendingFault == b.pendingFault &&
+    -- WS-BP BP7.9: the saved FP/SIMD context participates in structural
+    -- equality.  `FpContext` derives `DecidableEq`, so its `==` agrees with `=`.
+    a.fpContext == b.fpContext
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -1590,13 +1601,15 @@ theorem TCB.ext {a b : TCB}
     (hReply : a.replyObject = b.replyObject)
     (hPendReply : a.pendingReceiveReply = b.pendingReceiveReply)
     -- WS-RR RR4: extensionality covers the outstanding-fault field.
-    (hPendFault : a.pendingFault = b.pendingFault) :
+    (hPendFault : a.pendingFault = b.pendingFault)
+    -- WS-BP BP7.9: extensionality covers the saved FP/SIMD context.
+    (hFp : a.fpContext = b.fpContext) :
     a = b := by
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
          hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hLock, hCpuAff, hReply, hPendReply, hPendFault⟩
+         hLock, hCpuAff, hReply, hPendReply, hPendFault, hFp⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

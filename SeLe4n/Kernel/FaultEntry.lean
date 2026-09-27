@@ -73,7 +73,7 @@ open SeLe4n.Kernel.Concurrency
 
 /-- WS-RR RR4.25: the wire tag for each synchronous exception class.
 
-`trap.rs` mirrors these five values (`sync_class` in that module) and nothing
+`trap.rs` mirrors these eight values (`sync_class` in that module) and nothing
 else: the *mapping* from `ESR_EL1` to a class lives only here, so the Rust
 side cannot classify differently — it can only fail to recognise a tag, which
 it treats as `unknownReason` (the same fail-closed default this map has). -/
@@ -85,6 +85,7 @@ def syncExceptionClassTag : SynchronousExceptionClass → UInt32
   | .spAlignment   => 4
   | .unknownReason => 5
   | .kernelAbort   => 6
+  | .fpAccess      => 7
 
 /-- WS-RR RR4.25: the tags are pairwise distinct, so the Rust router's match
 on them is a total, unambiguous decoding of the Lean classification. -/
@@ -331,6 +332,7 @@ def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
       st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
   Platform.FFI.completePhysicalWrites r.2.2.2
   Concurrency.fireCrossCoreSgis r.1
+  Concurrency.releaseSwitchedFpOwner coreId
   Platform.FFI.restoreTrapFrame r.2.2.1
   Concurrency.recordCommittedCurrentThreadHw r.2.1
 
@@ -358,8 +360,79 @@ def unknownSyscallEntry (coreId : UInt64) (esr elr spsr far : UInt64)
       st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
   Platform.FFI.completePhysicalWrites r.2.2.2
   Concurrency.fireCrossCoreSgis r.1
+  Concurrency.releaseSwitchedFpOwner coreId
   Platform.FFI.restoreTrapFrame r.2.2.1
   Concurrency.recordCommittedCurrentThreadHw r.2.1
+
+-- ============================================================================
+-- §2b  WS-BP BP7.9 — the lazy FP/SIMD switch's entry
+-- ============================================================================
+
+/-- **WS-BP BP7.9**: the step the FP/SIMD access entry commits — the lazy switch
+on the core the raw id names, inert for an id that names none. -/
+def fpAccessEntryStep (st : SystemState) (coreId : UInt64) (live : Option FpContext) :
+    Architecture.FpAccessOutcome × SystemState :=
+  match Concurrency.coreIdOfUInt64? coreId with
+  | none => (.inert, st)
+  | some c => Architecture.fpAccessOnCore st c live
+
+/-- **WS-BP BP7.9**: what the HAL does with the switch's outcome — load the
+answered context and lift the trap, or nothing (the restore then leaves the trap
+armed). -/
+def applyFpAccessOutcome : Architecture.FpAccessOutcome → BaseIO Unit
+  | .load ctx => Platform.FFI.loadFpContext ctx
+  | .retry => pure ()
+  | .inert => pure ()
+
+/-- **WS-BP BP7.9 (the export)**: EC `0x07` from EL0 — a thread used FP/SIMD
+while its core's trap was armed.
+
+`trap.rs` routes the `fpAccess` class here, inside `with_kernel_entry` and
+behind the per-core readiness gate, having halted on an EL1-origin exception
+first.  It saves the trap frame like every other entry, captures the core's
+registers when they hold a recorded owner's live values, commits the lazy switch,
+loads the context it answers (`.load`) and lifts the trap, and restores what the
+core resumes — the faulting thread, whose `ELR_EL1` still names the FP/SIMD
+instruction, so it re-executes with its own FP state.  On `.retry` nothing is
+loaded and the restore leaves the trap armed, so the thread traps again until the
+core holding its live values has released them.  Nothing here schedules, so no
+SGI is fired and no successor is chosen. -/
+@[export lean_handle_fp_access]
+def fpAccessEntry (coreId : UInt64) : BaseIO Unit := do
+  let frame ← Platform.FFI.captureTrapFrame
+  let live ← Concurrency.captureOwnedFp coreId
+  let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+    let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
+    let res := fpAccessEntryStep st coreId live
+    ((res.1, Concurrency.restoreTargetAt res.2 coreId), res.2))
+  applyFpAccessOutcome r.1
+  Platform.FFI.restoreTrapFrame r.2
+
+/-- **WS-BP BP7.9** structural marker: the FP/SIMD access entry is the frame
+save, the owner capture, the lazy switch, the load it answers and the restore —
+pinned so a refactor that loads before committing, or restores without the
+switch, fails here. -/
+theorem fpAccessEntry_def (coreId : UInt64) :
+    fpAccessEntry coreId =
+      (do
+        let frame ← Platform.FFI.captureTrapFrame
+        let live ← Concurrency.captureOwnedFp coreId
+        let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+          let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
+          let res := fpAccessEntryStep st coreId live
+          ((res.1, Concurrency.restoreTargetAt res.2 coreId), res.2))
+        applyFpAccessOutcome r.1
+        Platform.FFI.restoreTrapFrame r.2) := rfl
+
+/-- **WS-BP BP7.9**: the FP/SIMD access schedules nothing — the step commits no
+scheduler change, so the core resumes the thread that trapped. -/
+theorem fpAccessEntryStep_scheduler (st : SystemState) (coreId : UInt64)
+    (live : Option FpContext) :
+    (fpAccessEntryStep st coreId live).2.scheduler = st.scheduler := by
+  unfold fpAccessEntryStep
+  split
+  · rfl
+  · exact Architecture.fpAccessOnCore_scheduler st _ live
 
 /-- WS-RR RR4.23 structural marker: `faultEntry` unfolds to the atomic commit
 of the verified step followed by the SGI firing.
@@ -395,6 +468,7 @@ theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
             st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
         Platform.FFI.completePhysicalWrites r.2.2.2
         Concurrency.fireCrossCoreSgis r.1
+        Concurrency.releaseSwitchedFpOwner coreId
         Platform.FFI.restoreTrapFrame r.2.2.1
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
@@ -417,6 +491,7 @@ theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
             st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
         Platform.FFI.completePhysicalWrites r.2.2.2
         Concurrency.fireCrossCoreSgis r.1
+        Concurrency.releaseSwitchedFpOwner coreId
         Platform.FFI.restoreTrapFrame r.2.2.1
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 

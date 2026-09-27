@@ -87,12 +87,13 @@ TOOLCHAIN_FILE = "rust/rust-toolchain.toml"
 WORKFLOW_FILE = ".github/workflows/lean_action_ci.yml"
 BUILD_SCRIPT = "rust/sele4n-hal/build.rs"
 HOST_LANE = "scripts/test_rust.sh"
-# The three `.S` sources as of this cut.  Kept as a floor, NOT as the source
+# The four `.S` sources as of this cut (WS-BP BP7.9 added `fp_context.S`, the
+# lazy FP/SIMD switch's routines).  Kept as a floor, NOT as the source
 # of truth: `assembly_sources` enumerates what is actually on disk, so a
 # fourth `.S` added later and never handed to the assembler is reported
 # rather than silently uncovered -- the same hole a hand-written wrapper
 # list had in the TLBI gate (PR #883 review round 4).
-ASM_SOURCES = ("src/boot.S", "src/vectors.S", "src/trap.S")
+ASM_SOURCES = ("src/boot.S", "src/vectors.S", "src/trap.S", "src/fp_context.S")
 # The disassembly gate the cross gate must run over its RELEASE objects, and
 # the two objects it must be handed, as bash receives them after expansion.
 # Canonical spellings: the gate script writes them, so they are required
@@ -1574,7 +1575,7 @@ def reachable_from_main(code: str, target: str) -> bool:
 
 
 def check_build_script(root: str) -> list[str]:
-    """`build.rs` still hands all three `.S` sources to the assembler."""
+    """`build.rs` still hands every `.S` source to the assembler."""
     text = read(root, BUILD_SCRIPT)
     if text is None:
         return [f"{BUILD_SCRIPT}: missing"]
@@ -1593,7 +1594,7 @@ def check_build_script(root: str) -> list[str]:
             f"{BUILD_SCRIPT}: cannot locate the assembly block "
             f"(`CARGO_CFG_TARGET_ARCH` gate at {gate_at}, "
             f'`.compile("sele4n_hal_asm")` at {compile_at}). If the build '
-            f"script was restructured, update this gate so the three `.S` "
+            f"script was restructured, update this gate so every `.S` "
             f"sources stay pinned to the live chain."
         ]
 
@@ -1932,6 +1933,7 @@ GOOD_BUILD_RS = """fn main() {
     asm.file("src/boot.S")
         .file("src/vectors.S")
         .file("src/trap.S")
+        .file("src/fp_context.S")
         .compile("sele4n_hal_asm");
 }
 """
@@ -2138,10 +2140,12 @@ def self_test() -> int:
     parameter_builder[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(
         '    let mut asm = cc::Build::new();\n    asm.file("src/boot.S")\n'
         '        .file("src/vectors.S")\n        .file("src/trap.S")\n'
+        '        .file("src/fp_context.S")\n'
         '        .compile("sele4n_hal_asm");\n}\n',
         '    let mut asm = cc::Build::new();\n    assemble(&mut asm);\n}\n\n'
         'fn assemble(asm: &mut cc::Build) {\n    asm.file("src/boot.S")\n'
         '        .file("src/vectors.S")\n        .file("src/trap.S")\n'
+        '        .file("src/fp_context.S")\n'
         '        .compile("sele4n_hal_asm");\n}\n',
     )
     cases.append(Case("build.rs compiles a builder it receives as a parameter",

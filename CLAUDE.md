@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.21.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.22.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -326,7 +326,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1884 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1875 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1841 lines)
-- `tests/FaultHandlingSuite.lean` (~1839 lines)
+- `tests/FaultHandlingSuite.lean` (~1937 lines)
 - `tests/VSpaceCapabilityBindingSuite.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1823 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1815 lines)
@@ -458,6 +458,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `SeLe4n/Platform/RPi5/Deployment.lean` (~804 lines)
+- `SeLe4n/Kernel/Architecture/Fault.lean` (~802 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -7154,7 +7155,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7259,13 +7260,17 @@ trapping FP/SIMD/SVE/SME at EL0 and EL1 before anything else runs on the PE at
 that level, and `build.rs`'s `scan_fp_trap_prologue`
 requires exactly that prologue at `_start` and `secondary_entry` and refuses any
 other write to `CPACR_EL1` in either spelling (`S3_0_C1_C0_2` included) in any
-`.S` file or `asm!` template.  There is no encoding that traps EL1 alone, so a
-**user** FP instruction traps too and is delivered as a `userException` fault
-until BP7.9 gives threads an FP context — fail-closed, and the known cost.  (3)
+`.S` file or `asm!` template — except the lazy FP switch's four pinned routines
+in `fp_context.S` since BP7.9 (`FP_CONTEXT_CPACR_WRITERS`, the paragraph on
+BP7.9 below).  There is no encoding that traps EL1 alone, so a **user** FP
+instruction traps too, and since BP7.9 that trap *is* the lazy switch: the
+thread's own context is loaded and the trap lifted for it.  (3)
 **`scripts/check_fp_simd_free_objects.py` is the evidence rather than the flag**:
 the cross gate's step [5/7] disassembles the release rlib and the assembly
 archive and refuses any FP/SIMD/SVE register operand or `FPCR`/`FPSR` access,
-reading operands only and refusing input it cannot decide, and
+reading operands only and refusing input it cannot decide — save for the two
+FP routines of `fp_context.S`, exempt by symbol and reconciled both ways since
+BP7.9 — and
 `check_aarch64_cross_target.py` requires that step — executed, over those two
 release objects, not followed by `&&`/`||` (which exempts a command from
 `set -e`; that check now covers the cross builds and the lint too).  (4) **It is
@@ -8478,6 +8483,43 @@ pool, so a message register cannot become a descriptor.  (4) **Every entry whose
 commit can deliver a message drains the ledger** through
 `Platform.FFI.completePhysicalWrites`, the fault seams included, since a
 thirteen-word fault message is delivered to a handler waiting in receive.
+
+**Each thread has an FP/SIMD context, switched lazily** (`v0.36.22`, BP7.9).
+`TCB.fpContext` (`v0`–`v31`, `FPCR`, `FPSR`; erased by `projectKernelObject`)
+and `MachineState.fpOwner` (whose values each core's registers hold); the
+transitions are `Architecture.fpAccessOnCore` (EC `0x07` from EL0, entered by
+`lean_handle_fp_access`) and `Architecture.fpReleaseOnCore`.  Six things new code
+must respect.  (1) **The load is always the trapping thread's own saved
+context** (`fpAccessOnCore_load_eq_own_context`), and captured live values are
+written into the recorded owner and no other thread
+(`fpAccessOnCore_saves_owner`, `fpReleaseOnCore_saves_owner`) — the property that
+keeps one thread's FP state out of another's reach.  (2) **The release happens at
+the entry that switches the owner out**, not when the next thread traps as in
+seL4: this kernel's placement is not fixed by affinity, so pure per-core laziness
+would need seL4's cross-core release IPI on every move.  Every entry that
+restores a context runs `Concurrency.releaseSwitchedFpOwner` between its commit
+and its restore — a second commit under the same entry lock — and a new such
+entry does too; its `_def` marker pins it.  (3) **A thread owned on another core
+retries** (`fpAccessOnCore_retry_of_owned_elsewhere`): the trap stays armed and
+the instruction re-executes until that core's next entry releases it, which the
+SGI its `current`-slot change sent guarantees; loading the stale TCB copy instead
+would lose the thread's work.  (4) **The trap follows the restore**:
+`RestoreTarget.user`'s `fpLive` (`fpLiveFor`) is restore kind `2`, which lifts the
+trap; kinds `0` and `1` arm it.  So the trap is lifted exactly while a core runs
+its owner, which is what makes the kernel's own FP-freedom (the gate above) the
+only thing standing between kernel code and an owner's registers at EL1.  (5)
+**`fp_context.S` is the only kernel code that names an FP/SIMD register or writes
+`CPACR_EL1` outside the boot prologues**: `sele4n_fp_save_context` (lift, store,
+re-arm), `sele4n_fp_load_context` (lift, load everything, `FPCR`/`FPSR`
+included), `sele4n_fp_trap_lift`, `sele4n_fp_trap_arm`, in
+`.text.sele4n_fp_context`, writing `FPEN = 0b11` alone so SVE and SME stay
+trapped.  `build.rs` pins each routine's writes (`FP_CONTEXT_CPACR_WRITERS`) and
+the disassembly gate exempts the two FP routines **by symbol**, reconciled both
+ways.  (6) **A thread a core's registers still hold is not destroyed**
+(`threadHeldOnSomeCore`, `.revocationRequired`): the release would otherwise
+write a destroyed thread's values into whatever TCB the retype creates under its
+id.  `retypeTargetDetached` carries `tcbFpReleased` for the payoff.  Executing
+the switch on the image is BP8's.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

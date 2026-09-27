@@ -4269,8 +4269,8 @@ run_check "INVARIANT" rg -n 'switching away then saves every register the thread
 # into the in-flight frame with SPSR sanitised to EL0t.
 run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturn st st'"'"' execCore outcome\n      let st'"''"' := PriorityInheritance\.scheduleLocalSuccessor st stR execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  let staged := Architecture\.stageCallerReturn unwound unwound execCore outcome\n' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^  completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^      ffiRestoreStageWord i\.toUInt32 [^\n]*\n    ffiInstallTranslation tableBase asid\n    ffiRestoreCommit 0$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^  completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      ffiRestoreStageWord i\.toUInt32 [^\n]*\n    ffiInstallTranslation tableBase asid\n    ffiRestoreCommit \(if fpLive then 2 else 0\)$' SeLe4n/Platform/FFI.lean
 # WS-BP BP7.6: the restore is live — no seam flag gates it, and none of the
 # gating wrappers, the flag or its module may come back.
 run_negative_check "INVARIANT" rg -n 'contextRestoreSeamLive|restoreTrapFrameLive|scheduleLocalSuccessorLive|resumeThreadOnCoreLive|resumeThreadEnqueueOnly|priorityRescheduleOnCoreLive|priorityRescheduleEnqueueOnly|contextRestoreWired|contextSwitchSites_restore_pending' SeLe4n tests
@@ -6348,8 +6348,8 @@ run_check "INVARIANT" rg -n '^def schedContextUnbindWriteSet($|[ ({:\[\]])' SeLe
 run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^export SeLe4n\.Kernel \(runningCoreOf\?\)' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^def retypeRunningTargetRejected($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" rg -n 'if threadCurrentOnSomeCore st tcb\.tid then' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_negative_check "INVARIANT" bash -c "rg -q 'threadCurrentOnSomeCore' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean && ! rg -q 'revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean"
+run_check "INVARIANT" rg -n 'if threadHeldOnSomeCore st tcb\.tid then' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_negative_check "INVARIANT" bash -c "rg -q 'threadHeldOnSomeCore' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean && ! rg -q 'revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean"
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_vspaceMap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_vspaceUnmap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # The gate's whole point is that its exception list empties.  Pinned NEGATIVELY:
@@ -7628,6 +7628,46 @@ run_check "INVARIANT" rg -n '12 CONTROL: without the RAM read the receiver is ha
 run_check "INVARIANT" rg -n '^  runOverflowDeliveryWitnesses$' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n 'audit status .visible length 2, monitor.' tests/fixtures/syscall_return_abi.expected
 run_check "INVARIANT" rg -n 'audit drain of one entry .new visible length 1.' tests/fixtures/syscall_return_abi.expected
+# WS-BP BP7.9: per-thread FP/SIMD state, switched lazily.  The load is the
+# trapping thread's own context, the captured values go into the recorded owner,
+# a thread owned elsewhere retries, every restoring entry releases a switched-out
+# owner before its restore, the trap follows the restore's `fpLive`, the destroy
+# path refuses a thread a core still holds, and `fp_context.S` is the only code
+# that names an FP register or writes CPACR_EL1 outside the boot prologues.
+run_check "INVARIANT" rg -n '^  fpContext : SeLe4n\.FpContext := default$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^                       fpContext := default \}$' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^  fpOwner : _root_\.Vector \(Option ThreadId\) numCores :=$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_load_eq_own_context($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_saves_owner($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_retry_of_owned_elsewhere($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
+run_check "INVARIANT" rg -n '^theorem fpReleaseOnCore_saves_owner($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
+run_check "INVARIANT" rg -n '^    else if fpOwnedElsewhere st c tid then \(\.retry, st\)$' SeLe4n/Kernel/Architecture/FpContext.lean
+run_check "INVARIANT" rg -n '^        \.user tcb\.registerContext ops\.1 ops\.2 \(fpLiveFor st c tid\)$' SeLe4n/Kernel/Architecture/ContextRestore.lean
+run_check "INVARIANT" rg -n '^    ffiRestoreCommit \(if fpLive then 2 else 0\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^@\[export lean_handle_fp_access\]$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame record\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# The FP routines keep an output section of their own in the linked image.
+run_check "INVARIANT" rg -n -U '^    \.text\.sele4n_fp_context : ALIGN\(16\) \{\n        KEEP\(\*\(\.text\.sele4n_fp_context\)\)' rust/sele4n-hal/link.ld
+# ...and the image check decides executable-in-text by address, not by name.
+run_negative_check "INVARIANT" rg -n 's\.executable and s\.name not in REQUIRED_SECTIONS' scripts/check_kernel_image.py
+run_check "INVARIANT" rg -n '^                                         and s\.addr \+ s\.size <= text_end\)\]$' scripts/check_kernel_image.py
+run_check "INVARIANT" rg -n '^  else if ec = 0x07 then \.fpAccess$' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^  \| \.fpAccess     => none$' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^  threadCurrentOnSomeCore st tid \|\| st\.machine\.fpOwnedOnSomeCore tid$' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^        if threadHeldOnSomeCore st tcb\.tid then$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^  tcbFpReleased : ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^\.section \.text\.sele4n_fp_context$' rust/sele4n-hal/src/fp_context.S
+run_check "INVARIANT" rg -n '^    mov     x9, #0x300000$' rust/sele4n-hal/src/fp_context.S
+run_check "INVARIANT" rg -n '^const FP_CONTEXT_CPACR_WRITERS: \[\(&str, &\[&str\]\); 4\] = \[$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^FP_CONTEXT_ROUTINES = frozenset\(\{"sele4n_fp_save_context", "sele4n_fp_load_context"\}\)$' scripts/check_fp_simd_free_objects.py
+run_check "INVARIANT" rg -n 'crate::fp_context::set_trap_for_resume\(kind == RESTORE_KIND_USER_FP_LIVE\);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^        sync_class::FP_ACCESS => \{$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'the next thread loads its own context' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n 'a thread some core.s registers hold is not destroyed' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^  runLazyFpChecks$' tests/FaultHandlingSuite.lean
 
 # ============================================================================
 # WS-SM SM9.B — refusal auditing

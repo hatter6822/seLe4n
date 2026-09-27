@@ -542,6 +542,45 @@ def restoreTargetAt (st : SeLe4n.Model.SystemState) (coreId : UInt64) :
   | some c => Architecture.restoreTargetOnCore st c
   | none => .none
 
+/-- **WS-BP BP7.9: release a core's switched-out FP/SIMD owner.**
+
+Runs after an entry's atomic step and before its restore, under the same
+kernel-entry lock.  When the committed state no longer runs the core's recorded
+owner there (`Architecture.fpReleaseNeeded`), the owner's live values are
+captured from the registers and committed into its saved context, and the core
+owns nothing — so the restore that follows arms the trap for whatever the core
+resumes, and the thread's context is in its TCB for a trap on any core to load.
+A second commit rather than part of the first, because only the committed state
+says whether the owner still runs, and the registers cannot be read inside the
+pure step; the entry lock is what keeps the two one critical section.  A raw id
+naming no core, and a core with nothing to release, cost one state read. -/
+def releaseSwitchedFpOwnerOnCore (c : CoreId) : BaseIO Unit := do
+  let st ← Platform.FFI.getKernelState
+  match Architecture.fpReleaseNeeded st c with
+  | none => pure ()
+  | some _ =>
+    let live ← Platform.FFI.captureLiveFp
+    Platform.FFI.modifyGetKernelState (fun st => ((), Architecture.fpReleaseOnCore st c live))
+
+/-- **WS-BP BP7.9**: `releaseSwitchedFpOwnerOnCore` for a per-core entry's raw
+core id — nothing when the id names no core. -/
+def releaseSwitchedFpOwner (coreId : UInt64) : BaseIO Unit :=
+  match coreIdOfUInt64? coreId with
+  | none => pure ()
+  | some c => releaseSwitchedFpOwnerOnCore c
+
+/-- **WS-BP BP7.9**: the live FP/SIMD values the executing core's registers hold
+for its recorded owner — `none` when the core owns nothing, since then the
+registers hold nothing the model tracks. -/
+def captureOwnedFp (coreId : UInt64) : BaseIO (Option SeLe4n.FpContext) := do
+  match coreIdOfUInt64? coreId with
+  | none => pure none
+  | some c =>
+    let st ← Platform.FFI.getKernelState
+    match Architecture.fpOwnerOf st c with
+    | none => pure none
+    | some _ => some <$> Platform.FFI.captureLiveFp
+
 /-- **WS-RR RR7.26**: the shared tail of the three state-committing per-core
 entries — record on the HAL what the committed post-state left running.
 

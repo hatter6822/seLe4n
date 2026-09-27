@@ -839,10 +839,13 @@ def syscallDispatchCrossCoreEntry
   -- cleared in the atomic step above, so it is emitted exactly once and never
   -- stranded into the next syscall.  Inert when nothing was owed.
   completeIcacheMaintenance result.2.2.2.2.2.1
+  -- **WS-BP BP7.9**: a thread whose FP/SIMD values this core holds and which
+  -- the committed state no longer runs here has them saved into its TCB first.
+  Concurrency.releaseSwitchedFpOwnerOnCore execCore
   -- **WS-BP BP7.4**: install what the committed state runs on this core — the
   -- current thread's saved context and translation, or the idle wait loop —
   -- into the in-flight trap frame, last, after every memory and TLB effect the
-  -- commit owed.  Inert until the context-restore seam is live.
+  -- commit owed.
   Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1
   -- **WS-RR RR7.26**: record on the HAL what this commit left running on the
   -- executing core, so `ffi::PER_CPU_CURRENT_THREAD` follows the verified
@@ -888,6 +891,7 @@ theorem syscallDispatchCrossCoreEntry_def
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
         completeIcacheMaintenance result.2.2.2.2.2.1
+        Concurrency.releaseSwitchedFpOwnerOnCore execCore
         Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1
         Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
         pure result.1.tagWord) := rfl

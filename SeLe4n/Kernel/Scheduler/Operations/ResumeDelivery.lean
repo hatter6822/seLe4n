@@ -53,7 +53,7 @@ open SeLe4n.Kernel.Concurrency (CoreId)
 resumes, read the way `readReturnFrame` reads a TCB's.  An idle core and an
 empty core deliver none. -/
 def RestoreTarget.deliveredFrame? : RestoreTarget → Option SyscallReturnFrame
-  | .user ctx _ _ =>
+  | .user ctx _ _ _ =>
     some { x0 := (ctx.gpr ⟨0⟩).val.toUInt64
            x1 := (ctx.gpr ⟨1⟩).val.toUInt64
            x2 := (ctx.gpr ⟨2⟩).val.toUInt64

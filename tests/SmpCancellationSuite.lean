@@ -1928,7 +1928,7 @@ private def resumedAfterSwitch (st : SystemState) (c : CoreId) (tid : SeLe4n.Thr
   | .ok st' =>
       let target := Architecture.restoreTargetOnCore st' c
       match target.deliveredFrame?, target with
-      | some f, .user ctx _ _ => some (f, ctx.pc)
+      | some f, .user ctx _ _ _ => some (f, ctx.pc)
       | _, _ => none
   | .error _ => none
 

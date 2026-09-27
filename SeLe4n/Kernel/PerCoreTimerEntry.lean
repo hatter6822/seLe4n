@@ -154,6 +154,7 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
       if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
       Concurrency.fireCrossCoreSgis sgisAndFlag.1
   | none => pure ()
+  Concurrency.releaseSwitchedFpOwner coreId
   Platform.FFI.restoreTrapFrame r.2.2
   Concurrency.recordCommittedCurrentThreadHw r.2.1
 
@@ -183,6 +184,7 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
             if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
             Concurrency.fireCrossCoreSgis sgisAndFlag.1
         | none => pure ()
+        Concurrency.releaseSwitchedFpOwner coreId
         Platform.FFI.restoreTrapFrame r.2.2
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 

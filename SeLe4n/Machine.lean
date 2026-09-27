@@ -429,6 +429,58 @@ structure SystemRegisterFile where
 instance : Inhabited SystemRegisterFile where
   default := {}
 
+/-- **WS-BP BP7.9: a thread's FP/SIMD context** — `v0`–`v31`, `FPCR`, `FPSR`.
+
+Each 128-bit vector register is two doublewords, low first, so `q` holds
+`2 * 32` words: `q[2 * n]` is `v`n`'s bits [63:0] and `q[2 * n + 1]` its bits
+[127:64].  That is the order the HAL's save and load routines store and load
+them (`fp_context.S`, one `stp qN, qN+1` per pair), and `fpContextWordCount`
+words in all cross the FFI: the 64, then `FPCR`, then `FPSR`.
+
+A fresh thread's context is all zeroes (`default`), which is what the lazy switch
+loads the first time the thread uses FP/SIMD: the load overwrites every register
+it names, so nothing a previous occupant of the core's registers left behind is
+visible to it. -/
+structure FpContext where
+  q : _root_.Vector UInt64 64
+  fpcr : UInt64 := 0
+  fpsr : UInt64 := 0
+  deriving DecidableEq, Repr
+
+instance : Inhabited FpContext where
+  default := { q := _root_.Vector.replicate 64 0 }
+
+/-- **WS-BP BP7.9**: the words an `FpContext` occupies on the wire. -/
+def fpContextWordCount : Nat := 66
+
+/-- **WS-BP BP7.9**: word `i` of a context, in the wire layout — the 64 vector
+doublewords, `FPCR`, `FPSR`, and `0` past them. -/
+def FpContext.word (ctx : FpContext) (i : Nat) : UInt64 :=
+  if h : i < 64 then ctx.q.get ⟨i, h⟩
+  else if i = 64 then ctx.fpcr
+  else if i = 65 then ctx.fpsr
+  else 0
+
+/-- **WS-BP BP7.9**: the context the wire words describe — the inverse of
+`FpContext.word` on its 66 words. -/
+def FpContext.ofWords (w : Nat → UInt64) : FpContext :=
+  { q := _root_.Vector.ofFn fun i => w i.val, fpcr := w 64, fpsr := w 65 }
+
+/-- **WS-BP BP7.9**: reading a context back off its own words is the identity,
+so the save → wire → TCB and TCB → wire → load paths lose nothing. -/
+theorem FpContext.ofWords_word (ctx : FpContext) : FpContext.ofWords ctx.word = ctx := by
+  cases ctx with
+  | mk q fpcr fpsr =>
+    have hq : (_root_.Vector.ofFn fun i : Fin 64 =>
+        FpContext.word { q := q, fpcr := fpcr, fpsr := fpsr } i.val) = q := by
+      apply _root_.Vector.ext
+      intro i hi
+      simp only [_root_.Vector.getElem_ofFn, FpContext.word, dif_pos hi]
+      rfl
+    show FpContext.mk _ _ _ = FpContext.mk q fpcr fpsr
+    rw [hq]
+    rfl
+
 /-- Top-level abstract machine state manipulated by kernel transitions.
     AG3-B (P-04): All `MachineConfig` fields are now carried in machine state
     so that kernel transitions can reference platform parameters without
@@ -527,6 +579,18 @@ structure MachineState where
       a circular import between `Machine.lean` and
       `Architecture/BarrierComposition.lean`. -/
   lastTlbBarrierKind : Nat := 0x05
+  /-- **WS-BP BP7.9: whose FP/SIMD state each core's registers hold.**
+      `some t` on core `c` means `c`'s `v0`–`v31`, `FPCR` and `FPSR` are
+      thread `t`'s *live* values and `t`'s `TCB.fpContext` may be stale;
+      `none` means the registers belong to nobody the model tracks, and a
+      thread's context lives only in its TCB.  The lazy switch sets it when a
+      thread first uses FP/SIMD on the core (`Architecture.fpAccessOnCore`) and
+      clears it, saving the live values into the owner's TCB, at the first
+      entry whose committed state no longer runs the owner there
+      (`Architecture.fpReleaseOnCore`).  The trap is lifted exactly while the
+      core resumes its owner (`RestoreTarget.user`'s `fpLive`). -/
+  fpOwner : _root_.Vector (Option ThreadId) numCores :=
+    _root_.Vector.replicate numCores none
 
 instance : Inhabited MachineState where
   default := { coreRegs := _root_.Vector.replicate numCores default, memory := (fun _ => 0), timer := 0 }
@@ -543,6 +607,48 @@ instance : Inhabited MachineState where
 @[inline] def MachineState.setRegsOnCore (ms : MachineState) (c : CoreId)
     (v : RegisterFile) : MachineState :=
   { ms with coreRegs := ms.coreRegs.set c.val v c.isLt }
+
+/-- **WS-BP BP7.9**: the thread whose FP/SIMD state core `c`'s registers hold. -/
+@[inline] def MachineState.fpOwnerOnCore (ms : MachineState) (c : CoreId) : Option ThreadId :=
+  ms.fpOwner.get c
+
+/-- **WS-BP BP7.9**: record `t?` as the owner of core `c`'s FP/SIMD registers. -/
+@[inline] def MachineState.setFpOwnerOnCore (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : MachineState :=
+  { ms with fpOwner := ms.fpOwner.set c.val t? c.isLt }
+
+@[simp] theorem MachineState.fpOwnerOnCore_setFpOwnerOnCore_self (ms : MachineState)
+    (c : CoreId) (t? : Option ThreadId) : (ms.setFpOwnerOnCore c t?).fpOwnerOnCore c = t? := by
+  simp only [MachineState.fpOwnerOnCore, MachineState.setFpOwnerOnCore]
+  exact SeLe4n.PerCoreVector.get_set_eq ms.fpOwner c t?
+
+@[simp] theorem MachineState.fpOwnerOnCore_setFpOwnerOnCore_ne (ms : MachineState)
+    (c c' : CoreId) (t? : Option ThreadId) (h : c ≠ c') :
+    (ms.setFpOwnerOnCore c t?).fpOwnerOnCore c' = ms.fpOwnerOnCore c' := by
+  simp only [MachineState.fpOwnerOnCore, MachineState.setFpOwnerOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne ms.fpOwner c c' t? h
+
+/-- **WS-BP BP7.9**: some core's registers hold `tid`'s live FP/SIMD values. -/
+def MachineState.fpOwnedOnSomeCore (ms : MachineState) (tid : ThreadId) : Bool :=
+  SeLe4n.Kernel.Concurrency.allCores.any fun c => ms.fpOwnerOnCore c == some tid
+
+/-- **WS-BP BP7.9**: the owner test is exactly "some core records `tid`". -/
+theorem MachineState.fpOwnedOnSomeCore_eq_false_iff (ms : MachineState) (tid : ThreadId) :
+    ms.fpOwnedOnSomeCore tid = false ↔ ∀ c, ms.fpOwnerOnCore c ≠ some tid := by
+  unfold MachineState.fpOwnedOnSomeCore
+  constructor
+  · intro h c hc
+    have := List.any_eq_false.mp h c (SeLe4n.Kernel.Concurrency.mem_allCores c)
+    simp [hc] at this
+  · intro h
+    exact List.any_eq_false.mpr fun c _ => by simp [h c]
+
+/-- **WS-BP BP7.9**: an owner write touches nothing but the owner table. -/
+@[simp] theorem MachineState.setFpOwnerOnCore_coreRegs (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : (ms.setFpOwnerOnCore c t?).coreRegs = ms.coreRegs := rfl
+
+@[simp] theorem MachineState.setFpOwnerOnCore_memory (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : (ms.setFpOwnerOnCore c t?).memory = ms.memory := rfl
 
 /-- WS-SM SM5.I: the executing-core / single-core register view — the **boot
 core's** bank.  This is the back-compatible accessor every pre-SM5 single-core

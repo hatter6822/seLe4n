@@ -490,7 +490,7 @@ private def stIdle : SystemState :=
 
 private def restoresUser (t : Architecture.RestoreTarget) (ctx : RegisterFile) : Bool :=
   match t with
-  | .user c _ _ => c == ctx
+  | .user c _ _ _ => c == ctx
   | _ => false
 
 private def restoresIdle (t : Architecture.RestoreTarget) : Bool :=

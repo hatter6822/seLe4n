@@ -1610,9 +1610,51 @@ pub extern "C" fn ffi_restore_stage_word(index: u32, value: u64) -> crate::lean_
     crate::lean_runtime::base_io_unit()
 }
 
+/// **WS-BP BP7.9**: save the executing PE's live FP/SIMD registers into its
+/// capture buffer, arming the trap (`fp_context::capture`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFpCapture`.
+#[no_mangle]
+pub extern "C" fn ffi_fp_capture() -> crate::lean_runtime::Obj {
+    crate::fp_context::capture();
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.9**: word `index` of the executing PE's FP/SIMD capture buffer
+/// (`fp_context::captured_word`); `0` past the context.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFpCapturedWord`.
+#[no_mangle]
+pub extern "C" fn ffi_fp_captured_word(index: u32) -> u64 {
+    crate::fp_context::captured_word(index)
+}
+
+/// **WS-BP BP7.9**: stage word `index` of the FP/SIMD context the executing PE
+/// loads (`fp_context::stage_word`); a word past the context **halts the
+/// system**.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFpStageWord`.
+#[no_mangle]
+pub extern "C" fn ffi_fp_stage_word(index: u32, value: u64) -> crate::lean_runtime::Obj {
+    crate::fp_context::stage_word(index, value);
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.9**: load the staged FP/SIMD context into the executing PE's
+/// registers and lift the trap (`fp_context::load_commit`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFpLoadCommit`.
+#[no_mangle]
+pub extern "C" fn ffi_fp_load_commit() -> crate::lean_runtime::Obj {
+    crate::fp_context::load_commit();
+    crate::lean_runtime::base_io_unit()
+}
+
 /// **WS-BP BP7.4**: commit the executing PE's staged resume into the frame
 /// its handler will `eret` through (`trap::restore_commit`) — kind `0` a user
-/// thread, kind `1` the idle loop.  An unknown kind **halts the system**.
+/// thread, kind `1` the idle loop, and (WS-BP BP7.9) kind `2` a user thread
+/// whose FP/SIMD values the registers hold, for which the trap is lifted.  An
+/// unknown kind **halts the system**.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRestoreCommit`.
 #[no_mangle]

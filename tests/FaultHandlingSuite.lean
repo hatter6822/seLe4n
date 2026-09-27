@@ -220,11 +220,12 @@ example (ectx : ExceptionContext) (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (sgi? : Option (CoreId × SgiKind)) (st' : SystemState)
     (hCls : classifySynchronousException ectx ≠ .svc)
     (hK : classifySynchronousException ectx ≠ .kernelAbort)
+    (hFp : classifySynchronousException ectx ≠ .fpAccess)
     (hCur : st.scheduler.currentOnCore c = some tid)
     (hStep : dispatchSynchronousException ectx st c = .ok (sgi?, st')) :
     ¬ dispatchableOnCore st' tid c :=
   dispatchSynchronousException_nonSvc_thread_not_dispatchable ectx st c tid sgi? st'
-    hCls hK hCur hStep
+    hCls hK hFp hCur hStep
 
 -- ============================================================================
 -- §3  Runtime fixture — four cores, four threads
@@ -462,6 +463,11 @@ private def runClassificationChecks : IO Unit := do
     (classifySynchronousExceptionExport (UInt64.ofNat (0x25 <<< 26)) == 6)
   assertBool "exported tag: kernelAbort = 6 (EC 0x21, instruction abort from the current EL)"
     (classifySynchronousExceptionExport (UInt64.ofNat (0x21 <<< 26)) == 6)
+  -- WS-BP BP7.9: a trapped FP/SIMD access is the lazy switch's, never a fault.
+  assertBool "exported tag: fpAccess = 7 (EC 0x07, a trapped FP/SIMD access)"
+    (classifySynchronousExceptionExport (UInt64.ofNat (0x07 <<< 26)) == 7)
+  assertBool "an FP/SIMD access yields no fault"
+    (faultOfExceptionContext (mk 0x07) == none)
   assertBool "a current-EL data abort yields no user fault"
     (faultOfExceptionContext (mk 0x25) == none)
   assertBool "a current-EL instruction abort yields no user fault"
@@ -479,6 +485,7 @@ private def runClassificationChecks : IO Unit := do
     else if ec == 0x25 || ec == 0x21 then 6
     else if ec == 0x22 then 3
     else if ec == 0x26 then 4
+    else if ec == 0x07 then 7
     else 5
   assertBool "all 64 EC values classify to the tag table trap.rs mirrors"
     ((List.range 64).all (fun ec =>
@@ -1805,11 +1812,102 @@ private def runTraceFixtureCheck : IO Unit := do
     IO.println s!"          (then refresh {fixturePath}.sha256 — see tests/fixtures/README.md)"
     throw (IO.userError "4-core fault trace fixture mismatch")
 
+-- ============================================================================
+-- §4c  WS-BP BP7.9 — the lazy FP/SIMD switch
+-- ============================================================================
+
+/-- A context no fresh thread holds: every doubleword `0xA5`, a non-zero `FPCR`
+(round towards zero) and `FPSR` (an inexact flag). -/
+private def ctxA : SeLe4n.FpContext :=
+  { q := _root_.Vector.replicate 64 0xA5, fpcr := 0xC00000, fpsr := 0x10 }
+
+private def fpCtxOf (st : SystemState) (t : SeLe4n.ThreadId) : Option SeLe4n.FpContext :=
+  (st.getTcb? t).map (·.fpContext)
+
+private def isLoad (o : FpAccessOutcome) (ctx : SeLe4n.FpContext) : Bool :=
+  decide (o = .load ctx)
+
+private def fpLiveOf : RestoreTarget → Option Bool
+  | .user _ _ _ live => some live
+  | _ => none
+
+private def runLazyFpChecks : IO Unit := do
+  IO.println "--- §4c the lazy FP/SIMD switch (WS-BP BP7.9) ---"
+  -- 1. The faulter's first FP/SIMD use on core 0: nothing owns the registers,
+  --    so nothing is captured, and the load is its own (fresh, zero) context.
+  let (o1, st1) := fpAccessOnCore stRunning c0 none
+  let fpEctx : ExceptionContext :=
+    { esr := UInt64.ofNat (0x07 <<< 26), elr := 0, spsr := 0, far := 0 }
+  assertBool "EC 0x07 classifies to the switch, never to a fault"
+    (classifySynchronousException fpEctx == .fpAccess)
+  assertBool "the first access loads the faulter's own (zero) context" (isLoad o1 default)
+  assertBool "and records it as core 0's owner" (fpOwnerOf st1 c0 == some faulter)
+  assertBool "the switch schedules nothing" (st1.scheduler.currentOnCore c0 == some faulter)
+  assertBool "the restore lifts the trap for the owner it resumes"
+    (fpLiveOf (restoreTargetOnCore st1 c0) == some true)
+  -- 2. The faulter computes (its live values are `ctxA`) and is switched out:
+  --    the core resumes another thread, so the release saves `ctxA` into the
+  --    faulter's TCB and the core owns nothing.
+  let stSw : SystemState :=
+    { st1 with scheduler := st1.scheduler.setCurrentOnCore c0 (some grantReplyFaulter) }
+  assertBool "a switched-out owner is released" (fpReleaseNeeded stSw c0 == some faulter)
+  assertBool "and the restore arms the trap for the thread it switches to"
+    (fpLiveOf (restoreTargetOnCore stSw c0) == some false)
+  let st2 := fpReleaseOnCore stSw c0 ctxA
+  assertBool "the release saves the owner's live values into the owner"
+    (fpCtxOf st2 faulter == some ctxA)
+  assertBool "and into no other thread"
+    (fpCtxOf st2 grantReplyFaulter == some default)
+  assertBool "and leaves the core owning nothing" (fpOwnerOf st2 c0 == none)
+  -- 3. The information-flow witness: the thread that runs next and uses FP
+  --    loads ITS OWN context, never the values the registers last held.
+  let (o3, st3) := fpAccessOnCore st2 c0 none
+  assertBool "the next thread loads its own context" (isLoad o3 default)
+  assertBool "never the previous owner's" (!isLoad o3 ctxA)
+  assertBool "and becomes the owner" (fpOwnerOf st3 c0 == some grantReplyFaulter)
+  -- 4. The same, without a release in between: the trap-time capture saves the
+  --    live values into the recorded owner before the load — the path a core
+  --    whose owner was never switched out (it trapped itself) takes.
+  let (o4, st4) := fpAccessOnCore stSw c0 (some ctxA)
+  assertBool "the trap-time capture saves into the recorded owner"
+    (fpCtxOf st4 faulter == some ctxA)
+  assertBool "and the trapping thread still loads its own"
+    (isLoad o4 default && !isLoad o4 ctxA)
+  assertBool "an owner with no capture retries rather than dropping its values"
+    (decide ((fpAccessOnCore stSw c0 none).1 = .retry))
+  -- 5. The migration race: the faulter's live values are still in core 0's
+  --    registers while it runs on core 1 — it retries until core 0 releases.
+  let stMig : SystemState :=
+    { st1 with scheduler := st1.scheduler.setCurrentOnCore c1 (some faulter) }
+  assertBool "a thread owned on another core retries"
+    (decide ((fpAccessOnCore stMig c1 none).1 = .retry))
+  assertBool "and commits nothing" ((fpAccessOnCore stMig c1 none).2.machine.fpOwnerOnCore c1 ==
+    stMig.machine.fpOwnerOnCore c1)
+  -- 6. The fault entry is inert on EC 0x07: the switch owns it.
+  assertBool "the fault entry commits nothing for an FP/SIMD access"
+    ((faultEntryStep permissiveCtx stRunning fpEctx
+      { gprs := #[0, 0, 0, 0, 0, 0, 0, 0], sp := 0, lr := 0 } 0).1.isEmpty)
+  -- 7. The destroy path refuses a thread whose live values a core still holds
+  --    (it is current nowhere), and the CONTROL admits it once released.
+  let stHeld : SystemState :=
+    { stFault with machine := stFault.machine.setFpOwnerOnCore c2 (some faulter) }
+  let tcbF := mkTcb 1121 40 none (some handlerCPtr)
+  assertBool "the faulter is current on no core" (!threadCurrentOnSomeCore stHeld faulter)
+  assertBool "a thread some core's registers hold is not destroyed"
+    (match lifecyclePreRetypeCleanup stHeld faulter.toObjId (.tcb tcbF) (.tcb tcbF) with
+     | .error .revocationRequired => true
+     | _ => false)
+  assertBool "CONTROL: released, the same thread is admitted"
+    (match lifecyclePreRetypeCleanup stFault faulter.toObjId (.tcb tcbF) (.tcb tcbF) with
+     | .ok _ => true
+     | _ => false)
+
 def runFaultHandlingChecks : IO Unit := do
   IO.println "WS-RR RR4.26 — Fault handling suite (fault IPC, resume, restart, progress)"
   IO.println "===================================="
   runEncodingChecks
   runClassificationChecks
+  runLazyFpChecks
   runResolutionChecks
   runDeliveryChecks
   runNoHandlerChecks

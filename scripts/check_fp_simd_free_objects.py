@@ -26,6 +26,22 @@ It fails closed on what it cannot read: an input that does not disassemble
 as AArch64 ELF, or that yields no instructions at all, is refused, since a
 file that could not be read and a clean file must not produce the same PASS.
 
+The one exception (WS-BP BP7.9).  The lazy FP/SIMD switch has to move a
+thread's FP context between its TCB and the registers, which only code that
+names them can do.  `rust/sele4n-hal/src/fp_context.S` holds that code, in its
+own section (`FP_CONTEXT_SECTION`), and exactly two of its routines
+(`FP_CONTEXT_ROUTINES`) are exempt -- BY SYMBOL, reconciled both ways:
+
+* an FP/SIMD instruction anywhere but inside an exempt routine still fails;
+* an exempt routine found anywhere but in that section fails, since a routine
+  moved out of its section is no longer the one `build.rs` pins;
+* an exempt routine that names no FP/SIMD register is a stale exemption and
+  fails, since an exemption nothing needs reads exactly like one that is used;
+* an input holding the section must hold every exempt routine, and every
+  function in the section is exempt or FP-free;
+* the exempt set equals the set of global routines `fp_context.S` defines
+  that name an FP/SIMD register, read from the source.
+
 Scope.  It decides the files it is handed.  The linked image additionally
 contains whatever members of the target's `compiler_builtins` the link pulls
 in, and that library is **not** FP-free even for the softfloat target (its
@@ -72,6 +88,13 @@ FP_MNEMONICS = frozenset({"setffr", "smstart", "smstop", "wrffr", "rdffr", "rdff
 # text section is a change this gate then reports rather than reads past).
 UNKNOWN_MNEMONIC = "<unknown>"
 
+# WS-BP BP7.9: the lazy FP/SIMD switch's routines, the only kernel code that
+# may name an FP/SIMD register, and the section they must live in.
+FP_CONTEXT_ROUTINES = frozenset({"sele4n_fp_save_context", "sele4n_fp_load_context"})
+FP_CONTEXT_SECTION = ".text.sele4n_fp_context"
+FP_CONTEXT_SOURCE = REPO / "rust" / "sele4n-hal" / "src" / "fp_context.S"
+SECTION = re.compile(r"^Disassembly of section (\S+):$")
+
 # `  1c:\tmnemonic\toperands` -- llvm-objdump's instruction line with
 # `--no-show-raw-insn`.  The optional `<...>:` form is a function header.
 INSTRUCTION = re.compile(r"^\s*[0-9a-f]+:\s+(\S+)(?:\s+(.*))?$")
@@ -93,7 +116,9 @@ def fp_findings(disassembly: str) -> tuple[int, list[str]]:
     """(instructions read, FP/SIMD findings) for one `llvm-objdump -d` output.
 
     Raises `Unreadable` when a member's format is not AArch64 ELF or when no
-    instruction was read at all."""
+    instruction was read at all.  An FP/SIMD instruction inside an exempt
+    routine (`FP_CONTEXT_ROUTINES`) that sits in `FP_CONTEXT_SECTION` is not a
+    finding; the exemption's own relations are findings when they fail."""
     formats = FILE_FORMAT.findall(disassembly)
     if not formats:
         raise Unreadable("no `file format` line: the input did not disassemble")
@@ -103,10 +128,28 @@ def fp_findings(disassembly: str) -> tuple[int, list[str]]:
     count = 0
     findings: list[str] = []
     function = "?"
+    section = "?"
+    fp_in: dict[str, int] = {}
+    in_section: set[str] = set()
+    section_seen = False
     for line in disassembly.splitlines():
+        sec = SECTION.match(line.strip())
+        if sec:
+            section = sec.group(1)
+            section_seen = section_seen or section == FP_CONTEXT_SECTION
+            continue
         header = FUNCTION.match(line)
         if header:
             function = header.group(1)
+            if section == FP_CONTEXT_SECTION:
+                in_section.add(function)
+            if function in FP_CONTEXT_ROUTINES:
+                fp_in.setdefault(function, 0)
+                if section != FP_CONTEXT_SECTION:
+                    findings.append(
+                        f"{function}: an exempt FP/SIMD routine outside {FP_CONTEXT_SECTION} "
+                        f"(in {section})"
+                    )
             continue
         insn = INSTRUCTION.match(line)
         if not insn:
@@ -117,10 +160,54 @@ def fp_findings(disassembly: str) -> tuple[int, list[str]]:
         if mnemonic == UNKNOWN_MNEMONIC:
             raise Unreadable(f"an undecodable word in {function}: {line.strip()}")
         if mnemonic.split(".", 1)[0] in FP_MNEMONICS or FP_OPERAND.search(operands):
-            findings.append(f"{function}: {mnemonic} {operands.strip()}")
+            if function in FP_CONTEXT_ROUTINES and section == FP_CONTEXT_SECTION:
+                fp_in[function] += 1
+            else:
+                findings.append(f"{function}: {mnemonic} {operands.strip()}")
     if count == 0:
         raise Unreadable("no instructions disassembled")
+    for routine, used in sorted(fp_in.items()):
+        if used == 0:
+            findings.append(f"{routine}: a stale exemption -- it names no FP/SIMD register")
+    if section_seen:
+        for routine in sorted(FP_CONTEXT_ROUTINES - in_section):
+            findings.append(f"{routine}: missing from {FP_CONTEXT_SECTION}")
     return count, findings
+
+
+def source_fp_routines(text: str) -> set[str]:
+    """The global routines of `fp_context.S` that name an FP/SIMD register --
+    what the exemption must equal.  A routine is a label declared `.global`;
+    its body runs to the next such label."""
+    code = "\n".join(line.split("//", 1)[0] for line in text.splitlines())
+    globals_ = set(re.findall(r"^\s*\.global\s+(\w+)", code, re.MULTILINE))
+    routines: set[str] = set()
+    current = None
+    for line in code.splitlines():
+        label = re.match(r"^\s*(\w+):", line)
+        if label and label.group(1) in globals_:
+            current = label.group(1)
+            continue
+        stripped = line.strip()
+        if current and stripped and not stripped.startswith("."):
+            parts = stripped.split(None, 1)
+            operands = parts[1] if len(parts) > 1 else ""
+            if parts[0].lower() in FP_MNEMONICS or FP_OPERAND.search(operands.lower()):
+                routines.add(current)
+    return routines
+
+
+def exemption_reconciled(text: str) -> list[str]:
+    """Where the pinned exemption and the source disagree; `[]` when equal."""
+    found = source_fp_routines(text)
+    out = []
+    for r in sorted(found - FP_CONTEXT_ROUTINES):
+        out.append(f"fp_context.S's `{r}` names an FP/SIMD register and is not exempt")
+    for r in sorted(FP_CONTEXT_ROUTINES - found):
+        out.append(f"`{r}` is exempt and fp_context.S defines no such FP routine")
+    if f".section {FP_CONTEXT_SECTION}" not in text:
+        out.append(f"fp_context.S does not open {FP_CONTEXT_SECTION}")
+    return out
 
 
 def rust_llvm_tool(name: str) -> str:
@@ -179,6 +266,14 @@ def check(paths: list[Path], objdump: str) -> int:
     # decided is part of the verdict (the v0.36.2 audit).
     print(f"disassembling with {objdump}")
     failed = False
+    try:
+        source = FP_CONTEXT_SOURCE.read_text()
+    except OSError as exc:
+        print(f"FAIL: cannot read {FP_CONTEXT_SOURCE}: {exc}")
+        return 1
+    for problem in exemption_reconciled(source):
+        print(f"FAIL exemption: {problem}")
+        failed = True
     for path in paths:
         try:
             count, findings = fp_findings(disassemble(objdump, path))
@@ -270,9 +365,59 @@ def self_test() -> int:
     count, findings = fp_findings(_disasm("ret", "stp\tq0, q1, [sp]", "stp\td8, d9, [sp]"))
     if count != 3 or len(findings) != 2:
         failures.append(f"counts wrong: {count} instructions, {len(findings)} findings")
+    # WS-BP BP7.9: the by-symbol exemption, and each of its relations broken
+    # while the FP instruction is kept.
+    def fp_section(*functions: tuple[str, list[str]], section: str = FP_CONTEXT_SECTION) -> str:
+        body = ""
+        for name, lines in functions:
+            insns = "\n".join(f"      {i * 4:x}:      \t{ln}" for i, ln in enumerate(lines))
+            body += f"0000000000000000 <{name}>:\n{insns}\n\n"
+        return f"{HEADER.replace('.text', section)}{body}"
+    exempt_ok = fp_section(
+        ("sele4n_fp_save_context", ["stp\tq0, q1, [x0]", "ret"]),
+        ("sele4n_fp_load_context", ["ldp\tq0, q1, [x0]", "ret"]),
+        ("sele4n_fp_trap_arm", ["msr\tcpacr_el1, xzr", "ret"]),
+    )
+    if fp_findings(exempt_ok)[1]:
+        failures.append(f"the exempt routines were refused: {fp_findings(exempt_ok)[1]}")
+    for label, text in [
+        ("an FP register in an unexempt routine of the section", fp_section(
+            ("sele4n_fp_save_context", ["stp\tq0, q1, [x0]"]),
+            ("sele4n_fp_load_context", ["ldp\tq0, q1, [x0]"]),
+            ("sele4n_fp_trap_arm", ["fmov\td0, x0"]))),
+        ("an exempt routine moved out of its section", fp_section(
+            ("sele4n_fp_save_context", ["stp\tq0, q1, [x0]"]), section=".text")),
+        ("a stale exemption", fp_section(
+            ("sele4n_fp_save_context", ["ret"]),
+            ("sele4n_fp_load_context", ["ldp\tq0, q1, [x0]"]))),
+        ("an exempt routine missing from its section", fp_section(
+            ("sele4n_fp_save_context", ["stp\tq0, q1, [x0]"]))),
+        ("a routine named like one but a suffix longer", fp_section(
+            ("sele4n_fp_save_context", ["stp\tq0, q1, [x0]"]),
+            ("sele4n_fp_load_context", ["ldp\tq0, q1, [x0]"]),
+            ("sele4n_fp_save_context2", ["stp\tq2, q3, [x0]"]))),
+    ]:
+        if not fp_findings(text)[1]:
+            failures.append(f"refused exemption case accepted: {label}")
+    good_src = (".section .text.sele4n_fp_context\n.global sele4n_fp_save_context\n"
+                "sele4n_fp_save_context:\n    stp q0, q1, [x0]\n.global sele4n_fp_load_context\n"
+                "sele4n_fp_load_context:\n    ldp q0, q1, [x0]\n.global sele4n_fp_trap_arm\n"
+                "sele4n_fp_trap_arm:\n    msr cpacr_el1, xzr\n")
+    if exemption_reconciled(good_src):
+        failures.append(f"a reconciled source was refused: {exemption_reconciled(good_src)}")
+    for label, text in [
+        ("a third FP routine the pin does not name",
+         good_src.replace("msr cpacr_el1, xzr", "fmov d0, x0")),
+        ("an exempt routine the source no longer defines",
+         good_src.replace("sele4n_fp_load_context", "sele4n_fp_restore_context")),
+        ("the routines outside their section",
+         good_src.replace(".section .text.sele4n_fp_context", ".section .text")),
+    ]:
+        if not exemption_reconciled(text):
+            failures.append(f"refused source case accepted: {label}")
     for failure in failures:
         print(f"FAIL self-test: {failure}")
-    total = len(_REFUSED) + len(_ACCEPTED) + 6
+    total = len(_REFUSED) + len(_ACCEPTED) + 6 + 1 + 5 + 1 + 3
     if failures:
         return 1
     print(f"check_fp_simd_free_objects self-test: {total} cases passed")

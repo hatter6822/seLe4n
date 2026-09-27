@@ -3220,6 +3220,10 @@ opaque ffiRestoreStageWord : UInt32 → UInt64 → BaseIO Unit
     The trap handler then returns through it instead of through the thread that
     trapped.
 
+    **WS-BP BP7.9**: kind `2` is kind `0` for a thread whose FP/SIMD values the
+    core's registers hold (`RestoreTarget.user`'s `fpLive`): the commit lifts the
+    FP/SIMD trap for it, where kinds `0` and `1` arm it.
+
     Rust: `ffi_restore_commit` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "ffi_restore_commit"]
 opaque ffiRestoreCommit : UInt32 → BaseIO Unit
@@ -3228,15 +3232,64 @@ opaque ffiRestoreCommit : UInt32 → BaseIO Unit
     word by word and then its translation and the commit; the idle loop under
     the kernel's translation; or nothing. -/
 def restoreTrapFrame : SeLe4n.Kernel.Architecture.RestoreTarget → BaseIO Unit
-  | .user ctx tableBase asid => do
+  | .user ctx tableBase asid fpLive => do
     for i in [0:SeLe4n.Kernel.Architecture.trapFrameWordCount] do
       ffiRestoreStageWord i.toUInt32 (SeLe4n.Kernel.Architecture.trapWordsOfRegisterFile ctx i)
     ffiInstallTranslation tableBase asid
-    ffiRestoreCommit 0
+    ffiRestoreCommit (if fpLive then 2 else 0)
   | .idle => do
     ffiInstallTranslation 0 0
     ffiRestoreCommit 1
   | .none => pure ()
+
+-- ============================================================================
+-- WS-BP BP7.9 — the lazy FP/SIMD switch
+-- ============================================================================
+
+/-- **WS-BP BP7.9**: save the executing PE's live FP/SIMD registers into its
+    per-core capture buffer (`fp_context.S`'s `sele4n_fp_save_context`), which
+    leaves the FP/SIMD trap **armed**: a capture is taken exactly when the values
+    are about to stop being the running thread's.
+
+    Rust: `ffi_fp_capture` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_fp_capture"]
+opaque ffiFpCapture : BaseIO Unit
+
+/-- **WS-BP BP7.9**: word `index` of the capture buffer (`fpContextWordCount`
+    words, the `FpContext.word` layout); `0` past it.
+
+    Rust: `ffi_fp_captured_word` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_fp_captured_word"]
+opaque ffiFpCapturedWord : UInt32 → BaseIO UInt64
+
+/-- **WS-BP BP7.9**: stage word `index` of the context the executing PE loads.
+
+    Rust: `ffi_fp_stage_word` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_fp_stage_word"]
+opaque ffiFpStageWord : UInt32 → UInt64 → BaseIO Unit
+
+/-- **WS-BP BP7.9**: load the staged context into the executing PE's FP/SIMD
+    registers (`sele4n_fp_load_context`), every register it names overwritten,
+    and lift the trap.
+
+    Rust: `ffi_fp_load_commit` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_fp_load_commit"]
+opaque ffiFpLoadCommit : BaseIO Unit
+
+/-- **WS-BP BP7.9: the live FP/SIMD values in the executing PE's registers.** -/
+def captureLiveFp : BaseIO SeLe4n.FpContext := do
+  ffiFpCapture
+  let mut words : Array UInt64 := Array.mkEmpty SeLe4n.fpContextWordCount
+  for i in [0:SeLe4n.fpContextWordCount] do
+    words := words.push (← ffiFpCapturedWord i.toUInt32)
+  return SeLe4n.FpContext.ofWords fun i => words.getD i 0
+
+/-- **WS-BP BP7.9: load a thread's FP/SIMD context** into the executing PE and
+    lift the trap. -/
+def loadFpContext (ctx : SeLe4n.FpContext) : BaseIO Unit := do
+  for i in [0:SeLe4n.fpContextWordCount] do
+    ffiFpStageWord i.toUInt32 (ctx.word i)
+  ffiFpLoadCommit
 
 /-- **WS-SM SM7.D.1**: the invalidate-all operand routes to op tag 0. -/
 theorem icMaintenanceBroadcast_iallu_encoding :

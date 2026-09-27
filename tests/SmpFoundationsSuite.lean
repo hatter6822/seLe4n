@@ -376,6 +376,7 @@ example (coreId : UInt64) :
             (((SeLe4n.Kernel.Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
               SeLe4n.Kernel.Concurrency.restoreTargetAt st' coreId), st'))
+          SeLe4n.Kernel.Concurrency.releaseSwitchedFpOwner coreId
           SeLe4n.Platform.FFI.restoreTrapFrame record.2
           SeLe4n.Kernel.Concurrency.recordCommittedCurrentThreadHw record.1) :=
   SeLe4n.Kernel.secondaryKernelMain_def coreId

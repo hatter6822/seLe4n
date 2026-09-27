@@ -273,12 +273,14 @@ fn main() {
     asm.file("src/boot.S")
         .file("src/vectors.S")
         .file("src/trap.S")
+        .file("src/fp_context.S")
         .compile("sele4n_hal_asm");
 
     // Re-run build script if assembly files change
     println!("cargo:rerun-if-changed=src/boot.S");
     println!("cargo:rerun-if-changed=src/vectors.S");
     println!("cargo:rerun-if-changed=src/trap.S");
+    println!("cargo:rerun-if-changed=src/fp_context.S");
     println!("cargo:rerun-if-changed=link.ld");
     println!("cargo:rerun-if-changed=build.rs");
 }
@@ -2164,6 +2166,10 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
         "deliver_unknown_syscall",
         "lean_handle_unknown_syscall",
     ),
+    // WS-BP BP7.9: the lazy FP/SIMD switch — `deliver_fp_access` enters the
+    // runtime to commit `fpAccessOnCore` (a TCB's saved FP context and the
+    // core's `fpOwner` slot) and load the faulting thread's context.
+    ("src/trap.rs", "deliver_fp_access", "lean_handle_fp_access"),
     // PR #887 review round 2: the classifier is a Lean-emitted symbol like
     // any other, so it consults the gate too; a not-ready core classifies
     // through the pinned Rust mirror instead.
@@ -9865,9 +9871,14 @@ fn fp_trap_prologue_status(
         ));
     }
     for (path, source) in other_asm {
+        if path.ends_with(FP_CONTEXT_SOURCE) {
+            fp_context_cpacr_status(source).map_err(|e| format!("{path}: {e}"))?;
+            continue;
+        }
         if names_cpacr_el1(&asm_code_view(source)) {
             return Err(format!(
-                "{path} names CPACR_EL1; only boot.S's entry prologues may"
+                "{path} names CPACR_EL1; only boot.S's entry prologues and \
+                 {FP_CONTEXT_SOURCE}'s pinned routines may"
             ));
         }
     }
@@ -9876,6 +9887,105 @@ fn fp_trap_prologue_status(
             return Err(format!(
                 "{path} names CPACR_EL1 in code or an `asm!` template; the \
                  boot prologues are its only writers"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// **WS-BP BP7.9**: the lazy FP switch's source, the one `.S` file outside
+/// `boot.S` that may write `CPACR_EL1`.
+const FP_CONTEXT_SOURCE: &str = "fp_context.S";
+
+/// **WS-BP BP7.9**: the section its routines live in — the one the disassembly
+/// gate's by-symbol exemption is reconciled against.
+const FP_CONTEXT_SECTION: &str = ".section .text.sele4n_fp_context";
+
+/// **WS-BP BP7.9**: the value that lifts the FP/SIMD trap — `FPEN = 0b11`
+/// (bits [21:20]) and nothing else, so SVE (`ZEN`) and SME (`SMEN`) stay
+/// trapped.  Every non-zero `CPACR_EL1` write must be the register this
+/// statement set, immediately before it.
+const FP_CONTEXT_LIFT_VALUE: &str = "mov x9, #0x300000";
+
+/// **WS-BP BP7.9**: each routine of `fp_context.S` and its `CPACR_EL1` writes,
+/// in order.  The lift writes `x9` (set by `FP_CONTEXT_LIFT_VALUE`), the arm
+/// writes `xzr`; the save routine does both, so a capture always leaves the
+/// trap armed.  A write in any other routine, or a routine with a different
+/// sequence, fails the build.
+const FP_CONTEXT_CPACR_WRITERS: [(&str, &[&str]); 4] = [
+    (
+        "sele4n_fp_save_context",
+        &["msr cpacr_el1, x9", "msr cpacr_el1, xzr"],
+    ),
+    ("sele4n_fp_load_context", &["msr cpacr_el1, x9"]),
+    ("sele4n_fp_trap_lift", &["msr cpacr_el1, x9"]),
+    ("sele4n_fp_trap_arm", &["msr cpacr_el1, xzr"]),
+];
+
+/// **WS-BP BP7.9**: `fp_context.S` writes `CPACR_EL1` exactly as
+/// `FP_CONTEXT_CPACR_WRITERS` says — per routine, in order, each lift preceded
+/// by `FP_CONTEXT_LIFT_VALUE`, each write followed by `isb` — and its routines
+/// sit in `FP_CONTEXT_SECTION`.  The routine a statement belongs to is the
+/// last global label above it.
+fn fp_context_cpacr_status(source: &str) -> Result<(), String> {
+    let view = asm_code_view(source);
+    if let Some(why) = asm_unreadable_directive(&view) {
+        return Err(why);
+    }
+    let items = asm_statement_items(&view);
+    if !items.contains(&AsmItem::Statement(FP_CONTEXT_SECTION.to_string())) {
+        return Err(format!("the routines are not in `{FP_CONTEXT_SECTION}`"));
+    }
+    let routines: Vec<&str> = FP_CONTEXT_CPACR_WRITERS.iter().map(|(r, _)| *r).collect();
+    let mut current: Option<&str> = None;
+    let mut seen: Vec<(String, Vec<String>)> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        match item {
+            AsmItem::Label(label) => {
+                if let Some(r) = routines.iter().find(|r| **r == label.as_str()) {
+                    current = Some(r);
+                    seen.push((label.clone(), Vec::new()));
+                }
+            }
+            AsmItem::Statement(stmt) if names_cpacr_el1(stmt) => {
+                let Some(routine) = current else {
+                    return Err(format!("`{stmt}` is outside every pinned routine"));
+                };
+                if stmt == "msr cpacr_el1, x9"
+                    && items.get(i.wrapping_sub(1))
+                        != Some(&AsmItem::Statement(FP_CONTEXT_LIFT_VALUE.to_string()))
+                {
+                    return Err(format!(
+                        "`{routine}` writes `x9` to CPACR_EL1 without `{FP_CONTEXT_LIFT_VALUE}` \
+                         immediately before it"
+                    ));
+                }
+                if items.get(i + 1) != Some(&AsmItem::Statement("isb".to_string())) {
+                    return Err(format!("`{routine}`'s `{stmt}` is not followed by `isb`"));
+                }
+                if let Some(entry) = seen.last_mut() {
+                    entry.1.push(stmt.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    for (routine, writes) in FP_CONTEXT_CPACR_WRITERS {
+        let found: Vec<&Vec<String>> = seen
+            .iter()
+            .filter(|(r, _)| r == routine)
+            .map(|(_, w)| w)
+            .collect();
+        let [got] = found[..] else {
+            return Err(format!(
+                "`{routine}` is defined {} times; expected once",
+                found.len()
+            ));
+        };
+        let expected: Vec<String> = writes.iter().map(|w| (*w).to_string()).collect();
+        if *got != expected {
+            return Err(format!(
+                "`{routine}` writes CPACR_EL1 as {got:?}; FP_CONTEXT_CPACR_WRITERS pins {expected:?}"
             ));
         }
     }
@@ -9903,6 +10013,86 @@ fn verify_fp_trap_prologue_scanner() {
         );
     };
     accept("canonical", GOOD, &[], &[]);
+    // WS-BP BP7.9: the lazy FP switch's pinned writers, accepted as written and
+    // refused under every token-preserving mutation of the relation.
+    const FP_CTX: &str = ".section .text.sele4n_fp_context\n\
+        sele4n_fp_save_context:\n    mov x9, #0x300000\n    msr cpacr_el1, x9\n    isb\n\
+        \x20   stp q0, q1, [x0]\n    msr cpacr_el1, xzr\n    isb\n    ret\n\
+        sele4n_fp_load_context:\n    mov x9, #0x300000\n    msr cpacr_el1, x9\n    isb\n\
+        \x20   ldp q0, q1, [x0]\n    ret\n\
+        sele4n_fp_trap_lift:\n    mov x9, #0x300000\n    msr cpacr_el1, x9\n    isb\n    ret\n\
+        sele4n_fp_trap_arm:\n    msr cpacr_el1, xzr\n    isb\n    ret\n";
+    accept(
+        "the lazy FP switch's routines",
+        GOOD,
+        &[("src/fp_context.S", FP_CTX)],
+        &[],
+    );
+    refuse(
+        "the same routines in any other .S",
+        GOOD,
+        &[("src/trap.S", FP_CTX)],
+        &[],
+    );
+    refuse(
+        "a lift value that also lifts SVE",
+        GOOD,
+        &[(
+            "src/fp_context.S",
+            &FP_CTX.replacen("#0x300000", "#0x330000", 1),
+        )],
+        &[],
+    );
+    refuse(
+        "the save routine leaves the trap lifted",
+        GOOD,
+        &[(
+            "src/fp_context.S",
+            &FP_CTX.replacen(
+                "    msr cpacr_el1, xzr\n    isb\n    ret\nsele4n_fp_load_context",
+                "    isb\n    ret\nsele4n_fp_load_context",
+                1,
+            ),
+        )],
+        &[],
+    );
+    refuse(
+        "a write moved to an unpinned routine",
+        GOOD,
+        &[(
+            "src/fp_context.S",
+            &FP_CTX.replacen("sele4n_fp_trap_arm:", "sele4n_fp_trap_off:", 1),
+        )],
+        &[],
+    );
+    refuse(
+        "a write without its isb",
+        GOOD,
+        &[(
+            "src/fp_context.S",
+            &FP_CTX
+                .replacen(
+                    "    msr cpacr_el1, xzr\n    isb\n    ret\n\n",
+                    "    msr cpacr_el1, xzr\n    ret\n\n",
+                    1,
+                )
+                .replacen(
+                    "sele4n_fp_trap_arm:\n    msr cpacr_el1, xzr\n    isb",
+                    "sele4n_fp_trap_arm:\n    msr cpacr_el1, xzr\n    nop",
+                    1,
+                ),
+        )],
+        &[],
+    );
+    refuse(
+        "the routines outside their section",
+        GOOD,
+        &[(
+            "src/fp_context.S",
+            &FP_CTX.replacen(".section .text.sele4n_fp_context", ".section .text", 1),
+        )],
+        &[],
+    );
     accept(
         "a comment and a Rust comment mention it",
         &format!("// CPACR_EL1 is written below\n{GOOD}"),

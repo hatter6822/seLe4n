@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Architecture.TrapFrameSave
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Architecture.HardwareTables
 import SeLe4n.Kernel.Scheduler.IdleThread
+import SeLe4n.Kernel.Architecture.FpContext
 
 /-!
 # WS-BP BP7.4 — what a core returns to, staged per core
@@ -129,8 +130,11 @@ theorem stageCallerReturn_stages_switched_out (pre post : SystemState) (c : Core
 /-- **What a core resumes when a kernel entry ends.** -/
 inductive RestoreTarget where
   /-- A thread at EL0: its saved context, and the `TTBR0_EL1` operands of its
-  address space (`threadTranslationOperands`). -/
-  | user (context : SeLe4n.RegisterFile) (tableBase asid : UInt64)
+  address space (`threadTranslationOperands`).  **WS-BP BP7.9**: `fpLive` is
+  whether the core's registers hold the thread's own FP/SIMD values
+  (`fpLiveFor`) — the trap is lifted exactly then, and armed otherwise, so a
+  thread never runs with another's FP/SIMD state accessible. -/
+  | user (context : SeLe4n.RegisterFile) (tableBase asid : UInt64) (fpLive : Bool)
   /-- The core's idle thread: the kernel's wait loop at EL1. -/
   | idle
   /-- The core runs no thread: nothing to install. -/
@@ -146,7 +150,7 @@ def restoreTargetOnCore (st : SystemState) (c : CoreId) : RestoreTarget :=
       match st.getTcb? tid with
       | some tcb =>
         let ops := threadTranslationOperands st tid
-        .user tcb.registerContext ops.1 ops.2
+        .user tcb.registerContext ops.1 ops.2 (fpLiveFor st c tid)
       | none => .none
   | none => .none
 
@@ -163,7 +167,7 @@ theorem restoreTargetOnCore_user (st : SystemState) (c : CoreId) (tid : SeLe4n.T
     (hIdle : SeLe4n.Kernel.isIdleThreadId tid = false) (hTcb : st.getTcb? tid = some tcb) :
     restoreTargetOnCore st c =
       .user tcb.registerContext (threadTranslationOperands st tid).1
-        (threadTranslationOperands st tid).2 := by
+        (threadTranslationOperands st tid).2 (fpLiveFor st c tid) := by
   simp [restoreTargetOnCore, hCur, hIdle, hTcb]
 
 /-- **The words a context occupies in the trap frame**, the inverse of

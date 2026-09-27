@@ -111,7 +111,7 @@ echo "      ✓ debug and release cross builds succeeded"
 echo ""
 
 # --------------------------------------------------------------------------
-# [3/7] The three .S files really assembled.
+# [3/7] The four .S files really assembled (WS-BP BP7.9 added fp_context.S).
 #
 # `build.rs` only assembles when `CARGO_CFG_TARGET_ARCH == "aarch64"`.
 # If that gate ever regressed, the build above would still pass while
@@ -119,14 +119,15 @@ echo ""
 # the failure shape this whole workstream exists to eliminate.  So the
 # archive is inspected rather than assumed.
 # --------------------------------------------------------------------------
-echo "[3/7] Verifying boot.S / vectors.S / trap.S assembled..."
+echo "[3/7] Verifying boot.S / vectors.S / trap.S / fp_context.S assembled..."
 # Exactly one archive can exist now, since the directory was cleared above;
 # `head -1` is defensive rather than a choice between candidates.
 asm_archive="$(find "target/${CROSS_TARGET}/release/build" \
     -name 'libsele4n_hal_asm.a' -print 2> /dev/null | head -1)"
 if [ -z "${asm_archive}" ]; then
     echo "      ✗ FAILED — no libsele4n_hal_asm.a produced for ${CROSS_TARGET}."
-    echo "        build.rs assembles src/boot.S, src/vectors.S and src/trap.S"
+    echo "        build.rs assembles src/boot.S, src/vectors.S, src/trap.S and"
+    echo "        src/fp_context.S"
     echo "        only when CARGO_CFG_TARGET_ARCH == aarch64.  A missing"
     echo "        archive means the assembly step was skipped and the .S"
     echo "        files have no compile coverage."
@@ -140,7 +141,7 @@ if command -v ar > /dev/null 2>&1; then
 else
     members="$(strings "${asm_archive}" 2> /dev/null || true)"
 fi
-for obj in boot vectors trap; do
+for obj in boot vectors trap fp_context; do
     if ! printf '%s\n' "${members}" | grep -q -- "${obj}\.o"; then
         echo "      ✗ FAILED — ${obj}.o missing from ${asm_archive}"
         echo "        Members found:"
@@ -148,7 +149,7 @@ for obj in boot vectors trap; do
         exit 1
     fi
 done
-echo "      ✓ all three .S sources assembled into ${asm_archive##*/}"
+echo "      ✓ all four .S sources assembled into ${asm_archive##*/}"
 echo ""
 
 # --------------------------------------------------------------------------

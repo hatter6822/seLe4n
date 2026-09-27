@@ -3401,6 +3401,12 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
   tcbDescheduled : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ c : CoreId, (st.scheduler.runQueueOnCore c).contains t.tid = false ∧
       st.scheduler.currentOnCore c ≠ some t.tid
+  /-- **WS-BP BP7.9**: and no core's registers hold the thread's live FP/SIMD
+      values.  The destroy path refuses such a target (`threadHeldOnSomeCore`),
+      so under this pack the refusal is not taken — the same shape as
+      `tcbDescheduled` beside it, one piece of per-core state further. -/
+  tcbFpReleased : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
+    ∀ c : CoreId, st.machine.fpOwnerOnCore c ≠ some t.tid
   blockedRefsAvoid : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
     tcb.ipcState ≠ .blockedOnSend target ∧ tcb.ipcState ≠ .blockedOnReceive target ∧
@@ -4340,15 +4346,20 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
     (hObj : st.objects[target]? = some currentObj)
     (hDet : retypeTargetDetached st target)
     (hStep : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean) :
-    stClean.objects = st.objects ∧ stClean.scheduler = st.scheduler := by
+    stClean.objects = st.objects ∧ stClean.scheduler = st.scheduler ∧
+      stClean.machine.fpOwner = st.machine.fpOwner := by
   unfold lifecyclePreRetypeCleanup at hStep
   cases currentObj with
   | tcb tcb =>
-      have hCur : threadCurrentOnSomeCore st tcb.tid = false := by
-        unfold threadCurrentOnSomeCore
-        simp only [List.any_eq_false, beq_iff_eq]
-        intro c _
-        exact (hDet.tcbDescheduled tcb hObj c).2
+      have hCur : threadHeldOnSomeCore st tcb.tid = false := by
+        have hC : threadCurrentOnSomeCore st tcb.tid = false := by
+          unfold threadCurrentOnSomeCore
+          simp only [List.any_eq_false, beq_iff_eq]
+          intro c _
+          exact (hDet.tcbDescheduled tcb hObj c).2
+        have hF : st.machine.fpOwnedOnSomeCore tcb.tid = false :=
+          (MachineState.fpOwnedOnSomeCore_eq_false_iff _ _).mpr (hDet.tcbFpReleased tcb hObj)
+        simp [threadHeldOnSomeCore, hC, hF]
       -- `v0.35.164`: the pack puts the target on the identity arm of the destroy
       -- path's reservation dispatcher — neither `.donated` nor `.bound`.
       have hB : tcb.schedContextBinding = .unbound := by
@@ -4363,12 +4374,13 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
       split at hStep
       · contradiction
       · cases hStep
-        exact ⟨rfl, rfl⟩
+        exact ⟨rfl, rfl, rfl⟩
   | endpoint ep =>
       simp only [] at hStep
       cases hStep
       exact ⟨cleanupEndpointServiceRegistrations_objects_eq st target,
-        cleanupEndpointServiceRegistrations_scheduler_eq st target⟩
+        cleanupEndpointServiceRegistrations_scheduler_eq st target,
+        by rw [cleanupEndpointServiceRegistrations_machine_eq st target]⟩
   | cnode cn =>
       simp only [] at hStep
       split at hStep
@@ -4377,19 +4389,20 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
         · contradiction
         · cases hStep
           exact ⟨detachCNodeSlots_objects_eq st target cn,
-            detachCNodeSlots_scheduler_eq st target cn⟩
+            detachCNodeSlots_scheduler_eq st target cn,
+            by rw [detachCNodeSlots_machine_eq st target cn]⟩
   | reply r =>
       simp only [] at hStep
       split at hStep
       · contradiction
       · cases hStep
-        exact ⟨rfl, rfl⟩
+        exact ⟨rfl, rfl, rfl⟩
   | notification n =>
       cases hStep
-      exact ⟨rfl, rfl⟩
+      exact ⟨rfl, rfl, rfl⟩
   | vspaceRoot v =>
       cases hStep
-      exact ⟨rfl, rfl⟩
+      exact ⟨rfl, rfl, rfl⟩
   | untyped u =>
       -- WS-BP BP7.1 slice 4: an untyped target is refused, as a frame is.
       cases hStep
@@ -4412,6 +4425,7 @@ step (the cleanup and scrub stages). -/
 private theorem retypeTargetDetached_of_objects_scheduler_eq
     {st st2 : SystemState} {target : SeLe4n.ObjId}
     (hObjs : st2.objects = st.objects) (hSched : st2.scheduler = st.scheduler)
+    (hFpOwner : st2.machine.fpOwner = st.machine.fpOwner)
     (hDet : retypeTargetDetached st target) : retypeTargetDetached st2 target := by
   constructor
   · intro sc; rw [hObjs]; exact hDet.notSc sc
@@ -4428,6 +4442,10 @@ private theorem retypeTargetDetached_of_objects_scheduler_eq
   · intro t hT oid sc hS; rw [hObjs] at hT hS
     exact hDet.tcbNotDonationOrigin t hT oid sc hS
   · intro t hT c; rw [hObjs] at hT; rw [hSched]; exact hDet.tcbDescheduled t hT c
+  -- WS-BP BP7.9: the FP-owner clause travels on the owner table alone.
+  · intro t hT c; rw [hObjs] at hT
+    show st2.machine.fpOwner.get c ≠ some t.tid
+    rw [hFpOwner]; exact hDet.tcbFpReleased t hT c
   · intro tid tcb hT; rw [hObjs] at hT; exact hDet.blockedRefsAvoid tid tcb hT
   · intro a tcbA b hA hN; rw [hObjs] at hA; exact hDet.notQueueLinked a tcbA b hA hN
   · intro b tcbB a hB hP; rw [hObjs] at hB; exact hDet.notPrevLinked b tcbB a hB hP
@@ -4489,7 +4507,7 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull
         | ok stClean =>
             rw [hClean] at hStep
             dsimp only [] at hStep
-            obtain ⟨hCO, hCS⟩ := lifecyclePreRetypeCleanup_detached_frame st stClean target
+            obtain ⟨hCO, hCS, hCF⟩ := lifecyclePreRetypeCleanup_detached_frame st stClean target
               currentObj newObj hObjInv hObj hDet hClean
             have hSO : (scrubObjectMemory stClean target currentObj.objectType).objects
                 = st.objects :=
@@ -4500,7 +4518,7 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull
             exact lifecycleRetypeDirect_preserves_ipcInvariantFull _ st' authCap target newObj
               (hSO ▸ hObjInv)
               hFresh
-              (retypeTargetDetached_of_objects_scheduler_eq hSO hSS hDet)
+              (retypeTargetDetached_of_objects_scheduler_eq hSO hSS hCF hDet)
               (ipcInvariantFull_of_objects_scheduler_eq hSO hSS hInv)
               hStep
 

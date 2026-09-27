@@ -16,7 +16,7 @@
  * Kernel load address: 0x80000 (standard RPi5 kernel entry point, matching
  * the address used by U-Boot and the RPi firmware bootloader).
  *
- * Section order: .text.boot → .text.vectors → .text → .rodata → .data → .bss
+ * Section order: .text.boot → .text.vectors → .text.sele4n_fp_context → .text → .rodata → .data → .bss
  *   → .stack → .smp_stacks → .lean_heap → .dtb_window → .boot_table_pool
  *   (all NOLOAD from .bss)
  */
@@ -74,6 +74,16 @@ SECTIONS
     /* Exception vector table — 2048-byte aligned per ARM ARM D1.10.2 */
     .text.vectors : ALIGN(2048) {
         KEEP(*(.text.vectors))
+    } > RAM
+
+    /* WS-BP BP7.9: the only two kernel routines that name an FP/SIMD register
+     * (`fp_context.S`, the lazy FP switch).  An output section of their own so
+     * the linked image keeps the boundary `check_fp_simd_free_objects.py`
+     * exempts them by: merged into `.text`, the disassembly would no longer say
+     * which instructions are theirs.  Inside `[_start, __text_end)`, so mapped
+     * executable like every other text. */
+    .text.sele4n_fp_context : ALIGN(16) {
+        KEEP(*(.text.sele4n_fp_context))
     } > RAM
 
     /* Kernel code.  WS-BP BP2.6: the boot map's permission boundaries are

@@ -1,3 +1,90 @@
+## v0.36.22 — WS-BP BP7.9: per-thread FP/SIMD state, switched lazily
+
+Since `v0.36.2` `boot.S` traps FP/SIMD at EL0 as well as EL1 (the architecture
+has no encoding that traps EL1 alone), so a user FP instruction raised EC `0x07`
+and was delivered as a `userException` fault: fail-closed, and no user thread
+could use floating point.  BP7.9 gives each thread an FP context and switches it
+lazily.
+
+- **The model.**  `FpContext` (`Machine.lean`: `v0`–`v31` as 64 doublewords,
+  `FPCR`, `FPSR`; `fpContextWordCount = 66`, `FpContext.word` / `ofWords` the
+  wire layout and `ofWords_word` its round trip) is a new `TCB.fpContext`,
+  erased by `projectKernelObject` exactly as `registerContext` is, and
+  `MachineState.fpOwner` records, per core, whose FP/SIMD values its registers
+  hold.
+- **The switch** (`SeLe4n/Kernel/Architecture/FpContext.lean`).
+  `fpAccessOnCore` — EC `0x07` from EL0 — saves the registers' live values into
+  the recorded owner (captured by the entry), records the current thread as the
+  owner and answers the thread's **own** saved context to load
+  (`fpAccessOnCore_load_eq_own_context`, `fpAccessOnCore_saves_owner`).
+  `fpReleaseOnCore` runs at every entry whose committed state no longer runs a
+  core's owner there: the owner's live values are saved into its TCB and the
+  core owns nothing (`fpReleaseOnCore_saves_owner`, `fpReleaseOnCore_owner`).
+  Neither schedules (`fpAccessOnCore_scheduler`, `fpReleaseOnCore_scheduler`).
+- **Where it departs from seL4, and why.**  seL4 saves the previous owner only
+  when a new thread traps on the same core, and moves live state between cores
+  with an IPI on an affinity change.  This kernel's placement is not fixed by
+  affinity — an unpinned thread is woken onto the boot core wherever it last ran
+  — so the release happens at the entry that switches the owner out, keeping a
+  thread's context in its TCB whenever it is not running; the load stays lazy.
+  The one race left — a thread taken off a remote core's `current` slot and
+  dispatched elsewhere before that core takes its SGI — answers **retry**
+  (`fpAccessOnCore_retry_of_owned_elsewhere`): the trap stays armed and the
+  thread re-executes until the first core has released it, rather than loading a
+  stale copy.
+- **The entries.**  `lean_handle_fp_access` (`FaultEntry.fpAccessEntry`, with
+  `fpAccessEntry_def`) is the new state-committing entry, behind the readiness
+  gate and inside the kernel-entry lock, recorded **unbracketed** in
+  `ExportCommitDisciplineCensus` with its reason.  Every other entry that
+  restores a context runs `Concurrency.releaseSwitchedFpOwner` between its
+  commit and its restore — a second commit under the same lock, because only the
+  committed state says whether the owner still runs — and each `_def` marker
+  pins it there.  The classifier gains `SynchronousExceptionClass.fpAccess`
+  (EC `0x07`, tag 7; `faultOfExceptionContext` answers `none`, so the fault
+  entry is inert on it).
+- **The trap follows the restore.**  `RestoreTarget.user` carries `fpLive`
+  (`fpLiveFor`: the core's owner is the thread it resumes), which
+  `restoreTrapFrame` commits as restore kind `2`; the HAL lifts the trap for
+  kind `2` and arms it for kinds `0` and `1` (`trap::restore_commit`,
+  `fp_context::set_trap_for_resume`).
+- **The HAL** (`rust/sele4n-hal/src/fp_context.S`, `fp_context.rs`).  Four
+  routines in their own section, `.text.sele4n_fp_context` —
+  `sele4n_fp_save_context` (lift, store, **re-arm**), `sele4n_fp_load_context`
+  (lift, load every register, `FPCR` and `FPSR` included), `sele4n_fp_trap_lift`
+  and `sele4n_fp_trap_arm` — the only kernel code that names an FP/SIMD register
+  or writes `CPACR_EL1` outside the boot prologues.  `FPEN = 0b11` alone
+  (`0x300000`), so SVE and SME stay trapped.  `trap.rs` routes
+  `sync_class::FP_ACCESS` to `deliver_fp_access`, which halts on a not-ready
+  core and on a switch that restored nothing, as an abort does.
+- **The gates.**  `build.rs`'s one-writer rule for `CPACR_EL1` admits exactly
+  `FP_CONTEXT_CPACR_WRITERS` — per routine, in order, each lift preceded by
+  `mov x9, #0x300000`, each write followed by `isb`, in the pinned section —
+  with seven token-preserving mutations in its self-test.
+  `check_fp_simd_free_objects.py` exempts `sele4n_fp_save_context` and
+  `sele4n_fp_load_context` **by symbol**, reconciled both ways: an FP register
+  anywhere else fails, an exempt routine outside its section or naming no FP
+  register fails (stale), and the exemption must equal the FP routines
+  `fp_context.S` defines.  `link.ld` gives the section an output section of its
+  own inside the text: merged into `.text`, the linked image's disassembly no
+  longer said which instructions were the routines', and the archive lane's
+  image check — the one run over the image that actually links them — reported
+  every one as unexempt and the exemption as stale at once.
+  `check_kernel_image.py` then refused the new section as "executable outside
+  the text", because it decided *text* by a list of three section names; it
+  decides by address now — an executable section must lie in
+  `[_start, __text_end)`, which is what the boot map maps executable — with a
+  self-test case that keeps the section's name and moves it past the text.
+- **The destroy path.**  A thread whose live FP values a core still holds is not
+  retyped (`threadHeldOnSomeCore`, `.revocationRequired`): the release would
+  otherwise write a destroyed thread's FP state into whatever TCB the retype
+  creates under its id, which the new thread would then load.
+  `retypeTargetDetached` gains `tcbFpReleased` for the payoff.
+- **Witness.**  `tests/FaultHandlingSuite.lean` §4c: the first access loads the
+  thread's own zero context and lifts the trap; a switched-out owner is released
+  into its own TCB and no other; the next thread loads its own context, never
+  the previous owner's; the trap-time capture; the migration retry; the fault
+  entry inert on EC `0x07`; and the destroy refusal with its control.
+
 ## v0.36.21 — WS-BP BP7.8: message registers past the fourth, both directions
 
 The WS-RA return frame carries four message registers in `x2`-`x5`.  BP7.8 was

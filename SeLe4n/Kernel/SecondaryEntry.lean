@@ -157,6 +157,7 @@ theorem secondaryKernelMain_def (coreId : UInt64) :
           (((Concurrency.coreIdOfUInt64? coreId).map
             (fun c => (c, st'.scheduler.currentOnCore c)),
             Concurrency.restoreTargetAt st' coreId), st'))
+        Concurrency.releaseSwitchedFpOwner coreId
         Platform.FFI.restoreTrapFrame record.2
         Concurrency.recordCommittedCurrentThreadHw record.1) := rfl
 

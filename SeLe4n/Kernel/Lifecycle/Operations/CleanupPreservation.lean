@@ -1740,7 +1740,11 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
         -- Placed inside the arm that already cases on `currentObj`, and reading
         -- the **pre-state** `st`: every later `let` shadows `st` with the swept
         -- state, in which the slot this tests has already been cleared.
-        if threadCurrentOnSomeCore st tcb.tid then
+        --
+        -- **WS-BP BP7.9**: nor a thread whose live FP/SIMD values a core still
+        -- holds (`threadHeldOnSomeCore`): that core's release would write them
+        -- into whatever TCB the retype creates under this id.
+        if threadHeldOnSomeCore st tcb.tid then
           (.error .revocationRequired : Except KernelError SystemState)
         else
           -- **`v0.35.164`: end the reservation the way the suspend's G3 does.**
@@ -2087,7 +2091,7 @@ theorem lifecyclePreRetypeCleanup_rejects_current_anywhere
     lifecyclePreRetypeCleanup st target (.tcb tcb) newObj = .error .revocationRequired := by
   unfold lifecyclePreRetypeCleanup
   simp only []
-  rw [if_pos (threadCurrentOnSomeCore_iff st tcb.tid |>.mpr ⟨c, hCur⟩)]
+  rw [if_pos (by simp [threadHeldOnSomeCore, (threadCurrentOnSomeCore_iff st tcb.tid).mpr ⟨c, hCur⟩])]
 
 /-- WS-SM SM8.B.2: the TCB reference scrub writes no register bank.
 

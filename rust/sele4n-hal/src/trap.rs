@@ -203,6 +203,12 @@ pub const RESTORE_KIND_USER: u32 = 0;
 /// resumes [`kernel_idle_loop`] at EL1.
 pub const RESTORE_KIND_IDLE: u32 = 1;
 
+/// **WS-BP BP7.9**: restore kind `2` — kind `0` for a thread whose FP/SIMD
+/// values the core's registers hold (the Lean `RestoreTarget.user`'s
+/// `fpLive`): the commit lifts the FP/SIMD trap for it, where kinds `0` and `1`
+/// arm it.
+pub const RESTORE_KIND_USER_FP_LIVE: u32 = 2;
+
 /// **WS-BP BP7.4**: the `SPSR_EL1` a user resume may carry — the condition
 /// flags of the staged value and nothing else, so the `eret` lands at **EL0t**
 /// with every exception unmasked whatever the saved word says.  A thread's
@@ -271,7 +277,7 @@ pub fn restore_commit_in(
     kind: u32,
     idle_pc: u64,
 ) -> Result<bool, RestoreRefusal> {
-    if kind != RESTORE_KIND_USER && kind != RESTORE_KIND_IDLE {
+    if kind != RESTORE_KIND_USER && kind != RESTORE_KIND_IDLE && kind != RESTORE_KIND_USER_FP_LIVE {
         return Err(RestoreRefusal::UnknownKind);
     }
     let slot = slots.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
@@ -287,7 +293,7 @@ pub fn restore_commit_in(
     // live reference to the frame for the duration of the write, and only
     // core `core` writes slot `core`.
     let frame = unsafe { &mut *ptr };
-    if kind == RESTORE_KIND_USER {
+    if kind == RESTORE_KIND_USER || kind == RESTORE_KIND_USER_FP_LIVE {
         let word = |i: usize| words[i].load(Ordering::Relaxed);
         for (i, gpr) in frame.gprs.iter_mut().enumerate() {
             *gpr = word(i);
@@ -322,16 +328,25 @@ pub fn restore_stage_word(index: u32, value: u64) -> Result<(), RestoreRefusal> 
 }
 
 /// **WS-BP BP7.4**: commit the executing PE's staged resume.
+///
+/// **WS-BP BP7.9**: and set the FP/SIMD trap for what it resumes — lifted for
+/// [`RESTORE_KIND_USER_FP_LIVE`], armed for every other kind — once the frame
+/// is replaced, so the trap and the frame the handler `eret`s through always
+/// describe the same thread.
 pub fn restore_commit(kind: u32) -> Result<bool, RestoreRefusal> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    restore_commit_in(
+    let replaced = restore_commit_in(
         &IN_FLIGHT_FRAMES,
         &RESTORE_STAGING,
         &RESTORED,
         core,
         kind,
         kernel_idle_loop as *const () as usize as u64,
-    )
+    )?;
+    if replaced {
+        crate::fp_context::set_trap_for_resume(kind == RESTORE_KIND_USER_FP_LIVE);
+    }
+    Ok(replaced)
 }
 
 /// **WS-BP BP7.4**: take the executing PE's restored flag.  The trap arms
@@ -521,6 +536,9 @@ mod ec {
     pub const DABT_CURRENT: u64 = 0x25;
     /// SP alignment fault.
     pub const SP_ALIGN: u64 = 0x26;
+    /// WS-BP BP7.9: access to SIMD or floating-point functionality trapped by
+    /// `CPACR_EL1.FPEN` — the lazy FP/SIMD switch's trap.
+    pub const FP_ACCESS: u64 = 0x07;
 }
 
 /// Kernel error discriminants matching `sele4n-types::KernelError` and
@@ -587,6 +605,9 @@ pub mod sync_class {
     /// A data or instruction abort taken from the **current** EL — the kernel
     /// itself faulted (PR #887 review).  Never delivered; the handler halts.
     pub const KERNEL_ABORT: u32 = 6;
+    /// **WS-BP BP7.9**: a trapped FP/SIMD access (EC `0x07`) — routed to the
+    /// lazy switch, never delivered as a fault.
+    pub const FP_ACCESS: u32 = 7;
 }
 
 /// **PR #887 review**: was the exception taken from EL0?
@@ -739,6 +760,7 @@ fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
         ec::DABT_CURRENT | ec::IABT_CURRENT => sync_class::KERNEL_ABORT,
         ec::PC_ALIGN => sync_class::PC_ALIGNMENT,
         ec::SP_ALIGN => sync_class::SP_ALIGNMENT,
+        ec::FP_ACCESS => sync_class::FP_ACCESS,
         _ => sync_class::UNKNOWN_REASON,
     }
 }
@@ -887,6 +909,71 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
     // function never returns; `build.rs` pins that this write is host-only.
     #[cfg(not(feature = "hw_target"))]
     frame.set_return_frame(crate::svc_dispatch::error_frame_regs(fallback_discriminant));
+}
+
+/// **WS-BP BP7.9: the lazy FP/SIMD switch** — EC `0x07` from EL0.
+///
+/// The Lean half is `lean_handle_fp_access` (`@[export]` on
+/// `SeLe4n.Kernel.fpAccessEntry`): it saves the trap frame, captures the core's
+/// registers if they hold a recorded owner's live values, commits
+/// `Architecture.fpAccessOnCore`, loads the faulting thread's own saved context
+/// (`fp_context::load_commit`) and restores the thread — whose `ELR_EL1` still
+/// names the FP/SIMD instruction — with the trap lifted, so the instruction
+/// re-executes with the thread's own state.  When the thread's live values are
+/// on another core the switch answers *retry*: nothing is loaded, the trap stays
+/// armed and the thread traps again until that core has released them.
+///
+/// Same lock, same readiness gate and same restored-frame return as
+/// [`deliver_fault`].  A core whose Lean runtime is not up cannot switch and
+/// cannot return — `ELR_EL1` is on the trapped instruction, so a returned frame
+/// would trap again forever — so it halts, as an abort does
+/// ([`halt_abort_before_lean_ready`]); and a switch that restored nothing halts
+/// too, since returning through the unchanged frame re-executes into the same
+/// trap.  The host lane has no FP/SIMD registers and no Lean kernel, so the arm
+/// is inert there.
+#[allow(unused_variables)]
+fn deliver_fp_access(frame: &mut TrapFrame) {
+    #[cfg(feature = "hw_target")]
+    {
+        let core_id = crate::per_cpu::current_core_id_from_tpidr();
+        if crate::lean_ready::lean_ready(core_id as usize) {
+            extern "C" {
+                /// # Safety
+                ///
+                /// Sound only on a core whose Lean runtime is initialised
+                /// (`lean_ready` checked on *this* PE), inside the kernel-entry
+                /// lock, and only for an FP/SIMD trap taken from EL0: the entry
+                /// loads a thread's FP/SIMD context into this PE's registers and
+                /// lifts the trap for the thread its committed state runs here.
+                fn lean_handle_fp_access(core_id: u64) -> crate::lean_runtime::LeanBaseIoUnit;
+            }
+            // SAFETY: `lean_handle_fp_access` is the C-callable wrapper the
+            // Lean compiler emits for `Kernel.fpAccessEntry`
+            // (`@[export lean_handle_fp_access]`).  It takes one `u64` and
+            // returns its `BaseIO Unit` value, `lean_box(0)`; sound from EL1
+            // exception context once this core's Lean runtime is initialized
+            // (the gate just checked) and inside the kernel-entry lock (taken
+            // here), which serialises its `IO.Ref` commits.
+            let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_handle_fp_access(core_id)
+            });
+            // SAFETY: `res` is the value the export just returned; if it is
+            // a heap object this caller owns its one reference.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_handle_fp_access") };
+            // The switch restored the thread that trapped, with the trap set
+            // for it; return through that frame.
+            if crate::trap::take_restored() {
+                return;
+            }
+            crate::kprintln!(
+                "[core {}] FP/SIMD access switched and no context restored; halting (ELR=0x{:016x})",
+                core_id,
+                frame.elr_el1
+            );
+            crate::cpu::fatal_halt();
+        }
+        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);
+    }
 }
 
 /// **PR #887 review round 3**: an EL0 abort taken on a core whose Lean
@@ -1192,6 +1279,13 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
         sync_class::KERNEL_ABORT => {
             // PR #887 review: the kernel faulted — halt, never deliver.
             halt_on_kernel_abort(frame, esr);
+        }
+        sync_class::FP_ACCESS => {
+            // WS-BP BP7.9: a thread used FP/SIMD with its core's trap armed —
+            // the lazy switch loads its context and restarts the instruction.
+            // An EL1-origin one halted above (`halt_if_kernel_origin`): the
+            // kernel is FP-free, so an FP instruction at EL1 is a defect.
+            deliver_fp_access(frame);
         }
         sync_class::DATA_ABORT | sync_class::INSTR_ABORT => {
             // WS-RR RR4.21/RR4.23: an abort is **delivered** to the faulting
@@ -1627,6 +1721,29 @@ mod tests {
         );
     }
 
+    /// WS-BP BP7.9: the FP-live user resume (kind 2) installs the staged
+    /// context exactly as a plain user resume does — the kinds differ only in
+    /// the FP/SIMD trap the hardware commit sets, never in the frame.
+    #[test]
+    fn an_fp_live_restore_installs_the_same_frame_as_a_user_restore() {
+        let run = |kind: u32| {
+            let (slots, staging, restored) = fresh_restore();
+            for i in 0..TRAP_FRAME_CONTEXT_WORDS {
+                restore_stage_word_in(&staging, 0, i, 500 + u64::from(i)).unwrap();
+            }
+            let mut frame = zero_frame();
+            {
+                let _g = InFlightFrame::publish_in(&slots, 0, &mut frame);
+                assert_eq!(
+                    restore_commit_in(&slots, &staging, &restored, 0, kind, 0),
+                    Ok(true)
+                );
+            }
+            (frame.gprs, frame.sp_el0, frame.elr_el1, frame.spsr_el1)
+        };
+        assert_eq!(run(RESTORE_KIND_USER_FP_LIVE), run(RESTORE_KIND_USER));
+    }
+
     /// WS-BP BP7.4: an idle resume aims the frame at the idle loop at EL1h
     /// with interrupts unmasked and carries no register of the thread it
     /// replaced.
@@ -1662,8 +1779,14 @@ mod tests {
             Ok(false)
         );
         assert!(!take_restored_in(&restored, 1));
+        // WS-BP BP7.9: kind 2 is the FP-live user resume, so it is a kind the
+        // commit knows; kind 3 is not.
         assert_eq!(
-            restore_commit_in(&slots, &staging, &restored, 1, 2, 0),
+            restore_commit_in(&slots, &staging, &restored, 1, RESTORE_KIND_USER_FP_LIVE, 0),
+            Ok(false)
+        );
+        assert_eq!(
+            restore_commit_in(&slots, &staging, &restored, 1, 3, 0),
             Err(RestoreRefusal::UnknownKind)
         );
         assert_eq!(
@@ -1915,6 +2038,8 @@ mod tests {
                 0x25 | 0x21 => sync_class::KERNEL_ABORT,
                 0x22 => sync_class::PC_ALIGNMENT,
                 0x26 => sync_class::SP_ALIGNMENT,
+                // WS-BP BP7.9: the lazy FP/SIMD switch's trap.
+                0x07 => sync_class::FP_ACCESS,
                 _ => sync_class::UNKNOWN_REASON,
             };
             assert_eq!(
@@ -1935,6 +2060,7 @@ mod tests {
         assert_eq!(sync_class::PC_ALIGNMENT, 3);
         assert_eq!(sync_class::SP_ALIGNMENT, 4);
         assert_eq!(sync_class::UNKNOWN_REASON, 5);
+        assert_eq!(sync_class::FP_ACCESS, 7);
         assert_eq!(sync_class::KERNEL_ABORT, 6);
     }
 

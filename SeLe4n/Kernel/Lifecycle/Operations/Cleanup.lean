@@ -79,6 +79,23 @@ def threadCurrentOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   SeLe4n.Kernel.Concurrency.allCores.any (fun c =>
     st.scheduler.currentOnCore c == some tid)
 
+/-- **WS-BP BP7.9: a thread some core still holds** — current there, or the
+owner of that core's FP/SIMD registers (`MachineState.fpOwnedOnSomeCore`).
+
+The destroy path refuses both, for one reason: the core has state that belongs
+to the thread and will be written back under its id.  A current thread's is its
+scheduler slot; an FP owner's is its live FP/SIMD values, which the core's next
+entry saves into the thread's TCB (`Architecture.fpReleaseOnCore`).  An owner is
+current wherever it owns, except in the window between a remote core taking it
+off that core's `current` slot and that core taking the SGI the change sent it —
+and a retype in that window would let the release write a destroyed thread's FP
+state into whatever TCB is created under its id, which the new thread would then
+load: one thread reading another's registers.  Refusing it
+(`.revocationRequired`, "switch away first") closes the window without a second
+writer of the owner table. -/
+def threadHeldOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  threadCurrentOnSomeCore st tid || st.machine.fpOwnedOnSomeCore tid
+
 /-- **WS-SM SM8.B (PR #861 review round 39): the retype's running-target
 rejection**, as a named predicate on the object being destroyed.
 
@@ -93,11 +110,11 @@ running, so every other object kind is admitted outright
 non-TCB arms reduce by `rfl`). -/
 def retypeRunningTargetRejected (st : SystemState) (currentObj : KernelObject) : Bool :=
   match currentObj with
-  | .tcb tcb => threadCurrentOnSomeCore st tcb.tid
+  | .tcb tcb => threadHeldOnSomeCore st tcb.tid
   | _ => false
 
 @[simp] theorem retypeRunningTargetRejected_tcb (st : SystemState) (tcb : TCB) :
-    retypeRunningTargetRejected st (.tcb tcb) = threadCurrentOnSomeCore st tcb.tid := rfl
+    retypeRunningTargetRejected st (.tcb tcb) = threadHeldOnSomeCore st tcb.tid := rfl
 
 /-- WS-SM SM8.B: the guard is exactly "some core has this thread current". -/
 theorem threadCurrentOnSomeCore_iff (st : SystemState) (tid : SeLe4n.ThreadId) :

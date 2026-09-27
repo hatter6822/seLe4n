@@ -376,3 +376,8 @@ pub mod lean_entry;
 // the system on a refusal; and an address space is installed with the kernel
 // window at its top-level entry 0.
 pub mod user_translation;
+
+// WS-BP BP7.9: the lazy FP/SIMD switch's register side — the per-core capture
+// and load buffers and the four `fp_context.S` routines, the only kernel code
+// that names an FP/SIMD register.
+pub mod fp_context;

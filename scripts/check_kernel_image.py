@@ -233,8 +233,16 @@ def check_image(image: Image, script: Script, table: dict[str, int], undefined: 
         addr = table.get(name)
         if addr is None or start is None or text_end is None or not start <= addr < text_end:
             problems.append(f"`{name}` is at {addr}, not in the text [{start}, {text_end})")
+    # Executable is a question about the ADDRESS, not the name: `[_start,
+    # __text_end)` is what the boot map maps executable (`mmu::image_layout`),
+    # so an executable section inside it is text whatever it is called — the FP
+    # context routines' own section (WS-BP BP7.9) is one — and one outside it
+    # is mapped never-execute whatever it is called.  A list of the text
+    # sections' names would refuse the first and could not see the second.
     non_text = [s.name for s in image.sections
-                if s.executable and s.name not in REQUIRED_SECTIONS]
+                if s.executable and not (start is not None and text_end is not None
+                                         and start <= s.addr
+                                         and s.addr + s.size <= text_end)]
     if non_text:
         problems.append(f"executable section(s) outside the text: {', '.join(non_text)}")
     problems.extend(check_layout(table, reserved))
@@ -242,7 +250,8 @@ def check_image(image: Image, script: Script, table: dict[str, int], undefined: 
 
 
 # A well-formed image, for the self-test: the shape a real link produces.
-_SCRIPT = Script(0x80000, ((".text.boot", False), (".text.vectors", False), (".text", False),
+_SCRIPT = Script(0x80000, ((".text.boot", False), (".text.vectors", False),
+                          (".text.sele4n_fp_context", False), (".text", False),
                           (".rodata", False), (".data", False), (".bss", True),
                           (".stack", True), (".smp_stacks", True), (".lean_heap", True),
                           (".dtb_window", True), (".boot_table_pool", True)))
@@ -251,6 +260,7 @@ _TABLE = {**_GOOD, "__exception_vectors": 0x80800, "rust_boot_main": 0x80900,
 _IMAGE = Image(ET_EXEC, EM_AARCH64, 0x80000, (
     Section(".text.boot", 0x80000, 0x100, False, True),
     Section(".text.vectors", 0x80800, 0x780, False, True),
+    Section(".text.sele4n_fp_context", 0x80f80, 0x80, False, True),
     Section(".text", 0x81000, 0x0, False, True),
     Section(".rodata", 0x81000, 0x1000, False, False),
     Section(".data", 0x82000, 0x800, False, False),
@@ -299,6 +309,9 @@ def self_test() -> int:
         ("a branch target outside the text", _IMAGE, _SCRIPT,
          {**_TABLE, "rust_secondary_main": 0x81800}, [], "rust_secondary_main"),
         ("executable read-only data", _with_section(".rodata", executable=True),
+         _SCRIPT, _TABLE, [], "outside the text"),
+        ("a named text section placed past the text",
+         _with_section(".text.sele4n_fp_context", addr=0x81800),
          _SCRIPT, _TABLE, [], "outside the text"),
         ("an arena shorter than its constant", _IMAGE, _SCRIPT,
          {**_TABLE, "__lean_heap_end": _TABLE["__lean_heap_end"] - 4096}, [],

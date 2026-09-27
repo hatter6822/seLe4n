@@ -95,6 +95,7 @@ inductive SynchronousExceptionClass where
   | spAlignment     -- SP alignment fault
   | unknownReason   -- Unclassified synchronous exception
   | kernelAbort     -- Data or instruction abort taken from the current EL: the kernel faulted
+  | fpAccess        -- WS-BP BP7.9: a trapped FP/SIMD access (EC 0x07): the lazy FP switch
   deriving Repr, DecidableEq
 
 /-- AG3-C: Exception context — captures the ARM64 exception registers
@@ -154,6 +155,7 @@ def classifySynchronousException (ectx : ExceptionContext) : SynchronousExceptio
   else if ec = 0x25 || ec = 0x21 then .kernelAbort
   else if ec = 0x22 then .pcAlignment
   else if ec = 0x26 then .spAlignment
+  else if ec = 0x07 then .fpAccess
   else .unknownReason
 
 /-- Review round (PR #887): the two current-EL abort syndromes classify as a
@@ -199,15 +201,33 @@ def faultOfExceptionContext (ectx : ExceptionContext) : Option Fault :=
   | .pcAlignment  => some (.userException (extractExceptionClass ectx.esr) ectx.esr)
   | .spAlignment  => some (.userException (extractExceptionClass ectx.esr) ectx.esr)
   | .unknownReason => some (.userException (extractExceptionClass ectx.esr) ectx.esr)
+  -- WS-BP BP7.9: an FP/SIMD access is the lazy switch's, not a fault: the
+  -- thread asked for its FP context, and `Architecture.fpAccessOnCore` loads it.
+  | .fpAccess     => none
 
 /-- WS-RR RR4.3 / review round: the SVC class and the kernel abort — and only
 they — yield no fault. -/
 theorem faultOfExceptionContext_eq_none_iff (ectx : ExceptionContext) :
     faultOfExceptionContext ectx = none ↔
       (classifySynchronousException ectx = .svc ∨
-        classifySynchronousException ectx = .kernelAbort) := by
+        classifySynchronousException ectx = .kernelAbort ∨
+        classifySynchronousException ectx = .fpAccess) := by
   unfold faultOfExceptionContext
   cases h : classifySynchronousException ectx <;> simp
+
+/-- **WS-BP BP7.9**: EC `0x07` is the FP/SIMD access class. -/
+theorem classifySynchronousException_fpAccess (ectx : ExceptionContext)
+    (h : extractExceptionClass ectx.esr = 0x07) :
+    classifySynchronousException ectx = .fpAccess := by
+  unfold classifySynchronousException
+  simp [h]
+
+/-- **WS-BP BP7.9**: and an FP/SIMD access is never turned into a fault — the
+fault entry is inert on it, and the trap layer routes it to the lazy switch. -/
+theorem faultOfExceptionContext_fpAccess (ectx : ExceptionContext)
+    (h : classifySynchronousException ectx = .fpAccess) :
+    faultOfExceptionContext ectx = none := by
+  simp [faultOfExceptionContext, h]
 
 /-- Review round (PR #887): a kernel abort is never turned into a user fault. -/
 theorem faultOfExceptionContext_kernelAbort (ectx : ExceptionContext)
@@ -222,7 +242,8 @@ instruction).  The kernel abort is excluded by name: it is the one class the
 trap layer must *halt* on rather than deliver. -/
 theorem faultOfExceptionContext_isSome_of_ne_svc (ectx : ExceptionContext)
     (h : classifySynchronousException ectx ≠ .svc)
-    (hK : classifySynchronousException ectx ≠ .kernelAbort) :
+    (hK : classifySynchronousException ectx ≠ .kernelAbort)
+    (hFp : classifySynchronousException ectx ≠ .fpAccess) :
     (faultOfExceptionContext ectx).isSome := by
   unfold faultOfExceptionContext
   cases hc : classifySynchronousException ectx <;> simp_all

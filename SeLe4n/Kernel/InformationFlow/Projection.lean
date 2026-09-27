@@ -288,7 +288,13 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        pipBoost := none, pendingMessage := none, timedOut := false,
                        cpuAffinity := none, replyObject := none,
                        pendingReceiveReply := none,
-                       lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+                       lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld,
+                       -- WS-BP BP7.9: the saved FP/SIMD context is the thread's
+                       -- own register state, erased exactly as `registerContext`
+                       -- is; the lazy switch (`Architecture.fpAccessOnCore` /
+                       -- `fpReleaseOnCore`) writes it, and an observer that saw
+                       -- it would see every value the thread computed in FP.
+                       fpContext := default }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
