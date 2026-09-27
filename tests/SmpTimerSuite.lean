@@ -9,6 +9,7 @@
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Kernel.Architecture.SyscallReturn
+import SeLe4n.Kernel.Scheduler.Operations.ResumeDelivery
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -910,6 +911,33 @@ private def runTimeoutFrameStagingChecks : IO Unit := do
      | .ok r => decide (Architecture.readReturnFrame r.1 tidCur ≠ Architecture.timeoutFrame)
      | .error _ => false)
 
+/-- §3.15b (WS-BP BP7.5 — the timeout frame, delivered): staging the frame is
+half an answer; the other half is that the thread *reads* it.  A thread becomes
+a core's current thread only by a switch, and the restore resumes a core from
+its committed current thread's context (`Architecture.restoreTargetOnCore`),
+so the witness switches to the woken waiter and asks what the restore delivers.
+The CONTROL switches to it before the tick: the same switch, with no frame
+staged, delivers the stale window, so the assertion is about the staging and
+not about the switch. -/
+private def runTimeoutFrameDeliveryChecks : IO Unit := do
+  IO.println "--- §3.15b WS-BP BP7.5 the timeout frame is what the waiter resumes with ---"
+  let tidW := ThreadId.ofNat 321
+  let stLocal := mkTimeoutWakeState (some core1)
+  assertBool "a timed-out waiter, once switched to, resumes reading .ipcTimeout"
+    (match timerTickOnCore stLocal core1 with
+     | .ok r =>
+         match switchToThreadOnCore r.1 core1 tidW with
+         | .ok st' => decide ((Architecture.restoreTargetOnCore st' core1).deliveredFrame?
+                                = some Architecture.timeoutFrame)
+         | .error _ => false
+     | .error _ => false)
+  assertBool "CONTROL: switched to before the tick, it would resume with its stale window"
+    (match switchToThreadOnCore stLocal core1 tidW with
+     | .ok st' => decide ((Architecture.restoreTargetOnCore st' core1).deliveredFrame?
+                            = some (Architecture.readReturnFrame stLocal tidW)
+                          ∧ Architecture.readReturnFrame stLocal tidW ≠ Architecture.timeoutFrame)
+     | .error _ => false)
+
 def runAll : IO Unit := do
   IO.println "=== WS-SM SM5.D — Per-core timer tick suite ==="
   runLockSetChecks
@@ -927,6 +955,7 @@ def runAll : IO Unit := do
   runLocalReplenishRescheduleChecks
   runAffinityTimeoutWakeChecks
   runTimeoutFrameStagingChecks
+  runTimeoutFrameDeliveryChecks
   IO.println "=== SM5.D timer suite: all checks passed ==="
 
 end SeLe4n.Testing.SmpTimer

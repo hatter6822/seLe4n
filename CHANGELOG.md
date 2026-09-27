@@ -1,3 +1,53 @@
+## v0.36.18 — WS-BP BP7.5: a staged unblock frame is what the thread resumes with
+
+WS-RR RR7.14 stages an error frame into the saved context of a thread taken out
+of a blocking IPC — `.ipcTimeout` when its budget expired, `.ipcCancelled` when
+the operation was destroyed under it.  A staged frame is only an answer if the
+restore hands it back, and nothing stated that it does.
+
+Since BP7.4 the restore resumes a core from its committed current thread's saved
+context, and a thread becomes a core's current thread only by a switch.  So
+delivery is one relation rather than a mechanism per path:
+
+- **`switchToThreadOnCore_delivers_readReturnFrame`** — a switch resumes the
+  incoming thread with the frame its TCB holds.  The switch's only object write
+  is the *outgoing* thread's context save, so the incoming thread's context
+  crosses it unchanged.
+- **`abortPendingIpcOnEndpoint_readReturnFrame`** — the timeout's object prefix
+  leaves the unblocked thread reading `.ipcTimeout`, beside RR7.14's existing
+  `restoreToReadyCancelled_readReturnFrame` for the cancellation.
+- **The two corollaries** compose them:
+  `restoreToReadyCancelled_then_switch_delivers_cancelledIpcFrame` and
+  `abortPendingIpcOnEndpoint_then_switch_delivers_timeoutFrame`.
+
+The delivered frame has one reading, `Architecture.RestoreTarget.deliveredFrame?`
+(`x0`–`x5` of a user target; none for idle or an empty core), stated beside the
+restore target in the new production module
+`SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean`, which the library root
+imports.  `readReturnFrame_of_withReturnFrame` is the round trip stated for any
+frame-staged record rather than only for `writeReturnFrameToTcb`'s write.
+
+**What is not claimed**: that nothing between the unblock and the switch
+rewrites the frame.  A `.ready` thread on no IPC queue is targeted by no
+delivery, and the trap-frame save writes only a core's *current* thread, but
+that is a property of every transition rather than of this relation.  The
+executed witnesses drive the live unblock and the live switch end to end:
+`tests/SmpCancellationSuite.lean` §3.19b (an endpoint-blocked and a
+notification-blocked victim, the first also resuming at its own `pc`) and
+`tests/SmpTimerSuite.lean` §3.15b (a budget-blocked waiter after the exhaustion
+tick).  Each carries a CONTROL that performs the same switch *before* the
+unblock and resumes the stale window, so the assertions are about the staging
+and not about the switch.
+
+**Deviation from the plan row, recorded**: the row named `svc_dispatch.rs` and
+`Timeout.lean` as the files it would change, and neither did — RR7.14 had
+already staged both frames into the context the restore reads, so what was owed
+was the relation, not a write.
+
+Also: four unused `simp` arguments removed from `ContextRestore.lean`.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP7.5)
+
 ## v0.36.17 — WS-BP BP7.4: the context each core resumes, staged per core
 
 BP7.4 is the third of the three prerequisites for turning the context restore on.

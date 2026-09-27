@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
 import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds
 import SeLe4n.Kernel.Architecture.SyscallReturn
+import SeLe4n.Kernel.Scheduler.Operations.ResumeDelivery
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Testing.StateBuilder
@@ -1917,6 +1918,45 @@ private def stNtfnBlockedStale? : Option SystemState :=
   | (st, .ok none) => some st
   | _ => none
 
+/-- §3.19b (WS-BP BP7.5): the frame and program counter core `c` resumes after
+it switches to `tid` — the frame read by `RestoreTarget.deliveredFrame?`, the
+one reading the delivery theorems are stated over — or `none` when the switch
+fails or names no user context. -/
+private def resumedAfterSwitch (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    Option (Architecture.SyscallReturnFrame × SeLe4n.RegValue) :=
+  match switchToThreadOnCore st c tid with
+  | .ok st' =>
+      let target := Architecture.restoreTargetOnCore st' c
+      match target.deliveredFrame?, target with
+      | some f, .user ctx _ _ => some (f, ctx.pc)
+      | _, _ => none
+  | .error _ => none
+
+/-- §3.19b (WS-BP BP7.5 — the cancellation frame, delivered): the staging
+(§3.19) is half an answer; the other half is that the victim *reads* it.  The
+CONTROL switches to the victim before the cancellation: the same switch, with
+nothing staged, resumes it with its own request registers, so the assertions
+are about the staging and not about the switch. -/
+private def runUnblockFrameDeliveryChecks : IO Unit := do
+  IO.println "--- §3.19b WS-BP BP7.5 the cancellation frame is what the victim resumes with ---"
+  match stCallBlockedStale?, stNtfnBlockedStale? with
+  | some stE, some stN =>
+      let (stE', _) := cancelIpcBlockingOnCore victimTid (victimTcb stE) bootCoreId stE
+      let (stN', _) := cancelIpcBlockingOnCore victimTid (victimTcb stN) bootCoreId stN
+      assertBool "an endpoint-blocked victim, once switched to, resumes reading .ipcCancelled at its own pc"
+        (match resumedAfterSwitch stE' core1 victimTid with
+         | some (f, pc) => decide (f = Architecture.cancelledIpcFrame) && decide (pc = staleRequestRegs.pc)
+         | none => false)
+      assertBool "a notification-blocked victim resumes reading .ipcCancelled, never a stale badge"
+        (match resumedAfterSwitch stN' core1 victimTid with
+         | some (f, _) => decide (f = Architecture.cancelledIpcFrame)
+         | none => false)
+      assertBool "CONTROL: switched to before the cancellation, the victim resumes with its arguments"
+        (match resumedAfterSwitch stE core1 victimTid with
+         | some (f, _) => decide (f.x0 = 0xBAD0) && decide (f ≠ Architecture.cancelledIpcFrame)
+         | none => false)
+  | _, _ => assertBool "setup: both blocked stale-register fixtures build" false
+
 private def runUnblockFrameStagingChecks : IO Unit := do
   IO.println "--- §3.19 WS-RR RR7.14 the cancellation return frame ---"
   -- The two frames are distinguishable, and neither is the success frame.
@@ -2973,6 +3013,7 @@ def runSmpCancellationChecks : IO Unit := do
   runPlacementDescheduleChecks
   runDiffSeamEdfChecks
   runUnblockFrameStagingChecks
+  runUnblockFrameDeliveryChecks
   runDonationDoublePopFootprintChecks
   runFrameHeadReclaimChecks
   runReplenishDestinationChecks

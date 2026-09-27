@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.17.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.18.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7152,7 +7152,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -8386,6 +8386,27 @@ restore ever replaces, since every other kernel path runs with IRQs masked.
 (`restoreTrapFrameLive_inert`), so the trap arms still deliver the mailbox frame,
 the poison and the SM10.1 halts until BP7.6 flips it and has them consult
 `trap::take_restored`.
+
+**A staged unblock frame is what the thread resumes with** (`v0.36.18`, BP7.5).
+Delivery is one relation, not a mechanism per path:
+`switchToThreadOnCore_delivers_readReturnFrame` says a switch resumes the
+incoming thread with the frame its TCB holds, because the switch's only object
+write is the *outgoing* thread's context save; the two unblock paths then state
+what that frame is (`restoreToReadyCancelled_readReturnFrame`,
+`abortPendingIpcOnEndpoint_readReturnFrame`) and the two corollaries compose
+them.  Two things new code must respect.  (1) **The delivered frame has one
+reading**, `Architecture.RestoreTarget.deliveredFrame?` (`x0`–`x5` of a user
+target, none for idle or an empty core), beside the restore target in
+`Scheduler/Operations/ResumeDelivery.lean`; a witness that decodes a target's
+context itself is a second reading, and a Tier 3 negative refuses the one the
+cancellation suite had.  (2) **What is not claimed**: that nothing between the
+unblock and the switch rewrites the frame.  A `.ready` thread on no IPC queue is
+targeted by no delivery and the trap-frame save writes only a core's *current*
+thread, but that is a property of every transition, not of this relation; the
+executed witnesses (`tests/SmpCancellationSuite.lean` §3.19b,
+`tests/SmpTimerSuite.lean` §3.15b) drive the live unblock and the live switch
+end to end, each with a CONTROL that switches before the unblock and resumes the
+stale window.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

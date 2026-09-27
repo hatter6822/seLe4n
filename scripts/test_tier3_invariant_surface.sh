@@ -4276,6 +4276,19 @@ run_check "INVARIANT" rg -n '^        frame\.spsr_el1 = sanitise_user_spsr\(word
 run_negative_check "INVARIANT" rg -n 'frame\.spsr_el1 = word\(33\)' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -U '^pub extern "C" fn ffi_restore_commit\(kind: u32\)[^\n]*\n    if crate::trap::restore_commit\(kind\)\.is_err\(\) \{\n        crate::gic::halt_all\(\);$' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n 'switching away then keeps the result: the caller resumes with x0-x5 its syscall returned' tests/SmpSwitchToThreadSuite.lean
+# WS-BP BP7.5 (v0.36.18): a switch resumes the incoming thread with the frame
+# its TCB holds, and the two unblock paths each deliver their own error frame.
+# The delivered frame is read by ONE reading, beside the restore target, and the
+# cancellation witness uses it rather than a private copy.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.Operations\.ResumeDelivery$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^def RestoreTarget\.deliveredFrame\? : RestoreTarget → Option SyscallReturnFrame$' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_delivers_readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_then_switch_delivers_cancelledIpcFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_then_switch_delivers_timeoutFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n 'a timed-out waiter, once switched to, resumes reading .ipcTimeout' tests/SmpTimerSuite.lean
+run_check "INVARIANT" rg -n 'an endpoint-blocked victim, once switched to, resumes reading .ipcCancelled at its own pc' tests/SmpCancellationSuite.lean
+run_negative_check "INVARIANT" rg -n 'def frameOfContext' tests/SmpCancellationSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
 # environment with no entry now that one exists, and the link gate has no

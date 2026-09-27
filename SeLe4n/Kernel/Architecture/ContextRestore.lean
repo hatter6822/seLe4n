@@ -167,18 +167,18 @@ theorem registerFileOfTrapWords_trapWordsOfRegisterFile (rf : SeLe4n.RegisterFil
   refine ⟨?_, ?_, ?_, ?_⟩
   · simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, trapFramePcWord, trapFrameSpWord,
       trapFramePstateWord]
-    cases h : rf.pc; simp_all [Nat.toUInt64, UInt64.toNat_ofNat, Nat.mod_eq_of_lt]
+    cases h : rf.pc; simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
   · simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, trapFramePcWord, trapFrameSpWord,
       trapFramePstateWord]
-    cases h : rf.sp; simp_all [Nat.toUInt64, UInt64.toNat_ofNat, Nat.mod_eq_of_lt]
+    cases h : rf.sp; simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
   · simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, trapFramePcWord, trapFrameSpWord,
       trapFramePstateWord]
-    cases h : rf.pstate; simp_all [Nat.toUInt64, UInt64.toNat_ofNat, Nat.mod_eq_of_lt]
+    cases h : rf.pstate; simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
   · intro r hr
     have hLt := hGpr r hr
     simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, hr, if_true]
     cases h : rf.gpr r
     rw [h] at hLt
-    simp_all [Nat.toUInt64, UInt64.toNat_ofNat, Nat.mod_eq_of_lt]
+    simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
 
 end SeLe4n.Kernel.Architecture
