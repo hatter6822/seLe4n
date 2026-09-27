@@ -54,9 +54,12 @@ namespace SeLe4n.Kernel.Architecture
 
 open SeLe4n.Model
 
-/-- Addresses a 48-bit walk can translate: below `2^48`. -/
+/-- Addresses a thread's translation tables may cover: the user window
+(`VAddr.inUserWindow`, WS-BP BP7.2) — canonical, and past level-0 entry 0,
+which every user root gives to the kernel's own window.  A table installed for a
+lower address would take that slot. -/
 def pageTableAddressable (vaddr : SeLe4n.VAddr) : Bool :=
-  vaddr.toNat < 2 ^ 48
+  vaddr.inUserWindow
 
 /-- **A slot lies beneath the install `inst`**: a deeper level whose index,
 shifted up to `inst`'s level, is `inst`'s — a table the walk reaches only

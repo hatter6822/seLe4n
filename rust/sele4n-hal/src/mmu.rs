@@ -121,6 +121,15 @@ const MAIR_VALUE: u64 = 0xFF | (0x44 << 16);
 /// - ORGN1 = 0b01 (bits [27:26]): Write-Back cacheable for TTBR1
 /// - IRGN1 = 0b01 (bits [25:24]): Write-Back cacheable for TTBR1
 /// - EPD1  = 1 (bit 23):        TTBR1 walks disabled (WS-RR RR7.1)
+/// - AS    = 1 (bit 36):        16-bit ASIDs (WS-BP BP7.2)
+///
+/// **WS-BP BP7.2 — `AS`**: the model allocates ASIDs from a 16-bit space
+/// (`MachineConfig.maxASID = 65536`), and a thread's root is installed in
+/// `TTBR0_EL1` tagged with its ASID.  With `AS` clear the hardware compares
+/// only `TTBR0_EL1[55:48]`, so two address spaces whose ASIDs agree in their
+/// low eight bits would share TLB entries — one thread translating through
+/// another's cached mappings.  [`asid_bits_of_this_pe_or_halt`] refuses a PE
+/// that does not implement 16-bit ASIDs before this value is written.
 ///
 /// **WS-RR RR7.1 — `EPD1`**: the boot path installs no TTBR1 table, so a
 /// translation in the top half of the virtual address space must **fault**.
@@ -148,7 +157,53 @@ pub const fn tcr_el1_value(ips_encoding: u64) -> u64 {
     let orgn1: u64 = 0b01 << 26;
     let irgn1: u64 = 0b01 << 24;
     let epd1: u64 = 1 << 23; // WS-RR RR7.1: no TTBR1 table exists yet
-    t0sz | t1sz | tg0 | tg1 | ips | sh0 | sh1 | orgn0 | irgn0 | orgn1 | irgn1 | epd1
+    let asid16: u64 = 1 << 36; // WS-BP BP7.2: 16-bit ASIDs
+    t0sz | t1sz | tg0 | tg1 | ips | sh0 | sh1 | orgn0 | irgn0 | orgn1 | irgn1 | epd1 | asid16
+}
+
+/// **WS-BP BP7.2**: the ASID width `TCR_EL1.AS` selects, in bits — the width
+/// the model's ASID space (`MachineConfig.maxASID`) is `2^`.
+pub const ASID_BITS_REQUIRED: u32 = 16;
+
+/// Decode `ID_AA64MMFR0_EL1.ASIDBits`, bits [7:4]: `0b0000` is 8-bit ASIDs,
+/// `0b0010` 16-bit, every other value reserved (ARM ARM D19.2.64).
+pub const fn asid_bits_of(memory_model_features: u64) -> Option<u32> {
+    match (memory_model_features >> 4) & 0xF {
+        0b0000 => Some(8),
+        0b0010 => Some(16),
+        _ => None,
+    }
+}
+
+/// The executing PE's ASID width, or a halt unless it is
+/// [`ASID_BITS_REQUIRED`].  A PE with 8-bit ASIDs ignores `TCR_EL1.AS` and
+/// tags TLB entries by `TTBR0_EL1[55:48]` alone, which would let two model
+/// ASIDs alias; `halt` is the caller's, as
+/// [`physical_address_size_of_this_pe_or_halt`]'s is.  On the host the answer
+/// is the Cortex-A76's, which implements 16-bit ASIDs.
+pub fn asid_bits_of_this_pe_or_halt(halt: fn() -> !) -> u32 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let features = crate::read_sysreg!("id_aa64mmfr0_el1");
+        match asid_bits_of(features) {
+            Some(ASID_BITS_REQUIRED) => ASID_BITS_REQUIRED,
+            other => {
+                crate::kprintln!(
+                    "[mmu] FATAL: ID_AA64MMFR0_EL1 = {features:#x}: ASIDBits {:#06b} ({other:?} \
+                     bits); the kernel tags address spaces with {} bit ASIDs; refusing to \
+                     enable translation",
+                    (features >> 4) & 0xF,
+                    ASID_BITS_REQUIRED
+                );
+                halt();
+            }
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = halt;
+        ASID_BITS_REQUIRED
+    }
 }
 
 /// **The v0.36.2 audit**: what `ID_AA64MMFR0_EL1.PARange` — bits [3:0] of the
@@ -1347,6 +1402,9 @@ fn enable_mmu() {
     // A reserved encoding, or a PE narrower than the tables' reach, halts here
     // — the primary before any secondary exists, a secondary parking itself.
     let pa = physical_address_size_of_this_pe_or_halt(crate::cpu::fatal_halt);
+    // WS-BP BP7.2: the PE tags TLB entries with the 16-bit ASIDs `TCR_EL1.AS`
+    // selects, or it halts here — before the value that sets `AS` is written.
+    let _ = asid_bits_of_this_pe_or_halt(crate::cpu::fatal_halt);
 
     // Step 1: Invalidate stale TLB entries (cold reset / warm-reset safety).
     // `tlbi_vmalle1()` emits DSB ISH + ISB internally.
@@ -1826,6 +1884,44 @@ mod tests {
         assert!(
             BOOT_TABLE_REACH <= 1u64 << lean_width,
             "every address the boot tables can describe is one the Lean model admits"
+        );
+    }
+
+    /// WS-BP BP7.2: `TCR_EL1.AS` selects 16-bit ASIDs, and the model allocates
+    /// from exactly that space — read from the Lean suite's `asidSpace` line
+    /// rather than a literal, so a model ASID space wider than the hardware's
+    /// tag, which would let two address spaces share TLB entries, fails here.
+    #[test]
+    fn the_lean_asid_space_is_the_one_the_hal_programs() {
+        assert_eq!((TCR_VALUE >> 36) & 1, 1, "TCR_EL1.AS selects 16-bit ASIDs");
+        assert_eq!(
+            lean_boot_map_scalar("asidSpace"),
+            1u64 << ASID_BITS_REQUIRED,
+            "tests/fixtures/boot_map.expected's asidSpace is the 16-bit hardware ASID space"
+        );
+    }
+
+    /// WS-BP BP7.2: `ID_AA64MMFR0_EL1.ASIDBits` (bits [7:4]) decodes to 8 or
+    /// 16 bits and nothing else, and ignores every other field.
+    #[test]
+    fn asid_bits_decode_the_architecture_table() {
+        assert_eq!(asid_bits_of(0x0000), Some(8));
+        assert_eq!(asid_bits_of(0x0020), Some(16));
+        for reserved in [0b0001u64, 0b0011, 0b0100, 0b1000, 0b1111] {
+            assert_eq!(
+                asid_bits_of(reserved << 4),
+                None,
+                "ASIDBits {reserved:#06b}"
+            );
+        }
+        assert_eq!(
+            asid_bits_of(0xFFFF_FF0F | 0x20),
+            Some(16),
+            "PARange and the fields above ASIDBits are ignored"
+        );
+        assert_eq!(
+            asid_bits_of_this_pe_or_halt(|| panic!("the host answers the A76's")),
+            16
         );
     }
 
@@ -2334,6 +2430,9 @@ mod boot_map_tests {
                 // WS-BP BP7.1: the boot table pool, which
                 // `the_boot_table_pool_is_the_lean_and_linker_one` reads.
                 ["tablePool", _, _] => {}
+                // WS-BP BP7.2: the model's ASID space, which
+                // `the_lean_asid_space_is_the_one_the_hal_programs` reads.
+                ["asidSpace", _] => {}
                 _ => panic!("unrecognised boot-map line {line:?}"),
             }
         }

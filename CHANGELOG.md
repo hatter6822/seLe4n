@@ -1,3 +1,48 @@
+## v0.36.14 — WS-BP BP7.2: the user window and 16-bit hardware ASIDs
+
+The first cut of BP7.2, the install of a thread's translation root.  Before any
+descriptor reaches the hardware, three facts the install depends on are made
+true of the model and the HAL.
+
+**The user window.**  A thread's root is installed in `TTBR0_EL1` beside the
+kernel's own window rather than the kernel moving to `TTBR1_EL1`: level-0 entry
+0 of every user root is the kernel's boot-map subtree, reachable at EL1 only.
+So a thread maps nothing below `VAddr.userWindowBase` (`2^39`, the reach of one
+level-0 entry): `.vspaceMap` refuses such an address (`.addressOutOfBounds`,
+`vspaceMapFromFrameCap_ok_inUserWindow`) and `.pageTableMap` installs no table
+there (`pageTableAddressable` is `VAddr.inUserWindow`, which also stops at the
+canonical bound).  Without the refusal a thread's level-1 table would take the
+slot the kernel window needs, and the first install would either overwrite the
+kernel's own translation or be overwritten by it.
+
+**Page-aligned keys.**  `VSpaceRoot.mapPage` refused an unaligned physical
+address and accepted an unaligned virtual one, while `VAddr.pageBase`'s
+docstring said the mapping table is keyed by the page base and `mapPage`
+refuses any other key.  Two keys inside one page were two mappings in the
+model and one translation on the machine, so the reconcile BP7.2 lands next
+could not have written both.  `mapPage` refuses both now
+(`mapPage_vaddrAligned`), and `vspaceMapPage` answers `.alignmentError` for
+either through one named predicate (`pageMappingAligned`,
+`pageMappingAligned_of_mapPage`) rather than `.mappingConflict`.
+
+**Sixteen-bit hardware ASIDs.**  The model allocates ASIDs from a 16-bit space
+(`maxASID = 65536`) and `TCR_EL1.AS` was clear, so the hardware compared
+`TTBR0_EL1[55:48]` alone: two address spaces whose ASIDs agree in their low
+byte would have shared TLB entries once roots are installed — one thread
+translating through another's cached mappings.  `tcr_el1_value` sets `AS`,
+`mmu::asid_bits_of_this_pe_or_halt` refuses a PE whose
+`ID_AA64MMFR0_EL1.ASIDBits` is not 16 before the value is written, and the Lean
+suite writes `maxASID` into `tests/fixtures/boot_map.expected` (`asidSpace`),
+which the HAL's `the_lean_asid_space_is_the_one_the_hal_programs` holds to the
+hardware tag.  Latent until roots are installed; closed before.
+
+**Tests.**  `Testing.fixtureMappableRoot`'s walk now covers the first 2 MiB of
+the user window, and fixtures name mapping addresses with
+`Testing.fixtureUserVAddr`; `tests/VSpaceCapabilityBindingSuite.lean` §5k adds
+the window's boundaries, a table and a frame below it, and an unaligned address
+inside a complete walk with an aligned control beside it.  The golden trace is
+unchanged.
+
 ## v0.36.13 — WS-BP BP7.1: every configured address space owns a table page
 
 A root the boot configured had no table page — its `tableBase` was `none` — so

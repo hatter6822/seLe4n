@@ -94,6 +94,22 @@ theorem physicalAddressBoundForConfig_le_default (config : MachineConfig)
   unfold physicalAddressBoundForConfig physicalAddressBound
   exact Nat.pow_le_pow_right (by omega) h
 
+/-- **WS-BP BP7.2**: a page mapping names a page-aligned physical and virtual
+address.  `VSpaceRoot.mapPage` refuses anything else; `vspaceMapPage` asks this
+first so the caller is answered `.alignmentError` rather than `.mappingConflict`. -/
+def pageMappingAligned (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) : Bool :=
+  paddr.toNat % pageBytes == 0 && vaddr.toNat % pageBytes == 0
+
+/-- A mapping `VSpaceRoot.mapPage` accepted names page-aligned addresses — the
+fact that discharges `vspaceMapPage`'s alignment guard after a successful
+`mapPage`. -/
+theorem pageMappingAligned_of_mapPage {root root' : VSpaceRoot} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions}
+    (hMap : root.mapPage vaddr paddr perms = some root') :
+    pageMappingAligned vaddr paddr = true := by
+  simp [pageMappingAligned, pageBytes, VSpaceRoot.mapPage_pageAligned hMap,
+    VSpaceRoot.mapPage_vaddrAligned hMap]
+
 /-- WS-H11/S6-B/V4-E: Core VSpace map transition — page table only, no TLB flush.
 
 **Internal proof decomposition helper.** This function operates on the page table
@@ -118,8 +134,9 @@ def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PA
         -- the caller sees `.alignmentError` rather than the `.mappingConflict`
         -- that `VSpaceRoot.mapPage`'s structural guard would otherwise surface.
         -- The guard below it is the defense-in-depth layer, exactly as with
-        -- `wxCompliant`; this arm exists to keep the error code honest.
-        else if paddr.toNat % pageBytes != 0 then .error .alignmentError
+        -- `wxCompliant`; this arm exists to keep the error code honest.  WS-BP
+        -- BP7.2: the virtual address likewise — `mapPage` refuses both.
+        else if !pageMappingAligned vaddr paddr then .error .alignmentError
         else
           match root.mapPage vaddr paddr perms with
           | none => .error .mappingConflict
@@ -744,13 +761,13 @@ theorem vspaceMapPage_tlb_eq
     split at hStep
     · simp at hStep
     · split at hStep
+      · simp at hStep
       · cases hMap : root.mapPage vaddr paddr perms with
         | none => rw [hMap] at hStep; simp at hStep
         | some root' =>
           rw [hMap] at hStep; simp at hStep
           unfold storeObject at hStep; cases hStep
           rfl
-      · simp at hStep
 
 /-- AJ4-B: `vspaceUnmapPage` does not modify the TLB. -/
 theorem vspaceUnmapPage_tlb_eq
@@ -826,7 +843,7 @@ theorem vspaceMapPage_entry_consistent_frame
     · simp at hStep
     · rename_i hWx
       split at hStep
-      case isFalse hUnaligned => simp at hStep
+      case isTrue hUnaligned => simp at hStep
       cases hMapPage : root₀.mapPage vaddr paddr perms with
       | none => rw [hMapPage] at hStep; simp at hStep
       | some root' =>
@@ -1099,7 +1116,7 @@ theorem vspaceMapPage_resolveAsidRoot_isSome
     split at hStep
     · simp at hStep
     · split at hStep
-      case isFalse hUnaligned => simp at hStep
+      case isTrue hUnaligned => simp at hStep
       cases hMapPage : root₀.mapPage vaddr paddr perms with
       | none => rw [hMapPage] at hStep; simp at hStep
       | some root' =>

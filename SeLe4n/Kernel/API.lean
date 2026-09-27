@@ -4388,7 +4388,11 @@ def vspaceMapFromFrameCap (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs) : Kerne
         -- refused; mapping the frame again takes a copy of the capability,
         -- which carries no record.  A record gone stale (its address space
         -- unmapped the address, or was destroyed) is simply overwritten.
-        if capabilityMappingLive st frameCap then .error .invalidCapability
+        -- WS-BP BP7.2: a thread maps only inside the user window — level-0
+        -- entry 0 of every user root is the kernel's own window, installed
+        -- beside the thread's tables in `TTBR0_EL1`.
+        if !args.vaddr.inUserWindow then .error .addressOutOfBounds
+        else if capabilityMappingLive st frameCap then .error .invalidCapability
         -- WS-BP BP7.1 (`v0.36.12`): a carved address space maps a frame only
         -- where every level of its walk is present — seL4's
         -- `seL4_FailedLookup` from `seL4_ARM_Page_Map` when a table is missing.
@@ -4454,6 +4458,10 @@ theorem vspaceMapFromFrameCap_ok (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
       cases u
       rw [hA] at h
       simp only at h
+      cases hW : args.vaddr.inUserWindow
+      · rw [hW] at h; simp at h
+      rw [hW] at h
+      simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
       cases hLive : capabilityMappingLive st frameCap
       · rw [hLive] at h
         simp only [Bool.false_eq_true, ↓reduceIte] at h
@@ -4478,6 +4486,28 @@ theorem vspaceMapFromFrameCap_ok (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
             exact ⟨frameSlot, frameCap, frame, st1, by first | exact hR | rfl,
               by first | exact hA | rfl, hLive, rfl, hV, by first | exact hM | rfl, h⟩
       · rw [hLive] at h; simp at h
+
+/-- **WS-BP BP7.2: a successful mapping is inside the user window** — the arm
+refuses an address below `VAddr.userWindowBase`, whose walk would enter the
+level-0 slot every user root gives to the kernel's own window. -/
+theorem vspaceMapFromFrameCap_ok_inUserWindow (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
+    (st st' : SystemState) (h : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
+    args.vaddr.inUserWindow = true := by
+  unfold vspaceMapFromFrameCap at h
+  cases hR : resolveVSpaceMapFrame tid args st with
+  | error e => rw [hR] at h; cases h
+  | ok triple =>
+    obtain ⟨frameSlot, frameCap, frame⟩ := triple
+    rw [hR] at h
+    simp only at h
+    cases hA : frameMappingAdmissible frameCap frame args.perms with
+    | error e => rw [hA] at h; cases h
+    | ok u =>
+      rw [hA] at h
+      simp only at h
+      cases hW : args.vaddr.inUserWindow
+      · rw [hW] at h; simp at h
+      · rfl
 
 /-- **WS-BP BP7.1 (`v0.36.7`): a successful mapping records itself on the
 capability that made it** — the slot the capability was resolved from now holds

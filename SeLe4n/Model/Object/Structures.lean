@@ -290,7 +290,11 @@ executable page into the VSpace root. -/
 def mapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := PagePermissions.readOnly) : Option VSpaceRoot :=
   if !perms.wxCompliant then none
-  else if paddr.toNat % SeLe4n.pageBytes != 0 then none
+  -- WS-BP BP7.2: both addresses are page-aligned.  The mapping table is keyed by
+  -- the page base (`VAddr.pageBase`), and a hardware walk indexes by the page
+  -- the address falls in — so two unaligned keys inside one page would be two
+  -- mappings here and one translation on the machine.
+  else if paddr.toNat % SeLe4n.pageBytes != 0 || vaddr.toNat % SeLe4n.pageBytes != 0 then none
   else match root.mappings[vaddr]? with
   | some _ => none
   | none => some { root with mappings := root.mappings.insert vaddr (paddr, perms) }
@@ -310,7 +314,24 @@ theorem mapPage_pageAligned {root root' : VSpaceRoot} {vaddr : SeLe4n.VAddr}
   · split at hMap
     · exact absurd hMap (by simp)
     · rename_i hAligned
-      simpa using hAligned
+      simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, Decidable.not_not] at hAligned
+      exact hAligned.1
+
+/-- **WS-BP BP7.2**: every virtual address `mapPage` installs is page-aligned —
+the key a hardware walk reaches, so the model's mappings and the machine's
+translations are in one-to-one correspondence. -/
+theorem mapPage_vaddrAligned {root root' : VSpaceRoot} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions}
+    (hMap : root.mapPage vaddr paddr perms = some root') :
+    vaddr.toNat % SeLe4n.pageBytes = 0 := by
+  unfold mapPage at hMap
+  split at hMap
+  · exact absurd hMap (by simp)
+  · split at hMap
+    · exact absurd hMap (by simp)
+    · rename_i hAligned
+      simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, Decidable.not_not] at hAligned
+      exact hAligned.2
 
 /-- WS-G6/F-P05: O(1) amortized page unmapping via `HashMap.erase`.
 Returns `none` if no mapping exists for `vaddr`. -/

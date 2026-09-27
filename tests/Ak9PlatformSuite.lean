@@ -2440,6 +2440,11 @@ private def bootMapTableLines : List String :=
     -- `TCR_EL1.IPS` from, so the model's bound and the PE's are compared by
     -- running both rather than by two literals each claiming the board.
     ++ [s!"physicalAddressWidth {bootMapHex rpi5MachineConfig.physicalAddressWidth}"]
+    -- WS-BP BP7.2: the ASID space the model allocates from, as `asidSpace <n>`
+    -- — read back by the HAL's `the_lean_asid_space_is_the_one_the_hal_programs`,
+    -- which holds it to the 16-bit hardware ASID `TCR_EL1.AS` selects, so two
+    -- model ASIDs can never share one hardware tag.
+    ++ [s!"asidSpace {bootMapHex rpi5MachineConfig.maxASID}"]
     -- WS-BP BP7.1: the table-page pool the boot takes each configured address
     -- space's top-level table from, as `tablePool <base> <pages>` — read back by
     -- the HAL's `the_boot_table_pool_is_the_lean_and_linker_one` and by

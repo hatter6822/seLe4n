@@ -4091,7 +4091,7 @@ run_check "INVARIANT" rg -n '^pub fn untyped_reset\(untyped_cap: CPtr\)' rust/se
 # arm's own transition and a decided post-check; a CNode holding a recording
 # capability is not retyped in place; the boot admits no configured record; and
 # the frozen delete, which has no unmap, refuses what it cannot finalise.
-run_check "INVARIANT" rg -n -U '        if capabilityMappingLive st frameCap then \.error \.invalidCapability' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '        else if capabilityMappingLive st frameCap then \.error \.invalidCapability' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*            cspaceRecordFrameMapping frameSlot \{ asid := args\.asid, vaddr := args\.vaddr \} st1' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,10}            cspaceDeleteSlotFinalising \(determineExecutingCore st tid\) addr st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,8}            cspaceRevokeCdtFinalising \(determineExecutingCore st tid\) addr st' SeLe4n/Kernel/API.lean
@@ -4205,6 +4205,22 @@ run_check "INVARIANT" rg -n '^BOOT_TABLE_POOL_PAGES = 0x10;$' rust/sele4n-hal/li
 run_check "INVARIANT" rg -n '^    crate::mmu::zero_boot_table_pool\(\);$' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n '^tablePool 0xfff0000 0x10$' tests/fixtures/boot_map.expected
 run_check "INVARIANT" rg -n 'a root with no table page is refused, naming the pool' tests/SmpIdleSuite.lean
+# WS-BP BP7.2 (v0.36.14): a thread maps only inside the user window, the
+# mapping table is keyed by page-aligned addresses on both sides, and the
+# hardware tags address spaces with the 16-bit ASIDs the model allocates.
+run_check "INVARIANT" rg -n '^def userWindowBase : Nat := 2\^39$' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^  userWindowBase ≤ addr\.val && addr\.val < canonicalBound$' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n -U 'def pageTableAddressable [^\n]*\n  vaddr\.inUserWindow$' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_negative_check "INVARIANT" rg -n 'vaddr\.toNat < 2 \^ 48' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n '^        if !args\.vaddr\.inUserWindow then \.error \.addressOutOfBounds$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_ok_inUserWindow($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  else if paddr\.toNat % SeLe4n\.pageBytes != 0 \|\| vaddr\.toNat % SeLe4n\.pageBytes != 0 then none$' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem mapPage_vaddrAligned($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^        else if !pageMappingAligned vaddr paddr then \.error \.alignmentError$' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^    let asid16: u64 = 1 << 36;' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^    let _ = asid_bits_of_this_pe_or_halt\(crate::cpu::fatal_halt\);$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^asidSpace 0x10000$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n 'an unaligned virtual address inside a complete walk is refused \(alignmentError\)' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
 # environment with no entry now that one exists, and the link gate has no
@@ -5410,7 +5426,7 @@ run_check "INVARIANT" bash -c "! rg -q 'objectTypeAllocSize' <(sed -n '/^def scr
 # below both layers that must agree on it.
 run_check "INVARIANT" rg -n '^def pageBytes : Nat := 4096' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^def pageBytes : Nat := SeLe4n.pageBytes' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n 'paddr.toNat % SeLe4n.pageBytes != 0 then none' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n 'paddr.toNat % SeLe4n.pageBytes != 0 \|\| vaddr.toNat % SeLe4n.pageBytes != 0 then none' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^theorem mapPage_pageAligned($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '_hAligned : paddr.toNat % SeLe4n.pageBytes = 0' SeLe4n/Model/Builder.lean
 run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes != 0 then .error .alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean

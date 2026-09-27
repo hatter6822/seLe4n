@@ -2894,7 +2894,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   -- Distinct from the `⟨502⟩` root `buildSyscallState` always installs at ASID 1.
   let chainAsid : SeLe4n.ASID := ⟨2⟩
   let vsRoot : SeLe4n.Model.VSpaceRoot := fixtureMappableRoot chainAsid
-  -- === vspaceMap (syscallId=9): x2=asid(2), x3=vaddr(0x2000), x4=frame cap(slot 1), x5=perms(1=readOnly) ===
+  -- === vspaceMap (syscallId=9): x2=asid(2), x3=vaddr(user window + 0x2000, WS-BP BP7.2), x4=frame cap(slot 1), x5=perms(1=readOnly) ===
   -- WS-BP BP7.1: MR2 is the address of a frame capability in the caller's CSpace;
   -- the page mapped is that frame's own `base` (0x3000), not a register value.
   let frameId : SeLe4n.ObjId := ⟨701⟩
@@ -2903,13 +2903,13 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   let stMap := buildSyscallState 9 0 vsId
     (AccessRightSet.ofList [.read, .write])
     [(vsId, .vspaceRoot vsRoot), (frameId, .frame { base := SeLe4n.PAddr.ofNat 0x3000 })]
-    [(2, 2), (3, 0x2000), (4, 1), (5, 1)]
+    [(2, 2), (3, (fixtureUserVAddr 0x2000).toNat), (4, 1), (5, 1)]
     [(vsId, .vspaceRoot), (frameId, .frame)]
     [(1, frameCap)]
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMap with
   | .ok (_, stAfter) =>
     -- Verify the mapping was created
-    match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid (SeLe4n.VAddr.ofNat 0x2000) stAfter with
+    match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid (fixtureUserVAddr 0x2000) stAfter with
     | .ok (paddr, _) => expect "chain28: vspaceMap dispatch mapped" (paddr == (SeLe4n.PAddr.ofNat 0x3000))
     | .error _ => throw <| IO.userError "chain28: lookup after vspaceMap failed"
   | .error err =>

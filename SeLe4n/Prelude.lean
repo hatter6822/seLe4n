@@ -972,6 +972,19 @@ def canonicalBound : Nat := 2^48
 /-- U2-A/U-H06: Propositional version of canonical address check. -/
 @[inline] def canonical (addr : VAddr) : Prop := addr.val < canonicalBound
 
+/-- **WS-BP BP7.2**: the lowest virtual address a thread's address space may
+    map.  A thread's translation root is installed in `TTBR0_EL1` beside the
+    kernel's own window: level-0 entry 0 of every user root is the kernel's
+    boot-map subtree (EL1-only), so a user mapping lives at level-0 index 1 or
+    above — at or beyond `2^39`, the reach of one level-0 entry. -/
+def userWindowBase : Nat := 2^39
+
+/-- **WS-BP BP7.2**: a virtual address a thread's address space may translate
+    — at or beyond `userWindowBase` and canonical, so its walk never enters the
+    level-0 slot the kernel window holds. -/
+@[inline] def inUserWindow (addr : VAddr) : Bool :=
+  userWindowBase ≤ addr.val && addr.val < canonicalBound
+
 instance : ToString VAddr where
   toString addr := toString addr.toNat
 

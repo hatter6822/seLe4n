@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.13.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.14.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7152,7 +7152,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -8295,6 +8295,24 @@ one pool in three places**: `rpi5BootTablePool*`, `link.ld`'s
 live by `scripts/check_link_script.py`) and `mmu::BOOT_TABLE_POOL_*`, held
 together by `tests/fixtures/boot_map.expected`'s `tablePool` line; the HAL zeroes
 it (`mmu::zero_boot_table_pool`) before the Lean kernel is entered.
+
+**A thread maps only inside the user window, under a 16-bit hardware ASID**
+(`v0.36.14`, BP7.2's first cut).  Three things new code must respect.  (1)
+**Level-0 entry 0 of every user root is the kernel's**: a thread's root is
+installed in `TTBR0_EL1` beside the kernel's own window rather than the kernel
+moving to `TTBR1_EL1`, so `.vspaceMap` refuses an address below
+`VAddr.userWindowBase` (`2^39`) and `.pageTableMap` installs no table there
+(`pageTableAddressable` is `VAddr.inUserWindow`); a fixture addresses a mapping
+with `Testing.fixtureUserVAddr`.  (2) **A mapping's virtual address is
+page-aligned**, as its physical address is: `VSpaceRoot.mapPage` refuses both
+(`mapPage_vaddrAligned`), and `vspaceMapPage` answers `.alignmentError` through
+`pageMappingAligned` — two keys inside one page would be two mappings in the
+model and one translation on the machine.  (3) **The model's ASID space is the
+hardware's tag**: `TCR_EL1.AS` selects 16-bit ASIDs, a PE implementing fewer
+halts before it is written (`mmu::asid_bits_of_this_pe_or_halt`), and
+`tests/fixtures/boot_map.expected`'s `asidSpace` line holds `maxASID` to it —
+with `AS` clear two address spaces whose ASIDs agree in their low byte would
+share TLB entries.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

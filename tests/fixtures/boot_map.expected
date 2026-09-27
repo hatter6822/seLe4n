@@ -1,6 +1,7 @@
 # RPi5 boot map: the Lean memory map per RAM configuration (every variant, and firmware-cut ones), and its kind at every probe (Lean/Rust cross-check)
 kernelReserved 0x0 0x10000000
 physicalAddressWidth 0x28
+asidSpace 0x10000
 tablePool 0xfff0000 0x10
 declaredCores 0x4
 mmio uart 0x107d001000 0x200

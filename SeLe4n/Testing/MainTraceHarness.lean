@@ -1743,7 +1743,9 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .vspaceMap
-    msgRegs := #[⟨10⟩, ⟨4096⟩, ⟨0⟩, ⟨1⟩]  -- asid=10, vaddr=4096, frame cap at slot 0, perms=1(read)
+    -- asid=10, vaddr=one page into the user window (WS-BP BP7.2), frame cap at
+    -- slot 0, perms=1(read)
+    msgRegs := #[⟨10⟩, ⟨(fixtureUserVAddr 4096).toNat⟩, ⟨0⟩, ⟨1⟩]
   }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs vspaceDecoded 65536 with
   | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"

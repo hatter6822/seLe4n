@@ -160,9 +160,9 @@ private def victimAsid   : SeLe4n.ASID := SeLe4n.ASID.ofNat 7
 private def attackerAsid : SeLe4n.ASID := SeLe4n.ASID.ofNat 5
 private def unboundAsid  : SeLe4n.ASID := SeLe4n.ASID.ofNat 9
 
-private def victimVaddr : SeLe4n.VAddr := SeLe4n.VAddr.ofNat 0x40000
+private def victimVaddr : SeLe4n.VAddr := SeLe4n.Testing.fixtureUserVAddr 0x40000
 private def victimPaddr : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x90000
-private def freshVaddr  : SeLe4n.VAddr := SeLe4n.VAddr.ofNat 0x50000
+private def freshVaddr  : SeLe4n.VAddr := SeLe4n.Testing.fixtureUserVAddr 0x50000
 
 private def execPerms : PagePermissions :=
   { read := true, write := false, execute := true, user := true, cacheable := true }
@@ -242,7 +242,7 @@ private def decode2 (sid : SeLe4n.Model.SyscallId) (asid vaddr : Nat) :
   { capAddr   := SeLe4n.CPtr.ofNat 0
   , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
   , syscallId := sid
-  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat vaddr] }
+  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr)] }
 
 /-- Permission words (bit 0 read, 1 write, 2 execute, 3 user, 4 cacheable). -/
 private def permsRUC  : Nat := 25  -- read + user + cacheable (W^X-compliant)
@@ -258,7 +258,7 @@ private def decodeMap (asid vaddr frameSlot : Nat) (perms : Nat := permsRUC) :
   { capAddr   := SeLe4n.CPtr.ofNat 0
   , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
   , syscallId := .vspaceMap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat vaddr,
+  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr),
                    SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
 
 /-- The physical address `vaddr` translates to in the address space bound to
@@ -602,7 +602,7 @@ private def decodeOwnMap (vaddr frameSlot perms : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat slotOwnVsp
   , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
   , syscallId := .vspaceMap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat 6, SeLe4n.RegValue.ofNat vaddr,
+  , msgRegs   := #[SeLe4n.RegValue.ofNat 6, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr),
                    SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
 
 private def runCarveChecks : IO Unit := do
@@ -630,7 +630,7 @@ private def runCarveChecks : IO Unit := do
     | .error e => assertBool s!"the carved frame maps (got {repr e})" false
     | .ok ((), st2) =>
       assertBool "and `.vspaceMap` maps the CARVED page, writable"
-        (mappedPaddr st2 carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase)
+        (mappedPaddr st2 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase)
     -- A second carve takes the NEXT page, never the same one.
     match dispatchSyscall (decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9)
         carveOwner st1 with
@@ -751,9 +751,9 @@ private def runResetChecks : IO Unit := do
   | .error e => assertBool s!"the carve-and-map setup succeeds (got {repr e})" false
   | .ok st => do
     assertBool "setup: the carved page is mapped at 0x60000"
-      (mappedPaddr st carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase)
+      (mappedPaddr st carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase)
     assertBool "setup: the device page is mapped at 0x70000"
-      (mappedPaddr st carveAsid (SeLe4n.VAddr.ofNat 0x70000) == some carveDevBase)
+      (mappedPaddr st carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x70000) == some carveDevBase)
     -- While a capability to a carved frame survives, the reset is refused.
     assertBool "a reset while the frame capabilities survive is refused (revocationRequired)"
       (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner st))
@@ -789,20 +789,20 @@ private def runResetChecks : IO Unit := do
       -- and the step REPORTS the destroyed capability's page, which is exactly
       -- what the teardown then removes.
       assertBool "the revocation removes the mapping the destroyed frame capability recorded"
-        (mappedPaddr stRev carveAsid (SeLe4n.VAddr.ofNat 0x60000) == none)
+        (mappedPaddr stRev carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == none)
       assertBool "RETIRED: the revocation step without its teardown left that mapping in place"
         (match cspaceRevokeCdt { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotUtRetype } st with
           | .ok (_, stOld) =>
-              mappedPaddr stOld carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase
+              mappedPaddr stOld carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase
           | .error _ => false)
       assertBool "the revocation step reports exactly the page the destroyed capability recorded"
         (match cspaceRevokeCdt { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotUtRetype } st with
           | .ok (pages, _) =>
               pages.map (fun p => (p.asid, p.vaddr.toNat, p.paddr.toNat))
-                == [(carveAsid, 0x60000, carveUtBase)]
+                == [(carveAsid, (SeLe4n.Testing.fixtureUserVAddr 0x60000).toNat, carveUtBase)]
           | .error _ => false)
       assertBool "and it leaves the mapping of a page no destroyed capability recorded alone"
-        (mappedPaddr stRev carveAsid (SeLe4n.VAddr.ofNat 0x70000) == some carveDevBase)
+        (mappedPaddr stRev carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x70000) == some carveDevBase)
       let inFlight : TCB :=
         { tid := ⟨990⟩, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := carveCn,
           vspaceRoot := carveVsp, ipcBuffer := SeLe4n.VAddr.ofNat 8192,
@@ -823,9 +823,9 @@ private def runResetChecks : IO Unit := do
       | .error e => assertBool s!"the reset after revocation succeeds (got {repr e})" false
       | .ok ((), stReset) => do
         assertBool "after the reset the region's page is mapped nowhere"
-          (mappedPaddr stReset carveAsid (SeLe4n.VAddr.ofNat 0x60000) == none)
+          (mappedPaddr stReset carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == none)
         assertBool "and leaves the mapping of a page OUTSIDE the region alone"
-          (mappedPaddr stReset carveAsid (SeLe4n.VAddr.ofNat 0x70000) == some carveDevBase)
+          (mappedPaddr stReset carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x70000) == some carveDevBase)
         assertBool "the carved frames are retired from the object store"
           ((stReset.objects[SeLe4n.ObjId.ofNat 950]?).isNone &&
            (stReset.objects[SeLe4n.ObjId.ofNat 951]?).isNone)
@@ -932,7 +932,7 @@ private def runChildUntypedChecks : IO Unit := do
       assertBool "and the frame carve zeroed it"
         (SeLe4n.readMem st2.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0)
       assertBool "and it maps"
-        (mappedPaddr st2 carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase)
+        (mappedPaddr st2 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase)
       assertBool "the child is exhausted after one page (untypedRegionExhausted)"
         (isErr .untypedRegionExhausted
           (dispatchSyscall (decodeCarve 12 frameTag 972 slotOwnCnRW 14) carveOwner st2))
@@ -963,7 +963,7 @@ private def runChildUntypedChecks : IO Unit := do
             ((stReset.objects[SeLe4n.ObjId.ofNat 970]?).isNone &&
              (stReset.objects[SeLe4n.ObjId.ofNat 971]?).isNone)
           assertBool "and the grandchild's page is mapped nowhere"
-            (mappedPaddr stReset carveAsid (SeLe4n.VAddr.ofNat 0x60000) == none)
+            (mappedPaddr stReset carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == none)
           assertBool "and the parent is empty again"
             ((stReset.getUntyped? carveUt).map (fun u => (u.watermark, u.children.length))
               == some (0, 0))
@@ -1007,7 +1007,7 @@ private def decodeOwnUnmap (vaddr : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat slotOwnVsp
   , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
   , syscallId := .vspaceUnmap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat 6, SeLe4n.RegValue.ofNat vaddr] }
+  , msgRegs   := #[SeLe4n.RegValue.ofNat 6, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr)] }
 
 /-- The mapping record on the capability in the owner's root at `slot`. -/
 private def recordAt (st : SystemState) (slot : Nat) : Option FrameMapping :=
@@ -1097,7 +1097,7 @@ private def decodeMapVia (rootSlot asid vaddr frameSlot perms : Nat) : SyscallDe
   { capAddr   := SeLe4n.CPtr.ofNat rootSlot
   , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
   , syscallId := .vspaceMap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat vaddr,
+  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr),
                    SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
 
 /-- The root stored at `oid`, if one is. -/
@@ -1188,7 +1188,7 @@ private def runFrameFinaliseChecks : IO Unit := do
   | .error e => assertBool s!"the carve-map-copy setup succeeds (got {repr e})" false
   | .ok st => do
     assertBool "the map records the mapping on the capability that made it"
-      (recordAt st slotCarved == some { asid := carveAsid, vaddr := SeLe4n.VAddr.ofNat 0x60000 })
+      (recordAt st slotCarved == some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 })
     assertBool "a copy carries no mapping record (seL4's `deriveCap`)"
       (recordAt st 12 == none &&
        (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 }).isSome)
@@ -1201,19 +1201,19 @@ private def runFrameFinaliseChecks : IO Unit := do
     | .error e => assertBool s!"the copy maps the frame again (got {repr e})" false
     | .ok ((), st2) => do
       assertBool "setup: the frame is mapped twice"
-        (mappedPaddr st2 carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase &&
-         mappedPaddr st2 carveAsid (SeLe4n.VAddr.ofNat 0x61000) == some carveUtBase)
+        (mappedPaddr st2 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase &&
+         mappedPaddr st2 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x61000) == some carveUtBase)
       match dispatchSyscall (decodeDelete 12) carveOwner st2 with
       | .error e => assertBool s!"deleting the copy succeeds (got {repr e})" false
       | .ok ((), st3) => do
         assertBool "deleting a frame capability removes the mapping it made"
-          (mappedPaddr st3 carveAsid (SeLe4n.VAddr.ofNat 0x61000) == none)
+          (mappedPaddr st3 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x61000) == none)
         assertBool "and leaves the mapping another capability made alone"
-          (mappedPaddr st3 carveAsid (SeLe4n.VAddr.ofNat 0x60000) == some carveUtBase)
+          (mappedPaddr st3 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase)
         assertBool "RETIRED: the non-finalising delete left the deleted capability's mapping in place"
           (match cspaceDeleteSlot { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 } st2 with
             | .ok ((), stOld) =>
-                mappedPaddr stOld carveAsid (SeLe4n.VAddr.ofNat 0x61000) == some carveUtBase
+                mappedPaddr stOld carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x61000) == some carveUtBase
             | .error _ => false)
   -- A STALE record: the address space unmaps 0x60000 through its own VSpace
   -- capability and maps the OTHER frame there.  Deleting slot 8 — whose record
@@ -1229,14 +1229,14 @@ private def runFrameFinaliseChecks : IO Unit := do
   | .error e => assertBool s!"the map-unmap-remap setup succeeds (got {repr e})" false
   | .ok st4 => do
     assertBool "setup: 0x60000 now maps the second frame, and slot 8's record is stale"
-      (mappedPaddr st4 carveAsid (SeLe4n.VAddr.ofNat 0x60000)
+      (mappedPaddr st4 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000)
           == some (carveUtBase + SeLe4n.pageBytes) &&
-       recordAt st4 slotCarved == some { asid := carveAsid, vaddr := SeLe4n.VAddr.ofNat 0x60000 })
+       recordAt st4 slotCarved == some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 })
     match dispatchSyscall (decodeDelete slotCarved) carveOwner st4 with
     | .error e => assertBool s!"deleting the stale-record capability succeeds (got {repr e})" false
     | .ok ((), st5) =>
       assertBool "a stale record removes nothing: the other frame's mapping survives"
-        (mappedPaddr st5 carveAsid (SeLe4n.VAddr.ofNat 0x60000)
+        (mappedPaddr st5 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000)
           == some (carveUtBase + SeLe4n.pageBytes))
     -- A stale record does not block a fresh map of its capability.
     match dispatchSyscall (decodeOwnMap 0x62000 slotCarved permsRWUC) carveOwner st4 with
@@ -1244,14 +1244,14 @@ private def runFrameFinaliseChecks : IO Unit := do
     | .ok ((), st6) =>
       assertBool "and the new mapping replaces the stale record"
         (recordAt st6 slotCarved
-          == some { asid := carveAsid, vaddr := SeLe4n.VAddr.ofNat 0x62000 })
+          == some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x62000 })
   -- A CNode whose ONLY obstacle to an in-place retype is a mapping record: a
   -- fresh CNode holding one frame capability with no CDT node at all, so no
   -- derivation-parent guard can be what refuses it.  The control is the same
   -- CNode with the record stripped.
   let recCap : Capability :=
     { frameCapability (SeLe4n.ObjId.ofNat 950) with
-      mapping := some { asid := carveAsid, vaddr := SeLe4n.VAddr.ofNat 0x60000 } }
+      mapping := some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 } }
   let lone (cap : Capability) : CNode :=
     { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, cap)] }
@@ -1272,7 +1272,7 @@ private def runFrameFinaliseChecks : IO Unit := do
   assertBool "the boot refuses a configured capability that records a mapping"
     (!SeLe4n.Platform.Boot.bootSafeCapCheck
       { frameCapability (SeLe4n.ObjId.ofNat 950) with
-        mapping := some { asid := carveAsid, vaddr := SeLe4n.VAddr.ofNat 0x60000 } })
+        mapping := some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 } })
   assertBool "CONTROL: and admits the same capability with no record"
     (SeLe4n.Platform.Boot.bootSafeCapCheck (frameCapability (SeLe4n.ObjId.ofNat 950)))
 
@@ -1446,7 +1446,24 @@ private def decodeTableMap (tableSlot rootSlot vaddr : Nat) : SyscallDecodeResul
   { capAddr   := SeLe4n.CPtr.ofNat tableSlot
   , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
   , syscallId := .pageTableMap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat rootSlot, SeLe4n.RegValue.ofNat vaddr] }
+  , msgRegs   := #[SeLe4n.RegValue.ofNat rootSlot, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr)] }
+
+/-- WS-BP BP7.2: `.vspaceMap` through the root at `rootSlot` naming the raw
+virtual address `rawVaddr` — no user-window offset, so a scenario can name an
+address below the window, or an unaligned one. -/
+private def decodeRawMapVia (rootSlot asid rawVaddr frameSlot perms : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat rootSlot
+  , msgInfo   := { length := 4, extraCaps := 0, label := 0 }
+  , syscallId := .vspaceMap
+  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat rawVaddr,
+                   SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
+
+/-- WS-BP BP7.2: `.pageTableMap` naming the raw virtual address `rawVaddr`. -/
+private def decodeRawTableMap (tableSlot rootSlot rawVaddr : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat tableSlot
+  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+  , syscallId := .pageTableMap
+  , msgRegs   := #[SeLe4n.RegValue.ofNat rootSlot, SeLe4n.RegValue.ofNat rawVaddr] }
 
 /-- `.pageTableUnmap` on the table capability at `tableSlot`. -/
 private def decodeTableUnmap (tableSlot : Nat) : SyscallDecodeResult :=
@@ -1460,7 +1477,7 @@ private def decodeUnmapVia (rootSlot asid vaddr : Nat) : SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat rootSlot
   , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
   , syscallId := .vspaceUnmap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat vaddr] }
+  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr)] }
 
 /-- Where the table at `oid` records itself installed. -/
 private def installOf (st : SystemState) (oid : Nat) : Option PageTableInstall :=
@@ -1533,9 +1550,37 @@ private def runPageTableChecks : IO Unit := do
       | .ok st3 => do
         assertBool "the third table is at level 3, and the frame maps"
           (slotsOf st3 980 == some [(1, 983), (2, 984), (3, 985)] &&
-           mappedPaddr st3 one (SeLe4n.VAddr.ofNat va) == some (carveUtBase + SeLe4n.pageBytes))
+           mappedPaddr st3 one (SeLe4n.Testing.fixtureUserVAddr va) == some (carveUtBase + SeLe4n.pageBytes))
         assertBool "a complete walk has no room for a fourth table (mappingConflict)"
           (isErr .mappingConflict (dispatchSyscall (decodeTableMap 18 12 va) carveOwner st3))
+        -- WS-BP BP7.2: the user window.  Level-0 entry 0 of every user root
+        -- is the kernel's own window, so neither a table nor a frame may go
+        -- below `VAddr.userWindowBase`; and a mapping's virtual address is
+        -- page-aligned, as its physical address is.
+        assertBool "the user window starts at 2^39 and ends at the canonical bound"
+          (!(SeLe4n.VAddr.ofNat (SeLe4n.VAddr.userWindowBase - 1)).inUserWindow &&
+           (SeLe4n.VAddr.ofNat SeLe4n.VAddr.userWindowBase).inUserWindow &&
+           (SeLe4n.VAddr.ofNat (2 ^ 48 - SeLe4n.pageBytes)).inUserWindow &&
+           !(SeLe4n.VAddr.ofNat (2 ^ 48)).inUserWindow)
+        assertBool "a table below the user window is refused (addressOutOfBounds)"
+          (isErr .addressOutOfBounds (dispatchSyscall (decodeRawTableMap 18 12 va) carveOwner st3))
+        assertBool "a frame below the user window is refused (addressOutOfBounds)"
+          (isErr .addressOutOfBounds
+            (dispatchSyscall (decodeRawMapVia 12 1 va 14 permsRWUC) carveOwner st2))
+        -- A copy carries no mapping record, so it may map the frame again;
+        -- only the address is wrong.
+        assertBool "an unaligned virtual address inside a complete walk is refused (alignmentError)"
+          (match runAll st3 [decodeCopy 14 22] with
+           | .ok sCopy =>
+               isErr .alignmentError
+                 (dispatchSyscall
+                   (decodeRawMapVia 12 1 (SeLe4n.VAddr.userWindowBase + va + SeLe4n.pageBytes + 8) 22
+                     permsRWUC) carveOwner sCopy) &&
+               -- CONTROL: the same copy at the aligned page beside it maps.
+               (dispatchSyscall
+                   (decodeRawMapVia 12 1 (SeLe4n.VAddr.userWindowBase + va + SeLe4n.pageBytes) 22
+                     permsRWUC) carveOwner sCopy).isOk
+           | .error _ => false)
         assertBool "a table a mapping still passes through is not unmapped (revocationRequired)"
           (isErr .revocationRequired (dispatchSyscall (decodeTableUnmap 17) carveOwner st3))
         assertBool "nor one a deeper table is installed beneath (revocationRequired)"
@@ -1552,7 +1597,7 @@ private def runPageTableChecks : IO Unit := do
         | .ok sCopy =>
           assertBool "a table another capability still names stays installed, with everything beneath it"
             (slotsOf sCopy 980 == slotsOf st3 980 &&
-             mappedPaddr sCopy one (SeLe4n.VAddr.ofNat va) == some (carveUtBase + SeLe4n.pageBytes))
+             mappedPaddr sCopy one (SeLe4n.Testing.fixtureUserVAddr va) == some (carveUtBase + SeLe4n.pageBytes))
         match dispatchSyscall (decodeDelete 15) carveOwner st3 with
         | .error e => assertBool s!"deleting the level-1 table's only capability succeeds (got {repr e})" false
         | .ok ((), sDel) => do
@@ -1560,11 +1605,11 @@ private def runPageTableChecks : IO Unit := do
             (slotsOf sDel 980 == some [] &&
              [983, 984, 985].all (fun n => !Architecture.pageTableInstallLive sDel (SeLe4n.ObjId.ofNat n)))
           assertBool "...and the mapping whose walk passed through it"
-            (mappedPaddr sDel one (SeLe4n.VAddr.ofNat va) == none)
+            (mappedPaddr sDel one (SeLe4n.Testing.fixtureUserVAddr va) == none)
           assertBool "RETIRED: the bare delete — no finalisation — left all three tables and the mapping in place"
             (match cspaceDeleteSlot at15 st3 with
              | .ok ((), r) => slotsOf r 980 == slotsOf st3 980 &&
-                 mappedPaddr r one (SeLe4n.VAddr.ofNat va) == some (carveUtBase + SeLe4n.pageBytes)
+                 mappedPaddr r one (SeLe4n.Testing.fixtureUserVAddr va) == some (carveUtBase + SeLe4n.pageBytes)
              | .error _ => false)
           assertBool "a table left with a stale record installs again, at the shallowest missing level"
             (match dispatchSyscall (decodeTableMap 16 12 va) carveOwner sDel with

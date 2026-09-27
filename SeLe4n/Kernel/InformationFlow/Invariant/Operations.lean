@@ -963,11 +963,11 @@ theorem vspaceMapPage_preserves_projection
       · simp at hStep
       · split at hStep <;> simp at hStep
     | some root' =>
-      -- PR #845 review (P2): a successful `mapPage` witnesses page alignment,
-      -- which discharges the guard the transition checks before delegating.
-      have hAligned : paddr.toNat % Architecture.pageBytes = 0 :=
-        SeLe4n.Model.VSpaceRoot.mapPage_pageAligned hMap
-      simp only [hMap, hAligned] at hStep
+      -- PR #845 review (P2), WS-BP BP7.2: a successful `mapPage` witnesses that
+      -- both addresses are page-aligned, which discharges the guard the
+      -- transition checks before delegating.
+      simp only [hMap, Architecture.pageMappingAligned_of_mapPage hMap, Bool.not_true,
+        Bool.false_eq_true, ↓reduceIte] at hStep
       have hHigh := hRootHigh rootId root hResolve
       exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hObjInv hStep
 
