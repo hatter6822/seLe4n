@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
 import SeLe4n.Kernel.Concurrency.Runtime
+import SeLe4n.Kernel.Architecture.ContextRestore
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -478,6 +479,67 @@ private def runTrapFrameSaveChecks : IO Unit := do
     (let s := Architecture.saveCapturedTrapFrame stPreempt bootCoreId none
      s.machine.regsOnCore bootCoreId == stPreempt.machine.regsOnCore bootCoreId)
 
+/-- §3.12 (WS-BP BP7.4): the result frame a syscall returns. -/
+private def resultFrame : Architecture.SyscallReturnFrame :=
+  { x0 := 0xA0, x1 := 0xA1, x2 := 0xA2, x3 := 0xA3, x4 := 0xA4, x5 := 0xA5 }
+
+/-- The boot core running its idle thread. -/
+private def stIdle : SystemState :=
+  let base := BootstrapBuilder.empty.build
+  { base with scheduler := base.scheduler.setCurrentOnCore bootCoreId (some (idleThreadId bootCoreId)) }
+
+private def restoresUser (t : Architecture.RestoreTarget) (ctx : RegisterFile) : Bool :=
+  match t with
+  | .user c _ _ => c == ctx
+  | _ => false
+
+private def restoresIdle (t : Architecture.RestoreTarget) : Bool :=
+  match t with
+  | .idle => true
+  | _ => false
+
+private def restoresNothing (t : Architecture.RestoreTarget) : Bool :=
+  match t with
+  | .none => true
+  | _ => false
+
+private def runContextRestoreChecks : IO Unit := do
+  IO.println "--- §3.12 WS-BP BP7.4 the caller's result survives a same-entry switch ---"
+  let saved := Architecture.saveTrapFrameOnCore stPreempt bootCoreId savedFrame
+  let staged := Architecture.stageCallerReturn saved saved bootCoreId (.returns resultFrame)
+  assertBool "staging writes the result into the caller's context and the core's bank"
+    (let ctx := savedContextOf staged tidP
+     ctx.gpr ⟨0⟩ == ⟨0xA0⟩ && ctx.gpr ⟨5⟩ == ⟨0xA5⟩ && ctx.gpr ⟨6⟩ == ⟨0x1006⟩ &&
+     ctx.pc == ⟨0x1020⟩ && (staged.machine.regsOnCore bootCoreId).gpr ⟨0⟩ == ⟨0xA0⟩)
+  assertBool "switching away then keeps the result: the caller resumes with x0-x5 its syscall returned"
+    (switchOkAnd staged bootCoreId tidA (fun st' =>
+      let ctx := savedContextOf st' tidP
+      ctx.gpr ⟨0⟩ == ⟨0xA0⟩ && ctx.gpr ⟨3⟩ == ⟨0xA3⟩ && ctx.gpr ⟨6⟩ == ⟨0x1006⟩))
+  assertBool "RETIRED: without staging, the switch saved the syscall's arguments as its result"
+    (switchOkAnd saved bootCoreId tidA (fun st' =>
+      (savedContextOf st' tidP).gpr ⟨0⟩ == ⟨0x1000⟩))
+  assertBool "a blocking or faulting outcome stages nothing"
+    (let b := Architecture.stageCallerReturn saved saved bootCoreId .blocks
+     let f := Architecture.stageCallerReturn saved saved bootCoreId .faulted
+     savedContextOf b tidP == savedFrame && savedContextOf f tidP == savedFrame)
+  assertBool "a caller no longer current when the dispatch committed is not staged"
+    (let post := { saved with scheduler := saved.scheduler.setCurrentOnCore bootCoreId (some tidA) }
+     let s := Architecture.stageCallerReturn saved post bootCoreId (.returns resultFrame)
+     savedContextOf s tidP == savedFrame)
+  IO.println "--- §3.12 WS-BP BP7.4 the restore target is the committed current thread ---"
+  assertBool "a user thread's saved context is what the core resumes"
+    (restoresUser (Architecture.restoreTargetOnCore staged bootCoreId) (savedContextOf staged tidP))
+  assertBool "after a switch the core resumes the incoming thread, not the one that trapped"
+    (switchOkAnd staged bootCoreId tidA (fun st' =>
+      restoresUser (Architecture.restoreTargetOnCore st' bootCoreId) (savedContextOf st' tidA) &&
+      !restoresUser (Architecture.restoreTargetOnCore st' bootCoreId) (savedContextOf st' tidP)))
+  assertBool "a core running its idle thread resumes the idle loop"
+    (restoresIdle (Architecture.restoreTargetOnCore stIdle bootCoreId))
+  assertBool "a core running nothing restores nothing"
+    (restoresNothing (Architecture.restoreTargetOnCore stPreempt core1))
+  assertBool "the trap words of a context read back as that context"
+    (Architecture.registerFileOfTrapWords (Architecture.trapWordsOfRegisterFile savedFrame) == savedFrame)
+
 def runSmpSwitchToThreadChecks : IO Unit := do
   IO.println "WS-SM SM5.B — Per-core switchToThread suite"
   IO.println "===================================="
@@ -485,6 +547,7 @@ def runSmpSwitchToThreadChecks : IO Unit := do
   runLockSetChecks
   runAffinityAlgebraChecks
   runTrapFrameSaveChecks
+  runContextRestoreChecks
   IO.println "===================================="
   IO.println "All SM5.B per-core switchToThread checks PASS."
 

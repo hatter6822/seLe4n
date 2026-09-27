@@ -1596,6 +1596,33 @@ pub extern "C" fn ffi_trap_frame_word(index: u32) -> u64 {
     crate::trap::in_flight_frame_word(index).unwrap_or(0)
 }
 
+/// **WS-BP BP7.4**: stage word `index` of the executing PE's resume context
+/// (`trap::restore_stage_word`).  A word past the context is a kernel defect —
+/// the Lean restore stages exactly `trap::TRAP_FRAME_CONTEXT_WORDS` — so it
+/// **halts the system** rather than resuming a partly staged context.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRestoreStageWord`.
+#[no_mangle]
+pub extern "C" fn ffi_restore_stage_word(index: u32, value: u64) -> crate::lean_runtime::Obj {
+    if crate::trap::restore_stage_word(index, value).is_err() {
+        crate::gic::halt_all();
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.4**: commit the executing PE's staged resume into the frame
+/// its handler will `eret` through (`trap::restore_commit`) — kind `0` a user
+/// thread, kind `1` the idle loop.  An unknown kind **halts the system**.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRestoreCommit`.
+#[no_mangle]
+pub extern "C" fn ffi_restore_commit(kind: u32) -> crate::lean_runtime::Obj {
+    if crate::trap::restore_commit(kind).is_err() {
+        crate::gic::halt_all();
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
 /// **WS-BP BP7.2**: perform one physical write a committed transition
 /// recorded — `Platform.FFI.ffiApplyPhysicalWrite`, driven by the syscall
 /// seam's `completePhysicalWrites`.  The operands are validated against the

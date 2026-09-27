@@ -153,9 +153,11 @@ def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit := do
   let record ← Platform.FFI.modifyGetKernelState (fun st =>
     let st' := (rescheduleUnderDeclaredLockSet coreId
       (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
-    ((Concurrency.coreIdOfUInt64? coreId).map
-      (fun c => (c, st'.scheduler.currentOnCore c)), st'))
-  Concurrency.recordCommittedCurrentThreadHw record
+    (((Concurrency.coreIdOfUInt64? coreId).map
+      (fun c => (c, st'.scheduler.currentOnCore c)),
+      Concurrency.restoreTargetAt st' coreId), st'))
+  Platform.FFI.restoreTrapFrameLive record.2
+  Concurrency.recordCommittedCurrentThreadHw record.1
 
 /-- **WS-SM SM5.C.5** structural marker: `perCoreRescheduleEntry` unfolds to
 the atomic commit of the bracketed reschedule step followed by the HAL
@@ -174,8 +176,10 @@ theorem perCoreRescheduleEntry_def (coreId : UInt64) :
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
           let st' := (rescheduleUnderDeclaredLockSet coreId
             (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
-          ((Concurrency.coreIdOfUInt64? coreId).map
-            (fun c => (c, st'.scheduler.currentOnCore c)), st'))
-        Concurrency.recordCommittedCurrentThreadHw record) := rfl
+          (((Concurrency.coreIdOfUInt64? coreId).map
+            (fun c => (c, st'.scheduler.currentOnCore c)),
+            Concurrency.restoreTargetAt st' coreId), st'))
+        Platform.FFI.restoreTrapFrameLive record.2
+        Concurrency.recordCommittedCurrentThreadHw record.1) := rfl
 
 end SeLe4n.Kernel

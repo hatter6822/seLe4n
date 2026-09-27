@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.16.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.17.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7152,7 +7152,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -8365,6 +8365,27 @@ register rather than the syscall window.  A new state-committing trap entry
 captures and saves the same way.  (4) **Only a frame taken from EL0 is a
 thread's** (`trapFromEl0`, `SPSR_EL1.M[3:0] = 0`): a tick taken while an idle
 core waits at EL1 carries the kernel's registers and saves nothing.
+
+**Each core's resume is staged from the committed state** (`v0.36.17`, BP7.4).
+Four things new code must respect.  (1) **A syscall's result is in the caller's
+saved context before any local reschedule** (`Architecture.stageCallerReturn`,
+run before `scheduleLocalSuccessorLive`): the restore resumes a thread *from*
+its context, so a result staged only in the HAL mailbox would be replaced by the
+arguments a same-entry switch saved.  A path that answers a syscall with a frame
+— the refusal in `syscallBracketRefusalResult` included — stages it the same
+way.  (2) **Every state-committing entry names what its core resumes**
+(`Architecture.restoreTargetOnCore` on the committed state: a user thread's
+context and translation, `.idle` for an idle thread, `.none` for an empty core)
+and hands it to `Platform.FFI.restoreTrapFrameLive` last, after every memory and
+TLB effect the commit owed; a new entry does too.  (3) **The HAL sanitises a
+user resume's `SPSR_EL1` to its condition flags** (`trap::sanitise_user_spsr`),
+because a thread's saved `pstate` is state the thread influences, and an idle
+resume enters `trap::kernel_idle_loop` at EL1h — the only EL1-origin frame a
+restore ever replaces, since every other kernel path runs with IRQs masked.
+(4) **The restore is gated on `contextRestoreSeamLive`**
+(`restoreTrapFrameLive_inert`), so the trap arms still deliver the mailbox frame,
+the poison and the SM10.1 halts until BP7.6 flips it and has them consult
+`trap::take_restored`.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

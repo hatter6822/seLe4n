@@ -53,7 +53,11 @@ a full outgoing-frame save — landed at WS-BP BP7.3 (`v0.36.16`: every state-
 committing trap entry saves `x0`–`x30`, `SP`, `PC` and `PSTATE` into the core's
 bank and the current thread's context, `Architecture.saveTrapFrameOnCore`); and
 per-core staging (the kernel-entry lock closes in `dispatch_svc` before the trap
-handler would install), which is BP7.4's. -/
+handler would install) — landed at WS-BP BP7.4 (`v0.36.17`: the caller's result
+is staged into its saved context before any local reschedule,
+`Architecture.stageCallerReturn`, and every entry hands the HAL what its core
+resumes, `Platform.FFI.restoreTrapFrameLive`, which reads this constant).  With
+the three in place, what the flip waits on is BP7.5 and the trap arms (BP7.6). -/
 def contextRestoreSeamLive : Bool := false
 
 end SeLe4n.Kernel.PriorityInheritance

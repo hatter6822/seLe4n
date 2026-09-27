@@ -147,13 +147,15 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
     let st' := outcome.state
     ((outcome.value?,
       (Concurrency.coreIdOfUInt64? coreId).map
-        (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+        (fun c => (c, st'.scheduler.currentOnCore c)),
+      Concurrency.restoreTargetAt st' coreId), st'))
   match r.1 with
   | some sgisAndFlag =>
       if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
       Concurrency.fireCrossCoreSgis sgisAndFlag.1
   | none => pure ()
-  Concurrency.recordCommittedCurrentThreadHw r.2
+  Platform.FFI.restoreTrapFrameLive r.2.2
+  Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- **WS-SM SM5.I** structural marker: `perCoreTimerTickEntry` unfolds to the
 bracketed-step-then-shadow-advance-then-fire-SGIs driver.  Pins the entry's body
@@ -174,12 +176,14 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
           let st' := outcome.state
           ((outcome.value?,
             (Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+              (fun c => (c, st'.scheduler.currentOnCore c)),
+            Concurrency.restoreTargetAt st' coreId), st'))
         match r.1 with
         | some sgisAndFlag =>
             if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
             Concurrency.fireCrossCoreSgis sgisAndFlag.1
         | none => pure ()
-        Concurrency.recordCommittedCurrentThreadHw r.2) := rfl
+        Platform.FFI.restoreTrapFrameLive r.2.2
+        Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 end SeLe4n.Kernel

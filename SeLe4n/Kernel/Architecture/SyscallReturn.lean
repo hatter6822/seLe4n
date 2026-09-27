@@ -624,7 +624,8 @@ nothing else: not `x7`, not `pc`/`sp`, no other TCB field
 RA.B.10 projection preservation hold for every observer.  Since WS-BP BP7.3 the
 bank and the current thread's context are one value at every trap entry
 (`Architecture.saveTrapFrameOnCore`); what reconciles a frame staged for the
-*current* thread with the bank is the per-core staging of BP7.4.
+*current* thread with the bank is `Architecture.stageCallerReturn` (WS-BP BP7.4),
+which writes both.
 
 Total: a non-TCB target returns the state unchanged, mirroring
 `writeFfiRegistersToTcb`'s posture (the caller surfaces the error).

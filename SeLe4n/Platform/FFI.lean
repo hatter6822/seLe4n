@@ -12,6 +12,8 @@ import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Kernel.Architecture.TrapFrameSave
+import SeLe4n.Kernel.Architecture.ContextRestore
+import SeLe4n.Kernel.Concurrency.ContextRestoreSeam
 
 /-!
 # FFI Bridge: Lean Kernel ↔ Rust HAL
@@ -3154,6 +3156,48 @@ opaque ffiInstallTranslation : UInt64 → UInt64 → BaseIO Unit
 def installThreadTranslation (st : SystemState) (tid : SeLe4n.ThreadId) : BaseIO Unit :=
   let ops := SeLe4n.Kernel.Architecture.threadTranslationOperands st tid
   ffiInstallTranslation ops.1 ops.2
+
+/-- **WS-BP BP7.4**: stage word `index` of the context the executing PE resumes
+    (the `captureTrapFrame` layout) in its per-core staging buffer.  Nothing
+    reaches the trap frame until `ffiRestoreCommit`.
+
+    Rust: `ffi_restore_stage_word` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_restore_stage_word"]
+opaque ffiRestoreStageWord : UInt32 → UInt64 → BaseIO Unit
+
+/-- **WS-BP BP7.4**: commit the staged context into the executing PE's in-flight
+    trap frame — kind `0` a thread at EL0 (its processor state sanitised to
+    `EL0t` and the condition flags), kind `1` the kernel's idle wait loop at EL1.
+    The trap handler then returns through it instead of through the thread that
+    trapped.
+
+    Rust: `ffi_restore_commit` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_restore_commit"]
+opaque ffiRestoreCommit : UInt32 → BaseIO Unit
+
+/-- **WS-BP BP7.4: install what a core resumes** — a thread's context, staged
+    word by word and then its translation and the commit; the idle loop under
+    the kernel's translation; or nothing. -/
+def restoreTrapFrame : SeLe4n.Kernel.Architecture.RestoreTarget → BaseIO Unit
+  | .user ctx tableBase asid => do
+    for i in [0:SeLe4n.Kernel.Architecture.trapFrameWordCount] do
+      ffiRestoreStageWord i.toUInt32 (SeLe4n.Kernel.Architecture.trapWordsOfRegisterFile ctx i)
+    ffiInstallTranslation tableBase asid
+    ffiRestoreCommit 0
+  | .idle => do
+    ffiInstallTranslation 0 0
+    ffiRestoreCommit 1
+  | .none => pure ()
+
+/-- **WS-BP BP7.4**: the restore, gated on the context-restore seam — the same
+    one constant the scheduler's local-successor dispatch reads, so the model
+    dispatches a successor exactly when the hardware installs one. -/
+def restoreTrapFrameLive (t : SeLe4n.Kernel.Architecture.RestoreTarget) : BaseIO Unit :=
+  if SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive then restoreTrapFrame t else pure ()
+
+/-- **WS-BP BP7.4**: inert until the seam is live. -/
+theorem restoreTrapFrameLive_inert (t : SeLe4n.Kernel.Architecture.RestoreTarget) :
+    restoreTrapFrameLive t = pure () := rfl
 
 /-- **WS-SM SM7.D.1**: the invalidate-all operand routes to op tag 0. -/
 theorem icMaintenanceBroadcast_iallu_encoding :

@@ -312,9 +312,11 @@ def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
         { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
     ((sgis,
       (Concurrency.coreIdOfUInt64? coreId).map
-        (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+        (fun c => (c, st'.scheduler.currentOnCore c)),
+      Concurrency.restoreTargetAt st' coreId), st'))
   Concurrency.fireCrossCoreSgis r.1
-  Concurrency.recordCommittedCurrentThreadHw r.2
+  Platform.FFI.restoreTrapFrameLive r.2.2
+  Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- Review round (PR #887, **the export**): the C-callable unknown-syscall
 seam.  `trap.rs`'s `SVC` arm invokes it — inside `with_kernel_entry`, behind
@@ -335,9 +337,11 @@ def unknownSyscallEntry (coreId : UInt64) (esr elr spsr far : UInt64)
         { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
     ((sgis,
       (Concurrency.coreIdOfUInt64? coreId).map
-        (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+        (fun c => (c, st'.scheduler.currentOnCore c)),
+      Concurrency.restoreTargetAt st' coreId), st'))
   Concurrency.fireCrossCoreSgis r.1
-  Concurrency.recordCommittedCurrentThreadHw r.2
+  Platform.FFI.restoreTrapFrameLive r.2.2
+  Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- WS-RR RR4.23 structural marker: `faultEntry` unfolds to the atomic commit
 of the verified step followed by the SGI firing.
@@ -368,9 +372,11 @@ theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
               { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
           ((sgis,
             (Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+              (fun c => (c, st'.scheduler.currentOnCore c)),
+            Concurrency.restoreTargetAt st' coreId), st'))
         Concurrency.fireCrossCoreSgis r.1
-        Concurrency.recordCommittedCurrentThreadHw r.2) := rfl
+        Platform.FFI.restoreTrapFrameLive r.2.2
+        Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 /-- The same marker for the unknown-syscall seam. -/
 theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
@@ -386,9 +392,11 @@ theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
               { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
           ((sgis,
             (Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+              (fun c => (c, st'.scheduler.currentOnCore c)),
+            Concurrency.restoreTargetAt st' coreId), st'))
         Concurrency.fireCrossCoreSgis r.1
-        Concurrency.recordCommittedCurrentThreadHw r.2) := rfl
+        Platform.FFI.restoreTrapFrameLive r.2.2
+        Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 /-- The shared delivery inherits the progress guarantee: whatever it commits,
 the thread that was current on `c` is not dispatchable there afterwards.

@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Architecture.TrapFrameSave
+import SeLe4n.Kernel.Architecture.ContextRestore
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
 import SeLe4n.Kernel.Scheduler.Invariant.PerCore
 
@@ -97,5 +98,40 @@ theorem saveTrapFrameOnCore_contextMatchesCurrentOnCore_other (st : SystemState)
         rw [h]; exact SeLe4n.MachineState.regsOnCore_setRegsOnCore_ne _ c c' rf (Ne.symm hNe)
       simp only [hG, hB]
       exact hMatch
+
+/-- **WS-BP BP7.4: staging the caller's result preserves the IPC bundle** — it
+is `writeReturnFrameToTcb` followed by a bank write. -/
+theorem stageCallerReturn_preserves_ipcInvariantFull (pre post : SystemState) (c : CoreId)
+    (o : SyscallOutcome) (hObjInv : post.objects.invExt) (hInv : ipcInvariantFull post) :
+    ipcInvariantFull (stageCallerReturn pre post c o) := by
+  cases o with
+  | blocks => exact hInv
+  | faulted => exact hInv
+  | returns f =>
+    cases hP : pre.scheduler.currentOnCore c with
+    | none => simp only [stageCallerReturn, hP]; exact hInv
+    | some tid =>
+      simp only [stageCallerReturn, hP]
+      split
+      · exact ipcInvariantFull_of_objects_scheduler_eq
+          (st := writeReturnFrameToTcb post tid f) rfl rfl
+          (writeReturnFrameToTcb_preserves_ipcInvariantFull post tid f hObjInv hInv)
+      · exact hInv
+
+/-- **WS-BP BP7.4**: and the object store stays well-formed. -/
+theorem stageCallerReturn_preserves_objects_invExt (pre post : SystemState) (c : CoreId)
+    (o : SyscallOutcome) (hObjInv : post.objects.invExt) :
+    (stageCallerReturn pre post c o).objects.invExt := by
+  cases o with
+  | blocks => exact hObjInv
+  | faulted => exact hObjInv
+  | returns f =>
+    cases hP : pre.scheduler.currentOnCore c with
+    | none => simp only [stageCallerReturn, hP]; exact hObjInv
+    | some tid =>
+      simp only [stageCallerReturn, hP]
+      split
+      · exact writeReturnFrameToTcb_preserves_objects_invExt post tid f hObjInv
+      · exact hObjInv
 
 end SeLe4n.Kernel.Architecture

@@ -566,28 +566,36 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
-      Option SeLe4n.ThreadId) × SystemState :=
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st with
   | Except.ok (outcome, st') =>
-      let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
+      -- WS-BP BP7.4: the returning caller's result is in its saved context and
+      -- the core's bank before any local reschedule, so a switch saves it.
+      let stR := Architecture.stageCallerReturn st st' execCore outcome
+      let st'' := PriorityInheritance.scheduleLocalSuccessorLive st stR execCore
       ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
         Architecture.shootdownChangedTargets st st'',
         Architecture.shootdownPostedOps st st'',
         Architecture.shootdownRoundWindow st st'',
         st''.pendingIcacheMaintenance,
         st''.pendingPhysicalWrites,
+        Architecture.restoreTargetOnCore st'' execCore,
         st''.scheduler.currentOnCore execCore),
        Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st''))
   | Except.error e =>
-      ((Architecture.SyscallOutcome.returns (Architecture.errorFrame e),
+      -- WS-BP BP7.4: the error is the caller's result, staged as any is.
+      let outcome := Architecture.SyscallOutcome.returns (Architecture.errorFrame e)
+      let stE := Architecture.stageCallerReturn st st execCore outcome
+      ((outcome,
         ([] : List (CoreId × SgiKind)),
         ([] : List CoreId),
         ([] : List Architecture.TlbInvalidation),
         ((0, 0) : Nat × Nat),
         ([] : List Architecture.ICacheInvalidation),
         ([] : List Architecture.PhysicalWrite),
-        st.scheduler.currentOnCore execCore), st)
+        Architecture.restoreTargetOnCore stE execCore,
+        stE.scheduler.currentOnCore execCore), stE)
 
 /-- **WS-BP BP7.2 (the ledger is drained exactly once)**: the state the step
 commits owes no physical write, and the writes it hands the runtime are the ones
@@ -603,7 +611,8 @@ theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContex
           ipcBufferAddr elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
       (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1 =
-        (PriorityInheritance.scheduleLocalSuccessorLive st st' execCore).pendingPhysicalWrites := by
+        (PriorityInheritance.scheduleLocalSuccessorLive st
+          (Architecture.stageCallerReturn st st' execCore outcome) execCore).pendingPhysicalWrites := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
     msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
   refine ⟨outcome, st', h, ?_, ?_⟩ <;> simp [syscallDispatchCrossCoreStep, h]
@@ -624,20 +633,29 @@ phase writes nothing the resolver reads.
 
 No diffs are surfaced and neither the I-cache ledger nor the physical-write
 ledger is cleared: nothing ran, so there is nothing to poke about and nothing
-owed was consumed. -/
+owed was consumed.
+
+**WS-BP BP7.4**: the one write beyond the unwinding is the caller's own result.
+The error frame is staged into the caller's saved context and the core's bank
+(`Architecture.stageCallerReturn`), because the context restore resumes a thread
+*from* its saved context: a refusal that left the context holding the syscall's
+arguments would return them to the caller as its result. -/
 def syscallBracketRefusalResult (execCore : CoreId) (unwound : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
-      Option SeLe4n.ThreadId) × SystemState :=
-  ((Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState),
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
+  let outcome := Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState)
+  let staged := Architecture.stageCallerReturn unwound unwound execCore outcome
+  ((outcome,
     ([] : List (CoreId × SgiKind)),
     ([] : List CoreId),
     ([] : List Architecture.TlbInvalidation),
     ((0, 0) : Nat × Nat),
     ([] : List Architecture.ICacheInvalidation),
     ([] : List Architecture.PhysicalWrite),
-    unwound.scheduler.currentOnCore execCore), unwound)
+    Architecture.restoreTargetOnCore staged execCore,
+    staged.scheduler.currentOnCore execCore), staged)
 
 /-- **WS-RR RR7.12: the step, inside its declared per-object footprint.**
 
@@ -668,7 +686,7 @@ def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext) (execCore : Co
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
-      Option SeLe4n.ThreadId) × SystemState :=
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   match Concurrency.runBracketed schedulerLockBracketDomain
       (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5)
       execCore
@@ -818,13 +836,18 @@ def syscallDispatchCrossCoreEntry
   -- cleared in the atomic step above, so it is emitted exactly once and never
   -- stranded into the next syscall.  Inert when nothing was owed.
   completeIcacheMaintenance result.2.2.2.2.2.1
+  -- **WS-BP BP7.4**: install what the committed state runs on this core — the
+  -- current thread's saved context and translation, or the idle wait loop —
+  -- into the in-flight trap frame, last, after every memory and TLB effect the
+  -- commit owed.  Inert until the context-restore seam is live.
+  Platform.FFI.restoreTrapFrameLive result.2.2.2.2.2.2.2.1
   -- **WS-RR RR7.26**: record on the HAL what this commit left running on the
   -- executing core, so `ffi::PER_CPU_CURRENT_THREAD` follows the verified
   -- scheduler rather than lagging it.  The value was read inside the atomic
   -- step above (after `scheduleLocalSuccessorLive`, so it is the successor
   -- when the syscall vacated the core), and a syscall that left the core
   -- vacated clears the mirror rather than leaving it naming a blocked caller.
-  Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2))
+  Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
   -- WS-RA: the export's scalar return is the outcome tag (0 = the mailbox
   -- frame is the caller's return; 1 = the caller blocked, no frame; 2 = the
   -- caller faulted at the seam, no frame, and the trap layer halts pending
@@ -858,7 +881,8 @@ theorem syscallDispatchCrossCoreEntry_def
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
         completeIcacheMaintenance result.2.2.2.2.2.1
-        Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2))
+        Platform.FFI.restoreTrapFrameLive result.2.2.2.2.2.2.2.1
+        Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
         pure result.1.tagWord) := rfl
 
 /-- **WS-SM SM8.B** (PR #861 review rounds 39/41): the gating argument's

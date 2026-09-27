@@ -1,3 +1,57 @@
+## v0.36.17 — WS-BP BP7.4: the context each core resumes, staged per core
+
+BP7.4 is the third of the three prerequisites for turning the context restore on.
+The restore resumes a thread *from its saved context*, and until this cut two
+things stood between that context and the thread the model chose.
+
+**The caller's result was not in its saved context.**  A syscall's return frame
+went to the HAL mailbox alone, so the caller's `registerContext` still held the
+syscall's arguments — and a reschedule in the same entry saves the outgoing
+thread from the core's bank, which held them too.  A caller preempted by its own
+syscall would have resumed with its arguments as its result.
+`Architecture.stageCallerReturn` (`ContextRestore.lean`) writes the returned frame
+into the caller's context **and** the core's bank when the caller is still the
+core's current thread, and the syscall step runs it *before*
+`scheduleLocalSuccessorLive`, so a switch saves the result.  The refusal path
+(`syscallBracketRefusalResult`) stages its `.illegalState` frame the same way:
+that is the one write it commits beyond the unwinding, and without it a live
+restore would have returned the arguments to a refused caller.  A blocking or
+faulting outcome stages nothing.  `stageCallerReturn_preserves_ipcInvariantFull`
+and `_preserves_objects_invExt` carry the bundle across it.
+
+**Nothing said what a core resumes.**  `Architecture.restoreTargetOnCore` reads
+the committed state's current thread on the executing core: a user thread gives
+its saved context and its `TTBR0_EL1` operands (`threadTranslationOperands`), an
+idle thread gives the kernel's wait loop, and no thread gives nothing.  Every
+state-committing entry — the syscall seam, the fault and unknown-syscall entries,
+the timer tick, the `.reschedule` receiver and the secondary bring-up — returns
+that target from its atomic step and hands it to
+`Platform.FFI.restoreTrapFrameLive` after every memory and TLB effect it owed.
+
+**The HAL.**  `trap::RESTORE_STAGING` holds each core's staged context
+(`ffi_restore_stage_word`, 34 words in trap-frame order) and
+`ffi_restore_commit` writes it into the in-flight frame the handler will `eret`
+through: kind `0` copies a user context with `SPSR_EL1` sanitised to its
+condition flags (`sanitise_user_spsr`, so the `eret` lands at EL0t with every
+exception unmasked whatever the saved word says), kind `1` aims the frame at
+`trap::kernel_idle_loop` at EL1h with interrupts unmasked.  The syndrome words are
+the trap's and are left alone; a published frame is required (none is a no-op);
+an unknown kind or a word past the context halts the system.  `take_restored`
+reports whether the frame was replaced, which BP7.6's trap arms consult.  The
+staging is per core and the frame is the handler's own, so the kernel-entry lock
+closing before the handler returns — the obstacle the plan row named — no longer
+matters.
+
+**Gated.**  `restoreTrapFrameLive` runs the restore only when
+`contextRestoreSeamLive` is set, the same constant the scheduler's local-successor
+dispatch reads (`restoreTrapFrameLive_inert`), so this cut changes no behaviour on
+hardware; BP7.6 flips it with the trap arms.
+
+Witnesses: `tests/SmpSwitchToThreadSuite.lean` §3.12 (the result survives a
+same-entry switch, with the retired reading computed beside it; the target names
+the incoming thread after a switch, the idle loop for an idle thread, nothing for
+an empty core) and four `trap::tests` over the commit.
+
 ## v0.36.16 — WS-BP BP7.3: the whole trap frame, saved at every entry
 
 A thread's context is `x0`–`x30`, `SP_EL0`, `ELR_EL1` and `SPSR_EL1`.  The trap

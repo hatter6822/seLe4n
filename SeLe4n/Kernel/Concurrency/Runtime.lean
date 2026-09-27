@@ -534,6 +534,14 @@ def saveCapturedTrapFrameAt (st : SeLe4n.Model.SystemState) (coreId : UInt64)
   | some c => Architecture.saveCapturedTrapFrame st c frame
   | none => st
 
+/-- **WS-BP BP7.4**: what the core a per-core entry's raw id names resumes —
+nothing when the id names no core. -/
+def restoreTargetAt (st : SeLe4n.Model.SystemState) (coreId : UInt64) :
+    Architecture.RestoreTarget :=
+  match coreIdOfUInt64? coreId with
+  | some c => Architecture.restoreTargetOnCore st c
+  | none => .none
+
 /-- **WS-RR RR7.26**: the shared tail of the three state-committing per-core
 entries — record on the HAL what the committed post-state left running.
 

@@ -4259,6 +4259,23 @@ run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TrapFrameSave
 run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_synchronous_exception\(frame: &mut TrapFrame\) \{\n    let esr = frame\.esr_el1;\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_irq_per_core\(frame: &mut TrapFrame\) \{\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n 'switching away then saves every register the thread trapped with' tests/SmpSwitchToThreadSuite.lean
+# WS-BP BP7.4 (v0.36.17): the caller's result is staged where a switch saves
+# from, before the local reschedule; every entry hands the HAL the context the
+# committed state names, gated on the context-restore seam; the HAL commits it
+# into the in-flight frame with SPSR sanitised to EL0t.
+run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturn st st'"'"' execCore outcome\n      let st'"''"' := PriorityInheritance\.scheduleLocalSuccessorLive st stR execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  let staged := Architecture\.stageCallerReturn unwound unwound execCore outcome\n' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrameLive result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      ffiRestoreStageWord i\.toUInt32 [^\n]*\n    ffiInstallTranslation tableBase asid\n    ffiRestoreCommit 0$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  if SeLe4n\.Kernel\.PriorityInheritance\.contextRestoreSeamLive then restoreTrapFrame t else pure \(\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrameLive r\.2\.2\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrameLive record\.2\n  Concurrency\.recordCommittedCurrentThreadHw record\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n '^    if SeLe4n\.Kernel\.isIdleThreadId tid then \.idle$' SeLe4n/Kernel/Architecture/ContextRestore.lean
+run_check "INVARIANT" rg -n '^    value & 0xF000_0000$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^        frame\.spsr_el1 = sanitise_user_spsr\(word\(33\)\);$' rust/sele4n-hal/src/trap.rs
+run_negative_check "INVARIANT" rg -n 'frame\.spsr_el1 = word\(33\)' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn ffi_restore_commit\(kind: u32\)[^\n]*\n    if crate::trap::restore_commit\(kind\)\.is_err\(\) \{\n        crate::gic::halt_all\(\);$' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n 'switching away then keeps the result: the caller resumes with x0-x5 its syscall returned' tests/SmpSwitchToThreadSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
 # environment with no entry now that one exists, and the link gate has no

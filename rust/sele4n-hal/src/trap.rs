@@ -32,7 +32,7 @@
 /// register. A nested exception (e.g., SError during data-abort handling)
 /// would otherwise mutate the live ESR/FAR before the outer handler reads
 /// them, producing incorrect classification and fault-address reports.
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
 
 #[repr(C, align(16))]
 pub struct TrapFrame {
@@ -168,6 +168,173 @@ pub fn in_flight_frame_present() -> bool {
 pub fn in_flight_frame_word(index: u32) -> Option<u64> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     in_flight_frame_word_in(&IN_FLIGHT_FRAMES, core, index)
+}
+
+/// **WS-BP BP7.4: the context each PE is about to resume**, staged word by
+/// word by the Lean kernel (`Platform.FFI.restoreTrapFrame`) in the trap-frame
+/// word order of [`trap_frame_word`], then committed into the in-flight frame
+/// by [`restore_commit_in`].  Slot `c` is written and read only by core `c`,
+/// inside one handler, so `Relaxed` suffices.
+pub type RestoreStaging =
+    [[AtomicU64; TRAP_FRAME_CONTEXT_WORDS as usize]; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP7.4**: per core, whether the frame the handler will `eret`
+/// through has been replaced by a restore since the handler began.
+pub type RestoredFlags = [AtomicBool; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+static RESTORE_STAGING: RestoreStaging =
+    [const { [const { AtomicU64::new(0) }; TRAP_FRAME_CONTEXT_WORDS as usize] };
+        crate::svc_dispatch::RETURN_FRAME_CORES];
+
+static RESTORED: RestoredFlags =
+    [const { AtomicBool::new(false) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP7.4**: restore kind `0` — resume a user thread from the staged
+/// context.
+pub const RESTORE_KIND_USER: u32 = 0;
+
+/// **WS-BP BP7.4**: restore kind `1` — the core has no thread to run, so it
+/// resumes [`kernel_idle_loop`] at EL1.
+pub const RESTORE_KIND_IDLE: u32 = 1;
+
+/// **WS-BP BP7.4**: the `SPSR_EL1` a user resume may carry — the condition
+/// flags of the staged value and nothing else, so the `eret` lands at **EL0t**
+/// with every exception unmasked whatever the saved word says.  A thread's
+/// `pstate` is state the thread can influence (a register write, a hand-built
+/// frame); letting its mode bits through would let it `eret` into EL1.
+#[must_use]
+pub const fn sanitise_user_spsr(value: u64) -> u64 {
+    value & 0xF000_0000
+}
+
+/// **WS-BP BP7.4**: `SPSR_EL1` for the idle resume — EL1h (`M = 0b0101`),
+/// DAIF clear, so the idle loop takes the interrupt that ends it.
+pub const IDLE_SPSR: u64 = 0x5;
+
+/// **WS-BP BP7.4: the core's wait when no thread is runnable.**  Entered only
+/// by `eret` from a restore of kind [`RESTORE_KIND_IDLE`], at EL1h with IRQs
+/// unmasked; it keeps no state, so a later restore may replace its frame
+/// outright — which is the only kind of EL1-origin frame a restore ever
+/// meets, since every other kernel path runs with IRQs masked.
+pub extern "C" fn kernel_idle_loop() -> ! {
+    loop {
+        crate::cpu::wfi();
+    }
+}
+
+/// Why a restore was refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RestoreRefusal {
+    /// A word index past the context.
+    IndexOutOfRange,
+    /// A kind other than [`RESTORE_KIND_USER`] or [`RESTORE_KIND_IDLE`].
+    UnknownKind,
+    /// A core id outside the slot arrays.
+    CoreOutOfRange,
+}
+
+/// **WS-BP BP7.4**: stage word `index` of `core`'s resume context (the
+/// testable form).
+pub fn restore_stage_word_in(
+    staging: &RestoreStaging,
+    core: usize,
+    index: u32,
+    value: u64,
+) -> Result<(), RestoreRefusal> {
+    let slot = staging.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
+    let word = slot
+        .get(index as usize)
+        .ok_or(RestoreRefusal::IndexOutOfRange)?;
+    word.store(value, Ordering::Relaxed);
+    Ok(())
+}
+
+/// **WS-BP BP7.4: commit a staged resume into the frame the handler will
+/// `eret` through** (the testable form).  `Ok(false)` when no frame is
+/// published on `core` — the entry was not reached from a trap, and there is
+/// nothing to resume into; `Ok(true)` when the frame was replaced and
+/// `restored[core]` set.  A user resume copies the staged words with
+/// `SPSR_EL1` sanitised ([`sanitise_user_spsr`]); an idle resume clears the
+/// general-purpose registers and `SP_EL0` and aims `ELR_EL1` at `idle_pc`.
+/// The syndrome words are the trap's and are left alone.
+pub fn restore_commit_in(
+    slots: &InFlightSlots,
+    staging: &RestoreStaging,
+    restored: &RestoredFlags,
+    core: usize,
+    kind: u32,
+    idle_pc: u64,
+) -> Result<bool, RestoreRefusal> {
+    if kind != RESTORE_KIND_USER && kind != RESTORE_KIND_IDLE {
+        return Err(RestoreRefusal::UnknownKind);
+    }
+    let slot = slots.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
+    let words = staging.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
+    let flag = restored.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
+    let ptr = slot.load(Ordering::Relaxed);
+    if ptr.is_null() {
+        return Ok(false);
+    }
+    // SAFETY: as in `in_flight_frame_word_in` — a non-null slot names the
+    // frame a handler on this PE published and has not withdrawn; that
+    // handler is suspended in the call that reached here, so this is the only
+    // live reference to the frame for the duration of the write, and only
+    // core `core` writes slot `core`.
+    let frame = unsafe { &mut *ptr };
+    if kind == RESTORE_KIND_USER {
+        let word = |i: usize| words[i].load(Ordering::Relaxed);
+        for (i, gpr) in frame.gprs.iter_mut().enumerate() {
+            *gpr = word(i);
+        }
+        frame.sp_el0 = word(31);
+        frame.elr_el1 = word(32);
+        frame.spsr_el1 = sanitise_user_spsr(word(33));
+    } else {
+        frame.gprs = [0; 31];
+        frame.sp_el0 = 0;
+        frame.elr_el1 = idle_pc;
+        frame.spsr_el1 = IDLE_SPSR;
+    }
+    flag.store(true, Ordering::Relaxed);
+    Ok(true)
+}
+
+/// **WS-BP BP7.4**: take (and clear) `core`'s restored flag — whether the
+/// frame the handler is about to `eret` through was replaced by a restore
+/// (the testable form).
+#[must_use]
+pub fn take_restored_in(restored: &RestoredFlags, core: usize) -> bool {
+    restored
+        .get(core)
+        .is_some_and(|flag| flag.swap(false, Ordering::Relaxed))
+}
+
+/// **WS-BP BP7.4**: stage word `index` of the executing PE's resume context.
+pub fn restore_stage_word(index: u32, value: u64) -> Result<(), RestoreRefusal> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    restore_stage_word_in(&RESTORE_STAGING, core, index, value)
+}
+
+/// **WS-BP BP7.4**: commit the executing PE's staged resume.
+pub fn restore_commit(kind: u32) -> Result<bool, RestoreRefusal> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    restore_commit_in(
+        &IN_FLIGHT_FRAMES,
+        &RESTORE_STAGING,
+        &RESTORED,
+        core,
+        kind,
+        kernel_idle_loop as *const () as usize as u64,
+    )
+}
+
+/// **WS-BP BP7.4**: take the executing PE's restored flag.  The trap arms
+/// consult it once the context-restore seam is live (BP7.6): a replaced frame
+/// is resumed as it stands, never overwritten by a return frame or a poison.
+#[must_use]
+pub fn take_restored() -> bool {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    take_restored_in(&RESTORED, core)
 }
 
 impl TrapFrame {
@@ -1389,6 +1556,117 @@ mod tests {
             None,
             "a core past the slots"
         );
+    }
+
+    fn fresh_restore() -> (InFlightSlots, RestoreStaging, RestoredFlags) {
+        (
+            [const { AtomicPtr::new(core::ptr::null_mut()) };
+                crate::svc_dispatch::RETURN_FRAME_CORES],
+            [const { [const { AtomicU64::new(0) }; TRAP_FRAME_CONTEXT_WORDS as usize] };
+                crate::svc_dispatch::RETURN_FRAME_CORES],
+            [const { AtomicBool::new(false) }; crate::svc_dispatch::RETURN_FRAME_CORES],
+        )
+    }
+
+    /// WS-BP BP7.4: a user resume replaces every context word of the frame
+    /// the handler will `eret` through, sanitises `SPSR_EL1` to EL0t, leaves
+    /// the trap's own syndrome words alone, and sets the restored flag once.
+    #[test]
+    fn a_user_restore_replaces_the_in_flight_context() {
+        let (slots, staging, restored) = fresh_restore();
+        for i in 0..TRAP_FRAME_CONTEXT_WORDS {
+            restore_stage_word_in(&staging, 2, i, 1000 + u64::from(i)).unwrap();
+        }
+        // A hostile pstate: EL1h with DAIF masked and NZCV set.
+        restore_stage_word_in(&staging, 2, 33, 0xF000_03C5).unwrap();
+        let mut frame = zero_frame();
+        frame.esr_el1 = 0x5600_0000;
+        frame.far_el1 = 0xDEAD;
+        {
+            let _g = InFlightFrame::publish_in(&slots, 2, &mut frame);
+            assert_eq!(
+                restore_commit_in(&slots, &staging, &restored, 2, RESTORE_KIND_USER, 0x4242),
+                Ok(true)
+            );
+        }
+        for i in 0..31 {
+            assert_eq!(frame.gprs[i], 1000 + i as u64);
+        }
+        assert_eq!(frame.sp_el0, 1031);
+        assert_eq!(frame.elr_el1, 1032);
+        assert_eq!(
+            frame.spsr_el1, 0xF000_0000,
+            "mode and DAIF must not survive"
+        );
+        assert_eq!(frame.esr_el1, 0x5600_0000);
+        assert_eq!(frame.far_el1, 0xDEAD);
+        assert!(take_restored_in(&restored, 2));
+        assert!(!take_restored_in(&restored, 2), "the flag is taken once");
+        assert!(
+            !take_restored_in(&restored, 1),
+            "another core's flag is untouched"
+        );
+    }
+
+    /// WS-BP BP7.4: an idle resume aims the frame at the idle loop at EL1h
+    /// with interrupts unmasked and carries no register of the thread it
+    /// replaced.
+    #[test]
+    fn an_idle_restore_resumes_the_idle_loop() {
+        let (slots, staging, restored) = fresh_restore();
+        let mut frame = zero_frame();
+        frame.gprs = [7; 31];
+        frame.sp_el0 = 9;
+        frame.elr_el1 = 0x40_0000;
+        {
+            let _g = InFlightFrame::publish_in(&slots, 0, &mut frame);
+            assert_eq!(
+                restore_commit_in(&slots, &staging, &restored, 0, RESTORE_KIND_IDLE, 0x8_1234),
+                Ok(true)
+            );
+        }
+        assert_eq!(frame.gprs, [0; 31]);
+        assert_eq!(frame.sp_el0, 0);
+        assert_eq!(frame.elr_el1, 0x8_1234);
+        assert_eq!(frame.spsr_el1, IDLE_SPSR);
+        assert!(take_restored_in(&restored, 0));
+    }
+
+    /// WS-BP BP7.4: with no frame published there is nothing to resume into,
+    /// so the commit is a no-op that sets no flag; an unknown kind, a word
+    /// past the context and a core outside the slots are refused.
+    #[test]
+    fn a_restore_without_a_frame_is_a_no_op_and_bad_operands_are_refused() {
+        let (slots, staging, restored) = fresh_restore();
+        assert_eq!(
+            restore_commit_in(&slots, &staging, &restored, 1, RESTORE_KIND_USER, 0),
+            Ok(false)
+        );
+        assert!(!take_restored_in(&restored, 1));
+        assert_eq!(
+            restore_commit_in(&slots, &staging, &restored, 1, 2, 0),
+            Err(RestoreRefusal::UnknownKind)
+        );
+        assert_eq!(
+            restore_stage_word_in(&staging, 1, TRAP_FRAME_CONTEXT_WORDS, 0),
+            Err(RestoreRefusal::IndexOutOfRange)
+        );
+        assert_eq!(
+            restore_stage_word_in(&staging, 99, 0, 0),
+            Err(RestoreRefusal::CoreOutOfRange)
+        );
+        assert_eq!(
+            restore_commit_in(&slots, &staging, &restored, 99, RESTORE_KIND_IDLE, 0),
+            Err(RestoreRefusal::CoreOutOfRange)
+        );
+    }
+
+    /// WS-BP BP7.4: sanitisation keeps exactly the condition flags.
+    #[test]
+    fn user_spsr_sanitisation_keeps_only_nzcv() {
+        assert_eq!(sanitise_user_spsr(0), 0);
+        assert_eq!(sanitise_user_spsr(u64::MAX), 0xF000_0000);
+        assert_eq!(sanitise_user_spsr(0x3C5), 0);
     }
 
     /// AK5-F test helper: construct a zero-initialized TrapFrame.
