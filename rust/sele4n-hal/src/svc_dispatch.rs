@@ -8,7 +8,7 @@
 //!
 //! ## Mirror discipline
 //!
-//! `SyscallId` here mirrors the 38-variant enum in
+//! `SyscallId` here mirrors the 39-variant enum in
 //! `sele4n-types/src/syscall.rs`.  We do NOT depend on `sele4n-types`
 //! in the runtime build (the HAL crate is the lowest-level workspace
 //! member with zero runtime dependencies, by design — see
@@ -82,7 +82,7 @@ impl DispatchError {
     }
 }
 
-/// AN9-F: 38-variant syscall ID enum mirroring
+/// AN9-F: 39-variant syscall ID enum mirroring
 /// `sele4n-types::SyscallId`.  Discriminants align with the Lean
 /// `SyscallId.toNat` encoding so a `u64` syscall id read from the
 /// trap frame's `x7` register decodes identically on both sides.
@@ -154,11 +154,15 @@ pub enum SyscallId {
     /// capability names a carved child (seL4's `resetUntypedCap`); invoked on
     /// the untyped capability, with no message registers.
     UntypedReset = 37,
+    /// WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and VSpace
+    /// roots (seL4's `TCB_SetSpace`); x2/x3 = capability addresses of the two
+    /// roots in the caller's CSpace.
+    TcbSetSpace = 38,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 38;
+    pub const COUNT: u32 = 39;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
     /// outside the valid `0..COUNT` range with `None`.
@@ -202,6 +206,7 @@ impl SyscallId {
             35 => Some(Self::CspaceRevoke),
             36 => Some(Self::UntypedRetype),
             37 => Some(Self::UntypedReset),
+            38 => Some(Self::TcbSetSpace),
             _ => None,
         }
     }
@@ -245,6 +250,8 @@ impl SyscallId {
             Self::UntypedRetype => 4,
             // WS-BP BP7.1: the reset's only operand is the invoked capability.
             Self::UntypedReset => 0,
+            // WS-BP BP7.1: the two root capability addresses.
+            Self::TcbSetSpace => 2,
             Self::LifecycleRetype => 3,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
@@ -1242,7 +1249,10 @@ mod tests {
         // WS-BP BP7.1: the reset takes no message registers.
         assert_eq!(SyscallId::UntypedReset.min_inline_args(), 0);
         assert_eq!(SyscallId::from_u32(37), Some(SyscallId::UntypedReset));
-        assert_eq!(SyscallId::from_u32(38), None);
+        // WS-BP BP7.1: the space change takes its two root addresses.
+        assert_eq!(SyscallId::TcbSetSpace.min_inline_args(), 2);
+        assert_eq!(SyscallId::from_u32(38), Some(SyscallId::TcbSetSpace));
+        assert_eq!(SyscallId::from_u32(39), None);
     }
 
     // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid

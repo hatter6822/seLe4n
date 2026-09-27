@@ -132,6 +132,35 @@ pub fn tcb_set_fault_handler(tcb_cap: CPtr, handler_cptr: u64) -> KernelResult<S
     })
 }
 
+/// Set a suspended thread's CSpace and VSpace roots — seL4's `TCB_SetSpace`.
+///
+/// `cspace_root` and `vspace_root` are capability addresses **in the caller's
+/// CSpace**: the first names the new CSpace root (a CNode, held with `Grant`
+/// and `Write`), the second the new VSpace root (held with `Write`) — for
+/// instance one carved from an untyped.  Requires `.write` on the target TCB
+/// capability, and the target must be suspended (`IllegalState` otherwise).
+///
+/// Lean: `setThreadSpace` (Lifecycle/Operations/SetSpace.lean), dispatched as
+/// `SyscallId.tcbSetSpace` in `API.lean` (WS-BP BP7.1).
+#[inline]
+pub fn tcb_set_space(
+    tcb_cap: CPtr,
+    cspace_root: CPtr,
+    vspace_root: CPtr,
+) -> KernelResult<SyscallResponse> {
+    let args = SetSpaceArgs {
+        cspace_root: cspace_root.raw(),
+        vspace_root: vspace_root.raw(),
+    };
+    let encoded = args.encode();
+    invoke_syscall(SyscallRequest {
+        cap_addr: tcb_cap,
+        msg_info: MessageInfo::new_const(2, 0, 0),
+        msg_regs: [encoded[0], encoded[1], 0, 0],
+        syscall_id: SyscallId::TcbSetSpace,
+    })
+}
+
 /// Bind a notification object to a TCB (PR #866 round-3 review: the
 /// wrapper the ABI documented but never had — the syscall was callable
 /// only via hand-encoded requests, leaving it outside the prefilter

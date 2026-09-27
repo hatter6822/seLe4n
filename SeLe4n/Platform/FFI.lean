@@ -2663,6 +2663,7 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .auditDrain             => some false
   | .declassifySignal       => none
   | .tcbSetFaultHandler     => some false
+  | .tcbSetSpace            => some false
 
 /-- The partition, pinned against the ledger rather than listed twice: a
 syscall returns its lookup failure exactly when the refusal seam records it.

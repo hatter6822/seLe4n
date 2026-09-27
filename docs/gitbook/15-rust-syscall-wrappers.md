@@ -81,7 +81,7 @@ Safe high-level wrappers across the syscall surface:
 | VSpace | `vspace_map` (W^X pre-check; + `_read_only` / `_read_write` / `_read_execute` presets), `vspace_unmap`, `vspace_unify_instruction` |
 | Service | `service_register`, `service_revoke`, `service_query` (returns the resolved service id since WS-RA v0.33.37) |
 | SchedContext | `sched_context_configure`, `sched_context_bind`, `sched_context_unbind` |
-| TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer`, `tcb_set_affinity`, `tcb_set_fault_handler`, `tcb_bind_notification`, `tcb_unbind_notification` |
+| TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer`, `tcb_set_affinity`, `tcb_set_fault_handler`, `tcb_set_space` (put a suspended thread in a CSpace and a VSpace root the caller holds, BP7.1 v0.36.11), `tcb_bind_notification`, `tcb_unbind_notification` |
 | Information flow | `declassify`, `declassify_signal` (data-carrying, SM9.C) |
 | Audit trail | `audit_read`, `audit_fold_chunks`, `audit_drain`, `audit_drain_all`, `audit_read_raw` (SM9.A/B reader + drain behind the monitor gate) |
 

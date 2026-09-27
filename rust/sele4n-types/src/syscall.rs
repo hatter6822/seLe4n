@@ -5,7 +5,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 38 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 39 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -131,11 +131,20 @@ pub enum SyscallId {
     /// instruction-cache maintenance `VSpaceUnmap` performs), the carved frames
     /// cease to exist, and the watermark returns to zero.
     UntypedReset = 37,
+    /// WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and VSpace
+    /// roots — seL4's `TCB_SetSpace`.
+    ///
+    /// Invoked on the **target TCB** capability (`Write` right).  x2 = the
+    /// address, in the caller's CSpace, of a capability to the new CSpace root
+    /// (a CNode, held with `Grant` and `Write`); x3 = the address of a
+    /// capability to the new VSpace root (held with `Write`).  Refused unless
+    /// the target is suspended.
+    TcbSetSpace = 38,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 38;
+    pub const COUNT: usize = 39;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -179,6 +188,7 @@ impl SyscallId {
             35 => Some(Self::CspaceRevoke),
             36 => Some(Self::UntypedRetype),
             37 => Some(Self::UntypedReset),
+            38 => Some(Self::TcbSetSpace),
             _ => None,
         }
     }
@@ -208,6 +218,8 @@ impl SyscallId {
             Self::UntypedRetype => AccessRight::Retype,
             // WS-BP BP7.1: a reset is authority over the untyped's memory.
             Self::UntypedReset => AccessRight::Retype,
+            // WS-BP BP7.1: setting a thread's roots configures the thread.
+            Self::TcbSetSpace => AccessRight::Write,
             Self::VSpaceMap | Self::VSpaceUnmap => AccessRight::Write,
             Self::ServiceRegister | Self::ServiceRevoke => AccessRight::Write,
             Self::ServiceQuery => AccessRight::Read,
@@ -429,8 +441,9 @@ mod tests {
         // discriminant is unchanged.
         assert_eq!(SyscallId::UntypedReset.to_u64(), 37);
         assert_eq!(SyscallId::from_u64(37), Some(SyscallId::UntypedReset));
-        assert_eq!(SyscallId::from_u64(38), None);
-        assert_eq!(SyscallId::COUNT, 38);
+        assert_eq!(SyscallId::from_u64(38), Some(SyscallId::TcbSetSpace));
+        assert_eq!(SyscallId::from_u64(39), None);
+        assert_eq!(SyscallId::COUNT, 39);
         assert_eq!(
             SyscallId::UntypedReset.required_right(),
             AccessRight::Retype

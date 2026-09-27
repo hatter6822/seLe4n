@@ -1,3 +1,55 @@
+## v0.36.11 — WS-BP BP7.1: a thread runs in a carved address space
+
+`v0.36.10` carved address spaces from untypeds and registered what it could not
+yet do: nothing wrote a TCB's `vspaceRoot` at runtime, so a carved root could be
+mapped into and reset but never run in.  This cut adds seL4's `TCB_SetSpace` and
+closes that half of the row.
+
+**The syscall.**  `.tcbSetSpace` is discriminant **38** (count 39), invoked on the
+target TCB capability with `.write`.  MR0 and MR1 are addresses, in the
+**caller's** CSpace, of capabilities to the new CSpace root and the new VSpace
+root.  `resolveSetSpace` resolves both over `resolveCallerCapObject` — the
+caller-CSpace resolution `resolveVSpaceMapFrame` and
+`resolveSchedContextBindThread` each spell inline, now named once — requiring
+`.grant` **and** `.write` on the CNode (a CSpace root hands the thread every
+capability the CNode holds and the right to change them, the authority
+`.cspaceMint` gates on) and `.write` on the VSpace root (the right `.vspaceMap`
+gates on).  `resolveSetSpace_ok_authorised` is the authority fact.
+
+**The operation.**  `setThreadSpace` (`Lifecycle/Operations/SetSpace.lean`)
+rewrites the target's `cspaceRoot` and `vspaceRoot` and nothing else, as one
+in-place TCB rewrite under its lookup's own witness, after re-checking each root's
+kind against the store.  It refuses a thread that is not **suspended**, and
+suspended means both the stored flag is `.Inactive` *and* `inferThreadState`
+classifies the thread so — placed on no core, blocked on nothing.  The flag alone
+is not enough: a builder-made or otherwise stale flag reads `.Inactive` on a
+thread the scheduler is running, and the witness's decisive case is exactly that
+thread (`setThreadSpace_refuses_active`).  `setThreadSpace_preserves_ipcInvariantFull`
+reaches the bundle through the one-field transport `setThreadFaultHandlerOp` uses.
+
+**Everywhere a syscall is classified.**  The return shape is `.unit` (the shared
+fixture regenerated on both sides of the ABI), the refusal ledger `.exempt`, the
+capability-fault phase send, taint `.inert`, the frozen surface uncovered (a
+production object-store op with no frozen variant).  It declares a static lock
+footprint, `lockSet_tcbSetSpace` — the caller and its CNode root read, the target
+written, the two new roots read — with its consistency theorem, its size bound in
+the derived-footprint bundle, and a queue-ownership theorem; it writes no
+scheduler slot, so the scheduler domain answers `none`.  The enforcement boundary
+gains `setThreadSpace` as capability-only (50 canonical, 65 per-core).  The SM3
+manifest moves to 432 entries and 289 theorems; the WS-SM total to **1142 entries
+of which 923 are theorems**.  The Rust ABI mirrors it (`SyscallId::TcbSetSpace`,
+`SetSpaceArgs`, `sele4n_sys::tcb::tcb_set_space`, two inline registers).
+
+**Witness.**  `tests/VSpaceCapabilityBindingSuite.lean` §5j puts a suspended worker
+into a carved root through the live arm, refuses a grant-less and a read-only
+CNode capability, a CNode and an untyped named as the VSpace root, a short
+message and the running owner — with the retired flag-only reading computed
+beside it — then shows the reset refusing while the worker runs in the carved
+root and succeeding once it is moved back.
+
+**Still registered.**  A boot-configured root has no table page, and intermediate
+page-table objects are not carved; both are BP7.1's before BP7.2 installs a root.
+
 ## v0.36.10 — WS-BP BP7.1 slice 4b: an address space is carved memory
 
 `v0.36.9` closed the in-place retype's ASID-0 collision by refusing to create a

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.10.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.11.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7151,7 +7151,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -8220,10 +8220,32 @@ capability carries), removes every mapping it holds through the verified unmap
 and checks it empty, and erases its ASID entry, deciding afterwards that no
 entry names a retired object (`untypedReset_ok_asids_released`).  (4) **The
 carve lock is keyed on the carved kind** (`carvedObjectLock`), so a kind the
-carve gains names its own lock.  What is still owed before BP7.2: a TCB-space
-operation, a table page for each configured root, and intermediate page-table
-objects — registered.  The witness is `tests/VSpaceCapabilityBindingSuite.lean`
-§5i.
+carve gains names its own lock.  What is still owed before BP7.2: a table
+page for each configured root, and intermediate page-table objects —
+registered.  The witness is `tests/VSpaceCapabilityBindingSuite.lean` §5i.
+
+**A thread runs in a carved address space** (`v0.36.11`).  `.tcbSetSpace`
+(syscall **38**, count 39) is seL4's `TCB_SetSpace`: invoked on the target TCB
+capability with `.write`, MR0/MR1 the addresses in the **caller's** CSpace of
+capabilities to the new CSpace root and VSpace root.  Four things new code must
+respect.  (1) **The CSpace root needs `.grant` and `.write`**
+(`resolveSetSpace`): making a CNode a thread's root hands the thread every
+capability it holds and the right to change them, which is the authority
+`.cspaceMint` gates on — a read-only or grant-less capability is refused.  The
+VSpace root needs `.write`, as `.vspaceMap` does.  (2) **Suspended means the
+state says so, not the flag alone**: `setThreadSpace` refuses unless the stored
+flag is `.Inactive` *and* `inferThreadState` classifies the thread so (placed on
+no core, blocked on nothing), so a stale flag cannot admit a running thread —
+§5j's decisive case is the running owner, whose stored flag is the default
+`.Inactive`.  (3) **The write is one in-place TCB rewrite** under the lookup's
+own witness, reaching `ipcInvariantFull` through the one-field transport
+`setThreadFaultHandlerOp` uses.  (4) **It declares a static footprint**
+(`lockSet_tcbSetSpace`: the caller and its CNode root read, the target written,
+the two new roots read), and `resolveCallerCapObject` is the caller-CSpace
+resolution the arm's two operands share — a new arm resolving a capability
+operand reaches for it rather than spelling the gate again.  The payoff §5j
+measures: the reset refuses while a thread runs in a carved root, and succeeds
+once the thread is moved back.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
@@ -13408,12 +13430,12 @@ code may assume:
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
   phase SM0..SM10, each naming the theorem inventories that phase owns.  Those
-  inventories hold **1140 entries**, of which **922 are theorems**: the
-  inventories register a phase's whole surface, so 218 entries are `def`s —
+  inventories hold **1142 entries**, of which **923 are theorems**: the
+  inventories register a phase's whole surface, so 219 entries are `def`s —
   lock-set footprints, PIP chain-start markers, per-core invariant predicates,
   WCRT cost functions — and
   every inventory's construction macro proves only that the name *resolves*,
-  never that its type is a `Prop`.  **Quote 922, and quote it as theorems; 1140
+  never that its type is a `Prop`.  **Quote 923, and quote it as theorems; 1142
   is the entry count.**  A `List.length` cannot tell the two apart, so the
   propositionality census at the end of that module resolves each identifier
   against the environment and fails elaboration on drift.  **Eight of the eleven

@@ -21,6 +21,7 @@ import SeLe4n.Kernel.Service.Registry
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.Operations.Fault
 import SeLe4n.Kernel.Capability.FrameFinalise
+import SeLe4n.Kernel.Lifecycle.Operations.SetSpace
 
 /-!
 # `ipcInvariantFull` bundles for the non-IPC dispatch arms
@@ -4919,6 +4920,20 @@ theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull
             { tcb with faultHandler := some cptr } hObjInv hInv
             ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
             rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle.  It
+rewrites one TCB's `cspaceRoot` and `vspaceRoot`, neither of which any conjunct
+reads, so it is the one-field TCB rewrite `setThreadFaultHandlerOp` is. -/
+theorem setThreadSpace_preserves_ipcInvariantFull
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cn vr : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : setThreadSpace st vtid cn vr = .ok st') :
+    ipcInvariantFull st' := by
+  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := setThreadSpace_ok st st' vtid cn vr hStep
+  exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val tcb
+    { tcb with cspaceRoot := cn, vspaceRoot := vr } hObjInv hInv
+    ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
+    rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- Review round (PR #887): and the object-store invariant. -/
 theorem setThreadFaultHandlerOp_preserves_objects_invExt

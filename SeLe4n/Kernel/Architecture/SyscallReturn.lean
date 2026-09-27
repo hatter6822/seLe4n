@@ -300,6 +300,7 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .tcbSetIPCBuffer       => .unit
   | .tcbSetAffinity        => .unit
   | .tcbSetFaultHandler    => .unit
+  | .tcbSetSpace           => .unit
   | .tcbBindNotification   => .unit
   | .tcbUnbindNotification => .unit
   | .mintReplyCap          => .unit

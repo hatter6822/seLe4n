@@ -248,6 +248,8 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_tcbSetAffinity .lockSet,
     lkst! "lockSet for tcbSetFaultHandler"
       lockSet_tcbSetFaultHandler .lockSet,
+    lkst! "lockSet for tcbSetSpace"
+      lockSet_tcbSetSpace .lockSet,
     lkst! "lockSet for tcbBindNotification"
       lockSet_tcbBindNotification .lockSet,
     lkst! "lockSet for tcbUnbindNotification"
@@ -321,6 +323,8 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_tcbSetAffinity .consistency,
     lkst! "lockSet_consistent for tcbSetFaultHandler"
       lockSet_consistent_tcbSetFaultHandler .consistency,
+    lkst! "lockSet_consistent for tcbSetSpace"
+      lockSet_consistent_tcbSetSpace .consistency,
     lkst! "lockSet_consistent for tcbBindNotification"
       lockSet_consistent_tcbBindNotification .consistency,
     lkst! "lockSet_consistent for tcbUnbindNotification"
@@ -375,7 +379,11 @@ def lockSetTheorems : List LockSetTheorem :=
     lkst! "pipChainStart for tcbSuspend (revert from the captured blocking server when reply-blocked)"
       pipChainStart_tcbSuspend .chainStart]
 
-/-- WS-SM SM3.B: the inventory has exactly 113 entries (WS-OD OD3.14's two
+/-- WS-SM SM3.B: the inventory has exactly 117 entries (WS-BP BP7.1's
+`tcbSetSpace` lockSet + consistency pair — the thread-space configuration
+syscall, whose footprint is the caller's and target's TCBs, the caller's CNode
+root, and the new CSpace and VSpace roots in *read* mode — on top of the
+115 before it, which were WS-OD OD3.14's two
 new chain-start markers — the second walk a `.replyRecv` performs on a
 delegated reply and the walk `.receive` gained when its rendezvous-path
 priority inversion was closed — on top of the PR #887 review
@@ -402,7 +410,7 @@ PR #822 Phase H's `mintReplyCap` pair, and SM6.B's `tcbBindNotification` /
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 115 := by decide
+    lockSetTheorems.length = 117 := by decide
 
 /-- WS-SM SM3.B: 22 entries in the `projection` category
 (lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
@@ -414,14 +422,16 @@ theorem lockSetTheorems_projection_count :
     (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
-/-- WS-SM SM3.B: 35 entries in the `lockSet` category (one per SyscallId variant). -/
+/-- WS-SM SM3.B: 37 entries in the `lockSet` category (one per statically
+declared SyscallId variant). -/
 theorem lockSetTheorems_lockSet_count :
-    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 36 := by
+    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 37 := by
   decide
 
-/-- WS-SM SM3.B: 35 entries in the `consistency` category (one per SyscallId variant). -/
+/-- WS-SM SM3.B: 37 entries in the `consistency` category (one per statically
+declared SyscallId variant). -/
 theorem lockSetTheorems_consistency_count :
-    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 36 := by
+    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 37 := by
   decide
 
 /-- WS-SM SM3.B: 6 entries in the `acquireSort` category

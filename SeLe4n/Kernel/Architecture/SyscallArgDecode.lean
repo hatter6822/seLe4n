@@ -1907,4 +1907,35 @@ theorem decodeAuditDrainArgs_roundtrip (args : AuditDrainArgs) :
         Except.bind, Pure.pure, Except.pure]
 
 
+-- ============================================================================
+-- WS-BP BP7.1 (`v0.36.11`): thread-space configuration decode (`tcbSetSpace`)
+-- ============================================================================
+
+/-- WS-BP BP7.1 (`v0.36.11`): per-syscall argument structure for `tcbSetSpace`
+    — seL4's `TCB_SetSpace`.  Register mapping: x2 = the address, in the
+    caller's CSpace, of a capability to the new **CSpace root** (a CNode); x3 =
+    the address of a capability to the new **VSpace root**.  The target thread
+    comes from the invoked capability. -/
+structure SetSpaceArgs where
+  cspaceRoot : SeLe4n.CPtr
+  vspaceRoot : SeLe4n.CPtr
+  deriving Repr, DecidableEq
+
+/-- WS-BP BP7.1: decode `tcbSetSpace` arguments.  Requires 2 message registers. -/
+def decodeSetSpaceArgs (decoded : SyscallDecodeResult)
+    : Except KernelError SetSpaceArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  pure { cspaceRoot := SeLe4n.CPtr.ofNat r0.val, vspaceRoot := SeLe4n.CPtr.ofNat r1.val }
+
+/-- WS-BP BP7.1: encode `tcbSetSpace` arguments into message registers. -/
+@[inline] def encodeSetSpaceArgs (args : SetSpaceArgs) : Array RegValue :=
+  #[⟨args.cspaceRoot.toNat⟩, ⟨args.vspaceRoot.toNat⟩]
+
+/-- WS-BP BP7.1: SetSpaceArgs decode round-trip. -/
+theorem decodeSetSpaceArgs_roundtrip (args : SetSpaceArgs) :
+    decodeSetSpaceArgs (stubDecoded (encodeSetSpaceArgs args)) = .ok args := by
+  simp [decodeSetSpaceArgs, encodeSetSpaceArgs, stubDecoded, requireMsgReg, Bind.bind,
+        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat, SeLe4n.CPtr.toNat]
+
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

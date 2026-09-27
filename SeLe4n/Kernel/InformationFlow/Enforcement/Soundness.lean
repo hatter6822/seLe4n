@@ -371,12 +371,14 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     transition; and WS-BP BP7.1 (`v0.36.7`) added `cspaceDeleteSlotFinalising`
     and `cspaceRevokeCdtFinalising`, capability-only — the live `.cspaceDelete`
     and `.cspaceRevoke` arms' transitions, each removing the mappings the frame
-    capabilities it destroys recorded.
+    capabilities it destroys recorded.  WS-BP BP7.1 (`v0.36.11`) added
+    `setThreadSpace`, capability-only — the live `.tcbSetSpace` arm's
+    transition, rewriting a suspended thread's two root fields.
 
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 49 := by rfl
+    enforcementBoundaryExtended.length = 50 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

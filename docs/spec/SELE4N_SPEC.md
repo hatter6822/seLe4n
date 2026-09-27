@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.10` (`lakefile.toml`) |
+| **Package version** | `0.36.11` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 426,183 across 346 Lean files |
-| **Test LoC** | 86,857 across 71 Lean test suites |
-| **Proved declarations** | 14,113 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 426,657 across 347 Lean files |
+| **Test LoC** | 86,966 across 71 Lean test suites |
+| **Proved declarations** | 14,123 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10 (§8.10.2a); the rest of BP7, and BP8, not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, and `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11 (§8.10.2a); the rest of BP7, and BP8, not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -2809,7 +2809,7 @@ abstract Lean kernel model to concrete ARM64 hardware:
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Lean Kernel Model (pure functions, machine-checked)     │
-│  - Transitions: SeLe4n/Kernel/API.lean (38 syscalls)     │
+│  - Transitions: SeLe4n/Kernel/API.lean (39 syscalls)     │
 │  - Invariants: cross-subsystem, IPC, scheduler, etc.     │
 ├──────────────────────────────────────────────────────────┤
 │  FFI Bridge (@[extern] declarations)                     │
@@ -3120,8 +3120,8 @@ instruction is precisely the livelock RR4 exists to remove.
   preserves `ipcInvariantFull`, `objects.invExt` and the low projection, and
   is mirrored in `sele4n-types` / `sele4n-abi` / `sele4n-sys`
   (`tcb_set_fault_handler`; 36 syscalls since WS-RR RR8.16 added
-  `.cspaceRevoke`, 37 since WS-BP BP7.1 added `.untypedRetype`, and 38 since
-  it added `.untypedReset`).
+  `.cspaceRevoke`, 37 since WS-BP BP7.1 added `.untypedRetype`, 38 since
+  it added `.untypedReset`, and 39 since it added `.tcbSetSpace`).
 - A current-EL abort (EC `0x25`/`0x21`) or an EL1-origin frame was delivered
   as the current *user* thread's fault, carrying the kernel's register window
   to a handler whose reply would `eret` into the kernel frame.  The syndromes
@@ -4706,9 +4706,22 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   through the verified unmap and checks it empty, erases its ASID-table entry,
   and decides no entry names a retired object.  Payoffs:
   `untypedRetypeObject_ok_vspaceRoot`, `untypedNextVSpaceRoot_of_retype_ok`,
-  `untypedReset_ok_asids_released`.  Open: nothing yet points a thread at a
-  carved root, and intermediate page-table objects are not carved.  Witness:
-  §5i.
+  `untypedReset_ok_asids_released`.  Open: intermediate page-table objects
+  are not carved, and a boot-configured root has no table page.  Witness: §5i.
+- **A thread runs in a carved address space** (`v0.36.11`, `.tcbSetSpace`,
+  syscall 38, `.write` on the target TCB — seL4's `TCB_SetSpace`).
+  `setThreadSpace` rewrites a suspended thread's `cspaceRoot` and `vspaceRoot`
+  and nothing else.  MR0/MR1 are capability addresses in the **caller's**
+  CSpace, resolved by `resolveSetSpace` over the shared
+  `resolveCallerCapObject`: the CSpace root needs `.grant` and `.write` (a
+  CSpace root hands the thread every capability the CNode holds), the VSpace
+  root `.write`; each is re-checked against the store for its kind.  Suspended
+  means the stored flag is `.Inactive` **and** `inferThreadState` classifies the
+  thread so — a stale flag cannot admit a running thread
+  (`setThreadSpace_refuses_active`).  Payoffs: `setThreadSpace_ok_tcb`,
+  `resolveSetSpace_ok_authorised`, `setThreadSpace_preserves_ipcInvariantFull`;
+  footprint `lockSet_tcbSetSpace`.  Witness: §5j, which also measures the
+  reset refusing while a thread runs in a carved root.
 
 ### 8.10.3 seL4 Divergence: CNode Intermediate Rights
 `resolveCapAddress` (Operations.lean) does NOT check `Read` rights
@@ -5320,7 +5333,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **204** statements in the family (the
+bound on a post-state across all **205** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to

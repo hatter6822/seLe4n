@@ -4116,6 +4116,36 @@ def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
       (handlerEndpointObjId.map (fun ep => (endpointLock ep, .read))))
     (queueOwnerMember queueOwner)
 
+/-- **WS-BP BP7.1 (`v0.36.11`): `lockSet` for `tcbSetSpace`.**
+
+`setThreadSpace` writes the target TCB's two root fields (covered by
+`tcbLock targetTcbTid .write`) after `resolveSetSpace` has read, through the
+**caller's** CSpace root, the two capabilities MR0 and MR1 name, and after the
+operation has read the CNode and the VSpace root they name to check each is an
+object of its kind.  Those two kind checks are the fourth and fifth locks, in
+read mode: without them a concurrent retype of either object races the check,
+and a thread could be left naming a root that was never coherently validated —
+the reason `lockSet_tcbSetFaultHandler` locks its endpoint.  The caller
+pre-resolves each capability's `.object` target the way `resolveSetSpace` does;
+`none` when a lookup fails, since the operation then refuses before reading the
+object.  The capability walks name the caller's root and nothing below it, which
+WS-RR RR7.41 proved is the complete CNode footprint of every resolution the live
+seam admits. -/
+def lockSet_tcbSetSpace (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
+    (newCnodeObjId : Option ObjId) (newVSpaceRootObjId : Option ObjId)
+    (queueOwner : Option QueueOwner) : LockSet :=
+  lockSetExtendOpt
+    (lockSetExtendOpt
+      (lockSetExtendOpt
+        (lockSetOfList
+          [(tcbLock callerTid, .read),
+           (cnodeLock cnodeRootObjId, .read),
+           (tcbLock targetTcbTid, .write)])
+        (newCnodeObjId.map (fun cn => (cnodeLock cn, .read))))
+      (newVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read))))
+    (queueOwnerMember queueOwner)
+
 -- ============================================================================
 -- SM3.B.3 (audit-pass-5) — PIP-chain-walk start markers
 -- ============================================================================
@@ -4564,6 +4594,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- and (review round 3) the endpoint the CPtr names, for the kind check.
   | .tcbSetFaultHandler =>
       [.tcb, .cnode, .endpoint, .notification]
+  -- **WS-BP BP7.1 (`v0.36.11`)**: `setThreadSpace` writes the target TCB and
+  -- reads the new CSpace root (a CNode) and the new VSpace root.
+  | .tcbSetSpace =>
+      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]
   -- WS-SM SM6.B: bind/unbind a notification to a TCB.  Both the notification
   -- (write — `boundTCB`) and the bound TCB (write — `boundNotification`) are in
   -- the footprint, plus the CNode (read) covering the capability resolution.
@@ -4595,7 +4629,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal | .auditRead | .auditDrain => true
 
@@ -6509,6 +6543,34 @@ theorem lockSet_consistent_tcbSetFaultHandler (callerTid : ThreadId)
           cases handlerEp with
           | none => simp at hpp
           | some ep => simp at hpp; rw [← hpp]; simp; decide))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
+
+/-- WS-BP BP7.1 (`v0.36.11`), for `.tcbSetSpace`: the base three locks plus the
+optional reads of the new CSpace root and the new VSpace root. -/
+theorem lockSet_consistent_tcbSetSpace (callerTid : ThreadId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (newCnode newVSpaceRoot : Option ObjId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_tcbSetSpace callerTid cnRoot targetTcb newCnode newVSpaceRoot queueOwner).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSetSpace :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_extendOpt _ _ _
+      (lockSet_consistent_base_plus_opt _ _ _
+        (by intro p hMem
+            rcases List.mem_cons.mp hMem with h | hMem
+            · rw [h]; simp; decide
+            rcases List.mem_cons.mp hMem with h | hMem
+            · rw [h]; simp; decide
+            rcases List.mem_cons.mp hMem with h | hMem
+            · rw [h]; simp; decide
+            exact absurd hMem (by intro h; cases h))
+        (by intro pp hpp
+            cases newCnode with
+            | none => simp at hpp
+            | some cn => simp at hpp; rw [← hpp]; simp; decide))
+      (by intro pp hpp
+          cases newVSpaceRoot with
+          | none => simp at hpp
+          | some vsr => simp at hpp; rw [← hpp]; simp; decide))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 end SeLe4n.Kernel.Concurrency

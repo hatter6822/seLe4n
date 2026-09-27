@@ -1312,6 +1312,109 @@ private def runAuthorizedChecks : IO Unit := do
         | .ok ((), st') => stillMapped st' attackerAsid freshVaddr
         | .error _ => false)
 
+-- ============================================================================
+-- §5j  WS-BP BP7.1 (`v0.36.11`) — a thread runs in a carved address space
+-- ============================================================================
+
+private def spaceWorker : SeLe4n.ThreadId := ⟨945⟩
+private def slotWorkerTcb : Nat := 10  -- a writable capability to the suspended worker
+private def slotOwnerTcb  : Nat := 11  -- a writable capability to the running owner
+
+/-- §5d's scenario with a **suspended** worker thread and two TCB capabilities
+in the owner's CSpace root: one to the worker, one to the owner itself. -/
+private def spaceScenario : SystemState :=
+  let st := carveScenario
+  let worker : TCB :=
+    { tid := spaceWorker, priority := ⟨10⟩, domain := ⟨0⟩,
+      cspaceRoot := carveCn, vspaceRoot := carveVsp,
+      ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready }
+  let st1 := match storeObject spaceWorker.toObjId (.tcb worker) st with
+    | .ok ((), s) => s
+    | .error _ => st
+  match st1.getCNode? carveCn with
+  | none => st1
+  | some cn =>
+    let cn' := (cn.insert (SeLe4n.Slot.ofNat slotWorkerTcb)
+        (frameCapTo spaceWorker.toObjId [.read, .write])).insert
+      (SeLe4n.Slot.ofNat slotOwnerTcb) (frameCapTo carveOwner.toObjId [.read, .write])
+    match storeObject carveCn (.cnode cn') st1 with
+    | .ok ((), s) => s
+    | .error _ => st1
+
+/-- `.tcbSetSpace` on the TCB capability at `tcbSlot`: MR0 the new CSpace root's
+capability address, MR1 the new VSpace root's. -/
+private def decodeSetSpace (tcbSlot cnSlot vrSlot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat tcbSlot
+  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+  , syscallId := .tcbSetSpace
+  , msgRegs   := #[SeLe4n.RegValue.ofNat cnSlot, SeLe4n.RegValue.ofNat vrSlot] }
+
+/-- The retired reading of "suspended": the stored flag alone.  Spelled here and
+nowhere else, so the witness can show the live check discriminates. -/
+private def flagOnlySuspended (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | some t => t.threadState == .Inactive
+  | none => false
+
+/-- The roots a thread names, if it is stored. -/
+private def rootsOf (st : SystemState) (tid : SeLe4n.ThreadId) : Option (SeLe4n.ObjId × SeLe4n.ObjId) :=
+  (st.getTcb? tid).map (fun t => (t.cspaceRoot, t.vspaceRoot))
+
+private def runSetSpaceChecks : IO Unit := do
+  IO.println "-- §5j `.tcbSetSpace` puts a suspended thread in a carved address space (WS-BP BP7.1)"
+  let st := spaceScenario
+  let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
+    match r with | .error e' => e' == e | .ok _ => false
+  let root := SeLe4n.ObjId.ofNat 980
+  match dispatchSyscall (decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12) carveOwner st with
+  | .error e => assertBool s!"carving a root succeeds (got {repr e})" false
+  | .ok ((), st1) => do
+    -- The refusals, each on the state the success runs on.
+    assertBool "a CSpace-root capability without .grant is refused (illegalAuthority)"
+      (isErr .illegalAuthority (dispatchSyscall (decodeSetSpace slotWorkerTcb slotOwnCnRW 12) carveOwner st1))
+    assertBool "a read-only CSpace-root capability is refused (illegalAuthority)"
+      (isErr .illegalAuthority (dispatchSyscall (decodeSetSpace slotWorkerTcb slotOwnCnRO 12) carveOwner st1))
+    assertBool "a CNode capability named as the VSpace root is refused (invalidCapability)"
+      (isErr .invalidCapability
+        (dispatchSyscall (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnCnRW) carveOwner st1))
+    assertBool "an untyped capability named as the VSpace root is refused (invalidCapability)"
+      (isErr .invalidCapability
+        (dispatchSyscall (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotUtRetype) carveOwner st1))
+    assertBool "one message register is refused"
+      ((dispatchSyscall { decodeSetSpace slotWorkerTcb slotOwnCnGrant 12 with
+          msgInfo := { length := 1, extraCaps := 0, label := 0 },
+          msgRegs := #[SeLe4n.RegValue.ofNat slotOwnCnGrant] } carveOwner st1).toOption.isNone)
+    -- The decisive case: the running owner's stored flag is the default
+    -- `.Inactive`, so the retired flag-only reading would admit it.
+    assertBool "CONTROL: the running owner's stored flag reads .Inactive (the retired reading admits it)"
+      (flagOnlySuspended st1 carveOwner)
+    assertBool "a thread the scheduler runs is refused (illegalState), whatever its flag says"
+      (isErr .illegalState (dispatchSyscall (decodeSetSpace slotOwnerTcb slotOwnCnGrant 12) carveOwner st1))
+    match dispatchSyscall (decodeSetSpace slotWorkerTcb slotOwnCnGrant 12) carveOwner st1 with
+    | .error e => assertBool s!"setting the suspended worker's space succeeds (got {repr e})" false
+    | .ok ((), st2) => do
+      assertBool "the worker now names the carved root and the CSpace root"
+        (rootsOf st2 spaceWorker == some (carveCn, root))
+      assertBool "and nothing else about it moved"
+        ((st2.getTcb? spaceWorker).map (fun t => (t.priority, t.ipcState, t.threadState))
+          == (st1.getTcb? spaceWorker).map (fun t => (t.priority, t.ipcState, t.threadState)))
+      assertBool "the owner is untouched"
+        (rootsOf st2 carveOwner == rootsOf st1 carveOwner)
+      match dispatchSyscall (decodeRevoke slotUtRetype) carveOwner st2 with
+      | .error e => assertBool s!"revoking the untyped capability succeeds (got {repr e})" false
+      | .ok ((), stRev) => do
+        assertBool "the reset refuses while the worker runs in the carved root (revocationRequired)"
+          (isErr .revocationRequired (dispatchSyscall (decodeReset slotUtRetype) carveOwner stRev))
+        match dispatchSyscall (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnVsp) carveOwner stRev with
+        | .error e => assertBool s!"moving the worker back to the boot root succeeds (got {repr e})" false
+        | .ok ((), stBack) => do
+          assertBool "the worker names the boot root again"
+            (rootsOf stBack spaceWorker == some (carveCn, carveVsp))
+          assertBool "CONTROL: with no thread in it, the reset retires the carved root"
+            (match dispatchSyscall (decodeReset slotUtRetype) carveOwner stBack with
+             | .ok ((), s) => (s.objects[root]?).isNone
+             | .error _ => false)
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -1327,6 +1430,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runChildUntypedChecks
   runInPlaceVSpaceRootChecks
   runCarvedRootChecks
+  runSetSpaceChecks
   runFrameFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="

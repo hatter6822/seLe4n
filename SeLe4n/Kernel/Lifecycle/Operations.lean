@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers
 import SeLe4n.Kernel.Lifecycle.Operations.UntypedReset
+import SeLe4n.Kernel.Lifecycle.Operations.SetSpace
 
 /-!
 # AN4-G.5 (LIF-M05): `Lifecycle.Operations` hub

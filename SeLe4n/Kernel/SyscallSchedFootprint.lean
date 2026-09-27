@@ -2178,7 +2178,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler
+  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .tcbSetSpace
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .auditRead | .auditDrain => none
@@ -2193,10 +2193,10 @@ footprint without listing it here breaks
 still answers `none` is refused by that arm's own `_isSome_iff`, which states
 the exact operands under which it declares.
 
-There are `SyscallId.count = 38` arms; **sixteen** declare and twenty-two
-answer `none`.  *Which* of those twenty-two write a scheduler slot at all is this
+There are `SyscallId.count = 39` arms; **sixteen** declare and twenty-three
+answer `none`.  *Which* of those twenty-three write a scheduler slot at all is this
 enumeration's own open question — the arms above are the ones WS-RR RR8.12's
-sequence identified, and a twenty-third found to write one is a footprint to
+sequence identified, and a twenty-fourth found to write one is a footprint to
 declare rather than a row to move.  `.cspaceRevoke` (`v0.35.190`) is in the
 `none` group for the same reason its `.cspaceDelete` sibling is: the revocation
 family writes CNodes, the derivation tree and in-flight messages, and no
@@ -2206,7 +2206,9 @@ a page of machine memory — no scheduler field at all.  `.untypedReset` (`v0.36
 writes VSpace roots, TLB, shootdown and instruction-cache state, erased frames
 and the untyped — the `.vspaceUnmap` arm's writes, per mapping, and no run-queue
 or replenish-queue slot on any core (`untypedReset_ok_frame`: the scheduler is
-unchanged). -/
+unchanged).  `.tcbSetSpace` (`v0.36.11`) rewrites one suspended TCB's two root
+fields and nothing else (`setThreadSpace_ok`: the post-state is the pre-state
+with one object-table insert). -/
 def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetAffinity
@@ -2219,7 +2221,7 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler
+  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .tcbSetSpace
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .auditRead | .auditDrain => false

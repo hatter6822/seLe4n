@@ -207,9 +207,58 @@ impl SetFaultHandlerArgs {
     }
 }
 
+/// Arguments for `tcbSetSpace` (syscall 38) — seL4's `TCB_SetSpace`.
+/// Register mapping: x2 = the address, in the **caller's** CSpace, of a
+/// capability to the new CSpace root (a CNode, held with `Grant` and `Write`);
+/// x3 = the address of a capability to the new VSpace root (held with
+/// `Write`).  The target thread must be suspended.
+///
+/// Lean: `SetSpaceArgs` (SyscallArgDecode.lean, WS-BP BP7.1)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SetSpaceArgs {
+    pub cspace_root: u64,
+    pub vspace_root: u64,
+}
+
+impl SetSpaceArgs {
+    pub const fn encode(&self) -> [u64; 2] {
+        [self.cspace_root, self.vspace_root]
+    }
+
+    /// Decode from message registers. Requires 2 registers.
+    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
+        if regs.len() < 2 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            cspace_root: regs[0],
+            vspace_root: regs[1],
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- WS-BP BP7.1: SetSpace --
+
+    #[test]
+    fn set_space_roundtrip() {
+        let args = SetSpaceArgs {
+            cspace_root: 0x11,
+            vspace_root: 0x22,
+        };
+        assert_eq!(SetSpaceArgs::decode(&args.encode()).unwrap(), args);
+    }
+
+    #[test]
+    fn set_space_requires_two_registers() {
+        assert_eq!(
+            SetSpaceArgs::decode(&[1]),
+            Err(KernelError::InvalidMessageInfo)
+        );
+    }
 
     // -- D1: Suspend/Resume --
 

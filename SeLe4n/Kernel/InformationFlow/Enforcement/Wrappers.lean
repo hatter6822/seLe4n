@@ -296,6 +296,12 @@ def enforcementBoundary : List EnforcementClass :=
   -- boundary until the thread faults, and that delivery is policy-gated by
   -- `faultDeliverOnCoreChecked`.
   , .capabilityOnly "setThreadFaultHandlerOp"
+  -- **WS-BP BP7.1 (`v0.36.11`)**: `seL4_TCB_SetSpace`'s roots.  Capability-only:
+  -- the authority is the TCB capability's write right plus the caller's own
+  -- capabilities to the two roots (`resolveSetSpace`: `.grant`+`.write` on the
+  -- CNode, `.write` on the VSpace root), and the write touches one TCB's two
+  -- root fields of a suspended thread — no data crosses a label boundary.
+  , .capabilityOnly "setThreadSpace"
   -- WS-SM SM6.B: notification-binding capability-only operations (seL4
   -- NotificationBind / UnbindNotification — mutate the boundTCB ⇄ boundNotification
   -- relation; gated by the TCB capability, not an information-flow policy)
@@ -427,6 +433,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbSetIPCBuffer => "setIPCBuffer"
   | .tcbSetAffinity => "setThreadCpuAffinity"
   | .tcbSetFaultHandler => "setThreadFaultHandlerOp"
+  | .tcbSetSpace => "setThreadSpace"
   | .tcbBindNotification => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap => "mintReplyCapWithCdt"
