@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/loving-babbage-2z8r8z",
-      "commit_sha": "9a4c60f849e9662b1f893bd7d8437511f3316556",
-      "tree_sha": "0053456599b1071251ce02c7c9bea3daaca64199",
-      "committed_at_utc": "2026-09-27T14:19:28+00:00"
+      "commit_sha": "980c31f20fe9a5a41cf3810aa3ef53df3ddabb9b",
+      "tree_sha": "b799d50a010e5874fbb703f98ddac7ed208cc97f",
+      "committed_at_utc": "2026-09-27T17:25:55+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f0347879d062215d369a652a1258033ed79ad0e84dac362c5a884111b4f5981d"
+    "source_digest": "3a738c11b2eb7167a8c22fe9a33d068345a4422b83b0d8e4e9aab183238b6015"
   },
   "summary": {
     "module_count": 425,
@@ -27,7 +27,7 @@
     "version": "0.36.22",
     "lean_toolchain": "v4.28.0",
     "production_files": 354,
-    "production_loc": 430407,
+    "production_loc": 430409,
     "test_files": 71,
     "test_loc": 87972,
     "proved_theorem_lemma_decls": 14238,
@@ -256931,7 +256931,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_def",
-          "line": 871,
+          "line": 873,
           "called": [
             "captureTrapFrame",
             "completeIcacheMaintenance",
@@ -256960,7 +256960,7 @@
         {
           "kind": "theorem",
           "name": "vacatedCore_next_syscall_rejected",
-          "line": 914,
+          "line": 916,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -256976,7 +256976,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_sgis_nil_single_core",
-          "line": 938,
+          "line": 940,
           "called": [
             "CoreId",
             "SystemState",
@@ -256992,7 +256992,7 @@
         {
           "kind": "def",
           "name": "suspendThreadCrossCoreStep",
-          "line": 993,
+          "line": 995,
           "called": [
             "CoreId",
             "KernelError.toUInt32",
@@ -257017,7 +257017,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadCrossCoreStep_idle_refused",
-          "line": 1064,
+          "line": 1066,
           "called": [
             "CoreId",
             "KernelError.toUInt32",
@@ -257034,7 +257034,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadCrossCoreStep_sentinel_refused",
-          "line": 1079,
+          "line": 1081,
           "called": [
             "CoreId",
             "KernelError.toUInt32",
@@ -257047,7 +257047,7 @@
         {
           "kind": "def",
           "name": "suspendThreadCrossCoreEntry",
-          "line": 1086,
+          "line": 1088,
           "called": [
             "currentCoreId",
             "fireCrossCoreSgis",
@@ -257059,7 +257059,7 @@
         {
           "kind": "theorem",
           "name": "computeCrossCoreSgis_recordSyscallRefusal_eq",
-          "line": 1112,
+          "line": 1114,
           "called": [
             "CoreId",
             "Kernel",
