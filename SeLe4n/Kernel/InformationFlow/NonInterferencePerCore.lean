@@ -1826,7 +1826,9 @@ theorem vspaceMapPage_confinedToCore (st st' : SystemState) (asid : SeLe4n.ASID)
         | none => simp [hMap] at hStep
         | some root' =>
           simp only [hMap] at hStep
-          exact storeObject_confinedToCore st st' rootId _ c₀ hStep
+          exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+            (storeObject_scheduler_eq (Architecture.recordPhysicalWrites st _) st' rootId _ hStep)
+            (storeObject_machine_eq (Architecture.recordPhysicalWrites st _) st' rootId _ hStep)
 
 /-- SM8.B.3: `vspaceUnmapPage` writes only the VSpace root object. -/
 theorem vspaceUnmapPage_confinedToCore (st st' : SystemState) (asid : SeLe4n.ASID)
@@ -1843,7 +1845,9 @@ theorem vspaceUnmapPage_confinedToCore (st st' : SystemState) (asid : SeLe4n.ASI
     | none => simp [hUnmap] at hStep
     | some root' =>
       simp only [hUnmap] at hStep
-      exact storeObject_confinedToCore st st' rootId _ c₀ hStep
+      exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+            (storeObject_scheduler_eq (Architecture.recordPhysicalWrites st _) st' rootId _ hStep)
+            (storeObject_machine_eq (Architecture.recordPhysicalWrites st _) st' rootId _ hStep)
 
 /-- SM8.B.3: `vspaceLookup` is a pure read. -/
 theorem vspaceLookup_confinedToCore (st st' : SystemState) (asid : SeLe4n.ASID)

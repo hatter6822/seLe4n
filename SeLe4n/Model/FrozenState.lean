@@ -565,6 +565,12 @@ structure FrozenSystemState where
       snapshot) owes no maintenance. -/
   pendingIcacheMaintenance :
       List SeLe4n.Kernel.Architecture.ICacheInvalidation
+  /-- WS-BP BP7.2: the physical-write ledger, transferred from
+      `SystemState.pendingPhysicalWrites` during freeze.  **Required** (no
+      default), so a silent drop is a compile error; always `[]` in practice,
+      for the reason `pendingIcacheMaintenance` is. -/
+  pendingPhysicalWrites :
+      List SeLe4n.Kernel.Architecture.PhysicalWrite
   /-- WS-SM SM8.C.8: the declassification audit trail, transferred from
       `SystemState.declassificationAuditLog` during freeze.  **Required** (no
       default), for the same reason as the three fields above and with more at
@@ -744,6 +750,8 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     perCoreICache := st.perCoreICache
     -- WS-SM SM7.D.1: forward the instruction-cache emission ledger unchanged.
     pendingIcacheMaintenance := st.pendingIcacheMaintenance
+    -- WS-BP BP7.2: forward the physical-write ledger unchanged.
+    pendingPhysicalWrites := st.pendingPhysicalWrites
     -- WS-SM SM8.C.8: forward the declassification audit trail unchanged — a
     -- frozen snapshot records every downgrade the running system recorded.
     declassificationAuditLog := st.declassificationAuditLog
@@ -801,6 +809,10 @@ theorem freeze_preserves_perCoreICache (ist : IntermediateState) :
 /-- WS-SM SM7.D.1: `freeze` preserves the instruction-cache emission ledger. -/
 theorem freeze_preserves_pendingIcacheMaintenance (ist : IntermediateState) :
     (freeze ist).pendingIcacheMaintenance = ist.state.pendingIcacheMaintenance := rfl
+
+/-- WS-BP BP7.2: `freeze` preserves the physical-write ledger. -/
+theorem freeze_preserves_pendingPhysicalWrites (ist : IntermediateState) :
+    (freeze ist).pendingPhysicalWrites = ist.state.pendingPhysicalWrites := rfl
 
 /-- WS-SM SM8.C.8: freeze carries the declassification audit trail intact — the
 frozen `declassificationAuditLog` is identical to the pre-freeze

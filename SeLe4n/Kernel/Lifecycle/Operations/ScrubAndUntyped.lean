@@ -865,7 +865,11 @@ owner.  A **device** frame is not touched: its page is MMIO, where a store is a
 command to a device rather than a scrub. -/
 def carveZeroFrame (st : SystemState) (frame : FrameObject) : SystemState :=
   if frame.isDevice then st
-  else { st with machine := SeLe4n.zeroMemoryRange st.machine frame.base SeLe4n.pageBytes }
+  else { st with
+          machine := SeLe4n.zeroMemoryRange st.machine frame.base SeLe4n.pageBytes
+          -- WS-BP BP7.2: the same scrub, owed to physical memory.
+          pendingPhysicalWrites := st.pendingPhysicalWrites ++
+            [SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage frame.base] }
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`): the size bounds of a carved untyped**, as
 a power of two.  The lower bound is one page: every carve's base must stay on a
@@ -1009,7 +1013,9 @@ def CarveRequest.capability (childId : SeLe4n.ObjId) : CarveRequest → Capabili
 any capability to it exists (`carveZeroFrame`).  A child untyped writes nothing:
 its memory is handed out only through its own carves, and each frame carve
 zeroes its page, so scrubbing here would scrub twice — and a device child's
-memory is MMIO, where a store is a command.  A VSpace root's page is zeroed too
+memory is MMIO, where a store is a command.  Every scrub is also recorded as a
+physical write (WS-BP BP7.2), since the model's memory is not the machine's.  A
+VSpace root's page is zeroed too
 (slice 4b): a zeroed table page is a table of invalid descriptors, so a PE told
 to walk it translates nothing — and a device untyped cannot back a root at all
 (`KernelObjectType.deviceBackable`), so the page is always RAM. -/
@@ -1018,12 +1024,16 @@ def CarveRequest.scrub (st : SystemState) (ut : UntypedObject) : CarveRequest �
   | .untyped _ => st
   | .vspaceRoot _ =>
       { st with
-          machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut).base SeLe4n.pageBytes }
+          machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut).base SeLe4n.pageBytes
+          pendingPhysicalWrites := st.pendingPhysicalWrites ++
+            [SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage (untypedNextFrame ut).base] }
   -- WS-BP BP7.1 (`v0.36.12`): a table page is zeroed for the root's reason — a
   -- zeroed table holds only invalid descriptors.
   | .pageTable =>
       { st with
-          machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut).base SeLe4n.pageBytes }
+          machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut).base SeLe4n.pageBytes
+          pendingPhysicalWrites := st.pendingPhysicalWrites ++
+            [SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage (untypedNextFrame ut).base] }
 
 /-- **WS-BP BP7.1 (`v0.36.5`, generalized at slice 4, `v0.36.8`): carve one object
 out of an untyped the caller holds — seL4's `Untyped_Retype`.**
@@ -1276,10 +1286,13 @@ theorem untypedNextVSpaceRoot_of_retype_ok
     (carveZeroFrame st frame).scheduler = st.scheduler := by
   unfold carveZeroFrame; split <;> rfl
 
-/-- **WS-BP BP7.1**: ...and every other field but `machine` — the record is the
-input with the machine's memory rewritten, or the input itself. -/
+/-- **WS-BP BP7.1**: ...and every other field but `machine` and the physical-write
+ledger (WS-BP BP7.2) — the record is the input with the machine's memory
+rewritten and the scrub recorded, or the input itself. -/
 theorem carveZeroFrame_eq (st : SystemState) (frame : FrameObject) :
-    carveZeroFrame st frame = { st with machine := (carveZeroFrame st frame).machine } := by
+    carveZeroFrame st frame =
+      { st with machine := (carveZeroFrame st frame).machine
+                pendingPhysicalWrites := (carveZeroFrame st frame).pendingPhysicalWrites } := by
   unfold carveZeroFrame; split <;> rfl
 
 /-- **WS-BP BP7.1**: a RAM frame's page is zero after the scrub. -/

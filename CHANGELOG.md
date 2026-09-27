@@ -1,3 +1,85 @@
+## v0.36.15 — WS-BP BP7.2: the physical-write ledger, and the translation install
+
+The second and last cut of BP7.2.  The model's address spaces were records the
+hardware never read: a mapping, an installed table, a page carved for an address
+space changed `SystemState` and nothing else, so the translation tables in RAM —
+the only tables the walker reads — would have stayed as the boot left them.  This
+cut carries every such change to physical memory, and gives the context restore
+the call that installs a thread's address space.
+
+**The ledger.**  `SystemState.pendingPhysicalWrites` records what a committed
+transition owes physical memory, in the order it owes it
+(`Architecture.PhysicalWrite`: zero a page, store a descriptor, invalidate an
+ASID's translations), exactly as `pendingIcacheMaintenance` records the
+instruction-cache operand.  `Architecture/HardwareTables.lean` is the function
+from the model to the walker's view: which entry of which table page the walker
+reads for a mapping (`mappingStore?`) or a table slot (`slotStore?`), and what it
+must hold — a level-3 page descriptor with **nG** (ASID-tagged), **PXN**, Normal
+write-back or Device-nGnRnE by the mapping's cacheability, and EL0 access only for
+a user-readable mapping (`userPageDescriptorValue`); a table descriptor naming the
+table's page (`tableDescriptorValue`).  Every writer records at the one place it
+changes the model:
+
+* `vspaceMapPage` / `vspaceUnmapPage` store the level-3 entry (the page
+  descriptor, or `0`);
+* `.pageTableMap` stores the parent's entry, `.pageTableUnmap` clears it and
+  invalidates the ASID (the walk caches intermediate levels, which a leaf TLBI
+  does not name);
+* the finalising detach (`detachPageTables`) clears the parent entry, **zeroes
+  every table page it takes out** — a table left with a stale record re-installs,
+  and must re-install empty — and invalidates the ASID (`detachWrites`);
+* every carve that scrubs a page (a frame of RAM, a VSpace root's page, a page
+  table) records the zeroing — **the hardware scrub the model had always
+  claimed**: a carved frame's old contents were zeroed in the model's memory and
+  in no RAM, which would have handed a thread the previous owner's data;
+* the reset invalidates a retired address space's ASID before the next carve can
+  hand it to a new one.
+
+A root that owns no table page records nothing, because the walker has no page
+to read.
+
+**The seam.**  `syscallDispatchCrossCoreStep` reads and clears the ledger in the
+atomic step (`syscallDispatchCrossCoreStep_drains_physicalWrites`: the committed
+state owes nothing, and the runtime receives exactly what was recorded), and the
+entry performs the writes (`completePhysicalWrites`, in record order,
+`completePhysicalWrites_cons`) **first** — before the cross-core SGIs and before
+the shootdown round, so no core refills a TLB entry from a descriptor the model
+has already cleared, and a carved page is zero before anything can name it.  A
+bracket refusal runs nothing and clears nothing.
+
+**The HAL.**  `rust/sele4n-hal/src/user_translation.rs` validates every operand
+before it writes (`decode_physical_write`): a page is one of the boot's
+table-page pool pages or a whole page of RAM past the kernel's reserved extent
+that the boot map covers, a descriptor store is eight-byte aligned inside such a
+page, an ASID is non-zero and in the 16-bit space.  A refusal **halts the
+system** (`ffi::mmu_apply_physical_write`): the Lean kernel names only pages it
+owns, so a refused operand is a kernel defect, and performing it would write
+memory the kernel did not mean to touch.  Stores go through the identity map as
+single aligned 64-bit writes followed by `DSB ISH`; ASID invalidations are
+`TLBI ASIDE1IS`.
+
+**The install.**  `Platform.FFI.installThreadTranslation` hands the HAL a
+thread's address space (`Architecture.threadTranslationOperands`: its root's
+table page and ASID, or `(0, 0)` for the kernel's own translation when the root
+owns no page), and `ffi::mmu_install_translation` writes the root's level-0
+entry 0 with the **kernel window** — the boot tables' own entry 0 with
+**UXNTable** and **APTable = 0b01**, so no EL0 access or fetch reaches the
+kernel's pages whatever their own descriptors say (`mmu::boot_l0_entry0`) — then
+`TTBR0_EL1` with the ASID in bits [63:48], then `ISB`.  No TLB invalidation on a
+root change: every thread translation is ASID-tagged and every kernel one is
+global.  The context restore (BP7.6) is the caller.
+
+**Tests.**  `tests/VSpaceCapabilityBindingSuite.lean` §5l drives the live
+syscalls and asserts every recorded write at its address: the six carve
+zeroings, each table install's descriptor at the parent entry the architecture
+says (entry 1 of the root for `2^39 + 0x70000`, entry 0 of each table below), the
+page descriptor bit by bit, the unmaps, a table unmap's clear-then-invalidate,
+and the finalising detach's clear, zeroings and invalidation — with the spare
+table's page not rewritten.  It also asserts the install operands for a thread in
+a mappable root, in a root with no page and for an id that names no thread.  The
+HAL's `user_translation::tests` cover every decode refusal, the TTBR0 layout and
+the kernel window's bits.  The golden trace is unchanged.
+
 ## v0.36.14 — WS-BP BP7.2: the user window and 16-bit hardware ASIDs
 
 The first cut of BP7.2, the install of a thread's translation root.  Before any

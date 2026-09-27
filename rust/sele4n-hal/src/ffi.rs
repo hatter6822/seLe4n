@@ -1575,6 +1575,51 @@ pub extern "C" fn cache_ic_maintenance(
     crate::lean_runtime::base_io_unit()
 }
 
+/// **WS-BP BP7.2**: perform one physical write a committed transition
+/// recorded — `Platform.FFI.ffiApplyPhysicalWrite`, driven by the syscall
+/// seam's `completePhysicalWrites`.  The operands are validated against the
+/// pages the kernel may write for a thread
+/// (`user_translation::decode_physical_write`) before anything is written, and
+/// a refusal **halts the system**: the Lean kernel names only pages it owns, so
+/// a refused operand is a kernel defect, and performing it would write memory
+/// the kernel did not mean to touch.
+#[no_mangle]
+pub extern "C" fn mmu_apply_physical_write(
+    tag: u64,
+    addr: u64,
+    value: u64,
+) -> crate::lean_runtime::Obj {
+    match crate::user_translation::decode_physical_write(
+        tag,
+        addr,
+        value,
+        crate::mmu::is_boot_cacheable_range,
+    ) {
+        Ok(write) => crate::user_translation::apply_physical_write(write),
+        Err(_) => crate::gic::halt_all(),
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.2**: install a translation on the executing PE —
+/// `Platform.FFI.ffiInstallTranslation`.  `(0, 0)` is the kernel's own boot
+/// tables; anything else is an address space's top-level table page and its
+/// ASID, validated (`user_translation::decode_install`) before `TTBR0_EL1` is
+/// written, with a refusal halting the system for the reason
+/// [`mmu_apply_physical_write`] gives.
+#[no_mangle]
+pub extern "C" fn mmu_install_translation(table_base: u64, asid: u64) -> crate::lean_runtime::Obj {
+    match crate::user_translation::decode_install(
+        table_base,
+        asid,
+        crate::mmu::is_boot_cacheable_range,
+    ) {
+        Ok(translation) => crate::user_translation::install_translation(translation),
+        Err(_) => crate::gic::halt_all(),
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
 // AN9-D inner (WS-SM SM6.E: per-core form) — Lean-emitted
 // `suspendThreadCrossCoreEntry` dispatch entry: the verified per-core
 // `suspendThreadOnCore` (home-core deschedule + remote `.reschedule`

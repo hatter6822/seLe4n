@@ -368,13 +368,13 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
         | some root' =>
             -- PR #845 review (P2), WS-BP BP7.2: a successful `mapPage` witnesses
             -- that both addresses are page-aligned (`pageMappingAligned_of_mapPage`).
-            have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+            have hStore : storeObject rootId (.vspaceRoot root') (recordPhysicalWrites st (mappingStore? st root' vaddr).toList) = .ok ((), st') := by
               simpa [hMapRoot, pageMappingAligned_of_mapPage hMapRoot] using hStep
             rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
             have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
-              storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStore
+              storeObject_objects_eq (recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStore
             have hObjNe : ∀ oid, oid ≠ rootId → st'.objects[oid]? = st.objects[oid]? :=
-              fun oid hNe => storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hObjInv hStore
+              fun oid hNe => storeObject_objects_ne (recordPhysicalWrites st _) st' rootId oid (.vspaceRoot root') hNe hObjInv hStore
             have hAsidPreserved : root'.asid = root.asid :=
               VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
             have hMappingsInv : root.mappings.invExt := hMappingsWF rootId root hObjRoot
@@ -419,7 +419,7 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                 exact hNoOverlap oid r hObj
             -- 3. asidTableConsistent st' (via shared helper)
             · exact asidTableConsistent_of_storeObject_vspaceRoot
-                st st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
+                (recordPhysicalWrites st _) st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
                 hAsidInv' hAsidK
             -- 4. wxExclusiveInvariant st'
             · intro oid r v p pm hObjR hMap
@@ -522,13 +522,13 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
       cases hUnmapRoot : root.unmapPage vaddr with
       | none => simp [hResolve, hUnmapRoot] at hStep
       | some root' =>
-          have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+          have hStore : storeObject rootId (.vspaceRoot root') (recordPhysicalWrites st (mappingStore? st root' vaddr).toList) = .ok ((), st') := by
             simpa [hResolve, hUnmapRoot] using hStep
           rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
           have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
-            storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStore
+            storeObject_objects_eq (recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStore
           have hObjNe : ∀ oid, oid ≠ rootId → st'.objects[oid]? = st.objects[oid]? :=
-            fun oid hNe => storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hObjInv hStore
+            fun oid hNe => storeObject_objects_ne (recordPhysicalWrites st _) st' rootId oid (.vspaceRoot root') hNe hObjInv hStore
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
           have hMappingsInvK : root.mappings.invExtK := hMappingsK rootId root hObjRoot
@@ -572,7 +572,7 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
               exact hNoOverlap oid r hObj
           -- 3. asidTableConsistent st' (via shared helper)
           · exact asidTableConsistent_of_storeObject_vspaceRoot
-              st st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
+              (recordPhysicalWrites st _) st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
               hAsidInv' hAsidK
           -- 4. wxExclusiveInvariant st' (unmap only removes entries — subset of pre-state mappings)
           · intro oid r v p pm hObjR hMap
@@ -659,19 +659,19 @@ theorem vspaceLookup_after_map
         | some root' =>
             -- PR #845 review (P2), WS-BP BP7.2: a successful `mapPage` witnesses
             -- that both addresses are page-aligned (`pageMappingAligned_of_mapPage`).
-            have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+            have hStore : storeObject rootId (.vspaceRoot root') (recordPhysicalWrites st (mappingStore? st root' vaddr).toList) = .ok ((), st') := by
               simpa [hMapRoot, pageMappingAligned_of_mapPage hMapRoot] using hStep
             rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
             have hAsidPreserved : root'.asid = root.asid :=
               VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
             have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
-              storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStore
+              storeObject_objects_eq (recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStore
             have hAsidInv' : (match st.objects[rootId]? with
                 | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
                 | _ => st.asidTable).invExt := by
               simp only [hObjRoot]; exact hAsidInv rootId root hObjRoot
             have hTablePost : st'.asidTable[root'.asid]? = some rootId :=
-              storeObject_asidTable_vspaceRoot st st' rootId root' hAsidInv' hStore
+              storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) st' rootId root' hAsidInv' hStore
             have hAsidEq : root'.asid = asid := hAsidPreserved.trans hAsidRoot
             have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
               resolveAsidRoot_of_asidTable_entry st' asid rootId root'
@@ -715,19 +715,19 @@ theorem vspaceLookup_map_other
         | some root' =>
             -- PR #845 review (P2), WS-BP BP7.2: a successful `mapPage` witnesses
             -- that both addresses are page-aligned (`pageMappingAligned_of_mapPage`).
-            have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+            have hStore : storeObject rootId (.vspaceRoot root') (recordPhysicalWrites st (mappingStore? st root' vaddr).toList) = .ok ((), st') := by
               simpa [hMapRoot, pageMappingAligned_of_mapPage hMapRoot] using hStep
             rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
             have hAsidPreserved : root'.asid = root.asid :=
               VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
             have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
-              storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStore
+              storeObject_objects_eq (recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStore
             have hAsidInv' : (match st.objects[rootId]? with
                 | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
                 | _ => st.asidTable).invExt := by
               simp only [hObjRoot]; exact hAsidInv rootId root hObjRoot
             have hTablePost : st'.asidTable[root'.asid]? = some rootId :=
-              storeObject_asidTable_vspaceRoot st st' rootId root' hAsidInv' hStore
+              storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) st' rootId root' hAsidInv' hStore
             have hAsidEq : root'.asid = asid := hAsidPreserved.trans hAsidRoot
             have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
               resolveAsidRoot_of_asidTable_entry st' asid rootId root'
@@ -763,19 +763,19 @@ theorem vspaceLookup_after_unmap
       cases hUnmapRoot : root.unmapPage vaddr with
       | none => simp [hResolve, hUnmapRoot] at hStep
       | some root' =>
-          have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+          have hStore : storeObject rootId (.vspaceRoot root') (recordPhysicalWrites st (mappingStore? st root' vaddr).toList) = .ok ((), st') := by
             simpa [hResolve, hUnmapRoot] using hStep
           rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
           have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
-            storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStore
+            storeObject_objects_eq (recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStore
           have hAsidInv' : (match st.objects[rootId]? with
               | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
               | _ => st.asidTable).invExt := by
             simp only [hObjRoot]; exact hAsidInv rootId root hObjRoot
           have hTablePost : st'.asidTable[root'.asid]? = some rootId :=
-            storeObject_asidTable_vspaceRoot st st' rootId root' hAsidInv' hStore
+            storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) st' rootId root' hAsidInv' hStore
           have hAsidEq : root'.asid = asid := hAsidPreserved.trans hAsidRoot
           have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
             resolveAsidRoot_of_asidTable_entry st' asid rootId root'
@@ -808,19 +808,19 @@ theorem vspaceLookup_unmap_other
       cases hUnmapRoot : root.unmapPage vaddr with
       | none => simp [hResolve, hUnmapRoot] at hStep
       | some root' =>
-          have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+          have hStore : storeObject rootId (.vspaceRoot root') (recordPhysicalWrites st (mappingStore? st root' vaddr).toList) = .ok ((), st') := by
             simpa [hResolve, hUnmapRoot] using hStep
           rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
           have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
-            storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStore
+            storeObject_objects_eq (recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStore
           have hAsidInv' : (match st.objects[rootId]? with
               | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
               | _ => st.asidTable).invExt := by
             simp only [hObjRoot]; exact hAsidInv rootId root hObjRoot
           have hTablePost : st'.asidTable[root'.asid]? = some rootId :=
-            storeObject_asidTable_vspaceRoot st st' rootId root' hAsidInv' hStore
+            storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) st' rootId root' hAsidInv' hStore
           have hAsidEq : root'.asid = asid := hAsidPreserved.trans hAsidRoot
           have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
             resolveAsidRoot_of_asidTable_entry st' asid rootId root'
@@ -918,19 +918,19 @@ theorem vspaceLookupFull_after_map
         | some root' =>
             -- PR #845 review (P2), WS-BP BP7.2: a successful `mapPage` witnesses
             -- that both addresses are page-aligned (`pageMappingAligned_of_mapPage`).
-            have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+            have hStore : storeObject rootId (.vspaceRoot root') (recordPhysicalWrites st (mappingStore? st root' vaddr).toList) = .ok ((), st') := by
               simpa [hMapRoot, pageMappingAligned_of_mapPage hMapRoot] using hStep
             rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
             have hAsidPreserved : root'.asid = root.asid :=
               VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
             have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
-              storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStore
+              storeObject_objects_eq (recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStore
             have hAsidInv' : (match st.objects[rootId]? with
                 | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
                 | _ => st.asidTable).invExt := by
               simp only [hObjRoot]; exact hAsidInv rootId root hObjRoot
             have hTablePost : st'.asidTable[root'.asid]? = some rootId :=
-              storeObject_asidTable_vspaceRoot st st' rootId root' hAsidInv' hStore
+              storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) st' rootId root' hAsidInv' hStore
             have hAsidEq : root'.asid = asid := hAsidPreserved.trans hAsidRoot
             have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
               resolveAsidRoot_of_asidTable_entry st' asid rootId root'
@@ -977,15 +977,15 @@ theorem vspaceMapPage_resolveAsidRoot_agreement
         | some root' =>
             -- PR #845 review (P2), WS-BP BP7.2: a successful `mapPage` witnesses
             -- that both addresses are page-aligned (`pageMappingAligned_of_mapPage`).
-            have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+            have hStore : storeObject rootId (.vspaceRoot root') (recordPhysicalWrites st (mappingStore? st root' vaddr).toList) = .ok ((), st') := by
               simpa [hMapRoot, pageMappingAligned_of_mapPage hMapRoot] using hStep
             rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, _, hAsidRoot⟩
             have hAsidPreserved : root'.asid = root.asid :=
               VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
             have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
-              storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStore
+              storeObject_objects_eq (recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStore
             have hTablePost : st'.asidTable[root'.asid]? = some rootId :=
-              storeObject_asidTable_vspaceRoot st st' rootId root' (hAsidInv rootId) hStore
+              storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) st' rootId root' (hAsidInv rootId) hStore
             have hAsidEq : root'.asid = asid := hAsidPreserved.trans hAsidRoot
             have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
               resolveAsidRoot_of_asidTable_entry st' asid rootId root'
@@ -1014,15 +1014,15 @@ theorem vspaceUnmapPage_resolveAsidRoot_agreement
       cases hUnmapRoot : root.unmapPage vaddr with
       | none => simp [hResolve, hUnmapRoot] at hStep
       | some root' =>
-          have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
+          have hStore : storeObject rootId (.vspaceRoot root') (recordPhysicalWrites st (mappingStore? st root' vaddr).toList) = .ok ((), st') := by
             simpa [hResolve, hUnmapRoot] using hStep
           rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, _, hAsidRoot⟩
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
           have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
-            storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStore
+            storeObject_objects_eq (recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStore
           have hTablePost : st'.asidTable[root'.asid]? = some rootId :=
-            storeObject_asidTable_vspaceRoot st st' rootId root' (hAsidInv rootId) hStore
+            storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) st' rootId root' (hAsidInv rootId) hStore
           have hAsidEq : root'.asid = asid := hAsidPreserved.trans hAsidRoot
           have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
             resolveAsidRoot_of_asidTable_entry st' asid rootId root'

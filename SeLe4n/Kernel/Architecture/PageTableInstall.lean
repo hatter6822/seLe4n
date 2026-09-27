@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.Architecture.HardwareTables
 
 /-!
 # Intermediate page tables — seL4's `seL4_ARM_PageTable_Map` / `_Unmap`
@@ -128,6 +129,18 @@ def _root_.SeLe4n.Model.VSpaceRoot.withoutTablesBeneath (root : VSpaceRoot)
   let keep := fun (s : PageTableSlot) => !(s == inst.slotFor table) && !inst.coversSlot s
   { root with tables := root.tables.filter keep }
 
+/-- **WS-BP BP7.2: the physical writes taking `table` and everything beneath it
+out of `root` owes** — the parent entry cleared, every detached table's page
+zeroed (a detached table may be installed again later, and its page must then
+hold nothing it translated before), and the address space's ASID invalidated,
+since the walk caches intermediate levels. -/
+def detachWrites (st : SystemState) (root : VSpaceRoot) (inst : PageTableInstall)
+    (table : SeLe4n.ObjId) : List PhysicalWrite :=
+  let removed := root.tables.filter fun s => s == inst.slotFor table || inst.coversSlot s
+  (slotStore? st (root.withoutTablesBeneath inst table) inst.level inst.index).toList ++
+    removed.filterMap (fun s => (st.getPageTable? s.table).map fun t => .zeroPage t.base) ++
+    [.invalidateAsid root.asid]
+
 /-- The table's record once installed at `(root, level, index)`. -/
 def _root_.SeLe4n.Model.PageTableObject.installedAt (table : PageTableObject) (root : SeLe4n.ObjId)
     (level index : Nat) : PageTableObject :=
@@ -164,7 +177,10 @@ def pageTableMap (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr) : Kernel
           match storeObject tableId (.pageTable (table.installedAt rootId level index)) st with
           | .error e => .error e
           | .ok ((), st1) =>
-            storeObject rootId (.vspaceRoot (root.withTableSlot level index tableId)) st1
+            -- WS-BP BP7.2: the parent entry now names the table's page.
+            storeObject rootId (.vspaceRoot (root.withTableSlot level index tableId))
+              (recordPhysicalWrites st1
+                (slotStore? st1 (root.withTableSlot level index tableId) level index).toList)
 
 /-- **`seL4_ARM_PageTable_Unmap`**: take the table `tableId` out of the address
 space it is installed in.  A table installed nowhere is left as it is — seL4
@@ -189,7 +205,13 @@ def pageTableUnmap (tableId : SeLe4n.ObjId) : Kernel Unit :=
               match storeObject tableId (.pageTable { table with installedIn := none }) st with
               | .error e => .error e
               | .ok ((), st1) =>
-                storeObject inst.root (.vspaceRoot (root.withoutTableSlot inst tableId)) st1
+                -- WS-BP BP7.2: the parent entry is cleared, and the walk
+                -- caches the address space's intermediate levels, so its ASID
+                -- is invalidated.
+                storeObject inst.root (.vspaceRoot (root.withoutTableSlot inst tableId))
+                  (recordPhysicalWrites st1
+                    ((slotStore? st1 (root.withoutTableSlot inst tableId) inst.level
+                      inst.index).toList ++ [.invalidateAsid root.asid]))
           else
             -- A stale record (`pageTableInstallLive`): the root no longer holds
             -- the table, so only the record is left to clear.
@@ -206,7 +228,10 @@ theorem pageTableMap_ok (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr)
       storeObject tableId (.pageTable (table.installedAt rootId level
         (PageTableSlot.indexOf level vaddr))) st = .ok ((), st1) ∧
       storeObject rootId (.vspaceRoot (root.withTableSlot level
-        (PageTableSlot.indexOf level vaddr) tableId)) st1 = .ok ((), st') := by
+        (PageTableSlot.indexOf level vaddr) tableId))
+        (recordPhysicalWrites st1 (slotStore? st1 (root.withTableSlot level
+          (PageTableSlot.indexOf level vaddr) tableId) level
+          (PageTableSlot.indexOf level vaddr)).toList) = .ok ((), st') := by
   unfold pageTableMap at h
   cases hT : st.getPageTable? tableId with
   | none => rw [hT] at h; cases h
@@ -262,9 +287,10 @@ theorem pageTableMap_ok_installed (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4
     intro hEq; subst hEq
     rw [SystemState.getPageTable?_eq_some_iff] at hT; rw [SystemState.getVSpaceRoot?_eq_some_iff] at hR
     rw [hT] at hR; cases hR
-  refine ⟨table, root, level, hT, hR, hL, storeObject_objects_eq _ _ _ _ hInv1 hS2, ?_⟩
-  rw [storeObject_objects_ne _ _ _ _ _ hNe hInv1 hS2]
-  exact storeObject_objects_eq _ _ _ _ hObjInv hS1
+  refine ⟨table, root, level, hT, hR, hL, storeObject_objects_eq (recordPhysicalWrites st1 _) _ _ _ hInv1 hS2, ?_⟩
+  rw [storeObject_objects_ne (recordPhysicalWrites st1 _) _ _ _ _ hNe hInv1 hS2]
+  have hTab := storeObject_objects_eq _ _ _ _ hObjInv hS1
+  exact hTab
 
 /-- **A table something still translates through is not unmapped.** -/
 theorem pageTableUnmap_refuses_in_use (tableId : SeLe4n.ObjId) (st : SystemState)

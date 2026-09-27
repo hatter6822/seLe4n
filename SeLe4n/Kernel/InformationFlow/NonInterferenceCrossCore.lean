@@ -4017,7 +4017,8 @@ theorem vspaceUnmapPage_framed (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
   · exact absurd h (by simp)
   · split at h
     · exact absurd h (by simp)
-    · exact ⟨storeObject_scheduler_eq _ _ _ _ h, storeObject_machine_eq _ _ _ _ h⟩
+    · exact ⟨storeObject_scheduler_eq (Architecture.recordPhysicalWrites st _) _ _ _ h,
+        storeObject_machine_eq (Architecture.recordPhysicalWrites st _) _ _ _ h⟩
 
 /-- SM8.B.2: the TLB flush the unmap appends writes only `tlb`. -/
 theorem vspaceUnmapPageWithFlush_framed (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
@@ -4098,7 +4099,8 @@ theorem vspaceMapPage_framed (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
   repeat' split at h
   all_goals first
     | exact absurd h (by simp)
-    | exact ⟨storeObject_scheduler_eq _ _ _ _ h, storeObject_machine_eq _ _ _ _ h⟩
+    | exact ⟨storeObject_scheduler_eq (Architecture.recordPhysicalWrites st _) _ _ _ h,
+        storeObject_machine_eq (Architecture.recordPhysicalWrites st _) _ _ _ h⟩
 
 /-- SM8.B.2: the checked map wrapper adds only guards and a `tlb` write. -/
 theorem vspaceMapPageCheckedWithFlushFromState_framed (asid : SeLe4n.ASID)

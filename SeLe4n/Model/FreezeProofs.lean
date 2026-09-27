@@ -1462,6 +1462,8 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     sst.perCoreICache = fst.perCoreICache ∧
     -- WS-SM SM7.D.1: the instruction-cache emission ledger is carried bitwise.
     sst.pendingIcacheMaintenance = fst.pendingIcacheMaintenance ∧
+    -- WS-BP BP7.2: the physical-write ledger is carried bitwise.
+    sst.pendingPhysicalWrites = fst.pendingPhysicalWrites ∧
     -- WS-SM SM8.C.8: the declassification audit trail is carried bitwise —
     -- a frozen snapshot records exactly the downgrades the live state did.
     sst.declassificationAuditLog = fst.declassificationAuditLog ∧
@@ -1494,7 +1496,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- Map fields (16)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
@@ -1512,7 +1514,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact fun p => lookup_freeze_byPriority ist p
   · exact fun tid => lookup_freeze_threadPriority ist tid
   · exact fun tid => lookup_freeze_membership ist tid
-  -- Non-map fields (20)
+  -- Non-map fields (21)
   · exact (freeze_preserves_machine ist).symm
   · exact (freeze_preserves_objectIndex ist).symm
   · exact (freeze_preserves_tlb ist).symm
@@ -1532,6 +1534,8 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact (freeze_preserves_perCoreICache ist).symm
   -- WS-SM SM7.D.1: the emission ledger carried bitwise through freeze
   · exact (freeze_preserves_pendingIcacheMaintenance ist).symm
+  -- WS-BP BP7.2: the physical-write ledger carried bitwise through freeze
+  · exact (freeze_preserves_pendingPhysicalWrites ist).symm
   -- WS-SM SM8.C.8: the declassification audit trail carried bitwise
   · exact (freeze_preserves_declassificationAuditLog ist).symm
   -- WS-SM SM9.A.1a: the audit epoch carried bitwise

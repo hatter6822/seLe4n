@@ -166,7 +166,8 @@ def detachPageTables : List (SeLe4n.ObjId × PageTableInstall) → Kernel Unit
     match st.getVSpaceRoot? o.2.root with
     | none => detachPageTables rest st
     | some root =>
-      match storeObject o.2.root (.vspaceRoot (root.withoutTablesBeneath o.2 o.1)) st with
+      match storeObject o.2.root (.vspaceRoot (root.withoutTablesBeneath o.2 o.1))
+          (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) with
       | .error e => .error e
       | .ok ((), st1) => detachPageTables rest st1
 
@@ -198,21 +199,22 @@ theorem detachPageTables_ok_frame :
       | some root =>
         rw [hR] at h
         simp only at h
-        cases hS : storeObject o.2.root (.vspaceRoot (root.withoutTablesBeneath o.2 o.1)) st with
+        cases hS : storeObject o.2.root (.vspaceRoot (root.withoutTablesBeneath o.2 o.1))
+            (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) with
         | error e => rw [hS] at h; cases h
         | ok pr =>
           obtain ⟨⟨⟩, st1⟩ := pr
           rw [hS] at h
           have hObj := (SystemState.getVSpaceRoot?_eq_some_iff st o.2.root root).mp hR
-          have hInv1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS
+          have hInv1 := storeObject_preserves_objects_invExt (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hInv hS
           obtain ⟨hI2, hW2, hS2, hM2⟩ := detachPageTables_ok_frame rest st1 st' hInv1 h
           refine ⟨hI2, vspaceRootOnlyWrite.trans (fun oid => ?_) hW2,
-            hS2.trans (storeObject_scheduler_eq _ _ _ _ hS),
-            hM2.trans (storeObject_machine_eq _ _ _ _ hS)⟩
+            hS2.trans (storeObject_scheduler_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hS),
+            hM2.trans (storeObject_machine_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hS)⟩
           by_cases hK : oid = o.2.root
           · subst hK
-            exact Or.inr ⟨⟨root, hObj⟩, ⟨_, storeObject_objects_eq _ _ _ _ hInv hS⟩⟩
-          · exact Or.inl (storeObject_objects_ne _ _ _ _ _ hK hInv hS)
+            exact Or.inr ⟨⟨root, hObj⟩, ⟨_, storeObject_objects_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hInv hS⟩⟩
+          · exact Or.inl (storeObject_objects_ne (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ _ hK hInv hS)
 
 /-- The table detach writes no scheduler and no machine state — needing none of
 the object table's invariant, since a store writes neither. -/
@@ -230,14 +232,15 @@ theorem detachPageTables_ok_scheduler_machine :
       | some root =>
         rw [hR] at h
         simp only at h
-        cases hS : storeObject o.2.root (.vspaceRoot (root.withoutTablesBeneath o.2 o.1)) st with
+        cases hS : storeObject o.2.root (.vspaceRoot (root.withoutTablesBeneath o.2 o.1))
+            (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) with
         | error e => rw [hS] at h; cases h
         | ok pr =>
           obtain ⟨⟨⟩, st1⟩ := pr
           rw [hS] at h
           obtain ⟨hS2, hM2⟩ := detachPageTables_ok_scheduler_machine rest st1 st' h
-          exact ⟨hS2.trans (storeObject_scheduler_eq _ _ _ _ hS),
-            hM2.trans (storeObject_machine_eq _ _ _ _ hS)⟩
+          exact ⟨hS2.trans (storeObject_scheduler_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hS),
+            hM2.trans (storeObject_machine_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hS)⟩
 
 /-- **Finalise what a destroying step destroyed**: take out the page tables it
 orphaned, then remove the pages its frame capabilities recorded and the pages

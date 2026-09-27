@@ -3091,6 +3091,38 @@ def icMaintenanceBroadcast
     (op : SeLe4n.Kernel.Architecture.ICacheInvalidation) : BaseIO Unit :=
   ffiIcMaintenance op.toOpTag op.toPaddr op.toSize
 
+/-- **WS-BP BP7.2: perform one physical write a committed transition
+    recorded.**  `(tag, addr, value)` is `PhysicalWrite`'s encoding (tag 0 zeroes
+    the page at `addr`, tag 1 stores the descriptor `value` at `addr`, tag 2
+    invalidates every translation tagged with the ASID `addr`).
+
+    Rust: `ffi::mmu_apply_physical_write` in `sele4n-hal/src/ffi.rs`, which
+    validates the operands against the pages the kernel may write for a thread
+    (`user_translation::decode_physical_write`) and halts the system on a
+    refusal. -/
+@[extern "mmu_apply_physical_write"]
+opaque ffiApplyPhysicalWrite : UInt64 → UInt64 → UInt64 → BaseIO Unit
+
+/-- **WS-BP BP7.2**: typed wrapper over `ffiApplyPhysicalWrite`. -/
+def physicalWriteApply (w : SeLe4n.Kernel.Architecture.PhysicalWrite) : BaseIO Unit :=
+  ffiApplyPhysicalWrite w.tag w.addr w.value
+
+/-- **WS-BP BP7.2: install a translation on the executing PE.**  `(0, 0)` is the
+    kernel's own boot tables under ASID 0; anything else is an address space's
+    top-level table page and its ASID, which the HAL writes into `TTBR0_EL1`
+    after making the page's entry 0 the kernel window.
+
+    Rust: `ffi::mmu_install_translation` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "mmu_install_translation"]
+opaque ffiInstallTranslation : UInt64 → UInt64 → BaseIO Unit
+
+/-- **WS-BP BP7.2**: install the translation a thread runs under — its own
+    address space, or the kernel's (`Architecture.threadTranslationOperands`).
+    The context restore (BP7.6) calls it for the thread it resumes. -/
+def installThreadTranslation (st : SystemState) (tid : SeLe4n.ThreadId) : BaseIO Unit :=
+  let ops := SeLe4n.Kernel.Architecture.threadTranslationOperands st tid
+  ffiInstallTranslation ops.1 ops.2
+
 /-- **WS-SM SM7.D.1**: the invalidate-all operand routes to op tag 0. -/
 theorem icMaintenanceBroadcast_iallu_encoding :
     (SeLe4n.Kernel.Architecture.ICacheInvalidation.iallu).toOpTag = 0 ∧

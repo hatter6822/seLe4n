@@ -1685,6 +1685,125 @@ private def runPageTableChecks : IO Unit := do
                       ([980, 982, 983, 984, 985, 986, 990, 993, 994].all
                         (fun n => (st7.objects[SeLe4n.ObjId.ofNat n]?).isNone))
 
+-- ============================================================================
+-- §5l  WS-BP BP7.2 (`v0.36.15`) — the physical writes a transition records
+-- ============================================================================
+
+/-- The writes a step appended to the ledger. -/
+private def recordedBy (before after : SystemState) : List Architecture.PhysicalWrite :=
+  after.pendingPhysicalWrites.drop before.pendingPhysicalWrites.length
+
+private def store (entry : Nat) (value : UInt64) : Architecture.PhysicalWrite :=
+  .storeDescriptor (SeLe4n.PAddr.ofNat entry) value
+
+private def zero (page : Nat) : Architecture.PhysicalWrite :=
+  .zeroPage (SeLe4n.PAddr.ofNat page)
+
+/-- A table descriptor, spelled from the architecture rather than from the model's
+encoder: the page's address and `0b11` (ARM ARM D8.3.1). -/
+private def tableDesc (page : Nat) : UInt64 := page.toUInt64 ||| (0b11 : UInt64)
+
+private def runPhysicalWriteChecks : IO Unit := do
+  IO.println "-- §5l the physical writes a transition records (WS-BP BP7.2)"
+  let st := tableScenario
+  let va : Nat := 0x70000
+  -- Carve order fixes each page: the root at the untyped's base, then the
+  -- frame, then the four tables, one page each.
+  let root := carveUtBase
+  let frame := carveUtBase + SeLe4n.pageBytes
+  let l1 := carveUtBase + 2 * SeLe4n.pageBytes
+  let l2 := carveUtBase + 3 * SeLe4n.pageBytes
+  let l3 := carveUtBase + 4 * SeLe4n.pageBytes
+  let spare := carveUtBase + 5 * SeLe4n.pageBytes
+  assertBool "the scenario starts with nothing owed"
+    (st.pendingPhysicalWrites == [])
+  match runAll st
+      [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
+       decodeCarve slotUtRetype frameTag 982 slotOwnCnRW 14,
+       decodeCarve slotUtRetype pageTableTag 983 slotOwnCnRW 15,
+       decodeCarve slotUtRetype pageTableTag 984 slotOwnCnRW 16,
+       decodeCarve slotUtRetype pageTableTag 985 slotOwnCnRW 17,
+       decodeCarve slotUtRetype pageTableTag 986 slotOwnCnRW 18] with
+  | .error e => assertBool s!"carving a root, a frame and four tables succeeds (got {repr e})" false
+  | .ok st1 => do
+    assertBool "every carved page is zeroed in memory, in carve order"
+      (recordedBy st st1 == [zero root, zero frame, zero l1, zero l2, zero l3, zero spare])
+    match dispatchSyscall (decodeTableMap 15 12 va) carveOwner st1 with
+    | .error e => assertBool s!"installing the level-1 table succeeds (got {repr e})" false
+    | .ok ((), st2) => do
+      -- 2^39 + 0x70000: level-0 index 1 (entry 0 is the kernel window).
+      assertBool "a level-1 install stores its table descriptor at entry 1 of the root's page"
+        (recordedBy st1 st2 == [store (root + 8) (tableDesc l1)])
+      match runAll st2 [decodeTableMap 16 12 va, decodeTableMap 17 12 va] with
+      | .error e => assertBool s!"installing levels 2 and 3 succeeds (got {repr e})" false
+      | .ok st3 => do
+        assertBool "levels 2 and 3 store at entry 0 of the table above each"
+          (recordedBy st2 st3 == [store l1 (tableDesc l2), store l2 (tableDesc l3)])
+        match dispatchSyscall (decodeMapVia 12 1 va 14 permsRWUC) carveOwner st3 with
+        | .error e => assertBool s!"mapping the frame succeeds (got {repr e})" false
+        | .ok ((), st4) => do
+          -- The page descriptor, bit by bit: the frame's address; valid page
+          -- (0b11); AttrIndx 0 (Normal); AP 0b01 (EL0 read/write); SH inner;
+          -- AF; nG (ASID-tagged); PXN (the kernel never executes it); UXN
+          -- (not executable — no execute right).
+          let bit (n : UInt64) : UInt64 := (1 : UInt64) <<< n
+          let desc : UInt64 := frame.toUInt64 ||| (0b11 : UInt64) ||| bit 6 ||| (0b11 <<< (8 : UInt64)) |||
+            bit 10 ||| bit 11 ||| bit 53 ||| bit 54
+          assertBool "a mapping stores its page descriptor at the frame's level-3 entry (0x70 → +0x380)"
+            (recordedBy st3 st4 == [store (l3 + 0x380) desc])
+          match dispatchSyscall (decodeUnmapVia 12 1 va) carveOwner st4 with
+          | .error e => assertBool s!"unmapping the frame succeeds (got {repr e})" false
+          | .ok ((), st5) => do
+            assertBool "an unmap stores the invalid descriptor at the same entry"
+              (recordedBy st4 st5 == [store (l3 + 0x380) 0])
+            match dispatchSyscall (decodeTableUnmap 17) carveOwner st5 with
+            | .error e => assertBool s!"unmapping the level-3 table succeeds (got {repr e})" false
+            | .ok ((), st6) =>
+              assertBool "a table unmap clears its entry in the table above, then drops the ASID's cached walks"
+                (recordedBy st5 st6 == [store l2 0, .invalidateAsid (SeLe4n.ASID.ofNat 1)])
+          match dispatchSyscall (decodeDelete 15) carveOwner st4 with
+          | .error e => assertBool s!"deleting the level-1 table's last capability succeeds (got {repr e})" false
+          | .ok ((), sDel) => do
+            let ws := recordedBy st4 sDel
+            assertBool "destroying a table's last capability clears the root's entry for it"
+              (ws.contains (store (root + 8) 0))
+            assertBool "...zeroes the three table pages it takes out, so a stale one re-installs empty"
+              ([l1, l2, l3].all (fun p => ws.contains (zero p)))
+            assertBool "...and ends by dropping the ASID's cached walks"
+              (ws.getLast? == some (.invalidateAsid (SeLe4n.ASID.ofNat 1)))
+            assertBool "the untouched spare table's page is not rewritten"
+              (!ws.contains (zero spare))
+    -- A root with no table page records no descriptor: the walker has no page
+    -- to read, so there is nothing to make agree.
+    assertBool "a root that owns no page records no descriptor store"
+      (match storeObject carveVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 3, mappings := {} }) st1 with
+       | .ok ((), s) =>
+           match s.getVSpaceRoot? carveVsp with
+           | some r => Architecture.mappingStore? s r (SeLe4n.Testing.fixtureUserVAddr va) == none &&
+                       Architecture.slotStore? s r 1 1 == none
+           | none => false
+       | .error _ => false)
+  -- The thread-translation operands: a thread whose root owns a page and a
+  -- non-kernel ASID installs that page and ASID; any other runs under the
+  -- kernel's translation, `(0, 0)`.
+  match dispatchSyscall (decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12) carveOwner spaceScenario with
+  | .error e => assertBool s!"carving a root in the §5j scenario succeeds (got {repr e})" false
+  | .ok ((), sp1) => do
+    assertBool "a thread in the fixture's mappable root installs that root's page and ASID"
+      (Architecture.threadTranslationOperands sp1 spaceWorker ==
+        ((0x7D000 : UInt64), carveAsid.toNat.toUInt64))
+    assertBool "a thread whose root owns no page runs under the kernel's translation (0, 0)"
+      (match storeObject carveVsp (.vspaceRoot { asid := carveAsid, mappings := {} }) sp1 with
+       | .ok ((), s) => Architecture.threadTranslationOperands s spaceWorker == (0, 0)
+       | .error _ => false)
+    assertBool "a thread id that resolves to no thread runs under the kernel's translation (0, 0)"
+      (Architecture.threadTranslationOperands sp1 ⟨99999⟩ == (0, 0))
+    match dispatchSyscall (decodeSetSpace slotWorkerTcb slotOwnCnGrant 12) carveOwner sp1 with
+    | .error e => assertBool s!"moving the worker into the carved root succeeds (got {repr e})" false
+    | .ok ((), sp2) =>
+      assertBool "moved into the carved root, it installs that root's page under ASID 1"
+        (Architecture.threadTranslationOperands sp2 spaceWorker == (carveUtBase.toUInt64, (1 : UInt64)))
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -1702,6 +1821,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runCarvedRootChecks
   runSetSpaceChecks
   runPageTableChecks
+  runPhysicalWriteChecks
   runFrameFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="

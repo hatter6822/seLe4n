@@ -969,7 +969,8 @@ theorem vspaceMapPage_preserves_projection
       simp only [hMap, Architecture.pageMappingAligned_of_mapPage hMap, Bool.not_true,
         Bool.false_eq_true, ↓reduceIte] at hStep
       have hHigh := hRootHigh rootId root hResolve
-      exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hObjInv hStep
+      exact storeObject_preserves_projection ctx observer
+        (Architecture.recordPhysicalWrites st _) st' rootId _ hHigh hObjInv hStep
 
 /-- WS-H9: vspaceMapPage preserves low-equivalence. -/
 theorem vspaceMapPage_preserves_lowEquivalent
@@ -1012,7 +1013,8 @@ theorem vspaceUnmapPage_preserves_projection
     | some root' =>
       simp only [hUnmap] at hStep
       have hHigh := hRootHigh rootId root hResolve
-      exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hObjInv hStep
+      exact storeObject_preserves_projection ctx observer
+        (Architecture.recordPhysicalWrites st _) st' rootId _ hHigh hObjInv hStep
 
 /-- WS-H9: vspaceUnmapPage preserves low-equivalence. -/
 theorem vspaceUnmapPage_preserves_lowEquivalent
@@ -4092,6 +4094,17 @@ theorem pendingIcacheMaintenance_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (m : List SeLe4n.Kernel.Architecture.ICacheInvalidation) :
     projectState ctx observer { st with pendingIcacheMaintenance := m } =
+      projectState ctx observer st := rfl
+
+/-- WS-BP BP7.2 (non-interference): a write to the physical-write ledger is
+invisible to the information-flow projection.  The ledger names memory the
+kernel owns — table pages, carved pages — and an ASID, so projecting it would
+publish an address-space layout the projection deliberately withholds; it is
+drained in the atomic step that commits the transition besides. -/
+theorem pendingPhysicalWrites_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (m : List SeLe4n.Kernel.Architecture.PhysicalWrite) :
+    projectState ctx observer { st with pendingPhysicalWrites := m } =
       projectState ctx observer st := rfl
 
 /-- WS-SM SM8.C.8 (non-interference): a write to the mounted declassification

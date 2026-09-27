@@ -3072,10 +3072,10 @@ theorem vspaceMapPage_preserves_ipcInvariantFull
           | some root' =>
               simp only [hMp] at hStep
               exact vspaceRootWrite_preserves_ipcInvariantFull hInv hPre
-                (storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStep)
+                (storeObject_objects_eq (Architecture.recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStep)
                 (fun oid hNe =>
-                  storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hObjInv hStep)
-                (storeObject_scheduler_eq st st' rootId (.vspaceRoot root') hStep)
+                  storeObject_objects_ne (Architecture.recordPhysicalWrites st _) st' rootId oid (.vspaceRoot root') hNe hObjInv hStep)
+                (storeObject_scheduler_eq (Architecture.recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hStep)
 
 /-- `.vspaceUnmap` base transition: same single-`.vspaceRoot`-write shape. -/
 theorem vspaceUnmapPage_preserves_ipcInvariantFull
@@ -3096,10 +3096,10 @@ theorem vspaceUnmapPage_preserves_ipcInvariantFull
       | some root' =>
           simp only [hMp] at hStep
           exact vspaceRootWrite_preserves_ipcInvariantFull hInv hPre
-            (storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStep)
+            (storeObject_objects_eq (Architecture.recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hObjInv hStep)
             (fun oid hNe =>
-              storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hObjInv hStep)
-            (storeObject_scheduler_eq st st' rootId (.vspaceRoot root') hStep)
+              storeObject_objects_ne (Architecture.recordPhysicalWrites st _) st' rootId oid (.vspaceRoot root') hNe hObjInv hStep)
+            (storeObject_scheduler_eq (Architecture.recordPhysicalWrites st _) st' rootId (.vspaceRoot root') hStep)
 
 /-- The local-flush wrapper adds a `tlb`-only rewrite over the base map. -/
 theorem vspaceMapPageWithFlush_preserves_ipcInvariantFull
@@ -4934,6 +4934,14 @@ theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull
             ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
             rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
+/-- **WS-BP BP7.2**: recording physical writes touches only the ledger, which
+no conjunct of the bundle reads. -/
+theorem ipcInvariantFull_recordPhysicalWrites {st : SystemState}
+    {ws : List Architecture.PhysicalWrite} (h : ipcInvariantFull st) :
+    ipcInvariantFull (Architecture.recordPhysicalWrites st ws) :=
+  ipcInvariantFull_of_vspaceRootOnlyWrite (st := st)
+    (st' := Architecture.recordPhysicalWrites st ws) (fun _ => Or.inl rfl) rfl h
+
 /-- **WS-BP BP7.1 (`v0.36.12`)**: installing a page table preserves
 `ipcInvariantFull` — two stores, a page table over a page table and a VSpace
 root over a VSpace root, both kinds the bundle does not read. -/
@@ -4954,9 +4962,11 @@ theorem pageTableMap_preserves_ipcInvariantFull (tableId rootId : SeLe4n.ObjId)
     intro hEq; subst hEq; rw [hT'] at hR'; cases hR'
   have hR1 : st1.objects[rootId]? = some (.vspaceRoot root) := by
     rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hS1]; exact hR'
-  exact storeObject_inertNonCNode_preserves_ipcInvariantFull st1 st' rootId _
-    hObjInv1 hInv1 (Or.inr (by rw [hR1]; trivial)) (by trivial)
-    (fun _ h => KernelObject.noConfusion h) hS2
+  exact storeObject_inertNonCNode_preserves_ipcInvariantFull
+    (Architecture.recordPhysicalWrites st1 _) st' rootId _
+    hObjInv1 (ipcInvariantFull_recordPhysicalWrites hInv1)
+    (Or.inr (by simp only [Architecture.recordPhysicalWrites_objects, hR1]; trivial))
+    (by trivial) (fun _ h => KernelObject.noConfusion h) hS2
 
 /-- **WS-BP BP7.1 (`v0.36.12`)**: removing a page table preserves
 `ipcInvariantFull`, for the same reason. -/
@@ -5003,9 +5013,11 @@ theorem pageTableUnmap_preserves_ipcInvariantFull (tableId : SeLe4n.ObjId)
                 intro hEq; rw [hEq, hT'] at hR'; cases hR'
               have hR1 : st1.objects[inst.root]? = some (.vspaceRoot root) := by
                 rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hS1]; exact hR'
-              exact storeObject_inertNonCNode_preserves_ipcInvariantFull st1 st' inst.root _
-                hObjInv1 hInv1 (Or.inr (by rw [hR1]; trivial)) (by trivial)
-                (fun _ h => KernelObject.noConfusion h) hStep
+              exact storeObject_inertNonCNode_preserves_ipcInvariantFull
+                (Architecture.recordPhysicalWrites st1 _) st' inst.root _
+                hObjInv1 (ipcInvariantFull_recordPhysicalWrites hInv1)
+                (Or.inr (by simp only [Architecture.recordPhysicalWrites_objects, hR1]; trivial))
+                (by trivial) (fun _ h => KernelObject.noConfusion h) hStep
         · exact storeObject_inertNonCNode_preserves_ipcInvariantFull st st' tableId _
             hObjInv hInv (Or.inr (by rw [hT']; trivial)) (by trivial)
             (fun _ h => KernelObject.noConfusion h) hStep

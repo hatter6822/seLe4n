@@ -4016,7 +4016,7 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_untyped($|[ ({:\[\]
 run_check "INVARIANT" rg -n -U '    \.error \.revocationRequired\n  \| \.untyped _ =>(\n([ \t][^\n]*)?)*    \.error \.revocationRequired\n  \| _ => \.ok st' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_negative_check "INVARIANT" rg -n '\buntypedRetypeFrame\b|\bretireFrames?\b|\bframeRetireWrite\b|\buntypedChildrenUnreferenced\b|\bcapNamesCarvedChild\b|\buntypedChildrenRetirable\b|\buntypedReset_ok_children_absent\b' SeLe4n tests
 run_check "INVARIANT" rg -n -U 'def untypedNextFrame \(ut : UntypedObject\) : FrameObject :=\n  \{ base := SeLe4n\.PAddr\.ofNat \(ut\.regionBase\.toNat \+ ut\.watermark\)\n    isDevice := ut\.isDevice \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def carveZeroFrame[^\n]*(\n([ \t][^\n]*)?)*  if frame\.isDevice then st\n  else \{ st with machine := SeLe4n\.zeroMemoryRange st\.machine frame\.base SeLe4n\.pageBytes \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def carveZeroFrame[^\n]*(\n([ \t][^\n]*)?)*  if frame\.isDevice then st\n  else \{ st with\n          machine := SeLe4n\.zeroMemoryRange st\.machine frame\.base SeLe4n\.pageBytes\n([ \t]*\n)*          pendingPhysicalWrites := st\.pendingPhysicalWrites \+\+\n            \[SeLe4n\.Kernel\.Architecture\.PhysicalWrite\.zeroPage frame\.base\] \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^        else if ut\.isDevice && !newObj\.objectType\.deviceBackable then$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 # v0.36.9: a VSpace root is memory-backed (the in-place retype refuses to create
 # one, which is what closed the ASID-0 collision), and a device untyped still
@@ -4156,7 +4156,7 @@ run_check "INVARIANT" rg -n 'and leaves the mapping of a page OUTSIDE the region
 # maps a frame only where its walk is complete.  The reset retires a page table
 # like any carved object and refuses an install crossing its subtree boundary.
 run_check "INVARIANT" rg -n -U 'def pageTableMap \(tableId rootId[^\n]*(\n([ \t][^\n]*)?)*        match root\.missingLevel\? vaddr with\n        \| none => \.error \.mappingConflict' SeLe4n/Kernel/Architecture/PageTableInstall.lean
-run_check "INVARIANT" rg -n -U 'def pageTableMap \(tableId rootId[^\n]*(\n([ \t][^\n]*)?)*          match storeObject tableId \(\.pageTable \(table\.installedAt rootId level index\)\) st with(\n([ \t][^\n]*)?)*            storeObject rootId \(\.vspaceRoot \(root\.withTableSlot level index tableId\)\) st1' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n -U 'def pageTableMap \(tableId rootId[^\n]*(\n([ \t][^\n]*)?)*          match storeObject tableId \(\.pageTable \(table\.installedAt rootId level index\)\) st with(\n([ \t][^\n]*)?)*            storeObject rootId \(\.vspaceRoot \(root\.withTableSlot level index tableId\)\)\n              \(recordPhysicalWrites st1\n                \(slotStore\? st1 \(root\.withTableSlot level index tableId\) level index\)\.toList\)' SeLe4n/Kernel/Architecture/PageTableInstall.lean
 run_check "INVARIANT" rg -n -U 'def pageTableUnmap \(tableId[^\n]*(\n([ \t][^\n]*)?)*          if root\.tables\.contains \(inst\.slotFor tableId\) then\n            if pageTableInUse root inst then \.error \.revocationRequired' SeLe4n/Kernel/Architecture/PageTableInstall.lean
 run_check "INVARIANT" rg -n '^theorem pageTableMap_ok_installed($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTableInstall.lean
 run_check "INVARIANT" rg -n '^theorem pageTableUnmap_refuses_in_use($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTableInstall.lean
@@ -4221,6 +4221,27 @@ run_check "INVARIANT" rg -n '^    let asid16: u64 = 1 << 36;' rust/sele4n-hal/sr
 run_check "INVARIANT" rg -n '^    let _ = asid_bits_of_this_pe_or_halt\(crate::cpu::fatal_halt\);$' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^asidSpace 0x10000$' tests/fixtures/boot_map.expected
 run_check "INVARIANT" rg -n 'an unaligned virtual address inside a complete walk is refused \(alignmentError\)' tests/VSpaceCapabilityBindingSuite.lean
+# WS-BP BP7.2 (v0.36.15): the physical writes a transition owes are recorded,
+# drained by the syscall seam in the atomic step, and performed before the SGIs
+# and the shootdown round; the HAL halts on an operand it refuses.  Each positive
+# is the relation (the drain adjacent to the commit and ahead of the SGIs; the
+# refusal arm's halt), and the negative refuses a seam that clears the I-cache
+# ledger and leaves the physical one.
+run_check "INVARIANT" rg -n '^       Architecture\.clearPhysicalWrites \(Architecture\.clearIcacheMaintenance st'"''"'\)\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_negative_check "INVARIANT" rg -n '^       Architecture\.clearIcacheMaintenance st'"''"'\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.ffiSyscallReturnFrame [^\n]*\n([ \t]*\n)*  completePhysicalWrites result\.2\.2\.2\.2\.2\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchCrossCoreStep_drains_physicalWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem completePhysicalWrites_cons($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^  owed\.forM Platform\.FFI\.physicalWriteApply$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^  ffiApplyPhysicalWrite w\.tag w\.addr w\.value$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem threadTranslationOperands_cases($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/HardwareTables.lean
+run_check "INVARIANT" rg -n '^  descriptorToUInt64 \(\.page paddr \(userPageAttributes perms\)\) \|\|\| notGlobalBit$' SeLe4n/Kernel/Architecture/HardwareTables.lean
+run_check "INVARIANT" rg -n '^    pxn        := true$' SeLe4n/Kernel/Architecture/HardwareTables.lean
+run_check "INVARIANT" rg -n -U '^    match crate::user_translation::decode_physical_write\([^\n]*(\n([ \t][^\n]*)?)*        Err\(_\) => crate::gic::halt_all\(\),$' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn mmu_install_translation[^\n]*(\n([ \t][^\n]*)?)*        Err\(_\) => crate::gic::halt_all\(\),$' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n '^    let in_ram = page >= KERNEL_RESERVED_END && covered\(page, PAGE_BYTES\);$' rust/sele4n-hal/src/user_translation.rs
+run_check "INVARIANT" rg -n '^    boot_l0_entry0 \| UXN_TABLE \| AP_TABLE_NO_EL0$' rust/sele4n-hal/src/user_translation.rs
+run_check "INVARIANT" rg -n 'destroying a table.s last capability clears the root.s entry for it' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
 # environment with no entry now that one exists, and the link gate has no
@@ -8952,7 +8973,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
-run_check "INVARIANT" rg -n 'StateField enum has 27 variants' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 28 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on

@@ -19,6 +19,7 @@ import SeLe4n.Kernel.Architecture.TlbShootdown
 -- for exactly the reason `TlbInvalidation` was (SM7.A): a state-layer field
 -- must not pull the architecture layer's import closure.
 import SeLe4n.Kernel.Architecture.CacheInvalidation
+import SeLe4n.Kernel.Architecture.PhysicalWrite
 -- WS-SM SM8.C.8: the pure declassification audit record — the payload of the
 -- `declassificationAuditLog` trail mounted below.  Extracted for exactly the
 -- reason `TlbInvalidation` and `CacheInvalidation` were: a state-layer field
@@ -973,6 +974,25 @@ structure SystemState where
   pendingIcacheMaintenance :
       List SeLe4n.Kernel.Architecture.ICacheInvalidation := []
 
+  /-- **WS-BP BP7.2: the physical writes a committed transition owes** — the
+      stores that make physical memory agree with the address spaces the model
+      describes: a descriptor in a table page when a mapping or an installed
+      table changes, a page zeroed when it is carved for a thread, and an ASID
+      invalidation when a table descriptor is cleared or an ASID is retired.
+
+      The hardware walker reads memory, not `SystemState`, so a transition that
+      changes a translation records the store here and the syscall seam
+      performs it, **before** the shootdown round, so a translation the
+      transition retired is gone from memory before any core drops it from its
+      TLB.  **Lifecycle**: written only by `Architecture.recordPhysicalWrites`
+      and cleared by the syscall seam in the same atomic step that commits the
+      transition (`Architecture.clearPhysicalWrites`), so every state observed
+      at a syscall boundary carries `[]`.  **Information flow**: not part of
+      the projection surface — it names memory the kernel owns, and
+      `pendingPhysicalWrites_write_preserves_projection` is the frame. -/
+  pendingPhysicalWrites :
+      List SeLe4n.Kernel.Architecture.PhysicalWrite := []
+
   /-- WS-SM SM8.C.8: the **declassification audit trail** — the append-only
       record of every authorized cross-domain downgrade the kernel performed.
 
@@ -1234,6 +1254,8 @@ instance : Inhabited SystemState where
     -- WS-SM SM7.D.1: nothing is owed to the instruction caches at boot.
     -- Explicit listing pins `default_pendingIcacheMaintenance`.
     pendingIcacheMaintenance := []
+    -- WS-BP BP7.2: no physical write is owed at boot.
+    pendingPhysicalWrites := []
     -- WS-SM SM8.C.8: no declassification has occurred at boot, so the audit
     -- trail is empty.  Explicit listing pins `default_declassificationAuditLog`
     -- and, through it, the boot witness for the 16th bundle conjunct
@@ -1611,6 +1633,10 @@ maintenance is owed before the first transition runs.  The `none`-at-every-
 syscall-boundary property the runtime seam maintains starts here. -/
 @[simp] theorem default_pendingIcacheMaintenance :
     (default : SystemState).pendingIcacheMaintenance = [] := rfl
+
+/-- WS-BP BP7.2: the boot state owes no physical write. -/
+@[simp] theorem default_pendingPhysicalWrites :
+    (default : SystemState).pendingPhysicalWrites = [] := rfl
 
 /-- WS-SM SM8.C.8: at boot no declassification has occurred, so the audit trail
 is empty.  The `.declassify` syscall is the only writer, so this is the trail's
@@ -2416,6 +2442,17 @@ theorem storeObject_pendingIcacheMaintenance_eq
     (pair : Unit × SystemState)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.pendingIcacheMaintenance = st.pendingIcacheMaintenance := by
+  unfold storeObject at hStore; cases hStore; rfl
+
+/-- WS-BP BP7.2: `storeObject` frames the physical-write ledger — only
+`Architecture.recordPhysicalWrites` writes it. -/
+theorem storeObject_pendingPhysicalWrites_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.pendingPhysicalWrites = st.pendingPhysicalWrites := by
   unfold storeObject at hStore; cases hStore; rfl
 
 /-- WS-SM SM8.C.8: `storeObject` frames the declassification audit trail.

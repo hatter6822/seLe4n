@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.Architecture.HardwareTables
 
 /-!
 WS-C3 proof-surface note:
@@ -141,7 +142,10 @@ def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PA
           match root.mapPage vaddr paddr perms with
           | none => .error .mappingConflict
           | some root' =>
-              storeObject rootId (.vspaceRoot root') st
+              -- WS-BP BP7.2: the descriptor store that makes memory agree,
+              -- recorded for the syscall seam (`mappingStore?`).
+              storeObject rootId (.vspaceRoot root')
+                (recordPhysicalWrites st (mappingStore? st root' vaddr).toList)
 
 /-- WS-H11/A-05/S6-B/V4-E: Address-bounds-checked VSpace map — no TLB flush.
 
@@ -184,7 +188,9 @@ def vspaceUnmapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
         match root.unmapPage vaddr with
         | none => .error .translationFault
         | some root' =>
-            storeObject rootId (.vspaceRoot root') st
+            -- WS-BP BP7.2: the invalid descriptor that makes memory agree.
+            storeObject rootId (.vspaceRoot root')
+              (recordPhysicalWrites st (mappingStore? st root' vaddr).toList)
 
 /-- WS-H11: Deterministic VSpace translation helper returning physical address and permissions. -/
 def vspaceLookupFull (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
@@ -858,7 +864,7 @@ theorem vspaceMapPage_entry_consistent_frame
             · split at hMapPage
               · simp at hMapPage  -- already-mapped case
               · simp at hMapPage; subst hMapPage; exact hRootAsidEq
-        have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
+        have hStoreObjSelf := storeObject_objects_eq (recordPhysicalWrites st _) stMid rootId₀
           (KernelObject.vspaceRoot root') hObjK.1 hStep
         have hAsidInv : (match st.objects[rootId₀]? with
             | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
@@ -873,7 +879,7 @@ theorem vspaceMapPage_entry_consistent_frame
           have hResolvePost : resolveAsidRoot stMid entry.asid = some (rootId₀, root') := by
             apply resolveAsidRoot_of_asidTable_entry
             · rw [← hRoot'Asid]
-              exact storeObject_asidTable_vspaceRoot st stMid rootId₀ root' hAsidInv hStep
+              exact storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) stMid rootId₀ root' hAsidInv hStep
             · exact hStoreObjSelf
             · exact hRoot'Asid
           rw [hResolvePost] at hResolveMid
@@ -898,7 +904,7 @@ theorem vspaceMapPage_entry_consistent_frame
           have hNeAsid : entry.asid ≠ root'.asid := fun h => hAsidEq (h.trans hRoot'Asid)
           -- Show ASID table lookup is preserved
           have hAsidPreserved : stMid.asidTable[entry.asid]? = st.asidTable[entry.asid]? := by
-            have hMid := storeObject_asidTable_vspaceRoot_ne st stMid rootId₀
+            have hMid := storeObject_asidTable_vspaceRoot_ne (recordPhysicalWrites st _) stMid rootId₀
               root' entry.asid hNeAsid hAsidInv hStep
             simp [hObjRoot] at hMid
             rw [hMid, hRootAsidEq]
@@ -918,8 +924,8 @@ theorem vspaceMapPage_entry_consistent_frame
                 have h1 : ¬(root'.asid = entry.asid) := by rw [hRoot'Asid]; exact fun h => hAsidEq h.symm
                 have h2 : ¬(root₀.asid = entry.asid) := by rw [hRootAsidEq]; exact fun h => hAsidEq h.symm
                 simp [h1, h2]
-              · rw [storeObject_objects_ne st stMid rootId₀ oid
-                  (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]
+              · rw [storeObject_objects_ne (recordPhysicalWrites st _) stMid rootId₀ oid
+                  (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]; rfl
           rw [hResolveEq] at hResolveMid
           exact hConsistPre rid r hResolveMid
 
@@ -962,7 +968,7 @@ theorem vspaceUnmapPage_entry_consistent_frame
         unfold VSpaceRoot.unmapPage at hUnmapPage
         split at hUnmapPage <;> simp at hUnmapPage
         subst hUnmapPage; exact hRootAsidEq
-      have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
+      have hStoreObjSelf := storeObject_objects_eq (recordPhysicalWrites st _) stMid rootId₀
         (KernelObject.vspaceRoot root') hObjK.1 hStep
       have hAsidInv : (match st.objects[rootId₀]? with
           | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
@@ -977,7 +983,7 @@ theorem vspaceUnmapPage_entry_consistent_frame
         have hResolvePost : resolveAsidRoot stMid entry.asid = some (rootId₀, root') := by
           apply resolveAsidRoot_of_asidTable_entry
           · rw [← hRoot'Asid]
-            exact storeObject_asidTable_vspaceRoot st stMid rootId₀ root' hAsidInv hStep
+            exact storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) stMid rootId₀ root' hAsidInv hStep
           · exact hStoreObjSelf
           · exact hRoot'Asid
         rw [hResolvePost] at hResolveMid
@@ -999,7 +1005,7 @@ theorem vspaceUnmapPage_entry_consistent_frame
         have hNeAsid : entry.asid ≠ root'.asid := fun h => hAsidEq (h.trans hRoot'Asid)
         -- Show ASID table lookup is preserved
         have hAsidPreserved : stMid.asidTable[entry.asid]? = st.asidTable[entry.asid]? := by
-          have hMid := storeObject_asidTable_vspaceRoot_ne st stMid rootId₀
+          have hMid := storeObject_asidTable_vspaceRoot_ne (recordPhysicalWrites st _) stMid rootId₀
             root' entry.asid hNeAsid hAsidInv hStep
           simp [hObjRoot] at hMid
           rw [hMid, hRootAsidEq]
@@ -1019,8 +1025,8 @@ theorem vspaceUnmapPage_entry_consistent_frame
               have h1 : ¬(root'.asid = entry.asid) := by rw [hRoot'Asid]; exact fun h => hAsidEq h.symm
               have h2 : ¬(root₀.asid = entry.asid) := by rw [hRootAsidEq]; exact fun h => hAsidEq h.symm
               simp [h1, h2]
-            · rw [storeObject_objects_ne st stMid rootId₀ oid
-                (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]
+            · rw [storeObject_objects_ne (recordPhysicalWrites st _) stMid rootId₀ oid
+                (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]; rfl
         rw [hResolveEq] at hResolveMid
         exact hConsistPre rid r hResolveMid
 
@@ -1051,7 +1057,7 @@ theorem vspaceUnmapPage_resolveAsidRoot_isSome
         unfold VSpaceRoot.unmapPage at hUnmapPage
         split at hUnmapPage <;> simp at hUnmapPage
         subst hUnmapPage; exact hRootAsidEq
-      have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
+      have hStoreObjSelf := storeObject_objects_eq (recordPhysicalWrites st _) stMid rootId₀
         (KernelObject.vspaceRoot root') hObjK.1 hStep
       have hAsidInv : (match st.objects[rootId₀]? with
           | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
@@ -1063,13 +1069,13 @@ theorem vspaceUnmapPage_resolveAsidRoot_isSome
         have hResolvePost : resolveAsidRoot stMid a = some (rootId₀, root') := by
           apply resolveAsidRoot_of_asidTable_entry
           · rw [← hRoot'Asid]
-            exact storeObject_asidTable_vspaceRoot st stMid rootId₀ root' hAsidInv hStep
+            exact storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) stMid rootId₀ root' hAsidInv hStep
           · exact hStoreObjSelf
           · exact hRoot'Asid
         rw [hResolvePost]; rfl
       · have hNeAsid : a ≠ root'.asid := fun hh => hAsidEq (hh.trans hRoot'Asid)
         have hAsidPreserved : stMid.asidTable[a]? = st.asidTable[a]? := by
-          have hMid := storeObject_asidTable_vspaceRoot_ne st stMid rootId₀
+          have hMid := storeObject_asidTable_vspaceRoot_ne (recordPhysicalWrites st _) stMid rootId₀
             root' a hNeAsid hAsidInv hStep
           simp [hObjRoot] at hMid
           rw [hMid, hRootAsidEq]
@@ -1088,8 +1094,8 @@ theorem vspaceUnmapPage_resolveAsidRoot_isSome
               have h1 : ¬(root'.asid = a) := by rw [hRoot'Asid]; exact fun hh => hAsidEq hh.symm
               have h2 : ¬(root₀.asid = a) := by rw [hRootAsidEq]; exact fun hh => hAsidEq hh.symm
               simp [h1, h2]
-            · rw [storeObject_objects_ne st stMid rootId₀ oid
-                (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]
+            · rw [storeObject_objects_ne (recordPhysicalWrites st _) stMid rootId₀ oid
+                (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]; rfl
         rw [hResolveEq]; exact h
 
 /-- WS-SM SM7.F: a page **map** never unbinds an ASID — if `a` resolved to a
@@ -1130,7 +1136,7 @@ theorem vspaceMapPage_resolveAsidRoot_isSome
             · split at hMapPage
               · simp at hMapPage
               · simp at hMapPage; subst hMapPage; exact hRootAsidEq
-        have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
+        have hStoreObjSelf := storeObject_objects_eq (recordPhysicalWrites st _) stMid rootId₀
           (KernelObject.vspaceRoot root') hObjK.1 hStep
         have hAsidInv : (match st.objects[rootId₀]? with
             | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
@@ -1142,13 +1148,13 @@ theorem vspaceMapPage_resolveAsidRoot_isSome
           have hResolvePost : resolveAsidRoot stMid a = some (rootId₀, root') := by
             apply resolveAsidRoot_of_asidTable_entry
             · rw [← hRoot'Asid]
-              exact storeObject_asidTable_vspaceRoot st stMid rootId₀ root' hAsidInv hStep
+              exact storeObject_asidTable_vspaceRoot (recordPhysicalWrites st _) stMid rootId₀ root' hAsidInv hStep
             · exact hStoreObjSelf
             · exact hRoot'Asid
           rw [hResolvePost]; rfl
         · have hNeAsid : a ≠ root'.asid := fun hh => hAsidEq (hh.trans hRoot'Asid)
           have hAsidPreserved : stMid.asidTable[a]? = st.asidTable[a]? := by
-            have hMid := storeObject_asidTable_vspaceRoot_ne st stMid rootId₀
+            have hMid := storeObject_asidTable_vspaceRoot_ne (recordPhysicalWrites st _) stMid rootId₀
               root' a hNeAsid hAsidInv hStep
             simp [hObjRoot] at hMid
             rw [hMid, hRootAsidEq]
@@ -1167,8 +1173,8 @@ theorem vspaceMapPage_resolveAsidRoot_isSome
                 have h1 : ¬(root'.asid = a) := by rw [hRoot'Asid]; exact fun hh => hAsidEq hh.symm
                 have h2 : ¬(root₀.asid = a) := by rw [hRootAsidEq]; exact fun hh => hAsidEq hh.symm
                 simp [h1, h2]
-              · rw [storeObject_objects_ne st stMid rootId₀ oid
-                  (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]
+              · rw [storeObject_objects_ne (recordPhysicalWrites st _) stMid rootId₀ oid
+                  (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]; rfl
           rw [hResolveEq]; exact h
 
 end SeLe4n.Kernel.Architecture

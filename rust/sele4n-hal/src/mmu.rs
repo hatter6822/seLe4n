@@ -1351,7 +1351,34 @@ fn build_identity_tables(layout: &ImageLayout) {
 
 /// AK5-E.3: TTBR0_EL1 BAADDR mask — bits [47:12] on ARMv8 (clears CnP bit 0,
 /// common-not-private bit, and any reserved bits set on the raw PA).
-const TTBR_BAADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
+pub(crate) const TTBR_BAADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
+
+/// **WS-BP BP7.2**: the value `TTBR0_EL1` takes for the kernel's own
+/// translation — the boot tables, under ASID 0.  The value [`enable_mmu`]
+/// programs, and the one `user_translation::install_translation` restores on a
+/// core running no thread's address space.
+#[must_use]
+pub fn boot_ttbr0_value() -> u64 {
+    (BOOT_TABLES.pa() as u64) & TTBR_BAADDR_MASK
+}
+
+/// **WS-BP BP7.2: the kernel window** — the boot tables' top-level entry `0`,
+/// which every thread's address space carries at its own entry `0`
+/// (`user_translation::kernel_window_entry`).  It covers `[0, 2^39)`, every
+/// byte the boot map maps, and it is fixed once the map is sealed: the boot
+/// writes it before translation is enabled and [`extend_boot_ram_map`] writes
+/// only entries of the tables beneath it.
+#[must_use]
+pub fn boot_l0_entry0() -> u64 {
+    let entry = BOOT_TABLES.pa() as *const u64;
+    // SAFETY: `BOOT_TABLES` is a static, 4 KiB-aligned `BootPageTables` whose
+    // first member is the level-0 array, so its address is that array's entry 0:
+    // aligned, initialised (to zero until `populate_boot_tables` runs) and
+    // readable for the life of the kernel.  The read is volatile because the
+    // boot writes the tables through `with_inner_mut`, which the compiler does
+    // not see from here.
+    unsafe { core::ptr::read_volatile(entry) }
+}
 
 /// Set TTBR0/TTBR1 and enable the MMU — AK5-D/AK5-C/AK5-E.3 full sequence.
 ///

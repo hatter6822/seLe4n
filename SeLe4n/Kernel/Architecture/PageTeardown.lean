@@ -149,13 +149,13 @@ theorem vspaceUnmapPage_ok_frame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
       simp only at hStep
       obtain ⟨_, hObj, _⟩ :=
         Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hRes
-      refine ⟨storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStep, ?_,
-        storeObject_scheduler_eq _ _ _ _ hStep⟩
+      refine ⟨storeObject_preserves_objects_invExt (Architecture.recordPhysicalWrites st _) _ _ _ hObjInv hStep, ?_,
+        (by have h := storeObject_scheduler_eq _ _ _ _ hStep; exact h)⟩
       intro oid
       by_cases hK : oid = rootId
       · subst hK
-        exact Or.inr ⟨⟨root, hObj⟩, ⟨root', storeObject_objects_eq _ _ _ _ hObjInv hStep⟩⟩
-      · exact Or.inl (storeObject_objects_ne _ _ _ _ _ hK hObjInv hStep)
+        exact Or.inr ⟨⟨root, hObj⟩, ⟨root', storeObject_objects_eq (Architecture.recordPhysicalWrites st _) _ _ _ hObjInv hStep⟩⟩
+      · exact Or.inl (storeObject_objects_ne (Architecture.recordPhysicalWrites st _) _ _ _ _ hK hObjInv hStep)
 
 /-- **The verified unmap the `.vspaceUnmap` arm runs** changes the object store
 exactly as its page-table erase does: the local flush, the shootdown round, the
@@ -232,13 +232,13 @@ theorem vspaceMapPage_ok_frame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
           simp only at hStep
           obtain ⟨_, hObj, _⟩ :=
             Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hRes
-          refine ⟨storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStep, ?_,
-            storeObject_scheduler_eq _ _ _ _ hStep⟩
+          refine ⟨storeObject_preserves_objects_invExt (Architecture.recordPhysicalWrites st _) _ _ _ hObjInv hStep, ?_,
+            (by have h := storeObject_scheduler_eq _ _ _ _ hStep; exact h)⟩
           intro oid
           by_cases hK : oid = rootId
           · subst hK
-            exact Or.inr ⟨⟨root, hObj⟩, ⟨root', storeObject_objects_eq _ _ _ _ hObjInv hStep⟩⟩
-          · exact Or.inl (storeObject_objects_ne _ _ _ _ _ hK hObjInv hStep)
+            exact Or.inr ⟨⟨root, hObj⟩, ⟨root', storeObject_objects_eq (Architecture.recordPhysicalWrites st _) _ _ _ hObjInv hStep⟩⟩
+          · exact Or.inl (storeObject_objects_ne (Architecture.recordPhysicalWrites st _) _ _ _ _ hK hObjInv hStep)
 
 /-- **The verified map the `.vspaceMap` arm runs** changes the object store
 exactly as its page-table write does: the bounds guards write nothing, and the

@@ -404,7 +404,14 @@ def retireCarvedObject (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
         asidTable :=
           match st.getVSpaceRoot? id with
           | some root => st.asidTable.erase root.asid
-          | none => st.asidTable }
+          | none => st.asidTable
+        -- WS-BP BP7.2: a released ASID's translations are invalidated before
+        -- the next carve can hand it to a new address space.
+        pendingPhysicalWrites :=
+          match st.getVSpaceRoot? id with
+          | some root => st.pendingPhysicalWrites ++
+              [SeLe4n.Kernel.Architecture.PhysicalWrite.invalidateAsid root.asid]
+          | none => st.pendingPhysicalWrites }
   else st
 
 /-- **WS-BP BP7.1 slice 4b (`v0.36.10`): no ASID-table entry names a listed

@@ -502,6 +502,38 @@ theorem completeIcacheMaintenance_cons (op : Architecture.ICacheInvalidation)
     completeIcacheMaintenance (op :: rest) =
       (do Platform.FFI.icMaintenanceBroadcast op; completeIcacheMaintenance rest) := rfl
 
+/-- **WS-BP BP7.2** (the physical-write seam): perform the physical-memory writes
+the just-committed transition recorded, in record order.
+
+A transition that changes an address space — a mapping, an installed or removed
+table, a page carved for an address space, a table page returned to its untyped
+— is a pure state function, so what makes the translation tables in memory agree
+with the model is recorded in `SystemState.pendingPhysicalWrites`
+(`Architecture.recordPhysicalWrites`) and performed here, exactly as the
+instruction-cache ledger is.  The ledger is read and cleared in the atomic step,
+so a write is performed once and never stranded into the next syscall.
+
+**Order is the content.**  The writes run in the order recorded, because a
+detach records the parent-entry clear before the zeroing of the pages beneath
+it and the ASID invalidation after both; and the whole list runs before the
+cross-core SGIs and the shootdown round, so no core refills a TLB entry from a
+descriptor the model has already cleared.  Inert when nothing was recorded
+(`completePhysicalWrites_nil`), which is every syscall that changed no address
+space. -/
+def completePhysicalWrites (owed : List Architecture.PhysicalWrite) : BaseIO Unit :=
+  owed.forM Platform.FFI.physicalWriteApply
+
+/-- **WS-BP BP7.2**: a commit that recorded no physical write performs none. -/
+theorem completePhysicalWrites_nil : completePhysicalWrites [] = pure () := rfl
+
+/-- **WS-BP BP7.2**: the seam performs **every** recorded write, in record
+order — pinned so a refactor that keeps only the last one (the descriptor store
+of a detach, say, and not the zeroing of the pages beneath it) fails here. -/
+theorem completePhysicalWrites_cons (w : Architecture.PhysicalWrite)
+    (rest : List Architecture.PhysicalWrite) :
+    completePhysicalWrites (w :: rest) =
+      (do Platform.FFI.physicalWriteApply w; completePhysicalWrites rest) := rfl
+
 /-- **WS-SM SM7.B** (structural marker): a commit that changed no
 pending-shootdown queue runs no round — no lock traffic, no reset, no
 SGIs, no TLBIs, no wait.  This is the non-shootdown-syscall inertness
@@ -533,7 +565,8 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × Option SeLe4n.ThreadId) × SystemState :=
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Option SeLe4n.ThreadId) × SystemState :=
   match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st with
   | Except.ok (outcome, st') =>
@@ -543,8 +576,9 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
         Architecture.shootdownPostedOps st st'',
         Architecture.shootdownRoundWindow st st'',
         st''.pendingIcacheMaintenance,
+        st''.pendingPhysicalWrites,
         st''.scheduler.currentOnCore execCore),
-       Architecture.clearIcacheMaintenance st'')
+       Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st''))
   | Except.error e =>
       ((Architecture.SyscallOutcome.returns (Architecture.errorFrame e),
         ([] : List (CoreId × SgiKind)),
@@ -552,7 +586,27 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
         ([] : List Architecture.TlbInvalidation),
         ((0, 0) : Nat × Nat),
         ([] : List Architecture.ICacheInvalidation),
+        ([] : List Architecture.PhysicalWrite),
         st.scheduler.currentOnCore execCore), st)
+
+/-- **WS-BP BP7.2 (the ledger is drained exactly once)**: the state the step
+commits owes no physical write, and the writes it hands the runtime are the ones
+the committed transition recorded.  So a write is performed once — by the seam
+this commit returns to — and none is stranded into the next syscall. -/
+theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContext)
+    (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    ∃ outcome st',
+      Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+          ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (outcome, st') ∧
+      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+          ipcBufferAddr elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
+      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+          ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1 =
+        (PriorityInheritance.scheduleLocalSuccessorLive st st' execCore).pendingPhysicalWrites := by
+  obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
+    msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+  refine ⟨outcome, st', h, ?_, ?_⟩ <;> simp [syscallDispatchCrossCoreStep, h]
 
 /-- **WS-RR RR7.12**: what a revalidation refusal returns to the caller.
 
@@ -568,18 +622,21 @@ conformance and error-matrix suites) exactly when the refusal becomes reachable
 is today one global read-modify-write over one `SystemState` and the growing
 phase writes nothing the resolver reads.
 
-No diffs are surfaced and the I-cache ledger is **not** cleared: nothing ran, so
-there is nothing to poke about and nothing owed was consumed. -/
+No diffs are surfaced and neither the I-cache ledger nor the physical-write
+ledger is cleared: nothing ran, so there is nothing to poke about and nothing
+owed was consumed. -/
 def syscallBracketRefusalResult (execCore : CoreId) (unwound : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × Option SeLe4n.ThreadId) × SystemState :=
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Option SeLe4n.ThreadId) × SystemState :=
   ((Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState),
     ([] : List (CoreId × SgiKind)),
     ([] : List CoreId),
     ([] : List Architecture.TlbInvalidation),
     ((0, 0) : Nat × Nat),
     ([] : List Architecture.ICacheInvalidation),
+    ([] : List Architecture.PhysicalWrite),
     unwound.scheduler.currentOnCore execCore), unwound)
 
 /-- **WS-RR RR7.12: the step, inside its declared per-object footprint.**
@@ -610,7 +667,8 @@ def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext) (execCore : Co
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × Option SeLe4n.ThreadId) × SystemState :=
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Option SeLe4n.ThreadId) × SystemState :=
   match Concurrency.runBracketed schedulerLockBracketDomain
       (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5)
       execCore
@@ -738,6 +796,13 @@ def syscallDispatchCrossCoreEntry
   -- frame exists for the caller — RA.C.9).
   let frame := result.1.mailboxFrame
   Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
+  -- **WS-BP BP7.2**: make physical memory agree with the committed address
+  -- spaces — the descriptor stores, page zeroings and ASID invalidations the
+  -- transition recorded, read and cleared in the atomic step above.  First,
+  -- before any core is poked and before the shootdown round: a remote core
+  -- must not refill its TLB from a descriptor the model has already cleared,
+  -- and a carved page must be zero before anything can name it.
+  completePhysicalWrites result.2.2.2.2.2.2.1
   Concurrency.fireCrossCoreSgis result.2.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
@@ -755,7 +820,7 @@ def syscallDispatchCrossCoreEntry
   -- step above (after `scheduleLocalSuccessorLive`, so it is the successor
   -- when the syscall vacated the core), and a syscall that left the core
   -- vacated clears the mirror rather than leaving it naming a blocked caller.
-  Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2))
+  Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2))
   -- WS-RA: the export's scalar return is the outcome tag (0 = the mailbox
   -- frame is the caller's return; 1 = the caller blocked, no frame; 2 = the
   -- caller faulted at the seam, no frame, and the trap layer halts pending
@@ -784,10 +849,11 @@ theorem syscallDispatchCrossCoreEntry_def
             ipcBufferAddr elr spsr spEl0 x30)
         let frame := result.1.mailboxFrame
         Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
+        completePhysicalWrites result.2.2.2.2.2.2.1
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
         completeIcacheMaintenance result.2.2.2.2.2.1
-        Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2))
+        Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2))
         pure result.1.tagWord) := rfl
 
 /-- **WS-SM SM8.B** (PR #861 review rounds 39/41): the gating argument's

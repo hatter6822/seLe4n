@@ -234,7 +234,8 @@ def emptyFrozenSystemState : FrozenSystemState :=
     declassificationTaint := SeLe4n.Kernel.TaintTable.empty
     perCoreICache :=
       _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
-    pendingIcacheMaintenance := [] }
+    pendingIcacheMaintenance := []
+    pendingPhysicalWrites := [] }
 
 /-- A `FrozenSystemState` holding `objs`, with the run queue a live state would
 have: a bucket per distinct TCB priority, holding the threads that are `.ready`.

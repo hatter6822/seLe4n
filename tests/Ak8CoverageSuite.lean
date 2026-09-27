@@ -219,7 +219,8 @@ private def emptyFrozenState : FrozenSystemState :=
       _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
     -- WS-SM SM7.D.1: the instruction-cache emission ledger is likewise a
     -- required frozen field; it is always `none` at a syscall boundary.
-    pendingIcacheMaintenance := [] }
+    pendingIcacheMaintenance := []
+    pendingPhysicalWrites := [] }
 
 /-- Helper: build a minimal FrozenSystemState containing the given objects.
 `FrozenMap.set` REQUIRES the key to already exist (frozen maps have a
