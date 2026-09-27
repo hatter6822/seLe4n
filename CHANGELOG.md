@@ -1,3 +1,78 @@
+## v0.36.23 — WS-BP BP7.11: the boot starts both initial threads, one per domain
+
+Until this version no deployment thread ever ran.  `bootSafeTcbCheck` installs
+every configured thread `.Inactive`, the idle-enqueued boot queued only idle
+threads, and each initial thread's only TCB capability sat in its own CNode, so
+nothing could resume it: the root task never ran, and the untrusted thread at
+`0x10_0000` — the labeling's upper separation witness — was permanently inert.
+The labeling guard was therefore decided on a separation between two threads
+that could never originate or receive a flow, which is the vacuity
+`separationWitnessAdmissible` refuses for the idle threads, one object over.
+BP7.11 closes it the way the `v0.36.2` audit's review decided: the boot starts
+**both** initial threads, one per domain, so no capability crosses the
+confinement boundary.
+
+- **The start is the kernel model's** (`SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean`).
+  `startInitialThreadOnCore` is `enqueueRunnableOnCore` — the step every wake
+  and resume ends in — preceded by the one field it does not write, the
+  thread-state flag, and it dispatches nothing.  `initialThreadStartable` is its
+  admissibility (a stored, `.Inactive`, unqueued thread with a positive time
+  slice and no inherited boost), `startInitialThreadOnCore_eq` its decomposition,
+  and the module carries the four `IntermediateState` witnesses in every branch,
+  the object frames, and the facts the boot reads:
+  `startInitialThreadOnCore_preserves_threadStateConsistent` (the full
+  classification survives a start, because a started thread is stored `.Ready`
+  exactly as it is queued) and `startInitialThreadOnCore_preserves_runQueueBootSound`.
+- **The stage** (`SeLe4n/Platform/Boot/InitialThreads.lean`).
+  `PlatformConfig.initialThreads` (default `[]`) names the threads;
+  `bootFromPlatformCheckedStartedFor` is the idle-enqueued boot followed by
+  `startInitialThreads`, which **refuses** the boot
+  (`unstartableInitialThreadBootError`) at the first name it cannot start — an
+  absent thread, an idle thread, a thread named twice — rather than skipping it.
+  With no name the stage is the idle boot (`bootFromPlatformCheckedStartedFor_of_nil`).
+  Every named thread is started — queued and stored `.Ready`
+  (`bootFromPlatformCheckedStartedFor_started`) — and no current slot is set
+  (`bootFromPlatformCheckedStartedFor_currentOnCore`).
+- **One bundle argument for both boots.**  `bootStartShape` (`Boot.lean`) names
+  what a boot leaves for the proof-layer bundle to be read off — boot-shaped
+  objects, default quiescent fields, a consistent ASID table, disjoint untypeds,
+  the default scheduler but for its run queues, and a boot-sound boot-core queue
+  (`Kernel.runQueueBootSound`).  `proofLayerInvariantBundle_of_bootStartShape`
+  is the argument the idle-boot theorem used to carry inline;
+  `bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle` is now
+  two citations, and `bootToRuntime_invariantBridge_started` is the started
+  boot's bridge through the same argument, because every start keeps the shape
+  (`startInitialThread_preserves_bootStartShape`).
+- **The binding names its threads, derived from its labeling.**
+  `PlatformBinding.initialThreads` is the labeling's two declared separation
+  witnesses, lower then upper, and `bindPlatformConfig` installs it as it
+  installs the boot VSpace root — so the witnesses the guard is decided on and
+  the threads that run cannot be two lists.  The FFI boot wrapper runs the
+  started stage.  Deriving the threads from the binding also left the
+  device-tree bridge and the boot-entry contract unchanged: the entry still
+  names the same approved call with the same four data arguments.
+- **The RPi5 deployment.**  The untrusted thread is pinned to core 1
+  (`rpi5UntrustedThread`, `rpi5UntrustedCore`); the root task, unpinned, starts
+  on the boot core.  `rpi5DeploymentIdleStateAt` is the idle stage (what
+  `rpi5DeploymentBootStateAt` was) and `rpi5DeploymentBootStateAt` the state
+  with both started; `rpi5BoundPlatformConfigAt_boot` is restated over the
+  started boot, and `rpi5DeploymentBootStateAt_initialThreadsStarted` is the
+  payoff.  The hardware entry's theorems (`kernelMain_installs`,
+  `kernelMain_installs_invariantBundle`) now speak of the started state with no
+  change to their statements.
+- **Witnesses.**  `tests/Ak9PlatformSuite.lean` drives the started boot on every
+  variant, computing the idle stage beside it as the CONTROL: each thread queued
+  on its own core and only there, both `.Ready`, no current slot set, and each
+  core's first scheduling point selecting the started thread where the idle
+  stage selects idle; and the refusals (absent, idle, named twice) with a
+  single-name CONTROL.  `tests/SyscallDispatchSuite.lean` SD-057's lower witness
+  is now suspended by the transition (it is started) where it used to be
+  refused `.illegalState` (it was inert).
+- **Registered debt closed**: *Nothing starts the root task, and the untrusted
+  witness can never run* (`docs/REGISTERED_DEBT.md` table B).
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP7.11)
+
 ## v0.36.22 — WS-BP BP7.9: per-thread FP/SIMD state, switched lazily
 
 Since `v0.36.2` `boot.S` traps FP/SIMD at EL0 as well as EL1 (the architecture

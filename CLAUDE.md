@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.22.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.23.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -230,7 +230,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8709 lines)
 - `docs/spec/SELE4N_SPEC.md` (~8417 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8235 lines)
-- `SeLe4n/Platform/Boot.lean` (~7664 lines)
+- `SeLe4n/Platform/Boot.lean` (~7706 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6656 lines)
 - `SeLe4n/Model/State.lean` (~6286 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5955 lines)
@@ -280,7 +280,7 @@ To find files that need pagination today, run:
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2606 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2604 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
-- `tests/Ak9PlatformSuite.lean` (~2595 lines)
+- `tests/Ak9PlatformSuite.lean` (~2683 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2512 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2506 lines)
@@ -457,7 +457,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockIdProjection.lean` (~810 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
-- `SeLe4n/Platform/RPi5/Deployment.lean` (~804 lines)
+- `SeLe4n/Platform/RPi5/Deployment.lean` (~931 lines)
 - `SeLe4n/Kernel/Architecture/Fault.lean` (~802 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -7155,7 +7155,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7176,8 +7176,8 @@ third at `v0.36.6` (the untyped reset, `.untypedReset`, so memory returns to the
 untyped it was carved from), and at `v0.36.7` the security fix that slice 3
 found (a frame capability owns the mapping it made, so destroying it unmaps),
 and at `v0.36.8` its slice 4a (an untyped carves child untypeds, and a reset
-returns everything carved from it at any depth); the rest of BP7, and BP8, have
-not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+returns everything carved from it at any depth), and the rest of BP7 through
+`v0.36.23` (the paragraphs below); BP8 has not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -8520,6 +8520,36 @@ ways.  (6) **A thread a core's registers still hold is not destroyed**
 write a destroyed thread's values into whatever TCB the retype creates under its
 id.  `retypeTargetDetached` carries `tcbFpReleased` for the payoff.  Executing
 the switch on the image is BP8's.
+
+**The boot starts both initial threads, one per domain** (`v0.36.23`, BP7.11).
+Until then every configured thread was installed `.Inactive` and nothing ever
+resumed one, so the labeling guard was decided on a separation between two
+threads that could never run.  Five things new code must respect.  (1) **The
+start is the kernel model's**: `Kernel.startInitialThreadOnCore`
+(`Scheduler/Operations/InitialThreadStart.lean`) is `enqueueRunnableOnCore`
+preceded by the flag write it does not do, and it dispatches nothing — every
+current slot stays `none`, so each core's first scheduling point selects.  A
+second body in the boot would be a second answer to "what makes a thread
+runnable", the reason `enqueueIdleThread` is the kernel model's too.  (2)
+**`bootSafeTcbCheck` still requires `.Inactive` of every configured thread**;
+the start writes `.Ready`, and `initialThreadStartable` (stored, `.Inactive`,
+unqueued, positive time slice, no inherited boost) is the one place the started
+set is admitted — a name it refuses refuses the boot
+(`unstartableInitialThreadBootError`), never a skip.  (3) **A binding's started
+threads are derived from its labeling**: `PlatformBinding.initialThreads` is the
+two separation witnesses, and `bindPlatformConfig` installs it as it installs the
+boot root, so the threads the guard is decided on and the threads that run are
+one list; a direct-entry caller names its own through
+`PlatformConfig.initialThreads` (default `[]`, where the stage is the idle boot,
+`bootFromPlatformCheckedStartedFor_of_nil`).  (4) **One bundle argument for
+every boot**: `bootStartShape` names what the proof-layer bundle reads of a boot
+state, `proofLayerInvariantBundle_of_bootStartShape` is the argument, and a new
+boot stage proves that it keeps the shape (`startInitialThread_preserves_bootStartShape`)
+rather than re-running the argument.  (5) **Concrete boot states are proved by
+rewriting, never by unfolding a bind against them**: the deployment's proofs go
+through `bootFromPlatformCheckedStartedFor_of_idle`, stated over variables,
+because a defeq check that reaches `startInitialThreads` of a concrete list
+evaluates `initialThreadStartable` against the whole boot state and times out.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

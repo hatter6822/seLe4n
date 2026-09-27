@@ -317,9 +317,10 @@ them for zeroing, copies and spills — it put 129 such instructions in the HAL 
 so the HAL builds for `aarch64-unknown-none-softfloat`, and the cross gate's
 step [5/7] checks the generated code rather than trusting the flag. Do not
 write `neon`/`fp-armv8` target features, FP inline assembly or a second
-`CPACR_EL1` write: `build.rs` and the disassembly gate refuse all three. User
-FP/SIMD traps and is delivered as a fault until per-thread FP state lands
-(WS-BP BP7.9).
+`CPACR_EL1` write: `build.rs` and the disassembly gate refuse all three, save
+for `fp_context.S`'s four pinned routines. A user FP/SIMD instruction traps and
+is the lazy switch: the thread's own context is loaded and the trap lifted for
+it (WS-BP BP7.9, `v0.36.22`).
 
 ### Concurrency model checking and miri
 

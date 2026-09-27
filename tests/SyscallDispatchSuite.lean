@@ -1235,13 +1235,17 @@ private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
               (SeLe4n.Kernel.idleThreadId c).toNat.toUInt64 c0 st with
           | ((code, _), _) => code == invalidArgument))
         "every core's idle id is refused"
-      -- An ordinary installed thread reaches the transition: the inactive
-      -- lower witness is refused by `suspendThreadOnCore`'s own `.illegalState`.
+      -- An ordinary installed thread reaches the transition and is suspended:
+      -- since WS-BP BP7.11 the platform boot **starts** its labeling's lower
+      -- witness (`PlatformBinding.initialThreads`), so it is queued and
+      -- `.Ready`, and the transition succeeds — where before BP7.11 it was
+      -- `.Inactive` and the transition refused it `.illegalState`.  Either way
+      -- the point stands: the seam's idle check does not refuse it.
       let (witnessStatus, _) ← modifyGetKernelState
         (suspendThreadCrossCoreStep SeLe4n.Kernel.harnessLowerWitnessIndex.toUInt64 c0)
       expect "sd057_ordinary_thread_reaches_the_transition"
-        (witnessStatus == KernelError.toUInt32 .illegalState)
-        s!"an inactive witness is refused by the transition, got {witnessStatus}"
+        (witnessStatus == 0)
+        s!"the started witness is suspended by the transition, got {witnessStatus}"
       -- The sentinel keeps its refusal.
       let (sentinelStatus, _) ← modifyGetKernelState (suspendThreadCrossCoreStep 0 c0)
       expect "sd057_sentinel_refused" (sentinelStatus == invalidArgument)

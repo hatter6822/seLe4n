@@ -170,6 +170,18 @@ def rpi5InitialThread (id cspace vspace : SeLe4n.ObjId) : TCB :=
     vspaceRoot := vspace
     ipcBuffer := SeLe4n.VAddr.ofNat 0 }
 
+/-- **WS-BP BP7.11**: the core the untrusted domain's thread runs on — core 1,
+    so the two initial threads, one per domain, are started on two cores and
+    neither waits on the other's time slice.  The root task is unpinned and so
+    starts on the boot core (`determineTargetCore`). -/
+def rpi5UntrustedCore : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+
+/-- **WS-BP BP7.11**: the untrusted domain's initial thread — pinned to
+    `rpi5UntrustedCore`. -/
+def rpi5UntrustedThread : TCB :=
+  { rpi5InitialThread rpi5UntrustedTcbId rpi5UntrustedCNodeId rpi5UntrustedVSpaceId with
+    cpuAffinity := some rpi5UntrustedCore }
+
 /-- A capability to an object with the given rights, unbadged. -/
 def rpi5InitialCap (target : SeLe4n.ObjId) (rights : List AccessRight) : Capability :=
   { target := .object target, rights := AccessRightSet.ofList rights }
@@ -329,8 +341,7 @@ def rpi5InitialObjectsFor (v : BCM2712Config) : List ObjectEntry :=
   , cnodeEntry rpi5RootTaskCNodeId (rpi5RootTaskCNodeFor v)
   , vspaceEntry rpi5RootTaskVSpaceId rpi5RootTaskAsid 0
   , notificationEntry rpi5InterruptNotificationId
-  , tcbEntry rpi5UntrustedTcbId
-      (rpi5InitialThread rpi5UntrustedTcbId rpi5UntrustedCNodeId rpi5UntrustedVSpaceId)
+  , tcbEntry rpi5UntrustedTcbId rpi5UntrustedThread
   , cnodeEntry rpi5UntrustedCNodeId rpi5UntrustedCNode
   , vspaceEntry rpi5UntrustedVSpaceId rpi5UntrustedAsid 1 ] ++
   (rpi5RootTaskUntypeds v).map fun u => untypedEntry u.1 u.2
@@ -362,7 +373,8 @@ def rpi5BoundPlatformConfigAt (v : BCM2712Config) : PlatformConfig :=
   { irqTable := rpi5IrqTable
     initialObjects := rpi5InitialObjectsFor v
     machineConfig := rpi5MachineConfigForVariant v
-    bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := RPi5Platform) }
+    bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := RPi5Platform)
+    initialThreads := PlatformBinding.initialThreads (platform := RPi5Platform) }
 
 /-- **WS-BP BP4.4**: binding a board account is choosing a variant — the bound
     configuration depends on the account only through `rpi5VariantFor`. -/
@@ -645,52 +657,165 @@ theorem rpi5BoundPlatformConfigAt_checked (v : BCM2712Config) (hv : v.Admissible
 -- every board account
 -- ============================================================================
 
-/-- The state the hardware boot installs for this deployment on variant `v`:
-    the checked boot with each declared core's idle thread enqueued. -/
-def rpi5DeploymentBootStateAt (v : BCM2712Config) : IntermediateState :=
+/-- **WS-BP BP7.11**: the idle stage of this deployment's boot on variant `v` —
+    the checked boot with each declared core's idle thread enqueued, every
+    configured thread still `.Inactive`.  (It was `rpi5DeploymentBootStateAt`
+    until BP7.11, which added the stage that starts the initial threads.) -/
+def rpi5DeploymentIdleStateAt (v : BCM2712Config) : IntermediateState :=
   (PlatformBinding.declaredCores (platform := RPi5Platform)).foldl enqueueIdleThread
     (bootEnableInterruptsOp
       (installBootVSpaceRoot (bootFromPlatform (rpi5BoundPlatformConfigAt v))
         rpi5BootVSpaceRootEntry.id rpi5BootVSpaceRootEntry.root
         rpi5BootVSpaceRootEntry.hMappings))
 
+/-- The state the hardware boot installs for this deployment on variant `v`:
+    the idle stage with **both initial threads started** (WS-BP BP7.11) — the
+    root task on the boot core and the untrusted thread on
+    `rpi5UntrustedCore`, the binding's `PlatformBinding.initialThreads`, which
+    are its labeling's two separation witnesses. -/
+def rpi5DeploymentBootStateAt (v : BCM2712Config) : IntermediateState :=
+  (PlatformBinding.initialThreads (platform := RPi5Platform)).foldl startInitialThread
+    (rpi5DeploymentIdleStateAt v)
+
 /-- **WS-BP BP3.3**: the idle-thread boot on the binding's cores succeeds on
     every variant, and this is what it returns. -/
-theorem rpi5BoundPlatformConfigAt_boot (v : BCM2712Config) (hv : v.Admissible) :
+theorem rpi5BoundPlatformConfigAt_idleBoot (v : BCM2712Config) (hv : v.Admissible) :
     bootFromPlatformCheckedWithIdleThreadsFor
         (PlatformBinding.declaredCores (platform := RPi5Platform))
         (rpi5BoundPlatformConfigAt v) =
-      .ok (rpi5DeploymentBootStateAt v) :=
+      .ok (rpi5DeploymentIdleStateAt v) :=
   bootFromPlatformCheckedWithIdleThreadsFor_map_ok _ _ _ (rpi5BoundPlatformConfigAt_checked v hv)
     (rpi5BoundPlatformConfigAt_affinities v hv)
 
-/-- **WS-BP BP3.4**: a configured thread is a thread of the boot state. -/
-private theorem rpi5Deployment_tcb_installed (v : BCM2712Config) (hv : v.Admissible)
-    (id cspace vspace : SeLe4n.ObjId)
-    (hMem : tcbEntry id (rpi5InitialThread id cspace vspace) ∈ rpi5InitialObjectsFor v) :
-    ((rpi5DeploymentBootStateAt v).state.getTcb? ⟨id.val⟩).isSome = true := by
+/-- ...and in its all-cores spelling, which the idle boot's characterisations
+    are stated in — the RPi5 binding declares every model core. -/
+private theorem rpi5BoundPlatformConfigAt_idleBoot_allCores (v : BCM2712Config)
+    (hv : v.Admissible) :
+    bootFromPlatformCheckedWithIdleThreads (rpi5BoundPlatformConfigAt v) =
+      .ok (rpi5DeploymentIdleStateAt v) := by
+  rw [← bootFromPlatformCheckedWithIdleThreadsFor_allCores, ← rpi5_cores_eq_allCores]
+  exact rpi5BoundPlatformConfigAt_idleBoot v hv
+
+/-- **WS-BP BP3.4**: a configured thread is a thread of the idle stage. -/
+private theorem rpi5Deployment_tcb_idle (v : BCM2712Config) (hv : v.Admissible)
+    (id : SeLe4n.ObjId) (tcb : TCB) (hMem : tcbEntry id tcb ∈ rpi5InitialObjectsFor v) :
+    (rpi5DeploymentIdleStateAt v).state.getTcb? ⟨id.val⟩ = some tcb := by
   have h := bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem _ _ _
-    (rpi5BoundPlatformConfigAt_boot v hv) _ hMem
-  have hTcb : (rpi5DeploymentBootStateAt v).state.getTcb? ⟨id.val⟩ =
-      some (rpi5InitialThread id cspace vspace) :=
-    (SystemState.getTcb?_eq_some_iff _ _ _).mpr h
-  rw [hTcb]; rfl
+    (rpi5BoundPlatformConfigAt_idleBoot v hv) _ hMem
+  exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr h
+
+/-- **WS-BP BP7.11**: the binding's initial threads are the root task and the
+    untrusted thread, in that order — its labeling's lower and upper witness. -/
+theorem rpi5_initialThreads :
+    PlatformBinding.initialThreads (platform := RPi5Platform) =
+      [⟨rpi5RootTaskTcbId.val⟩, ⟨rpi5UntrustedTcbId.val⟩] := rfl
+
+/-- **WS-BP BP7.11**: the bound configuration starts the binding's initial
+    threads (it is `bindPlatformConfig`'s, by `rfl`). -/
+theorem rpi5BoundPlatformConfigAt_initialThreads (v : BCM2712Config) :
+    (rpi5BoundPlatformConfigAt v).initialThreads =
+      PlatformBinding.initialThreads (platform := RPi5Platform) := rfl
+
+/-- **WS-BP BP7.11**: neither initial thread is an idle thread. -/
+private theorem rpi5_initialThreads_not_idle :
+    (∀ c, (⟨rpi5RootTaskTcbId.val⟩ : SeLe4n.ThreadId) ≠ Kernel.idleThreadId c) ∧
+    (∀ c, (⟨rpi5UntrustedTcbId.val⟩ : SeLe4n.ThreadId) ≠ Kernel.idleThreadId c) := by
+  decide
+
+/-- **WS-BP BP7.11**: the root task is startable on the idle stage. -/
+private theorem rpi5Deployment_rootTask_startable (v : BCM2712Config) (hv : v.Admissible) :
+    Kernel.initialThreadStartable (rpi5DeploymentIdleStateAt v).state
+      ⟨rpi5RootTaskTcbId.val⟩ = true := by
+  have hT := rpi5Deployment_tcb_idle v hv rpi5RootTaskTcbId
+    (rpi5InitialThread rpi5RootTaskTcbId rpi5RootTaskCNodeId rpi5RootTaskVSpaceId)
+    (by simp [rpi5InitialObjectsFor])
+  exact bootFromPlatformCheckedWithIdleThreads_initialThreadStartable _ _
+    (rpi5BoundPlatformConfigAt_idleBoot_allCores v hv) _ _ hT
+    rpi5_initialThreads_not_idle.1 (by decide) rfl
+
+/-- **WS-BP BP7.11**: the untrusted thread is startable on the idle stage. -/
+private theorem rpi5Deployment_untrusted_startable (v : BCM2712Config) (hv : v.Admissible) :
+    Kernel.initialThreadStartable (rpi5DeploymentIdleStateAt v).state
+      ⟨rpi5UntrustedTcbId.val⟩ = true := by
+  have hT := rpi5Deployment_tcb_idle v hv rpi5UntrustedTcbId rpi5UntrustedThread
+    (by simp [rpi5InitialObjectsFor])
+  exact bootFromPlatformCheckedWithIdleThreads_initialThreadStartable _ _
+    (rpi5BoundPlatformConfigAt_idleBoot_allCores v hv) _ _ hT
+    rpi5_initialThreads_not_idle.2 (by decide) rfl
+
+/-- **WS-BP BP7.11**: both are startable on the idle stage — configured,
+    `.Inactive`, unqueued, with the default time slice and no boost. -/
+private theorem rpi5Deployment_initialThreads_startable (v : BCM2712Config)
+    (hv : v.Admissible) :
+    ∀ tid ∈ PlatformBinding.initialThreads (platform := RPi5Platform),
+      Kernel.initialThreadStartable (rpi5DeploymentIdleStateAt v).state tid = true := by
+  rw [rpi5_initialThreads]
+  intro tid hMem
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hMem
+  rcases hMem with h | h
+  · rw [h]; exact rpi5Deployment_rootTask_startable v hv
+  · rw [h]; exact rpi5Deployment_untrusted_startable v hv
+
+/-- **WS-BP BP7.11**: the stage is the fold — neither start refused. -/
+private theorem rpi5Deployment_startInitialThreads (v : BCM2712Config) (hv : v.Admissible) :
+    startInitialThreads (PlatformBinding.initialThreads (platform := RPi5Platform))
+        (rpi5DeploymentIdleStateAt v) = .ok (rpi5DeploymentBootStateAt v) :=
+  startInitialThreads_eq_foldl _ _ (by rw [rpi5_initialThreads]; decide)
+    (rpi5Deployment_initialThreads_startable v hv)
+
+/-- **WS-BP BP3.3, BP7.11**: the started boot on the binding's cores succeeds on
+    every variant, and this is what it returns — neither start is refused. -/
+theorem rpi5BoundPlatformConfigAt_boot (v : BCM2712Config) (hv : v.Admissible) :
+    bootFromPlatformCheckedStartedFor
+        (PlatformBinding.declaredCores (platform := RPi5Platform))
+        (rpi5BoundPlatformConfigAt v) =
+      .ok (rpi5DeploymentBootStateAt v) := by
+  rw [bootFromPlatformCheckedStartedFor_of_idle _ _ _ (rpi5BoundPlatformConfigAt_idleBoot v hv),
+    rpi5BoundPlatformConfigAt_initialThreads]
+  exact rpi5Deployment_startInitialThreads v hv
 
 /-- **WS-BP BP3.4**: both threads the labeling declares separated are installed
-    — the root task at the lower witness, the untrusted initial thread at the
-    upper — so the boot's last refusal (`uninstalledSeparationWitnessBootError`)
-    is unreachable too, on every variant. -/
-theorem rpi5DeploymentBootStateAt_witnessesInstalled (v : BCM2712Config)
+    on the idle stage... -/
+private theorem rpi5DeploymentIdleStateAt_witnessesInstalled (v : BCM2712Config)
     (hv : v.Admissible) :
-    declaredWitnessesInstalled (rpi5DeploymentBootStateAt v).state
+    declaredWitnessesInstalled (rpi5DeploymentIdleStateAt v).state
       (PlatformBinding.labeling (platform := RPi5Platform)) = true := by
   unfold declaredWitnessesInstalled
   rw [rpi5_deploymentLabeling_separatedThreads]
   simp only [Bool.and_eq_true]
-  exact ⟨rpi5Deployment_tcb_installed v hv rpi5RootTaskTcbId rpi5RootTaskCNodeId
-      rpi5RootTaskVSpaceId (by simp [rpi5InitialObjectsFor]),
-    rpi5Deployment_tcb_installed v hv rpi5UntrustedTcbId rpi5UntrustedCNodeId
-      rpi5UntrustedVSpaceId (by simp [rpi5InitialObjectsFor])⟩
+  have h1 := rpi5Deployment_tcb_idle v hv rpi5RootTaskTcbId
+    (rpi5InitialThread rpi5RootTaskTcbId rpi5RootTaskCNodeId rpi5RootTaskVSpaceId)
+    (by simp [rpi5InitialObjectsFor])
+  have h2 := rpi5Deployment_tcb_idle v hv rpi5UntrustedTcbId rpi5UntrustedThread
+    (by simp [rpi5InitialObjectsFor])
+  exact ⟨Option.isSome_iff_exists.mpr ⟨_, h1⟩, Option.isSome_iff_exists.mpr ⟨_, h2⟩⟩
+
+/-- **WS-BP BP3.4**: ...and on the started state the boot installs, so the boot's
+    last refusal (`uninstalledSeparationWitnessBootError`) is unreachable too, on
+    every variant. -/
+theorem rpi5DeploymentBootStateAt_witnessesInstalled (v : BCM2712Config)
+    (hv : v.Admissible) :
+    declaredWitnessesInstalled (rpi5DeploymentBootStateAt v).state
+      (PlatformBinding.labeling (platform := RPi5Platform)) = true :=
+  startInitialThreads_preserves_declaredWitnessesInstalled _ _ _
+    (rpi5Deployment_startInitialThreads v hv) _
+    (rpi5DeploymentIdleStateAt_witnessesInstalled v hv)
+
+/-- **WS-BP BP7.11 — the payoff**: on the state the hardware boot installs,
+    **both initial threads are started** — queued and stored `.Ready` — the root
+    task in the boot domain and the untrusted thread in the other, so the
+    labeling's two separation witnesses are threads that run.  Before BP7.11
+    neither ever did, and the separation the labeling guard is decided on
+    separated two threads that could never originate or receive a flow. -/
+theorem rpi5DeploymentBootStateAt_initialThreadsStarted (v : BCM2712Config)
+    (hv : v.Admissible) :
+    Kernel.threadStarted (rpi5DeploymentBootStateAt v).state ⟨rpi5RootTaskTcbId.val⟩ ∧
+    Kernel.threadStarted (rpi5DeploymentBootStateAt v).state ⟨rpi5UntrustedTcbId.val⟩ := by
+  have h := bootFromPlatformCheckedStartedFor_started _ _ _ (rpi5BoundPlatformConfigAt_boot v hv)
+  have hT : (rpi5BoundPlatformConfigAt v).initialThreads =
+      [⟨rpi5RootTaskTcbId.val⟩, ⟨rpi5UntrustedTcbId.val⟩] := rpi5_initialThreads
+  rw [hT] at h
+  exact ⟨h _ (List.mem_cons_self ..), h _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))⟩
 
 /-- **WS-BP BP3 acceptance, BP4.4 generalisation**: the hardware boot, given
     this deployment on **any** board account, commits the boot state of the
@@ -709,7 +834,7 @@ theorem bootAndInitialiseRPi5_rpi5PlatformConfigFor (board : SeLe4n.MachineConfi
         pure (Except.ok (rpi5DeploymentBootStateAt (rpi5VariantFor board)).state)) := by
   have hv := rpi5VariantFor_admissible board
   rw [bootAndInitialiseRPi5_eq, bootAndInitialisePlatform_eq_checked_boot]
-  show (match bootFromPlatformCheckedWithIdleThreadsFor _
+  show (match bootFromPlatformCheckedStartedFor _
       (bindPlatformConfig RPi5Platform (rpi5PlatformConfigFor board)) with
     | .error e => _ | .ok ist => _) = _
   rw [bindPlatformConfig_rpi5PlatformConfigFor, rpi5BoundPlatformConfigAt_boot _ hv]
@@ -737,7 +862,7 @@ theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor (board : SeLe4n.Machin
 theorem rpi5DeploymentBootStateAt_invariantBridge (v : BCM2712Config) (hv : v.Admissible) :
     SeLe4n.Kernel.Architecture.proofLayerInvariantBundle (rpi5DeploymentBootStateAt v).state ∧
     SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze (rpi5DeploymentBootStateAt v)) :=
-  bootToRuntime_invariantBridge_checked _ PlatformBinding.declaredCores_nodup _ _
+  bootToRuntime_invariantBridge_started _ PlatformBinding.declaredCores_nodup _ _
     (rpi5BoundPlatformConfigAt_boot v hv)
 
 -- ============================================================================
@@ -793,9 +918,11 @@ theorem rpi5DeploymentBootStateAt_untypedInstalled (v : BCM2712Config)
     (hv : v.Admissible) (u : SeLe4n.ObjId × UntypedObject)
     (hu : u ∈ rpi5RootTaskUntypeds v) :
     (rpi5DeploymentBootStateAt v).state.objects[u.1]? = some (.untyped u.2) :=
-  bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem _ _ _
-    (rpi5BoundPlatformConfigAt_boot v hv) (untypedEntry u.1 u.2)
-    (List.mem_append_right _ (List.mem_map.mpr ⟨u, hu, rfl⟩))
+  startInitialThreads_objects_of_nonTcb _ _ _
+    (rpi5Deployment_startInitialThreads v hv) _ _ (fun _ h => by cases h)
+    (bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem _ _ _
+      (rpi5BoundPlatformConfigAt_idleBoot v hv) (untypedEntry u.1 u.2)
+      (List.mem_append_right _ (List.mem_map.mpr ⟨u, hu, rfl⟩)))
 
 /- **Tombstone (WS-BP BP7.10)**: `rpi5DeploymentBootStateAt_ramUntypedInstalled`
 is `rpi5DeploymentBootStateAt_untypedInstalled` above, over every root-task

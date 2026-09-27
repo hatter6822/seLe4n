@@ -10,6 +10,7 @@ import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
+import SeLe4n.Platform.Boot.InitialThreads
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Kernel.Architecture.TrapFrameSave
 import SeLe4n.Kernel.Architecture.ContextRestore
@@ -1181,7 +1182,7 @@ def bootAndInitialiseFromPlatformOn
   if isInsecureDefaultContext ctx then
     pure (Except.error insecureLabelingContextBootError)
   else
-    match bootFromPlatformCheckedWithIdleThreadsFor cores config with
+    match bootFromPlatformCheckedStartedFor cores config with
     | Except.error e => pure (Except.error e)
     | Except.ok ist =>
       if declaredWitnessesInstalled ist.state ctx then
@@ -1258,6 +1259,16 @@ folds a per-core idle enqueue over `allCores`.  The hypothesis is discharged fro
 the state the kernel actually comes up in
 (`bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore`).
 
+**WS-BP BP7.11 — and then starts the configuration's initial threads.**  The idle
+stage installs every configured thread `.Inactive`, so until BP7.11 no deployment
+thread ever ran.  The wrapper now runs `bootFromPlatformCheckedStartedFor`: the
+idle-enqueued boot, then each thread `PlatformConfig.initialThreads` names
+started through the kernel model's own start (`Kernel.startInitialThreadOnCore`)
+— `.Ready`, on its home core's run queue, no current slot set — refusing the boot
+for a named thread it cannot start.  With no named thread the stage is the idle
+boot verbatim (`bootFromPlatformCheckedStartedFor_of_nil`); a platform binding
+names its labeling's two separation witnesses (`bindPlatformConfig`).
+
 **RR5.2 — the labeling context is mandatory.**  It used to be
 `ctx : Option LabelingContext := none`, and on the `none` path the wrapper
 installed the boot state and left whatever the labeling reference already held
@@ -1278,9 +1289,9 @@ labeling reference at its fail-closed pre-boot value — rather than leaving a
 live post-boot state paired with a policy that enforces nothing.
 
 Returns the post-boot state on success, or an error string on failure: the boot
-error from `bootFromPlatformChecked` (which the idle entry forwards verbatim —
-`bootFromPlatformCheckedWithIdleThreads_rejects_invalid`), or
-`insecureLabelingContextBootError`.
+error from `bootFromPlatformChecked` (which the started entry forwards verbatim —
+`bootFromPlatformCheckedStartedFor_rejects_invalid`),
+`unstartableInitialThreadBootError`, or `insecureLabelingContextBootError`.
 Neither IO.Ref is updated on either failure path — callers can detect the
 failure explicitly without seeing partial state. -/
 def bootAndInitialiseFromPlatform
@@ -1315,12 +1326,20 @@ board boots the 2 GiB configuration and a caller that describes nothing boots
 the smallest.  Round 7's guarantee is kept in the form that survives a family:
 the bound configuration is a member of the binding's family whatever the caller
 said (`rpi5BoundMachineConfig_mem_family`), and it declares the binding's PE
-count (`bindPlatformConfig_declaredCoreCount`). -/
+count (`bindPlatformConfig_declaredCoreCount`).
+
+**WS-BP BP7.11**: the binding also names the threads its boot starts
+(`PlatformBinding.initialThreads` — its labeling's two separation witnesses),
+for the reason it names the root: which threads run first is a property of the
+deployment the binding states, not of a caller's configuration, and deriving it
+from the labeling makes the witnesses the guard is decided on the threads that
+run (`bindPlatformConfig_initialThreads`). -/
 def bindPlatformConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) : PlatformConfig :=
   { config with
     machineConfig := PlatformBinding.bindMachineConfig (platform := platform) config.machineConfig
-    bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := platform) }
+    bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := platform)
+    initialThreads := PlatformBinding.initialThreads (platform := platform) }
 
 theorem bindPlatformConfig_machineConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
@@ -1345,12 +1364,21 @@ configuration's obligation; `bootAndInitialisePlatform_eq_checked_boot` is what
 says the platform entry runs exactly this checked boot. -/
 theorem bootAndInitialisePlatform_checked_declaredCoreCount (platform : Type)
     [PlatformBinding platform] (config : PlatformConfig) (ist : IntermediateState)
-    (h : bootFromPlatformCheckedWithIdleThreadsFor
+    (h : bootFromPlatformCheckedStartedFor
         (PlatformBinding.declaredCores (platform := platform))
         (bindPlatformConfig platform config) = .ok ist) :
     ist.state.machine.declaredCoreCount = PlatformBinding.coreCount (platform := platform) := by
-  rw [bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ h]
+  obtain ⟨base, hBase, hStart⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
+  rw [startInitialThreads_machine _ _ _ hStart,
+    bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ hBase]
   exact bindPlatformConfig_declaredCoreCount platform config
+
+/-- **WS-BP BP7.11**: the bound configuration starts the binding's labeling's
+two separation witnesses. -/
+theorem bindPlatformConfig_initialThreads (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).initialThreads =
+      PlatformBinding.initialThreads (platform := platform) := rfl
 
 theorem bindPlatformConfig_bootVSpaceRoot (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
@@ -1386,7 +1414,8 @@ Because the binding stores the source, the guard's admission
 proofs each one carries, so the refusal arm of `bootAndInitialiseFromPlatform`
 is unreachable from here — machine-checked as
 `bootAndInitialisePlatform_eq_checked_boot`: this entry accepts and rejects
-exactly what `bootFromPlatformCheckedWithIdleThreads` does.
+exactly what the started boot `bootFromPlatformCheckedStartedFor` does over the
+binding's cores.
 
 **The binding supplies the machine configuration and the boot VSpace root too**
 (PR #889 review round 7).  This entry used to take the binding's cores and
@@ -1795,7 +1824,7 @@ theorem rpi5PlatformConfigFromDtb_ok_binds_detected_variant (blob : ByteArray)
 theorem bootAndInitialisePlatform_eq_checked_boot (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
     bootAndInitialisePlatform platform config =
-      (match bootFromPlatformCheckedWithIdleThreadsFor
+      (match bootFromPlatformCheckedStartedFor
           (PlatformBinding.declaredCores (platform := platform))
           (bindPlatformConfig platform config) with
         | Except.error e => pure (Except.error e)

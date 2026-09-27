@@ -18,6 +18,7 @@ import SeLe4n.Kernel.Scheduler.IdleThread
 -- `enqueueIdleThread` below runs `enqueueIdleThreadOnCore` on the intermediate
 -- state's `state`, so the module holding that operation sits upstream of here.
 import SeLe4n.Kernel.Scheduler.Operations.IdleEnqueue
+import SeLe4n.Kernel.Scheduler.Operations.InitialThreadStart
 -- WS-RC R3 (DEEP-BOOT-01): boot-VSpaceRoot threading reaches into the
 -- canonical RPi5 boot root + boot-safety predicate so that
 -- `bootSafeObjectCheck` can admit a well-formed boot VSpaceRoot.
@@ -119,6 +120,18 @@ structure PlatformConfig where
   initialObjects : List ObjectEntry
   machineConfig : MachineConfig := defaultMachineConfig
   bootVSpaceRoot : Option BootVSpaceRootEntry := none
+  /-- **WS-BP BP7.11**: the configured threads the boot **starts** — marks
+      `.Ready` and places on its home core's run queue, after the idle enqueue
+      (`Platform.Boot.startInitialThreads`, `Kernel.startInitialThreadOnCore`).
+      Every configured thread is installed `.Inactive` (`bootSafeTcbCheck`); a
+      thread named here is the one the first scheduling point of its core may
+      dispatch.  A name that is not a stored, inactive, unqueued thread with a
+      positive time slice and no inherited boost refuses the boot.  Empty by
+      default, so every configuration that predates the field boots exactly as
+      it did.  A platform binding supplies its own
+      (`Platform.FFI.bindPlatformConfig`: the labeling's two separation
+      witnesses), as it supplies the boot VSpace root. -/
+  initialThreads : List SeLe4n.ThreadId := []
 
 -- V7-I: O(n) duplicate detection via HashSet accumulation.
 -- Replaces the O(n²) per-element `List.any` scan with a single-pass fold.
@@ -7498,27 +7511,91 @@ private theorem bootCoreIdleQueue_threadPriority :
         idleThreadId bootCoreId]? = some ⟨0⟩ := by
   decide
 
-/-- **WS-BP BP3.5**: **the state the checked, idle-enqueued boot installs
-    satisfies the proof-layer invariant bundle** — for any configuration the
-    checked boot accepts and any duplicate-free core list, so the hardware
-    boot's state (`bootAndInitialisePlatform`, over the binding's declared
-    cores) and the all-cores boot are both instances.
+/-- **WS-BP BP7.11**: **what a boot leaves, for the bundle to be read off** —
+    every object boot-shaped, the untouched fields their defaults, the ASID
+    table consistent, the untypeds disjoint, the scheduler the default one but
+    for its run queues, and the boot core's queue boot-sound
+    (`Kernel.runQueueBootSound`: distinct members, each a stored TCB with a
+    positive time slice and no inherited boost, bucketed at its own priority).
 
-    This is what a transition going live owes first: the next phase's first
-    row makes this boot live, and until this theorem no statement about the
-    proof-layer bundle covered the state it installs — the general bridge was
-    about the unchecked boot of a VSpace-free configuration, with an empty
-    scheduler.  Each hypothesis of `proofLayerInvariantBundle_of_bootShape` is
-    discharged from the boot itself: the objects' shape from the checked
-    boot's object and root checks and the idle TCBs' defaults, the ASID table
-    from the id and ASID gates, the untyped regions from `wellFormed`'s
-    placement conjunct, and the scheduler facts from what the fold enqueued —
-    on the boot core, nothing or its idle thread at priority `0`. -/
-theorem bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle
+    It is the idle boot's state and — BP7.11's point — the started boot's too:
+    starting a designated thread writes one TCB that was already boot-shaped
+    and inserts it into one queue, so every conjunct survives it.  Stating the
+    shape once is what lets the two boots share one bundle argument
+    (`proofLayerInvariantBundle_of_bootStartShape`) rather than two. -/
+def bootStartShape (ist : IntermediateState) : Prop :=
+  (∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+    ist.state.objects[oid]? = some obj → bootObjectShape obj) ∧
+  bootQuiescentFields ist.state ∧
+  Architecture.asidTableConsistent ist.state ∧
+  Kernel.untypedRegionsDisjoint ist.state ∧
+  (∃ rq, ist.state.scheduler = { (default : SystemState).scheduler with runQueue := rq }) ∧
+  Kernel.runQueueBootSound ist.state bootCoreId
+
+/-- **WS-BP BP7.11**: **the proof-layer bundle of any state of boot shape.**
+    The scheduler half of `proofLayerInvariantBundle_of_bootShape`'s hypotheses
+    is discharged from the boot core's queue facts and the default scheduler;
+    the rest is passed through. -/
+theorem proofLayerInvariantBundle_of_bootStartShape (ist : IntermediateState)
+    (h : bootStartShape ist) : Architecture.proofLayerInvariantBundle ist.state := by
+  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, hSch⟩, hNodup, hQueue⟩ := h
+  have hCur : ist.state.scheduler.currentOnCore bootCoreId = none := by
+    rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).1
+  have hRunnableTcb : ∀ tid, tid ∈ ist.state.scheduler.runnable →
+      ∃ tcb, ist.state.objects[tid.toObjId]? = some (.tcb tcb) ∧ 0 < tcb.timeSlice ∧
+        tcb.pipBoost = none ∧
+        (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? =
+          some tcb.priority :=
+    fun tid hMem => hQueue tid ((SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mp hMem)
+  have hSched : schedulerInvariantBundleFull ist.state := by
+    refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · simp [queueCurrentConsistent, hCur]
+    · exact hNodup
+    · unfold currentThreadValid; rw [hCur]; trivial
+    · intro tid hMem
+      obtain ⟨t, hObj, hPos, _, _⟩ := hRunnableTcb tid hMem
+      simp only [hObj]
+      exact hPos
+    · unfold currentTimeSlicePositive; rw [hCur]; trivial
+    · unfold edfCurrentHasEarliestDeadline; rw [hCur]; trivial
+    · unfold contextMatchesCurrent; rw [hCur]; trivial
+    · intro tid hMem
+      obtain ⟨t, hObj, _⟩ := hRunnableTcb tid hMem
+      exact ⟨t, hObj⟩
+    · intro tid hMem
+      obtain ⟨t, hObj, _, hB, hPrio⟩ := hQueue tid hMem
+      simp only [hObj]
+      rw [hPrio]
+      show some t.priority = some (t.priority.raisedBy t.pipBoost)
+      rw [hB]; rfl
+    · unfold domainTimeRemainingPositive
+      rw [hSch]
+      exact (by decide : (default : SchedulerState).domainTimeRemainingOnCore bootCoreId > 0)
+    · intro e hMem
+      have hDS : ist.state.scheduler.domainSchedule = [] := by rw [hSch]; rfl
+      rw [hDS] at hMem
+      simp at hMem
+  refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hAsid hUntyped hSched hCur ?_ ?_
+  · simp only [replenishQueueValid, hSch]
+    exact ⟨empty_sorted, empty_sizeConsistent⟩
+  · intro tid hMem
+    obtain ⟨t, hObj, _, _, hPrio⟩ := hQueue tid hMem
+    simp only [hObj]
+    exact hPrio
+
+/-- **WS-BP BP7.11**: the checked, idle-enqueued boot leaves a state of boot
+    shape — for any configuration the checked boot accepts and any
+    duplicate-free core list.  Each conjunct is discharged from the boot
+    itself: the objects' shape from the checked boot's object and root checks
+    and the idle TCBs' defaults, the ASID table from the id and ASID gates, the
+    untyped regions from `wellFormed`'s placement conjunct, and the boot core's
+    queue from what the fold enqueued there — nothing, or its idle thread at
+    priority `0`. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
     (config : PlatformConfig) (ist : IntermediateState)
     (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
-    Architecture.proofLayerInvariantBundle ist.state := by
+    bootStartShape ist := by
   cases hChecked : bootFromPlatformChecked config with
   | error e =>
     rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config e hChecked] at h
@@ -7536,82 +7613,12 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle
     have hBaseQ : base.state.scheduler.runQueueOnCore bootCoreId =
         SeLe4n.Kernel.RunQueue.empty := by
       rw [hBaseSch]; exact (default_state_perCoreInitialized bootCoreId).2.1
-    -- The boot core's run queue holds its idle thread at priority 0, or nothing.
-    have hRunnable : ∀ tid,
-        tid ∈ (cores.foldl enqueueIdleThread base).state.scheduler.runQueueOnCore bootCoreId →
-        tid = idleThreadId bootCoreId ∧
-        (cores.foldl enqueueIdleThread base).state.objects[(idleThreadId bootCoreId).toObjId]? =
-          some (.tcb (queuedIdleThread bootCoreId)) ∧
-        ((cores.foldl enqueueIdleThread base).state.scheduler.runQueueOnCore
-          bootCoreId).threadPriority[tid]? = some ⟨0⟩ := by
-      intro tid hMem
-      by_cases hb : bootCoreId ∈ cores
-      · have hQ := foldl_enqueueIdleThread_runQueueOnCore_eq bootCoreId cores base hNodup hb
-        rw [hBaseQ] at hQ
-        rw [hQ] at hMem ⊢
-        have hIn := (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mpr hMem
-        rw [bootCoreIdleQueue_toList, List.mem_singleton] at hIn
-        subst hIn
-        exact ⟨rfl, (foldl_enqueueIdleThread_installs bootCoreId cores base hNodup hb).2,
-          bootCoreIdleQueue_threadPriority⟩
-      · rw [foldl_enqueueIdleThread_runQueueOnCore_frame cores base bootCoreId
-          (fun c' hc' hEq => hb (hEq ▸ hc')), hBaseQ] at hMem
-        exact absurd hMem (SeLe4n.Kernel.RunQueue.not_mem_empty tid)
-    have hCur : (cores.foldl enqueueIdleThread base).state.scheduler.currentOnCore
-        bootCoreId = none := by
-      rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).1
-    have hRunnableTcb : ∀ tid,
-        tid ∈ (cores.foldl enqueueIdleThread base).state.scheduler.runnable →
-        tid = idleThreadId bootCoreId ∧
-        (cores.foldl enqueueIdleThread base).state.objects[(idleThreadId bootCoreId).toObjId]? =
-          some (.tcb (queuedIdleThread bootCoreId)) ∧
-        ((cores.foldl enqueueIdleThread base).state.scheduler.runQueueOnCore
-          bootCoreId).threadPriority[tid]? = some ⟨0⟩ :=
-      fun tid hMem => hRunnable tid ((SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mp hMem)
-    have hSched : schedulerInvariantBundleFull (cores.foldl enqueueIdleThread base).state := by
-      refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-      · simp [queueCurrentConsistent, hCur]
-      · show ((cores.foldl enqueueIdleThread base).state.scheduler.runQueueOnCore
-          bootCoreId).toList.Nodup
-        by_cases hb : bootCoreId ∈ cores
-        · rw [foldl_enqueueIdleThread_runQueueOnCore_eq bootCoreId cores base hNodup hb, hBaseQ]
-          exact SeLe4n.Kernel.RunQueue.insert_preserves_toList_nodup _ _ _
-            (SeLe4n.Kernel.RunQueue.remove_preserves_toList_nodup _ _
-              (by rw [SeLe4n.Kernel.RunQueue.toList_empty]; exact List.nodup_nil))
-        · rw [foldl_enqueueIdleThread_runQueueOnCore_frame cores base bootCoreId
-            (fun c' hc' hEq => hb (hEq ▸ hc')), hBaseQ, SeLe4n.Kernel.RunQueue.toList_empty]
-          exact List.nodup_nil
-      · unfold currentThreadValid; rw [hCur]; trivial
-      · intro tid hMem
-        obtain ⟨rfl, hObj, _⟩ := hRunnableTcb tid hMem
-        simp only [hObj]
-        decide
-      · unfold currentTimeSlicePositive; rw [hCur]; trivial
-      · unfold edfCurrentHasEarliestDeadline; rw [hCur]; trivial
-      · unfold contextMatchesCurrent; rw [hCur]; trivial
-      · intro tid hMem
-        obtain ⟨rfl, hObj, _⟩ := hRunnableTcb tid hMem
-        exact ⟨_, hObj⟩
-      · intro tid hMem
-        obtain ⟨rfl, hObj, hPrio⟩ := hRunnable tid hMem
-        simp only [hObj]
-        rw [hPrio]
-        rfl
-      · unfold domainTimeRemainingPositive
-        rw [hSch]
-        exact (by decide : (default : SchedulerState).domainTimeRemainingOnCore bootCoreId > 0)
-      · intro e hMem
-        have hDS : (cores.foldl enqueueIdleThread base).state.scheduler.domainSchedule = [] := by
-          rw [hSch]; rfl
-        rw [hDS] at hMem
-        simp at hMem
-    refine proofLayerInvariantBundle_of_bootShape (cores.foldl enqueueIdleThread base)
-      ?_ (foldl_enqueueIdleThread_bootQuiescentFields cores base
-        (bootFromPlatformChecked_ok_bootQuiescentFields config base hChecked))
-      (foldl_enqueueIdleThread_preserves_asidTableConsistent cores base
+    refine ⟨?_, foldl_enqueueIdleThread_bootQuiescentFields cores base
+        (bootFromPlatformChecked_ok_bootQuiescentFields config base hChecked),
+      foldl_enqueueIdleThread_preserves_asidTableConsistent cores base
         (bootFromPlatformChecked_ok_asidTableConsistent config base hChecked)
-        (fun c _ r hr => by rw [hFresh c] at hr; cases hr))
-      ?_ hSched hCur ?_ ?_
+        (fun c _ r hr => by rw [hFresh c] at hr; cases hr),
+      ?_, ⟨rq, hSch⟩, ?_, ?_⟩
     · -- Every object: the checked boot's, or an idle TCB.
       intro oid obj hObj
       rcases foldl_enqueueIdleThread_objects_cases cores base oid obj hObj with
@@ -7628,15 +7635,50 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle
         hB | ⟨c, _, hEq⟩
       · exact bootFromPlatformChecked_ok_untyped config base hChecked oid ut hB
       · cases hEq
-    · -- The replenishment queues are the default's, which are empty.
-      simp only [replenishQueueValid, hSch]
-      exact ⟨empty_sorted, empty_sizeConsistent⟩
-    · -- The boot core's queued thread is its idle thread, bucketed at its priority.
+    · -- The boot core's queue holds its idle thread, or nothing: duplicate-free.
+      show ((cores.foldl enqueueIdleThread base).state.scheduler.runQueueOnCore
+        bootCoreId).toList.Nodup
+      by_cases hb : bootCoreId ∈ cores
+      · rw [foldl_enqueueIdleThread_runQueueOnCore_eq bootCoreId cores base hNodup hb, hBaseQ]
+        exact SeLe4n.Kernel.RunQueue.insert_preserves_toList_nodup _ _ _
+          (SeLe4n.Kernel.RunQueue.remove_preserves_toList_nodup _ _
+            (by rw [SeLe4n.Kernel.RunQueue.toList_empty]; exact List.nodup_nil))
+      · rw [foldl_enqueueIdleThread_runQueueOnCore_frame cores base bootCoreId
+          (fun c' hc' hEq => hb (hEq ▸ hc')), hBaseQ, SeLe4n.Kernel.RunQueue.toList_empty]
+        exact List.nodup_nil
+    · -- ...and that idle thread is a stored TCB, bucketed at its priority `0`.
       intro tid hMem
-      obtain ⟨rfl, hObj, hPrio⟩ := hRunnable tid hMem
-      simp only [hObj]
-      rw [hPrio]
-      rfl
+      by_cases hb : bootCoreId ∈ cores
+      · have hQ := foldl_enqueueIdleThread_runQueueOnCore_eq bootCoreId cores base hNodup hb
+        rw [hBaseQ] at hQ
+        rw [hQ] at hMem ⊢
+        have hIn := (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mpr hMem
+        rw [bootCoreIdleQueue_toList, List.mem_singleton] at hIn
+        subst hIn
+        exact ⟨queuedIdleThread bootCoreId,
+          (foldl_enqueueIdleThread_installs bootCoreId cores base hNodup hb).2,
+          by decide, rfl, bootCoreIdleQueue_threadPriority⟩
+      · rw [foldl_enqueueIdleThread_runQueueOnCore_frame cores base bootCoreId
+          (fun c' hc' hEq => hb (hEq ▸ hc')), hBaseQ] at hMem
+        exact absurd hMem (SeLe4n.Kernel.RunQueue.not_mem_empty tid)
+
+/-- **WS-BP BP3.5**: **the state the checked, idle-enqueued boot installs
+    satisfies the proof-layer invariant bundle** — for any configuration the
+    checked boot accepts and any duplicate-free core list, so the idle-boot
+    stage of the hardware boot (`bootAndInitialisePlatform`, over the binding's
+    declared cores) and the all-cores boot are both instances.
+
+    Since WS-BP BP7.11 it is two citations: the boot leaves a state of boot
+    shape (`bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape`), and any
+    such state carries the bundle (`proofLayerInvariantBundle_of_bootStartShape`)
+    — the argument the started boot reuses, rather than a second copy of it. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    Architecture.proofLayerInvariantBundle ist.state :=
+  proofLayerInvariantBundle_of_bootStartShape ist
+    (bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config ist h)
 
 /-- **WS-BP BP3.5**: the all-cores form. -/
 theorem bootFromPlatformCheckedWithIdleThreads_proofLayerInvariantBundle

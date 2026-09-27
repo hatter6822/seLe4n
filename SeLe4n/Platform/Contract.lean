@@ -307,6 +307,36 @@ theorem PlatformBinding.labeling_admitted [PlatformBinding platform] :
       = false :=
   SeLe4n.Kernel.isInsecureDefaultContext_deploymentLabelingContext _
 
+/-- **WS-BP BP7.11**: the threads a hardware boot of this binding **starts** —
+    its labeling's two declared separation witnesses, lower then upper, one per
+    domain.
+
+    Derived rather than declared, so the threads the labeling guard is decided
+    on and the threads that run cannot be two lists: the guard admits a
+    labeling for separating two admissible threads, the boot refuses unless
+    both are installed (`Platform.Boot.declaredWitnessesInstalled`), and now
+    starts both.  Before WS-BP BP7.11 neither ever ran, so the separation the
+    guard was decided on separated two threads that could never originate or
+    receive a flow — the vacuity `separationWitnessAdmissible` excludes for the
+    idle threads, one object over.  Starting both — rather than giving one of
+    them a capability to the other — keeps every capability inside its own
+    domain, which is what the confined labeling states. -/
+@[inline] def PlatformBinding.initialThreads [PlatformBinding platform] :
+    List SeLe4n.ThreadId :=
+  [(PlatformBinding.deploymentLabeling (platform := platform)).separatedLower,
+   (PlatformBinding.deploymentLabeling (platform := platform)).separatedUpper]
+
+/-- **WS-BP BP7.11**: the started threads are exactly the labeling's declared
+    separation witnesses — definitional. -/
+theorem PlatformBinding.labeling_separatedThreads_initialThreads [PlatformBinding platform] :
+    (PlatformBinding.labeling (platform := platform)).separatedThreads =
+      some ((PlatformBinding.deploymentLabeling (platform := platform)).separatedLower,
+        (PlatformBinding.deploymentLabeling (platform := platform)).separatedUpper) ∧
+    PlatformBinding.initialThreads (platform := platform) =
+      [(PlatformBinding.deploymentLabeling (platform := platform)).separatedLower,
+       (PlatformBinding.deploymentLabeling (platform := platform)).separatedUpper] :=
+  ⟨rfl, rfl⟩
+
 /-- PR #889 review round 3: the cores the binding **declares**, as model core
     ids — the first `coreCount` of `allCores` (`cores` is the count itself).
     What the checked platform boot installs idle threads on

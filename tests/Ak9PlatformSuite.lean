@@ -2496,6 +2496,92 @@ def bootMap_the_lean_map_is_the_shared_table : IO Unit :=
   checkSharedFixture "WS-BP BP0.4 boot map" "tests/fixtures/boot_map.expected"
     "rust/sele4n-hal/src/mmu.rs" bootMapTableLines
 
+/-- **WS-BP BP7.11**: the deployment's boot **starts both initial threads**, one
+per domain — the root task on the boot core, the untrusted thread on core 1 —
+`.Ready` and queued, with every current slot still `none`, on every variant.
+
+The idle stage (the boot as it was before BP7.11) is computed beside the started
+one on the same configuration and must queue neither thread, so each positive
+assertion is known to be about the start rather than about the configuration.
+The first scheduling point of each core then selects the started thread ahead
+of that core's idle thread (priority 255 against 0). -/
+def deployment_starts_both_initial_threads : IO Unit := do
+  let cores := SeLe4n.Platform.PlatformBinding.declaredCores (platform := RPi5Platform)
+  let root : SeLe4n.ThreadId := ⟨rpi5RootTaskTcbId.val⟩
+  let untrusted : SeLe4n.ThreadId := ⟨rpi5UntrustedTcbId.val⟩
+  let boot := SeLe4n.Kernel.Concurrency.bootCoreId
+  for v in rpi5Variants do
+    let cfg := rpi5BoundPlatformConfigAt v
+    let idle ← match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor cores cfg with
+      | .ok i => pure i
+      | .error e => throw <| IO.userError s!"idle stage refused on {v.ramSize}: {e}"
+    let started ← match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor cores cfg with
+      | .ok i => pure i
+      | .error e => throw <| IO.userError s!"started boot refused on {v.ramSize}: {e}"
+    -- CONTROL: the idle stage queues neither thread.
+    unless !SeLe4n.Kernel.runnableOnSomeCore idle.state root &&
+        !SeLe4n.Kernel.runnableOnSomeCore idle.state untrusted do
+      throw <| IO.userError s!"idle stage already queues an initial thread on {v.ramSize}"
+    -- Each is queued on its own core, and only there.
+    let q0 := started.state.scheduler.runQueueOnCore boot
+    let q1 := started.state.scheduler.runQueueOnCore rpi5UntrustedCore
+    unless q0.contains root && !q0.contains untrusted && q1.contains untrusted &&
+        !q1.contains root do
+      throw <| IO.userError s!"initial threads not queued one per core on {v.ramSize}"
+    -- Both are stored `.Ready`.
+    unless (started.state.getTcb? root).map (·.threadState) == some .Ready &&
+        (started.state.getTcb? untrusted).map (·.threadState) == some .Ready do
+      throw <| IO.userError s!"initial threads not stored .Ready on {v.ramSize}"
+    -- Nothing is dispatched: every core's current slot is still empty.
+    unless SeLe4n.Kernel.Concurrency.allCores.all
+        (fun c => started.state.scheduler.currentOnCore c == none) do
+      throw <| IO.userError s!"the start dispatched a thread on {v.ramSize}"
+    -- Each core's first scheduling point selects the started thread over idle.
+    let chosen := fun st c => match SeLe4n.Kernel.chooseThreadOnCore st c with
+      | .ok t => t
+      | .error _ => none
+    unless chosen started.state boot == some root &&
+        chosen started.state rpi5UntrustedCore == some untrusted do
+      throw <| IO.userError s!"the first scheduling point does not select the initial threads on {v.ramSize}"
+    -- CONTROL: on the idle stage the same cores select their idle threads.
+    unless chosen idle.state boot == some (SeLe4n.Kernel.idleThreadId boot) do
+      throw <| IO.userError s!"idle stage's boot core does not select idle on {v.ramSize}"
+  IO.println "deployment starts both initial threads, one per domain, on every variant: PASS"
+
+/-- **WS-BP BP7.11**: the stage **refuses** a named thread it cannot start —
+absent, an idle thread (already queued), or named twice (queued by its first
+start) — rather than skipping it; and naming none is the idle boot. -/
+def boot_refuses_unstartable_initial_threads : IO Unit := do
+  let cores := SeLe4n.Platform.PlatformBinding.declaredCores (platform := RPi5Platform)
+  let cfg := rpi5BoundPlatformConfigAt { ramSize := 4 * 1024 * 1024 * 1024 }
+  let root : SeLe4n.ThreadId := ⟨rpi5RootTaskTcbId.val⟩
+  let refused := fun (L : List SeLe4n.ThreadId) =>
+    match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor cores
+        { cfg with initialThreads := L } with
+    | .error e => e == SeLe4n.Platform.Boot.unstartableInitialThreadBootError
+    | .ok _ => false
+  unless refused [⟨12345⟩] do
+    throw <| IO.userError "an absent initial thread was not refused"
+  unless refused [SeLe4n.Kernel.idleThreadId SeLe4n.Kernel.Concurrency.bootCoreId] do
+    throw <| IO.userError "an idle thread named as initial was not refused"
+  unless refused [root, root] do
+    throw <| IO.userError "an initial thread named twice was not refused"
+  -- CONTROL: the same thread named once starts.
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor cores
+      { cfg with initialThreads := [root] } with
+  | .ok ist =>
+    unless SeLe4n.Kernel.runnableOnSomeCore ist.state root do
+      throw <| IO.userError "the control start did not queue the root task"
+  | .error e => throw <| IO.userError s!"the control start was refused: {e}"
+  -- Naming none leaves every configured thread unqueued.
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor cores
+      { cfg with initialThreads := [] } with
+  | .ok ist =>
+    if SeLe4n.Kernel.runnableOnSomeCore ist.state root then
+      throw <| IO.userError "naming no initial thread still queued the root task"
+  | .error e => throw <| IO.userError s!"the empty start was refused: {e}"
+  IO.println "the boot refuses an unstartable initial thread and starts nothing unnamed: PASS"
+
 end SeLe4n.Testing.Ak9PlatformSuite
 
 open SeLe4n.Testing.Ak9PlatformSuite in
@@ -2591,5 +2677,7 @@ def main : IO Unit := do
   bootMap_the_lean_map_is_the_shared_table
   deployment_roots_own_distinct_pool_pages
   kernelEntry_boots_the_deployment_on_every_variant
+  deployment_starts_both_initial_threads
+  boot_refuses_unstartable_initial_threads
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

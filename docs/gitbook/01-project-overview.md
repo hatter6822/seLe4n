@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.22): 430,409 lines of production Lean across 354 files, 87,972 lines across 71 Lean test suites,
-14,238 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.36.23): 431,776 lines of production Lean across 356 files, 88,064 lines across 71 Lean test suites,
+14,307 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -138,7 +138,10 @@ declared PE serves the kernel (IRQ-ready and Lean-ready) within a bounded
 window.  **BP7.10** (v0.36.3) reads the first gigabyte's RAM off the firmware's
 account — a real Raspberry Pi 5 withholds the gigabyte's top — so a real board
 boots, and the boot map's constant RAM is the kernel's reserved extent alone.
-The rest of BP7, and BP8, have not started.
+**BP7.1–BP7.9** (v0.36.4–v0.36.22) give threads memory, address spaces, a
+saved and restored context and lazily switched FP/SIMD state, and **BP7.11**
+(v0.36.23) starts both initial threads, one per domain, so the labeling's two
+separation witnesses are threads that run.  BP8 has not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

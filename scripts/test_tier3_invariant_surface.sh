@@ -7669,6 +7669,43 @@ run_check "INVARIANT" rg -n 'the next thread loads its own context' tests/FaultH
 run_check "INVARIANT" rg -n 'a thread some core.s registers hold is not destroyed' tests/FaultHandlingSuite.lean
 run_check "INVARIANT" rg -n '^  runLazyFpChecks$' tests/FaultHandlingSuite.lean
 
+# WS-BP BP7.11: the boot starts both initial threads, one per domain.  The start
+# is the kernel model's enqueue preceded by the flag write, dispatching nothing;
+# the stage runs it after the idle enqueue and refuses a name it cannot start;
+# a binding's started threads are its labeling's two separation witnesses; the
+# bundle is one argument over a named boot shape; and the RPi5 deployment starts
+# the root task on the boot core and the untrusted thread pinned to core 1.
+run_check "INVARIANT" rg -U -n '^def startInitialThreadOnCore \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  enqueueRunnableOnCore \(st\.updateTcb tid fun t => \{ t with threadState := \.Ready \}\)\n    \(determineTargetCore st tid\) tid$' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem initialThreadStartable_spec($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_currentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_threadStateConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_runQueueBootSound($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem initialThreadStartable_of_start_ne($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^  initialThreads : List SeLe4n\.ThreadId := \[\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootStartShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -U -n '^    Architecture\.proofLayerInvariantBundle ist\.state :=\n  proofLayerInvariantBundle_of_bootStartShape ist\n    \(bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config ist h\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -U -n '^    Except String IntermediateState :=\n  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind\n    \(startInitialThreads config\.initialThreads\)$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -U -n '^      if initialThreadStartable ist\.state tid then\n        startInitialThreads rest \(startInitialThread ist tid\)\n      else\n        \.error unstartableInitialThreadBootError$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^  state := startInitialThreadOnCore ist\.state tid$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThread_preserves_bootStartShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_started($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_started($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_of_nil($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_allCores_threadInactiveFlagConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -U -n '^@\[inline\] def PlatformBinding\.initialThreads \[PlatformBinding platform\] :\n    List SeLe4n\.ThreadId :=\n  \[\(PlatformBinding\.deploymentLabeling \(platform := platform\)\)\.separatedLower,\n   \(PlatformBinding\.deploymentLabeling \(platform := platform\)\)\.separatedUpper\]$' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^    initialThreads := PlatformBinding\.initialThreads \(platform := platform\) \}$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^    match bootFromPlatformCheckedStartedFor cores config with$' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'match bootFromPlatformCheckedWithIdleThreadsFor cores config with' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^    cpuAffinity := some rpi5UntrustedCore \}$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^  , tcbEntry rpi5UntrustedTcbId rpi5UntrustedThread$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_initialThreadsStarted($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -U -n '^theorem rpi5BoundPlatformConfigAt_boot \(v : BCM2712Config\) \(hv : v\.Admissible\) :\n    bootFromPlatformCheckedStartedFor$' SeLe4n/Platform/RPi5/Deployment.lean
+run_negative_check "INVARIANT" rg -n 'maxHeartbeats' SeLe4n/Platform/RPi5/Deployment.lean SeLe4n/Platform/Boot/InitialThreads.lean SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' '^  deployment_starts_both_initial_threads$' tests
+run_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' '^  boot_refuses_unstartable_initial_threads$' tests
+run_prose_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' 'CONTROL: the idle stage queues neither thread' tests
+
 # ============================================================================
 # WS-SM SM9.B — refusal auditing
 # (plan SMP_DECLASSIFICATION_COMPLETION_PLAN.md §4 SM9.B.1 … SM9.B.10).
