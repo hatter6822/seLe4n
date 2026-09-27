@@ -348,7 +348,7 @@ theorem startInitialThreads_objects_of_nonTcb (L : List SeLe4n.ThreadId)
     (hObj : ist.state.objects[k]? = some obj) :
     ist'.state.objects[k]? = some obj :=
   startInitialThreads_induct (fun i => i.state.objects[k]? = some obj)
-    (fun i t _ hP => startInitialThreadOnCore_objects_of_nonTcb _ _ i.hAllTables.1.1 _ _ hNot hP)
+    (fun i _ _ hP => startInitialThreadOnCore_objects_of_nonTcb _ _ i.hAllTables.1.1 _ _ hNot hP)
     L ist ist' h hObj
 
 /-- **WS-BP BP7.11** (frame): every thread that resolved still resolves. -/
@@ -357,7 +357,7 @@ theorem startInitialThreads_getTcb?_isSome (L : List SeLe4n.ThreadId)
     (t : SeLe4n.ThreadId) (hT : (ist.state.getTcb? t).isSome = true) :
     (ist'.state.getTcb? t).isSome = true :=
   startInitialThreads_induct (fun i => (i.state.getTcb? t).isSome = true)
-    (fun i t' _ hP => startInitialThreadOnCore_getTcb?_isSome _ _ _ i.hAllTables.1.1 hP)
+    (fun i _ _ hP => startInitialThreadOnCore_getTcb?_isSome _ _ _ i.hAllTables.1.1 hP)
     L ist ist' h hT
 
 /-- **WS-BP BP7.11**: the labeling's declared witnesses, installed on the idle
