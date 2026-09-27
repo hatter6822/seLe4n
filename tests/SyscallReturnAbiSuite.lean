@@ -8,6 +8,9 @@
 -/
 
 import SeLe4n.Platform.FFI
+import SeLe4n.Kernel.SchedLockBracket
+import SeLe4n.Kernel.SyscallDispatchEntry
+import SeLe4n.Kernel.Scheduler.Operations.ResumeDelivery
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.Helpers
 
@@ -1156,6 +1159,120 @@ private def runAbiLayoutFixtureCheck : IO Unit :=
     "rust/sele4n-abi/tests/conformance.rs" abiLayoutTableLines
 
 -- ============================================================================
+-- §11  WS-BP BP7.7 — the declassified badge, delivered
+-- ============================================================================
+--
+-- SM9.C's data-carrying declassification is the one flow the kernel makes
+-- visible on purpose, and in the wait-before-signal ordering its badge reaches
+-- the waiter only through the return frame: the waiter blocked first, so its
+-- own syscall returned nothing.  §9a shows the badge *staged*; this group runs
+-- the whole path through the live entry — the waiter's `.notificationWait`, a
+-- cleared sender's `.declassifySignal` on another core, the waiter's core
+-- taking the `.reschedule` the signal posts — and reads what the context
+-- restore hands the hardware.  A sentinel, or the waiter's own stale argument
+-- spill, in that `x0` is a failure of this row, not of SM9.
+
+/-- The declassified badge — deliberately not §9a's 42, so a scenario that
+fell back to the plain signal path could not satisfy the assertions. -/
+private def declassBadge : Nat := 0x5C
+
+/-- The signaller's label: `kernelTrusted` (high confidentiality). -/
+private def declassHigh : SecurityLabel := SecurityLabel.kernelTrusted
+
+/-- The waiter's and the notification's label: `publicLabel` (low). -/
+private def declassLow : SecurityLabel := SecurityLabel.publicLabel
+
+/-- `trustedLabeling` with the signaller raised to `declassHigh`, the waiter and
+the notification lowered to `declassLow`, and a declassification policy that
+authorizes exactly that downgrade.  So the base lattice DENIES the signal's
+first hop (high → low), the policy authorizes it, and the second hop (the
+notification to its low waiter) is an ordinary flow — one record. -/
+private def declassLabeling : LabelingContext :=
+  { trustedLabeling with
+      threadLabelOf := fun t =>
+        if t = peerTid then declassHigh
+        else if t = callerTid then declassLow
+        else trustedLabeling.threadLabelOf t,
+      objectLabelOf := fun o =>
+        if o = ntfnId ∨ o = callerTid.toObjId then declassLow
+        else trustedLabeling.objectLabelOf o,
+      endpointLabelOf := fun o =>
+        if o = ntfnId then declassLow else trustedLabeling.endpointLabelOf o,
+      declassificationPolicy := { canDeclassify := (fun s d =>
+        decide (s = embedLegacyLabel declassHigh) && decide (d = embedLegacyLabel declassLow)) } }
+
+/-- The same labelling under the deny-all policy an unconfigured deployment
+carries — the control that shows the badge is delivered BECAUSE the policy
+authorized it. -/
+private def declassDeniedLabeling : LabelingContext :=
+  { declassLabeling with declassificationPolicy := { canDeclassify := fun _ _ => false } }
+
+/-- One syscall through the live, bracketed entry step on `core`: the
+dispatch, the caller's return staging, the local scheduling point and the
+restore target, exactly as `syscallDispatchCrossCoreEntry` commits them. -/
+private def entryStepOn (ctx : LabelingContext) (core : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : Nat) (msgInfoRaw capPtr x2 : UInt64) (st : SystemState) :=
+  SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep ctx core syscallId.toUInt32
+    msgInfoRaw capPtr msgInfoRaw x2 0 0 0 0 0 0 0 0 st
+
+/-- The end-to-end run: wait on the boot core, declassify-signal from core 1,
+then the boot core takes the `.reschedule` the signal posted.  Returns the wait's
+outcome, the signal's outcome and posted SGIs, the post-signal audit trail, and
+what the boot core's restore hands the hardware. -/
+private def declassifiedBadgeRun (ctx : LabelingContext) :
+    Kernel.Architecture.SyscallOutcome × Kernel.Architecture.SyscallOutcome ×
+      List (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind) ×
+      List DeclassificationEvent × Option Kernel.Architecture.SyscallReturnFrame :=
+  let (r1, st1) := entryStepOn ctx SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 twoThreadState
+  let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal.toNat 1
+    capPtrValue.toUInt64 declassBadge.toUInt64 st1
+  let st3 := (SeLe4n.Kernel.rescheduleUnderDeclaredLockSet 0 st2).state
+  (r1.1, r2.1, r2.2.1, st2.declassificationAuditLog,
+    (SeLe4n.Kernel.Concurrency.restoreTargetAt st3 0).deliveredFrame?)
+
+private def runDeclassifiedBadgeDeliveryWitnesses : IO Unit := do
+  IO.println "-- §11 WS-BP BP7.7: the declassified badge reaches the waiter through the live restore"
+  let (wait, signal, sgis, trail, delivered) := declassifiedBadgeRun declassLabeling
+  assertBool "11: the waiter's own wait blocked — no frame of its own to read the badge from"
+    (wait == .blocks)
+  assertBool "11: the declassifying signal succeeded as a unit syscall"
+    (match signal with | .returns f => f == .zero | _ => false)
+  assertBool "11: the fixture is a genuine downgrade — the base lattice denies high → low"
+    (securityFlowsTo declassHigh declassLow == false)
+  assertBool "11: the signal posted a .reschedule to the waiter's core, and only that"
+    (sgis == [(SeLe4n.Kernel.Concurrency.bootCoreId, .reschedule)])
+  assertBool "11: the trail carries exactly one record: high → low at the notification, by the signaller"
+    (match trail with
+     | [e] => decide (e.srcDomain = embedLegacyLabel declassHigh) &&
+              decide (e.dstDomain = embedLegacyLabel declassLow) &&
+              decide (e.targetObject = ntfnId) &&
+              decide (e.actor.subject = peerTid)
+     | _ => false)
+  assertBool "11: the waiter resumes reading THAT badge in x0, with the success label in x1"
+    (match delivered with
+     | some f => f.x0 == declassBadge.toUInt64 && f.x1 == 0
+     | none => false)
+  assertBool "11: the delivered frame decodes as the badge, end to end"
+    (match delivered with
+     | some f => rustDecodeResponse (postTrapRegs f) == .ok declassBadge.toUInt64 #[0, 0, 0, 0]
+     | none => false)
+  assertBool "NEGATIVE: the delivered x0 is not the waiter's own stale cap ptr (the §3.5 hazard)"
+    (match delivered with
+     | some f => f.x0 != capPtrValue.toUInt64
+     | none => false)
+  -- CONTROL: the same run under the deny-all policy.  The signal is refused, the
+  -- trail stays empty, nothing is posted, and the waiter's core has nothing to
+  -- resume — which is what makes the positive run a statement about the policy.
+  let (_, signalD, sgisD, trailD, deliveredD) := declassifiedBadgeRun declassDeniedLabeling
+  assertBool "11 CONTROL: under the deny-all policy the signal is refused as a declassification denial"
+    (signalD == .returns (Kernel.Architecture.errorFrame .declassificationDenied))
+  assertBool "11 CONTROL: ...no SGI is posted and no record is written"
+    (sgisD.isEmpty && trailD.isEmpty)
+  assertBool "11 CONTROL: ...and the waiter's core resumes no badge"
+    (deliveredD.isNone)
+
+-- ============================================================================
 -- Runner
 -- ============================================================================
 
@@ -1173,6 +1290,7 @@ def runSyscallReturnAbiChecks : IO Unit := do
   runBlockedOutcomeWitness
   runBlockedWaiterStagingWitnesses
   runAuditReadEndToEnd
+  runDeclassifiedBadgeDeliveryWitnesses
   runTraceFixtureCheck
   runReturnShapeFixtureCheck
   runAbiLayoutFixtureCheck

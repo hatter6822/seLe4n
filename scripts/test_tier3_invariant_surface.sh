@@ -7595,6 +7595,13 @@ run_check "INVARIANT" rg -n "10a: .status. returns the visible length \\(2\\), n
 run_check "INVARIANT" rg -n '10b: a field read returns the SELECTED entry' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '10c: NEGATIVE — an all-rights capability to an ordinary object is rejected' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '10e: NEGATIVE — an unconfigured deployment cannot drain' tests/SyscallReturnAbiSuite.lean
+# WS-BP BP7.7: the wait-before-signal declassified badge is DELIVERED through the
+# live restore -- the witness reads the restore target, carries a deny-all control,
+# and is on the runner's path (a section nothing calls asserts nothing).
+run_check "INVARIANT" rg -n '11: the waiter resumes reading THAT badge in x0' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n 'restoreTargetAt st3 0\)\.deliveredFrame\?' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '11 CONTROL: \.\.\.and the waiter.s core resumes no badge' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassifiedBadgeDeliveryWitnesses$' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n 'audit status .visible length 2, monitor.' tests/fixtures/syscall_return_abi.expected
 run_check "INVARIANT" rg -n 'audit drain of one entry .new visible length 1.' tests/fixtures/syscall_return_abi.expected
 

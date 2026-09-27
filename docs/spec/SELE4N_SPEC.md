@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.19` (`lakefile.toml`) |
+| **Package version** | `0.36.20` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 429,333 across 353 Lean files |
-| **Test LoC** | 87,623 across 71 Lean test suites |
+| **Test LoC** | 87,741 across 71 Lean test suites |
 | **Proved declarations** | 14,198 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -4844,6 +4844,15 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   `tests/SmpSwitchToThreadSuite.lean` (a switched-out caller, with the retired
   bank-only staging as the control), `tests/SmpInformationFlowSuite.lean` and
   `./scripts/test_rust.sh`.
+- **The declassified badge, delivered** (`v0.36.20`, WS-BP BP7.7).  In the
+  wait-before-signal ordering a data-carrying declassification's badge reaches
+  the waiter only through the return frame.  `tests/SyscallReturnAbiSuite.lean`
+  §11 drives the waiter's `.notificationWait`, a cleared signaller's
+  `.declassifySignal` from another core and the waiter's `.reschedule` through
+  the live bracketed entry step, and asserts the restore target hands the
+  hardware the badge in `x0` with the success label in `x1`, one matching trail
+  record, and one posted SGI; under the deny-all policy the signal is refused
+  and nothing is delivered.
 
 ### 8.10.3 seL4 Divergence: CNode Intermediate Rights
 `resolveCapAddress` (Operations.lean) does NOT check `Read` rights

@@ -1174,6 +1174,12 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       `badge wait after signal` line and the wait-first ordering by its staged
       `wait-before-signal` frame, both pinned byte-for-byte in
       `tests/fixtures/syscall_return_abi.expected`)
+      **And the wait-first badge is DELIVERED, not only staged** (WS-BP BP7.7,
+      `v0.36.20`): `SyscallReturnAbiSuite` §11 runs the waiter's wait, a
+      cleared signaller's `.declassifySignal` from another core and the
+      waiter's `.reschedule` through the live entry, and the restore hands the
+      hardware the badge in `x0` with exactly one matching trail record; under
+      the deny-all policy it hands nothing.
 - [x] The declassifying signal authorizes its **resolved destination**, not only
       its notification, and the audit event names that destination — the
       v0.31.73 leak is not re-opened under declassification authority.

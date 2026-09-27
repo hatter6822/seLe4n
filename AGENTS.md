@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.19.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.20.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7154,7 +7154,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -8436,6 +8436,23 @@ never stated of the delivered state, which no caller holds.  (4) **One path,
 not two**: with the gate gone there is no inert arm for a theorem to be stated
 over, so a result about an entry is a result about the program the hardware
 runs; a new entry does not grow a `…Live` twin.
+
+**The declassified badge is delivered, not only staged** (`v0.36.20`, BP7.7).
+SM9.C's data-carrying declassification is the one flow the kernel makes visible
+on purpose, and in the wait-before-signal ordering its badge reaches the waiter
+only through the return frame.  `tests/SyscallReturnAbiSuite.lean` §11 runs the
+whole path through the live bracketed entry step: the waiter's
+`.notificationWait` blocks on the boot core, a `kernelTrusted` signaller's
+`.declassifySignal` from core 1 — a downgrade the base lattice refuses and the
+policy authorizes — returns the unit frame, posts one `.reschedule` and writes
+one trail record, and the waiter's core, taking that `.reschedule`, stages a
+restore whose `x0` is the badge.  Two things new code must respect.  (1) **A
+witness of delivery reads the RESTORE TARGET**, `restoreTargetAt … |>.deliveredFrame?`,
+never the TCB's register context alone: the context is what the switch reads,
+the target is what the hardware receives, and only the second is the claim.
+(2) **Its control is the deny-all policy**, under which the signal is refused
+and the waiter's core resumes nothing — so the positive run is a statement about
+the policy rather than about the fixture.  Executing it on the image is BP8's.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

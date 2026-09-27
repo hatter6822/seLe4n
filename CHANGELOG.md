@@ -1,3 +1,42 @@
+## v0.36.20 — WS-BP BP7.7: the declassified badge, delivered
+
+SM9.C's data-carrying declassification is the one flow the kernel makes visible
+on purpose, and in the **wait-before-signal** ordering its badge reaches the
+waiter only through the return frame: the waiter blocked first, so its own
+syscall returned nothing.  WS-RR RR7.23 made delivering it an explicit
+acceptance criterion; with the context restore live (BP7.6) it is now exercised
+end to end.
+
+- **`tests/SyscallReturnAbiSuite.lean` §11** runs the whole path through the
+  live bracketed entry step (`syscallDispatchCrossCoreBracketedStep`), with no
+  scheduler surgery between the legs.  The waiter's `.notificationWait` on the
+  boot core blocks.  A `kernelTrusted` signaller on core 1 issues
+  `.declassifySignal` to the `publicLabel` notification under a policy that
+  authorizes exactly that downgrade — the base lattice refuses it, which the
+  witness asserts, so the scenario is a genuine declassification rather than an
+  ordinary flow.  The signal returns the unit frame, posts a `.reschedule` to
+  the waiter's core and nothing else, and leaves exactly one trail record
+  (high → low, at the notification, by the signaller).  The waiter's core then
+  takes that `.reschedule` (`rescheduleUnderDeclaredLockSet`), and the restore
+  it stages (`restoreTargetAt … |>.deliveredFrame?`) hands the hardware
+  `x0 = 0x5C` — deliberately not §9a's 42 — with the success label in `x1`,
+  which the Rust `decode_response` model reads back as that badge.
+- **Negative**: the delivered `x0` is not the waiter's own argument spill (the
+  §3.5 hazard).  **Control**: the same run under the deny-all policy an
+  unconfigured deployment carries — the signal is refused
+  `.declassificationDenied`, nothing is posted, no record is written and the
+  waiter's core resumes no badge, so the positive run is a statement about the
+  policy.
+- The witness reads the **restore target**, not the TCB's register context: the
+  context is what the switch reads, the target is what the hardware receives.
+- Docs: the plan's BP7.7 row LANDED and its acceptance box ticked (the on-image
+  run is BP8's), `SMP_DECLASSIFICATION_COMPLETION_PLAN.md`,
+  `UNFINISHED_SMP_WORK.md` row 6, spec §8.10.2a, the claim index, GitBook 05,
+  `CLAUDE.md` / `AGENTS.md`.  Tier 3 anchors pin the section, its runner call
+  and the deny-all control.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP7.7)
+
 ## v0.36.19 — WS-BP BP7.6: the context restore is live
 
 BP7.1–BP7.5 built everything the hardware needs to resume a thread: a table
