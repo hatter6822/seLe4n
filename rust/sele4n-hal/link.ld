@@ -40,6 +40,15 @@ LEAN_HEAP_SIZE = 64M;
  * line, which is the form both of those read. */
 KERNEL_RESERVED_END = 0x10000000;
 
+/* WS-BP BP8.1: the base of the board's RAM, and so of the kernel's reserved
+ * extent [RAM_BASE, KERNEL_RESERVED_END).  `0` on the Raspberry Pi 5, whose
+ * DRAM is contiguous from 0.  This script is the Raspberry Pi 5's; the QEMU
+ * `virt` image's is derived from it by `build.rs`, which rewrites exactly this
+ * line, `KERNEL_RESERVED_END` and `MEMORY`'s `ORIGIN` from `src/board.rs`'s
+ * `QEMU_VIRT` and nothing else — and refuses to build either image if these
+ * three do not state `RPI5`'s numbers.  Hex on one line, as above. */
+RAM_BASE = 0x0;
+
 /* WS-BP BP5.3: the size of the window the image build places the device tree
  * in (`.dtb_window` below).  It is `cmdline::MAX_DTB_SIZE`, the bound every
  * reader of the blob enforces before it forms a slice and the extent
@@ -224,6 +233,12 @@ SECTIONS
     }
 }
 
+/* WS-BP BP8.1: the arm64 Image header's `image_size` (`boot.S`) — the memory
+ * the image owns from `_start`, its NOLOAD stacks and Lean heap included, so a
+ * loader following the Linux arm64 boot protocol places nothing (the device
+ * tree above all) inside it. */
+__kernel_image_size = __lean_heap_end - _start;
+
 /* WS-BP BP2.1: the arena is a whole number of pages.  A heap that does not
  * fit is a link error, never a boot-time surprise. */
 ASSERT(LEAN_HEAP_SIZE % 4096 == 0, "LEAN_HEAP_SIZE must be a whole number of 4 KiB pages")
@@ -240,7 +255,8 @@ ASSERT(__lean_heap_start % 4096 == 0, "the Lean heap arena must be 4 KiB aligned
  * firmware reports whole.) */
 ASSERT(__lean_heap_end <= KERNEL_RESERVED_END, "the image, Lean heap included, must end inside the kernel's reserved extent")
 ASSERT(KERNEL_RESERVED_END % 0x200000 == 0, "the kernel's reserved extent must be whole 2 MiB blocks")
-ASSERT(KERNEL_RESERVED_END <= 0x40000000, "the kernel's reserved extent must lie inside the first gigabyte")
+ASSERT(RAM_BASE % 0x40000000 == 0 && KERNEL_RESERVED_END > RAM_BASE && KERNEL_RESERVED_END - RAM_BASE <= 0x40000000, "the kernel's reserved extent must lie inside the gigabyte at the base of RAM")
+ASSERT(ORIGIN(RAM) == RAM_BASE + 0x80000, "the image must load 512 KiB above the base of RAM, the offset its arm64 Image header declares")
 ASSERT(ORIGIN(RAM) + LENGTH(RAM) == KERNEL_RESERVED_END, "link.ld's RAM region must end exactly at the kernel's reserved extent")
 
 /* WS-BP BP5.3: the device tree's window is the size every reader bounds a

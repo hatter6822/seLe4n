@@ -42,6 +42,12 @@ own section (`FP_CONTEXT_SECTION`), and exactly two of its routines
 * the exempt set equals the set of global routines `fp_context.S` defines
   that name an FP/SIMD register, read from the source.
 
+Data in text (WS-BP BP8.1).  `_start` begins with the arm64 Image header, 60
+bytes of data after its first branch, which llvm-objdump prints as `.word`
+lines carrying raw bytes.  Those are read as data rather than instructions, and
+admitted only inside the first 64 bytes of `_start` (`IMAGE_HEADER_BYTES`); a
+data word anywhere else in executable code is a finding.
+
 Scope.  It decides the files it is handed.  The linked image additionally
 contains whatever members of the target's `compiler_builtins` the link pulls
 in, and that library is **not** FP-free even for the softfloat target (its
@@ -98,7 +104,18 @@ SECTION = re.compile(r"^Disassembly of section (\S+):$")
 # `  1c:\tmnemonic\toperands` -- llvm-objdump's instruction line with
 # `--no-show-raw-insn`.  The optional `<...>:` form is a function header.
 INSTRUCTION = re.compile(r"^\s*[0-9a-f]+:\s+(\S+)(?:\s+(.*))?$")
-FUNCTION = re.compile(r"^[0-9a-f]+ <(.+)>:$")
+FUNCTION = re.compile(r"^([0-9a-f]+) <(.+)>:$")
+
+# WS-BP BP8.1: a data word in a text section -- what llvm-objdump prints, raw
+# bytes and all, for bytes the assembler's mapping symbols mark as data.  Read
+# as data rather than as an instruction (its raw bytes are not operands: `00 b0
+# 05 04` is not the register `b0`), and admitted in ONE place: the arm64 Image
+# header, the first `IMAGE_HEADER_BYTES` of `_start` (`boot.S`, pinned word for
+# word by `build.rs`'s `IMAGE_HEADER`).  Any other data word in executable code
+# is a finding, since this gate cannot show it is never executed.
+DATA_WORD = re.compile(r"^\s*([0-9a-f]+):\s+(?:[0-9a-f]{2} )+\s*\.(?:byte|short|word|quad)\s")
+IMAGE_HEADER_FUNCTION = "_start"
+IMAGE_HEADER_BYTES = 0x40
 FILE_FORMAT = re.compile(r"file format (\S+)")
 AARCH64_FORMAT = "elf64-littleaarch64"
 
@@ -128,6 +145,7 @@ def fp_findings(disassembly: str) -> tuple[int, list[str]]:
     count = 0
     findings: list[str] = []
     function = "?"
+    function_start = 0
     section = "?"
     fp_in: dict[str, int] = {}
     in_section: set[str] = set()
@@ -140,7 +158,8 @@ def fp_findings(disassembly: str) -> tuple[int, list[str]]:
             continue
         header = FUNCTION.match(line)
         if header:
-            function = header.group(1)
+            function_start = int(header.group(1), 16)
+            function = header.group(2)
             if section == FP_CONTEXT_SECTION:
                 in_section.add(function)
             if function in FP_CONTEXT_ROUTINES:
@@ -150,6 +169,13 @@ def fp_findings(disassembly: str) -> tuple[int, list[str]]:
                         f"{function}: an exempt FP/SIMD routine outside {FP_CONTEXT_SECTION} "
                         f"(in {section})"
                     )
+            continue
+        data = DATA_WORD.match(line)
+        if data:
+            offset = int(data.group(1), 16) - function_start
+            if function != IMAGE_HEADER_FUNCTION or not 0 <= offset < IMAGE_HEADER_BYTES:
+                findings.append(f"{function}: a data word in executable code outside the "
+                                f"arm64 Image header: {line.strip()}")
             continue
         insn = INSTRUCTION.match(line)
         if not insn:
@@ -362,6 +388,21 @@ def self_test() -> int:
         except Unreadable:
             continue
         failures.append(f"unreadable input decided: {label}")
+    # WS-BP BP8.1: the Image header's data words, and each relation that
+    # admits them broken while the data word is kept.
+    def header_image(name: str, first_data_at: int) -> str:
+        lines = [f"   80000:      \tb\t0x80040 <{name}+0x40>"]
+        for i, raw in enumerate(["00 b0 05 04", "41 52 4d 64"]):
+            addr = 0x80000 + first_data_at + 4 * i
+            lines.append(f"   {addr:x}: {raw}  \t.word\t0x0")
+        lines.append("   80040:      \tbl\t0x80138 <x>")
+        return f"{HEADER}0000000000080000 <{name}>:\n" + "\n".join(lines) + "\n"
+    if fp_findings(header_image("_start", 0x10))[1]:
+        failures.append(f"the Image header was refused: {fp_findings(header_image('_start', 0x10))[1]}")
+    if not fp_findings(header_image("secondary_entry", 0x10))[1]:
+        failures.append("a data word outside `_start` was admitted")
+    if not fp_findings(header_image("_start", 0x3c))[1]:
+        failures.append("a data word past the Image header's 64 bytes was admitted")
     count, findings = fp_findings(_disasm("ret", "stp\tq0, q1, [sp]", "stp\td8, d9, [sp]"))
     if count != 3 or len(findings) != 2:
         failures.append(f"counts wrong: {count} instructions, {len(findings)} findings")

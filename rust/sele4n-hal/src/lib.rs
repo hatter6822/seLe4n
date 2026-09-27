@@ -212,6 +212,7 @@
 //             typed `Fin numCores` identifier.
 
 pub mod barriers;
+pub mod board;
 pub mod boot;
 pub mod cache;
 pub mod cpu;

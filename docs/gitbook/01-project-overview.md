@@ -141,7 +141,9 @@ boots, and the boot map's constant RAM is the kernel's reserved extent alone.
 **BP7.1–BP7.9** (v0.36.4–v0.36.22) give threads memory, address spaces, a
 saved and restored context and lazily switched FP/SIMD state, and **BP7.11**
 (v0.36.23) starts both initial threads, one per domain, so the labeling's two
-separation witnesses are threads that run.  BP8 has not started.
+separation witnesses are threads that run.  **BP8.1**'s first slice (v0.36.24)
+boots the image on QEMU's `virt` — QEMU models no BCM2712, so the board is a
+build-time choice — at EL1 and at EL2.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

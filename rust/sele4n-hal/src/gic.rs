@@ -91,11 +91,11 @@
 
 /// GIC-400 Distributor base address (Board.lean `gicDistributorBase`, held to
 /// it by `tests/fixtures/boot_map.expected`'s `mmio gicd` line).
-pub const GICD_BASE: usize = 0x10_7FFF_9000;
+pub const GICD_BASE: usize = crate::board::BOARD.gicd_base;
 
 /// GIC-400 CPU Interface base address (Board.lean `gicCpuInterfaceBase`, held
 /// to it by the fixture's `mmio gicc` line).
-pub const GICC_BASE: usize = 0x10_7FFF_A000;
+pub const GICC_BASE: usize = crate::board::BOARD.gicc_base;
 
 /// Timer PPI interrupt ID (non-secure physical timer, INTID 30).
 /// Matches Lean `timerPpiId` and `timerInterruptId`.
@@ -119,6 +119,10 @@ pub const MAX_INTID: u32 = 224;
 mod gicd {
     /// Distributor Control Register.
     pub const CTLR: usize = 0x000;
+    /// Interrupt Controller Type Register (read-only).  `CPUNumber`,
+    /// bits \[7:5\], is one less than the number of CPU interfaces the
+    /// distributor implements.
+    pub const TYPER: usize = 0x004;
     /// Interrupt Group Registers (banked per 32 interrupts).
     pub const IGROUPR_BASE: usize = 0x080;
     /// Interrupt Set-Enable Registers.
@@ -497,8 +501,9 @@ pub fn init_cpu_interface_secondary(core_id: u64) {
 /// 0; the self-check would always fail — so we skip it under
 /// `cfg!(test)` and `cfg(not(target_arch = "aarch64"))`.
 fn self_check_distributor(base: usize) {
-    let actual = read_self_check_target(base);
-    if actual != SELF_CHECK_EXPECTED {
+    let actual = read_distributor_register(base, SELF_CHECK_TARGET_OFFSET);
+    let expected = self_check_expected(read_distributor_register(base, gicd::TYPER));
+    if actual != expected {
         // SAFETY: gicd::ITARGETSR is a 32-bit register, well-defined
         // even after init. We do not panic because the kernel's UART
         // may not be reliable if the distributor is broken; instead
@@ -521,6 +526,28 @@ const SELF_CHECK_TARGET_INDEX: usize = 8;
 /// (CPU 0 for each of the four 8-bit INTID lanes in the 32-bit register).
 const SELF_CHECK_EXPECTED: u32 = 0x0101_0101;
 
+/// The offset of the ITARGETSR register the self-check reads back.
+const SELF_CHECK_TARGET_OFFSET: usize = gicd::ITARGETSR_BASE + SELF_CHECK_TARGET_INDEX * 4;
+
+/// **WS-BP BP8.1**: what the self-check's ITARGETSR must read back, given the
+/// distributor's `GICD_TYPER`.
+///
+/// A distributor with more than one CPU interface stores the targets
+/// `init_distributor` wrote, so it reads [`SELF_CHECK_EXPECTED`].  A
+/// uniprocessor one (`CPUNumber == 0`) implements every ITARGETSR field as
+/// read-as-zero / write-ignored (GICv2 architecture specification,
+/// IHI0048B §4.3.12 — there is only one CPU to target), so it reads `0`.
+/// Expecting the multiprocessor pattern there halted every single-PE boot:
+/// the first run of the kernel image, under QEMU's `virt` with one PE, did
+/// exactly that.
+const fn self_check_expected(typer: u32) -> u32 {
+    if (typer >> 5) & 0x7 == 0 {
+        0
+    } else {
+        SELF_CHECK_EXPECTED
+    }
+}
+
 /// AN8-D (RUST-M05) audit: split out the read-back logic so unit tests
 /// can verify the address arithmetic and the structure of the check
 /// without WFE-looping. The function returns the value read at the
@@ -533,8 +560,8 @@ const SELF_CHECK_EXPECTED: u32 = 0x0101_0101;
 /// suite pointer-safe. `self_check_distributor` correctly treats the
 /// 0-return as a mismatch and skips the WFE-loop on the same gate.
 #[inline(always)]
-fn read_self_check_target(base: usize) -> u32 {
-    let addr = base + gicd::ITARGETSR_BASE + SELF_CHECK_TARGET_INDEX * 4;
+fn read_distributor_register(base: usize, offset: usize) -> u32 {
+    let addr = base + offset;
     #[cfg(all(target_arch = "aarch64", not(test)))]
     {
         // SAFETY: production boot path; address is inside the GICD MMIO
@@ -1662,11 +1689,11 @@ mod tests {
 
     #[test]
     fn self_check_target_address_arithmetic() {
-        // The address computed by `read_self_check_target` must equal
+        // The address computed by `read_distributor_register` must equal
         // `base + ITARGETSR_BASE + TARGET_INDEX * 4`. We verify against
         // a concrete BCM2712 base.
         let base = GICD_BASE; // 0x10_7FFF_9000
-        let expected = base + gicd::ITARGETSR_BASE + SELF_CHECK_TARGET_INDEX * 4;
+        let expected = base + SELF_CHECK_TARGET_OFFSET;
         assert_eq!(
             expected,
             0x10_7FFF_9000 + 0x800 + 8 * 4,
@@ -1677,6 +1704,17 @@ mod tests {
             "self-check should target ITARGETSR[8] @ 0x10_7FFF_9820 \
              on BCM2712"
         );
+    }
+
+    #[test]
+    fn a_uniprocessor_distributor_expects_its_targets_to_read_as_zero() {
+        // CPUNumber = 0: ITARGETSR is RAZ/WI, so the read-back is 0.
+        assert_eq!(self_check_expected(0x0000_0000), 0);
+        assert_eq!(self_check_expected(0xFFFF_FF1F), 0);
+        // CPUNumber = 3 (four interfaces, the BCM2712's GIC-400).
+        assert_eq!(self_check_expected(3 << 5), SELF_CHECK_EXPECTED);
+        // CPUNumber = 1: any multiprocessor distributor stores the targets.
+        assert_eq!(self_check_expected(1 << 5), SELF_CHECK_EXPECTED);
     }
 
     #[test]

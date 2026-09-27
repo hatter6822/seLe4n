@@ -63,6 +63,12 @@ host_tools = []
 # the Lean kernel is `hw_target`'s question -- with it, `build.rs` links
 # `libsele4n.a` into the image (WS-BP BP5.2).
 kernel_image = []
+# WS-BP BP8.1: build the image for QEMU's `virt` machine rather than the
+# Raspberry Pi 5.  QEMU has no BCM2712 model, so an image meant to run under
+# QEMU must carry `virt`'s device map (`src/board.rs`) and link at `virt`'s RAM
+# base (`build.rs` derives that link script from `link.ld`).  Selects a board;
+# enables nothing else.
+board_qemu_virt = []
 
 # Explicit target declaration so `required-features` can be attached.
 # Declaring one `[[bin]]` disables Cargo's auto-discovery of `src/bin/`

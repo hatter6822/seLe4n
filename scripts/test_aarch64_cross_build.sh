@@ -50,6 +50,8 @@ CROSS_FEATURES="hw_target"
 # WS-BP BP5.1: the kernel image, the one final bare-metal binary in the tree.
 IMAGE_BIN="sele4n-kernel"
 IMAGE_FEATURES="kernel_image"
+# WS-BP BP8.1: the board feature that builds the image for QEMU's `virt`.
+VIRT_FEATURE="board_qemu_virt"
 
 echo "=== aarch64 cross-compile coverage (WS-RR RR1) ==="
 echo ""
@@ -248,6 +250,18 @@ python3 "${PROJECT_ROOT}/scripts/check_kernel_image.py" \
 python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
 echo "      ✓ the kernel image links under link.ld and is FP/SIMD-free"
+# WS-BP BP8.1: the same image built for QEMU's `virt` (`board_qemu_virt`) --
+# `virt`'s device map, and a link script `build.rs` derives from `link.ld` at
+# `virt`'s RAM base -- is linted, linked and read for FP/SIMD too, so the board
+# the QEMU lanes boot cannot rot behind a feature no per-PR lane enables.  It
+# comes last because it links to the same path as the image checked above.
+cargo clippy --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
+    --features "${CROSS_FEATURES},${IMAGE_FEATURES},${VIRT_FEATURE}" --lib --bins -- -D warnings
+cargo build --release --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
+    --features "${IMAGE_FEATURES},${VIRT_FEATURE}" --bin "${IMAGE_BIN}"
+python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
+    target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
+echo "      ✓ the QEMU virt image lints clean, links and is FP/SIMD-free"
 echo ""
 
 echo "=== aarch64 cross-compile coverage: PASS ==="

@@ -3836,20 +3836,20 @@ run_check "INVARIANT" rg -n '^pub const fn boot_mapping_for\(addr: u64, layout: 
 # and the cacheable window is that interval unioned with the RAM BP4.6 records.
 # NEGATIVE: the retired first-gigabyte constant, which described the top of the
 # gigabyte the firmware keeps for itself as the kernel's own writable RAM.
-run_check "INVARIANT" rg -n -U '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{\n    if addr < KERNEL_RESERVED_END \{' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{\n    if in_kernel_reserved_extent\(addr\) \{' rust/sele4n-hal/src/mmu.rs
 run_negative_check "INVARIANT" rg -n '\bGUARANTEED_RAM_TOP\b' rust/sele4n-hal/src/
-run_check "INVARIANT" rg -n -U '^pub const fn ram_range_covered\(base: u64, size: u64, extensions: &\[\(u64, u64\)\]\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?        if cursor < KERNEL_RESERVED_END \{\n            next = Some\(KERNEL_RESERVED_END\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const fn ram_range_covered\(base: u64, size: u64, extensions: &\[\(u64, u64\)\]\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?        if in_kernel_reserved_extent\(cursor\) \{\n            next = Some\(KERNEL_RESERVED_END\);' rust/sele4n-hal/src/mmu.rs
 # WS-BP BP7.10: the first gigabyte is extended in 2 MiB blocks through its own
 # level-2 table, one answer for both passes of `extend_boot_tables`, and an
 # extension reaching back into the kernel's extent is refused.
-run_check "INVARIANT" rg -n -U '^fn level2_table\(tables: &mut BootPageTables, g: usize\) -> Option<&mut \[u64; TABLE_ENTRIES\]> \{\n    if g == 0 \{\n        Some\(&mut tables\.l2_ram\)\n    \} else if g == DEVICE_GIB \{\n        Some\(&mut tables\.l2_device\)' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^fn level2_table\(tables: &mut BootPageTables, g: usize\) -> Option<&mut \[u64; TABLE_ENTRIES\]> \{\n    if g == RAM_GIB \{\n        Some\(&mut tables\.l2_ram\)\n    \} else if g == DEVICE_GIB \{\n        Some\(&mut tables\.l2_device\)' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n -U '^    if base < KERNEL_RESERVED_END \{\n        return Err\(RamExtensionRefusal::InsideKernelReserved\);' rust/sele4n-hal/src/mmu.rs
 run_negative_check "INVARIANT" rg -n '\bBelowGuaranteedRam\b' rust/sele4n-hal/src/
 # The device tree's window is the readers' own bound, taken from the pointer,
 # and admitted only inside the kernel's reserved extent (WS-BP BP3.2) and
 # outside the image.
 run_check "INVARIANT" rg -n -U '^pub const fn dtb_window\(dtb_ptr: u64\) -> \(u64, u64\) \{\n    if dtb_ptr == 0 \{\n        \(0, 0\)\n    \} else \{\n        \(dtb_ptr, crate::cmdline::MAX_DTB_SIZE as u64\)' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n 'Some\(end\) if end <= KERNEL_RESERVED_END => dtb_disjoint_from_image\(window, &\[kernel\]\),' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'Some\(end\) if in_kernel_reserved_extent\(base\) && end <= KERNEL_RESERVED_END => \{\n            dtb_disjoint_from_image\(window, &\[kernel\]\)' rust/sele4n-hal/src/mmu.rs
 # NEGATIVE: the BP2.6 bound, under which a blob could lie in RAM a boot untyped
 # describes and a user retype would then overwrite.
 run_negative_check "INVARIANT" rg -n 'Some\(end\) if end <= GUARANTEED_RAM_TOP => dtb_disjoint_from_image' rust/sele4n-hal/src/mmu.rs
@@ -3889,11 +3889,17 @@ run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacem
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # BP3.2 — the kernel's reserved extent, stated in three places and held equal.
 run_check "INVARIANT" rg -n '^def rpi5KernelReservedEnd : Nat := 0x1000_0000$' SeLe4n/Platform/RPi5/Board.lean
-run_check "INVARIANT" rg -n '^pub const KERNEL_RESERVED_END: u64 = 0x1000_0000;$' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP8.1: the value lives in the board map (`board.rs`'s `RPI5`), and the
+# boot path's constant reads the board the image is built for.
+run_check "INVARIANT" rg -n '^pub const KERNEL_RESERVED_END: u64 = crate::board::BOARD\.kernel_reserved_end;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const RPI5: BoardMap = BoardMap \{[^\n]*(\n([ \t][^\n]*)?)*?\n    ram_base: 0x0,\n    kernel_reserved_end: 0x1000_0000,$' rust/sele4n-hal/src/board.rs
 run_prose_check "INVARIANT" rg -n '^KERNEL_RESERVED_END = 0x10000000;$' rust/sele4n-hal/link.ld
 run_prose_check "INVARIANT" rg -n -F 'ASSERT(__lean_heap_end <= KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
 run_prose_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END % 0x200000 == 0,' rust/sele4n-hal/link.ld
-run_prose_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END <= 0x40000000,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(RAM_BASE % 0x40000000 == 0 && KERNEL_RESERVED_END > RAM_BASE && KERNEL_RESERVED_END - RAM_BASE <= 0x40000000,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(ORIGIN(RAM) == RAM_BASE + 0x80000,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n '^RAM_BASE = 0x0;$' rust/sele4n-hal/link.ld
+run_prose_negative_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END <= 0x40000000,' rust/sele4n-hal/link.ld
 # WS-BP BP7.10: the linker's RAM region IS the kernel's reserved extent.
 run_prose_check "INVARIANT" rg -n -F 'ASSERT(ORIGIN(RAM) + LENGTH(RAM) == KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
 run_prose_check "INVARIANT" rg -n '^    RAM \(rwx\) : ORIGIN = 0x80000, LENGTH = 0xFF80000$' rust/sele4n-hal/link.ld
@@ -5409,7 +5415,7 @@ run_negative_check "INVARIANT" rg -n '\brpi5InitialObjects\b|\brpi5RootTaskCNode
 # bare-metal target only.
 run_check "INVARIANT" rg -U -n '^\[\[bin\]\]\nname = "sele4n-kernel"\npath = "src/bin/sele4n_kernel\.rs"\nrequired-features = \["kernel_image"\]$' rust/sele4n-hal/Cargo.toml
 run_check "INVARIANT" rg -U -n '^#\[panic_handler\]\nfn panic\(_info: &core::panic::PanicInfo<._>\) -> ! \{\n    sele4n_hal::gic::halt_all\(\)\n\}$' rust/sele4n-hal/src/bin/sele4n_kernel.rs
-run_check "INVARIANT" rg -U -n '^    if std::env::var\("CARGO_CFG_TARGET_OS"\)\.as_deref\(\) == Ok\("none"\) \{[^\n]*(\n([ \t][^\n]*)?)*?        println!\("cargo:rustc-link-arg-bin=sele4n-kernel=-T\{manifest_dir\}/link\.ld"\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -U -n '^    if std::env::var\("CARGO_CFG_TARGET_OS"\)\.as_deref\(\) == Ok\("none"\) \{[^\n]*(\n([ \t][^\n]*)?)*?        let script = board_link_script\(&manifest_dir\);\n        println!\("cargo:rustc-link-arg-bin=sele4n-kernel=-T\{script\}"\);$' rust/sele4n-hal/build.rs
 # WS-BP BP5.2: with `hw_target` the image links the Lean archive AND the roots
 # script, with `--gc-sections`, inside the bare-metal branch; the archive
 # builder's reachable link reads that same roots script; and the Lean archive
@@ -5454,7 +5460,7 @@ run_check "INVARIANT" rg -n '^    fn the_device_tree_window_is_the_dereference_b
 # any other level halts.  build.rs pins the routine item for item, and both
 # scanners refuse the retired prologue-first order.
 run_check "INVARIANT" rg -n '^    scan_el1_entry\(\);$' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -U -n '^_start:\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb\n    mov     x20, x9 ' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^_start:\n(\n|    //[^\n]*\n)*    b       \.L_image_body[^\n]*\n(    \.[^\n]*\n){9}\.L_image_body:\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb\n    mov     x20, x9 ' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -U -n '^secondary_entry:\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb$' rust/sele4n-hal/src/boot.S
 run_negative_check "INVARIANT" rg -U -n '^(_start|secondary_entry):\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -n '"the FP trap written before the drop to EL1",' rust/sele4n-hal/build.rs
@@ -7705,6 +7711,51 @@ run_negative_check "INVARIANT" rg -n 'maxHeartbeats' SeLe4n/Platform/RPi5/Deploy
 run_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' '^  deployment_starts_both_initial_threads$' tests
 run_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' '^  boot_refuses_unstartable_initial_threads$' tests
 run_prose_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' 'CONTROL: the idle stage queues neither thread' tests
+
+# WS-BP BP8.1 slice 1: the image runs under QEMU, on `virt`.  The board is a
+# build-time choice with one home (`board.rs`), every board's shape is decided
+# by the compiler, and the boot path reads the board off `BOARD`.
+run_check "INVARIANT" rg -n -U '^#\[cfg\(not\(feature = "board_qemu_virt"\)\)\]\npub const BOARD: BoardMap = RPI5;$' rust/sele4n-hal/src/board.rs
+run_check "INVARIANT" rg -n -U '^#\[cfg\(feature = "board_qemu_virt"\)\]\npub const BOARD: BoardMap = QEMU_VIRT;$' rust/sele4n-hal/src/board.rs
+run_check "INVARIANT" rg -n '^const _: \(\) = assert!\(well_formed\(&RPI5\)\);$' rust/sele4n-hal/src/board.rs
+run_check "INVARIANT" rg -n '^const _: \(\) = assert!\(well_formed\(&QEMU_VIRT\)\);$' rust/sele4n-hal/src/board.rs
+run_check "INVARIANT" rg -n -U '^pub const QEMU_VIRT: BoardMap = BoardMap \{[^\n]*(\n([ \t][^\n]*)?)*?\n    ram_base: 0x4000_0000,\n    kernel_reserved_end: 0x5000_0000,$' rust/sele4n-hal/src/board.rs
+run_check "INVARIANT" rg -n '^board_qemu_virt = \[\]$' rust/sele4n-hal/Cargo.toml
+# The reserved extent sits at the base of the board's RAM, and the boot tables
+# put `l2_ram` at that gigabyte, never at index 0.
+run_check "INVARIANT" rg -n '^pub const KERNEL_RESERVED_BASE: u64 = crate::board::BOARD\.ram_base;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const fn in_kernel_reserved_extent\(addr: u64\) -> bool \{\n    addr\.wrapping_sub\(KERNEL_RESERVED_BASE\) < KERNEL_RESERVED_END - KERNEL_RESERVED_BASE\n\}$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^    tables\.l1\[RAM_GIB\] = table_descriptor\(base_pa, L2_RAM_TABLE\);$' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n 'tables\.l1\[0\] = table_descriptor' rust/sele4n-hal/src/mmu.rs
+# The `virt` link script is derived from `link.ld`: three board lines rewritten
+# from `board.rs`, nothing else, and both images refused unless `link.ld`
+# states `RPI5`'s.
+run_check "INVARIANT" rg -n '^fn board_link_script\(manifest_dir: &str\) -> String \{$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U '^fn board_link_script\(manifest_dir: &str\) -> String \{[^\n]*(\n([ \t][^\n]*)?)*?\n    let \(rpi5_base, rpi5_end\) = board_ram_extent\(&board_rs, "RPI5"\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U '^fn board_link_script\(manifest_dir: &str\) -> String \{[^\n]*(\n([ \t][^\n]*)?)*?\n +Some\(i\) => virt\[i\]\.clone\(\),\n +None => l\.to_string\(\),' rust/sele4n-hal/build.rs
+# `_start` begins with the arm64 Image header, pinned word for word, and both
+# prologue scanners start `_start`'s contract after it.
+run_check "INVARIANT" rg -n '^const IMAGE_HEADER: \[&str; 10\] = \[$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^        let first = entry_body_index\(&items, entry, at\)\?;$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^        let call = entry_body_index\(&items, entry, at\)\?;$' rust/sele4n-hal/build.rs
+run_prose_check "INVARIANT" rg -n '^    \.word   0x644d5241              // magic' rust/sele4n-hal/src/boot.S
+run_prose_check "INVARIANT" rg -n '^__kernel_image_size = __lean_heap_end - _start;$' rust/sele4n-hal/link.ld
+# The FP/SIMD gate reads the header's data words as data, and admits data only
+# in `_start`'s first 64 bytes.
+run_check "INVARIANT" rg -n '^            if function != IMAGE_HEADER_FUNCTION or not 0 <= offset < IMAGE_HEADER_BYTES:$' scripts/check_fp_simd_free_objects.py
+# A uniprocessor GIC reads its targets as zero: the self-check reads TYPER.
+run_check "INVARIANT" rg -n '^    let expected = self_check_expected\(read_distributor_register\(base, gicd::TYPER\)\);$' rust/sele4n-hal/src/gic.rs
+run_negative_check "INVARIANT" rg -n 'if actual != SELF_CHECK_EXPECTED' rust/sele4n-hal/src/gic.rs
+# The QEMU lane is live: the `virt` image, booted at EL1 and at EL2, the
+# fixture's fragments in order, and the fixture's companion verified.
+run_check "INVARIANT" rg -n -- '--features kernel_image,board_qemu_virt --bin sele4n-kernel' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -U '^    boot_once "virt, EL2 entry" "virt,gic-version=2,virtualization=on" \\\n        "booting on QEMU virt" "Entered at EL2, running at EL1" "PSCI conduit: Smc"$' scripts/test_qemu.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F 'line=$(tail -n "+$((after + 1))" "${QEMU_LOG}" | grep -n -F -m1 -- "${fragment}" | cut -d: -f1) || line=""' scripts/test_qemu.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F 'sha256sum -c "$(basename "${FIXTURE}").sha256"' scripts/test_qemu.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- '--features "${IMAGE_FEATURES},${VIRT_FEATURE}" --bin "${IMAGE_BIN}"' scripts/test_aarch64_cross_build.sh
 
 # ============================================================================
 # WS-SM SM9.B — refusal auditing
@@ -21988,14 +22039,17 @@ run_check "INVARIANT" rg -n 'include_str!\("\.\./\.\./\.\./tests/fixtures/boot_m
 # The Lean map, the HAL boot map, the UART and the GIC are one set of addresses,
 # and the drivers' bases are read from the fixture the Lean suite writes.  None
 # of the BCM2711's addresses may come back as a live constant.
-run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_BASE: u64 = 0x10_7C00_0000;$' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_TOP: u64 = 0x10_8000_0000;$' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP8.1: the RPi5's numbers live in `board.rs`'s `RPI5`, and the boot
+# path's constants read the board the image is built for.
+run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_BASE: u64 = crate::board::BOARD\.device_window_base;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_TOP: u64 = crate::board::BOARD\.device_window_top;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const RPI5: BoardMap = BoardMap \{[^\n]*(\n([ \t][^\n]*)?)*?\n    device_window_base: 0x10_7C00_0000,\n    device_window_top: 0x10_8000_0000,\n    uart_base: 0x10_7D00_1000,\n    uart_clock_hz: 9_216_000,\n    gicd_base: 0x10_7FFF_9000,\n    gicc_base: 0x10_7FFF_A000,$' rust/sele4n-hal/src/board.rs
 run_check "INVARIANT" rg -n '^const _: \(\) = assert!\(DEVICE_WINDOW_TOP\.is_multiple_of\(L2_BLOCK_SIZE\)\);$' rust/sele4n-hal/src/mmu.rs
 run_negative_check "INVARIANT" rg -n 'DEVICE_TAIL_BLOCK_BASE|l3_device_tail|L3_DEVICE_TAIL_TABLE' rust/sele4n-hal/src/
-run_check "INVARIANT" rg -n '^pub const UART0_BASE: usize = 0x10_7D00_1000;$' rust/sele4n-hal/src/uart.rs
-run_check "INVARIANT" rg -n '^const UART_CLOCK_HZ: u32 = 9_216_000;$' rust/sele4n-hal/src/uart.rs
-run_check "INVARIANT" rg -n '^pub const GICD_BASE: usize = 0x10_7FFF_9000;$' rust/sele4n-hal/src/gic.rs
-run_check "INVARIANT" rg -n '^pub const GICC_BASE: usize = 0x10_7FFF_A000;$' rust/sele4n-hal/src/gic.rs
+run_check "INVARIANT" rg -n '^pub const UART0_BASE: usize = crate::board::BOARD\.uart_base;$' rust/sele4n-hal/src/uart.rs
+run_check "INVARIANT" rg -n '^const UART_CLOCK_HZ: u32 = crate::board::BOARD\.uart_clock_hz;$' rust/sele4n-hal/src/uart.rs
+run_check "INVARIANT" rg -n '^pub const GICD_BASE: usize = crate::board::BOARD\.gicd_base;$' rust/sele4n-hal/src/gic.rs
+run_check "INVARIANT" rg -n '^pub const GICC_BASE: usize = crate::board::BOARD\.gicc_base;$' rust/sele4n-hal/src/gic.rs
 run_check "INVARIANT" rg -n '^def uart0Base : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107D001000\)$' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^def gicDistributorBase : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107FFF9000\)$' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^def gicCpuInterfaceBase : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107FFFA000\)$' SeLe4n/Platform/RPi5/Board.lean

@@ -1,21 +1,31 @@
-# AG9-A: Expected QEMU boot sequence fragments
+# Expected QEMU boot sequence (AG9-A; ordered and made live at WS-BP BP8.1)
 #
-# Each non-comment line is a substring that must appear in the QEMU boot log
-# for the corresponding check to pass. Lines are checked in order.
+# Each non-comment line is a substring the QEMU boot log must contain, and the
+# lines must occur IN THIS ORDER: scripts/test_qemu.sh requires each fragment
+# on a line after the previous fragment's line, so a phase that runs out of
+# sequence fails as surely as one that does not run.  Every fragment is
+# mandatory.
+#
+# The sequence is the boot core's phases (rust/sele4n-hal/src/boot.rs's
+# rust_boot_main): the banner, the entry level and the PSCI conduit it
+# selects, the early per-core pointer, translation on, the vectors, the
+# interrupt controller, the timer, IRQs unmasked, secondary bring-up, the
+# handoff summary.  The lane runs it on QEMU's `virt` at both entry levels
+# (WS-BP BP8.1), so no fragment names a board; the entry-level lines are the
+# lane's own per-run checks.
 #
 # Format: CHECK_NAME | expected_fragment
-#
-# These fragments are validated when the full kernel binary is linked and
-# runs on QEMU. Every fragment is mandatory: a missing fragment is a hard
-# failure. Pre-hardware, scripts/test_qemu.sh SKIPs before launching QEMU
-# at its kernel-binary check (sele4n-hal builds as a library until the
-# SM10.1 binary target lands), so these rows only gate real boots.
 
-BOOT_BANNER | seLe4n
-UART_INIT   | UART
-MMU_INIT    | MMU
-GIC_INIT    | GIC
-TIMER_INIT  | Timer
+BOOT_BANNER | booting on
+ENTRY_LEVEL | [boot] Entered at EL
+PSCI_CONDUIT | [boot] PSCI conduit:
 TPIDR_SET   | TPIDR_EL1 set early (Phase 1) to PER_CPU_DATA
-PER_CPU_ID  | current_core_id_from_tpidr() =
-BOOT_DONE   | Boot complete
+MMU_INIT    | [boot] MMU enabled (identity map
+VBAR_SET    | [boot] VBAR_EL1 set to exception vector table
+GIC_INIT    | [boot] GICv2 initialized
+TIMER_INIT  | [boot] Timer initialized
+PER_CPU_ID  | current_core_id_from_tpidr() = 0
+IRQ_ENABLE  | [boot] IRQ delivery enabled
+SMP_PHASE   | [boot] Phase 6:
+HANDOFF     | [boot] Hardware initialization complete:
+BOOT_DONE   | [boot] Boot complete

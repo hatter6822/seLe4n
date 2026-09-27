@@ -17,7 +17,9 @@ relations the Rust side depends on:
   2. the arena lies above the image and both stack regions, so it overlaps
      nothing the boot writes;
   3. (WS-BP BP7.10) the kernel's reserved extent is whole 2 MiB blocks inside
-     the first gigabyte, the level-2 table the boot map describes it with;
+     the gigabyte at the base of RAM, the level-2 table the boot map describes
+     it with, and (WS-BP BP8.1) the image loads 512 KiB above that base, the
+     offset its arm64 Image header declares;
   4. (WS-BP BP2.6) the boot map's permission boundaries `_start`, `__text_end`
      and `__rodata_end` are page aligned and ordered, and the read-only data
      begins where the text ends (`__rodata_start`) — which
@@ -201,9 +203,22 @@ ASSERTION_WITNESSES = (
         "the loaded image must run from the text through the initialised data",
     ),
     (
-        "a reserved extent past the first gigabyte",
+        "a reserved extent past the gigabyte at the base of RAM",
         (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x50000000;"),),
-        "the kernel's reserved extent must lie inside the first gigabyte",
+        "the kernel's reserved extent must lie inside the gigabyte at the base of RAM",
+    ),
+    # WS-BP BP8.1: the RAM base is a board line, and the extent sits at the base
+    # of a gigabyte-aligned RAM, with the image 512 KiB above it (the offset
+    # the arm64 Image header declares).
+    (
+        "a RAM base off a gigabyte",
+        (("RAM_BASE = 0x0;", "RAM_BASE = 0x200000;"),),
+        "the kernel's reserved extent must lie inside the gigabyte at the base of RAM",
+    ),
+    (
+        "an image loaded at another offset above the RAM base",
+        (("ORIGIN = 0x80000, LENGTH = 0xFF80000", "ORIGIN = 0x100000, LENGTH = 0xFF00000"),),
+        "the image must load 512 KiB above the base of RAM, the offset its arm64 Image header declares",
     ),
     (
         "a table-page pool that stops short of the reserved extent's end",

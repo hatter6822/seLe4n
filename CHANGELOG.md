@@ -1,3 +1,89 @@
+## v0.36.24 — WS-BP BP8.1 slice 1: the kernel image boots under QEMU, on `virt`, at EL1 and at EL2
+
+The first execution of any kernel code.  Until this version every QEMU script
+in `scripts/` had always reported SKIP: QEMU ships no BCM2712 model, and an
+image carrying the BCM2712's device map meets no device under any machine QEMU
+has.  BP8.1 owed an answer — a QEMU device map taken from a platform binding,
+or the board itself — and this is the first slice of the first: **QEMU's
+`virt`**, the one QEMU machine carrying what the whole BP8 arc needs (PSCI for
+the four-core bring-up, a GICv2, a PL011).  QEMU 8.2 ships no `raspi4b`, and
+that machine is a BCM2711 without PSCI besides.
+
+- **The board is a build-time choice with one home**
+  (`rust/sele4n-hal/src/board.rs`).  `BoardMap` holds every board-dependent
+  constant the boot path reads — the RAM base the kernel's reserved extent sits
+  at, the extent's end, the device window, the PL011's base and clock, the GIC
+  distributor and CPU interface — as `RPI5` (the default) and `QEMU_VIRT`
+  (feature `board_qemu_virt`: RAM from `0x4000_0000`, GICv2 at
+  `0x0800_0000`/`0x0801_0000`, PL011 at `0x0900_0000` on a 24 MHz clock).
+  `mmu`, `uart` and `gic` read them off `BOARD` rather than carrying literals.
+  A `const` assertion decides every board's shape — gigabyte-aligned RAM, the
+  extent whole 2 MiB blocks inside that gigabyte, the device window whole
+  blocks inside a different one, every device inside the window — so a
+  malformed board fails every build.
+- **The boot map is generalised off DRAM-at-0.**  The reserved extent is
+  `[KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)`; membership has one spelling,
+  `mmu::in_kernel_reserved_extent` (offset form — `0 <= x` is an absurd
+  comparison the cross lint refuses on the RPi5); `l2_ram` sits at the RAM's
+  gigabyte (`RAM_GIB`); the RAM-extension walk, the cacheable-window
+  predicate, the image-layout check and the device-tree window check all ask
+  the one question.
+- **The `virt` image links under a script derived from `link.ld`.**
+  `link.ld` gained a `RAM_BASE` board line, its gigabyte `ASSERT` is stated
+  over it, and a new `ASSERT` holds `ORIGIN(RAM) == RAM_BASE + 0x80000`.
+  `build.rs`'s `board_link_script` refuses to build either image unless
+  `link.ld`'s three board lines state `board.rs`'s `RPI5`, and for `virt`
+  writes `link.ld` with exactly those three lines rewritten to `QEMU_VIRT`'s —
+  every section, symbol and `ASSERT` shared, so the two layouts cannot drift.
+- **`_start` begins with the arm64 Image header** (`boot.S`): a branch past
+  it, then `text_offset` (512 KiB), `image_size` (`__kernel_image_size`, the
+  memory the image owns from `_start`, Lean heap included), flags and the
+  `ARM\x64` magic.  QEMU's `-kernel` passes the device tree in `x0` only to an
+  image carrying it — a headerless ELF is entered with `x0 = 0` — and the
+  Raspberry Pi firmware reads it too.  `build.rs` pins it word for word
+  (`IMAGE_HEADER`) and both prologue scanners start `_start`'s contract after
+  it (`entry_body_index`), with five token-preserving mutations refused.  The
+  FP/SIMD gate now reads llvm-objdump's data lines as data — `00 b0 05 04` was
+  being read as the register `b0` — and admits them only in `_start`'s first
+  64 bytes (`DATA_WORD`, three new self-test cases).
+- **A uniprocessor GIC reads its targets as zero** (`gic.rs`).  The
+  distributor self-check expected `0x0101_0101` from `GICD_ITARGETSR[8]`
+  unconditionally, and on a GIC with one CPU interface those fields are
+  RAZ/WI (IHI0048B §4.3.12), so the first run halted in `init_gic`.  It reads
+  `GICD_TYPER.CPUNumber` now (`self_check_expected`) and expects `0` there.
+  Latent on the Raspberry Pi 5, whose GIC-400 has four interfaces.
+- **The boot log reports the machine it runs on**: the banner names
+  `BOARD.name`, and the GIC, timer and summary lines print the addresses and
+  the counter frequency read off the hardware, where they printed BCM2712
+  literals ("UART10 @ 0x10_7D00_1000", "54 MHz") whatever the board.
+- **`scripts/test_qemu.sh` is a live gate.**  It builds the `virt` image, cuts
+  the raw binary with the toolchain's `llvm-objcopy`, and boots it twice —
+  `virt,gic-version=2` (EL1 entry, HVC conduit) and the same with
+  `virtualization=on` (EL2 entry, dropped to EL1, SMC conduit).  Each run must
+  contain `tests/fixtures/qemu_boot_expected.txt`'s fragments **in order**
+  (the fixture is rewritten to the boot core's real phase sequence; the old
+  one's "UART" matched only the closing summary) plus its own entry level and
+  conduit.  The fixture gained its `.sha256` companion, which the lane
+  verifies itself because Tier 2's sweep reads `*.expected.sha256` only.  A
+  missing fragment is now reported: under `set -e -o pipefail` a no-match
+  `grep` inside the command substitution had exited the script silently,
+  found by transposing two fixture lines and watching the lane exit 1 with no
+  finding.  Measured: both runs reach "Boot complete" with about 1000 timer
+  IRQs taken per second and no other exception.
+- **The cross gate builds `virt` too** (`test_aarch64_cross_build.sh` step
+  [7/7]): the `virt` image is linted with `-D warnings`, linked and read by the
+  FP/SIMD gate, so the board the QEMU lanes boot cannot rot behind a feature no
+  per-PR lane enables.  `check_link_script.py` gained two ASSERT witnesses (a
+  RAM base off a gigabyte, an image loaded at another offset);
+  `check_physical_address_width.sh` reads the RPi5's extent out of `board.rs`.
+
+What this slice does **not** do is run Lean.  The Lean `virt` binding — memory
+map, device-tree board check, deployment and its own boot entry, and the
+fixture that holds the HAL's `virt` constants to it as `boot_map.expected`
+holds the RPi5's — is slice 2, and the Lean-linked image's boot to the first
+idle dispatch is slice 3.  Until slice 2 the `virt` constants are held to
+nothing on the Lean side.
+
 ## v0.36.23 — WS-BP BP7.11: the boot starts both initial threads, one per domain
 
 Until this version no deployment thread ever ran.  `bootSafeTcbCheck` installs

@@ -54,13 +54,13 @@ mod flags {
 /// together by `tests/fixtures/boot_map.expected`'s `mmio uart` line, which
 /// the Lean suite writes and `tests::the_console_is_the_lean_uart_inside_the_device_window`
 /// reads).
-pub const UART0_BASE: usize = 0x10_7D00_1000;
+pub const UART0_BASE: usize = crate::board::BOARD.uart_base;
 
 /// UART reference clock frequency on RPi5: `bcm2712.dtsi`'s `clk_uart`, a
 /// fixed 9.216 MHz clock (`clock-frequency = <9216000>`), which is exactly
 /// `16 × 115200 × 5` — so the 115200-baud divisor is `IBRD = 5, FBRD = 0` with
 /// no rounding error.
-const UART_CLOCK_HZ: u32 = 9_216_000;
+const UART_CLOCK_HZ: u32 = crate::board::BOARD.uart_clock_hz;
 
 /// Default baud rate for debug console.
 const DEFAULT_BAUD: u32 = 115_200;

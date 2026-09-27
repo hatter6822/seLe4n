@@ -25,7 +25,7 @@
 //!          bounded window, or the system halts (WS-BP BP6.3)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.36.23";
+const KERNEL_VERSION: &str = "0.36.24";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -109,8 +109,12 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // -----------------------------------------------------------------------
     crate::uart::init_boot_uart();
     crate::kprintln!();
-    crate::kprintln!("seLe4n v{} booting on Raspberry Pi 5", KERNEL_VERSION);
-    crate::kprintln!("  ARM64 / BCM2712 / Cortex-A76");
+    crate::kprintln!(
+        "seLe4n v{} booting on {}",
+        KERNEL_VERSION,
+        crate::board::BOARD.name
+    );
+    crate::kprintln!("  ARM64 / Cortex-A76");
     crate::kprintln!();
 
     // Report the level the firmware entered at and the level the kernel
@@ -208,9 +212,13 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // -----------------------------------------------------------------------
     // Phase 3: GIC-400 and timer initialization (AG5)
     // -----------------------------------------------------------------------
-    crate::kprintln!("[boot] Initializing GIC-400...");
+    crate::kprintln!("[boot] Initializing the GICv2...");
     crate::gic::init_gic();
-    crate::kprintln!("[boot] GIC-400 initialized (distributor + CPU interface)");
+    crate::kprintln!(
+        "[boot] GICv2 initialized (distributor {:#x}, CPU interface {:#x})",
+        crate::gic::GICD_BASE,
+        crate::gic::GICC_BASE
+    );
 
     // WS-SM SM7.B.3: register the `.tlbShootdownReq` (INTID 1) handler in
     // the SM1.F.5 SGI table.  Single-core, IRQs still masked, before
@@ -263,7 +271,10 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
             idle_loop();
         }
     }
-    crate::kprintln!("[boot] Timer initialized (54 MHz counter, 1ms ticks)");
+    crate::kprintln!(
+        "[boot] Timer initialized ({} Hz counter, 1ms ticks)",
+        crate::timer::read_frequency()
+    );
 
     // -----------------------------------------------------------------------
     // Phase 4: TPIDR_EL1 setup (the IRQ enable moved after Phase 5, BP6.2)
@@ -458,11 +469,18 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // -----------------------------------------------------------------------
     crate::kprintln!();
     crate::kprintln!("[boot] Hardware initialization complete:");
-    crate::kprintln!("  UART   : PL011 UART10 @ 0x10_7D00_1000 (115200 8N1)");
+    crate::kprintln!("  Board  : {}", crate::board::BOARD.name);
+    crate::kprintln!(
+        "  UART   : PL011 @ {:#x} (115200 8N1)",
+        crate::uart::UART0_BASE
+    );
     crate::kprintln!("  MMU    : identity map (kernel extent + device window; board RAM after the verified parse)");
     crate::kprintln!("  VBAR   : exception vectors installed");
-    crate::kprintln!("  GIC    : GIC-400 distributor + CPU interface");
-    crate::kprintln!("  Timer  : 1000 Hz (54 MHz / 54000 counts per tick)");
+    crate::kprintln!("  GIC    : GICv2 distributor + CPU interface");
+    crate::kprintln!(
+        "  Timer  : 1000 Hz ({} Hz counter)",
+        crate::timer::read_frequency()
+    );
     crate::kprintln!(
         "  SMP    : {} (max cores: {})",
         if cmdline_cfg.smp_enabled {
@@ -748,7 +766,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.36.23");
+        assert_eq!(KERNEL_VERSION, "0.36.24");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

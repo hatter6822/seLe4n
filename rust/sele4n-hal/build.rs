@@ -238,7 +238,11 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("none") {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
             .expect("cargo sets CARGO_MANIFEST_DIR for every build script");
-        println!("cargo:rustc-link-arg-bin=sele4n-kernel=-T{manifest_dir}/link.ld");
+        // WS-BP BP8.1: the image for QEMU's `virt` links under a script
+        // derived from `link.ld` for `virt`'s RAM base (`board_link_script`).
+        let script = board_link_script(&manifest_dir);
+        println!("cargo:rustc-link-arg-bin=sele4n-kernel=-T{script}");
+        println!("cargo:rerun-if-changed=src/board.rs");
         // WS-BP BP5.2: with `hw_target` the HAL names the Lean kernel's
         // symbols, so the image links the kernel's Lean archive — the one
         // `scripts/build_lean_aarch64_archive.py` builds — together with the
@@ -283,6 +287,107 @@ fn main() {
     println!("cargo:rerun-if-changed=src/fp_context.S");
     println!("cargo:rerun-if-changed=link.ld");
     println!("cargo:rerun-if-changed=build.rs");
+}
+
+/// **WS-BP BP8.1**: one board's RAM base and reserved-extent end, read off
+/// `src/board.rs`'s `BoardMap` constant named `board` — the one place the HAL
+/// states them, so the link script cannot disagree with the boot map.
+fn board_ram_extent(board_rs: &str, board: &str) -> (u64, u64) {
+    let header = format!("pub const {board}: BoardMap = BoardMap {{");
+    let start = board_rs
+        .find(&header)
+        .unwrap_or_else(|| panic!("src/board.rs defines no `{board}` BoardMap"));
+    let body = &board_rs[start + header.len()..];
+    let body = &body[..body.find("};").expect("an unterminated BoardMap")];
+    let field = |name: &str| -> u64 {
+        let key = format!("{name}:");
+        let hits: Vec<&str> = body
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with(&key))
+            .collect();
+        let [line] = hits[..] else {
+            panic!(
+                "`{board}` sets `{name}` {} times; expected once",
+                hits.len()
+            );
+        };
+        let value = line[key.len()..]
+            .trim()
+            .trim_end_matches(',')
+            .replace('_', "");
+        let hex = value
+            .strip_prefix("0x")
+            .unwrap_or_else(|| panic!("`{board}.{name}` is not a hex literal: {value}"));
+        u64::from_str_radix(hex, 16).unwrap_or_else(|e| panic!("`{board}.{name}`: {e}"))
+    };
+    (field("ram_base"), field("kernel_reserved_end"))
+}
+
+/// **WS-BP BP8.1**: the three `link.ld` lines that state a board's RAM base,
+/// in the spelling `link.ld` writes them, for a board whose RAM starts at
+/// `ram_base` and whose reserved extent ends at `end`.  The image loads
+/// 512 KiB above the RAM base and its region ends at the extent's end, as
+/// `link.ld`'s `ASSERT`s require.
+fn board_link_lines(ram_base: u64, end: u64) -> [String; 3] {
+    let origin = ram_base + 0x8_0000;
+    [
+        format!("RAM_BASE = 0x{ram_base:X};"),
+        format!("KERNEL_RESERVED_END = 0x{end:X};"),
+        format!(
+            "    RAM (rwx) : ORIGIN = 0x{origin:X}, LENGTH = 0x{:X}",
+            end - origin
+        ),
+    ]
+}
+
+/// **WS-BP BP8.1**: the linker script the kernel image links under.
+///
+/// `link.ld` is the Raspberry Pi 5's, and it must state `src/board.rs`'s
+/// `RPI5` numbers in its three board lines — the build stops otherwise, for
+/// either board.  For QEMU's `virt` (`board_qemu_virt`) the script is
+/// `link.ld` with exactly those three lines rewritten to `QEMU_VIRT`'s,
+/// written to `OUT_DIR`; every section, symbol and `ASSERT` is `link.ld`'s,
+/// so the two images cannot be laid out by two scripts that drift.  A board
+/// line that does not occur exactly once is a script this derivation cannot
+/// read, and stops the build rather than linking an image at the wrong base.
+fn board_link_script(manifest_dir: &str) -> String {
+    let link_ld = format!("{manifest_dir}/link.ld");
+    let text =
+        std::fs::read_to_string(&link_ld).unwrap_or_else(|e| panic!("cannot read {link_ld}: {e}"));
+    let board_rs = std::fs::read_to_string(format!("{manifest_dir}/src/board.rs"))
+        .unwrap_or_else(|e| panic!("cannot read src/board.rs: {e}"));
+    let (rpi5_base, rpi5_end) = board_ram_extent(&board_rs, "RPI5");
+    let rpi5 = board_link_lines(rpi5_base, rpi5_end);
+    for line in &rpi5 {
+        let count = text
+            .lines()
+            .filter(|l| l.trim_end() == line.as_str())
+            .count();
+        assert!(
+            count == 1,
+            "link.ld must state `{line}` exactly once (src/board.rs's RPI5); it does {count} times"
+        );
+    }
+    if std::env::var_os("CARGO_FEATURE_BOARD_QEMU_VIRT").is_none() {
+        return link_ld;
+    }
+    let (base, end) = board_ram_extent(&board_rs, "QEMU_VIRT");
+    let virt = board_link_lines(base, end);
+    let derived: Vec<String> = text
+        .lines()
+        .map(
+            |l| match rpi5.iter().position(|r| l.trim_end() == r.as_str()) {
+                Some(i) => virt[i].clone(),
+                None => l.to_string(),
+            },
+        )
+        .collect();
+    let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR for every build script");
+    let path = format!("{out_dir}/link_qemu_virt.ld");
+    std::fs::write(&path, derived.join("\n") + "\n")
+        .unwrap_or_else(|e| panic!("cannot write {path}: {e}"));
+    path
 }
 
 /// AN8-B.5 (H-18): Reject the legacy `mov x2, #0xFFFF ; movk x2, #0xFF, lsl #16`
@@ -9837,13 +9942,14 @@ fn fp_trap_prologue_status(
         // The v0.36.2 audit: the entry's first item is the drop to EL1, and
         // the prologue follows it (see `FP_TRAP_PROLOGUE`'s docs for why the
         // other order is unsound at EL2).
-        if items.get(at + 1) != Some(&AsmItem::Statement(EL1_ENTRY_CALL.to_string())) {
+        let first = entry_body_index(&items, entry, at)?;
+        if items.get(first) != Some(&AsmItem::Statement(EL1_ENTRY_CALL.to_string())) {
             return Err(format!(
                 "`{entry}` does not begin with `{EL1_ENTRY_CALL}`; its first item is {:?}",
-                items.get(at + 1)
+                items.get(first)
             ));
         }
-        let opening: Vec<&AsmItem> = items[at + 2..]
+        let opening: Vec<&AsmItem> = items[first + 1..]
             .iter()
             .take(FP_TRAP_PROLOGUE.len())
             .collect();
@@ -9992,15 +10098,29 @@ fn fp_context_cpacr_status(source: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// **WS-BP BP8.1**: `_start`'s arm64 Image header as a scanner fixture writes
+/// it — `IMAGE_HEADER` in source spelling, then the body label.
+macro_rules! image_header_fixture {
+    () => {
+        "    b .L_image_body\n    .word 0\n    .quad 0x80000\n    .quad __kernel_image_size\n\
+         \x20   .quad 0x2\n    .quad 0\n    .quad 0\n    .quad 0\n    .word 0x644d5241\n\
+         \x20   .word 0\n.L_image_body:\n"
+    };
+}
+
 /// Pin `fp_trap_prologue_status` with token-preserving mutations: each
 /// refused case keeps the prologue's tokens and breaks the relation — the
 /// order, the operand, the position, the spelling of a second write, or the
 /// enclosure (a comment, a string).
 fn verify_fp_trap_prologue_scanner() {
-    const GOOD: &str = "_start:\n    bl .L_enter_el1\n    msr     cpacr_el1, xzr\n    isb\n\
+    const GOOD: &str = concat!(
+        "_start:\n",
+        image_header_fixture!(),
+        "    bl .L_enter_el1\n    msr     cpacr_el1, xzr\n    isb\n\
                         \x20   mrs x1, mpidr_el1\n\
                         secondary_entry:\n    bl .L_enter_el1\n    MSR CPACR_EL1 ,XZR ; isb\n\
-                        \x20   msr daifset, #0xf\n";
+                        \x20   msr daifset, #0xf\n"
+    );
     let accept = |label: &str, boot: &str, asm: &[(&str, &str)], rust: &[(&str, &str)]| {
         if let Err(e) = fp_trap_prologue_status(boot, asm, rust) {
             panic!("FP-trap scanner self-test: `{label}` must be accepted: {e}");
@@ -10127,13 +10247,44 @@ fn verify_fp_trap_prologue_scanner() {
     );
     refuse(
         "an .inst ahead of it",
-        &GOOD.replacen("_start:\n", "_start:\n    .inst 0x1e604000\n", 1),
+        &GOOD.replacen(
+            ".L_image_body:\n",
+            ".L_image_body:\n    .inst 0x1e604000\n",
+            1,
+        ),
         &[],
         &[],
     );
     refuse(
         "a label ahead of it",
-        &GOOD.replacen("_start:\n", "_start:\nearly:\n", 1),
+        &GOOD.replacen(".L_image_body:\n", ".L_image_body:\nearly:\n", 1),
+        &[],
+        &[],
+    );
+    // WS-BP BP8.1: the Image header is pinned word for word, and an
+    // instruction ahead of the header is one more thing that runs before the
+    // drop to EL1.
+    refuse(
+        "an .inst ahead of the Image header",
+        &GOOD.replacen("_start:\n", "_start:\n    .inst 0x1e604000\n", 1),
+        &[],
+        &[],
+    );
+    refuse(
+        "the Image header's text_offset changed",
+        &GOOD.replacen(".quad 0x80000\n", ".quad 0x200000\n", 1),
+        &[],
+        &[],
+    );
+    refuse(
+        "the Image header's branch retargeted",
+        &GOOD.replacen("    b .L_image_body\n", "    b secondary_entry\n", 1),
+        &[],
+        &[],
+    );
+    refuse(
+        "the Image header ending at another label",
+        &GOOD.replacen(".L_image_body:\n", ".L_other:\n", 1),
         &[],
         &[],
     );
@@ -10208,8 +10359,8 @@ fn verify_fp_trap_prologue_scanner() {
     refuse(
         "the FP trap written before the drop to EL1",
         &GOOD.replacen(
-            "_start:\n    bl .L_enter_el1\n    msr     cpacr_el1, xzr\n    isb\n",
-            "_start:\n    msr     cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n",
+            ".L_image_body:\n    bl .L_enter_el1\n    msr     cpacr_el1, xzr\n    isb\n",
+            ".L_image_body:\n    msr     cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n",
             1,
         ),
         &[],
@@ -10238,6 +10389,65 @@ fn verify_fp_trap_prologue_scanner() {
 /// The first item of each boot entry, ahead of `FP_TRAP_PROLOGUE` (whose docs
 /// say why the drop to EL1 must precede the `CPACR_EL1` write).
 const EL1_ENTRY_CALL: &str = "bl .l_enter_el1";
+
+/// **WS-BP BP8.1**: the arm64 Image header `_start` begins with, statement by
+/// statement as `asm_statement_items` normalises it — a branch past the header
+/// (`code0`), `code1`, `text_offset` (the image loads 512 KiB above the base of
+/// RAM on every board, which `link.ld` asserts), `image_size` (the linker's
+/// `__kernel_image_size`), `flags` (little-endian, 4 KiB pages), three
+/// reserved words, the `ARM\x64` magic and a reserved word.  It is what a
+/// Linux-protocol loader reads to place the image and to pass the device tree
+/// in `x0` — QEMU's `-kernel` does so only for an image carrying it, and the
+/// Raspberry Pi firmware reads it too.  The branch is the only instruction that
+/// runs before the drop to EL1, and it writes no register.  A canonical-spelling
+/// contract like `FP_TRAP_PROLOGUE`: a header differing in any word is refused.
+const IMAGE_HEADER: [&str; 10] = [
+    "b .l_image_body",
+    ".word 0",
+    ".quad 0x80000",
+    ".quad __kernel_image_size",
+    ".quad 0x2",
+    ".quad 0",
+    ".quad 0",
+    ".quad 0",
+    ".word 0x644d5241",
+    ".word 0",
+];
+
+/// **WS-BP BP8.1**: the label that ends `_start`'s Image header — the branch
+/// target of its first word, and where `_start`'s executable prologue begins.
+const IMAGE_BODY_LABEL: &str = ".L_image_body";
+
+/// **WS-BP BP8.1**: the index of the first item `entry` executes after its
+/// header.  `_start` is the image's first byte and so carries the arm64 Image
+/// header (`IMAGE_HEADER`) then `IMAGE_BODY_LABEL`; every other boot entry
+/// begins at its label.  A `_start` whose header differs in any word, or that
+/// does not end it at the body label, is refused.
+fn entry_body_index(items: &[AsmItem], entry: &str, at: usize) -> Result<usize, String> {
+    if entry != "_start" {
+        return Ok(at + 1);
+    }
+    let body = at + 1 + IMAGE_HEADER.len();
+    let header = items.get(at + 1..body).unwrap_or(&[]);
+    let expected: Vec<AsmItem> = IMAGE_HEADER
+        .iter()
+        .map(|s| AsmItem::Statement((*s).to_string()))
+        .collect();
+    if header != expected.as_slice() {
+        return Err(format!(
+            "`_start` does not begin with the arm64 Image header {IMAGE_HEADER:?}; its first \
+             items are {header:?}"
+        ));
+    }
+    if items.get(body) != Some(&AsmItem::Label(IMAGE_BODY_LABEL.to_string())) {
+        return Err(format!(
+            "`_start`'s Image header is not followed by `{IMAGE_BODY_LABEL}:`; the item there \
+             is {:?}",
+            items.get(body)
+        ));
+    }
+    Ok(body + 1)
+}
 
 /// What `_start` does with the entry level `.L_enter_el1` reports in `x9`:
 /// keep it in a callee-saved register through BSS zeroing and hand it to
@@ -10441,7 +10651,7 @@ fn el1_entry_status(
         };
         // The v0.36.2 audit: the call is the entry's FIRST item, and the FP
         // prologue follows it — see `FP_TRAP_PROLOGUE`.
-        let call = at + 1;
+        let call = entry_body_index(&items, entry, at)?;
         if texts.get(call).map(String::as_str) != Some(EL1_ENTRY_CALL) {
             return Err(format!(
                 "`{entry}` does not call `.L_enter_el1` as its first item; the item there \
@@ -10591,10 +10801,11 @@ fn el1_entry_fixture() -> String {
         })
         .collect();
     format!(
-        "_start:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n    mov x20, x9\n\
+        "_start:\n{header}    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n    mov x20, x9\n\
          \x20   mov x19, x0\n    mov x0, x19\n    mov x1, x20\n    bl rust_boot_main\n\
          secondary_entry:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n    msr daifset, #0xf\n\
-         {routine}"
+         {routine}",
+        header = image_header_fixture!()
     )
 }
 
@@ -10643,8 +10854,8 @@ fn verify_el1_entry_scanner() {
     refuse(
         "the FP trap written before the drop to EL1",
         &mutate(
-            "_start:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n",
-            "_start:\n    msr cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n",
+            ".L_image_body:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n",
+            ".L_image_body:\n    msr cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n",
         ),
         &[],
         &[],

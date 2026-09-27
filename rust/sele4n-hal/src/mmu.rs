@@ -537,14 +537,36 @@ pub const fn compute_sctlr_el1_bitmap() -> u64 {
 /// `tests::the_kernel_reserved_extent_is_the_lean_and_linker_one` compares with
 /// both.  `scripts/check_link_script.py` reads the linked symbol against the
 /// same fixture line.
-pub const KERNEL_RESERVED_END: u64 = 0x1000_0000;
+pub const KERNEL_RESERVED_END: u64 = crate::board::BOARD.kernel_reserved_end;
+
+/// **WS-BP BP8.1**: the first byte of the kernel's reserved extent — the base
+/// of the board's RAM (`board::BoardMap::ram_base`): `0` on the Raspberry Pi 5,
+/// `0x4000_0000` on QEMU's `virt`.  The extent is
+/// `[KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)`, and nothing below it is RAM
+/// on either board, so the boot map maps nothing there Normal.
+pub const KERNEL_RESERVED_BASE: u64 = crate::board::BOARD.ram_base;
+
+/// **WS-BP BP8.1**: is `addr` inside the kernel's reserved extent
+/// `[KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)`?  The one spelling of the
+/// question: an address below the base wraps to above the extent's length.
+#[must_use]
+pub const fn in_kernel_reserved_extent(addr: u64) -> bool {
+    addr.wrapping_sub(KERNEL_RESERVED_BASE) < KERNEL_RESERVED_END - KERNEL_RESERVED_BASE
+}
+
+/// **WS-BP BP8.1**: the level-1 index of the gigabyte holding the reserved
+/// extent — the one `l2_ram` describes.
+const RAM_GIB: usize = (KERNEL_RESERVED_BASE / L1_BLOCK_SIZE) as usize;
 
 // The reserved extent is whole 2 MiB blocks inside the first gigabyte, whose
 // level-2 table describes it — a fact about constants, so the compiler decides
 // it rather than a test.  Whole blocks, because the RAM an extension adds past
 // it starts on a block boundary (`extend_boot_tables`).
 const _: () = assert!(
-    KERNEL_RESERVED_END <= L1_BLOCK_SIZE && KERNEL_RESERVED_END.is_multiple_of(L2_BLOCK_SIZE)
+    KERNEL_RESERVED_BASE.is_multiple_of(L1_BLOCK_SIZE)
+        && KERNEL_RESERVED_BASE < KERNEL_RESERVED_END
+        && KERNEL_RESERVED_END - KERNEL_RESERVED_BASE <= L1_BLOCK_SIZE
+        && KERNEL_RESERVED_END.is_multiple_of(L2_BLOCK_SIZE)
 );
 
 /// **WS-BP BP7.1**: the number of 4 KiB pages in the boot's table-page pool —
@@ -610,7 +632,7 @@ pub fn zero_boot_table_pool() {
 /// UART and interrupt controller unmapped, and the first console write or GIC
 /// access would have gone to RAM.  Every address between the RAM the boot
 /// maps and this one is **unmapped**.
-pub const DEVICE_WINDOW_BASE: u64 = 0x10_7C00_0000;
+pub const DEVICE_WINDOW_BASE: u64 = crate::board::BOARD.device_window_base;
 
 /// One past the last byte of the device window — exactly the end of the
 /// `.device` region `rpi5MemoryMapForConfig` declares, and the end of the
@@ -621,7 +643,7 @@ pub const DEVICE_WINDOW_BASE: u64 = 0x10_7C00_0000;
 /// `0xFF85_0000`, not a block boundary, and a level-3 table described the one
 /// straddling block; with nothing left to straddle that table is deleted
 /// rather than kept describing nothing.)
-pub const DEVICE_WINDOW_TOP: u64 = 0x10_8000_0000;
+pub const DEVICE_WINDOW_TOP: u64 = crate::board::BOARD.device_window_top;
 
 /// What the boot tables map an address as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -683,6 +705,7 @@ impl ImageLayout {
             && self.rodata_end.is_multiple_of(L3_PAGE_SIZE)
             && self.text_start < self.text_end
             && self.text_end <= self.rodata_end
+            && in_kernel_reserved_extent(self.text_start)
             && self.rodata_end <= KERNEL_RESERVED_END
     }
 
@@ -703,7 +726,7 @@ impl ImageLayout {
 /// every other address is unmapped.
 #[must_use]
 pub const fn boot_mapping_for(addr: u64, layout: &ImageLayout) -> BootMapping {
-    if addr < KERNEL_RESERVED_END {
+    if in_kernel_reserved_extent(addr) {
         if layout.text_start <= addr && addr < layout.text_end {
             BootMapping::KernelText
         } else if layout.text_end <= addr && addr < layout.rodata_end {
@@ -780,7 +803,7 @@ pub const fn ram_range_covered(base: u64, size: u64, extensions: &[(u64, u64)]) 
             return true;
         }
         let mut next = None;
-        if cursor < KERNEL_RESERVED_END {
+        if in_kernel_reserved_extent(cursor) {
             next = Some(KERNEL_RESERVED_END);
         }
         let mut i = 0;
@@ -968,7 +991,7 @@ const _: () = assert!(
     "BootPageTables must be a whole number of 4 KiB translation tables"
 );
 // The device window is described by one L2 table, in a gigabyte of its own.
-const _: () = assert!(DEVICE_GIB != 0);
+const _: () = assert!(DEVICE_GIB != RAM_GIB);
 const _: () = assert!(DEVICE_WINDOW_BASE.is_multiple_of(L2_BLOCK_SIZE));
 const _: () = assert!(DEVICE_WINDOW_TOP <= (DEVICE_GIB as u64 + 1) * L1_BLOCK_SIZE);
 // The BCM2712 address-map correction: the window's top is the Lean extent and a
@@ -1056,7 +1079,7 @@ fn gigabytes_of(base: u64, end: u64) -> impl Iterator<Item = (usize, u64, u64)> 
 /// One answer for both passes of [`extend_boot_tables`], so the pass that
 /// decides and the pass that writes cannot pick different tables.
 fn level2_table(tables: &mut BootPageTables, g: usize) -> Option<&mut [u64; TABLE_ENTRIES]> {
-    if g == 0 {
+    if g == RAM_GIB {
         Some(&mut tables.l2_ram)
     } else if g == DEVICE_GIB {
         Some(&mut tables.l2_device)
@@ -1292,11 +1315,12 @@ fn populate_boot_tables(tables: &mut BootPageTables, base_pa: u64, layout: &Imag
     // the RAM the firmware reports past it) and the device window; nothing
     // else.
     tables.l1 = [0; TABLE_ENTRIES];
-    tables.l1[0] = table_descriptor(base_pa, L2_RAM_TABLE);
+    tables.l1[RAM_GIB] = table_descriptor(base_pa, L2_RAM_TABLE);
     tables.l1[DEVICE_GIB] = table_descriptor(base_pa, L2_DEVICE_TABLE);
 
+    let ram_gib_base = (RAM_GIB as u64) * L1_BLOCK_SIZE;
     for (i, entry) in tables.l2_ram.iter_mut().enumerate() {
-        let base = (i as u64) * L2_BLOCK_SIZE;
+        let base = ram_gib_base + (i as u64) * L2_BLOCK_SIZE;
         *entry = match image_l3_slot(layout, base) {
             Some(slot) => table_descriptor(base_pa, L3_IMAGE_TABLE_BASE + slot as u64),
             None => block_descriptor(base, boot_mapping_for(base, layout)),
@@ -1541,8 +1565,9 @@ pub fn init_mmu(dtb_ptr: u64) {
     if !dtb_window_admissible(dtb_window(dtb_ptr), kernel_extent()) {
         crate::kprintln!(
             "[boot] FATAL: the device tree at {:#x} is not in the kernel's reserved extent \
-             [0, {:#x}) outside the image, its stacks and the Lean heap arena; refusing to read it",
+             [{:#x}, {:#x}) outside the image, its stacks and the Lean heap arena; refusing to read it",
             dtb_ptr,
+            KERNEL_RESERVED_BASE,
             KERNEL_RESERVED_END
         );
         crate::cpu::fatal_halt();
@@ -1651,7 +1676,7 @@ pub const fn dtb_window(dtb_ptr: u64) -> (u64, u64) {
 /// **WS-BP BP2.6**: may the boot read the device tree at `window`?
 ///
 /// The window must lie wholly inside the kernel's reserved extent —
-/// `[0, KERNEL_RESERVED_END)`, which the boot map covers and no boot untyped
+/// `[KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)`, which the boot map covers and no boot untyped
 /// may describe (WS-BP BP3.2), so the blob is never memory a thread was handed
 /// — and be disjoint from `kernel`, the memory the image owns.  An empty window
 /// (a null pointer) reads nothing and is accepted; a window whose end overflows
@@ -1663,7 +1688,9 @@ pub const fn dtb_window_admissible(window: (u64, u64), kernel: (u64, u64)) -> bo
         return true;
     }
     match base.checked_add(size) {
-        Some(end) if end <= KERNEL_RESERVED_END => dtb_disjoint_from_image(window, &[kernel]),
+        Some(end) if in_kernel_reserved_extent(base) && end <= KERNEL_RESERVED_END => {
+            dtb_disjoint_from_image(window, &[kernel])
+        }
         _ => false,
     }
 }
@@ -1761,6 +1788,60 @@ pub fn init_mmu_secondary(core_id: u64) {
         "init_mmu_secondary called with core_id 0 — use init_mmu() for the primary"
     );
     init_mmu_per_core(core_id);
+}
+
+/// **The BCM2712 address-map correction (v0.36.2)**: the MMIO window the Lean
+/// binding programs under `name` (`uart`, `gicd`, `gicc`), as `(base, size)`,
+/// read from the `mmio` lines `tests/Ak9PlatformSuite.lean` writes into
+/// `tests/fixtures/boot_map.expected` from `mmioRegions`.
+///
+/// The UART and GIC drivers' tests compare their base constants with this, so
+/// the two sides are compared by running both.  Before it they asserted a
+/// literal beside a comment naming `Board.lean`, and both sides then carried
+/// the BCM2711's addresses together while every test passed.
+#[cfg(test)]
+pub(crate) fn lean_mmio_window(name: &str) -> (u64, u64) {
+    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+    let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
+    let mut found = None;
+    for line in LEAN_TABLE.lines() {
+        let mut cols = line.split_whitespace();
+        if cols.next() == Some("mmio") && cols.next() == Some(name) {
+            let base = hex(cols.next().expect("an mmio line carries a base"));
+            let size = hex(cols.next().expect("an mmio line carries a size"));
+            assert!(
+                found.is_none(),
+                "two `mmio {name}` lines in the boot-map table"
+            );
+            found = Some((base, size));
+        }
+    }
+    found.unwrap_or_else(|| panic!("no `mmio {name}` line in the boot-map table"))
+}
+
+/// **The v0.36.2 audit**: a single-valued line of the shared boot-map table —
+/// `physicalAddressWidth <bits>` (read back against the PE's `PARange` above)
+/// and `declaredCores <n>` (read back by `boot.rs` against the handoff's
+/// `LEAN_DECLARED_CORE_COUNT`) — as `tests/Ak9PlatformSuite.lean` writes it
+/// into `tests/fixtures/boot_map.expected`.  Exactly one line carries `key`,
+/// and it carries exactly one hexadecimal value.
+#[cfg(test)]
+pub(crate) fn lean_boot_map_scalar(key: &str) -> u64 {
+    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+    let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
+    let mut found = None;
+    for line in LEAN_TABLE.lines() {
+        let mut cols = line.split_whitespace();
+        if cols.next() == Some(key) {
+            let value = hex(cols
+                .next()
+                .unwrap_or_else(|| panic!("a `{key}` line carries a value")));
+            assert!(cols.next().is_none(), "a `{key}` line carries one value");
+            assert!(found.is_none(), "two `{key}` lines in the boot-map table");
+            found = Some(value);
+        }
+    }
+    found.unwrap_or_else(|| panic!("no `{key}` line in the boot-map table"))
 }
 
 #[cfg(test)]
@@ -2234,61 +2315,12 @@ mod tests {
 // predicate address by address rather than checking that both exist.
 // ===========================================================================
 
-/// **The BCM2712 address-map correction (v0.36.2)**: the MMIO window the Lean
-/// binding programs under `name` (`uart`, `gicd`, `gicc`), as `(base, size)`,
-/// read from the `mmio` lines `tests/Ak9PlatformSuite.lean` writes into
-/// `tests/fixtures/boot_map.expected` from `mmioRegions`.
-///
-/// The UART and GIC drivers' tests compare their base constants with this, so
-/// the two sides are compared by running both.  Before it they asserted a
-/// literal beside a comment naming `Board.lean`, and both sides then carried
-/// the BCM2711's addresses together while every test passed.
+// WS-BP BP8.1: these tests drive the Raspberry Pi 5's boot map against
+// `tests/fixtures/boot_map.expected`, the Lean suite's account of the RPi5, so
+// they are the RPi5 board's; the QEMU `virt` board is held to its own Lean
+// binding by the slice that writes it.
 #[cfg(test)]
-pub(crate) fn lean_mmio_window(name: &str) -> (u64, u64) {
-    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
-    let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
-    let mut found = None;
-    for line in LEAN_TABLE.lines() {
-        let mut cols = line.split_whitespace();
-        if cols.next() == Some("mmio") && cols.next() == Some(name) {
-            let base = hex(cols.next().expect("an mmio line carries a base"));
-            let size = hex(cols.next().expect("an mmio line carries a size"));
-            assert!(
-                found.is_none(),
-                "two `mmio {name}` lines in the boot-map table"
-            );
-            found = Some((base, size));
-        }
-    }
-    found.unwrap_or_else(|| panic!("no `mmio {name}` line in the boot-map table"))
-}
-
-/// **The v0.36.2 audit**: a single-valued line of the shared boot-map table —
-/// `physicalAddressWidth <bits>` (read back against the PE's `PARange` above)
-/// and `declaredCores <n>` (read back by `boot.rs` against the handoff's
-/// `LEAN_DECLARED_CORE_COUNT`) — as `tests/Ak9PlatformSuite.lean` writes it
-/// into `tests/fixtures/boot_map.expected`.  Exactly one line carries `key`,
-/// and it carries exactly one hexadecimal value.
-#[cfg(test)]
-pub(crate) fn lean_boot_map_scalar(key: &str) -> u64 {
-    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
-    let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
-    let mut found = None;
-    for line in LEAN_TABLE.lines() {
-        let mut cols = line.split_whitespace();
-        if cols.next() == Some(key) {
-            let value = hex(cols
-                .next()
-                .unwrap_or_else(|| panic!("a `{key}` line carries a value")));
-            assert!(cols.next().is_none(), "a `{key}` line carries one value");
-            assert!(found.is_none(), "two `{key}` lines in the boot-map table");
-            found = Some(value);
-        }
-    }
-    found.unwrap_or_else(|| panic!("no `{key}` line in the boot-map table"))
-}
-
-#[cfg(test)]
+#[cfg(not(feature = "board_qemu_virt"))]
 mod boot_map_tests {
     use super::*;
     // WS-BP BP0.4: the Lean-table test parses a checked-in fixture into `Vec`s.

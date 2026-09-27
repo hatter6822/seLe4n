@@ -22,6 +22,32 @@
 
 _start:
     // =====================================================================
+    // The arm64 Image header (Linux `Documentation/arch/arm64/booting.rst`,
+    // WS-BP BP8.1).  `_start` is the image's first byte, so the header is
+    // its first 64 bytes: a branch past them, then the words a
+    // Linux-protocol loader reads — QEMU's `-kernel` places an image carrying
+    // this header at `text_offset` above the base of RAM and passes the
+    // device tree in x0 (it passes nothing to a headerless one), and the
+    // Raspberry Pi firmware reads it too.  `text_offset` is 512 KiB on every
+    // board (`link.ld` asserts `ORIGIN(RAM) == RAM_BASE + 0x80000`);
+    // `image_size` is the memory the image owns from `_start`, its NOLOAD
+    // stacks and Lean heap included (`__kernel_image_size`), so a loader
+    // places nothing inside it; `flags` = little-endian, 4 KiB pages.  The
+    // branch is the only instruction that runs before the drop to EL1, and
+    // it writes no register.  `build.rs` (`IMAGE_HEADER`) pins every word.
+    // =====================================================================
+    b       .L_image_body           // code0: branch past the header
+    .word   0                       // code1
+    .quad   0x80000                 // text_offset
+    .quad   __kernel_image_size     // image_size
+    .quad   0x2                     // flags: little-endian, 4 KiB pages
+    .quad   0                       // res2
+    .quad   0                       // res3
+    .quad   0                       // res4
+    .word   0x644d5241              // magic: "ARM\x64"
+    .word   0                       // res5
+.L_image_body:
+    // =====================================================================
     // Step 0: reach EL1 before anything else runs.  The Raspberry Pi 5
     // firmware enters a 64-bit kernel at EL2; QEMU's `virt` machine enters
     // at EL1.  `.L_enter_el1` returns at EL1 either way, with x0 (the DTB

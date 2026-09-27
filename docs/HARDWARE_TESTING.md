@@ -435,18 +435,23 @@ identifier lookup is a single `mrs xN, tpidr_el1` instruction.
 ./scripts/test_qemu.sh
 ```
 
-> Note: the script builds the real image (`sele4n-kernel`, BP5.1) and then
-> SKIPs unless `QEMU_MACHINE` names a machine, because QEMU models no
-> BCM2712 and the image's console and GIC are the BCM2712's (WS-BP BP8.1
-> owns the machine).  Once it runs, the assertions are **hard failures**:
-> empty serial output, a missing boot banner, or
-> any fragment of `tests/fixtures/qemu_boot_expected.txt` absent from the
-> boot log fails the script — a hung kernel cannot soft-pass.
+> Note: QEMU models no BCM2712, so the script builds the image for QEMU's
+> `virt` machine (`--features kernel_image,board_qemu_virt`, WS-BP BP8.1:
+> `virt`'s device map from `rust/sele4n-hal/src/board.rs`, its link script
+> derived from `link.ld`), cuts the raw binary — QEMU passes the device tree
+> in `x0` only to an image carrying the arm64 Image header — and boots it
+> twice: at QEMU's default EL1 entry, and with `virtualization=on` at EL2, as
+> the Raspberry Pi firmware enters.  The assertions are **hard failures**:
+> empty serial output, a fatal line, any fragment of
+> `tests/fixtures/qemu_boot_expected.txt` absent from the boot log **or out of
+> the fixture's order**, or a run whose entry level and PSCI conduit are not
+> the ones its machine implies — a hung kernel cannot soft-pass.  To boot
+> another image on another machine, name both (`KERNEL_BIN`, `QEMU_MACHINE`).
 
 The kernel boot log on the primary core MUST contain:
 
 ```
-[boot] Timer initialized (54 MHz counter, 1ms ticks)
+[boot] Timer initialized (<CNTFRQ_EL0> Hz counter, 1ms ticks)
 [boot] TPIDR_EL1 set early (Phase 1) to PER_CPU_DATA[0] = 0x<addr>
 [boot] current_core_id_from_tpidr() = 0
 [boot] IRQ delivery enabled

@@ -18,20 +18,15 @@
 #   - qemu-system-aarch64 installed (QEMU >= 8.0)
 #   - Rust toolchain with aarch64-unknown-none-softfloat target
 #   - cargo build --release --target aarch64-unknown-none-softfloat
-#     --features kernel_image --bin sele4n-kernel completes (WS-BP BP5.1's
-#     bare-metal image; the Rust half boots on its own, and KERNEL_BIN may
-#     name the archive lane's Lean-linked image instead)
-#   - a QEMU machine that models the BCM2712 -- which QEMU does not ship
-#     (the v0.36.2 audit).  The image programs the BCM2712's UART10, GIC-400
-#     and SoC-bus window (`SeLe4n/Platform/RPi5/Board.lean`), so on `raspi4b`
-#     (a BCM2711) or `virt` its first console write faults and its device-tree
-#     check refuses the board.  QEMU_MACHINE is therefore unset by default and
-#     the lane SKIPs after building the image; WS-BP BP8.1 owns the machine.
+#     --features kernel_image,board_qemu_virt --bin sele4n-kernel completes
+#     (WS-BP BP8.1: the image built for QEMU's `virt` machine -- QEMU models no
+#     BCM2712, so the Raspberry Pi 5 image meets no device under it; the Rust
+#     half boots on its own, and KERNEL_BIN may name another image instead)
 #
 # Usage:
-#   ./scripts/test_qemu.sh              # Build the image; SKIP (no BCM2712 machine)
-#   QEMU_MACHINE=raspi4b ./scripts/test_qemu.sh   # Run it on a named machine anyway
-#   QEMU_TIMEOUT=120 ./scripts/test_qemu.sh  # Custom timeout (seconds)
+#   ./scripts/test_qemu.sh              # Build the virt image; boot it at EL1 and at EL2
+#   KERNEL_BIN=… QEMU_MACHINE=… ./scripts/test_qemu.sh   # Boot a named image on a named machine
+#   QEMU_TIMEOUT=30 ./scripts/test_qemu.sh  # Custom per-boot timeout (seconds)
 #
 # CI Integration:
 #   A gate that cannot run certifies nothing, so an unavailable prerequisite
@@ -51,7 +46,7 @@ cd "${REPO_ROOT}"
 
 # ── Configuration ──────────────────────────────────────────────────────────
 QEMU_BIN="${QEMU_BIN:-qemu-system-aarch64}"
-QEMU_TIMEOUT="${QEMU_TIMEOUT:-60}"
+QEMU_TIMEOUT="${QEMU_TIMEOUT:-10}"
 QEMU_MACHINE="${QEMU_MACHINE:-}"
 QEMU_CPU="${QEMU_CPU:-cortex-a76}"
 QEMU_MEMORY="${QEMU_MEMORY:-1G}"
@@ -60,7 +55,7 @@ RUST_DIR="${REPO_ROOT}/rust"
 RUST_TARGET="aarch64-unknown-none-softfloat"
 # WS-BP BP5.1: the bare-metal image is the `sele4n-kernel` binary behind the
 # `kernel_image` feature; `sele4n-hal` itself is a library and builds no file
-# QEMU could boot.  A caller may name another image (the archive lane's
+# QEMU could boot.  WS-BP BP8.1: built for `virt` (`board_qemu_virt`).  A caller may name another image (the archive lane's
 # Lean-linked one) in KERNEL_BIN, in which case nothing is built here.
 KERNEL_BIN_DEFAULT="${RUST_DIR}/target/${RUST_TARGET}/release/sele4n-kernel"
 KERNEL_BIN="${KERNEL_BIN:-${KERNEL_BIN_DEFAULT}}"
@@ -111,7 +106,7 @@ if [[ "${KERNEL_BIN}" == "${KERNEL_BIN_DEFAULT}" ]]; then
     log_section "BUILD" "Building the kernel image (sele4n-kernel) for ${RUST_TARGET}..."
     cd "${RUST_DIR}"
     if ! cargo build --release --target "${RUST_TARGET}" -p sele4n-hal \
-            --features kernel_image --bin sele4n-kernel 2>"${QEMU_BUILD_LOG}"; then
+            --features kernel_image,board_qemu_virt --bin sele4n-kernel 2>"${QEMU_BUILD_LOG}"; then
         # Cross-compilation may fail without linker config — this is expected
         # in CI environments without aarch64 linker. Skip gracefully.
         log_section "META" "SKIP: Cross-compilation failed (expected without aarch64 linker)"
@@ -131,102 +126,112 @@ fi
 
 log_section "BUILD" "Kernel image: $(wc -c < "${KERNEL_BIN}") bytes"
 
-# ── A machine the image can boot on ───────────────────────────────────────
-# The image is built for the BCM2712 and QEMU models no such machine; running
-# it on `raspi4b` or `virt` faults at the first console write and refuses the
-# board at the device-tree check, so without an explicit machine the lane has
-# nothing it can certify (WS-BP BP8.1 owns the machine question).
-if [[ -z "${QEMU_MACHINE}" ]]; then
-    log_section "META" "SKIP: no QEMU machine models the BCM2712 the image is built for (set QEMU_MACHINE to run it on one anyway)"
-    exit "${SELE4N_SKIP_EXIT:-77}"
+# ── WS-BP BP8.1: QEMU's `virt`, at both entry levels ───────────────────────
+# QEMU models no BCM2712, so the lane boots the image built for `virt`
+# (`board_qemu_virt`, rust/sele4n-hal/src/board.rs): `virt`'s device map and
+# RAM base, the same kernel otherwise.  QEMU passes the device tree in x0 only
+# to an image carrying the arm64 Image header, so it is handed the raw binary
+# cut from the ELF, never the ELF.  It runs twice — at QEMU's default EL1
+# entry, and with `virtualization=on`, where QEMU enters at EL2 as the
+# Raspberry Pi firmware does, so the drop to EL1 and the SMC conduit execute
+# before the board is the first thing to run them.  An image named by
+# KERNEL_BIN runs on the machine named by QEMU_MACHINE instead, once.
+OBJCOPY=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from check_fp_simd_free_objects import rust_llvm_tool; print(rust_llvm_tool("llvm-objcopy"))' "${SCRIPT_DIR}")
+QEMU_IMAGE=$(mktemp /tmp/qemu_image_XXXXXX.img)
+trap 'cleanup; rm -f "${QEMU_IMAGE}"' EXIT
+if ! "${OBJCOPY}" -O binary "${KERNEL_BIN}" "${QEMU_IMAGE}"; then
+    record_failure "BUILD" "${OBJCOPY} could not cut a raw image from ${KERNEL_BIN}"
+    finalize_report
 fi
 
-# ── QEMU boot test (temp logs created above, before first use) ────────────
-
-log_section "TRACE" "RUN: QEMU boot test (timeout: ${QEMU_TIMEOUT}s)"
-
-# Launch QEMU with serial output to file, kill after timeout
-timeout "${QEMU_TIMEOUT}" "${QEMU_BIN}" \
-    -machine "${QEMU_MACHINE}" \
-    -cpu "${QEMU_CPU}" \
-    -m "${QEMU_MEMORY}" \
-    -kernel "${KERNEL_BIN}" \
-    -serial stdio \
-    -display none \
-    -no-reboot \
-    -semihosting \
-    > "${QEMU_LOG}" 2>&1 || true
-
-# ── Validate boot output ──────────────────────────────────────────────────
+FIXTURE="${REPO_ROOT}/tests/fixtures/qemu_boot_expected.txt"
 BOOT_PASS=true
 
-# Check 1: UART boot banner — mandatory: a kernel that boots without its
-# banner is a failed boot (the KERNEL_BIN SKIP above is the only soft path)
-if grep -q "seLe4n" "${QEMU_LOG}" 2>/dev/null; then
-    log_section "TRACE" "PASS: Boot banner detected"
-else
-    record_failure "TRACE" "Boot banner not detected"
-    BOOT_PASS=false
-fi
-
-# Check 2: Non-empty output — mandatory: a silent QEMU run is a hung or
-# dead kernel, not a pass
-if [[ -s "${QEMU_LOG}" ]]; then
-    log_section "TRACE" "PASS: QEMU produced output (UART functional)"
-    QEMU_LINES=$(wc -l < "${QEMU_LOG}")
-    log_section "TRACE" "      Output: ${QEMU_LINES} lines"
-else
-    record_failure "TRACE" "QEMU produced no output (hung or dead kernel)"
-    BOOT_PASS=false
-fi
-
-# Check 3: No fatal exceptions in output
-if grep -qi "fatal\|panic\|unhandled.*exception\|SError" "${QEMU_LOG}" 2>/dev/null; then
-    record_failure "TRACE" "Fatal exception detected in QEMU output"
-    BOOT_PASS=false
-else
-    log_section "TRACE" "PASS: No fatal exceptions in boot output"
-fi
-
-# Check 4: QEMU did not crash or segfault
-if grep -qi "segfault\|core dumped\|aborted" "${QEMU_LOG}" 2>/dev/null; then
-    record_failure "TRACE" "QEMU crashed during boot"
-    BOOT_PASS=false
-else
-    log_section "TRACE" "PASS: QEMU completed without crash"
-fi
-
-# Check 5: Structured boot sequence validation from fixture — every fragment
-# is mandatory once QEMU has run; an empty log already failed Check 2, so the
-# -s guard only suppresses duplicate per-fragment reports
-FIXTURE="${REPO_ROOT}/tests/fixtures/qemu_boot_expected.txt"
-if [[ ! -f "${FIXTURE}" ]]; then
-    record_failure "TRACE" "Boot fixture missing: ${FIXTURE}"
-    BOOT_PASS=false
-elif [[ -s "${QEMU_LOG}" ]]; then
-    log_section "TRACE" "Validating boot sequence against ${FIXTURE##*/}..."
+# boot_once LABEL MACHINE [FRAGMENT...]: boot the image on MACHINE and require
+# the fixture's fragments IN ORDER, then each extra FRAGMENT anywhere.
+boot_once() {
+    local label="$1" machine="$2"
+    shift 2
+    log_section "TRACE" "RUN: ${label} — -machine ${machine} (timeout: ${QEMU_TIMEOUT}s)"
+    : > "${QEMU_LOG}"
+    timeout "${QEMU_TIMEOUT}" "${QEMU_BIN}" \
+        -machine "${machine}" \
+        -cpu "${QEMU_CPU}" \
+        -smp 1 \
+        -m "${QEMU_MEMORY}" \
+        -kernel "${QEMU_IMAGE}" \
+        -serial "file:${QEMU_LOG}" \
+        -monitor none \
+        -display none \
+        -no-reboot || true
+    tr -d '\r' < "${QEMU_LOG}" > "${QEMU_LOG}.txt"
+    mv "${QEMU_LOG}.txt" "${QEMU_LOG}"
+    if [[ ! -s "${QEMU_LOG}" ]]; then
+        record_failure "TRACE" "${label}: QEMU produced no output (hung or dead kernel)"
+        BOOT_PASS=false
+        return
+    fi
+    if grep -qi "fatal\|panic\|unhandled.*exception\|SError" "${QEMU_LOG}"; then
+        record_failure "TRACE" "${label}: fatal exception in boot output: $(grep -i -m1 'fatal\|panic\|unhandled.*exception\|SError' "${QEMU_LOG}")"
+        BOOT_PASS=false
+    fi
+    # The fixture's fragments in the order the fixture lists them: each must
+    # occur on a line after the previous fragment's line.
+    local after=0 check_name fragment line
     while IFS='|' read -r check_name fragment; do
-        # Skip comments and blank lines
         [[ "${check_name}" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "${check_name}" ]] && continue
+        [[ -z "${check_name// /}" ]] && continue
         check_name=$(echo "${check_name}" | xargs)
         fragment=$(echo "${fragment}" | xargs)
-        if grep -q "${fragment}" "${QEMU_LOG}" 2>/dev/null; then
-            log_section "TRACE" "PASS: ${check_name} — '${fragment}' found"
+        # No match is grep's status 1, which `set -e -o pipefail` would turn
+        # into a silent exit; it is a missing fragment, and is reported.
+        line=$(tail -n "+$((after + 1))" "${QEMU_LOG}" | grep -n -F -m1 -- "${fragment}" | cut -d: -f1) || line=""
+        if [[ -n "${line}" ]]; then
+            after=$((after + line))
+            log_section "TRACE" "PASS: ${label}: ${check_name} — '${fragment}' at line ${after}"
         else
-            record_failure "TRACE" "${check_name} — '${fragment}' missing from boot log"
+            record_failure "TRACE" "${label}: ${check_name} — '${fragment}' missing after line ${after}"
             BOOT_PASS=false
         fi
     done < "${FIXTURE}"
+    for fragment in "$@"; do
+        if grep -q -F -- "${fragment}" "${QEMU_LOG}"; then
+            log_section "TRACE" "PASS: ${label}: '${fragment}'"
+        else
+            record_failure "TRACE" "${label}: '${fragment}' missing from boot log"
+            BOOT_PASS=false
+        fi
+    done
+    log_section "TRACE" "${label}: $(wc -l < "${QEMU_LOG}") lines of boot output"
+}
+
+if [[ ! -f "${FIXTURE}" ]]; then
+    record_failure "TRACE" "Boot fixture missing: ${FIXTURE}"
+    finalize_report
+fi
+# The fixture's `.sha256` companion (WS-BP BP8.1: it landed with the boot path
+# this lane now runs): a fixture edit must be paired with a hash refresh in the
+# same commit, as Tier 2 requires of every `.expected` fixture.  Tier 2's sweep
+# reads `*.expected.sha256` only, so this lane checks its own.
+if ! (cd "$(dirname "${FIXTURE}")" && sha256sum -c "$(basename "${FIXTURE}").sha256" > /dev/null 2>&1); then
+    record_failure "TRACE" "${FIXTURE##*/} does not match its .sha256 companion (cd tests/fixtures && sha256sum ${FIXTURE##*/} > ${FIXTURE##*/}.sha256)"
+    finalize_report
+fi
+
+if [[ -n "${QEMU_MACHINE}" ]]; then
+    boot_once "the image on ${QEMU_MACHINE}" "${QEMU_MACHINE}"
+else
+    boot_once "virt, EL1 entry" "virt,gic-version=2" \
+        "booting on QEMU virt" "Entered at EL1, running at EL1" "PSCI conduit: Hvc"
+    boot_once "virt, EL2 entry" "virt,gic-version=2,virtualization=on" \
+        "booting on QEMU virt" "Entered at EL2, running at EL1" "PSCI conduit: Smc"
 fi
 
 # ── Summary ────────────────────────────────────────────────────────────────
-log_section "META" "QEMU boot log: ${QEMU_LOG}"
-
 if [[ "${BOOT_PASS}" = true ]]; then
-    log_section "META" "PASS: AG9-A QEMU integration tests"
+    log_section "META" "PASS: QEMU boot"
 else
-    log_section "META" "FAIL: AG9-A QEMU integration tests — see ${QEMU_LOG}"
+    log_section "META" "FAIL: QEMU boot"
 fi
 
 finalize_report

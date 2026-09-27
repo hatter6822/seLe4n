@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.23.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.24.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7155,7 +7155,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7177,7 +7177,7 @@ untyped it was carved from), and at `v0.36.7` the security fix that slice 3
 found (a frame capability owns the mapping it made, so destroying it unmaps),
 and at `v0.36.8` its slice 4a (an untyped carves child untypeds, and a reset
 returns everything carved from it at any depth), and the rest of BP7 through
-`v0.36.23` (the paragraphs below); BP8 has not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.23` (the paragraphs below); BP8.1's first slice landed at `v0.36.24` (the last paragraph below).  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -8550,6 +8550,43 @@ rewriting, never by unfolding a bind against them**: the deployment's proofs go
 through `bootFromPlatformCheckedStartedFor_of_idle`, stated over variables,
 because a defeq check that reaches `startInitialThreads` of a concrete list
 evaluates `initialThreadStartable` against the whole boot state and times out.
+
+**The image runs under QEMU, on `virt`** (`v0.36.24`, BP8.1 slice 1).  QEMU
+ships no BCM2712, and `virt` is its one machine carrying PSCI, a GICv2 and a
+PL011, so BP8.1's answer is a QEMU device map from a platform binding.  Six
+things new code must respect.  (1) **The board is a build-time choice with one
+home**: `rust/sele4n-hal/src/board.rs`'s `BoardMap` holds every board-dependent
+constant the boot path reads — RAM base, reserved extent, device window, PL011
+base and clock, GIC bases — `RPI5` by default and `QEMU_VIRT` under
+`board_qemu_virt`, and `mmu`, `uart` and `gic` read them off `BOARD`.  A new
+board is one more `BoardMap`; its shape is decided by a `const` assertion on
+every board, so a malformed one fails every build.  (2) **The reserved extent
+is `[KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)`**, at the base of a
+gigabyte-aligned RAM: membership is `mmu::in_kernel_reserved_extent` (offset
+form, since `0 <= x` is an absurd comparison clippy refuses on the RPi5), and
+the boot tables put `l2_ram` at the RAM's gigabyte (`RAM_GIB`), never at index
+0.  (3) **`link.ld` is the RPi5's and the `virt` script is derived from it**:
+`build.rs`'s `board_link_script` rewrites exactly the three board lines
+(`RAM_BASE`, `KERNEL_RESERVED_END`, `MEMORY`'s `ORIGIN`) from `board.rs` and
+nothing else, and refuses to build either image if `link.ld`'s three do not
+state `RPI5`'s.  The image loads 512 KiB above RAM on both boards, which a
+`link.ld` `ASSERT` holds.  (4) **`_start` begins with the arm64 Image header**
+(a branch past it, then `text_offset`, `image_size` = `__kernel_image_size`,
+flags and the magic): QEMU passes the device tree in `x0` only to an image
+carrying it, and hands a headerless ELF nothing.  `build.rs` pins it word for
+word (`IMAGE_HEADER`, `entry_body_index`), the prologue scanners start after it,
+and the FP/SIMD gate reads its data words as data, admitted only in `_start`'s
+first 64 bytes.  (5) **A uniprocessor GIC reads its targets as zero**: the
+distributor self-check expected `0x0101_0101` from ITARGETSR unconditionally and
+halted the first run, since `GICD_TYPER.CPUNumber = 0` makes the field RAZ/WI;
+it reads `TYPER` now (`self_check_expected`).  (6) **`scripts/test_qemu.sh` is a
+live gate**: it builds the `virt` image, cuts the raw binary, boots it at EL1
+and with `virtualization=on` at EL2, and requires `qemu_boot_expected.txt`'s
+fragments **in order** plus each run's own entry level and PSCI conduit.  The
+fixture has a `.sha256` companion the lane verifies itself.  What slice 1 does
+**not** do is run Lean: the Lean `virt` binding and its fixture are slice 2, and
+the Lean-linked boot to the first idle dispatch is slice 3.  The HAL's `virt`
+constants are held to nothing on the Lean side until slice 2.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

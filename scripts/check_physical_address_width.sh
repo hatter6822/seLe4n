@@ -224,7 +224,21 @@ expect_mmu_const() {
 # driven comparison (see the header) decides every boundary against the Lean
 # map itself.  `KERNEL_RESERVED_END` stays pinned because the linker check below
 # needs its value and `link.ld` is not something Lean states.
-expect_mmu_const KERNEL_RESERVED_END '0x1000_0000'
+# WS-BP BP8.1: the value lives in the board map the image is built for
+# (`src/board.rs`), and `link.ld` states the Raspberry Pi 5's — so the mmu
+# constant must read the board map, and the board map's RPI5 entry must carry
+# the number the linker check below holds `link.ld` to.
+expect_mmu_const KERNEL_RESERVED_END 'crate::board::BOARD\.kernel_reserved_end'
+BOARD_SRC="rust/sele4n-hal/src/board.rs"
+if ! python3 - "${BOARD_SRC}" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+m = re.search(r"pub const RPI5: BoardMap = BoardMap \{(.*?)\n\};", text, re.S)
+sys.exit(0 if m and re.search(r"^\s*kernel_reserved_end: 0x1000_0000,$", m.group(1), re.M) else 1)
+PY
+then
+  fail "${BOARD_SRC}'s RPI5 must declare \`kernel_reserved_end: 0x1000_0000,\` (WS-RR RR7.1 boot map)."
+fi
 
 # link.ld's RAM region must end exactly at KERNEL_RESERVED_END: ORIGIN + LENGTH.
 LINK_LD="rust/sele4n-hal/link.ld"
