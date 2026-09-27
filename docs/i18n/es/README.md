@@ -98,7 +98,7 @@ demostración de Lean 4:
 |----------|-------|
 | **Versión** | `0.36.23` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 431.776 en 356 archivos |
+| **LoC de producción en Lean** | 431.777 en 356 archivos |
 | **LoC de pruebas en Lean** | 88.064 en 71 suites de pruebas |
 | **Declaraciones demostradas** | 14.307 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
