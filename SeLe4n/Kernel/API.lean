@@ -135,7 +135,7 @@ completed before implementation.
 | `setPriority` | `seL4_TCB_SetPriority` | **IMPLEMENTED** (D2, v0.24.1; per-core reroute WS-SM SM8.B). Wired as `SyscallId.tcbSetPriority` to `setPriorityOnCore` in `SchedContext/PriorityManagementPerCore.lean` (`setPriorityOp` remains its boot-core instance). | Complete |
 | `setMCPriority` | `seL4_TCB_SetMCPriority` | **IMPLEMENTED** (D2, v0.24.1; per-core reroute WS-SM SM8.B). Wired as `SyscallId.tcbSetMCPriority` to `setMCPriorityOnCore` in `SchedContext/PriorityManagementPerCore.lean`. | Complete |
 | `suspend` | `seL4_TCB_Suspend` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM6.E). Wired as `SyscallId.tcbSuspend` to `suspendThreadOnCore` in `Lifecycle/Suspend.lean` (`suspendThread` remains its boot-core form). | Complete |
-| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM8.B, PR #861 round 10). Wired as `SyscallId.tcbResume` to `resumeThreadOnCoreLive` in `Lifecycle/Suspend.lean` (`resumeThread` remains its boot-core form). | Complete |
+| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM8.B, PR #861 round 10). Wired as `SyscallId.tcbResume` to `resumeThreadOnCore` in `Lifecycle/Suspend.lean` (`resumeThread` remains its boot-core form). | Complete |
 | `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | **IMPLEMENTED** (D3, v0.24.2). `setIPCBufferOp` in `Architecture/IpcBufferValidation.lean`, wired as `SyscallId.tcbSetIPCBuffer`. | Complete |
 -/
 
@@ -4959,7 +4959,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Lifecycle.Suspend.resumeThreadOnCoreLive
+            match Lifecycle.Suspend.resumeThreadOnCore
                 (retirePendingFaultForResume st vtid.val) vtid
                 (determineExecutingCore st tid) with
             | .ok (st', _) => .ok ((), st')
@@ -5449,7 +5449,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCoreLive
+          cases hRes : Lifecycle.Suspend.resumeThreadOnCore
               (retirePendingFaultForResume st vtid.val) vtid
               (determineExecutingCore st tid) with
           | error e => simp only [hRes] at hStep; cases hStep
@@ -5457,7 +5457,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact resumeThreadOnCoreLive_preserves_ipcInvariantFull
+              exact resumeThreadOnCore_preserves_ipcInvariantFull
                 (retirePendingFaultForResume st vtid.val) st' vtid _ sgiU
                 (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
@@ -5709,7 +5709,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                 -- WS-RA RA.B.5b: a rendezvous woke the blocked receiver with the
                 -- message in its `pendingMessage`; stage its return frame now
                 -- (its own boundary crossing ended `.blocks` — delivery is the
-                -- SM10.1 context restore).  Inert when the send parked instead.
+                -- context restore, WS-BP BP7.6).  Inert when the send parked instead.
                 -- PR #866 round-2: the frame's `extraCaps` is the transfer
                 -- summary's INSTALLED count — a grant-denied or slot-exhausted
                 -- transfer reports zero, never the requested `msg.caps.size`.
@@ -5985,7 +5985,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           -- `.blockedOnReceive` TCB delivers the badge into its
           -- `pendingMessage`; stage the woken thread's return frame (its own
           -- wait blocked with no frame — §3.5's split, now closed on the
-          -- staging side; delivery is the SM10.1 context restore).  The two
+          -- staging side; delivery is the context restore (WS-BP BP7.6)).  The two
           -- targets are mutually exclusive (the bound path requires an empty
           -- wait queue), and each stager is inert when its target was not
           -- woken.
@@ -6559,7 +6559,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- ordinary arm owes its woken threads, this arm owes them too.  Dropping the
   -- stash clear would leave a woken bound receiver holding a server-first reply
   -- stash the ordinary path clears; dropping the stagers would leave the woken
-  -- thread's badge undeliverable at the SM10.1 context restore.
+  -- thread's badge undeliverable at the context restore (WS-BP BP7.6).
   --
   -- Neither domain is an operand.  The source is the *actor's* — read off the
   -- subject the executing core is running — and the two destinations are the
@@ -9509,7 +9509,7 @@ theorem dispatchWithCap_tcbResume_delegates
     (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
     dispatchWithCap decoded tid gate cap st =
-      (match Lifecycle.Suspend.resumeThreadOnCoreLive
+      (match Lifecycle.Suspend.resumeThreadOnCore
               (retirePendingFaultForResume st vtid.val) vtid
               (determineExecutingCore st tid) with
        | .ok (st', _) => .ok ((), st')
@@ -9819,7 +9819,7 @@ def syscallDelegates : SyscallId → Prop
         (∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a) →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
         dispatchWithCap decoded tid gate cap st =
-          (match Lifecycle.Suspend.resumeThreadOnCoreLive
+          (match Lifecycle.Suspend.resumeThreadOnCore
                   (retirePendingFaultForResume st vtid.val) vtid
                   (determineExecutingCore st tid) with
            | .ok (st', _) => .ok ((), st')

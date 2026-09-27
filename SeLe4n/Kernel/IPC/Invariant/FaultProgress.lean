@@ -297,4 +297,278 @@ theorem faultDeliverOnCoreChecked_leaves_thread_not_runnable (lctx : LabelingCon
   unfold dispatchableOnCore at h
   exact ⟨fun hQ => h (Or.inl hQ), fun hC => h (Or.inr hC)⟩
 
+/-- **WS-BP BP7.6**: the reschedule handler makes no thread dispatchable on its
+core except the one it chose, and it chooses from that core's run queue — so a
+thread that was not dispatchable there stays so.  The queue's well-formedness is
+what ties the chooser's bucket scan to membership
+(`chooseThreadEffectiveOnCore_some_mem_runQueueOnCore`). -/
+theorem handleRescheduleSgiOnCore_preserves_not_dispatchable
+    (st st' : SystemState) (c : CoreId) (u : SeLe4n.ThreadId)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hStep : handleRescheduleSgiOnCore st c = .ok st')
+    (h : ¬ dispatchableOnCore st u c) :
+    ¬ dispatchableOnCore st' u c := by
+  unfold dispatchableOnCore at h ⊢
+  have hQ : u ∉ st.scheduler.runQueueOnCore c := fun hm => h (Or.inl hm)
+  have hC : st.scheduler.currentOnCore c ≠ some u := fun hc => h (Or.inr hc)
+  unfold handleRescheduleSgiOnCore at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · rw [← Except.ok.inj hStep]; exact h
+  · split at hStep
+    · rename_i tid hChoose _
+      have hMem : tid ∈ st.scheduler.runQueueOnCore c :=
+        (RunQueue.mem_toList_iff_mem _ tid).mp
+          (chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hwf hChoose)
+      have hu : u ≠ tid := fun hEq => hQ (hEq ▸ hMem)
+      obtain ⟨hQ', hC'⟩ :=
+        switchToThreadOnCore_preserves_not_dispatchable_onCore st st' c tid u hu hStep hQ hC
+      rintro (hm | hc)
+      · exact hQ' hm
+      · exact hC' hc
+    · rw [← Except.ok.inj hStep]; exact h
+
+-- ============================================================================
+-- §4  WS-BP BP7.6 — the delivery keeps every run queue well-formed
+-- ============================================================================
+--
+-- The reschedule handler above chooses from the executing core's run queue, and
+-- ties that choice to membership through the queue's well-formedness.  So the
+-- fault entry's progress theorem needs the queue well-formed on the state the
+-- delivery LEAVES, and a hypothesis stated there is a statement about a state no
+-- caller holds.  This section is what lets it be stated on the pre-state instead:
+-- every step of the delivery either leaves the scheduler alone, removes a thread,
+-- enqueues one, re-buckets one, or moves replenishments — and each of those keeps
+-- every core's queue well-formed.
+
+/-- **WS-BP BP7.6**: every core's run queue satisfies `RunQueue.wellFormed`. -/
+def runQueuesWellFormed (s : SchedulerState) : Prop :=
+  ∀ c : CoreId, (s.runQueueOnCore c).wellFormed
+
+/-- A removal keeps every core's queue well-formed. -/
+theorem runQueuesWellFormed_removeRunnableOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) (h : runQueuesWellFormed st.scheduler) :
+    runQueuesWellFormed (removeRunnableOnCore st tid c).scheduler := fun c' =>
+  removeRunnableOnCore_preserves_runQueueOnCore_wellFormed st tid c c' (h c')
+
+/-- A wake keeps every core's queue well-formed: it is one insert. -/
+theorem runQueuesWellFormed_wakeThread (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (h : runQueuesWellFormed st.scheduler) :
+    runQueuesWellFormed (wakeThread st tid ec).1.scheduler := fun c' => by
+  rw [wakeThread_state_eq_enqueue]
+  by_cases hc : determineTargetCore st tid = c'
+  · subst hc; exact enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed st _ tid (h _)
+  · rw [enqueueRunnableOnCore_runQueueOnCore_ne st _ c' tid hc]; exact h c'
+
+/-- The cross-core call donation keeps every core's queue well-formed: the
+rebinding writes no scheduler state and the migration writes no run queue. -/
+theorem runQueuesWellFormed_applyCallDonationOnCore
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId) (h : runQueuesWellFormed st.scheduler)
+    (hStep : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    runQueuesWellFormed st''.scheduler := by
+  obtain ⟨st1, hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid
+    receiverVtid donorHome doneeHome hStep
+  have h1 : runQueuesWellFormed st1.scheduler := by
+    rw [applyCallDonation_scheduler_eq st callerVtid receiverVtid st1 hDon]; exact h
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
+  · exact h1
+  · intro c'; rw [migrateSchedContextReplenishment_runQueueOnCore]; exact h1 c'
+
+/-- The bare cross-core Call leg keeps every core's queue well-formed. -/
+theorem endpointCallOnCore_preserves_runQueuesWellFormed
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) (h : runQueuesWellFormed st.scheduler) :
+    runQueuesWellFormed
+      (endpointCallOnCore endpointId caller msg executingCore st).1.scheduler := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact h
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact h
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact h
+  | some ep =>
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact h
+      | ok st' =>
+        simp only
+        have h1 : runQueuesWellFormed st'.scheduler := by
+          rw [endpointQueueEnqueue_scheduler_eq endpointId false caller st st' hEnq]; exact h
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact h
+        | ok st'' =>
+          simp only
+          have h2 : runQueuesWellFormed st''.scheduler := by
+            rw [storeTcbIpcStateAndMessage_scheduler_eq st' st'' caller _ _ hMsg]; exact h1
+          exact runQueuesWellFormed_removeRunnableOnCore st'' caller executingCore h2
+    | some headTid =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact h
+      | ok pair =>
+        simp only
+        have hPop' : endpointQueuePopHead endpointId true st
+            = .ok (pair.1, pair.2.1, pair.2.2) := by rw [hPop]
+        have h1 : runQueuesWellFormed pair.2.2.scheduler := by
+          rw [endpointQueuePopHead_scheduler_eq endpointId true st pair.2.2 pair.1 hPop']; exact h
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact h
+        | ok st2 =>
+          simp only
+          have h2 : runQueuesWellFormed st2.scheduler := by
+            rw [storeTcbIpcStateAndMessage_scheduler_eq pair.2.2 st2 pair.1 _ _ hMsg]; exact h1
+          have h3 := runQueuesWellFormed_wakeThread st2 pair.1 executingCore h2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact h
+          | ok st4 =>
+            simp only
+            have h4 : runQueuesWellFormed st4.scheduler := by
+              rw [storeTcbIpcStateAndMessage_scheduler_eq _ st4 caller _ _ hCS]; exact h3
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact h
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have h5 : runQueuesWellFormed st5.scheduler := by
+                rw [linkServerStashedReply_scheduler_eq st4 st5 caller pair.1 hLink]; exact h4
+              exact runQueuesWellFormed_removeRunnableOnCore st5 caller executingCore h5
+
+/-- ...and the leg with capability transfer: the transfer writes no scheduler. -/
+theorem endpointCallWithCapsOnCore_preserves_runQueuesWellFormed
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (h : runQueuesWellFormed st.scheduler) :
+    runQueuesWellFormed (endpointCallWithCapsOnCore endpointId caller msg
+      endpointRights receiverSlotBase executingCore st).1.scheduler := by
+  have hBare := endpointCallOnCore_preserves_runQueuesWellFormed endpointId caller
+    { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st h
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  | mk stCall res =>
+    rw [hCall] at hBare
+    cases res with
+    | error e => exact hBare
+    | ok sgi =>
+      simp only
+      cases hEp : st.getEndpoint? endpointId with
+      | none => simp only; split <;> exact hBare
+      | some ep =>
+        simp only
+        cases hHead : ep.receiveQ.head with
+        | none => simp only; split <;> exact hBare
+        | some receiverId =>
+          simp only
+          split
+          · exact hBare
+          · cases hRoot : lookupCspaceRoot stCall receiverId with
+            | none => exact hBare
+            | some recvRoot =>
+              simp only
+              cases hUnwrap : ipcUnwrapCaps
+                  { msg with capsGranted := endpointRights.mem AccessRight.grant }
+                  recvRoot receiverSlotBase
+                  (endpointRights.mem AccessRight.grant) stCall with
+              | error e => exact hBare
+              | ok pair =>
+                obtain ⟨summary, stFinal⟩ := pair
+                simp only
+                rw [ipcUnwrapCaps_preserves_scheduler _ recvRoot receiverSlotBase _ stCall
+                  stFinal summary hUnwrap]
+                exact hBare
+
+/-- ...and the whole live `.call` chain: leg, donation, chain walk. -/
+theorem endpointCallCrossCoreDispatch_preserves_runQueuesWellFormed
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (h : runQueuesWellFormed st.scheduler) :
+    runQueuesWellFormed (endpointCallCrossCoreDispatch endpointId caller msg
+      endpointRights receiverSlotBase executingCore st).1.scheduler := by
+  have hWc := endpointCallWithCapsOnCore_preserves_runQueuesWellFormed endpointId caller
+    msg endpointRights receiverSlotBase executingCore st h
+  unfold endpointCallCrossCoreDispatch
+  cases hWcEq : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st with
+  | mk stW resW =>
+      rw [hWcEq] at hWc
+      simp only at hWc ⊢
+      cases resW with
+      | error e => exact hWc
+      | ok r =>
+          obtain ⟨summaryW, sgiW⟩ := r
+          simp only
+          split
+          · split
+            · split
+              · exact hWc
+              · rename_i stD hDon
+                intro c'
+                exact PriorityInheritance.propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed
+                  _ _ _ _ c'
+                  (runQueuesWellFormed_applyCallDonationOnCore _ _ _ _ _ _ hWc hDon c')
+            · exact hWc
+          · exact hWc
+
+/-- **WS-BP BP7.6**: the fault delivery keeps every core's run queue well-formed,
+on both dispositions. -/
+theorem faultDeliverOnCore_preserves_runQueuesWellFormed (st : SystemState)
+    (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (executingCore : CoreId)
+    (h : runQueuesWellFormed st.scheduler) :
+    runQueuesWellFormed (faultDeliverOnCore st tid f ctx executingCore).1.scheduler := by
+  have hFail : ∀ tf : ThreadFault, runQueuesWellFormed
+      (recordPendingFault (faultSuspendOnCore st tid executingCore) tid tf).scheduler := by
+    intro tf
+    rw [recordPendingFault_scheduler_eq, faultSuspendOnCore_scheduler_eq]
+    exact runQueuesWellFormed_removeRunnableOnCore st tid executingCore h
+  unfold faultDeliverOnCore
+  cases hRes : resolveFaultHandler st tid with
+  | error e => exact hFail _
+  | ok tgt =>
+      simp only
+      cases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
+          (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
+          (SeLe4n.Slot.ofNat 0) executingCore st with
+      | mk stC resC =>
+          have hC := endpointCallCrossCoreDispatch_preserves_runQueuesWellFormed
+            tgt.endpoint tid (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
+            (SeLe4n.Slot.ofNat 0) executingCore st h
+          rw [hCall] at hC
+          simp only at hC
+          cases resC with
+          | error e => exact hFail _
+          | ok r =>
+              obtain ⟨summary, sgi?⟩ := r
+              simp only
+              rw [recordPendingFault_scheduler_eq, Architecture.stageWokenDelivery_scheduler_eq]
+              exact hC
+
+/-- **WS-BP BP7.6**: ...and the flow-checked delivery the fault entries run. -/
+theorem faultDeliverOnCoreChecked_preserves_runQueuesWellFormed (lctx : LabelingContext)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext)
+    (c : CoreId) (h : runQueuesWellFormed st.scheduler) :
+    runQueuesWellFormed (faultDeliverOnCoreChecked lctx st tid f ctx c).1.scheduler := by
+  have hSusp : runQueuesWellFormed (recordPendingFault (faultSuspendOnCore st tid c) tid
+      { fault := f, context := ctx }).scheduler := by
+    rw [recordPendingFault_scheduler_eq, faultSuspendOnCore_scheduler_eq]
+    exact runQueuesWellFormed_removeRunnableOnCore st tid c h
+  unfold faultDeliverOnCoreChecked
+  cases hRes : resolveFaultHandler st tid with
+  | error e => simpa only [hRes] using hSusp
+  | ok tgt =>
+      by_cases hGate : endpointFlowGate lctx tgt.endpoint (lctx.threadLabelOf tid)
+          (lctx.endpointLabelOf tgt.endpoint) = true
+      · simp only [hGate, if_true]
+        exact faultDeliverOnCore_preserves_runQueuesWellFormed st tid f ctx c h
+      · simp only [Bool.not_eq_true] at hGate
+        simpa only [hRes, hGate, Bool.false_eq_true, if_false] using hSusp
+
 end SeLe4n.Kernel

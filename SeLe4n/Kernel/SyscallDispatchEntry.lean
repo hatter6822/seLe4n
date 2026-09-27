@@ -573,7 +573,7 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
       -- WS-BP BP7.4: the returning caller's result is in its saved context and
       -- the core's bank before any local reschedule, so a switch saves it.
       let stR := Architecture.stageCallerReturn st st' execCore outcome
-      let st'' := PriorityInheritance.scheduleLocalSuccessorLive st stR execCore
+      let st'' := PriorityInheritance.scheduleLocalSuccessor st stR execCore
       ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
         Architecture.shootdownChangedTargets st st'',
         Architecture.shootdownPostedOps st st'',
@@ -611,7 +611,7 @@ theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContex
           ipcBufferAddr elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
       (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1 =
-        (PriorityInheritance.scheduleLocalSuccessorLive st
+        (PriorityInheritance.scheduleLocalSuccessor st
           (Architecture.stageCallerReturn st st' execCore outcome) execCore).pendingPhysicalWrites := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
     msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
@@ -758,12 +758,12 @@ return-frame mailbox (`ffiSyscallReturnFrame` — the `ShootdownOpMailbox`
 pattern, since a scalar export return cannot carry six words), and the export's
 scalar return is the **outcome tag**: `0` = the mailbox frame is the caller's
 return, `1` = the caller blocked and no frame exists for it (RA.C.9; the
-staged frame is delivered by the SM10.1 context restore).  The pure dispatch
+staged frame is delivered by the context restore (WS-BP BP7.6)).  The pure dispatch
 never takes the `.error` arm (`syscallDispatchFromAbi_total`); the arm is
 discharged inertly with an error frame.
 
 **WS-SM SM8.B (PR #861 review round 17): the local half of the reschedule.**
-`PriorityInheritance.scheduleLocalSuccessorLive` runs *inside* the atomic step,
+`PriorityInheritance.scheduleLocalSuccessor` runs *inside* the atomic step,
 before the diffs are taken, and dispatches a successor when the transition
 vacated this core (`localSuccessorNeeded`).  It is the inline dual of
 `currentSlotChangeSgis`, which pokes every *remote* core whose `current` slot
@@ -773,14 +773,13 @@ did not exist: every blocking IPC leg cleared the caller's slot and nothing
 selected a successor, and the periodic tick provably cannot cover for it
 (`timerTickOnCore_cannot_dispatch_vacated_core`).
 
-**Gated (round 20).**  The wrapper is `scheduleLocalSuccessorLive`, which is
-the identity until `contextRestoreSeamLive` is true.  Dispatching a successor
-whose context the runtime cannot install into the trap frame would be worse than
-dispatching none: hardware returns through the blocked caller's frame either
-way, but `currentOnCore = none` makes the caller's next syscall fail *closed*
-(`.illegalState` — `vacatedCore_next_syscall_rejected` below, over the state
-this entry commits) whereas a named successor **misattributes** it.  The switch
-therefore turns on with the seam it depends on, not before.
+**Live since WS-BP BP7.6.**  From round 20 until then the dispatch ran behind a
+gate on the context-restore seam, because a successor the runtime could not
+install into the trap frame would have been attributed the blocked caller's
+next syscall, where `currentOnCore = none` fails it *closed*
+(`vacatedCore_next_syscall_rejected` below).  The entry now hands the HAL the
+context its core resumes (`Platform.FFI.restoreTrapFrame`), so the successor it
+dispatches is the thread the hardware runs, and the gate is retired.
 
 Two properties of the placement are load-bearing.  It is **inside** the
 `modifyGetKernelState` closure, so the successor is dispatched in the same
@@ -840,18 +839,19 @@ def syscallDispatchCrossCoreEntry
   -- current thread's saved context and translation, or the idle wait loop —
   -- into the in-flight trap frame, last, after every memory and TLB effect the
   -- commit owed.  Inert until the context-restore seam is live.
-  Platform.FFI.restoreTrapFrameLive result.2.2.2.2.2.2.2.1
+  Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1
   -- **WS-RR RR7.26**: record on the HAL what this commit left running on the
   -- executing core, so `ffi::PER_CPU_CURRENT_THREAD` follows the verified
   -- scheduler rather than lagging it.  The value was read inside the atomic
-  -- step above (after `scheduleLocalSuccessorLive`, so it is the successor
+  -- step above (after `scheduleLocalSuccessor`, so it is the successor
   -- when the syscall vacated the core), and a syscall that left the core
   -- vacated clears the mirror rather than leaving it naming a blocked caller.
   Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
   -- WS-RA: the export's scalar return is the outcome tag (0 = the mailbox
   -- frame is the caller's return; 1 = the caller blocked, no frame; 2 = the
-  -- caller faulted at the seam, no frame, and the trap layer halts pending
-  -- SM10.1 — PR #887 review round 5).
+  -- caller faulted at the seam, no frame — PR #887 review round 5; since WS-BP
+  -- BP7.6 the trap layer resumes the context restore staged, and halts only
+  -- when none was).
   pure result.1.tagWord
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
@@ -881,21 +881,20 @@ theorem syscallDispatchCrossCoreEntry_def
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
         completeIcacheMaintenance result.2.2.2.2.2.1
-        Platform.FFI.restoreTrapFrameLive result.2.2.2.2.2.2.2.1
+        Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1
         Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
         pure result.1.tagWord) := rfl
 
 /-- **WS-SM SM8.B** (PR #861 review rounds 39/41): the gating argument's
 "rejection, not misattribution" half, as a theorem rather than as prose.
 
-The gate above (`scheduleLocalSuccessorLive`, inert until the restore seam is
-live) is justified by a claim about what happens *next*: a blocking transition
-leaves `currentOnCore execCore = none`, and the caller's next syscall is then
-**rejected** rather than attributed to some other thread.  That claim has been
-challenged twice on the review — both times asserting the opposite, that the
-next syscall silently falls back to `bootCoreId` — so it is stated here at the
-entry, over the state the entry actually commits (the *gated* wrapper's output,
-so the theorem tracks whichever side of the seam is live).
+The gate that stood above until WS-BP BP7.6 was justified by a claim about what
+happens *next*: a transition that leaves `currentOnCore execCore = none` has the
+caller's next syscall **rejected** rather than attributed to some other thread.
+That claim was challenged twice on the review — both times asserting the
+opposite, that the next syscall silently falls back to `bootCoreId` — so it is
+stated here at the entry, over the state the entry commits.  With the dispatch
+live it covers a core whose run queue held no successor.
 
 The fallback the challenge describes is real but belongs to
 `determineExecutingCore`, which is reached only with a caller id already in
@@ -910,13 +909,13 @@ theorem vacatedCore_next_syscall_rejected
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (hMsg : msgInfo = x1)
     (hVacated :
-      (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore).scheduler.currentOnCore
+      (PriorityInheritance.scheduleLocalSuccessor pre post execCore).scheduler.currentOnCore
         execCore = none) :
     Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30
-        (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore)
+        (PriorityInheritance.scheduleLocalSuccessor pre post execCore)
       = Except.ok (.returns (Architecture.errorFrame .illegalState),
-                   PriorityInheritance.scheduleLocalSuccessorLive pre post execCore) :=
+                   PriorityInheritance.scheduleLocalSuccessor pre post execCore) :=
   Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId msgInfo
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hMsg hVacated
 
@@ -1028,7 +1027,7 @@ def suspendThreadCrossCoreStep (tid : UInt64) (execCore : CoreId) (st : SystemSt
             SystemState × (UInt32 × List (CoreId × SgiKind)) := fun s =>
           match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
           | Except.ok (s', _) =>
-              let s'' := PriorityInheritance.scheduleLocalSuccessorLive s s' execCore
+              let s'' := PriorityInheritance.scheduleLocalSuccessor s s' execCore
               (s'', ((0 : UInt32),
                     PriorityInheritance.computeCrossCoreSgis s s'' execCore))
           | Except.error e =>

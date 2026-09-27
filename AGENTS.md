@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.18.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.19.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4309,12 +4309,14 @@ message's tag decoded in userspace as a kernel error, so no fault handler could
 be written against `sele4n-abi`.  New code must not treat a nonzero `x1`
 label as an error; `ofErrorLabel?` / `decode_response` decide by range.
 
-What remains is owed to SM10.1: return-frame *delivery* at the context restore.
-Until that seam flips, a blocked caller's frame is poisoned with the fail-closed
-`blocked_resume_sentinel_regs()` so a stale request register can never decode as
-a success.  A caller that took a fault at the seam is outcome tag 2
-(`.faulted`) and is never poisoned-and-resumed: the core halts pending SM10.1
-(PR #887 review round 5).
+Return-frame *delivery* is the context restore's, and it is live since WS-BP
+BP7.6 (`v0.36.19`): a blocked caller resumes with the frame the kernel later
+stages into its context, and a caller that took a fault at the seam (outcome tag
+2, `.faulted`) resumes its successor like any other.  What survives is the
+fail-closed answer on a core where no restore was staged: a blocked caller's
+frame poisoned with `blocked_resume_sentinel_regs()`, so a stale request
+register can never decode as a success, and a faulted one's core halted (PR #887
+review round 5) — never `eret`ed past its `SVC`.
 
 **A forcibly unblocked thread is staged an error frame** (WS-RR RR7.14,
 v0.34.67) — the other half of §9's registered obligation, and closed.  A thread
@@ -7152,7 +7154,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7185,11 +7187,11 @@ nothing**: `SM10.1.1` still means the image *packaging* the release cut
 consumes, and `BP5.3` is the sub-task that produces what it packages — the
 collision between "numbering is execution order" and "IDs in CHANGELOG entries
 are frozen" resolved the way `SMP_RELEASE_CLOSURE_PLAN.md` §1.1 named it.  And
-the three `contextRestoreSeamLive` prerequisites are now scheduled rather than
+the three `contextRestoreSeamLive` prerequisites were scheduled rather than
 only described: `BP7.1`/`BP7.2` (the `VSpaceRoot → TTBR0` binding and its
 install), `BP7.3` (the full outgoing-frame save — `writeFfiRegistersToTcb`
 spilled only x0–x5 and x7 until it landed), `BP7.4` (per-core staging), with `BP7.6` the
-flip they gate.
+flip they gated — which deleted the flag at `v0.36.19`.
 
 And **the boot map is BP2.6's, not the device tree's** (the maintainer's
 correction, recorded as a scheduled row rather than as prose, and landed at
@@ -7834,8 +7836,8 @@ system (`gic::halt_all`, nothing released yet), a secondary parks itself
 **and** Lean-ready, through `serving_core_count_within`; the retired
 `irq_ready_core_count_within` counted the IRQ flag alone, which a PE with every
 seam dormant satisfies.  What BP6 does not do is return anyone to EL0: the
-fault and cap-fault halts are now **reachable**, and stay the seam's occupant
-until the context restore (BP7) installs a successor.
+fault and cap-fault halts became **reachable** here, and stayed the seam's
+occupant until the context restore (BP7.6, `v0.36.19`) installed a successor.
 
 **The `v0.36.2` audit of BP0–BP6** — what a re-read of the landed code against
 its own prose found, in the order a boot meets it, and what new code must
@@ -8382,10 +8384,8 @@ user resume's `SPSR_EL1` to its condition flags** (`trap::sanitise_user_spsr`),
 because a thread's saved `pstate` is state the thread influences, and an idle
 resume enters `trap::kernel_idle_loop` at EL1h — the only EL1-origin frame a
 restore ever replaces, since every other kernel path runs with IRQs masked.
-(4) **The restore is gated on `contextRestoreSeamLive`**
-(`restoreTrapFrameLive_inert`), so the trap arms still deliver the mailbox frame,
-the poison and the SM10.1 halts until BP7.6 flips it and has them consult
-`trap::take_restored`.
+(4) **The restore was gated on `contextRestoreSeamLive` at this cut**, and
+BP7.6 deleted the gate — the paragraph after next.
 
 **A staged unblock frame is what the thread resumes with** (`v0.36.18`, BP7.5).
 Delivery is one relation, not a mechanism per path:
@@ -8407,6 +8407,35 @@ executed witnesses (`tests/SmpCancellationSuite.lean` §3.19b,
 `tests/SmpTimerSuite.lean` §3.15b) drive the live unblock and the live switch
 end to end, each with a CONTROL that switches before the unblock and resumes the
 stale window.
+
+**The context restore is live, and its gate is deleted rather than flipped**
+(`v0.36.19`, BP7.6).  `contextRestoreSeamLive`, its module
+`Concurrency/ContextRestoreSeam.lean`, `scheduleLocalSuccessorLive`, the
+`…Live` / `…EnqueueOnly` pairs of `.tcbResume` and of the priority preemption,
+`restoreTrapFrameLive` and the context-switch-site register are gone, each with a
+tombstone and a Tier 3 negative; every entry runs `scheduleLocalSuccessor` and
+hands `Platform.FFI.restoreTrapFrame` the target BP7.4 stages.  Four things new
+code must respect.  (1) **A trap arm returns through the restore first**: the SVC
+arm, `deliver_fault` and `deliver_unknown_syscall` open with
+`if crate::trap::take_restored() { return; }` ahead of any mailbox write, poison
+or halt, and `build.rs` holds it there as a top-level statement
+(`is_restored_frame_return`); publishing a mailbox frame clears the core's
+`RESTORED` flag, so a stale restore cannot survive into the next trap.  The
+sentinel and the two halts remain, and mean only *no restore was staged on this
+core*.  (2) **A caller its own syscall switched out keeps its result**: an inline
+`.tcbResume` or a priority preemption can switch the caller out before the
+result is staged, so `stageCallerReturn` writes the frame into the caller's TCB
+always and into the core bank only while the caller is still current
+(`stageCallerReturn_stages_switched_out`) — the bank then belongs to the
+successor.  (3) **The fault progress theorem sees through the successor**, and
+what that needs is the executing core's queue well-formed where the successor is
+chosen (`handleRescheduleSgiOnCore_preserves_not_dispatchable`).  It is taken of
+the **pre**-state (`runQueuesWellFormed`, every core) and carried across the
+spill and the delivery by `faultDeliverOnCoreChecked_preserves_runQueuesWellFormed`,
+never stated of the delivered state, which no caller holds.  (4) **One path,
+not two**: with the gate gone there is no inert arm for a theorem to be stated
+over, so a result about an entry is a result about the program the hardware
+runs; a new entry does not grow a `…Live` twin.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
@@ -12823,8 +12852,8 @@ code may assume:
   off the mirror without spilling first.  (7) The entry derives its cross-core
   pokes from the pre/post **diff** (`computeCrossCoreSgis`), as the syscall
   seam does, never from the single SGI the Call chain surfaces; and it runs
-  the executing core's successor through `scheduleLocalSuccessorLive`, inert
-  until SM10.1.  (8) On hardware only `MR0`-`MR3` of a fault message reach
+  the executing core's successor through `scheduleLocalSuccessor`, live since
+  WS-BP BP7.6 (`v0.36.19`).  (8) On hardware only `MR0`-`MR3` of a fault message reach
   the handler's registers: no receive path writes `MR4` onward into the IPC
   buffer yet (a WS-RA residual with its first consumer here), so an
   `unknownSyscall` (13 words) or `userException` (5 words) handler sees its
@@ -12885,8 +12914,8 @@ code may assume:
   `ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30` cross the ABI for it
   (`lean_syscall_dispatch_cross_core` takes fifteen words).  The outcome is
   `.faulted` — outcome tag 2, distinct from a frame (0) and a block (1), on
-  which the SVC arm **halts** pending SM10.1 exactly as the unknown-syscall
-  delivery does (`halt_after_delivered_syscall_fault`, PR #887 review round
+  which the SVC arm resumes the staged successor or, where none was staged,
+  **halts** exactly as the unknown-syscall delivery does (`halt_after_delivered_syscall_fault`, PR #887 review round
   5), because a block's sentinel frame would `eret` the caller past the
   `SVC` the model has it restart at — and the caller is not dispatchable
   afterwards (`syscallDispatchFromAbi_capFault_faulted`,
@@ -12897,12 +12926,14 @@ code may assume:
   arm reads the syscall number at full width**: `u32::try_from(frame.x7())`,
   with the narrowing's failure delivered as the unknown-syscall fault, so a
   wide `x7` cannot alias a valid id.
-- **A core that takes an EL0 abort halts, until SM10.1 — delivered or not.**
-  The model deschedules the faulting thread, and the hardware cannot honour
-  that until the context restore installs a successor — `trap.S` would
-  otherwise `eret` through the blocked thread's own frame, back onto the
-  instruction that faulted.  So `trap.rs::deliver_fault` calls
-  `cpu::fatal_halt()` after a delivered fault, and (PR #887 review round 3)
+- **A core that takes an EL0 abort resumes its successor, and halts where no
+  restore was staged — delivered or not.**
+  The model deschedules the faulting thread, and the hardware honours that
+  through the context restore (WS-BP BP7.6, `v0.36.19`): `trap.rs::deliver_fault`
+  returns through `trap::take_restored` before anything else, so `trap.S`
+  `eret`s into the successor rather than through the faulting thread's own
+  frame, back onto the instruction that faulted.  Where no restore was staged it
+  calls `cpu::fatal_halt()` after a delivered fault, and (PR #887 review round 3)
   its not-ready path calls `halt_abort_before_lean_ready` rather than
   publishing a status frame: an abort leaves `ELR_EL1` on the faulting
   instruction, so a returned frame is `eret`ed straight back into the abort.
@@ -12919,9 +12950,11 @@ code may assume:
   decision.  The host lane keeps the abort fallback frame as the harness
   observable; `scan_trap_rs_abort_fallback_halts` pins that the write is
   host-only and the halt sits on the not-ready path.  Both halts are
-  reachable since WS-BP BP6 marks each core ready, and the context restore replaces the
-  delivered one with the successor install; new code must not read either as
-  the fault path's contract.  A kernel-origin exception halts the core too,
+  reachable since WS-BP BP6 marks each core ready, and since BP7.6 the context
+  restore replaces the delivered one with the successor install wherever one was
+  staged — `build.rs` requires the restored return as a top-level statement of
+  each arm ahead of its halt (`is_restored_frame_return`); new code must not read
+  either halt as the fault path's contract.  A kernel-origin exception halts the core too,
   and that one *is* the contract: `halt_if_kernel_origin` (an EL1-origin
   frame) and the `KERNEL_ABORT` arm (a current-EL abort syndrome) are
   fail-closed by design, not SM10.1 placeholders.

@@ -131,41 +131,11 @@ theorem resumeThreadOnCore_replenishQueueOnCore (st st' : SystemState)
             PriorityInheritance.resumeReadyMidState_scheduler_eq]
   · exact absurd h (by simp)
 
-/-- `v0.35.167`: and so does the enqueue-only form the gated wrapper takes while
-the context-restore seam is dark — a strict subset of the above. -/
-theorem resumeThreadEnqueueOnly_replenishQueueOnCore (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
-    (h : Lifecycle.Suspend.resumeThreadEnqueueOnly st vtid executingCore = .ok (st', sgi)) :
-    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold Lifecycle.Suspend.resumeThreadEnqueueOnly at h
-  dsimp only at h
-  split at h
-  · split at h
-    · exact absurd h (by simp)
-    · split at h <;>
-        (rw [Except.ok.injEq, Prod.mk.injEq] at h
-         rw [← h.1, enqueueRunnableOnCore_replenishQueueOnCore,
-            PriorityInheritance.resumeReadyMidState_scheduler_eq])
-  · exact absurd h (by simp)
-
-/-- `v0.35.167`: so the gated wrapper the live `.tcbResume` arm runs writes none
-either, on both settings of the seam. -/
-theorem resumeThreadOnCoreLive_replenishQueueOnCore (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
-    (h : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid executingCore = .ok (st', sgi)) :
-    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold Lifecycle.Suspend.resumeThreadOnCoreLive at h
-  split at h
-  · exact resumeThreadOnCore_replenishQueueOnCore st st' vtid executingCore sgi c h
-  · exact resumeThreadEnqueueOnly_replenishQueueOnCore st st' vtid executingCore sgi c h
-
 /-- **`v0.35.167`: the live `.tcbResume` arm's scheduler-domain footprint.**
 
 `schedFootprintOfCores` of the arm's own SM8.B write set, with an **empty**
 replenish segment: a resume moves no scheduling context, which
-`resumeThreadOnCoreLive_replenishQueueOnCore` is the statement of.
+`resumeThreadOnCore_replenishQueueOnCore` is the statement of.
 
 The fault retire the arm runs first (`retirePendingFaultForResume`, WS-RR RR4.11)
 needs no member of its own: it writes one TCB's `pendingFault` and no scheduler
@@ -190,7 +160,7 @@ theorem schedLockSet_resumeThreadOnCore_contains_executing_runQueue_write (st : 
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (by simp [resumeThreadOnCoreWriteSet])
 
 /-- `v0.35.167`: and **no** replenish-queue lock, on any core — the declaration's
-exact half, against `resumeThreadOnCoreLive_replenishQueueOnCore`'s. -/
+exact half, against `resumeThreadOnCore_replenishQueueOnCore`'s. -/
 theorem schedLockSet_resumeThreadOnCore_no_replenishQueue (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) (c : CoreId) :
     (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
@@ -238,21 +208,6 @@ theorem priorityRescheduleOnCore_replenishQueueOnCore (st st' : SystemState)
     · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]
   · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]
 
-/-- `v0.35.167`: and the gated seam the live arms run, which is that or the
-enqueue-only form — and the enqueue-only form returns its input outright. -/
-theorem priorityRescheduleOnCoreLive_replenishQueueOnCore (st st' : SystemState)
-    (running? : Option CoreId) (executingCore : CoreId) (shouldPreempt : Bool)
-    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
-    (h : SchedContext.PriorityManagement.priorityRescheduleOnCoreLive st running? executingCore
-      shouldPreempt = .ok (st', sgi)) :
-    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold SchedContext.PriorityManagement.priorityRescheduleOnCoreLive at h
-  split at h
-  · exact priorityRescheduleOnCore_replenishQueueOnCore st st' running? executingCore
-      shouldPreempt sgi c h
-  · rw [SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly_state st st' running?
-      executingCore shouldPreempt sgi h]
-
 /-- `v0.35.167`: the whole priority change — the source store (which writes
 objects only), the bucket migration (one run queue) and the preemption seam. -/
 theorem applyPriorityChangeOnCore_replenishQueueOnCore (st st' : SystemState)
@@ -263,7 +218,7 @@ theorem applyPriorityChangeOnCore_replenishQueueOnCore (st st' : SystemState)
       executingCore shouldPreempt = .ok (st', sgi)) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at h
-  rw [priorityRescheduleOnCoreLive_replenishQueueOnCore _ st' _ executingCore shouldPreempt
+  rw [priorityRescheduleOnCore_replenishQueueOnCore _ st' _ executingCore shouldPreempt
       sgi c h,
     SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_replenishQueueOnCore]
   obtain ⟨objs, hEq⟩ :=

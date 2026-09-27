@@ -751,34 +751,17 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.timerTickOnCore_cannot_dispatch_vacated_core
 -- Round 17: the third per-core scheduler slot.  The gate checked `current` and
 -- the run queues; the replenish queue is the one it could not see.
--- Round 18: the model switches threads; the runtime has no restore seam yet.
--- Registered as a checked partition so SM10.1 cannot wire one silently.
+-- Round 18: the sites that switch a core's thread.  WS-BP BP7.6: every one now
+-- restores the switched-in context; the enumeration is the tripwire a new site
+-- trips.
 #check @SeLe4n.Kernel.PriorityInheritance.ContextSwitchSite
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites_complete
-#check @SeLe4n.Kernel.PriorityInheritance.contextRestoreWired
-#check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites_restore_pending
-#check @SeLe4n.Kernel.PriorityInheritance.contextRestoreWired_none
-#check @SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive
-#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive
-#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_inert
--- PR #861 review round 34: the gate moved OUT of the two transitions and into
--- wrappers, so each base transition keeps its unconditional theorems and each
--- gated path is stated in both settings of the seam.
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadEnqueueOnly
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive_inert
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive_eq_of_seam_live
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive_remote_agrees
-#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly
-#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive
-#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive_inert
-#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive_eq_of_seam_live
-#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive_remote_agrees
-#check @SeLe4n.Kernel.priorityRescheduleOnCoreLive_preserves_projection
-#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_eq_of_seam_live
-#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_guard_eq_register
-#check @SeLe4n.Kernel.PriorityInheritance.suspendReschedule_guard_eq_register
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
+-- WS-BP BP7.6: the three gating wrappers are retired with the seam flag; the
+-- live arms run the transitions themselves.
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCore
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCore
 #check @SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
 #check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentOnCore
 #check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentFromAllCores
@@ -5005,36 +4988,17 @@ private def runVacatedCoreChecks : IO Unit := do
   assertBool "NEGATIVE: and inert on a core that was already idle before the send"
     (decide (SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded niState vacatedPost c3
       = false))
-  -- Round 20: the assertions above are about the pure transition, which is
-  -- correct and stays.  What the live entries run is the *gated* wrapper, and
-  -- it is inert until the hardware restore seam exists — because dispatching a
-  -- successor the runtime cannot install misattributes the blocked caller's
-  -- next syscall, where leaving the core idle fails closed.
-  assertBool "the LIVE successor dispatch is inert while the restore seam is not"
-    (decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive = false) &&
-     decide ((SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive
-       niState vacatedPost c0).scheduler.currentOnCore c0 = none))
-  -- The load-bearing negative: the guard is the ONLY thing holding it — the
-  -- underlying transition does dispatch, so this is a coupling and not a
-  -- transition that happens to do nothing.
-  assertBool "NEGATIVE: the ungated transition WOULD dispatch, so the guard is load-bearing"
+  -- WS-BP BP7.6: the live entries run this transition itself — the restore
+  -- installs the successor it dispatches, so the vacated core runs it.
+  assertBool "the LIVE successor dispatch runs the queued thread on the vacated core"
     (decide ((SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
        niState vacatedPost c0).scheduler.currentOnCore c0 = some lowQueued))
-  -- …and the register agrees with the guard, both reading one constant.
-  assertBool "the site's register entry matches the guard"
-    (decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreWired .vacatedCoreSuccessor = false)
-     && decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreWired .suspendReschedule = false))
-  -- Review round 18: the model dispatches a successor; hardware does not yet
-  -- know.  No context-switch site restores the incoming context before
-  -- exception return, so the register is the whole list — and stays so until
-  -- SM10.1 wires the first one, at which point this assertion fails.
-  assertBool "the context-restore obligation is registered for all four sites"
-    (decide (SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.length = 4) &&
-     SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.all
-       (fun s => !SeLe4n.Kernel.PriorityInheritance.contextRestoreWired s))
-  -- The load-bearing negative: the round-17 successor is IN the register, so
-  -- the marker covers the site this cut added rather than only pre-existing ones.
-  assertBool "NEGATIVE: the vacated-core successor is itself a registered site"
+  -- The enumeration of switch sites is the tripwire a new site trips.
+  assertBool "the context-switch sites are enumerated, all four"
+    (decide (SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.length = 4))
+  -- The round-17 successor is IN the enumeration, so the tripwire covers the
+  -- site that cut added rather than only pre-existing ones.
+  assertBool "the vacated-core successor is itself an enumerated site"
     (decide (SeLe4n.Kernel.PriorityInheritance.ContextSwitchSite.vacatedCoreSuccessor
       ∈ SeLe4n.Kernel.PriorityInheritance.contextSwitchSites))
 

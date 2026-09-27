@@ -110,6 +110,12 @@ impl InFlightFrame<'static> {
     /// Publish `frame` as the executing PE's in-flight frame.
     pub fn publish(frame: &mut TrapFrame) -> Self {
         let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+        // WS-BP BP7.6: a restore belongs to the handler that ran it, so the
+        // flag a previous handler on this PE may have left set is cleared
+        // before this one can read it.
+        if let Some(flag) = RESTORED.get(core) {
+            flag.store(false, Ordering::Relaxed);
+        }
         InFlightFrame::publish_in(&IN_FLIGHT_FRAMES, core, frame)
     }
 }
@@ -471,16 +477,13 @@ impl TrapFrame {
     /// of a fault handler's reach (see `Model.FaultContext.spsr`), which is
     /// strictly the fail-closed side of seL4's `sanitiseRegister`.
     ///
-    /// **Consumer**: SM10.1's context restore, which does not exist yet — this
-    /// mutator and its two siblings above are exercised by tests only today.
-    /// That is not an oversight to be tidied away: the restart frame is
-    /// installed into the *Lean* TCB by `applyFaultRestart` at reply time, and
-    /// reaches hardware when a core installs a successor.  Until then a core
-    /// that delivered a fault halts (`deliver_fault`), so there is no restore
-    /// to call this from.  RR4.24 exists because without an `ELR_EL1` mutator
-    /// the trap layer could only ever return to the faulting instruction, which
-    /// is the finding RR4 closes; the API has to be here before the restore
-    /// that uses it can be written.
+    /// **Consumer**: none on the live path.  The restart frame is installed
+    /// into the *Lean* TCB by `applyFaultRestart` at reply time, and since
+    /// WS-BP BP7.6 it reaches hardware through the context restore, which
+    /// copies the whole saved context (`restore_commit_in`) rather than
+    /// calling a per-field mutator.  This mutator and its two siblings remain
+    /// the Rust half of the verified `stageRestartFrame` layout and are held
+    /// to it by the host tests.
     #[inline(always)]
     pub fn set_fault_restart_frame(&mut self, regs: [u64; 11]) {
         self.gprs[..8].copy_from_slice(&regs[..8]);
@@ -761,15 +764,14 @@ fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
 ///
 /// # Why the core halts afterwards
 ///
-/// The model has just descheduled the faulting thread.  The hardware cannot
-/// honour that until the SM10.1 context restore installs a *successor* —
-/// until then `trap.S` restores and `eret`s through the faulting thread's own
-/// frame, straight back onto the instruction that faulted, which is precisely
-/// the defect RR4 exists to remove.  So the interim behaviour is to stop:
-/// `fatal_halt` after a diagnostic, rather than spin.  The halt is
-/// reachable since WS-BP BP6 marks each core ready, and the context restore replaces
-/// it with the successor install — it is the seam's occupant, not its
-/// contract.
+/// The model has just descheduled the faulting thread, and since WS-BP BP7.6
+/// the entry installs what this core resumes — its successor, or the idle
+/// loop — into the frame `trap.S` returns through, so the handler returns
+/// (`take_restored`).  A delivery that installed nothing would `eret` through
+/// the faulting thread's own frame, straight back onto the instruction that
+/// faulted, which is precisely the defect RR4 exists to remove, so that
+/// fallback stops the core: `fatal_halt` after a diagnostic, rather than
+/// spin.
 ///
 /// # The not-ready path (WS-RR RR4.22; PR #887 review round 3)
 ///
@@ -858,8 +860,14 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
             // SAFETY: `res` is the value the export just returned; if it is
             // a heap object this caller owns its one reference.
             unsafe { crate::lean_runtime::discharge_base_io(res, "lean_handle_fault") };
+            // WS-BP BP7.6: the delivery descheduled the faulting thread and the
+            // kernel installed what this core resumes — its successor, or the
+            // idle loop — so the handler returns through that.
+            if crate::trap::take_restored() {
+                return;
+            }
             crate::kprintln!(
-                "[core {}] fault delivered; halting pending the SM10.1 context restore (ESR=0x{:016x} ELR=0x{:016x})",
+                "[core {}] fault delivered and no context restored; halting (ESR=0x{:016x} ELR=0x{:016x})",
                 core_id,
                 esr,
                 elr
@@ -887,9 +895,8 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
 /// the faulting instruction, so any frame the handler published would be
 /// `eret`ed straight back into the same abort — the wedge RR4 exists to
 /// remove, reintroduced on the fallback.  The only fail-closed action is to
-/// stop the core, as `deliver_fault`'s delivered arm does pending the SM10.1
-/// successor install; both branches of that function therefore diverge on
-/// hardware.  The SVC seam is different and keeps its status frame: an `SVC`
+/// stop the core, as `deliver_fault`'s delivered arm does when no context
+/// was restored.  The SVC seam is different and keeps its status frame: an `SVC`
 /// advances `ELR_EL1` past itself, so a frame returned to a thread is a
 /// coherent outcome there (and the not-ready behaviour of the SVC seam as a
 /// whole is RR5's to decide, together with the ungated `dispatch_svc` beside
@@ -900,17 +907,16 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
 /// **PR #887 review round 5**: a syscall-raised fault has been delivered (or
 /// the caller suspended fail-closed) by the Lean dispatch — outcome tag 2,
 /// `SyscallOutcome.faulted`.  The model has descheduled the caller and, on
-/// the handler's reply, restarts it at the `SVC` (`svcFaultIP`); the
-/// hardware cannot honour either until the SM10.1 context restore installs
-/// a successor, and returning here would `eret` the caller past the `SVC`
-/// it is to re-issue.  So the core stops, as after every other delivered
-/// fault.  Unreachable today (no core sets `lean_ready`, so no Lean
-/// dispatch runs on hardware); pinned by `delivered_syscall_fault_halts` on
-/// the host lane, where `fatal_halt` panics, and by
-/// `scan_trap_rs_faulted_outcome_halts` in `build.rs`.
+/// the handler's reply, restarts it at the `SVC` (`svcFaultIP`).  Since
+/// WS-BP BP7.6 the dispatch installs this core's successor and the SVC arm
+/// returns through it before reaching this helper; the helper is the fallback
+/// for a dispatch that installed nothing, where returning would `eret` the
+/// caller past the `SVC` it is to re-issue, so the core stops.  Pinned by
+/// `delivered_syscall_fault_halts` on the host lane, where `fatal_halt`
+/// panics, and by `scan_trap_rs_faulted_outcome_halts` in `build.rs`.
 fn halt_after_delivered_syscall_fault(frame: &TrapFrame) -> ! {
     crate::kprintln!(
-        "syscall fault delivered; halting pending the SM10.1 context restore (x7=0x{:x} ELR=0x{:016x})",
+        "syscall fault delivered and no context restored; halting (x7=0x{:x} ELR=0x{:016x})",
         frame.x7(),
         frame.elr_el1
     );
@@ -939,7 +945,8 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
 /// thread blocks on its handler's endpoint awaiting a reply (a handler that
 /// emulates the call replies and the thread continues after the `SVC`), or —
 /// with no usable handler — is suspended fail-closed.  Same lock, same
-/// readiness gate, same SM10.1 halt as `deliver_fault`, for the same reasons.
+/// readiness gate, same restored-frame return and same fallback halt as
+/// `deliver_fault`, for the same reasons.
 ///
 /// The not-ready path differs from `deliver_fault`'s, deliberately: this seam
 /// keeps its status frame, because an `SVC` advances `ELR_EL1` past itself
@@ -1011,8 +1018,13 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
             // SAFETY: `res` is the value the export just returned; if it is
             // a heap object this caller owns its one reference.
             unsafe { crate::lean_runtime::discharge_base_io(res, "lean_handle_unknown_syscall") };
+            // WS-BP BP7.6: as for an abort — return through what the kernel
+            // installed for this core.
+            if crate::trap::take_restored() {
+                return;
+            }
             crate::kprintln!(
-                "[core {}] unknown syscall delivered; halting pending the SM10.1 context restore (x7=0x{:x} ELR=0x{:016x})",
+                "[core {}] unknown syscall delivered and no context restored; halting (x7=0x{:x} ELR=0x{:016x})",
                 core_id,
                 g[7],
                 elr
@@ -1122,12 +1134,20 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
                 Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
             };
+            // WS-BP BP7.6: the Lean dispatch installed what this core resumes —
+            // the caller with its result staged in its context, the thread its
+            // syscall switched to, or the idle loop — so the handler returns
+            // through that frame and publishes nothing over it.  Every arm below
+            // is the fallback for a dispatch that installed nothing.
+            if crate::trap::take_restored() {
+                return;
+            }
             // WS-RA (plan §3.1/§3.3): the writeback is a six-register
             // context restore — `x0` the value, the offset error label on
             // `x1`, `x2`-`x5` message registers.  A blocked caller has NO
             // return frame (its stale registers are not a return value;
-            // the staged frame is delivered by the SM10.1 context restore
-            // — RA.C.9's hook is the `Blocked` arm).  Prefilter rejections
+            // since WS-BP BP7.6 the context restore above installs what the
+            // core resumes instead).  Prefilter rejections
             // surface as label-encoded error frames like every kernel
             // rejection, retiring the raw-discriminant `x0` write and its
             // documented collision.
@@ -1138,18 +1158,17 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 // or the fail-closed suspend).  No frame exists, and the
                 // model restarts the caller AT the `SVC` on its handler's
                 // reply — the `Blocked` sentinel would `eret` it past the
-                // `SVC` instead.  So this arm halts pending the SM10.1
-                // successor install, as the delivered unknown-syscall and
-                // abort paths do.
+                // `SVC` instead.  Reached only when the dispatch installed no
+                // context (the restore returns above), so this arm halts, as
+                // the delivered unknown-syscall and abort paths do.
                 Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {
                     halt_after_delivered_syscall_fault(frame);
                 }
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
-                    // SM10.1 context-restore hook: the successor's frame
-                    // install lands here when `contextRestoreSeamLive`
-                    // flips.  Until then `trap.S` restores and `eret`s
-                    // through the blocked caller's own saved frame, so
-                    // poison it: left untouched, the caller's request
+                    // Reached only when the dispatch installed no context
+                    // (WS-BP BP7.6's restore returns above).  `trap.S` would
+                    // then `eret` through the blocked caller's own saved
+                    // frame, so poison it: left untouched, the caller's request
                     // registers (an `x1` label of `0`) decode as a false
                     // success carrying the caller's own capability
                     // pointer as the "badge" (PR #866 review).  The
@@ -1965,7 +1984,7 @@ mod tests {
     }
 
     /// **PR #887 review round 5**: a delivered syscall fault (outcome tag 2)
-    /// halts the core pending SM10.1 — returning would `eret` the caller
+    /// with no context restored halts the core — returning would `eret` the caller
     /// past the `SVC` the model has it restart at.  On the host lane
     /// `fatal_halt` panics, which is the observable.
     #[test]

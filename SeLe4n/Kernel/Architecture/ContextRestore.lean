@@ -52,18 +52,26 @@ abbrev stageFrameRegs (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) : SeLe
   rf.stageReturnFrame f
 
 /-- **WS-BP BP7.4: the returning caller's result, staged where a switch saves
-from.**  When the syscall returned a frame and the core's pre-entry thread is
-still its current thread, the frame goes into that thread's saved context
-**and** the core's bank; otherwise nothing is written. -/
+from.**  When the syscall returned a frame, the frame goes into the core's
+pre-entry thread's saved context, and — while that thread is still the core's
+current thread — into the core's bank as well.  A blocked or faulted caller
+stages nothing.
+
+**BP7.6: the frame goes into the context whether or not the caller is still
+current.**  An arm may switch the caller out *inside* the syscall — a
+`.tcbResume` of a higher-priority thread, a `.tcbSetPriority` that demotes the
+caller below a queued thread — and the preempt saves the caller from the bank,
+which holds its request registers.  Staging only a still-current caller left
+exactly that caller resuming later with its own arguments as the result. -/
 def stageCallerReturn (pre post : SystemState) (c : CoreId) :
     SyscallOutcome → SystemState
   | .returns f =>
     match pre.scheduler.currentOnCore c with
     | some tid =>
+      let s1 := writeReturnFrameToTcb post tid f
       if post.scheduler.currentOnCore c = some tid then
-        let s1 := writeReturnFrameToTcb post tid f
         { s1 with machine := s1.machine.setRegsOnCore c (stageFrameRegs (s1.machine.regsOnCore c) f) }
-      else post
+      else s1
     | none => post
   | .blocks => post
   | .faulted => post
@@ -83,7 +91,7 @@ theorem stageCallerReturn_scheduler (pre post : SystemState) (c : CoreId)
   · split
     · split
       · simp [writeReturnFrameToTcb, SystemState.updateTcb_scheduler]
-      · rfl
+      · simp [writeReturnFrameToTcb, SystemState.updateTcb_scheduler]
     · rfl
   · rfl
   · rfl
@@ -104,6 +112,19 @@ theorem stageCallerReturn_stages (pre post : SystemState) (c : CoreId)
     unfold writeReturnFrameToTcb
     rw [SystemState.updateTcb_getTcb?_self post tid _ hInv, hTcb]; rfl
   · simp [writeReturnFrameToTcb, SystemState.updateTcb_machine]
+
+/-- **BP7.6: and a caller switched out inside its own syscall** has its result
+in its saved context, so the thread that preempted it does not cost it the
+answer. -/
+theorem stageCallerReturn_stages_switched_out (pre post : SystemState) (c : CoreId)
+    (f : SyscallReturnFrame) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hPre : pre.scheduler.currentOnCore c = some tid)
+    (hPost : post.scheduler.currentOnCore c ≠ some tid)
+    (hTcb : post.getTcb? tid = some tcb) (hInv : post.objects.invExt) :
+    (stageCallerReturn pre post c (.returns f)).getTcb? tid = some (tcb.withReturnFrame f) := by
+  simp only [stageCallerReturn, hPre, hPost, if_false]
+  unfold writeReturnFrameToTcb
+  rw [SystemState.updateTcb_getTcb?_self post tid _ hInv, hTcb]; rfl
 
 /-- **What a core resumes when a kernel entry ends.** -/
 inductive RestoreTarget where

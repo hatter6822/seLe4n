@@ -100,7 +100,8 @@ theorem saveTrapFrameOnCore_contextMatchesCurrentOnCore_other (st : SystemState)
       exact hMatch
 
 /-- **WS-BP BP7.4: staging the caller's result preserves the IPC bundle** — it
-is `writeReturnFrameToTcb` followed by a bank write. -/
+is `writeReturnFrameToTcb`, followed by a bank write while the caller is
+still current. -/
 theorem stageCallerReturn_preserves_ipcInvariantFull (pre post : SystemState) (c : CoreId)
     (o : SyscallOutcome) (hObjInv : post.objects.invExt) (hInv : ipcInvariantFull post) :
     ipcInvariantFull (stageCallerReturn pre post c o) := by
@@ -116,7 +117,7 @@ theorem stageCallerReturn_preserves_ipcInvariantFull (pre post : SystemState) (c
       · exact ipcInvariantFull_of_objects_scheduler_eq
           (st := writeReturnFrameToTcb post tid f) rfl rfl
           (writeReturnFrameToTcb_preserves_ipcInvariantFull post tid f hObjInv hInv)
-      · exact hInv
+      · exact writeReturnFrameToTcb_preserves_ipcInvariantFull post tid f hObjInv hInv
 
 /-- **WS-BP BP7.4**: and the object store stays well-formed. -/
 theorem stageCallerReturn_preserves_objects_invExt (pre post : SystemState) (c : CoreId)
@@ -132,6 +133,6 @@ theorem stageCallerReturn_preserves_objects_invExt (pre post : SystemState) (c :
       simp only [stageCallerReturn, hP]
       split
       · exact writeReturnFrameToTcb_preserves_objects_invExt post tid f hObjInv
-      · exact hObjInv
+      · exact writeReturnFrameToTcb_preserves_objects_invExt post tid f hObjInv
 
 end SeLe4n.Kernel.Architecture

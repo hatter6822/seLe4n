@@ -1,3 +1,75 @@
+## v0.36.19 — WS-BP BP7.6: the context restore is live
+
+BP7.1–BP7.5 built everything the hardware needs to resume a thread: a table
+page for each address space and its install, the whole trap frame saved at
+every entry, each core's resume staged from the committed state, and the proof
+that the staged frame is what a resumed thread reads.  One constant,
+`contextRestoreSeamLive = false`, kept all of it inert: the local scheduling
+point, the inline resume, the priority preemption and the HAL restore each had a
+`…Live` wrapper that chose the dormant arm, and every trap arm answered with a
+mailbox frame, a sentinel poison or a halt.
+
+**The gate is deleted, not flipped.**  A flag set to `true` would leave nine
+definitions whose only content is the arm the flag no longer selects, and
+theorems stated over them rather than over the program the hardware runs.
+Removed, each with a tombstone and a Tier 3 negative:
+
+- `SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean` and `contextRestoreSeamLive`;
+- `scheduleLocalSuccessorLive`, `resumeThreadOnCoreLive` / `resumeThreadEnqueueOnly`,
+  `priorityRescheduleOnCoreLive` / `priorityRescheduleEnqueueOnly`,
+  `Platform.FFI.restoreTrapFrameLive`, and the context-switch-site register
+  (`contextRestoreWired`, `contextSwitchSites_restore_pending`).
+
+Every entry now runs `scheduleLocalSuccessor`, `.tcbResume` runs
+`resumeThreadOnCore`, the priority arms run `priorityRescheduleOnCore`, and each
+state-committing entry hands `Platform.FFI.restoreTrapFrame` the target BP7.4
+stages.  The consumers of the deleted theorems — the information-flow
+confinement, projection and cross-core non-interference results, the
+replenish-queue frames and the `ipcInvariantFull` preservation of the priority
+arms — are restated over the live definitions; the priority preservation now
+goes through the live preemption.
+
+**The trap arms return through the restore first.**  The SVC arm,
+`deliver_fault` and `deliver_unknown_syscall` open with
+`if crate::trap::take_restored() { return; }`, ahead of any mailbox write,
+sentinel poison or halt, so the sentinel and the two halts now answer only on a
+core where no restore was staged.  Publishing a mailbox frame clears the core's
+`RESTORED` flag, so a stale restore cannot survive into the next trap.
+`build.rs` holds the order: `abort_fallback_status` and
+`handler_faulted_arm_halts` require the restored return as a top-level statement
+(`is_restored_frame_return`), with negated, nested and dropped mutations in their
+self-checks.
+
+**Two defects the flip exposed, fixed in the cut.**
+
+- **A caller its own syscall switched out lost its result.**  An inline
+  `.tcbResume` or a priority preemption can switch the caller out before the
+  result is staged, and `stageCallerReturn` wrote the frame into the core bank
+  the switch had just given to the successor.  It now writes the caller's TCB
+  always and the bank only while the caller is still current
+  (`stageCallerReturn_stages_switched_out`).  The witness in
+  `tests/SmpSwitchToThreadSuite.lean` computes the retired bank-only staging
+  beside the live one.
+- **The fault progress theorem had to see through the successor dispatch**, and
+  the chooser ties its choice to queue membership only through the queue's
+  well-formedness.  Rather than state that of the delivered state, which no
+  caller holds, `faultEntryStep_not_dispatchable` and
+  `unknownSyscallEntryStep_not_dispatchable` take every run queue well-formed on
+  the **pre**-state (`runQueuesWellFormed`), and
+  `faultDeliverOnCoreChecked_preserves_runQueuesWellFormed` carries it across the
+  spill and the delivery — through the bare and capability-transferring `.call`
+  legs, the donation and the chain walk
+  (`IPC/Invariant/FaultProgress.lean` §4).  `handleRescheduleSgiOnCore_preserves_not_dispatchable`
+  and `switchToThreadOnCore_preserves_not_dispatchable_onCore` are the successor
+  half.
+
+Stale prose saying delivery "is the SM10.1 context restore", or that a core
+"halts pending SM10.1", is swept across the Lean sources, the HAL and the docs.
+Register rows closed: WS-RA frame delivery, and the fault core that could not
+switch away.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP7.6)
+
 ## v0.36.18 — WS-BP BP7.5: a staged unblock frame is what the thread resumes with
 
 WS-RR RR7.14 stages an error frame into the saved context of a thread taken out

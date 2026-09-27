@@ -522,10 +522,19 @@ private def runContextRestoreChecks : IO Unit := do
     (let b := Architecture.stageCallerReturn saved saved bootCoreId .blocks
      let f := Architecture.stageCallerReturn saved saved bootCoreId .faulted
      savedContextOf b tidP == savedFrame && savedContextOf f tidP == savedFrame)
-  assertBool "a caller no longer current when the dispatch committed is not staged"
+  -- WS-BP BP7.6: a caller its own syscall switched out (a `.tcbResume` of a
+  -- higher-priority thread, a self-demoting `.tcbSetPriority`) still gets its
+  -- result, in its context — and the core's bank, which holds the thread now
+  -- running, is left alone.
+  assertBool "a caller switched out by its own syscall has its result in its context"
     (let post := { saved with scheduler := saved.scheduler.setCurrentOnCore bootCoreId (some tidA) }
      let s := Architecture.stageCallerReturn saved post bootCoreId (.returns resultFrame)
-     savedContextOf s tidP == savedFrame)
+     let ctx := savedContextOf s tidP
+     ctx.gpr ⟨0⟩ == ⟨0xA0⟩ && ctx.gpr ⟨5⟩ == ⟨0xA5⟩ && ctx.gpr ⟨6⟩ == ⟨0x1006⟩ &&
+     s.machine.regsOnCore bootCoreId == post.machine.regsOnCore bootCoreId)
+  assertBool "RETIRED: staging only a still-current caller left it its arguments"
+    (let post := { saved with scheduler := saved.scheduler.setCurrentOnCore bootCoreId (some tidA) }
+     savedContextOf post tidP == savedFrame)
   IO.println "--- §3.12 WS-BP BP7.4 the restore target is the committed current thread ---"
   assertBool "a user thread's saved context is what the core resumes"
     (restoresUser (Architecture.restoreTargetOnCore staged bootCoreId) (savedContextOf staged tidP))

@@ -95,8 +95,8 @@ def abortPendingIpcOnEndpoint
       -- now-`.ready` thread would violate `pendingReceiveReplyWellFormed`.  (No-op for
       -- non-`blockedOnReceive` timed-out threads, which carry no stash.)
       -- WS-RR RR7.14: and stage the **timeout error frame** into the saved
-      -- register context.  Without it the thread resumes at the SM10.1 context
-      -- restore reading whatever its own argument spill left in `x0`-`x5` — its
+      -- register context.  Without it the thread resumes at the context
+      -- restore (WS-BP BP7.6) reading whatever its own argument spill left in `x0`-`x5` — its
       -- own request registers, decoded as a return value.  Folded into this
       -- record update rather than applied as a second state write, so the
       -- transition still commits exactly one object

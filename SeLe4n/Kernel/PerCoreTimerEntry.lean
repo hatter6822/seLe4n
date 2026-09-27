@@ -154,7 +154,7 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
       if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
       Concurrency.fireCrossCoreSgis sgisAndFlag.1
   | none => pure ()
-  Platform.FFI.restoreTrapFrameLive r.2.2
+  Platform.FFI.restoreTrapFrame r.2.2
   Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- **WS-SM SM5.I** structural marker: `perCoreTimerTickEntry` unfolds to the
@@ -183,7 +183,7 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
             if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
             Concurrency.fireCrossCoreSgis sgisAndFlag.1
         | none => pure ()
-        Platform.FFI.restoreTrapFrameLive r.2.2
+        Platform.FFI.restoreTrapFrame r.2.2
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 end SeLe4n.Kernel

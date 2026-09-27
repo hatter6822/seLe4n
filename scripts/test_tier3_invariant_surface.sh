@@ -4263,13 +4263,33 @@ run_check "INVARIANT" rg -n 'switching away then saves every register the thread
 # from, before the local reschedule; every entry hands the HAL the context the
 # committed state names, gated on the context-restore seam; the HAL commits it
 # into the in-flight frame with SPSR sanitised to EL0t.
-run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturn st st'"'"' execCore outcome\n      let st'"''"' := PriorityInheritance\.scheduleLocalSuccessorLive st stR execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturn st st'"'"' execCore outcome\n      let st'"''"' := PriorityInheritance\.scheduleLocalSuccessor st stR execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  let staged := Architecture\.stageCallerReturn unwound unwound execCore outcome\n' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^  completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrameLive result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^      ffiRestoreStageWord i\.toUInt32 [^\n]*\n    ffiInstallTranslation tableBase asid\n    ffiRestoreCommit 0$' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^  if SeLe4n\.Kernel\.PriorityInheritance\.contextRestoreSeamLive then restoreTrapFrame t else pure \(\)$' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrameLive r\.2\.2\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrameLive record\.2\n  Concurrency\.recordCommittedCurrentThreadHw record\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+# WS-BP BP7.6: the restore is live — no seam flag gates it, and none of the
+# gating wrappers, the flag or its module may come back.
+run_negative_check "INVARIANT" rg -n 'contextRestoreSeamLive|restoreTrapFrameLive|scheduleLocalSuccessorLive|resumeThreadOnCoreLive|resumeThreadEnqueueOnly|priorityRescheduleOnCoreLive|priorityRescheduleEnqueueOnly|contextRestoreWired|contextSwitchSites_restore_pending' SeLe4n tests
+run_negative_check "INVARIANT" test -e SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean
+# ...and every trap arm returns through the frame the kernel installed before
+# it falls back to a return frame, the poison or a halt.
+run_check "INVARIANT" rg -n -U 'Err\(_\) => Err\(crate::svc_dispatch::DispatchError::InvalidSyscallId\),\n\s+\};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;\n\s+\}\n\s+match dispatched \{' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U 'discharge_base_io\(res, "lean_handle_fault"\) \};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U 'discharge_base_io\(res, "lean_handle_unknown_syscall"\) \};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn is_restored_frame_return\(statement: &str\) -> bool \{$' rust/sele4n-hal/build.rs
+# A caller its own syscall switched out keeps its result.
+run_check "INVARIANT" rg -n '^theorem stageCallerReturn_stages_switched_out($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/ContextRestore.lean
+# The fault entry's progress obligation, discharged on the live dispatch.
+run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_preserves_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_preserves_not_dispatchable_onCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+# ...and the queue well-formedness it needs is carried from the PRE-state
+# across the delivery, never stated of the delivered state.
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_preserves_runQueuesWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_preserves_runQueuesWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+run_check "INVARIANT" rg -n -U '^    \(hwf : runQueuesWellFormed st\.scheduler\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" rg -n 'runQueueOnCoreWellFormed \(faultDeliveredState' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame r\.2\.2\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame record\.2\n  Concurrency\.recordCommittedCurrentThreadHw record\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 run_check "INVARIANT" rg -n '^    if SeLe4n\.Kernel\.isIdleThreadId tid then \.idle$' SeLe4n/Kernel/Architecture/ContextRestore.lean
 run_check "INVARIANT" rg -n '^    value & 0xF000_0000$' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^        frame\.spsr_el1 = sanitise_user_spsr\(word\(33\)\);$' rust/sele4n-hal/src/trap.rs
@@ -4882,7 +4902,7 @@ run_check "INVARIANT" rg -n 'Architecture\.stageWokenDelivery st. wokenReceiver\
 # (3) resuming a thread retires the fault it carries, and the arm runs the
 #     resume on the retired state;
 run_check "INVARIANT" rg -n '^def retirePendingFaultForResume($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n 'resumeThreadOnCoreLive$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'Lifecycle\.Suspend\.resumeThreadOnCore$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '\(retirePendingFaultForResume st vtid\.val\) vtid' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_pendingFault_none($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 # (4) the unknown-syscall fault has a live producer: the SVC arm routes an
@@ -6136,14 +6156,12 @@ run_check "INVARIANT" rg -n '^theorem vacatedCore_next_syscall_rejected($|[ ({:\
 # The citation lives in a docstring, so this one genuinely reads prose and says
 # so — it is the exception `run_prose_check` exists for, and round 43's whole
 # point is that the exception must be declared rather than indistinguishable
-# from a code anchor.
+# from a code anchor.  WS-BP BP7.6 deleted the gate whose justification cited
+# it from `PerCore.lean`; the argument now lives at the entry, beside the
+# theorem, where it explains what a vacated core's next syscall meets.
 run_prose_check "INVARIANT" rg -n 'vacatedCore_next_syscall_rejected' \
-  SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-# ... and the wrappers that replaced it must exist.
-run_check "INVARIANT" rg -n '^def resumeThreadOnCoreLive($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def resumeThreadEnqueueOnly($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def priorityRescheduleOnCoreLive($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
-run_check "INVARIANT" rg -n '^def priorityRescheduleEnqueueOnly($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
+  SeLe4n/Kernel/SyscallDispatchEntry.lean
+# WS-BP BP7.6 retired the wrappers with the seam flag (refused tree-wide above).
 # Review round 5: a LIVE inventory entry must name the function the syscall
 # dispatch calls.  Three entries named a below-API transition their wrapper does
 # strictly more than, so the wrappers get entries — and bounds — of their own.
@@ -6450,14 +6468,10 @@ run_check "INVARIANT" rg -n '^def covertChannelEvidenceName($|[ ({:\[\]])' SeLe4
 run_check "INVARIANT" rg -n '^theorem covertChannelEntry_eq_inventory($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'niName! acceptedCovertChannel_machineTimer_excluded_from_view' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
-# PR #861 review round 18: the model's context switches have no hardware
-# restore seam yet (the SVC path returns into the original caller's frame, the
-# timer ISR discards the result, and SGI INTID 0 has no registered handler).
-# Registered as a checked partition so SM10.1 cannot wire the first restore
-# without updating it.  The `_restore_pending` theorem is the load-bearing one:
-# it says the gap is TOTAL, so any wiring breaks it.
+# PR #861 review round 18: the sites that change which thread a core runs.
+# WS-BP BP7.6 wired the restore at every one and retired the pending register;
+# the enumeration stays as the tripwire a new site trips.
 run_check "INVARIANT" rg -n '^inductive ContextSwitchSite($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n '^theorem contextSwitchSites_restore_pending($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem contextSwitchSites_complete($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 
 # PR #861 review round 17: the citation table above validates only that a name
@@ -11593,7 +11607,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_setThreadCpuAffinity
 run_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadCpuAffinityReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match \(st\.getTcb\? tid\)\.bind \(fun tcb => tcb\.schedContextBinding\.scId\?\) with(\n([ \t][^\n]*)?)*\| none => \[\]" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 # The two exact halves the empty segments rest on: the live arms write no
 # replenish queue at all.
-run_check "INVARIANT" rg -n '^theorem resumeThreadOnCoreLive_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem resumeThreadOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem setPriorityOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem setMCPriorityOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context$' SeLe4n/Kernel/SyscallSchedFootprint.lean

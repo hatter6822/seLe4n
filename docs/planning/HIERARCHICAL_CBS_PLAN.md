@@ -790,12 +790,12 @@ cross-core wake paths — and cleared by `handleRescheduleSgiOnCore` on entry,
 and the per-core conjunct is stated **modulo the flag**:
 `edfCurrentEarliestOnCore st c` requires maximality only when no scheduling
 request is pending on `c` (§4.10).  The seam comes as the same wrapper pair
-SM8.B has: `keyRescheduleOnCore` is the model-level seam, and
-`keyRescheduleOnCoreLive` gates its **local** arm behind
-`contextRestoreSeamLive` exactly as `priorityRescheduleOnCoreLive` does — with
-one addition: while the gate is closed, the unapplied local preemption sets
-the executing core's own flag, so the state says a scheduling point is owed
-there rather than claiming a maximality the hardware has not enacted.  The
+SM8.B has — **amended at `v0.36.19`**: WS-BP BP7.6 deleted
+`contextRestoreSeamLive` and every `…Live` wrapper, so `keyRescheduleOnCore`
+is the one seam and applies its local preemption inline, as
+`priorityRescheduleOnCore` does; there is no closed gate for an unapplied
+preemption to wait behind, and the flag is set only where a remote core owes
+the scheduling point.  The
 theorem that licenses each caller is `keyRescheduleOnCore_establishes_or_posts`
 (T19): on the executing core with the seam live, `edfCurrentEarliestOnCore`
 holds on the returned state; otherwise the affected core's flag is set and its

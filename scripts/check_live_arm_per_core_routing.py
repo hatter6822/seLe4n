@@ -1109,7 +1109,7 @@ def main() -> int:
         fixture = (
             "def dispatchWithCapWitness (st : Nat) : SyscallId → Nat\n"
             "  | .tcbResume =>\n"
-            "    resumeThreadOnCoreLive st  -- resumeThread\n"
+            "    resumeThreadOnCore st  -- resumeThread\n"
             "  /- a retired sample:\n"
             "| .phantomArm =>\n"
             "    phantomArmRoot st\n"
@@ -1136,7 +1136,7 @@ def main() -> int:
             for _a in _arms.get("tcbResume", []):
                 _called |= called_names(strip_arm_patterns(_a))
             _bad = []
-            if "resumeThreadOnCoreLive" not in _called:
+            if "resumeThreadOnCore" not in _called:
                 _bad.append("the real call disappeared from the arm")
             if "resumeThread" in _called:
                 _bad.append("a trailing comment reached called_names")

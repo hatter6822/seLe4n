@@ -106,8 +106,8 @@ the *caller's* `.message` frame and the boundary read at the caller
 recovers it.  With `syscallReturnShape_value_returning` pinning the value
 surface at exactly those five syscalls, the family covers it.
 
-**Still owed elsewhere (registered in §9, owner SM10.1)**: frame *delivery*
-(the context restore — `contextRestoreSeamLive = false` until SM10.1).  The
+**Delivered since WS-BP BP7.6 (`v0.36.19`)**: frame *delivery* (the context
+restore — `contextRestoreSeamLive` was `false` until that cut deleted it).  The
 cancellation/timeout **error-frame** staging §9 registered beside it is
 **closed** — WS-RR RR7.14 (v0.34.67) made `timeoutThread` stage
 `Architecture.timeoutFrame` and `cancelIpcBlocking`'s four blocked arms stage

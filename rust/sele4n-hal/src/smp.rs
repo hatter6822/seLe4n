@@ -974,10 +974,9 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // timer tick (PPI 30) drives the verified scheduler tick and each
     // `.reschedule` SGI drives the verified reschedule, both via
     // `trap.rs::handle_irq_per_core` under the kernel-entry lock, and
-    // each returns here.  Actually *running* a dispatched thread's
-    // context on this core is the SM10.1 context-restore seam
-    // (`contextRestoreSeamLive`); until it flips, kernel state tracks
-    // the dispatch decisions while the core idles between interrupts.
+    // each returns through the context the kernel installed for this
+    // core (WS-BP BP7.6) — a dispatched thread at EL0, or the idle loop
+    // (`trap::kernel_idle_loop`), which replaces this one.
     // -----------------------------------------------------------------
     loop {
         crate::cpu::wfe();

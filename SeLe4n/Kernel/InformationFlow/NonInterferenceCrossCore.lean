@@ -2440,25 +2440,6 @@ theorem priorityRescheduleOnCore_confinedToCores (st st' : SystemState)
          | exact observableSlotsConfinedToCores_refl _ _)
     | exact absurd h (by simp)
 
-/-- SM8.B.2 (PR #861 review round 34): the **wrapper** is confined to the
-executing core, in *both* settings of the restore seam.
-
-Proved by cases on the flag, so neither branch is dead: the live branch defers
-to the base theorem above, and the gated branch changes no state at all. -/
-theorem priorityRescheduleOnCoreLive_confinedToCores (st st' : SystemState)
-    (running? : Option CoreId) (executingCore : CoreId) (shouldPreempt : Bool)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (h : SchedContext.PriorityManagement.priorityRescheduleOnCoreLive st running?
-      executingCore shouldPreempt = .ok (st', sgi)) :
-    observableSlotsConfinedToCores st st' [executingCore] := by
-  unfold SchedContext.PriorityManagement.priorityRescheduleOnCoreLive at h
-  split at h
-  · exact priorityRescheduleOnCore_confinedToCores st st' running? executingCore
-      shouldPreempt sgi h
-  · rw [SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly_state
-      st st' running? executingCore shouldPreempt sgi h]
-    exact observableSlotsConfinedToCores_refl _ _
-
 -- WS-RR RR8.12 Cut C3b-iii (`v0.35.169`): `threadOccupiedCores` moved to the
 -- production `SeLe4n/Kernel/SyscallSchedFootprint.lean` with the retype write
 -- set that reads it.  Its lemma family stays here: those are about the destroy
@@ -2850,88 +2831,6 @@ theorem resumeThreadOnCore_crossCoreNonInterference (ctx : LabelingContext)
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
     (resumeThreadOnCore_confinedToCores st st' vtid executingCore sgi hStep)
-    hShared
-
-/-- SM8.B.2: the enqueue-only sibling's bound, which is **sharper** than the
-base transition's — it writes the home core and nothing else.
-
-`resumeThreadOnCore`'s set is `[target, executingCore]` because its local arm
-runs the reschedule inline. The gated form stops after the enqueue, so the
-executing core never moves; declaring the smaller set is what makes that
-difference a checked fact rather than a comment. -/
-theorem resumeThreadEnqueueOnly_confinedToCores (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hStep : Lifecycle.Suspend.resumeThreadEnqueueOnly st vtid executingCore
-      = .ok (st', sgi)) :
-    observableSlotsConfinedToCores st st' [determineTargetCore st vtid.val] := by
-  unfold Lifecycle.Suspend.resumeThreadEnqueueOnly at hStep
-  simp only [] at hStep
-  split at hStep
-  · next tcb hTcb =>
-    split at hStep
-    · exact absurd hStep (by simp)
-    · next hInactive =>
-      have hPre : observableSlotsConfinedToCores st
-          (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
-            (determineTargetCore st vtid.val) vtid.val)
-          [determineTargetCore st vtid.val] :=
-        observableSlotsConfinedToCores_widen_cons
-          (resumeReadyMidState_confinedToCores st vtid.val)
-          (enqueueRunnableOnCore_confinedToCores _ (determineTargetCore st vtid.val) vtid.val)
-      -- both arms commit the same state; they differ only in the returned SGI
-      split at hStep <;>
-        · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hs, -⟩ := hStep
-          subst hs
-          exact hPre
-  · exact absurd hStep (by simp)
-
-/-- SM8.B.2 (**the bound on the function the live `.tcbResume` arm calls**).
-
-PR #861 review round 37: the arm delegates to `resumeThreadOnCoreLive`, and with
-`contextRestoreSeamLive = false` that is *not* `resumeThreadOnCore` — the
-wrapper only enqueues where the base transition may also switch `current` on the
-executing core. Citing the base transition's theorem for this arm broke the
-inventory's own round-5 rule (a live entry must name the function the dispatch
-calls), and the round-34 wrapper rework is what broke it.
-
-Stated at the base transition's write set so one set covers both settings: the
-gated branch writes a strict subset, which
-`resumeThreadEnqueueOnly_confinedToCores` records separately. -/
-theorem resumeThreadOnCoreLive_confinedToCores (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hStep : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid executingCore
-      = .ok (st', sgi)) :
-    observableSlotsConfinedToCores st st'
-      (resumeThreadOnCoreWriteSet st vtid executingCore) := by
-  unfold Lifecycle.Suspend.resumeThreadOnCoreLive at hStep
-  split at hStep
-  · exact resumeThreadOnCore_confinedToCores st st' vtid executingCore sgi hStep
-  · refine observableSlotsConfinedToCores_mono ?_
-      (resumeThreadEnqueueOnly_confinedToCores st st' vtid executingCore sgi hStep)
-    intro c hc
-    simp only [List.mem_singleton] at hc
-    simp [resumeThreadOnCoreWriteSet, hc]
-
-/-- SM8.B.3 (**the live `.tcbResume` non-interference, at the function the arm
-calls**): resuming a thread onto its home core is invisible to any core outside
-the write set, in **both** settings of the context-restore seam and with no
-hypothesis on the resumed thread's clearance.
-
-Holding in both settings is the point: it is what makes the SM10.1 flip a
-one-constant change that owes no new information-flow proof. -/
-theorem resumeThreadOnCoreLive_crossCoreNonInterference (ctx : LabelingContext)
-    (observer : IfObserver) (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (executingCore : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
-    (hStep : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid executingCore
-      = .ok (st', sgi))
-    (hne : c ∉ resumeThreadOnCoreWriteSet st vtid executingCore)
-    (hShared : sharedViewUnchanged ctx observer st st') :
-    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer hne
-    (resumeThreadOnCoreLive_confinedToCores st st' vtid executingCore sgi hStep)
     hShared
 
 -- ============================================================================
@@ -3823,7 +3722,7 @@ theorem applyPriorityChangeOnCore_confinedToCores (base st' : SystemState)
     observableSlotsConfinedToCores base st' [determineTargetCore base tid, executingCore] :=
   observableSlotsConfinedToCores_trans
     (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
-    (priorityRescheduleOnCoreLive_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
+    (priorityRescheduleOnCore_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `priorityControlWriteSet` moved to the
 -- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
@@ -5597,7 +5496,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .deschedule => niName! descheduleThread_crossCoreNonInterference
   | .cancelIpcBlocking => niName! cancelIpcBlockingOnCore_crossCoreNonInterference
   | .suspendThreadDispatch => niName! suspendThreadOnCore_crossCoreNonInterference
-  | .resumeThreadDispatch => niName! resumeThreadOnCoreLive_crossCoreNonInterference
+  | .resumeThreadDispatch => niName! resumeThreadOnCore_crossCoreNonInterference
   | .setPriorityDispatch => niName! setPriorityOnCore_crossCoreNonInterference
   | .setMCPriorityDispatch => niName! setMCPriorityOnCore_crossCoreNonInterference
   | .vspaceMapDispatch =>

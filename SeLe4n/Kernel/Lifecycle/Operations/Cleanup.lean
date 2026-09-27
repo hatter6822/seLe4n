@@ -58,9 +58,9 @@ The destroy path's precondition.  `cleanupTcbReferences` sweeps every core and
 its step clears `currentOnCore c` wherever it finds the thread — including the
 **executing** core, which is where the caller itself runs.  A thread holding a
 `.retype`-capable capability to its own TCB could therefore destroy itself: the
-core's `current` slot is cleared, no successor is scheduled
-(`scheduleLocalSuccessorLive` is inert until SM10.1), and execution returns
-through a frame whose TCB the retype has scrubbed and re-purposed.  Subsequent
+core's `current` slot is cleared, and before WS-BP BP7.6 no successor was
+scheduled and execution returned through a frame whose TCB the retype had
+scrubbed and re-purposed.  Subsequent
 syscalls from that core resolve `determineExecutingCore` to `bootCoreId`, so
 their scheduling effects land on the wrong core — a denial of service against
 every thread on that core, not only the caller.

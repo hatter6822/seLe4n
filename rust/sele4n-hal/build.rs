@@ -8543,8 +8543,22 @@ fn abort_fallback_status(raw: &str) -> Result<(), String> {
     if !(statement_diverges(ready_last) && ready_last.contains("fatal_halt(")) {
         return Err(
             "the delivered arm (the readiness guard's true branch) does not END in the \
-                    unconditional `fatal_halt()` that stands in for the SM10.1 successor \
-                    install"
+                    unconditional `fatal_halt()` that is its fallback when no context was \
+                    restored"
+                .to_string(),
+        );
+    }
+    // WS-BP BP7.6: the delivered arm returns through the restored frame
+    // before it falls back to the halt — a top-level statement, not the last.
+    let restored_returns = ready_statements.len() >= 2
+        && ready_statements[..ready_statements.len() - 1]
+            .iter()
+            .any(|&(lo, hi)| is_restored_frame_return(stripped[lo..hi].trim()));
+    if !restored_returns {
+        return Err(
+            "the delivered arm has no top-level `if crate::trap::take_restored() { return; }` \
+                    ahead of its halt: a core whose successor the kernel installed would halt \
+                    instead of running it"
                 .to_string(),
         );
     }
@@ -8610,6 +8624,16 @@ fn abort_fallback_status(raw: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// WS-BP BP7.6: is `statement` exactly the restored-frame return — the
+/// unconditional `if crate::trap::take_restored() { return; }` that sends a
+/// handler back through the context the Lean kernel installed?  Compared with
+/// whitespace removed, so a negation, a different flag or a nested body is not
+/// it.
+fn is_restored_frame_return(statement: &str) -> bool {
+    let squashed: String = statement.chars().filter(|c| !c.is_whitespace()).collect();
+    squashed == "ifcrate::trap::take_restored(){return;}"
+}
+
 /// Token-preserving self-check for `abort_fallback_status`: the fixture is
 /// no thinner than `deliver_fault` itself, and every mutation keeps the tokens
 /// a presence check would look for.
@@ -8629,6 +8653,9 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
             crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
                 lean_handle_fault(core_id, esr);
             });
+            if crate::trap::take_restored() {
+                return;
+            }
             crate::kprintln!("[core {}] fault delivered; halting (ESR=0x{:016x})", core_id, esr);
             crate::cpu::fatal_halt();
         }
@@ -8648,7 +8675,17 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
     if let Err(why) = abort_fallback_status(GOOD) {
         panic!("build.rs self-check: the good abort-fallback fixture was refused: {why}");
     }
-    let mutations: [(&str, &str, &str); 9] = [
+    let mutations: [(&str, &str, &str); 11] = [
+        (
+            "the restored-frame return negated (token kept, relation inverted)",
+            "            if crate::trap::take_restored() {\n",
+            "            if !crate::trap::take_restored() {\n",
+        ),
+        (
+            "the restored-frame return nested under a condition (token kept)",
+            "            if crate::trap::take_restored() {\n                return;\n            }\n",
+            "            if core_id == 0 {\n                if crate::trap::take_restored() {\n                    return;\n                }\n            }\n",
+        ),
         (
             "the not-ready halt moved into the ready branch (token kept, path broken)",
             "            crate::cpu::fatal_halt();\n        }\n        // A frame cannot fail-close an abort: halt.\n        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n",
@@ -9196,6 +9233,17 @@ fn handler_faulted_arm_halts(trap: &str) -> Result<(), String> {
         .ok_or_else(|| "the SVC arm is empty".to_string())?;
     let last = trap[last_lo..last_hi].trim_start();
     let last_at = last_hi - last.len();
+    let restored_first = svc_statements.len() >= 2
+        && is_restored_frame_return(text(&svc_statements[svc_statements.len() - 2]));
+    if !restored_first {
+        return Err(
+            "the statement before the SVC arm's `match dispatched` is not the unconditional \
+             `if crate::trap::take_restored() { return; }` (WS-BP BP7.6): a return frame, \
+             the blocked-caller poison or the fault halt would overwrite the context the \
+             Lean dispatch installed"
+                .to_string(),
+        );
+    }
     if !last.starts_with("match dispatched {") {
         return Err(
             "the SVC arm's terminal statement is not `match dispatched { … }` — the dispatch \
@@ -9351,6 +9399,9 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
                 Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
             };
+            if crate::trap::take_restored() {
+                return;
+            }
             match dispatched {
                 Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
                 // The caller took a fault at the seam: halt pending the successor install.
@@ -9427,6 +9478,16 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         panic!("build.rs self-check: the good faulted-outcome fixture was refused: {why}");
     }
     let trap_mutations: &[(&str, &str, &str)] = &[
+        (
+            "the restored-frame return negated before the routing (token kept)",
+            "            if crate::trap::take_restored() {\n                return;\n            }\n            match dispatched {\n",
+            "            if !crate::trap::take_restored() {\n                return;\n            }\n            match dispatched {\n",
+        ),
+        (
+            "the restored-frame return dropped from before the routing",
+            "            if crate::trap::take_restored() {\n                return;\n            }\n            match dispatched {\n",
+            "            match dispatched {\n",
+        ),
         (
             "the Faulted arm resuming behind the sentinel (helper token kept in a comment)",
             "                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    halt_after_delivered_syscall_fault(frame);\n                }\n",

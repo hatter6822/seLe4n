@@ -13,7 +13,6 @@
 
 import SeLe4n.Kernel.SchedContext.Operations
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
-import SeLe4n.Kernel.Concurrency.ContextRestoreSeam
 
 /-!
 # WS-SM SM8.B — per-core SchedContext operations
@@ -156,10 +155,8 @@ core's `current` (the Z5-H1 guard) precisely *in order to* force a reschedule,
 so suppressing the tail leaves a core with nothing current, which is the
 round-15 defect this scheduling point was added to fix.
 
-A gate is only sound where the state it leaves behind is coherent.  That holds
-for `resumeThreadOnCoreLive` (the thread stays queued, merely undispatched) and
-not here, so this path is deliberately ungated and recorded as such in
-`contextSwitchSites_restore_pending`. -/
+A gate is only sound where the state it leaves behind is coherent, which is
+why this path was never gated; since WS-BP BP7.6 no scheduling point is. -/
 theorem schedContextUnbindOnCore_local_reschedules (vScId : SeLe4n.ValidObjId)
     (executingCore : CoreId) (st stMid st' : SystemState)
     (hRunning : schedContextRunningCore? st vScId.val = some executingCore)

@@ -13,7 +13,6 @@ import SeLe4n.Platform.Boot
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Kernel.Architecture.TrapFrameSave
 import SeLe4n.Kernel.Architecture.ContextRestore
-import SeLe4n.Kernel.Concurrency.ContextRestoreSeam
 
 /-!
 # FFI Bridge: Lean Kernel ↔ Rust HAL
@@ -2004,7 +2003,8 @@ definition would break:
 * a blocked caller's outcome carries **no frame at all** — not a zero frame, not
   a stale one.  That is what the interim trap layer relies on when it poisons
   `x0`-`x5` with `blocked_resume_sentinel_regs()` rather than delivering
-  anything, and what SM10.1 will replace with a successor install;
+  anything, and what the context restore (WS-BP BP7.6) supersedes with a
+  successor install wherever one is staged;
 * the staged registers are **not read** on that arm, so a blocked caller's own
   argument spill can never reach the boundary as a return value — the §1.2
   defect, in the one place that would reintroduce it silently.
@@ -2100,7 +2100,8 @@ theorem syscallReturnOutcome_blocks_iff
 returns **no frame**.  Not a zero frame and not a stale one — there is no
 `SyscallReturnFrame` the boundary hands back, which is what makes the interim
 `blocked_resume_sentinel_regs()` poisoning the only thing a blocked caller's
-registers can hold before SM10.1. -/
+registers can hold on a core where the context restore (WS-BP BP7.6) staged no
+successor. -/
 theorem blockingArm_returns_no_frame
     (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb)
@@ -2770,9 +2771,10 @@ abort entry's delivery, at the SVC seam: spill the trap frame's window, build
 the context from the spilled file with the `SVC` instruction as the restart
 PC, and run the flow-checked delivery on the executing core.  The result is
 the committed state; the outcome is `.faulted` (tag 2), because the faulting
-thread is now waiting on its handler, no frame exists for it, and — until
-SM10.1 installs successors — the trap layer must halt rather than `eret` the
-thread past the `SVC` the handler's reply will restart it at (PR #887 review
+thread is now waiting on its handler, no frame exists for it, and the trap
+layer must never `eret` the thread past the `SVC` the handler's reply will
+restart it at: it resumes the successor the context restore staged (WS-BP
+BP7.6), or halts where none was (PR #887 review
 round 5). -/
 def deliverSyscallCapFault (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
@@ -2848,8 +2850,8 @@ Pipeline:
      deliver a `capFault` to the thread's fault handler instead of returning
      the error — seL4's `handleInvocation` / `handleRecv` — and hand back
      `.faulted` (outcome tag 2; PR #887 review round 5): a delivered fault,
-     on which the trap layer halts pending SM10.1 as it does for an
-     unknown-syscall delivery, never the `.blocks` sentinel that would
+     on which the trap layer resumes the staged successor (WS-BP BP7.6), or
+     halts where none was, as it does for an unknown-syscall delivery, never the `.blocks` sentinel that would
      resume the thread past the `SVC`.
      The trap frame's `ELR_EL1`, `SPSR_EL1`, `SP_EL0` and `x30` cross for
      this: the fault context is built from the spilled window
@@ -3188,16 +3190,6 @@ def restoreTrapFrame : SeLe4n.Kernel.Architecture.RestoreTarget → BaseIO Unit
     ffiInstallTranslation 0 0
     ffiRestoreCommit 1
   | .none => pure ()
-
-/-- **WS-BP BP7.4**: the restore, gated on the context-restore seam — the same
-    one constant the scheduler's local-successor dispatch reads, so the model
-    dispatches a successor exactly when the hardware installs one. -/
-def restoreTrapFrameLive (t : SeLe4n.Kernel.Architecture.RestoreTarget) : BaseIO Unit :=
-  if SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive then restoreTrapFrame t else pure ()
-
-/-- **WS-BP BP7.4**: inert until the seam is live. -/
-theorem restoreTrapFrameLive_inert (t : SeLe4n.Kernel.Architecture.RestoreTarget) :
-    restoreTrapFrameLive t = pure () := rfl
 
 /-- **WS-SM SM7.D.1**: the invalidate-all operand routes to op tag 0. -/
 theorem icMaintenanceBroadcast_iallu_encoding :

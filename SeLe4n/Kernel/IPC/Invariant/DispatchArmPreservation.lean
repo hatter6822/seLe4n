@@ -576,82 +576,6 @@ theorem migrateRunQueueBucketOnCore_preserves_ipcInvariantFull (st : SystemState
       (migrateRunQueueBucketOnCore_currentOnCore st tid p c Concurrency.bootCoreId))
     hInv.passiveServerIdle
 
-/-- `applyPriorityChangeOnCore` is the priority-source write followed by the
-bucket re-key; the reschedule stage is state-inert (its context-restore seam
-is not live — if that seam flips, this proof fails loudly at the flip, which
-is the registered SM10.1 obligation surfacing where it must). -/
-theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (p : SeLe4n.Priority) (ec : CoreId) (b : Bool)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (hStep : SchedContext.PriorityManagement.applyPriorityChangeOnCore
-      st tid tcb p ec b = .ok (st', sgi)) :
-    ipcInvariantFull st' := by
-  unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at hStep
-  rw [SchedContext.PriorityManagement.priorityRescheduleOnCoreLive_inert] at hStep
-  have hEq := SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly_state
-    _ _ _ _ _ _ hStep
-  subst hEq
-  exact migrateRunQueueBucketOnCore_preserves_ipcInvariantFull _ _ _ _
-    (updatePrioritySource_preserves_ipcInvariantFull st tid tcb p hObjInv hInv hPre)
-
-/-- `.tcbSetPriority`: authority check, then the priority write and bucket
-re-key — no conjunct-read field or membership moves. -/
-theorem setPriorityOnCore_preserves_ipcInvariantFull
-    (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
-    (p : SeLe4n.Priority) (ec : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : SchedContext.PriorityManagement.setPriorityOnCore
-      st vCallerTid vTargetTid p ec = .ok (st', sgi)) :
-    ipcInvariantFull st' := by
-  unfold SchedContext.PriorityManagement.setPriorityOnCore at hStep
-  split at hStep
-  · split at hStep
-    · contradiction
-    · split at hStep
-      · rename_i targetTcb hTarget
-        exact applyPriorityChangeOnCore_preserves_ipcInvariantFull st st' vTargetTid.val
-          targetTcb p ec _ _ hObjInv hInv
-          ((SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget) hStep
-      · contradiction
-  · contradiction
-
-/-- `.tcbSetMCPriority`: the MCP write is a one-TCB rewrite of a field no
-conjunct reads; when the new ceiling bites, the same priority-change chain
-runs on top. -/
-theorem setMCPriorityOnCore_preserves_ipcInvariantFull
-    (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
-    (p : SeLe4n.Priority) (ec : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : SchedContext.PriorityManagement.setMCPriorityOnCore
-      st vCallerTid vTargetTid p ec = .ok (st', sgi)) :
-    ipcInvariantFull st' := by
-  unfold SchedContext.PriorityManagement.setMCPriorityOnCore at hStep
-  split at hStep
-  · split at hStep
-    · contradiction
-    · split at hStep
-      · rename_i targetTcb hTarget _
-        dsimp only [SystemState.rewriteObject] at hStep
-        have hPreRaw := (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
-        have hInvMcp := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st
-          vTargetTid.val targetTcb { targetTcb with maxControlledPriority := p }
-          hObjInv hInv hPreRaw rfl rfl rfl rfl rfl rfl rfl rfl rfl
-        have hObjInvMcp := RobinHood.RHTable.insert_preserves_invExt st.objects
-          vTargetTid.val.toObjId (.tcb { targetTcb with maxControlledPriority := p }) hObjInv
-        have hAtMcp := insertObjects_getElem_self st vTargetTid.val.toObjId
-          (.tcb { targetTcb with maxControlledPriority := p }) hObjInv
-        split at hStep
-        · exact applyPriorityChangeOnCore_preserves_ipcInvariantFull _ st' vTargetTid.val
-            { targetTcb with maxControlledPriority := p } p ec _ _
-            hObjInvMcp hInvMcp hAtMcp hStep
-        · cases hStep
-          exact hInvMcp
-      · contradiction
-  · contradiction
-
 -- ============================================================================
 -- §8  Affinity arm (`.tcbSetAffinity`)
 -- ============================================================================
@@ -2655,6 +2579,86 @@ theorem priorityRescheduleOnCore_preserves_ipcInvariantFull (st : SystemState)
       exact hInv
   · cases hStep
     exact hInv
+
+/-- `applyPriorityChangeOnCore` is the priority-source write, the bucket re-key,
+and the preemption seam on the core running the thread.  WS-BP BP7.6: the seam
+is live, so a local preemption switches the executing core — the SM10.1
+obligation this proof used to defer, discharged by
+`priorityRescheduleOnCore_preserves_ipcInvariantFull`. -/
+theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (p : SeLe4n.Priority) (ec : CoreId) (b : Bool)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStep : SchedContext.PriorityManagement.applyPriorityChangeOnCore
+      st tid tcb p ec b = .ok (st', sgi)) :
+    ipcInvariantFull st' := by
+  unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at hStep
+  have hObjMid : (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+      (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
+      (determineTargetCore st tid)).objects.invExt := by
+    rw [migrateRunQueueBucketOnCore_objects_eq]
+    exact SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
+      st tid tcb p hObjInv
+  exact priorityRescheduleOnCore_preserves_ipcInvariantFull _ _ _ _ _ _ hObjMid
+    (migrateRunQueueBucketOnCore_preserves_ipcInvariantFull _ _ _ _
+      (updatePrioritySource_preserves_ipcInvariantFull st tid tcb p hObjInv hInv hPre)) hStep
+
+/-- `.tcbSetPriority`: authority check, then the priority write and bucket
+re-key — no conjunct-read field or membership moves. -/
+theorem setPriorityOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+    (p : SeLe4n.Priority) (ec : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : SchedContext.PriorityManagement.setPriorityOnCore
+      st vCallerTid vTargetTid p ec = .ok (st', sgi)) :
+    ipcInvariantFull st' := by
+  unfold SchedContext.PriorityManagement.setPriorityOnCore at hStep
+  split at hStep
+  · split at hStep
+    · contradiction
+    · split at hStep
+      · rename_i targetTcb hTarget
+        exact applyPriorityChangeOnCore_preserves_ipcInvariantFull st st' vTargetTid.val
+          targetTcb p ec _ _ hObjInv hInv
+          ((SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget) hStep
+      · contradiction
+  · contradiction
+
+/-- `.tcbSetMCPriority`: the MCP write is a one-TCB rewrite of a field no
+conjunct reads; when the new ceiling bites, the same priority-change chain
+runs on top. -/
+theorem setMCPriorityOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+    (p : SeLe4n.Priority) (ec : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : SchedContext.PriorityManagement.setMCPriorityOnCore
+      st vCallerTid vTargetTid p ec = .ok (st', sgi)) :
+    ipcInvariantFull st' := by
+  unfold SchedContext.PriorityManagement.setMCPriorityOnCore at hStep
+  split at hStep
+  · split at hStep
+    · contradiction
+    · split at hStep
+      · rename_i targetTcb hTarget _
+        dsimp only [SystemState.rewriteObject] at hStep
+        have hPreRaw := (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
+        have hInvMcp := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st
+          vTargetTid.val targetTcb { targetTcb with maxControlledPriority := p }
+          hObjInv hInv hPreRaw rfl rfl rfl rfl rfl rfl rfl rfl rfl
+        have hObjInvMcp := RobinHood.RHTable.insert_preserves_invExt st.objects
+          vTargetTid.val.toObjId (.tcb { targetTcb with maxControlledPriority := p }) hObjInv
+        have hAtMcp := insertObjects_getElem_self st vTargetTid.val.toObjId
+          (.tcb { targetTcb with maxControlledPriority := p }) hObjInv
+        split at hStep
+        · exact applyPriorityChangeOnCore_preserves_ipcInvariantFull _ st' vTargetTid.val
+            { targetTcb with maxControlledPriority := p } p ec _ _
+            hObjInvMcp hInvMcp hAtMcp hStep
+        · cases hStep
+          exact hInvMcp
+      · contradiction
+  · contradiction
 
 /-- Clearing a SchedContext's binding when **no** donation and no live TCB
 references it preserves the whole bundle — the fail-safe arm of the unbind,
@@ -4784,33 +4788,6 @@ private theorem enqueueRunnableOnCore_objects_invExt
     · exact RHTable_insert_preserves_invExt _ _ _ hObjInv
   · exact hObjInv
 
-/-- The enqueue-only resume — the branch the live `.tcbResume` arm runs while
-the context-restore seam is dark. -/
-theorem resumeThreadEnqueueOnly_preserves_ipcInvariantFull
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hObjInv : st.objects.invExt)
-    (hQ : threadIpcFieldsQuiescent st vtid.val)
-    (hInv : ipcInvariantFull st)
-    (hStep : Lifecycle.Suspend.resumeThreadEnqueueOnly st vtid ec = .ok (st', sgi)) :
-    ipcInvariantFull st' := by
-  unfold Lifecycle.Suspend.resumeThreadEnqueueOnly at hStep
-  dsimp only [] at hStep
-  cases hLk : st.getTcb? vtid.val with
-  | none => rw [hLk] at hStep; cases hStep
-  | some tcb =>
-      rw [hLk] at hStep
-      dsimp only [] at hStep
-      split at hStep
-      · cases hStep
-      · have hMid := resumeReadyMidState_preserves_ipcInvariantFull st vtid.val hObjInv hQ hInv
-        have hEnq := enqueueRunnableOnCore_preserves_ipcInvariantFull
-          (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
-          (determineTargetCore st vtid.val) vtid.val
-          (resumeReadyMidState_objects_invExt st vtid.val hObjInv)
-          (resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ) hMid
-        split at hStep <;> · cases hStep; exact hEnq
-
 /-- The full per-core resume (live once the context-restore seam flips). -/
 theorem resumeThreadOnCore_preserves_ipcInvariantFull
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
@@ -5053,22 +5030,6 @@ theorem setThreadFaultHandlerOp_preserves_objects_invExt
           cases hStep
           unfold installFaultHandler
           exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hObjInv
-
-/-- `.tcbResume` (dispatch arm): the seam-gated wrapper, both branches. -/
-theorem resumeThreadOnCoreLive_preserves_ipcInvariantFull
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hObjInv : st.objects.invExt)
-    (hQ : threadIpcFieldsQuiescent st vtid.val)
-    (hInv : ipcInvariantFull st)
-    (hStep : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid ec = .ok (st', sgi)) :
-    ipcInvariantFull st' := by
-  unfold Lifecycle.Suspend.resumeThreadOnCoreLive at hStep
-  split at hStep
-  · exact resumeThreadOnCore_preserves_ipcInvariantFull st st' vtid ec sgi
-      hObjInv hQ hInv hStep
-  · exact resumeThreadEnqueueOnly_preserves_ipcInvariantFull st st' vtid ec sgi
-      hObjInv hQ hInv hStep
 
 /-- Cancelling IPC blocking on a `.ready` victim is the identity — there is
 nothing to cancel. -/

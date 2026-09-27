@@ -413,7 +413,7 @@ Send/call feed the PR 3/4 caps optional. The other 32 arms stay `none`.
   with fail-closed `none` fallback (undeclared syscalls run unbracketed exactly
   as today). Model on the already-migrated `suspend_thread_cross_core`
   (v0.32.149).
-- *Step 2:* preserve `scheduleLocalSuccessorLive`-inside-the-closure and the
+- *Step 2:* preserve `scheduleLocalSuccessor`-inside-the-closure and the
   diff-against-`st''` discipline (do not lift the reschedule out of the bracket).
 - *Step 3:* update the `syscallDispatchCrossCoreEntry_def` marker theorem + the
   Rust `build.rs` Check-5 scanner pin.
@@ -606,7 +606,7 @@ gated on BP6, validated at BP8).**  Consumes PR 12.
   entry lock; two cores with disjoint footprints commit concurrently, which is
   the property PR 10 proves sound and the reason the track exists.
 - *Step 3:* seam flag — retain SM5.I's global entry ticket lock behind a flag
-  (`contextRestoreSeamLive` precedent), flipping only after BP8 validates on the
+  (the retired `contextRestoreSeamLive` precedent), flipping only after BP8 validates on the
   board.  Both settings stay host-stressed while the flag exists.
 - *Step 4:* delete the `UncoveredLockDomain` constructors PR 11 registered and
   PR 13 closes; re-pin the release closure

@@ -55,10 +55,9 @@ the global kernel-entry lock: `trap.rs` wraps the call in
 ## Readiness
 
 The entry is behind the per-core `lean_ready` gate on the Rust side, like the
-timer tick and the `.reschedule` receiver.  Until SM10.1 flips it, an abort on
-hardware takes the Rust-only half: a label-encoded error frame
-(RR4.22) rather than a delivered fault.  New code must not assume this seam
-executes on hardware merely because it is wired.
+timer tick and the `.reschedule` receiver; since WS-BP BP6 every serving PE
+marks itself ready, so an abort on hardware is delivered here, and since WS-BP
+BP7.6 the core returns through the successor the delivery installed.
 -/
 
 namespace SeLe4n.Kernel
@@ -130,6 +129,17 @@ theorem classifySynchronousException_depends_only_on_esr (ectx : ExceptionContex
 -- the SVC seam (`Platform.FFI.syscallDispatchFromAbi`, below this module in the
 -- import graph) spills the same window when it delivers a capability fault.
 
+/-- The state the delivery commits for the faulting thread `tid` on core `c`,
+before the core's successor is chosen: the trap frame's window spilled into the
+thread, the fault context built from the spilled registers, the flow-checked
+delivery.  Named so the entry and its progress theorem read the one state. -/
+def faultDeliveredState (lctx : LabelingContext) (st : SystemState) (f : Fault)
+    (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  let stRegs := writeFaultRegistersToTcb st tid w
+  let fctx := faultContextOfThread stRegs tid ectx.elr ectx.spsr
+  (faultDeliverOnCoreChecked lctx stRegs tid f fctx c).1
+
 /-- Review round (PR #887): **the delivery the two fault entries share**, given
 the fault already chosen.  Spill the trap frame's window, build the context
 from the spilled file, run the flow-checked delivery, dispatch the executing
@@ -170,21 +180,18 @@ recovers every such change from the pre/post states, exactly as
 composes; reading only the surfaced poke would leave a re-bucketed remote core
 running the wrong thread until something else woke it.
 
-**The executing core's successor** goes through the same gate as every other
-state-committing entry (`scheduleLocalSuccessorLive`, inert until SM10.1
-flips `contextRestoreSeamLive`): the delivery vacates this core, and when the
-context restore can install a successor the entry dispatches one in the same
-atomic step, with the SGI diff taken against the *final* state. -/
+**The executing core's successor** is dispatched in the same atomic step, as
+at every other state-committing entry (`scheduleLocalSuccessor`): the delivery
+vacates this core, and since WS-BP BP7.6 the context restore installs the
+successor, so the SGI diff is taken against the *final* state. -/
 def faultEntryDeliver (lctx : LabelingContext) (st : SystemState) (f : Fault)
     (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId) :
     List (CoreId × SgiKind) × SystemState :=
   match st.scheduler.currentOnCore c with
   | none => ([], st)
   | some tid =>
-      let stRegs := writeFaultRegistersToTcb st tid w
-      let fctx := faultContextOfThread stRegs tid ectx.elr ectx.spsr
-      let st' := (faultDeliverOnCoreChecked lctx stRegs tid f fctx c).1
-      let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' c
+      let st' := faultDeliveredState lctx st f ectx w c tid
+      let st'' := PriorityInheritance.scheduleLocalSuccessor st st' c
       (PriorityInheritance.computeCrossCoreSgis st st'' c, st'')
 
 /-- WS-RR RR4.23: the verified step the fault entry commits — classify, spill
@@ -315,7 +322,7 @@ def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
         (fun c => (c, st'.scheduler.currentOnCore c)),
       Concurrency.restoreTargetAt st' coreId), st'))
   Concurrency.fireCrossCoreSgis r.1
-  Platform.FFI.restoreTrapFrameLive r.2.2
+  Platform.FFI.restoreTrapFrame r.2.2
   Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- Review round (PR #887, **the export**): the C-callable unknown-syscall
@@ -340,7 +347,7 @@ def unknownSyscallEntry (coreId : UInt64) (esr elr spsr far : UInt64)
         (fun c => (c, st'.scheduler.currentOnCore c)),
       Concurrency.restoreTargetAt st' coreId), st'))
   Concurrency.fireCrossCoreSgis r.1
-  Platform.FFI.restoreTrapFrameLive r.2.2
+  Platform.FFI.restoreTrapFrame r.2.2
   Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- WS-RR RR4.23 structural marker: `faultEntry` unfolds to the atomic commit
@@ -356,7 +363,7 @@ scanner, the seam cannot regress silently — the discipline the timer and
 `.reschedule` entries already carry.
 
 The record matters here even though the trap layer halts after a delivered
-fault (pending SM10.1): the delivery *vacates* this core, so leaving the HAL
+fault on a core with no restore staged: the delivery *vacates* this core, so leaving the HAL
 mirror naming the faulted thread would be a stale name pointing at a
 descheduled frame — exactly what RR7.26's clear-on-vacate exists to prevent. -/
 theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
@@ -375,7 +382,7 @@ theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
               (fun c => (c, st'.scheduler.currentOnCore c)),
             Concurrency.restoreTargetAt st' coreId), st'))
         Concurrency.fireCrossCoreSgis r.1
-        Platform.FFI.restoreTrapFrameLive r.2.2
+        Platform.FFI.restoreTrapFrame r.2.2
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 /-- The same marker for the unknown-syscall seam. -/
@@ -395,22 +402,43 @@ theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
               (fun c => (c, st'.scheduler.currentOnCore c)),
             Concurrency.restoreTargetAt st' coreId), st'))
         Concurrency.fireCrossCoreSgis r.1
-        Platform.FFI.restoreTrapFrameLive r.2.2
+        Platform.FFI.restoreTrapFrame r.2.2
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 /-- The shared delivery inherits the progress guarantee: whatever it commits,
 the thread that was current on `c` is not dispatchable there afterwards.
-`scheduleLocalSuccessorLive` is the identity until SM10.1 flips the restore
-seam (`scheduleLocalSuccessorLive_inert`); when it does, the successor it
-installs is drawn from the run queue the faulting thread is no longer on, and
-this proof is the SM10.1 obligation that records that. -/
+
+**WS-BP BP7.6: the SM10.1 obligation, discharged.**  The core's successor is
+dispatched now, and it is drawn from the run queue the faulting thread is no
+longer on (`handleRescheduleSgiOnCore_preserves_not_dispatchable`).  That the
+chooser draws from the queue's *members* is what the queue's well-formedness
+says — its bucket scan and its membership agree — so the theorem takes it of
+the state the successor is chosen on — and that is derived, not assumed: the
+theorem takes every core's queue well-formed on the **pre**-state, which is a
+conjunct of `schedulerInvariant_perCore` every reachable state carries, and
+`faultDeliverOnCoreChecked_preserves_runQueuesWellFormed` carries it across the
+spill and the delivery. -/
 theorem faultEntryDeliver_not_dispatchable (lctx : LabelingContext) (st : SystemState)
     (f : Fault) (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
-    (tid : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore c = some tid) :
+    (tid : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore c = some tid)
+    (hwf : runQueuesWellFormed st.scheduler) :
     ¬ dispatchableOnCore (faultEntryDeliver lctx st f ectx w c).2 tid c := by
+  have hwfD : (faultDeliveredState lctx st f ectx w c tid).scheduler.runQueueOnCore c
+      |>.wellFormed := by
+    unfold faultDeliveredState
+    refine faultDeliverOnCoreChecked_preserves_runQueuesWellFormed lctx _ tid f _ c ?_ c
+    rw [writeFaultRegistersToTcb_scheduler]; exact hwf
   unfold faultEntryDeliver
-  simp only [hCur, PriorityInheritance.scheduleLocalSuccessorLive_inert]
-  exact faultDeliverOnCoreChecked_not_dispatchable lctx _ tid f _ c
+  simp only [hCur]
+  have hD : ¬ dispatchableOnCore (faultDeliveredState lctx st f ectx w c tid) tid c :=
+    faultDeliverOnCoreChecked_not_dispatchable lctx _ tid f _ c
+  unfold PriorityInheritance.scheduleLocalSuccessor
+  split
+  · split
+    · rename_i stH hH
+      exact handleRescheduleSgiOnCore_preserves_not_dispatchable _ stH c tid hwfD hH hD
+    · exact hD
+  · exact hD
 
 /-- WS-RR RR4.23/RR4.19: **the entry inherits the progress guarantee.**
 
@@ -424,13 +452,14 @@ theorem faultEntryStep_not_dispatchable (lctx : LabelingContext) (st : SystemSta
     (coreId : UInt64) (tid : SeLe4n.ThreadId) (h : coreId.toNat < numCores)
     (hEl0 : ectx.takenFromEl0 = true)
     (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid)
-    (hFault : (faultOfExceptionContext ectx).isSome) :
+    (hFault : (faultOfExceptionContext ectx).isSome)
+    (hwf : runQueuesWellFormed st.scheduler) :
     ¬ dispatchableOnCore (faultEntryStep lctx st ectx w coreId).2 tid ⟨coreId.toNat, h⟩ := by
   unfold faultEntryStep
   rw [dif_pos h, if_pos hEl0]
   cases hF : faultOfExceptionContext ectx with
   | none => rw [hF] at hFault; exact absurd hFault (by simp)
-  | some f => exact faultEntryDeliver_not_dispatchable lctx st f ectx w _ tid hCur
+  | some f => exact faultEntryDeliver_not_dispatchable lctx st f ectx w _ tid hCur hwf
 
 /-- Review round (PR #887): the unknown-syscall entry carries the same
 guarantee — a thread that issued an unknown syscall is never resumed at it
@@ -439,12 +468,13 @@ theorem unknownSyscallEntryStep_not_dispatchable (lctx : LabelingContext)
     (st : SystemState) (ectx : ExceptionContext) (w : FaultRegisterWindow)
     (coreId : UInt64) (tid : SeLe4n.ThreadId) (h : coreId.toNat < numCores)
     (hEl0 : ectx.takenFromEl0 = true)
-    (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid) :
+    (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid)
+    (hwf : runQueuesWellFormed st.scheduler) :
     ¬ dispatchableOnCore (unknownSyscallEntryStep lctx st ectx w coreId).2 tid
       ⟨coreId.toNat, h⟩ := by
   unfold unknownSyscallEntryStep
   rw [dif_pos h, if_pos hEl0]
-  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur
+  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur hwf
 
 /-- PR #887 review round 3: **the syscall seam's capability fault carries the
 same guarantee.**  `deliverSyscallCapFault` is the abort entry's delivery at
