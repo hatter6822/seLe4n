@@ -525,6 +525,15 @@ core for, and the core it yields is the one the verified step used. -/
     coreIdOfUInt64? coreId = none := by
   unfold coreIdOfUInt64?; rw [dif_neg h]
 
+/-- **WS-BP BP7.3**: save the frame a per-core entry captured into the core its
+raw id names — nothing when the id names no core, exactly as the verified steps
+refuse it. -/
+def saveCapturedTrapFrameAt (st : SeLe4n.Model.SystemState) (coreId : UInt64)
+    (frame : Option SeLe4n.RegisterFile) : SeLe4n.Model.SystemState :=
+  match coreIdOfUInt64? coreId with
+  | some c => Architecture.saveCapturedTrapFrame st c frame
+  | none => st
+
 /-- **WS-RR RR7.26**: the shared tail of the three state-committing per-core
 entries — record on the HAL what the committed post-state left running.
 

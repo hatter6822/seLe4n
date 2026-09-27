@@ -149,8 +149,10 @@ declared footprint, so the footprint is not a false one.  See the module
 docstring. -/
 @[export lean_per_core_reschedule]
 def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit := do
+  let frame ← Platform.FFI.captureTrapFrame
   let record ← Platform.FFI.modifyGetKernelState (fun st =>
-    let st' := (rescheduleUnderDeclaredLockSet coreId st).state
+    let st' := (rescheduleUnderDeclaredLockSet coreId
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
     ((Concurrency.coreIdOfUInt64? coreId).map
       (fun c => (c, st'.scheduler.currentOnCore c)), st'))
   Concurrency.recordCommittedCurrentThreadHw record
@@ -168,8 +170,10 @@ and the `build.rs` trap-path scanner, the seam cannot regress silently. -/
 theorem perCoreRescheduleEntry_def (coreId : UInt64) :
     perCoreRescheduleEntry coreId =
       (do
+        let frame ← Platform.FFI.captureTrapFrame
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
-          let st' := (rescheduleUnderDeclaredLockSet coreId st).state
+          let st' := (rescheduleUnderDeclaredLockSet coreId
+            (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
           ((Concurrency.coreIdOfUInt64? coreId).map
             (fun c => (c, st'.scheduler.currentOnCore c)), st'))
         Concurrency.recordCommittedCurrentThreadHw record) := rfl

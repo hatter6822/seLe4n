@@ -140,8 +140,10 @@ advances no clock and fires no SGI — fail-closed, because a tick that did not 
 must not poke a remote core.  See the module docstring. -/
 @[export lean_per_core_timer_tick]
 def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
+  let frame ← Platform.FFI.captureTrapFrame
   let r ← Platform.FFI.modifyGetKernelState (fun st =>
-    let outcome := timerTickUnderDeclaredLockSet coreId st
+    let outcome := timerTickUnderDeclaredLockSet coreId
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame)
     let st' := outcome.state
     ((outcome.value?,
       (Concurrency.coreIdOfUInt64? coreId).map
@@ -165,8 +167,10 @@ against) and the `build.rs` Check-5 scanner, the seam cannot regress silently. -
 theorem perCoreTimerTickEntry_def (coreId : UInt64) :
     perCoreTimerTickEntry coreId =
       (do
+        let frame ← Platform.FFI.captureTrapFrame
         let r ← Platform.FFI.modifyGetKernelState (fun st =>
-          let outcome := timerTickUnderDeclaredLockSet coreId st
+          let outcome := timerTickUnderDeclaredLockSet coreId
+            (Concurrency.saveCapturedTrapFrameAt st coreId frame)
           let st' := outcome.state
           ((outcome.value?,
             (Concurrency.coreIdOfUInt64? coreId).map

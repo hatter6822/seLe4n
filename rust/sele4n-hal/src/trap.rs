@@ -32,6 +32,8 @@
 /// register. A nested exception (e.g., SError during data-abort handling)
 /// would otherwise mutate the live ESR/FAR before the outer handler reads
 /// them, producing incorrect classification and fault-address reports.
+use core::sync::atomic::{AtomicPtr, Ordering};
+
 #[repr(C, align(16))]
 pub struct TrapFrame {
     /// General-purpose registers x0-x30 (31 registers).
@@ -63,6 +65,110 @@ const _: () = assert!(core::mem::offset_of!(TrapFrame, elr_el1) == 256);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, spsr_el1) == 264);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, esr_el1) == 272);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, far_el1) == 280);
+
+/// **WS-BP BP7.3: the number of words a thread's context occupies in a trap
+/// frame** — `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, in field order.  The
+/// Lean kernel reads word `i` through [`in_flight_frame_word`]
+/// (`Architecture.registerFileOfTrapWords`, `trapFrameWordCount`).
+pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 34;
+
+/// **WS-BP BP7.3**: word `index` of a thread's context in `frame`, or `None`
+/// past the context (`ESR_EL1` and `FAR_EL1` are the trap's, not the thread's).
+#[must_use]
+pub fn trap_frame_word(frame: &TrapFrame, index: u32) -> Option<u64> {
+    match index {
+        0..=30 => Some(frame.gprs[index as usize]),
+        31 => Some(frame.sp_el0),
+        32 => Some(frame.elr_el1),
+        33 => Some(frame.spsr_el1),
+        _ => None,
+    }
+}
+
+/// **WS-BP BP7.3: the trap frame each PE is handling**, published for the Lean
+/// kernel to read the whole outgoing context from.  Slot `c` is written only by
+/// core `c` — on entry to a handler, and restored when it returns — and read
+/// only by core `c`'s own Lean entry inside the same handler, so the accesses
+/// to a slot are same-core program-ordered and `Relaxed` suffices.
+pub type InFlightSlots = [AtomicPtr<TrapFrame>; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// The slots every handler publishes into.
+static IN_FLIGHT_FRAMES: InFlightSlots =
+    [const { AtomicPtr::new(core::ptr::null_mut()) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP7.3**: a PE's in-flight frame, published for the duration of a
+/// handler and withdrawn when the guard drops — so a Lean entry never reads a
+/// frame whose stack slot has been popped.  A nested handler restores the frame
+/// it displaced.
+pub struct InFlightFrame<'s> {
+    slots: &'s InFlightSlots,
+    core: usize,
+    previous: *mut TrapFrame,
+}
+
+impl InFlightFrame<'static> {
+    /// Publish `frame` as the executing PE's in-flight frame.
+    pub fn publish(frame: &mut TrapFrame) -> Self {
+        let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+        InFlightFrame::publish_in(&IN_FLIGHT_FRAMES, core, frame)
+    }
+}
+
+impl<'s> InFlightFrame<'s> {
+    /// Publish `frame` in `slots[core]` (the testable form).
+    pub fn publish_in(slots: &'s InFlightSlots, core: usize, frame: &mut TrapFrame) -> Self {
+        assert!(
+            core < slots.len(),
+            "InFlightFrame::publish: core {core} out of range"
+        );
+        let previous = slots[core].swap(frame as *mut TrapFrame, Ordering::Relaxed);
+        InFlightFrame {
+            slots,
+            core,
+            previous,
+        }
+    }
+}
+
+impl Drop for InFlightFrame<'_> {
+    fn drop(&mut self) {
+        self.slots[self.core].store(self.previous, Ordering::Relaxed);
+    }
+}
+
+/// **WS-BP BP7.3**: word `index` of the frame published in `slots[core]`, or
+/// `None` when none is or the index is past the context (the testable form).
+#[must_use]
+pub fn in_flight_frame_word_in(slots: &InFlightSlots, core: usize, index: u32) -> Option<u64> {
+    let ptr = slots.get(core)?.load(Ordering::Relaxed);
+    if ptr.is_null() {
+        return None;
+    }
+    // SAFETY: a non-null slot holds the frame a handler on this PE published
+    // through `InFlightFrame::publish_in` and has not yet withdrawn: the guard
+    // lives in that handler's frame, below this call on the same stack, so the
+    // `TrapFrame` it names is live, and the handler is suspended in the call
+    // that reached here, so nothing writes it across this read.  Only core
+    // `core` writes slot `core`.
+    let frame = unsafe { &*ptr };
+    trap_frame_word(frame, index)
+}
+
+/// **WS-BP BP7.3**: is a frame published on the executing PE?
+#[must_use]
+pub fn in_flight_frame_present() -> bool {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    IN_FLIGHT_FRAMES
+        .get(core)
+        .is_some_and(|slot| !slot.load(Ordering::Relaxed).is_null())
+}
+
+/// **WS-BP BP7.3**: word `index` of the executing PE's in-flight frame.
+#[must_use]
+pub fn in_flight_frame_word(index: u32) -> Option<u64> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    in_flight_frame_word_in(&IN_FLIGHT_FRAMES, core, index)
+}
 
 impl TrapFrame {
     /// ABI register accessors matching the seLe4n syscall convention:
@@ -769,6 +875,9 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
 #[no_mangle]
 pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
     let esr = frame.esr_el1;
+    // WS-BP BP7.3: the frame is the Lean kernel's to read for the handler's
+    // duration, so the whole outgoing context reaches the thread's TCB.
+    let _in_flight = InFlightFrame::publish(frame);
     // PR #887 review: **an exception taken from EL1 is the kernel's own
     // fault**, whatever its syndrome — halt before routing anything.  The
     // `build.rs` scanner pins that this call precedes the classification.
@@ -991,7 +1100,10 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 /// unwinding.
 #[no_mangle]
 #[deny(clippy::panic, clippy::unreachable, clippy::todo)]
-pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
+pub extern "C" fn handle_irq_per_core(frame: &mut TrapFrame) {
+    // WS-BP BP7.3: a preempted thread's whole context is the Lean kernel's to
+    // save for the handler's duration.
+    let _in_flight = InFlightFrame::publish(frame);
     // Read the calling core's id from TPIDR_EL1.  On hardware this is
     // pre-set by `boot.rs::rust_boot_main` (boot core) or
     // `boot.S::secondary_entry` (secondaries) before any kernel-mode
@@ -1214,6 +1326,70 @@ extern crate std;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WS-BP BP7.3: the context words are the frame's fields in order, and
+    /// the trap's own syndrome registers are not part of a thread's context.
+    #[test]
+    fn a_threads_context_is_the_frames_first_thirty_four_words() {
+        let mut frame = zero_frame();
+        for (i, r) in frame.gprs.iter_mut().enumerate() {
+            *r = 0x100 + i as u64;
+        }
+        frame.sp_el0 = 0xAAAA;
+        frame.elr_el1 = 0xBBBB;
+        frame.spsr_el1 = 0x2000_0000;
+        frame.esr_el1 = 0xDEAD;
+        frame.far_el1 = 0xBEEF;
+        for i in 0..31 {
+            assert_eq!(trap_frame_word(&frame, i), Some(0x100 + u64::from(i)));
+        }
+        assert_eq!(trap_frame_word(&frame, 31), Some(0xAAAA));
+        assert_eq!(trap_frame_word(&frame, 32), Some(0xBBBB));
+        assert_eq!(trap_frame_word(&frame, 33), Some(0x2000_0000));
+        assert_eq!(trap_frame_word(&frame, TRAP_FRAME_CONTEXT_WORDS), None);
+    }
+
+    /// WS-BP BP7.3: a frame is readable only while its handler's guard lives,
+    /// a nested handler restores the frame it displaced, and each core reads
+    /// its own slot.
+    #[test]
+    fn an_in_flight_frame_is_readable_only_while_published() {
+        let slots: InFlightSlots = [const { AtomicPtr::new(core::ptr::null_mut()) };
+            crate::svc_dispatch::RETURN_FRAME_CORES];
+        let mut outer = zero_frame();
+        outer.gprs[6] = 6;
+        let mut inner = zero_frame();
+        inner.gprs[6] = 66;
+        assert_eq!(in_flight_frame_word_in(&slots, 1, 6), None);
+        {
+            let _o = InFlightFrame::publish_in(&slots, 1, &mut outer);
+            assert_eq!(in_flight_frame_word_in(&slots, 1, 6), Some(6));
+            assert_eq!(
+                in_flight_frame_word_in(&slots, 0, 6),
+                None,
+                "another core's slot"
+            );
+            {
+                let _i = InFlightFrame::publish_in(&slots, 1, &mut inner);
+                assert_eq!(in_flight_frame_word_in(&slots, 1, 6), Some(66));
+            }
+            assert_eq!(
+                in_flight_frame_word_in(&slots, 1, 6),
+                Some(6),
+                "the outer frame is restored"
+            );
+        }
+        assert_eq!(
+            in_flight_frame_word_in(&slots, 1, 6),
+            None,
+            "withdrawn when the handler returns"
+        );
+        assert_eq!(
+            in_flight_frame_word_in(&slots, 99, 6),
+            None,
+            "a core past the slots"
+        );
+    }
 
     /// AK5-F test helper: construct a zero-initialized TrapFrame.
     fn zero_frame() -> TrapFrame {

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.15.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.16.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,13 +222,13 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~84076 lines)
+- `CHANGELOG.md` (~84120 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23845 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12531 lines)
 - `SeLe4n/Kernel/API.lean` (~10127 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8709 lines)
-- `docs/spec/SELE4N_SPEC.md` (~8404 lines)
+- `docs/spec/SELE4N_SPEC.md` (~8417 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8235 lines)
 - `SeLe4n/Platform/Boot.lean` (~7664 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6656 lines)
@@ -250,7 +250,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3843 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `SeLe4n/Platform/FFI.lean` (~3736 lines)
+- `SeLe4n/Platform/FFI.lean` (~3768 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3574 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3500 lines)
@@ -376,10 +376,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
+- `SeLe4n/Machine.lean` (~1244 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1242 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1240 lines)
-- `SeLe4n/Machine.lean` (~1234 lines)
 - `SeLe4n/Platform/RPi5/Board.lean` (~1221 lines)
 - `SeLe4n/Kernel/SchedContext/Operations.lean` (~1210 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~1207 lines)
@@ -401,7 +401,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1111 lines)
 - `tests/PerObjectLockSuite.lean` (~1106 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1099 lines)
-- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1088 lines)
+- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1093 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1071 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
@@ -410,8 +410,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~1043 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` (~1041 lines)
+- `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1009 lines)
 - `tests/DeadlockFreedomSuite.lean` (~1008 lines)
-- `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `docs/DEVELOPMENT.md` (~977 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~973 lines)
@@ -7152,7 +7152,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7188,7 +7188,7 @@ are frozen" resolved the way `SMP_RELEASE_CLOSURE_PLAN.md` §1.1 named it.  And
 the three `contextRestoreSeamLive` prerequisites are now scheduled rather than
 only described: `BP7.1`/`BP7.2` (the `VSpaceRoot → TTBR0` binding and its
 install), `BP7.3` (the full outgoing-frame save — `writeFfiRegistersToTcb`
-spills only x0–x5 and x7 today), `BP7.4` (per-core staging), with `BP7.6` the
+spilled only x0–x5 and x7 until it landed), `BP7.4` (per-core staging), with `BP7.6` the
 flip they gate.
 
 And **the boot map is BP2.6's, not the device tree's** (the maintainer's
@@ -8345,6 +8345,26 @@ invalidation (thread translations are nG, the kernel's are global).  (5) **What
 a thread installs is `Architecture.threadTranslationOperands`**: its root's page
 and ASID, or `(0, 0)` for the kernel's translation when the root owns no page;
 BP7.6's context restore calls `Platform.FFI.installThreadTranslation`.
+
+**Every trap entry saves the whole frame the thread trapped with** (`v0.36.16`,
+BP7.3).  Four things new code must respect.  (1) **`RegisterFile` carries
+`pstate`** (`SPSR_EL1` — the flags, the mode and the masks), compared by its
+`BEq` and required by `RegisterFile.ext`; a context without it resumes a thread
+preempted between a compare and its branch with the wrong condition.  (2) **The
+HAL publishes the in-flight frame** for a handler's duration
+(`trap::InFlightFrame`, withdrawn on drop, a nested handler restoring the one it
+displaced), and the Lean entry reads it word by word before its atomic step
+(`Platform.FFI.captureTrapFrame`, `trap::TRAP_FRAME_CONTEXT_WORDS`: `x0`–`x30`,
+`SP_EL0`, `ELR_EL1`, `SPSR_EL1`).  (3) **Every state-committing trap entry saves
+it** — the syscall seam, the fault and unknown-syscall entries, the timer tick
+and the `.reschedule` receiver — into **both** the executing core's bank and the
+current thread's `registerContext` (`Architecture.saveTrapFrameOnCore`), so
+`contextMatchesCurrentOnCore` holds on the state the transition runs on
+(`saveTrapFrameOnCore_contextMatchesCurrentOnCore`) and a switch saves every
+register rather than the syscall window.  A new state-committing trap entry
+captures and saves the same way.  (4) **Only a frame taken from EL0 is a
+thread's** (`trapFromEl0`, `SPSR_EL1.M[3:0] = 0`): a tick taken while an idle
+core waits at EL1 carries the kernel's registers and saves nothing.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

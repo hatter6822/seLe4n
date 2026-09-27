@@ -304,7 +304,9 @@ closure, while the delivery must be. -/
 def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
     (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) : BaseIO Unit := do
   let lctx ← Platform.FFI.getKernelLabelingContext
-  let r ← Platform.FFI.modifyGetKernelState (fun st =>
+  let frame ← Platform.FFI.captureTrapFrame
+  let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+    let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
     let (sgis, st') :=
       faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
         { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
@@ -325,7 +327,9 @@ syscall number rides in the window's `x7`. -/
 def unknownSyscallEntry (coreId : UInt64) (esr elr spsr far : UInt64)
     (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) : BaseIO Unit := do
   let lctx ← Platform.FFI.getKernelLabelingContext
-  let r ← Platform.FFI.modifyGetKernelState (fun st =>
+  let frame ← Platform.FFI.captureTrapFrame
+  let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+    let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
     let (sgis, st') :=
       unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
         { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
@@ -356,7 +360,9 @@ theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
     faultEntry coreId esr elr spsr far x0 x1 x2 x3 x4 x5 x6 x7 sp lr =
       (do
         let lctx ← Platform.FFI.getKernelLabelingContext
-        let r ← Platform.FFI.modifyGetKernelState (fun st =>
+        let frame ← Platform.FFI.captureTrapFrame
+        let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+          let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
           let (sgis, st') :=
             faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
               { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
@@ -372,7 +378,9 @@ theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
     unknownSyscallEntry coreId esr elr spsr far x0 x1 x2 x3 x4 x5 x6 x7 sp lr =
       (do
         let lctx ← Platform.FFI.getKernelLabelingContext
-        let r ← Platform.FFI.modifyGetKernelState (fun st =>
+        let frame ← Platform.FFI.captureTrapFrame
+        let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+          let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
           let (sgis, st') :=
             unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
               { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId

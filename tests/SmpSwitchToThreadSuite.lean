@@ -434,12 +434,57 @@ private def runAffinityAlgebraChecks : IO Unit := do
   assertBool "core1-bound thread REJECTED on the boot core"
     (!affinityAdmitsCore { mkTcb 102 10 0 with cpuAffinity := some core1 } bootCoreId)
 
+/-- §3.11 (WS-BP BP7.3): the whole trap frame reaches the outgoing thread.  A
+frame whose word `i` is `0x1000 + i`, taken from EL0 with the carry flag set. -/
+private def trapWords (i : Nat) : UInt64 :=
+  if i = Architecture.trapFramePstateWord then 0x2000_0000 else 0x1000 + i.toUInt64
+
+private def savedFrame : RegisterFile := Architecture.registerFileOfTrapWords trapWords
+
+/-- The saved context of `tid`, or the default file when it has no TCB. -/
+private def savedContextOf (st : SystemState) (tid : SeLe4n.ThreadId) : RegisterFile :=
+  ((st.getTcb? tid).map (·.registerContext)).getD default
+
+private def runTrapFrameSaveChecks : IO Unit := do
+  IO.println "--- §3.11 WS-BP BP7.3 the whole trap frame is saved ---"
+  assertBool "the frame's words are x0-x30, SP, PC and PSTATE, and x31 reads zero"
+    (savedFrame.gpr ⟨6⟩ == ⟨0x1006⟩ && savedFrame.gpr ⟨30⟩ == ⟨0x101E⟩ &&
+     savedFrame.gpr ⟨31⟩ == ⟨0⟩ && savedFrame.sp == ⟨0x101F⟩ &&
+     savedFrame.pc == ⟨0x1020⟩ && savedFrame.pstate == ⟨0x2000_0000⟩)
+  assertBool "a frame taken from EL0 is a thread's; one taken at EL1h is the kernel's"
+    (Architecture.trapFromEl0 savedFrame &&
+     !Architecture.trapFromEl0 { savedFrame with pstate := ⟨0x3C5⟩ })
+  let saved := Architecture.saveTrapFrameOnCore stPreempt bootCoreId savedFrame
+  assertBool "the save writes the core's bank and the current thread's context with one frame"
+    (saved.machine.regsOnCore bootCoreId == savedFrame &&
+     savedContextOf saved tidP == savedFrame)
+  assertBool "switching away then saves every register the thread trapped with (x6, x30, SP, PC, PSTATE)"
+    (switchOkAnd saved bootCoreId tidA (fun st' =>
+      let ctx := savedContextOf st' tidP
+      ctx.gpr ⟨6⟩ == ⟨0x1006⟩ && ctx.gpr ⟨30⟩ == ⟨0x101E⟩ && ctx.sp == ⟨0x101F⟩ &&
+      ctx.pc == ⟨0x1020⟩ && ctx.pstate == ⟨0x2000_0000⟩))
+  assertBool "RETIRED: with only the syscall window spilled, the switch saved x6 and the flags as zero"
+    (switchOkAnd stPreempt bootCoreId tidA (fun st' =>
+      let ctx := savedContextOf st' tidP
+      ctx.gpr ⟨6⟩ == ⟨0⟩ && ctx.pstate == ⟨0⟩))
+  assertBool "a frame taken at EL1 saves nothing"
+    (let s := Architecture.saveTrapFrameOnCore stPreempt bootCoreId { savedFrame with pstate := ⟨0x3C5⟩ }
+     s.machine.regsOnCore bootCoreId == stPreempt.machine.regsOnCore bootCoreId &&
+     savedContextOf s tidP == savedContextOf stPreempt tidP)
+  assertBool "a core running no thread saves nothing"
+    (let s := Architecture.saveTrapFrameOnCore stPreempt core1 savedFrame
+     s.machine.regsOnCore core1 == stPreempt.machine.regsOnCore core1)
+  assertBool "an entry with no published frame saves nothing"
+    (let s := Architecture.saveCapturedTrapFrame stPreempt bootCoreId none
+     s.machine.regsOnCore bootCoreId == stPreempt.machine.regsOnCore bootCoreId)
+
 def runSmpSwitchToThreadChecks : IO Unit := do
   IO.println "WS-SM SM5.B — Per-core switchToThread suite"
   IO.println "===================================="
   runSwitchScenarios
   runLockSetChecks
   runAffinityAlgebraChecks
+  runTrapFrameSaveChecks
   IO.println "===================================="
   IO.println "All SM5.B per-core switchToThread checks PASS."
 

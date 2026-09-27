@@ -243,6 +243,13 @@ structure RegisterFile where
   pc : RegValue
   sp : RegValue
   gpr : RegName → RegValue
+  /-- **WS-BP BP7.3**: the saved processor state (`SPSR_EL1` at the trap): the
+  condition flags, the exception level and stack selector (`M[3:0]`) and the
+  interrupt masks the thread returns to.  A thread preempted between a compare
+  and its branch resumes with the wrong condition unless this is saved with the
+  rest of its context.  `0` is `EL0t` with every flag clear and every interrupt
+  unmasked — a fresh thread's state. -/
+  pstate : RegValue := ⟨0⟩
 
 instance : Inhabited RegisterFile where
   default := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun _ => ⟨0⟩ }
@@ -285,7 +292,7 @@ The safety analysis at X5-G (below) confirms this does NOT affect kernel
 correctness: `BEq` is used only in test infrastructure and trace
 validation, never in proof-critical paths. -/
 instance : BEq RegisterFile where
-  beq a b := a.pc == b.pc && a.sp == b.sp &&
+  beq a b := a.pc == b.pc && a.sp == b.sp && a.pstate == b.pstate &&
     (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
 
 /-- AG7-D: BEq reflexivity for RegisterFile. Although the BEq instance is not
@@ -300,7 +307,7 @@ of the `pc` / `sp` / 32-GPR-index `RegValue` comparisons.  Lets the partial-
 equivalence lemmas below reduce to component `RegValue` equalities (which *are*
 `LawfulBEq`) without unfolding the inner `==` to raw `decide`. -/
 theorem RegisterFile.beq_def (a b : RegisterFile) :
-    (a == b) = (a.pc == b.pc && a.sp == b.sp &&
+    (a == b) = (a.pc == b.pc && a.sp == b.sp && a.pstate == b.pstate &&
       (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩) := rfl
 
 /-- WS-SM SM5.I: `RegisterFile`'s structural `BEq` is **symmetric**.  Although it
@@ -314,10 +321,11 @@ theorem RegisterFile.beq_symm {a b : RegisterFile} (h : (a == b) = true) :
   rw [RegisterFile.beq_def] at h
   rw [RegisterFile.beq_def]
   simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at h ⊢
-  obtain ⟨⟨hpc, hsp⟩, hgpr⟩ := h
-  refine ⟨⟨?_, ?_⟩, ?_⟩
+  obtain ⟨⟨⟨hpc, hsp⟩, hps⟩, hgpr⟩ := h
+  refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
   · rw [beq_iff_eq] at hpc ⊢; exact hpc.symm
   · rw [beq_iff_eq] at hsp ⊢; exact hsp.symm
+  · rw [beq_iff_eq] at hps ⊢; exact hps.symm
   · intro i hi; have hgi := hgpr i hi; rw [beq_iff_eq] at hgi ⊢; exact hgi.symm
 
 /-- WS-SM SM5.I: `RegisterFile`'s structural `BEq` is **transitive** (companion to
@@ -328,11 +336,12 @@ theorem RegisterFile.beq_trans {a b c : RegisterFile}
   rw [RegisterFile.beq_def] at hab hbc
   rw [RegisterFile.beq_def]
   simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at hab hbc ⊢
-  obtain ⟨⟨hpcab, hspab⟩, hgprab⟩ := hab
-  obtain ⟨⟨hpcbc, hspbc⟩, hgprbc⟩ := hbc
-  refine ⟨⟨?_, ?_⟩, ?_⟩
+  obtain ⟨⟨⟨hpcab, hspab⟩, hpsab⟩, hgprab⟩ := hab
+  obtain ⟨⟨⟨hpcbc, hspbc⟩, hpsbc⟩, hgprbc⟩ := hbc
+  refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
   · rw [beq_iff_eq] at hpcab hpcbc ⊢; exact hpcab.trans hpcbc
   · rw [beq_iff_eq] at hspab hspbc ⊢; exact hspab.trans hspbc
+  · rw [beq_iff_eq] at hpsab hpsbc ⊢; exact hpsab.trans hpsbc
   · intro i hi
     have h1 := hgprab i hi; have h2 := hgprbc i hi
     rw [beq_iff_eq] at h1 h2 ⊢; exact h1.trans h2
@@ -377,11 +386,12 @@ theorem RegisterFile.not_lawfulBEq : ¬ LawfulBEq RegisterFile := by
 -- execution.
 
 /-- S1-J: Extensionality lemma for `RegisterFile`. Two register files are equal
-    when their `pc`, `sp`, and `gpr` functions agree. -/
+    when their `pc`, `sp`, `gpr` functions and (WS-BP BP7.3) `pstate` agree. -/
 theorem RegisterFile.ext {a b : RegisterFile}
-    (hpc : a.pc = b.pc) (hsp : a.sp = b.sp) (hgpr : ∀ r, a.gpr r = b.gpr r) :
+    (hpc : a.pc = b.pc) (hsp : a.sp = b.sp) (hgpr : ∀ r, a.gpr r = b.gpr r)
+    (hps : a.pstate = b.pstate) :
     a = b := by
-  cases a; cases b; simp at *; exact ⟨hpc, hsp, funext hgpr⟩
+  cases a; cases b; simp at *; exact ⟨hpc, hsp, funext hgpr, hps⟩
 
 -- ============================================================================
 -- AG3-G (H3-ARCH-06): System Register Model

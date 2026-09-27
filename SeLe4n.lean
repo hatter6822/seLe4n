@@ -34,6 +34,7 @@ import SeLe4n.Kernel.Architecture.RegisterDecode
 -- SyscallOutcome / the offset error label) — the return-direction dual of
 -- RegisterDecode / SyscallArgDecode.
 import SeLe4n.Kernel.Architecture.SyscallReturn
+import SeLe4n.Kernel.Architecture.TrapFrameSaveInvariant
 import SeLe4n.Platform.Contract
 import SeLe4n.Platform.Boot
 import SeLe4n.Platform.FFI

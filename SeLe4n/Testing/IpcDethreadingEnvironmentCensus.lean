@@ -15,6 +15,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
 -- imports itself, so a bundle statement outside *this* closure is invisible to
 -- the semantic layer even while Tier 0's text scan counts it.
 import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
+import SeLe4n.Kernel.Architecture.TrapFrameSaveInvariant
 
 /-!
 # The elaborator-backed de-threading census

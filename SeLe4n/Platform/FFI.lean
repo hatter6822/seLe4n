@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
 import SeLe4n.Platform.RPi5.Contract
+import SeLe4n.Kernel.Architecture.TrapFrameSave
 
 /-!
 # FFI Bridge: Lean Kernel ↔ Rust HAL
@@ -594,6 +595,37 @@ opaque ffiEnableInterrupts : BaseIO Unit
     Rust: `ffi_current_core_id` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "ffi_current_core_id"]
 opaque ffiCurrentCoreId : BaseIO UInt64
+
+-- ============================================================================
+-- WS-BP BP7.3 — the in-flight trap frame
+-- ============================================================================
+
+/-- **WS-BP BP7.3**: `1` when the executing PE is inside a trap handler that
+    published its frame (`trap::InFlightFrame`), `0` otherwise.
+
+    Rust: `ffi_trap_frame_present` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_trap_frame_present"]
+opaque ffiTrapFramePresent : BaseIO UInt8
+
+/-- **WS-BP BP7.3**: word `index` of the executing PE's in-flight trap frame
+    (`Architecture.trapFrameWordCount` words: `x0`–`x30`, `SP_EL0`, `ELR_EL1`,
+    `SPSR_EL1`); `0` past the context.
+
+    Rust: `ffi_trap_frame_word` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_trap_frame_word"]
+opaque ffiTrapFrameWord : UInt32 → BaseIO UInt64
+
+/-- **WS-BP BP7.3: the whole context the executing PE trapped with**, or `none`
+    when no frame is published (an entry called outside a trap handler).  Read
+    word by word, before the atomic step, so the save and the transition see one
+    frame. -/
+def captureTrapFrame : BaseIO (Option SeLe4n.RegisterFile) := do
+  if (← ffiTrapFramePresent) == 0 then
+    return none
+  let mut words : Array UInt64 := Array.mkEmpty SeLe4n.Kernel.Architecture.trapFrameWordCount
+  for i in [0:SeLe4n.Kernel.Architecture.trapFrameWordCount] do
+    words := words.push (← ffiTrapFrameWord i.toUInt32)
+  return some (SeLe4n.Kernel.Architecture.registerFileOfTrapWords fun i => words.getD i 0)
 
 -- ============================================================================
 -- WS-SM SM1.I.3 — Per-core IDLE thread FFI declarations

@@ -1,3 +1,47 @@
+## v0.36.16 — WS-BP BP7.3: the whole trap frame, saved at every entry
+
+A thread's context is `x0`–`x30`, `SP_EL0`, `ELR_EL1` and `SPSR_EL1`.  The trap
+assembly saves all of them, but the Lean kernel read back only the syscall window
+(`x0`–`x5` and `x7`, `writeFfiRegistersToTcb`), so the executing core's register
+bank and the thread's saved context were stale for `x6`, `x8`–`x30`, the stack
+pointer, the program counter and the flags.  A context switch saves the outgoing
+thread from that bank, so a thread switched out and back in would have resumed
+with another state — the second of the three prerequisites for turning the
+context restore on.
+
+**The processor state.**  `RegisterFile` carries `pstate` (`SPSR_EL1`),
+compared by its `BEq` and required by `RegisterFile.ext`; a thread preempted
+between a compare and its branch resumes with the wrong condition without it.
+
+**The HAL.**  Each handler publishes its frame for its own duration
+(`trap::InFlightFrame`: withdrawn when the guard drops, a nested handler
+restoring the frame it displaced), and `ffi_trap_frame_present` /
+`ffi_trap_frame_word` read the executing PE's frame word by word
+(`trap::TRAP_FRAME_CONTEXT_WORDS`).
+
+**The save.**  Every state-committing trap entry — the syscall seam, the fault
+and unknown-syscall entries, the timer tick and the `.reschedule` receiver —
+captures the frame before its atomic step (`Platform.FFI.captureTrapFrame`) and
+saves it into **both** the executing core's bank and the current thread's
+`registerContext` (`Architecture.saveTrapFrameOnCore`), so
+`contextMatchesCurrentOnCore` holds on the state the transition runs on.  Only a
+frame taken from EL0 is a thread's (`trapFromEl0`): a tick taken while an idle
+core waits at EL1 carries the kernel's own registers and saves nothing, and the
+secondary bring-up entry, which runs in no trap handler, captures nothing.
+
+**Proofs.**  `TrapFrameSaveInvariant.lean`: the save preserves
+`ipcInvariantFull`, establishes the executing core's
+`contextMatchesCurrentOnCore`, and frames every other core's match when it runs
+a different thread.
+
+**Tests.**  `tests/SmpSwitchToThreadSuite.lean` §3.11 saves a frame whose every
+word is distinct and switches away, asserting that the outgoing thread's context
+holds `x6`, `x30`, `SP`, `PC` and `PSTATE`, with the retired window-only spill
+run beside it (which saved `x6` and the flags as zero), and that an EL1 frame, a
+core running no thread and an entry with no published frame save nothing.  The
+HAL's `trap::tests` cover the word layout and the publish/withdraw/nest
+discipline.  The golden trace is unchanged.
+
 ## v0.36.15 — WS-BP BP7.2: the physical-write ledger, and the translation install
 
 The second and last cut of BP7.2.  The model's address spaces were records the

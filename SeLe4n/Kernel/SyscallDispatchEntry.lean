@@ -786,9 +786,13 @@ def syscallDispatchCrossCoreEntry
   -- from this entry's own decode, acquires it, re-resolves at the state the
   -- growing phase ended in and refuses on any change; a syscall with no declared
   -- footprint runs exactly as it did before the bracket existed.
-  let result ← Platform.FFI.modifyGetKernelState
-    (syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30)
+  -- **WS-BP BP7.3**: the whole context the caller trapped with is saved into
+  -- this core's register bank and the caller's TCB before the step runs, so a
+  -- context switch the syscall causes saves every register, not the window.
+  let frame ← Platform.FFI.captureTrapFrame
+  let result ← Platform.FFI.modifyGetKernelState fun st =>
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      ipcBufferAddr elr spsr spEl0 x30 (Architecture.saveCapturedTrapFrame st execCore frame)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
   -- immediately after the commit — `dispatch_svc` reads it back inside the
   -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
@@ -844,9 +848,10 @@ theorem syscallDispatchCrossCoreEntry_def
       (do
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
-        let result ← Platform.FFI.modifyGetKernelState
-          (syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-            ipcBufferAddr elr spsr spEl0 x30)
+        let frame ← Platform.FFI.captureTrapFrame
+        let result ← Platform.FFI.modifyGetKernelState fun st =>
+          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+            ipcBufferAddr elr spsr spEl0 x30 (Architecture.saveCapturedTrapFrame st execCore frame)
         let frame := result.1.mailboxFrame
         Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
         completePhysicalWrites result.2.2.2.2.2.2.1

@@ -1575,6 +1575,27 @@ pub extern "C" fn cache_ic_maintenance(
     crate::lean_runtime::base_io_unit()
 }
 
+/// **WS-BP BP7.3**: is a trap frame published on the executing PE?  `1` inside
+/// a trap handler (`trap::InFlightFrame`), `0` otherwise — the Lean entry saves
+/// the outgoing context only from a published frame.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTrapFramePresent`.
+#[no_mangle]
+pub extern "C" fn ffi_trap_frame_present() -> u8 {
+    u8::from(crate::trap::in_flight_frame_present())
+}
+
+/// **WS-BP BP7.3**: word `index` of the executing PE's in-flight trap frame
+/// (`trap::TRAP_FRAME_CONTEXT_WORDS` words: `x0`–`x30`, `SP_EL0`, `ELR_EL1`,
+/// `SPSR_EL1`).  `0` when no frame is published or the index is past the
+/// context; the Lean entry asks [`ffi_trap_frame_present`] first.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTrapFrameWord`.
+#[no_mangle]
+pub extern "C" fn ffi_trap_frame_word(index: u32) -> u64 {
+    crate::trap::in_flight_frame_word(index).unwrap_or(0)
+}
+
 /// **WS-BP BP7.2**: perform one physical write a committed transition
 /// recorded — `Platform.FFI.ffiApplyPhysicalWrite`, driven by the syscall
 /// seam's `completePhysicalWrites`.  The operands are validated against the

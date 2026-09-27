@@ -45,13 +45,15 @@ A gate is only sound where the state it leaves behind is coherent — a gated
 resume leaves the thread `.Ready` and queued, which the next tick resolves; a
 gated unbind leaves half a transaction.
 
-Three things must land together before it becomes `true`, and none of them fits
-a non-interference cut: a `VSpaceRoot → TTBR0` binding (the model carries an
-ASID and an abstract `VAddr → PAddr` table, not a translation-table physical
-base), a full outgoing-frame save (`writeFfiRegistersToTcb` spills only x0..x5
-and x7, so `regsOnCore` is stale for x6, x8..x30, SP and PC), and per-core
-staging (the kernel-entry lock closes in `dispatch_svc` before the trap handler
-would install). -/
+Three things must land before it becomes `true`, and none of them fits a
+non-interference cut: a `VSpaceRoot → TTBR0` binding — landed at WS-BP BP7.2
+(`v0.36.15`: each carved root owns a table page, the physical-write ledger keeps
+the tables in memory, and `Platform.FFI.installThreadTranslation` installs one);
+a full outgoing-frame save — landed at WS-BP BP7.3 (`v0.36.16`: every state-
+committing trap entry saves `x0`–`x30`, `SP`, `PC` and `PSTATE` into the core's
+bank and the current thread's context, `Architecture.saveTrapFrameOnCore`); and
+per-core staging (the kernel-entry lock closes in `dispatch_svc` before the trap
+handler would install), which is BP7.4's. -/
 def contextRestoreSeamLive : Bool := false
 
 end SeLe4n.Kernel.PriorityInheritance

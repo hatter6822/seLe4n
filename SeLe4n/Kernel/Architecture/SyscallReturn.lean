@@ -620,11 +620,11 @@ enough in the import graph that the dispatch arms can call it.
 Writes `x0`-`x5` of `tcb.registerContext` from the frame and touches
 nothing else: not `x7`, not `pc`/`sp`, no other TCB field
 (`TCB.withReturnFrame`), and **deliberately not `machine.regs` /
-`regsOnCore`** — that mirror is already stale for x6, x8..x30 after the
-argument spill (the `ContextRestoreSeam` note), the SM10.1 outgoing-frame
-save is the registered closure for the whole staleness class, and keeping
-the write out of `machine` is part of what makes the RA.B.10 projection
-preservation hold for every observer.
+`regsOnCore`** — keeping the write out of `machine` is part of what makes the
+RA.B.10 projection preservation hold for every observer.  Since WS-BP BP7.3 the
+bank and the current thread's context are one value at every trap entry
+(`Architecture.saveTrapFrameOnCore`); what reconciles a frame staged for the
+*current* thread with the bank is the per-core staging of BP7.4.
 
 Total: a non-TCB target returns the state unchanged, mirroring
 `writeFfiRegistersToTcb`'s posture (the caller surfaces the error).

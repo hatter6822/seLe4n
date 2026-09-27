@@ -4242,6 +4242,23 @@ run_check "INVARIANT" rg -n -U '^pub extern "C" fn mmu_install_translation[^\n]*
 run_check "INVARIANT" rg -n '^    let in_ram = page >= KERNEL_RESERVED_END && covered\(page, PAGE_BYTES\);$' rust/sele4n-hal/src/user_translation.rs
 run_check "INVARIANT" rg -n '^    boot_l0_entry0 \| UXN_TABLE \| AP_TABLE_NO_EL0$' rust/sele4n-hal/src/user_translation.rs
 run_check "INVARIANT" rg -n 'destroying a table.s last capability clears the root.s entry for it' tests/VSpaceCapabilityBindingSuite.lean
+# WS-BP BP7.3 (v0.36.16): every state-committing trap entry saves the whole
+# frame the thread trapped with into the core's bank and its context.  Each
+# positive is a relation: the capture feeding the step's state, per entry, and
+# the handler publishing its frame before it routes anything.
+run_check "INVARIANT" rg -n '^  pstate : RegValue := ⟨0⟩$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^  rf\.pstate\.val % 16 == 0$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n '^      ipcBufferAddr elr spsr spEl0 x30 \(Architecture\.saveCapturedTrapFrame st execCore frame\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      faultEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      unknownSyscallEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)\)\.state$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
+run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TrapFrameSaveInvariant$' SeLe4n.lean
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_synchronous_exception\(frame: &mut TrapFrame\) \{\n    let esr = frame\.esr_el1;\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_irq_per_core\(frame: &mut TrapFrame\) \{\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'switching away then saves every register the thread trapped with' tests/SmpSwitchToThreadSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
 # environment with no entry now that one exists, and the link gate has no
@@ -8690,7 +8707,7 @@ EOF'
 # presence: the bare step still exists (it is what the bracket wraps and what
 # the undeclared fallback runs), so a file-wide search for its name proves
 # nothing -- what matters is which one `modifyGetKernelState` is handed.
-run_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState\n    \(syscallDispatchCrossCoreBracketedStep' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState fun st =>\n    syscallDispatchCrossCoreBracketedStep' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_negative_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState \(fun st =>' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The single-level CSpace guard: a multi-level resolution selects the target
 # through interior CNodes no declared footprint holds a lock on, and a `LockSet`

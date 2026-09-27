@@ -142,12 +142,18 @@ two seams cannot acquire different footprints for the same step.
 **WS-RR RR7.26**: the record is what makes bring-up hand the HAL a thread at
 all.  A freshly-onlined core has `currentOnCore c = none`, so its first
 reschedule dispatches its idle thread — and until RR7.26 the HAL's per-core
-mirror still said `NO_CURRENT_THREAD` afterwards, because nothing wrote it. -/
+mirror still said `NO_CURRENT_THREAD` afterwards, because nothing wrote it.
+
+**WS-BP BP7.3**: the frame capture is the reschedule entry's own, and at
+bring-up no trap handler has published a frame, so it captures `none` and
+saves nothing. -/
 theorem secondaryKernelMain_def (coreId : UInt64) :
     secondaryKernelMain coreId =
       (do
+        let frame ← Platform.FFI.captureTrapFrame
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
-          let st' := (rescheduleUnderDeclaredLockSet coreId st).state
+          let st' := (rescheduleUnderDeclaredLockSet coreId
+            (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
           ((Concurrency.coreIdOfUInt64? coreId).map
             (fun c => (c, st'.scheduler.currentOnCore c)), st'))
         Concurrency.recordCommittedCurrentThreadHw record) := rfl
