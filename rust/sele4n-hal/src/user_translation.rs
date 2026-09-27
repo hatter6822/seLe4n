@@ -46,6 +46,8 @@ pub const PHYSICAL_WRITE_ZERO_PAGE: u64 = 0;
 pub const PHYSICAL_WRITE_STORE_DESCRIPTOR: u64 = 1;
 /// Tag of an ASID invalidation (`PhysicalWrite.invalidateAsid`).
 pub const PHYSICAL_WRITE_INVALIDATE_ASID: u64 = 2;
+/// Tag of a user-word store (`PhysicalWrite.storeUserWord`, WS-BP BP7.8).
+pub const PHYSICAL_WRITE_STORE_USER_WORD: u64 = 3;
 
 /// Bytes in one page.
 const PAGE_BYTES: u64 = 4096;
@@ -68,6 +70,8 @@ pub enum PhysicalWrite {
     StoreDescriptor { entry: u64, value: u64 },
     /// Invalidate every translation tagged with this ASID.
     InvalidateAsid(u16),
+    /// Store this word at this address of a thread's RAM page (WS-BP BP7.8).
+    StoreUserWord { addr: u64, value: u64 },
 }
 
 /// Why a physical write was refused.
@@ -95,6 +99,19 @@ pub fn thread_page_admissible(page: u64, covered: impl Fn(u64, u64) -> bool) -> 
     let in_pool = (BOOT_TABLE_POOL_BASE..KERNEL_RESERVED_END).contains(&page);
     let in_ram = page >= KERNEL_RESERVED_END && covered(page, PAGE_BYTES);
     in_pool || in_ram
+}
+
+/// **Is the word at `addr` one the kernel may read or write for a thread?**
+/// (WS-BP BP7.8.)  An eight-byte aligned word in a whole page of RAM past the
+/// kernel's reserved extent that `covered` contains — a thread's own frame.
+/// Deliberately **not** a pool page: the pool holds translation tables, and a
+/// user word stored there would be a descriptor nobody wrote.  So a message
+/// register can never land in a table, whatever address the model names.
+#[must_use]
+pub fn user_word_admissible(addr: u64, covered: impl Fn(u64, u64) -> bool) -> bool {
+    use crate::mmu::KERNEL_RESERVED_END;
+    let page = addr & !(PAGE_BYTES - 1);
+    addr.is_multiple_of(8) && page >= KERNEL_RESERVED_END && covered(page, PAGE_BYTES)
 }
 
 /// Decode and validate one physical write.
@@ -128,6 +145,15 @@ pub fn decode_physical_write(
                 Err(PhysicalWriteRefusal::AsidOutOfRange(addr))
             } else {
                 Ok(PhysicalWrite::InvalidateAsid(addr as u16))
+            }
+        }
+        PHYSICAL_WRITE_STORE_USER_WORD => {
+            if !addr.is_multiple_of(8) {
+                Err(PhysicalWriteRefusal::Misaligned(addr))
+            } else if !user_word_admissible(addr, covered) {
+                Err(PhysicalWriteRefusal::NotAThreadPage(addr))
+            } else {
+                Ok(PhysicalWrite::StoreUserWord { addr, value })
             }
         }
         other => Err(PhysicalWriteRefusal::UnknownTag(other)),
@@ -177,6 +203,45 @@ pub fn apply_physical_write(write: PhysicalWrite) {
             crate::barriers::dsb_ish();
         }
         PhysicalWrite::InvalidateAsid(asid) => crate::tlb::tlbi_aside1is(asid),
+        PhysicalWrite::StoreUserWord { addr, value } => {
+            #[cfg(target_arch = "aarch64")]
+            {
+                // SAFETY: `addr` passed `user_word_admissible`: an eight-byte
+                // aligned word of a page of RAM past the kernel's reserved
+                // extent, mapped Normal write-back by the kernel's identity
+                // map.  No Rust reference aliases a thread's frame, and the
+                // store is one aligned 64-bit write.
+                unsafe {
+                    core::ptr::write_volatile(addr as *mut u64, value);
+                }
+            }
+            #[cfg(not(target_arch = "aarch64"))]
+            let _ = (addr, value);
+            crate::barriers::dsb_ish();
+        }
+    }
+}
+
+/// **WS-BP BP7.8: read the user word at `addr`** — a sender's message register
+/// past the four the trap frame carries, read out of its IPC buffer so the Lean
+/// kernel decodes what the thread wrote rather than its model of memory.
+/// `None` when `addr` is not [`user_word_admissible`]; the caller halts, since
+/// the Lean kernel names only its caller's own RAM frames.
+#[must_use]
+pub fn read_user_word(addr: u64, covered: impl Fn(u64, u64) -> bool) -> Option<u64> {
+    if !user_word_admissible(addr, covered) {
+        return None;
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: as `apply_physical_write`'s user-word store: an admissible,
+        // aligned word of a thread's RAM frame under the identity map; one
+        // aligned 64-bit load.
+        Some(unsafe { core::ptr::read_volatile(addr as *const u64) })
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        Some(0)
     }
 }
 
@@ -300,6 +365,7 @@ mod tests {
         assert_eq!(PHYSICAL_WRITE_ZERO_PAGE, 0);
         assert_eq!(PHYSICAL_WRITE_STORE_DESCRIPTOR, 1);
         assert_eq!(PHYSICAL_WRITE_INVALIDATE_ASID, 2);
+        assert_eq!(PHYSICAL_WRITE_STORE_USER_WORD, 3);
     }
 
     #[test]
@@ -362,9 +428,44 @@ mod tests {
             Err(PhysicalWriteRefusal::AsidOutOfRange(ASID_COUNT))
         );
         assert_eq!(
-            decode_physical_write(3, RAM_PAGE, 0, covered),
-            Err(PhysicalWriteRefusal::UnknownTag(3))
+            decode_physical_write(4, RAM_PAGE, 0, covered),
+            Err(PhysicalWriteRefusal::UnknownTag(4))
         );
+    }
+
+    #[test]
+    fn a_user_word_lands_only_in_a_thread_ram_page() {
+        // WS-BP BP7.8: tag 3 is `PhysicalWrite.storeUserWord`.
+        assert_eq!(PHYSICAL_WRITE_STORE_USER_WORD, 3);
+        assert_eq!(
+            decode_physical_write(3, RAM_PAGE + 0x20, 0x5c, covered),
+            Ok(PhysicalWrite::StoreUserWord {
+                addr: RAM_PAGE + 0x20,
+                value: 0x5c
+            })
+        );
+        assert_eq!(
+            decode_physical_write(3, RAM_PAGE + 4, 1, covered),
+            Err(PhysicalWriteRefusal::Misaligned(RAM_PAGE + 4))
+        );
+        // The kernel image, and a translation-table pool page, are refused:
+        // a message register must never become a descriptor.
+        assert_eq!(
+            decode_physical_write(3, 0x8_0010, 1, covered),
+            Err(PhysicalWriteRefusal::NotAThreadPage(0x8_0010))
+        );
+        let pool = crate::mmu::BOOT_TABLE_POOL_BASE;
+        assert!(thread_page_admissible(pool, covered));
+        assert_eq!(
+            decode_physical_write(3, pool + 8, 1, covered),
+            Err(PhysicalWriteRefusal::NotAThreadPage(pool + 8))
+        );
+        // RAM the boot map does not cover is refused.
+        assert!(!user_word_admissible(RAM_PAGE, |_, _| false));
+        // The read side answers exactly where the write side admits.
+        assert_eq!(read_user_word(RAM_PAGE + 8, covered), Some(0));
+        assert_eq!(read_user_word(pool, covered), None);
+        assert_eq!(read_user_word(RAM_PAGE + 3, covered), None);
     }
 
     #[test]

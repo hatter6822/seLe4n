@@ -1649,6 +1649,20 @@ pub extern "C" fn mmu_apply_physical_write(
     crate::lean_runtime::base_io_unit()
 }
 
+/// **WS-BP BP7.8**: read the user word at `addr` — a sender's message register
+/// past the four its trap frame carries — `Platform.FFI.ffiReadUserWord`.  The
+/// Lean kernel names only a word of its caller's own RAM frame
+/// (`IpcBufferRead.ipcBufferSlotPAddr?`), so an address
+/// [`crate::user_translation::user_word_admissible`] refuses is a kernel defect
+/// and **halts the system**, for the reason [`mmu_apply_physical_write`] gives.
+#[no_mangle]
+pub extern "C" fn ffi_read_user_word(addr: u64) -> u64 {
+    match crate::user_translation::read_user_word(addr, crate::mmu::is_boot_cacheable_range) {
+        Some(word) => word,
+        None => crate::gic::halt_all(),
+    }
+}
+
 /// **WS-BP BP7.2**: install a translation on the executing PE —
 /// `Platform.FFI.ffiInstallTranslation`.  `(0, 0)` is the kernel's own boot
 /// tables; anything else is an address space's top-level table page and its

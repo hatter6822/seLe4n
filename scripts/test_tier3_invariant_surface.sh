@@ -4229,10 +4229,10 @@ run_check "INVARIANT" rg -n 'an unaligned virtual address inside a complete walk
 # ledger and leaves the physical one.
 run_check "INVARIANT" rg -n '^       Architecture\.clearPhysicalWrites \(Architecture\.clearIcacheMaintenance st'"''"'\)\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_negative_check "INVARIANT" rg -n '^       Architecture\.clearIcacheMaintenance st'"''"'\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.ffiSyscallReturnFrame [^\n]*\n([ \t]*\n)*  completePhysicalWrites result\.2\.2\.2\.2\.2\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.ffiSyscallReturnFrame [^\n]*\n([ \t]*\n)*  Platform\.FFI\.completePhysicalWrites result\.2\.2\.2\.2\.2\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchCrossCoreStep_drains_physicalWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^theorem completePhysicalWrites_cons($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^  owed\.forM Platform\.FFI\.physicalWriteApply$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem completePhysicalWrites_cons($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  owed\.forM physicalWriteApply$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  ffiApplyPhysicalWrite w\.tag w\.addr w\.value$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem threadTranslationOperands_cases($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/HardwareTables.lean
 run_check "INVARIANT" rg -n '^  descriptorToUInt64 \(\.page paddr \(userPageAttributes perms\)\) \|\|\| notGlobalBit$' SeLe4n/Kernel/Architecture/HardwareTables.lean
@@ -4248,7 +4248,11 @@ run_check "INVARIANT" rg -n 'destroying a table.s last capability clears the roo
 # the handler publishing its frame before it routes anything.
 run_check "INVARIANT" rg -n '^  pstate : RegValue := ⟨0⟩$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^  rf\.pstate\.val % 16 == 0$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
-run_check "INVARIANT" rg -n '^      ipcBufferAddr elr spsr spEl0 x30 \(Architecture\.saveCapturedTrapFrame st execCore frame\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^        \(Architecture\.saveCapturedTrapFrame st execCore frame\) words\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# WS-BP BP7.8: the sender's overflow words are read from RAM and synced into the
+# model before the decode, at the seam and in its structural marker.
+run_check "INVARIANT" rg -n '^  let words ← readCallerOverflowWords execCore msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^      \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      faultEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      unknownSyscallEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)\)\.state$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
@@ -7602,6 +7606,26 @@ run_check "INVARIANT" rg -n '11: the waiter resumes reading THAT badge in x0' te
 run_check "INVARIANT" rg -n 'restoreTargetAt st3 0\)\.deliveredFrame\?' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '11 CONTROL: \.\.\.and the waiter.s core resumes no badge' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '^  runDeclassifiedBadgeDeliveryWitnesses$' tests/SyscallReturnAbiSuite.lean
+# WS-BP BP7.8: message registers past the fourth cross the kernel in both
+# directions, through ONE resolver; the write requires a writable mapping, the
+# delivery records user-word stores and counts them in the frame's length, both
+# fault seams drain the ledger, and the HAL never stores a user word into the
+# table pool.
+run_check "INVARIANT" rg -n '^def ipcBufferSlotPAddr\? \(st : SystemState\) \(tcb : SeLe4n\.Model\.TCB\) \(idx : Nat\)$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n 'st\.machine\.addrInRange pa && \(!needWrite \|\| perms\.write\)' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^theorem ipcBufferReadMr_syncUserWord($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^theorem readUInt64_writeUInt64($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTable.lean
+run_negative_check "INVARIANT" rg -n '^def writeUInt64' SeLe4n/Kernel/Architecture/VSpaceARMv8.lean
+run_check "INVARIANT" rg -n 'match IpcBufferRead\.ipcBufferSlotPAddr\? st tcb idx true with' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_negative_check "INVARIANT" rg -n 'ipcBufferSlotPAddr\? st tcb idx false' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^  \{ length    := min \(min msg\.registers\.size \(4 \+ overflow\)\) maxMessageRegisters$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n -U '^            recordPhysicalWrites\n              \(writeReturnFrameToTcb st tid \(returnFrameOfMessage msg installedCaps\n                \(messageOverflowWrites st tcb msg\)\.length\)\)$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\n  Concurrency\.fireCrossCoreSgis r\.1$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^        Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\n        Concurrency\.fireCrossCoreSgis r\.1$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n 'addr\.is_multiple_of\(8\) && page >= KERNEL_RESERVED_END && covered\(page, PAGE_BYTES\)' rust/sele4n-hal/src/user_translation.rs
+run_check "INVARIANT" rg -n '12: the three words past the fourth are stored into the receiver.s buffer, in order' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '12 CONTROL: without the RAM read the receiver is handed the model.s zeroes' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '^  runOverflowDeliveryWitnesses$' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n 'audit status .visible length 2, monitor.' tests/fixtures/syscall_return_abi.expected
 run_check "INVARIANT" rg -n 'audit drain of one entry .new visible length 1.' tests/fixtures/syscall_return_abi.expected
 

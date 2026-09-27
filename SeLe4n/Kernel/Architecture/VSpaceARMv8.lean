@@ -121,20 +121,10 @@ structure ARMv8VSpace where
 -- AG6-C-ii: Write helpers for page table memory
 -- ============================================================================
 
-/-- Write a single byte to memory at a given physical address. -/
-def writeByte (mem : Memory) (addr : PAddr) (val : UInt8) : Memory :=
-  fun a => if a == addr then val else mem a
-
-/-- Write a UInt64 to memory at a given address in little-endian order. -/
-def writeUInt64 (mem : Memory) (addr : PAddr) (val : UInt64) : Memory :=
-  let m0 := writeByte mem (PAddr.ofNat (addr.toNat + 0)) (val &&& 0xFF).toUInt8
-  let m1 := writeByte m0 (PAddr.ofNat (addr.toNat + 1)) ((val >>> 8) &&& 0xFF).toUInt8
-  let m2 := writeByte m1 (PAddr.ofNat (addr.toNat + 2)) ((val >>> 16) &&& 0xFF).toUInt8
-  let m3 := writeByte m2 (PAddr.ofNat (addr.toNat + 3)) ((val >>> 24) &&& 0xFF).toUInt8
-  let m4 := writeByte m3 (PAddr.ofNat (addr.toNat + 4)) ((val >>> 32) &&& 0xFF).toUInt8
-  let m5 := writeByte m4 (PAddr.ofNat (addr.toNat + 5)) ((val >>> 40) &&& 0xFF).toUInt8
-  let m6 := writeByte m5 (PAddr.ofNat (addr.toNat + 6)) ((val >>> 48) &&& 0xFF).toUInt8
-  writeByte m6 (PAddr.ofNat (addr.toNat + 7)) ((val >>> 56) &&& 0xFF).toUInt8
+-- WS-BP BP7.8: `writeByte` and this module's own `writeUInt64` are retired.
+-- The little-endian word write has one owner, `Architecture.writeUInt64`
+-- (`PageTable.lean`, beside `readUInt64`), which carries the read-back
+-- theorem (`readUInt64_writeUInt64`) this copy never had.
 
 /-- Write a page table descriptor to memory at `tableBase + index * 8`. -/
 def writeDescriptor (mem : Memory) (tableBase : PAddr) (index : Nat)

@@ -1209,7 +1209,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Platform.Boot.bootFromPlatformWithWarnings
   , `SeLe4n.Platform.Boot.installIdleThread
   , `SeLe4n.Platform.FFI.bootAndInitialiseFromPlatform
-  , `SeLe4n.Platform.FFI.getKernelState
   , `SeLe4n.Platform.RPi5.mmioRead
   , `SeLe4n.Platform.RPi5.mmioRead32
   , `SeLe4n.Platform.RPi5.mmioRead64

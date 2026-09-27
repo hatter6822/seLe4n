@@ -8,6 +8,8 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.Architecture.HardwareTables
+import SeLe4n.Kernel.Architecture.IpcBufferRead
 
 /-!
 # Syscall return convention (WS-RA)
@@ -24,9 +26,10 @@ kernel never had.  The argument direction lives in the sibling modules
   label carrying the discriminant directly would alias the first error with
   success — the silent-aliasing class WS-RA exists to remove
   (`errorLabel_never_zero`).
-* `x2`-`x5` — message registers (the inline window; a delivered message
-  longer than 4 registers keeps its full payload in `pendingMessage`, and the
-  frame reports the window — `returnFrame_message_window`).
+* `x2`-`x5` — message registers (the inline window).  Since WS-BP BP7.8 the
+  registers past the fourth are written into the receiver's IPC buffer
+  (`overflowDeliveryWrites`), and the frame's length counts the inline window
+  plus the words actually written (`returnFrame_message_window`).
 
 Nothing in this module is live until the WS-RA flip: the FFI boundary keeps
 the bit-63 `encodeOk` / `encodeError` protocol until `Platform/FFI.lean` and
@@ -451,31 +454,40 @@ site that cannot name its installed count has no business synthesizing a
 message frame.  Arms whose path runs no unwrap at all (the receive legs
 — tracked debt, see the plan — the reply delivery, and badge-only
 notification wakes) pass `0`, the honest count for a path that installs
-nothing. -/
-def returnMessageInfo (msg : IpcMessage) (installedCaps : Nat) : MessageInfo :=
-  { length    := min msg.registers.size 4
+nothing.
+
+**`overflow` is the count of message registers past the fourth the delivery
+actually wrote into the receiver's IPC buffer** (WS-BP BP7.8,
+`overflowDeliveryWrites`), and the length reports exactly what arrived: the
+inline window plus those words, never more than the message holds.  Like
+`installedCaps` it is not defaulted — a delivery that wrote none says `0`, and a
+receiver whose buffer resolves nowhere reads a length of at most four, which is
+seL4's own answer for a receiver with no IPC buffer (`copyMRs` copies the
+registers alone). -/
+def returnMessageInfo (msg : IpcMessage) (installedCaps overflow : Nat) : MessageInfo :=
+  { length    := min (min msg.registers.size (4 + overflow)) maxMessageRegisters
     extraCaps := min installedCaps Model.maxExtraCaps
     label     := min msg.label (errorLabelBase - 1) }
 
-/-- The §3.7 window bound, stated: the returned length never exceeds the
-four inline message registers. -/
-theorem returnFrame_message_window (msg : IpcMessage) (installedCaps : Nat) :
-    (returnMessageInfo msg installedCaps).length ≤ 4 :=
-  Nat.min_le_right _ _
+/-- The window bound, stated: the returned length never exceeds the four inline
+message registers plus the overflow words the delivery wrote. -/
+theorem returnFrame_message_window (msg : IpcMessage) (installedCaps overflow : Nat) :
+    (returnMessageInfo msg installedCaps overflow).length ≤ 4 + overflow :=
+  Nat.le_trans (Nat.min_le_left _ _) (Nat.min_le_right _ _)
 
 /-- The synthesized word is well-formed for the 20-bit-label encoding:
 length ≤ 120, extraCaps ≤ 3, label ≤ 2^20 − 1. -/
-theorem returnMessageInfo_wellFormed (msg : IpcMessage) (installedCaps : Nat) :
-    (returnMessageInfo msg installedCaps).wellFormed := by
-  refine ⟨Nat.le_trans (Nat.min_le_right _ _) (by decide), ?_, ?_⟩
+theorem returnMessageInfo_wellFormed (msg : IpcMessage) (installedCaps overflow : Nat) :
+    (returnMessageInfo msg installedCaps overflow).wellFormed := by
+  refine ⟨Nat.min_le_right _ _, ?_, ?_⟩
   · exact Nat.min_le_right _ _
   · exact Nat.le_trans (Nat.min_le_right _ _) (by rw [errorLabelBase_eq]; decide)
 
 /-- **A delivered message never carries a status label** (ABI v3): the
 synthesized label is below `errorLabelBase`, so a receiver's decoder cannot
 read a delivery as a kernel error whatever the message's label was. -/
-theorem returnMessageInfo_label_lt_errorLabelBase (msg : IpcMessage) (installedCaps : Nat) :
-    (returnMessageInfo msg installedCaps).label < errorLabelBase := by
+theorem returnMessageInfo_label_lt_errorLabelBase (msg : IpcMessage) (installedCaps overflow : Nat) :
+    (returnMessageInfo msg installedCaps overflow).label < errorLabelBase := by
   unfold returnMessageInfo
   have : errorLabelBase - 1 < errorLabelBase := by rw [errorLabelBase_eq]; decide
   exact Nat.lt_of_le_of_lt (Nat.min_le_right _ _) this
@@ -486,16 +498,16 @@ out-of-range label, never a rewrite of a real one.  Every kernel-emitted label
 satisfies the hypothesis (`Architecture.faultLabel_lt_errorLabelBase` for a
 fault message; a user send carries label `0`), so on every live path this
 reads as the identity. -/
-@[simp] theorem returnMessageInfo_label_of_lt (msg : IpcMessage) (installedCaps : Nat)
+@[simp] theorem returnMessageInfo_label_of_lt (msg : IpcMessage) (installedCaps overflow : Nat)
     (h : msg.label < errorLabelBase) :
-    (returnMessageInfo msg installedCaps).label = msg.label :=
+    (returnMessageInfo msg installedCaps overflow).label = msg.label :=
   Nat.min_eq_left (Nat.le_sub_one_of_lt h)
 
 /-- WS-RR RR4.4: a message carrying no label (the default, and every message
 built before RR4) delivers the `0` label the pre-RR4 synthesis hard-coded —
 the backward-compatibility bridge. -/
-@[simp] theorem returnMessageInfo_label_zero (msg : IpcMessage) (installedCaps : Nat)
-    (h : msg.label = 0) : (returnMessageInfo msg installedCaps).label = 0 := by
+@[simp] theorem returnMessageInfo_label_zero (msg : IpcMessage) (installedCaps overflow : Nat)
+    (h : msg.label = 0) : (returnMessageInfo msg installedCaps overflow).label = 0 := by
   simp [returnMessageInfo, h]
 
 /-- The honesty bound (PR #866 round-2): the returned `extraCaps` never
@@ -503,12 +515,12 @@ exceeds the installed count — in particular, a path that installed
 nothing reports zero, whatever the delivered message's `caps` array
 still carries. -/
 theorem returnMessageInfo_extraCaps_le_installed
-    (msg : IpcMessage) (installedCaps : Nat) :
-    (returnMessageInfo msg installedCaps).extraCaps ≤ installedCaps :=
+    (msg : IpcMessage) (installedCaps overflow : Nat) :
+    (returnMessageInfo msg installedCaps overflow).extraCaps ≤ installedCaps :=
   Nat.min_le_left _ _
 
-@[simp] theorem returnMessageInfo_extraCaps_zero (msg : IpcMessage) :
-    (returnMessageInfo msg 0).extraCaps = 0 := rfl
+@[simp] theorem returnMessageInfo_extraCaps_zero (msg : IpcMessage) (overflow : Nat) :
+    (returnMessageInfo msg 0 overflow).extraCaps = 0 := rfl
 
 /-- A delivered `IpcMessage` as a return frame — badge to `x0`, synthesized
 `MessageInfo` to `x1`, the inline register window to `x2`-`x5` (RA.A.3).
@@ -516,10 +528,10 @@ The **single** place a message becomes a frame, used by every RA.B.5b
 staging site, so the synthesis cannot drift between sites.
 `installedCaps` per `returnMessageInfo`: the count of caps actually
 installed by this delivery's transfer, `0` for paths that run none. -/
-def returnFrameOfMessage (msg : IpcMessage) (installedCaps : Nat) :
+def returnFrameOfMessage (msg : IpcMessage) (installedCaps overflow : Nat) :
     SyscallReturnFrame :=
   { x0 := ((msg.badge.map Badge.val).getD 0).toUInt64
-    x1 := (returnMessageInfo msg installedCaps).encode.toUInt64
+    x1 := (returnMessageInfo msg installedCaps overflow).encode.toUInt64
     x2 := ((msg.registers[0]?.map RegValue.val).getD 0).toUInt64
     x3 := ((msg.registers[1]?.map RegValue.val).getD 0).toUInt64
     x4 := ((msg.registers[2]?.map RegValue.val).getD 0).toUInt64
@@ -732,6 +744,59 @@ theorem writeReturnFrameToTcb_id_when_not_tcb
   unfold writeReturnFrameToTcb
   exact SystemState.updateTcb_eq_self_of_none hNot _
 
+/-- **WS-BP BP7.8: the message registers past the fourth, written into the
+receiver's IPC buffer.**  Register `4 + i` goes to overflow slot `i`, at the
+address the shared resolver answers for a **writable** mapping
+(`IpcBufferRead.ipcBufferSlotPAddr?` with `needWrite := true`), and the list
+stops at the first slot it refuses — so what arrives is always a prefix, and
+the frame's length (`returnMessageInfo`'s `overflow`) is that prefix's length.
+seL4 answers a receiver with no usable buffer the same way: `copyMRs` copies the
+registers alone and `setMessageInfo` reports what was copied.
+
+Each word is a `PhysicalWrite.storeUserWord`, recorded on the ledger the syscall
+seam drains (`Architecture.recordPhysicalWrites`) rather than written into the
+model's `machine.memory`: the model holds no thread's memory — the entry reads a
+sender's words from RAM when it needs them (`IpcBufferRead.syncUserWords`) — so
+the store is owed to RAM, exactly as a descriptor store is. -/
+def overflowDeliveryWrites (st : SystemState) (tcb : TCB) :
+    List SeLe4n.RegValue → Nat → List PhysicalWrite
+  | [], _ => []
+  | w :: rest, idx =>
+      match IpcBufferRead.ipcBufferSlotPAddr? st tcb idx true with
+      | some pa => .storeUserWord pa w.val.toUInt64 :: overflowDeliveryWrites st tcb rest (idx + 1)
+      | none => []
+
+/-- The overflow words a delivery of `msg` to `tcb` writes. -/
+def messageOverflowWrites (st : SystemState) (tcb : TCB) (msg : IpcMessage) :
+    List PhysicalWrite :=
+  overflowDeliveryWrites st tcb (msg.registers.toList.drop 4) 0
+
+/-- Every word a delivery writes is a user-word store. -/
+theorem overflowDeliveryWrites_storeUserWord (st : SystemState) (tcb : TCB) :
+    ∀ (ws : List SeLe4n.RegValue) (idx : Nat) (w : PhysicalWrite),
+      w ∈ overflowDeliveryWrites st tcb ws idx → ∃ pa v, w = .storeUserWord pa v
+  | [], _, _, h => by simp [overflowDeliveryWrites] at h
+  | x :: rest, idx, w, h => by
+      unfold overflowDeliveryWrites at h
+      split at h
+      · rename_i pa _
+        rcases List.mem_cons.mp h with h | h
+        · exact ⟨pa, _, h⟩
+        · exact overflowDeliveryWrites_storeUserWord st tcb rest (idx + 1) w h
+      · simp at h
+
+/-- A delivery writes no more words than the message carries past the fourth. -/
+theorem overflowDeliveryWrites_length_le (st : SystemState) (tcb : TCB) :
+    ∀ (ws : List SeLe4n.RegValue) (idx : Nat),
+      (overflowDeliveryWrites st tcb ws idx).length ≤ ws.length
+  | [], _ => by simp [overflowDeliveryWrites]
+  | x :: rest, idx => by
+      unfold overflowDeliveryWrites
+      split
+      · simp only [List.length_cons]
+        exact Nat.succ_le_succ (overflowDeliveryWrites_length_le st tcb rest (idx + 1))
+      · simp
+
 /-- WS-RA RA.B.6: stage the message a completed receive-shaped syscall
 delivered into the **caller's own** `pendingMessage` — the arm-level
 staging for the non-blocking consume paths (`.receive` / `.replyRecv`).
@@ -750,7 +815,11 @@ incidental register content.
 delivering transfer **actually installed** — the arm's transfer-summary
 `installedCount`, or `0` on a path that runs no unwrap.  It is never the
 delivered message's own `caps.size`, which records what the sender
-*requested*. -/
+*requested*.
+
+**WS-BP BP7.8**: the registers past the fourth are written into the
+receiver's IPC buffer (`messageOverflowWrites`), recorded on the physical-write
+ledger, and the frame's length counts them. -/
 def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId)
     (installedCaps : Nat) : SystemState :=
   match st.getTcb? tid with
@@ -758,7 +827,10 @@ def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId)
       if tcb.ipcState = .ready then
         match tcb.pendingMessage with
         | some msg =>
-            writeReturnFrameToTcb st tid (returnFrameOfMessage msg installedCaps)
+            recordPhysicalWrites
+              (writeReturnFrameToTcb st tid (returnFrameOfMessage msg installedCaps
+                (messageOverflowWrites st tcb msg).length))
+              (messageOverflowWrites st tcb msg)
         | none => st
       else st
   | none => st
@@ -1065,8 +1137,9 @@ leaves the woken waiter's frame staged: whenever a wake delivered `msg`
 into a counterparty (post-state `.ready` with `pendingMessage = some msg`
 — the `storeTcbIpcStateAndMessage`/`storeTcbReceiveComplete` shape every
 wake in the tree produces), the staging step writes exactly
-`returnFrameOfMessage msg` into its saved register context, and the
-boundary read recovers it bit for bit.  Delivery is the context restore
+`returnFrameOfMessage msg` into its saved register context — its length
+counting the overflow words written into the waiter's IPC buffer (WS-BP BP7.8)
+— and the boundary read recovers it bit for bit.  Delivery is the context restore
 (WS-BP BP7.6)'s; what this pins is that the frame is *there* to deliver. -/
 theorem blockedReturn_staged_in_waiter_frame
     (st : SystemState) (w : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage)
@@ -1076,14 +1149,15 @@ theorem blockedReturn_staged_in_waiter_frame
     (hMsg : tcb.pendingMessage = some msg)
     (hObjInv : st.objects.invExt) :
     readReturnFrame (stageWokenDelivery st (some w) installedCaps) w
-      = returnFrameOfMessage msg installedCaps := by
+      = returnFrameOfMessage msg installedCaps (messageOverflowWrites st tcb msg).length := by
   show readReturnFrame (stageDeliveredMessage st w installedCaps) w
-    = returnFrameOfMessage msg installedCaps
+    = returnFrameOfMessage msg installedCaps (messageOverflowWrites st tcb msg).length
   unfold stageDeliveredMessage
   rw [hTcb]
   simp only [hReady, hMsg]
   exact readReturnFrame_writeReturnFrame st w
-    (returnFrameOfMessage msg installedCaps) tcb hTcb hObjInv
+    (returnFrameOfMessage msg installedCaps (messageOverflowWrites st tcb msg).length)
+    tcb hTcb hObjInv
 
 /-- WS-RA RA.B.5b — the completion dual: a woken plain sender's staged
 frame is the zero frame (unit success), recovered by the boundary read. -/

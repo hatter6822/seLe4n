@@ -3130,7 +3130,8 @@ def icMaintenanceBroadcast
 /-- **WS-BP BP7.2: perform one physical write a committed transition
     recorded.**  `(tag, addr, value)` is `PhysicalWrite`'s encoding (tag 0 zeroes
     the page at `addr`, tag 1 stores the descriptor `value` at `addr`, tag 2
-    invalidates every translation tagged with the ASID `addr`).
+    invalidates every translation tagged with the ASID `addr`, tag 3 stores the
+    user word `value` at `addr` in a thread's RAM frame — WS-BP BP7.8).
 
     Rust: `ffi::mmu_apply_physical_write` in `sele4n-hal/src/ffi.rs`, which
     validates the operands against the pages the kernel may write for a thread
@@ -3139,9 +3140,55 @@ def icMaintenanceBroadcast
 @[extern "mmu_apply_physical_write"]
 opaque ffiApplyPhysicalWrite : UInt64 → UInt64 → UInt64 → BaseIO Unit
 
+/-- **WS-BP BP7.8: the user word at `addr`** — a word of the caller's own RAM
+    frame, read so the kernel decodes the message registers the thread wrote
+    into its IPC buffer rather than its model of that memory.  The HAL admits
+    only an eight-byte aligned word of RAM past the kernel's reserved extent
+    and halts the system on anything else.
+
+    Rust: `ffi_read_user_word` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_read_user_word"]
+opaque ffiReadUserWord : UInt64 → BaseIO UInt64
+
 /-- **WS-BP BP7.2**: typed wrapper over `ffiApplyPhysicalWrite`. -/
 def physicalWriteApply (w : SeLe4n.Kernel.Architecture.PhysicalWrite) : BaseIO Unit :=
   ffiApplyPhysicalWrite w.tag w.addr w.value
+
+/-- **WS-BP BP7.2** (the physical-write seam): perform the physical-memory writes
+the just-committed transition recorded, in record order.
+
+A transition that changes an address space — a mapping, an installed or removed
+table, a page carved for an address space, a table page returned to its untyped
+— is a pure state function, so what makes the translation tables in memory agree
+with the model is recorded in `SystemState.pendingPhysicalWrites`
+(`Architecture.recordPhysicalWrites`) and performed here, exactly as the
+instruction-cache ledger is.  The ledger is read and cleared in the atomic step,
+so a write is performed once and never stranded into the next syscall.
+
+**Order is the content.**  The writes run in the order recorded, because a
+detach records the parent-entry clear before the zeroing of the pages beneath
+it and the ASID invalidation after both; and the whole list runs before the
+cross-core SGIs and the shootdown round, so no core refills a TLB entry from a
+descriptor the model has already cleared.  Inert when nothing was recorded
+(`completePhysicalWrites_nil`), which is every syscall that changed no address
+space.
+
+**WS-BP BP7.8**: every entry whose commit can record a write drains the
+ledger through this one function — the syscall seam and, since a fault
+message carries thirteen words, both fault seams. -/
+def completePhysicalWrites (owed : List Architecture.PhysicalWrite) : BaseIO Unit :=
+  owed.forM physicalWriteApply
+
+/-- **WS-BP BP7.2**: a commit that recorded no physical write performs none. -/
+theorem completePhysicalWrites_nil : completePhysicalWrites [] = pure () := rfl
+
+/-- **WS-BP BP7.2**: the seam performs **every** recorded write, in record
+order — pinned so a refactor that keeps only the last one (the descriptor store
+of a detach, say, and not the zeroing of the pages beneath it) fails here. -/
+theorem completePhysicalWrites_cons (w : Architecture.PhysicalWrite)
+    (rest : List Architecture.PhysicalWrite) :
+    completePhysicalWrites (w :: rest) =
+      (do physicalWriteApply w; completePhysicalWrites rest) := rfl
 
 /-- **WS-BP BP7.2: install a translation on the executing PE.**  `(0, 0)` is the
     kernel's own boot tables under ASID 0; anything else is an address space's

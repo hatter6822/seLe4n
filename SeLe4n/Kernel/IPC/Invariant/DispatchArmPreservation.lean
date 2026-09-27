@@ -5652,7 +5652,13 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
 -- §16  Return-frame staging composites (`Architecture.stage*`)
 -- ============================================================================
 
-/-- Delivery staging is `writeReturnFrameToTcb` or the identity. -/
+/-- **WS-BP BP7.8**: and it carries no chain data. -/
+theorem recordPhysicalWrites_donationChainFrame (st st' : SystemState)
+    (ws : List Architecture.PhysicalWrite) (h : donationChainFrame st st') :
+    donationChainFrame st (Architecture.recordPhysicalWrites st' ws) :=
+  ⟨h.replyLinks, h.stackHeads, h.callerKept⟩
+
+/-- Delivery staging is `writeReturnFrameToTcb` then a ledger record, or the identity. -/
 theorem stageDeliveredMessage_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
@@ -5666,7 +5672,8 @@ theorem stageDeliveredMessage_preserves_ipcInvariantFull
       · cases tcb.pendingMessage with
         | none => exact hInv
         | some msg =>
-            exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv
+            exact ipcInvariantFull_recordPhysicalWrites
+              (writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv)
       · exact hInv
 
 /-- Woken-delivery staging: `stageDeliveredMessage` on the woken thread. -/
@@ -5797,7 +5804,8 @@ theorem stageDeliveredMessage_donationChainFrame
         | none => simp only []; exact donationChainFrame.refl st
         | some msg =>
             simp only []
-            exact writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv
+            exact recordPhysicalWrites_donationChainFrame st _ _
+              (writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv)
       · exact donationChainFrame.refl st
 
 /-- **WS-RM (`v0.35.6`)**: and so does the woken sender's completion frame. -/

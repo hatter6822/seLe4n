@@ -1273,6 +1273,137 @@ private def runDeclassifiedBadgeDeliveryWitnesses : IO Unit := do
     (deliveredD.isNone)
 
 -- ============================================================================
+-- §12  WS-BP BP7.8 — message registers past the fourth, both directions
+-- ============================================================================
+--
+-- The decode reads a sender's `MR4` onward out of its IPC buffer, and it read
+-- them from the model's memory, which holds no thread's writes; and no delivery
+-- wrote a receiver's.  So on hardware a message longer than four registers
+-- arrived as its first four and whatever the model held.  This group runs a
+-- seven-register send through the live dispatch between two threads whose IPC
+-- buffers are mapped to RAM: the sender's three overflow words are read from
+-- "RAM" (synced into the model as the entry does), and the receiver's are
+-- recorded as user-word stores into its buffer, with the frame's length
+-- counting them.
+
+/-- The receiver's IPC-buffer frame (`callerTid`'s buffer at VA 4096). -/
+private def rxBufferPA : Nat := 0x10_1000
+/-- The sender's IPC-buffer frame (`peerTid`'s buffer at VA 8192). -/
+private def txBufferPA : Nat := 0x10_2000
+
+/-- The three words the sender wrote past its four inline registers. -/
+private def overflowWords : List UInt64 := [0x55, 0x66, 0x77]
+
+/-- `twoThreadState` with both threads' IPC-buffer pages mapped to RAM, and that
+RAM declared.  `rxWrite` is the receiver mapping's write permission — the
+control that a read-only buffer receives nothing. -/
+private def mappedBuffersState (rxWrite : Bool) : SystemState :=
+  let root : SeLe4n.Model.VSpaceRoot :=
+    { asid := SeLe4n.ASID.ofNat 7,
+      mappings := SeLe4n.Kernel.RobinHood.RHTable.ofList
+        [(SeLe4n.VAddr.ofNat 4096, (SeLe4n.PAddr.ofNat rxBufferPA, { read := true, write := rxWrite })),
+         (SeLe4n.VAddr.ofNat 8192, (SeLe4n.PAddr.ofNat txBufferPA, { read := true, write := true }))] }
+  let st := twoThreadState
+  { st with
+      objects := st.objects.insert callerVsp (.vspaceRoot root),
+      machine := { st.machine with
+        memoryMap := [{ base := SeLe4n.PAddr.ofNat 0x10_0000, size := 0x10_0000, kind := .ram }] } }
+
+/-- What the entry does before the decode: read the caller's overflow words
+from RAM and write them into the model.  Here "RAM" is `overflowWords`. -/
+private def syncSenderOverflow (st : SystemState) (msgInfo : UInt64) : SystemState :=
+  let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st peerTid msgInfo
+  Kernel.Architecture.IpcBufferRead.syncUserWords st (addrs.zip overflowWords)
+
+/-- A seven-register message: length 7 in the `MessageInfo` word. -/
+private def sevenRegisters : UInt64 := 7
+
+/-- The receiver blocks in `.receive`; the sender sends seven registers
+(`1 2 3 4` inline, `overflowWords` in its buffer).  `sync` says whether the
+sender's words were read from RAM first — the retired reading is `false`. -/
+private def overflowSendRun (rxWrite sync : Bool) :
+    Except KernelError (Kernel.Architecture.SyscallReturnFrame ×
+      List Kernel.Architecture.PhysicalWrite × List SeLe4n.PAddr) := do
+  let st0 := mappedBuffersState rxWrite
+  let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 st0
+  if out1 != .blocks then throw .illegalState
+  let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st1 peerTid sevenRegisters
+  let stS := if sync then syncSenderOverflow st1 sevenRegisters else st1
+  let (_, st2) ← SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core1
+    SyscallId.send.toNat.toUInt32 sevenRegisters epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
+    0 0 0 0 stS
+  pure (stagedFrame st2 callerTid, st2.pendingPhysicalWrites, addrs)
+
+private def runOverflowDeliveryWitnesses : IO Unit := do
+  IO.println "-- §12 WS-BP BP7.8: message registers past the fourth, read from and written to IPC buffers"
+  match overflowSendRun true true with
+  | .error e => assertBool s!"12: the overflow send runs (got .error {reprStr e})" false
+  | .ok (frame, writes, addrs) => do
+      assertBool "12: the sender's three overflow slots resolve to its RAM frame"
+        (addrs == [SeLe4n.PAddr.ofNat txBufferPA, SeLe4n.PAddr.ofNat (txBufferPA + 8),
+                   SeLe4n.PAddr.ofNat (txBufferPA + 16)])
+      assertBool "12: the receiver's inline window is the sender's first four registers"
+        (frame.x2 == 1 && frame.x3 == 2 && frame.x4 == 3 && frame.x5 == 4)
+      assertBool "12: the three words past the fourth are stored into the receiver's buffer, in order"
+        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0x66,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0x77])
+      assertBool "12: ...and the frame's length counts them: seven registers delivered"
+        ((SeLe4n.Model.MessageInfo.decode frame.x1.toNat).map (·.length) == some 7)
+  -- CONTROL: the same send without the entry's RAM read — the retired reading.
+  -- The decode reads the model's memory, which holds zeroes for the sender's
+  -- frame, so what the receiver is handed is not what the sender wrote.
+  match overflowSendRun true false with
+  | .error e => assertBool s!"12 CONTROL: the unsynced send runs (got .error {reprStr e})" false
+  | .ok (_, writes, _) =>
+      assertBool "12 CONTROL: without the RAM read the receiver is handed the model's zeroes"
+        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0, .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0])
+  -- THE SEAM: the same send through the atomic step the hardware entry commits
+  -- surfaces the three stores to the runtime and commits a state that owes none.
+  match dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+      SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 (mappedBuffersState true) with
+  | .error e => assertBool s!"12 SEAM: the receive runs (got .error {reprStr e})" false
+  | .ok (_, st1) => do
+      let (r, stC) := SeLe4n.Kernel.syscallDispatchCrossCoreStep trustedLabeling core1
+        SyscallId.send.toNat.toUInt32 sevenRegisters epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
+        0 0 0 0 (syncSenderOverflow st1 sevenRegisters)
+      assertBool "12 SEAM: the step hands the runtime the three user-word stores"
+        (r.2.2.2.2.2.2.1 == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,
+                             .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0x66,
+                             .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0x77])
+      assertBool "12 SEAM: ...and the state it commits owes no physical write"
+        stC.pendingPhysicalWrites.isEmpty
+  -- A fault message's width: thirteen words (`unknownSyscall`) staged for a woken
+  -- handler write nine words past the fourth — the delivery is the one every
+  -- wake shares, so a fault handler reads every word the model encodes.
+  let st0 := mappedBuffersState true
+  let thirteen : IpcMessage :=
+    { registers := (Array.range 13).map (fun i => (⟨100 + i⟩ : SeLe4n.RegValue)) }
+  let stW : SystemState :=
+    match st0.objects[callerTid.toObjId]? with
+    | some (.tcb tcb) =>
+        let tcbW : TCB := { tcb with ipcState := .ready, pendingMessage := some thirteen }
+        { st0 with objects := st0.objects.insert callerTid.toObjId (.tcb tcbW) }
+    | _ => st0
+  let stD := Kernel.Architecture.stageWokenDelivery stW (some callerTid) 0
+  assertBool "12: a thirteen-word delivery stores its nine words past the fourth"
+    (stD.pendingPhysicalWrites ==
+      (List.range 9).map (fun i => Kernel.Architecture.PhysicalWrite.storeUserWord
+        (SeLe4n.PAddr.ofNat (rxBufferPA + 8 * i)) (104 + i).toUInt64))
+  assertBool "12: ...and the handler's frame reports thirteen"
+    ((SeLe4n.Model.MessageInfo.decode (stagedFrame stD callerTid).x1.toNat).map (·.length) == some 13)
+  -- CONTROL: a receiver whose buffer is read-only receives only the inline four.
+  match overflowSendRun false true with
+  | .error e => assertBool s!"12 CONTROL: the read-only send runs (got .error {reprStr e})" false
+  | .ok (frame, writes, _) => do
+      assertBool "12 CONTROL: a read-only receiver buffer is written nothing"
+        (writes.isEmpty)
+      assertBool "12 CONTROL: ...and its frame's length is the inline four, not seven"
+        ((SeLe4n.Model.MessageInfo.decode frame.x1.toNat).map (·.length) == some 4)
+
+-- ============================================================================
 -- Runner
 -- ============================================================================
 
@@ -1291,6 +1422,7 @@ def runSyscallReturnAbiChecks : IO Unit := do
   runBlockedWaiterStagingWitnesses
   runAuditReadEndToEnd
   runDeclassifiedBadgeDeliveryWitnesses
+  runOverflowDeliveryWitnesses
   runTraceFixtureCheck
   runReturnShapeFixtureCheck
   runAbiLayoutFixtureCheck

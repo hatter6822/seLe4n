@@ -502,37 +502,10 @@ theorem completeIcacheMaintenance_cons (op : Architecture.ICacheInvalidation)
     completeIcacheMaintenance (op :: rest) =
       (do Platform.FFI.icMaintenanceBroadcast op; completeIcacheMaintenance rest) := rfl
 
-/-- **WS-BP BP7.2** (the physical-write seam): perform the physical-memory writes
-the just-committed transition recorded, in record order.
-
-A transition that changes an address space — a mapping, an installed or removed
-table, a page carved for an address space, a table page returned to its untyped
-— is a pure state function, so what makes the translation tables in memory agree
-with the model is recorded in `SystemState.pendingPhysicalWrites`
-(`Architecture.recordPhysicalWrites`) and performed here, exactly as the
-instruction-cache ledger is.  The ledger is read and cleared in the atomic step,
-so a write is performed once and never stranded into the next syscall.
-
-**Order is the content.**  The writes run in the order recorded, because a
-detach records the parent-entry clear before the zeroing of the pages beneath
-it and the ASID invalidation after both; and the whole list runs before the
-cross-core SGIs and the shootdown round, so no core refills a TLB entry from a
-descriptor the model has already cleared.  Inert when nothing was recorded
-(`completePhysicalWrites_nil`), which is every syscall that changed no address
-space. -/
-def completePhysicalWrites (owed : List Architecture.PhysicalWrite) : BaseIO Unit :=
-  owed.forM Platform.FFI.physicalWriteApply
-
-/-- **WS-BP BP7.2**: a commit that recorded no physical write performs none. -/
-theorem completePhysicalWrites_nil : completePhysicalWrites [] = pure () := rfl
-
-/-- **WS-BP BP7.2**: the seam performs **every** recorded write, in record
-order — pinned so a refactor that keeps only the last one (the descriptor store
-of a detach, say, and not the zeroing of the pages beneath it) fails here. -/
-theorem completePhysicalWrites_cons (w : Architecture.PhysicalWrite)
-    (rest : List Architecture.PhysicalWrite) :
-    completePhysicalWrites (w :: rest) =
-      (do Platform.FFI.physicalWriteApply w; completePhysicalWrites rest) := rfl
+-- **WS-BP BP7.8**: `completePhysicalWrites` and its two equations moved to
+-- `Platform.FFI`, beside `physicalWriteApply`, because the fault entries drain the
+-- same ledger now (a fault message's words past the fourth are user-word stores)
+-- and `FaultEntry` cannot reach this module.
 
 /-- **WS-SM SM7.B** (structural marker): a commit that changed no
 pending-shootdown queue runs no round — no lock traffic, no reset, no
@@ -742,6 +715,31 @@ theorem syscallDispatchCrossCoreBracketedStep_refused (ctx : LabelingContext)
   rw [Concurrency.runBracketed_refused _ _ _ _ st S hDecl hGuard]
   rfl
 
+/-- **WS-BP BP7.8: the sender's message registers past the fourth, read from
+RAM.**  The decode reads a syscall's overflow message registers out of the
+caller's IPC buffer (`RegisterDecode.decodeSyscallArgsFromState` →
+`IpcBufferRead.ipcBufferReadMr`), and it reads them from `machine.memory` —
+the model's memory, which holds no thread's writes.  So before this seam the
+kernel on hardware decoded a sender's `MR4` onward as whatever the model held
+for that frame (zeroes from the carve), never what the thread wrote.
+
+This reads each word the decode will read — the caller's slots the shared
+resolver answers (`IpcBufferRead.callerOverflowAddrs`) — from RAM through the
+HAL, and `syncUserWords` writes them into the model in the atomic step, before
+the decode runs.  The addresses are resolved on the state read here and the
+words written on the state the commit closure receives; those are one state,
+because the kernel-entry lock serialises every committing entry and nothing
+between the two reads writes an address space.  A syscall that asks for no
+overflow reads nothing (`callerOverflowAddrs` answers `[]`). -/
+def readCallerOverflowWords (execCore : CoreId) (msgInfo : UInt64) :
+    BaseIO (List (SeLe4n.PAddr × UInt64)) := do
+  let st ← Platform.FFI.getKernelState
+  match st.scheduler.currentOnCore execCore with
+  | none => pure []
+  | some tid =>
+      (Architecture.IpcBufferRead.callerOverflowAddrs st tid msgInfo).mapM fun pa => do
+        pure (pa, ← Platform.FFI.ffiReadUserWord pa.toNat.toUInt64)
+
 /-- **WS-SM SM6.A**: the cross-core-aware syscall dispatch entry — the live
 SGI-dispatch seam.  Reads the deployment labeling context and the executing core
 from the hardware (`currentCoreId`), runs the verified
@@ -807,9 +805,15 @@ def syscallDispatchCrossCoreEntry
   -- this core's register bank and the caller's TCB before the step runs, so a
   -- context switch the syscall causes saves every register, not the window.
   let frame ← Platform.FFI.captureTrapFrame
+  -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
+  -- and synced into the model in the atomic step, so the decode reads what the
+  -- thread wrote.
+  let words ← readCallerOverflowWords execCore msgInfo
   let result ← Platform.FFI.modifyGetKernelState fun st =>
     syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 (Architecture.saveCapturedTrapFrame st execCore frame)
+      ipcBufferAddr elr spsr spEl0 x30
+      (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedTrapFrame st execCore frame) words)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
   -- immediately after the commit — `dispatch_svc` reads it back inside the
   -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
@@ -823,7 +827,7 @@ def syscallDispatchCrossCoreEntry
   -- before any core is poked and before the shootdown round: a remote core
   -- must not refill its TLB from a descriptor the model has already cleared,
   -- and a carved page must be zero before anything can name it.
-  completePhysicalWrites result.2.2.2.2.2.2.1
+  Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1
   Concurrency.fireCrossCoreSgis result.2.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
@@ -872,12 +876,15 @@ theorem syscallDispatchCrossCoreEntry_def
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
         let frame ← Platform.FFI.captureTrapFrame
+        let words ← readCallerOverflowWords execCore msgInfo
         let result ← Platform.FFI.modifyGetKernelState fun st =>
           syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-            ipcBufferAddr elr spsr spEl0 x30 (Architecture.saveCapturedTrapFrame st execCore frame)
+            ipcBufferAddr elr spsr spEl0 x30
+            (Architecture.IpcBufferRead.syncUserWords
+              (Architecture.saveCapturedTrapFrame st execCore frame) words)
         let frame := result.1.mailboxFrame
         Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
-        completePhysicalWrites result.2.2.2.2.2.2.1
+        Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
         completeIcacheMaintenance result.2.2.2.2.2.1

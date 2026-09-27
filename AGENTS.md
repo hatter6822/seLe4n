@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.20.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.21.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -385,7 +385,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~1207 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean` (~1185 lines)
-- `tests/SyscallReturnAbiSuite.lean` (~1185 lines)
+- `tests/SyscallReturnAbiSuite.lean` (~1435 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1184 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1180 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1179 lines)
@@ -7154,7 +7154,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -8453,6 +8453,31 @@ the target is what the hardware receives, and only the second is the claim.
 (2) **Its control is the deny-all policy**, under which the signal is refused
 and the waiter's core resumes nothing — so the positive run is a statement about
 the policy rather than about the fixture.  Executing it on the image is BP8's.
+
+
+**Message registers past the fourth cross the kernel in both directions**
+(`v0.36.21`, BP7.8).  Both were owed and one was registered: the decode read a
+sender's `MR4` onward from `machine.memory` — the model's memory, which holds no
+thread's writes — and no delivery wrote a receiver's.  Four things new code must
+respect.  (1) **One resolver, both directions**:
+`IpcBufferRead.ipcBufferSlotPAddr?` (the slot's page through the thread's own
+VSpace, eight-byte aligned, declared RAM, and writable when `needWrite`) is what
+the seam reads and what a delivery writes; a new path touching a thread's buffer
+asks it, never `root.lookup` directly.  (2) **The model holds no thread's memory,
+so a read of it is synced first**: the syscall seam reads the caller's words from
+RAM (`readCallerOverflowWords`, `ffi_read_user_word`) and writes them in with
+`syncUserWords` in the atomic step before the decode — `ipcBufferReadMr_syncUserWord`
+is the relation, over `writeUInt64` and `readUInt64_writeUInt64`.  A new kernel
+read of user memory is synced the same way.  (3) **A write to a thread's memory is
+owed to RAM, not to the model**: `stageDeliveredMessage` records
+`PhysicalWrite.storeUserWord` (tag 3) on the ledger, as a descriptor store is, and
+`returnMessageInfo`'s `overflow` makes the frame's length count exactly what was
+written — a prefix, stopping at the first slot the resolver refuses.  The HAL
+admits a user word only in RAM past the kernel's extent and never in the table
+pool, so a message register cannot become a descriptor.  (4) **Every entry whose
+commit can deliver a message drains the ledger** through
+`Platform.FFI.completePhysicalWrites`, the fault seams included, since a
+thirteen-word fault message is delivered to a handler waiting in receive.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
@@ -12870,12 +12895,12 @@ code may assume:
   pokes from the pre/post **diff** (`computeCrossCoreSgis`), as the syscall
   seam does, never from the single SGI the Call chain surfaces; and it runs
   the executing core's successor through `scheduleLocalSuccessor`, live since
-  WS-BP BP7.6 (`v0.36.19`).  (8) On hardware only `MR0`-`MR3` of a fault message reach
-  the handler's registers: no receive path writes `MR4` onward into the IPC
-  buffer yet (a WS-RA residual with its first consumer here), so an
-  `unknownSyscall` (13 words) or `userException` (5 words) handler sees its
-  first four words until that write lands — registered debt with a closure
-  target, not a silent truncation.  (9) **A kernel-origin exception is never
+  WS-BP BP7.6 (`v0.36.19`).  (8) **Every word of a fault message reaches the
+  handler** (WS-BP BP7.8, `v0.36.21`): the words past the fourth are written into
+  its IPC buffer by the delivery every wake shares, and the two fault seams drain
+  the physical-write ledger that carries them, exactly as the syscall seam does.
+  A handler whose buffer resolves to no writable RAM reads the four inline words
+  and a length of four.  (9) **A kernel-origin exception is never
   delivered.**  `classifySynchronousException` maps the current-EL aborts
   (EC `0x25`, `0x21`) to `.kernelAbort`, `faultOfExceptionContext` yields no
   fault for it, and `faultEntryStep` / `unknownSyscallEntryStep` are inert

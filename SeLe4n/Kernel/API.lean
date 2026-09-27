@@ -8090,7 +8090,9 @@ theorem dispatchArm_receive_matches_returnShape
     Architecture.syscallReturnShape .receive = .message ∧
     ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg summary.installedCount := by
+        = Architecture.returnFrameOfMessage msg summary.installedCount
+            (Architecture.messageOverflowWrites (Architecture.stageWokenSendCompletion stDon
+              ((st.getEndpoint? epId).bind (·.sendQ.head))) tcb msg).length := by
   refine ⟨rfl,
     Architecture.stageDeliveredMessage
       (Architecture.stageWokenSendCompletion stDon
@@ -8125,7 +8127,8 @@ theorem dispatchArm_replyRecv_matches_returnShape
     Architecture.syscallReturnShape .replyRecv = .message ∧
     ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg summary.installedCount := by
+        = Architecture.returnFrameOfMessage msg summary.installedCount
+            (Architecture.messageOverflowWrites stB tcb msg).length := by
   refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.installedCount, ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hResolve, hBody]
   · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg
@@ -8167,7 +8170,8 @@ theorem dispatchArm_call_frame_delivered_by_reply
     Architecture.syscallReturnShape .call = .message ∧
     ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost callerTid
-        = Architecture.returnFrameOfMessage msg 0 := by
+        = Architecture.returnFrameOfMessage msg 0
+            (Architecture.messageOverflowWrites st1 tcb msg).length := by
   refine ⟨rfl, Architecture.stageDeliveredMessage st1 callerTid 0, ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget,
       replyAnsweredCaller?, hReply, hCaller, replyTransferOnCore, hNoFault, hDispatch]

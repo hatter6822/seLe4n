@@ -35,6 +35,7 @@ The tag/operand encoding **must** stay in lockstep with
   tag 0 = zero one 4 KiB page at `addr`            (`value` ignored)
   tag 1 = store the descriptor `value` at `addr`
   tag 2 = invalidate every translation tagged `addr` as an ASID (`value` ignored)
+  tag 3 = store the user word `value` at `addr`, in a thread's RAM page (WS-BP BP7.8)
 -/
 
 namespace SeLe4n.Kernel.Architecture
@@ -54,6 +55,15 @@ inductive PhysicalWrite where
       and a leaf TLBI names one address) and when an ASID is handed to a new
       address space. -/
   | invalidateAsid (asid : SeLe4n.ASID)
+  /-- **WS-BP BP7.8**: store the 64-bit word `value` at `addr`, an eight-byte
+      aligned address in a page of RAM a thread maps — a delivered message
+      register past the four the return frame carries, written into the
+      receiver's IPC buffer.  Distinct from `storeDescriptor` because the two
+      name different memory: a descriptor lives in a table page (the boot pool
+      or a carved table), a user word in a thread's own frame, and the HAL
+      admits each only into its own kind of page, so a user word can never be
+      stored into a translation table. -/
+  | storeUserWord (addr : SeLe4n.PAddr) (value : UInt64)
   deriving Repr, DecidableEq
 
 namespace PhysicalWrite
@@ -63,21 +73,24 @@ def tag : PhysicalWrite → UInt64
   | .zeroPage _ => 0
   | .storeDescriptor _ _ => 1
   | .invalidateAsid _ => 2
+  | .storeUserWord _ _ => 3
 
 /-- The FFI address operand. -/
 def addr : PhysicalWrite → UInt64
   | .zeroPage base => base.toNat.toUInt64
   | .storeDescriptor entry _ => entry.toNat.toUInt64
   | .invalidateAsid asid => asid.toNat.toUInt64
+  | .storeUserWord a _ => a.toNat.toUInt64
 
 /-- The FFI value operand. -/
 def value : PhysicalWrite → UInt64
   | .zeroPage _ => 0
   | .storeDescriptor _ v => v
   | .invalidateAsid _ => 0
+  | .storeUserWord _ v => v
 
-/-- Every tag is one of the three the HAL decodes. -/
-theorem tag_le_two (w : PhysicalWrite) : w.tag ≤ 2 := by
+/-- Every tag is one of the four the HAL decodes. -/
+theorem tag_le_three (w : PhysicalWrite) : w.tag ≤ 3 := by
   cases w <;> simp [tag]
 
 end PhysicalWrite

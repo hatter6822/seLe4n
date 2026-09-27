@@ -306,7 +306,14 @@ against the live kernel state, then fires the cross-core SGIs the diff
 surfaced — the same read-context / commit / fire-SGIs shape
 `syscallDispatchCrossCoreEntry` has, and for the same reason: the context read
 is a pure read of a boot-installed value, so it need not be inside the commit
-closure, while the delivery must be. -/
+closure, while the delivery must be.
+
+**WS-BP BP7.8**: and it drains the physical-write ledger the same way, read and
+cleared in the atomic step and performed first.  A fault message carries up to
+thirteen words, and a handler already blocked in receive is delivered them at
+once, so the words past the fourth are user-word stores into its IPC buffer —
+recorded by the delivery (`Architecture.stageDeliveredMessage`) and owed to RAM
+by this seam. -/
 @[export lean_handle_fault]
 def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
     (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) : BaseIO Unit := do
@@ -320,9 +327,11 @@ def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
     ((sgis,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c)),
-      Concurrency.restoreTargetAt st' coreId), st'))
+      Concurrency.restoreTargetAt st' coreId,
+      st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
+  Platform.FFI.completePhysicalWrites r.2.2.2
   Concurrency.fireCrossCoreSgis r.1
-  Platform.FFI.restoreTrapFrame r.2.2
+  Platform.FFI.restoreTrapFrame r.2.2.1
   Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- Review round (PR #887, **the export**): the C-callable unknown-syscall
@@ -345,9 +354,11 @@ def unknownSyscallEntry (coreId : UInt64) (esr elr spsr far : UInt64)
     ((sgis,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c)),
-      Concurrency.restoreTargetAt st' coreId), st'))
+      Concurrency.restoreTargetAt st' coreId,
+      st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
+  Platform.FFI.completePhysicalWrites r.2.2.2
   Concurrency.fireCrossCoreSgis r.1
-  Platform.FFI.restoreTrapFrame r.2.2
+  Platform.FFI.restoreTrapFrame r.2.2.1
   Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- WS-RR RR4.23 structural marker: `faultEntry` unfolds to the atomic commit
@@ -380,9 +391,11 @@ theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
           ((sgis,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
-            Concurrency.restoreTargetAt st' coreId), st'))
+            Concurrency.restoreTargetAt st' coreId,
+            st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
+        Platform.FFI.completePhysicalWrites r.2.2.2
         Concurrency.fireCrossCoreSgis r.1
-        Platform.FFI.restoreTrapFrame r.2.2
+        Platform.FFI.restoreTrapFrame r.2.2.1
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 /-- The same marker for the unknown-syscall seam. -/
@@ -400,9 +413,11 @@ theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
           ((sgis,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
-            Concurrency.restoreTargetAt st' coreId), st'))
+            Concurrency.restoreTargetAt st' coreId,
+            st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
+        Platform.FFI.completePhysicalWrites r.2.2.2
         Concurrency.fireCrossCoreSgis r.1
-        Platform.FFI.restoreTrapFrame r.2.2
+        Platform.FFI.restoreTrapFrame r.2.2.1
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 /-- The shared delivery inherits the progress guarantee: whatever it commits,

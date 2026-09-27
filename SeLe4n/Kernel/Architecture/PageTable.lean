@@ -360,6 +360,89 @@ def readUInt64 (mem : Memory) (addr : PAddr) : UInt64 :=
   b0 ||| (b1 <<< 8) ||| (b2 <<< 16) ||| (b3 <<< 24) |||
   (b4 <<< 32) ||| (b5 <<< 40) ||| (b6 <<< 48) ||| (b7 <<< 56)
 
+/-- **WS-BP BP7.8**: write `w` as 8 bytes at `addr`, little-endian —
+`readUInt64`'s inverse (`readUInt64_writeUInt64`), and the model of one
+`PhysicalWrite.storeUserWord`.  Bytes outside `[addr, addr + 8)` are
+untouched (`readUInt64_writeUInt64_of_disjoint`). -/
+def writeUInt64 (mem : Memory) (addr : PAddr) (w : UInt64) : Memory := fun a =>
+  if a.toNat = addr.toNat + 0 then w.toUInt8
+  else if a.toNat = addr.toNat + 1 then (w >>> 8).toUInt8
+  else if a.toNat = addr.toNat + 2 then (w >>> 16).toUInt8
+  else if a.toNat = addr.toNat + 3 then (w >>> 24).toUInt8
+  else if a.toNat = addr.toNat + 4 then (w >>> 32).toUInt8
+  else if a.toNat = addr.toNat + 5 then (w >>> 40).toUInt8
+  else if a.toNat = addr.toNat + 6 then (w >>> 48).toUInt8
+  else if a.toNat = addr.toNat + 7 then (w >>> 56).toUInt8
+  else mem a
+
+private theorem umod256_getLsbD (x : BitVec 64) (j : Nat) :
+    (x % 256#64).getLsbD j = (decide (j < 8) && x.getLsbD j) := by
+  simp only [BitVec.getLsbD, BitVec.toNat_umod]
+  have : (256#64).toNat = 2 ^ 8 := by decide
+  rw [this, Nat.testBit_mod_two_pow]
+
+/-- The eight little-endian bytes of a word reassemble into the word. -/
+private theorem uint64_bytes_reassemble (w : UInt64) :
+    (w.toUInt8.toUInt64 ||| ((w >>> 8).toUInt8.toUInt64 <<< 8) |||
+      ((w >>> 16).toUInt8.toUInt64 <<< 16) ||| ((w >>> 24).toUInt8.toUInt64 <<< 24) |||
+      ((w >>> 32).toUInt8.toUInt64 <<< 32) ||| ((w >>> 40).toUInt8.toUInt64 <<< 40) |||
+      ((w >>> 48).toUInt8.toUInt64 <<< 48) ||| ((w >>> 56).toUInt8.toUInt64 <<< 56)) = w := by
+  apply UInt64.eq_of_toBitVec_eq
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp [BitVec.getLsbD_or, BitVec.getLsbD_shiftLeft, umod256_getLsbD, BitVec.getLsbD_ushiftRight]
+  have e8 : i ≥ 8 → 8 + (i - 8) = i := by omega
+  have e16 : i ≥ 16 → 16 + (i - 16) = i := by omega
+  have e24 : i ≥ 24 → 24 + (i - 24) = i := by omega
+  have e32 : i ≥ 32 → 32 + (i - 32) = i := by omega
+  have e40 : i ≥ 40 → 40 + (i - 40) = i := by omega
+  have e48 : i ≥ 48 → 48 + (i - 48) = i := by omega
+  have e56 : i ≥ 56 → 56 + (i - 56) = i := by omega
+  by_cases hLt : i < 8
+  · simp [show i < 8 by omega, show i < 16 by omega, show i < 24 by omega, show i < 32 by omega, show i < 40 by omega, show i < 48 by omega, show i < 56 by omega, show i < 64 by omega]
+  by_cases hLt : i < 16
+  · simp [show ¬ i < 8 by omega, show i < 16 by omega, show i < 24 by omega, show i < 32 by omega, show i < 40 by omega, show i < 48 by omega, show i < 56 by omega, show i < 64 by omega, show i - 8 < 8 by omega, e8 (by omega)]
+  by_cases hLt : i < 24
+  · simp [show ¬ i < 8 by omega, show ¬ i < 16 by omega, show i < 24 by omega, show i < 32 by omega, show i < 40 by omega, show i < 48 by omega, show i < 56 by omega, show i < 64 by omega, show ¬ i - 8 < 8 by omega, show i - 16 < 8 by omega, e16 (by omega)]
+  by_cases hLt : i < 32
+  · simp [show ¬ i < 8 by omega, show ¬ i < 16 by omega, show ¬ i < 24 by omega, show i < 32 by omega, show i < 40 by omega, show i < 48 by omega, show i < 56 by omega, show i < 64 by omega, show ¬ i - 8 < 8 by omega, show ¬ i - 16 < 8 by omega, show i - 24 < 8 by omega, e24 (by omega)]
+  by_cases hLt : i < 40
+  · simp [show ¬ i < 8 by omega, show ¬ i < 16 by omega, show ¬ i < 24 by omega, show ¬ i < 32 by omega, show i < 40 by omega, show i < 48 by omega, show i < 56 by omega, show i < 64 by omega, show ¬ i - 8 < 8 by omega, show ¬ i - 16 < 8 by omega, show ¬ i - 24 < 8 by omega, show i - 32 < 8 by omega, e32 (by omega)]
+  by_cases hLt : i < 48
+  · simp [show ¬ i < 8 by omega, show ¬ i < 16 by omega, show ¬ i < 24 by omega, show ¬ i < 32 by omega, show ¬ i < 40 by omega, show i < 48 by omega, show i < 56 by omega, show i < 64 by omega, show ¬ i - 8 < 8 by omega, show ¬ i - 16 < 8 by omega, show ¬ i - 24 < 8 by omega, show ¬ i - 32 < 8 by omega, show i - 40 < 8 by omega, e40 (by omega)]
+  by_cases hLt : i < 56
+  · simp [show ¬ i < 8 by omega, show ¬ i < 16 by omega, show ¬ i < 24 by omega, show ¬ i < 32 by omega, show ¬ i < 40 by omega, show ¬ i < 48 by omega, show i < 56 by omega, show i < 64 by omega, show ¬ i - 8 < 8 by omega, show ¬ i - 16 < 8 by omega, show ¬ i - 24 < 8 by omega, show ¬ i - 32 < 8 by omega, show ¬ i - 40 < 8 by omega, show i - 48 < 8 by omega, e48 (by omega)]
+  · simp [show ¬ i < 8 by omega, show ¬ i < 16 by omega, show ¬ i < 24 by omega, show ¬ i < 32 by omega, show ¬ i < 40 by omega, show ¬ i < 48 by omega, show ¬ i < 56 by omega, show i < 64 by omega, show ¬ i - 8 < 8 by omega, show ¬ i - 16 < 8 by omega, show ¬ i - 24 < 8 by omega, show ¬ i - 32 < 8 by omega, show ¬ i - 40 < 8 by omega, show ¬ i - 48 < 8 by omega, show i - 56 < 8 by omega, e56 (by omega)]
+
+/-- **WS-BP BP7.8**: reading back a written word yields the word. -/
+theorem readUInt64_writeUInt64 (mem : Memory) (addr : PAddr) (w : UInt64) :
+    readUInt64 (writeUInt64 mem addr w) addr = w := by
+  simp only [readUInt64, writeUInt64, PAddr.toNat_ofNat]
+  simp
+  exact uint64_bytes_reassemble w
+
+/-- **WS-BP BP7.8**: a write leaves every byte outside its eight unchanged. -/
+theorem writeUInt64_apply_of_outside (mem : Memory) (a x : PAddr) (w : UInt64)
+    (h : x.toNat < a.toNat ∨ a.toNat + 8 ≤ x.toNat) :
+    writeUInt64 mem a w x = mem x := by
+  simp only [writeUInt64]
+  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
+    if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+
+/-- **WS-BP BP7.8**: a write leaves every word it does not overlap unchanged. -/
+theorem readUInt64_writeUInt64_of_disjoint (mem : Memory) (a b : PAddr) (w : UInt64)
+    (h : b.toNat + 8 ≤ a.toNat ∨ a.toNat + 8 ≤ b.toNat) :
+    readUInt64 (writeUInt64 mem a w) b = readUInt64 mem b := by
+  simp only [readUInt64]
+  rw [writeUInt64_apply_of_outside mem a _ w (by simp only [PAddr.toNat_ofNat]; omega),
+    writeUInt64_apply_of_outside mem a _ w (by simp only [PAddr.toNat_ofNat]; omega),
+    writeUInt64_apply_of_outside mem a _ w (by simp only [PAddr.toNat_ofNat]; omega),
+    writeUInt64_apply_of_outside mem a _ w (by simp only [PAddr.toNat_ofNat]; omega),
+    writeUInt64_apply_of_outside mem a _ w (by simp only [PAddr.toNat_ofNat]; omega),
+    writeUInt64_apply_of_outside mem a _ w (by simp only [PAddr.toNat_ofNat]; omega),
+    writeUInt64_apply_of_outside mem a _ w (by simp only [PAddr.toNat_ofNat]; omega),
+    writeUInt64_apply_of_outside mem a _ w (by simp only [PAddr.toNat_ofNat]; omega)]
+
 /-- Read a page table descriptor from memory at `tableBase + index * 8`. -/
 def readDescriptor (mem : Memory) (tableBase : PAddr) (index : Nat) (level : PageTableLevel) : PageTableDescriptor :=
   let addr := PAddr.ofNat (tableBase.toNat + index * 8)

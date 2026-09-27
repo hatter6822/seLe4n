@@ -1,3 +1,50 @@
+## v0.36.21 — WS-BP BP7.8: message registers past the fourth, both directions
+
+The WS-RA return frame carries four message registers in `x2`-`x5`.  BP7.8 was
+registered as the receive half — no delivery wrote a receiver's `MR4` onward
+into its IPC buffer, so a thirteen-word `unknownSyscall` fault handler saw four.
+Closing it found the **read** half too: the decode read a sender's overflow
+registers out of the model's `machine.memory`, which holds no thread's writes,
+so on hardware a sender's `MR4` onward decoded as the carve's zeroes, never what
+the thread wrote.  Not a leak — the model holds only kernel-written zeroes for a
+user frame — but every message longer than four registers was wrong on the image.
+
+- **One resolver, both directions** — `IpcBufferRead.ipcBufferSlotPAddr?`: the
+  slot's page through the thread's own VSpace, eight-byte aligned, declared RAM
+  (never a device region), and for a write a **writable** mapping, the
+  permission check `ipcBufferReadMr` never made (`AuditRead`'s note that a write
+  path must make it is now discharged).
+- **Read**: the syscall seam reads the caller's slots from RAM
+  (`readCallerOverflowWords` → the new HAL `ffi_read_user_word`) and writes them
+  into the model in the atomic step before the decode (`syncUserWords`).
+  `ipcBufferReadMr_syncUserWord` is the relation, over a byte-level word write
+  proved against the read (`writeUInt64`, `readUInt64_writeUInt64`,
+  `readUInt64_writeUInt64_of_disjoint`); the staged `VSpaceARMv8` carried an
+  unproved copy of `writeUInt64`, which is retired so the question has one owner.
+- **Write**: the delivery every wake shares (`stageDeliveredMessage`) records the
+  registers past the fourth as `PhysicalWrite.storeUserWord` (tag 3), stopping
+  at the first slot the resolver refuses, and `returnMessageInfo` takes the
+  written count (`overflow`) so the frame's length reports exactly what arrived —
+  seL4's `copyMRs` answer for a receiver with no usable buffer.  The HAL admits
+  a user word only in RAM past the kernel's reserved extent and **never in the
+  translation-table pool** (`user_word_admissible`), so a message register can
+  never become a descriptor.
+- **Both fault seams drain the ledger** now, since a fault message is delivered
+  to a handler already waiting in receive; `completePhysicalWrites` moved to
+  `Platform.FFI` beside `physicalWriteApply` so the fault module can reach it.
+- **Witness**: `tests/SyscallReturnAbiSuite.lean` §12 — a seven-register send
+  through the live dispatch and through the atomic step (three stores at the
+  receiver's buffer, length seven, a committed state owing nothing), the retired
+  unsynced reading as a CONTROL (the receiver is handed zeroes), a read-only
+  receiver buffer as a CONTROL (nothing written, length four), and a
+  thirteen-word delivery (nine stores, length thirteen).  Rust:
+  `a_user_word_lands_only_in_a_thread_ram_page`.
+- Docs: the plan's BP7.8 row LANDED and its acceptance box ticked, the
+  `REGISTERED_DEBT.md` MR0–MR3 row CLOSED, spec §8.10.2a, the claim index,
+  GitBook 05, `CLAUDE.md` / `AGENTS.md`.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP7.8)
+
 ## v0.36.20 — WS-BP BP7.7: the declassified badge, delivered
 
 SM9.C's data-carrying declassification is the one flow the kernel makes visible
