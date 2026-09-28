@@ -139,6 +139,9 @@ BOOT_FILES_SCRIPT = "scripts/build_rpi5_image.sh"
 QEMU_LANE_SCRIPT = "scripts/test_qemu.sh"
 QEMU_LEAN_FLAG = "--lean-kernel"
 QEMU_REQUIRED = "REQUIRE_QEMU=1"
+# WS-BP BP8.2: and the four-PE bring-up gate, on the HAL-only image and on the
+# Lean-linked one, each with the same requirement.
+BRINGUP_SCRIPT = "scripts/test_qemu_smp_bringup.sh"
 LEAN_ARCHIVE_COMPONENTS = ("llvm-tools",)
 HAL_CRATE = "rust/sele4n-hal"
 ORACLE_PKG = "sele4n-hal"
@@ -1306,7 +1309,11 @@ def check_lean_archive_lane(root: str) -> list[str]:
     archive build (it links the image it boots from that archive), with
     `QEMU_REQUIRED` on the same command -- without it an absent QEMU exits 77,
     which `set -e` reads as a failure here but which a wrapper could as easily
-    read as a skip -- executed and not exempted from `set -e`."""
+    read as a skip -- executed and not exempted from `set -e`.
+
+    WS-BP BP8.2: and `BRINGUP_SCRIPT` twice, once without `QEMU_LEAN_FLAG`
+    (the HAL-only image) and once with it, each carrying `QEMU_REQUIRED`,
+    after the archive build and not exempted from `set -e`."""
     text = read(root, LEAN_ARCHIVE_LANE)
     if text is None:
         return [f"{LEAN_ARCHIVE_LANE}: missing. It is the one place the kernel's "
@@ -1323,6 +1330,7 @@ def check_lean_archive_lane(root: str) -> list[str]:
     image_fp: list[int] = []
     boot_files: list[int] = []
     qemu_boots: list[int] = []
+    bringups: dict[bool, list[int]] = {False: [], True: []}
     for position, (command, operator) in enumerate(shell_command_list(code)):
         argv = executed_argv(command, wrappers)
         raw = argv_of(command)
@@ -1330,6 +1338,16 @@ def check_lean_archive_lane(root: str) -> list[str]:
         if (argv and argv[0].endswith(QEMU_LANE_SCRIPT.split("/")[-1])
                 and QEMU_LEAN_FLAG in argv[1:] and QEMU_REQUIRED in assignments):
             qemu_boots.append(position)
+            if operator in ERREXIT_EXEMPTING_OPERATORS:
+                problems.append(
+                    f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
+                    f"which exempts it from `set -e`: it runs and its failure is "
+                    f"discarded."
+                )
+            continue
+        if (argv and argv[0].endswith(BRINGUP_SCRIPT.split("/")[-1])
+                and QEMU_REQUIRED in assignments):
+            bringups[QEMU_LEAN_FLAG in argv[1:]].append(position)
             if operator in ERREXIT_EXEMPTING_OPERATORS:
                 problems.append(
                     f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
@@ -1438,6 +1456,20 @@ def check_lean_archive_lane(root: str) -> list[str]:
             f"{LEAN_ARCHIVE_LANE}: the QEMU boot runs before the archive is built, "
             f"so it boots whatever archive a previous run left behind."
         )
+    for lean, runs in bringups.items():
+        image = "the Lean-linked image" if lean else "the HAL-only image"
+        spelling = f" {QEMU_LEAN_FLAG}" if lean else ""
+        if not runs:
+            problems.append(
+                f"{LEAN_ARCHIVE_LANE}: no executed `{QEMU_REQUIRED} {BRINGUP_SCRIPT}"
+                f"{spelling}`. It is the four-PE bring-up gate on {image}: every "
+                f"secondary's per-core init in order, every banner a whole line."
+            )
+        elif builds and min(runs) < max(builds):
+            problems.append(
+                f"{LEAN_ARCHIVE_LANE}: the bring-up gate on {image} runs before the "
+                f"archive is built."
+            )
     if images and any(p < min(images) for p in image_checks + image_fp + boot_files):
         problems.append(
             f"{LEAN_ARCHIVE_LANE}: the image is checked before it is linked, so the "
@@ -1459,7 +1491,10 @@ def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, 
     pack = (f'"${{PROJECT_ROOT}}/{BOOT_FILES_SCRIPT}" {IMAGE_PATH} '
             f'"${{PROJECT_ROOT}}/.lake/build/rpi5-image"\n')
     qemu = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{QEMU_LANE_SCRIPT}" {QEMU_LEAN_FLAG}\n'
+    bringup_hal = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{BRINGUP_SCRIPT}"\n'
+    bringup_lean = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{BRINGUP_SCRIPT}" {QEMU_LEAN_FLAG}\n'
     assert build in lane and check in lane and fp in lane and pack in lane and qemu in lane
+    assert bringup_hal in lane and bringup_lean in lane
     return [
         ("lane links the image without hw_target",
          lane.replace(build, build.replace("hw_target,", "") + "echo hw_target\n")),
@@ -1493,6 +1528,15 @@ def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, 
         ("lane boots before it builds the archive",
          lane.replace(qemu, "").replace(builder_line, qemu + builder_line)),
         ("lane discards the QEMU boot's failure", lane.replace(qemu, qemu.rstrip("\n") + " || true\n")),
+        ("lane echoes the HAL-only bring-up", lane.replace(bringup_hal, "echo " + bringup_hal)),
+        ("lane runs the bring-up on the Lean image twice", lane.replace(bringup_hal, bringup_lean)),
+        ("lane runs the bring-up on the HAL image twice", lane.replace(bringup_lean, bringup_hal)),
+        ("lane lets an absent QEMU skip the Lean bring-up",
+         lane.replace(bringup_lean, bringup_lean.replace(QEMU_REQUIRED, "REQUIRE_QEMU=0"))),
+        ("lane runs the bring-up before it builds the archive",
+         lane.replace(bringup_hal, "").replace(builder_line, bringup_hal + builder_line)),
+        ("lane discards the Lean bring-up's failure",
+         lane.replace(bringup_lean, bringup_lean.rstrip("\n") + " || true\n")),
     ]
 
 
@@ -1957,6 +2001,8 @@ python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" {LEAN_KERNEL_FLAG} "${{ARCHIVE_
 python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}
 "${{PROJECT_ROOT}}/{BOOT_FILES_SCRIPT}" {IMAGE_PATH} "${{PROJECT_ROOT}}/.lake/build/rpi5-image"
 {QEMU_REQUIRED} "${{PROJECT_ROOT}}/{QEMU_LANE_SCRIPT}" {QEMU_LEAN_FLAG}
+{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{BRINGUP_SCRIPT}"
+{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{BRINGUP_SCRIPT}" {QEMU_LEAN_FLAG}
 """
 
 GOOD_HOST_LANE = """#!/usr/bin/env bash

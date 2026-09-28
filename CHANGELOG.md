@@ -1,3 +1,72 @@
+## v0.36.27 — WS-BP BP8.2: the four-PE bring-up gate executes, and its first run finds the console tearing lines
+
+`scripts/test_qemu_smp_bringup.sh` has run for the first time.  Until now it
+SKIPped on every run: it asked the caller for a pre-built kernel ELF that no
+target built.  WS-RR RR7.16 had unchecked the two SM1.H acceptance boxes that
+claimed it, rather than restate them as "script authored".  The gate now builds
+the `virt` image itself.  It boots four PEs, at EL1 and at EL2 (EL2 via
+`virtualization=on`), on two images: the HAL alone and the Lean-linked kernel.
+The Lean archive lane runs it on every PR with `REQUIRE_QEMU=1`.  Both SM1.H
+boxes are ticked on that run's evidence.
+
+### The first run found the console tearing lines
+
+The SM1.H draft searched the log for substrings, and it would have passed this
+boot.  The first four-PE boot tore lines apart, `[smp] core [smp]2: entering
+per core 1: ent-cering peorer- inicorte init` among them.  Two defects did it,
+and both are fixed.
+
+- **A secondary printed before its MMU was on.**  With translation off the
+  console cannot take its ticket lock (`uart::ticket_lock_usable`: an exclusive
+  access to Device memory need never succeed).  So it writes unlocked, which is
+  sound only while no other PE prints.  `uart::with_uart_under` already stated
+  that a secondary's one pre-translation print is the fatal refusal of an
+  invalid PSCI context id.  `rust_secondary_main` printed `entering per-core
+  init` there anyway, while the boot core and two other secondaries printed.
+  The banner now follows `init_mmu_secondary`.
+- **`kprintln!` took the lock twice per line**: once for the body and once for
+  the newline, so another core's line landed between them.  `kprintln_core!`
+  had fixed exactly this at SM1.G audit-pass-1, and nothing swept the fix onto
+  its sibling.  `kprintln!` now writes the body and the newline inside one
+  `with_boot_uart`.
+  `uart::tests::a_printed_line_takes_the_console_lock_once` counts tickets on
+  the lock's own counter.  It takes the minimum over sixteen samples, so a
+  parallel printer can only raise a sample.  The retired macro fails it with
+  `2`.
+
+### A banner is a line
+
+The gate matches every fixture row against a line that *begins* with it.  It
+refuses any line that carries a console tag (`[smp]`, `[boot]`, `[sched]`,
+`[tick]`) anywhere but at its start.  `tests/fixtures/qemu_smp_bringup_expected.txt`
+is new, with a `.sha256` companion the gate verifies.  Its row scopes:
+
+- `secondary`: in order among each secondary's own `[smp] core N:` lines;
+- `boot`: in order over the whole log;
+- `lean`: anywhere, for every core where the row carries `{N}`.
+
+Mutation-tested: restoring the pre-MMU banner and the two-`kprint!` body fails
+the gate with torn lines, at the first entry level, on each of two runs.
+
+### One way to boot the kernel under QEMU
+
+`scripts/qemu_boot_lib.sh` is the build, the raw cut and the run.
+`scripts/test_qemu.sh` now uses it too, so the boot lane and the bring-up gate
+cannot boot different images.  Both `virt` images build under
+`rust/target/qemu-virt*`.  The archive lane uploads
+`rust/target/<target>/release/sele4n-kernel` as the Raspberry Pi 5 image, and
+it now runs a HAL-only `virt` build after packaging it.  With the old default
+target directory that build would have shipped in the board image's place.
+
+`scripts/check_aarch64_cross_target.py` requires the lane to run the gate twice:
+once HAL-only and once with `--lean-kernel`, each with `REQUIRE_QEMU=1`, after
+the archive build, and not exempted from `set -e`.  Six new token-preserving
+self-test cases cover it.  The SGI round-trip, minimal and kprintln-stress
+exercisers still take a caller's image; moving them onto the library is BP8.4's.
+
+**Sub-tasks**: WS-BP BP8.2.
+**Refs**: docs/planning/SMP_BOOT_PATH_PLAN.md §BP8 (BP8.2)
+
 ## v0.36.26 — WS-BP BP8.1 slice 3: the Lean-linked kernel boots under QEMU, on four PEs, to every core's first idle dispatch
 
 The Lean-linked `virt` image (`hw_target,kernel_image,board_qemu_virt`) now

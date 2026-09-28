@@ -42,6 +42,11 @@
 # uploads) and boots it on four PEs at EL1 and at EL2, to every core's first
 # idle dispatch.  `REQUIRE_QEMU=1` makes an absent QEMU a failure here.
 #
+# WS-BP BP8.2: and the four-PE bring-up gate, `scripts/test_qemu_smp_bringup.sh`,
+# on the HAL-only `virt` image and on the Lean-linked one: every secondary's
+# per-core init in order, every banner a whole line, at both entry levels.  Both
+# images build into target directories of their own (`scripts/qemu_boot_lib.sh`).
+#
 # Needs the Lean toolchain (`setup_lean_env.sh`) and rustup's `llvm-tools`
 # component (listed in `rust/rust-toolchain.toml`), which supplies the
 # `llvm-nm` and `llvm-objdump` the builder reads object code with.
@@ -84,7 +89,9 @@ echo "[5/6] The Raspberry Pi 5 boot files, cut from that image and checked"
 "${PROJECT_ROOT}/scripts/build_rpi5_image.sh" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}" "${PROJECT_ROOT}/.lake/build/rpi5-image"
 
-echo "[6/6] The Lean-linked kernel booted under QEMU (virt, four PEs, EL1 and EL2)"
+echo "[6/6] The Lean-linked kernel booted under QEMU (virt, four PEs, EL1 and EL2), and the four-PE bring-up"
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu.sh" --lean-kernel
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_bringup.sh"
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_bringup.sh" --lean-kernel
 
 echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it, is packaged, and boots."

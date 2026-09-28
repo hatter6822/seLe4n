@@ -5,208 +5,176 @@
 # This is free software, and you are welcome to redistribute it
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 #
-# WS-SM SM1.H.1 — QEMU SMP secondary-core bring-up validation.
+# WS-SM SM1.H.1 / WS-BP BP8.2 — the four-PE bring-up gate.
 #
-# Boots seLe4n under QEMU `virt -smp 4` with PSCI firmware enabled and
-# verifies all 4 cores reach their per-core ready banner from
-# `rust_secondary_main`.
+# Boots the kernel image built for QEMU's `virt` machine on four PEs, at EL1
+# and again at EL2 (`virtualization=on`, the firmware's entry level on the
+# Raspberry Pi 5), and requires the whole bring-up trace
+# `tests/fixtures/qemu_smp_bringup_expected.txt` names: every secondary core's
+# per-core init in order, the boot core's Phase 6 count of three secondaries,
+# and — with `--lean-kernel` — the Phase 7 topology check and every core's
+# first idle dispatch.
 #
-# Skip conditions:
-#   * `qemu-system-aarch64` missing on PATH → SKIP (no QEMU)
-#   * `SELE4N_KERNEL_IMAGE` env var not set OR file not found → SKIP
+# Until WS-BP BP8.2 this script SKIPped on every run: it asked the caller for
+# a pre-built kernel ELF that no target built, so it had executed no line
+# of SMP HAL code, and WS-RR RR7.16 unchecked the two SM1.H acceptance boxes
+# that claimed it.  It builds its own image now, through the same
+# `scripts/qemu_boot_lib.sh` the boot lane `scripts/test_qemu.sh` uses.
 #
-# Pass condition:
-#   * Each of the 4 cores emits a per-core "ready" banner within the
-#     timeout (cores 0..3).
+# **A banner is a line.**  Every row matches a line that BEGINS with it, and no
+# line may carry a console tag (`[smp]`, `[boot]`, `[sched]`, `[tick]`)
+# anywhere but at its start.  A gate that searched for substrings, as the
+# SM1.H draft did, would have passed the first four-PE boot, whose log tore
+# banners together character by character: the secondaries printed before
+# their MMU was on, where the console cannot take its lock, and `kprintln!`
+# took the lock twice per line (both fixed in the cut that made this gate run).
 #
-# Fail condition:
-#   * Fewer than 4 ready banners observed within timeout
-#   * QEMU exited unexpectedly with errors
+# Usage:
+#   ./scripts/test_qemu_smp_bringup.sh                 # HAL-only virt image
+#   ./scripts/test_qemu_smp_bringup.sh --lean-kernel   # the Lean-linked image
 #
 # Exit codes:
 #   0   PASS
-#   77  SKIP / NOT RUN (SELE4N_SKIP_EXIT) — a prerequisite was missing, so
-#       this gate certified nothing.  Non-failure, but not a pass: invoke via
-#       `run_gate_check` so the tier records incomplete coverage rather than
-#       counting it green.  SELE4N_REQUIRE_GATES=1 promotes it to a failure.
-#   1   FAIL (boot trace incomplete)
-#
-# **Note on kernel image availability**: at SM1.H landing the
-# workspace has no kernel binary target — `sele4n-hal` is a Rust
-# library (`[lib]`, not `[[bin]]`), so `cargo build -p sele4n-hal`
-# produces `libsele4n_hal.rlib` (an archive), not a QEMU-bootable
-# ELF.  Producing a bootable kernel ELF requires a future binary
-# target that:
-#
-#   1. Declares `[[bin]]` linking against the HAL + Lean kernel
-#      object code.
-#   2. Uses `link.ld` (already present) and `boot.S::_start`.
-#   3. Resolves the `lean_kernel_main` symbol from the Lean
-#      compiler output.
-#
-# That binary target is part of the SM5+ Lean-kernel-integration
-# work.  Until it exists, this script SKIPs on every CI run.  Set
-# `SELE4N_KERNEL_IMAGE=/path/to/kernel.elf` to test a pre-built
-# kernel image once the target is added.
+#   77  SKIP / NOT RUN (SELE4N_SKIP_EXIT) — QEMU, cargo or the cross target is
+#       missing, so this gate certified nothing; `run_gate_check` records it
+#       as NOT RUN.  REQUIRE_QEMU=1 makes an absent QEMU a failure.
+#   1   FAIL
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${REPO_ROOT}"
-
-# ---------------------------------------------------------------------------
-# Pre-flight checks
-# ---------------------------------------------------------------------------
-
-if ! command -v qemu-system-aarch64 &>/dev/null; then
-  echo "[SKIP] WS-SM SM1.H.1: qemu-system-aarch64 not found on PATH"
-  echo "       Install with: sudo apt-get install qemu-system-arm  (Debian/Ubuntu)"
-  echo "                     brew install qemu                      (macOS)"
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-# Kernel image must be set explicitly via $SELE4N_KERNEL_IMAGE — at
-# SM1.H landing there is no kernel binary target in the workspace
-# (sele4n-hal is a library, not an executable).  See the script
-# header for the kernel-image-availability rationale.
-KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
-
-if [[ -z "${KERNEL_IMAGE}" ]]; then
-  echo "[SKIP] WS-SM SM1.H.1: SELE4N_KERNEL_IMAGE env var not set"
-  echo ""
-  echo "  Reason: the workspace has no kernel binary target at SM1.H —"
-  echo "          sele4n-hal is a Rust library, not an ELF executable."
-  echo "          A kernel binary requires a future SM5+ [[bin]] target"
-  echo "          that links the HAL + Lean kernel object code."
-  echo ""
-  echo "  To test with a pre-built kernel ELF, set:"
-  echo "    export SELE4N_KERNEL_IMAGE=/path/to/kernel.elf"
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-if [[ ! -f "${KERNEL_IMAGE}" ]]; then
-  echo "[SKIP] WS-SM SM1.H.1: kernel image not found at ${KERNEL_IMAGE}"
-  echo "       (\$SELE4N_KERNEL_IMAGE = ${SELE4N_KERNEL_IMAGE})"
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-# ---------------------------------------------------------------------------
-# QEMU invocation
-# ---------------------------------------------------------------------------
-
-# Capture UART output to a temporary log so we can grep it after QEMU exits.
-LOG="$(mktemp -t sele4n-smp-bringup.XXXXXX.log)"
-# shellcheck disable=SC2064  # We want $LOG expanded NOW, not at exit.
-trap "rm -f '${LOG}'" EXIT
-
-# Run QEMU with:
-#   * `-machine virt,secure=on,virtualization=on` — enables EL2/EL3 so PSCI
-#     firmware (built into QEMU's `virt` machine) is functional.
-#   * `-cpu cortex-a76` — RPi5 CPU model.  PSCI is implemented by QEMU's
-#     own firmware at EL3; the kernel runs at EL1.
-#   * `-smp 4` — 4 cores total (matches RPi5 BCM2712 / `MAX_SECONDARY_CORES + 1`).
-#   * `-m 1G` — 1 GiB RAM (sufficient for boot diagnostics).
-#   * `-kernel ${KERNEL_IMAGE}` — load the freestanding kernel ELF at the
-#     `virt` machine's load address.
-#   * `-nographic` + `-serial mon:stdio` — UART output to stdout so we can
-#     capture and grep it.
-#   * `-d guest_errors` — log guest exceptions to QEMU's stderr (useful
-#     for diagnosing a hung secondary).
-#
-# Timeout via `timeout` so a hung kernel cannot pin CI forever.  30 seconds
-# is generous: a healthy boot completes in under 5s on a modern host.
-TIMEOUT_SECS="${SELE4N_QEMU_TIMEOUT_SECS:-30}"
-
-echo "[META] WS-SM SM1.H.1: booting QEMU virt -smp 4 (timeout: ${TIMEOUT_SECS}s)"
-echo "[META]   kernel image: ${KERNEL_IMAGE}"
-echo "[META]   log: ${LOG}"
-
-set +e
-# SMP is OFF by default until SM5.I serialises kernel entry
-# (`CmdlineConfig::default`), so an SMP exerciser must opt in on the
-# kernel command line rather than rely on the built-in default --
-# otherwise this boots single-core and tests nothing it is named for.
-# Drop the -append when the default flips back with SM5.I.
-timeout "${TIMEOUT_SECS}s" qemu-system-aarch64 \
-    -machine "virt,secure=on,virtualization=on" \
-    -cpu cortex-a76 \
-    -smp 4 \
-    -m 1G \
-    -kernel "${KERNEL_IMAGE}" \
-    -append "smp_enabled=true" \
-    -nographic \
-    -serial mon:stdio \
-    -d guest_errors \
-    < /dev/null \
-    > "${LOG}" 2>&1
-QEMU_EXIT=$?
-set -e
-
-# `timeout` exits 124 when the budget is hit.  In our case that's the
-# expected outcome — the kernel doesn't shut down on its own — so we treat
-# 124 as "QEMU ran for the full budget".  Any other non-zero exit means
-# QEMU itself errored (e.g., bad kernel image).
-case "${QEMU_EXIT}" in
-  0|124)
-    # Expected: 0 (clean exit, unlikely) or 124 (timeout, expected).
-    ;;
-  *)
-    echo "[FAIL] WS-SM SM1.H.1: QEMU exited with code ${QEMU_EXIT}" >&2
-    echo "       Last 40 lines of UART log:" >&2
-    tail -n 40 "${LOG}" >&2
-    exit 1
-    ;;
-esac
-
-# ---------------------------------------------------------------------------
-# Banner verification (SM1.H.4)
-# ---------------------------------------------------------------------------
-#
-# Per the SM1.C.5 boot trace (bring-up entry ordered before IRQ unmask
-# since the SM5.C.5 seam completion), each secondary core emits banners
-# of the form:
-#
-#   [smp] core N: entering per-core init
-#   [smp] core N: MMU enabled (...)
-#   [smp] core N: VBAR_EL1 installed
-#   [smp] core N: GIC-400 CPU interface initialized (...)
-#   [smp] core N: timer armed at 1000 Hz
-#   [smp] core N: kernel bring-up entry complete (first reschedule)
-#     (or "... deferred (Lean runtime not ready)" until SM10.1's image
-#      initialization marks the core ready — the lean_ready gate)
-#   [smp] core N: IRQ delivery enabled
-#   [smp] core N: IRQ-serviceable (shootdown-eligible)
-#   [smp] core N: ready, entering kernel
-#
-# We grep for the final "ready, entering kernel" banner per core because
-# that's the structural witness that ALL prior init steps succeeded
-# (a failure in any earlier step halts the offending core in its WFE
-# fallback before reaching this line).
-
-echo "[META] WS-SM SM1.H.1: verifying per-core ready banners"
-
-EXPECTED_CORES=("1" "2" "3")  # boot core (0) doesn't go through rust_secondary_main
-MISSING_CORES=()
-for core in "${EXPECTED_CORES[@]}"; do
-  if ! grep -q "\[smp\] core ${core}: ready, entering kernel" "${LOG}"; then
-    MISSING_CORES+=("${core}")
-  fi
+LEAN_KERNEL=0
+for arg in "$@"; do
+    case "${arg}" in
+        --lean-kernel) LEAN_KERNEL=1 ;;
+        *) echo "test_qemu_smp_bringup.sh: unknown argument: ${arg}" >&2; exit 2 ;;
+    esac
 done
 
-# Also verify the boot core completed Phase 5 (the SMP bring-up).  This is
-# the "structural witness" that the kernel reached the post-handoff point
-# rather than hanging earlier in the boot sequence.
-if ! grep -qE "\[boot\] Phase 5: [0-9]+ secondary core\(s\) online" "${LOG}"; then
-  MISSING_CORES+=("0 (Phase 5 banner missing)")
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/test_lib.sh"
+cd "${REPO_ROOT}"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/qemu_boot_lib.sh"
+
+log_section "META" "=== WS-BP BP8.2: four-PE bring-up under QEMU virt ==="
+
+FIXTURE="${REPO_ROOT}/tests/fixtures/qemu_smp_bringup_expected.txt"
+if [[ ! -f "${FIXTURE}" ]]; then
+    record_failure "TRACE" "bring-up fixture missing: ${FIXTURE}"
+    finalize_report
+fi
+# The fixture's `.sha256` companion: a fixture edit must be paired with a hash
+# refresh in the same commit, as Tier 2 requires of every `.expected` fixture.
+if ! (cd "$(dirname "${FIXTURE}")" && sha256sum -c "$(basename "${FIXTURE}").sha256" > /dev/null 2>&1); then
+    record_failure "TRACE" "${FIXTURE##*/} does not match its .sha256 companion"
+    finalize_report
 fi
 
-if [[ "${#MISSING_CORES[@]}" -gt 0 ]]; then
-  echo "[FAIL] WS-SM SM1.H.1: missing ready banner(s) for core(s): ${MISSING_CORES[*]}" >&2
-  echo "       Last 80 lines of UART log:" >&2
-  tail -n 80 "${LOG}" >&2
-  exit 1
+qemu_require_tools
+qemu_build_image "${LEAN_KERNEL}"
+qemu_cut_image
+qemu_temp_file BRINGUP_LOG qemu_bringup
+
+# The HAL-only image stops being interesting once the third secondary is ready;
+# the Lean-linked one once every core has dispatched its idle thread, and it
+# runs under `-icount` for the reason `scripts/test_qemu.sh` states (a Lean tick
+# emulated under host-timed TCG outlasts the tick period on four PEs).  These
+# are deadlines, not windows: each boot stops as soon as its condition holds.
+UNTIL_FRAGMENT="ready, entering kernel"
+UNTIL_COUNT=3
+DEADLINE="${QEMU_TIMEOUT:-60}"
+BOOT_EXTRA=()
+if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+    UNTIL_FRAGMENT="first idle dispatch"
+    UNTIL_COUNT=4
+    DEADLINE="${QEMU_TIMEOUT:-120}"
+    BOOT_EXTRA=(-icount "shift=0,sleep=off")
 fi
 
-echo "[PASS] WS-SM SM1.H.1: all 4 cores online, secondaries 1..3 ready, primary completed Phase 5"
-exit 0
+BRINGUP_PASS=true
+
+# bringup_once LABEL MACHINE: boot four PEs on MACHINE and hold the log to the
+# fixture.  The check is Python so a row is matched against a whole line, and a
+# line is attributed to the core it names, rather than grepped for a substring.
+bringup_once() {
+    local label="$1" machine="$2" verdict
+    log_section "TRACE" "RUN: ${label} — -machine ${machine} -smp 4 (deadline: ${DEADLINE}s)"
+    qemu_run "${label}" "${BRINGUP_LOG}" "${machine}" 4 "${DEADLINE}" \
+        "${UNTIL_FRAGMENT}" "${UNTIL_COUNT}" "${BOOT_EXTRA[@]}" || BRINGUP_PASS=false
+    verdict=$(python3 - "${BRINGUP_LOG}" "${FIXTURE}" "${LEAN_KERNEL}" <<'PY'
+import re
+import sys
+
+log_path, fixture_path, lean = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+with open(log_path, encoding="utf-8", errors="replace") as handle:
+    lines = handle.read().split("\n")
+rows = []
+with open(fixture_path, encoding="utf-8") as handle:
+    for raw in handle:
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        scope, _, prefix = raw.rstrip("\n").partition("|")
+        rows.append((scope.strip(), prefix.strip()))
+
+failures = []
+if not any(lines):
+    failures.append("QEMU produced no output (hung or dead kernel)")
+for number, line in enumerate(lines, 1):
+    # A torn line: a console tag anywhere but at the start.
+    if re.search(r".\[(smp|boot|sched|tick)\] ", line):
+        failures.append(f"line {number} is torn: {line!r}")
+    if re.search(r"(?i)fatal|panic|unhandled.*exception|serror", line):
+        failures.append(f"line {number} reports a fatal condition: {line!r}")
+
+def in_order(stream, prefixes, what):
+    at = 0
+    for prefix in prefixes:
+        while at < len(stream) and not stream[at].startswith(prefix):
+            at += 1
+        if at == len(stream):
+            failures.append(f"{what}: {prefix!r} missing, or out of order")
+            return
+        at += 1
+
+secondary = [p for s, p in rows if s == "secondary"]
+for core in (1, 2, 3):
+    tag = f"[smp] core {core}: "
+    stream = [line for line in lines if line.startswith(tag)]
+    in_order(stream, [p.replace("{N}", str(core)) for p in secondary], f"core {core}")
+in_order(lines, [p for s, p in rows if s == "boot"], "boot core")
+if lean:
+    for _, prefix in (r for r in rows if r[0] == "lean"):
+        cores = range(4) if "{N}" in prefix else (None,)
+        for core in cores:
+            wanted = prefix if core is None else prefix.replace("{N}", str(core))
+            if not any(line.startswith(wanted) for line in lines):
+                failures.append(f"{wanted!r} missing")
+unknown = {s for s, _ in rows} - {"secondary", "boot", "lean"}
+if unknown:
+    failures.append(f"fixture scope(s) {sorted(unknown)} are not ones this gate reads")
+for failure in failures:
+    print(failure)
+PY
+) || { record_failure "TRACE" "${label}: the bring-up check could not run"; BRINGUP_PASS=false; return; }
+    if [[ -n "${verdict}" ]]; then
+        while IFS= read -r failure; do
+            record_failure "TRACE" "${label}: ${failure}"
+        done <<< "${verdict}"
+        BRINGUP_PASS=false
+        log_section "TRACE" "${label}: last 40 lines of the log:"
+        tail -n 40 "${BRINGUP_LOG}"
+    else
+        log_section "TRACE" "PASS: ${label}: four PEs, every banner a whole line, in order ($(wc -l < "${BRINGUP_LOG}") lines)"
+    fi
+}
+
+bringup_once "four PEs, virt, EL1 entry" "virt,gic-version=2"
+bringup_once "four PEs, virt, EL2 entry" "virt,gic-version=2,virtualization=on"
+
+if [[ "${BRINGUP_PASS}" = true ]]; then
+    log_section "META" "PASS: four-PE bring-up"
+else
+    log_section "META" "FAIL: four-PE bring-up"
+fi
+finalize_report

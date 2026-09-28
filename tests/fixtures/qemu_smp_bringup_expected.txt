@@ -1,0 +1,32 @@
+# WS-BP BP8.2: the four-PE bring-up trace scripts/test_qemu_smp_bringup.sh
+# requires, at both entry levels.  One row per line of console output:
+#
+#   SCOPE | PREFIX
+#
+# `{N}` in PREFIX is a core number.  A row matches a line that BEGINS with
+# PREFIX, so the tail a banner carries (a register dump) may vary while its
+# head may not.  Scopes:
+#   secondary  every secondary core (1..3), in this order among that core's
+#              own `[smp] core N: ` lines
+#   boot       the boot core, in this order over the whole log
+#   lean       only when the image links the Lean kernel: every core (0..3)
+#              for a row carrying `{N}`, the line itself for one that does
+#              not, in any order
+# No line may carry a console tag anywhere but at its start: a banner that
+# lands mid-line is a torn line, which the gate reports whatever the rows say.
+secondary | [smp] core {N}: entering per-core init
+secondary | [smp] core {N}: MMU enabled (WXN, SA, SA0, EIS, EOS)
+secondary | [smp] core {N}: VBAR_EL1 installed
+secondary | [smp] core {N}: GIC-400 CPU interface initialized (
+secondary | [smp] core {N}: timer armed at 1000 Hz
+secondary | [smp] core {N}: kernel bring-up entry complete (first reschedule)
+secondary | [smp] core {N}: IRQ delivery enabled
+secondary | [smp] core {N}: IRQ-serviceable (shootdown-eligible)
+secondary | [smp] core {N}: ready, entering kernel
+boot | [smp] core 0: kernel bring-up entry complete (first reschedule)
+boot | [boot] IRQ delivery enabled
+boot | [boot] cmdline parsed: smp_enabled=true, smp_max_cores=4
+boot | [boot] Phase 6: 3 secondary core(s) online (max requested: 4)
+boot | [boot] Boot complete
+lean | [boot] Phase 7: all 4 declared PE(s) serve the kernel
+lean | [sched] core {N}: first idle dispatch

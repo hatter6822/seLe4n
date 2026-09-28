@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.26.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.27.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7155,7 +7155,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24; slice 2, the Lean `virt` binding and its boot entry, v0.36.25; slice 3, the Lean-linked image booted on four PEs to every core's first idle dispatch in CI, v0.36.26, completing BP8.1)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24; slice 2, the Lean `virt` binding and its boot entry, v0.36.25; slice 3, the Lean-linked image booted on four PEs to every core's first idle dispatch in CI, v0.36.26, completing BP8.1; BP8.2, the four-PE bring-up gate executed in CI, v0.36.27)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7177,7 +7177,7 @@ untyped it was carved from), and at `v0.36.7` the security fix that slice 3
 found (a frame capability owns the mapping it made, so destroying it unmaps),
 and at `v0.36.8` its slice 4a (an untyped carves child untypeds, and a reset
 returns everything carved from it at any depth), and the rest of BP7 through
-`v0.36.23` (the paragraphs below); BP8.1 landed in three slices at `v0.36.24`–`v0.36.26` (the last three paragraphs below).  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.23` (the paragraphs below); BP8.1 landed in three slices at `v0.36.24`–`v0.36.26` and BP8.2 at `v0.36.27` (the last four paragraphs below).  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -8649,6 +8649,26 @@ is not a longer tick.  The fixture is
 `[sched] core N: first idle dispatch` is printed after the IRQ handler releases
 its kernel-entry bracket, the one place a print cannot deadlock against a core
 still printing its bring-up.
+
+**The four-PE bring-up is executed, and a console line is a line** (`v0.36.27`,
+BP8.2).  `scripts/test_qemu_smp_bringup.sh` boots the HAL-only and the
+Lean-linked `virt` images on four PEs at EL1 and EL2 in the archive lane, holds
+every secondary's per-core init in order to
+`tests/fixtures/qemu_smp_bringup_expected.txt`, and ticks the two SM1.H boxes
+WS-RR RR7.16 unchecked.  Four things new code must respect.  (1) **A banner is
+matched as a whole line**: no console tag may appear anywhere but at a line's
+start, because a substring search passed the first four-PE boot, whose log was
+torn.  (2) **A PE prints nothing before its own MMU is on**, the invalid-context
+refusal excepted: with translation off the console bypasses its ticket lock
+(`uart::ticket_lock_usable`), which is sound only while no other PE prints, and
+each secondary's first banner tore against the others'.  (3) **A console line
+is one lock acquisition**: `kprintln!` took it twice (body, then newline), the
+defect `kprintln_core!` fixed at SM1.G and nothing swept onto its sibling;
+`uart::tests::a_printed_line_takes_the_console_lock_once` counts the lock's
+tickets.  (4) **A QEMU lane builds and boots through `scripts/qemu_boot_lib.sh`**,
+never its own copy, and a `virt` image builds under `rust/target/qemu-virt*`:
+the archive lane uploads `rust/target/<target>/release/sele4n-kernel` as the
+Raspberry Pi 5 image, and a `virt` build there would ship in its place.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

@@ -752,16 +752,24 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
         let _ = crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
     }
 
-    crate::kprintln!("[smp] core {core_id}: entering per-core init");
-
     // -----------------------------------------------------------------
     // Step 1 — MMU enable.
     //
     // Reuses the boot core's `BOOT_L1_TABLE` (a read-only global
     // populated by the primary's `init_mmu`).  Applies the AK5-C
     // SCTLR_EL1 bitmap including W^X (WXN).
+    //
+    // WS-BP BP8.2: this core prints nothing before this call.  With
+    // translation off the console cannot take its ticket lock
+    // (`uart::ticket_lock_usable`) and writes unlocked, which is sound only
+    // while no other PE prints — and here the boot core and the other
+    // secondaries are printing.  The banner that used to precede this call
+    // tore against theirs character by character on the first four-core
+    // boot, contradicting `uart::with_uart_under`'s own statement that a
+    // secondary's one pre-translation print is the fatal refusal above.
     // -----------------------------------------------------------------
     crate::mmu::init_mmu_secondary(core_id);
+    crate::kprintln!("[smp] core {core_id}: entering per-core init");
     crate::kprintln!("[smp] core {core_id}: MMU enabled (WXN, SA, SA0, EIS, EOS)");
     // The v0.36.2 audit: this PE's `CTR_EL0` admits the cache-maintenance
     // stride, or this PE parks and the boot core's Phase-7 wait counts it

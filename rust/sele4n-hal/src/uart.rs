@@ -616,8 +616,17 @@ macro_rules! kprint {
 macro_rules! kprintln {
     () => { $crate::kprint!("\n") };
     ($($arg:tt)*) => {{
-        $crate::kprint!($($arg)*);
-        $crate::kprint!("\n");
+        // WS-BP BP8.2: the body and its newline under ONE lock acquisition.
+        // Two `kprint!`s took the lock twice, so on four PEs another core's
+        // line landed between a body and its newline — the defect
+        // `kprintln_core!` fixed at SM1.G audit-pass-1 and nothing swept onto
+        // this macro.  The first four-core boot (`test_qemu_smp_bringup.sh`,
+        // which requires every banner to be a whole line) showed it.
+        use core::fmt::Write;
+        $crate::uart::with_boot_uart(|uart| {
+            let _ = uart.write_fmt(format_args!($($arg)*));
+            let _ = uart.write_str("\n");
+        });
     }};
 }
 
@@ -1106,6 +1115,34 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         crate::kprintln_core!("SM1.G.4 per-line atomicity smoke");
         crate::uart::with_boot_uart(|_uart| { /* re-acquire proof */ });
+    }
+
+    /// WS-BP BP8.2: `kprintln!` and `kprintln_core!` each take the console
+    /// lock ONCE per line, counted on the lock's own ticket counter rather
+    /// than read off the macro's source.  Another test printing in parallel
+    /// can only raise a sample, so the minimum over several is the macro's
+    /// own count: the retired `kprintln!` — body and newline as two
+    /// `kprint!`s — takes two tickets on every call, and fails this.
+    #[test]
+    fn a_printed_line_takes_the_console_lock_once() {
+        let _guard = UART_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tickets = |print: &dyn Fn()| {
+            (0..16)
+                .map(|_| {
+                    let before = UART_LOCK.inner.peek_next_ticket();
+                    print();
+                    UART_LOCK.inner.peek_next_ticket() - before
+                })
+                .min()
+                .expect("sixteen samples")
+        };
+        assert_eq!(tickets(&|| crate::kprintln!("BP8.2 whole line {}", 1)), 1);
+        assert_eq!(
+            tickets(&|| crate::kprintln_core!("BP8.2 whole line {}", 2)),
+            1
+        );
     }
 
     #[test]

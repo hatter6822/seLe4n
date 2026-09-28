@@ -59,7 +59,10 @@ source "${SCRIPT_DIR}/test_lib.sh"
 cd "${REPO_ROOT}"
 
 # ── Configuration ──────────────────────────────────────────────────────────
-QEMU_BIN="${QEMU_BIN:-qemu-system-aarch64}"
+# WS-BP BP8.2: the image build, the raw cut and the run are
+# `scripts/qemu_boot_lib.sh`'s, shared with the four-PE bring-up gate.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/qemu_boot_lib.sh"
 # The HAL-only boot never stops printing, so it runs for a fixed window; the
 # Lean-linked boot stops at the fourth first idle dispatch and this is only its
 # deadline (measured: about two seconds on either entry level).
@@ -69,126 +72,23 @@ else
     QEMU_TIMEOUT="${QEMU_TIMEOUT:-10}"
 fi
 QEMU_MACHINE="${QEMU_MACHINE:-}"
-QEMU_CPU="${QEMU_CPU:-cortex-a76}"
-QEMU_MEMORY="${QEMU_MEMORY:-1G}"
-REQUIRE_QEMU="${REQUIRE_QEMU:-0}"
-RUST_DIR="${REPO_ROOT}/rust"
-RUST_TARGET="aarch64-unknown-none-softfloat"
-# WS-BP BP5.1: the bare-metal image is the `sele4n-kernel` binary behind the
-# `kernel_image` feature; `sele4n-hal` itself is a library and builds no file
-# QEMU could boot.  WS-BP BP8.1: built for `virt` (`board_qemu_virt`).  A caller may name another image (the archive lane's
-# Lean-linked one) in KERNEL_BIN, in which case nothing is built here.
-KERNEL_BIN_DEFAULT="${RUST_DIR}/target/${RUST_TARGET}/release/sele4n-kernel"
-KERNEL_BIN="${KERNEL_BIN:-${KERNEL_BIN_DEFAULT}}"
-# The Lean-linked image builds into its own target directory: the archive lane
-# that runs this mode uploads `target/<target>/release/sele4n-kernel` as the
-# Raspberry Pi 5 image, which a `virt` build there would overwrite.
-LEAN_TARGET_DIR="${RUST_DIR}/target/qemu-virt-lean"
-LEAN_ARCHIVE="${REPO_ROOT}/.lake/build/${RUST_TARGET}/libsele4n.a"
-if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
-    KERNEL_BIN="${LEAN_TARGET_DIR}/${RUST_TARGET}/release/sele4n-kernel"
-fi
 
-# ── QEMU availability check ───────────────────────────────────────────────
 log_section "META" "=== AG9-A: QEMU Integration Testing ==="
-
-if ! command -v "${QEMU_BIN}" &>/dev/null; then
-    if [[ "${REQUIRE_QEMU}" -eq 1 ]]; then
-        record_failure "META" "QEMU not found: ${QEMU_BIN} (REQUIRE_QEMU=1)"
-        finalize_report
-    fi
-    log_section "META" "SKIP: ${QEMU_BIN} not found — QEMU tests skipped"
-    log_section "META" "       Install: apt install qemu-system-arm  (Debian/Ubuntu)"
-    log_section "META" "       Install: brew install qemu            (macOS)"
-    if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-        echo "QEMU_TESTS_SKIPPED=true" >> "${GITHUB_OUTPUT}"
-    fi
-    exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-QEMU_VERSION=$("${QEMU_BIN}" --version | head -1)
-log_section "META" "QEMU found: ${QEMU_VERSION}"
-
-# ── Rust cross-compilation target check ────────────────────────────────────
-if ! command -v cargo &>/dev/null; then
-    log_section "META" "SKIP: cargo not found — cannot build kernel binary"
-    exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-# Check if aarch64 target is installed
-if ! rustup target list --installed 2>/dev/null | grep -q "${RUST_TARGET}"; then
-    log_section "BUILD" "Installing Rust target: ${RUST_TARGET}"
-    rustup target add "${RUST_TARGET}" 2>/dev/null || {
-        log_section "META" "SKIP: Cannot install ${RUST_TARGET} target"
-        exit "${SELE4N_SKIP_EXIT:-77}"
-    }
-fi
-
-# ── Temp logs (created before first use; cleaned up on exit) ──────────────
-QEMU_LOG=$(mktemp /tmp/qemu_boot_XXXXXX.log)
-QEMU_BUILD_LOG=$(mktemp /tmp/qemu_build_XXXXXX.log)
-cleanup() { rm -f "${QEMU_LOG}" "${QEMU_BUILD_LOG}"; }
-trap cleanup EXIT
+qemu_require_tools
+qemu_temp_file QEMU_LOG qemu_boot
 
 # ── Build the kernel image ────────────────────────────────────────────────
-if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
-    # Asked for by name, so a missing archive or a failed link is a failure,
-    # not a skip: the archive lane that runs this mode has just built both.
-    if [[ ! -f "${LEAN_ARCHIVE}" ]]; then
-        record_failure "BUILD" "--lean-kernel needs ${LEAN_ARCHIVE}; run scripts/test_lean_aarch64_archive.sh"
-        finalize_report
-    fi
-    log_section "BUILD" "Building the Lean-linked kernel image for QEMU virt..."
-    cd "${RUST_DIR}"
-    if ! cargo build --release --target "${RUST_TARGET}" -p sele4n-hal \
-            --features hw_target,kernel_image,board_qemu_virt --bin sele4n-kernel \
-            --target-dir "${LEAN_TARGET_DIR}" 2>"${QEMU_BUILD_LOG}"; then
-        tail -20 "${QEMU_BUILD_LOG}"
-        record_failure "BUILD" "the Lean-linked virt image did not build"
-        finalize_report
-    fi
-    cd "${REPO_ROOT}"
-elif [[ "${KERNEL_BIN}" == "${KERNEL_BIN_DEFAULT}" ]]; then
-    log_section "BUILD" "Building the kernel image (sele4n-kernel) for ${RUST_TARGET}..."
-    cd "${RUST_DIR}"
-    if ! cargo build --release --target "${RUST_TARGET}" -p sele4n-hal \
-            --features kernel_image,board_qemu_virt --bin sele4n-kernel 2>"${QEMU_BUILD_LOG}"; then
-        # Cross-compilation may fail without linker config — this is expected
-        # in CI environments without aarch64 linker. Skip gracefully.
-        log_section "META" "SKIP: Cross-compilation failed (expected without aarch64 linker)"
-        log_section "META" "       Configure .cargo/config.toml with linker for ${RUST_TARGET}"
-        tail -10 "${QEMU_BUILD_LOG}"
-        exit "${SELE4N_SKIP_EXIT:-77}"
-    fi
-    cd "${REPO_ROOT}"
-else
-    log_section "BUILD" "Using the kernel image named by KERNEL_BIN: ${KERNEL_BIN}"
-fi
-
-if [[ ! -f "${KERNEL_BIN}" ]]; then
-    log_section "META" "SKIP: Kernel image not found at ${KERNEL_BIN}"
-    exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-log_section "BUILD" "Kernel image: $(wc -c < "${KERNEL_BIN}") bytes"
+qemu_build_image "${LEAN_KERNEL}"
 
 # ── WS-BP BP8.1: QEMU's `virt`, at both entry levels ───────────────────────
 # QEMU models no BCM2712, so the lane boots the image built for `virt`
 # (`board_qemu_virt`, rust/sele4n-hal/src/board.rs): `virt`'s device map and
-# RAM base, the same kernel otherwise.  QEMU passes the device tree in x0 only
-# to an image carrying the arm64 Image header, so it is handed the raw binary
-# cut from the ELF, never the ELF.  It runs twice — at QEMU's default EL1
+# RAM base, the same kernel otherwise.  It runs twice — at QEMU's default EL1
 # entry, and with `virtualization=on`, where QEMU enters at EL2 as the
 # Raspberry Pi firmware does, so the drop to EL1 and the SMC conduit execute
 # before the board is the first thing to run them.  An image named by
 # KERNEL_BIN runs on the machine named by QEMU_MACHINE instead, once.
-OBJCOPY=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from check_fp_simd_free_objects import rust_llvm_tool; print(rust_llvm_tool("llvm-objcopy"))' "${SCRIPT_DIR}")
-QEMU_IMAGE=$(mktemp /tmp/qemu_image_XXXXXX.img)
-trap 'cleanup; rm -f "${QEMU_IMAGE}"' EXIT
-if ! "${OBJCOPY}" -O binary "${KERNEL_BIN}" "${QEMU_IMAGE}"; then
-    record_failure "BUILD" "${OBJCOPY} could not cut a raw image from ${KERNEL_BIN}"
-    finalize_report
-fi
+qemu_cut_image
 
 FIXTURE="${REPO_ROOT}/tests/fixtures/qemu_boot_expected.txt"
 if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
@@ -224,45 +124,8 @@ boot_once() {
     local label="$1" machine="$2"
     shift 2
     log_section "TRACE" "RUN: ${label} — -machine ${machine} (timeout: ${QEMU_TIMEOUT}s)"
-    : > "${QEMU_LOG}"
-    local qemu_cmd=("${QEMU_BIN}"
-        -machine "${machine}"
-        -cpu "${QEMU_CPU}"
-        -smp "${BOOT_SMP}"
-        "${BOOT_EXTRA[@]}"
-        -m "${QEMU_MEMORY}"
-        -kernel "${QEMU_IMAGE}"
-        -serial "file:${QEMU_LOG}"
-        -monitor none
-        -display none
-        -no-reboot)
-    if [[ -z "${UNTIL_FRAGMENT}" ]]; then
-        timeout "${QEMU_TIMEOUT}" "${qemu_cmd[@]}" || true
-    else
-        # Run until the log carries UNTIL_COUNT lines holding UNTIL_FRAGMENT,
-        # or the deadline.  `grep -c` exits 1 for "no match" and above 1 for a
-        # read failure, which is a gate failure rather than a count of zero.
-        timeout "${QEMU_TIMEOUT}" "${qemu_cmd[@]}" &
-        local qemu_pid=$! waited=0 seen=0 rc
-        while (( waited < QEMU_TIMEOUT * 10 )); do
-            rc=0
-            seen=$(grep -c -F -- "${UNTIL_FRAGMENT}" "${QEMU_LOG}") || rc=$?
-            if (( rc > 1 )); then
-                record_failure "TRACE" "${label}: could not read ${QEMU_LOG}"
-                BOOT_PASS=false
-                break
-            fi
-            (( seen >= UNTIL_COUNT )) && break
-            kill -0 "${qemu_pid}" 2>/dev/null || break
-            sleep 0.1
-            waited=$((waited + 1))
-        done
-        kill "${qemu_pid}" 2>/dev/null || true
-        wait "${qemu_pid}" 2>/dev/null || true
-        log_section "TRACE" "${label}: ${seen} of ${UNTIL_COUNT} '${UNTIL_FRAGMENT}' line(s) after $((waited / 10))s"
-    fi
-    tr -d '\r' < "${QEMU_LOG}" > "${QEMU_LOG}.txt"
-    mv "${QEMU_LOG}.txt" "${QEMU_LOG}"
+    qemu_run "${label}" "${QEMU_LOG}" "${machine}" "${BOOT_SMP}" "${QEMU_TIMEOUT}" \
+        "${UNTIL_FRAGMENT}" "${UNTIL_COUNT}" "${BOOT_EXTRA[@]}" || BOOT_PASS=false
     if [[ ! -s "${QEMU_LOG}" ]]; then
         record_failure "TRACE" "${label}: QEMU produced no output (hung or dead kernel)"
         BOOT_PASS=false

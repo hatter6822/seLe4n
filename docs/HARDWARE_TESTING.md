@@ -398,13 +398,21 @@ IRQ-ready **and** Lean-ready within one second, so `smp_enabled=false` or an
 ./scripts/test_qemu_smp_bringup.sh
 ```
 
-The script (requires `SELE4N_KERNEL_IMAGE` pointing at a built kernel
-image; it SKIPs without one):
-1. Boots QEMU `virt` with `-smp 4 -machine virt,secure=on,virtualization=on`.
-2. Passes the kernel command line (`smp_enabled` defaults to `true`).
-3. Captures the UART log and asserts `[smp] core N: ready, entering
-   kernel` for cores 1..3 plus the `[boot] Phase 5: N secondary
-   core(s) online` rollup.
+The script (WS-BP BP8.2) builds the image for QEMU's `virt` machine itself
+(`scripts/qemu_boot_lib.sh`; `--lean-kernel` builds the Lean-linked one, from
+the archive `scripts/test_lean_aarch64_archive.sh` builds) and:
+1. Boots it on four PEs, once at EL1 and once with `virtualization=on`
+   (EL2, the Raspberry Pi 5 firmware's entry level).
+2. Requires every secondary's per-core init, in order, from
+   `tests/fixtures/qemu_smp_bringup_expected.txt` — `entering per-core init`
+   through `ready, entering kernel` — plus the boot core's `[boot] Phase 6:
+   3 secondary core(s) online` rollup, and with `--lean-kernel` the Phase 7
+   topology check and every core's first idle dispatch.
+3. Requires every banner to be a **whole line**: a console tag anywhere but at
+   the start of a line is a torn line and fails the run.
+
+On the board there is no QEMU; read the same banners off the serial console
+(BP8.3).
 
 The cross-core SGI round-trip is the separate
 `./scripts/test_qemu_smp_sgi_roundtrip.sh` exerciser (primary signals

@@ -38,9 +38,10 @@ if ! command -v qemu-system-aarch64 &>/dev/null; then
   exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
-# Kernel image must be set explicitly via $SELE4N_KERNEL_IMAGE — at
-# SM1.G landing there is no kernel binary target (see
-# test_qemu_smp_bringup.sh header for details).
+# Kernel image must be set explicitly via $SELE4N_KERNEL_IMAGE.  WS-BP BP8.2
+# made `test_qemu_smp_bringup.sh` build and boot its own image through
+# `scripts/qemu_boot_lib.sh`; moving this exerciser onto that library is
+# WS-BP BP8.4's, which runs the Tier-4 gates and records what they report.
 KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
 
 if [[ -z "${KERNEL_IMAGE}" ]]; then

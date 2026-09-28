@@ -405,8 +405,16 @@ archive `scripts/test_lean_aarch64_archive.sh` builds, and which that lane runs
 as its step [6/6]) it boots the Lean-linked image on four PEs to every core's
 first idle dispatch, under `-icount shift=0,sleep=off` — without it, one
 emulated Lean tick outlasts the 1 ms tick period on multi-threaded TCG and four
-PEs' ticks saturate the kernel-entry lock.  The other QEMU scripts and the
-board need artefacts BP8.2–BP8.5 produce.
+PEs' ticks saturate the kernel-entry lock.  `scripts/test_qemu_smp_bringup.sh`
+(WS-BP BP8.2) is live too: it boots the HAL-only image, and with `--lean-kernel`
+the Lean-linked one, on four PEs at EL1 and EL2, and requires every secondary's
+per-core init in order and every banner as a whole line; the same lane runs both
+modes.  The image build, the raw cut and the run are `scripts/qemu_boot_lib.sh`'s,
+shared by the two scripts, and the `virt` images build under `rust/target/qemu-virt*`
+so the Raspberry Pi 5 image in `rust/target/<target>/release` is never
+overwritten.  A console line is one lock acquisition, and a PE prints nothing
+before its own MMU is on.  The other QEMU scripts and the board need artefacts
+BP8.3–BP8.5 produce.
 
 ---
 

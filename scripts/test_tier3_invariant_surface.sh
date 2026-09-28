@@ -7756,7 +7756,10 @@ run_check "INVARIANT" rg -n '^    let expected = self_check_expected\(read_distr
 run_negative_check "INVARIANT" rg -n 'if actual != SELF_CHECK_EXPECTED' rust/sele4n-hal/src/gic.rs
 # The QEMU lane is live: the `virt` image, booted at EL1 and at EL2, the
 # fixture's fragments in order, and the fixture's companion verified.
-run_check "INVARIANT" rg -n -- '--features kernel_image,board_qemu_virt --bin sele4n-kernel' scripts/test_qemu.sh
+# WS-BP BP8.2: the build is `scripts/qemu_boot_lib.sh`'s, into a target
+# directory of its own, and the lane sources that library.
+run_check "INVARIANT" rg -n -U '^                --features kernel_image,board_qemu_virt --bin sele4n-kernel \\\n                --target-dir "\$\{HAL_TARGET_DIR\}"\) ' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_boot_lib\.sh"$' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -U '^    boot_once "virt, EL2 entry" "virt,gic-version=2,virtualization=on" \\\n        "booting on QEMU virt" "Entered at EL2, running at EL1" "PSCI conduit: Smc"$' scripts/test_qemu.sh
 # shellcheck disable=SC2016
 run_check "INVARIANT" rg -n -F 'line=$(tail -n "+$((after + 1))" "${QEMU_LOG}" | grep -n -F -m1 -- "${fragment}" | cut -d: -f1) || line=""' scripts/test_qemu.sh
@@ -7823,11 +7826,41 @@ run_check "INVARIANT" rg -n -F -- 'TOPOLOGY         | [boot] Phase 7: all 4 decl
 # The lane: the Lean-linked image, four PEs, the clock counted in instructions,
 # until the fourth first idle dispatch; and the archive lane runs it, requiring
 # QEMU, in a CI job that installs it.
-run_check "INVARIANT" rg -n -U '^            --features hw_target,kernel_image,board_qemu_virt --bin sele4n-kernel \\\n            --target-dir "\$\{LEAN_TARGET_DIR\}" ' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -U '^                --features hw_target,kernel_image,board_qemu_virt --bin sele4n-kernel \\\n                --target-dir "\$\{LEAN_TARGET_DIR\}"\) ' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n -U '^    BOOT_SMP=4\n    BOOT_EXTRA=\(-icount "shift=0,sleep=off"\)\n    UNTIL_FRAGMENT="first idle dispatch"\n    UNTIL_COUNT=4$' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -F -- 'boot_once "Lean kernel, virt, EL2 entry" "virt,gic-version=2,virtualization=on"' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu\.sh" --lean-kernel$' scripts/test_lean_aarch64_archive.sh
 run_check "INVARIANT" rg -n -F -- 'sudo apt-get install -y --no-install-recommends qemu-system-arm' .github/workflows/lean_action_ci.yml
+
+# ----------------------------------------------------------------------------
+# WS-BP BP8.2 (v0.36.27): the four-PE bring-up gate executes, and a console
+# line is a line.
+# ----------------------------------------------------------------------------
+# The gate builds and boots through the shared library -- never its own copy --
+# on four PEs at both entry levels, and the archive lane runs it in both modes,
+# requiring QEMU.
+run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_boot_lib\.sh"$' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n -U '^    qemu_run "\$\{label\}" "\$\{BRINGUP_LOG\}" "\$\{machine\}" 4 "\$\{DEADLINE\}" \\\n        "\$\{UNTIL_FRAGMENT\}" "\$\{UNTIL_COUNT\}" "\$\{BOOT_EXTRA\[@\]\}"' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n -F -- 'bringup_once "four PEs, virt, EL2 entry" "virt,gic-version=2,virtualization=on"' scripts/test_qemu_smp_bringup.sh
+run_negative_check "INVARIANT" rg -n 'SELE4N_KERNEL_IMAGE' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_smp_bringup\.sh"$' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_smp_bringup\.sh" --lean-kernel$' scripts/test_lean_aarch64_archive.sh
+# A banner is matched as a whole line: a console tag anywhere but at a line's
+# start fails the run, and a row matches a line that begins with it.
+run_check "INVARIANT" rg -n -F -- 'if re.search(r".\[(smp|boot|sched|tick)\] ", line):' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n -F -- 'while at < len(stream) and not stream[at].startswith(prefix):' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n -F -- 'secondary | [smp] core {N}: ready, entering kernel' tests/fixtures/qemu_smp_bringup_expected.txt
+run_check "INVARIANT" rg -n -F -- 'boot | [boot] Phase 6: 3 secondary core(s) online (max requested: 4)' tests/fixtures/qemu_smp_bringup_expected.txt
+# A PE prints nothing before its own MMU is on: nothing stands between a
+# secondary's release wait and its MMU enable, and its first banner follows it.
+run_check "INVARIANT" rg -n -U '^    \}\n([ ]*\n)*    crate::mmu::init_mmu_secondary\(core_id\);\n    crate::kprintln!\("\[smp\] core \{core_id\}: entering per-core init"\);$' rust/sele4n-hal/src/smp.rs
+# A console line is one lock acquisition, and the retired two-`kprint!` body
+# must not come back.
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -U '^        \$crate::uart::with_boot_uart\(\|uart\| \{\n            let _ = uart\.write_fmt\(format_args!\(\$\(\$arg\)\*\)\);\n            let _ = uart\.write_str\("\\n"\);\n        \}\);' rust/sele4n-hal/src/uart.rs
+# shellcheck disable=SC2016
+run_negative_check "INVARIANT" rg -n -U '\$crate::kprint!\(\$\(\$arg\)\*\);\n[ ]*\$crate::kprint!\("\\n"\);' rust/sele4n-hal/src/uart.rs
+run_check "INVARIANT" rg -n '^    fn a_printed_line_takes_the_console_lock_once\(\) \{$' rust/sele4n-hal/src/uart.rs
 
 # ============================================================================
 # WS-SM SM9.B — refusal auditing
