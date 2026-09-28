@@ -727,11 +727,18 @@ inductive KernelCodeWriteSite where
   | retypeScrub
   /-- Object/code materialisation during boot. -/
   | bootImageLoad
+  /-- **WS-BP post-landing audit (`v0.36.32`)**: the untyped carve's scrub
+      (`CarveRequest.scrub` — a frame, a VSpace root's table page, a page table),
+      recorded as `PhysicalWrite.zeroPage` and performed by the HAL.  Since
+      WS-BP BP7.1 this, not `.retypeScrub`, is how memory reaches a thread, and
+      it went unlisted for twenty-eight cuts while the in-place re-type it
+      replaced for memory-backed kinds carried the obligation. -/
+  | carveScrub
   deriving DecidableEq, Repr, Inhabited
 
 /-- **WS-SM SM7.D.2**: the enumeration of kernel code-write sites. -/
 def kernelCodeWriteSites : List KernelCodeWriteSite :=
-  [.retypeScrub, .bootImageLoad]
+  [.retypeScrub, .bootImageLoad, .carveScrub]
 
 /-- **WS-SM SM7.D.2** (the tripwire): every constructor is listed.  Adding a
 site to `KernelCodeWriteSite` without listing it breaks this `decide`, which is
@@ -813,6 +820,10 @@ def kernelCodeWriteObligation : KernelCodeWriteSite → PoUCleanObligation
       { cleanToPoU := .cleanByVA (SeLe4n.PAddr.ofNat 0)
         invalidate := .iallu
         barriers   := armv8DCacheToICacheSequence }
+  | .carveScrub =>
+      { cleanToPoU := .cleanByVA (SeLe4n.PAddr.ofNat 0)
+        invalidate := .iallu
+        barriers   := armv8DCacheToICacheSequence }
 
 /-- **WS-SM SM7.D.2**: what it means for a site's obligation to be well-formed —
 it must clean (not merely invalidate) the data side, must drop the instruction
@@ -874,7 +885,9 @@ which no boot untyped may describe (`untypedPlacementRespected`) and no boot
 VSpace maps (`bootSafeUserVSpaceRootCheck` refuses a configured mapping), so no
 thread can ever fetch it.  An initial task's code, when the image carries one,
 is in those loaded bytes; memory a thread *does* receive comes from an untyped
-through a re-type, which cleans it itself (`.retypeScrub`).
+through a carve, whose scrub's physical write cleans it (`.carveScrub`) — the
+in-place re-type, which cleans its own scrub (`.retypeScrub`), refuses every
+memory-backed kind since WS-BP BP7.1.
 
 The HAL emits this operand in the boot seam, in
 `lean_entry::enter_lean_kernel`, after the install and before it mints the
@@ -900,6 +913,18 @@ theorem bootImageIcacheOp_isDomainWide (base : SeLe4n.PAddr) (size : Nat) :
     (bootImageIcacheOp base size).isDomainWide = true :=
   dischargesPoUClean_isDomainWide (bootImageIcacheOp_discharges_obligation base size)
 
+/-- **WS-BP post-landing audit (`v0.36.32`)** (the obligation discharged): a
+zeroing's own maintenance discharges the clean-to-PoU obligation over exactly
+the page it zeroes.  It would be **false** of a zeroing that owed nothing, which
+is what `PhysicalWrite.icacheMaintenance` answered for every write until this
+cut — the carve's scrub reached a thread's executable mapping with the zeroes
+still in the data cache. -/
+theorem zeroPage_discharges_obligation (base : SeLe4n.PAddr) :
+    ∃ op, (PhysicalWrite.zeroPage base).icacheMaintenance = some op ∧
+      dischargesPoUClean op base SeLe4n.pageBytes = true :=
+  ⟨.cleanRangeIallu base SeLe4n.pageBytes, rfl, by
+    simp [dischargesPoUClean, ICacheInvalidation.covers]⟩
+
 /-- **WS-SM SM7.D.2**: does the kernel emit this site's obligation before the
 memory the site writes can be fetched as instructions?
 
@@ -913,10 +938,18 @@ memory the site writes can be fetched as instructions?
   before the secondary-release permit exists;
   `bootImageIcacheOp_discharges_obligation` is the link.  SM7.D deferred this
   site because the builder names no extent; the extent is the image's, which
-  only the link knows, and the boot seam is where the link is read. -/
+  only the link knows, and the boot seam is where the link is read.
+* `.carveScrub` — **yes** (since the WS-BP post-landing audit, `v0.36.32`).  The
+  carve records its scrub as `PhysicalWrite.zeroPage base`, and a zeroing's own
+  `PhysicalWrite.icacheMaintenance` is `cleanRangeIallu base pageBytes`, which
+  the HAL performs as the last step of the write; `zeroPage_discharges_obligation`
+  is the link, and `carveZeroFrame_discharges_carveScrub_obligation` ties the
+  carve's recorded write to it.  Carried by the write rather than recorded
+  beside it, so the clean follows the zero it cleans by construction. -/
 def kernelCodeWriteEmitted : KernelCodeWriteSite → Bool
   | .retypeScrub   => true
   | .bootImageLoad => true
+  | .carveScrub    => true
 
 /-- **WS-BP BP4.5** (the closure of SM7.D's honesty marker): every kernel
 code-write site emits its clean-to-PoU.

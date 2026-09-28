@@ -3965,7 +3965,7 @@ run_check "INVARIANT" rg -n '^def resolveVSpaceMapFrame \(callerTid' SeLe4n/Kern
 run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?)*        capAddr       := args\.frame\n        capDepth      := rootCn\.depth\n        requiredRight := \.read' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?)*          match st\.getFrame\? frameObjId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  if perms\.write && !frameCap\.hasRight \.write then \.error \.illegalAuthority$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^  else if frame\.isDevice && \(perms\.execute \|\| perms\.cacheable\) then \.error \.policyDenied$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^  else if perms\.cacheable == frame\.isDevice \|\| \(frame\.isDevice && perms\.execute\) then\n    \.error \.policyDenied$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*\(determineExecutingCore st tid\) args\.asid args\.vaddr frame\.base perms st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^              vspaceMapFromFrameCap tid args st$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_requires_frame_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -5372,6 +5372,25 @@ run_check "INVARIANT" rg -n '^        __image_load_end = \.;$' rust/sele4n-hal/l
 run_check "INVARIANT" rg -n '^pub fn clean_range_pou_then_invalidate_all_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'CleanRangeIallu\(u64, u64\)' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'fn test_clean_range_pou_line_coverage' rust/sele4n-hal/src/cache.rs
+# WS-BP post-landing audit (v0.36.32): the carve's RAM scrub is a third kernel
+# code-write site, and its clean-to-PoU rides ON the zeroing's physical write.
+# The model names the site and its emission, the write owes the operand, the
+# carve records exactly that write, and the HAL performs the operand as the
+# last step of `apply_physical_write` — after the store and its barrier, so
+# the clean reads the zeroes.
+run_check "INVARIANT" rg -U -n '^def kernelCodeWriteEmitted : KernelCodeWriteSite → Bool[^\n]*(\n([ \t][^\n]*)?)*?  \| \.carveScrub +=> true$' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -U -n '^def kernelCodeWriteSites : List KernelCodeWriteSite :=\n  \[\.retypeScrub, \.bootImageLoad, \.carveScrub\]$' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem zeroPage_discharges_obligation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -U -n '^def icacheMaintenance : PhysicalWrite → Option ICacheInvalidation\n  \| \.zeroPage base => some \(\.cleanRangeIallu base SeLe4n\.pageBytes\)$' SeLe4n/Kernel/Architecture/PhysicalWrite.lean
+run_check "INVARIANT" rg -n '^theorem carveZeroFrame_pendingPhysicalWrites($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem carveZeroFrame_discharges_carveScrub_obligation($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -U -n '^pub const fn icache_maintenance\(write: PhysicalWrite\) -> Option<crate::cache::ICacheInvalidation> \{\n    match write \{\n        PhysicalWrite::ZeroPage\(page\) => Some\(crate::cache::ICacheInvalidation::CleanRangeIallu\(\n            page, PAGE_BYTES,\n        \)\),' rust/sele4n-hal/src/user_translation.rs
+run_check "INVARIANT" rg -U -n '^pub fn apply_physical_write\(write: PhysicalWrite\) \{[^\n]*(\n([ \t][^\n]*)?)*?\n    if let Some\(op\) = icache_maintenance\(write\) \{\n        crate::cache::apply_icache_invalidation\(op\);\n    \}\n\}' rust/sele4n-hal/src/user_translation.rs
+# ...and a RAM frame is mapped cacheable or not at all, so no thread holds an
+# uncached alias of memory the kernel writes through its cacheable identity map.
+run_check "INVARIANT" rg -n '^  else if perms\.cacheable == frame\.isDevice \|\| \(frame\.isDevice && perms\.execute\) then$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem frameMappingAdmissible_cacheable_iff_ram($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'else if frame\.isDevice && \(perms\.execute \|\| perms\.cacheable\) then' SeLe4n/Kernel
 # WS-BP BP4.6: the verified board's RAM above the guaranteed gigabyte.  Lean
 # derives the extent from the bound variant's memory map (never a per-variant
 # list) and proves it is that RAM in both directions; the device-tree wrapper's

@@ -795,19 +795,21 @@ private def runLedgerChecks : IO Unit := do
 
 private def runCodeWriteObligationChecks : IO Unit := do
   IO.println "-- §3.11 SM7.D.2 kernel code-write clean-to-PoU obligation"
-  assertBool "both kernel code-write sites are enumerated"
-    (kernelCodeWriteSites.length == 2)
+  assertBool "all three kernel code-write sites are enumerated"
+    (kernelCodeWriteSites.length == 3)
   assertBool "every constructor is listed (the tripwire)"
-    ([KernelCodeWriteSite.retypeScrub, .bootImageLoad].all fun st =>
+    ([KernelCodeWriteSite.retypeScrub, .bootImageLoad, .carveScrub].all fun st =>
       kernelCodeWriteSites.contains st)
   assertBool "the canonical D→I sequence covers the barriers the obligation names"
     (armv8DCacheToICacheSequence.covers CacheBarrierKind.dsb_ish &&
      armv8DCacheToICacheSequence.covers CacheBarrierKind.isb)
-  -- The emission partition: both sites emit since WS-BP BP4.5.
+  -- The emission partition: every site emits (BP4.5; the carve since v0.36.32).
   assertBool "the re-type site's clean-to-PoU is EMITTED by a live transition"
     (kernelCodeWriteEmitted .retypeScrub)
   assertBool "the boot-image site's clean-to-PoU is EMITTED by the boot seam (BP4.5)"
     (kernelCodeWriteEmitted .bootImageLoad)
+  assertBool "the carve site's clean-to-PoU is EMITTED on its zeroing (v0.36.32)"
+    (kernelCodeWriteEmitted .carveScrub)
   assertBool "no site still owes an emission"
     (kernelCodeWriteSites.all kernelCodeWriteEmitted)
   -- The boot's operand discharges the obligation over the extent it names, and

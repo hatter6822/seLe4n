@@ -2061,6 +2061,31 @@ theorem retypeIcacheOp_discharges_scrub_obligation {target : SeLe4n.ObjId}
   rw [retypeIcacheOp_cleans_scrub_extent h]
   simp [Architecture.dischargesPoUClean, Architecture.ICacheInvalidation.covers]
 
+/-- **WS-BP post-landing audit (`v0.36.32`)** (the carve's obligation
+discharged): the scrub of a RAM frame records one write, and that write's own
+maintenance discharges the `.carveScrub` clean-to-PoU obligation over exactly
+the page the scrub zeroes.
+
+The carve's counterpart of `retypeIcacheOp_discharges_scrub_obligation`, with
+one difference that is the point: the re-type's operand is recorded **beside**
+its scrub, through `withIcacheBroadcast`, while the carve's rides **on** the
+scrub's physical write — the HAL performs `PhysicalWrite.icacheMaintenance` as
+the last step of `apply_physical_write` — because the zero is itself a deferred
+write the seam performs, and a clean recorded as a separate ledger entry could
+be emitted in some order other than right after the zero it cleans.  It would
+be **false** at the pre-`v0.36.32` model, where the zeroing owed nothing and a
+thread could map a freshly carved frame executable with its zeroes still in the
+data cache and its previous owner's bytes at the Point of Unification. -/
+theorem carveZeroFrame_discharges_carveScrub_obligation (st : SystemState)
+    (frame : FrameObject) (hRam : frame.isDevice = false) :
+    ∃ w op, (carveZeroFrame st frame).pendingPhysicalWrites =
+        st.pendingPhysicalWrites ++ [w] ∧
+      w.icacheMaintenance = some op ∧
+      Architecture.dischargesPoUClean op frame.base SeLe4n.pageBytes = true := by
+  obtain ⟨op, hOp, hDis⟩ := Architecture.zeroPage_discharges_obligation frame.base
+  exact ⟨.zeroPage frame.base, op, carveZeroFrame_pendingPhysicalWrites st frame hRam,
+    hOp, hDis⟩
+
 /-- **WS-SM SM7.D.1** (**the live `.lifecycleRetype` seam**, Direct-cap
 authority): the production retype, complete across both per-core cached
 structures.  Layered on SM7.F.4(b)(iii)'s

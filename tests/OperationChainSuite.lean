@@ -2894,16 +2894,19 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   -- Distinct from the `⟨502⟩` root `buildSyscallState` always installs at ASID 1.
   let chainAsid : SeLe4n.ASID := ⟨2⟩
   let vsRoot : SeLe4n.Model.VSpaceRoot := fixtureMappableRoot chainAsid
-  -- === vspaceMap (syscallId=9): x2=asid(2), x3=vaddr(user window + 0x2000, WS-BP BP7.2), x4=frame cap(slot 1), x5=perms(1=readOnly) ===
+  -- === vspaceMap (syscallId=9): x2=asid(2), x3=vaddr(user window + 0x2000, WS-BP BP7.2), x4=frame cap(slot 1), x5=perms(17=read|cacheable) ===
   -- WS-BP BP7.1: MR2 is the address of a frame capability in the caller's CSpace;
   -- the page mapped is that frame's own `base` (0x3000), not a register value.
+  -- A RAM frame must be mapped cacheable (`frameMappingAdmissible`, v0.36.32):
+  -- an uncached alias of RAM the kernel writes through its cacheable identity
+  -- map is refused `.policyDenied`, so the request is read (1) | cacheable (16).
   let frameId : SeLe4n.ObjId := ⟨701⟩
   let frameCap : Capability :=
     { target := .object frameId, rights := AccessRightSet.ofList [.read], badge := none }
   let stMap := buildSyscallState 9 0 vsId
     (AccessRightSet.ofList [.read, .write])
     [(vsId, .vspaceRoot vsRoot), (frameId, .frame { base := SeLe4n.PAddr.ofNat 0x3000 })]
-    [(2, 2), (3, (fixtureUserVAddr 0x2000).toNat), (4, 1), (5, 1)]
+    [(2, 2), (3, (fixtureUserVAddr 0x2000).toNat), (4, 1), (5, 17)]
     [(vsId, .vspaceRoot), (frameId, .frame)]
     [(1, frameCap)]
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMap with

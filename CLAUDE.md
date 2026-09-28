@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.31.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.32.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7993,8 +7993,12 @@ and the page installed is the frame's own `base`; `vspaceMapFromFrameCap` is the
 one definition the arm and its theorems read, and `vspaceMapFromFrameCap_ok` its
 decomposition.  (2) **The frame capability bounds the mapping**
 (`frameMappingAdmissible`): a writable mapping needs `.write` on it
-(`.illegalAuthority`, refused rather than silently narrowed) and a device frame
-maps neither executable nor cacheable (`.policyDenied`).  (3) **Nothing mints
+(`.illegalAuthority`, refused rather than silently narrowed), a device frame
+maps neither executable nor cacheable, and — since `v0.36.32` — a RAM frame maps
+cacheable or not at all (`.policyDenied`; `frameMappingAdmissible_cacheable_iff_ram`):
+the kernel writes RAM through its cacheable identity map, so an uncached user
+alias is a mismatched-attribute alias (ARM ARM B2.8) through which the carve's
+zeroes can arrive late and the previous owner's bytes early.  (3) **Nothing mints
 memory authority except an untyped**: an in-place retype refuses a
 memory-backed replacement (`KernelObjectType.memoryBacked`,
 `retypeReplacementAdmissible`'s third conjunct, `.illegalState`), the boot

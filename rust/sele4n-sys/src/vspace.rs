@@ -25,8 +25,11 @@ use sele4n_types::{Asid, CPtr, KernelResult, SyscallId, VAddr};
 /// it holds a frame capability for.  The frame capability must carry `.read`
 /// (every mapping is at least readable), and `.write` as well for a writable
 /// mapping (`IllegalAuthority` otherwise).  A **device** frame may be mapped
-/// neither executable nor cacheable (`PolicyDenied`): clear
-/// `PagePerms::CACHEABLE` for it.  A capability to anything but a frame, or an
+/// neither executable nor cacheable, and a **RAM** frame must be mapped
+/// cacheable (`PolicyDenied` otherwise): set `PagePerms::CACHEABLE` exactly
+/// when the frame is RAM.  An uncached alias of RAM the kernel writes through
+/// its cacheable identity map would be a mismatched-attribute alias (ARM ARM
+/// B2.8), so it is refused.  A capability to anything but a frame, or an
 /// empty slot, is `InvalidCapability`.
 ///
 /// The mapping is recorded on the frame capability that made it, so deleting

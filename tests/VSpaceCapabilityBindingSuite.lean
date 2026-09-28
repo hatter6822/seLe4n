@@ -451,6 +451,16 @@ private def runAlignmentChecks : IO Unit := do
 --      the memory
 -- ============================================================================
 
+/-- The `.vspaceMap` frame guard as it stood before `v0.36.32`: it refused a
+cacheable or executable mapping of a DEVICE frame and admitted an uncached
+mapping of a RAM frame.  Spelled here, and nowhere else, so the suite can show
+the live guard's new clause is what refuses the uncached RAM alias. -/
+private def retiredFrameMappingAdmissible (frameCap : Capability) (frame : FrameObject)
+    (perms : PagePermissions) : Except KernelError Unit :=
+  if perms.write && !frameCap.hasRight .write then .error .illegalAuthority
+  else if frame.isDevice && (perms.execute || perms.cacheable) then .error .policyDenied
+  else .ok ()
+
 /-- The caller here holds the **victim's own VSpace root capability** — full
 authority over that address space, which is exactly what PR #845's binding asks
 for — and every check below is still refused unless MR2 names a frame the caller
@@ -502,6 +512,26 @@ private def runFrameCapabilityChecks : IO Unit := do
       (match dispatchSyscall (decodeMap 7 0x50000 slotFrameDev permsRU) attacker st with
         | .ok ((), st') => mappedPaddr st' victimAsid freshVaddr == some 0xB0000
         | .error _ => false)
+    -- A RAM frame is mapped cacheable or not at all (v0.36.32): an uncached
+    -- user alias of RAM the kernel writes through its cacheable identity map
+    -- is a mismatched-attribute alias (ARM ARM B2.8), so the carve's zeroes
+    -- could reach the thread late and the page's previous owner's bytes early.
+    -- The retired guard is computed beside the live one on the same request.
+    let rRamU := dispatchSyscall (decodeMap 7 0x50000 slotFrameRO permsRU) attacker st
+    assertBool "an UNCACHED mapping of a RAM frame is refused (policyDenied)"
+      (isErr .policyDenied rRamU && nothingMapped rRamU)
+    match st.getFrame? frameA with
+    | none => assertBool "frame A resolves" false
+    | some fA =>
+      let uncached := PagePermissions.ofNat permsRU
+      let admitted (r : Except KernelError Unit) : Bool :=
+        match r with | .ok () => true | .error _ => false
+      let deniedByPolicy (r : Except KernelError Unit) : Bool :=
+        match r with | .error .policyDenied => true | _ => false
+      assertBool "...which the RETIRED guard admitted (the decision is the new clause)"
+        (admitted (retiredFrameMappingAdmissible (frameCapTo frameA [.read]) fA uncached)
+          && deniedByPolicy
+               (SeLe4n.Kernel.frameMappingAdmissible (frameCapTo frameA [.read]) fA uncached))
     -- The address mapped is the frame's own, and nothing the caller wrote.
     assertBool "the page mapped is the frame's `base`, not a register value"
       (match dispatchSyscall (decodeMap 7 0x50000 slotFrameRO) attacker st with
@@ -1728,6 +1758,20 @@ private def runPhysicalWriteChecks : IO Unit := do
   | .ok st1 => do
     assertBool "every carved page is zeroed in memory, in carve order"
       (recordedBy st st1 == [zero root, zero frame, zero l1, zero l2, zero l3, zero spare])
+    -- v0.36.32: each zeroing owes its own page's clean to the Point of
+    -- Unification and a domain-wide `IC IALLUIS` — the carved frame could be
+    -- mapped executable next, and the zeroes must reach the instruction side
+    -- before its previous contents can be fetched.  A write that owed nothing
+    -- (the pre-v0.36.32 ledger) answers `none` here and fails the check.
+    assertBool "every carve zeroing owes a clean-to-PoU of exactly its own page"
+      ((recordedBy st st1).all fun w =>
+        match w with
+        | .zeroPage base =>
+          w.icacheMaintenance
+            == some (Architecture.ICacheInvalidation.cleanRangeIallu base SeLe4n.pageBytes)
+        | _ => false)
+    assertBool "and a descriptor store owes none (only a zeroing can precede a fetch)"
+      ((store (root + 8) (tableDesc l1)).icacheMaintenance == none)
     match dispatchSyscall (decodeTableMap 15 12 va) carveOwner st1 with
     | .error e => assertBool s!"installing the level-1 table succeeds (got {repr e})" false
     | .ok ((), st2) => do

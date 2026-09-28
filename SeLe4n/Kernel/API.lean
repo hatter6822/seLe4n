@@ -4335,14 +4335,33 @@ executable request, through `PagePermissions.ofNat?`.)  A **writable** mapping n
 the capability bounds the access the mapping grants, as seL4's `maskVMRights`
 bounds it; here an over-reaching request is refused rather than silently
 narrowed, so a caller learns the mapping it asked for is not the one it holds
-authority for.  And a **device** frame is mapped neither executable (execution
-from Device memory is unpredictable on ARMv8) nor cacheable (a device register
-read through a cache line is not a device access): `.policyDenied`, the error
-`validateVSpaceMapPermsForMemoryKind` already returns for the first half. -/
+authority for.
+
+And a mapping carries **the frame's own memory type** (`.policyDenied`, the
+error `validateVSpaceMapPermsForMemoryKind` already returns for a device
+execute).  A **device** frame is mapped uncached and never executable
+(execution from Device memory is unpredictable on ARMv8, and a device register
+read through a cache line is not a device access).  A **RAM** frame is mapped
+cacheable, and only cacheable (the WS-BP post-landing audit, `v0.36.32`): the
+kernel's identity map aliases every page of RAM as Normal write-back, and a
+thread's uncached mapping of the same page — which `userPageAttributes` encodes
+as Device-nGnRnE — is the **mismatched-attribute** alias ARM ARM B2.8 says
+loses coherency.  It was a leak, not a curiosity: the carve zeroes a frame
+through the cacheable alias, so the zeroes can sit dirty in the data cache
+while DRAM still holds the page's previous owner's bytes, and an uncached read
+goes past the cache to DRAM — reporting to the new owner what the previous one
+wrote.  With the memory type fixed by the frame, no thread holds a second
+memory type for a page of RAM, and the only uncached mappings are of device
+memory, which the kernel never writes (`HardwareTables.lean`'s module
+docstring states the encoding this makes exact).  A thread that needs RAM
+shared with a non-coherent bus master has no such master to share it with:
+the model admits none (`CoherentAgent`'s tripwire), and adding one is where
+the buffer protocol belongs. -/
 def frameMappingAdmissible (frameCap : Capability) (frame : FrameObject)
     (perms : PagePermissions) : Except KernelError Unit :=
   if perms.write && !frameCap.hasRight .write then .error .illegalAuthority
-  else if frame.isDevice && (perms.execute || perms.cacheable) then .error .policyDenied
+  else if perms.cacheable == frame.isDevice || (frame.isDevice && perms.execute) then
+    .error .policyDenied
   else .ok ()
 
 /-- **WS-BP BP7.1**: an admitted writable mapping is backed by a writable frame
@@ -4365,6 +4384,33 @@ theorem frameMappingAdmissible_device (frameCap : Capability) (frame : FrameObje
   · cases h
   · rw [hDev] at h
     cases hE : perms.execute <;> cases hC : perms.cacheable <;> simp_all
+
+/-- **WS-BP post-landing audit (`v0.36.32`)**: an admitted mapping of a RAM frame
+is cacheable — the memory type the kernel's own identity map gives every page
+of RAM, so no thread's mapping aliases a page of RAM with a second memory type.
+This is the fact that makes the carve's zeroing through the kernel's cacheable
+alias what every later read of the page observes. -/
+theorem frameMappingAdmissible_ram (frameCap : Capability) (frame : FrameObject)
+    (perms : PagePermissions) (h : frameMappingAdmissible frameCap frame perms = .ok ())
+    (hRam : frame.isDevice = false) : perms.cacheable = true := by
+  unfold frameMappingAdmissible at h
+  split at h
+  · cases h
+  · rw [hRam] at h
+    cases hC : perms.cacheable <;> simp_all
+
+/-- **WS-BP post-landing audit (`v0.36.32`)**: every admitted mapping's
+cacheability **is** its frame's memory type — cacheable exactly when the frame
+is RAM.  `frameMappingAdmissible_device` and `frameMappingAdmissible_ram` are
+its two halves; this is the statement a consumer reasoning about memory types
+reads. -/
+theorem frameMappingAdmissible_cacheable_iff_ram (frameCap : Capability)
+    (frame : FrameObject) (perms : PagePermissions)
+    (h : frameMappingAdmissible frameCap frame perms = .ok ()) :
+    perms.cacheable = !frame.isDevice := by
+  cases hDev : frame.isDevice
+  · exact frameMappingAdmissible_ram frameCap frame perms h hDev
+  · exact (frameMappingAdmissible_device frameCap frame perms h hDev).2
 
 /-- **WS-BP BP7.1: the `.vspaceMap` arm past its address-space check, named.**
 

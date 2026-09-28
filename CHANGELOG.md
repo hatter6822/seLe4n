@@ -1,3 +1,47 @@
+## v0.36.32 — A carved RAM page cannot expose its previous owner (security fix)
+
+The post-landing audit of this PR's BP7 cuts found a vulnerability, reported
+before the fix: severity **High** on hardware, latent until a user thread runs on
+the board.  `docs/REGISTERED_DEBT.md` table B records it as closed.
+
+- **A RAM frame maps cacheable or not at all.**  `frameMappingAdmissible` refused
+  only a device frame's cacheable or executable mapping, so a thread could map a
+  RAM frame **uncached** while the kernel writes that page — the carve's scrub, a
+  delivered message register — through its cacheable identity map.  That is a
+  mismatched-attribute alias (ARM ARM B2.8): the scrub's zeroes could reach the
+  thread late and the page's previous owner's bytes early.  An uncached mapping
+  of a RAM frame is now `.policyDenied`, and
+  `frameMappingAdmissible_cacheable_iff_ram` states that an admitted mapping's
+  cacheability is the frame's kind.  `tests/VSpaceCapabilityBindingSuite.lean`
+  §5c computes the retired guard beside the live one on the same request.
+- **The carve's scrub is cleaned to the Point of Unification.**  The untyped
+  carve zeroes a RAM frame through `PhysicalWrite.zeroPage` and the frame may be
+  mapped executable next; the zeroing owed nothing, so on a Cortex-A76
+  (`CTR_EL0.IDC = DIC = 0`) a thread could fetch the page's previous contents.
+  The in-place retype's scrub has owed this clean since SM7.D; the carve re-added
+  a scrub without it.  `.carveScrub` is the third `KernelCodeWriteSite`;
+  `PhysicalWrite.icacheMaintenance` makes a zeroing owe `cleanRangeIallu` over its
+  own page (`zeroPage_discharges_obligation`), and
+  `carveZeroFrame_discharges_carveScrub_obligation` ties it to the carve.  The
+  clean rides **on** the write rather than beside it: the HAL's
+  `user_translation::apply_physical_write` performs it as its last step, after
+  the store and its `DSB ISH`, so it cannot be emitted in any other order.
+  §5l asserts every carve zeroing owes exactly its own page's clean.
+- **A docstring overclaim corrected.**  `PhysicalWrite.storeUserWord` and the
+  HAL's `user_word_admissible` said a user word "can never" land in a
+  translation table; the HAL refuses the table **pool** only, and a carved table
+  is RAM past the extent like a frame.  What keeps it out is the model — the
+  address resolves through the thread's own VSpace, which maps only frames — and
+  both docstrings now say so.
+- **`sele4n-sys`**: `vspace_map`'s contract states the new refusal.
+  `tests/OperationChainSuite.lean`'s chain28 mapped a RAM frame uncached and now
+  requests `read | cacheable`.
+- **The QEMU exerciser lane runs under `-icount shift=0,sleep=off`.**  The round
+  lock and shootdown-stress exercisers timed out under host load because
+  multi-threaded TCG ties the emulated clock to wall time; counting it in
+  instructions makes the bound a statement about the kernel rather than about the
+  CI host, and the lane's deadline is 300 s.
+
 ## v0.36.31 — Three WS-BP acceptance boxes decided by runs on the target
 
 Three boxes in the WS-BP acceptance gate named a run on the target and had none.

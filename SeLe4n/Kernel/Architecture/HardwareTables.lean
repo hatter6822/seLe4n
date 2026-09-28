@@ -42,7 +42,14 @@ space's ASID, so it is never shared with another — and **PXN** set, so the
 kernel never executes a thread's page.  A cacheable page is Normal
 write-back (MAIR index 0); a non-cacheable one is **Device-nGnRnE** (index 1),
 never executable, since the memory a thread may map uncached is device memory
-(`frameMappingAdmissible`).
+and only device memory: `frameMappingAdmissible` gives every mapping its
+frame's memory type (`frameMappingAdmissible_cacheable_iff_ram`).  So a page of
+RAM is mapped Normal write-back wherever it is mapped, which is the type the
+kernel's own identity map gives it, and no thread holds the mismatched-attribute
+alias (ARM ARM B2.8) that would let an uncached read see DRAM behind the
+kernel's cached writes — the carve's zeroing among them.  (Until the WS-BP
+post-landing audit, `v0.36.32`, this sentence was a claim `frameMappingAdmissible`
+did not enforce: a RAM frame could be mapped uncached.)
 -/
 
 namespace SeLe4n.Kernel.Architecture

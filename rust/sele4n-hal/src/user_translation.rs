@@ -104,9 +104,14 @@ pub fn thread_page_admissible(page: u64, covered: impl Fn(u64, u64) -> bool) -> 
 /// **Is the word at `addr` one the kernel may read or write for a thread?**
 /// (WS-BP BP7.8.)  An eight-byte aligned word in a whole page of RAM past the
 /// kernel's reserved extent that `covered` contains — a thread's own frame.
-/// Deliberately **not** a pool page: the pool holds translation tables, and a
-/// user word stored there would be a descriptor nobody wrote.  So a message
-/// register can never land in a table, whatever address the model names.
+/// Deliberately **not** a pool page: the pool holds the configured roots'
+/// translation tables, and a user word stored there would be a descriptor
+/// nobody wrote.  That refusal covers the **pool** only: a page table or VSpace
+/// root carved from an untyped (WS-BP BP7.1) is RAM past the extent like any
+/// frame, and this check cannot tell the two apart.  What keeps a message
+/// register out of a carved table is the Lean side — the address is resolved
+/// through the thread's own VSpace (`ipcBufferSlotPAddr?`), which maps only
+/// frames, and carves are disjoint, so no mapped page is ever a table page.
 #[must_use]
 pub fn user_word_admissible(addr: u64, covered: impl Fn(u64, u64) -> bool) -> bool {
     use crate::mmu::KERNEL_RESERVED_END;
@@ -160,7 +165,35 @@ pub fn decode_physical_write(
     }
 }
 
-/// Perform one validated physical write.
+/// **WS-BP post-landing audit (`v0.36.32`): the instruction-cache maintenance a
+/// physical write owes**, performed as the last step of
+/// [`apply_physical_write`].
+///
+/// Lean model: `Architecture.PhysicalWrite.icacheMaintenance`.  A page zeroing
+/// is a data write to a page a thread may later map **executable** (the carve
+/// of a frame zeroes it before any capability to it exists), and the
+/// Cortex-A76 has `CTR_EL0.IDC = DIC = 0`: the zeroes sit in the data cache
+/// while the page's previous contents stay reachable at the Point of
+/// Unification and in any instruction line still holding them.  So the zeroing
+/// is followed by a clean of the page to the PoU and an `IC IALLUIS` —
+/// `CleanRangeIallu`, the operand `zeroPage_discharges_obligation` proves
+/// discharges the `.carveScrub` obligation.  Every other write owes nothing:
+/// a descriptor and a user word land in pages no thread fetches from without a
+/// later carve's own zeroing, and an ASID invalidation writes no memory.
+#[must_use]
+pub const fn icache_maintenance(write: PhysicalWrite) -> Option<crate::cache::ICacheInvalidation> {
+    match write {
+        PhysicalWrite::ZeroPage(page) => Some(crate::cache::ICacheInvalidation::CleanRangeIallu(
+            page, PAGE_BYTES,
+        )),
+        PhysicalWrite::StoreDescriptor { .. }
+        | PhysicalWrite::InvalidateAsid(_)
+        | PhysicalWrite::StoreUserWord { .. } => None,
+    }
+}
+
+/// Perform one validated physical write, then the instruction-cache maintenance
+/// it owes ([`icache_maintenance`]).
 ///
 /// Zeroing and descriptor stores go through the kernel's identity map — every
 /// admissible page is Normal write-back RAM the boot map covers — and end in
@@ -219,6 +252,12 @@ pub fn apply_physical_write(write: PhysicalWrite) {
             let _ = (addr, value);
             crate::barriers::dsb_ish();
         }
+    }
+    // The maintenance follows the store and its `DSB ISH`, so the clean reads
+    // the zeroes rather than the page's previous contents.  The host performs
+    // none: `apply_icache_invalidation`'s host arms are no-ops too.
+    if let Some(op) = icache_maintenance(write) {
+        crate::cache::apply_icache_invalidation(op);
     }
 }
 
@@ -431,6 +470,48 @@ mod tests {
             decode_physical_write(4, RAM_PAGE, 0, covered),
             Err(PhysicalWriteRefusal::UnknownTag(4))
         );
+    }
+
+    /// The carve's scrub owes a clean to the PoU and a domain-wide
+    /// instruction-cache invalidation over exactly the zeroed page, and no
+    /// other write owes any maintenance (`PhysicalWrite.icacheMaintenance`).
+    #[test]
+    fn a_zeroed_page_owes_a_clean_to_the_point_of_unification() {
+        use crate::cache::ICacheInvalidation;
+        assert_eq!(
+            icache_maintenance(PhysicalWrite::ZeroPage(RAM_PAGE)),
+            Some(ICacheInvalidation::CleanRangeIallu(RAM_PAGE, 4096))
+        );
+        assert_eq!(
+            icache_maintenance(PhysicalWrite::StoreDescriptor {
+                entry: RAM_PAGE,
+                value: 3
+            }),
+            None
+        );
+        assert_eq!(icache_maintenance(PhysicalWrite::InvalidateAsid(7)), None);
+        assert_eq!(
+            icache_maintenance(PhysicalWrite::StoreUserWord {
+                addr: RAM_PAGE,
+                value: 1
+            }),
+            None
+        );
+    }
+
+    /// Every page a zeroing may name is one the maintenance can reach, so the
+    /// halt in `apply_icache_invalidation` is unreachable from this path: the
+    /// decode admits a page by the same boot-map coverage the maintenance
+    /// checks.  Exercised on a table-pool page, which lies inside the kernel's
+    /// reserved extent the constant map always covers.
+    #[test]
+    fn an_admitted_zeroing_is_always_maintainable() {
+        use crate::mmu::BOOT_TABLE_POOL_BASE;
+        let pool_page = BOOT_TABLE_POOL_BASE;
+        let write = decode_physical_write(0, pool_page, 0, crate::mmu::is_boot_cacheable_range)
+            .expect("a pool page is a thread page");
+        let op = icache_maintenance(write).expect("a zeroing owes maintenance");
+        assert!(crate::cache::icache_operand_within_identity_map(op));
     }
 
     #[test]

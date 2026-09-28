@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Prelude
+import SeLe4n.Kernel.Architecture.CacheInvalidation
 
 /-!
 # WS-BP BP7.2 — the physical writes a committed transition owes
@@ -32,7 +33,9 @@ must not pull the architecture layer's import closure.
 The tag/operand encoding **must** stay in lockstep with
 `rust/sele4n-hal/src/user_translation.rs::apply_physical_write`:
 
-  tag 0 = zero one 4 KiB page at `addr`            (`value` ignored)
+  tag 0 = zero one 4 KiB page at `addr`, then clean it to the Point of
+          Unification and invalidate every instruction cache in the domain
+          (`PhysicalWrite.icacheMaintenance`)  (`value` ignored)
   tag 1 = store the descriptor `value` at `addr`
   tag 2 = invalidate every translation tagged `addr` as an ASID (`value` ignored)
   tag 3 = store the user word `value` at `addr`, in a thread's RAM page (WS-BP BP7.8)
@@ -60,9 +63,13 @@ inductive PhysicalWrite where
       register past the four the return frame carries, written into the
       receiver's IPC buffer.  Distinct from `storeDescriptor` because the two
       name different memory: a descriptor lives in a table page (the boot pool
-      or a carved table), a user word in a thread's own frame, and the HAL
-      admits each only into its own kind of page, so a user word can never be
-      stored into a translation table. -/
+      or a carved table), a user word in a thread's own frame.  The HAL refuses
+      a user word in the **pool**; a *carved* table is RAM past the kernel's
+      extent like a frame, which the HAL cannot tell apart, so what keeps a
+      user word out of it is this model — the address is resolved through the
+      thread's own VSpace (`IpcBufferRead.ipcBufferSlotPAddr?`), which maps
+      only frames, and carves are disjoint, so no mapped page is a table
+      page. -/
   | storeUserWord (addr : SeLe4n.PAddr) (value : UInt64)
   deriving Repr, DecidableEq
 
@@ -92,6 +99,47 @@ def value : PhysicalWrite → UInt64
 /-- Every tag is one of the four the HAL decodes. -/
 theorem tag_le_three (w : PhysicalWrite) : w.tag ≤ 3 := by
   cases w <;> simp [tag]
+
+/-- **WS-BP post-landing audit (`v0.36.32`): the instruction-cache maintenance a
+physical write owes after its store**, which the HAL performs as the last step
+of the write itself (`user_translation::apply_physical_write`, through
+`user_translation::icache_maintenance`).
+
+A zeroing is the only write that needs it.  It scrubs a page the kernel is about
+to hand out — a frame a thread may map **executable** — through the kernel's
+data cache, and an instruction fetch reads at the Point of Unification: until a
+clean pushes the zeroes there, a fetch of the page can still read the bytes its
+**previous owner** left (Cortex-A76 reports `CTR_EL0.IDC = 0`, so the data side
+is not coherent with instruction fetch without that clean).  The operand is the
+re-type's own (`ICacheInvalidation.cleanRangeIallu`, whose docstring states the
+hazard for the in-place re-type's scrub and cites seL4's `clearMemory`): clean
+the page, then invalidate every instruction cache in the domain, so no core
+keeps a line of the page fetched before the carve.  The carve's scrub is a
+kernel code-write site for that reason (`KernelCodeWriteSite.carveScrub`), and
+this is its emission — carried by the write, so the clean can never be separated
+from the zero it follows or reordered before it.
+
+A descriptor store needs none (the table walk is coherent with the data cache
+under `TCR_EL1`'s write-back, inner-shareable walk attributes), nor an ASID
+invalidation, nor a user word (a thread's own buffer: a thread that executes
+what it or the kernel wrote there unifies it itself, through
+`.vspaceUnifyInstruction`). -/
+def icacheMaintenance : PhysicalWrite → Option ICacheInvalidation
+  | .zeroPage base => some (.cleanRangeIallu base SeLe4n.pageBytes)
+  | .storeDescriptor _ _ => none
+  | .invalidateAsid _ => none
+  | .storeUserWord _ _ => none
+
+/-- **WS-BP post-landing audit (`v0.36.32`)**: a zeroing owes the clean of exactly
+the page it zeroes, then the domain-wide invalidate. -/
+@[simp] theorem icacheMaintenance_zeroPage (base : SeLe4n.PAddr) :
+    (zeroPage base).icacheMaintenance = some (.cleanRangeIallu base SeLe4n.pageBytes) := rfl
+
+/-- **WS-BP post-landing audit (`v0.36.32`)**: exactly the zeroings owe
+instruction-cache maintenance. -/
+theorem icacheMaintenance_isSome_iff (w : PhysicalWrite) :
+    w.icacheMaintenance.isSome ↔ ∃ base, w = zeroPage base := by
+  cases w <;> simp [icacheMaintenance]
 
 end PhysicalWrite
 

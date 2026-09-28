@@ -48,19 +48,30 @@ exerciser_parse_args() {
 
 # exerciser_boot LABEL: build the exerciser image (Lean-linked when LEAN_KERNEL
 # is 1), boot it on four PEs until its summary line, and name the log in
-# EXERCISER_LOG.  The Lean-linked image runs under `-icount` for the reason
-# `scripts/test_qemu.sh` states.
+# EXERCISER_LOG.
+#
+# Both images run under `-icount shift=0,sleep=off`, the HAL-only one included,
+# because the drivers' verdicts are **bounded waits** — a round's acknowledgment
+# wait (`ROUND_WAIT_TIMEOUT_TICKS`, 540000 ticks, the seam's own budget), the
+# round lock's acquisition fuel and every command's two-second timeout — and
+# under multi-threaded TCG the guest's counter is the host's wall clock.  A vCPU
+# thread the host preempts for longer than a round's 8.6 ms budget then misses
+# the round, which halts the system as the seam does on hardware: measured, the
+# HAL-only stress passed on an idle 4-CPU host and failed with exactly that
+# signature — a round timed out with one core's acknowledgment lagging and the
+# other initiators out of lock fuel — with two CPU hogs beside it.  That is a
+# verdict about the host's scheduler, not the protocol.  Under `-icount` the
+# clock counts guest instructions, so every wait is decided by what the guest
+# does.  (The Lean-linked image needed it first for the reason
+# `scripts/test_qemu.sh` states: one emulated Lean tick outlasts the 1 ms
+# period.)
 exerciser_boot() {
-    local label="$1" deadline extra=()
+    local label="$1" deadline extra=(-icount "shift=0,sleep=off")
     qemu_require_tools
     qemu_build_image "${LEAN_KERNEL}" 1
     qemu_cut_image
     qemu_temp_file EXERCISER_LOG qemu_exercisers
-    deadline="${QEMU_TIMEOUT:-120}"
-    if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
-        deadline="${QEMU_TIMEOUT:-300}"
-        extra=(-icount "shift=0,sleep=off")
-    fi
+    deadline="${QEMU_TIMEOUT:-300}"
     log_section "TRACE" "RUN: ${label} — -machine ${EXERCISER_MACHINE} -smp 4 (deadline: ${deadline}s)"
     # The summary is the third `[smp-test] exercisers: ` line — the
     # announcement, the window, the tally.  A run that never prints it runs to

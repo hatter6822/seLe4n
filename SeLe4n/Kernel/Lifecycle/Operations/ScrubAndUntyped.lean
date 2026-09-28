@@ -1303,6 +1303,26 @@ theorem carveZeroFrame_zeroed (st : SystemState) (frame : FrameObject)
   simp only [hRam, Bool.false_eq_true, ↓reduceIte]
   exact SeLe4n.zeroMemoryRange_establishes_memoryZeroed st.machine _ _
 
+/-- **WS-BP post-landing audit (`v0.36.32`)**: the scrub of a RAM frame records
+exactly one physical write, the zeroing of the frame's own page — the write
+whose `PhysicalWrite.icacheMaintenance` is the frame's clean-to-PoU
+(`carveZeroFrame_discharges_carveScrub_obligation`). -/
+theorem carveZeroFrame_pendingPhysicalWrites (st : SystemState) (frame : FrameObject)
+    (hRam : frame.isDevice = false) :
+    (carveZeroFrame st frame).pendingPhysicalWrites =
+      st.pendingPhysicalWrites ++
+        [SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage frame.base] := by
+  unfold carveZeroFrame
+  simp only [hRam, Bool.false_eq_true, ↓reduceIte]
+
+/-- **WS-BP post-landing audit (`v0.36.32`)**: a device frame's scrub records
+nothing — its page is MMIO, where a store is a command — so it owes no
+maintenance either. -/
+theorem carveZeroFrame_device (st : SystemState) (frame : FrameObject)
+    (hDev : frame.isDevice = true) : carveZeroFrame st frame = st := by
+  unfold carveZeroFrame
+  simp only [hDev, ↓reduceIte]
+
 /-- **WS-BP BP7.1 slice 4**: a request's scrub moves no object... -/
 @[simp] theorem CarveRequest.scrub_objects (st : SystemState) (ut : UntypedObject)
     (req : CarveRequest) : (req.scrub st ut).objects = st.objects := by
