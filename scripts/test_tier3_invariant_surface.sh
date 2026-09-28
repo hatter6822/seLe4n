@@ -7928,7 +7928,7 @@ run_check "INVARIANT" rg -n -F -- 'if acked < generation:' scripts/qemu_exercise
 run_check "INVARIANT" rg -n -F -- 'if iterations != list(range(32)):' scripts/qemu_exerciser_lib.sh
 run_check "INVARIANT" rg -n -F -- 'if len(set(generations)) != len(generations):' scripts/qemu_exerciser_lib.sh
 run_check "INVARIANT" rg -n -F -- 'if line.startswith("[smp-test] tlb-shootdown-stress: stale translation"):' scripts/qemu_exerciser_lib.sh
-run_check "INVARIANT" rg -n -F -- 'require("[smp-test] exercisers: 4 passed, 0 failed")' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'require(f"[smp-test] exercisers: {len(every)} passed, 0 failed")' scripts/qemu_exerciser_lib.sh
 # Every executable gate boots and checks through the shared library and names
 # its driver; every user-program gate reports NOT RUN through it, exiting
 # SELE4N_SKIP_EXIT, and none reads a pre-built image any more.
@@ -7971,6 +7971,78 @@ run_check "INVARIANT" rg -n '^gate test_qemu_smp_shootdown_stress\.sh$' scripts/
 # The boxes the run decides are ticked on its evidence, and stay ticked.
 run_prose_check "INVARIANT" rg -n -F -- '- [x] Tier 0..4 green; QEMU shootdown test passes' docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md
 run_prose_check "INVARIANT" rg -n -F -- '- [x] Tier-4 reports a result rather than a SKIP (' docs/planning/SMP_BOOT_PATH_PLAN.md
+
+# ----------------------------------------------------------------------------
+# WS-BP BP8.5 (v0.36.29): the per-core counters are read on the booted machine
+# -- `perCoreStats` executed, `perCoreStatsPlausible` decided there.
+# ----------------------------------------------------------------------------
+# One selector-driven seam, `BaseIO UInt64` so it crosses as a `uint64_t`:
+# the four counters in the snapshot's own order, the verdict as `1`/`0`, and
+# every other selector or an unknown core refused with every bit set -- which
+# no counter reaches and neither verdict is.  The export decodes the core as
+# every per-core entry does and reads nothing at a core the model lacks.
+run_check "INVARIANT" rg -n -U '@\[export lean_per_core_stats_component\]\ndef perCoreStatsComponentExport \(coreId selector : UInt64\) : BaseIO UInt64 :=' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n -U 'match coreIdOfUInt64\? coreId with\n\s+\| some core => perCoreStatsComponent core selector\n\s+\| none => pure perCoreStatsRefused' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n -U 'match selector\.toNat with\n\s+\| 0 => s\.irqs\n\s+\| 1 => s\.timerTicks\n\s+\| 2 => s\.sgis\n\s+\| 3 => s\.syscalls\n\s+\| 4 => if perCoreStatsPlausible s then 1 else 0\n\s+\| _ => perCoreStatsRefused' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^def perCoreStatsRefused : UInt64 := 0xFFFFFFFFFFFFFFFF$' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsSelect_plausible_iff($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsSelect_refused($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsRefused_ne_zero($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsRefused_ne_one($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsComponent_def($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsComponent_plausible($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsComponentExport_of_core($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsComponentExport_refused($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+# The Rust side mirrors the selectors and the refusal as named constants, and
+# the seam is a Lean upcall like every other: declared and called inside the
+# readiness guard's true branch in one function, that function a
+# `LEAN_READY_GATED_SEAMS` entry, never called at a function's top level.
+run_check "INVARIANT" rg -n '^pub const STATS_IRQS: u64 = 0;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_TIMER_TICKS: u64 = 1;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_SGIS: u64 = 2;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_SYSCALLS: u64 = 3;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_PLAUSIBLE: u64 = 4;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_REFUSED: u64 = u64::MAX;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'lean_ready\(core_id as usize\) \{\n\s+extern "C" \{\n\s+fn lean_per_core_stats_component\(core_id: u64, selector: u64\) -> u64;' rust/sele4n-hal/src/smp_exercisers.rs
+run_negative_check "INVARIANT" rg -n '^    unsafe \{ lean_per_core_stats_component\(' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U '"src/smp_exercisers\.rs",\n        "lean_stats_component",\n        "lean_per_core_stats_component",' rust/sele4n-hal/build.rs
+# The driver reads each slot in the reader's own order on both sides -- the
+# subtypes, the total, the syscalls -- with the Lean words between two Rust
+# reads of the same slot and the verdict asked last; the verdict on a core is
+# decided refused, plausible, interrupted, ticked, bracketed, in that order;
+# the slots are told apart before any snapshot by SGI counts read live and
+# chained core by core, and told apart again from the words the seam reported;
+# the driver tallies on the Lean image and only says so on the HAL-only one.
+run_check "INVARIANT" rg -n -U 'let timer_ticks = crate::per_cpu_stats::timer_tick_count_for\(core\);\n\s+let sgis = crate::per_cpu_stats::sgi_count_for\(core\);\n\s+let irqs = crate::per_cpu_stats::irq_count_for\(core\);\n\s+let syscalls = crate::per_cpu_stats::syscall_count_for\(core\);' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'let before = rust_counters\(core\);\n\s+let timer_ticks = lean_stats_component\(core, STATS_TIMER_TICKS\);\n\s+let sgis = lean_stats_component\(core, STATS_SGIS\);\n\s+let irqs = lean_stats_component\(core, STATS_IRQS\);\n\s+let syscalls = lean_stats_component\(core, STATS_SYSCALLS\);\n\s+let plausible = lean_stats_component\(core, STATS_PLAUSIBLE\);\n\s+let after = rust_counters\(core\);' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'let words = lean\.counters;[^\n]*(\n([ \t][^\n]*)?)*\.contains\(&STATS_REFUSED\)[^\n]*(\n([ \t][^\n]*)?)*if lean\.plausible != 1 \{[^\n]*(\n([ \t][^\n]*)?)*if words\.irqs == 0 \{[^\n]*(\n([ \t][^\n]*)?)*if words\.timer_ticks == 0 \{[^\n]*(\n([ \t][^\n]*)?)*if !\(before\.le\(&words\) && words\.le\(after\)\) \{[^\n]*(\n([ \t][^\n]*)?)*Ok\(\(\)\)' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'let target = floor\.saturating_add\(STATS_SGI_SPREAD\);[^\n]*(\n([ \t][^\n]*)?)*while crate::per_cpu_stats::sgi_count_for\(core\) < target \{[^\n]*(\n([ \t][^\n]*)?)*floor = crate::per_cpu_stats::sgi_count_for\(core\);' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_SGI_SPREAD: u64 = 64;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_SPREAD_FUEL: u64 = 4096;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -F -- 'if sgi_counts[a] == sgi_counts[b] {' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'if let Some\(ok\) = per_core_stats\(\) \{\n\s+tally\("per-core-stats", ok\);' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(not\(feature = "hw_target"\)\)\]\nfn per_core_stats\(\) -> Option<bool> \{[^\n]*(\n([ \t][^\n]*)?)*per-core-stats: not run \(no Lean kernel linked[^\n]*(\n([ \t][^\n]*)?)*None' rust/sele4n-hal/src/smp_exercisers.rs
+# The checker re-derives every relation from the words the seam reported, on
+# the Lean image alone -- where the driver is one of the five it tallies.
+run_check "INVARIANT" rg -n -U '^if lean:\n    every\.append\("per-core-stats"\)$' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if plausible != 1:' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if ticks + sgis > irqs:' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if irqs == 0 or ticks == 0:' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if not all(b <= w <= a for b, w, a in zip(before, words, after)):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if len(set(sgis_by_core.values())) != len(sgis_by_core):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n '^EXERCISER_DRIVERS=\(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats\)$' scripts/qemu_exerciser_lib.sh
+# The gate runs on the Lean-linked image alone and reports NOT RUN otherwise;
+# the Tier-4 runner runs it in that mode only, and the archive lane reaches it
+# through the all-driver gate's Lean run.
+run_check "INVARIANT" rg -n -F -- '"per-core counters on the booted machine" per-core-stats --lean-kernel' scripts/test_qemu_smp_per_core_stats.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -U 'if \[\[ "\$\{LEAN_KERNEL\}" -ne 1 \]\]; then[^\n]*(\n([ \t][^\n]*)?)*exit "\$\{SELE4N_SKIP_EXIT:-77\}"' scripts/test_qemu_smp_per_core_stats.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -U '^gate_lean_only\(\) \{\n    if \[\[ "\$\{LEAN_MODE\}" -eq 1 \]\]; then\n        run_gate_check "META" "\$\{SCRIPT_DIR\}/\$1" --lean-kernel\n    else\n        record_skip' scripts/test_tier4_smp_bootcheck.sh
+run_check "INVARIANT" rg -n '^gate_lean_only test_qemu_smp_per_core_stats\.sh$' scripts/test_tier4_smp_bootcheck.sh
+run_negative_check "INVARIANT" rg -n '^gate test_qemu_smp_per_core_stats\.sh$' scripts/test_tier4_smp_bootcheck.sh
+# The box the run decides is ticked on its evidence, and stays ticked.
+run_prose_check "INVARIANT" rg -n -F -- '- [x] Every booted core' docs/planning/SMP_BOOT_PATH_PLAN.md
 
 # ============================================================================
 # WS-SM SM9.B — refusal auditing

@@ -31,7 +31,7 @@
 
 EXERCISER_MACHINE="virt,gic-version=2,virtualization=on"
 EXERCISER_SUMMARY="[smp-test] exercisers: "
-EXERCISER_DRIVERS=(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress)
+EXERCISER_DRIVERS=(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats)
 
 # exerciser_parse_args "$@": `--lean-kernel` selects the Lean-linked image
 # (LEAN_KERNEL=1); any other argument is an error.
@@ -71,16 +71,18 @@ exerciser_boot() {
 
 # exerciser_check LABEL DRIVER...: hold EXERCISER_LOG to the named drivers'
 # banners — each of `sgi-round-trip`, `kprintln-stress`, `tlb-shootdown`,
-# `tlb-shootdown-stress`, or `all` for every driver and the summary tally.
-# Records a failure per finding; returns 1 on any.
+# `tlb-shootdown-stress`, `per-core-stats` (WS-BP BP8.5; the Lean-linked image
+# only, since the reader and the verdict are the kernel's), or `all` for every
+# driver the image runs and the summary tally.  Records a failure per finding;
+# returns 1 on any.
 exerciser_check() {
     local label="$1" verdict
     shift
-    verdict=$(python3 - "${EXERCISER_LOG}" "$@" <<'PY'
+    verdict=$(python3 - "${EXERCISER_LOG}" "${LEAN_KERNEL}" "$@" <<'PY'
 import re
 import sys
 
-log_path, drivers = sys.argv[1], sys.argv[2:]
+log_path, lean, drivers = sys.argv[1], sys.argv[2] == "1", sys.argv[3:]
 with open(log_path, encoding="utf-8", errors="replace") as handle:
     lines = handle.read().split("\n")
 failures = []
@@ -107,9 +109,11 @@ for line in lines:
 if not any(line.startswith("[smp-test] exercisers: window installed at ") for line in lines):
     failures.append("the exercisers' window was not installed")
 every = ["sgi-round-trip", "kprintln-stress", "tlb-shootdown", "tlb-shootdown-stress"]
+if lean:
+    every.append("per-core-stats")
 if "all" in drivers:
     drivers = every
-    require("[smp-test] exercisers: 4 passed, 0 failed")
+    require(f"[smp-test] exercisers: {len(every)} passed, 0 failed")
 for driver in drivers:
     for line in lines:
         if line == f"[smp-test] FAIL: {driver}" or line.startswith(f"[smp-test] FAIL: {driver}:"):
@@ -157,6 +161,34 @@ for driver in drivers:
         for line in lines:
             if line.startswith("[smp-test] tlb-shootdown-stress: stale translation"):
                 failures.append(f"a stale translation survived a round: {line!r}")
+    elif driver == "per-core-stats":
+        # WS-BP BP8.5: the relations, re-derived from the words the seam
+        # reported rather than taken from the driver's own verdict -- the
+        # verdict `1` beside words that refute it is a seam answering `1`
+        # unconditionally, which the driver alone could not see.
+        require("[smp-test] per-core-stats: every core's snapshot is plausible, ticked, and inside its own slot's bracket")
+        sgis_by_core = {}
+        for core in range(4):
+            lean_lines = matches(rf"\[smp-test\] per-core-stats: core {core}: lean irqs=(\d+) timer-ticks=(\d+) sgis=(\d+) syscalls=(\d+) plausible=(\d+)")
+            rust_lines = matches(rf"\[smp-test\] per-core-stats: core {core}: rust before irqs=(\d+) timer-ticks=(\d+) sgis=(\d+) syscalls=(\d+) after irqs=(\d+) timer-ticks=(\d+) sgis=(\d+) syscalls=(\d+)")
+            if len(lean_lines) != 1 or len(rust_lines) != 1:
+                failures.append(f"per-core-stats: core {core}: expected one Lean line and one Rust line, found {len(lean_lines)} and {len(rust_lines)}")
+                continue
+            irqs, ticks, sgis, syscalls, plausible = (int(g) for g in lean_lines[0].groups())
+            before = tuple(int(g) for g in rust_lines[0].groups()[:4])
+            after = tuple(int(g) for g in rust_lines[0].groups()[4:])
+            words = (irqs, ticks, sgis, syscalls)
+            if plausible != 1:
+                failures.append(f"per-core-stats: core {core}: the verdict is {plausible}, not 1")
+            if ticks + sgis > irqs:
+                failures.append(f"per-core-stats: core {core}: the words refute the verdict: {ticks} + {sgis} > {irqs}")
+            if irqs == 0 or ticks == 0:
+                failures.append(f"per-core-stats: core {core}: a serving core reports irqs={irqs} timer-ticks={ticks}")
+            if not all(b <= w <= a for b, w, a in zip(before, words, after)):
+                failures.append(f"per-core-stats: core {core}: a word is outside its slot's bracket: before {before}, lean {words}, after {after}")
+            sgis_by_core[core] = sgis
+        if len(set(sgis_by_core.values())) != len(sgis_by_core):
+            failures.append(f"per-core-stats: two cores report one SGI count ({sgis_by_core}), so a wrong slot could not be told from the right one")
     else:
         failures.append(f"unknown driver {driver!r}")
 for failure in failures:

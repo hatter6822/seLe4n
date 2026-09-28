@@ -6623,16 +6623,16 @@ theorem lockSet_consistent_pageTableMap (callerTid : ThreadId)
   lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        · rw [h]; simp [tcbLock, permittedKinds]
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        · rw [h]; simp [cnodeLock, permittedKinds]
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        · rw [h]; simp [pageLock, permittedKinds]
         exact absurd hMem (by intro h; cases h))
     (by intro pp hpp
         cases root with
         | none => simp at hpp
-        | some r => simp at hpp; rw [← hpp]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds])
+        | some r => simp at hpp; rw [← hpp]; simp [vspaceRootLock, permittedKinds])
 
 /-- WS-BP BP7.1 (`v0.36.12`), for `.pageTableUnmap`: the same shape. -/
 theorem lockSet_consistent_pageTableUnmap (callerTid : ThreadId)
@@ -6642,15 +6642,15 @@ theorem lockSet_consistent_pageTableUnmap (callerTid : ThreadId)
   lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        · rw [h]; simp [tcbLock, permittedKinds]
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        · rw [h]; simp [cnodeLock, permittedKinds]
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds]
+        · rw [h]; simp [pageLock, permittedKinds]
         exact absurd hMem (by intro h; cases h))
     (by intro pp hpp
         cases root with
         | none => simp at hpp
-        | some r => simp at hpp; rw [← hpp]; simp [tcbLock, cnodeLock, pageLock, vspaceRootLock, permittedKinds])
+        | some r => simp at hpp; rw [← hpp]; simp [vspaceRootLock, permittedKinds])
 
 end SeLe4n.Kernel.Concurrency

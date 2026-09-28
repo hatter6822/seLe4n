@@ -265,16 +265,22 @@ pub struct BackingPages([[u64; PAGE_WORDS]; 2 * CORE_COUNT]);
 
 /// Interior-mutable storage for the tables and pages.
 ///
-/// The boot core is the only core that writes either through Rust (the
-/// install and every remap run there); every other access is the hardware's
-/// — the translation-table walker reading the tables, and a core's probe
-/// reading a page through the window alias, which is a volatile load through
-/// an address the walker resolves, never a Rust reference into the static.
+/// Every Rust access to the contents is a volatile access through a raw
+/// pointer, never a reference.  The boot core fills every page and every
+/// entry at the install, before any other core reaches the window; after it
+/// the only Rust writes are a core's own level-3 entry, written by the page's
+/// owner alone — on the boot core for its page, in a secondary's own agent
+/// handler for that secondary's (`COMMAND_ROUND`) — so no two cores write one
+/// location.  Every other access is the hardware's: the translation-table
+/// walker reading the tables, and a core's probe reading a page through the
+/// window alias, a volatile load through an address the walker resolves.
 pub struct ExerciserCell<T>(UnsafeCell<T>);
 
-// SAFETY: see the type's docstring — one Rust writer (the boot core), and the
-// other cores reach the contents only through hardware translation, so no two
-// Rust references to the contents ever coexist.
+// SAFETY: see the type's docstring — no Rust reference to the contents is
+// ever formed, every write is a volatile write to a location one core owns
+// (the install's, before any other core touches the window; afterwards a
+// core's own level-3 entry), so no two cores write one location and no
+// reference can alias a write.
 unsafe impl<T> Sync for ExerciserCell<T> {}
 
 static TABLES: ExerciserCell<WindowTables> = ExerciserCell(UnsafeCell::new(WindowTables {
@@ -312,9 +318,10 @@ fn physical_address<T>(pointer: *mut T) -> u64 {
 /// ARMv8 page-table-update bracket (`dsb ishst; dc cvac; dsb ish; isb`).
 fn store_window_entry(core: usize, descriptor: u64) {
     let entry = level3_table_pointer().wrapping_add(core);
-    // SAFETY: `entry` is inside `TABLES`, a static this core alone writes, at
-    // an aligned `u64`; the write is volatile because the walker reads the
-    // table behind the compiler's back.
+    // SAFETY: `entry` is `core`'s own level-3 entry inside `TABLES`, at an
+    // aligned `u64`, written by the page's owner alone once the install is
+    // done (`ExerciserCell`'s discipline); the write is volatile because the
+    // walker reads the table behind the compiler's back.
     unsafe { entry.write_volatile(descriptor) };
     crate::barriers::BarrierKind::emit_armv8_page_table_update(physical_address(entry));
 }
@@ -925,13 +932,17 @@ fn shootdown_stress() -> bool {
     pass
 }
 
+/// How many drivers this image runs: the four of BP8.4 on every image, and
+/// the per-core counter check on the image that links the kernel (BP8.5).
+const DRIVER_COUNT: u32 = if cfg!(feature = "hw_target") { 5 } else { 4 };
+
 /// How long the boot core waits for every PE to become IRQ-serviceable: one
 /// second of the counter.
 fn serviceable_wait_ticks() -> u64 {
     u64::from(crate::timer::read_frequency())
 }
 
-/// Run the four drivers on the boot core, after Phase 7.  Every PE must be
+/// Run the drivers on the boot core, after Phase 7.  Every PE must be
 /// IRQ-serviceable (the shootdown protocol's own online set); a machine with
 /// fewer reports that and runs nothing, which is what a gate reads as NOT RUN.
 pub fn run_on_boot_core(smp_enabled: bool) {
@@ -954,7 +965,7 @@ pub fn run_on_boot_core(smp_enabled: bool) {
     }
     if let Err(refusal) = install_window() {
         crate::kprintln!("[smp-test] FAIL: exercisers: the window was refused: {refusal:?}");
-        crate::kprintln!("[smp-test] exercisers: 0 passed, 4 failed");
+        crate::kprintln!("[smp-test] exercisers: 0 passed, {DRIVER_COUNT} failed");
         return;
     }
     crate::kprintln!(
@@ -974,7 +985,319 @@ pub fn run_on_boot_core(smp_enabled: bool) {
     tally("kprintln-stress", kprintln_stress());
     tally("tlb-shootdown", shootdown_round_trip());
     tally("tlb-shootdown-stress", shootdown_stress());
+    // WS-BP BP8.5: the counters, read through the Lean seam on an image that
+    // links the kernel; the HAL-only image reports it not run and counts it in
+    // neither column.
+    if let Some(ok) = per_core_stats() {
+        tally("per-core-stats", ok);
+    }
     crate::kprintln!("[smp-test] exercisers: {passed} passed, {failed} failed");
+}
+
+// ============================================================================
+// WS-BP BP8.5 — the counters read on the booted machine
+// ============================================================================
+
+/// The selectors `lean_per_core_stats_component` answers, in the order
+/// `perCoreStatsSelect` declares them (`SeLe4n/Kernel/Concurrency/Runtime.lean`):
+/// the four counters, then the plausibility verdict.
+pub const STATS_IRQS: u64 = 0;
+/// The timer-tick word (`PerCoreStatsSnapshot.timerTicks`).
+pub const STATS_TIMER_TICKS: u64 = 1;
+/// The SGI word (`PerCoreStatsSnapshot.sgis`).
+pub const STATS_SGIS: u64 = 2;
+/// The syscall word (`PerCoreStatsSnapshot.syscalls`).
+pub const STATS_SYSCALLS: u64 = 3;
+/// The verdict: `1` when `perCoreStatsPlausible` holds of the snapshot read
+/// for this call, `0` when it does not.
+pub const STATS_PLAUSIBLE: u64 = 4;
+/// What the seam answers for a core the model does not have or a selector it
+/// does not define (`perCoreStatsRefused`): every bit set, which no counter
+/// reaches and neither verdict is.  A not-ready core answers it too.
+pub const STATS_REFUSED: u64 = u64::MAX;
+/// The least gap between the SGI counts of two cores adjacent in core order
+/// that the driver establishes before any snapshot, so the four slots are
+/// pairwise distinguishable by that word: a snapshot read off ANOTHER core's
+/// slot — an accessor resolving to the wrong slot, which is what the counters
+/// were declared to catch — then cannot fall inside its own core's bracket.
+/// The timer-tick counts alone could not tell the slots apart: the four cores
+/// tick at one rate from nearly one instant.  Sixty-four leaves room for the
+/// stray SGIs a running kernel may send between the spread and the snapshots.
+pub const STATS_SGI_SPREAD: u64 = 64;
+/// The most commands the spread sends one core before giving up on it — a
+/// bound on the driver's running time rather than a budget a healthy run
+/// approaches, since each core needs about [`STATS_SGI_SPREAD`] commands plus
+/// whatever the earlier drivers left the core before it ahead by.
+pub const STATS_SPREAD_FUEL: u64 = 4096;
+
+/// One core's four counters.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CounterSnapshot {
+    /// Every IRQ the core's handler dispatched.
+    pub irqs: u64,
+    /// The timer PPI alone; a subset of `irqs`.
+    pub timer_ticks: u64,
+    /// The SGIs alone; a subset of `irqs`, disjoint from the timer PPI.
+    pub sgis: u64,
+    /// `SVC` dispatches; not an interrupt.
+    pub syscalls: u64,
+}
+
+impl CounterSnapshot {
+    /// Component-wise `self <= other`.  The counters only grow, so a snapshot
+    /// taken before another is at most it, component by component — which is
+    /// what makes a read between two Rust reads of the same slot checkable
+    /// without an atomic snapshot of four words.
+    pub const fn le(&self, other: &CounterSnapshot) -> bool {
+        self.irqs <= other.irqs
+            && self.timer_ticks <= other.timer_ticks
+            && self.sgis <= other.sgis
+            && self.syscalls <= other.syscalls
+    }
+}
+
+/// A core's counters read on the Rust side, in the order the Lean reader takes
+/// them — the subtypes first, the total last (`perCoreStats`, PR #892 review
+/// round 2) — so this snapshot satisfies the containment for the same reason:
+/// every subtype increment it observes was preceded by a total increment the
+/// later total read includes.  Read by the driver alone, which runs on the
+/// Lean-linked image alone.
+#[cfg(feature = "hw_target")]
+fn rust_counters(core: usize) -> CounterSnapshot {
+    let timer_ticks = crate::per_cpu_stats::timer_tick_count_for(core);
+    let sgis = crate::per_cpu_stats::sgi_count_for(core);
+    let irqs = crate::per_cpu_stats::irq_count_for(core);
+    let syscalls = crate::per_cpu_stats::syscall_count_for(core);
+    CounterSnapshot {
+        irqs,
+        timer_ticks,
+        sgis,
+        syscalls,
+    }
+}
+
+/// A core's snapshot as the Lean seam reports it: the four words and the
+/// verdict, each from a read of its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LeanSnapshot {
+    /// The four words.
+    pub counters: CounterSnapshot,
+    /// The verdict word: `1`, `0`, or [`STATS_REFUSED`].
+    pub plausible: u64,
+}
+
+/// Why a core's snapshot fails the gate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StatsFailure {
+    /// The seam refused a read: a core the model does not have, or a core
+    /// whose runtime is not ready.
+    Refused,
+    /// The verdict is not `1`: the snapshot cannot have come from a coherent
+    /// slot.
+    NotPlausible,
+    /// A serving core reports no IRQ at all, though it ticks.
+    NoIrqs,
+    /// A serving core reports no timer tick.
+    NoTicks,
+    /// A word the seam reported is below the Rust read before it or above the
+    /// Rust read after it — the two reads bracket every read of the SAME slot,
+    /// so a word outside them was read off another.
+    OutsideBracket,
+}
+
+/// The verdict on one core, decided on three reads — the Rust counters before,
+/// the Lean words, the Rust counters after: what BP8.5 requires of a core of
+/// the booted machine.  Pure, so it is tested on the host.
+pub fn stats_verdict(
+    before: &CounterSnapshot,
+    lean: &LeanSnapshot,
+    after: &CounterSnapshot,
+) -> Result<(), StatsFailure> {
+    let words = lean.counters;
+    if [
+        words.irqs,
+        words.timer_ticks,
+        words.sgis,
+        words.syscalls,
+        lean.plausible,
+    ]
+    .contains(&STATS_REFUSED)
+    {
+        return Err(StatsFailure::Refused);
+    }
+    if lean.plausible != 1 {
+        return Err(StatsFailure::NotPlausible);
+    }
+    if words.irqs == 0 {
+        return Err(StatsFailure::NoIrqs);
+    }
+    if words.timer_ticks == 0 {
+        return Err(StatsFailure::NoTicks);
+    }
+    if !(before.le(&words) && words.le(after)) {
+        return Err(StatsFailure::OutsideBracket);
+    }
+    Ok(())
+}
+
+/// One word of `core`'s snapshot through the Lean seam — `perCoreStats` on the
+/// booted machine — or [`STATS_REFUSED`] on a core whose runtime is not ready,
+/// which the boot core is not once it has passed Phase 7.  The call is behind
+/// the readiness gate like every Lean upcall (`LEAN_READY_GATED_SEAMS` in
+/// `build.rs`): the contract in `lean_ready.rs` admits no exception for a pure
+/// read, since it is about the symbol, not the function.
+#[cfg(feature = "hw_target")]
+fn lean_stats_component(core: usize, selector: u64) -> u64 {
+    let core_id = crate::per_cpu::current_core_id_from_tpidr();
+    if crate::lean_ready::lean_ready(core_id as usize) {
+        extern "C" {
+            /// # Safety
+            ///
+            /// Sound only on a core whose Lean runtime is initialised —
+            /// `lean_ready(current_core_id_from_tpidr())` must have returned
+            /// `true` on *this* PE, which the enclosing branch has just
+            /// checked.  It reads the per-core counters through this crate's
+            /// four `ffi_per_core_*_count` accessors, allocates the snapshot
+            /// on the kernel's Lean heap and frees it, and commits nothing.
+            fn lean_per_core_stats_component(core_id: u64, selector: u64) -> u64;
+        }
+        // SAFETY: `lean_per_core_stats_component` is the C-callable wrapper
+        // the Lean compiler emits for `Concurrency.perCoreStatsComponentExport`:
+        // two `u64` in, a `u64` out (a `BaseIO UInt64` crosses as `uint64_t`,
+        // which `scripts/check_kernel_entry_exports.py` holds this declaration
+        // to), reading the counters through this crate's own accessors and
+        // touching no kernel state; this core's Lean runtime is initialised —
+        // the `lean_ready` gate just checked — so entering the symbol is within
+        // the runtime's contract.
+        unsafe { lean_per_core_stats_component(core as u64, selector) }
+    } else {
+        STATS_REFUSED
+    }
+}
+
+/// WS-BP BP8.5: read every core's counters through the Lean seam on the booted
+/// machine and hold them to what the counters were declared for.  `Some(pass)`
+/// on an image that links the kernel.
+///
+/// Each core's snapshot is read between two Rust reads of the same slot, so
+/// every word Lean reports must lie inside the bracket — a word outside it was
+/// read off another slot.  The words are asked for in the reader's own order
+/// (the subtypes, the total, the syscalls), each from a later snapshot than the
+/// one before, so `ticks + sgis <= irqs` holds of the reported words too, the
+/// counters being monotone; the verdict is asked last, of a snapshot of its own.
+/// Before any snapshot the four slots are made pairwise distinguishable by
+/// their SGI counts ([`STATS_SGI_SPREAD`] apart, in core order), because the
+/// timer alone cannot tell them apart.
+#[cfg(feature = "hw_target")]
+fn per_core_stats() -> Option<bool> {
+    // 1. Tell the four slots apart: make their SGI counts strictly increasing
+    //    in core order, each at least `STATS_SGI_SPREAD` above the core before
+    //    it, by sending each secondary's agent commands until its own count —
+    //    read on this side, through the Rust twin of the accessor under test —
+    //    is there.  Every command is one SGI to that core, nothing else sends
+    //    one while this driver runs, and the count is read live, so the loop
+    //    ends with the count where it must be whatever the earlier drivers
+    //    left in each slot; a core that stops answering, or whose count does
+    //    not get there within `STATS_SPREAD_FUEL` commands, fails the driver
+    //    rather than hanging it.  The boot core's own count is the floor the
+    //    chain starts from: the driver cannot raise it without an SGI to
+    //    itself.
+    let mut floor = crate::per_cpu_stats::sgi_count_for(0);
+    for core in 1..CORE_COUNT {
+        let target = floor.saturating_add(STATS_SGI_SPREAD);
+        let mut sent = 0u64;
+        while crate::per_cpu_stats::sgi_count_for(core) < target {
+            if sent == STATS_SPREAD_FUEL {
+                crate::kprintln!(
+                    "[smp-test] FAIL: per-core-stats: core {core}'s SGI count did not reach \
+                     {target} within {STATS_SPREAD_FUEL} commands"
+                );
+                return Some(false);
+            }
+            if command(core, COMMAND_PROBE, window_address(core)).is_none() {
+                crate::kprintln!(
+                    "[smp-test] FAIL: per-core-stats: core {core} did not answer a spread command"
+                );
+                return Some(false);
+            }
+            sent += 1;
+        }
+        floor = crate::per_cpu_stats::sgi_count_for(core);
+    }
+    // 2. Each core's snapshot, through the seam, between two Rust reads.
+    let mut pass = true;
+    let mut sgi_counts = [0u64; CORE_COUNT];
+    for (core, sgi_count) in sgi_counts.iter_mut().enumerate() {
+        let before = rust_counters(core);
+        let timer_ticks = lean_stats_component(core, STATS_TIMER_TICKS);
+        let sgis = lean_stats_component(core, STATS_SGIS);
+        let irqs = lean_stats_component(core, STATS_IRQS);
+        let syscalls = lean_stats_component(core, STATS_SYSCALLS);
+        let plausible = lean_stats_component(core, STATS_PLAUSIBLE);
+        let after = rust_counters(core);
+        let lean = LeanSnapshot {
+            counters: CounterSnapshot {
+                irqs,
+                timer_ticks,
+                sgis,
+                syscalls,
+            },
+            plausible,
+        };
+        crate::kprintln!(
+            "[smp-test] per-core-stats: core {core}: lean irqs={irqs} timer-ticks={timer_ticks} \
+             sgis={sgis} syscalls={syscalls} plausible={plausible}"
+        );
+        crate::kprintln!(
+            "[smp-test] per-core-stats: core {core}: rust before irqs={} timer-ticks={} sgis={} \
+             syscalls={} after irqs={} timer-ticks={} sgis={} syscalls={}",
+            before.irqs,
+            before.timer_ticks,
+            before.sgis,
+            before.syscalls,
+            after.irqs,
+            after.timer_ticks,
+            after.sgis,
+            after.syscalls,
+        );
+        if let Err(why) = stats_verdict(&before, &lean, &after) {
+            crate::kprintln!("[smp-test] FAIL: per-core-stats: core {core}: {why:?}");
+            pass = false;
+        }
+        *sgi_count = sgis;
+    }
+    // 3. The slots are told apart by their SGI counts.
+    for a in 0..CORE_COUNT {
+        for b in (a + 1)..CORE_COUNT {
+            if sgi_counts[a] == sgi_counts[b] {
+                crate::kprintln!(
+                    "[smp-test] FAIL: per-core-stats: cores {a} and {b} report one SGI count ({}), \
+                     so a wrong slot could not be told from the right one",
+                    sgi_counts[a]
+                );
+                pass = false;
+            }
+        }
+    }
+    if pass {
+        crate::kprintln!(
+            "[smp-test] per-core-stats: every core's snapshot is plausible, ticked, and inside \
+             its own slot's bracket"
+        );
+    }
+    Some(pass)
+}
+
+/// The HAL-only image links no Lean kernel: the reader and the verdict are the
+/// kernel's, so there is nothing to execute here, and the driver says so rather
+/// than counting in either column.
+#[cfg(not(feature = "hw_target"))]
+fn per_core_stats() -> Option<bool> {
+    crate::kprintln!(
+        "[smp-test] per-core-stats: not run (no Lean kernel linked; the reader and the verdict \
+         are Lean's)"
+    );
+    None
 }
 
 // ============================================================================
@@ -1136,6 +1459,126 @@ mod tests {
             0,
             "the success code the stress requires"
         );
+    }
+
+    fn snapshot(irqs: u64, timer_ticks: u64, sgis: u64, syscalls: u64) -> CounterSnapshot {
+        CounterSnapshot {
+            irqs,
+            timer_ticks,
+            sgis,
+            syscalls,
+        }
+    }
+
+    #[test]
+    fn a_counter_snapshot_is_ordered_component_by_component() {
+        let low = snapshot(5, 3, 2, 0);
+        let high = snapshot(9, 3, 4, 1);
+        assert!(low.le(&low));
+        assert!(low.le(&high));
+        assert!(!high.le(&low));
+        // One component below is enough: the order is not the total's.
+        let mixed = snapshot(100, 2, 2, 0);
+        assert!(!low.le(&mixed));
+        assert!(!mixed.le(&low));
+    }
+
+    #[test]
+    fn the_selectors_are_the_lean_readers_order_and_the_refusal_is_no_counter() {
+        // `perCoreStatsSelect`'s arms, in order, and `perCoreStatsRefused`
+        // (`SeLe4n/Kernel/Concurrency/Runtime.lean`); Tier 3 pins the Lean side.
+        assert_eq!(STATS_IRQS, 0);
+        assert_eq!(STATS_TIMER_TICKS, 1);
+        assert_eq!(STATS_SGIS, 2);
+        assert_eq!(STATS_SYSCALLS, 3);
+        assert_eq!(STATS_PLAUSIBLE, 4);
+        assert_eq!(STATS_REFUSED, u64::MAX);
+        assert_eq!(STATS_SGI_SPREAD, 64);
+        assert_eq!(STATS_SPREAD_FUEL, 4096);
+    }
+
+    #[test]
+    fn the_stats_verdict_accepts_a_plausible_ticked_snapshot_inside_its_bracket() {
+        let before = snapshot(10, 4, 3, 1);
+        let lean = LeanSnapshot {
+            counters: snapshot(12, 5, 3, 1),
+            plausible: 1,
+        };
+        let after = snapshot(12, 5, 4, 2);
+        assert_eq!(stats_verdict(&before, &lean, &after), Ok(()));
+        // A bracket in which nothing moved is a bracket.
+        let still = LeanSnapshot {
+            counters: before,
+            plausible: 1,
+        };
+        assert_eq!(stats_verdict(&before, &still, &before), Ok(()));
+    }
+
+    #[test]
+    fn the_stats_verdict_names_each_failure_and_decides_them_in_order() {
+        let before = snapshot(10, 4, 3, 1);
+        let after = snapshot(12, 5, 4, 2);
+        let good = snapshot(12, 5, 3, 1);
+        let verdict = |counters, plausible| {
+            stats_verdict(
+                &before,
+                &LeanSnapshot {
+                    counters,
+                    plausible,
+                },
+                &after,
+            )
+        };
+        // A refused word in any position is the seam refusing, decided before
+        // any relation between the words is asked.
+        for refused in [
+            snapshot(STATS_REFUSED, 5, 3, 1),
+            snapshot(12, STATS_REFUSED, 3, 1),
+            snapshot(12, 5, STATS_REFUSED, 1),
+            snapshot(12, 5, 3, STATS_REFUSED),
+        ] {
+            assert_eq!(verdict(refused, 1), Err(StatsFailure::Refused));
+        }
+        assert_eq!(verdict(good, STATS_REFUSED), Err(StatsFailure::Refused));
+        // The verdict word is `1` or the snapshot is refused as implausible.
+        assert_eq!(verdict(good, 0), Err(StatsFailure::NotPlausible));
+        assert_eq!(verdict(good, 2), Err(StatsFailure::NotPlausible));
+        // A serving core that took no interrupt, then one that never ticked.
+        let idle = snapshot(0, 0, 0, 0);
+        let idle_lean = LeanSnapshot {
+            counters: idle,
+            plausible: 1,
+        };
+        assert_eq!(
+            stats_verdict(&idle, &idle_lean, &idle),
+            Err(StatsFailure::NoIrqs)
+        );
+        let sgis_only = snapshot(3, 0, 3, 0);
+        let sgis_only_lean = LeanSnapshot {
+            counters: sgis_only,
+            plausible: 1,
+        };
+        assert_eq!(
+            stats_verdict(&sgis_only, &sgis_only_lean, &sgis_only),
+            Err(StatsFailure::NoTicks)
+        );
+        // A word below the read before it, or above the read after it, on any
+        // one component, is a word read off another slot.
+        for outside in [
+            snapshot(9, 5, 3, 1),
+            snapshot(12, 3, 3, 1),
+            snapshot(12, 5, 2, 1),
+            snapshot(12, 5, 3, 0),
+            snapshot(13, 5, 3, 1),
+            snapshot(12, 6, 3, 1),
+            snapshot(12, 5, 5, 1),
+            snapshot(12, 5, 3, 3),
+            // Another core's whole snapshot: plausible and ticked, and caught
+            // by the bracket alone.
+            snapshot(200, 50, 140, 0),
+        ] {
+            assert_eq!(verdict(outside, 1), Err(StatsFailure::OutsideBracket));
+        }
     }
 
     #[test]

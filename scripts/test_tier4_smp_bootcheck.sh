@@ -63,6 +63,16 @@ gate() {
     fi
 }
 
+# gate_lean_only SCRIPT: a gate whose subject is the Lean kernel's, so it runs
+# on the Lean-linked image alone and is NOT RUN without the archive.
+gate_lean_only() {
+    if [[ "${LEAN_MODE}" -eq 1 ]]; then
+        run_gate_check "META" "${SCRIPT_DIR}/$1" --lean-kernel
+    else
+        record_skip "META" "$1 --lean-kernel: needs the Lean-linked image (no archive at ${LEAN_ARCHIVE})"
+    fi
+}
+
 # SM1.H.1 / WS-BP BP8.2 — the four-PE bring-up, at EL1 and EL2.
 gate test_qemu_smp_bringup.sh
 
@@ -86,6 +96,13 @@ gate test_qemu_smp_shootdown.sh
 # SM7.E.3 — four concurrent initiators, eight generations: the round lock's
 # serialisation and the acknowledgment under contention.
 gate test_qemu_smp_shootdown_stress.sh
+
+# WS-BP BP8.5 — the per-core counters read through the Lean seam on the booted
+# machine: `Concurrency.perCoreStats` executed on every core and
+# `perCoreStatsPlausible` decided there, each word held inside the bracket of
+# two Rust reads of the same slot.  The reader and the verdict are the kernel's,
+# so the Lean-linked image alone.
+gate_lean_only test_qemu_smp_per_core_stats.sh
 
 # The gates that need a user program: each reports NOT RUN with its reason.
 # SM3.D.7 — cross-core deadlock-freedom stress (formal:

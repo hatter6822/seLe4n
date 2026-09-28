@@ -422,7 +422,10 @@ declared PE serves the kernel.  `./scripts/test_qemu_smp_exercisers.sh` reads
 all four from one boot; the per-driver gates
 (`test_qemu_smp_sgi_roundtrip.sh`, `test_qemu_smp_kprintln_stress.sh`,
 `test_qemu_smp_shootdown.sh`, `test_qemu_smp_shootdown_stress.sh`) each read
-one; and the PE-withheld boot is `./scripts/test_qemu_smp_minimal.sh`
+one; the per-core counter check (WS-BP BP8.5,
+`./scripts/test_qemu_smp_per_core_stats.sh --lean-kernel`) is the fifth driver
+and runs on the Lean-linked image alone, since the reader and the verdict are
+the kernel's; and the PE-withheld boot is `./scripts/test_qemu_smp_minimal.sh`
 (`-smp 2`).  `./scripts/test_tier4_smp_bootcheck.sh` orchestrates every
 Tier-4 gate on both images, HAL-only and `--lean-kernel`; the eight gates
 that need a user program report NOT RUN until SM10's root task exists.
@@ -540,6 +543,7 @@ anything, so wire a hardware test in directly rather than behind a
 # scripts/test_tier4_smp_bootcheck.sh (since WS-BP BP8.4): each executable
 # gate on the HAL-only image and, when the archive exists, --lean-kernel.
 gate test_qemu_smp_bringup.sh        # run_gate_check, both images
+gate_lean_only test_qemu_smp_per_core_stats.sh   # the Lean-linked image alone (BP8.5)
 # ... plus the SM10.3 scripts as they land
 ```
 

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/loving-babbage-2z8r8z",
-      "commit_sha": "fc23c023adb1d4ca03cc7dc23e8b4bfde8a7234b",
-      "tree_sha": "5cd3dd6b8c8e213131b8f5603b4f260f74a3ecbb",
-      "committed_at_utc": "2026-09-28T04:11:00+00:00"
+      "commit_sha": "5012c2847408ab6dc4f9c7ba59e76a1a7b2c0118",
+      "tree_sha": "ad4012b82ffcde0d140a8bb62e3ce73b4b2bf31e",
+      "committed_at_utc": "2026-09-28T07:58:23+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "98e5433b9784c9e8c7e00dcc591a135bf9bfc708a9dee2c503e72ce6eadf19ff"
+    "source_digest": "bb9e244e6bef2afc0d282d483f57d65ceeea897b0abc269ffcb546cbcc5e4fad"
   },
   "summary": {
     "module_count": 432,
-    "declaration_count": 24177
+    "declaration_count": 24194
   },
   "readme_sync": {
-    "version": "0.36.28",
+    "version": "0.36.29",
     "lean_toolchain": "v4.28.0",
     "production_files": 361,
-    "production_loc": 432837,
+    "production_loc": 432957,
     "test_files": 71,
     "test_loc": 88168,
-    "proved_theorem_lemma_decls": 14357,
+    "proved_theorem_lemma_decls": 14370,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -64632,7 +64632,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Runtime",
       "path": "SeLe4n/Kernel/Concurrency/Runtime.lean",
-      "declaration_count": 87,
+      "declaration_count": 104,
       "declarations": [
         {
           "kind": "namespace",
@@ -65538,6 +65538,179 @@
             "CoreId",
             "numCores",
             "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "perCoreStatsRefused",
+          "line": 1064,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "perCoreStatsSelect",
+          "line": 1080,
+          "called": [
+            "PerCoreStatsSnapshot",
+            "perCoreStatsPlausible",
+            "perCoreStatsRefused",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsSelect_irqs",
+          "line": 1089,
+          "called": [
+            "PerCoreStatsSnapshot",
+            "perCoreStatsSelect"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsSelect_timerTicks",
+          "line": 1092,
+          "called": [
+            "PerCoreStatsSnapshot",
+            "perCoreStatsSelect"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsSelect_sgis",
+          "line": 1095,
+          "called": [
+            "PerCoreStatsSnapshot",
+            "perCoreStatsSelect"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsSelect_syscalls",
+          "line": 1098,
+          "called": [
+            "PerCoreStatsSnapshot",
+            "perCoreStatsSelect"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsSelect_plausible",
+          "line": 1101,
+          "called": [
+            "PerCoreStatsSnapshot",
+            "perCoreStatsPlausible",
+            "perCoreStatsSelect"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsSelect_plausible_iff",
+          "line": 1106,
+          "called": [
+            "PerCoreStatsSnapshot",
+            "perCoreStatsPlausible",
+            "perCoreStatsSelect",
+            "perCoreStatsSelect_plausible"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsSelect_refused",
+          "line": 1112,
+          "called": [
+            "PerCoreStatsSnapshot",
+            "perCoreStatsRefused",
+            "perCoreStatsSelect",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsRefused_ne_zero",
+          "line": 1117,
+          "called": [
+            "perCoreStatsRefused"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsRefused_ne_one",
+          "line": 1119,
+          "called": [
+            "perCoreStatsRefused"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "perCoreStatsComponent",
+          "line": 1126,
+          "called": [
+            "CoreId",
+            "perCoreStats",
+            "perCoreStatsSelect",
+            "pure"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsComponent_def",
+          "line": 1133,
+          "called": [
+            "CoreId",
+            "perCoreStats",
+            "perCoreStatsComponent",
+            "perCoreStatsSelect",
+            "pure"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsComponent_plausible",
+          "line": 1138,
+          "called": [
+            "CoreId",
+            "perCoreStats",
+            "perCoreStatsComponent",
+            "perCoreStatsPlausible",
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "perCoreStatsComponentExport",
+          "line": 1156,
+          "called": [
+            "coreIdOfUInt64",
+            "none",
+            "perCoreStatsComponent",
+            "perCoreStatsRefused",
+            "pure"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsComponentExport_of_core",
+          "line": 1162,
+          "called": [
+            "coreIdOfUInt64",
+            "numCores",
+            "perCoreStatsComponent",
+            "perCoreStatsComponentExport",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreStatsComponentExport_refused",
+          "line": 1170,
+          "called": [
+            "coreIdOfUInt64",
+            "numCores",
+            "perCoreStatsComponentExport",
+            "perCoreStatsRefused",
+            "pure",
             "toNat"
           ]
         }

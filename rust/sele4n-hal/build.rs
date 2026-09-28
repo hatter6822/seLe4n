@@ -2291,6 +2291,14 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
         "classify_synchronous_exception",
         "lean_classify_synchronous_exception",
     ),
+    // WS-BP BP8.5: the Tier-4 driver reads `perCoreStats` on the booted
+    // machine through the Lean seam, one word per call, from the boot core; a
+    // not-ready core is answered the refusal instead.
+    (
+        "src/smp_exercisers.rs",
+        "lean_stats_component",
+        "lean_per_core_stats_component",
+    ),
     // WS-RR RR5.6: the SVC dispatch seam — the highest-traffic route into the
     // Lean runtime, and one of the two `kernel_entry.rs`'s five-entry table
     // claimed consulted the gate while neither did.

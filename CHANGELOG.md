@@ -1,3 +1,136 @@
+## v0.36.29 — WS-BP BP8.5: the per-core counters are read on the booted machine
+
+`Concurrency.perCoreStats` reads a core's four counters through the HAL's
+accessors and `perCoreStatsPlausible` states their containment — the timer-PPI
+and SGI counts are disjoint subsets of the IRQ total, so their sum is bounded by
+it (WS-RR RR7.33, finding 98).  Both were proved and runtime-checked, and until
+this cut executed on no machine: nothing on the image called them.  Now the
+Lean-linked `virt` image reads every core's snapshot through the kernel's own
+reader on every PR, the verdict is decided there, and the gate re-derives every
+relation from the words the seam reported.  BP8.5's acceptance box is ticked on
+the run.
+
+### One seam, one word per call
+
+`lean_per_core_stats_component(core, selector)` is `perCoreStatsComponentExport`
+(`SeLe4n/Kernel/Concurrency/Runtime.lean`): `BaseIO UInt64`, so it crosses as a
+`uint64_t`, which `check_kernel_entry_exports.py` holds the HAL's declaration
+to over both archives.  `perCoreStatsSelect`'s arms are the four counters in the
+snapshot's own order (`0..3`) and the verdict (`4`, as `1`/`0`); every other
+selector, and a core the model lacks, is refused with every bit set
+(`perCoreStatsRefused`), which no counter reaches in the life of a machine and
+neither verdict is (`perCoreStatsRefused_ne_zero`, `_ne_one`).  One selector
+rather than five symbols, because a `UInt64` is the widest scalar an export may
+return and the four counters are each one — one symbol to declare, one call to
+gate, one entry in every inventory that reads the export set.  The export
+decodes the core as every per-core entry does (`coreIdOfUInt64?`) and reads
+nothing at a core the model lacks (`perCoreStatsComponentExport_refused`); each
+call is one `perCoreStats` read projected and nothing else
+(`perCoreStatsComponent_def`, the pin against a second table of accessors).  It
+commits nothing, so it needs no entry lock, and it is a Lean upcall like every
+other: declared and called inside the readiness guard's true branch in
+`smp_exercisers::lean_stats_component`, a `LEAN_READY_GATED_SEAMS` entry that
+`build.rs`'s derivation must reproduce.
+
+### The driver, and why the slots must be told apart first
+
+The fifth Tier-4 driver (`per_core_stats`, `rust/sele4n-hal/src/smp_exercisers.rs`)
+runs on the boot core after every declared PE serves the kernel.  Its evidence
+is a **bracket**: each core's words are read through the seam between two Rust
+reads of the same slot, in the reader's own order (the subtypes, the total, the
+syscalls; the verdict last, of a snapshot of its own), and the counters only
+grow, so a word below the read before it or above the read after it was read
+off another core's slot — an accessor resolving to the wrong slot, which is
+what the counters were declared to catch.  But a bracket cannot catch a wrong
+slot whose counts equal the right one's, and the four cores tick at one rate
+from nearly one instant, so before any snapshot the driver drives each
+secondary's SGI count `STATS_SGI_SPREAD` (64) past the core before it, by agent
+commands (one SGI each), reading the count live through the accessor's Rust
+twin — so the chain holds whatever the earlier drivers left in each slot, where
+a fixed spread would have depended on those priors; a core that stops answering
+or whose count does not get there within `STATS_SPREAD_FUEL` fails the driver
+rather than hanging it.  The verdict on a core is pure and host-tested
+(`stats_verdict`: refused, implausible, no IRQ, no tick, outside the bracket,
+decided in that order), and the driver then requires the four SGI counts the
+seam reported to be pairwise distinct, so a seam aliasing every core to one
+slot fails on distinctness and one permuting the slots fails on the bracket.
+On the HAL-only image the driver says it is not run — the reader and the
+verdict are the kernel's — and counts in neither column, so the all-driver
+tally is five on the Lean-linked image and four on the HAL-only one.
+
+### What the run shows, and what decides it
+
+On the Lean-linked `virt` image every core is plausible, ticked and inside its
+bracket: the boot core reports 27 SGIs from the earlier drivers and each
+secondary is driven to exactly its predecessor's count plus 64 (91, 155, 219),
+while the timer-tick counts are 15, 12, 13 and 12 — the four cores ticking at
+one rate from nearly one instant, which is why the timer alone could not tell
+the slots apart.  Two mutations decide the harness.  A driver asking the seam
+for the **next** core's slot while bracketing its own — the wrong-slot accessor
+the counters were declared to catch — is refused at every core with
+`OutsideBracket`, the tally falling to four, and the gate fails naming each
+core's words against its bracket.  And eleven mutations of the run's own log,
+each keeping every token, are refused by the checker: a verdict `0` or `2`
+beside plausible words; words that refute a verdict `1` with the bracket kept;
+a core that never ticked; a word above or below its bracket; two cores
+reporting one SGI count; the summary line, a core's lines, or a driver failure
+line moved.  The first draft of that harness applied no mutation at all and
+reported every case caught, because a crashed mutation left a stale log the
+checker refused — *a harness that crashes where it should report hides the
+second defect* — so each case now asserts its mutation changed the text.
+
+### The gate re-derives the relations
+
+`scripts/qemu_exerciser_lib.sh`'s `per-core-stats` branch trusts nothing the
+driver decided: from the two lines a core prints it requires the verdict `1`,
+the words it was decided on to satisfy `ticks + sgis <= irqs`, a tick and an
+IRQ on every serving core, every word inside its slot's bracket, and the four
+SGI counts distinct — because a verdict `1` beside words that refute it is a
+seam answering `1` unconditionally, which the driver alone could not see.
+`scripts/test_qemu_smp_per_core_stats.sh` is the gate, Lean-image only
+(without `--lean-kernel` it reports NOT RUN naming why, exit 77);
+`scripts/test_tier4_smp_bootcheck.sh` runs it in that mode alone
+(`gate_lean_only`), and the archive lane reaches it through the all-driver
+gate's Lean run.  Tier 3 gains 43 anchors — the seam's attribute and type, the
+selector arms in order, the refusal, the export's decode, the eight theorem
+names, the `STATS_*` mirror, the gated call shape (and the ungated one
+refused), the `build.rs` entry, both read orders, the verdict's order, the
+spread's chain and its two constants, the checker's five relations, the driver
+list, the gate's and the runner's modes, and the plan's ticked box — held by 37
+token-preserving mutations, each keeping the tokens and breaking a relation,
+37 of 37 decisive; the six theorem-name pins and the four selector literals
+without a case of their own share the shapes the rename and renumber cases
+decide, and the box is a prose check.  The anchor pinning the four-driver
+tally is repointed at the derived count.  `stats_verdict` and `CounterSnapshot::le` gain host tests, and the
+selectors' mirror is pinned on both sides.
+
+### Warnings retired
+
+The default Lean build carried twenty-four `unusedSimpArgs` warnings from
+`lockSet_consistent_pageTableMap` / `_pageTableUnmap` (`v0.36.12`), each `simp`
+naming every lock constructor where its branch uses one; each names its own
+now, and `lake build` is warning-free.  The HAL-only exerciser image's build
+warned that `rust_counters` was unused there; it is compiled with the driver
+that reads it.
+
+### Documentation
+
+`SMP_BOOT_PATH_PLAN.md`'s BP8.5 row and box; `SMP_RELEASE_READINESS_PLAN.md`'s
+RR7.33 row (finding 98 executed); `UNFINISHED_SMP_WORK.md` rows 31 and 98;
+`REGISTERED_DEBT.md`'s WS-BP registry row (BP8.4 and BP8.5, the former missed
+at `v0.36.28`); `CLAIM_EVIDENCE_INDEX.md` (a new evidence row); the spec's
+§6.2.18; `DEVELOPMENT.md`'s tier table; `HARDWARE_TESTING.md`; the GitBook
+testing chapter; the nightly workflow's comment; `CLAUDE.md` / `AGENTS.md`
+(the status line, a BP8.5 paragraph, and the known-large-files block
+refreshed).  Version bumped 0.36.28 → 0.36.29.
+
+### What is not claimed
+
+That the board boots (BP8.3 needs the Raspberry Pi 5) — what the run shows is
+QEMU's `virt` with its GICv2 and timer, on which every core ticked and every
+secondary took its SGIs; the counters on a Cortex-A76 are the board's to
+confirm.  That the eight gates that need a user program have run.
+
 ## v0.36.28 — WS-BP BP8.4: the Tier-4 gates execute on the `virt` test image, and the shootdown box is decided by a run
 
 The Tier-4 acceptance runner has fourteen gates.  Until this cut thirteen of

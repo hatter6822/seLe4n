@@ -73,8 +73,9 @@ jobs:
 
       # Tier 4 reports NOT RUN (exit 77) when its acceptance gates cannot
       # execute, and that status propagates to here.  Since WS-BP BP8.4 the
-      # bring-up, the PE-withheld boot and the four in-image exercisers run
-      # on the `virt` image and pass; the eight gates that drive kernel
+      # bring-up, the PE-withheld boot and the in-image exercisers run on
+      # the `virt` image and pass (the per-core counter check, BP8.5, on the
+      # Lean-linked one alone); the eight gates that drive kernel
       # transitions from user space still skip, for want of a user program
       # that SM10's root task owes and which no amount of CI configuration
       # can supply — so a hard failure would paint this job red on every

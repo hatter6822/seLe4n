@@ -1053,4 +1053,124 @@ theorem shootdownSelfServiceRound_eq_ffi (c : CoreId) :
 theorem shootdownAck_ffi_core_in_range :
     ∀ c : CoreId, (UInt64.ofNat c.val).toNat < numCores := by decide
 
+-- ============================================================================
+-- WS-BP BP8.5 — the counters read on the booted machine
+-- ============================================================================
+
+/-- **WS-BP BP8.5**: what `lean_per_core_stats_component` answers for a core the
+model does not have or a selector it does not define: every bit set, which no
+counter reaches in the life of a machine and which neither verdict is
+(`perCoreStatsRefused_ne_zero`, `perCoreStatsRefused_ne_one`). -/
+def perCoreStatsRefused : UInt64 := 0xFFFFFFFFFFFFFFFF
+
+/-- **WS-BP BP8.5**: one word of a core's snapshot, selected by a small integer
+— `0..3` the four counters in the order the snapshot declares them, `4` the
+plausibility verdict as `1` or `0` — or the refusal.
+
+`perCoreStats` and `perCoreStatsPlausible` were proved, runtime-checked, and
+executed on no machine: nothing on the image called them.  The Tier-4 driver in
+`rust/sele4n-hal/src/smp_exercisers.rs` does now, through one C-callable seam,
+and needs the whole snapshot back to compare it with the counters the Rust side
+reads — one word per call, because a `UInt64` is the widest scalar an export may
+return (`ExportCommitDisciplineCensus`) and the four counters are each one.  So
+the seam takes a selector rather than being five seams: one symbol to declare,
+one call site to gate, one entry in every inventory that reads the export set.
+The selectors are literals here and mirrored as named constants on the Rust
+side (`STATS_IRQS` and siblings), pinned to each other by Tier 3. -/
+def perCoreStatsSelect (s : PerCoreStatsSnapshot) (selector : UInt64) : UInt64 :=
+  match selector.toNat with
+  | 0 => s.irqs
+  | 1 => s.timerTicks
+  | 2 => s.sgis
+  | 3 => s.syscalls
+  | 4 => if perCoreStatsPlausible s then 1 else 0
+  | _ => perCoreStatsRefused
+
+theorem perCoreStatsSelect_irqs (s : PerCoreStatsSnapshot) :
+    perCoreStatsSelect s 0 = s.irqs := rfl
+
+theorem perCoreStatsSelect_timerTicks (s : PerCoreStatsSnapshot) :
+    perCoreStatsSelect s 1 = s.timerTicks := rfl
+
+theorem perCoreStatsSelect_sgis (s : PerCoreStatsSnapshot) :
+    perCoreStatsSelect s 2 = s.sgis := rfl
+
+theorem perCoreStatsSelect_syscalls (s : PerCoreStatsSnapshot) :
+    perCoreStatsSelect s 3 = s.syscalls := rfl
+
+theorem perCoreStatsSelect_plausible (s : PerCoreStatsSnapshot) :
+    perCoreStatsSelect s 4 = if perCoreStatsPlausible s then 1 else 0 := rfl
+
+/-- The verdict word is `1` exactly when the predicate holds of the snapshot —
+the relation the gate reads off the log, beside the words it was decided on. -/
+theorem perCoreStatsSelect_plausible_iff (s : PerCoreStatsSnapshot) :
+    perCoreStatsSelect s 4 = 1 ↔ perCoreStatsPlausible s = true := by
+  rw [perCoreStatsSelect_plausible]
+  cases perCoreStatsPlausible s <;> simp
+
+/-- A selector the seam does not define is refused, whatever the snapshot. -/
+theorem perCoreStatsSelect_refused (s : PerCoreStatsSnapshot) (selector : UInt64)
+    (h : 4 < selector.toNat) : perCoreStatsSelect s selector = perCoreStatsRefused := by
+  unfold perCoreStatsSelect
+  split <;> first | rfl | omega
+
+theorem perCoreStatsRefused_ne_zero : perCoreStatsRefused ≠ 0 := by decide
+
+theorem perCoreStatsRefused_ne_one : perCoreStatsRefused ≠ 1 := by decide
+
+/-- **WS-BP BP8.5**: read core `core`'s counters through `perCoreStats` and
+answer `selector`'s word of that snapshot.  One read per call, so the verdict is
+decided on the snapshot it is asked of; a driver asking for the words one at a
+time gets them from successive snapshots, which is what its bracket against the
+Rust-side counters tolerates, the counters being monotone. -/
+def perCoreStatsComponent (core : CoreId) (selector : UInt64) : BaseIO UInt64 := do
+  let s ← perCoreStats core
+  pure (perCoreStatsSelect s selector)
+
+/-- `perCoreStatsComponent` is one `perCoreStats` read projected, and nothing
+else: the marker a refactor cannot quietly replace the reader with a second
+table of accessors. -/
+theorem perCoreStatsComponent_def (core : CoreId) (selector : UInt64) :
+    perCoreStatsComponent core selector =
+      (do let s ← perCoreStats core; pure (perCoreStatsSelect s selector)) := rfl
+
+/-- The verdict word is the predicate, decided on one read. -/
+theorem perCoreStatsComponent_plausible (core : CoreId) :
+    perCoreStatsComponent core 4 =
+      (do let s ← perCoreStats core; pure (if perCoreStatsPlausible s then 1 else 0)) := rfl
+
+/-- **WS-BP BP8.5** (the export): `perCoreStatsComponent` at the core the raw
+id names, decoded as every per-core entry decodes it (`coreIdOfUInt64?`), or
+the refusal for a core the model does not have.
+
+Read, never committed: the seam touches no kernel state, so it needs no entry
+lock, and the HAL calls it from the boot core behind the readiness gate, after
+every PE serves the kernel (`smp_exercisers::lean_stats_component`, a
+`LEAN_READY_GATED_SEAMS` entry in `build.rs`).  It is what lets the BP8.5 gate
+execute `perCoreStats` and `perCoreStatsPlausible` on the booted machine rather
+than in a host suite; what the gate then requires of the words — the verdict
+`1`, the words it was decided on satisfying it, a tick and an IRQ on every
+serving core, every word inside the bracket of two Rust reads of the same slot,
+and the four slots told apart — is `scripts/qemu_exerciser_lib.sh`'s. -/
+@[export lean_per_core_stats_component]
+def perCoreStatsComponentExport (coreId selector : UInt64) : BaseIO UInt64 :=
+  match coreIdOfUInt64? coreId with
+  | some core => perCoreStatsComponent core selector
+  | none => pure perCoreStatsRefused
+
+/-- The export at a core the model has is the typed reader at that core. -/
+theorem perCoreStatsComponentExport_of_core (coreId selector : UInt64)
+    (h : coreId.toNat < numCores) :
+    perCoreStatsComponentExport coreId selector =
+      perCoreStatsComponent ⟨coreId.toNat, h⟩ selector := by
+  unfold perCoreStatsComponentExport
+  rw [coreIdOfUInt64?_eq_some coreId h]
+
+/-- …and at a core it does not have it reads nothing and refuses. -/
+theorem perCoreStatsComponentExport_refused (coreId selector : UInt64)
+    (h : ¬ coreId.toNat < numCores) :
+    perCoreStatsComponentExport coreId selector = pure perCoreStatsRefused := by
+  unfold perCoreStatsComponentExport
+  rw [coreIdOfUInt64?_eq_none coreId h]
+
 end SeLe4n.Kernel.Concurrency
