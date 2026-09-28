@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.27.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.28.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7155,7 +7155,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24; slice 2, the Lean `virt` binding and its boot entry, v0.36.25; slice 3, the Lean-linked image booted on four PEs to every core's first idle dispatch in CI, v0.36.26, completing BP8.1; BP8.2, the four-PE bring-up gate executed in CI, v0.36.27)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24; slice 2, the Lean `virt` binding and its boot entry, v0.36.25; slice 3, the Lean-linked image booted on four PEs to every core's first idle dispatch in CI, v0.36.26, completing BP8.1; BP8.2, the four-PE bring-up gate executed in CI, v0.36.27; BP8.4, the Tier-4 gates executed on the `virt` test image, v0.36.28)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -8669,6 +8669,45 @@ tickets.  (4) **A QEMU lane builds and boots through `scripts/qemu_boot_lib.sh`*
 never its own copy, and a `virt` image builds under `rust/target/qemu-virt*`:
 the archive lane uploads `rust/target/<target>/release/sele4n-kernel` as the
 Raspberry Pi 5 image, and a `virt` build there would ship in its place.
+
+**The Tier-4 gates execute on the `virt` test image, and the shootdown box is
+decided by a run** (`v0.36.28`, BP8.4).  The four gates that need no user
+program — the SGI round trip (SM1.H.5), the console stress (SM1.G.3), the TLB
+shootdown round trip (SM7.E.2) and the shootdown stress (SM7.E.3) — are
+in-image drivers (`rust/sele4n-hal/src/smp_exercisers.rs`, feature
+`smp_exercisers`) the boot core runs before it hands itself to the idle wait,
+and `scripts/test_qemu_smp_minimal.sh` boots two PEs where the kernel declares
+four; every gate reports a result on both `virt` images, and the eight that
+drive kernel transitions from user space report NOT RUN naming why.  Five
+things new code must respect.  (1) **The exerciser feature never reaches a
+release image**: it builds into `rust/target/qemu-virt*-exercisers`, the
+archive lane's image build is refused if it names it
+(`check_aarch64_cross_target.py`, which also refuses it on any image build
+without the board selector), and the cross lane builds the test image last,
+after both images it checks.  (2) **A round is the kernel's round**:
+`run_round_in` acquires the round lock (self-servicing a round in flight while
+it waits, under the seam's own fuel `ROUND_LOCK_ACQUIRE_FUEL`, which is
+`shootdownRoundLockAcquireFuel`), allocates the generation, publishes the
+operand, requests every online target, broadcasts the invalidation and waits
+bounded for the acknowledgments — `completeShootdownRounds`' order, with
+`tlbi_local` nowhere in the module — and a timed-out round halts the system,
+because a round left open is a round lock the next kernel entry halts on.
+The three mutations that decide it are recorded in the plan: a local
+invalidation leaves core 1's translation stale, a round that sends no request
+times out, and two initiators without the lock are reported inside one
+critical section.  (3) **The window is global and hangs off the boot L1
+table** (`mmu::install_exerciser_window`, entry 511, `0x7F_C000_0000`), so a
+probe translates under every thread's `TTBR0` and survives the idle restore;
+the install is refused unsealed, unaligned, outside the kernel's extent or at
+an entry in use, and the HAL-only image seals the map where the Lean image
+does.  (4) **A driver prints whole lines and the checker reads relations**
+(`scripts/qemu_exerciser_lib.sh`): acknowledged generations at or past the
+round's, each core's stress lines exactly the iterations 0..31, 32 rounds
+under 32 distinct generations, and no stale probe.  (5) **A gate that cannot
+run says why**: the PE-withheld Lean run admits a serving secondary's idle
+dispatch and refuses the boot core's, and the eight user-program gates exit 77
+through `exerciser_user_program_gate`, never by searching an image with
+`strings`.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

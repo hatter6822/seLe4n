@@ -693,7 +693,8 @@ SM1 is complete when:
 - [x] `test_qemu_smp_bringup.sh` boots 4 cores; verifies 4 banners
       (decided by the WS-BP BP8.2 run; see the closure record below).
 - [ ] Wired into tier-4 nightly.
-- [ ] SGI round-trip test.
+- [x] SGI round-trip test (executed at WS-BP BP8.4, `v0.36.28`; see the
+      closure record below).
 - [ ] ~50+ new cargo tests pass.
 - [ ] CHANGELOG entries per PR; aggregate SM1 closure entry.
 
@@ -828,7 +829,14 @@ side-branch joining at SM1.H.5).
       the same cut.
 - [x] Wired into tier-4 nightly (the script; see the box above for
       what it has actually executed).
-- [x] SGI round-trip test (SKIP-only until SM5 wires kernel handlers).
+- [x] SGI round-trip test — **executed at WS-BP BP8.4 (`v0.36.28`)**, not
+      SKIP-only: the boot core signals each secondary on INTID 15, each
+      secondary's agent answers with an ack SGI, and both cores' SGI counters
+      move (`scripts/test_qemu_smp_sgi_roundtrip.sh`, on the HAL-only and the
+      Lean-linked `virt` images).  The same cut executes SM1.G.3's per-core
+      console stress (every core prints its 32 lines, each a whole line) and
+      SM1.H.3's PE-withheld boot (`-smp 2`: the HAL-only image boots one
+      secondary and counts exactly one; the Lean-linked image refuses).
 - [x] ~50+ new cargo tests pass (583 total at v0.31.8, up from
       ~140 at SM1 start).
 - [x] CHANGELOG entries per PR; aggregate SM1 closure entry at

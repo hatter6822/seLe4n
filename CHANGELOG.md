@@ -1,3 +1,135 @@
+## v0.36.28 — WS-BP BP8.4: the Tier-4 gates execute on the `virt` test image, and the shootdown box is decided by a run
+
+The Tier-4 acceptance runner has fourteen gates.  Until this cut thirteen of
+them SKIPped on every run: each asked the caller for a pre-built kernel ELF that
+no target built, and looked for its driver's banner in that image with
+`strings`.  Only the four-PE bring-up (BP8.2, `v0.36.27`) executed.  Now every
+gate reports a result.  The six that need no user program — the bring-up, the
+PE-withheld boot, the cross-core SGI round trip, the per-core console stress,
+the TLB shootdown round trip and the shootdown stress — execute on the HAL-only
+and the Lean-linked `virt` images and pass, twelve runs, and the eight that
+drive kernel transitions from user space report NOT RUN naming why.
+[`SMP_TLB_SHOOTDOWN_PLAN.md`](docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md) §8's
+one open box, which WS-RR RR7.20 kept unchecked because a SKIP is not a pass, is
+ticked on the run.  So is BP6.3's PE-withheld box, and BP8.4's own.
+
+### The drivers are in the image
+
+The four exercisers are **in-image drivers**: `rust/sele4n-hal/src/smp_exercisers.rs`,
+behind the `smp_exercisers` feature, which builds a `virt` *test* image into a
+target directory of its own (`rust/target/qemu-virt*-exercisers`).  No board
+boots it and no release image carries it: the archive lane's image build is
+refused if it names the feature, and any image build in either lane naming it
+without the board selector is refused too (`scripts/check_aarch64_cross_target.py`,
+eight new self-test cases).  The boot core runs the drivers after every declared
+PE serves the kernel and before it hands itself to the idle wait, so a tick
+taken during a driver returns to it — the place the Phase 7 refusal already
+relies on.
+
+Each PE's **agent** is an SGI handler on INTID 15 servicing a per-core command
+slot (one cache line: command, argument, result, two sequence words), so a
+driver can put work on every core and await it under a bounded clock.  The SGI
+round trip signals each secondary and requires the ack and both cores' SGI
+counters to move; the console stress has every core print 32 lines and requires
+each core's lines to be exactly the iterations 0..31, once each, every line
+whole.
+
+The shootdown drivers exercise the **HAL's own round protocol**.  A page window
+hangs off the boot L1 table's last entry (`mmu::install_exerciser_window`, VA
+`0x7F_C000_0000`; refused unsealed, unaligned, outside the kernel's extent or at
+an entry in use), with **global** entries, so a probe translates under every
+thread's `TTBR0` and survives the idle restore.  Core 1 reads its page through
+the window, the boot core breaks the entry, runs a round, and makes the new
+page; core 1 then reads the new page — the stale translation removed.  A round
+is `run_round_in`: acquire the round lock (self-servicing a round in flight
+while waiting, under the seam's own fuel, `shootdownRoundLockAcquireFuel`),
+the in-flight witness, the generation, the operand mailbox, the request SGI to
+every online target, the broadcast invalidation, the bounded acknowledgment
+wait, the release — `completeShootdownRounds`' order, with no local
+invalidation anywhere in the module.  A round that times out **halts the
+system**, because a round left open is a round lock the next kernel entry halts
+on, and a round runs with IRQs masked for the same reason.  The stress runs
+four initiators for eight generations each: 32 rounds, which the round lock
+serialises under 32 distinct generations, every core probing every window after
+each generation.
+
+### The harness is decisive
+
+Three mutations of the driver, each keeping every token: a **local**
+invalidation in place of the round leaves core 1's translation stale and both
+shootdown gates fail (`2 passed, 2 failed`); a round that **sends no request**
+times out after `WFE_DEFAULT_TIMEOUT_TICKS` and halts the system, naming the
+acknowledged generations; two initiators **without the lock** are reported
+inside one critical section (`3 passed, 1 failed`).  What the run shows is
+QEMU's per-vCPU software TLB, which caches a translation per vCPU and honours
+the inner-shareable broadcast — evidence about the protocol's ordering and
+completeness, not about a Cortex-A76's TLB, which is BP8.3's.  The HAL-only
+image runs under multi-threaded TCG, where the four vCPUs genuinely run in
+parallel and the round lock's atomicity is exercised; the Lean-linked one runs
+under `-icount`, for the reason `scripts/test_qemu.sh` states.
+
+### What the first runs found
+
+The HAL-only image **never sealed the boot map**: only `enter_lean_kernel`
+seals, so the window install was refused `NotSealed` on the first run.  The
+HAL-only boot seals where the Lean image seals — before any secondary is
+released, so the map has one writer no more.  And the PE-withheld check first
+forbade *any* `first idle dispatch` line; the one serving secondary legitimately
+dispatches its own idle thread while the boot core waits its window, which is
+the kernel idling on a PE that serves it.  The rule is now the boot core's
+dispatch, which the refusal precedes, and any dispatch on a PE the machine does
+not have.
+
+### The gates
+
+`scripts/qemu_exerciser_lib.sh` is the shared boot and checker: every exerciser
+gate boots the test image on four PEs at EL2 (`--lean-kernel` for the
+Lean-linked one), and the checker holds each driver's banners as **relations**
+— acknowledged generations at or past the round's, the iterations exactly
+0..31, 32 rounds under 32 distinct generations, no stale probe, a torn line a
+failure.  `scripts/test_qemu_smp_exercisers.sh` reads all four drivers from one
+boot and the Lean archive lane runs it on both images with `REQUIRE_QEMU=1`;
+the four per-driver gates each read one; `scripts/test_qemu_smp_minimal.sh`
+boots two PEs and holds the HAL-only image to booting (one secondary, counted
+once, no line naming an absent PE) and the Lean-linked one to refusing (PE 2
+and PE 3 named with the half of readiness each lacks).
+`scripts/test_tier4_smp_bootcheck.sh` runs every executable gate on both images
+when the archive exists and records its absence as a skip otherwise.  The eight
+user-program gates go through `exerciser_user_program_gate`: NOT RUN, the
+reason (the image carries no user program; SM10's root task), the suite that
+establishes the property machine-checked, and the banner the gate will require
+— exit 77, which `SELE4N_REQUIRE_GATES=1` fails.
+
+`scripts/test_rust.sh` gains step [5/8], the drivers' twenty unit tests (the
+agent protocol; the round protocol against a silent target, a wedged lock and a
+second initiator, with a cooperating waiter that self-services and acquires
+after the release; the window's admission and its descriptors), and lints the
+RPi5 HAL with the feature; `scripts/test_aarch64_cross_build.sh` lints, links
+and FP/SIMD-checks the test image last.  Tier 3 gains 61 anchors, each
+mutation-tested by keeping the tokens and breaking the relation — the round's
+order inside one body, the timed-out halt, the IRQ mask, the window written only
+after it is admitted, the seal before the permit, the drivers before the idle
+handoff, the checker's three relations, the target directory, and the feature
+kept out of both release image builds — and the three anchors pinning the
+retired build-line spellings are repointed.
+
+### Documentation
+
+`SMP_TLB_SHOOTDOWN_PLAN.md` §8's box and its SM7.E.2/E.3 rows;
+`SMP_BOOT_PATH_PLAN.md`'s BP8.4 row and the BP6.3 and BP8.4 boxes;
+`SMP_RUST_HAL_PLAN.md`'s SGI round-trip boxes; `REGISTERED_DEBT.md`'s Tier-4
+row, closed, and a new row for the eight user-program gates;
+`CLAIM_EVIDENCE_INDEX.md` (a new evidence row and the not-claimed row
+narrowed); the spec's §6.2.18; `DEVELOPMENT.md`'s tier table;
+`HARDWARE_TESTING.md` §4–§6; the GitBook mirrors; the nightly workflow's
+warning text; `CLAUDE.md` / `AGENTS.md`.  Version bumped 0.36.27 → 0.36.28.
+
+### What is not claimed
+
+That the board boots (BP8.3 needs the Raspberry Pi 5); that the eight gates
+that need a user program have run; that the per-core counters have been read
+on the booted machine (BP8.5).
+
 ## v0.36.27 — WS-BP BP8.2: the four-PE bring-up gate executes, and its first run finds the console tearing lines
 
 `scripts/test_qemu_smp_bringup.sh` has run for the first time.  Until now it

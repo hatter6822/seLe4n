@@ -52,6 +52,11 @@ IMAGE_BIN="sele4n-kernel"
 IMAGE_FEATURES="kernel_image"
 # WS-BP BP8.1: the board feature that builds the image for QEMU's `virt`.
 VIRT_FEATURE="board_qemu_virt"
+# WS-BP BP8.4: the Tier-4 in-image exercisers, built into the `virt` TEST image
+# only.  Never a member of IMAGE_FEATURES: the Raspberry Pi 5 image the archive
+# lane uploads must not carry them, and `scripts/check_aarch64_cross_target.py`
+# refuses an image build that names the feature without the board selector.
+EXERCISER_FEATURE="smp_exercisers"
 
 echo "=== aarch64 cross-compile coverage (WS-RR RR1) ==="
 echo ""
@@ -262,6 +267,19 @@ cargo build --release --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
 python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
 echo "      ✓ the QEMU virt image lints clean, links and is FP/SIMD-free"
+# WS-BP BP8.4: and the `virt` TEST image the Tier-4 exerciser gates boot -- the
+# same board with the in-image drivers (`smp_exercisers`) -- is linted, linked
+# and read for FP/SIMD too.  The drivers run at EL1 with FP/SIMD trapped, so a
+# driver that touched a vector register would halt the gate rather than fail
+# it; the gate reads the image, where that is decided.  It links to the same
+# path, so it comes after both images above and their checks.
+cargo clippy --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
+    --features "${CROSS_FEATURES},${IMAGE_FEATURES},${VIRT_FEATURE},${EXERCISER_FEATURE}" --lib --bins -- -D warnings
+cargo build --release --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
+    --features "${IMAGE_FEATURES},${VIRT_FEATURE},${EXERCISER_FEATURE}" --bin "${IMAGE_BIN}"
+python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
+    target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
+echo "      ✓ the QEMU virt test image (the Tier-4 exercisers) lints clean, links and is FP/SIMD-free"
 echo ""
 
 echo "=== aarch64 cross-compile coverage: PASS ==="

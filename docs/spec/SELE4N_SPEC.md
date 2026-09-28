@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.27` (`lakefile.toml`) |
+| **Package version** | `0.36.28` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 432,837 across 361 Lean files |
 | **Test LoC** | 88,168 across 71 Lean test suites |
@@ -1032,6 +1032,34 @@ Two console rules came out of its first run:
   under a single `with_boot_uart`, as `kprintln_core!` already did;
   `uart::tests::a_printed_line_takes_the_console_lock_once` counts the lock's
   tickets per line.
+
+**The Tier-4 gates execute on the `virt` test image (BP8.4, v0.36.28).**  The
+four Tier-4 gates that need no user program are in-image drivers
+(`rust/sele4n-hal/src/smp_exercisers.rs`, feature `smp_exercisers`) that the
+boot core runs after every declared PE serves the kernel and before it hands
+itself to the idle wait: the cross-core SGI round trip on INTID 15, the
+per-core console stress, the TLB shootdown round trip and the shootdown
+stress.  Each PE's agent is an SGI handler servicing a per-core command slot,
+so a driver can put work on every core.  The shootdown drivers break a page
+window's translation on one core and run the HAL's own round protocol — the
+round lock, the generation, the operand mailbox, the request SGI, the
+broadcast invalidation and the bounded acknowledgment wait, in
+`completeShootdownRounds`' order — and the cores that had the stale
+translation cached read the new page; the stress runs four initiators for
+eight generations each and requires 32 rounds under 32 distinct generations.
+A timed-out round halts the system, because a round left open is a round lock
+the next kernel entry halts on.  The window is global and hangs off the boot
+L1 table's last entry (`mmu::install_exerciser_window`), so it translates
+under every thread's `TTBR0` and survives the idle restore; the exerciser
+feature builds a test image in a target directory of its own and never reaches
+a release image, which the cross-target gate refuses.  The PE-withheld gate
+(`scripts/test_qemu_smp_minimal.sh`) boots two PEs where the Lean kernel
+declares four and holds the HAL-only image to booting and the Lean-linked one
+to refusing before the boot core dispatches.  `scripts/qemu_exerciser_lib.sh`
+is the shared boot and checker, holding each driver's banners as relations
+rather than tokens, and the archive lane runs the all-driver gate on both
+images.  The eight gates that drive kernel transitions from user space report
+NOT RUN naming their reason — SM10's root task — and never PASS.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

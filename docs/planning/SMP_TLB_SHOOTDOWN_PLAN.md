@@ -547,8 +547,8 @@ reported it as the last site owing an emission.)
 | Sub | Description | Status |
 |-----|-------------|--------|
 | SM7.E.1 | `tests/SmpTlbShootdownSuite.lean` (15+ scenarios) — seeded at SM7.A, 22 groups at the SM7.B completion cut, 32 at the SM7.F cuts | **LANDED** — 35 runtime groups / 272 assertions (§3.1–§3.12, §4.1–§4.11, §5.1–§5.10, §6, §7, §8) |
-| SM7.E.2 | QEMU shootdown integration — `scripts/test_qemu_smp_shootdown.sh` | **LANDED** (seeded at the SM7.B completion cut; Tier-4 registered, SKIPs until the SM10.1 bootable image) |
-| SM7.E.3 | Shootdown stress test (4 cores × concurrent unmaps) | **LANDED** — suite §6 (model tier) + `scripts/test_qemu_smp_shootdown_stress.sh` (Tier-4 hardware tier) |
+| SM7.E.2 | QEMU shootdown integration — `scripts/test_qemu_smp_shootdown.sh` | **LANDED** (seeded at the SM7.B completion cut; **executed at WS-BP BP8.4, `v0.36.28`**: the in-image driver breaks a page window's translation on the boot core and runs the HAL's own round protocol, and core 1 — which had the stale translation cached — reads the new page; the gate holds every core's acknowledged generation to the round's) |
+| SM7.E.3 | Shootdown stress test (4 cores × concurrent unmaps) | **LANDED** — suite §6 (model tier) + `scripts/test_qemu_smp_shootdown_stress.sh` (Tier-4 hardware tier; **executed at WS-BP BP8.4, `v0.36.28`**: four initiators, eight generations each, 32 rounds serialised by the round lock under 32 distinct generations, every core's probe of every window fresh after each generation) |
 | SM7.E.4 | Cross-cluster mock test | **LANDED** — suite §7 (TLB side) + `SmpCacheMaintenanceSuite` §3.15 (I-cache reach side) |
 | SM7.E.5 | Surface anchors | **LANDED** — §1 `#check` blocks + Tier-3 `rg` anchors for every new symbol, runner, fixture and script |
 | SM7.E.6 | Fixture: `smp_tlb_shootdown.expected` | **LANDED** — 21-line `[smp-tlb-shootdown]` golden trace + `.sha256`, auto-gated by the Tier-2 trace walk |
@@ -629,20 +629,32 @@ reported it as the last site owing an emission.)
       both the TLB and instruction-cache sides, the `smp_tlb_shootdown`
       golden trace fixture, the surface anchors, and the Tier-4 stress
       exerciser.
-- [ ] Tier 0..4 green; QEMU shootdown test passes (Tier 0..3 green at
-      SM7.B, at the SM7.D landing, and at the SM7.E landing; the two QEMU
-      exercisers — `test_qemu_smp_shootdown.sh` (SM7.E.2) and
-      `test_qemu_smp_shootdown_stress.sh` (SM7.E.3) — are Tier-4 registered
-      and SKIP for want of a bootable image).
-      **Owner (WS-RR RR7.20)**: the image is
-      [`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md) `BP5.3`, and the run
-      that decides this box is `BP8.2` (four-core bring-up under QEMU).  This
-      row stays unchecked deliberately — a SKIP is not a pass, and restating
-      it as "the script exists" would trade a behaviour criterion for an
-      artefact-existence one, which is what WS-RR RR7.16 refused for the two
-      SM1.H boxes.  When the image lands, run both exercisers and check this
-      box **in the same cut**; treat a shootdown-round-serialisation break or
-      a missing acknowledgment as a failure of SM7, not of the harness.
+- [x] Tier 0..4 green; QEMU shootdown test passes (Tier 0..3 green at
+      SM7.B, at the SM7.D landing, and at the SM7.E landing; **the two QEMU
+      exercisers executed at WS-BP BP8.4, `v0.36.28`**, on the HAL-only and
+      the Lean-linked `virt` images, in the Lean archive lane on every PR).
+      WS-RR RR7.20 kept this row unchecked because a SKIP is not a pass and
+      "the script exists" is not a behaviour criterion; what decides it now is
+      a run.  `test_qemu_smp_shootdown.sh` (SM7.E.2): the in-image driver
+      (`rust/sele4n-hal/src/smp_exercisers.rs`) has core 1 read a page
+      through a global window, breaks the window's translation on the boot
+      core, runs the HAL's own round protocol — the round lock, the
+      generation, the operand mailbox, the request SGI to every online
+      target, the broadcast invalidation, the bounded acknowledgment wait,
+      in `completeShootdownRounds`' order — makes the new page, and core 1
+      reads the new page; the gate requires every core's acknowledged
+      generation at or past the round's.  `test_qemu_smp_shootdown_stress.sh`
+      (SM7.E.3): four initiators, eight generations each, every core probing
+      every window after each generation; the gate requires 32 completed
+      rounds under 32 distinct generations (the round lock serialising them)
+      and no stale probe.  The harness is decisive, measured by three
+      mutations of the driver: a local invalidation in place of the round
+      leaves core 1's translation stale and both gates fail; a round that
+      sends no request times out and halts the system; two initiators
+      without the lock are reported inside one critical section.  A
+      shootdown-round-serialisation break or a missing acknowledgment is
+      therefore a failure of SM7 the gate reports, not one the harness
+      absorbs.
 - [x] **Closes SMP-C4 formally**: SM7.C's per-core TLB model and SM7.D's
       per-core cache invariant have both landed, so every per-PE cached view
       of a mapping the kernel destroys — translation *and* instruction line —

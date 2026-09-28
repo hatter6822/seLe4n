@@ -5,166 +5,37 @@
 # This is free software, and you are welcome to redistribute it
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 #
-# WS-SM SM5.D (plan §6 Tier-4) — Per-core timer-tick boot test.
+# WS-SM SM5.D (plan §6 Tier-4) — per-core timer-tick boot test.
 #
-# Boots QEMU `-smp 4` with seLe4n and exercises the per-core ARM Generic Timer:
-# each core's CNTP fires independently, its ISR (`timer::per_core_timer_tick_isr`)
-# records the per-core tick, re-arms the per-core comparator, and drives the Lean
-# per-core tick (`lean_per_core_timer_tick` → `perCoreTimerTickEntry`, SM5.D.1).
-# The runtime witness for SM5.D's defining SMP property: every core advances its
-# OWN local accounting (domain time, CBS budgets) without advancing the single
-# global monotonic counter — on real hardware-modelled cores, with a real GIC.
+# Boots QEMU `-smp 4` and requires the banner
+#   [smp-test] per-core-timer: cores 0-3 ticked locally
+# — which the image cannot print yet.  The gate needs
+# a thread per core whose budget the per-core tick charges, so each core's
+# tick is observed charging its own current thread, and the kernel
+# image carries no user program: the two initial threads WS-BP BP7.11 starts
+# run no code, and a user program is SM10's root task.  Until it exists this
+# gate reports NOT RUN with that reason, through
+# `scripts/qemu_exerciser_lib.sh`'s `exerciser_user_program_gate`, rather
+# than looking for the banner in the image with `strings` — which is what it
+# did until WS-BP BP8.4, against a kernel ELF no target built.  Registered:
+# `docs/REGISTERED_DEBT.md` (WS-BP).
 #
-# **What the formal layer already guarantees (SM5.D, no QEMU needed)**:
-#   * `timerTickOnCore_advances_per_core` — the tick advances core c's local
-#     accounting WITHOUT advancing the global `machine.timer` (SM5.D.2 headline:
-#     the global tick counter is primary-owned, mirroring the Rust HAL TICK_COUNT).
-#   * `switchDomainOnCore_rotates` — the separate atomic domain transition rotates
-#     core c's active domain to the next schedule entry (SM5.D.6; audit-pass-2: the
-#     tick itself does NOT rotate, and `timerTickOnCore_preserves_currentThreadInActiveDomainOnCore`
-#     proves the budget-only tick keeps the running thread in its domain).
-#   * `timerTickOnCore_preempts_local` — budget / time-slice exhaustion re-selects
-#     and dispatches core c's highest-priority budget-eligible thread (SM5.D.5).
-#   * `cbsReplenish_can_wake_remote_core` — a CBS replenishment whose refilled
-#     thread targets a remote core fires a cross-core `.reschedule` SGI (SM5.D.4).
-#   * `timerTickOnCore_preserves_currentThreadValidOnCore` — the tick preserves
-#     per-core current-thread validity UNCONDITIONALLY (§7 B1).
-#   * `timerTickOnCore_preserves_objects_invExt` /
-#     `timerTickOnCore_clears_lastTimeoutErrors` — object-store invariant + the
-#     SM5.D.9 diagnostic clear.
-#   These are machine-checked in `tests/SmpTimerSuite.lean` (Tier 2/3) and hold
-#   for ALL executions — the QEMU test is a complementary *runtime* spot-check.
+# The property is established for every execution, machine-checked, by
+# tests/SmpTimerSuite.lean (Tier 2/3); this gate is its runtime spot-check on emulated cores.
 #
-# **Prerequisites (SM5.I+)**:
-#   * Per-core scheduler state so each core has live current / run-queue / domain
-#     slots the tick advances (SM5.D models the transition; SM5.I drives it).
-#   * The per-core timer ISR wired to drive `timerTickOnCore` against live
-#     per-core kernel state under the `timerTickOnCoreLockSet` `withLockSet`
-#     bracket (the per-core FFI seam; SM5.I).
-#   * A per-core timer driver in the kernel image emitting the banner below.
-#
-# As of SM5.I, `perCoreTimerTickEntry` is the live driver: it atomically runs the
-# verified `perCoreTimerTickStep` (decoding the core id, driving `timerTickOnCore`,
-# committing the new state) and fires the recovered cross-core `.reschedule` SGIs
-# via `fireCrossCoreSgis`.  What this script still needs is a bootable kernel
-# **image** (`[[bin]]` target linking the HAL + the Lean `@[export]` symbols) and a
-# real (or QEMU-emulated) multi-core boot to exercise it end-to-end — that image
-# target is the remaining SM5.I closure item.  This script therefore SKIPs with a
-# documentation banner until the kernel image exists.
-#
-# Skip / pass / fail conditions:
-#   * No QEMU on PATH                 → SKIP
-#   * No kernel image                 → SKIP
-#   * Per-core timer driver unwired   → SKIP (current state, SM5.D)
-#   * Global timer advanced per-core  → FAIL
-#   * Per-core tick banner missing    → FAIL
-#   * Per-core ticks observed on 0..3 → PASS
+# Exit codes:
+#   77  NOT RUN (SELE4N_SKIP_EXIT) until the root task exists; `run_gate_check`
+#       records it, and SELE4N_REQUIRE_GATES=1 makes it a failure.
+#   0   PASS / 1 FAIL, once the driver program exists.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/test_lib.sh"
 cd "${REPO_ROOT}"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/qemu_exerciser_lib.sh"
 
-LOG="$(mktemp -t sele4n-smp-timer.XXXXXX.log)"
-TIMEOUT_SECS="${SELE4N_QEMU_TIMEOUT:-45}"
-TEST_BANNER="\\[smp-test\\] per-core-timer: cores 0-3 ticked locally"
-
-if ! command -v qemu-system-aarch64 &>/dev/null; then
-  echo "[SKIP] WS-SM SM5.D: qemu-system-aarch64 not found on PATH"
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
-
-if [[ -z "${KERNEL_IMAGE}" ]]; then
-  echo "[SKIP] WS-SM SM5.D: SELE4N_KERNEL_IMAGE env var not set"
-  echo "       Set SELE4N_KERNEL_IMAGE=/path/to/kernel.elf to enable."
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-if [[ ! -f "${KERNEL_IMAGE}" ]]; then
-  echo "[SKIP] WS-SM SM5.D: kernel image not found at ${KERNEL_IMAGE}"
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-# --------------------------------------------------------------------------
-# Pre-condition: the per-core timer driver must be wired in the kernel image.
-# We detect it by the banner the driver emits.  At SM5.D the driver is NOT
-# present (it needs SM5.I per-core scheduler state to advance), so this SKIPs.
-# --------------------------------------------------------------------------
-if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -q "smp-test.*per-core-timer"; then
-  echo "[SKIP] WS-SM SM5.D: per-core timer driver not wired in kernel image"
-  echo ""
-  echo "  Reason: exercising a real per-core timer tick end-to-end requires a"
-  echo "          bootable kernel IMAGE ([[bin]] target linking the HAL + the Lean"
-  echo "          @[export] symbols).  The per-core entry seam (perCoreTimerTickEntry)"
-  echo "          IS the live driver as of SM5.I — it drives perCoreTimerTickStep"
-  echo "          (timerTickOnCore) and fires the cross-core SGIs; the remaining item"
-  echo "          is the kernel image to load.  The per-core tick correctness"
-  echo "          guarantee is established FORMALLY (and for ALL"
-  echo "          executions) by:"
-  echo "            timerTickOnCore_advances_per_core      (no global advance; D.2)"
-  echo "            switchDomainOnCore_rotates             (domain rotation; D.6)"
-  echo "            timerTickOnCore_preserves_currentThreadInActiveDomainOnCore (D.6 capstone)"
-  echo "            timerTickOnCore_preempts_local         (budget preempt; D.5)"
-  echo "            cbsReplenish_can_wake_remote_core      (cross-core wake; D.4)"
-  echo "            timerTickOnCore_preserves_currentThreadValidOnCore (B1; §7)"
-  echo "          machine-checked in tests/SmpTimerSuite.lean."
-  echo ""
-  echo "  When wired (SM5.I), this script will:"
-  echo "    1. Boot QEMU virt -smp 4."
-  echo "    2. Let each core's CNTP fire and run timerTickOnCore locally."
-  echo "    3. Assert the global monotonic timer is advanced by ONE authority"
-  echo "       (no per-core double-advance)."
-  echo "    4. Assert '[smp-test] per-core-timer: cores 0-3 ticked locally'."
-  echo ""
-  echo "  Formal coverage at SM5.D (already passing):"
-  echo "    lake exe smp_timer_suite"
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-echo "[META] WS-SM SM5.D: booting QEMU virt -smp 4 for per-core timer tick"
-echo "[META]   kernel image: ${KERNEL_IMAGE}"
-echo "[META]   log: ${LOG}"
-
-set +e
-# SMP is OFF by default until SM5.I serialises kernel entry
-# (`CmdlineConfig::default`), so an SMP exerciser must opt in on the
-# kernel command line rather than rely on the built-in default --
-# otherwise this boots single-core and tests nothing it is named for.
-# Drop the -append when the default flips back with SM5.I.
-timeout "${TIMEOUT_SECS}s" qemu-system-aarch64 \
-    -machine "virt,secure=on,virtualization=on" \
-    -cpu cortex-a76 \
-    -smp 4 \
-    -m 1G \
-    -kernel "${KERNEL_IMAGE}" \
-    -append "smp_enabled=true" \
-    -nographic \
-    -serial mon:stdio \
-    -d guest_errors \
-    < /dev/null \
-    > "${LOG}" 2>&1
-QEMU_EXIT=$?
-set -e
-
-if ! grep -qE "${TEST_BANNER}" "${LOG}"; then
-  echo "[FAIL] WS-SM SM5.D: per-core tick banner missing (a core failed to tick)" >&2
-  echo "       QEMU exit code: ${QEMU_EXIT}" >&2
-  echo "       Last 80 lines of UART log:" >&2
-  tail -n 80 "${LOG}" >&2
-  exit 1
-fi
-
-case "${QEMU_EXIT}" in
-  0|124) ;;
-  *)
-    echo "[FAIL] WS-SM SM5.D: QEMU exited with code ${QEMU_EXIT}" >&2
-    tail -n 40 "${LOG}" >&2
-    exit 1
-    ;;
-esac
-
-echo "[PASS] WS-SM SM5.D: per-core timer tick completed (cores 0-3 ticked locally)"
-exit 0
+exerciser_user_program_gate "WS-SM SM5.D (plan §6 Tier-4)" "per-core timer-tick boot test" "tests/SmpTimerSuite.lean" \
+    "[smp-test] per-core-timer: cores 0-3 ticked locally"

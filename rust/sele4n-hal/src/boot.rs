@@ -25,7 +25,7 @@
 //!          bounded window, or the system halts (WS-BP BP6.3)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.36.27";
+const KERNEL_VERSION: &str = "0.36.28";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -258,6 +258,21 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     }
     crate::kprintln!("[boot] reschedule SGI handler registered (INTID 0)");
 
+    // WS-BP BP8.4: a test image registers the Tier-4 exercisers' agent SGI
+    // handler (INTID 15) under the same boot-phase-3 conditions.
+    //
+    // SAFETY: same boot-phase-3 conditions as the registrations above --
+    // primary core alone, PSTATE.I set, no secondary online yet.
+    #[cfg(feature = "smp_exercisers")]
+    unsafe {
+        crate::smp_exercisers::register_agent_handler();
+    }
+    #[cfg(feature = "smp_exercisers")]
+    crate::kprintln!(
+        "[boot] Tier-4 exerciser agent SGI handler registered (INTID {})",
+        crate::smp_exercisers::AGENT_SGI_INTID
+    );
+
     crate::kprintln!("[boot] Initializing timer (1000 Hz)...");
     // AJ5-C/L-14 + AK5-J/AK5-L: init_timer returns Result — on failure,
     // log the error and halt via idle_loop since the kernel cannot function
@@ -390,6 +405,12 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
         crate::kprintln!("[boot] Phase 5: kernel state installed");
         permit
     };
+    // WS-BP BP8.4: the HAL-only image extends the boot map nowhere — the
+    // extensions are the verified boot's (BP4.6) — so it seals the map here,
+    // where the Lean-linked image seals it (`enter_lean_kernel`): before any
+    // secondary is released, so the map has one writer no more.
+    #[cfg(not(feature = "hw_target"))]
+    crate::mmu::seal_boot_map();
     #[cfg(not(feature = "hw_target"))]
     let secondary_release = crate::lean_entry::SecondaryReleasePermit::no_lean_kernel();
 
@@ -595,6 +616,12 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // tick it took since the IRQ unmask resumed this bring-up, so the topology
     // refusal above cannot be abandoned to a restore; from here the kernel's
     // next scheduling decision on this core is what it runs.
+    // WS-BP BP8.4: a test image runs the Tier-4 in-image drivers here — every
+    // declared PE serves the kernel, and this core has not yet handed itself
+    // to the idle wait, so a tick taken during a driver returns to it.
+    #[cfg(feature = "smp_exercisers")]
+    crate::smp_exercisers::run_on_boot_core(cmdline_cfg.smp_enabled);
+
     #[cfg(feature = "hw_target")]
     crate::trap::enter_idle_wait();
     // With no Lean kernel linked (simulation, the HAL-only images) nothing is
@@ -789,7 +816,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.36.27");
+        assert_eq!(KERNEL_VERSION, "0.36.28");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

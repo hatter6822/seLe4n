@@ -5292,10 +5292,14 @@ run_check "INVARIANT" rg -n '^private def runTraceFixtureCheck($|[ ({:\[\]])' te
 run_check "INVARIANT" rg -n '^\[smp-tlb-shootdown\]' tests/fixtures/smp_tlb_shootdown.expected
 run_check "INVARIANT" rg -n 'smp_tlb_shootdown\.expected' tests/fixtures/smp_tlb_shootdown.expected.sha256
 run_check "INVARIANT" rg -n 'test_qemu_smp_shootdown_stress\.sh' scripts/test_tier4_smp_bootcheck.sh
-# The Tier-4 stress exerciser's driver-detection guard and its pass gate must
-# agree on the `tlb-shootdown-stress` banner tag (the contract the future SM10.1
-# in-image driver emits); anchoring the exact pass phrase catches silent drift.
-run_check "INVARIANT" rg -n 'tlb-shootdown-stress: all cores completed' scripts/test_qemu_smp_shootdown_stress.sh
+# The Tier-4 stress exerciser's pass gate and the in-image driver agree on the
+# `tlb-shootdown-stress` completion banner: the shared checker requires it as a
+# whole line, and the driver prints it (WS-BP BP8.4 -- the gate reads the
+# library, and the driver is `rust/sele4n-hal/src/smp_exercisers.rs`).
+run_check "INVARIANT" rg -n -F -- 'require("[smp-test] tlb-shootdown-stress: all cores completed (8 generations, 32 rounds)")' scripts/qemu_exerciser_lib.sh
+# shellcheck disable=SC1003
+run_check "INVARIANT" rg -n -F -- '"[smp-test] tlb-shootdown-stress: all cores completed ({STRESS_ROUNDS} generations, {} \' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STRESS_ROUNDS: u64 = 8;$' rust/sele4n-hal/src/smp_exercisers.rs
 # ============================================================================
 # WS-SM SM7.D — cache maintenance broadcast
 #
@@ -7758,7 +7762,8 @@ run_negative_check "INVARIANT" rg -n 'if actual != SELF_CHECK_EXPECTED' rust/sel
 # fixture's fragments in order, and the fixture's companion verified.
 # WS-BP BP8.2: the build is `scripts/qemu_boot_lib.sh`'s, into a target
 # directory of its own, and the lane sources that library.
-run_check "INVARIANT" rg -n -U '^                --features kernel_image,board_qemu_virt --bin sele4n-kernel \\\n                --target-dir "\$\{HAL_TARGET_DIR\}"\) ' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^    features="kernel_image,board_qemu_virt"\n    target_dir="\$\{HAL_TARGET_DIR\}"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^                --features "\$\{features\}" --bin sele4n-kernel \\\n                --target-dir "\$\{target_dir\}"\) ' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_boot_lib\.sh"$' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -U '^    boot_once "virt, EL2 entry" "virt,gic-version=2,virtualization=on" \\\n        "booting on QEMU virt" "Entered at EL2, running at EL1" "PSCI conduit: Smc"$' scripts/test_qemu.sh
 # shellcheck disable=SC2016
@@ -7788,7 +7793,7 @@ run_check "INVARIANT" rg -n -F -- 'println!("cargo:rustc-env=SELE4N_BOARD_LINK_S
 run_check "INVARIANT" rg -n -F -- 'pub(crate) const BOARD_LINK_SCRIPT: &str = include_str!(env!("SELE4N_BOARD_LINK_SCRIPT"));' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n -F -- 'include_str!("../../../tests/fixtures/boot_map_qemu_virt.expected");' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n -F -- 'cargo test -p sele4n-hal --lib --features board_qemu_virt' scripts/test_rust.sh
-run_check "INVARIANT" rg -n -F -- 'cargo clippy -p sele4n-hal --all-targets --features hw_target,host_tools,kernel_image -- -D warnings' scripts/test_rust.sh
+run_check "INVARIANT" rg -n -F -- 'cargo clippy -p sele4n-hal --all-targets --features hw_target,host_tools,kernel_image,smp_exercisers -- -D warnings' scripts/test_rust.sh
 run_check "INVARIANT" rg -n -F -- 'qemu_virt_dtb_fixture.py" --self-test' scripts/test_tier0_hygiene.sh
 run_check "INVARIANT" rg -n -F -- 'qemu_virt_dtb_fixture.py" --check' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -F -- 'BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt")' scripts/check_kernel_entry_exports.py
@@ -7826,7 +7831,7 @@ run_check "INVARIANT" rg -n -F -- 'TOPOLOGY         | [boot] Phase 7: all 4 decl
 # The lane: the Lean-linked image, four PEs, the clock counted in instructions,
 # until the fourth first idle dispatch; and the archive lane runs it, requiring
 # QEMU, in a CI job that installs it.
-run_check "INVARIANT" rg -n -U '^                --features hw_target,kernel_image,board_qemu_virt --bin sele4n-kernel \\\n                --target-dir "\$\{LEAN_TARGET_DIR\}"\) ' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^        features="hw_target,\$\{features\}"\n        target_dir="\$\{LEAN_TARGET_DIR\}"$' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n -U '^    BOOT_SMP=4\n    BOOT_EXTRA=\(-icount "shift=0,sleep=off"\)\n    UNTIL_FRAGMENT="first idle dispatch"\n    UNTIL_COUNT=4$' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n -F -- 'boot_once "Lean kernel, virt, EL2 entry" "virt,gic-version=2,virtualization=on"' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu\.sh" --lean-kernel$' scripts/test_lean_aarch64_archive.sh
@@ -7861,6 +7866,111 @@ run_check "INVARIANT" rg -n -U '^        \$crate::uart::with_boot_uart\(\|uart\|
 # shellcheck disable=SC2016
 run_negative_check "INVARIANT" rg -n -U '\$crate::kprint!\(\$\(\$arg\)\*\);\n[ ]*\$crate::kprint!\("\\n"\);' rust/sele4n-hal/src/uart.rs
 run_check "INVARIANT" rg -n '^    fn a_printed_line_takes_the_console_lock_once\(\) \{$' rust/sele4n-hal/src/uart.rs
+
+# ----------------------------------------------------------------------------
+# WS-BP BP8.4 (v0.36.28): the Tier-4 gates execute on the `virt` test image,
+# and the shootdown box is decided by a run.
+# ----------------------------------------------------------------------------
+# The drivers are a module behind a feature, and the feature never reaches a
+# release image: the exerciser image builds into a target directory of its
+# own, no image build in either lane names the feature without the board
+# selector, and the packager never sees it.  The `.sh` negatives are scoped to
+# the COMMANDS, since a shell script is read raw and each lane's header names
+# the feature in prose to say exactly this.
+run_check "INVARIANT" rg -n -U '^#\[cfg\(feature = "smp_exercisers"\)\]\npub mod smp_exercisers;$' rust/sele4n-hal/src/lib.rs
+run_check "INVARIANT" rg -n '^smp_exercisers = \[\]$' rust/sele4n-hal/Cargo.toml
+run_check "INVARIANT" rg -n -U '^        features="\$\{features\},\$\{EXERCISER_FEATURE\}"\n        target_dir="\$\{target_dir\}-exercisers"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n '^EXERCISER_FEATURE="smp_exercisers"$' scripts/qemu_boot_lib.sh
+run_negative_check "INVARIANT" rg -n -U '^cargo build[^\n]*\\\n[^\n]*smp_exercisers' scripts/test_lean_aarch64_archive.sh
+run_negative_check "INVARIANT" rg -n '^IMAGE_FEATURES=.*smp_exercisers' scripts/test_aarch64_cross_build.sh
+run_negative_check "INVARIANT" rg -n 'smp_exercisers' scripts/build_rpi5_image.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- '--features "${IMAGE_FEATURES},${VIRT_FEATURE},${EXERCISER_FEATURE}" --bin "${IMAGE_BIN}"' scripts/test_aarch64_cross_build.sh
+run_check "INVARIANT" rg -n -F -- 'cargo test -p sele4n-hal --lib --features smp_exercisers' scripts/test_rust.sh
+# A round is the kernel's round: acquire (self-servicing a round in flight,
+# under the seam's own fuel), the in-flight witness, the generation, the
+# operands, the request to every online target, the broadcast invalidation,
+# the bounded wait, the release -- in that order, inside one body, which the
+# bounded gap cannot leave.  A timed-out round halts the system, and a round
+# runs with IRQs masked, since a kernel entry while holding the round lock is
+# the tripwire's halt.  No local invalidation anywhere in the module.
+run_check "INVARIANT" rg -n -U 'let mut fuel = protocol\.acquire_fuel;[^\n]*(\n([ \t][^\n]*)?)*round_lock_try_acquire_in\(protocol\.lock, initiator\)[^\n]*(\n([ \t][^\n]*)?)*self_service_round_in\(protocol\.mailbox, protocol\.slots, initiator\)[^\n]*(\n([ \t][^\n]*)?)*in_flight\.fetch_add\(1, Ordering::AcqRel\) != 0[^\n]*(\n([ \t][^\n]*)?)*allocate_round_generation_in\(protocol\.generations\)[^\n]*(\n([ \t][^\n]*)?)*publish_round_ops_in\(protocol\.mailbox, &\[op\], generation\)[^\n]*(\n([ \t][^\n]*)?)*\(hardware\.send_request\)\(target\)[^\n]*(\n([ \t][^\n]*)?)*\(hardware\.broadcast_invalidate\)\(op\)[^\n]*(\n([ \t][^\n]*)?)*wait_all_acked_bounded_in\([^\n]*(\n([ \t][^\n]*)?)*round_lock_release_in\(protocol\.lock\)' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'if outcome == RoundOutcome::TimedOut \{[^\n]*(\n([ \t][^\n]*)?)*crate::gic::halt_all\(\);' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'let saved = crate::interrupts::disable_interrupts\(\);\n[ ]*let \(generation, outcome\) = run_round_in\(' rust/sele4n-hal/src/smp_exercisers.rs
+run_negative_check "INVARIANT" rg -n 'tlbi_local|fatal_halt' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'pub fn production_protocol\(\) -> RoundProtocol<.static> \{[^\n]*(\n([ \t][^\n]*)?)*acquire_fuel: ROUND_LOCK_ACQUIRE_FUEL,' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const ROUND_LOCK_ACQUIRE_FUEL: u64 = 1_000_000;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^def shootdownRoundLockAcquireFuel : Nat := 1000000$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^pub const ROUND_WAIT_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS;$' rust/sele4n-hal/src/smp_exercisers.rs
+# The window hangs off the boot L1 table's last entry, and the install decides
+# admission -- sealed, aligned, inside the kernel's extent, at a free entry --
+# before it writes; the HAL-only image seals the map where the Lean image does,
+# before any secondary is released.
+run_check "INVARIANT" rg -n '^pub const EXERCISER_WINDOW_L1_INDEX: usize = TABLE_ENTRIES - 1;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'let verdict = exerciser_window_admissible\(l2_table_pa, sealed, current, kernel\);\n[ ]*if verdict\.is_ok\(\) \{\n[ ]*core::ptr::write_volatile\(entry, \(l2_table_pa & DESC_ADDR_MASK\) \| DESC_TABLE\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(not\(feature = "hw_target"\)\)\]\n[ ]*crate::mmu::seal_boot_map\(\);\n[ ]*#\[cfg\(not\(feature = "hw_target"\)\)\]\n[ ]*let secondary_release = crate::lean_entry::SecondaryReleasePermit::no_lean_kernel\(\);' rust/sele4n-hal/src/boot.rs
+# The drivers run on the boot core after every declared PE serves the kernel
+# and before the core hands itself to the idle wait; each PE's agent is an SGI
+# handler on INTID 15, registered in boot phase 3.
+run_check "INVARIANT" rg -n -U '#\[cfg\(feature = "smp_exercisers"\)\]\n[ ]*crate::smp_exercisers::run_on_boot_core\(cmdline_cfg\.smp_enabled\);\n\n[ ]*#\[cfg\(feature = "hw_target"\)\]\n[ ]*crate::trap::enter_idle_wait\(\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -F -- 'crate::smp_exercisers::register_agent_handler();' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^pub const AGENT_SGI_INTID: u8 = 15;$' rust/sele4n-hal/src/smp_exercisers.rs
+# The banners the drivers print and the checker requires, whole, as relations:
+# acknowledged generations at or past the round's, every core's stress lines
+# exactly the iterations 0..31, 32 rounds under 32 distinct generations, no
+# stale probe, and a torn line a failure.
+run_check "INVARIANT" rg -n -F -- 'crate::kprintln!("[smp-test] SGI round-trip complete");' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -F -- 'crate::kprintln!("[smp-test] tlb-shootdown: stale translation removed");' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -F -- 'crate::kprintln!("[smp-test] kprintln-stress: every core printed {STRESS_LINES} lines");' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STRESS_LINES: u64 = 32;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -F -- 'if re.search(r".\[(smp|boot|sched|tick|smp-test|gic|kernel-entry|core \d)\] ", line):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if acked < generation:' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if iterations != list(range(32)):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if len(set(generations)) != len(generations):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if line.startswith("[smp-test] tlb-shootdown-stress: stale translation"):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'require("[smp-test] exercisers: 4 passed, 0 failed")' scripts/qemu_exerciser_lib.sh
+# Every executable gate boots and checks through the shared library and names
+# its driver; every user-program gate reports NOT RUN through it, exiting
+# SELE4N_SKIP_EXIT, and none reads a pre-built image any more.
+run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_exerciser_lib\.sh"$' scripts/test_qemu_smp_exercisers.sh
+run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_exerciser_lib\.sh"$' scripts/test_qemu_smp_minimal.sh
+# (The gate id each script passes first names its workstream, which is prose
+# to the naming gate only when double-quoted, so the anchors pin the subject and
+# the driver, which is what the library dispatches on.)
+run_check "INVARIANT" rg -n -F -- '"the Tier-4 exercisers" all "$@"' scripts/test_qemu_smp_exercisers.sh
+run_check "INVARIANT" rg -n -F -- '"cross-core SGI round trip" sgi-round-trip "$@"' scripts/test_qemu_smp_sgi_roundtrip.sh
+run_check "INVARIANT" rg -n -F -- '"cross-core console stress" kprintln-stress "$@"' scripts/test_qemu_smp_kprintln_stress.sh
+run_check "INVARIANT" rg -n -F -- '"cross-core TLB shootdown round trip" tlb-shootdown "$@"' scripts/test_qemu_smp_shootdown.sh
+run_check "INVARIANT" rg -n -F -- '"concurrent TLB shootdown stress" tlb-shootdown-stress "$@"' scripts/test_qemu_smp_shootdown_stress.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"cross-core wake-via-SGI round trip"' scripts/test_qemu_smp_wake.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"per-core timer-tick boot test"' scripts/test_qemu_smp_timer.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"cross-core priority-inheritance round trip"' scripts/test_qemu_smp_pip.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"per-core domain-scheduling rotation"' scripts/test_qemu_smp_domain.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"per-core CBS replenishment and affinity migration"' scripts/test_qemu_smp_cbs.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"per-core scheduler, four threads on four cores"' scripts/test_qemu_smp_scheduler.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"cross-core IPC handshake round trip"' scripts/test_qemu_smp_ipc.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"cross-core deadlock-freedom stress"' scripts/test_qemu_smp_deadlock_stress.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- 'exit "${SELE4N_SKIP_EXIT:-77}"' scripts/qemu_exerciser_lib.sh
+run_negative_check "INVARIANT" rg -n 'SELE4N_KERNEL_IMAGE' scripts/test_qemu_smp_exercisers.sh scripts/test_qemu_smp_minimal.sh scripts/test_qemu_smp_sgi_roundtrip.sh scripts/test_qemu_smp_kprintln_stress.sh scripts/test_qemu_smp_shootdown.sh scripts/test_qemu_smp_shootdown_stress.sh scripts/test_qemu_smp_wake.sh scripts/test_qemu_smp_timer.sh scripts/test_qemu_smp_pip.sh scripts/test_qemu_smp_domain.sh scripts/test_qemu_smp_cbs.sh scripts/test_qemu_smp_scheduler.sh scripts/test_qemu_smp_ipc.sh scripts/test_qemu_smp_deadlock_stress.sh scripts/qemu_exerciser_lib.sh
+# The PE-withheld boot: two PEs, the Lean-linked image's refusal naming the
+# count, the boot core's dispatch refused and a serving secondary's admitted.
+# shellcheck disable=SC2016,SC1003
+run_check "INVARIANT" rg -n -F -- 'qemu_run "${LABEL}" "${MINIMAL_LOG}" "${EXERCISER_MACHINE}" 2 "${DEADLINE}" \' scripts/test_qemu_smp_minimal.sh
+run_check "INVARIANT" rg -n -F -- 'require_prefix("[boot] FATAL: 2 PE(s) serving the kernel but the linked Lean kernel declares 4")' scripts/test_qemu_smp_minimal.sh
+run_check "INVARIANT" rg -n -F -- 'if line.startswith("[sched] core 0:"):' scripts/test_qemu_smp_minimal.sh
+run_negative_check "INVARIANT" rg -n 'line\.endswith\("first idle dispatch"\)' scripts/test_qemu_smp_minimal.sh
+# The lanes: the archive lane runs the all-driver gate on both images requiring
+# QEMU, and the Tier-4 runner runs every executable gate on both images.
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_smp_exercisers\.sh"$' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_smp_exercisers\.sh" --lean-kernel$' scripts/test_lean_aarch64_archive.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -U '^gate\(\) \{\n    run_gate_check "META" "\$\{SCRIPT_DIR\}/\$1"\n    if \[\[ "\$\{LEAN_MODE\}" -eq 1 \]\]; then\n        run_gate_check "META" "\$\{SCRIPT_DIR\}/\$1" --lean-kernel' scripts/test_tier4_smp_bootcheck.sh
+run_check "INVARIANT" rg -n '^gate test_qemu_smp_minimal\.sh$' scripts/test_tier4_smp_bootcheck.sh
+run_check "INVARIANT" rg -n '^gate test_qemu_smp_shootdown_stress\.sh$' scripts/test_tier4_smp_bootcheck.sh
+# The boxes the run decides are ticked on its evidence, and stay ticked.
+run_prose_check "INVARIANT" rg -n -F -- '- [x] Tier 0..4 green; QEMU shootdown test passes' docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md
+run_prose_check "INVARIANT" rg -n -F -- '- [x] Tier-4 reports a result rather than a SKIP (' docs/planning/SMP_BOOT_PATH_PLAN.md
 
 # ============================================================================
 # WS-SM SM9.B — refusal auditing

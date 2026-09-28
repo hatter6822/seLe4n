@@ -5,153 +5,44 @@
 # This is free software, and you are welcome to redistribute it
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 #
-# WS-SM SM1.H.5 — Cross-core SGI round-trip test.
+# WS-SM SM1.H.5 / WS-BP BP8.4 — cross-core SGI round trip.
 #
-# Boots QEMU `-smp 4` with seLe4n.  After all 4 cores reach their per-
-# core ready banner, the boot core sends an SGI to core 1; core 1's
-# handler increments a shared atomic counter then sends an ACK SGI
-# back.  The boot core waits for the counter increment and emits a
-# success banner.
+# The boot core sends the agent SGI (INTID 15) to each secondary in turn.  The
+# secondary's handler prints the SGI's arrival with the GIC's attribution of
+# the source core, answers with an SGI of its own into the boot core's command
+# slot, and the boot core's handler prints the acknowledgment; the per-core SGI
+# counters move on both ends.  What the log must carry, per secondary: the
+# send, the arrival attributed to core 0, the acknowledgment attributed to the
+# secondary, and both counters up by at least one.
 #
-# **Prerequisites**:
-#   * SM1.F.5 SGI handler dispatch wired and registered for INTID
-#     `tlbShootdownReq` on every secondary's IRQ vector.
-#   * SM1.H.1 base bringup test passes.
+# Driver: `smp_exercisers::sgi_round_trip` (`rust/sele4n-hal/src/smp_exercisers.rs`,
+# compiled into the test image alone).  The boot, the image and what the log
+# must say are `scripts/qemu_exerciser_lib.sh`'s, shared by every exerciser
+# gate; the four drivers run in one boot and this gate reads its own.
 #
-# **Test handler design** (kernel-side, NOT in the HAL):
-#   * Boot core registers an `acknowledge` handler at INTID
-#     `tlbShootdownAck` (= 2 per SM0.H).
-#   * Each secondary registers a `forward` handler at INTID
-#     `tlbShootdownReq` (= 1) that:
-#         1. Increments the shared `SGI_REQ_RECEIVED` AtomicU32.
-#         2. Sends INTID 2 (ack) back to the boot core via send_sgi(0x01, 2).
-#   * Boot core, after Phase 6 banner, sends INTID 1 to core 1 via
-#     send_sgi(0x02, 1) and waits for `SGI_ACK_RECEIVED == 1`.
-#   * On ACK, boot core emits "[smp-test] SGI round-trip complete".
+# Until WS-BP BP8.4 this gate SKIPped on every run: it asked for a kernel ELF no
+# target built and looked for its banner in that image with `strings`.
 #
-# At v1.0.0 (this script's landing) the kernel-side test handlers are
-# NOT yet wired (they require SM5+ per-core scheduler state to register
-# from Lean).  This script SKIPs with a documentation banner until the
-# handler wiring lands at SM5.
+# Usage:
+#   ./scripts/test_qemu_smp_sgi_roundtrip.sh                 # the HAL-only exerciser image
+#   ./scripts/test_qemu_smp_sgi_roundtrip.sh --lean-kernel   # the Lean-linked one
 #
-# Skip / pass / fail conditions:
-#   * No QEMU on PATH       → SKIP
-#   * No kernel image       → SKIP
-#   * Test handlers unwired → SKIP (current state at SM1.F)
-#   * Timeout / no ACK      → FAIL
+# Exit codes:
+#   0   PASS
+#   77  SKIP / NOT RUN (SELE4N_SKIP_EXIT) — QEMU, cargo or the cross target is
+#       missing, so this gate certified nothing; `run_gate_check` records it
+#       as NOT RUN.  REQUIRE_QEMU=1 makes an absent QEMU a failure.
+#   1   FAIL
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/test_lib.sh"
 cd "${REPO_ROOT}"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/qemu_boot_lib.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/qemu_exerciser_lib.sh"
 
-if ! command -v qemu-system-aarch64 &>/dev/null; then
-  echo "[SKIP] WS-SM SM1.H.5: qemu-system-aarch64 not found on PATH"
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-# Kernel image must be set explicitly via $SELE4N_KERNEL_IMAGE.  WS-BP BP8.2
-# made `test_qemu_smp_bringup.sh` build and boot its own image through
-# `scripts/qemu_boot_lib.sh`; moving this exerciser onto that library is
-# WS-BP BP8.4's, which runs the Tier-4 gates and records what they report.
-KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
-
-if [[ -z "${KERNEL_IMAGE}" ]]; then
-  echo "[SKIP] WS-SM SM1.H.5: SELE4N_KERNEL_IMAGE env var not set"
-  echo "       Set SELE4N_KERNEL_IMAGE=/path/to/kernel.elf to enable."
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-if [[ ! -f "${KERNEL_IMAGE}" ]]; then
-  echo "[SKIP] WS-SM SM1.H.5: kernel image not found at ${KERNEL_IMAGE}"
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-# --------------------------------------------------------------------------
-# Pre-condition: kernel-side SGI test handlers must be wired.  At SM1.F
-# the handler dispatch infrastructure is in place (gic::dispatch_sgi,
-# gic::register_sgi_handler, FFI exports), but registering the test
-# handlers requires Lean-side glue that lands at SM5+ when per-core
-# scheduler state exists.
-#
-# We detect the wiring by greping the kernel image's `.rodata` strings
-# for the test banner the handlers would emit.  If the banner string
-# is absent, the handlers haven't been registered → SKIP.
-# --------------------------------------------------------------------------
-TEST_BANNER="\\[smp-test\\] SGI round-trip complete"
-if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -q "smp-test.*SGI round-trip"; then
-  echo "[SKIP] WS-SM SM1.H.5: SGI test handlers not yet wired in kernel image"
-  echo ""
-  echo "  Reason: kernel-side SGI handler registration requires SM5+"
-  echo "          per-core scheduler state to register from Lean.  At"
-  echo "          SM1.F the HAL primitives (send_sgi, dispatch_sgi,"
-  echo "          register_sgi_handler) are present and unit-tested; the"
-  echo "          kernel-side wiring is the SM5 / SM7 follow-on."
-  echo ""
-  echo "  When wired (SM5+), this script will:"
-  echo "    1. Boot QEMU virt -smp 4."
-  echo "    2. Wait for primary's '[smp-test] sending INTID 1 to core 1'."
-  echo "    3. Wait for core 1's '[smp-test] received SGI 1, sending ACK'."
-  echo "    4. Wait for primary's '[smp-test] SGI round-trip complete'."
-  echo ""
-  echo "  HAL-level coverage at SM1.F (already passing):"
-  echo "    cargo test -p sele4n-hal --lib gic::tests::sm1f"
-  echo "    cargo test -p sele4n-hal --lib ffi::tests::sm1f6"
-  exit "${SELE4N_SKIP_EXIT:-77}"
-fi
-
-# --------------------------------------------------------------------------
-# Run the test (only reached if test handlers are wired)
-# --------------------------------------------------------------------------
-LOG="$(mktemp -t sele4n-smp-sgi.XXXXXX.log)"
-# shellcheck disable=SC2064
-trap "rm -f '${LOG}'" EXIT
-
-TIMEOUT_SECS="${SELE4N_QEMU_TIMEOUT_SECS:-30}"
-
-echo "[META] WS-SM SM1.H.5: booting QEMU virt -smp 4 for SGI round-trip"
-echo "[META]   kernel image: ${KERNEL_IMAGE}"
-echo "[META]   log: ${LOG}"
-
-set +e
-# SMP is OFF by default until SM5.I serialises kernel entry
-# (`CmdlineConfig::default`), so an SMP exerciser must opt in on the
-# kernel command line rather than rely on the built-in default --
-# otherwise this boots single-core and tests nothing it is named for.
-# Drop the -append when the default flips back with SM5.I.
-timeout "${TIMEOUT_SECS}s" qemu-system-aarch64 \
-    -machine "virt,secure=on,virtualization=on" \
-    -cpu cortex-a76 \
-    -smp 4 \
-    -m 1G \
-    -kernel "${KERNEL_IMAGE}" \
-    -append "smp_enabled=true" \
-    -nographic \
-    -serial mon:stdio \
-    -d guest_errors \
-    < /dev/null \
-    > "${LOG}" 2>&1
-QEMU_EXIT=$?
-set -e
-
-case "${QEMU_EXIT}" in
-  0|124) ;;
-  *)
-    echo "[FAIL] WS-SM SM1.H.5: QEMU exited with code ${QEMU_EXIT}" >&2
-    echo "       Last 40 lines of UART log:" >&2
-    tail -n 40 "${LOG}" >&2
-    exit 1
-    ;;
-esac
-
-# Verify the round-trip completion banner.
-if ! grep -qE "${TEST_BANNER}" "${LOG}"; then
-  echo "[FAIL] WS-SM SM1.H.5: round-trip banner missing from UART log" >&2
-  echo "       Last 80 lines of UART log:" >&2
-  tail -n 80 "${LOG}" >&2
-  exit 1
-fi
-
-echo "[PASS] WS-SM SM1.H.5: cross-core SGI round-trip succeeded"
-exit 0
+exerciser_gate "WS-SM SM1.H.5 / WS-BP BP8.4" "cross-core SGI round trip" sgi-round-trip "$@"

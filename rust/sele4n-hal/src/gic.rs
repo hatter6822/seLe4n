@@ -635,6 +635,7 @@ pub fn acknowledge_irq_classified(base: usize) -> AckResult {
 //   INTID 2 — tlbShootdownAck
 //   INTID 3 — cacheBroadcast
 //   INTID 4 — haltAll
+//   INTID 15 — the Tier-4 exercisers' agent (WS-BP BP8.4; test images only)
 //
 // Sending an SGI:  write the encoded value to GICD_SGIR.
 // Receiving an SGI: it appears as a normal IRQ with INTID 0..15 at the

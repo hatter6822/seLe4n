@@ -47,6 +47,15 @@
 # per-core init in order, every banner a whole line, at both entry levels.  Both
 # images build into target directories of their own (`scripts/qemu_boot_lib.sh`).
 #
+# WS-BP BP8.4: and the Tier-4 in-image exercisers,
+# `scripts/test_qemu_smp_exercisers.sh`, on the HAL-only `virt` test image and
+# on the Lean-linked one: the cross-core SGI round trip, the per-core console
+# stress, the TLB shootdown round trip and the shootdown stress, driven by the
+# boot core through the HAL's own shootdown round protocol, each banner held as
+# a whole line.  The test image carries the `smp_exercisers` feature and builds
+# into a target directory of its own; the Raspberry Pi 5 image above never
+# carries it, which `scripts/check_aarch64_cross_target.py` refuses.
+#
 # Needs the Lean toolchain (`setup_lean_env.sh`) and rustup's `llvm-tools`
 # component (listed in `rust/rust-toolchain.toml`), which supplies the
 # `llvm-nm` and `llvm-objdump` the builder reads object code with.
@@ -89,9 +98,11 @@ echo "[5/6] The Raspberry Pi 5 boot files, cut from that image and checked"
 "${PROJECT_ROOT}/scripts/build_rpi5_image.sh" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}" "${PROJECT_ROOT}/.lake/build/rpi5-image"
 
-echo "[6/6] The Lean-linked kernel booted under QEMU (virt, four PEs, EL1 and EL2), and the four-PE bring-up"
+echo "[6/6] The Lean-linked kernel booted under QEMU (virt, four PEs, EL1 and EL2), the four-PE bring-up, and the Tier-4 exercisers"
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu.sh" --lean-kernel
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_bringup.sh"
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_bringup.sh" --lean-kernel
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_exercisers.sh"
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_exercisers.sh" --lean-kernel
 
-echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it, is packaged, and boots."
+echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it, is packaged, boots, and its Tier-4 exercisers pass."

@@ -8,9 +8,10 @@
 # WS-BP BP8.2: the one way this tree builds a kernel image for QEMU's `virt`
 # machine, cuts the raw image QEMU boots, and runs it.
 #
-# `scripts/test_qemu.sh` (the boot lane) and `scripts/test_qemu_smp_bringup.sh`
-# (the four-PE bring-up gate) both boot the kernel, and they must boot the same
-# image the same way: an image built one way here and another way there is two
+# `scripts/test_qemu.sh` (the boot lane), `scripts/test_qemu_smp_bringup.sh`
+# (the four-PE bring-up gate) and, through `scripts/qemu_exerciser_lib.sh`, every
+# Tier-4 exerciser gate (WS-BP BP8.4) boot the kernel, and they must boot the
+# same image the same way: an image built one way here and another way there is two
 # answers to "what does the kernel do under QEMU".  Sourced, never executed;
 # the caller sources `test_lib.sh` first, for `log_section`, `record_failure`
 # and `finalize_report`.
@@ -88,40 +89,64 @@ qemu_require_tools() {
     fi
 }
 
-# qemu_build_image LEAN: build the `virt` image -- the Lean-linked one when
-# LEAN is 1, else the HAL alone -- and name it in KERNEL_BIN.  A HAL-only
-# KERNEL_BIN the caller named is booted as it is.
+# qemu_build_image LEAN [EXERCISERS]: build the `virt` image -- the Lean-linked
+# one when LEAN is 1, else the HAL alone; with the Tier-4 in-image exercisers
+# (`smp_exercisers`, WS-BP BP8.4) when EXERCISERS is 1 -- and name it in
+# KERNEL_BIN.  A HAL-only KERNEL_BIN the caller named is booted as it is.
+#
+# Each of the four images builds into a target directory of its own (the
+# reason above), and each is named by the features that build it:
+#   HAL-only            kernel_image,board_qemu_virt
+#   Lean-linked         hw_target,kernel_image,board_qemu_virt
+#   + the exercisers    ...,smp_exercisers
+# `qemu_require_tools` has verified cargo and the cross target, so a build
+# that fails here is a failure of the tree, not of the environment.
+EXERCISER_FEATURE="smp_exercisers"
 qemu_build_image() {
-    local lean="$1" build_log
+    local lean="$1" exercisers="${2:-0}" build_log features target_dir label
     qemu_temp_file build_log qemu_build
+    features="kernel_image,board_qemu_virt"
+    target_dir="${HAL_TARGET_DIR}"
+    label="HAL-only"
     if [[ "${lean}" -eq 1 ]]; then
-        KERNEL_BIN="${LEAN_TARGET_DIR}/${RUST_TARGET}/release/sele4n-kernel"
+        features="hw_target,${features}"
+        target_dir="${LEAN_TARGET_DIR}"
+        label="Lean-linked"
+    fi
+    if [[ "${exercisers}" -eq 1 ]]; then
+        features="${features},${EXERCISER_FEATURE}"
+        target_dir="${target_dir}-exercisers"
+        label="${label} exerciser"
+    fi
+    if [[ "${lean}" -eq 1 || "${exercisers}" -eq 1 ]]; then
+        KERNEL_BIN="${target_dir}/${RUST_TARGET}/release/sele4n-kernel"
         # Asked for by name, so a missing archive or a failed link is a
-        # failure, not a skip: the archive lane that runs this mode has just
-        # built both.
-        if [[ ! -f "${LEAN_ARCHIVE}" ]]; then
+        # failure, not a skip: the archive lane that runs the Lean mode has
+        # just built both.
+        if [[ "${lean}" -eq 1 && ! -f "${LEAN_ARCHIVE}" ]]; then
             record_failure "BUILD" "--lean-kernel needs ${LEAN_ARCHIVE}; run scripts/test_lean_aarch64_archive.sh"
             finalize_report
         fi
-        log_section "BUILD" "Building the Lean-linked kernel image for QEMU virt..."
+        log_section "BUILD" "Building the ${label} kernel image for QEMU virt (${features})..."
         if ! (cd "${RUST_DIR}" && cargo build --release --target "${RUST_TARGET}" -p sele4n-hal \
-                --features hw_target,kernel_image,board_qemu_virt --bin sele4n-kernel \
-                --target-dir "${LEAN_TARGET_DIR}") 2>"${build_log}"; then
+                --features "${features}" --bin sele4n-kernel \
+                --target-dir "${target_dir}") 2>"${build_log}"; then
             tail -20 "${build_log}"
-            record_failure "BUILD" "the Lean-linked virt image did not build"
+            record_failure "BUILD" "the ${label} virt image did not build"
             finalize_report
         fi
     elif [[ "${KERNEL_BIN}" == "${KERNEL_BIN_DEFAULT}" ]]; then
-        log_section "BUILD" "Building the kernel image (sele4n-kernel) for ${RUST_TARGET}..."
+        log_section "BUILD" "Building the kernel image (sele4n-kernel) for ${RUST_TARGET} (${features})..."
         if ! (cd "${RUST_DIR}" && cargo build --release --target "${RUST_TARGET}" -p sele4n-hal \
-                --features kernel_image,board_qemu_virt --bin sele4n-kernel \
-                --target-dir "${HAL_TARGET_DIR}") 2>"${build_log}"; then
-            # Cross-compilation may fail without linker config — this is
-            # expected in CI environments without an aarch64 linker.
-            log_section "META" "SKIP: Cross-compilation failed (expected without aarch64 linker)"
-            log_section "META" "       Configure .cargo/config.toml with linker for ${RUST_TARGET}"
-            tail -10 "${build_log}"
-            exit "${SELE4N_SKIP_EXIT:-77}"
+                --features "${features}" --bin sele4n-kernel \
+                --target-dir "${target_dir}") 2>"${build_log}"; then
+            # WS-BP BP8.4: a failure, where it used to be a skip.  `qemu_require_tools`
+            # has verified cargo and the cross target, so a build that fails here is
+            # the tree's, and a gate that reports it NOT RUN reads a broken image as
+            # an absent emulator.
+            tail -20 "${build_log}"
+            record_failure "BUILD" "the HAL-only virt image did not build"
+            finalize_report
         fi
     else
         log_section "BUILD" "Using the kernel image named by KERNEL_BIN: ${KERNEL_BIN}"

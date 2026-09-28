@@ -382,3 +382,9 @@ pub mod user_translation;
 // and load buffers and the four `fp_context.S` routines, the only kernel code
 // that names an FP/SIMD register.
 pub mod fp_context;
+
+/// **WS-BP BP8.4**: the Tier-4 in-image exercisers — compiled into a test
+/// image only (`smp_exercisers`); see the module docs for what runs and why
+/// no shipped image carries it.
+#[cfg(feature = "smp_exercisers")]
+pub mod smp_exercisers;

@@ -1404,6 +1404,128 @@ pub fn boot_l0_entry0() -> u64 {
     unsafe { core::ptr::read_volatile(entry) }
 }
 
+// ---------------------------------------------------------------------------
+// WS-BP BP8.4 — the Tier-4 exercisers' window (test images only)
+// ---------------------------------------------------------------------------
+
+/// **WS-BP BP8.4**: the boot level-1 entry the exercisers' window hangs off —
+/// the last one, whose gigabyte no board's RAM, device window or RAM extension
+/// describes (a Raspberry Pi 5 tops out at 16 GiB; the assertions below hold
+/// the two constant users off it), inside level-0 entry 0's subtree, which
+/// every thread's address space shares (`user_translation::kernel_window_entry`).
+/// Compiled only into a test image (`smp_exercisers`).
+#[cfg(feature = "smp_exercisers")]
+pub const EXERCISER_WINDOW_L1_INDEX: usize = TABLE_ENTRIES - 1;
+
+/// **WS-BP BP8.4**: the first byte of that entry.
+#[cfg(feature = "smp_exercisers")]
+pub const EXERCISER_WINDOW_BASE: u64 = EXERCISER_WINDOW_L1_INDEX as u64 * L1_BLOCK_SIZE;
+
+#[cfg(feature = "smp_exercisers")]
+const _: () =
+    assert!(EXERCISER_WINDOW_L1_INDEX != RAM_GIB && EXERCISER_WINDOW_L1_INDEX != DEVICE_GIB);
+#[cfg(feature = "smp_exercisers")]
+const _: () = assert!(EXERCISER_WINDOW_BASE + L1_BLOCK_SIZE <= BOOT_TABLE_REACH);
+
+/// **WS-BP BP8.4**: why the exercisers' window was refused.
+#[cfg(feature = "smp_exercisers")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExerciserWindowRefusal {
+    /// The boot map is not sealed: RAM extensions may still be written, and
+    /// the window is hung only once the map has one writer no more.
+    NotSealed,
+    /// The level-2 table is not 4 KiB-aligned.
+    TableUnaligned,
+    /// The level-2 table is not a page of the kernel image's own memory.
+    TableOutsideKernelExtent,
+    /// The level-1 entry already holds a valid descriptor.
+    EntryInUse,
+}
+
+/// **WS-BP BP8.4**: may the exercisers' level-2 table at `l2_table_pa` be
+/// hung off the boot map — sealed, with `entry` the level-1 entry's current
+/// value and `kernel` the image's extent as `(start, length)`?  The whole
+/// decision, so it is decided on the host; [`install_exerciser_window`] reads
+/// the three facts off the machine and writes nothing unless this says `Ok`.
+#[cfg(feature = "smp_exercisers")]
+pub const fn exerciser_window_admissible(
+    l2_table_pa: u64,
+    sealed: bool,
+    entry: u64,
+    kernel: (u64, u64),
+) -> Result<(), ExerciserWindowRefusal> {
+    if !sealed {
+        return Err(ExerciserWindowRefusal::NotSealed);
+    }
+    if !l2_table_pa.is_multiple_of(4096) {
+        return Err(ExerciserWindowRefusal::TableUnaligned);
+    }
+    let (start, length) = kernel;
+    if l2_table_pa < start || l2_table_pa.saturating_add(4096) > start.saturating_add(length) {
+        return Err(ExerciserWindowRefusal::TableOutsideKernelExtent);
+    }
+    if entry & DESC_VALID != 0 {
+        return Err(ExerciserWindowRefusal::EntryInUse);
+    }
+    Ok(())
+}
+
+/// **WS-BP BP8.4**: a Table descriptor naming the table at `table_pa`.
+#[cfg(feature = "smp_exercisers")]
+#[must_use]
+pub const fn exerciser_table_descriptor(table_pa: u64) -> u64 {
+    (table_pa & DESC_ADDR_MASK) | DESC_TABLE
+}
+
+/// **WS-BP BP8.4**: the page descriptor the exercisers map a backing page
+/// with — the kernel's own Normal RAM descriptor: EL1 read-write, never
+/// executable, global.
+#[cfg(feature = "smp_exercisers")]
+#[must_use]
+pub const fn exerciser_page_descriptor(page_pa: u64) -> u64 {
+    page_descriptor(page_pa & DESC_ADDR_MASK, BootMapping::NormalRam)
+}
+
+/// **WS-BP BP8.4**: hang the exercisers' level-2 table at `l2_table_pa` off
+/// the boot map's level-1 table at [`EXERCISER_WINDOW_L1_INDEX`].
+///
+/// One 64-bit store, invalid to valid, so a walker sees the old entry or the
+/// new one and never a partial update; then `DSB ISH` and `ISB`, as
+/// [`extend_boot_ram_map`] publishes its entries.  Run on the boot core with
+/// IRQs masked for the store, which is [`PageTableCell::with_inner_mut`]'s
+/// precondition.
+///
+/// # Errors
+///
+/// [`exerciser_window_admissible`]'s refusal, with nothing written.
+#[cfg(feature = "smp_exercisers")]
+pub fn install_exerciser_window(l2_table_pa: u64) -> Result<(), ExerciserWindowRefusal> {
+    let saved = crate::interrupts::disable_interrupts();
+    let sealed = BOOT_MAP_SEALED.load(Ordering::Acquire);
+    let kernel = kernel_extent();
+    // SAFETY: the boot core, with IRQs masked (above), is the one writer
+    // `with_inner_mut` requires.  `entry` is an aligned `u64` inside the live
+    // boot tables, read and — only after the admission check has refused every
+    // value the store may not replace — written volatile, because the walker
+    // reads it behind the compiler's back; the one store is single-copy
+    // atomic, from an invalid entry, so no walk observes a partial update.
+    let outcome = unsafe {
+        BOOT_TABLES.with_inner_mut(|tables| {
+            let entry = &raw mut tables.l1[EXERCISER_WINDOW_L1_INDEX];
+            let current = core::ptr::read_volatile(entry);
+            let verdict = exerciser_window_admissible(l2_table_pa, sealed, current, kernel);
+            if verdict.is_ok() {
+                core::ptr::write_volatile(entry, (l2_table_pa & DESC_ADDR_MASK) | DESC_TABLE);
+            }
+            verdict
+        })
+    };
+    crate::barriers::dsb_ish();
+    crate::barriers::isb();
+    crate::interrupts::restore_interrupts(saved);
+    outcome
+}
+
 /// Set TTBR0/TTBR1 and enable the MMU — AK5-D/AK5-C/AK5-E.3 full sequence.
 ///
 /// # SAFETY preconditions

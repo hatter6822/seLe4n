@@ -69,6 +69,14 @@ kernel_image = []
 # base (`build.rs` derives that link script from `link.ld`).  Selects a board;
 # enables nothing else.
 board_qemu_virt = []
+# WS-BP BP8.4: the Tier-4 in-image exercisers (`src/smp_exercisers.rs`): an
+# agent SGI handler at INTID 15, a per-core window hung off the boot map, and
+# the four drivers the QEMU gates `test_qemu_smp_{sgi_roundtrip,kprintln_stress,
+# shootdown,shootdown_stress}.sh` boot and read.  A **test image** feature: the
+# Raspberry Pi 5 image never carries it (`scripts/build_rpi5_image.sh` and the
+# archive lane build without it, and a Tier 3 negative holds them to that), so
+# nothing here exists in an image a board boots.  Enables nothing else.
+smp_exercisers = []
 
 # Explicit target declaration so `required-features` can be attached.
 # Declaring one `[[bin]]` disables Cargo's auto-discovery of `src/bin/`

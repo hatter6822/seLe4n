@@ -63,7 +63,7 @@ enforced by a named script rather than by review.
 
 That the kernel boots on hardware; that per-object fine locks are deployed;
 unconditional SMP starvation-freedom; that live WCRT matches the fine-lock
-bound; that Tier 4 acceptance gates have passed; that a fault message past
+bound; that the eight Tier-4 gates that need a user program have run; that a fault message past
 `MR3` reaches a handler on hardware.
 
 *(That the deployed RwLock is the one the Lean FIFO spec describes left this

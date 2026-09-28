@@ -414,13 +414,21 @@ the archive `scripts/test_lean_aarch64_archive.sh` builds) and:
 On the board there is no QEMU; read the same banners off the serial console
 (BP8.3).
 
-The cross-core SGI round-trip is the separate
-`./scripts/test_qemu_smp_sgi_roundtrip.sh` exerciser (primary signals
-each secondary; each secondary acknowledges); the broader SMP behaviour
-suites are orchestrated by `./scripts/test_tier4_smp_bootcheck.sh`.
+The cross-core SGI round trip, the per-core console stress, the TLB
+shootdown round trip and the shootdown stress are **in-image drivers** (WS-BP
+BP8.4, `rust/sele4n-hal/src/smp_exercisers.rs`, built into the `virt` test
+image by the `smp_exercisers` feature) that the boot core runs once every
+declared PE serves the kernel.  `./scripts/test_qemu_smp_exercisers.sh` reads
+all four from one boot; the per-driver gates
+(`test_qemu_smp_sgi_roundtrip.sh`, `test_qemu_smp_kprintln_stress.sh`,
+`test_qemu_smp_shootdown.sh`, `test_qemu_smp_shootdown_stress.sh`) each read
+one; and the PE-withheld boot is `./scripts/test_qemu_smp_minimal.sh`
+(`-smp 2`).  `./scripts/test_tier4_smp_bootcheck.sh` orchestrates every
+Tier-4 gate on both images, HAL-only and `--lean-kernel`; the eight gates
+that need a user program report NOT RUN until SM10's root task exists.
 
-**Expected output** ends with the script's
-`[PASS] WS-SM SM1.H.1` line once all secondaries report ready.
+**Expected output** ends with `[META] PASS: four-PE bring-up` and
+`[META] All checks passed.` once all secondaries report ready.
 
 **Failure diagnostic:** if any secondary fails to wake, examine the
 PSCI return code (`PsciResult::Denied`, `AlreadyOn`, etc.) logged
@@ -529,8 +537,9 @@ anything, so wire a hardware test in directly rather than behind a
 `command -v` guard:
 
 ```bash
-# Add to scripts/test_tier4_smp_bootcheck.sh:
-run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_bringup.sh"
+# scripts/test_tier4_smp_bootcheck.sh (since WS-BP BP8.4): each executable
+# gate on the HAL-only image and, when the archive exists, --lean-kernel.
+gate test_qemu_smp_bringup.sh        # run_gate_check, both images
 # ... plus the SM10.3 scripts as they land
 ```
 
@@ -568,9 +577,12 @@ checklist before tagging:
         `NIGHTLY_ENABLE_EXPERIMENTAL=1` is what makes Tier 4 run at all, and
         without it the tier reports NOT RUN and strict mode fails — which is
         the intended behaviour, since a strict run that never reached the
-        gates certifies nothing. The image exists since v0.36.2 (BP5); run
-        this once WS-BP BP8.1 gives the QEMU lanes a machine that boots it —
-        until then the gates report NOT RUN and this box cannot be ticked.
+        gates certifies nothing. Since WS-BP BP8.4 (`v0.36.28`) the twelve
+        executable gate runs pass on QEMU `virt`
+        (`./scripts/test_tier4_smp_bootcheck.sh`, both images); the eight
+        gates that need a user program report NOT RUN until SM10's root task
+        exists, so the strict run cannot yet be ticked — which is what it is
+        for.
   - [ ] §4.1 — TLB+Cache coherency (AN9-A)
   - [ ] §4.2 — TLBI bracket audit (AN9-B)
   - [ ] §4.3 — `suspendThread` atomicity (AN9-D)

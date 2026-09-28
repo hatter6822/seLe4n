@@ -142,6 +142,15 @@ QEMU_REQUIRED = "REQUIRE_QEMU=1"
 # WS-BP BP8.2: and the four-PE bring-up gate, on the HAL-only image and on the
 # Lean-linked one, each with the same requirement.
 BRINGUP_SCRIPT = "scripts/test_qemu_smp_bringup.sh"
+# WS-BP BP8.4: the Tier-4 in-image exercisers, run on both `virt` images.
+EXERCISERS_SCRIPT = "scripts/test_qemu_smp_exercisers.sh"
+# The feature that builds the exerciser drivers into a `virt` TEST image, and
+# the board selector.  An image carrying the drivers is a test image and never
+# the Raspberry Pi 5's, so an image build naming the feature without the board
+# selector -- in either lane -- is refused, as is the archive lane's release
+# image build naming it at all.
+EXERCISER_FEATURE = "smp_exercisers"
+VIRT_FEATURE = "board_qemu_virt"
 LEAN_ARCHIVE_COMPONENTS = ("llvm-tools",)
 HAL_CRATE = "rust/sele4n-hal"
 ORACLE_PKG = "sele4n-hal"
@@ -869,6 +878,18 @@ def check_gate_script(root: str) -> list[str]:
         and IMAGE_FEATURE in option_values(argv, "features")
         and "--all-features" not in argv
     ]
+    # WS-BP BP8.4: the Tier-4 in-image drivers build a `virt` TEST image.  An
+    # image build naming the feature without the board selector is a board
+    # image carrying test drivers, which no release may.
+    for argv in images:
+        features = {f for v in option_values(argv, "features") for f in v.replace(",", " ").split()}
+        if EXERCISER_FEATURE in features and VIRT_FEATURE not in features:
+            problems.append(
+                f"{GATE_SCRIPT}: the image build `{' '.join(argv)}` names "
+                f"`{EXERCISER_FEATURE}` without `{VIRT_FEATURE}`: the Tier-4 drivers "
+                f"belong to the `virt` test image the QEMU gates boot, never to the "
+                f"Raspberry Pi 5 image."
+            )
     if not released_images:
         problems.append(
             f"{GATE_SCRIPT}: no cross `cargo build --release --target "
@@ -1313,7 +1334,13 @@ def check_lean_archive_lane(root: str) -> list[str]:
 
     WS-BP BP8.2: and `BRINGUP_SCRIPT` twice, once without `QEMU_LEAN_FLAG`
     (the HAL-only image) and once with it, each carrying `QEMU_REQUIRED`,
-    after the archive build and not exempted from `set -e`."""
+    after the archive build and not exempted from `set -e`.
+
+    WS-BP BP8.4: and `EXERCISERS_SCRIPT` the same way, twice -- the Tier-4
+    in-image drivers on the HAL-only test image and on the Lean-linked one --
+    and the release image build must not name `EXERCISER_FEATURE`: the
+    drivers are a test image's, built into a target directory of their own,
+    and the image this lane links is the one CI uploads for the board."""
     text = read(root, LEAN_ARCHIVE_LANE)
     if text is None:
         return [f"{LEAN_ARCHIVE_LANE}: missing. It is the one place the kernel's "
@@ -1331,6 +1358,7 @@ def check_lean_archive_lane(root: str) -> list[str]:
     boot_files: list[int] = []
     qemu_boots: list[int] = []
     bringups: dict[bool, list[int]] = {False: [], True: []}
+    exercisers: dict[bool, list[int]] = {False: [], True: []}
     for position, (command, operator) in enumerate(shell_command_list(code)):
         argv = executed_argv(command, wrappers)
         raw = argv_of(command)
@@ -1355,17 +1383,37 @@ def check_lean_archive_lane(root: str) -> list[str]:
                     f"discarded."
                 )
             continue
+        if (argv and argv[0].endswith(EXERCISERS_SCRIPT.split("/")[-1])
+                and QEMU_REQUIRED in assignments):
+            exercisers[QEMU_LEAN_FLAG in argv[1:]].append(position)
+            if operator in ERREXIT_EXEMPTING_OPERATORS:
+                problems.append(
+                    f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
+                    f"which exempts it from `set -e`: it runs and its failure is "
+                    f"discarded."
+                )
+            continue
+        features = {f for v in option_values(argv, "features") for f in v.replace(",", " ").split()}
         image_build = (
             argv[:2] == ["cargo", "build"]
             and CROSS_TARGET in option_values(argv, "target")
             and IMAGE_BIN in option_values(argv, "bin")
             and ("--release" in argv or "release" in option_values(argv, "profile"))
-            and {"hw_target", IMAGE_FEATURE}
-            <= {f for v in option_values(argv, "features") for f in v.replace(",", " ").split()}
+            and {"hw_target", IMAGE_FEATURE} <= features
             and "--all-features" not in argv
         )
         if image_build:
             images.append(position)
+            # WS-BP BP8.4: this is the image CI uploads for the board.  The
+            # Tier-4 drivers are a test image's; an image carrying them is
+            # not the release image, whatever else it carries.
+            if EXERCISER_FEATURE in features:
+                problems.append(
+                    f"{LEAN_ARCHIVE_LANE}: the release image build `{command}` names "
+                    f"`{EXERCISER_FEATURE}`, the Tier-4 in-image drivers. They belong "
+                    f"to the `virt` test image the QEMU gates build for themselves, "
+                    f"never to the image this lane links and CI uploads for the board."
+                )
             if operator in ERREXIT_EXEMPTING_OPERATORS:
                 problems.append(
                     f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
@@ -1470,6 +1518,22 @@ def check_lean_archive_lane(root: str) -> list[str]:
                 f"{LEAN_ARCHIVE_LANE}: the bring-up gate on {image} runs before the "
                 f"archive is built."
             )
+    for lean, runs in exercisers.items():
+        image = "the Lean-linked test image" if lean else "the HAL-only test image"
+        spelling = f" {QEMU_LEAN_FLAG}" if lean else ""
+        if not runs:
+            problems.append(
+                f"{LEAN_ARCHIVE_LANE}: no executed `{QEMU_REQUIRED} {EXERCISERS_SCRIPT}"
+                f"{spelling}`. It is the Tier-4 in-image exercisers on {image}: the "
+                f"cross-core SGI round trip, the console stress, the TLB shootdown "
+                f"round trip and the shootdown stress, driven through the HAL's own "
+                f"round protocol, every banner a whole line."
+            )
+        elif builds and min(runs) < max(builds):
+            problems.append(
+                f"{LEAN_ARCHIVE_LANE}: the Tier-4 exercisers on {image} run before "
+                f"the archive is built."
+            )
     if images and any(p < min(images) for p in image_checks + image_fp + boot_files):
         problems.append(
             f"{LEAN_ARCHIVE_LANE}: the image is checked before it is linked, so the "
@@ -1493,8 +1557,11 @@ def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, 
     qemu = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{QEMU_LANE_SCRIPT}" {QEMU_LEAN_FLAG}\n'
     bringup_hal = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{BRINGUP_SCRIPT}"\n'
     bringup_lean = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{BRINGUP_SCRIPT}" {QEMU_LEAN_FLAG}\n'
+    exercisers_hal = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{EXERCISERS_SCRIPT}"\n'
+    exercisers_lean = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{EXERCISERS_SCRIPT}" {QEMU_LEAN_FLAG}\n'
     assert build in lane and check in lane and fp in lane and pack in lane and qemu in lane
     assert bringup_hal in lane and bringup_lean in lane
+    assert exercisers_hal in lane and exercisers_lean in lane
     return [
         ("lane links the image without hw_target",
          lane.replace(build, build.replace("hw_target,", "") + "echo hw_target\n")),
@@ -1537,6 +1604,18 @@ def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, 
          lane.replace(bringup_hal, "").replace(builder_line, bringup_hal + builder_line)),
         ("lane discards the Lean bring-up's failure",
          lane.replace(bringup_lean, bringup_lean.rstrip("\n") + " || true\n")),
+        # WS-BP BP8.4: the Tier-4 exercisers, and the release image without them.
+        ("lane echoes the HAL-only exercisers", lane.replace(exercisers_hal, "echo " + exercisers_hal)),
+        ("lane runs the exercisers on the Lean image twice", lane.replace(exercisers_hal, exercisers_lean)),
+        ("lane runs the exercisers on the HAL image twice", lane.replace(exercisers_lean, exercisers_hal)),
+        ("lane lets an absent QEMU skip the Lean exercisers",
+         lane.replace(exercisers_lean, exercisers_lean.replace(QEMU_REQUIRED, "REQUIRE_QEMU=0"))),
+        ("lane runs the exercisers before it builds the archive",
+         lane.replace(exercisers_hal, "").replace(builder_line, exercisers_hal + builder_line)),
+        ("lane discards the Lean exercisers' failure",
+         lane.replace(exercisers_lean, exercisers_lean.rstrip("\n") + " || true\n")),
+        ("lane links the exercisers into the release image",
+         lane.replace(build, build.replace("hw_target,", f"hw_target,{EXERCISER_FEATURE},"))),
     ]
 
 
@@ -2003,6 +2082,8 @@ python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}
 {QEMU_REQUIRED} "${{PROJECT_ROOT}}/{QEMU_LANE_SCRIPT}" {QEMU_LEAN_FLAG}
 {QEMU_REQUIRED} "${{PROJECT_ROOT}}/{BRINGUP_SCRIPT}"
 {QEMU_REQUIRED} "${{PROJECT_ROOT}}/{BRINGUP_SCRIPT}" {QEMU_LEAN_FLAG}
+{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{EXERCISERS_SCRIPT}"
+{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{EXERCISERS_SCRIPT}" {QEMU_LEAN_FLAG}
 """
 
 GOOD_HOST_LANE = """#!/usr/bin/env bash
@@ -2914,6 +2995,10 @@ def self_test() -> int:
          "preserving"),
         ("the image is built for the host",
          image_build, image_build.replace('--target "$CROSS_TARGET" ', ""), "preserving"),
+        ("the RPi5 image carries the Tier-4 exercisers",
+         image_build,
+         image_build.replace(f"--features {IMAGE_FEATURE}", f"--features {IMAGE_FEATURE},{EXERCISER_FEATURE}"),
+         "preserving"),
         ("the image check is echoed, not run", image_check, "echo " + image_check, "preserving"),
         ("the image check reads the debug image",
          image_check, image_check.replace("/release/", "/debug/"), "preserving"),
