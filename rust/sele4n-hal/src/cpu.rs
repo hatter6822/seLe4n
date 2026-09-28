@@ -545,9 +545,82 @@ pub fn current_core_id() -> u64 {
     0
 }
 
+/// The EL0 access-enable bits of `CNTKCTL_EL1` the kernel sets: none.
+///
+/// `EL0PCTEN` (bit 0), `EL0VCTEN` (bit 1), `EL0VTEN` (bit 8) and `EL0PTEN`
+/// (bit 9) reset to an architecturally UNKNOWN value (ARM ARM D13.11.15), and
+/// `EL0PTEN` set lets a thread write `CNTP_CTL_EL0` and `CNTP_CVAL_EL0` — the
+/// kernel's preemption tick.  Every bit is clear, so an EL0 counter or timer
+/// access traps to EL1 and is delivered as a fault.
+pub const CNTKCTL_EL1_KERNEL: u64 = 0;
+
+/// Whether `ID_AA64DFR0_EL1` reports a PMUv3 (`PMUVer`, bits [11:8], in
+/// `0x1..=0xE`).  `0x0` is no PMU and `0xF` an IMPLEMENTATION DEFINED one, and
+/// in neither case does `PMUSERENR_EL0` exist to be written.
+#[must_use]
+pub const fn pmu_v3_implemented(debug_features: u64) -> bool {
+    let ver = (debug_features >> 8) & 0xF;
+    ver != 0 && ver != 0xF
+}
+
+/// **Close every system-register channel EL0 has on this PE** (v0.36.30).
+///
+/// The kernel's isolation between threads rests on each register EL0 can
+/// write being either thread context (the trap frame, `TPIDR_EL0` included,
+/// and the lazily switched FP/SIMD state) or trapped.  Four controls were
+/// neither, left at their reset or firmware value:
+///
+/// * `CNTKCTL_EL1` ([`CNTKCTL_EL1_KERNEL`]): with `EL0PTEN` set a thread could
+///   switch off its core's tick and keep the CPU, outside every budget.
+/// * `PMUSERENR_EL0`: with `EN` set a thread could read and reset the PE's
+///   performance counters, which no switch saves — a channel between threads.
+///   Written only when a PMUv3 exists ([`pmu_v3_implemented`]).
+/// * `MDSCR_EL1`: `TDCC` clear lets EL0 use the debug communications channel,
+///   a per-PE register no switch saves.  Zero also leaves software step and
+///   debug exceptions off.
+/// * `TPIDRRO_EL0` and `TPIDR_EL0`: cleared so no firmware value is handed to
+///   the first thread; `TPIDR_EL0` is per-thread from then on.
+///
+/// Every PE runs this before it unmasks IRQs, so it runs before any thread
+/// reaches EL0 on that PE.
+pub fn lock_el0_system_access() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::write_sysreg!("cntkctl_el1", CNTKCTL_EL1_KERNEL);
+        if pmu_v3_implemented(crate::read_sysreg!("id_aa64dfr0_el1")) {
+            crate::write_sysreg!("pmuserenr_el0", 0u64);
+        }
+        crate::write_sysreg!("mdscr_el1", 0u64);
+        crate::write_sysreg!("tpidrro_el0", 0u64);
+        crate::write_sysreg!("tpidr_el0", 0u64);
+        crate::barriers::isb();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// v0.36.30: no EL0 access-enable bit of `CNTKCTL_EL1` is set.
+    #[test]
+    fn el0_has_no_counter_or_timer_access() {
+        for bit in [0u32, 1, 8, 9] {
+            assert_eq!(CNTKCTL_EL1_KERNEL & (1 << bit), 0, "CNTKCTL_EL1 bit {bit}");
+        }
+    }
+
+    /// v0.36.30: `PMUSERENR_EL0` is written exactly when a PMUv3 exists.
+    #[test]
+    fn pmuserenr_is_written_only_on_a_pmu_v3() {
+        assert!(!pmu_v3_implemented(0));
+        assert!(!pmu_v3_implemented(0xF << 8));
+        assert!(pmu_v3_implemented(0x1 << 8));
+        // Cortex-A76 reports PMUv3 for ARMv8.1 (`0x4`).
+        assert!(pmu_v3_implemented(0x4 << 8));
+        assert!(pmu_v3_implemented(0xE << 8));
+        // Neighbouring fields do not decide it.
+        assert!(!pmu_v3_implemented(0xF0FF));
+    }
 
     #[test]
     fn mpidr_mask_covers_all_low_affinity_fields() {

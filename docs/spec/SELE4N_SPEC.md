@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.29` (`lakefile.toml`) |
+| **Package version** | `0.36.30` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 432,957 across 361 Lean files |
 | **Test LoC** | 88,168 across 71 Lean test suites |
@@ -3508,18 +3508,27 @@ UART access (including `kprint!` macro and FFI `ffi_uart_putc`) flows through
 the lock. The original `pub static mut BOOT_UART` has been replaced with
 module-private `BOOT_UART_INNER` guarded by `UART_LOCK`.
 
-#### 6.5.6 Architecture Gap: TPIDR_EL0 / TLS
-`RegisterFile` (Prelude.lean) models GPRs (x0-x30), PC, and SP only.
-The ARM64 `TPIDR_EL0` register (thread-local storage pointer) is not
-modeled. This register is required for user-space TLS support (e.g.,
-`__thread` variables, Go runtime, Rust `thread_local!`).
+#### 6.5.6 TPIDR_EL0 / TLS is thread context (v0.36.30)
+`RegisterFile` (`Machine.lean`) models GPRs (x0-x30), PC, SP, the saved
+processor state and the thread pointer `TPIDR_EL0` (`RegisterFile.tpidr`).
 
-**Integration timeline**: TPIDR_EL0 modeling is planned for a future
-AG-phase when user-space binary loading and context switching of system
-registers are implemented. The `TrapFrame` in `sele4n-hal` (288 bytes
-since AK5-F: ESR at 272, FAR at 280) already has space for system
-register state; the Lean model needs a corresponding `RegisterFile`
-extension.
+This section recorded the register as an unmodeled gap to be closed "when
+context switching of system registers is implemented".  WS-BP BP7.6 made the
+context restore live without closing it, and from then until v0.36.30 the gap
+was a **security defect**: EL0 writes `TPIDR_EL0` with no trap and nothing saved
+or restored it, so a thread read the value the previous thread on its core had
+written — a 64-bit storage channel between threads sharing a core, across
+domains, invisible to the non-interference theorems because the model lacked the
+register.  It is trap-frame word 34 now (`trapFrameTpidrWord`), saved at every
+entry and restored at every exit in the 304-byte `TrapFrame` (offset 288), and
+a context restore installs the incoming thread's own value.
+
+The other EL0-reachable controls are closed on every PE before it unmasks IRQs
+(`cpu::lock_el0_system_access`): `CNTKCTL_EL1 = 0` (no EL0 counter or timer
+access, so a thread cannot switch off the preemption tick), `PMUSERENR_EL0 = 0`
+where a PMUv3 exists, `MDSCR_EL1 = 0`, and `TPIDRRO_EL0` and `TPIDR_EL0` cleared
+of any firmware value.  Every other register EL0 can write is either in the trap
+frame or in the lazily switched FP/SIMD context (BP7.9).
 
 ### 6.6 Platform Testing Limitations
 The simulation platform contract (`Sim/Contract.lean`) uses a permissive
@@ -4898,7 +4907,8 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   trap frame for a handler's duration (`trap::InFlightFrame`), and every
   state-committing trap entry — the syscall seam, the fault and unknown-syscall
   entries, the timer tick, the `.reschedule` receiver — reads it
-  (`Platform.FFI.captureTrapFrame`: `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`)
+  (`Platform.FFI.captureTrapFrame`: `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`,
+  and since v0.36.30 `TPIDR_EL0`)
   and saves it into the executing core's bank and the current thread's context
   before its atomic step (`Architecture.saveTrapFrameOnCore`), a frame taken at
   EL1 saving nothing (`trapFromEl0`).  The save preserves `ipcInvariantFull`

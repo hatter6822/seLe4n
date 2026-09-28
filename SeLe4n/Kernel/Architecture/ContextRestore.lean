@@ -171,25 +171,28 @@ theorem restoreTargetOnCore_user (st : SystemState) (c : CoreId) (tid : SeLe4n.T
   simp [restoreTargetOnCore, hCur, hIdle, hTcb]
 
 /-- **The words a context occupies in the trap frame**, the inverse of
-`registerFileOfTrapWords` on the layout's thirty-four words. -/
+`registerFileOfTrapWords` on the layout's thirty-five words. -/
 def trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile) (i : Nat) : UInt64 :=
   if i < 31 then (rf.gpr ⟨i⟩).val.toUInt64
   else if i = trapFrameSpWord then rf.sp.val.toUInt64
   else if i = trapFramePcWord then rf.pc.val.toUInt64
   else if i = trapFramePstateWord then rf.pstate.val.toUInt64
+  else if i = trapFrameTpidrWord then rf.tpidr.val.toUInt64
   else 0
 
 /-- **Save then restore is the identity** on a context whose registers fit in
 64 bits — which every context a trap frame produced does. -/
 theorem registerFileOfTrapWords_trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile)
     (hGpr : ∀ r : SeLe4n.RegName, r.val < 31 → (rf.gpr r).val < 2 ^ 64)
-    (hSp : rf.sp.val < 2 ^ 64) (hPc : rf.pc.val < 2 ^ 64) (hPs : rf.pstate.val < 2 ^ 64) :
+    (hSp : rf.sp.val < 2 ^ 64) (hPc : rf.pc.val < 2 ^ 64) (hPs : rf.pstate.val < 2 ^ 64)
+    (hTp : rf.tpidr.val < 2 ^ 64) :
     (registerFileOfTrapWords (trapWordsOfRegisterFile rf)).pc = rf.pc ∧
     (registerFileOfTrapWords (trapWordsOfRegisterFile rf)).sp = rf.sp ∧
     (registerFileOfTrapWords (trapWordsOfRegisterFile rf)).pstate = rf.pstate ∧
+    (registerFileOfTrapWords (trapWordsOfRegisterFile rf)).tpidr = rf.tpidr ∧
     (∀ r : SeLe4n.RegName, r.val < 31 →
       (registerFileOfTrapWords (trapWordsOfRegisterFile rf)).gpr r = rf.gpr r) := by
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, trapFramePcWord, trapFrameSpWord,
       trapFramePstateWord]
     cases h : rf.pc; simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
@@ -199,6 +202,9 @@ theorem registerFileOfTrapWords_trapWordsOfRegisterFile (rf : SeLe4n.RegisterFil
   · simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, trapFramePcWord, trapFrameSpWord,
       trapFramePstateWord]
     cases h : rf.pstate; simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
+  · simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, trapFramePcWord, trapFrameSpWord,
+      trapFramePstateWord, trapFrameTpidrWord]
+    cases h : rf.tpidr; simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
   · intro r hr
     have hLt := hGpr r hr
     simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, hr, if_true]

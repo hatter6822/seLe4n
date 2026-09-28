@@ -14,8 +14,17 @@
 /// - SPSR_EL1 at offset 264
 /// - ESR_EL1 at offset 272 (AK5-F — read-only snapshot at exception entry)
 /// - FAR_EL1 at offset 280 (AK5-F — read-only snapshot at exception entry)
+/// - TPIDR_EL0 at offset 288 (v0.36.30 — the thread pointer)
+/// - one padding word at offset 296
 ///
-/// Total size: 36 × 8 = 288 bytes, 16-byte aligned.
+/// Total size: 38 × 8 = 304 bytes, 16-byte aligned.
+///
+/// **`TPIDR_EL0` is thread context.**  EL0 writes it with no trap, so until
+/// v0.36.30, when nothing saved or restored it, a thread could read the value
+/// the previous thread on its core had written: a 64-bit storage channel
+/// between any two threads sharing a core, across domains.  It is saved at
+/// every entry and restored at every exit, and a context restore installs the
+/// incoming thread's own value (word 34).
 ///
 /// **No FP/SIMD register is saved, and that is sound only because the
 /// kernel touches none.**  Both boot entries trap FP/SIMD at EL0 and EL1
@@ -50,14 +59,19 @@ pub struct TrapFrame {
     /// AK5-F: Fault Address Register snapshot at trap entry.
     /// Written by `trap.S:save_context`, READ-ONLY from Rust.
     pub far_el1: u64,
+    /// v0.36.30: the thread pointer `TPIDR_EL0`, saved at entry and restored
+    /// at exit by `trap.S`; word 34 of a thread's context.
+    pub tpidr_el0: u64,
+    /// Padding that keeps the frame a multiple of 16 bytes.  Never read.
+    pub reserved: u64,
 }
 
 /// Size of TrapFrame in bytes (for assembly offset calculations).
-/// AK5-F: 288 bytes (was 272 pre-AK5-F).
+/// 304 bytes: AK5-F grew it 272 -> 288, v0.36.30 to 304 for `TPIDR_EL0`.
 pub const TRAP_FRAME_SIZE: usize = core::mem::size_of::<TrapFrame>();
 
 // Compile-time layout assertions (AK5-F).
-const _: () = assert!(TRAP_FRAME_SIZE == 288);
+const _: () = assert!(TRAP_FRAME_SIZE == 304);
 const _: () = assert!(core::mem::align_of::<TrapFrame>() == 16);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, gprs) == 0);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, sp_el0) == 248);
@@ -65,12 +79,13 @@ const _: () = assert!(core::mem::offset_of!(TrapFrame, elr_el1) == 256);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, spsr_el1) == 264);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, esr_el1) == 272);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, far_el1) == 280);
+const _: () = assert!(core::mem::offset_of!(TrapFrame, tpidr_el0) == 288);
 
 /// **WS-BP BP7.3: the number of words a thread's context occupies in a trap
-/// frame** — `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, in field order.  The
+/// frame** — `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`.  The
 /// Lean kernel reads word `i` through [`in_flight_frame_word`]
 /// (`Architecture.registerFileOfTrapWords`, `trapFrameWordCount`).
-pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 34;
+pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;
 
 /// **WS-BP BP7.3**: word `index` of a thread's context in `frame`, or `None`
 /// past the context (`ESR_EL1` and `FAR_EL1` are the trap's, not the thread's).
@@ -81,6 +96,7 @@ pub fn trap_frame_word(frame: &TrapFrame, index: u32) -> Option<u64> {
         31 => Some(frame.sp_el0),
         32 => Some(frame.elr_el1),
         33 => Some(frame.spsr_el1),
+        34 => Some(frame.tpidr_el0),
         _ => None,
     }
 }
@@ -403,11 +419,15 @@ pub fn restore_commit_in(
         frame.sp_el0 = word(31);
         frame.elr_el1 = word(32);
         frame.spsr_el1 = sanitise_user_spsr(word(33));
+        frame.tpidr_el0 = word(34);
     } else {
         frame.gprs = [0; 31];
         frame.sp_el0 = 0;
         frame.elr_el1 = idle_pc;
         frame.spsr_el1 = IDLE_SPSR;
+        // The idle loop reads no thread pointer; clearing it leaves no thread's
+        // value in the core while it waits.
+        frame.tpidr_el0 = 0;
     }
     flag.store(true, Ordering::Relaxed);
     Ok(true)
@@ -1718,7 +1738,7 @@ mod tests {
     /// WS-BP BP7.3: the context words are the frame's fields in order, and
     /// the trap's own syndrome registers are not part of a thread's context.
     #[test]
-    fn a_threads_context_is_the_frames_first_thirty_four_words() {
+    fn a_threads_context_is_the_frames_first_thirty_five_words() {
         let mut frame = zero_frame();
         for (i, r) in frame.gprs.iter_mut().enumerate() {
             *r = 0x100 + i as u64;
@@ -1728,12 +1748,14 @@ mod tests {
         frame.spsr_el1 = 0x2000_0000;
         frame.esr_el1 = 0xDEAD;
         frame.far_el1 = 0xBEEF;
+        frame.tpidr_el0 = 0x7777_0000;
         for i in 0..31 {
             assert_eq!(trap_frame_word(&frame, i), Some(0x100 + u64::from(i)));
         }
         assert_eq!(trap_frame_word(&frame, 31), Some(0xAAAA));
         assert_eq!(trap_frame_word(&frame, 32), Some(0xBBBB));
         assert_eq!(trap_frame_word(&frame, 33), Some(0x2000_0000));
+        assert_eq!(trap_frame_word(&frame, 34), Some(0x7777_0000));
         assert_eq!(trap_frame_word(&frame, TRAP_FRAME_CONTEXT_WORDS), None);
     }
 
@@ -1809,6 +1831,8 @@ mod tests {
         let mut frame = zero_frame();
         frame.esr_el1 = 0x5600_0000;
         frame.far_el1 = 0xDEAD;
+        // v0.36.30: the thread pointer the previous thread on this core wrote.
+        frame.tpidr_el0 = 0x5EC2_E700;
         {
             let _g = InFlightFrame::publish_in(&slots, 2, &mut frame);
             assert_eq!(
@@ -1835,6 +1859,10 @@ mod tests {
         );
         assert_eq!(frame.esr_el1, 0x5600_0000);
         assert_eq!(frame.far_el1, 0xDEAD);
+        assert_eq!(
+            frame.tpidr_el0, 1034,
+            "the incoming thread resumes with its own thread pointer, not the outgoing one's"
+        );
         assert!(take_restored_in(&restored, 2));
         assert!(!take_restored_in(&restored, 2), "the flag is taken once");
         assert!(
@@ -1861,7 +1889,13 @@ mod tests {
                     Ok(true)
                 );
             }
-            (frame.gprs, frame.sp_el0, frame.elr_el1, frame.spsr_el1)
+            (
+                frame.gprs,
+                frame.sp_el0,
+                frame.elr_el1,
+                frame.spsr_el1,
+                frame.tpidr_el0,
+            )
         };
         assert_eq!(run(RESTORE_KIND_USER_FP_LIVE), run(RESTORE_KIND_USER));
     }
@@ -1876,6 +1910,7 @@ mod tests {
         frame.gprs = [7; 31];
         frame.sp_el0 = 9;
         frame.elr_el1 = 0x40_0000;
+        frame.tpidr_el0 = 0x5EC2_E700;
         {
             let _g = InFlightFrame::publish_in(&slots, 0, &mut frame);
             assert_eq!(
@@ -1895,6 +1930,7 @@ mod tests {
         assert_eq!(frame.sp_el0, 0);
         assert_eq!(frame.elr_el1, 0x8_1234);
         assert_eq!(frame.spsr_el1, IDLE_SPSR);
+        assert_eq!(frame.tpidr_el0, 0, "an idle core keeps no thread's pointer");
         assert!(take_restored_in(&restored, 0));
     }
 
@@ -2076,6 +2112,8 @@ mod tests {
             spsr_el1: 0,
             esr_el1: 0,
             far_el1: 0,
+            tpidr_el0: 0,
+            reserved: 0,
         }
     }
 
@@ -2132,10 +2170,11 @@ mod tests {
     }
 
     #[test]
-    fn trap_frame_size_is_288_bytes() {
-        // AK5-F: TrapFrame grew from 272 to 288 (added ESR_EL1 + FAR_EL1).
-        assert_eq!(TRAP_FRAME_SIZE, 288);
-        assert_eq!(core::mem::size_of::<TrapFrame>(), 288);
+    fn trap_frame_size_is_304_bytes() {
+        // AK5-F grew TrapFrame 272 -> 288 (ESR_EL1 + FAR_EL1); v0.36.30 to 304
+        // (TPIDR_EL0 + one padding word).
+        assert_eq!(TRAP_FRAME_SIZE, 304);
+        assert_eq!(core::mem::size_of::<TrapFrame>(), 304);
     }
 
     #[test]
@@ -2154,6 +2193,7 @@ mod tests {
         // AK5-F: ESR + FAR snapshot offsets.
         assert_eq!(core::mem::offset_of!(TrapFrame, esr_el1), 272);
         assert_eq!(core::mem::offset_of!(TrapFrame, far_el1), 280);
+        assert_eq!(core::mem::offset_of!(TrapFrame, tpidr_el0), 288);
     }
 
     #[test]

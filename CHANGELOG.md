@@ -1,3 +1,46 @@
+## v0.36.30 — Every register EL0 can write is thread context or trapped (security fix)
+
+**Security fix: a thread could read the thread pointer the previous thread on its
+core wrote.**  `TPIDR_EL0` is written by EL0 with no trap, and nothing in the kernel
+saved, restored or cleared it.  The trap frame held `x0`–`x30`, `SP_EL0`, `ELR_EL1`
+and `SPSR_EL1`, and the Lean `RegisterFile` had no field for it either.  So a value
+one thread stored there survived the context switch into the next thread on that
+core.  That is a 64-bit storage channel between any two threads sharing a core,
+including the two confined domains WS-BP BP7.11 starts.  It became reachable when
+BP7.6 made the context restore live.  The non-interference theorems could not see
+it, because the model did not contain the register.
+
+- **The register is thread context now.**  `RegisterFile.tpidr` is a field, compared
+  by `BEq` and required by `RegisterFile.ext`.  Trap-frame word 34 is `TPIDR_EL0`
+  (`trapFrameTpidrWord`, `trapFrameWordCount` 35).  `trap.S` saves it at every entry
+  and restores it at every exit, in a frame grown from 288 to 304 bytes (one padding
+  word keeps it 16-byte aligned).  A user restore installs the incoming thread's own
+  value, and an idle restore clears it.
+- **Witnesses.**  `tests/SmpSwitchToThreadSuite.lean` §3.11 and §3.12 check that a
+  switched-out thread keeps its pointer and that the incoming thread's restore
+  target carries its own value and not the outgoing thread's.  The HAL's
+  `a_user_restore_replaces_the_in_flight_context` starts from a frame that holds the
+  previous thread's pointer and requires the staged one.
+
+**Advisory hardening: four controls EL0 could reach are now closed on every PE.**
+None was ever written, so each held its reset or firmware value.  Whether any was
+open on a real Raspberry Pi 5 depends on the firmware, which has not been measured.
+QEMU resets all four closed.
+
+- `CNTKCTL_EL1`: its EL0 access-enable bits reset UNKNOWN.  With `EL0PTEN` set, a
+  thread could write `CNTP_CTL_EL0` and switch off its core's preemption tick.  It
+  is `0` now, so EL0 counter and timer accesses trap and are delivered as faults.
+- `PMUSERENR_EL0`: with `EN` set, a thread could read and reset the per-PE
+  performance counters, which no switch saves.  It is `0` where a PMUv3 exists.
+- `MDSCR_EL1`: with `TDCC` clear, EL0 can use the per-PE debug communications
+  channel.  It is `0`.
+- `TPIDRRO_EL0` and `TPIDR_EL0` are cleared so no firmware value reaches the first
+  thread.
+
+`cpu::lock_el0_system_access` performs all of this.  The boot core and every
+secondary call it after installing their vectors and before unmasking IRQs, so it
+runs before any thread reaches EL0 on that PE.  Tier 3 gains 23 anchors.
+
 ## v0.36.29 — WS-BP BP8.5: the per-core counters are read on the booted machine
 
 `Concurrency.perCoreStats` reads a core's four counters through the HAL's

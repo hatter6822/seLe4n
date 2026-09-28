@@ -25,7 +25,7 @@
 //!          bounded window, or the system halts (WS-BP BP6.3)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.36.29";
+const KERNEL_VERSION: &str = "0.36.30";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -208,6 +208,10 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // ...and the cache-maintenance stride this HAL assumes is checked against
     // the PE's own `CTR_EL0` rather than trusted from the TRM.
     crate::cache::verify_cache_line_stride_or_halt(crate::cpu::fatal_halt);
+    // v0.36.30: EL0 reaches no timer, PMU, debug channel or thread-pointer
+    // residue on this PE (`cpu::lock_el0_system_access`), before any IRQ is
+    // unmasked and so before any thread can run here.
+    crate::cpu::lock_el0_system_access();
 
     // -----------------------------------------------------------------------
     // Phase 3: GIC-400 and timer initialization (AG5)
@@ -816,7 +820,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.36.29");
+        assert_eq!(KERNEL_VERSION, "0.36.30");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

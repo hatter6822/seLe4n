@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.29.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.30.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8363,7 +8363,8 @@ HAL publishes the in-flight frame** for a handler's duration
 (`trap::InFlightFrame`, withdrawn on drop, a nested handler restoring the one it
 displaced), and the Lean entry reads it word by word before its atomic step
 (`Platform.FFI.captureTrapFrame`, `trap::TRAP_FRAME_CONTEXT_WORDS`: `x0`–`x30`,
-`SP_EL0`, `ELR_EL1`, `SPSR_EL1`).  (3) **Every state-committing trap entry saves
+`SP_EL0`, `ELR_EL1`, `SPSR_EL1`, and since v0.36.30 `TPIDR_EL0`, which EL0
+writes with no trap — until then a thread read the previous thread's value).  (3) **Every state-committing trap entry saves
 it** — the syscall seam, the fault and unknown-syscall entries, the timer tick
 and the `.reschedule` receiver — into **both** the executing core's bank and the
 current thread's `registerContext` (`Architecture.saveTrapFrameOnCore`), so

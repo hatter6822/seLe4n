@@ -941,6 +941,8 @@ mod tests {
             spsr_el1: 0,
             esr_el1: 0,
             far_el1: 0,
+            tpidr_el0: 0,
+            reserved: 0,
         }
     }
 

@@ -8045,6 +8045,47 @@ run_negative_check "INVARIANT" rg -n '^gate test_qemu_smp_per_core_stats\.sh$' s
 run_prose_check "INVARIANT" rg -n -F -- '- [x] Every booted core' docs/planning/SMP_BOOT_PATH_PLAN.md
 
 # ============================================================================
+# v0.36.30 — every EL0-writable register is thread context or trapped
+# ============================================================================
+#
+# `TPIDR_EL0` is written by EL0 with no trap, and nothing saved or restored it,
+# so a thread read the value the previous thread on its core wrote: a 64-bit
+# storage channel between threads that share a core, across domains.  It is
+# trap-frame word 34 now, saved at every entry and restored at every exit, and a
+# context restore installs the incoming thread's own value.  Each anchor pins a
+# relation — the save writes the frame slot the restore reads, the restore
+# installs word 34, the Lean layout reads and writes that word — rather than
+# the register's name.
+run_check "INVARIANT" rg -n -U 'mrs\s+x0, tpidr_el0\n\s+str\s+x0, \[sp, #288\]' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n -U 'ldr\s+x0, \[sp, #288\]\n\s+msr\s+tpidr_el0, x0' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n 'sub\s+sp, sp, #304$' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n 'add\s+sp, sp, #304$' rust/sele4n-hal/src/trap.S
+run_negative_check "INVARIANT" rg -n '(sub|add)\s+sp, sp, #288$' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n -F -- 'const _: () = assert!(core::mem::offset_of!(TrapFrame, tpidr_el0) == 288);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -F -- 'pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -F -- '34 => Some(frame.tpidr_el0),' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = word(34);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = 0;' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^def trapFrameWordCount : Nat := 35$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n '^def trapFrameTpidrWord : Nat := 34$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n -F -- 'tpidr := ⟨(word trapFrameTpidrWord).toNat⟩ }' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n -F -- 'else if i = trapFrameTpidrWord then rf.tpidr.val.toUInt64' SeLe4n/Kernel/Architecture/ContextRestore.lean
+run_check "INVARIANT" rg -n -F -- 'a.pstate == b.pstate && a.tpidr == b.tpidr &&' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n -F -- 'the incoming thread resumes with its own thread pointer, not the outgoing thread' tests/SmpSwitchToThreadSuite.lean
+#
+# The four controls EL0 could reach with no save and no trap — the preemption
+# timer through `CNTKCTL_EL1`, the performance counters through
+# `PMUSERENR_EL0`, the debug channel through `MDSCR_EL1`, and a firmware value
+# in `TPIDRRO_EL0` — are closed on every PE before it unmasks IRQs.
+run_check "INVARIANT" rg -n '^pub const CNTKCTL_EL1_KERNEL: u64 = 0;$' rust/sele4n-hal/src/cpu.rs
+run_check "INVARIANT" rg -n -F -- 'crate::write_sysreg!("cntkctl_el1", CNTKCTL_EL1_KERNEL);' rust/sele4n-hal/src/cpu.rs
+run_check "INVARIANT" rg -n -U 'if pmu_v3_implemented\(crate::read_sysreg!\("[^"]*"\)\) \{\n\s+crate::write_sysreg!\("pmuserenr_el0", 0u64\);' rust/sele4n-hal/src/cpu.rs
+run_check "INVARIANT" rg -n -F -- 'crate::write_sysreg!("mdscr_el1", 0u64);' rust/sele4n-hal/src/cpu.rs
+run_check "INVARIANT" rg -n -F -- 'crate::write_sysreg!("tpidrro_el0", 0u64);' rust/sele4n-hal/src/cpu.rs
+run_check "INVARIANT" rg -n -F -- 'crate::cpu::lock_el0_system_access();' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -F -- 'crate::cpu::lock_el0_system_access();' rust/sele4n-hal/src/smp.rs
+
+# ============================================================================
 # WS-SM SM9.B — refusal auditing
 # (plan SMP_DECLASSIFICATION_COMPLETION_PLAN.md §4 SM9.B.1 … SM9.B.10).
 # ============================================================================

@@ -1,10 +1,11 @@
 // seLe4n ARM64 Trap Entry/Exit Assembly
 //
-// Saves the full CPU context (31 GPRs + SP_EL0 + ELR_EL1 + SPSR_EL1) into
+// Saves the full CPU context (31 GPRs + SP_EL0 + ELR_EL1 + SPSR_EL1 +
+// TPIDR_EL0) into
 // a TrapFrame on the kernel stack, calls the appropriate Rust handler, then
 // restores context and returns via ERET.
 //
-// TrapFrame layout (288 bytes, must match trap.rs TrapFrame):
+// TrapFrame layout (304 bytes, must match trap.rs TrapFrame):
 //   Offset   0: x0-x1   (stp pair)
 //   Offset  16: x2-x3
 //   Offset  32: x4-x5
@@ -26,6 +27,9 @@
 //   Offset 264: SPSR_EL1
 //   Offset 272: ESR_EL1  (AK5-F — snapshot at entry)
 //   Offset 280: FAR_EL1  (AK5-F — snapshot at entry)
+//   Offset 288: TPIDR_EL0 (v0.36.30 — the thread pointer EL0 writes untrapped;
+//               saved and restored so no thread reads another's)
+//   Offset 296: padding (keeps the frame 16-byte aligned)
 
 .section .text
 
@@ -36,9 +40,10 @@
 // Post-condition: SP points to TrapFrame base, x0 = SP (frame pointer)
 // =========================================================================
 .macro save_context
-    // AK5-F: Allocate TrapFrame on stack (288 bytes, 16-byte aligned).
-    // Previously 272; extended by 16 bytes to hold ESR_EL1 + FAR_EL1.
-    sub     sp, sp, #288
+    // Allocate TrapFrame on stack (304 bytes, 16-byte aligned).  AK5-F
+    // grew it 272 -> 288 for ESR_EL1 + FAR_EL1; v0.36.30 grew it to 304 for
+    // TPIDR_EL0 and one padding word.
+    sub     sp, sp, #304
 
     // Save x0-x29 in pairs
     stp     x0,  x1,  [sp, #0]
@@ -81,6 +86,13 @@
     mrs     x0, far_el1
     str     x0, [sp, #280]
 
+    // v0.36.30: Save TPIDR_EL0 at offset 288.  EL0 writes it with no trap,
+    // so it is thread context: restore_context writes back what the frame
+    // holds, which is this value unless a context restore installed another
+    // thread's.
+    mrs     x0, tpidr_el0
+    str     x0, [sp, #288]
+
     // x0 = pointer to TrapFrame (first argument to Rust handler)
     mov     x0, sp
 .endm
@@ -95,6 +107,10 @@
     // AK5-F: ESR_EL1 and FAR_EL1 are read-only in the TrapFrame (snapshot
     // at entry). They are NOT restored to hardware on exception return —
     // ELR/SPSR alone control the return path. Skip offsets 272/280.
+
+    // v0.36.30: Restore TPIDR_EL0 (offset 288).
+    ldr     x0, [sp, #288]
+    msr     tpidr_el0, x0
 
     // Restore SPSR_EL1
     ldr     x0, [sp, #264]
@@ -128,8 +144,8 @@
     ldp     x2,  x3,  [sp, #16]
     ldp     x0,  x1,  [sp, #0]
 
-    // AK5-F: Deallocate TrapFrame — 288 bytes (was 272).
-    add     sp, sp, #288
+    // Deallocate TrapFrame — 304 bytes.
+    add     sp, sp, #304
 
     // Return from exception — restores PC from ELR, PSTATE from SPSR
     eret

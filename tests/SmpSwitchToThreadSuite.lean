@@ -452,6 +452,10 @@ private def runTrapFrameSaveChecks : IO Unit := do
     (savedFrame.gpr ⟨6⟩ == ⟨0x1006⟩ && savedFrame.gpr ⟨30⟩ == ⟨0x101E⟩ &&
      savedFrame.gpr ⟨31⟩ == ⟨0⟩ && savedFrame.sp == ⟨0x101F⟩ &&
      savedFrame.pc == ⟨0x1020⟩ && savedFrame.pstate == ⟨0x2000_0000⟩)
+  -- v0.36.30: word 34 is the thread pointer `TPIDR_EL0`, which EL0 writes with
+  -- no trap.
+  assertBool "word 34 is the thread pointer TPIDR_EL0"
+    (savedFrame.tpidr == ⟨0x1022⟩ && Architecture.trapFrameWordCount == 35)
   assertBool "a frame taken from EL0 is a thread's; one taken at EL1h is the kernel's"
     (Architecture.trapFromEl0 savedFrame &&
      !Architecture.trapFromEl0 { savedFrame with pstate := ⟨0x3C5⟩ })
@@ -463,7 +467,7 @@ private def runTrapFrameSaveChecks : IO Unit := do
     (switchOkAnd saved bootCoreId tidA (fun st' =>
       let ctx := savedContextOf st' tidP
       ctx.gpr ⟨6⟩ == ⟨0x1006⟩ && ctx.gpr ⟨30⟩ == ⟨0x101E⟩ && ctx.sp == ⟨0x101F⟩ &&
-      ctx.pc == ⟨0x1020⟩ && ctx.pstate == ⟨0x2000_0000⟩))
+      ctx.pc == ⟨0x1020⟩ && ctx.pstate == ⟨0x2000_0000⟩ && ctx.tpidr == ⟨0x1022⟩))
   assertBool "RETIRED: with only the syscall window spilled, the switch saved x6 and the flags as zero"
     (switchOkAnd stPreempt bootCoreId tidA (fun st' =>
       let ctx := savedContextOf st' tidP
@@ -542,6 +546,19 @@ private def runContextRestoreChecks : IO Unit := do
     (switchOkAnd staged bootCoreId tidA (fun st' =>
       restoresUser (Architecture.restoreTargetOnCore st' bootCoreId) (savedContextOf st' tidA) &&
       !restoresUser (Architecture.restoreTargetOnCore st' bootCoreId) (savedContextOf st' tidP)))
+  -- v0.36.30: the thread pointer is part of what the core resumes, so the
+  -- incoming thread gets its own and never the value the outgoing thread
+  -- wrote.  Before the fix the hardware register was never saved or
+  -- restored, and the incoming thread read `0x1022` — the outgoing thread's.
+  assertBool "the incoming thread resumes with its own thread pointer, not the outgoing thread's"
+    (switchOkAnd staged bootCoreId tidA (fun st' =>
+      match Architecture.restoreTargetOnCore st' bootCoreId with
+      | .user c _ _ _ =>
+        let staged := Architecture.trapWordsOfRegisterFile c Architecture.trapFrameTpidrWord
+        staged == (savedContextOf st' tidA).tpidr.val.toUInt64 && staged != 0x1022
+      | _ => false))
+  assertBool "the outgoing thread keeps its thread pointer for its next resume"
+    (switchOkAnd staged bootCoreId tidA (fun st' => (savedContextOf st' tidP).tpidr == ⟨0x1022⟩))
   assertBool "a core running its idle thread resumes the idle loop"
     (restoresIdle (Architecture.restoreTargetOnCore stIdle bootCoreId))
   assertBool "a core running nothing restores nothing"

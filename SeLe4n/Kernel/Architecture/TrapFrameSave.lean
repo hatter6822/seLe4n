@@ -40,9 +40,15 @@ pointer and return address to user mode.  Such a frame saves nothing.
 
 ## Word layout
 
-Words `0`–`30` are `x0`–`x30`, `31` is `SP_EL0`, `32` is `ELR_EL1` and `33` is
-`SPSR_EL1` — the order of `TrapFrame`'s fields, which the HAL's
-`trap_frame_word` reads by the same index.
+Words `0`–`30` are `x0`–`x30`, `31` is `SP_EL0`, `32` is `ELR_EL1`, `33` is
+`SPSR_EL1` and `34` is `TPIDR_EL0` — the order of `TrapFrame`'s fields, which
+the HAL's `trap_frame_word` reads by the same index.
+
+`TPIDR_EL0` is in the layout because EL0 writes it with no trap, so it is part
+of a thread's context whether the model names it or not: a switch that leaves it
+in the core hands one thread's value to the next.  It was absent until v0.36.30,
+and every other register EL0 can write is either in this layout or in the lazily
+switched FP/SIMD context (WS-BP BP7.9).
 -/
 
 namespace SeLe4n.Kernel.Architecture
@@ -51,7 +57,7 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
 /-- The number of words a thread's context occupies in the trap frame. -/
-def trapFrameWordCount : Nat := 34
+def trapFrameWordCount : Nat := 35
 
 /-- The index of `SP_EL0` in the trap frame's word layout. -/
 def trapFrameSpWord : Nat := 31
@@ -62,6 +68,9 @@ def trapFramePcWord : Nat := 32
 /-- The index of `SPSR_EL1` (the processor state the thread resumes with). -/
 def trapFramePstateWord : Nat := 33
 
+/-- The index of `TPIDR_EL0` (the thread pointer the thread resumes with). -/
+def trapFrameTpidrWord : Nat := 34
+
 /-- **The register file a trap frame holds**, from its words (`word i` is the
 `i`-th word of the layout above).  `x31` — the zero register's index — reads as
 zero. -/
@@ -69,7 +78,8 @@ def registerFileOfTrapWords (word : Nat → UInt64) : SeLe4n.RegisterFile :=
   { pc := ⟨(word trapFramePcWord).toNat⟩
     sp := ⟨(word trapFrameSpWord).toNat⟩
     gpr := fun r => if r.val < 31 then ⟨(word r.val).toNat⟩ else ⟨0⟩
-    pstate := ⟨(word trapFramePstateWord).toNat⟩ }
+    pstate := ⟨(word trapFramePstateWord).toNat⟩
+    tpidr := ⟨(word trapFrameTpidrWord).toNat⟩ }
 
 /-- **Was the trap taken from EL0?**  `SPSR_EL1.M[3:0] = 0b0000` (`EL0t`): the
 frame is a thread's.  Any other mode is the kernel's own. -/

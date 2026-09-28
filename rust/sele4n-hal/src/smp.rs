@@ -789,6 +789,10 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // The v0.36.2 audit: an SError on this PE is reported and halts from here
     // on (`trap::handle_serror`), as on the boot core.
     crate::interrupts::enable_serror();
+    // v0.36.30: EL0 reaches no timer, PMU, debug channel or thread-pointer
+    // residue on this PE (`cpu::lock_el0_system_access`), before any IRQ is
+    // unmasked and so before any thread can run here.
+    crate::cpu::lock_el0_system_access();
 
     // -----------------------------------------------------------------
     // Step 3 — GIC CPU interface.
