@@ -278,7 +278,7 @@ does both, then runs `check_kernel_image.py --lean-kernel` and the FP/SIMD gate
 over the linked image).  A missing archive fails the link naming the path.
 **The firmware's boot files** (BP5.3): `./scripts/build_rpi5_image.sh [ELF
 [OUT]]` writes `kernel8.img` and `config.txt` to `.lake/build/rpi5-image/`
-from that image (the archive lane's step [5/5] does this).  Copy both to the
+from that image (the archive lane's step [5/6] does this).  Copy both to the
 SD card's boot partition.  `config.txt` is generated — its `kernel_address` is
 the image's entry and its `device_tree_address` / `device_tree_end` are
 `link.ld`'s `.dtb_window` — and `rpi5_boot_files.py check` refuses a key it
@@ -399,7 +399,14 @@ lake env lean --run tests/NegativeStateSuite.lean
 `scripts/test_qemu*.sh` cover SMP bring-up, IPC, scheduler, timer, SGI
 round-trip, TLB shootdown, deadlock and kprintln stress.
 `scripts/test_hw_full.sh` and `docs/HARDWARE_TESTING.md` cover the RPi5 path.
-Both need artefacts SM10.1 has not produced yet.
+`scripts/test_qemu.sh` is live: with no argument it boots the HAL-only image on
+QEMU's `virt` at EL1 and at EL2, and with `--lean-kernel` (which needs the
+archive `scripts/test_lean_aarch64_archive.sh` builds, and which that lane runs
+as its step [6/6]) it boots the Lean-linked image on four PEs to every core's
+first idle dispatch, under `-icount shift=0,sleep=off` — without it, one
+emulated Lean tick outlasts the 1 ms tick period on multi-threaded TCG and four
+PEs' ticks saturate the kernel-entry lock.  The other QEMU scripts and the
+board need artefacts BP8.2–BP8.5 produce.
 
 ---
 

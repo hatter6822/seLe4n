@@ -25,7 +25,7 @@
 //!          bounded window, or the system halts (WS-BP BP6.3)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.36.25";
+const KERNEL_VERSION: &str = "0.36.26";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -403,6 +403,13 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // holds this statement after the install and before `enable_irq`.
     #[cfg(feature = "hw_target")]
     crate::lean_ready::become_ready_or_halt(0, crate::gic::halt_all);
+    // WS-BP BP8.1: the boot core's first reschedule — the same bring-up entry
+    // every secondary runs (`smp::first_reschedule`), in the same place: after
+    // readiness, before the unmask, under the kernel-entry lock.  A booted
+    // state has no current thread on any core and a tick on such a core
+    // dispatches nothing, so without it the boot core would never dispatch —
+    // not its idle thread, nor an initial thread homed on it.
+    crate::smp::first_reschedule(0, crate::gic::halt_all);
     crate::interrupts::enable_irq();
     crate::kprintln!("[boot] IRQ delivery enabled");
 
@@ -573,11 +580,27 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
             // for a per-PE fault — the VBAR check below is one.
             crate::gic::halt_all();
         }
+        // WS-BP BP8.1: the refusal did not fire, and the boot log says so —
+        // "Boot complete" above precedes this wait, so without this line a log
+        // cannot tell a boot that passed the topology check from one still in
+        // it.  `scripts/test_qemu.sh --lean-kernel` requires it.
+        crate::kprintln!(
+            "[boot] Phase 7: all {} declared PE(s) serve the kernel",
+            running_cores
+        );
     }
 
-    // Idle fallback: enter WFE loop when no kernel main is linked (simulation)
-    // or if kernel_main returns (should not happen in production).
-    idle_loop()
+    // WS-BP BP8.1: the boot core hands itself to the kernel's idle wait,
+    // which marks it handed off (`trap::IdleHandoffFlags`): until here every
+    // tick it took since the IRQ unmask resumed this bring-up, so the topology
+    // refusal above cannot be abandoned to a restore; from here the kernel's
+    // next scheduling decision on this core is what it runs.
+    #[cfg(feature = "hw_target")]
+    crate::trap::enter_idle_wait();
+    // With no Lean kernel linked (simulation, the HAL-only images) nothing is
+    // ever staged for this core to resume, so it waits on its own.
+    #[cfg(not(feature = "hw_target"))]
+    idle_loop();
 }
 
 /// **WS-SM SM1.C.2** (closes SMP-C2 VBAR step): Install the EL1
@@ -766,7 +789,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.36.25");
+        assert_eq!(KERNEL_VERSION, "0.36.26");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

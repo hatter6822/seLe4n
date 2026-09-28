@@ -203,10 +203,10 @@ structure FdtHeader where
 def readBE32 (blob : ByteArray) (offset : Nat) : Option UInt32 :=
   if offset + 4 > blob.size then none
   else do
-    let b0 ← blob.data[offset]?
-    let b1 ← blob.data[offset + 1]?
-    let b2 ← blob.data[offset + 2]?
-    let b3 ← blob.data[offset + 3]?
+    let b0 ← blob[offset]?
+    let b1 ← blob[offset + 1]?
+    let b2 ← blob[offset + 2]?
+    let b3 ← blob[offset + 3]?
     some ((b0.toUInt32 <<< 24) ||| (b1.toUInt32 <<< 16) |||
           (b2.toUInt32 <<< 8) ||| b3.toUInt32)
 
@@ -633,7 +633,7 @@ where
     match fuel with
     | 0 => none  -- Fuel exhausted without finding null terminator
     | fuel' + 1 =>
-      match blob.data[offset]? with
+      match blob[offset]? with
       | none => none  -- Out of bounds
       | some byte =>
         if byte == 0 then
@@ -666,7 +666,7 @@ where
     match fuel with
     | 0 => .error .fuelExhausted
     | fuel' + 1 =>
-      match blob.data[offset]? with
+      match blob[offset]? with
       | none => .error .malformedBlob
       | some byte =>
         if byte == 0 then
@@ -708,7 +708,7 @@ where
     | fuel' + 1 =>
       if offset ≥ limit then none -- The terminator is outside the declared block
       else
-        match bytes.data[offset]? with
+        match bytes[offset]? with
         | none => none
         | some byte =>
           if byte == 0 then

@@ -36,6 +36,12 @@
 # by publishing the image's size and section map (`scripts/kernel_image_report.py`)
 # to the CI step summary and `kernel-image-report.json`.
 #
+# WS-BP BP8.1: and then the kernel runs.  `scripts/test_qemu.sh --lean-kernel`
+# links the same archive into the image built for QEMU's `virt` machine (in a
+# target directory of its own, so the Raspberry Pi 5 image above is what CI
+# uploads) and boots it on four PEs at EL1 and at EL2, to every core's first
+# idle dispatch.  `REQUIRE_QEMU=1` makes an absent QEMU a failure here.
+#
 # Needs the Lean toolchain (`setup_lean_env.sh`) and rustup's `llvm-tools`
 # component (listed in `rust/rust-toolchain.toml`), which supplies the
 # `llvm-nm` and `llvm-objdump` the builder reads object code with.
@@ -54,16 +60,16 @@ CROSS_TARGET="aarch64-unknown-none-softfloat"
 IMAGE_BIN="sele4n-kernel"
 ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"
 
-echo "[1/5] Host static archive (the reconciliation's other half)"
+echo "[1/6] Host static archive (the reconciliation's other half)"
 lake build SeLe4n:static
 
-echo "[2/5] Cross archive"
+echo "[2/6] Cross archive"
 python3 "${SCRIPT_DIR}/build_lean_aarch64_archive.py"
 
-echo "[3/5] Kernel-entry reconciliation over both archives"
+echo "[3/6] Kernel-entry reconciliation over both archives"
 python3 "${SCRIPT_DIR}/check_kernel_entry_exports.py" --require-cross
 
-echo "[4/5] The kernel image, linked with the Lean kernel, and checked"
+echo "[4/6] The kernel image, linked with the Lean kernel, and checked"
 cd "${PROJECT_ROOT}/rust"
 rm -f "target/${CROSS_TARGET}/release/${IMAGE_BIN}"
 cargo build --release --target "${CROSS_TARGET}" -p sele4n-hal \
@@ -74,8 +80,11 @@ python3 "${PROJECT_ROOT}/scripts/check_kernel_image.py" \
 python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
 
-echo "[5/5] The Raspberry Pi 5 boot files, cut from that image and checked"
+echo "[5/6] The Raspberry Pi 5 boot files, cut from that image and checked"
 "${PROJECT_ROOT}/scripts/build_rpi5_image.sh" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}" "${PROJECT_ROOT}/.lake/build/rpi5-image"
 
-echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it and is packaged."
+echo "[6/6] The Lean-linked kernel booted under QEMU (virt, four PEs, EL1 and EL2)"
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu.sh" --lean-kernel
+
+echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it, is packaged, and boots."

@@ -547,7 +547,7 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_link_script.py" --self-test
 # synthetic ELF that keeps every section and symbol and breaks that relation,
 # and that the real `link.ld` parses into the section list the cases assume.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_kernel_image.py" --self-test
-# WS-BP BP5.3: the boot-file check the archive lane runs as step [5/5].  Tier 0
+# WS-BP BP5.3: the boot-file check the archive lane runs as step [5/6].  Tier 0
 # has no image, so it pins the pure half: each relation between `kernel8.img`,
 # `config.txt` and a synthetic image, broken one at a time with both files
 # kept present and well-formed.

@@ -25,6 +25,8 @@
 #
 # Usage:
 #   ./scripts/test_qemu.sh              # Build the virt image; boot it at EL1 and at EL2
+#   ./scripts/test_qemu.sh --lean-kernel  # Build the Lean-linked virt image; boot it on
+#                                         # four PEs to every core's first idle dispatch
 #   KERNEL_BIN=… QEMU_MACHINE=… ./scripts/test_qemu.sh   # Boot a named image on a named machine
 #   QEMU_TIMEOUT=30 ./scripts/test_qemu.sh  # Custom per-boot timeout (seconds)
 #
@@ -38,6 +40,18 @@
 
 set -euo pipefail
 
+# WS-BP BP8.1 slice 3: `--lean-kernel` boots the image that links the Lean
+# kernel (`hw_target`) instead of the HAL alone.  It needs the Lean archive
+# `scripts/test_lean_aarch64_archive.sh` builds, and that lane runs this mode as
+# its last step.
+LEAN_KERNEL=0
+for arg in "$@"; do
+    case "${arg}" in
+        --lean-kernel) LEAN_KERNEL=1 ;;
+        *) echo "test_qemu.sh: unknown argument: ${arg}" >&2; exit 2 ;;
+    esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/test_lib.sh"
@@ -46,7 +60,14 @@ cd "${REPO_ROOT}"
 
 # ── Configuration ──────────────────────────────────────────────────────────
 QEMU_BIN="${QEMU_BIN:-qemu-system-aarch64}"
-QEMU_TIMEOUT="${QEMU_TIMEOUT:-10}"
+# The HAL-only boot never stops printing, so it runs for a fixed window; the
+# Lean-linked boot stops at the fourth first idle dispatch and this is only its
+# deadline (measured: about two seconds on either entry level).
+if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+    QEMU_TIMEOUT="${QEMU_TIMEOUT:-120}"
+else
+    QEMU_TIMEOUT="${QEMU_TIMEOUT:-10}"
+fi
 QEMU_MACHINE="${QEMU_MACHINE:-}"
 QEMU_CPU="${QEMU_CPU:-cortex-a76}"
 QEMU_MEMORY="${QEMU_MEMORY:-1G}"
@@ -59,6 +80,14 @@ RUST_TARGET="aarch64-unknown-none-softfloat"
 # Lean-linked one) in KERNEL_BIN, in which case nothing is built here.
 KERNEL_BIN_DEFAULT="${RUST_DIR}/target/${RUST_TARGET}/release/sele4n-kernel"
 KERNEL_BIN="${KERNEL_BIN:-${KERNEL_BIN_DEFAULT}}"
+# The Lean-linked image builds into its own target directory: the archive lane
+# that runs this mode uploads `target/<target>/release/sele4n-kernel` as the
+# Raspberry Pi 5 image, which a `virt` build there would overwrite.
+LEAN_TARGET_DIR="${RUST_DIR}/target/qemu-virt-lean"
+LEAN_ARCHIVE="${REPO_ROOT}/.lake/build/${RUST_TARGET}/libsele4n.a"
+if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+    KERNEL_BIN="${LEAN_TARGET_DIR}/${RUST_TARGET}/release/sele4n-kernel"
+fi
 
 # ── QEMU availability check ───────────────────────────────────────────────
 log_section "META" "=== AG9-A: QEMU Integration Testing ==="
@@ -102,7 +131,24 @@ cleanup() { rm -f "${QEMU_LOG}" "${QEMU_BUILD_LOG}"; }
 trap cleanup EXIT
 
 # ── Build the kernel image ────────────────────────────────────────────────
-if [[ "${KERNEL_BIN}" == "${KERNEL_BIN_DEFAULT}" ]]; then
+if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+    # Asked for by name, so a missing archive or a failed link is a failure,
+    # not a skip: the archive lane that runs this mode has just built both.
+    if [[ ! -f "${LEAN_ARCHIVE}" ]]; then
+        record_failure "BUILD" "--lean-kernel needs ${LEAN_ARCHIVE}; run scripts/test_lean_aarch64_archive.sh"
+        finalize_report
+    fi
+    log_section "BUILD" "Building the Lean-linked kernel image for QEMU virt..."
+    cd "${RUST_DIR}"
+    if ! cargo build --release --target "${RUST_TARGET}" -p sele4n-hal \
+            --features hw_target,kernel_image,board_qemu_virt --bin sele4n-kernel \
+            --target-dir "${LEAN_TARGET_DIR}" 2>"${QEMU_BUILD_LOG}"; then
+        tail -20 "${QEMU_BUILD_LOG}"
+        record_failure "BUILD" "the Lean-linked virt image did not build"
+        finalize_report
+    fi
+    cd "${REPO_ROOT}"
+elif [[ "${KERNEL_BIN}" == "${KERNEL_BIN_DEFAULT}" ]]; then
     log_section "BUILD" "Building the kernel image (sele4n-kernel) for ${RUST_TARGET}..."
     cd "${RUST_DIR}"
     if ! cargo build --release --target "${RUST_TARGET}" -p sele4n-hal \
@@ -145,7 +191,32 @@ if ! "${OBJCOPY}" -O binary "${KERNEL_BIN}" "${QEMU_IMAGE}"; then
 fi
 
 FIXTURE="${REPO_ROOT}/tests/fixtures/qemu_boot_expected.txt"
+if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+    FIXTURE="${REPO_ROOT}/tests/fixtures/qemu_lean_boot_expected.txt"
+fi
 BOOT_PASS=true
+
+# How each boot runs.  The HAL-only image boots one PE for a fixed window.  The
+# Lean-linked image boots the four its binding declares -- the boot halts at
+# Phase 7 unless every one serves the kernel -- until `UNTIL_COUNT` lines carry
+# `UNTIL_FRAGMENT`, and under `-icount`: with QEMU's multi-threaded TCG the
+# virtual clock follows host time, one Lean scheduler tick emulated takes longer
+# than the 1 ms tick period, and four PEs' ticks then hold the kernel-entry lock
+# end to end so the boot core never leaves its bring-up (measured, at both entry
+# levels).  `-icount shift=0` advances the clock one nanosecond per executed
+# instruction -- a 1 GHz PE, slower than a Cortex-A76 -- so a tick costs its
+# instruction count, and `sleep=off` skips the idle waits.  That is the kernel's
+# own cost measured in instructions, not a longer tick.
+BOOT_SMP=1
+BOOT_EXTRA=()
+UNTIL_FRAGMENT=""
+UNTIL_COUNT=0
+if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+    BOOT_SMP=4
+    BOOT_EXTRA=(-icount "shift=0,sleep=off")
+    UNTIL_FRAGMENT="first idle dispatch"
+    UNTIL_COUNT=4
+fi
 
 # boot_once LABEL MACHINE [FRAGMENT...]: boot the image on MACHINE and require
 # the fixture's fragments IN ORDER, then each extra FRAGMENT anywhere.
@@ -154,16 +225,42 @@ boot_once() {
     shift 2
     log_section "TRACE" "RUN: ${label} — -machine ${machine} (timeout: ${QEMU_TIMEOUT}s)"
     : > "${QEMU_LOG}"
-    timeout "${QEMU_TIMEOUT}" "${QEMU_BIN}" \
-        -machine "${machine}" \
-        -cpu "${QEMU_CPU}" \
-        -smp 1 \
-        -m "${QEMU_MEMORY}" \
-        -kernel "${QEMU_IMAGE}" \
-        -serial "file:${QEMU_LOG}" \
-        -monitor none \
-        -display none \
-        -no-reboot || true
+    local qemu_cmd=("${QEMU_BIN}"
+        -machine "${machine}"
+        -cpu "${QEMU_CPU}"
+        -smp "${BOOT_SMP}"
+        "${BOOT_EXTRA[@]}"
+        -m "${QEMU_MEMORY}"
+        -kernel "${QEMU_IMAGE}"
+        -serial "file:${QEMU_LOG}"
+        -monitor none
+        -display none
+        -no-reboot)
+    if [[ -z "${UNTIL_FRAGMENT}" ]]; then
+        timeout "${QEMU_TIMEOUT}" "${qemu_cmd[@]}" || true
+    else
+        # Run until the log carries UNTIL_COUNT lines holding UNTIL_FRAGMENT,
+        # or the deadline.  `grep -c` exits 1 for "no match" and above 1 for a
+        # read failure, which is a gate failure rather than a count of zero.
+        timeout "${QEMU_TIMEOUT}" "${qemu_cmd[@]}" &
+        local qemu_pid=$! waited=0 seen=0 rc
+        while (( waited < QEMU_TIMEOUT * 10 )); do
+            rc=0
+            seen=$(grep -c -F -- "${UNTIL_FRAGMENT}" "${QEMU_LOG}") || rc=$?
+            if (( rc > 1 )); then
+                record_failure "TRACE" "${label}: could not read ${QEMU_LOG}"
+                BOOT_PASS=false
+                break
+            fi
+            (( seen >= UNTIL_COUNT )) && break
+            kill -0 "${qemu_pid}" 2>/dev/null || break
+            sleep 0.1
+            waited=$((waited + 1))
+        done
+        kill "${qemu_pid}" 2>/dev/null || true
+        wait "${qemu_pid}" 2>/dev/null || true
+        log_section "TRACE" "${label}: ${seen} of ${UNTIL_COUNT} '${UNTIL_FRAGMENT}' line(s) after $((waited / 10))s"
+    fi
     tr -d '\r' < "${QEMU_LOG}" > "${QEMU_LOG}.txt"
     mv "${QEMU_LOG}.txt" "${QEMU_LOG}"
     if [[ ! -s "${QEMU_LOG}" ]]; then
@@ -228,6 +325,18 @@ fi
 
 if [[ -n "${QEMU_MACHINE}" ]]; then
     boot_once "the image on ${QEMU_MACHINE}" "${QEMU_MACHINE}"
+elif [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+    # Every core's first idle dispatch, and every secondary's IRQ readiness,
+    # which the boot core's Phase 7 counts; the fixture orders the boot core's.
+    LEAN_PER_CORE=(
+        "[smp] core 1: IRQ-serviceable" "[smp] core 2: IRQ-serviceable" "[smp] core 3: IRQ-serviceable"
+        "[sched] core 0: first idle dispatch" "[sched] core 1: first idle dispatch"
+        "[sched] core 2: first idle dispatch" "[sched] core 3: first idle dispatch"
+    )
+    boot_once "Lean kernel, virt, EL1 entry" "virt,gic-version=2" \
+        "Entered at EL1, running at EL1" "PSCI conduit: Hvc" "${LEAN_PER_CORE[@]}"
+    boot_once "Lean kernel, virt, EL2 entry" "virt,gic-version=2,virtualization=on" \
+        "Entered at EL2, running at EL1" "PSCI conduit: Smc" "${LEAN_PER_CORE[@]}"
 else
     boot_once "virt, EL1 entry" "virt,gic-version=2" \
         "booting on QEMU virt" "Entered at EL1, running at EL1" "PSCI conduit: Hvc"

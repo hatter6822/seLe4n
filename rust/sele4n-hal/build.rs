@@ -1224,7 +1224,8 @@ fn scan_reschedule_sgi_seam_intact() {
 ///
 ///   1. `timer.rs::per_core_timer_tick_isr` → `lean_per_core_timer_tick`
 ///   2. `trap.rs::reschedule_sgi_handler`   → `lean_per_core_reschedule`
-///   3. `smp.rs::rust_secondary_main`       → `lean_secondary_kernel_main`
+///   3. `smp.rs::first_reschedule`          → `lean_secondary_kernel_main`
+///      (every core's first reschedule, the boot core's too, WS-BP BP8.1)
 ///
 /// For each seam the scanner extracts the named function's body (first
 /// `fn <name>(` declaration through its brace-matched close, on the
@@ -2266,7 +2267,7 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
     ),
     (
         "src/smp.rs",
-        "rust_secondary_main",
+        "first_reschedule",
         "lean_secondary_kernel_main",
     ),
     // The fault-delivery seam: `deliver_fault` enters the Lean runtime to run

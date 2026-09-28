@@ -5503,7 +5503,7 @@ run_check "INVARIANT" rg -n '^pub unsafe fn initialise_core_runtime_with\($' rus
 run_check "INVARIANT" rg -n '^    if !installed\.load\(Ordering::Acquire\) \{$' rust/sele4n-hal/src/lean_ready.rs
 run_check "INVARIANT" rg -n '^    if !heap_probe\(\) \{$' rust/sele4n-hal/src/lean_ready.rs
 run_check "INVARIANT" rg -U -n '^    crate::lean_ready::publish_kernel_installed\(\);\n    SecondaryReleasePermit \{ _private: \(\) \}$' rust/sele4n-hal/src/lean_entry.rs
-run_check "INVARIANT" rg -U -n '^    #\[cfg\(feature = "hw_target"\)\]\n    crate::lean_ready::become_ready_or_halt\(0, crate::gic::halt_all\);\n    crate::interrupts::enable_irq\(\);$' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -U -n '^    #\[cfg\(feature = "hw_target"\)\]\n    crate::lean_ready::become_ready_or_halt\(0, crate::gic::halt_all\);\n([ ]*\n)*    crate::smp::first_reschedule\(0, crate::gic::halt_all\);\n    crate::interrupts::enable_irq\(\);$' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -U -n '^    #\[cfg\(feature = "hw_target"\)\]\n    crate::lean_ready::become_ready_or_halt\(core_idx, crate::cpu::fatal_halt\);$' rust/sele4n-hal/src/smp.rs
 # WS-BP BP6.3: the boot refuses a topology in which a declared PE does not
 # serve the kernel — Lean-ready AND IRQ-ready — within the bounded window.
@@ -7792,6 +7792,42 @@ run_check "INVARIANT" rg -n -F -- 'BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "le
 run_check "INVARIANT" rg -n '^  qemuVirt_board_check_on_qemus_own_device_tree$' tests
 run_check "INVARIANT" rg -n '^  qemuVirt_deployment_boots$' tests
 run_check "INVARIANT" rg -n '^  bootMap_the_qemu_virt_map_is_the_shared_table$' tests
+
+# WS-BP BP8.1 slice 3 (v0.36.26): the Lean-linked `virt` image boots on four PEs
+# to every core's first idle dispatch, at EL1 and at EL2.  Three defects the
+# first run found, each pinned as the relation it restores.  (1) The verified
+# device-tree parser reads a byte through `ByteArray`'s own accessor: `.data[i]?`
+# builds a boxed copy of the whole blob per byte, which made the parse quadratic
+# in the blob and never finished on QEMU's 1 MiB tree.
+run_negative_check "INVARIANT" rg -n '\.data\[' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -F -- 'let b0 ← blob[offset]?' SeLe4n/Platform/DeviceTree.lean
+# (2) A restore replaces an EL1-origin frame only once its core has handed
+# itself to the idle wait; before that the frame is the kernel's own bring-up,
+# resumed as it stands, and the live commit reads the live flags.
+run_check "INVARIANT" rg -n -U '^    if !exception_taken_from_el0\(frame\.spsr_el1\) && !handed_off\.load\(Ordering::Relaxed\) \{\n        return Ok\(false\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^        &RESTORED,\n        &IDLE_HANDOFF,\n        core,$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^pub fn enter_idle_wait\(\) -> ! \{\n[^\n]*\n    hand_off_to_idle_in\(&IDLE_HANDOFF, core\);\n    kernel_idle_loop\(\)\n\}$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^    crate::trap::enter_idle_wait\(\)\n\}$' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n -U '^    #\[cfg\(feature = "hw_target"\)\]\n    crate::trap::enter_idle_wait\(\);$' rust/sele4n-hal/src/boot.rs
+# The first-idle report prints after the IRQ dispatch has released its bracket,
+# and is noted only when an idle resume replaced the frame.
+run_check "INVARIANT" rg -n -U '^    \}\);\n[ ]*\n    report_first_idle_dispatch\(\);\n\}$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^        if kind == RESTORE_KIND_IDLE \{\n            note_idle_dispatch_in\(&FIRST_IDLE, core\);$' rust/sele4n-hal/src/trap.rs
+# (3) Every core runs a first reschedule -- the boot core's between its
+# readiness and its unmask, as every secondary's is.
+run_check "INVARIANT" rg -n -F -- '    first_reschedule(core_idx, crate::cpu::fatal_halt);' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n -U '^pub\(crate\) fn first_reschedule\(core_idx: usize, halt: fn\(\) -> !\) \{$' rust/sele4n-hal/src/smp.rs
+# The boot log says the topology check passed, and the lane requires it.
+run_check "INVARIANT" rg -n -F -- '"[boot] Phase 7: all {} declared PE(s) serve the kernel",' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -F -- 'TOPOLOGY         | [boot] Phase 7: all 4 declared PE(s) serve the kernel' tests/fixtures/qemu_lean_boot_expected.txt
+# The lane: the Lean-linked image, four PEs, the clock counted in instructions,
+# until the fourth first idle dispatch; and the archive lane runs it, requiring
+# QEMU, in a CI job that installs it.
+run_check "INVARIANT" rg -n -U '^            --features hw_target,kernel_image,board_qemu_virt --bin sele4n-kernel \\\n            --target-dir "\$\{LEAN_TARGET_DIR\}" ' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -U '^    BOOT_SMP=4\n    BOOT_EXTRA=\(-icount "shift=0,sleep=off"\)\n    UNTIL_FRAGMENT="first idle dispatch"\n    UNTIL_COUNT=4$' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -F -- 'boot_once "Lean kernel, virt, EL2 entry" "virt,gic-version=2,virtualization=on"' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu\.sh" --lean-kernel$' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -n -F -- 'sudo apt-get install -y --no-install-recommends qemu-system-arm' .github/workflows/lean_action_ci.yml
 
 # ============================================================================
 # WS-SM SM9.B — refusal auditing

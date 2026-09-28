@@ -19,7 +19,7 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.25): 432,837 lines of production Lean across 361 files, 88,168 lines across 71 Lean test suites,
+Current state (as of v0.36.26): 432,837 lines of production Lean across 361 files, 88,168 lines across 71 Lean test suites,
 14,357 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
@@ -145,7 +145,11 @@ separation witnesses are threads that run.  **BP8.1**'s first slice (v0.36.24)
 boots the image on QEMU's `virt` — QEMU models no BCM2712, so the board is a
 build-time choice — at EL1 and at EL2 — and its second (v0.36.25) gives the
 Lean kernel a `virt` binding, a deployment and its own boot entry, checked on
-QEMU's own device tree.
+QEMU's own device tree.  Its third (v0.36.26) runs the Lean kernel: the
+Lean-linked image boots on four PEs to every core's first idle dispatch, at
+EL1 and at EL2, on every PR — a first execution that found and fixed a
+quadratic device-tree parse, a restore that abandoned each core's bring-up,
+and a boot core that never dispatched.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

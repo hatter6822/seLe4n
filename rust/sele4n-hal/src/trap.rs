@@ -32,7 +32,7 @@
 /// register. A nested exception (e.g., SError during data-abort handling)
 /// would otherwise mutate the live ESR/FAR before the outer handler reads
 /// them, producing incorrect classification and fault-address reports.
-use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, AtomicU8, Ordering};
 
 #[repr(C, align(16))]
 pub struct TrapFrame {
@@ -223,15 +223,107 @@ pub const fn sanitise_user_spsr(value: u64) -> u64 {
 /// DAIF clear, so the idle loop takes the interrupt that ends it.
 pub const IDLE_SPSR: u64 = 0x5;
 
-/// **WS-BP BP7.4: the core's wait when no thread is runnable.**  Entered only
-/// by `eret` from a restore of kind [`RESTORE_KIND_IDLE`], at EL1h with IRQs
-/// unmasked; it keeps no state, so a later restore may replace its frame
-/// outright — which is the only kind of EL1-origin frame a restore ever
-/// meets, since every other kernel path runs with IRQs masked.
+/// **WS-BP BP7.4: the core's wait when no thread is runnable.**  Entered by
+/// `eret` from a restore of kind [`RESTORE_KIND_IDLE`], at EL1h with IRQs
+/// unmasked, and by a core's own bring-up through [`enter_idle_wait`]; it keeps
+/// no state, so a later restore may replace its frame outright.
 pub extern "C" fn kernel_idle_loop() -> ! {
     loop {
         crate::cpu::wfi();
     }
+}
+
+/// **WS-BP BP8.1: whether each core has handed itself to the idle wait.**
+///
+/// A restore replaces the frame an interrupt was taken on, and an EL1-origin
+/// frame is not always replaceable: the bring-up of every core (the boot
+/// core's Phases 6 and 7, a secondary's steps after its first reschedule)
+/// runs with IRQs unmasked, because the boot core must acknowledge shootdowns
+/// through the Phase 7 wait and a secondary publishes `CORE_IRQ_READY` only
+/// after it unmasks.  A timer tick there commits a scheduling decision and
+/// stages a restore; replacing the bring-up frame would abandon the rest of
+/// the bring-up — the secondary's IRQ-readiness publication, the boot core's
+/// topology refusal — for good.  The first Lean-linked boot under QEMU did
+/// exactly that: every secondary's first tick resumed the idle loop over its
+/// bring-up, no secondary published IRQ-readiness, and the boot halted.
+///
+/// So an EL1-origin frame is replaced only once its core has **handed off**:
+/// [`enter_idle_wait`] sets the flag and never returns, so after it every
+/// EL1-origin frame on that core is the idle loop's, and before it no thread
+/// has run on the core (a thread runs only through a restore), so every frame
+/// is the kernel's own bring-up.  The decision is therefore exact, not a
+/// heuristic on the frame's contents.  A restore the core declines is not
+/// lost: the committed state names what the core runs, the interrupted
+/// bring-up saved nothing into any thread (`trapFromEl0` is false of an
+/// EL1-origin frame), and the core's first tick after its handoff restores the
+/// same target.  Each flag is written by its own core and read by that core's
+/// own handlers, so program order and the exception entry order it.
+pub type IdleHandoffFlags = [AtomicBool; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+static IDLE_HANDOFF: IdleHandoffFlags =
+    [const { AtomicBool::new(false) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP8.1: each core's first idle dispatch, and whether it has been
+/// reported.**  `0` none yet, `1` committed and not yet reported, `2`
+/// reported.  A restore of kind [`RESTORE_KIND_IDLE`] that replaces a frame
+/// moves a core from `0` to `1`; the IRQ handler, once its kernel-entry
+/// bracket has been released, moves it from `1` to `2` and prints one line —
+/// the boot log's evidence that the kernel, not the bring-up, now owns the
+/// core.  The print is outside the bracket for a reason: a core still printing
+/// its bring-up with IRQs unmasked may hold the console lock while it waits
+/// for the kernel-entry lock, so printing under that lock could deadlock.  At
+/// the report the interrupted frame is the idle loop or a thread (a restore
+/// replaced it, so the core had handed off), neither of which holds the
+/// console lock.
+pub type FirstIdleFlags = [AtomicU8; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+static FIRST_IDLE: FirstIdleFlags =
+    [const { AtomicU8::new(0) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP8.1**: record that `core`'s frame was replaced by an idle resume
+/// (the testable form); only the first one counts.
+pub fn note_idle_dispatch_in(flags: &FirstIdleFlags, core: usize) {
+    if let Some(flag) = flags.get(core) {
+        let _ = flag.compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed);
+    }
+}
+
+/// **WS-BP BP8.1**: take `core`'s first-idle report (the testable form):
+/// `true` exactly once, after an idle resume was noted.
+#[must_use]
+pub fn take_first_idle_report_in(flags: &FirstIdleFlags, core: usize) -> bool {
+    flags.get(core).is_some_and(|flag| {
+        flag.compare_exchange(1, 2, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    })
+}
+
+/// **WS-BP BP8.1**: print the executing core's first idle dispatch, once.
+/// Called by the IRQ handler after its kernel-entry bracket is released.
+pub fn report_first_idle_dispatch() {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    if take_first_idle_report_in(&FIRST_IDLE, core) {
+        crate::kprintln!("[sched] core {core}: first idle dispatch");
+    }
+}
+
+/// **WS-BP BP8.1: hand the executing core to the idle wait** (the testable
+/// form): set `core`'s handoff flag, after which a restore may replace an
+/// EL1-origin frame on it.
+pub fn hand_off_to_idle_in(handoff: &IdleHandoffFlags, core: usize) {
+    if let Some(flag) = handoff.get(core) {
+        flag.store(true, Ordering::Relaxed);
+    }
+}
+
+/// **WS-BP BP8.1: the last thing a core's bring-up does.**  Marks the core
+/// handed off ([`IdleHandoffFlags`]) and enters [`kernel_idle_loop`]; the
+/// caller has already unmasked IRQs, so the next tick or SGI takes the core
+/// from here to whatever the kernel committed for it.
+pub fn enter_idle_wait() -> ! {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    hand_off_to_idle_in(&IDLE_HANDOFF, core);
+    kernel_idle_loop()
 }
 
 /// Why a restore was refused.
@@ -264,7 +356,9 @@ pub fn restore_stage_word_in(
 /// **WS-BP BP7.4: commit a staged resume into the frame the handler will
 /// `eret` through** (the testable form).  `Ok(false)` when no frame is
 /// published on `core` — the entry was not reached from a trap, and there is
-/// nothing to resume into; `Ok(true)` when the frame was replaced and
+/// nothing to resume into — and when the frame was taken at EL1 before the
+/// core handed itself to the idle wait, which is the kernel's own bring-up
+/// (WS-BP BP8.1, [`IdleHandoffFlags`]); `Ok(true)` when the frame was replaced and
 /// `restored[core]` set.  A user resume copies the staged words with
 /// `SPSR_EL1` sanitised ([`sanitise_user_spsr`]); an idle resume clears the
 /// general-purpose registers and `SP_EL0` and aims `ELR_EL1` at `idle_pc`.
@@ -273,6 +367,7 @@ pub fn restore_commit_in(
     slots: &InFlightSlots,
     staging: &RestoreStaging,
     restored: &RestoredFlags,
+    handoff: &IdleHandoffFlags,
     core: usize,
     kind: u32,
     idle_pc: u64,
@@ -283,6 +378,7 @@ pub fn restore_commit_in(
     let slot = slots.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
     let words = staging.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
     let flag = restored.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
+    let handed_off = handoff.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
     let ptr = slot.load(Ordering::Relaxed);
     if ptr.is_null() {
         return Ok(false);
@@ -293,6 +389,12 @@ pub fn restore_commit_in(
     // live reference to the frame for the duration of the write, and only
     // core `core` writes slot `core`.
     let frame = unsafe { &mut *ptr };
+    // WS-BP BP8.1: a frame taken at EL1 before the core handed itself to the
+    // idle wait is the kernel's own bring-up, resumed as it stands
+    // ([`IdleHandoffFlags`]).
+    if !exception_taken_from_el0(frame.spsr_el1) && !handed_off.load(Ordering::Relaxed) {
+        return Ok(false);
+    }
     if kind == RESTORE_KIND_USER || kind == RESTORE_KIND_USER_FP_LIVE {
         let word = |i: usize| words[i].load(Ordering::Relaxed);
         for (i, gpr) in frame.gprs.iter_mut().enumerate() {
@@ -339,12 +441,16 @@ pub fn restore_commit(kind: u32) -> Result<bool, RestoreRefusal> {
         &IN_FLIGHT_FRAMES,
         &RESTORE_STAGING,
         &RESTORED,
+        &IDLE_HANDOFF,
         core,
         kind,
         kernel_idle_loop as *const () as usize as u64,
     )?;
     if replaced {
         crate::fp_context::set_trap_for_resume(kind == RESTORE_KIND_USER_FP_LIVE);
+        if kind == RESTORE_KIND_IDLE {
+            note_idle_dispatch_in(&FIRST_IDLE, core);
+        }
     }
     Ok(replaced)
 }
@@ -1452,6 +1558,8 @@ pub extern "C" fn handle_irq_per_core(frame: &mut TrapFrame) {
             crate::kprintln_core!("IRQ: unhandled INTID {}", intid);
         }
     });
+    // WS-BP BP8.1: the dispatch's kernel-entry bracket is released here.
+    report_first_idle_dispatch();
 }
 
 /// **WS-SM SM0.H / SM5.C.5**: the `.reschedule` SGI INTID, matching
@@ -1671,12 +1779,18 @@ mod tests {
         );
     }
 
-    fn fresh_restore() -> (InFlightSlots, RestoreStaging, RestoredFlags) {
+    fn fresh_restore() -> (
+        InFlightSlots,
+        RestoreStaging,
+        RestoredFlags,
+        IdleHandoffFlags,
+    ) {
         (
             [const { AtomicPtr::new(core::ptr::null_mut()) };
                 crate::svc_dispatch::RETURN_FRAME_CORES],
             [const { [const { AtomicU64::new(0) }; TRAP_FRAME_CONTEXT_WORDS as usize] };
                 crate::svc_dispatch::RETURN_FRAME_CORES],
+            [const { AtomicBool::new(false) }; crate::svc_dispatch::RETURN_FRAME_CORES],
             [const { AtomicBool::new(false) }; crate::svc_dispatch::RETURN_FRAME_CORES],
         )
     }
@@ -1686,7 +1800,7 @@ mod tests {
     /// the trap's own syndrome words alone, and sets the restored flag once.
     #[test]
     fn a_user_restore_replaces_the_in_flight_context() {
-        let (slots, staging, restored) = fresh_restore();
+        let (slots, staging, restored, handoff) = fresh_restore();
         for i in 0..TRAP_FRAME_CONTEXT_WORDS {
             restore_stage_word_in(&staging, 2, i, 1000 + u64::from(i)).unwrap();
         }
@@ -1698,7 +1812,15 @@ mod tests {
         {
             let _g = InFlightFrame::publish_in(&slots, 2, &mut frame);
             assert_eq!(
-                restore_commit_in(&slots, &staging, &restored, 2, RESTORE_KIND_USER, 0x4242),
+                restore_commit_in(
+                    &slots,
+                    &staging,
+                    &restored,
+                    &handoff,
+                    2,
+                    RESTORE_KIND_USER,
+                    0x4242
+                ),
                 Ok(true)
             );
         }
@@ -1727,7 +1849,7 @@ mod tests {
     #[test]
     fn an_fp_live_restore_installs_the_same_frame_as_a_user_restore() {
         let run = |kind: u32| {
-            let (slots, staging, restored) = fresh_restore();
+            let (slots, staging, restored, handoff) = fresh_restore();
             for i in 0..TRAP_FRAME_CONTEXT_WORDS {
                 restore_stage_word_in(&staging, 0, i, 500 + u64::from(i)).unwrap();
             }
@@ -1735,7 +1857,7 @@ mod tests {
             {
                 let _g = InFlightFrame::publish_in(&slots, 0, &mut frame);
                 assert_eq!(
-                    restore_commit_in(&slots, &staging, &restored, 0, kind, 0),
+                    restore_commit_in(&slots, &staging, &restored, &handoff, 0, kind, 0),
                     Ok(true)
                 );
             }
@@ -1749,7 +1871,7 @@ mod tests {
     /// replaced.
     #[test]
     fn an_idle_restore_resumes_the_idle_loop() {
-        let (slots, staging, restored) = fresh_restore();
+        let (slots, staging, restored, handoff) = fresh_restore();
         let mut frame = zero_frame();
         frame.gprs = [7; 31];
         frame.sp_el0 = 9;
@@ -1757,7 +1879,15 @@ mod tests {
         {
             let _g = InFlightFrame::publish_in(&slots, 0, &mut frame);
             assert_eq!(
-                restore_commit_in(&slots, &staging, &restored, 0, RESTORE_KIND_IDLE, 0x8_1234),
+                restore_commit_in(
+                    &slots,
+                    &staging,
+                    &restored,
+                    &handoff,
+                    0,
+                    RESTORE_KIND_IDLE,
+                    0x8_1234
+                ),
                 Ok(true)
             );
         }
@@ -1773,20 +1903,36 @@ mod tests {
     /// past the context and a core outside the slots are refused.
     #[test]
     fn a_restore_without_a_frame_is_a_no_op_and_bad_operands_are_refused() {
-        let (slots, staging, restored) = fresh_restore();
+        let (slots, staging, restored, handoff) = fresh_restore();
         assert_eq!(
-            restore_commit_in(&slots, &staging, &restored, 1, RESTORE_KIND_USER, 0),
+            restore_commit_in(
+                &slots,
+                &staging,
+                &restored,
+                &handoff,
+                1,
+                RESTORE_KIND_USER,
+                0
+            ),
             Ok(false)
         );
         assert!(!take_restored_in(&restored, 1));
         // WS-BP BP7.9: kind 2 is the FP-live user resume, so it is a kind the
         // commit knows; kind 3 is not.
         assert_eq!(
-            restore_commit_in(&slots, &staging, &restored, 1, RESTORE_KIND_USER_FP_LIVE, 0),
+            restore_commit_in(
+                &slots,
+                &staging,
+                &restored,
+                &handoff,
+                1,
+                RESTORE_KIND_USER_FP_LIVE,
+                0
+            ),
             Ok(false)
         );
         assert_eq!(
-            restore_commit_in(&slots, &staging, &restored, 1, 3, 0),
+            restore_commit_in(&slots, &staging, &restored, &handoff, 1, 3, 0),
             Err(RestoreRefusal::UnknownKind)
         );
         assert_eq!(
@@ -1798,9 +1944,119 @@ mod tests {
             Err(RestoreRefusal::CoreOutOfRange)
         );
         assert_eq!(
-            restore_commit_in(&slots, &staging, &restored, 99, RESTORE_KIND_IDLE, 0),
+            restore_commit_in(
+                &slots,
+                &staging,
+                &restored,
+                &handoff,
+                99,
+                RESTORE_KIND_IDLE,
+                0
+            ),
             Err(RestoreRefusal::CoreOutOfRange)
         );
+    }
+
+    /// WS-BP BP8.1: a frame taken at EL1 before its core handed itself to the
+    /// idle wait is the kernel's own bring-up, so neither a user nor an idle
+    /// restore replaces it and no flag is set; once the core hands off, the
+    /// same restore replaces it.  An EL0-origin frame is replaced either way
+    /// (the tests above run with no core handed off), and handing off one core
+    /// hands off no other.
+    #[test]
+    fn a_bring_up_frame_is_replaced_only_after_its_core_hands_off() {
+        let el1h = |frame: &mut TrapFrame| {
+            frame.elr_el1 = 0x4008_0000;
+            frame.spsr_el1 = 0x3C5;
+            frame.gprs = [3; 31];
+        };
+        for kind in [
+            RESTORE_KIND_USER,
+            RESTORE_KIND_USER_FP_LIVE,
+            RESTORE_KIND_IDLE,
+        ] {
+            let (slots, staging, restored, handoff) = fresh_restore();
+            for i in 0..TRAP_FRAME_CONTEXT_WORDS {
+                restore_stage_word_in(&staging, 1, i, 700 + u64::from(i)).unwrap();
+            }
+            let mut frame = zero_frame();
+            el1h(&mut frame);
+            {
+                let _g = InFlightFrame::publish_in(&slots, 1, &mut frame);
+                assert_eq!(
+                    restore_commit_in(&slots, &staging, &restored, &handoff, 1, kind, 0x8_1234),
+                    Ok(false),
+                    "a bring-up frame is resumed as it stands"
+                );
+            }
+            assert_eq!(frame.elr_el1, 0x4008_0000);
+            assert_eq!(frame.spsr_el1, 0x3C5);
+            assert_eq!(frame.gprs, [3; 31]);
+            assert!(!take_restored_in(&restored, 1));
+
+            hand_off_to_idle_in(&handoff, 2);
+            {
+                let _g = InFlightFrame::publish_in(&slots, 1, &mut frame);
+                assert_eq!(
+                    restore_commit_in(&slots, &staging, &restored, &handoff, 1, kind, 0x8_1234),
+                    Ok(false),
+                    "another core's handoff is not this core's"
+                );
+            }
+            assert_eq!(frame.elr_el1, 0x4008_0000);
+
+            hand_off_to_idle_in(&handoff, 1);
+            {
+                let _g = InFlightFrame::publish_in(&slots, 1, &mut frame);
+                assert_eq!(
+                    restore_commit_in(&slots, &staging, &restored, &handoff, 1, kind, 0x8_1234),
+                    Ok(true),
+                    "after the handoff an EL1 frame is the idle loop's"
+                );
+            }
+            let expected_pc = if kind == RESTORE_KIND_IDLE {
+                0x8_1234
+            } else {
+                700 + 32
+            };
+            assert_eq!(frame.elr_el1, expected_pc);
+            assert!(take_restored_in(&restored, 1));
+        }
+        // A core outside the flag array is refused, not read past.
+        let (slots, staging, restored, handoff) = fresh_restore();
+        hand_off_to_idle_in(&handoff, 99);
+        assert_eq!(
+            restore_commit_in(
+                &slots,
+                &staging,
+                &restored,
+                &handoff,
+                99,
+                RESTORE_KIND_IDLE,
+                0
+            ),
+            Err(RestoreRefusal::CoreOutOfRange)
+        );
+    }
+
+    /// WS-BP BP8.1: the first-idle report fires exactly once per core, only
+    /// after an idle resume was noted, and one core's note is not another's.
+    #[test]
+    fn the_first_idle_dispatch_is_reported_once_per_core() {
+        let flags: FirstIdleFlags =
+            [const { AtomicU8::new(0) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+        assert!(!take_first_idle_report_in(&flags, 1), "nothing noted yet");
+        note_idle_dispatch_in(&flags, 1);
+        assert!(!take_first_idle_report_in(&flags, 2), "another core's note");
+        assert!(take_first_idle_report_in(&flags, 1));
+        assert!(!take_first_idle_report_in(&flags, 1), "reported once");
+        note_idle_dispatch_in(&flags, 1);
+        assert!(
+            !take_first_idle_report_in(&flags, 1),
+            "a later idle resume is not the first"
+        );
+        note_idle_dispatch_in(&flags, 99);
+        assert!(!take_first_idle_report_in(&flags, 99));
     }
 
     /// WS-BP BP7.4: sanitisation keeps exactly the condition flags.

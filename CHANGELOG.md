@@ -1,3 +1,112 @@
+## v0.36.26 — WS-BP BP8.1 slice 3: the Lean-linked kernel boots under QEMU, on four PEs, to every core's first idle dispatch
+
+The Lean-linked `virt` image (`hw_target,kernel_image,board_qemu_virt`) now
+boots under QEMU on four PEs, at EL1 and at EL2. On each run the library
+initializes, the verified device-tree boot installs, every PE serves the
+kernel, the boot core's topology check passes, and every core reaches its
+first idle dispatch, in about a second each. It is the first execution of the
+Lean kernel on an aarch64 machine. That first execution found three defects,
+none visible to any host test, fixture or proof in the tree:
+- one in the verified device-tree parser;
+- one in the context restore;
+- one in the boot core's bring-up.
+
+All three are board-independent, so each would have stopped the Raspberry
+Pi 5 boot the same way. None is attacker-reachable: each is a boot-time
+liveness failure before any user code runs.
+
+- **The device-tree parser read every byte by copying the whole blob.**
+  `readBE32`, `readCString`, `readCStringChecked` and `readCStringWithin`
+  indexed `blob.data[offset]?`. In compiled code, `ByteArray.data` builds a
+  boxed `Array UInt8` of the entire blob (`byte_array_data`). So each byte read
+  cost a copy of the whole blob, and the parse was quadratic in its size. The
+  boot sat in `readCStringWithin` for good on QEMU's 1 MiB tree, and a
+  Raspberry Pi 5's tree of about 80 KB is large enough to stall it too.
+  - The seven sites read `blob[offset]?` now, which compiles to
+    `lean_byte_array_fget`. Each docstring already said the code "uses
+    `ByteArray.get?`", so the code now matches its own documentation.
+  - No proof changed.
+  - A Tier 3 negative refuses `.data[` in `DeviceTree.lean`.
+  - Host tests could not see this: the checked-in `virt` fixture strips QEMU's
+    1 MiB padding, and every other blob is small.
+- **A restore abandoned the bring-up it interrupted.** The restore replaced any
+  EL1-origin frame outright, on the stated ground that "every other kernel path
+  runs with IRQs masked". That is false of every core's bring-up tail:
+  - the boot core unmasks before Phase 6 so it can acknowledge shootdowns
+    through the Phase 7 wait;
+  - a secondary unmasks before it publishes `CORE_IRQ_READY`.
+
+  So each secondary's first tick resumed the idle loop over its own bring-up,
+  no secondary published IRQ readiness, and the boot halted at Phase 7. With
+  the fix reverted, even the boot core is taken over at its first tick. The
+  fix:
+  - `trap::IdleHandoffFlags` marks a core that has handed itself to the idle
+    wait. `trap::enter_idle_wait` sets the flag and enters
+    `kernel_idle_loop`; it is now the last thing both bring-up paths do.
+  - `restore_commit_in` declines an EL1 frame on a core that has not handed
+    off, and the interrupted bring-up resumes as it stands.
+  - The decision is exact rather than a heuristic. Before a core's handoff no
+    thread has run on it (a thread runs only through a restore), so every EL1
+    frame is bring-up code. After the handoff every EL1 frame is the idle
+    loop's.
+  - Declining loses nothing. The interrupted EL1 frame saved into no thread
+    (`trapFromEl0` is false), and the next tick after the handoff restores the
+    same committed target.
+- **The boot core never dispatched.** A booted state has no current thread on
+  any core, and a tick on such a core charges and dispatches nothing. A
+  secondary's first scheduling point is its bring-up entry; the boot core had
+  none. So core 0's idle thread, and any initial thread homed on it, would
+  never have run.
+  - The secondary's Step 5 is lifted into `smp::first_reschedule(core, halt)`.
+    Both cores call it in the same place: after readiness, before the unmask,
+    under the kernel-entry lock.
+  - The boot core passes `gic::halt_all` and a secondary passes
+    `cpu::fatal_halt`.
+  - The readiness gate's site table names the new function.
+- **The log now shows the kernel owning each core and the topology check
+  passing.**
+  - The IRQ handler prints `[sched] core N: first idle dispatch` once per core,
+    after its kernel-entry bracket is released. That placement is the one
+    where printing cannot deadlock: a core still printing its bring-up with
+    IRQs unmasked can hold the console lock while it waits for the entry lock.
+  - The boot core prints `[boot] Phase 7: all 4 declared PE(s) serve the
+    kernel`. "Boot complete" precedes the wait, so no line had said it passed.
+- **`scripts/test_qemu.sh --lean-kernel`.**
+  - It links the lane's archive into the `virt` image, in its own target
+    directory so the archive lane still uploads the Raspberry Pi 5 image.
+  - It boots the image on four PEs and stops at the fourth first idle
+    dispatch, with a two-minute deadline.
+  - It requires `tests/fixtures/qemu_lean_boot_expected.txt`'s boot-core lines
+    in order, and every secondary's IRQ readiness and every core's first idle
+    dispatch unordered.
+  - It runs under `-icount shift=0,sleep=off`. Under QEMU's multi-threaded
+    TCG the virtual clock follows host time. One emulated Lean tick outlasts
+    the 1 ms tick period, so four PEs' ticks held the kernel-entry lock end to
+    end and the boot core never left its bring-up (measured at both entry
+    levels). `-icount` charges each executed instruction one nanosecond, a
+    1 GHz PE, slower than a Cortex-A76. So each tick costs its own instruction
+    count; the tick period is not lengthened.
+  - The HAL-only mode is unchanged.
+- **The per-PR run.** `scripts/test_lean_aarch64_archive.sh` gains a sixth
+  step, `REQUIRE_QEMU=1 scripts/test_qemu.sh --lean-kernel`, and the CI job
+  that runs it installs QEMU. `check_aarch64_cross_target.py` holds that step
+  as a relation:
+  - executed, with the flag and the requirement on the same command;
+  - run after the archive build;
+  - not exempted from `set -e`.
+
+  Six new token-preserving mutations cover it. The lane's step citations in
+  the spec, `DEVELOPMENT.md`, the claim index and this file are renumbered to
+  `/6`.
+- **Evidence.**
+  - Host HAL tests: `a_bring_up_frame_is_replaced_only_after_its_core_hands_off`
+    (both kinds, both orders, a foreign core's handoff, an out-of-range core)
+    and `the_first_idle_dispatch_is_reported_once_per_core`.
+  - Nineteen Tier 3 anchors.
+  - Mutations of the lane itself: reverting the handoff fails it at the boot
+    core's IRQ unmask, and dropping the boot core's first reschedule fails it
+    at core 0's idle dispatch.
+
 ## v0.36.25 — WS-BP BP8.1 slice 2: the Lean `virt` binding, its deployment and its own boot entry
 
 Slice 1 booted the Rust half of the image on QEMU's `virt`; the Lean half could

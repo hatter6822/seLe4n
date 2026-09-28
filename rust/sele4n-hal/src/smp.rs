@@ -839,106 +839,11 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     crate::lean_ready::become_ready_or_halt(core_idx, crate::cpu::fatal_halt);
 
     // -----------------------------------------------------------------
-    // Step 5 — Lean kernel bring-up entry (the core's first reschedule).
-    //
-    // Calls into `SeLe4n.Kernel.secondaryKernelMain` (defined in
-    // `SeLe4n/Kernel/SecondaryEntry.lean` with
-    // `@[export lean_secondary_kernel_main]`), which is definitionally
-    // the per-core reschedule entry: the verified
-    // `handleRescheduleSgiOnCore` transition dispatches the
-    // highest-priority runnable thread assigned to this core (the
-    // core's idle thread when nothing else is enqueued), establishing
-    // `currentOnCore` before this core takes its first interrupt.
-    //
-    // Ordering and locking are load-bearing here:
-    //
-    //   * The entry commits kernel state (an `IO.Ref` read-then-write),
-    //     while sibling cores may already be executing bracketed kernel
-    //     entries — so the call MUST hold the kernel-entry lock
-    //     (`kernel_entry::with_kernel_entry`), like every committing
-    //     entry.
-    //   * It runs BEFORE `enable_irq` (Step 6): the kernel-entry lock
-    //     is not reentrant, and a per-core timer tick taken mid-bracket
-    //     would queue behind a ticket this core already holds — the
-    //     IRQs-masked-while-held discipline every other kernel entry
-    //     observes.  DAIF has been masked since `secondary_entry`
-    //     (boot.S), so no extra masking is needed.
-    //   * The bracket's spin self-services shootdown obligations, but a
-    //     core that has not yet published `CORE_IRQ_READY` is excluded
-    //     from every shootdown round, so acquisition terminates without
-    //     external help.
-    //
-    // The `hw_target` feature gates the extern declaration: under host
-    // `cargo test` builds the symbol is not linked, so the declaration
-    // would be unresolved.  Under a hardware build the Lean compiler
-    // emits a C-callable wrapper that resolves here.
+    // Step 5 — Lean kernel bring-up entry (the core's first reschedule),
+    // [`first_reschedule`].  A refusal parks this PE (`cpu::fatal_halt`),
+    // so the boot core's bounded readiness wait counts it short.
     // -----------------------------------------------------------------
-    #[cfg(feature = "hw_target")]
-    {
-        // Lean-runtime readiness gate: Step 4b ran this PE's per-core
-        // handshake and marked it ready, so on the image the gate passes.
-        // It stays because a PE must never enter a Lean runtime it has not
-        // initialized, and the gate is where `build.rs` checks that; a PE
-        // that marked itself and still reads not-ready has a broken mask,
-        // and parks rather than skip its first reschedule.
-        //
-        // PR #887 review round 6: the readiness gate is the EXECUTING PE's.
-        // `core_idx` is the PSCI context id the primary passed, validated
-        // for range only; `boot.S::secondary_entry` set this core's
-        // `TPIDR_EL1` from the same word, so on conforming firmware the two
-        // agree — and a firmware that woke another PE with this context id
-        // must not consult that core's readiness, nor take its kernel-entry
-        // ticket.  Kept in release builds: a `debug_assert_eq!` compiles out
-        // on hardware, and `build.rs` accepts only this form (or a `let`
-        // from `current_core_id_from_tpidr()`) as the guard argument's
-        // provenance.
-        assert_eq!(
-            core_idx as u64,
-            crate::per_cpu::current_core_id_from_tpidr(),
-            "rust_secondary_main: the PSCI context id must match the executing core's TPIDR_EL1"
-        );
-        if crate::lean_ready::lean_ready(core_idx) {
-            extern "C" {
-                /// # Safety
-                ///
-                /// Sound once on each secondary PE, from its bring-up entry,
-                /// after that PE's MMU, GIC and timer init have completed and
-                /// its Lean runtime is initialised (`lean_ready` checked on
-                /// *this* PE).  `core_id` must equal the executing PE's
-                /// `TPIDR_EL1`, which the caller asserts.
-                fn lean_secondary_kernel_main(core_id: u64) -> crate::lean_runtime::LeanBaseIoUnit;
-            }
-            // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted
-            // C-callable wrapper for `SeLe4n.Kernel.secondaryKernelMain`.
-            // The function takes one u64 argument (the PSCI context_id)
-            // and returns its `BaseIO Unit` value, `lean_box(0)` — the call is total and never unwinds
-            // across the FFI boundary (Lean's `BaseIO` never throws under
-            // `panic = "abort"`).  The verified step decodes the id
-            // fail-closed, so even an out-of-range context_id commits
-            // nothing.  This core's Lean runtime is initialized (the
-            // `lean_ready` gate just checked).
-            let res = crate::kernel_entry::with_kernel_entry(core_idx, || unsafe {
-                lean_secondary_kernel_main(core_id)
-            });
-            // The export returns its `BaseIO Unit` value, `lean_box(0)`,
-            // checked outside the bracket so a malformed one halts this PE
-            // without holding the kernel-entry lock
-            // (`lean_runtime::discharge_base_io`).
-            // SAFETY: `res` is the value the export just returned; if it is
-            // a heap object this caller owns its one reference.
-            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_secondary_kernel_main") };
-            crate::kprintln!(
-                "[smp] core {core_id}: kernel bring-up entry complete (first reschedule)"
-            );
-        } else {
-            crate::kprintln!(
-                "[smp] core {core_id}: FATAL: not ready after marking itself; halting this core"
-            );
-            crate::cpu::fatal_halt();
-        }
-    }
-    #[cfg(not(feature = "hw_target"))]
-    crate::kprintln!("[smp] core {core_id}: kernel bring-up entry complete (first reschedule)");
+    first_reschedule(core_idx, crate::cpu::fatal_halt);
 
     // -----------------------------------------------------------------
     // Step 6 — IRQ unmask.
@@ -975,11 +880,140 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // `.reschedule` SGI drives the verified reschedule, both via
     // `trap.rs::handle_irq_per_core` under the kernel-entry lock, and
     // each returns through the context the kernel installed for this
-    // core (WS-BP BP7.6) — a dispatched thread at EL0, or the idle loop
-    // (`trap::kernel_idle_loop`), which replaces this one.
+    // core (WS-BP BP7.6) — a dispatched thread at EL0, or the idle loop.
+    //
+    // WS-BP BP8.1: the core enters that wait through
+    // `trap::enter_idle_wait`, which marks it handed off.  Every step above
+    // after the IRQ unmask ran with interrupts live, and a restore declines
+    // an EL1 frame until its core hands off — so a tick taken there resumes
+    // this bring-up rather than replacing it, and the IRQ-readiness
+    // publication cannot be abandoned (`trap::IdleHandoffFlags`).
     // -----------------------------------------------------------------
-    loop {
-        crate::cpu::wfe();
+    crate::trap::enter_idle_wait()
+}
+
+/// **The core's first reschedule** — WS-SM SM5.C.5's bring-up entry, and since
+/// WS-BP BP8.1 every core's, the boot core's included.
+///
+/// A freshly booted state has every current slot `none`, and a tick on a core
+/// with no current thread charges nothing and dispatches nothing (the
+/// `currentOnCore c = none` arm of `timerTickOnCore` acts only on a local
+/// replenish wake).  So a core whose first scheduling point never runs never
+/// dispatches at all: the boot core, until BP8.1, ran no first reschedule, and
+/// the first Lean-linked boot under QEMU showed it — its idle thread, and any
+/// initial thread homed on it, never ran.  The Lean entry this calls is
+/// definitionally the per-core `.reschedule` receiver, so it is correct on any
+/// core; the Lean name `secondaryKernelMain` predates the boot core using it.
+///
+/// `halt` is the caller's refusal barrier: `cpu::fatal_halt` on a secondary,
+/// whose absence the boot core's readiness wait then reports; `gic::halt_all`
+/// on the boot core, which has released no secondary yet.
+pub(crate) fn first_reschedule(core_idx: usize, halt: fn() -> !) {
+    let core_id = core_idx as u64;
+    // -----------------------------------------------------------------
+    // Step 5 — Lean kernel bring-up entry (the core's first reschedule).
+    //
+    // Calls into `SeLe4n.Kernel.secondaryKernelMain` (defined in
+    // `SeLe4n/Kernel/SecondaryEntry.lean` with
+    // `@[export lean_secondary_kernel_main]`), which is definitionally
+    // the per-core reschedule entry: the verified
+    // `handleRescheduleSgiOnCore` transition dispatches the
+    // highest-priority runnable thread assigned to this core (the
+    // core's idle thread when nothing else is enqueued), establishing
+    // `currentOnCore` before this core takes its first interrupt.
+    //
+    // Ordering and locking are load-bearing here:
+    //
+    //   * The entry commits kernel state (an `IO.Ref` read-then-write),
+    //     while sibling cores may already be executing bracketed kernel
+    //     entries — so the call MUST hold the kernel-entry lock
+    //     (`kernel_entry::with_kernel_entry`), like every committing
+    //     entry.
+    //   * It runs BEFORE `enable_irq` (Step 6): the kernel-entry lock
+    //     is not reentrant, and a per-core timer tick taken mid-bracket
+    //     would queue behind a ticket this core already holds — the
+    //     IRQs-masked-while-held discipline every other kernel entry
+    //     observes.  DAIF has been masked since the core's entry
+    //     (`boot.S`'s `_start` / `secondary_entry`), so no extra masking is
+    //     needed.
+    //   * The bracket's spin self-services shootdown obligations, but a
+    //     core that has not yet published `CORE_IRQ_READY` is excluded
+    //     from every shootdown round, so acquisition terminates without
+    //     external help.
+    //
+    // The `hw_target` feature gates the extern declaration: under host
+    // `cargo test` builds the symbol is not linked, so the declaration
+    // would be unresolved.  Under a hardware build the Lean compiler
+    // emits a C-callable wrapper that resolves here.
+    // -----------------------------------------------------------------
+    #[cfg(feature = "hw_target")]
+    {
+        // Lean-runtime readiness gate: Step 4b ran this PE's per-core
+        // handshake and marked it ready, so on the image the gate passes.
+        // It stays because a PE must never enter a Lean runtime it has not
+        // initialized, and the gate is where `build.rs` checks that; a PE
+        // that marked itself and still reads not-ready has a broken mask,
+        // and parks rather than skip its first reschedule.
+        //
+        // PR #887 review round 6: the readiness gate is the EXECUTING PE's.
+        // `core_idx` is the PSCI context id the primary passed, validated
+        // for range only; `boot.S::secondary_entry` set this core's
+        // `TPIDR_EL1` from the same word, so on conforming firmware the two
+        // agree — and a firmware that woke another PE with this context id
+        // must not consult that core's readiness, nor take its kernel-entry
+        // ticket.  Kept in release builds: a `debug_assert_eq!` compiles out
+        // on hardware, and `build.rs` accepts only this form (or a `let`
+        // from `current_core_id_from_tpidr()`) as the guard argument's
+        // provenance.
+        assert_eq!(
+            core_idx as u64,
+            crate::per_cpu::current_core_id_from_tpidr(),
+            "first_reschedule: the core id must match the executing core's TPIDR_EL1"
+        );
+        if crate::lean_ready::lean_ready(core_idx) {
+            extern "C" {
+                /// # Safety
+                ///
+                /// Sound once on each secondary PE, from its bring-up entry,
+                /// after that PE's MMU, GIC and timer init have completed and
+                /// its Lean runtime is initialised (`lean_ready` checked on
+                /// *this* PE).  `core_id` must equal the executing PE's
+                /// `TPIDR_EL1`, which the caller asserts.
+                fn lean_secondary_kernel_main(core_id: u64) -> crate::lean_runtime::LeanBaseIoUnit;
+            }
+            // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted
+            // C-callable wrapper for `SeLe4n.Kernel.secondaryKernelMain`.
+            // The function takes one u64 argument (the PSCI context_id)
+            // and returns its `BaseIO Unit` value, `lean_box(0)` — the call is total and never unwinds
+            // across the FFI boundary (Lean's `BaseIO` never throws under
+            // `panic = "abort"`).  The verified step decodes the id
+            // fail-closed, so even an out-of-range context_id commits
+            // nothing.  This core's Lean runtime is initialized (the
+            // `lean_ready` gate just checked).
+            let res = crate::kernel_entry::with_kernel_entry(core_idx, || unsafe {
+                lean_secondary_kernel_main(core_id)
+            });
+            // The export returns its `BaseIO Unit` value, `lean_box(0)`,
+            // checked outside the bracket so a malformed one halts this PE
+            // without holding the kernel-entry lock
+            // (`lean_runtime::discharge_base_io`).
+            // SAFETY: `res` is the value the export just returned; if it is
+            // a heap object this caller owns its one reference.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_secondary_kernel_main") };
+            crate::kprintln!(
+                "[smp] core {core_id}: kernel bring-up entry complete (first reschedule)"
+            );
+        } else {
+            crate::kprintln!(
+                "[smp] core {core_id}: FATAL: not ready after marking itself; halting"
+            );
+            halt();
+        }
+    }
+    #[cfg(not(feature = "hw_target"))]
+    {
+        let _ = halt;
+        crate::kprintln!("[smp] core {core_id}: kernel bring-up entry complete (first reschedule)");
     }
 }
 
