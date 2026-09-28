@@ -25,7 +25,7 @@
 //!          bounded window, or the system halts (WS-BP BP6.3)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.36.30";
+const KERNEL_VERSION: &str = "0.36.31";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -404,9 +404,21 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     let secondary_release = {
         // WS-BP BP2.3/BP2.4: initialize the Lean library, halting the system
         // if it refuses, then enter the kernel with the proof that it ran.
+        #[cfg(not(feature = "lean_init_refusal_probe"))]
         let initialised = crate::lean_entry::initialise_lean_library();
+        // v0.36.31: the refusal probe's `virt` test image drives a refused
+        // initialization through the same report-and-halt path, so the
+        // refusal is executed on the target rather than asserted
+        // (`scripts/test_qemu_lean_init_refusal.sh`).  It never returns.
+        #[cfg(feature = "lean_init_refusal_probe")]
+        let initialised = crate::lean_entry::refusal_probe::initialise_refusing(dtb_ptr);
+        // v0.36.31: a census on each side of the install, so the run shows the
+        // Lean kernel's own `IO` action allocating on the target and completing
+        // with the heap's invariants intact (WS-BP BP2.5).
+        crate::lean_entry::report_heap_census("the library initializer");
         let permit = crate::lean_entry::enter_lean_kernel(initialised, dtb_ptr);
         crate::kprintln!("[boot] Phase 5: kernel state installed");
+        crate::lean_entry::report_heap_census("the install");
         permit
     };
     // WS-BP BP8.4: the HAL-only image extends the boot map nowhere — the
@@ -820,7 +832,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.36.30");
+        assert_eq!(KERNEL_VERSION, "0.36.31");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

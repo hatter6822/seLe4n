@@ -8086,6 +8086,44 @@ run_check "INVARIANT" rg -n -F -- 'crate::cpu::lock_el0_system_access();' rust/s
 run_check "INVARIANT" rg -n -F -- 'crate::cpu::lock_el0_system_access();' rust/sele4n-hal/src/smp.rs
 
 # ============================================================================
+# v0.36.31 — three acceptance boxes decided by runs on the target
+# ============================================================================
+#
+# WS-BP BP2.4: a refused Lean initialization halts the system.  The refusal is
+# reported and halted on in ONE function, which the production initializer and
+# the refusal probe both call, so the probe executes the code a real refusal
+# runs; the probe is a test image's feature and the gate that boots it runs in
+# the archive lane.
+run_check "INVARIANT" rg -n -U 'unsafe fn initialise_or_halt\(initializer: impl FnOnce\(\) -> Obj\) -> LeanLibraryInitialised \{[^\n]*(\n([ \t][^\n]*)?)*crate::gic::halt_all\(\)' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'unsafe { initialise_or_halt(initializer) }' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'ProbeMode::Error => unsafe { initialise_or_halt(|| io_result_mk_error(boxed(0))) },' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'ProbeMode::Malformed => unsafe { initialise_or_halt(|| boxed(0)) },' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -U 'ProbeMode::Twice => \{\n\s+let first = initialise_lean_library\(\);' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(feature = "lean_init_refusal_probe"\)\]\n\s+let initialised = crate::lean_entry::refusal_probe::initialise_refusing\(dtb_ptr\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(not\(feature = "lean_init_refusal_probe"\)\)\]\n\s+let initialised = crate::lean_entry::initialise_lean_library\(\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^lean_init_refusal_probe = \[\]$' rust/sele4n-hal/Cargo.toml
+run_check "INVARIANT" rg -n '^TEST_IMAGE_FEATURES = \(EXERCISER_FEATURE, PROBE_FEATURE\)$' scripts/check_aarch64_cross_target.py
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_lean_init_refusal\.sh"$' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -n -F -- 'if lines[-1] != refusal:' scripts/test_qemu_lean_init_refusal.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- 'qemu_run "${label}" "${PROBE_LOG}" "${MACHINE}" 4 "${WINDOW}" "" 0' scripts/test_qemu_lean_init_refusal.sh
+#
+# WS-BP BP2.5 and BP4.2: the Lean-linked boot reports a heap census on each
+# side of the install and a line at the release, and the boot lane holds the
+# log to the relations: the install allocated (more live allocations after it
+# than before), the heap's invariants hold at both points, and the install
+# precedes the release, which precedes every secondary's first line.
+run_check "INVARIANT" rg -n -U 'crate::lean_entry::report_heap_census\("the library initializer"\);\n\s+let permit = crate::lean_entry::enter_lean_kernel\(initialised, dtb_ptr\);\n\s+crate::kprintln!\("\[boot\] Phase 5: kernel state installed"\);\n\s+crate::lean_entry::report_heap_census\("the install"\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -F -- 'heap.check_invariants().map_err(|_| HeapFault::Corrupt)?;' rust/sele4n-hal/src/lean_heap.rs
+run_check "INVARIANT" rg -n -U 'let crate::lean_entry::SecondaryReleasePermit \{ \.\. \} = permit;\n\s+if !enabled\.load\(Ordering::Acquire\) \{\n\s+return 0;\n\s+\}\n(\s+//[^\n]*\n)*\s+crate::kprintln!\("\[smp\] releasing the secondaries under the install permit"\);' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n -F -- 'RELEASE          | [smp] releasing the secondaries under the install permit' tests/fixtures/qemu_lean_boot_expected.txt
+run_check "INVARIANT" rg -n -F -- 'if not release[0] < secondary[0]:' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -F -- 'if not install[0] < release[0]:' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -F -- 'if not 0 < live_init < live_boot:' scripts/test_qemu.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- 'lean_boot_relations "${label}"' scripts/test_qemu.sh
+
+# ============================================================================
 # WS-SM SM9.B — refusal auditing
 # (plan SMP_DECLASSIFICATION_COMPLETION_PLAN.md §4 SM9.B.1 … SM9.B.10).
 # ============================================================================

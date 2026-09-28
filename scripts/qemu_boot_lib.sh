@@ -89,21 +89,25 @@ qemu_require_tools() {
     fi
 }
 
-# qemu_build_image LEAN [EXERCISERS]: build the `virt` image -- the Lean-linked
-# one when LEAN is 1, else the HAL alone; with the Tier-4 in-image exercisers
-# (`smp_exercisers`, WS-BP BP8.4) when EXERCISERS is 1 -- and name it in
-# KERNEL_BIN.  A HAL-only KERNEL_BIN the caller named is booted as it is.
+# qemu_build_image LEAN [EXERCISERS] [PROBE]: build the `virt` image -- the
+# Lean-linked one when LEAN is 1, else the HAL alone; with the Tier-4 in-image
+# exercisers (`smp_exercisers`, WS-BP BP8.4) when EXERCISERS is 1; with the Lean
+# initialization refusal probe (`lean_init_refusal_probe`, v0.36.31) when PROBE
+# is 1, which needs LEAN -- and name it in KERNEL_BIN.  A HAL-only KERNEL_BIN
+# the caller named is booted as it is.
 #
 # Each of the four images builds into a target directory of its own (the
 # reason above), and each is named by the features that build it:
 #   HAL-only            kernel_image,board_qemu_virt
 #   Lean-linked         hw_target,kernel_image,board_qemu_virt
 #   + the exercisers    ...,smp_exercisers
+#   + the refusal probe ...,lean_init_refusal_probe
 # `qemu_require_tools` has verified cargo and the cross target, so a build
 # that fails here is a failure of the tree, not of the environment.
 EXERCISER_FEATURE="smp_exercisers"
+PROBE_FEATURE="lean_init_refusal_probe"
 qemu_build_image() {
-    local lean="$1" exercisers="${2:-0}" build_log features target_dir label
+    local lean="$1" exercisers="${2:-0}" probe="${3:-0}" build_log features target_dir label
     qemu_temp_file build_log qemu_build
     features="kernel_image,board_qemu_virt"
     target_dir="${HAL_TARGET_DIR}"
@@ -117,6 +121,15 @@ qemu_build_image() {
         features="${features},${EXERCISER_FEATURE}"
         target_dir="${target_dir}-exercisers"
         label="${label} exerciser"
+    fi
+    if [[ "${probe}" -eq 1 ]]; then
+        if [[ "${lean}" -ne 1 ]]; then
+            record_failure "BUILD" "the refusal probe drives the Lean library's initialization; it needs the Lean-linked image"
+            finalize_report
+        fi
+        features="${features},${PROBE_FEATURE}"
+        target_dir="${target_dir}-init-probe"
+        label="${label} refusal-probe"
     fi
     if [[ "${lean}" -eq 1 || "${exercisers}" -eq 1 ]]; then
         KERNEL_BIN="${target_dir}/${RUST_TARGET}/release/sele4n-kernel"

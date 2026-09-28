@@ -1,3 +1,44 @@
+## v0.36.31 — Three WS-BP acceptance boxes decided by runs on the target
+
+Three boxes in the WS-BP acceptance gate named a run on the target and had none.
+Each is now ticked by a QEMU run on every PR.
+
+- **BP2.4: a refused Lean initialization halts the system.**  The refusal is
+  reported and halted on in one function, `lean_entry::initialise_or_halt`, which
+  the production initializer and a new probe both call.  The probe is a
+  Lean-linked `virt` test image (feature `lean_init_refusal_probe`) whose library
+  initialization refuses in the mode its command line names: an `IO` error, a
+  malformed result, or a second initialization after the real one succeeded.  A
+  probe image with no mode refuses to boot the kernel at all.  The new gate
+  `scripts/test_qemu_lean_init_refusal.sh` boots it on four PEs at the board's
+  EL2 entry, once per mode, and requires each log to end on its refusal with
+  nothing after it through a 20-second window.  With the halt replaced by a
+  return, every mode fails the gate: the boot runs on into an uninitialized
+  kernel and takes a kernel abort.
+- **BP2.5: a Lean `IO` action that allocates completes on the target.**  The
+  boot reports a census of the kernel heap after the library initializer and
+  after the install (`lean_entry::report_heap_census`, over the new
+  `lean_heap::kernel_heap_census`, which checks every allocator invariant first
+  and halts the system if one fails).  `scripts/test_qemu.sh --lean-kernel`
+  requires more live allocations after the install than before it, with the
+  invariants intact at both points.  Measured: 97 872 then 98 588 live
+  allocations, over 697 then 705 of 16 069 pages.
+- **BP4.2: the install precedes the release of any secondary.**  The bring-up
+  prints a release line before its first `CPU_ON`.  The boot lane requires the
+  install line, then the release line, then the first line of any secondary, at
+  EL1 and EL2.  Five mutations of a real log, each keeping every line and
+  breaking one relation, are each refused.
+
+The probe feature is fenced the way `smp_exercisers` is.
+`scripts/check_aarch64_cross_target.py` treats both as test-image features
+(`TEST_IMAGE_FEATURES`), refuses either on a board image or on the release image,
+and requires the archive lane to run the probe gate after the archive build and
+without exempting it from `set -e`.  Six new self-test cases cover this.
+
+Still open in the acceptance gate: the two boxes that need a first green CI run
+(the archive and `kernel8.img`), a real firmware blob reaching Lean, a blocked
+caller resumed on hardware, and the board boot (BP8.3).
+
 ## v0.36.30 — Every register EL0 can write is thread context or trapped (security fix)
 
 **Security fix: a thread could read the thread pointer the previous thread on its

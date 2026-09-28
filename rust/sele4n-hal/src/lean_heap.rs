@@ -1015,6 +1015,40 @@ pub fn kernel_small_size(addr: usize) -> Result<u32, KernelHeapError> {
     Ok(size as u32)
 }
 
+/// **What the kernel heap holds, measured** (v0.36.31).  The boot reports one
+/// census after the Lean library initializer and one after the install, so the
+/// run itself shows a Lean `IO` action allocating on the target and completing
+/// with the heap's invariants intact (WS-BP BP2.5's acceptance box).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KernelHeapCensus {
+    /// Data pages in the arena.
+    pub pages: usize,
+    /// Data pages some allocation owns.
+    pub used_pages: usize,
+    /// Live allocations: small objects plus page runs.
+    pub live_allocations: usize,
+}
+
+/// The kernel heap's census, after checking every allocator invariant.
+///
+/// # Errors
+///
+/// `Init` if the arena cannot be taken into service; `Fault(Corrupt)` when an
+/// invariant does not hold — a census of a heap whose metadata is wrong would
+/// be a number about memory nothing can trust.
+pub fn kernel_heap_census() -> Result<KernelHeapCensus, KernelHeapError> {
+    with_kernel_heap(|heap| {
+        heap.check_invariants().map_err(|_| HeapFault::Corrupt)?;
+        let stats = heap.stats();
+        Ok(KernelHeapCensus {
+            pages: stats.pages,
+            used_pages: stats.pages - stats.free_pages,
+            live_allocations: heap.live_allocations(),
+        })
+    })?
+    .map_err(KernelHeapError::Fault)
+}
+
 /// The fail-closed end of every Lean-facing heap call: the Lean runtime cannot
 /// recover from a failed small allocation — `lean.h`'s inline paths do not test
 /// the result — and a contract violation means an object's lifetime is already
@@ -1578,8 +1612,15 @@ mod tests {
 
     #[test]
     fn the_kernel_heap_serves_the_lean_contract() {
+        let base = kernel_heap_census().expect("the census takes the arena into service");
         let a = kernel_alloc_small(40, 4).expect("the kernel heap takes the arena into service");
         let b = kernel_alloc_small(40, 4).expect("room");
+        // v0.36.31: the census counts what was allocated, and checks the
+        // heap's invariants on the way.
+        let two = kernel_heap_census().unwrap();
+        assert_eq!(two.live_allocations, base.live_allocations + 2);
+        assert!(two.used_pages > base.used_pages || base.used_pages > 0);
+        assert_eq!(two.pages, base.pages);
         let (start, len) = arena_extent();
         assert!(a >= start && a < start + len, "served from the arena");
         assert_eq!(kernel_small_size(a), Ok(40));
@@ -1589,6 +1630,11 @@ mod tests {
             Err(KernelHeapError::Fault(HeapFault::NotLive))
         );
         assert_eq!(kernel_free_small(b), Ok(()));
+        assert_eq!(
+            kernel_heap_census().unwrap().live_allocations,
+            base.live_allocations,
+            "the census sees the frees"
+        );
         assert_eq!(
             kernel_alloc_small(40, 3),
             Err(KernelHeapError::Fault(HeapFault::SlotMismatch))
@@ -1616,6 +1662,11 @@ mod tests {
             "one 4 KiB object per data page, every page served"
         );
         assert_eq!(kernel_alloc_small(8, 0), Err(KernelHeapError::Exhausted));
+        let full = kernel_heap_census().unwrap();
+        assert_eq!(
+            full.used_pages, full.pages,
+            "an exhausted heap uses every page"
+        );
         for addr in live {
             assert_eq!(kernel_free_small(addr), Ok(()));
         }

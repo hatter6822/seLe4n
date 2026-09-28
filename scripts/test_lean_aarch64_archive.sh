@@ -56,6 +56,14 @@
 # into a target directory of its own; the Raspberry Pi 5 image above never
 # carries it, which `scripts/check_aarch64_cross_target.py` refuses.
 #
+# v0.36.31: and the Lean initialization refusal probe,
+# `scripts/test_qemu_lean_init_refusal.sh`: a Lean-linked `virt` test image
+# whose library initialization refuses as its command line names -- an `IO`
+# error, a malformed result, a second run -- booted on four PEs at the board's
+# EL2 entry, each run held to ending on the refusal with nothing after it
+# (WS-BP BP2.4, on the target).  The probe feature is fenced exactly as the
+# exercisers are.
+#
 # Needs the Lean toolchain (`setup_lean_env.sh`) and rustup's `llvm-tools`
 # component (listed in `rust/rust-toolchain.toml`), which supplies the
 # `llvm-nm` and `llvm-objdump` the builder reads object code with.
@@ -98,11 +106,12 @@ echo "[5/6] The Raspberry Pi 5 boot files, cut from that image and checked"
 "${PROJECT_ROOT}/scripts/build_rpi5_image.sh" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}" "${PROJECT_ROOT}/.lake/build/rpi5-image"
 
-echo "[6/6] The Lean-linked kernel booted under QEMU (virt, four PEs, EL1 and EL2), the four-PE bring-up, and the Tier-4 exercisers"
+echo "[6/6] The Lean-linked kernel booted under QEMU (virt, four PEs, EL1 and EL2), the four-PE bring-up, the Tier-4 exercisers, and the initialization refusal probe"
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu.sh" --lean-kernel
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_bringup.sh"
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_bringup.sh" --lean-kernel
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_exercisers.sh"
 REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_exercisers.sh" --lean-kernel
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_lean_init_refusal.sh"
 
-echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it, is packaged, boots, and its Tier-4 exercisers pass."
+echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it, is packaged, boots, its Tier-4 exercisers pass, and a refused initialization halts."

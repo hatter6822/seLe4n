@@ -77,6 +77,12 @@ board_qemu_virt = []
 # archive lane build without it, and a Tier 3 negative holds them to that), so
 # nothing here exists in an image a board boots.  Enables nothing else.
 smp_exercisers = []
+# v0.36.31: the Lean initialization refusal probe (`lean_entry::refusal_probe`):
+# a `virt` TEST image whose library initialization refuses in the mode its
+# command line names, so the refusal path executes on the target.  It never
+# boots the kernel, and no release image or board image may carry it
+# (`scripts/check_aarch64_cross_target.py`).
+lean_init_refusal_probe = []
 
 # Explicit target declaration so `required-features` can be attached.
 # Declaring one `[[bin]]` disables Cargo's auto-discovery of `src/bin/`

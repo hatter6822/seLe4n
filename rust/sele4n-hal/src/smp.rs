@@ -410,6 +410,10 @@ pub fn bring_up_secondaries_inner(
     if !enabled.load(Ordering::Acquire) {
         return 0;
     }
+    // v0.36.31: the release is a line of its own, printed before the first
+    // `CPU_ON`, so a boot log shows the install's line, then this one, then
+    // any secondary's first line — WS-BP BP4.2's order, read off a run.
+    crate::kprintln!("[smp] releasing the secondaries under the install permit");
 
     let mut online: u32 = 0;
     for (idx, &mpidr) in mpidr_table.iter().enumerate() {

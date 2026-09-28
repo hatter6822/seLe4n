@@ -162,7 +162,78 @@ boot_once() {
             BOOT_PASS=false
         fi
     done
+    if [[ "${LEAN_KERNEL}" -eq 1 ]]; then
+        lean_boot_relations "${label}"
+    fi
     log_section "TRACE" "${label}: $(wc -l < "${QEMU_LOG}") lines of boot output"
+}
+
+# lean_boot_relations LABEL (v0.36.31): what the ordered fragments cannot
+# state.  WS-BP BP4.2 -- the install precedes the release, and the release
+# precedes every secondary's first line, so no secondary ran while the
+# unbracketed install wrote the kernel state.  WS-BP BP2.5 -- the census after
+# the install counts more live allocations than the one after the library
+# initializer: the Lean kernel's own `IO` action allocated on the target and
+# completed, with the heap's invariants intact at both points.
+lean_boot_relations() {
+    local label="$1" verdict
+    verdict=$(python3 - "${QEMU_LOG}" <<'PY'
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8", errors="replace") as handle:
+    lines = handle.read().split("\n")
+failures = []
+
+def indices(predicate):
+    return [i for i, line in enumerate(lines) if predicate(line)]
+
+install = indices(lambda l: l == "[boot] Phase 5: kernel state installed")
+release = indices(lambda l: l == "[smp] releasing the secondaries under the install permit")
+secondary = indices(lambda l: re.match(r"\[(smp|sched|tick)\] core [1-9]", l) is not None)
+if len(install) != 1 or len(release) != 1:
+    failures.append(f"expected one install line and one release line, found {len(install)} and {len(release)}")
+elif not secondary:
+    failures.append("no secondary line at all: the release was not followed by a bring-up")
+else:
+    if not install[0] < release[0]:
+        failures.append("the release precedes the install")
+    if not release[0] < secondary[0]:
+        failures.append(f"a secondary ran before the release: {lines[secondary[0]]!r}")
+
+census = re.compile(
+    r"\[boot\] Lean heap after (the library initializer|the install): (\d+) live "
+    r"allocation\(s\), (\d+) of (\d+) page\(s\) in use, invariants hold$")
+found = {}
+for i, line in enumerate(lines):
+    match = census.match(line)
+    if match:
+        if match.group(1) in found:
+            failures.append(f"a second census after {match.group(1)}")
+        found[match.group(1)] = (i, int(match.group(2)), int(match.group(3)), int(match.group(4)))
+if set(found) != {"the library initializer", "the install"}:
+    failures.append(f"expected a census after the library initializer and after the install, found {sorted(found)}")
+else:
+    (i_init, live_init, used_init, pages_init) = found["the library initializer"]
+    (i_boot, live_boot, used_boot, pages_boot) = found["the install"]
+    if install and not i_init < install[0] < i_boot:
+        failures.append("the censuses do not bracket the install")
+    if not 0 < live_init < live_boot:
+        failures.append(f"the install did not allocate: {live_init} then {live_boot} live allocation(s)")
+    if pages_init != pages_boot or not 0 < used_init <= used_boot <= pages_boot:
+        failures.append(f"the page counts are not a heap's: {used_init}/{pages_init} then {used_boot}/{pages_boot}")
+for failure in failures:
+    print(failure)
+PY
+) || { record_failure "TRACE" "${label}: the relation check could not run"; BOOT_PASS=false; return; }
+    if [[ -n "${verdict}" ]]; then
+        BOOT_PASS=false
+        while IFS= read -r failure; do
+            record_failure "TRACE" "${label}: ${failure}"
+        done <<< "${verdict}"
+    else
+        log_section "TRACE" "PASS: ${label}: install, release, then the secondaries; the install allocated, with the heap's invariants intact"
+    fi
 }
 
 if [[ ! -f "${FIXTURE}" ]]; then

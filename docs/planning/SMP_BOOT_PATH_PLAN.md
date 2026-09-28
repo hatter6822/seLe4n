@@ -402,8 +402,25 @@ that no script had ever performed.
   defined in both archives and `lean_kernel_main` reconciled as
   expected-unresolved; since BP4.1 the reconciliation reports 10 defined and 0
   expected-unresolved (next box).
-- [ ] A Lean `IO` action that allocates completes on the target (BP2.5).
-- [ ] The Lean runtime's failure path halts rather than continues (BP2.4).
+- [x] A Lean `IO` action that allocates completes on the target (BP2.5).
+      Executed at `v0.36.31` by the Lean-linked `virt` boot on every PR: the
+      boot reports a census of the kernel heap after the library initializer
+      and after the install (`lean_entry::report_heap_census`, which checks
+      every allocator invariant first), and `scripts/test_qemu.sh
+      --lean-kernel` holds the second to more live allocations than the first
+      with the invariants intact at both, at EL1 and EL2 — measured, 97 872
+      then 98 588 live allocations over 697 then 705 of 16 069 pages.
+- [x] The Lean runtime's failure path halts rather than continues (BP2.4).
+      Executed at `v0.36.31` by `scripts/test_qemu_lean_init_refusal.sh` in the
+      archive lane: a Lean-linked `virt` test image (`lean_init_refusal_probe`)
+      drives each refusal — an `IO` error, a malformed result, and a second
+      initialization after the real one succeeded — through the one
+      report-and-halt function the production initializer calls
+      (`lean_entry::initialise_or_halt`), on four PEs at the board's EL2 entry,
+      and each run must end on its refusal with nothing after it through a
+      20-second window.  Decisive, measured: with the halt replaced by a
+      return, every mode fails the gate, the boot running on into an
+      uninitialized kernel and a kernel abort.
 - [x] `bootAndInitialiseRPi5OrHalt (rpi5PlatformConfigFor board)` evaluates to
       `.ok` for every board account, every refusal arm unreachable (BP3.3,
       BP3.4; generalised at BP4.4 —
@@ -412,13 +429,20 @@ that no script had ever performed.
       entry is removed rather than retained (BP4.1).  Executed at `v0.36.2`:
       `scripts/test_lean_aarch64_archive.sh` reports all 10 HAL kernel-entry
       declarations defined in both archives, 0 expected unresolved.
-- [ ] The kernel-state install precedes the release of any secondary (BP4.2).
-      Enforced by type at `v0.36.2` (`SecondaryReleasePermit`); the box is
-      ticked by a boot trace showing the order, which is BP8's.
+- [x] The kernel-state install precedes the release of any secondary (BP4.2).
+      Enforced by type at `v0.36.2` (`SecondaryReleasePermit`); ticked at
+      `v0.36.31` by the boot trace: the bring-up prints a release line before
+      its first `CPU_ON`, and `scripts/test_qemu.sh --lean-kernel` holds every
+      Lean-linked boot to the install line, then the release line, then the
+      first line of any secondary, at EL1 and EL2 on every PR.  Five mutations
+      of a real log, each keeping every line and breaking one relation, are
+      each refused.
 - [ ] The device tree reaches Lean, and a foreign board is refused (BP4.3).
       Implemented at `v0.36.2` and run on the host over fixture boards
       (`kernelEntry_boots_the_deployment_on_every_variant`); the box is ticked
       by the target run that reads a real firmware blob, which is BP8's.
+      (Since BP8.1 QEMU's own device tree reaches the verified parser on every
+      PR; the Raspberry Pi 5 firmware's is BP8.3's.)
 - [ ] `kernel8.img` is built by CI and contains `_start`,
       `__exception_vectors` and `lean_kernel_main` (BP5.3, BP5.4).
 - [x] Every declared PE publishes readiness within the bounded window, and a

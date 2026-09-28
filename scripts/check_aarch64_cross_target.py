@@ -151,6 +151,14 @@ EXERCISERS_SCRIPT = "scripts/test_qemu_smp_exercisers.sh"
 # image build naming it at all.
 EXERCISER_FEATURE = "smp_exercisers"
 VIRT_FEATURE = "board_qemu_virt"
+# v0.36.31: the Lean initialization refusal probe -- a `virt` TEST image whose
+# library initialization refuses in the mode its command line names, so WS-BP
+# BP2.4's refusal executes on the target -- and the gate that boots it.  Like
+# the exercisers it is a test image's feature, fenced the same way: no board
+# image and no release image may carry it.
+PROBE_FEATURE = "lean_init_refusal_probe"
+PROBE_SCRIPT = "scripts/test_qemu_lean_init_refusal.sh"
+TEST_IMAGE_FEATURES = (EXERCISER_FEATURE, PROBE_FEATURE)
 LEAN_ARCHIVE_COMPONENTS = ("llvm-tools",)
 HAL_CRATE = "rust/sele4n-hal"
 ORACLE_PKG = "sele4n-hal"
@@ -883,13 +891,14 @@ def check_gate_script(root: str) -> list[str]:
     # image carrying test drivers, which no release may.
     for argv in images:
         features = {f for v in option_values(argv, "features") for f in v.replace(",", " ").split()}
-        if EXERCISER_FEATURE in features and VIRT_FEATURE not in features:
-            problems.append(
-                f"{GATE_SCRIPT}: the image build `{' '.join(argv)}` names "
-                f"`{EXERCISER_FEATURE}` without `{VIRT_FEATURE}`: the Tier-4 drivers "
-                f"belong to the `virt` test image the QEMU gates boot, never to the "
-                f"Raspberry Pi 5 image."
-            )
+        for test_feature in TEST_IMAGE_FEATURES:
+            if test_feature in features and VIRT_FEATURE not in features:
+                problems.append(
+                    f"{GATE_SCRIPT}: the image build `{' '.join(argv)}` names "
+                    f"`{test_feature}` without `{VIRT_FEATURE}`: a test image's feature "
+                    f"belongs to the `virt` test image the QEMU gates boot, never to the "
+                    f"Raspberry Pi 5 image."
+                )
     if not released_images:
         problems.append(
             f"{GATE_SCRIPT}: no cross `cargo build --release --target "
@@ -1359,6 +1368,7 @@ def check_lean_archive_lane(root: str) -> list[str]:
     qemu_boots: list[int] = []
     bringups: dict[bool, list[int]] = {False: [], True: []}
     exercisers: dict[bool, list[int]] = {False: [], True: []}
+    probes: list[int] = []
     for position, (command, operator) in enumerate(shell_command_list(code)):
         argv = executed_argv(command, wrappers)
         raw = argv_of(command)
@@ -1376,6 +1386,16 @@ def check_lean_archive_lane(root: str) -> list[str]:
         if (argv and argv[0].endswith(BRINGUP_SCRIPT.split("/")[-1])
                 and QEMU_REQUIRED in assignments):
             bringups[QEMU_LEAN_FLAG in argv[1:]].append(position)
+            if operator in ERREXIT_EXEMPTING_OPERATORS:
+                problems.append(
+                    f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
+                    f"which exempts it from `set -e`: it runs and its failure is "
+                    f"discarded."
+                )
+            continue
+        if (argv and argv[0].endswith(PROBE_SCRIPT.split("/")[-1])
+                and QEMU_REQUIRED in assignments):
+            probes.append(position)
             if operator in ERREXIT_EXEMPTING_OPERATORS:
                 problems.append(
                     f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
@@ -1407,13 +1427,14 @@ def check_lean_archive_lane(root: str) -> list[str]:
             # WS-BP BP8.4: this is the image CI uploads for the board.  The
             # Tier-4 drivers are a test image's; an image carrying them is
             # not the release image, whatever else it carries.
-            if EXERCISER_FEATURE in features:
-                problems.append(
-                    f"{LEAN_ARCHIVE_LANE}: the release image build `{command}` names "
-                    f"`{EXERCISER_FEATURE}`, the Tier-4 in-image drivers. They belong "
-                    f"to the `virt` test image the QEMU gates build for themselves, "
-                    f"never to the image this lane links and CI uploads for the board."
-                )
+            for test_feature in TEST_IMAGE_FEATURES:
+                if test_feature in features:
+                    problems.append(
+                        f"{LEAN_ARCHIVE_LANE}: the release image build `{command}` names "
+                        f"`{test_feature}`, a test image's feature. It belongs to the "
+                        f"`virt` test image the QEMU gates build for themselves, never "
+                        f"to the image this lane links and CI uploads for the board."
+                    )
             if operator in ERREXIT_EXEMPTING_OPERATORS:
                 problems.append(
                     f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
@@ -1534,6 +1555,16 @@ def check_lean_archive_lane(root: str) -> list[str]:
                 f"{LEAN_ARCHIVE_LANE}: the Tier-4 exercisers on {image} run before "
                 f"the archive is built."
             )
+    if not probes:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `{QEMU_REQUIRED} {PROBE_SCRIPT}`. It is "
+            f"WS-BP BP2.4 executed on the target: a refused Lean initialization, in "
+            f"each of its three ways, halts the system and nothing runs after it."
+        )
+    elif builds and min(probes) < max(builds):
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: the refusal probe runs before the archive is built."
+        )
     if images and any(p < min(images) for p in image_checks + image_fp + boot_files):
         problems.append(
             f"{LEAN_ARCHIVE_LANE}: the image is checked before it is linked, so the "
@@ -1559,6 +1590,8 @@ def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, 
     bringup_lean = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{BRINGUP_SCRIPT}" {QEMU_LEAN_FLAG}\n'
     exercisers_hal = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{EXERCISERS_SCRIPT}"\n'
     exercisers_lean = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{EXERCISERS_SCRIPT}" {QEMU_LEAN_FLAG}\n'
+    probe = f'{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{PROBE_SCRIPT}"\n'
+    assert probe in lane
     assert build in lane and check in lane and fp in lane and pack in lane and qemu in lane
     assert bringup_hal in lane and bringup_lean in lane
     assert exercisers_hal in lane and exercisers_lean in lane
@@ -1616,6 +1649,16 @@ def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, 
          lane.replace(exercisers_lean, exercisers_lean.rstrip("\n") + " || true\n")),
         ("lane links the exercisers into the release image",
          lane.replace(build, build.replace("hw_target,", f"hw_target,{EXERCISER_FEATURE},"))),
+        # v0.36.31: the refusal probe, and the release image without it.
+        ("lane echoes the refusal probe", lane.replace(probe, "echo " + probe)),
+        ("lane lets an absent QEMU skip the refusal probe",
+         lane.replace(probe, probe.replace(QEMU_REQUIRED, "REQUIRE_QEMU=0"))),
+        ("lane runs the refusal probe before it builds the archive",
+         lane.replace(probe, "").replace(builder_line, probe + builder_line)),
+        ("lane discards the refusal probe's failure",
+         lane.replace(probe, probe.rstrip("\n") + " || true\n")),
+        ("lane links the refusal probe into the release image",
+         lane.replace(build, build.replace("hw_target,", f"hw_target,{PROBE_FEATURE},"))),
     ]
 
 
@@ -2084,6 +2127,7 @@ python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}
 {QEMU_REQUIRED} "${{PROJECT_ROOT}}/{BRINGUP_SCRIPT}" {QEMU_LEAN_FLAG}
 {QEMU_REQUIRED} "${{PROJECT_ROOT}}/{EXERCISERS_SCRIPT}"
 {QEMU_REQUIRED} "${{PROJECT_ROOT}}/{EXERCISERS_SCRIPT}" {QEMU_LEAN_FLAG}
+{QEMU_REQUIRED} "${{PROJECT_ROOT}}/{PROBE_SCRIPT}"
 """
 
 GOOD_HOST_LANE = """#!/usr/bin/env bash
@@ -2998,6 +3042,10 @@ def self_test() -> int:
         ("the RPi5 image carries the Tier-4 exercisers",
          image_build,
          image_build.replace(f"--features {IMAGE_FEATURE}", f"--features {IMAGE_FEATURE},{EXERCISER_FEATURE}"),
+         "preserving"),
+        ("the RPi5 image carries the refusal probe",
+         image_build,
+         image_build.replace(f"--features {IMAGE_FEATURE}", f"--features {IMAGE_FEATURE},{PROBE_FEATURE}"),
          "preserving"),
         ("the image check is echoed, not run", image_check, "echo " + image_check, "preserving"),
         ("the image check reads the debug image",
