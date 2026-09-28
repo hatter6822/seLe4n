@@ -393,10 +393,18 @@ artefact existing.  The distinction is the one WS-RR RR7.16 had to enforce
 against this plan's predecessor, where two boxes claimed a four-core boot
 that no script had ever performed.
 
-- [ ] `libsele4n.a` is produced for `aarch64-unknown-none` by CI (BP1.3).
+- [x] `libsele4n.a` is produced for `aarch64-unknown-none` by CI (BP1.3).
   The lane landed at `v0.36.2` and ran green locally
   (`scripts/test_lean_aarch64_archive.sh`); this box is ticked by its first
-  green CI run, not by the job existing.
+  green CI run, not by the job existing.  Ticked at `v0.36.33` on Lean Action
+  CI run 36489522711 (job "Lean aarch64 Archive", head `38835550`): steps
+  [1/6]–[3/6] built `libsele4n.a` for `aarch64-unknown-none-softfloat` (the
+  soft-float variant the FP-free kernel targets), attributed all 394
+  unresolved symbols, and reconciled all 13 HAL kernel-entry declarations
+  against it, and the job uploaded it as `lean-aarch64-archive`.  The job's
+  sixth step failed on that run — QEMU refused to start without the NIC
+  option ROM CI's `--no-install-recommends` install omits — which is a
+  failure of the QEMU half and not of the archive; fixed in the same cut.
 - [x] `check_kernel_entry_exports.py` reads the cross archive (BP1.4).
   Executed at BP1.4 (`v0.36.2`, before the entry existed): 8 declarations
   defined in both archives and `lean_kernel_main` reconciled as
@@ -443,8 +451,16 @@ that no script had ever performed.
       by the target run that reads a real firmware blob, which is BP8's.
       (Since BP8.1 QEMU's own device tree reaches the verified parser on every
       PR; the Raspberry Pi 5 firmware's is BP8.3's.)
-- [ ] `kernel8.img` is built by CI and contains `_start`,
-      `__exception_vectors` and `lean_kernel_main` (BP5.3, BP5.4).
+- [x] `kernel8.img` is built by CI and contains `_start`,
+      `__exception_vectors` and `lean_kernel_main` (BP5.3, BP5.4).  Ticked at
+      `v0.36.33` on the same run: step [4/6] linked the image and
+      `check_kernel_image.py --lean-kernel` passed over it — entered at
+      `_start` (`0x80000`), `__exception_vectors` the first byte of
+      `.text.vectors` and 2048-byte aligned, and the Lean kernel's 13 roots,
+      `lean_kernel_main` among them, all text; step [5/6] cut `kernel8.img`
+      and proved it byte-identical to `[_start, __image_load_end)`, published
+      the size report, and the job uploaded image, boot files and report as
+      `rpi5-kernel-image`.
 - [x] Every declared PE publishes readiness within the bounded window, and a
       PE that does not fails the boot (BP6.3).  Implemented at `v0.36.2` and
       pinned by `build.rs`; ticked by the QEMU run with four PEs (BP8.2,

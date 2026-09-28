@@ -47,7 +47,8 @@ REPO = Path(__file__).resolve().parent.parent
 FIXTURE = REPO / "tests" / "fixtures" / "qemu_virt_dtb.hex"
 #: The machine `scripts/test_qemu.sh` boots — the same arguments, so the
 #: fixture is the blob the lane's kernel is handed.
-QEMU_ARGS = ["-M", "virt,gic-version=2", "-cpu", "cortex-a76", "-smp", "4", "-m", "1G"]
+QEMU_ARGS = ["-M", "virt,gic-version=2", "-cpu", "cortex-a76", "-smp", "4", "-m", "1G",
+             "-nic", "none"]
 FDT_MAGIC = 0xD00DFEED
 HEADER = struct.Struct(">10I")
 #: The `/chosen` properties QEMU fills with fresh randomness on every run.
@@ -142,8 +143,13 @@ def dump_from_qemu(qemu: str) -> bytes:
         target = Path(tmp) / "virt.dtb"
         args = list(QEMU_ARGS)
         args[1] = f"{args[1]},dumpdtb={target}"
-        subprocess.run([qemu, *args, "-nographic"], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # QEMU's refusal to start is the one diagnostic worth keeping: without it
+        # a missing option ROM read as "the fixture is stale".
+        done = subprocess.run([qemu, *args, "-nographic"], stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True)
+        if done.returncode != 0 or not target.is_file():
+            raise DtbError(f"{qemu} did not dump its `virt` device tree "
+                           f"(exit {done.returncode}): {done.stderr.strip()}")
         return target.read_bytes()
 
 
@@ -219,7 +225,11 @@ def main(argv: list[str]) -> int:
             return 0
         print(f"error: `{qemu}` not installed", file=sys.stderr)
         return 1
-    blob = compact(dump_from_qemu(qemu))
+    try:
+        blob = compact(dump_from_qemu(qemu))
+    except DtbError as err:
+        print(f"[FAIL] qemu_virt_dtb_fixture: {err}")
+        return 1
     rendered = render(blob, qemu_version(qemu) + " " + " ".join(QEMU_ARGS))
     if argv[:1] == ["--check"]:
         current = parse(FIXTURE.read_text())

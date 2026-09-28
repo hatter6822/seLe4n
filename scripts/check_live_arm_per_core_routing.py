@@ -450,7 +450,7 @@ def routeSelfTestComposite (st : SeLe4n.Model.SystemState) :
 the form that motivated zeta-reduction rather than only against whatever the
 kernel happens to contain today. -/
 -- NOT `private`: a private definition is mangled to `_private.…`, so
--- `env.find? \`routeSelfTestAlias` would return none and the witness would
+-- `env.find? \\`routeSelfTestAlias` would return none and the witness would
 -- report itself missing.  That is the same trap as the dispatch seeds above,
 -- hit twice in one sitting -- which is the argument for the witness existing.
 def routeSelfTestAlias st tid :=

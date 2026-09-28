@@ -189,6 +189,12 @@ qemu_cut_image() {
 # With an empty UNTIL_FRAGMENT it runs for TIMEOUT seconds; otherwise until LOG
 # carries UNTIL_COUNT lines holding UNTIL_FRAGMENT, or the TIMEOUT deadline.
 # Carriage returns are stripped.  Returns 1 when LOG could not be read.
+#
+# `-nic none`: `virt`'s default NIC is a virtio-net-pci device whose option ROM
+# (`efi-virtio.rom`) ships in `ipxe-qemu`, a Recommends of `qemu-system-arm` that
+# CI's `--no-install-recommends` install omits, and QEMU refuses to start when
+# the ROM is missing.  The kernel drives no NIC, and `-nic none` leaves the
+# device tree byte-identical (`scripts/qemu_virt_dtb_fixture.py` asks the same).
 qemu_run() {
     local label="$1" log="$2" machine="$3" smp="$4" deadline="$5" until="$6" count="$7"
     shift 7
@@ -199,6 +205,7 @@ qemu_run() {
         -smp "${smp}"
         "$@"
         -m "${QEMU_MEMORY}"
+        -nic none
         -kernel "${QEMU_IMAGE}"
         -serial "file:${log}"
         -monitor none

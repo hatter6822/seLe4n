@@ -1,3 +1,54 @@
+## v0.36.33 — CI runs the QEMU lanes; two WS-BP acceptance boxes ticked on a CI run
+
+Lean Action CI run 36489522711 (a `workflow_dispatch` of head `38835550`) failed
+in two jobs, and neither failure was in the kernel.  Both are fixed, and the two
+§6 boxes that run *did* decide are ticked on its evidence.
+
+**The QEMU lanes could not start on CI.**  The archive lane's sixth step asks
+QEMU to dump its `virt` device tree, and QEMU exited 1 before dumping.  CI installs
+`qemu-system-arm` with `--no-install-recommends`, which omits `ipxe-qemu`, and
+`ipxe-qemu` ships `efi-virtio.rom` — the option ROM for `virt`'s default
+virtio-net NIC.  QEMU refuses to start when it is missing (reproduced locally with
+a missing ROM; the local install carries the Recommends, which is why every local
+run passed).  Every boot lane builds its command through `qemu_run`, so all of
+them would have failed the same way the moment the dump stopped failing first.
+`qemu_run` and the device-tree fixture now pass `-nic none`: the kernel drives no
+NIC, and the dumped device tree is byte-identical with and without it (measured),
+so `tests/fixtures/qemu_virt_dtb.hex` is unchanged.  The fixture script also
+discarded QEMU's stderr, so a refusal to start read as "the fixture is not this
+QEMU's device tree"; it now reports QEMU's exit status and message, and
+`test_qemu.sh` no longer asserts a stale fixture when the check fails.
+
+**The fast lane could not derive a change set on a dispatched run.**
+`workflow_dispatch` carries neither a pull-request base nor `before`, so the
+"Provide a base revision" step resolved nothing and the changed-file anchor sweep
+refused — correctly — to report a clean sweep over an unknown change set.  Both
+workflows that run the changed-file gates now fall back to HEAD's parent,
+deepening the shallow checkout by one to reach it.
+
+**Invalid escape sequences, and a gate so they cannot come back.**  CI's Python
+3.12 printed `SyntaxWarning: invalid escape sequence` from Tier 0 gates, and the
+local 3.11 said nothing.  Sweeping every tracked `.py` the way 3.12 compiles found
+fourteen such escapes (`\.`, `\w`, `\W`, `\[`, `\(`, `\)`, `\S`, and a
+backslash-backtick) in nine strings across eight files.  Each is now a doubled backslash, so
+every string's value is byte-identical (every string constant in the eight files
+compared through the AST, before and after).
+`scripts/check_python_compile_warnings.py` (Tier 0) compiles every tracked `.py`,
+read from the index, with every warning promoted to an error, and refuses a
+listed path it cannot read rather than skipping it; its self-test holds the
+refusal and the two accepted spellings (raw string, doubled backslash) apart.
+
+**Acceptance.**  `docs/planning/SMP_BOOT_PATH_PLAN.md` §6 ticks two boxes on that
+run.  One is *`libsele4n.a` is produced by CI* (BP1.3): the archive was built for
+`aarch64-unknown-none-softfloat`, every unresolved symbol was attributed, and all
+13 HAL kernel-entry declarations were reconciled against it.  The other is
+*`kernel8.img` is built by CI and contains `_start`, `__exception_vectors` and
+`lean_kernel_main`* (BP5.3, BP5.4): `check_kernel_image.py --lean-kernel` passed
+over the linked image, and `kernel8.img` was cut and proved byte-identical to
+`[_start, __image_load_end)`.  Tier 3 gains anchors on the `-nic none` in both
+places, the dump's refusal report, the fallback in each workflow separately, and
+the new Tier 0 wiring.
+
 ## v0.36.32 — A carved RAM page cannot expose its previous owner (security fix)
 
 The post-landing audit of this PR's BP7 cuts found a vulnerability, reported

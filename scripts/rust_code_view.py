@@ -323,7 +323,7 @@ def keyword(word: str) -> str:
     reviewed for it.
 
     **And the boundary is asked of Rust's identifier class, not Python's**
-    (PR #895 review round 21).  `\b` is defined against `\w`, which is a
+    (PR #895 review round 21).  `\b` is defined against `\\w`, which is a
     *Unicode-table* question and therefore version-dependent: U+1C89 is
     unassigned in this CPython's Unicode 14.0, so `\b` saw a boundary inside
     the perfectly valid identifier `unsafe\u1c89`, `\bunsafe\b` matched its
@@ -788,7 +788,7 @@ def bare_ident_literals() -> list[str]:
     """Every ASCII identifier class written in a source that asks about Rust.
 
     **The mechanism, rather than a third widening.**  Round 12 widened this
-    gate's identifier class from ASCII to `[^\W\d]` and round 18 found it still
+    gate's identifier class from ASCII to `[^\\W\\d]` and round 18 found it still
     short of `XID_Start` -- the same shape as the keyword rule above, one
     character class over, and with the same remedy: one fragment to compose,
     derived from an oracle, and a check that refuses a new hand-written one.

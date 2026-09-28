@@ -186,7 +186,7 @@ def lean_exports_in_view(view: str) -> set[str]:
     PR #889 review round 12: read with the shared attribute-list parser, so a
     combined list (`@[inline, export lean_kernel_main]`) and a line break after
     the keyword count — both are what Lean emits, and both were invisible to
-    the `@\[export\s+…\]` regex this replaces.  The consequences ran in the
+    the `@\\[export\\s+…\\]` regex this replaces.  The consequences ran in the
     fail-open direction twice over: an export written that way was missing from
     the inventory, so the archive was never required to define it; and the boot
     entry carrying it was not recognised as the boot entry, so the check that

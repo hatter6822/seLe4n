@@ -44,6 +44,17 @@ jobs:
               exit 0
             fi
           fi
+          # `workflow_dispatch` and `schedule` carry no base at all (no PR, no
+          # `before`), so the cut is the last commit: deepen the shallow
+          # checkout by one and name HEAD's parent.  Without this a dispatched
+          # run had no change set, and the changed-file anchor sweep refused
+          # to report a clean sweep over it.
+          git fetch --no-tags --deepen=1 origin "${GITHUB_SHA}" 2>/dev/null || true
+          if parent="$(git rev-parse --verify -q "HEAD^1^{commit}")"; then
+            echo "SELE4N_PLAN_BASE_REF=${parent}" >> "${GITHUB_ENV}"
+            echo "plan-gate base (HEAD's parent; this event carries no base): ${parent}"
+            exit 0
+          fi
           echo "no base revision resolved; the gate will say so in its output"
 
       - name: Restore Lean and Lake caches

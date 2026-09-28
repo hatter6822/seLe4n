@@ -2598,7 +2598,7 @@ class Bundle:
         -- a conclusion that *contradicts* the invariant -- reading as a
         family conclusion).  The residual under-approximation is a
         conclusion that entails the invariant only semantically (an ASCII
-        `/\`-spelled right conjunct, a quantifier-wrapped application);
+        `/\\`-spelled right conjunct, a quantifier-wrapped application);
         those read as `None`, which fails closed via `family_conclusion`.
 
         `None` for a declaration that carries the family marker in its name

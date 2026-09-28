@@ -253,7 +253,7 @@ fi
 # device tree; this QEMU is asked for its own and the two must agree, so the
 # fixture cannot drift from the machine the image boots on.
 if ! QEMU_BIN="${QEMU_BIN}" python3 "${REPO_ROOT}/scripts/qemu_virt_dtb_fixture.py" --check; then
-    record_failure "TRACE" "tests/fixtures/qemu_virt_dtb.hex is not this QEMU's virt device tree (scripts/qemu_virt_dtb_fixture.py)"
+    record_failure "TRACE" "tests/fixtures/qemu_virt_dtb.hex could not be confirmed as this QEMU's virt device tree (scripts/qemu_virt_dtb_fixture.py names the reason above)"
     finalize_report
 fi
 

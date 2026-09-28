@@ -204,7 +204,7 @@ def _table_access(kinds: tuple[str, ...], extra_method: str = "") -> str:
     parentheses, and a bounded-depth alternation is the enumeration this file
     spends its length retiring -- so the branch requires only that a qualified
     table operation be followed, on the same line, by a `.objects` projection.
-    Its predecessor spelled the receiver `(?:\([^()\n]*\)|[\w'.]*)`, a FLAT
+    Its predecessor spelled the receiver `(?:\\([^()\n]*\\)|[\\w'.]*)`, a FLAT
     paren group, so `RHTable.erase ((st)).objects k` and
     `RHTable.erase (f (g st)).objects k` matched nothing and an executable raw
     write could sit outside an enforced zero.

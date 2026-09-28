@@ -766,7 +766,7 @@ def heading_publishes_safety(inline: str) -> bool:
       left-flanking, so CommonMark leaves it inactive and rustdoc renders the
       literal `** Safety **`; the peel loop returned `Safety`.
     * `# [Safety](url)junk)` — a link destination is balanced, so rustdoc closes
-      it at the first `)` and renders `Safetyjunk)`; a greedy `\S+` swallowed
+      it at the first `)` and renders `Safetyjunk)`; a greedy `\\S+` swallowed
       `url)junk` and the label was returned as the title.
 
     Both would have let a **private** `unsafe fn` — which clippy does not

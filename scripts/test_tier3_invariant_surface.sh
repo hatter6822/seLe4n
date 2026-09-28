@@ -7855,6 +7855,20 @@ run_check "INVARIANT" rg -n -U '^    BOOT_SMP=4\n    BOOT_EXTRA=\(-icount "shift
 run_check "INVARIANT" rg -n -F -- 'boot_once "Lean kernel, virt, EL2 entry" "virt,gic-version=2,virtualization=on"' scripts/test_qemu.sh
 run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu\.sh" --lean-kernel$' scripts/test_lean_aarch64_archive.sh
 run_check "INVARIANT" rg -n -F -- 'sudo apt-get install -y --no-install-recommends qemu-system-arm' .github/workflows/lean_action_ci.yml
+# That install omits `ipxe-qemu` (a Recommends), whose `efi-virtio.rom` backs
+# `virt`'s default NIC, and QEMU refuses to start without it (CI run
+# 36489522711).  Every boot goes through `qemu_run`, which asks for no NIC, and
+# the device-tree fixture dumps the same machine the boots run on.
+run_check "INVARIANT" rg -n -U '^        -m "\$\{QEMU_MEMORY\}"\n        -nic none\n        -kernel "\$\{QEMU_IMAGE\}"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^QEMU_ARGS = \["-M", "virt,gic-version=2", "-cpu", "cortex-a76", "-smp", "4", "-m", "1G",\n             "-nic", "none"\]$' scripts/qemu_virt_dtb_fixture.py
+# A dump QEMU refused is reported with QEMU's own reason, never as a stale fixture.
+run_check "INVARIANT" rg -n -U 'if done\.returncode != 0 or not target\.is_file\(\):\n            raise DtbError' scripts/qemu_virt_dtb_fixture.py
+# An event with no base (workflow_dispatch, schedule) takes HEAD's parent, in
+# both workflows that run the changed-file gates.
+run_check "INVARIANT" rg -n -U '^          git fetch --no-tags --deepen=1 origin "\$\{GITHUB_SHA\}" 2>/dev/null \|\| true\n          if parent="\$\(git rev-parse --verify -q "HEAD\^1\^\{commit\}"\)"; then\n            echo "SELE4N_PLAN_BASE_REF=\$\{parent\}" >> "\$\{GITHUB_ENV\}"$' .github/workflows/lean_action_ci.yml
+run_check "INVARIANT" rg -n -U '^          git fetch --no-tags --deepen=1 origin "\$\{GITHUB_SHA\}" 2>/dev/null \|\| true\n          if parent="\$\(git rev-parse --verify -q "HEAD\^1\^\{commit\}"\)"; then\n            echo "SELE4N_PLAN_BASE_REF=\$\{parent\}" >> "\$\{GITHUB_ENV\}"$' .github/workflows/platform_security_baseline.yml
+# Every tracked Python source compiles with warnings as errors, in Tier 0.
+run_check "INVARIANT" rg -n '^run_check "HYGIENE" python3 "\$\{SCRIPT_DIR\}/check_python_compile_warnings\.py"$' scripts/test_tier0_hygiene.sh
 
 # ----------------------------------------------------------------------------
 # WS-BP BP8.2 (v0.36.27): the four-PE bring-up gate executes, and a console

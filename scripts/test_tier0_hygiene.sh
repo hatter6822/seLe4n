@@ -618,6 +618,11 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py"
 # decisive case keeps the anchor and the definition and adds only a reader.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py"
+# A tracked Python source the compiler warns about (an invalid escape sequence is
+# silent on 3.11 and a printed SyntaxWarning on CI's 3.12) fails here rather
+# than surfacing as noise above some other gate's PASS line.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_python_compile_warnings.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_python_compile_warnings.py"
 
 # "Does this declaration carry a body" had SIX answers across six artefacts
 # (`v0.35.114`, `v0.35.115`), four of them matching the definition constructor

@@ -794,7 +794,7 @@ def _literal_core(pattern: str, fixed: bool = False) -> str | None:
     PR #873 round 8 made the unescaped dot a wildcard here.  It used to be folded
     to a literal dot on the grounds that the suites overwhelmingly write module
     separators unescaped, which is true but not a licence to *decide* on: a
-    positive `foo.bar` and a negative `foo\.bar` are both satisfied by a tree
+    positive `foo.bar` and a negative `foo\\.bar` are both satisfied by a tree
     containing only `fooXbar`, and the gate was reporting that satisfiable pair
     as a contradiction — failing CI over a suite that is fine.  A gate that
     invents failures is as bad as one that misses them.  What the fold was
