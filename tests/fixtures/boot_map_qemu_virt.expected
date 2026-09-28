@@ -1,0 +1,22 @@
+# QEMU virt boot map: the Lean binding's memory map and constants, and its kind at every probe (Lean/Rust cross-check)
+kernelReserved 0x40000000 0x50000000
+physicalAddressWidth 0x28
+asidSpace 0x10000
+tablePool 0x4fff0000 0x10
+declaredCores 0x4
+mmio uart 0x9000000 0x1000
+mmio gicd 0x8000000 0x1000
+mmio gicc 0x8010000 0x2000
+region 0x40000000 0x40000000 ram
+region 0x8000000 0x2000000 device
+extend 0x50000000 0x30000000
+probe 0x0 reserved
+probe 0x7ffffff reserved
+probe 0x8000000 device
+probe 0x9ffffff device
+probe 0xa000000 reserved
+probe 0x3fffffff reserved
+probe 0x40000000 ram
+probe 0x7fffffff ram
+probe 0x80000000 reserved
+probe 0x4000000000 reserved

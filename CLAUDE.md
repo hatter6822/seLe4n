@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.24.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.25.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7155,7 +7155,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24; slice 2, the Lean `virt` binding and its boot entry, v0.36.25)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -8586,7 +8586,42 @@ fragments **in order** plus each run's own entry level and PSCI conduit.  The
 fixture has a `.sha256` companion the lane verifies itself.  What slice 1 does
 **not** do is run Lean: the Lean `virt` binding and its fixture are slice 2, and
 the Lean-linked boot to the first idle dispatch is slice 3.  The HAL's `virt`
-constants are held to nothing on the Lean side until slice 2.
+constants were held to nothing on the Lean side until slice 2 (the next
+paragraph).
+
+**The Lean kernel has a `virt` binding and a `virt` boot entry** (`v0.36.25`,
+BP8.1 slice 2; `SeLe4n/Platform/QemuVirt/`, in the library root).  Five things
+new code must respect.  (1) **A board is a binding plus an entry**: the
+`virt` image calls `lean_kernel_main_qemu_virt` (`QemuVirt.kernelMain`) where
+the RPi5's calls `lean_kernel_main`, both exported from every archive, and
+`lean_entry::enter_lean_kernel` selects by `cfg` — two extern items, two
+cfg-gated `let`s, one occurrence each in `LEAN_UPCALLS_OUTSIDE_THE_GATE`.  A new
+board adds a row, never a runtime switch.  (2) **The boot-entry contract is a
+table** (`BootEntryContract.bootEntries`, `BootEntrySpec`): each exported symbol
+is held to its own approved call, and the cross-wired witnesses — each board's
+shape refused under the other's row — are what make it decide *which* board an
+entry boots.  (3) **The board check is one question**: `virt`'s bridge
+(`qemuVirtPlatformConfigFromDtb`) accepts through the RPi5 bridge's own
+`Boot.deviceTreeCoversMachineConfig` and `Boot.deviceTreeCoversMmioRegions`,
+asked of this binding's machine configuration and windows; only the binding
+differs.  Board-free pieces are shared, not copied — the runtime contract, the
+kernel boot root's builder (`VSpaceBoot.insertIdentity`) and the deployment's
+object builders — and a piece is board-free only if it reads no board
+constant.  (4) **`virt` is one fixed configuration**: RAM `[0x4000_0000,
+0x8000_0000)`, extent `[0x4000_0000, 0x5000_0000)`, four PEs, the RPi5
+deployment's layout on it, every boot gate `decide`d
+(`qemuVirtBoundPlatformConfig_*`), the started boot proved on every account
+(`bootAndInitialiseQemuVirt_qemuVirtPlatformConfigFor`).  (5) **Each board's
+HAL is held to its own binding by running both**: the Lean suite writes
+`tests/fixtures/boot_map_qemu_virt.expected`, the HAL reads it under
+`board_qemu_virt` through the same readers the RPi5 uses (`mmu::LEAN_BOOT_MAP`,
+`mmu::BOARD_LINK_SCRIPT` — the derived script, written on every build), and
+`scripts/test_rust.sh` runs that lane (step 4) and lints the RPi5 HAL apart
+(step 7), since `--all-features` selects `virt`.  A HAL test that names a
+board's address is a board's test: it reads `board::BOARD`, or it carries a
+twin for the other board.  QEMU's own device tree is a fixture
+(`tests/fixtures/qemu_virt_dtb.hex`, `scripts/qemu_virt_dtb_fixture.py`) that
+both bridges are run on.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

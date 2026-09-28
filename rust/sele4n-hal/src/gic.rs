@@ -1688,6 +1688,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "board_qemu_virt"))]
     fn self_check_target_address_arithmetic() {
         // The address computed by `read_distributor_register` must equal
         // `base + ITARGETSR_BASE + TARGET_INDEX * 4`. We verify against
@@ -2401,7 +2402,20 @@ mod tests {
         send_sgi_to_all_but_self(2);
     }
 
+    /// **WS-BP BP8.1**: the same arithmetic against the QEMU `virt` board's
+    /// distributor, `intc@8000000`'s first `reg` block.
     #[test]
+    #[cfg(feature = "board_qemu_virt")]
+    fn qemu_virt_distributor_address_arithmetic() {
+        assert_eq!(
+            GICD_BASE + SELF_CHECK_TARGET_OFFSET,
+            0x0800_0000 + 0x800 + 8 * 4
+        );
+        assert_eq!(GICD_BASE + gicd::SGIR, 0x0800_0F00);
+    }
+
+    #[test]
+    #[cfg(not(feature = "board_qemu_virt"))]
     fn sgi_address_arithmetic_correct() {
         // Sanity: GICD_BASE + gicd::SGIR resolves to the BCM2712
         // GICD_SGIR MMIO address.

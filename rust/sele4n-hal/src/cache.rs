@@ -1041,9 +1041,12 @@ mod tests {
     #[test]
     fn test_apply_icache_invalidation_all_arms() {
         apply_icache_invalidation(ICacheInvalidation::Iallu);
-        apply_icache_invalidation(ICacheInvalidation::IvauPage(0x2000));
-        apply_icache_invalidation(ICacheInvalidation::UnifyPage(0x3000));
-        apply_icache_invalidation(ICacheInvalidation::CleanRangeIallu(0x4000, 1024));
+        // WS-BP BP8.1: addresses in the board's kernel extent, which is where
+        // the identity map is on every board (`mmu::KERNEL_RESERVED_BASE`).
+        let base = crate::mmu::KERNEL_RESERVED_BASE;
+        apply_icache_invalidation(ICacheInvalidation::IvauPage(base + 0x2000));
+        apply_icache_invalidation(ICacheInvalidation::UnifyPage(base + 0x3000));
+        apply_icache_invalidation(ICacheInvalidation::CleanRangeIallu(base + 0x4000, 1024));
     }
 
     // AN8-D (RUST-M07): memory_fence is a pure DSB ISH — verify it does
@@ -1076,10 +1079,10 @@ mod identity_map_operand_tests {
     use super::*;
 
     /// An address inside the kernel's reserved extent the boot tables map Normal.
-    const IN_WINDOW: u64 = 0x0010_0000;
+    const IN_WINDOW: u64 = crate::mmu::KERNEL_RESERVED_BASE + 0x0010_0000;
     /// An address inside the BCM2712 peripheral window — mapped Device, so
     /// `IC IVAU` against it maintains nothing the kernel meant.
-    const IN_DEVICE_WINDOW: u64 = 0x10_7D00_1000;
+    const IN_DEVICE_WINDOW: u64 = crate::board::BOARD.uart_base as u64;
     /// An address above the RAM the boot tables map — unmapped, so
     /// the instruction takes a translation fault at EL1.
     const ABOVE_RAM: u64 = 0x1_0000_0000;
@@ -1200,7 +1203,7 @@ mod identity_map_operand_tests {
         // refusal is unreachable for a linked image; an extent that ran past it
         // would halt rather than be under-maintained.
         assert!(icache_operand_within_identity_map(
-            boot_image_icache_operand((0x8_0000, 0x20_0000))
+            boot_image_icache_operand((crate::mmu::KERNEL_RESERVED_BASE + 0x8_0000, 0x20_0000))
         ));
         assert!(!icache_operand_within_identity_map(
             boot_image_icache_operand((ABOVE_RAM, PAGE_SIZE))

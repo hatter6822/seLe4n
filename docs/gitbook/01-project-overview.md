@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.24): 431,777 lines of production Lean across 356 files, 88,064 lines across 71 Lean test suites,
-14,307 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.36.25): 432,837 lines of production Lean across 361 files, 88,168 lines across 71 Lean test suites,
+14,357 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -143,7 +143,9 @@ saved and restored context and lazily switched FP/SIMD state, and **BP7.11**
 (v0.36.23) starts both initial threads, one per domain, so the labeling's two
 separation witnesses are threads that run.  **BP8.1**'s first slice (v0.36.24)
 boots the image on QEMU's `virt` — QEMU models no BCM2712, so the board is a
-build-time choice — at EL1 and at EL2.
+build-time choice — at EL1 and at EL2 — and its second (v0.36.25) gives the
+Lean kernel a `virt` binding, a deployment and its own boot entry, checked on
+QEMU's own device tree.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

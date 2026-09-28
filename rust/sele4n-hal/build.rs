@@ -223,6 +223,17 @@ fn main() {
     // which a declared PE does not serve the kernel.
     scan_readiness_publication();
 
+    // WS-BP BP8.1: the board's link script — `link.ld` checked against
+    // `src/board.rs`'s RPI5, and on `board_qemu_virt` the `virt` script
+    // derived from it — is produced on every build, host ones included, so the
+    // host tests that hold the Lean table to the linker read the script the
+    // `virt` image actually links under (`mmu::BOARD_LINK_SCRIPT`).
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .expect("cargo sets CARGO_MANIFEST_DIR for every build script");
+    let board_script = board_link_script(&manifest_dir);
+    println!("cargo:rerun-if-changed=src/board.rs");
+    println!("cargo:rustc-env=SELE4N_BOARD_LINK_SCRIPT={board_script}");
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
@@ -236,13 +247,9 @@ fn main() {
     // The path is absolute, because the link runs in a directory cargo
     // chooses.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("none") {
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-            .expect("cargo sets CARGO_MANIFEST_DIR for every build script");
         // WS-BP BP8.1: the image for QEMU's `virt` links under a script
         // derived from `link.ld` for `virt`'s RAM base (`board_link_script`).
-        let script = board_link_script(&manifest_dir);
-        println!("cargo:rustc-link-arg-bin=sele4n-kernel=-T{script}");
-        println!("cargo:rerun-if-changed=src/board.rs");
+        println!("cargo:rustc-link-arg-bin=sele4n-kernel=-T{board_script}");
         // WS-BP BP5.2: with `hw_target` the HAL names the Lean kernel's
         // symbols, so the image links the kernel's Lean archive — the one
         // `scripts/build_lean_aarch64_archive.py` builds — together with the
@@ -2329,6 +2336,17 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
          initialization returns, and it precedes every secondary's release \
          because the bring-up consumes the permit it returns (WS-BP BP4.2)",
     ),
+    // WS-BP BP8.1: the same install on the QEMU `virt` board.  The image calls
+    // exactly one of the two, by `cfg`, so each is one occurrence.
+    (
+        "src/lean_entry.rs",
+        "enter_lean_kernel",
+        "lean_kernel_main_qemu_virt",
+        1,
+        "the QEMU `virt` board's boot install, `lean_kernel_main` on that board: \
+         it runs in its place, under the same token and before the same permit, \
+         on an image built with `board_qemu_virt`",
+    ),
     // WS-BP BP2.3: the library initializer runs before any Lean code, on the
     // primary, so it precedes every readiness decision there is.  Its caller
     // refuses a second run and halts the system on a failed one.
@@ -3576,6 +3594,13 @@ fn lean_symbol_declarations(
             }
             // The item's own header, plus — for a declaration inside an
             // `extern "C" { … }` block — that block's header.
+            //
+            // WS-BP BP8.1: the enclosing block is the innermost `{` still open
+            // at the item, found by brace depth — not the character before the
+            // item's own header, which is the *previous item's* `;` for every
+            // item but a block's first.  Read that way, a second declaration in
+            // one `extern` block had no enclosing header, classified as a plain
+            // Rust function, and the gate refused a correctly gated extern.
             let header = {
                 let mut i = before - 2;
                 while i > 0 && !matches!(bytes[i - 1], b';' | b'{' | b'}') {
@@ -3583,8 +3608,22 @@ fn lean_symbol_declarations(
                 }
                 let own = &code[i..before];
                 let mut enclosing = String::new();
-                if i > 0 && bytes[i - 1] == b'{' {
-                    let block_open = i - 1;
+                let mut depth = 0usize;
+                let mut open = None;
+                let mut k = i;
+                while k > 0 {
+                    k -= 1;
+                    match bytes[k] {
+                        b'}' => depth += 1,
+                        b'{' if depth == 0 => {
+                            open = Some(k);
+                            break;
+                        }
+                        b'{' => depth -= 1,
+                        _ => {}
+                    }
+                }
+                if let Some(block_open) = open {
                     let mut j = block_open;
                     while j > 0 && !matches!(bytes[j - 1], b';' | b'{' | b'}') {
                         j -= 1;
@@ -3953,6 +3992,31 @@ fn lean_gamma() -> u64 {
         Ok(n) => panic!(
             "build.rs self-check: a string literal supplied the cfg nesting — an ungated \
              `extern \"C\"` block classified as gated ({n} declarations checked)"
+        ),
+    }
+    // WS-BP BP8.1: a declaration that is not its block's first item is still
+    // inside the block — two cfg-selected entries in one gated `extern` block
+    // both classify as linker-visible under `hw_target`, and the same block
+    // ungated refuses both.
+    const MULTI: &str = "#[cfg(feature = \"hw_target\")]\n\
+                         extern \"C\" {\n    #[cfg(not(feature = \"x\"))]\n    \
+                         fn lean_alpha(x: u64) -> u64;\n    #[cfg(feature = \"x\")]\n    \
+                         fn lean_beta(x: u64) -> u64;\n}\n";
+    match check(MULTI) {
+        Ok(2) => {}
+        Ok(n) => panic!(
+            "build.rs self-check: a two-item gated extern block classified {n} \
+             declarations, expected 2"
+        ),
+        Err(why) => panic!(
+            "build.rs self-check: the second item of a gated extern block was refused: {why}"
+        ),
+    }
+    match check(&MULTI.replacen("#[cfg(feature = \"hw_target\")]\n", "", 1)) {
+        Err(_) => {}
+        Ok(n) => panic!(
+            "build.rs self-check: an ungated two-item extern block was accepted ({n} \
+             declarations checked)"
         ),
     }
     // ...and the same text as *code* still gates the block, so the fix did not

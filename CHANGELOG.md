@@ -1,3 +1,89 @@
+## v0.36.25 — WS-BP BP8.1 slice 2: the Lean `virt` binding, its deployment and its own boot entry
+
+Slice 1 booted the Rust half of the image on QEMU's `virt`; the Lean half could
+not follow it, because the only Lean platform binding was the Raspberry Pi 5's
+and the only boot entry, `lean_kernel_main`, checks the board against the
+BCM2712's map — so a Lean-linked `virt` image would parse QEMU's device tree,
+find no BCM2712 and halt every PE.  This slice is the Lean `virt` binding and
+everything the Lean-linked image needs to boot on it; slice 3 runs it.
+
+- **`SeLe4n/Platform/QemuVirt/`, in the library root.**  `Board.lean` is
+  `virt`'s address map as the kernel models it, every constant read off QEMU's
+  own device tree for the machine `scripts/test_qemu.sh` boots: RAM
+  `[0x4000_0000, 0x8000_0000)` (`-m 1G`), the kernel's reserved extent
+  `[0x4000_0000, 0x5000_0000)` with the table-page pool its last sixteen pages,
+  the device window `[0x0800_0000, 0x0A00_0000)`, the PL011 at `0x0900_0000`,
+  the GICv2 at `0x0800_0000`/`0x0801_0000`, 256 SPIs, a 40-bit PE (QEMU's
+  `cortex-a76`) and four of them (`-smp 4`).  `Contract.lean` is the
+  `PlatformBinding` — four PEs in one inner-shareable cluster and the confined
+  two-domain labeling at the RPi5's boundary and witnesses — with a kernel boot
+  root identity-mapping this board's image and devices, built with the RPi5
+  root's own builder (`VSpaceBoot.insertIdentity` / `emptyBootRoot`, public
+  now) rather than a copy of it.  The runtime contract is shared with the RPi5
+  binding: it reads the *installed* memory map, so it names no board.
+- **The board check is the RPi5 bridge's question asked of this binding.**
+  `QemuVirt.qemuVirtPlatformConfigFromDtb` parses with the verified parser and
+  accepts a board through `Boot.deviceTreeCoversMachineConfig` and
+  `Boot.deviceTreeCoversMmioRegions` — the RPi5 bridge's own predicates — with
+  `arm,pl011` and `arm,cortex-a15-gic` as the devices that must be at the three
+  windows.  `bootAndInitialiseQemuVirtFromDtbOrHalt` maps the RAM past the
+  extent, then boots through `bootAndInitialisePlatform QemuVirtPlatform`, or
+  halts every PE.
+- **The deployment is the RPi5's layout on this board** (`Deployment.lean`):
+  the root task (TCB, CNode, VSpace on pool page 0, the interrupt notification,
+  one untyped over `[0x5000_0000, 0x8000_0000)`) and the untrusted thread
+  (TCB pinned to core 1, CNode, VSpace on pool page 1), built with the RPi5
+  deployment's board-free builders.  Being one fixed configuration, every gate
+  of the checked boot is decided outright, the started boot is proved to accept
+  it and install and start both witnesses on every board account
+  (`bootAndInitialiseQemuVirt_qemuVirtPlatformConfigFor`), and the installed
+  state carries the proof-layer bundle (`qemuVirtDeploymentBootState_invariantBridge`).
+- **A second hardware boot entry, `lean_kernel_main_qemu_virt`**
+  (`QemuVirt.kernelMain`), with `kernelMain_refuses` / `kernelMain_installs`
+  stated as for the RPi5's.  Both entries are in every archive; the HAL's
+  `enter_lean_kernel` calls the one its board names, by `cfg`, and
+  `LEAN_UPCALLS_OUTSIDE_THE_GATE` records each as one occurrence.
+- **The boot-entry contract is a table** (`SeLe4n/Testing/BootEntryContract.lean`):
+  `BootEntrySpec` pairs a symbol with its one approved call, and every entry in
+  `bootEntries` is held to its own row.  Two cross-wired witnesses keep it
+  deciding *which board*: the RPi5 entry's shape is refused under the `virt`
+  row and the `virt` shape under the RPi5 row.  `ExportCommitDisciplineCensus`
+  records the new seam; `check_kernel_entry_exports.py` reports both entries.
+- **QEMU's own device tree is a fixture** (`tests/fixtures/qemu_virt_dtb.hex`,
+  rendered by the new `scripts/qemu_virt_dtb_fixture.py`, whose `--check`
+  compares it with a fresh dump — the QEMU lane runs that comparison before
+  it boots, and Tier 0 runs the normaliser's self-test).  QEMU pads the blob to 1 MiB, writes fresh
+  `kaslr-seed`/`rng-seed` values into `/chosen` on every run, and leaves one
+  alignment byte uninitialised, so the render cuts `totalsize` to the strings
+  block and zeroes those values and the alignment padding — nothing the kernel
+  reads.  `tests/Ak9PlatformSuite.lean` runs the board check on it: the `virt`
+  bridge accepts QEMU's tree, the RPi5 bridge refuses the same tree as a
+  foreign board, the `virt` bridge refuses an RPi5 board's tree, and both
+  refuse an empty blob.
+- **The `virt` HAL is held to the `virt` binding by running both.**  The Lean
+  suite writes `tests/fixtures/boot_map_qemu_virt.expected`; under
+  `board_qemu_virt` the HAL's fixture readers take it (`mmu::LEAN_BOOT_MAP`,
+  and `mmu::BOARD_LINK_SCRIPT`, the derived `virt` script `build.rs` now writes
+  on every build), so the UART, GIC, PA-width, ASID, core-count, reserved-extent
+  and table-pool checks compare `QEMU_VIRT` with the Lean `virt` binding, and a
+  new `the_virt_boot_map_agrees_with_the_lean_map` drives the `virt` boot map
+  and its extension against the Lean regions and probes.  The table walk those
+  tests share moved into a board-generic test module (`boot_table_walk`).
+  `scripts/test_rust.sh` runs the HAL's unit tests for `virt` too (1038) and
+  lints the HAL's RPi5 configuration separately, since `--all-features`
+  selects `virt`.  Running the `virt` host tests for the first time found nine
+  that hard-coded BCM2712 addresses; each now reads the board's constants or
+  carries a `virt` twin.
+- **A build.rs scanner read an `extern` block's second item as a plain
+  function.**  `lean_symbol_declarations` found an item's enclosing block by
+  the character before the item's own header, which is the previous item's
+  `;` for every item but a block's first, so a correctly gated second
+  declaration was refused as an ungated host stand-in.  It walks brace depth to
+  the innermost open `{` now, with a two-item self-check case both ways and the
+  pre-fix reading shown to fail it.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP8.1)
+
 ## v0.36.24 — WS-BP BP8.1 slice 1: the kernel image boots under QEMU, on `virt`, at EL1 and at EL2
 
 The first execution of any kernel code.  Until this version every QEMU script

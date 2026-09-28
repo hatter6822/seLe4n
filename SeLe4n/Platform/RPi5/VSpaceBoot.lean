@@ -157,14 +157,19 @@ theorem permsMmioRW_wxCompliant : permsMmioRW.wxCompliant = true := by decide
 -- ============================================================================
 
 /-- Convenience: insert a single identity mapping into a `VSpaceRoot`.  Used
-    to build the boot root incrementally so each mapping is traceable. -/
-private def insertIdentity (root : VSpaceRoot) (paddr : PAddr)
+    to build the boot root incrementally so each mapping is traceable.
+
+    **WS-BP BP8.1**: public, because the QEMU `virt` binding builds its boot
+    root the same way (`QemuVirt.qemuVirtBootVSpaceRoot`) — one builder for
+    both boards' kernel roots rather than a second copy of it. -/
+def insertIdentity (root : VSpaceRoot) (paddr : PAddr)
     (perms : PagePermissions) : VSpaceRoot :=
   let vaddr : VAddr := VAddr.ofNat paddr.toNat
   { root with mappings := root.mappings.insert vaddr (paddr, perms) }
 
-/-- Empty boot root with ASID 0 (kernel ASID). -/
-private def emptyBootRoot : VSpaceRoot :=
+/-- Empty boot root with ASID 0 (kernel ASID).  Public since WS-BP BP8.1, for
+    the reason `insertIdentity` is. -/
+def emptyBootRoot : VSpaceRoot :=
   { asid := ASID.ofNat 0
     mappings := RHTable.empty 16 }
 

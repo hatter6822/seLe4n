@@ -2676,7 +2676,10 @@ mod tests {
     fn cleaning_a_pagetable_range_inside_the_identity_map_returns() {
         // The complementary case, so the refusal witness below is not
         // satisfied by a seam that halts unconditionally.
-        clean_pagetable_range_within_identity_map(0x0010_0000, 0x1000);
+        clean_pagetable_range_within_identity_map(
+            crate::mmu::KERNEL_RESERVED_BASE + 0x0010_0000,
+            0x1000,
+        );
     }
 
     #[test]

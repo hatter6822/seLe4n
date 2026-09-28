@@ -196,6 +196,11 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/indexed_source.py" --self-test
 # same treatment.  Self-test first: a scanner that under-reaches fails silently.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
+# WS-BP BP8.1: the QEMU `virt` device tree the Lean board check is driven
+# against is a checked-in fixture normalised from a QEMU dump (per-run seeds
+# and uninitialised padding zeroed).  The normaliser is self-tested here; the
+# comparison against a live dump runs in the QEMU lane, which has QEMU.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/qemu_virt_dtb_fixture.py" --self-test
 
 # WS-RR RR7.34 (register finding 93): every artefact the claim/evidence index
 # names must exist.  A row that names a missing artefact asserts evidence that

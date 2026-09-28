@@ -20,6 +20,7 @@ import SeLe4n.Platform.RPi5.VSpaceBoot
 import SeLe4n.Platform.Sim.BootContract
 import SeLe4n.Platform.DeviceTree
 import SeLe4n.Platform.FFI
+import SeLe4n.Platform.QemuVirt.KernelMain
 import SeLe4n.Testing.Helpers
 
 /-! # AK9 Platform Regression Suite — Phase AK9 audit remediation
@@ -2582,6 +2583,106 @@ def boot_refuses_unstartable_initial_threads : IO Unit := do
   | .error e => throw <| IO.userError s!"the empty start was refused: {e}"
   IO.println "the boot refuses an unstartable initial thread and starts nothing unnamed: PASS"
 
+-- ============================================================================
+-- WS-BP BP8.1 — the QEMU `virt` binding
+-- ============================================================================
+
+open SeLe4n.Platform.QemuVirt in
+/-- **WS-BP BP8.1**: the `virt` boot map as the Lean binding declares it — the
+kernel's reserved extent, the address and ASID widths, the table pool, the PE
+count, the three MMIO windows, the memory map, the RAM the boot maps after the
+parse, and the kind at every boundary probe.  `rust/sele4n-hal`'s tests under
+`board_qemu_virt` read the same file (`mmu::lean_boot_map_scalar`,
+`mmu::lean_mmio_window`, `board::tests`), so the HAL's `QEMU_VIRT` map and this
+binding are compared by running both rather than by two literals each naming
+the board — the arrangement `boot_map.expected` gives the RPi5. -/
+private def qemuVirtBootMapTableLines : List String :=
+  let map := qemuVirtMachineConfig.memoryMap
+  "# QEMU virt boot map: the Lean binding's memory map and constants, and its kind at every probe (Lean/Rust cross-check)"
+    :: qemuVirtMachineConfig.kernelReserved.map (fun r =>
+        s!"kernelReserved {bootMapHex r.base.toNat} {bootMapHex r.endAddr}")
+    ++ [s!"physicalAddressWidth {bootMapHex qemuVirtMachineConfig.physicalAddressWidth}"]
+    ++ [s!"asidSpace {bootMapHex qemuVirtMachineConfig.maxASID}"]
+    ++ [s!"tablePool {bootMapHex qemuVirtBootTablePoolBase} {bootMapHex qemuVirtBootTablePoolPages}"]
+    ++ [s!"declaredCores {bootMapHex (SeLe4n.Platform.PlatformBinding.coreCount (platform := QemuVirtPlatform))}"]
+    ++ (["uart", "gicd", "gicc"].zip qemuVirtMmioRegions).map (fun (name, r) =>
+        s!"mmio {name} {bootMapHex r.base.toNat} {bootMapHex r.size}")
+    ++ map.map (fun r =>
+        s!"region {bootMapHex r.base.toNat} {bootMapHex r.size} {bootMapKindName r.kind}")
+    ++ qemuVirtBootRamExtensions.map (fun e => s!"extend {bootMapHex e.1} {bootMapHex e.2}")
+    ++ (bootMapProbes map).map fun a =>
+        s!"probe {bootMapHex a} {bootMapKindName (classifyAddress (SeLe4n.PAddr.ofNat a) map)}"
+
+def bootMap_the_qemu_virt_map_is_the_shared_table : IO Unit :=
+  checkSharedFixture "WS-BP BP8.1 QEMU virt boot map" "tests/fixtures/boot_map_qemu_virt.expected"
+    "rust/sele4n-hal/src/mmu.rs" qemuVirtBootMapTableLines
+
+open SeLe4n.Platform.QemuVirt in
+/-- **WS-BP BP8.1**: the `virt` board check on the device tree **QEMU itself**
+hands the kernel (`tests/fixtures/qemu_virt_dtb.hex`, rendered from QEMU's own
+dump by `scripts/qemu_virt_dtb_fixture.py`).
+
+Four facts, each with the control that makes it a statement about the board
+rather than about the blob: the `virt` bridge accepts QEMU's tree and yields
+this deployment's configuration; the RPi5 bridge refuses the **same** tree as a
+foreign board; the `virt` bridge refuses an RPi5 board's tree as a foreign
+board; and both refuse an empty blob as unparseable. -/
+def qemuVirt_board_check_on_qemus_own_device_tree : IO Unit := do
+  IO.println "--- WS-BP BP8.1 QEMU virt board check on QEMU's device tree ---"
+  let text ← IO.FS.readFile "tests/fixtures/qemu_virt_dtb.hex"
+  let blob ← match parseCorpusHex text with
+    | .ok b => pure b
+    | .error e => throw <| IO.userError s!"qemu_virt_dtb.hex: {e}"
+  match qemuVirtPlatformConfigFromDtb blob qemuVirtIrqTable qemuVirtInitialObjects none with
+  | .ok config =>
+      unless SeLe4n.Platform.Boot.machineConfigCovers config.machineConfig
+          qemuVirtMachineConfig do
+        throw <| IO.userError "the accepted account does not cover the binding's RAM"
+      unless config.initialObjects.length == qemuVirtInitialObjects.length
+          && config.irqTable.length == qemuVirtGicSpiCount do
+        throw <| IO.userError "the accepted configuration is not this deployment's"
+      IO.println "  PASS: the virt bridge accepts QEMU's own device tree"
+  | .error e => throw <| IO.userError s!"the virt bridge refused QEMU's device tree: {repr e}"
+  match SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb blob [] (fun _ => []) none with
+  | .error .boardDoesNotMatchBinding =>
+      IO.println "  PASS: the RPi5 bridge refuses QEMU's tree as a foreign board"
+  | other => throw <| IO.userError s!"the RPi5 bridge on QEMU's tree: {reprStr (other.map (·.irqTable.length))}"
+  match qemuVirtPlatformConfigFromDtb (boardDtb 0x100000000) [] [] none with
+  | .error .boardDoesNotMatchBinding =>
+      IO.println "  PASS: the virt bridge refuses an RPi5 board's tree as a foreign board"
+  | other => throw <| IO.userError s!"the virt bridge on an RPi5 tree: {reprStr (other.map (·.irqTable.length))}"
+  match qemuVirtPlatformConfigFromDtb ByteArray.empty [] [] none with
+  | .error (.unparseableBlob _) =>
+      IO.println "  PASS: the virt bridge refuses an empty blob as unparseable"
+  | other => throw <| IO.userError s!"the virt bridge on an empty blob: {reprStr (other.map (·.irqTable.length))}"
+
+open SeLe4n.Platform.QemuVirt in
+/-- **WS-BP BP8.1**: the `virt` deployment boots — its two address spaces own
+the pool's first two pages, both initial threads are started one per domain,
+and the root task's untyped is the RAM the boot maps. -/
+def qemuVirt_deployment_boots : IO Unit := do
+  IO.println "--- WS-BP BP8.1 QEMU virt deployment ---"
+  let bases := SeLe4n.Platform.Boot.configuredRootTableBases qemuVirtBoundPlatformConfig
+  unless bases == [some (qemuVirtBootTablePage 0), some (qemuVirtBootTablePage 1)] do
+    throw <| IO.userError s!"virt deployment roots' table pages: {reprStr bases}"
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor
+      (SeLe4n.Platform.PlatformBinding.declaredCores (platform := QemuVirtPlatform))
+      qemuVirtBoundPlatformConfig with
+  | .error e => throw <| IO.userError s!"the virt deployment's boot refused: {e}"
+  | .ok ist =>
+      let root : SeLe4n.ThreadId := ⟨qemuVirtRootTaskTcbId.val⟩
+      let untrusted : SeLe4n.ThreadId := ⟨qemuVirtUntrustedTcbId.val⟩
+      let q0 := ist.state.scheduler.runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId
+      let q1 := ist.state.scheduler.runQueueOnCore qemuVirtUntrustedCore
+      unless q0.contains root && !q0.contains untrusted && q1.contains untrusted &&
+          !q1.contains root do
+        throw <| IO.userError "the virt deployment's initial threads are not queued one per core"
+      IO.println "  PASS: the virt deployment boots and starts both initial threads, one per domain"
+  unless [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)]
+      == qemuVirtBootRamExtensions do
+    throw <| IO.userError "the root task's untyped is not the RAM the boot maps"
+  IO.println "  PASS: the root task's untyped is the RAM the boot maps"
+
 end SeLe4n.Testing.Ak9PlatformSuite
 
 open SeLe4n.Testing.Ak9PlatformSuite in
@@ -2679,5 +2780,8 @@ def main : IO Unit := do
   kernelEntry_boots_the_deployment_on_every_variant
   deployment_starts_both_initial_threads
   boot_refuses_unstartable_initial_threads
+  bootMap_the_qemu_virt_map_is_the_shared_table
+  qemuVirt_board_check_on_qemus_own_device_tree
+  qemuVirt_deployment_boots
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

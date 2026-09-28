@@ -218,6 +218,14 @@ if ! (cd "$(dirname "${FIXTURE}")" && sha256sum -c "$(basename "${FIXTURE}").sha
     finalize_report
 fi
 
+# WS-BP BP8.1: the Lean board check is driven against a checked-in `virt`
+# device tree; this QEMU is asked for its own and the two must agree, so the
+# fixture cannot drift from the machine the image boots on.
+if ! QEMU_BIN="${QEMU_BIN}" python3 "${REPO_ROOT}/scripts/qemu_virt_dtb_fixture.py" --check; then
+    record_failure "TRACE" "tests/fixtures/qemu_virt_dtb.hex is not this QEMU's virt device tree (scripts/qemu_virt_dtb_fixture.py)"
+    finalize_report
+fi
+
 if [[ -n "${QEMU_MACHINE}" ]]; then
     boot_once "the image on ${QEMU_MACHINE}" "${QEMU_MACHINE}"
 else

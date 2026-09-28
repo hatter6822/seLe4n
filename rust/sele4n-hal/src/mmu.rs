@@ -1790,6 +1790,31 @@ pub fn init_mmu_secondary(core_id: u64) {
     init_mmu_per_core(core_id);
 }
 
+/// **WS-BP BP8.1**: the Lean binding's shared boot-map table for the board this
+/// build is for — `tests/fixtures/boot_map.expected` (the RPi5, which
+/// `tests/Ak9PlatformSuite.lean` writes from the RPi5 binding) or, under
+/// `board_qemu_virt`, `tests/fixtures/boot_map_qemu_virt.expected` (written by
+/// the same suite from the `virt` binding).  Every test that holds a HAL
+/// constant to the Lean binding reads it here, so on each board the HAL is held
+/// to that board's binding and not to the other's.
+#[cfg(test)]
+#[cfg(not(feature = "board_qemu_virt"))]
+pub(crate) const LEAN_BOOT_MAP: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+/// The `virt` table (see the RPi5 one above).
+#[cfg(test)]
+#[cfg(feature = "board_qemu_virt")]
+pub(crate) const LEAN_BOOT_MAP: &str =
+    include_str!("../../../tests/fixtures/boot_map_qemu_virt.expected");
+
+/// **WS-BP BP8.1**: the link script the image for this build's board links
+/// under — `link.ld`, or under `board_qemu_virt` the script `build.rs` derives
+/// from it (`board_link_script`), which it writes on every build so these host
+/// tests read the file the `virt` image actually links with.  `build.rs`
+/// publishes the script's absolute path as `SELE4N_BOARD_LINK_SCRIPT` — the
+/// path it hands the image's link, so the tests and the link read one file.
+#[cfg(test)]
+pub(crate) const BOARD_LINK_SCRIPT: &str = include_str!(env!("SELE4N_BOARD_LINK_SCRIPT"));
+
 /// **The BCM2712 address-map correction (v0.36.2)**: the MMIO window the Lean
 /// binding programs under `name` (`uart`, `gicd`, `gicc`), as `(base, size)`,
 /// read from the `mmio` lines `tests/Ak9PlatformSuite.lean` writes into
@@ -1801,7 +1826,7 @@ pub fn init_mmu_secondary(core_id: u64) {
 /// the BCM2711's addresses together while every test passed.
 #[cfg(test)]
 pub(crate) fn lean_mmio_window(name: &str) -> (u64, u64) {
-    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+    const LEAN_TABLE: &str = LEAN_BOOT_MAP;
     let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
     let mut found = None;
     for line in LEAN_TABLE.lines() {
@@ -1827,7 +1852,7 @@ pub(crate) fn lean_mmio_window(name: &str) -> (u64, u64) {
 /// and it carries exactly one hexadecimal value.
 #[cfg(test)]
 pub(crate) fn lean_boot_map_scalar(key: &str) -> u64 {
-    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+    const LEAN_TABLE: &str = LEAN_BOOT_MAP;
     let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
     let mut found = None;
     for line in LEAN_TABLE.lines() {
@@ -2305,6 +2330,98 @@ mod tests {
     }
 }
 
+// WS-BP BP8.1: the reserved extent and the table-page pool held to the Lean
+// binding's table and to the link script — board-generic, so each board's
+// build checks its own binding and its own script.
+#[cfg(test)]
+mod lean_linker_agreement_tests {
+    use super::*;
+    extern crate std;
+    use std::vec::Vec;
+
+    /// **WS-BP BP8.1**: board-generic — the table and the script are the ones
+    /// this build's board reads (`LEAN_BOOT_MAP`, `BOARD_LINK_SCRIPT`), so on
+    /// `board_qemu_virt` the `virt` binding and the derived `virt` script are
+    /// held to the HAL's `QEMU_VIRT` constants.
+    ///
+    /// **WS-BP BP7.1**: the boot table-page pool is one pool in three places —
+    /// these constants, the Lean `rpi5BootTablePool*` (the fixture's
+    /// `tablePool <base> <pages>` line) and `link.ld`'s `BOOT_TABLE_POOL_PAGES`.
+    #[test]
+    fn the_boot_table_pool_is_the_lean_and_linker_one() {
+        const LEAN_TABLE: &str = LEAN_BOOT_MAP;
+        const LINK_SCRIPT: &str = BOARD_LINK_SCRIPT;
+        let lean: Vec<(u64, u64)> = LEAN_TABLE
+            .lines()
+            .filter_map(
+                |l| match l.split_whitespace().collect::<Vec<_>>().as_slice() {
+                    ["tablePool", base, pages] => Some((
+                        u64::from_str_radix(base.trim_start_matches("0x"), 16).expect("hex"),
+                        u64::from_str_radix(pages.trim_start_matches("0x"), 16).expect("hex"),
+                    )),
+                    _ => None,
+                },
+            )
+            .collect();
+        assert_eq!(
+            lean,
+            std::vec![(BOOT_TABLE_POOL_BASE, BOOT_TABLE_POOL_PAGES)],
+            "the Lean table-page pool"
+        );
+        let linker: Vec<u64> = LINK_SCRIPT
+            .lines()
+            .filter_map(|l| {
+                let rest = l.trim().strip_prefix("BOOT_TABLE_POOL_PAGES = ")?;
+                let hex = rest.strip_suffix(';')?.trim_start_matches("0x");
+                Some(u64::from_str_radix(hex, 16).expect("hex in link.ld"))
+            })
+            .collect();
+        assert_eq!(linker, std::vec![BOOT_TABLE_POOL_PAGES], "link.ld's pool");
+    }
+
+    /// **WS-BP BP3.2**: the reserved extent is one number in three places —
+    /// this constant, the Lean `rpi5KernelReservedEnd` (read here out of the
+    /// fixture the Lean suite writes), and `link.ld`'s `KERNEL_RESERVED_END`
+    /// (read out of the script).  It is whole 2 MiB blocks of the first
+    /// gigabyte, so the boot map describes it exactly and an extension past it
+    /// starts on a block boundary.
+    #[test]
+    fn the_kernel_reserved_extent_is_the_lean_and_linker_one() {
+        const LEAN_TABLE: &str = LEAN_BOOT_MAP;
+        const LINK_SCRIPT: &str = BOARD_LINK_SCRIPT;
+        let lean: Vec<(u64, u64)> = LEAN_TABLE
+            .lines()
+            .filter_map(
+                |l| match l.split_whitespace().collect::<Vec<_>>().as_slice() {
+                    ["kernelReserved", base, end] => Some((
+                        u64::from_str_radix(base.trim_start_matches("0x"), 16).expect("hex"),
+                        u64::from_str_radix(end.trim_start_matches("0x"), 16).expect("hex"),
+                    )),
+                    _ => None,
+                },
+            )
+            .collect();
+        assert_eq!(
+            lean,
+            std::vec![(KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)],
+            "the Lean reserved extent"
+        );
+        let linker: Vec<u64> = LINK_SCRIPT
+            .lines()
+            .filter_map(|l| {
+                let rest = l.trim().strip_prefix("KERNEL_RESERVED_END = ")?;
+                let hex = rest.strip_suffix(';')?.trim_start_matches("0x");
+                Some(u64::from_str_radix(hex, 16).expect("hex in link.ld"))
+            })
+            .collect();
+        assert_eq!(
+            linker,
+            std::vec![KERNEL_RESERVED_END],
+            "link.ld's reserved extent"
+        );
+    }
+}
+
 // ===========================================================================
 // WS-RR RR7.1: boot-memory-map and translation-table witnesses
 //
@@ -2315,45 +2432,45 @@ mod tests {
 // predicate address by address rather than checking that both exist.
 // ===========================================================================
 
-// WS-BP BP8.1: these tests drive the Raspberry Pi 5's boot map against
-// `tests/fixtures/boot_map.expected`, the Lean suite's account of the RPi5, so
-// they are the RPi5 board's; the QEMU `virt` board is held to its own Lean
-// binding by the slice that writes it.
+// WS-BP BP8.1: the table walk and the image layouts the boot-map tests drive,
+// shared by both boards' tests.  Board-generic: every layout sits at the base
+// of the board's kernel extent (`KERNEL_RESERVED_BASE`, `0` on the RPi5), and
+// the walk follows descriptor types from level 0 whatever the addresses.
 #[cfg(test)]
-#[cfg(not(feature = "board_qemu_virt"))]
-mod boot_map_tests {
+mod boot_table_walk {
     use super::*;
-    // WS-BP BP0.4: the Lean-table test parses a checked-in fixture into `Vec`s.
-    extern crate std;
-    use std::vec::Vec;
 
     /// An image shaped like `link.ld` produces: text from the load address
     /// across a block boundary, and read-only data ending in the same block as
     /// the text — two blocks need page granularity.
-    const LAYOUT: ImageLayout = ImageLayout {
-        text_start: 0x8_0000,
-        text_end: 0x2A_3000,
-        rodata_end: 0x3C_5000,
+    pub(super) const LAYOUT: ImageLayout = ImageLayout {
+        text_start: KERNEL_RESERVED_BASE + 0x8_0000,
+        text_end: KERNEL_RESERVED_BASE + 0x2A_3000,
+        rodata_end: KERNEL_RESERVED_BASE + 0x3C_5000,
     };
 
     /// Every boundary in a block of its own: all three L3 image tables used.
-    const SPREAD_LAYOUT: ImageLayout = ImageLayout {
-        text_start: 0x8_0000,
-        text_end: 0x61_F000,
-        rodata_end: 0xA0_5000,
+    pub(super) const SPREAD_LAYOUT: ImageLayout = ImageLayout {
+        text_start: KERNEL_RESERVED_BASE + 0x8_0000,
+        text_end: KERNEL_RESERVED_BASE + 0x61_F000,
+        rodata_end: KERNEL_RESERVED_BASE + 0xA0_5000,
     };
 
     /// Every boundary on a block boundary: no L3 image table used.
-    const BLOCK_ALIGNED_LAYOUT: ImageLayout = ImageLayout {
-        text_start: 0x20_0000,
-        text_end: 0x40_0000,
-        rodata_end: 0x60_0000,
+    pub(super) const BLOCK_ALIGNED_LAYOUT: ImageLayout = ImageLayout {
+        text_start: KERNEL_RESERVED_BASE + 0x20_0000,
+        text_end: KERNEL_RESERVED_BASE + 0x40_0000,
+        rodata_end: KERNEL_RESERVED_BASE + 0x60_0000,
     };
 
-    const LAYOUTS: [ImageLayout; 3] = [LAYOUT, SPREAD_LAYOUT, BLOCK_ALIGNED_LAYOUT];
+    pub(super) const LAYOUTS: [ImageLayout; 3] = [LAYOUT, SPREAD_LAYOUT, BLOCK_ALIGNED_LAYOUT];
 
     /// The table at `pa`, if `pa` is one of the struct's tables other than L0.
-    fn table_at(tables: &BootPageTables, base_pa: u64, pa: u64) -> Option<&[u64; TABLE_ENTRIES]> {
+    pub(super) fn table_at(
+        tables: &BootPageTables,
+        base_pa: u64,
+        pa: u64,
+    ) -> Option<&[u64; TABLE_ENTRIES]> {
         let index = pa.checked_sub(base_pa)? / 4096;
         if pa != table_pa(base_pa, index) {
             return None;
@@ -2377,7 +2494,7 @@ mod boot_map_tests {
     /// Follows descriptor *types*: a block at level 0 or a page type anywhere
     /// but level 3 does not resolve, which is what makes the walk a witness
     /// rather than a reading of chosen arrays.
-    fn walk(tables: &BootPageTables, base_pa: u64, va: u64) -> Option<(u64, u64)> {
+    pub(super) fn walk(tables: &BootPageTables, base_pa: u64, va: u64) -> Option<(u64, u64)> {
         let mut table: &[u64; TABLE_ENTRIES] = &tables.l0;
         for level in 0..4u32 {
             let shift = 39 - 9 * level;
@@ -2396,22 +2513,193 @@ mod boot_map_tests {
     }
 
     /// Build a table set for `layout` at a synthetic (4 KiB-aligned) base.
-    fn build(layout: &ImageLayout) -> (BootPageTables, u64) {
-        let base_pa: u64 = 0x10_0000;
+    pub(super) fn build(layout: &ImageLayout) -> (BootPageTables, u64) {
+        let base_pa: u64 = KERNEL_RESERVED_BASE + 0x10_0000;
         let mut tables = BootPageTables::new();
         populate_boot_tables(&mut tables, base_pa, layout);
         (tables, base_pa)
     }
 
     /// Is this descriptor's page writable at EL1?  (`AP[2] == 0`.)
-    fn writable(attrs: u64) -> bool {
+    pub(super) fn writable(attrs: u64) -> bool {
         attrs & AP_RO_EL1 == 0
     }
 
     /// Is this descriptor's page executable at EL1?  (`PXN` clear.)
-    fn executable(attrs: u64) -> bool {
+    pub(super) fn executable(attrs: u64) -> bool {
         attrs & PXN == 0
     }
+}
+
+// WS-BP BP8.1: the QEMU `virt` board's boot map, driven against
+// `tests/fixtures/boot_map_qemu_virt.expected` — the Lean `virt` binding's
+// account, written by `tests/Ak9PlatformSuite.lean` — exactly as
+// `boot_map_tests` drives the RPi5's against `boot_map.expected`.
+#[cfg(test)]
+#[cfg(feature = "board_qemu_virt")]
+mod qemu_virt_boot_map_tests {
+    use super::boot_table_walk::*;
+    use super::*;
+    extern crate std;
+    use std::vec::Vec;
+
+    /// **WS-BP BP8.1**: on `virt`, the constant Normal window is the Lean
+    /// binding's kernel extent, the Device window is its device region, the
+    /// one extension is the rest of its RAM, and with that extension applied
+    /// the Normal window is exactly the Lean RAM — at every probe the Lean
+    /// suite wrote, every boundary of both maps and every image boundary,
+    /// through `boot_mapping_for` and through a walk of the built tables.
+    #[test]
+    fn the_virt_boot_map_agrees_with_the_lean_map() {
+        fn hex(s: &str) -> u64 {
+            u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex in the boot-map table")
+        }
+        let mut regions: Vec<(u64, u64, &str)> = Vec::new();
+        let mut probes: Vec<(u64, &str)> = Vec::new();
+        let mut extensions: Vec<(u64, u64)> = Vec::new();
+        let mut reserved: Vec<(u64, u64)> = Vec::new();
+        for line in LEAN_BOOT_MAP.lines().filter(|l| !l.starts_with('#')) {
+            match line.split_whitespace().collect::<Vec<_>>().as_slice() {
+                ["region", base, size, kind] => regions.push((hex(base), hex(size), kind)),
+                ["probe", addr, kind] => probes.push((hex(addr), kind)),
+                ["extend", base, size] => extensions.push((hex(base), hex(size))),
+                ["kernelReserved", base, end] => reserved.push((hex(base), hex(end))),
+                ["mmio", _, _, _]
+                | ["physicalAddressWidth", _]
+                | ["declaredCores", _]
+                | ["tablePool", _, _]
+                | ["asidSpace", _] => {}
+                _ => panic!("unrecognised virt boot-map line {line:?}"),
+            }
+        }
+        assert_eq!(reserved, [(KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)]);
+        let ram: Vec<(u64, u64)> = regions
+            .iter()
+            .filter(|r| r.2 == "ram")
+            .map(|r| (r.0, r.1))
+            .collect();
+        let device: Vec<(u64, u64)> = regions
+            .iter()
+            .filter(|r| r.2 == "device")
+            .map(|r| (r.0, r.1))
+            .collect();
+        assert_eq!(ram.len(), 1, "the virt binding declares one RAM region");
+        assert_eq!(
+            ram[0].0, KERNEL_RESERVED_BASE,
+            "the kernel extent is at the RAM's base"
+        );
+        assert_eq!(
+            device,
+            [(DEVICE_WINDOW_BASE, DEVICE_WINDOW_TOP - DEVICE_WINDOW_BASE)]
+        );
+        let ram_end = ram[0].0 + ram[0].1;
+        assert_eq!(
+            extensions,
+            [(KERNEL_RESERVED_END, ram_end - KERNEL_RESERVED_END)],
+            "the one extension is the RAM past the kernel's extent"
+        );
+        let lean_kind = |a: u64| -> &str {
+            regions
+                .iter()
+                .find(|&&(b, sz, _)| b <= a && a < b + sz)
+                .map_or("reserved", |&(_, _, k)| k)
+        };
+        for layout in &LAYOUTS {
+            let (tables, base_pa) = build(layout);
+            let (mut extended, _) = build(layout);
+            let mut ranges: Vec<(u64, u64)> = Vec::new();
+            for &(base, size) in &extensions {
+                extend_boot_tables(&mut extended, base, size)
+                    .unwrap_or_else(|r| panic!("[{base:#x}, +{size:#x}) refused: {r:?}"));
+                ranges.push((base, base + size));
+            }
+            let mut addrs: Vec<u64> = Vec::new();
+            for &(a, kind) in &probes {
+                assert_eq!(
+                    kind,
+                    lean_kind(a),
+                    "the table's probe at {a:#x} names its own regions"
+                );
+                addrs.push(a);
+            }
+            for c in [
+                KERNEL_RESERVED_BASE,
+                KERNEL_RESERVED_END,
+                DEVICE_WINDOW_BASE,
+                DEVICE_WINDOW_TOP,
+                ram_end,
+                layout.text_start,
+                layout.text_end,
+                layout.rodata_end,
+                1 << 39,
+            ] {
+                addrs.push(c - 1);
+                addrs.push(c);
+            }
+            for a in addrs {
+                let kind = boot_mapping_for(a, layout);
+                let lean = lean_kind(a);
+                if kind.is_normal() {
+                    assert_eq!(lean, "ram", "{a:#x} maps Normal");
+                }
+                assert_eq!(
+                    kind == BootMapping::Device,
+                    lean == "device",
+                    "{a:#x} is {lean}"
+                );
+                assert_eq!(
+                    kind.is_normal(),
+                    in_kernel_reserved_extent(a),
+                    "{a:#x}: the constant Normal window is the kernel's extent"
+                );
+                let extended_normal = walk(&extended, base_pa, a)
+                    .is_some_and(|(_, attrs)| attrs & ATTR_IDX_DEVICE == 0);
+                assert_eq!(extended_normal, lean == "ram", "extended: {a:#x} is {lean}");
+                assert_eq!(
+                    ram_range_covered(a, 1, &ranges),
+                    lean == "ram",
+                    "the cacheable window at {a:#x} is not the virt RAM"
+                );
+                if let Some((pa, attrs)) = walk(&extended, base_pa, a) {
+                    assert_eq!(pa, a, "the extended map is an identity map");
+                    if !in_kernel_reserved_extent(a) && attrs & ATTR_IDX_DEVICE == 0 {
+                        assert!(
+                            writable(attrs) && !executable(attrs),
+                            "{a:#x}: extended RAM is writable and never executable"
+                        );
+                    }
+                }
+                match (kind, walk(&tables, base_pa, a)) {
+                    (BootMapping::Unmapped, walked) => {
+                        assert!(walked.is_none(), "{a:#x} must fault")
+                    }
+                    (_, walked) => {
+                        let (pa, attrs) = walked.unwrap_or_else(|| panic!("{a:#x} must map"));
+                        assert_eq!(pa, a, "the boot map is an identity map");
+                        assert_eq!(
+                            attrs & ATTR_IDX_DEVICE != 0,
+                            kind == BootMapping::Device,
+                            "{a:#x} has the wrong memory type"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+// WS-BP BP8.1: these tests drive the Raspberry Pi 5's boot map against
+// `tests/fixtures/boot_map.expected`, the Lean suite's account of the RPi5, so
+// they are the RPi5 board's; the QEMU `virt` board is held to its own Lean
+// binding by the slice that writes it.
+#[cfg(test)]
+#[cfg(not(feature = "board_qemu_virt"))]
+mod boot_map_tests {
+    use super::boot_table_walk::*;
+    use super::*;
+    // WS-BP BP0.4: the Lean-table test parses a checked-in fixture into `Vec`s.
+    extern crate std;
+    use std::vec::Vec;
 
     /// **WS-BP BP0.4 / BP2.6**: the boot map, driven through the Lean map
     /// rather than mirrored from it.
@@ -3200,83 +3488,6 @@ mod boot_map_tests {
         }
         assert!(dtb_disjoint_from_image((0, 0), &image));
         assert!(!dtb_disjoint_from_image((u64::MAX - 4, 0x10), &image));
-    }
-
-    /// **WS-BP BP7.1**: the boot table-page pool is one pool in three places —
-    /// these constants, the Lean `rpi5BootTablePool*` (the fixture's
-    /// `tablePool <base> <pages>` line) and `link.ld`'s `BOOT_TABLE_POOL_PAGES`.
-    #[test]
-    fn the_boot_table_pool_is_the_lean_and_linker_one() {
-        const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
-        const LINK_SCRIPT: &str = include_str!("../link.ld");
-        let lean: Vec<(u64, u64)> = LEAN_TABLE
-            .lines()
-            .filter_map(
-                |l| match l.split_whitespace().collect::<Vec<_>>().as_slice() {
-                    ["tablePool", base, pages] => Some((
-                        u64::from_str_radix(base.trim_start_matches("0x"), 16).expect("hex"),
-                        u64::from_str_radix(pages.trim_start_matches("0x"), 16).expect("hex"),
-                    )),
-                    _ => None,
-                },
-            )
-            .collect();
-        assert_eq!(
-            lean,
-            std::vec![(BOOT_TABLE_POOL_BASE, BOOT_TABLE_POOL_PAGES)],
-            "the Lean table-page pool"
-        );
-        let linker: Vec<u64> = LINK_SCRIPT
-            .lines()
-            .filter_map(|l| {
-                let rest = l.trim().strip_prefix("BOOT_TABLE_POOL_PAGES = ")?;
-                let hex = rest.strip_suffix(';')?.trim_start_matches("0x");
-                Some(u64::from_str_radix(hex, 16).expect("hex in link.ld"))
-            })
-            .collect();
-        assert_eq!(linker, std::vec![BOOT_TABLE_POOL_PAGES], "link.ld's pool");
-    }
-
-    /// **WS-BP BP3.2**: the reserved extent is one number in three places —
-    /// this constant, the Lean `rpi5KernelReservedEnd` (read here out of the
-    /// fixture the Lean suite writes), and `link.ld`'s `KERNEL_RESERVED_END`
-    /// (read out of the script).  It is whole 2 MiB blocks of the first
-    /// gigabyte, so the boot map describes it exactly and an extension past it
-    /// starts on a block boundary.
-    #[test]
-    fn the_kernel_reserved_extent_is_the_lean_and_linker_one() {
-        const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
-        const LINK_SCRIPT: &str = include_str!("../link.ld");
-        let lean: Vec<(u64, u64)> = LEAN_TABLE
-            .lines()
-            .filter_map(
-                |l| match l.split_whitespace().collect::<Vec<_>>().as_slice() {
-                    ["kernelReserved", base, end] => Some((
-                        u64::from_str_radix(base.trim_start_matches("0x"), 16).expect("hex"),
-                        u64::from_str_radix(end.trim_start_matches("0x"), 16).expect("hex"),
-                    )),
-                    _ => None,
-                },
-            )
-            .collect();
-        assert_eq!(
-            lean,
-            std::vec![(0, KERNEL_RESERVED_END)],
-            "the Lean reserved extent"
-        );
-        let linker: Vec<u64> = LINK_SCRIPT
-            .lines()
-            .filter_map(|l| {
-                let rest = l.trim().strip_prefix("KERNEL_RESERVED_END = ")?;
-                let hex = rest.strip_suffix(';')?.trim_start_matches("0x");
-                Some(u64::from_str_radix(hex, 16).expect("hex in link.ld"))
-            })
-            .collect();
-        assert_eq!(
-            linker,
-            std::vec![KERNEL_RESERVED_END],
-            "link.ld's reserved extent"
-        );
     }
 
     /// **WS-BP BP5.3**: the window `link.ld` places the device tree in is

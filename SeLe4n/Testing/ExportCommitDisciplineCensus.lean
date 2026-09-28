@@ -233,7 +233,14 @@ def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
       .unbracketed "boot install: `lean_kernel_main` writes the kernel state and the \
         labeling context once, on the boot core, before any secondary is released \
         (WS-BP BP4.2), so no other committer exists; it replaces the state wholesale \
-        rather than committing a transition a footprint could describe") ]
+        rather than committing a transition a footprint could describe")
+    -- WS-BP BP8.1: the QEMU `virt` image's boot entry — the same install on
+    -- another board, and the same ordering fact: the HAL calls exactly one of
+    -- the two entries, the one its `board_qemu_virt` feature selects.
+  , (`SeLe4n.Platform.QemuVirt.kernelMain,
+      .unbracketed "boot install: `lean_kernel_main_qemu_virt` is `lean_kernel_main` \
+        on the QEMU `virt` board — it installs the kernel state once, on the boot core, \
+        before any secondary is released, so no other committer exists") ]
 
 /-- The seams that commit and are recorded as bracketed. -/
 def bracketedSeams : List Name :=

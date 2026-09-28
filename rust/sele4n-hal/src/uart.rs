@@ -740,6 +740,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "board_qemu_virt"))]
     fn baud_rate_divisor_115200() {
         // For the 9.216 MHz clock at 115200 baud:
         //   BRD = 9216000 / (16 × 115200) = 5.0 exactly
@@ -755,8 +756,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "board_qemu_virt"))]
     fn uart_clock_is_the_bcm2712_fixed_clock() {
         assert_eq!(UART_CLOCK_HZ, 9_216_000);
+    }
+
+    /// **WS-BP BP8.1**: QEMU `virt`'s PL011 is clocked by its `apb-pclk`
+    /// fixed clock, 24 MHz (`clock-frequency = <0x16e3600>` in QEMU's device
+    /// tree), which at 115200 baud gives IBRD 13 and FBRD 1
+    /// (`(24e6 × 8 + 115200) / 230400 = 833`, and `833 = 13 × 64 + 1`).
+    #[test]
+    #[cfg(feature = "board_qemu_virt")]
+    fn qemu_virt_uart_clock_and_baud_divisor() {
+        assert_eq!(UART_CLOCK_HZ, 24_000_000);
+        let baud: u64 = 115_200;
+        let brd_times_64 = (UART_CLOCK_HZ as u64 * 4 * 2 + baud) / (baud * 2);
+        assert_eq!((brd_times_64 / 64, brd_times_64 % 64), (13, 1));
     }
 
     #[test]

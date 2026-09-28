@@ -4330,14 +4330,21 @@ run_check "INVARIANT" rg -n '^theorem kernelMain_installs($|[ ({:\[\]])' SeLe4n/
 run_check "INVARIANT" rg -n '^theorem kernelMain_refuses($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^def approvedBootCall : Name := `SeLe4n\.Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^        return \(← instantiateMVars passed\) == blob$' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^ +..bootEntryWitnessEditedBlob, ..bootEntryWitnessRetiredCall\] do$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^ +..bootEntryWitnessEditedBlob, ..bootEntryWitnessRetiredCall,$' SeLe4n/Testing/BootEntryContract.lean
+# WS-BP BP8.1: the `virt` entry's shape is refused under the RPi5 entry, and the
+# RPi5 entry's shape under the `virt` one — the table decides which board.
+run_check "INVARIANT" rg -n '^ +..bootEntryWitnessQemuVirtCompliant\] do$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^  for witness in \[..bootEntryWitnessCompliant, ..bootEntryWitnessQemuVirtFixedBlob,\n +..bootEntryWitnessSideInstall\] do\n    if \(← bootEntryContractViolations qemuVirtBootEntry witness\)\.isEmpty then' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def bootEntries : List BootEntrySpec := \[rpi5BootEntry, qemuVirtBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^  `SeLe4n\.Platform\.QemuVirt\.bootAndInitialiseQemuVirtFromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^  \.forallE .dtb \(mkConst ..ByteArray\) \(mkApp \(mkConst ..BaseIO\) \(mkConst ..Unit\)\) \.default$' SeLe4n/Testing/BootEntryContract.lean
 # WS-BP BP4.3: the HAL copies the firmware's blob into the `ByteArray` the entry
 # takes, and an unreadable pointer is handed over empty for Lean to refuse.
 run_check "INVARIANT" rg -n '^        fn lean_kernel_main\(dtb: Obj\) -> lean_runtime::LeanBaseIoUnit;$' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n '^    lean_runtime::array::byte_array_of\(blob\.unwrap_or\(&\[\]\)\)$' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n '^pub fn byte_array_of\(bytes: &\[u8\]\) -> Obj \{$' rust/sele4n-hal/src/lean_runtime/array.rs
-run_check "INVARIANT" rg -U -n '^  \| \[\] =>\n      throwError "boot-entry contract: no declaration exports' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^  for spec in bootEntries do\n    match bootEntryDeclarations env spec\.symbol with' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^    \| \[\] =>\n        throwError "boot-entry contract: no declaration exports' SeLe4n/Testing/BootEntryContract.lean
 run_negative_check "INVARIANT" rg -n 'logInfo m!"boot-entry contract: no declaration exports' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^EXPECTED_UNRESOLVED: dict\[str, str\] = \{\}$' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Platform\.RPi5\.kernelMain,$' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
@@ -5415,7 +5422,8 @@ run_negative_check "INVARIANT" rg -n '\brpi5InitialObjects\b|\brpi5RootTaskCNode
 # bare-metal target only.
 run_check "INVARIANT" rg -U -n '^\[\[bin\]\]\nname = "sele4n-kernel"\npath = "src/bin/sele4n_kernel\.rs"\nrequired-features = \["kernel_image"\]$' rust/sele4n-hal/Cargo.toml
 run_check "INVARIANT" rg -U -n '^#\[panic_handler\]\nfn panic\(_info: &core::panic::PanicInfo<._>\) -> ! \{\n    sele4n_hal::gic::halt_all\(\)\n\}$' rust/sele4n-hal/src/bin/sele4n_kernel.rs
-run_check "INVARIANT" rg -U -n '^    if std::env::var\("CARGO_CFG_TARGET_OS"\)\.as_deref\(\) == Ok\("none"\) \{[^\n]*(\n([ \t][^\n]*)?)*?        let script = board_link_script\(&manifest_dir\);\n        println!\("cargo:rustc-link-arg-bin=sele4n-kernel=-T\{script\}"\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -U -n '^    if std::env::var\("CARGO_CFG_TARGET_OS"\)\.as_deref\(\) == Ok\("none"\) \{[^\n]*(\n([ \t][^\n]*)?)*?        println!\("cargo:rustc-link-arg-bin=sele4n-kernel=-T\{board_script\}"\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    let board_script = board_link_script\(&manifest_dir\);$' rust/sele4n-hal/build.rs
 # WS-BP BP5.2: with `hw_target` the image links the Lean archive AND the roots
 # script, with `--gc-sections`, inside the bare-metal branch; the archive
 # builder's reachable link reads that same roots script; and the Lean archive
@@ -7756,6 +7764,34 @@ run_check "INVARIANT" rg -n -F 'line=$(tail -n "+$((after + 1))" "${QEMU_LOG}" |
 run_check "INVARIANT" rg -n -F 'sha256sum -c "$(basename "${FIXTURE}").sha256"' scripts/test_qemu.sh
 # shellcheck disable=SC2016
 run_check "INVARIANT" rg -n -F -- '--features "${IMAGE_FEATURES},${VIRT_FEATURE}" --bin "${IMAGE_BIN}"' scripts/test_aarch64_cross_build.sh
+# WS-BP BP8.1 slice 2 (v0.36.25): the Lean `virt` binding and its boot entry.
+# The entry is exported under its own symbol and is exactly the virt device-tree
+# wrapper on the entry's own blob; the library root reaches it, so the archive
+# carries it; the HAL declares and calls it under the board feature alone; the
+# readiness scanner records it as the one other upcall outside the gate; the HAL
+# reads the virt board's Lean table under the feature; the virt host tests and the
+# RPi5-only clippy lane both run; the fixture normaliser is self-tested in Tier 0
+# and compared against a live dump in the QEMU lane; and the Lean suite drives the
+# board check on QEMU's own device tree.
+run_check "INVARIANT" rg -n '^@\[export lean_kernel_main_qemu_virt\]$' SeLe4n/Platform/QemuVirt/KernelMain.lean
+run_check "INVARIANT" rg -n '^  bootAndInitialiseQemuVirtFromDtbOrHalt dtb qemuVirtIrqTable qemuVirtInitialObjects none$' SeLe4n/Platform/QemuVirt/KernelMain.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.KernelMain$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^instance qemuVirtPlatformBinding\b' SeLe4n/Platform/QemuVirt/Contract.lean
+run_check "INVARIANT" rg -n '^def qemuVirtBootRamExtensions[ :]' SeLe4n/Platform/QemuVirt/Board.lean
+run_check "INVARIANT" rg -n -F -- '#[cfg(feature = "board_qemu_virt")]' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_qemu_virt(dtb) };' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- '"lean_kernel_main_qemu_virt",' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -F -- 'println!("cargo:rustc-env=SELE4N_BOARD_LINK_SCRIPT={board_script}");' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -F -- 'pub(crate) const BOARD_LINK_SCRIPT: &str = include_str!(env!("SELE4N_BOARD_LINK_SCRIPT"));' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -F -- 'include_str!("../../../tests/fixtures/boot_map_qemu_virt.expected");' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -F -- 'cargo test -p sele4n-hal --lib --features board_qemu_virt' scripts/test_rust.sh
+run_check "INVARIANT" rg -n -F -- 'cargo clippy -p sele4n-hal --all-targets --features hw_target,host_tools,kernel_image -- -D warnings' scripts/test_rust.sh
+run_check "INVARIANT" rg -n -F -- 'qemu_virt_dtb_fixture.py" --self-test' scripts/test_tier0_hygiene.sh
+run_check "INVARIANT" rg -n -F -- 'qemu_virt_dtb_fixture.py" --check' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -F -- 'BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt")' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^  qemuVirt_board_check_on_qemus_own_device_tree$' tests
+run_check "INVARIANT" rg -n '^  qemuVirt_deployment_boots$' tests
+run_check "INVARIANT" rg -n '^  bootMap_the_qemu_virt_map_is_the_shared_table$' tests
 
 # ============================================================================
 # WS-SM SM9.B — refusal auditing
@@ -10360,8 +10396,8 @@ run_check "INVARIANT" rg -n '^def isApprovedBootApplication($|[ ({:\[\]])' SeLe4
 # recursion limit on every `bind`-headed witness once the boot's configuration
 # binding reached the RAM-variant selection, and which would have accepted an
 # inlined copy of the wrapper's body.
-run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedBootCall with\n\s+\| none => pure false\n\s+\| some reduced =>[^\n]*(\n([ \t][^\n]*)?)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkAppN \(mkConst approvedBootCall\) args\)' SeLe4n/Testing/BootEntryContract.lean
-run_negative_check "INVARIANT" rg -nF 'Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedCall with\n\s+\| none => pure false\n\s+\| some reduced =>[^\n]*(\n([ \t][^\n]*)?)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkAppN \(mkConst approvedCall\) args\)' SeLe4n/Testing/BootEntryContract.lean
+run_negative_check "INVARIANT" rg -n 'Meta\.isDefEq body \(mkApp \(mkConst approved(Boot)?Call\) config\)' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasedBoot($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean

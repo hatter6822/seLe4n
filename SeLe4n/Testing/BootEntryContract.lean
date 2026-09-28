@@ -83,6 +83,38 @@ configuration no device tree was checked against is exactly what the move
 retires. -/
 def approvedBootCall : Name := `SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt
 
+/-- **WS-BP BP8.1**: the symbol the QEMU `virt` image's boot entry exports.
+`rust/sele4n-hal/src/lean_entry.rs` calls it instead of `lean_kernel_main` on an
+image built with `board_qemu_virt`; both are in every archive, because both
+entries are in the library root. -/
+def qemuVirtBootEntrySymbol : Name := `lean_kernel_main_qemu_virt
+
+/-- **WS-BP BP8.1**: the one boot call the `virt` entry may make — the `virt`
+device-tree boot with its failure handled. -/
+def qemuVirtApprovedBootCall : Name :=
+  `SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtFromDtbOrHalt
+
+/-- **WS-BP BP8.1**: a hardware boot entry — the symbol the HAL calls and the
+one boot call the declaration exporting it may make.  A table rather than two
+constants, because the question is one question asked of each board: an entry
+that is the *other* board's approved call is refused under this one's
+(`bootEntryWitnessCompliant` under the `virt` entry, and the reverse), so an
+image cannot boot a deployment built for different hardware. -/
+structure BootEntrySpec where
+  /-- The exported C symbol. -/
+  symbol : Name
+  /-- The constant the exporting declaration must be an application of. -/
+  approvedCall : Name
+
+/-- The Raspberry Pi 5 entry. -/
+def rpi5BootEntry : BootEntrySpec := ⟨bootEntrySymbol, approvedBootCall⟩
+
+/-- The QEMU `virt` entry. -/
+def qemuVirtBootEntry : BootEntrySpec := ⟨qemuVirtBootEntrySymbol, qemuVirtApprovedBootCall⟩
+
+/-- Every hardware boot entry the library exports, one per board. -/
+def bootEntries : List BootEntrySpec := [rpi5BootEntry, qemuVirtBootEntry]
+
 /-- The value of `n`, or `none` for a declaration that has none (an axiom, a
 constructor).
 
@@ -162,15 +194,15 @@ further can unfold — the first of which must be the entry's own parameter.  Th
 canonical spelling and its reductions; what it refuses is everything else,
 including a re-spelling of the wrapper's body, and it decides in constant time
 on every witness rather than by exhausting a budget. -/
-def isApprovedBootApplication (value : Expr) : MetaM Bool :=
+def isApprovedBootApplication (approvedCall : Name) (value : Expr) : MetaM Bool :=
   Meta.lambdaTelescope value fun params body => do
     let some blob := params[0]? | pure false
     unless params.size == 1 do return false
-    match ← Meta.whnfUntil body approvedBootCall with
+    match ← Meta.whnfUntil body approvedCall with
     | none => pure false
     | some reduced =>
-        let (args, _, _) ← Meta.forallMetaTelescope (← Meta.inferType (mkConst approvedBootCall))
-        unless ← Meta.withReducible <| Meta.isDefEq reduced (mkAppN (mkConst approvedBootCall) args) do
+        let (args, _, _) ← Meta.forallMetaTelescope (← Meta.inferType (mkConst approvedCall))
+        unless ← Meta.withReducible <| Meta.isDefEq reduced (mkAppN (mkConst approvedCall) args) do
           return false
         -- The blob the wrapper parses is the one the firmware handed over.
         let some passed := args[0]? | pure false
@@ -192,7 +224,7 @@ def expectedBootEntryType : Expr :=
   .forallE `dtb (mkConst ``ByteArray) (mkApp (mkConst ``BaseIO) (mkConst ``Unit)) .default
 
 /-- Why `entry` does not meet the boot-entry contract; `[]` when it does. -/
-def bootEntryContractViolations (entry : Name) : MetaM (List String) := do
+def bootEntryContractViolations (spec : BootEntrySpec) (entry : Name) : MetaM (List String) := do
   let env ← getEnv
   let typed ← match env.find? entry with
     | some info =>
@@ -204,8 +236,8 @@ def bootEntryContractViolations (entry : Name) : MetaM (List String) := do
     | none => pure [s!"`{entry}` is not a declaration of this environment"]
   let shaped ← match declarationValue env entry with
     | some value =>
-        if ← isApprovedBootApplication value then pure []
-        else pure [s!"`{entry}` is not `{approvedBootCall}` applied to its own device-tree \
+        if ← isApprovedBootApplication spec.approvedCall value then pure []
+        else pure [s!"`{entry}` is not `{spec.approvedCall}` applied to its own device-tree \
                       argument and a configuration.  The hardware boot entry must *be* that \
                       application — the device-tree boot with its failure handled, so a foreign \
                       board or a refused boot parks every PE instead of \
@@ -221,9 +253,9 @@ def bootEntryContractViolations (entry : Name) : MetaM (List String) := do
 so an `@[inline, export lean_kernel_main]`, an `@[export]` in any namespace and
 an entry in any module are all found, and a commented-out one is not there at
 all. -/
-def bootEntryDeclarations (env : Environment) : List Name :=
+def bootEntryDeclarations (env : Environment) (symbol : Name) : List Name :=
   env.constants.toList.foldl
-    (fun acc (n, _) => if getExportNameFor? env n == some bootEntrySymbol then n :: acc else acc)
+    (fun acc (n, _) => if getExportNameFor? env n == some symbol then n :: acc else acc)
     []
 
 /-! ## Witnesses
@@ -386,6 +418,19 @@ private def bootEntryWitnessSideInstall (dtb : ByteArray) : BaseIO Unit := do
 private def bootEntryWitnessUnbooted (_dtb : ByteArray) : BaseIO Unit :=
   pure ()
 
+/-- **WS-BP BP8.1**: the `virt` entry's required shape — accepted under the
+`virt` entry, and **refused** under the RPi5 one: an RPi5 image that booted
+the `virt` deployment would program a GIC and a console at addresses the board
+does not have them at. -/
+private def bootEntryWitnessQemuVirtCompliant (dtb : ByteArray) : BaseIO Unit :=
+  Platform.QemuVirt.bootAndInitialiseQemuVirtFromDtbOrHalt dtb [] [] none
+
+/-- **WS-BP BP8.1**: the `virt` approved call on a blob the entry did not
+receive — refused under the `virt` entry for the reason
+`bootEntryWitnessFixedBlob` is under the RPi5 one. -/
+private def bootEntryWitnessQemuVirtFixedBlob (_dtb : ByteArray) : BaseIO Unit :=
+  Platform.QemuVirt.bootAndInitialiseQemuVirtFromDtbOrHalt ByteArray.empty [] [] none
+
 run_cmd Command.liftTermElabM do
   let env ← getEnv
   -- The environment is the production one.  A witness cannot pin this — the
@@ -399,15 +444,16 @@ run_cmd Command.liftTermElabM do
   -- to a declaration of *this* environment, or every entry would be refused
   -- for the same uninformative reason and the witnesses below would pass by
   -- accident.
-  unless (env.find? approvedBootCall).isSome do
-    throwError "boot-entry contract: `{approvedBootCall}` is not a declaration of this \
-      environment, so the shape the entry is held to does not exist"
+  for spec in bootEntries do
+    unless (env.find? spec.approvedCall).isSome do
+      throwError "boot-entry contract: `{spec.approvedCall}` is not a declaration of this \
+        environment, so the shape the `{spec.symbol}` entry is held to does not exist"
   -- The witnesses.
   -- Accepted: the required program, however it is spelled.  Without these the
   -- contract could be refusing everything and read exactly the same.
   for witness in [``bootEntryWitnessCompliant, ``bootEntryWitnessLetBoundConfig,
                   ``bootEntryWitnessAliasedBoot] do
-    let violations ← bootEntryContractViolations witness
+    let violations ← bootEntryContractViolations rpi5BootEntry witness
     unless violations.isEmpty do
       throwError "boot-entry contract: the compliant witness `{witness}` was refused: \
         {violations}"
@@ -418,26 +464,39 @@ run_cmd Command.liftTermElabM do
                   ``bootEntryWitnessOpaqueBypass, ``bootEntryWitnessHaltedFirst,
                   ``bootEntryWitnessAliasHaltedFirst, ``bootEntryWitnessSequenced,
                   ``bootEntryWitnessLetBoundHalt, ``bootEntryWitnessFixedBlob,
-                  ``bootEntryWitnessEditedBlob, ``bootEntryWitnessRetiredCall] do
-    if (← bootEntryContractViolations witness).isEmpty then
+                  ``bootEntryWitnessEditedBlob, ``bootEntryWitnessRetiredCall,
+                  ``bootEntryWitnessQemuVirtCompliant] do
+    if (← bootEntryContractViolations rpi5BootEntry witness).isEmpty then
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted"
-  -- The contract itself.
-  match bootEntryDeclarations env with
-  -- WS-BP BP4.1 wrote the entry, so an environment with none is a regression,
-  -- not a state to report: the HAL calls the symbol unconditionally on an image
-  -- that links the kernel, and a contract that passed on an absent entry would
-  -- read exactly like one that decided a present one.
-  | [] =>
-      throwError "boot-entry contract: no declaration exports `{bootEntrySymbol}`.  The \
-        hardware boot entry is `SeLe4n.Platform.RPi5.kernelMain` (WS-BP BP4.1), and the HAL \
-        calls the symbol on every image that links the kernel"
-  | [entry] =>
-      match ← bootEntryContractViolations entry with
-      | [] => logInfo m!"boot-entry contract: `{entry}` is `{approvedBootCall}` applied \
-                to its own device tree and a configuration, and nothing else"
-      | violations => throwError "boot-entry contract: {violations}"
-  | entries =>
-      throwError "boot-entry contract: {entries.length} declarations export \
-        `{bootEntrySymbol}` ({entries}) — the hardware boot entry is one declaration"
+  -- WS-BP BP8.1: the `virt` entry — its own shape accepted, and the RPi5
+  -- entry's shape refused, which is what makes the table decide *which* board
+  -- an entry boots rather than only that it boots through some approved call.
+  unless (← bootEntryContractViolations qemuVirtBootEntry
+      ``bootEntryWitnessQemuVirtCompliant).isEmpty do
+    throwError "boot-entry contract: the compliant `virt` witness was refused"
+  for witness in [``bootEntryWitnessCompliant, ``bootEntryWitnessQemuVirtFixedBlob,
+                  ``bootEntryWitnessSideInstall] do
+    if (← bootEntryContractViolations qemuVirtBootEntry witness).isEmpty then
+      throwError "boot-entry contract: the deviating witness `{witness}` was accepted \
+        under the `virt` entry"
+  -- The contract itself, once per board.
+  for spec in bootEntries do
+    match bootEntryDeclarations env spec.symbol with
+    -- WS-BP BP4.1 wrote the RPi5 entry and BP8.1 the `virt` one, so an
+    -- environment missing either is a regression, not a state to report: the
+    -- HAL calls the symbol unconditionally on an image built for that board,
+    -- and a contract that passed on an absent entry would read exactly like one
+    -- that decided a present one.
+    | [] =>
+        throwError "boot-entry contract: no declaration exports `{spec.symbol}`.  The HAL \
+          calls it on every image built for that board that links the kernel"
+    | [entry] =>
+        match ← bootEntryContractViolations spec entry with
+        | [] => logInfo m!"boot-entry contract: `{entry}` is `{spec.approvedCall}` applied \
+                  to its own device tree and a configuration, and nothing else"
+        | violations => throwError "boot-entry contract: {violations}"
+    | entries =>
+        throwError "boot-entry contract: {entries.length} declarations export \
+          `{spec.symbol}` ({entries}) — a hardware boot entry is one declaration"
 
 end SeLe4n.Testing.BootEntryContract

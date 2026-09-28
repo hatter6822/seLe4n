@@ -206,7 +206,9 @@ pub fn device_tree_blob(blob: Option<&[u8]>) -> Obj {
 /// reads, so it cannot sit behind that gate.  It returns only on success — a
 /// device tree the verified parser refuses, a board that is not a Raspberry
 /// Pi 5, and a refused boot all halt the system inside it
-/// (`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`) — so reaching the
+/// (`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`; on an image built with
+/// `board_qemu_virt`, `lean_kernel_main_qemu_virt` and
+/// `QemuVirt.bootAndInitialiseQemuVirtFromDtbOrHalt`, WS-BP BP8.1) — so reaching the
 /// `return` below is reaching an installed kernel state.  The image's loaded
 /// bytes are then cleaned to the Point of Unification before the permit is
 /// minted (WS-BP BP4.5), which is the other thing the permit certifies.
@@ -230,7 +232,17 @@ pub fn enter_lean_kernel(
         /// on the boot core, after the library initializer, before any other
         /// Lean upcall on any PE and before any secondary is released.  `dtb`
         /// must be a live `ByteArray` whose one reference the callee takes.
+        #[cfg(not(feature = "board_qemu_virt"))]
         fn lean_kernel_main(dtb: Obj) -> lean_runtime::LeanBaseIoUnit;
+        /// # Safety
+        ///
+        /// WS-BP BP8.1: `lean_kernel_main` on the QEMU `virt` board
+        /// (`SeLe4n.Platform.QemuVirt.kernelMain`), under the same contract:
+        /// once, on the boot core, after the library initializer, before any
+        /// other Lean upcall and before any secondary is released, handed the
+        /// one reference of a live `ByteArray`.
+        #[cfg(feature = "board_qemu_virt")]
+        fn lean_kernel_main_qemu_virt(dtb: Obj) -> lean_runtime::LeanBaseIoUnit;
     }
     // SAFETY: `init_mmu` admitted `mmu::dtb_window(dtb_ptr)` — `MAX_DTB_SIZE`
     // bytes from the pointer, inside the kernel's reserved extent the boot map covers and
@@ -249,8 +261,13 @@ pub fn enter_lean_kernel(
     // SAFETY: the token proves the library initializer ran and succeeded, and
     // it is consumed here, so this call happens at most once per
     // initialization.  `dtb` is the fresh `ByteArray` just built, whose one
-    // reference is handed over.
+    // reference is handed over.  WS-BP BP8.1: the entry is the board's — both
+    // are in every archive, and the image calls the one its board names.
+    #[cfg(not(feature = "board_qemu_virt"))]
     let res = unsafe { lean_kernel_main(dtb) };
+    // SAFETY: as above — the `virt` board's entry under the same contract.
+    #[cfg(feature = "board_qemu_virt")]
+    let res = unsafe { lean_kernel_main_qemu_virt(dtb) };
     // SAFETY: `res` is the `BaseIO Unit` value `lean_kernel_main` just
     // returned (`lean_box(0)`); if it is a heap object this caller owns its one
     // reference.

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/loving-babbage-2z8r8z",
-      "commit_sha": "3ac3be97a872d132fffe8517621d7e2911c2e14a",
-      "tree_sha": "cbd09f925f23672d198667d08619839c3a5fa8f2",
-      "committed_at_utc": "2026-09-27T22:59:53+00:00"
+      "commit_sha": "cededcb6db2e09c600e73ad3d4db564b566d9cb3",
+      "tree_sha": "319e3d92a33811861676eb8e6e2c39493580240d",
+      "committed_at_utc": "2026-09-27T23:03:38+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c42d54b142283c2d902df69683127f0404f1e25cd1bda7bb16dd1469afc7f857"
+    "source_digest": "4c24ebe3d79d2b47bf53eeaae882507d2d05cee05009857c5eb9f7374f2b025a"
   },
   "summary": {
-    "module_count": 427,
-    "declaration_count": 24048
+    "module_count": 432,
+    "declaration_count": 24177
   },
   "readme_sync": {
-    "version": "0.36.24",
+    "version": "0.36.25",
     "lean_toolchain": "v4.28.0",
-    "production_files": 356,
-    "production_loc": 431777,
+    "production_files": 361,
+    "production_loc": 432837,
     "test_files": 71,
-    "test_loc": 88064,
-    "proved_theorem_lemma_decls": 14307,
+    "test_loc": 88168,
+    "proved_theorem_lemma_decls": 14357,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -289346,6 +289346,1371 @@
       ]
     },
     {
+      "module": "SeLe4n.Platform.QemuVirt.Board",
+      "path": "SeLe4n/Platform/QemuVirt/Board.lean",
+      "declaration_count": 27,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.QemuVirt",
+          "line": 40,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtRamBase",
+          "line": 43,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtRamSize",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtRamTop",
+          "line": 50,
+          "called": [
+            "qemuVirtRamBase",
+            "qemuVirtRamSize"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtKernelReservedEnd",
+          "line": 57,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtDeviceWindowBase",
+          "line": 62,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtDeviceWindowSize",
+          "line": 65,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtUartBase",
+          "line": 68,
+          "called": [
+            "PAddr",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtGicDistributorBase",
+          "line": 71,
+          "called": [
+            "PAddr",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtGicCpuInterfaceBase",
+          "line": 74,
+          "called": [
+            "PAddr",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtGicSpiCount",
+          "line": 78,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtMemoryMap",
+          "line": 81,
+          "called": [
+            "MemoryRegion",
+            "ofNat",
+            "qemuVirtDeviceWindowBase",
+            "qemuVirtDeviceWindowSize",
+            "qemuVirtRamBase",
+            "qemuVirtRamSize",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtKernelReserved",
+          "line": 88,
+          "called": [
+            "MemoryRegion",
+            "ofNat",
+            "qemuVirtKernelReservedEnd",
+            "qemuVirtRamBase",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBootTablePoolPages",
+          "line": 94,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBootTablePoolBase",
+          "line": 98,
+          "called": [
+            "qemuVirtBootTablePoolPages",
+            "qemuVirtKernelReservedEnd"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBootTablePool",
+          "line": 102,
+          "called": [
+            "PAddr",
+            "ofNat",
+            "qemuVirtBootTablePoolBase",
+            "qemuVirtBootTablePoolPages"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBootTablePage",
+          "line": 107,
+          "called": [
+            "PAddr",
+            "ofNat",
+            "qemuVirtBootTablePoolBase"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtMachineConfig",
+          "line": 114,
+          "called": [
+            "MachineConfig",
+            "qemuVirtBootTablePool",
+            "qemuVirtKernelReserved",
+            "qemuVirtMemoryMap"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtMachineConfig_wellFormed",
+          "line": 126,
+          "called": [
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtMmioRegions",
+          "line": 134,
+          "called": [
+            "MemoryRegion",
+            "qemuVirtGicCpuInterfaceBase",
+            "qemuVirtGicDistributorBase",
+            "qemuVirtUartBase",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtRequiredMmioWindows",
+          "line": 144,
+          "called": [
+            "RequiredMmioWindow",
+            "qemuVirtMmioRegions"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtRequiredMmioWindows_regions_eq",
+          "line": 153,
+          "called": [
+            "qemuVirtMmioRegions"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtMmioRegions_in_deviceWindow",
+          "line": 157,
+          "called": [
+            "all",
+            "endAddr",
+            "qemuVirtDeviceWindowBase",
+            "qemuVirtDeviceWindowSize",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtMmioRegions_pairwiseDisjoint",
+          "line": 164,
+          "called": [
+            "all",
+            "overlaps"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBootRamExtensions",
+          "line": 174,
+          "called": [
+            "qemuVirtKernelReservedEnd",
+            "qemuVirtRamTop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBootRamExtensions_exact",
+          "line": 180,
+          "called": [
+            "qemuVirtBootRamExtensions",
+            "qemuVirtKernelReservedEnd",
+            "qemuVirtRamBase",
+            "qemuVirtRamSize",
+            "qemuVirtRamTop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBootRamExtensions_aligned",
+          "line": 189,
+          "called": [
+            "all"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.QemuVirt.BootEntry",
+      "path": "SeLe4n/Platform/QemuVirt/BootEntry.lean",
+      "declaration_count": 10,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.QemuVirt",
+          "line": 35,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtPlatformConfigFromDtb",
+          "line": 45,
+          "called": [
+            "BootVSpaceRootEntry",
+            "DeviceTree.fromDtbFull",
+            "DeviceTreeBootRefusal",
+            "IrqEntry",
+            "ObjectEntry",
+            "PlatformConfig",
+            "PlatformConfig.fromDeviceTree",
+            "deviceTreeCoversMachineConfig",
+            "deviceTreeCoversMmioRegions",
+            "qemuVirtMachineConfig",
+            "qemuVirtRequiredMmioWindows"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootAndInitialiseQemuVirt",
+          "line": 59,
+          "called": [
+            "PlatformConfig",
+            "QemuVirtPlatform",
+            "SystemState",
+            "bootAndInitialisePlatform",
+            "config"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootAndInitialiseQemuVirt_eq",
+          "line": 63,
+          "called": [
+            "PlatformConfig",
+            "QemuVirtPlatform",
+            "bootAndInitialisePlatform",
+            "bootAndInitialiseQemuVirt",
+            "config"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootAndInitialiseQemuVirtOrHalt",
+          "line": 67,
+          "called": [
+            "PlatformConfig",
+            "bootAndInitialiseQemuVirt",
+            "config",
+            "ffiFatalHaltAll",
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootAndInitialiseQemuVirtFromDtbOrHalt",
+          "line": 78,
+          "called": [
+            "BootVSpaceRootEntry",
+            "IrqEntry",
+            "ObjectEntry",
+            "bootAndInitialiseQemuVirtOrHalt",
+            "config",
+            "extendBootRamMap",
+            "ffiFatalHaltAll",
+            "qemuVirtBootRamExtensions",
+            "qemuVirtPlatformConfigFromDtb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootAndInitialiseQemuVirtFromDtbOrHalt_refused",
+          "line": 88,
+          "called": [
+            "BootVSpaceRootEntry",
+            "DeviceTreeBootRefusal",
+            "IrqEntry",
+            "ObjectEntry",
+            "bootAndInitialiseQemuVirtFromDtbOrHalt",
+            "ffiFatalHaltAll",
+            "qemuVirtPlatformConfigFromDtb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootAndInitialiseQemuVirtFromDtbOrHalt_accepted",
+          "line": 99,
+          "called": [
+            "BootVSpaceRootEntry",
+            "IrqEntry",
+            "ObjectEntry",
+            "PlatformConfig",
+            "bootAndInitialiseQemuVirtFromDtbOrHalt",
+            "bootAndInitialiseQemuVirtOrHalt",
+            "config",
+            "extendBootRamMap",
+            "qemuVirtBootRamExtensions",
+            "qemuVirtPlatformConfigFromDtb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtPlatformConfigFromDtb_ok_eq_fromDeviceTree",
+          "line": 112,
+          "called": [
+            "BootVSpaceRootEntry",
+            "IrqEntry",
+            "ObjectEntry",
+            "PlatformConfig",
+            "PlatformConfig.fromDeviceTree",
+            "config",
+            "deviceTreeCoversMachineConfig",
+            "deviceTreeCoversMmioRegions",
+            "qemuVirtMachineConfig",
+            "qemuVirtPlatformConfigFromDtb",
+            "qemuVirtRequiredMmioWindows"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtPlatformConfigFromDtb_refuses_foreign_board",
+          "line": 131,
+          "called": [
+            "BootVSpaceRootEntry",
+            "DeviceTree",
+            "DeviceTree.fromDtbFull",
+            "IrqEntry",
+            "ObjectEntry",
+            "deviceTreeCoversMachineConfig",
+            "deviceTreeCoversMmioRegions",
+            "qemuVirtMachineConfig",
+            "qemuVirtPlatformConfigFromDtb",
+            "qemuVirtRequiredMmioWindows"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.QemuVirt.Contract",
+      "path": "SeLe4n/Platform/QemuVirt/Contract.lean",
+      "declaration_count": 22,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.QemuVirt",
+          "line": 32,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "QemuVirtPlatform",
+          "line": 37,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtKernelTextBase",
+          "line": 43,
+          "called": [
+            "PAddr",
+            "ofNat",
+            "qemuVirtRamBase"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtKernelDataBase",
+          "line": 47,
+          "called": [
+            "PAddr",
+            "kernelTextSize",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtKernelStackBase",
+          "line": 51,
+          "called": [
+            "PAddr",
+            "ofNat",
+            "qemuVirtRamBase"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBootVSpaceRoot",
+          "line": 56,
+          "called": [
+            "VSpaceRoot",
+            "emptyBootRoot",
+            "insertIdentity",
+            "permsDataRW",
+            "permsMmioRW",
+            "permsTextRX",
+            "qemuVirtGicCpuInterfaceBase",
+            "qemuVirtGicDistributorBase",
+            "qemuVirtKernelDataBase",
+            "qemuVirtKernelStackBase",
+            "qemuVirtKernelTextBase",
+            "qemuVirtUartBase"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBootVSpaceRoot_mappings_invExt",
+          "line": 67,
+          "called": [
+            "RHTable.empty_invExt",
+            "RHTable.insert_preserves_invExt",
+            "emptyBootRoot",
+            "insertIdentity",
+            "invExt",
+            "qemuVirtBootVSpaceRoot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBootVSpaceRoot_bootSafeCheck",
+          "line": 78,
+          "called": [
+            "bootSafeVSpaceRootCheck",
+            "qemuVirtBootVSpaceRoot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBootVSpaceRootObjId",
+          "line": 85,
+          "called": [
+            "ObjId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBootVSpaceRootEntry",
+          "line": 88,
+          "called": [
+            "BootVSpaceRootEntry",
+            "qemuVirtBootVSpaceRoot",
+            "qemuVirtBootVSpaceRootObjId",
+            "qemuVirtBootVSpaceRoot_mappings_invExt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtUpperDomainBase",
+          "line": 95,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtLowerWitnessIndex",
+          "line": 99,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtLowerWitnessIndex_admissible",
+          "line": 101,
+          "called": [
+            "qemuVirtLowerWitnessIndex",
+            "separationWitnessAdmissible"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtLowerWitnessIndex_below_boundary",
+          "line": 105,
+          "called": [
+            "qemuVirtLowerWitnessIndex",
+            "qemuVirtUpperDomainBase",
+            "separationBoundary"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtUpperDomainBase_clears_boot",
+          "line": 110,
+          "called": [
+            "idleThreadIdBase",
+            "numCores",
+            "qemuVirtUpperDomainBase",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBootContract",
+          "line": 117,
+          "called": [
+            "BootBoundaryContract",
+            "SystemState",
+            "default",
+            "objectTypeMetadataConsistent",
+            "qemuVirtGicSpiCount",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtInterruptContract",
+          "line": 124,
+          "called": [
+            "InterruptBoundaryContract",
+            "none",
+            "qemuVirtGicSpiCount",
+            "st",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "qemuVirtPlatformBinding",
+          "line": 132,
+          "called": [
+            "PlatformBinding",
+            "QemuVirtPlatform",
+            "bootCoreId",
+            "confinedDeploymentLabeling",
+            "qemuVirtBootContract",
+            "qemuVirtBootVSpaceRootEntry",
+            "qemuVirtInterruptContract",
+            "qemuVirtLowerWitnessIndex",
+            "qemuVirtLowerWitnessIndex_admissible",
+            "qemuVirtLowerWitnessIndex_below_boundary",
+            "qemuVirtMachineConfig",
+            "qemuVirtUpperDomainBase",
+            "rpi5RuntimeContract"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirt_bindMachineConfig",
+          "line": 153,
+          "called": [
+            "MachineConfig",
+            "QemuVirtPlatform",
+            "qemuVirtMachineConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirt_cores_eq_allCores",
+          "line": 158,
+          "called": [
+            "PlatformBinding.declaredCores",
+            "PlatformBinding.declaredCores_eq_allCores_of_full",
+            "QemuVirtPlatform",
+            "allCores"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirt_deploymentLabeling",
+          "line": 165,
+          "called": [
+            "PlatformBinding.labeling",
+            "QemuVirtPlatform",
+            "confinedLabelingContext",
+            "qemuVirtLowerWitnessIndex",
+            "qemuVirtLowerWitnessIndex_admissible",
+            "qemuVirtLowerWitnessIndex_below_boundary",
+            "qemuVirtUpperDomainBase"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirt_deploymentLabeling_separatedThreads",
+          "line": 171,
+          "called": [
+            "PlatformBinding.labeling",
+            "QemuVirtPlatform",
+            "qemuVirtLowerWitnessIndex",
+            "qemuVirtUpperDomainBase"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.QemuVirt.Deployment",
+      "path": "SeLe4n/Platform/QemuVirt/Deployment.lean",
+      "declaration_count": 53,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.QemuVirt",
+          "line": 43,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtRootTaskTcbId",
+          "line": 51,
+          "called": [
+            "ObjId",
+            "qemuVirtLowerWitnessIndex"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtRootTaskCNodeId",
+          "line": 53,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtRootTaskVSpaceId",
+          "line": 55,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtInterruptNotificationId",
+          "line": 57,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtRootTaskUntypedId",
+          "line": 59,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtUntrustedTcbId",
+          "line": 61,
+          "called": [
+            "ObjId",
+            "qemuVirtUpperDomainBase"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtUntrustedCNodeId",
+          "line": 63,
+          "called": [
+            "ObjId",
+            "qemuVirtUpperDomainBase"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtUntrustedVSpaceId",
+          "line": 65,
+          "called": [
+            "ObjId",
+            "qemuVirtUpperDomainBase"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtUntrustedCore",
+          "line": 69,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtUntrustedThread",
+          "line": 72,
+          "called": [
+            "TCB",
+            "qemuVirtUntrustedCNodeId",
+            "qemuVirtUntrustedCore",
+            "qemuVirtUntrustedTcbId",
+            "qemuVirtUntrustedVSpaceId",
+            "rpi5InitialThread"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtInitialVSpace",
+          "line": 78,
+          "called": [
+            "ASID",
+            "RHTable.empty",
+            "VSpaceRoot",
+            "qemuVirtBootTablePage"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtRootTaskUntyped",
+          "line": 83,
+          "called": [
+            "UntypedObject",
+            "qemuVirtKernelReservedEnd",
+            "qemuVirtRamTop",
+            "rpi5InitialUntyped"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtRootTaskUntyped_region",
+          "line": 87,
+          "called": [
+            "qemuVirtBootRamExtensions",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtRootTaskCNode",
+          "line": 93,
+          "called": [
+            "CNode",
+            "ofNat",
+            "qemuVirtInterruptNotificationId",
+            "qemuVirtRootTaskCNodeId",
+            "qemuVirtRootTaskTcbId",
+            "qemuVirtRootTaskUntypedId",
+            "qemuVirtRootTaskVSpaceId",
+            "rpi5InitialCNode",
+            "rpi5InitialCap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtUntrustedCNode",
+          "line": 103,
+          "called": [
+            "CNode",
+            "ofNat",
+            "qemuVirtUntrustedCNodeId",
+            "qemuVirtUntrustedTcbId",
+            "qemuVirtUntrustedVSpaceId",
+            "rpi5InitialCNode",
+            "rpi5InitialCap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tcbEntry",
+          "line": 109,
+          "called": [
+            "ObjId",
+            "ObjectEntry",
+            "TCB"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cnodeEntry",
+          "line": 114,
+          "called": [
+            "CNode",
+            "ObjId",
+            "ObjectEntry",
+            "slotsUnique_holds"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "vspaceEntry",
+          "line": 119,
+          "called": [
+            "ASID",
+            "ObjId",
+            "ObjectEntry",
+            "RHTable.empty_invExt",
+            "qemuVirtInitialVSpace"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "untypedEntry",
+          "line": 125,
+          "called": [
+            "ObjId",
+            "ObjectEntry",
+            "UntypedObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "notificationEntry",
+          "line": 130,
+          "called": [
+            "ObjId",
+            "ObjectEntry",
+            "empty",
+            "none",
+            "state"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtInitialObjects",
+          "line": 138,
+          "called": [
+            "ObjectEntry",
+            "cnodeEntry",
+            "notificationEntry",
+            "ofNat",
+            "qemuVirtInterruptNotificationId",
+            "qemuVirtRootTaskCNode",
+            "qemuVirtRootTaskCNodeId",
+            "qemuVirtRootTaskTcbId",
+            "qemuVirtRootTaskUntyped",
+            "qemuVirtRootTaskUntypedId",
+            "qemuVirtRootTaskVSpaceId",
+            "qemuVirtUntrustedCNode",
+            "qemuVirtUntrustedCNodeId",
+            "qemuVirtUntrustedTcbId",
+            "qemuVirtUntrustedThread",
+            "qemuVirtUntrustedVSpaceId",
+            "rpi5InitialThread",
+            "tcbEntry",
+            "untypedEntry",
+            "vspaceEntry"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtIrqTable",
+          "line": 151,
+          "called": [
+            "IrqEntry",
+            "handler",
+            "qemuVirtGicSpiCount",
+            "qemuVirtInterruptNotificationId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtPlatformConfigFor",
+          "line": 158,
+          "called": [
+            "MachineConfig",
+            "PlatformConfig",
+            "qemuVirtInitialObjects",
+            "qemuVirtIrqTable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBoundPlatformConfig",
+          "line": 164,
+          "called": [
+            "PlatformBinding.initialThreads",
+            "PlatformConfig",
+            "QemuVirtPlatform",
+            "initialThreads",
+            "qemuVirtInitialObjects",
+            "qemuVirtIrqTable",
+            "qemuVirtMachineConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bindPlatformConfig_qemuVirtPlatformConfigFor",
+          "line": 172,
+          "called": [
+            "MachineConfig",
+            "QemuVirtPlatform",
+            "bindPlatformConfig",
+            "qemuVirtBoundPlatformConfig",
+            "qemuVirtPlatformConfigFor"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_wellFormed",
+          "line": 184,
+          "called": [
+            "PlatformConfig.wellFormed",
+            "irqsUnique_eq_transparent",
+            "objectIdsUnique_eq_transparent",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_bootSafe",
+          "line": 190,
+          "called": [
+            "all",
+            "bootSafeObjectCheck"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_asidsDistinct",
+          "line": 195,
+          "called": [
+            "bootVSpaceAsidsDistinct",
+            "qemuVirtBoundPlatformConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_irqHandlers",
+          "line": 200,
+          "called": [
+            "irqHandlersReferenceNotifications",
+            "qemuVirtBoundPlatformConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_rootDistinct",
+          "line": 204,
+          "called": [
+            "bootVSpaceRootObjIdDistinct",
+            "qemuVirtBoundPlatformConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_rootNonSentinel",
+          "line": 208,
+          "called": [
+            "bootVSpaceRootObjIdNonSentinel",
+            "qemuVirtBoundPlatformConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_rootSafe",
+          "line": 212,
+          "called": [
+            "bootVSpaceRootSafe",
+            "qemuVirtBoundPlatformConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_affinities",
+          "line": 217,
+          "called": [
+            "PlatformBinding.declaredCores",
+            "QemuVirtPlatform",
+            "bootAffinitiesDeclared",
+            "qemuVirtBoundPlatformConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_physicalAddressWidth",
+          "line": 222,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_checked",
+          "line": 228,
+          "called": [
+            "bootEnableInterruptsOp",
+            "bootFromPlatform",
+            "bootFromPlatformChecked",
+            "bootFromPlatformChecked_admits_bootVSpace",
+            "installBootVSpaceRoot",
+            "qemuVirtBootVSpaceRootEntry",
+            "qemuVirtBoundPlatformConfig",
+            "qemuVirtBoundPlatformConfig_asidsDistinct",
+            "qemuVirtBoundPlatformConfig_bootSafe",
+            "qemuVirtBoundPlatformConfig_irqHandlers",
+            "qemuVirtBoundPlatformConfig_physicalAddressWidth",
+            "qemuVirtBoundPlatformConfig_rootDistinct",
+            "qemuVirtBoundPlatformConfig_rootNonSentinel",
+            "qemuVirtBoundPlatformConfig_rootSafe",
+            "qemuVirtBoundPlatformConfig_wellFormed",
+            "qemuVirtMachineConfig_wellFormed"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtDeploymentIdleState",
+          "line": 246,
+          "called": [
+            "IntermediateState",
+            "PlatformBinding.declaredCores",
+            "QemuVirtPlatform",
+            "bootEnableInterruptsOp",
+            "bootFromPlatform",
+            "enqueueIdleThread",
+            "installBootVSpaceRoot",
+            "qemuVirtBoundPlatformConfig"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtDeploymentBootState",
+          "line": 255,
+          "called": [
+            "IntermediateState",
+            "PlatformBinding.initialThreads",
+            "QemuVirtPlatform",
+            "qemuVirtDeploymentIdleState",
+            "startInitialThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_idleBoot",
+          "line": 259,
+          "called": [
+            "PlatformBinding.declaredCores",
+            "QemuVirtPlatform",
+            "bootFromPlatformCheckedWithIdleThreadsFor",
+            "bootFromPlatformCheckedWithIdleThreadsFor_map_ok",
+            "qemuVirtBoundPlatformConfig",
+            "qemuVirtBoundPlatformConfig_affinities",
+            "qemuVirtBoundPlatformConfig_checked",
+            "qemuVirtDeploymentIdleState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_idleBoot_allCores",
+          "line": 267,
+          "called": [
+            "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreadsFor_allCores",
+            "qemuVirtBoundPlatformConfig",
+            "qemuVirtBoundPlatformConfig_idleBoot",
+            "qemuVirtDeploymentIdleState",
+            "qemuVirt_cores_eq_allCores"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtDeployment_tcb_idle",
+          "line": 273,
+          "called": [
+            "ObjId",
+            "TCB",
+            "bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem",
+            "getTcb",
+            "qemuVirtBoundPlatformConfig_idleBoot",
+            "qemuVirtInitialObjects",
+            "tcbEntry"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirt_initialThreads",
+          "line": 281,
+          "called": [
+            "PlatformBinding.initialThreads",
+            "QemuVirtPlatform"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirt_initialThreads_not_idle",
+          "line": 285,
+          "called": [
+            "ThreadId",
+            "idleThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtDeployment_initialThreads_startable",
+          "line": 290,
+          "called": [
+            "PlatformBinding.initialThreads",
+            "QemuVirtPlatform",
+            "bootFromPlatformCheckedWithIdleThreads_initialThreadStartable",
+            "initialThreadStartable",
+            "qemuVirtBoundPlatformConfig_idleBoot_allCores",
+            "qemuVirtDeployment_tcb_idle",
+            "qemuVirtInitialObjects",
+            "qemuVirtRootTaskCNodeId",
+            "qemuVirtRootTaskTcbId",
+            "qemuVirtRootTaskVSpaceId",
+            "qemuVirtUntrustedTcbId",
+            "qemuVirtUntrustedThread",
+            "qemuVirt_initialThreads",
+            "rpi5InitialThread",
+            "state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtDeployment_startInitialThreads",
+          "line": 311,
+          "called": [
+            "PlatformBinding.initialThreads",
+            "QemuVirtPlatform",
+            "qemuVirtDeploymentBootState",
+            "qemuVirtDeploymentIdleState",
+            "qemuVirtDeployment_initialThreads_startable",
+            "qemuVirt_initialThreads",
+            "startInitialThreads",
+            "startInitialThreads_eq_foldl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtBoundPlatformConfig_boot",
+          "line": 319,
+          "called": [
+            "PlatformBinding.declaredCores",
+            "QemuVirtPlatform",
+            "bootFromPlatformCheckedStartedFor",
+            "bootFromPlatformCheckedStartedFor_of_idle",
+            "qemuVirtBoundPlatformConfig",
+            "qemuVirtBoundPlatformConfig_idleBoot",
+            "qemuVirtDeploymentBootState",
+            "qemuVirtDeployment_startInitialThreads"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtDeploymentBootState_witnessesInstalled",
+          "line": 329,
+          "called": [
+            "PlatformBinding.labeling",
+            "QemuVirtPlatform",
+            "declaredWitnessesInstalled",
+            "qemuVirtDeployment_startInitialThreads",
+            "qemuVirtDeployment_tcb_idle",
+            "qemuVirtInitialObjects",
+            "qemuVirtRootTaskCNodeId",
+            "qemuVirtRootTaskTcbId",
+            "qemuVirtRootTaskVSpaceId",
+            "qemuVirtUntrustedTcbId",
+            "qemuVirtUntrustedThread",
+            "qemuVirt_deploymentLabeling_separatedThreads",
+            "rpi5InitialThread",
+            "startInitialThreads_preserves_declaredWitnessesInstalled",
+            "state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtDeploymentBootState_initialThreadsStarted",
+          "line": 345,
+          "called": [
+            "bootFromPlatformCheckedStartedFor_started",
+            "initialThreads",
+            "qemuVirtBoundPlatformConfig_boot",
+            "qemuVirt_initialThreads",
+            "state",
+            "threadStarted"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootAndInitialiseQemuVirt_qemuVirtPlatformConfigFor",
+          "line": 356,
+          "called": [
+            "MachineConfig",
+            "PlatformBinding.labeling",
+            "QemuVirtPlatform",
+            "bindPlatformConfig",
+            "bindPlatformConfig_qemuVirtPlatformConfigFor",
+            "bootAndInitialisePlatform_eq_checked_boot",
+            "bootAndInitialiseQemuVirt",
+            "bootAndInitialiseQemuVirt_eq",
+            "bootFromPlatformCheckedStartedFor",
+            "initialiseKernelLabelingContext",
+            "initialiseKernelState",
+            "pure",
+            "qemuVirtBoundPlatformConfig_boot",
+            "qemuVirtDeploymentBootState_witnessesInstalled",
+            "qemuVirtPlatformConfigFor",
+            "state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootAndInitialiseQemuVirtOrHalt_qemuVirtPlatformConfigFor",
+          "line": 370,
+          "called": [
+            "MachineConfig",
+            "PlatformBinding.labeling",
+            "QemuVirtPlatform",
+            "bootAndInitialiseQemuVirtOrHalt",
+            "bootAndInitialiseQemuVirt_qemuVirtPlatformConfigFor",
+            "initialiseKernelLabelingContext",
+            "initialiseKernelState",
+            "qemuVirtPlatformConfigFor",
+            "state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtDeploymentBootState_invariantBridge",
+          "line": 381,
+          "called": [
+            "PlatformBinding.declaredCores_nodup",
+            "apiInvariantBundle_frozen",
+            "bootToRuntime_invariantBridge_started",
+            "freeze",
+            "proofLayerInvariantBundle",
+            "qemuVirtBoundPlatformConfig_boot",
+            "qemuVirtDeploymentBootState",
+            "state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtPlatformConfigFromDtb_deployment_ok",
+          "line": 389,
+          "called": [
+            "PlatformConfig",
+            "config",
+            "none",
+            "qemuVirtInitialObjects",
+            "qemuVirtIrqTable",
+            "qemuVirtPlatformConfigFor",
+            "qemuVirtPlatformConfigFromDtb",
+            "qemuVirtPlatformConfigFromDtb_ok_eq_fromDeviceTree"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "qemuVirtDeploymentBootState_untypedInstalled",
+          "line": 398,
+          "called": [
+            "bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem",
+            "qemuVirtBoundPlatformConfig_idleBoot",
+            "qemuVirtDeployment_startInitialThreads",
+            "qemuVirtRootTaskUntyped",
+            "qemuVirtRootTaskUntypedId",
+            "startInitialThreads_objects_of_nonTcb",
+            "untypedEntry"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.QemuVirt.KernelMain",
+      "path": "SeLe4n/Platform/QemuVirt/KernelMain.lean",
+      "declaration_count": 5,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.QemuVirt",
+          "line": 28,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "kernelMain",
+          "line": 32,
+          "called": [
+            "bootAndInitialiseQemuVirtFromDtbOrHalt",
+            "none",
+            "qemuVirtInitialObjects",
+            "qemuVirtIrqTable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "kernelMain_refuses",
+          "line": 36,
+          "called": [
+            "DeviceTreeBootRefusal",
+            "bootAndInitialiseQemuVirtFromDtbOrHalt_refused",
+            "ffiFatalHaltAll",
+            "kernelMain",
+            "none",
+            "qemuVirtInitialObjects",
+            "qemuVirtIrqTable",
+            "qemuVirtPlatformConfigFromDtb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "kernelMain_installs",
+          "line": 45,
+          "called": [
+            "PlatformBinding.labeling",
+            "PlatformConfig",
+            "QemuVirtPlatform",
+            "bootAndInitialiseQemuVirtFromDtbOrHalt_accepted",
+            "bootAndInitialiseQemuVirtOrHalt_qemuVirtPlatformConfigFor",
+            "config",
+            "extendBootRamMap",
+            "initialiseKernelLabelingContext",
+            "initialiseKernelState",
+            "kernelMain",
+            "none",
+            "qemuVirtBootRamExtensions",
+            "qemuVirtInitialObjects",
+            "qemuVirtIrqTable",
+            "qemuVirtPlatformConfigFromDtb",
+            "qemuVirtPlatformConfigFromDtb_deployment_ok",
+            "state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "kernelMain_installs_invariantBundle",
+          "line": 60,
+          "called": [
+            "proofLayerInvariantBundle",
+            "state"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Platform.RPi5.Board",
       "path": "SeLe4n/Platform/RPi5/Board.lean",
       "declaration_count": 104,
@@ -293632,7 +294997,7 @@
         {
           "kind": "def",
           "name": "insertIdentity",
-          "line": 161,
+          "line": 165,
           "called": [
             "PAddr",
             "PagePermissions",
@@ -293646,7 +295011,7 @@
         {
           "kind": "def",
           "name": "emptyBootRoot",
-          "line": 167,
+          "line": 172,
           "called": [
             "RHTable.empty",
             "VSpaceRoot",
@@ -293656,7 +295021,7 @@
         {
           "kind": "def",
           "name": "rpi5BootVSpaceRoot",
-          "line": 177,
+          "line": 182,
           "called": [
             "VSpaceRoot",
             "emptyBootRoot",
@@ -293675,7 +295040,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_asid",
-          "line": 187,
+          "line": 192,
           "called": [
             "ofNat"
           ]
@@ -293683,7 +295048,7 @@
         {
           "kind": "def",
           "name": "VSpaceRootWxCompliant",
-          "line": 198,
+          "line": 203,
           "called": [
             "VSpaceRoot",
             "fold",
@@ -293693,7 +295058,7 @@
         {
           "kind": "def",
           "name": "VSpaceRootPaddrBounded",
-          "line": 207,
+          "line": 212,
           "called": [
             "VSpaceRoot",
             "fold",
@@ -293703,7 +295068,7 @@
         {
           "kind": "def",
           "name": "VSpaceRootVaddrCanonical",
-          "line": 227,
+          "line": 232,
           "called": [
             "VSpaceRoot",
             "fold",
@@ -293713,7 +295078,7 @@
         {
           "kind": "def",
           "name": "VSpaceRootWellFormed",
-          "line": 245,
+          "line": 250,
           "called": [
             "VSpaceRoot",
             "VSpaceRootPaddrBounded",
@@ -293726,7 +295091,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_wxCompliant",
-          "line": 260,
+          "line": 265,
           "called": [
             "VSpaceRootWxCompliant",
             "rpi5BootVSpaceRoot"
@@ -293735,7 +295100,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_paddrBounded",
-          "line": 273,
+          "line": 278,
           "called": [
             "VSpaceRootPaddrBounded",
             "rpi5BootVSpaceRoot"
@@ -293744,7 +295109,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_vaddrCanonical",
-          "line": 285,
+          "line": 290,
           "called": [
             "VSpaceRootVaddrCanonical",
             "rpi5BootVSpaceRoot"
@@ -293753,7 +295118,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_wellFormed",
-          "line": 292,
+          "line": 297,
           "called": [
             "VSpaceRootWellFormed",
             "maxAsidValue",
@@ -293768,7 +295133,7 @@
         {
           "kind": "def",
           "name": "bootSafeVSpaceRoot",
-          "line": 317,
+          "line": 322,
           "called": [
             "VSpaceRoot",
             "VSpaceRootWellFormed"
@@ -293777,7 +295142,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_bootSafe",
-          "line": 322,
+          "line": 327,
           "called": [
             "bootSafeVSpaceRoot",
             "rpi5BootVSpaceRoot",
@@ -293787,7 +295152,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_admits_bootSafe",
-          "line": 338,
+          "line": 343,
           "called": [
             "bootSafeVSpaceRoot",
             "ofNat",
@@ -293800,7 +295165,7 @@
         {
           "kind": "def",
           "name": "bootSafeVSpaceRootCheck",
-          "line": 372,
+          "line": 377,
           "called": [
             "VSpaceRoot",
             "fold",
@@ -293814,7 +295179,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeVSpaceRootCheck_iff",
-          "line": 382,
+          "line": 387,
           "called": [
             "VSpaceRoot",
             "VSpaceRootPaddrBounded",
@@ -293828,7 +295193,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_bootSafeCheck",
-          "line": 391,
+          "line": 396,
           "called": [
             "bootSafeVSpaceRootCheck",
             "bootSafeVSpaceRootCheck_iff",
@@ -293839,7 +295204,7 @@
         {
           "kind": "def",
           "name": "bootSafeUserVSpaceRoot",
-          "line": 419,
+          "line": 424,
           "called": [
             "VSpaceRoot",
             "maxAsidValue",
@@ -293849,7 +295214,7 @@
         {
           "kind": "def",
           "name": "bootSafeUserVSpaceRootCheck",
-          "line": 431,
+          "line": 436,
           "called": [
             "VSpaceRoot",
             "isEmpty",
@@ -293860,7 +295225,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeUserVSpaceRootCheck_iff",
-          "line": 436,
+          "line": 441,
           "called": [
             "VSpaceRoot",
             "bootSafeUserVSpaceRoot",
@@ -293870,7 +295235,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_not_bootSafeUser",
-          "line": 444,
+          "line": 449,
           "called": [
             "bootSafeUserVSpaceRootCheck",
             "rpi5BootVSpaceRoot",
@@ -293880,7 +295245,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_mappings_invExt",
-          "line": 460,
+          "line": 465,
           "called": [
             "RHTable.empty_invExt",
             "RHTable.insert_preserves_invExt",
@@ -293893,7 +295258,7 @@
         {
           "kind": "def",
           "name": "bootVSpaceRootMappingsSafe",
-          "line": 488,
+          "line": 493,
           "called": [
             "PAddr",
             "PagePermissions",
@@ -293907,7 +295272,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeVSpaceRoot_mappingsSafe",
-          "line": 497,
+          "line": 502,
           "called": [
             "PAddr",
             "PagePermissions",
@@ -293925,7 +295290,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeUserVSpaceRoot_mappingsSafe",
-          "line": 514,
+          "line": 519,
           "called": [
             "RHTable.get",
             "RHTable_getElem",
@@ -297912,7 +299277,7 @@
     {
       "module": "SeLe4n.Testing.BootEntryContract",
       "path": "SeLe4n/Testing/BootEntryContract.lean",
-      "declaration_count": 29,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
@@ -297936,8 +299301,58 @@
         },
         {
           "kind": "def",
+          "name": "qemuVirtBootEntrySymbol",
+          "line": 90,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtApprovedBootCall",
+          "line": 94,
+          "called": [
+            "bootAndInitialiseQemuVirtFromDtbOrHalt"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "BootEntrySpec",
+          "line": 103,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "rpi5BootEntry",
+          "line": 110,
+          "called": [
+            "BootEntrySpec",
+            "approvedBootCall",
+            "bootEntrySymbol"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirtBootEntry",
+          "line": 113,
+          "called": [
+            "BootEntrySpec",
+            "qemuVirtApprovedBootCall",
+            "qemuVirtBootEntrySymbol"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootEntries",
+          "line": 116,
+          "called": [
+            "BootEntrySpec",
+            "qemuVirtBootEntry",
+            "rpi5BootEntry"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "declarationValue",
-          "line": 91,
+          "line": 123,
           "called": [
             "bind",
             "value"
@@ -297946,9 +299361,8 @@
         {
           "kind": "def",
           "name": "isApprovedBootApplication",
-          "line": 165,
+          "line": 197,
           "called": [
-            "approvedBootCall",
             "none",
             "pure",
             "size",
@@ -297958,7 +299372,7 @@
         {
           "kind": "def",
           "name": "expectedBootEntryType",
-          "line": 191,
+          "line": 223,
           "called": [
             "default"
           ]
@@ -297966,9 +299380,9 @@
         {
           "kind": "def",
           "name": "bootEntryContractViolations",
-          "line": 195,
+          "line": 227,
           "called": [
-            "approvedBootCall",
+            "BootEntrySpec",
             "boot",
             "declarationValue",
             "expectedBootEntryType",
@@ -297983,15 +299397,13 @@
         {
           "kind": "def",
           "name": "bootEntryDeclarations",
-          "line": 224,
-          "called": [
-            "bootEntrySymbol"
-          ]
+          "line": 256,
+          "called": []
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessBootAlias",
-          "line": 250,
+          "line": 282,
           "called": [
             "BCM2712Config",
             "BootVSpaceRootEntry",
@@ -298003,7 +299415,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessCompliant",
-          "line": 257,
+          "line": 289,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "none"
@@ -298012,7 +299424,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessSequenced",
-          "line": 266,
+          "line": 298,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "getKernelState",
@@ -298022,7 +299434,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessLetBoundConfig",
-          "line": 273,
+          "line": 305,
           "called": [
             "IrqEntry",
             "bootAndInitialiseRPi5FromDtbOrHalt",
@@ -298032,7 +299444,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessAliasedBoot",
-          "line": 282,
+          "line": 314,
           "called": [
             "bootEntryWitnessBootAlias",
             "none"
@@ -298041,7 +299453,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessFixedBlob",
-          "line": 289,
+          "line": 321,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "empty",
@@ -298051,7 +299463,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessEditedBlob",
-          "line": 295,
+          "line": 327,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "none"
@@ -298060,7 +299472,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessRetiredCall",
-          "line": 301,
+          "line": 333,
           "called": [
             "bootAndInitialiseRPi5OrHalt"
           ]
@@ -298068,7 +299480,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessConditional",
-          "line": 307,
+          "line": 339,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "none",
@@ -298079,7 +299491,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessHaltedFirst",
-          "line": 314,
+          "line": 346,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "ffiFatalHaltAll",
@@ -298089,7 +299501,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessAliasHaltedFirst",
-          "line": 320,
+          "line": 352,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "fatalHaltAll",
@@ -298099,7 +299511,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessLetBoundHalt",
-          "line": 329,
+          "line": 361,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "ffiFatalHaltAll",
@@ -298109,13 +299521,13 @@
         {
           "kind": "def",
           "name": "BootEntryBogusMonad",
-          "line": 338,
+          "line": 370,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:340>",
-          "line": 340,
+          "name": "<anonymous:instance:372>",
+          "line": 372,
           "called": [
             "BootEntryBogusMonad",
             "bind",
@@ -298125,7 +299537,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessBogusBind",
-          "line": 346,
+          "line": 378,
           "called": [
             "BootEntryBogusMonad",
             "bind",
@@ -298137,7 +299549,7 @@
         {
           "kind": "opaque",
           "name": "bootEntryWitnessOpaqueInstaller",
-          "line": 354,
+          "line": 386,
           "called": [
             "SystemState",
             "initialiseKernelState"
@@ -298146,7 +299558,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessOpaqueBypass",
-          "line": 359,
+          "line": 391,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "bootEntryWitnessOpaqueInstaller",
@@ -298157,7 +299569,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessWrongType",
-          "line": 366,
+          "line": 398,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "none"
@@ -298166,7 +299578,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessBypass",
-          "line": 372,
+          "line": 404,
           "called": [
             "bootAndInitialiseRPi5",
             "config",
@@ -298180,7 +299592,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessSideInstall",
-          "line": 381,
+          "line": 413,
           "called": [
             "bootAndInitialiseRPi5FromDtbOrHalt",
             "default",
@@ -298191,13 +299603,30 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessUnbooted",
-          "line": 386,
+          "line": 418,
           "called": [
-            "approvedBootCall",
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootEntryWitnessQemuVirtCompliant",
+          "line": 425,
+          "called": [
+            "bootAndInitialiseQemuVirtFromDtbOrHalt",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootEntryWitnessQemuVirtFixedBlob",
+          "line": 431,
+          "called": [
             "boot",
+            "bootAndInitialiseQemuVirtFromDtbOrHalt",
+            "bootEntries",
             "bootEntryContractViolations",
             "bootEntryDeclarations",
-            "bootEntrySymbol",
             "bootEntryWitnessAliasHaltedFirst",
             "bootEntryWitnessAliasedBoot",
             "bootEntryWitnessBogusBind",
@@ -298210,15 +299639,19 @@
             "bootEntryWitnessLetBoundConfig",
             "bootEntryWitnessLetBoundHalt",
             "bootEntryWitnessOpaqueBypass",
+            "bootEntryWitnessQemuVirtCompliant",
             "bootEntryWitnessRetiredCall",
             "bootEntryWitnessSequenced",
             "bootEntryWitnessSideInstall",
+            "bootEntryWitnessUnbooted",
             "bootEntryWitnessWrongType",
             "contains",
+            "empty",
             "isEmpty",
-            "kernelMain",
             "links",
-            "pure"
+            "none",
+            "qemuVirtBootEntry",
+            "rpi5BootEntry"
           ]
         }
       ]
@@ -298416,7 +299849,7 @@
         {
           "kind": "def",
           "name": "bracketedSeams",
-          "line": 239,
+          "line": 246,
           "called": [
             "none"
           ]
@@ -298424,7 +299857,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 257,
+          "line": 264,
           "called": [
             "contains",
             "filter",
@@ -298438,7 +299871,7 @@
         {
           "kind": "def",
           "name": "censusWitnessBracketed",
-          "line": 281,
+          "line": 288,
           "called": [
             "bootCoreId",
             "modifyGetKernelState",
@@ -298451,7 +299884,7 @@
         {
           "kind": "def",
           "name": "censusWitnessBareCommit",
-          "line": 292,
+          "line": 299,
           "called": [
             "modifyGetKernelState",
             "pure",
@@ -298461,7 +299894,7 @@
         {
           "kind": "def",
           "name": "censusWitnessCommitHelper",
-          "line": 298,
+          "line": 305,
           "called": [
             "SystemState",
             "initialiseKernelState",
@@ -298471,7 +299904,7 @@
         {
           "kind": "def",
           "name": "censusWitnessIndirectCommit",
-          "line": 301,
+          "line": 308,
           "called": [
             "censusWitnessCommitHelper",
             "default"
@@ -298480,7 +299913,7 @@
         {
           "kind": "def",
           "name": "censusWitnessNoCommit",
-          "line": 305,
+          "line": 312,
           "called": [
             "getKernelState",
             "pure"
@@ -298489,13 +299922,13 @@
         {
           "kind": "def",
           "name": "exportResultTypes",
-          "line": 327,
+          "line": 334,
           "called": []
         },
         {
           "kind": "def",
           "name": "exportResultViolation",
-          "line": 332,
+          "line": 339,
           "called": [
             "admissible",
             "contains",
@@ -298509,7 +299942,7 @@
         {
           "kind": "def",
           "name": "exportResultWitnessUnit",
-          "line": 358,
+          "line": 365,
           "called": [
             "pure"
           ]
@@ -298517,7 +299950,7 @@
         {
           "kind": "def",
           "name": "exportResultWitnessScalar",
-          "line": 359,
+          "line": 366,
           "called": [
             "pure"
           ]
@@ -298525,7 +299958,7 @@
         {
           "kind": "def",
           "name": "exportResultWitnessBoxed",
-          "line": 360,
+          "line": 367,
           "called": [
             "pure"
           ]
@@ -298533,19 +299966,19 @@
         {
           "kind": "def",
           "name": "exportResultWitnessPure",
-          "line": 361,
+          "line": 368,
           "called": []
         },
         {
           "kind": "def",
           "name": "exportResultWitnessPureBoxed",
-          "line": 362,
+          "line": 369,
           "called": []
         },
         {
           "kind": "def",
           "name": "exportResultWitnessIO",
-          "line": 363,
+          "line": 370,
           "called": [
             "bracketForms",
             "bracketedSeams",
@@ -300331,6 +301764,8 @@
             "propagatePipChainCrossCoreState",
             "propagatePriorityInheritance",
             "purgedAndRestored",
+            "qemuVirtDeploymentBootState",
+            "qemuVirtDeploymentIdleState",
             "readOnlyInstance",
             "registerInterface",
             "registerService",
@@ -300437,7 +301872,7 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
-          "line": 1237,
+          "line": 1239,
           "called": [
             "_cstage1.censusWitnessNestedTransformer",
             "_flat_ctor",
@@ -300471,7 +301906,7 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitions",
-          "line": 1280,
+          "line": 1282,
           "called": [
             "nonExecutedTransitionsPlain",
             "nonExecutedTransitionsPrivate"
@@ -300480,7 +301915,7 @@
         {
           "kind": "def",
           "name": "standsBesideLive",
-          "line": 1306,
+          "line": 1308,
           "called": [
             "cancelBoundDonationOnCore",
             "cancelDonationOnCore",
@@ -300493,7 +301928,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 1330,
+          "line": 1332,
           "called": [
             "contains",
             "insert",
@@ -300505,7 +301940,7 @@
         {
           "kind": "def",
           "name": "pinSides",
-          "line": 1363,
+          "line": 1365,
           "called": [
             "conclusionOf",
             "none"
@@ -300514,7 +301949,7 @@
         {
           "kind": "def",
           "name": "pinRelatesPrograms",
-          "line": 1395,
+          "line": 1397,
           "called": [
             "contains",
             "none",
@@ -300524,7 +301959,7 @@
         {
           "kind": "def",
           "name": "pinViolations",
-          "line": 1408,
+          "line": 1410,
           "called": [
             "any",
             "contains",
@@ -300539,7 +301974,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
-          "line": 1448,
+          "line": 1450,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -300548,7 +301983,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
-          "line": 1456,
+          "line": 1458,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -300557,7 +301992,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
-          "line": 1463,
+          "line": 1465,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -300566,7 +302001,7 @@
         {
           "kind": "def",
           "name": "pinCheckWitnesses",
-          "line": 1468,
+          "line": 1470,
           "called": [
             "pinWitnessBothOnOneSide",
             "pinWitnessConjunctionOfReflexivity",
@@ -300576,7 +302011,7 @@
         {
           "kind": "def",
           "name": "pinCheckWitnessViolations",
-          "line": 1480,
+          "line": 1482,
           "called": [
             "SystemState",
             "cancelIpcBlockingOnCore",
@@ -303780,24 +305215,24 @@
     {
       "module": "tests.Ak9PlatformSuite",
       "path": "tests/Ak9PlatformSuite.lean",
-      "declaration_count": 164,
+      "declaration_count": 168,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.Ak9PlatformSuite",
-          "line": 54,
+          "line": 55,
           "called": []
         },
         {
           "kind": "def",
           "name": "tag",
-          "line": 56,
+          "line": 57,
           "called": []
         },
         {
           "kind": "def",
           "name": "expect",
-          "line": 58,
+          "line": 59,
           "called": [
             "expectCond",
             "tag"
@@ -303806,7 +305241,7 @@
         {
           "kind": "def",
           "name": "ak9a_01_mmioRead32_rejects_unaligned",
-          "line": 66,
+          "line": 67,
           "called": [
             "PAddr",
             "SystemState",
@@ -303822,7 +305257,7 @@
         {
           "kind": "def",
           "name": "ak9a_02_mmioRead64_rejects_unaligned",
-          "line": 77,
+          "line": 78,
           "called": [
             "PAddr",
             "SystemState",
@@ -303838,7 +305273,7 @@
         {
           "kind": "def",
           "name": "ak9a_03_mmioRead32_rejects_ram",
-          "line": 86,
+          "line": 87,
           "called": [
             "PAddr",
             "SystemState",
@@ -303853,7 +305288,7 @@
         {
           "kind": "def",
           "name": "ak9a_04_mmioRead32_accepts_gic",
-          "line": 96,
+          "line": 97,
           "called": [
             "PAddr",
             "SystemState",
@@ -303868,7 +305303,7 @@
         {
           "kind": "def",
           "name": "ak9d_01_range_within_gic_dist",
-          "line": 109,
+          "line": 110,
           "called": [
             "expect",
             "gicDistributorBase",
@@ -303878,7 +305313,7 @@
         {
           "kind": "def",
           "name": "ak9d_02_range_crosses_boundary",
-          "line": 118,
+          "line": 119,
           "called": [
             "PAddr",
             "addr",
@@ -303892,7 +305327,7 @@
         {
           "kind": "def",
           "name": "ak9b_01_sim_objectStoreEmptyAtBoot",
-          "line": 129,
+          "line": 130,
           "called": [
             "expect",
             "simBootContract_objectStoreEmptyAtBoot_holds"
@@ -303901,7 +305336,7 @@
         {
           "kind": "def",
           "name": "ak9b_02_rpi5_objectStoreEmptyAtBoot",
-          "line": 136,
+          "line": 137,
           "called": [
             "expect",
             "rpi5BootContract_objectStoreEmptyAtBoot_holds"
@@ -303910,7 +305345,7 @@
         {
           "kind": "def",
           "name": "ak9c_01_empty_irqs_accepted",
-          "line": 146,
+          "line": 147,
           "called": [
             "PlatformConfig",
             "expect",
@@ -303920,7 +305355,7 @@
         {
           "kind": "def",
           "name": "ak9c_02_missing_handler_rejected",
-          "line": 152,
+          "line": 153,
           "called": [
             "PlatformConfig",
             "expect",
@@ -303932,7 +305367,7 @@
         {
           "kind": "def",
           "name": "minimalNotif",
-          "line": 160,
+          "line": 161,
           "called": [
             "Notification",
             "empty",
@@ -303942,7 +305377,7 @@
         {
           "kind": "def",
           "name": "minimalTcb",
-          "line": 163,
+          "line": 164,
           "called": [
             "TCB",
             "ThreadId",
@@ -303952,7 +305387,7 @@
         {
           "kind": "def",
           "name": "mkNotifObjectEntry",
-          "line": 171,
+          "line": 172,
           "called": [
             "ObjId",
             "ObjectEntry",
@@ -303962,7 +305397,7 @@
         {
           "kind": "def",
           "name": "mkTcbObjectEntry",
-          "line": 177,
+          "line": 178,
           "called": [
             "ObjId",
             "ObjectEntry",
@@ -303973,7 +305408,7 @@
         {
           "kind": "def",
           "name": "ak9c_03_non_notification_rejected",
-          "line": 184,
+          "line": 185,
           "called": [
             "ObjId",
             "PlatformConfig",
@@ -303987,7 +305422,7 @@
         {
           "kind": "def",
           "name": "ak9c_04_notification_accepted",
-          "line": 193,
+          "line": 194,
           "called": [
             "ObjId",
             "PlatformConfig",
@@ -304001,7 +305436,7 @@
         {
           "kind": "def",
           "name": "ak9f_01_classify_empty_map",
-          "line": 207,
+          "line": 208,
           "called": [
             "FdtMemoryRegion",
             "classifyMemoryRegionChecked",
@@ -304013,7 +305448,7 @@
         {
           "kind": "def",
           "name": "ak9f_02_classify_unmapped",
-          "line": 213,
+          "line": 214,
           "called": [
             "FdtMemoryRegion",
             "MemoryRegion",
@@ -304027,7 +305462,7 @@
         {
           "kind": "def",
           "name": "ak9f_03_classify_mapped",
-          "line": 221,
+          "line": 222,
           "called": [
             "FdtMemoryRegion",
             "MemoryRegion",
@@ -304040,7 +305475,7 @@
         {
           "kind": "def",
           "name": "ak9f_04_applyMachineConfigChecked_rejects_zero_pa",
-          "line": 230,
+          "line": 231,
           "called": [
             "IntermediateState",
             "MachineConfig",
@@ -304053,7 +305488,7 @@
         {
           "kind": "def",
           "name": "ak9f_05_applyMachineConfigChecked_rejects_pa_over_52",
-          "line": 238,
+          "line": 239,
           "called": [
             "IntermediateState",
             "MachineConfig",
@@ -304066,7 +305501,7 @@
         {
           "kind": "def",
           "name": "ak9f_06_applyMachineConfigChecked_accepts_default",
-          "line": 246,
+          "line": 247,
           "called": [
             "IntermediateState",
             "applyMachineConfigChecked",
@@ -304078,7 +305513,7 @@
         {
           "kind": "def",
           "name": "ak9g_01_enables_interrupts",
-          "line": 257,
+          "line": 258,
           "called": [
             "bootEnableInterruptsOp",
             "bootFromPlatform",
@@ -304088,7 +305523,7 @@
         {
           "kind": "def",
           "name": "ak9g_02_default_disabled",
-          "line": 264,
+          "line": 265,
           "called": [
             "bootFromPlatform",
             "expect"
@@ -304097,7 +305532,7 @@
         {
           "kind": "def",
           "name": "ak9g_03_withInterrupts_enables",
-          "line": 270,
+          "line": 271,
           "called": [
             "bootFromPlatformWithInterrupts",
             "expect"
@@ -304106,7 +305541,7 @@
         {
           "kind": "def",
           "name": "ak9ce_01_checked_boot_rejects_bad_irq",
-          "line": 282,
+          "line": 283,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -304118,7 +305553,7 @@
         {
           "kind": "def",
           "name": "ak9ce_02_checked_boot_rejects_tcb_handler",
-          "line": 293,
+          "line": 294,
           "called": [
             "ObjId",
             "PlatformConfig",
@@ -304132,7 +305567,7 @@
         {
           "kind": "def",
           "name": "ak9fe_01_checked_boot_rejects_pa_over_52",
-          "line": 305,
+          "line": 306,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -304143,7 +305578,7 @@
         {
           "kind": "def",
           "name": "ak9fe_02_checked_boot_rejects_malformed_machine_config",
-          "line": 316,
+          "line": 317,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -304154,7 +305589,7 @@
         {
           "kind": "def",
           "name": "ak9ge_01_checked_boot_enables_interrupts",
-          "line": 327,
+          "line": 328,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -304164,7 +305599,7 @@
         {
           "kind": "def",
           "name": "ak9a_05_mmioReadByte_accepts_uart",
-          "line": 340,
+          "line": 341,
           "called": [
             "PAddr",
             "SystemState",
@@ -304179,7 +305614,7 @@
         {
           "kind": "def",
           "name": "ak9a_06_mmioRead_alias_matches_byte",
-          "line": 352,
+          "line": 353,
           "called": [
             "PAddr",
             "SystemState",
@@ -304197,7 +305632,7 @@
         {
           "kind": "def",
           "name": "ak9a_07_mmioRead32_positive_success",
-          "line": 384,
+          "line": 385,
           "called": [
             "PAddr",
             "SystemState",
@@ -304212,7 +305647,7 @@
         {
           "kind": "def",
           "name": "ak9a_08_mmioRead64_positive_success",
-          "line": 393,
+          "line": 394,
           "called": [
             "PAddr",
             "SystemState",
@@ -304227,7 +305662,7 @@
         {
           "kind": "def",
           "name": "ak9h_01_readCStringChecked_rejects_oob",
-          "line": 406,
+          "line": 407,
           "called": [
             "expect",
             "readCStringChecked"
@@ -304236,7 +305671,7 @@
         {
           "kind": "def",
           "name": "ak9h_02_readCStringChecked_rejects_fuel_zero",
-          "line": 415,
+          "line": 416,
           "called": [
             "expect",
             "readCStringChecked"
@@ -304245,7 +305680,7 @@
         {
           "kind": "def",
           "name": "ak9h_03_readCStringChecked_ok",
-          "line": 424,
+          "line": 425,
           "called": [
             "expect",
             "readCStringChecked"
@@ -304254,7 +305689,7 @@
         {
           "kind": "def",
           "name": "ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated",
-          "line": 433,
+          "line": 434,
           "called": [
             "expect",
             "readCStringChecked"
@@ -304263,7 +305698,7 @@
         {
           "kind": "def",
           "name": "an7d2_01_rpi5BootVSpaceRoot_wellFormed",
-          "line": 449,
+          "line": 450,
           "called": [
             "expect",
             "size",
@@ -304273,7 +305708,7 @@
         {
           "kind": "def",
           "name": "an7d2_02_rpi5BootVSpaceRoot_wxCompliant",
-          "line": 470,
+          "line": 471,
           "called": [
             "expect",
             "wxCompliant"
@@ -304282,7 +305717,7 @@
         {
           "kind": "def",
           "name": "an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions",
-          "line": 496,
+          "line": 497,
           "called": [
             "VAddr",
             "expect",
@@ -304296,7 +305731,7 @@
         {
           "kind": "def",
           "name": "an7d2_04_rpi5BootVSpaceRoot_paddrBounded",
-          "line": 524,
+          "line": 525,
           "called": [
             "expect",
             "toNat"
@@ -304305,7 +305740,7 @@
         {
           "kind": "def",
           "name": "mkRegProperty",
-          "line": 547,
+          "line": 548,
           "called": [
             "size"
           ]
@@ -304313,7 +305748,7 @@
         {
           "kind": "def",
           "name": "mkPeripheral",
-          "line": 569,
+          "line": 570,
           "called": [
             "FdtNode",
             "mkRegProperty",
@@ -304323,7 +305758,7 @@
         {
           "kind": "def",
           "name": "mkRangesProperty",
-          "line": 579,
+          "line": 580,
           "called": [
             "length",
             "mkRegProperty"
@@ -304332,13 +305767,13 @@
         {
           "kind": "def",
           "name": "mkCellProperty",
-          "line": 584,
+          "line": 585,
           "called": []
         },
         {
           "kind": "def",
           "name": "mkBus",
-          "line": 599,
+          "line": 600,
           "called": [
             "FdtNode",
             "mkCellProperty",
@@ -304349,7 +305784,7 @@
         {
           "kind": "def",
           "name": "withStatus",
-          "line": 611,
+          "line": 612,
           "called": [
             "FdtNode",
             "ofNat",
@@ -304360,7 +305795,7 @@
         {
           "kind": "def",
           "name": "an7d5_01_extractPeripherals_depth3_discovery",
-          "line": 631,
+          "line": 632,
           "called": [
             "FdtNode",
             "any",
@@ -304376,7 +305811,7 @@
         {
           "kind": "def",
           "name": "review5_bus_without_ranges_hides_its_children",
-          "line": 672,
+          "line": 673,
           "called": [
             "FdtNode",
             "any",
@@ -304389,7 +305824,7 @@
         {
           "kind": "def",
           "name": "review5_empty_ranges_is_the_identity",
-          "line": 688,
+          "line": 689,
           "called": [
             "FdtNode",
             "any",
@@ -304403,7 +305838,7 @@
         {
           "kind": "def",
           "name": "review7_partial_ranges_tuple_maps_nothing",
-          "line": 708,
+          "line": 709,
           "called": [
             "FdtNode",
             "any",
@@ -304418,7 +305853,7 @@
         {
           "kind": "def",
           "name": "review5_untranslatable_address_is_refused",
-          "line": 729,
+          "line": 730,
           "called": [
             "FdtNode",
             "any",
@@ -304432,7 +305867,7 @@
         {
           "kind": "def",
           "name": "review5_disabled_peripheral_is_not_discovered",
-          "line": 744,
+          "line": 745,
           "called": [
             "any",
             "expect",
@@ -304444,7 +305879,7 @@
         {
           "kind": "def",
           "name": "an7d5_02_extractPeripherals_zero_fuel_collapses",
-          "line": 765,
+          "line": 766,
           "called": [
             "FdtNode",
             "expect",
@@ -304456,7 +305891,7 @@
         {
           "kind": "def",
           "name": "an7d5_03_extractPeripherals_skips_incomplete_nodes",
-          "line": 779,
+          "line": 780,
           "called": [
             "FdtNode",
             "expect",
@@ -304467,7 +305902,7 @@
         {
           "kind": "def",
           "name": "an7d5_04_extractPeripherals_excludes_reserved_names",
-          "line": 789,
+          "line": 790,
           "called": [
             "FdtNode",
             "any",
@@ -304482,13 +305917,13 @@
         {
           "kind": "def",
           "name": "be32",
-          "line": 827,
+          "line": 828,
           "called": []
         },
         {
           "kind": "def",
           "name": "be64",
-          "line": 834,
+          "line": 835,
           "called": [
             "be32"
           ]
@@ -304496,7 +305931,7 @@
         {
           "kind": "def",
           "name": "fdtString",
-          "line": 838,
+          "line": 839,
           "called": [
             "size"
           ]
@@ -304504,7 +305939,7 @@
         {
           "kind": "def",
           "name": "fdtProp",
-          "line": 845,
+          "line": 846,
           "called": [
             "be32",
             "size",
@@ -304514,7 +305949,7 @@
         {
           "kind": "def",
           "name": "fdtBeginNode",
-          "line": 850,
+          "line": 851,
           "called": [
             "be32",
             "fdtString"
@@ -304523,14 +305958,6 @@
         {
           "kind": "def",
           "name": "fdtEndNodeTok",
-          "line": 853,
-          "called": [
-            "be32"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "fdtEndTok",
           "line": 854,
           "called": [
             "be32"
@@ -304538,8 +305965,16 @@
         },
         {
           "kind": "def",
+          "name": "fdtEndTok",
+          "line": 855,
+          "called": [
+            "be32"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "stringsBlock",
-          "line": 857,
+          "line": 858,
           "called": [
             "fdtString"
           ]
@@ -304547,21 +305982,12 @@
         {
           "kind": "def",
           "name": "regNameOff",
-          "line": 861,
+          "line": 862,
           "called": []
         },
         {
           "kind": "def",
           "name": "deviceTypeNameOff",
-          "line": 862,
-          "called": [
-            "fdtString",
-            "size"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "compatibleNameOff",
           "line": 863,
           "called": [
             "fdtString",
@@ -304570,8 +305996,17 @@
         },
         {
           "kind": "def",
+          "name": "compatibleNameOff",
+          "line": 864,
+          "called": [
+            "fdtString",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "statusNameOff",
-          "line": 867,
+          "line": 868,
           "called": [
             "fdtString",
             "size"
@@ -304580,7 +306015,7 @@
         {
           "kind": "def",
           "name": "addressCellsNameOff",
-          "line": 870,
+          "line": 871,
           "called": [
             "fdtString",
             "size",
@@ -304590,7 +306025,7 @@
         {
           "kind": "def",
           "name": "sizeCellsNameOff",
-          "line": 871,
+          "line": 872,
           "called": [
             "addressCellsNameOff",
             "fdtString",
@@ -304600,7 +306035,7 @@
         {
           "kind": "def",
           "name": "rootCellProperties",
-          "line": 881,
+          "line": 882,
           "called": [
             "addressCellsNameOff",
             "be32",
@@ -304611,7 +306046,7 @@
         {
           "kind": "def",
           "name": "peripheralNode",
-          "line": 886,
+          "line": 887,
           "called": [
             "be64",
             "compatibleNameOff",
@@ -304626,7 +306061,7 @@
         {
           "kind": "def",
           "name": "emptyRsvBlock",
-          "line": 901,
+          "line": 902,
           "called": [
             "be64"
           ]
@@ -304634,7 +306069,7 @@
         {
           "kind": "def",
           "name": "assembleDtb",
-          "line": 905,
+          "line": 906,
           "called": [
             "be32",
             "emptyRsvBlock",
@@ -304645,7 +306080,7 @@
         {
           "kind": "def",
           "name": "boardDtbRegions",
-          "line": 920,
+          "line": 921,
           "called": [
             "assembleDtb",
             "be64",
@@ -304663,7 +306098,7 @@
         {
           "kind": "def",
           "name": "boardDtb",
-          "line": 940,
+          "line": 941,
           "called": [
             "boardDtbRegions"
           ]
@@ -304671,7 +306106,7 @@
         {
           "kind": "def",
           "name": "assembleDtbReserving",
-          "line": 951,
+          "line": 952,
           "called": [
             "be32",
             "be64",
@@ -304684,7 +306119,7 @@
         {
           "kind": "def",
           "name": "assembleDtbWithoutRsvBlock",
-          "line": 973,
+          "line": 974,
           "called": [
             "be32",
             "size",
@@ -304694,7 +306129,7 @@
         {
           "kind": "def",
           "name": "assembleDtbAtOffsets",
-          "line": 991,
+          "line": 992,
           "called": [
             "be32",
             "emptyRsvBlock",
@@ -304705,7 +306140,7 @@
         {
           "kind": "def",
           "name": "assembleDtbVersioned",
-          "line": 1004,
+          "line": 1005,
           "called": [
             "be32",
             "emptyRsvBlock",
@@ -304716,7 +306151,7 @@
         {
           "kind": "def",
           "name": "assembleDtbDeclaring",
-          "line": 1022,
+          "line": 1023,
           "called": [
             "be32",
             "emptyRsvBlock",
@@ -304727,7 +306162,7 @@
         {
           "kind": "def",
           "name": "canonicalStructBlock",
-          "line": 1035,
+          "line": 1036,
           "called": [
             "be64",
             "deviceTypeNameOff",
@@ -304744,7 +306179,7 @@
         {
           "kind": "def",
           "name": "terminatorOutsideStructBlockDtb",
-          "line": 1056,
+          "line": 1057,
           "called": [
             "assembleDtbDeclaring",
             "canonicalStructBlock",
@@ -304754,7 +306189,7 @@
         {
           "kind": "def",
           "name": "nameOutsideStringsBlockDtb",
-          "line": 1068,
+          "line": 1069,
           "called": [
             "assembleDtbDeclaring",
             "canonicalStructBlock",
@@ -304765,7 +306200,7 @@
         {
           "kind": "def",
           "name": "memoryNamedRootDtb",
-          "line": 1077,
+          "line": 1078,
           "called": [
             "assembleDtb",
             "be64",
@@ -304781,7 +306216,7 @@
         {
           "kind": "def",
           "name": "twoRootDtb",
-          "line": 1085,
+          "line": 1086,
           "called": [
             "assembleDtb",
             "be64",
@@ -304798,7 +306233,7 @@
         {
           "kind": "def",
           "name": "overlappingMemoryDtb",
-          "line": 1105,
+          "line": 1106,
           "called": [
             "boardDtbRegions"
           ]
@@ -304806,7 +306241,7 @@
         {
           "kind": "def",
           "name": "unterminatedBoardDtb",
-          "line": 1116,
+          "line": 1117,
           "called": [
             "assembleDtb",
             "be64",
@@ -304823,7 +306258,7 @@
         {
           "kind": "def",
           "name": "unknownTokenBoardDtb",
-          "line": 1130,
+          "line": 1131,
           "called": [
             "assembleDtb",
             "be32",
@@ -304841,7 +306276,7 @@
         {
           "kind": "def",
           "name": "boardDtbWithMemoryStatus",
-          "line": 1140,
+          "line": 1141,
           "called": [
             "assembleDtb",
             "be64",
@@ -304860,7 +306295,7 @@
         {
           "kind": "def",
           "name": "singleGicNodeBoardDtb",
-          "line": 1158,
+          "line": 1159,
           "called": [
             "assembleDtb",
             "be64",
@@ -304879,7 +306314,7 @@
         {
           "kind": "def",
           "name": "canonicalBodyWithMemory",
-          "line": 1175,
+          "line": 1176,
           "called": [
             "deviceTypeNameOff",
             "fdtBeginNode",
@@ -304895,7 +306330,7 @@
         {
           "kind": "def",
           "name": "headerReservedBoardDtb",
-          "line": 1188,
+          "line": 1189,
           "called": [
             "assembleDtbReserving",
             "be64",
@@ -304905,7 +306340,7 @@
         {
           "kind": "def",
           "name": "reservedMemoryNodeBoardDtb",
-          "line": 1194,
+          "line": 1195,
           "called": [
             "addressCellsNameOff",
             "assembleDtb",
@@ -304926,7 +306361,7 @@
         {
           "kind": "def",
           "name": "futureVersionBoardDtb",
-          "line": 1215,
+          "line": 1216,
           "called": [
             "assembleDtbReserving",
             "be64",
@@ -304936,7 +306371,7 @@
         {
           "kind": "def",
           "name": "latePropertyBoardDtb",
-          "line": 1221,
+          "line": 1222,
           "called": [
             "addressCellsNameOff",
             "assembleDtb",
@@ -304955,7 +306390,7 @@
         {
           "kind": "def",
           "name": "duplicateStatusBoardDtb",
-          "line": 1234,
+          "line": 1235,
           "called": [
             "assembleDtb",
             "be64",
@@ -304973,7 +306408,7 @@
         {
           "kind": "def",
           "name": "wrongDevicesAtRightWindowsDtb",
-          "line": 1251,
+          "line": 1252,
           "called": [
             "assembleDtb",
             "be64",
@@ -304991,7 +306426,7 @@
         {
           "kind": "def",
           "name": "twoMemoryNodeDtb",
-          "line": 1267,
+          "line": 1268,
           "called": [
             "assembleDtb",
             "be64",
@@ -305010,7 +306445,7 @@
         {
           "kind": "def",
           "name": "singleCellBoardDtb",
-          "line": 1285,
+          "line": 1286,
           "called": [
             "addressCellsNameOff",
             "assembleDtb",
@@ -305029,7 +306464,7 @@
         {
           "kind": "def",
           "name": "truncatedRegBoardDtb",
-          "line": 1301,
+          "line": 1302,
           "called": [
             "assembleDtb",
             "be64",
@@ -305046,7 +306481,7 @@
         {
           "kind": "def",
           "name": "emptyUnitAddressDtb",
-          "line": 1312,
+          "line": 1313,
           "called": [
             "assembleDtb",
             "be64",
@@ -305063,7 +306498,7 @@
         {
           "kind": "def",
           "name": "reservedMemoryOnlyDtb",
-          "line": 1323,
+          "line": 1324,
           "called": [
             "assembleDtb",
             "be64",
@@ -305080,7 +306515,7 @@
         {
           "kind": "def",
           "name": "boundMapOf",
-          "line": 1335,
+          "line": 1336,
           "called": [
             "MemoryRegion",
             "PlatformConfig",
@@ -305092,7 +306527,7 @@
         {
           "kind": "def",
           "name": "variantMap",
-          "line": 1339,
+          "line": 1340,
           "called": [
             "MemoryRegion",
             "rpi5MemoryMapForConfig"
@@ -305101,7 +306536,7 @@
         {
           "kind": "def",
           "name": "kernelEntryBoot",
-          "line": 1346,
+          "line": 1347,
           "called": [
             "IntermediateState",
             "PlatformBinding.declaredCores",
@@ -305119,7 +306554,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_01_fixture_blob_parses",
-          "line": 1359,
+          "line": 1360,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -305130,7 +306565,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_02_matching_board_accepted",
-          "line": 1372,
+          "line": 1373,
           "called": [
             "boardDtb",
             "config",
@@ -305144,7 +306579,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_03_short_ram_refused",
-          "line": 1393,
+          "line": 1394,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -305159,7 +306594,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_04_missing_mmio_refused",
-          "line": 1408,
+          "line": 1409,
           "called": [
             "boardDtb",
             "expect",
@@ -305170,7 +306605,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_05_unparseable_blob_refused",
-          "line": 1416,
+          "line": 1417,
           "called": [
             "expect",
             "none",
@@ -305180,7 +306615,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_06_coverage_is_refusable",
-          "line": 1425,
+          "line": 1426,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -305195,7 +306630,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_07_small_variants_bind_their_own_map",
-          "line": 1440,
+          "line": 1441,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -305209,7 +306644,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_08_canonical_board_binds_canonical_map",
-          "line": 1459,
+          "line": 1460,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -305222,7 +306657,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_09_eight_gib_two_banks",
-          "line": 1471,
+          "line": 1472,
           "called": [
             "boardDtbRegions",
             "boundMapOf",
@@ -305237,7 +306672,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_10_between_variants_binds_largest_covered",
-          "line": 1484,
+          "line": 1485,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -305251,7 +306686,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_11_foreign_base_refused",
-          "line": 1495,
+          "line": 1496,
           "called": [
             "boardDtbRegions",
             "expect",
@@ -305262,7 +306697,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_12_split_aperture_binds_canonical_map",
-          "line": 1504,
+          "line": 1505,
           "called": [
             "boardDtbRegions",
             "boundMapOf",
@@ -305276,7 +306711,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_13_direct_path_fallback_is_smallest",
-          "line": 1528,
+          "line": 1529,
           "called": [
             "PlatformConfig",
             "all",
@@ -305296,7 +306731,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_22_every_register_block_is_a_window",
-          "line": 1552,
+          "line": 1553,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -305311,7 +306746,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_23_extent_past_the_window_is_refused",
-          "line": 1572,
+          "line": 1573,
           "called": [
             "any",
             "expect",
@@ -305326,7 +306761,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_18_every_memory_node_contributes",
-          "line": 1601,
+          "line": 1602,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -305345,7 +306780,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_19_root_cell_widths_are_honoured",
-          "line": 1620,
+          "line": 1621,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -305360,7 +306795,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_20_partial_reg_pair_refused",
-          "line": 1632,
+          "line": 1633,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -305370,7 +306805,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_21_empty_unit_address_is_not_memory",
-          "line": 1639,
+          "line": 1640,
           "called": [
             "DeviceTree.fromDtbFull",
             "emptyUnitAddressDtb",
@@ -305380,7 +306815,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_14_unterminated_blob_refused",
-          "line": 1651,
+          "line": 1652,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -305394,7 +306829,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_15_unknown_token_refused",
-          "line": 1664,
+          "line": 1665,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -305404,7 +306839,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_16_disabled_memory_refused",
-          "line": 1673,
+          "line": 1674,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtbWithMemoryStatus",
@@ -305416,7 +306851,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_17_reserved_memory_child_is_not_ram",
-          "line": 1688,
+          "line": 1689,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -305426,7 +306861,7 @@
         {
           "kind": "def",
           "name": "review8_mmio_windows_require_the_right_devices",
-          "line": 1696,
+          "line": 1697,
           "called": [
             "DeviceTree.fromDtbFull",
             "all",
@@ -305449,7 +306884,7 @@
         {
           "kind": "def",
           "name": "uartWindowIsTheDeviceTreesRegisterBlock",
-          "line": 1738,
+          "line": 1739,
           "called": [
             "boardDtb",
             "expect",
@@ -305462,7 +306897,7 @@
         {
           "kind": "def",
           "name": "rangesWalkStarvedOfFuelRefuses",
-          "line": 1764,
+          "line": 1765,
           "called": [
             "FdtRangeEntry",
             "be64",
@@ -305474,7 +306909,7 @@
         {
           "kind": "def",
           "name": "bootRefusesConfiguredFrames",
-          "line": 1793,
+          "line": 1794,
           "called": [
             "FrameObject",
             "all",
@@ -305489,7 +306924,7 @@
         {
           "kind": "def",
           "name": "bootUntypedMustBePristine",
-          "line": 1814,
+          "line": 1815,
           "called": [
             "UntypedObject",
             "all",
@@ -305504,7 +306939,7 @@
         {
           "kind": "def",
           "name": "realFirmwareAccountBindsTheReportedRam",
-          "line": 1847,
+          "line": 1848,
           "called": [
             "BCM2712Config",
             "DeviceTree.fromDtbFull",
@@ -305528,13 +306963,13 @@
         {
           "kind": "def",
           "name": "ramUntypedCount",
-          "line": 1882,
+          "line": 1883,
           "called": []
         },
         {
           "kind": "def",
           "name": "kernelEntry_boots_the_deployment_on_every_variant",
-          "line": 1892,
+          "line": 1893,
           "called": [
             "CNode",
             "Capability",
@@ -305569,7 +307004,7 @@
         {
           "kind": "def",
           "name": "review7_declared_block_extents_are_enforced",
-          "line": 1945,
+          "line": 1946,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtBlob.of",
@@ -305591,7 +307026,7 @@
         {
           "kind": "def",
           "name": "review9_parser_conformance_and_reservations",
-          "line": 2005,
+          "line": 2006,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtBlob.of",
@@ -305638,7 +307073,7 @@
         {
           "kind": "def",
           "name": "review9_runtime_contract_follows_the_installed_map",
-          "line": 2220,
+          "line": 2221,
           "called": [
             "MachineConfig",
             "MachineState",
@@ -305654,13 +307089,13 @@
         {
           "kind": "def",
           "name": "dtbCorpusDir",
-          "line": 2249,
+          "line": 2250,
           "called": []
         },
         {
           "kind": "def",
           "name": "corpusHexDigit",
-          "line": 2251,
+          "line": 2252,
           "called": [
             "none",
             "toNat"
@@ -305669,7 +307104,7 @@
         {
           "kind": "def",
           "name": "parseCorpusHex",
-          "line": 2259,
+          "line": 2260,
           "called": [
             "corpusHexDigit",
             "empty",
@@ -305684,7 +307119,7 @@
         {
           "kind": "def",
           "name": "parseCorpusNat",
-          "line": 2274,
+          "line": 2275,
           "called": [
             "corpusHexDigit",
             "isEmpty",
@@ -305694,7 +307129,7 @@
         {
           "kind": "def",
           "name": "parseCorpusRegions",
-          "line": 2284,
+          "line": 2285,
           "called": [
             "foldr",
             "none",
@@ -305705,7 +307140,7 @@
         {
           "kind": "def",
           "name": "corpusDeclaredRegions",
-          "line": 2302,
+          "line": 2303,
           "called": [
             "fdtRoot",
             "memoryRegionsFromNodes",
@@ -305718,7 +307153,7 @@
         {
           "kind": "def",
           "name": "corpusStructureReadable",
-          "line": 2317,
+          "line": 2318,
           "called": [
             "fdtRoot",
             "none",
@@ -305729,7 +307164,7 @@
         {
           "kind": "def",
           "name": "dtbCorpus_every_fixture_agrees_with_the_manifest",
-          "line": 2325,
+          "line": 2326,
           "called": [
             "corpusDeclaredRegions",
             "corpusStructureReadable",
@@ -305748,7 +307183,7 @@
         {
           "kind": "def",
           "name": "bootMapHex",
-          "line": 2387,
+          "line": 2388,
           "called": [
             "ofList"
           ]
@@ -305756,7 +307191,7 @@
         {
           "kind": "def",
           "name": "bootMapKindName",
-          "line": 2390,
+          "line": 2391,
           "called": [
             "MemoryKind"
           ]
@@ -305764,13 +307199,13 @@
         {
           "kind": "def",
           "name": "bootMapFarProbe",
-          "line": 2397,
+          "line": 2398,
           "called": []
         },
         {
           "kind": "def",
           "name": "bootMapProbes",
-          "line": 2399,
+          "line": 2400,
           "called": [
             "MemoryRegion",
             "bootMapFarProbe",
@@ -305781,7 +307216,7 @@
         {
           "kind": "def",
           "name": "bootMapConfigurations",
-          "line": 2411,
+          "line": 2412,
           "called": [
             "BCM2712Config",
             "rpi5LowRamTopFloor",
@@ -305792,7 +307227,7 @@
         {
           "kind": "theorem",
           "name": "bootMapConfigurations_admissible",
-          "line": 2419,
+          "line": 2420,
           "called": [
             "Admissible",
             "bootMapConfigurations",
@@ -305802,7 +307237,7 @@
         {
           "kind": "def",
           "name": "bootMapTableLines",
-          "line": 2428,
+          "line": 2429,
           "called": [
             "RPi5Platform",
             "bootMapHex",
@@ -305824,7 +307259,7 @@
         {
           "kind": "def",
           "name": "deployment_roots_own_distinct_pool_pages",
-          "line": 2484,
+          "line": 2485,
           "called": [
             "bootRootTablesPlaced",
             "configuredRootTableBases",
@@ -305840,7 +307275,7 @@
         {
           "kind": "def",
           "name": "bootMap_the_lean_map_is_the_shared_table",
-          "line": 2495,
+          "line": 2496,
           "called": [
             "bootMapTableLines",
             "checkSharedFixture"
@@ -305849,7 +307284,7 @@
         {
           "kind": "def",
           "name": "deployment_starts_both_initial_threads",
-          "line": 2508,
+          "line": 2509,
           "called": [
             "PlatformBinding.declaredCores",
             "RPi5Platform",
@@ -305881,7 +307316,7 @@
         {
           "kind": "def",
           "name": "boot_refuses_unstartable_initial_threads",
-          "line": 2554,
+          "line": 2555,
           "called": [
             "PlatformBinding.declaredCores",
             "RPi5Platform",
@@ -305901,8 +307336,82 @@
         },
         {
           "kind": "def",
+          "name": "qemuVirtBootMapTableLines",
+          "line": 2599,
+          "called": [
+            "QemuVirtPlatform",
+            "bootMapHex",
+            "bootMapKindName",
+            "bootMapProbes",
+            "classifyAddress",
+            "declaredCores",
+            "endAddr",
+            "ofNat",
+            "qemuVirtBootTablePoolBase",
+            "qemuVirtBootTablePoolPages",
+            "qemuVirtMmioRegions",
+            "size",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootMap_the_qemu_virt_map_is_the_shared_table",
+          "line": 2616,
+          "called": [
+            "checkSharedFixture",
+            "qemuVirtBootMapTableLines"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirt_board_check_on_qemus_own_device_tree",
+          "line": 2630,
+          "called": [
+            "boardDtb",
+            "config",
+            "empty",
+            "hex",
+            "length",
+            "machineConfigCovers",
+            "none",
+            "parseCorpusHex",
+            "pure",
+            "qemuVirtGicSpiCount",
+            "qemuVirtInitialObjects",
+            "qemuVirtIrqTable",
+            "qemuVirtMachineConfig",
+            "qemuVirtPlatformConfigFromDtb",
+            "rpi5PlatformConfigFromDtb",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "qemuVirt_deployment_boots",
+          "line": 2663,
+          "called": [
+            "PlatformBinding.declaredCores",
+            "QemuVirtPlatform",
+            "ThreadId",
+            "boot",
+            "bootCoreId",
+            "bootFromPlatformCheckedStartedFor",
+            "configuredRootTableBases",
+            "contains",
+            "qemuVirtBootRamExtensions",
+            "qemuVirtBootTablePage",
+            "qemuVirtBoundPlatformConfig",
+            "qemuVirtUntrustedCore",
+            "runQueueOnCore",
+            "throw",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 2588,
+          "line": 2689,
           "called": [
             "ak9a_01_mmioRead32_rejects_unaligned",
             "ak9a_02_mmioRead64_rejects_unaligned",
@@ -305947,6 +307456,7 @@
             "an7d5_03_extractPeripherals_skips_incomplete_nodes",
             "an7d5_04_extractPeripherals_excludes_reserved_names",
             "bootMap_the_lean_map_is_the_shared_table",
+            "bootMap_the_qemu_virt_map_is_the_shared_table",
             "bootRefusesConfiguredFrames",
             "bootUntypedMustBePristine",
             "boot_refuses_unstartable_initial_threads",
@@ -305977,6 +307487,8 @@
             "deviceTreeBridge_23_extent_past_the_window_is_refused",
             "dtbCorpus_every_fixture_agrees_with_the_manifest",
             "kernelEntry_boots_the_deployment_on_every_variant",
+            "qemuVirt_board_check_on_qemus_own_device_tree",
+            "qemuVirt_deployment_boots",
             "rangesWalkStarvedOfFuelRefuses",
             "realFirmwareAccountBindsTheReportedRam",
             "review5_bus_without_ranges_hides_its_children",

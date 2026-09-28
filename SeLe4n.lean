@@ -51,6 +51,10 @@ import SeLe4n.Platform.RPi5.Deployment
 -- WS-BP BP4.1: the hardware boot entry, `lean_kernel_main` — in the production
 -- root so the symbol is in the archive the image links.
 import SeLe4n.Platform.RPi5.KernelMain
+-- WS-BP BP8.1: the QEMU `virt` binding, its deployment and its hardware boot
+-- entry, `lean_kernel_main_qemu_virt` — in the production root so the symbol
+-- is in the archive the `board_qemu_virt` image links.
+import SeLe4n.Platform.QemuVirt.KernelMain
 -- WS-SM SM6.A (live cross-core `.call` completion): the cross-core syscall
 -- dispatch entry `syscallDispatchCrossCoreEntry`
 -- (`@[export lean_syscall_dispatch_cross_core]`) — the live seam the Rust SVC
