@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/loving-babbage-2z8r8z",
-      "commit_sha": "388355500dfc0e90ec63d4283c4efcd268c20eff",
-      "tree_sha": "b35eda0909304a6c5b49bddf55fb8aa6ccb98f7d",
-      "committed_at_utc": "2026-09-28T21:57:52+00:00"
+      "commit_sha": "f0ca14a9c7dd8a9fc74aa23920ac4d284c279ff7",
+      "tree_sha": "373723e5a30ed42c90b86ac56daacdcfb52438cb",
+      "committed_at_utc": "2026-09-28T23:47:38+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 24205
   },
   "readme_sync": {
-    "version": "0.36.33",
+    "version": "0.36.34",
     "lean_toolchain": "v4.28.0",
     "production_files": 361,
     "production_loc": 433163,

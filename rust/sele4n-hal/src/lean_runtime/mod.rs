@@ -30,7 +30,16 @@
 //! **Invariants the runtime keeps, and relies on.**  No object is ever
 //! multi-threaded (`m_rc < 0`): nothing here marks one, the kernel's Lean code
 //! runs one core at a time under the kernel-entry lock, and every path that
-//! would meet one halts.  No task or promise object exists, for the same
+//! would meet one halts.  "Under the kernel-entry lock" is checked, not stated:
+//! `build.rs` derives every HAL call into Lean and refuses one outside a
+//! `crate::kernel_entry::with_kernel_entry` bracket unless
+//! `LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK` records why — the boot install and the
+//! library initializer, which run before any other core can, and the exception
+//! classifier, which runs with IRQs masked and reaches no shared object that is
+//! not persistent.  The heap's leaf lock does not mask IRQs, so a Lean call
+//! must also never be preemptible by an IRQ that enters Lean on the same core;
+//! a thread-context caller masks IRQs around the bracket
+//! (`LEAN_UPCALLS_IN_THREAD_CONTEXT`).  No task or promise object exists, for the same
 //! reason.  Persistent objects (`m_rc == 0`) are never freed.
 //!
 //! The object layouts are `lean.h`'s, byte for byte: the inline paths in every

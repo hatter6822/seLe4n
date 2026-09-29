@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.33.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.34.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8728,8 +8728,19 @@ which no counter reaches and neither verdict is.  The Rust side mirrors the
 selectors as `STATS_*` constants, pinned to the arms by Tier 3.  (2) **It is a
 Lean upcall like every other**: declared and called inside the readiness
 guard's true branch in `smp_exercisers::lean_stats_component`, a
-`LEAN_READY_GATED_SEAMS` entry, and it commits nothing — a read needs no entry
-lock, and the contract in `lean_ready.rs` admits no exception for one.  (3)
+`LEAN_READY_GATED_SEAMS` entry — and **it runs with IRQs masked, under the
+kernel-entry lock**.  It commits nothing, and that was the wrong question: the
+kernel's Lean runtime runs one core at a time (non-atomic reference counts, one
+heap behind a leaf lock that does not mask IRQs), and the first cut called it
+bare from the boot core in thread context, so a tick preempting it inside the
+heap lock wedged the kernel-entry lock on every core (Lean Action CI run
+36499869963, `v0.36.34`).  `build.rs` now derives that every Lean upcall sits
+inside `crate::kernel_entry::with_kernel_entry(…)` or is registered, by
+occurrence and with its reason, in `LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK` (the
+boot install, the library initializer, and the exception classifier, which runs
+with IRQs masked and touches no non-persistent shared object), and holds each
+thread-context seam (`LEAN_UPCALLS_IN_THREAD_CONTEXT`) to masking IRQs before
+the bracket and restoring the value it saved after.  (3)
 **The driver's evidence is the bracket, and the bracket needs the slots told
 apart.**  Each core's words are read between two Rust reads of the same slot,
 in the reader's own order (subtypes, total, syscalls; the verdict last, of a

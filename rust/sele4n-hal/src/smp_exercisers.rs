@@ -1161,15 +1161,31 @@ fn lean_stats_component(core: usize, selector: u64) -> u64 {
             /// on the kernel's Lean heap and frees it, and commits nothing.
             fn lean_per_core_stats_component(core_id: u64, selector: u64) -> u64;
         }
-        // SAFETY: `lean_per_core_stats_component` is the C-callable wrapper
-        // the Lean compiler emits for `Concurrency.perCoreStatsComponentExport`:
-        // two `u64` in, a `u64` out (a `BaseIO UInt64` crosses as `uint64_t`,
-        // which `scripts/check_kernel_entry_exports.py` holds this declaration
-        // to), reading the counters through this crate's own accessors and
-        // touching no kernel state; this core's Lean runtime is initialised —
-        // the `lean_ready` gate just checked — so entering the symbol is within
-        // the runtime's contract.
-        unsafe { lean_per_core_stats_component(core as u64, selector) }
+        // The call runs with IRQs masked and under the kernel-entry lock, as
+        // every other Lean upcall runs.  It commits nothing, and that is not
+        // the question: the kernel's Lean runtime runs one core at a time,
+        // and its heap is behind a leaf lock that does not mask IRQs.  This
+        // driver runs on the boot core in thread context with IRQs unmasked,
+        // so a bare call can be preempted by a tick while it holds the heap
+        // lock; the tick's own Lean call then spins on that lock forever, or
+        // another core holding the kernel-entry lock does, and every core
+        // runs out of kernel-entry fuel (Lean Action CI run 36499869963).
+        let saved_daif = crate::interrupts::disable_interrupts();
+        let word = crate::kernel_entry::with_kernel_entry(core_id as usize, || {
+            // SAFETY: `lean_per_core_stats_component` is the C-callable
+            // wrapper the Lean compiler emits for
+            // `Concurrency.perCoreStatsComponentExport`: two `u64` in, a `u64`
+            // out (a `BaseIO UInt64` crosses as `uint64_t`, which
+            // `scripts/check_kernel_entry_exports.py` holds this declaration
+            // to), reading the counters through this crate's own accessors and
+            // touching no kernel state; this core's Lean runtime is
+            // initialised — the `lean_ready` gate just checked — and no other
+            // core runs Lean while this one holds the kernel-entry lock, so
+            // entering the symbol is within the runtime's contract.
+            unsafe { lean_per_core_stats_component(core as u64, selector) }
+        });
+        crate::interrupts::restore_interrupts(saved_daif);
+        word
     } else {
         STATS_REFUSED
     }

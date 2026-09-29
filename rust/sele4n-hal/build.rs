@@ -2374,6 +2374,69 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
     // table holds the two calls that precede the boot core being ready.
 ];
 
+/// **Lean upcalls that run outside the kernel-entry lock**, as
+/// `(source, enclosing fn, Lean symbol, occurrences, why)` — reconciled by
+/// occurrence in both directions, like `LEAN_UPCALLS_OUTSIDE_THE_GATE`.
+///
+/// The kernel's Lean runtime runs one core at a time: its reference counts
+/// are not atomic and its heap sits behind a leaf lock that does not mask
+/// IRQs.  `crate::kernel_entry::with_kernel_entry` is what makes that true, so
+/// every other upcall sits inside one (`kernel_entry_bracket_encloses`).
+/// Lean Action CI run 36499869963 is why this is checked rather than stated:
+/// the Tier-4 per-core-stats driver called Lean on the boot core in thread
+/// context, IRQs unmasked, outside the bracket, and a tick preempting it
+/// inside the heap lock wedged the kernel-entry lock on every core.
+const LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK: &[(&str, &str, &str, usize, &str)] = &[
+    (
+        "src/lean_entry.rs",
+        "enter_lean_kernel",
+        "lean_kernel_main",
+        1,
+        "the boot install: it runs on the boot core alone, before any secondary \
+         is released (WS-BP BP4.2) and before the boot core unmasks IRQs, so no \
+         other Lean code can run while it does",
+    ),
+    (
+        "src/lean_entry.rs",
+        "enter_lean_kernel",
+        "lean_kernel_main_qemu_virt",
+        1,
+        "the QEMU `virt` board's boot install, under the same ordering",
+    ),
+    (
+        "src/lean_entry.rs",
+        "initialise_lean_library",
+        "initialize_seLe4n_SeLe4n",
+        1,
+        "the library initializer: it runs before the install, on the boot core \
+         alone, with IRQs masked",
+    ),
+    (
+        "src/trap.rs",
+        "classify_synchronous_exception",
+        "lean_classify_synchronous_exception",
+        1,
+        "the exception classifier: it runs in exception context, so IRQs are \
+         masked and it cannot be preempted inside the heap lock; it reads no \
+         kernel state and touches no shared object that is not persistent (the \
+         generated closed terms are marked persistent, so their reference \
+         counts are never written); and it is taken before the entry lock so an \
+         `SVC` can be routed without entering the kernel twice",
+    ),
+];
+
+/// **Upcall seams that run in thread context**, as `(source, enclosing fn)`:
+/// the caller is not an exception handler, so IRQs are not masked by the
+/// exception entry, and the bracket must be taken with them masked — a tick
+/// taken inside the bracket re-enters the kernel on a core that already holds
+/// the non-reentrant entry lock.  Each must mask with
+/// `crate::interrupts::disable_interrupts()` before the bracket and restore
+/// after it (`irq_mask_encloses_bracket`).  A pin, not a derivation: whether a
+/// function is reached from an exception vector is not a question this
+/// scanner can answer.
+const LEAN_UPCALLS_IN_THREAD_CONTEXT: &[(&str, &str)] =
+    &[("src/smp_exercisers.rs", "lean_stats_component")];
+
 /// **WS-RR RR5.18**: the two safety tripwires that must survive a release
 /// build, as `(source, enclosing fn, a token the condition must name)`.
 ///
@@ -4144,6 +4207,11 @@ struct LeanUpcallSite {
     /// Whether a readiness guard on the executing PE dominates the call
     /// (`readiness_guard_dominates`).
     gated: bool,
+    /// Whether the call sits inside the argument of a
+    /// `crate::kernel_entry::with_kernel_entry(` call in the same body
+    /// (`kernel_entry_bracket_encloses`) — the kernel's Lean runtime runs one
+    /// core at a time, and that bracket is what makes it so.
+    entry_locked: bool,
 }
 
 /// Every reference to a Lean-emitted symbol in `code` — a strings-blanked
@@ -4212,14 +4280,214 @@ fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>
                 ));
             };
             let gated = readiness_guard_dominates(code, open, at);
+            let entry_locked = kernel_entry_bracket_encloses(code, open, at);
             sites.push(LeanUpcallSite {
                 enclosing_fn,
                 symbol: (*symbol).to_string(),
                 gated,
+                entry_locked,
             });
         }
     }
     Ok(sites)
+}
+
+/// The canonical spelling of the kernel-entry bracket a Lean upcall runs in.
+/// A contract on code this crate writes, not a parser: an alias, a `use`, or
+/// the bare `with_kernel_entry(` spelling does not count, so a new seam writes
+/// the bracket this way or fails the build.
+const KERNEL_ENTRY_BRACKET: &str = "crate::kernel_entry::with_kernel_entry(";
+
+/// Does the argument list of a [`KERNEL_ENTRY_BRACKET`] call in the body that
+/// opens at `body_open` contain the call at `call`?  The span is the
+/// bracket's own parenthesised argument list, so a call after the bracket
+/// closes — or in a bracket closed before it — is not enclosed.
+fn kernel_entry_bracket_encloses(code: &str, body_open: usize, call: usize) -> bool {
+    let Some(body_close) = matching_close_brace(code, body_open) else {
+        return false;
+    };
+    let body = &code[body_open..body_close];
+    let mut search = 0usize;
+    while let Some(hit) = body[search..].find(KERNEL_ENTRY_BRACKET) {
+        let at = body_open + search + hit;
+        search += hit + KERNEL_ENTRY_BRACKET.len();
+        let paren = at + KERNEL_ENTRY_BRACKET.len() - 1;
+        if let Some(close) = matching_close_paren(code, paren) {
+            if paren < call && call < close {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+const IRQ_MASK_CALL: &str = "crate::interrupts::disable_interrupts()";
+const IRQ_RESTORE_CALL: &str = "crate::interrupts::restore_interrupts(";
+
+/// Every whole-identifier occurrence of `needle` in `hay`, as byte offsets.
+fn whole_word_offsets(hay: &str, needle: &str) -> Vec<usize> {
+    let bytes = hay.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut out = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = hay[search..].find(needle) {
+        let at = search + hit;
+        search = at + needle.len();
+        if at > 0 && is_ident(bytes[at - 1]) {
+            continue;
+        }
+        out.push(at);
+    }
+    out
+}
+
+/// A thread-context upcall seam's body masks IRQs, takes the kernel-entry
+/// bracket, and restores the mask it saved — in that order, as a relation:
+/// `let <saved> = crate::interrupts::disable_interrupts();` exactly once,
+/// before the one [`KERNEL_ENTRY_BRACKET`] opens, and
+/// `crate::interrupts::restore_interrupts(<saved>)` exactly once, after that
+/// bracket's argument list closes.  A restore of another value, a mask taken
+/// after the bracket opens, or a restore inside it, keeps every token and
+/// breaks the relation, and each is refused.
+fn irq_mask_encloses_bracket(code: &str, fn_name: &str) -> Result<(), String> {
+    let heads = whole_word_offsets(code, &format!("fn {fn_name}("));
+    let [head] = heads.as_slice() else {
+        return Err(format!(
+            "expected one `fn {fn_name}`, found {}",
+            heads.len()
+        ));
+    };
+    let open =
+        fn_body_open_brace(code, *head).ok_or_else(|| format!("`fn {fn_name}` has no body"))?;
+    let close = matching_close_brace(code, open)
+        .ok_or_else(|| format!("`fn {fn_name}`'s body does not close"))?;
+    let body = &code[open..close];
+    let one = |needle: &str| -> Result<usize, String> {
+        let hits = whole_word_offsets(body, needle);
+        match hits.as_slice() {
+            [at] => Ok(*at),
+            _ => Err(format!(
+                "`fn {fn_name}` must contain `{needle}` exactly once, found {}",
+                hits.len()
+            )),
+        }
+    };
+    let mask = one(IRQ_MASK_CALL)?;
+    let bracket = one(KERNEL_ENTRY_BRACKET)?;
+    let restore = one(IRQ_RESTORE_CALL)?;
+    let bracket_paren = bracket + KERNEL_ENTRY_BRACKET.len() - 1;
+    let bracket_close = matching_close_paren(body, bracket_paren)
+        .ok_or_else(|| format!("`fn {fn_name}`'s kernel-entry bracket does not close"))?;
+    if mask >= bracket {
+        return Err(format!(
+            "`fn {fn_name}` masks IRQs after the kernel-entry bracket opens; the bracket \
+             must be taken with IRQs masked"
+        ));
+    }
+    if restore <= bracket_close {
+        return Err(format!(
+            "`fn {fn_name}` restores the IRQ mask before the kernel-entry bracket closes"
+        ));
+    }
+    // The saved value: the `let` binding whose initializer is the mask call.
+    let line_start = body[..mask].rfind([';', '{', '}']).map_or(0, |i| i + 1);
+    let binding = body[line_start..mask].trim();
+    let saved = binding
+        .strip_prefix("let ")
+        .and_then(|rest| rest.strip_suffix('='))
+        .map(str::trim)
+        .filter(|name| {
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+        .ok_or_else(|| {
+            format!(
+                "`fn {fn_name}`'s IRQ mask is not bound by `let <saved> = {IRQ_MASK_CALL};`, \
+                 so the restore cannot be tied to it"
+            )
+        })?;
+    let arg_open = restore + IRQ_RESTORE_CALL.len() - 1;
+    let arg_close = matching_close_paren(body, arg_open)
+        .ok_or_else(|| format!("`fn {fn_name}`'s IRQ restore does not close"))?;
+    let arg = body[arg_open + 1..arg_close].trim();
+    if arg != saved {
+        return Err(format!(
+            "`fn {fn_name}` restores `{arg}`, not the `{saved}` its mask saved"
+        ));
+    }
+    Ok(())
+}
+
+/// The kernel-entry bracket check and the thread-context IRQ-mask check,
+/// each held to token-preserving mutations before the tree is scanned.
+fn verify_kernel_entry_bracket_scanner() {
+    let (_, good) = rust_code_views(
+        "fn seam(c: usize) -> u64 {\n    extern \"C\" {\n        fn lean_x(a: u64) -> u64;\n    }\n    \
+         let saved = crate::interrupts::disable_interrupts();\n    \
+         let w = crate::kernel_entry::with_kernel_entry(c, || unsafe { lean_x(1) });\n    \
+         crate::interrupts::restore_interrupts(saved);\n    w\n}\n",
+    );
+    assert!(
+        irq_mask_encloses_bracket(&good, "seam").is_ok(),
+        "kernel-entry bracket self-check: a masked, bracketed, restored seam was refused"
+    );
+    let open = fn_body_open_brace(&good, good.find("fn seam").unwrap()).unwrap();
+    let call = good.find("lean_x(1)").unwrap();
+    assert!(
+        kernel_entry_bracket_encloses(&good, open, call),
+        "kernel-entry bracket self-check: a call inside the bracket read as outside it"
+    );
+    let cases: &[(&str, &str)] = &[
+        (
+            "the mask taken after the bracket opens",
+            "fn seam(c: usize) -> u64 {\n    let w = crate::kernel_entry::with_kernel_entry(c, || \
+             {\n        let saved = crate::interrupts::disable_interrupts();\n        \
+             crate::interrupts::restore_interrupts(saved);\n        unsafe { lean_x(1) }\n    });\n    \
+             w\n}\n",
+        ),
+        (
+            "the restore inside the bracket",
+            "fn seam(c: usize) -> u64 {\n    let saved = crate::interrupts::disable_interrupts();\n    \
+             let w = crate::kernel_entry::with_kernel_entry(c, || {\n        \
+             crate::interrupts::restore_interrupts(saved);\n        unsafe { lean_x(1) }\n    });\n    \
+             w\n}\n",
+        ),
+        (
+            "a restore of another value",
+            "fn seam(c: usize) -> u64 {\n    let saved = crate::interrupts::disable_interrupts();\n    \
+             let w = crate::kernel_entry::with_kernel_entry(c, || unsafe { lean_x(1) });\n    \
+             crate::interrupts::restore_interrupts(0);\n    let _ = saved;\n    w\n}\n",
+        ),
+        (
+            "the mask discarded rather than bound",
+            "fn seam(c: usize) -> u64 {\n    let _ = 0;\n    crate::interrupts::disable_interrupts();\n    \
+             let w = crate::kernel_entry::with_kernel_entry(c, || unsafe { lean_x(1) });\n    \
+             crate::interrupts::restore_interrupts(saved);\n    w\n}\n",
+        ),
+    ];
+    for (what, source) in cases {
+        let (_, code) = rust_code_views(source);
+        assert!(
+            irq_mask_encloses_bracket(&code, "seam").is_err(),
+            "kernel-entry bracket self-check: {what} was accepted"
+        );
+    }
+    let (_, after) = rust_code_views(
+        "fn seam(c: usize) -> u64 {\n    crate::kernel_entry::with_kernel_entry(c, || 0);\n    \
+         unsafe { lean_x(1) }\n}\n",
+    );
+    let open = fn_body_open_brace(&after, after.find("fn seam").unwrap()).unwrap();
+    assert!(
+        !kernel_entry_bracket_encloses(&after, open, after.find("lean_x").unwrap()),
+        "kernel-entry bracket self-check: a call after the bracket closed read as inside it"
+    );
+    let (_, bare) = rust_code_views(
+        "fn seam(c: usize) -> u64 {\n    with_kernel_entry(c, || unsafe { lean_x(1) })\n}\n",
+    );
+    let open = fn_body_open_brace(&bare, bare.find("fn seam").unwrap()).unwrap();
+    assert!(
+        !kernel_entry_bracket_encloses(&bare, open, bare.find("lean_x").unwrap()),
+        "kernel-entry bracket self-check: the non-canonical bare spelling was accepted"
+    );
 }
 
 /// Does a readiness check **control** the call at `call`?  Textual precedence
@@ -6000,6 +6268,7 @@ fn is_hal_declared_lean_symbol(name: &str) -> bool {
 }
 
 fn scan_lean_upcalls_readiness_gated() {
+    verify_kernel_entry_bracket_scanner();
     verify_lean_extern_gating_scanner();
     verify_lean_export_collector();
     verify_lean_link_name_scanner();
@@ -6060,6 +6329,7 @@ fn scan_lean_upcalls_readiness_gated() {
 
     let mut gated_found: Vec<(String, String, String)> = Vec::new();
     let mut ungated_found: Vec<(String, String, String)> = Vec::new();
+    let mut unlocked_found: Vec<(String, String, String)> = Vec::new();
     for (path, code, _) in &views {
         let sites = match lean_upcall_sites(code, &export_refs) {
             Ok(s) => s,
@@ -6067,6 +6337,9 @@ fn scan_lean_upcalls_readiness_gated() {
         };
         for site in sites {
             let gated = site.gated;
+            if !site.entry_locked {
+                unlocked_found.push((path.clone(), site.enclosing_fn.clone(), site.symbol.clone()));
+            }
             let found = (path.clone(), site.enclosing_fn, site.symbol);
             if gated {
                 gated_found.push(found);
@@ -6118,6 +6391,39 @@ fn scan_lean_upcalls_readiness_gated() {
     if let Err(why) = reconcile_upcall_exemptions(&ungated_refs, LEAN_UPCALLS_OUTSIDE_THE_GATE) {
         panic!("Lean upcall scanner: {why}");
     }
+    // Lean Action CI run 36499869963: the kernel's Lean runtime runs one core at
+    // a time, and the kernel-entry bracket is what makes it so.  Every upcall is
+    // inside one, or registered with its reason, by occurrence.
+    let unlocked_refs: Vec<(&str, &str, &str)> = unlocked_found
+        .iter()
+        .map(|(p, f, s)| (p.as_str(), f.as_str(), s.as_str()))
+        .collect();
+    if let Err(why) = reconcile_upcall_table(
+        &unlocked_refs,
+        LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK,
+        "LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK",
+        "the kernel-entry lock (`crate::kernel_entry::with_kernel_entry(core, || …)` \
+         around the call).  The kernel's Lean runtime runs one core at a time, and a \
+         call outside the bracket can race another core's kernel entry — or, with \
+         IRQs unmasked, be preempted inside the heap lock by its own core's tick.  \
+         Bracket the call, or add it",
+    ) {
+        panic!("Lean upcall scanner: {why}");
+    }
+    for (tp, tf) in LEAN_UPCALLS_IN_THREAD_CONTEXT {
+        let Some((_, code, _)) = views.iter().find(|(p, _, _)| p == tp) else {
+            panic!("Lean upcall scanner: `LEAN_UPCALLS_IN_THREAD_CONTEXT` names `{tp}`, which is not a source");
+        };
+        if !gated_found.iter().any(|(p, f, _)| p == tp && f == tf) {
+            panic!(
+                "Lean upcall scanner: `LEAN_UPCALLS_IN_THREAD_CONTEXT` names `{tp}`'s `fn {tf}`, \
+                 which makes no gated Lean upcall; a stale entry reads as coverage"
+            );
+        }
+        if let Err(why) = irq_mask_encloses_bracket(code, tf) {
+            panic!("Lean upcall scanner: thread-context seam: {why}");
+        }
+    }
     for (p, f, sym) in &gated_found {
         let pinned = LEAN_READY_GATED_SEAMS
             .iter()
@@ -6157,6 +6463,28 @@ fn reconcile_upcall_exemptions(
     ungated: &[(&str, &str, &str)],
     table: &[(&str, &str, &str, usize, &str)],
 ) -> Result<(), String> {
+    reconcile_upcall_table(
+        ungated,
+        table,
+        "LEAN_UPCALLS_OUTSIDE_THE_GATE",
+        "a readiness guard on the executing PE dominating the call \
+         (`if crate::lean_ready::lean_ready(<this core's TPIDR-derived id>) { … }`).  \
+         A PE must never enter a Lean runtime it has not initialized.  Either gate \
+         the call — and add the seam to `LEAN_READY_GATED_SEAMS` — or, if it is the \
+         call that establishes readiness or a registered gap, add it",
+    )
+}
+
+/// The occurrence reconciliation both upcall exemption tables share: every
+/// call the scan found lacking the relation is covered by an entry of `table`
+/// (named `table_name`), and every entry covers exactly the calls that exist.
+/// `missing` says what relation the unregistered call lacks and what to do.
+fn reconcile_upcall_table(
+    ungated: &[(&str, &str, &str)],
+    table: &[(&str, &str, &str, usize, &str)],
+    table_name: &str,
+    missing: &str,
+) -> Result<(), String> {
     let mut groups: Vec<((&str, &str, &str), usize)> = Vec::new();
     for &(p, f, s) in ungated {
         match groups.iter_mut().find(|(key, _)| *key == (p, f, s)) {
@@ -6167,7 +6495,7 @@ fn reconcile_upcall_exemptions(
     for &(p, f, s, expected, _) in table {
         if expected == 0 {
             return Err(format!(
-                "`LEAN_UPCALLS_OUTSIDE_THE_GATE` exempts zero calls of `{s}` in `{p}`'s \
+                "`{table_name}` exempts zero calls of `{s}` in `{p}`'s \
                  `fn {f}`; an entry that covers nothing is a stale entry — remove it"
             ));
         }
@@ -6178,7 +6506,7 @@ fn reconcile_upcall_exemptions(
             .unwrap_or(0);
         if found != expected {
             return Err(format!(
-                "`LEAN_UPCALLS_OUTSIDE_THE_GATE` exempts {expected} ungated call(s) of `{s}` \
+                "`{table_name}` exempts {expected} call(s) of `{s}` \
                  in `{p}`'s `fn {f}`, but {found} exist there.  A call was added without a \
                  reviewed reason of its own, or removed without retiring its entry; the \
                  count changes in the same change as the call"
@@ -6192,12 +6520,7 @@ fn reconcile_upcall_exemptions(
         if !registered {
             return Err(format!(
                 "`{p}`'s `fn {f}` calls the Lean-emitted symbol `{s}` ({n} call(s)) without \
-                 a readiness guard on the executing PE dominating the call \
-                 (`if crate::lean_ready::lean_ready(<this core's TPIDR-derived id>) {{ … }}`).  \
-                 A PE must never enter a Lean runtime it has not initialized.  Either gate \
-                 the call — and add the seam to `LEAN_READY_GATED_SEAMS` — or, if it is the \
-                 call that establishes readiness or a registered gap, add it to \
-                 `LEAN_UPCALLS_OUTSIDE_THE_GATE` with its occurrence count and reason"
+                 {missing} to `{table_name}` with its occurrence count and reason"
             ));
         }
     }
@@ -6275,6 +6598,7 @@ fn verify_lean_upcall_scanner() {
             enclosing_fn: "seam".to_string(),
             symbol: "lean_x".to_string(),
             gated: true,
+            entry_locked: false,
         }],
         "Lean upcall scanner self-check: a gated call must be found once, gated"
     );

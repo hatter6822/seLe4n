@@ -1,3 +1,44 @@
+## v0.36.34 — The Lean runtime runs under the kernel-entry lock, and that is now checked
+
+The CI run dispatched on `v0.36.33` (Lean Action CI run 36499869963) confirmed that
+version's fixes: the fast lane was green, QEMU started, and the Lean kernel booted
+four PEs at EL1 and EL2.  It then found a real defect in the Tier-4 exercisers and
+one documentation drift.
+
+**The per-core-stats driver could wedge every core.**  `lean_stats_component`
+called the Lean seam `lean_per_core_stats_component` from the boot core in thread
+context, with IRQs unmasked and outside the kernel-entry lock, on the reasoning
+that a read commits nothing and so needs no lock.  That was the wrong question.
+The kernel's Lean runtime runs one core at a time: its reference counts are not
+atomic, and its heap sits behind a leaf lock that does not mask IRQs.  On CI a
+tick preempted the call while it held the heap lock; the tick's own kernel entry,
+or another core already holding the kernel-entry lock, then spun on the heap lock,
+and cores 0, 2 and 3 each exhausted their kernel-entry fuel and halted the system.
+Every local run had passed, by timing.  The call now masks IRQs, takes
+`crate::kernel_entry::with_kernel_entry`, and restores the mask it saved.
+
+**And the class is checked.**  `build.rs`'s upcall scan already derives every HAL
+call into Lean from the Lean tree's `@[export]`s.  It now also requires each call
+to sit inside a `crate::kernel_entry::with_kernel_entry(…)` argument list, or to
+be registered by occurrence, with its reason, in the new
+`LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK`.  That table holds four calls: the two boot
+installs and the library initializer, which run before any other core can, and
+the exception classifier, which runs with IRQs masked and reaches no shared object
+that is not persistent (generated closed terms are marked persistent).  A pinned
+`LEAN_UPCALLS_IN_THREAD_CONTEXT` holds each thread-context seam to masking IRQs
+before the bracket and restoring the saved value after it, as a relation: a
+restore of another value, a mask taken inside the bracket, or a restore before it
+closes is refused.  Both checks are mutation-tested in the build's own self-test
+and on the real tree: the pre-fix seam and a restore moved above the bracket each
+fail the build with their own reason.  The reconciliation is shared with the
+readiness-gate table (`reconcile_upcall_table`) rather than copied.
+
+**Documentation.**  The runtime's invariant statement (`lean_runtime/mod.rs`),
+`CLAUDE.md`, and the BP8.5 plan row said the stats read needed no entry lock, or
+stated "one core at a time" as a fact nothing checked; each now says what is
+checked and where.  Three GitBook chapters carried the version-stamped trace-line
+figure at the previous version, which the v0.36.33 bump did not re-sync; synced.
+
 ## v0.36.33 — CI runs the QEMU lanes; two WS-BP acceptance boxes ticked on a CI run
 
 Lean Action CI run 36489522711 (a `workflow_dispatch` of head `38835550`) failed

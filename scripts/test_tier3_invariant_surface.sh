@@ -8039,6 +8039,15 @@ run_check "INVARIANT" rg -n '^pub const STATS_REFUSED: u64 = u64::MAX;$' rust/se
 run_check "INVARIANT" rg -n -U 'lean_ready\(core_id as usize\) \{\n\s+extern "C" \{\n\s+fn lean_per_core_stats_component\(core_id: u64, selector: u64\) -> u64;' rust/sele4n-hal/src/smp_exercisers.rs
 run_negative_check "INVARIANT" rg -n '^    unsafe \{ lean_per_core_stats_component\(' rust/sele4n-hal/src/smp_exercisers.rs
 run_check "INVARIANT" rg -n -U '"src/smp_exercisers\.rs",\n        "lean_stats_component",\n        "lean_per_core_stats_component",' rust/sele4n-hal/build.rs
+# v0.36.34 (Lean Action CI run 36499869963): the stats read runs with IRQs
+# masked, inside the kernel-entry bracket, restoring the mask it saved — and
+# build.rs derives that every Lean upcall is bracketed or registered.
+run_check "INVARIANT" rg -n -U '^        let saved_daif = crate::interrupts::disable_interrupts\(\);\n        let word = crate::kernel_entry::with_kernel_entry\(core_id as usize, \|\| \{' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U '^            unsafe \{ lean_per_core_stats_component\(core as u64, selector\) \}\n        \}\);\n        crate::interrupts::restore_interrupts\(saved_daif\);$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^const LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK: &\[\(&str, &str, &str, usize, &str\)\] = &\[$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U '^const LEAN_UPCALLS_IN_THREAD_CONTEXT: &\[\(&str, &str\)\] =\n    &\[\("src/smp_exercisers\.rs", "lean_stats_component"\)\];$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U 'if let Err\(why\) = reconcile_upcall_table\(\n        &unlocked_refs,\n        LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK,' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_kernel_entry_bracket_scanner\(\);$' rust/sele4n-hal/build.rs
 # The driver reads each slot in the reader's own order on both sides -- the
 # subtypes, the total, the syscalls -- with the Lean words between two Rust
 # reads of the same slot and the verdict asked last; the verdict on a core is
