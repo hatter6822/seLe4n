@@ -1,3 +1,46 @@
+## v0.36.37 — Every PE leaves a retired address space before the reset returns
+
+A deeper audit of the memory-authority path found that retiring a VSpace root
+did not stop every PE from walking its table page.  Reported as **High,
+latent** (no board runs user code yet).  `untypedReset` recorded one
+`invalidateAsid` per retired root, which the syscall seam performs as a broadcast
+`TLBI ASIDE1IS`: every TLB loses the ASID and no `TTBR0_EL1` changes.  A PE whose
+thread another core had just descheduled keeps the retired root's table page as
+its walk base until its own next context restore, and the reset hands that page
+back to its untyped.  The next carve may give it to another thread as a frame,
+whose contents then become the lagging PE's descriptors — any physical page at
+EL0, the kernel window (the page's entry 0) at EL1.
+
+- **Lean.**  The live `.untypedReset` arm is `untypedResetWithShootdown`: the
+  reset, then one acknowledged `.aside1` round per retired root's ASID, read on
+  the pre-state (`untypedResetShootdownAsids`; `untypedResetShootdownAsids_mem`
+  says every retired root's ASID is posted).  The round fold is the retype's own
+  (`retypeAsidRoundFold`) and writes no object, scheduler, machine or ASID-table
+  state (`untypedResetWithShootdown_ok_frame`), so every reset result carries
+  over; `untypedResetWithShootdown_preserves_ipcInvariantFull`,
+  `untypedResetWithShootdown_confinedToCores` and its cross-core
+  non-interference are the arm's, and the delegation proof, the enforcement
+  boundary and the cross-core inventory name the wrapper.
+- **HAL.**  A PE servicing an `.aside1` round — on the precise path
+  (`retire_round_ops_in`) and the self-service path (`self_service_round_in`,
+  which evicts from the round's snapshot, or from any user translation if the
+  snapshot is unreadable) — installs the kernel's boot tables in `TTBR0_EL1`
+  when that register still carries the retired ASID
+  (`evict_retired_translation`, `translation_retired_by`), then invalidates, then
+  acknowledges.  The initiator's wait runs inside the kernel-entry bracket, so no
+  later syscall — and no carve of the page — begins until every PE has left.
+  Every `.aside1` round in the tree names an ASID no thread may run under (the
+  reset refuses while any TCB's `vspaceRoot` names a member of the subtree), so
+  the eviction takes no live thread out of its address space.
+- **Tests.**  `VSpaceCapabilityBindingSuite` §5i asserts both retired roots'
+  ASIDs are posted and the boot root's is not, with the bare reset computed
+  beside it posting none; the HAL gains two host tests for the eviction
+  predicate and the op tag.  Tier 3 anchors pin the arm, the wrapper and both
+  HAL eviction sites, with a negative refusing the bare reset as the arm.
+- **Gate fix.**  A v0.36.36 Tier 3 `#check` of `qemuVirtRamOrigin` sat in a block
+  importing `SeLe4n.Platform.FFI`, which does not reach the QEMU binding; it is a
+  text anchor over its own module now.
+
 ## v0.36.36 — A Raspberry Pi 5's RAM begins at the image origin
 
 The post-landing audit of BP7.10 found that the deployment could not boot on a

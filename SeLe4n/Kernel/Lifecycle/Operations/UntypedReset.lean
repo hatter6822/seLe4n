@@ -930,4 +930,104 @@ theorem untypedReset_ok_frame (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjI
       · have := hCT st1 oid hc; rw [e1] at this; exact Or.inr ⟨this, trivial⟩
       · rw [hr]; exact Or.inr ⟨trivial, trivial⟩
 
+-- ============================================================================
+-- §7  The acknowledged ASID round (`v0.36.37`)
+-- ============================================================================
+
+/-- The ASIDs of the VSpace roots among `ids`, read on `st`. -/
+def untypedResetRetiredRootAsids (st : SystemState) (ids : List SeLe4n.ObjId) :
+    List SeLe4n.ASID :=
+  ids.filterMap fun id => (st.getVSpaceRoot? id).map VSpaceRoot.asid
+
+/-- **The ASIDs a reset retires**, read on the state the reset runs on — the same
+subtree walk `untypedReset` performs, and `[]` wherever that walk refuses (the
+reset then refuses too, so nothing is posted). -/
+def untypedResetShootdownAsids (st : SystemState) (untypedId : SeLe4n.ObjId) :
+    List SeLe4n.ASID :=
+  match st.getUntyped? untypedId with
+  | none => []
+  | some ut =>
+    match untypedCarvedSubtree st ut with
+    | none => []
+    | some ids => untypedResetRetiredRootAsids st ids
+
+/-- **A reset whose retired ASIDs every PE has left** (`v0.36.37`, the live
+`.untypedReset` arm).
+
+`retireCarvedObject` records an `invalidateAsid` for a retired root, which the
+syscall seam performs as a broadcast `TLBI ASIDE1IS`.  That empties every TLB of
+the ASID and leaves every `TTBR0_EL1` alone: a PE whose thread another core has
+descheduled keeps the retired root's table page in its `TTBR0_EL1` until its own
+next context restore, and the reset hands that page back to the untyped, from
+which the next carve may give it to another thread as a frame.  A walk through it
+then reads that thread's bytes as descriptors.
+
+So the arm posts one acknowledged `.aside1` round per retired ASID, the
+retype's own round (`retypeAsidRoundFold`).  A PE servicing an `.aside1` round
+leaves the address space it names before it acknowledges
+(`shootdown::evict_retired_translation` in the HAL), and the initiator's bounded
+wait for every acknowledgment runs inside the kernel-entry bracket — so no later
+syscall, and so no carve of that page, can begin until every PE has left it.
+Every ASID posted here names a root no thread may run under: the reset refuses
+while any TCB's `vspaceRoot` names a member of the subtree
+(`carvedSubtreeUnreferenced`), so the eviction takes no live thread out of its
+address space. -/
+def untypedResetWithShootdown (executingCore : Concurrency.CoreId)
+    (untypedId : SeLe4n.ObjId) : Kernel Unit :=
+  fun st =>
+    match untypedReset executingCore untypedId st with
+    | .error e => .error e
+    | .ok ((), st1) =>
+      .ok ((), retypeAsidRoundFold executingCore (untypedResetShootdownAsids st untypedId) st1)
+
+/-- **What the wrapper did**: the reset, then the round fold over the ASIDs read
+on the pre-state. -/
+theorem untypedResetWithShootdown_ok (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjId)
+    (st st' : SystemState)
+    (hStep : untypedResetWithShootdown ec untypedId st = .ok ((), st')) :
+    ∃ st1, untypedReset ec untypedId st = .ok ((), st1) ∧
+      st' = retypeAsidRoundFold ec (untypedResetShootdownAsids st untypedId) st1 := by
+  unfold untypedResetWithShootdown at hStep
+  cases hR : untypedReset ec untypedId st with
+  | error e => rw [hR] at hStep; cases hStep
+  | ok pr =>
+    obtain ⟨u, st1⟩ := pr; cases u
+    rw [hR] at hStep
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+    exact ⟨st1, rfl, hStep.symm⟩
+
+/-- **The rounds write nothing a reset result reads**: the object store, the
+scheduler, the machine and the ASID table are the reset's own. -/
+theorem untypedResetWithShootdown_ok_frame (ec : Concurrency.CoreId)
+    (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (hStep : untypedResetWithShootdown ec untypedId st = .ok ((), st')) :
+    ∃ st1, untypedReset ec untypedId st = .ok ((), st1) ∧
+      st'.objects = st1.objects ∧ st'.scheduler = st1.scheduler ∧
+      st'.machine = st1.machine ∧ st'.asidTable = st1.asidTable := by
+  obtain ⟨st1, hR, rfl⟩ := untypedResetWithShootdown_ok ec untypedId st st' hStep
+  exact ⟨st1, hR, retypeAsidRoundFold_objects _ _ _, retypeAsidRoundFold_scheduler _ _ _,
+    retypeAsidRoundFold_machine _ _ _, retypeAsidRoundFold_asidTable _ _ _⟩
+
+/-- **Every retired root's ASID gets a round**: a VSpace root in the subtree the
+reset walks has its ASID in the posted list. -/
+theorem untypedResetShootdownAsids_mem (st : SystemState) (untypedId : SeLe4n.ObjId)
+    {ut : UntypedObject} {ids : List SeLe4n.ObjId} {id : SeLe4n.ObjId} {root : VSpaceRoot}
+    (hUt : st.getUntyped? untypedId = some ut) (hW : untypedCarvedSubtree st ut = some ids)
+    (hId : id ∈ ids) (hRoot : st.getVSpaceRoot? id = some root) :
+    root.asid ∈ untypedResetShootdownAsids st untypedId := by
+  simp only [untypedResetShootdownAsids, hUt, hW, untypedResetRetiredRootAsids,
+    List.mem_filterMap]
+  exact ⟨id, hId, by simp [hRoot]⟩
+
+/-- **The rounds the wrapper posts**: the shootdown state is the reset's with one
+coalescing `.aside1` round posted per retired ASID. -/
+theorem untypedResetWithShootdown_ok_tlbShootdown (ec : Concurrency.CoreId)
+    (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (hStep : untypedResetWithShootdown ec untypedId st = .ok ((), st')) :
+    ∃ st1, untypedReset ec untypedId st = .ok ((), st1) ∧
+      st'.tlbShootdown =
+        roundFoldSd ec (untypedResetShootdownAsids st untypedId) st1.tlbShootdown := by
+  obtain ⟨st1, hR, rfl⟩ := untypedResetWithShootdown_ok ec untypedId st st' hStep
+  exact ⟨st1, hR, retypeAsidRoundFold_tlbShootdown _ _ _⟩
+
 end SeLe4n.Kernel

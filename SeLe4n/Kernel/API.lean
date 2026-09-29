@@ -4718,12 +4718,14 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- returns to it once no capability names any carved child.  Every mapping of
   -- the region is removed through the `.vspaceUnmap` arm's own transition, with
   -- the invoking thread's core as the initiator of each shootdown round, and the
-  -- carved frames are retired.  Takes no message registers: the capability is
-  -- the whole operand.
+  -- carved frames are retired.  Since `v0.36.37` every retired root's ASID then
+  -- gets an acknowledged `.aside1` round (`untypedResetWithShootdown`), which is
+  -- what makes every PE leave that address space before the page can be recarved.
+  -- Takes no message registers: the capability is the whole operand.
   | .untypedReset =>
     some <| match cap.target with
     | .object untypedId => fun st =>
-        untypedReset (determineExecutingCore st tid) untypedId st
+        untypedResetWithShootdown (determineExecutingCore st tid) untypedId st
     | _ => fun _ => .error .invalidCapability
   | .vspaceMap =>
     some <| match cap.target with
@@ -5277,7 +5279,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
   case untypedReset =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      exact untypedReset_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
+      exact untypedResetWithShootdown_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
     all_goals try cases hStep
   case lifecycleRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -7712,8 +7714,10 @@ theorem dispatchWithCap_vspaceUnmap_delegates
         (determineExecutingCore st tid) args.asid args.vaddr st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
 
-/-- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm *is* `untypedReset` at
-the invoking thread's executing core and the untyped the capability names — the
+/-- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm *is* the reset — since
+`v0.36.37` `untypedResetWithShootdown`, the reset followed by one acknowledged
+`.aside1` round per retired ASID — at the invoking thread's executing core and
+the untyped the capability names — the
 same core the `.vspaceUnmap` arm initiates its shootdown rounds on, so the
 reset's unmaps and an ordinary unmap cannot disagree about who drives the round.
 The arm decodes no message register: the capability is the whole operand. -/
@@ -7723,7 +7727,7 @@ theorem dispatchWithCap_untypedReset_delegates
     (hSyscall : decoded.syscallId = .untypedReset)
     (hTarget : cap.target = .object untypedId) :
     dispatchWithCap decoded tid gate cap st =
-      untypedReset (determineExecutingCore st tid) untypedId st := by
+      untypedResetWithShootdown (determineExecutingCore st tid) untypedId st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================
@@ -10001,7 +10005,7 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .untypedReset →
         cap.target = .object untypedId →
         dispatchWithCap decoded tid gate cap st =
-          untypedReset (determineExecutingCore st tid) untypedId st
+          untypedResetWithShootdown (determineExecutingCore st tid) untypedId st
   -- WS-BP BP7.1 (`v0.36.7`): the two destroying arms.  Each names the finalising
   -- composite — the delete or the revocation, then the removal of every mapping a
   -- destroyed frame capability recorded — at the invoking thread's core.

@@ -265,7 +265,10 @@ def enforcementBoundary : List EnforcementClass :=
   -- and the reset refuses unless no capability anywhere names a carved child,
   -- so no principal loses a capability it holds.  What it removes is mappings
   -- whose capabilities are already gone, and frames no capability names.
-  , .capabilityOnly "untypedReset"
+  -- Since `v0.36.37` the arm's composite is `untypedResetWithShootdown`: the reset
+  -- then one acknowledged `.aside1` round per retired ASID, which moves no
+  -- authority either.
+  , .capabilityOnly "untypedResetWithShootdown"
   -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
@@ -420,7 +423,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceRevoke => "cspaceRevokeCdtFinalising"
   | .lifecycleRetype => "lifecycleRetypeObject"
   | .untypedRetype => "untypedRetypeFromCap"
-  | .untypedReset => "untypedReset"
+  | .untypedReset => "untypedResetWithShootdown"
   | .vspaceMap => "vspaceMapPageCheckedWithShootdownFromState"
   | .vspaceUnmap => "vspaceUnmapPageWithShootdown"
   | .serviceRegister => "registerServiceChecked"

@@ -4235,6 +4235,34 @@ theorem untypedReset_crossCoreNonInterference
   crossCoreNonInterference_ofCores ctx observer (by simp)
     (untypedReset_confinedToCores executingCore untypedId st st' hStep) hShared
 
+/-- **`v0.36.37`: the live `.untypedReset` arm writes no core.**  The arm is the
+reset followed by the `.aside1` round fold, which writes neither the scheduler
+nor the machine (`untypedResetWithShootdown_ok_frame`). -/
+theorem untypedResetWithShootdown_confinedToCores
+    (executingCore : CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (hStep : untypedResetWithShootdown executingCore untypedId st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  apply observableSlotsConfinedToCores_nil_of_framed
+  obtain ⟨st1, hR, -, hs, hm, -⟩ :=
+    untypedResetWithShootdown_ok_frame executingCore untypedId st st' hStep
+  obtain ⟨_, ids, st2, -, -, -, -, -, -, -, hUnmap, -, -, -, -, hSt⟩ :=
+    untypedReset_ok_decompose executingCore untypedId st st1 hR
+  obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ st st2 hUnmap
+  obtain ⟨hs2, hm2⟩ := retireCarvedObjects_framed ids st2
+  exact ⟨hs.trans ((storeObject_scheduler_eq _ _ _ _ hSt).trans (hs2.trans hs1)),
+    hm.trans ((storeObject_machine_eq _ _ _ _ hSt).trans (hm2.trans hm1))⟩
+
+/-- **`v0.36.37`: the live `.untypedReset` arm, cross-core** — invisible on every
+core, with its acknowledged ASID rounds. -/
+theorem untypedResetWithShootdown_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (untypedId : SeLe4n.ObjId) (st st' : SystemState) (c : CoreId)
+    (hStep : untypedResetWithShootdown executingCore untypedId st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (untypedResetWithShootdown_confinedToCores executingCore untypedId st st' hStep) hShared
+
 /-- WS-BP BP7.1 (`v0.36.12`): the finalisation a destroying capability
 operation owes — the page-table detach, stores to VSpace roots, and the page
 teardown, the `.vspaceUnmap` arm's own transition — writes no scheduler and no
@@ -5390,8 +5418,9 @@ inductive CrossCoreTransition where
   | vspaceUnmapDispatch
   /-- WS-BP BP7.1 (slice 3) — the **live** `.untypedReset` arm.  Takes an
   executing core to initiate its unmaps' shootdown rounds, and writes no core:
-  its unmap pass is the `.vspaceUnmap` arm's own transition, and the retire and
-  the rewind write the object table alone. -/
+  its unmap pass is the `.vspaceUnmap` arm's own transition, the retire and the
+  rewind write the object table alone, and (`v0.36.37`) its acknowledged `.aside1`
+  rounds write the TLB state alone (`untypedResetWithShootdown`). -/
   | untypedResetDispatch
   /-- WS-BP BP7.1 (`v0.36.7`) — the **live** `.cspaceDelete` arm.  Takes an
   executing core since the delete finalises a frame capability — its recorded
@@ -5504,7 +5533,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! vspaceMapFromFrameCap_crossCoreNonInterference
   | .vspaceUnmapDispatch =>
       niName! vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
-  | .untypedResetDispatch => niName! untypedReset_crossCoreNonInterference
+  | .untypedResetDispatch => niName! untypedResetWithShootdown_crossCoreNonInterference
   | .cspaceDeleteDispatch => niName! cspaceDeleteSlotFinalising_crossCoreNonInterference
   | .cspaceRevokeDispatch => niName! cspaceRevokeCdtFinalising_crossCoreNonInterference
   | .lifecycleRetypeDispatch =>

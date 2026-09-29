@@ -1237,6 +1237,22 @@ private def runCarvedRootChecks : IO Unit := do
         assertBool "their ASIDs are released, and the boot root's is untouched"
           (stReset.asidTable[one]? == none && stReset.asidTable[SeLe4n.ASID.ofNat 2]? == none &&
            stReset.asidTable[carveAsid]? == some carveVsp)
+        -- `v0.36.37`: every retired ASID gets an ACKNOWLEDGED `.aside1` round,
+        -- whose servicing PEs leave that address space (their `TTBR0_EL1`)
+        -- before they acknowledge.  The ledger's broadcast `TLBI ASIDE1IS`
+        -- empties TLBs and leaves every `TTBR0_EL1` alone.
+        let posted := Architecture.shootdownPostedOps stRev stReset
+        assertBool "each retired root's ASID is posted as an acknowledged .aside1 round"
+          (posted.contains (Architecture.encodeAsidInvalidation one) &&
+           posted.contains (Architecture.encodeAsidInvalidation (SeLe4n.ASID.ofNat 2)))
+        assertBool "and the boot root's ASID, which the reset did not retire, is not"
+          (!posted.contains (Architecture.encodeAsidInvalidation carveAsid))
+        assertBool "RETIRED: the bare reset posted no .aside1 round for a retired ASID"
+          (match untypedReset (determineExecutingCore stRev carveOwner) carveUt stRev with
+            | .ok ((), stOld) =>
+                !(Architecture.shootdownPostedOps stRev stOld).contains
+                  (Architecture.encodeAsidInvalidation one)
+            | .error _ => false)
         match dispatchSyscall (decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12)
             carveOwner stReset with
         | .error e => assertBool s!"a root carve after the reset succeeds (got {repr e})" false

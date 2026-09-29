@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.36.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.37.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8285,7 +8285,17 @@ until the boot places a page for it.  (3) **Retiring a root is finalising it**:
 the reset refuses while a thread's `vspaceRoot` names one (a reference no
 capability carries), removes every mapping it holds through the verified unmap
 and checks it empty, and erases its ASID entry, deciding afterwards that no
-entry names a retired object (`untypedReset_ok_asids_released`).  (4) **The
+entry names a retired object (`untypedReset_ok_asids_released`).  **And every
+PE leaves a retired root before the reset returns** (`v0.36.37`): the live arm is
+`untypedResetWithShootdown`, which posts one acknowledged `.aside1` round per
+retired ASID (`untypedResetShootdownAsids_mem`), and a PE servicing an `.aside1`
+round installs the kernel's boot tables in `TTBR0_EL1` if it still runs under
+that ASID (`shootdown::evict_retired_translation`) before it acknowledges.  The
+ledger's broadcast `TLBI ASIDE1IS` empties TLBs and leaves every `TTBR0_EL1`
+alone, so a PE lagging behind a remote deschedule kept the retired root's table
+page — which the next carve may hand out as a frame — as its walk base.  Every
+`.aside1` round in the tree names an ASID no thread may run under, so the
+eviction never takes a live thread out of its address space.  (4) **The
 carve lock is keyed on the carved kind** (`carvedObjectLock`), so a kind the
 carve gains names its own lock.  What is still owed before BP7.2: a table
 page for each configured root, and intermediate page-table objects —

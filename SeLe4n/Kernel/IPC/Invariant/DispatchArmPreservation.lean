@@ -1580,6 +1580,20 @@ theorem untypedReset_preserves_ipcInvariantFull
       hInv.passiveServerIdle)
     hCap hInv
 
+/-- **`v0.36.37`: the live `.untypedReset` arm preserves `ipcInvariantFull`.**  The
+arm is the reset followed by the `.aside1` round fold, which writes neither the
+object store nor the scheduler (`untypedResetWithShootdown_ok_frame`), so the
+reset's own result carries over. -/
+theorem untypedResetWithShootdown_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : untypedResetWithShootdown ec untypedId st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨st1, hR, hObj, hSched, -, -⟩ :=
+    untypedResetWithShootdown_ok_frame ec untypedId st st' hStep
+  exact ipcInvariantFull_of_objects_scheduler_eq hObj hSched
+    (untypedReset_preserves_ipcInvariantFull ec untypedId st st1 hObjInv hInv hR)
+
 /-- `.cspaceRevoke`'s store invariant, read off the scaffold's own preservation
 theorem — what the finalising revocation's teardown needs. -/
 theorem cspaceRevokeCdt_preserves_objects_invExt
