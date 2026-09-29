@@ -225,15 +225,25 @@ def rpi5RootTaskUntypeds (v : BCM2712Config) : List (SeLe4n.ObjId × UntypedObje
   (rpi5BootRamExtensions v).mapIdx fun i e =>
     (rpi5RootTaskUntypedId i, rpi5InitialUntyped e.1 e.2)
 
+/-- The untypeds built over any extension list have exactly its regions —
+    stated over the list, so no proof about a configuration's untypeds asks the
+    kernel to evaluate that configuration's extensions: with the first region
+    sized `lowRamTop - rpi5RamOrigin` (`v0.36.36`), `Nat.sub` would unfold once
+    per unit of its literal second argument. -/
+private theorem untypedsOver_regions (l : List (Nat × Nat)) :
+    (l.mapIdx fun i e => (rpi5RootTaskUntypedId i, rpi5InitialUntyped e.1 e.2)).map
+        (fun u => (u.2.regionBase.toNat, u.2.regionSize)) = l := by
+  apply List.ext_getElem
+  · simp
+  · intro i h₁ h₂
+    simp
+
 /-- **WS-BP BP4.7**: the untypeds' regions are exactly the extensions the boot
     maps, in order — on every configuration. -/
 theorem rpi5RootTaskUntypeds_regions (v : BCM2712Config) :
     (rpi5RootTaskUntypeds v).map (fun u => (u.2.regionBase.toNat, u.2.regionSize)) =
-      rpi5BootRamExtensions v := by
-  apply List.ext_getElem
-  · simp [rpi5RootTaskUntypeds]
-  · intro i h₁ h₂
-    simp [rpi5RootTaskUntypeds]
+      rpi5BootRamExtensions v :=
+  untypedsOver_regions (rpi5BootRamExtensions v)
 
 /-- **WS-BP BP7.10**: how many extensions an admissible configuration has — the
     first gigabyte's, and the variant's RAM above it on every board larger than
@@ -496,6 +506,40 @@ private theorem extensions_pairwise_disjoint (v : BCM2712Config) (hv : v.Admissi
     exact List.pairwise_pair.mpr (Or.inl (by omega))
   · simp
 
+/-- An untyped over an extension of any machine configuration that reserves
+    the kernel's extent is placed: inside the RAM region the extension was cut
+    from, and clear of the extent.  Stated over the configuration and the
+    extension, not over a board configuration: with the first region sized
+    `lowRamTop - rpi5RamOrigin` (`v0.36.36`), evaluating a symbolic board's
+    extensions unfolds `Nat.sub` once per unit of the origin. -/
+private theorem extension_placed (mc : SeLe4n.MachineConfig)
+    (hRes : mc.kernelReserved = rpi5KernelReserved) (x : Nat × Nat)
+    (hx : x ∈ bootRamExtensionsOf mc.memoryMap) :
+    (untypedWithinDeclaredRegion mc (rpi5InitialUntyped x.1 x.2) &&
+      untypedClearOfKernel mc (rpi5InitialUntyped x.1 x.2)) = true := by
+  obtain ⟨r, hr, hk, hlo, hend, hkre, _⟩ := mem_bootRamExtensionsOf _ _ hx
+  simp only [Bool.and_eq_true]
+  refine ⟨?_, ?_⟩
+  · unfold untypedWithinDeclaredRegion
+    refine List.any_eq_true.mpr ⟨r, hr, ?_⟩
+    simp only [untypedRegionKind, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq,
+      rpi5InitialUntyped_base, rpi5InitialUntyped_size]
+    refine ⟨⟨?_, hlo⟩, by omega⟩
+    simp [rpi5InitialUntyped, hk]
+  · unfold untypedClearOfKernel
+    rw [hRes]
+    simp only [rpi5KernelReserved, List.all_cons, List.all_nil, Bool.and_true, Bool.or_eq_true,
+      decide_eq_true_eq, rpi5InitialUntyped_base, rpi5InitialUntyped_size]
+    right
+    simpa [SeLe4n.MemoryRegion.endAddr, SeLe4n.PAddr.ofNat, SeLe4n.PAddr.toNat] using hkre
+
+/-- Two untypeds over extensions that do not overlap do not overlap either
+    (stated over the extensions, for the reason above). -/
+private theorem extensions_disjoint_untyped (a b : Nat × Nat) (h : a.1 + a.2 ≤ b.1) :
+    (rpi5InitialUntyped a.1 a.2).regionBase.val + (rpi5InitialUntyped a.1 a.2).regionSize ≤
+      (rpi5InitialUntyped b.1 b.2).regionBase.val := by
+  simpa [rpi5InitialUntyped, SeLe4n.PAddr.ofNat] using h
+
 /-- **WS-BP BP7.10**: the one gate the projection forgets, decided over the
     structure rather than by evaluation — every untyped is its extension, which
     lies inside a RAM region of the bound map (`mem_bootRamExtensionsOf`) and
@@ -510,22 +554,7 @@ theorem rpi5BoundPlatformConfigAt_placement (v : BCM2712Config) (hv : v.Admissib
     cases hObj : e.obj with
     | untyped ut =>
         obtain ⟨i, hi, _, rfl⟩ := untyped_of_mem v e ut he hObj
-        obtain ⟨r, hr, hk, hlo, hend, hkre, _⟩ :=
-          mem_bootRamExtensionsOf _ _ (List.getElem_mem hi)
-        simp only [Bool.and_eq_true]
-        refine ⟨?_, ?_⟩
-        · unfold untypedWithinDeclaredRegion
-          refine List.any_eq_true.mpr ⟨r, hr, ?_⟩
-          simp only [untypedRegionKind, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq,
-            rpi5InitialUntyped_base, rpi5InitialUntyped_size]
-          refine ⟨⟨?_, hlo⟩, by omega⟩
-          simp [rpi5InitialUntyped, hk]
-        · unfold untypedClearOfKernel
-          simp only [rpi5BoundPlatformConfigAt, rpi5MachineConfigForVariant_kernelReserved,
-            rpi5KernelReserved, List.all_cons, List.all_nil, Bool.and_true, Bool.or_eq_true,
-            decide_eq_true_eq, rpi5InitialUntyped_base, rpi5InitialUntyped_size]
-          right
-          simpa [SeLe4n.MemoryRegion.endAddr, SeLe4n.PAddr.ofNat, SeLe4n.PAddr.toNat] using hkre
+        exact extension_placed (rpi5MachineConfigForVariant v) rfl _ (List.getElem_mem hi)
     | _ => rfl
   · intro e₁ he₁ e₂ he₂
     unfold untypedEntriesDisjoint
@@ -539,14 +568,13 @@ theorem rpi5BoundPlatformConfigAt_placement (v : BCM2712Config) (hv : v.Admissib
             by_cases hij : i = j
             · subst hij; exact Or.inl (Or.inl (hId₁.trans hId₂.symm))
             · have hP := List.pairwise_iff_getElem.mp (extensions_pairwise_disjoint v hv)
-              simp only [rpi5InitialUntyped]
               rcases Nat.lt_or_gt_of_ne hij with hlt | hgt
               · rcases hP i j hi hj hlt with h | h
-                · exact Or.inl (Or.inr h)
-                · exact Or.inr h
+                · exact Or.inl (Or.inr (extensions_disjoint_untyped _ _ h))
+                · exact Or.inr (extensions_disjoint_untyped _ _ h)
               · rcases hP j i hj hi hgt with h | h
-                · exact Or.inr h
-                · exact Or.inl (Or.inr h)
+                · exact Or.inr (extensions_disjoint_untyped _ _ h)
+                · exact Or.inl (Or.inr (extensions_disjoint_untyped _ _ h))
         | _ => rfl
     | _ => rfl
 

@@ -230,8 +230,19 @@ def c_eight_gib_bcm2711_relocated_bank() -> Fdt:
 # `realFirmwareAccountBindsTheReportedRam` boots it bound to the 8 GiB member
 # cut at `0x3FC00000`.
 def c_eight_gib_rpi5_firmware() -> Fdt:
-    return close(memory(root(), "memory@0", (0, 0x8_0000), (0x8_0000, 0x3FB8_0000),
-                        (0x4000_0000, 0x1_C000_0000)))
+    # v0.36.36: with `bcm2712.dtsi`'s own `reserved-memory/atf@0` -- the secure
+    # monitor's [0, 0x80000), two address cells, one size cell, `ranges`
+    # and `no-map` -- so both readers walk the tree a real board's firmware
+    # hands over.  The `regions` column is `/memory` selection, before any
+    # reservation is subtracted, so it does not move.
+    f = memory(root(), "memory@0", (0, 0x8_0000), (0x8_0000, 0x3FB8_0000),
+               (0x4000_0000, 0x1_C000_0000))
+    f.begin("reserved-memory").u32prop("#address-cells", 2).u32prop("#size-cells", 1)
+    f.prop("ranges", b"")
+    f.begin("atf@0").reg((0, 0x8_0000), ac=2, sc=1)
+    f.prop("no-map", b"")
+    f.end()
+    return close(f.end())
 
 
 def c_two_nodes_low_short() -> Fdt:

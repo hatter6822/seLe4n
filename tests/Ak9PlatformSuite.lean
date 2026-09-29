@@ -919,13 +919,26 @@ entry of `regions` (base, size), plus the three MMIO windows the RPi5 binding
 programs.  Several pairs is how the firmware reports a board whose RAM is not
 one contiguous run — every RPi5 above 2 GiB. -/
 private def boardDtbRegions (regions : List (Nat × Nat)) (withMmio : Bool := true)
-    (uartSize : Nat := 0x200) : ByteArray :=
+    (uartSize : Nat := 0x200) (atf : Bool := false) : ByteArray :=
   let regPairs := regions.foldl (fun acc r => acc ++ be64 r.1 ++ be64 r.2) #[]
+  -- `v0.36.36`: `bcm2712.dtsi`'s `reserved-memory/atf@0` — the secure
+  -- monitor's `[0, 0x80000)`, two address cells and one size cell, exactly as
+  -- the firmware's tree declares it.
+  let atfNode :=
+    if atf then
+      fdtBeginNode "reserved-memory"
+        ++ fdtProp addressCellsNameOff (be32 2) ++ fdtProp sizeCellsNameOff (be32 1)
+        ++ (fdtBeginNode "atf@0"
+            ++ fdtProp regNameOff (be64 0 ++ be32 0x80000)
+            ++ fdtEndNodeTok)
+        ++ fdtEndNodeTok
+    else #[]
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
       ++ fdtProp regNameOff regPairs
       ++ fdtEndNodeTok
+      ++ atfNode
   let peripherals :=
     if withMmio then
       peripheralNode "serial@107d001000" 0x107D001000 uartSize "arm,pl011"
@@ -1848,11 +1861,18 @@ account's ranges.  The shared corpus carries the same account as
 def realFirmwareAccountBindsTheReportedRam : IO Unit := do
   let firmwareAccount : List (Nat × Nat) :=
     [(0, 0x80000), (0x80000, 0x3fb80000), (0x40000000, 0x1c0000000)]
-  let blob := boardDtbRegions firmwareAccount
+  -- `v0.36.36`: with the tree's own `atf@0` reservation, which the parser
+  -- subtracts — the account a real board produces.
+  let blob := boardDtbRegions firmwareAccount (atf := true)
   let cut : BCM2712Config := { ramSize := 8 * 1024 * 1024 * 1024, lowRamTop := 0x3fc00000 }
   match DeviceTree.fromDtbFull blob rpi5MachineConfig.physicalAddressWidth with
   | .error _ => expect "BP7.10 the firmware's account parses" false
   | .ok dt =>
+      expect "v0.36.36 the parsed account begins at the image origin (atf@0 subtracted)"
+        (classifyAddress (PAddr.ofNat 0) dt.machineConfig.memoryMap != .ram &&
+          classifyAddress (PAddr.ofNat 0x80000) dt.machineConfig.memoryMap == .ram)
+      expect "v0.36.36 RETIRED the reach from 0 is nothing, so the pre-v0.36.36 derivation refused"
+        (Platform.Boot.ramReachFrom dt.machineConfig 0 == 0)
       expect "BP7.10 the firmware's account binds the 8 GiB member cut at 0x3fc00000"
         (decide (rpi5VariantFor dt.machineConfig = cut))
       expect "BP7.10 NEGATIVE the firmware's account covers no uncut variant"
@@ -1866,6 +1886,9 @@ def realFirmwareAccountBindsTheReportedRam : IO Unit := do
         (decide (boundMapOf config = rpi5MemoryMapForConfig cut))
       expect "BP7.10 the bound map declares the withheld top of the first gigabyte as no RAM"
         (decide (classifyAddress (PAddr.ofNat 0x3fc00000) (boundMapOf config) ≠ .ram))
+      expect "v0.36.36 the bound map declares the secure monitor's [0, 0x80000) as no RAM"
+        (decide (classifyAddress (PAddr.ofNat 0x7ffff) (boundMapOf config) ≠ .ram) &&
+          decide (classifyAddress (PAddr.ofNat 0x80000) (boundMapOf config) = .ram))
       let untypeds : List (Nat × Nat) :=
         (List.range 3).filterMap fun i =>
           match ist.state.objects[rpi5RootTaskUntypedId i]? with
@@ -2222,7 +2245,10 @@ def review9_runtime_contract_follows_the_installed_map : IO Unit := do
   let stFor (mc : SeLe4n.MachineConfig) : SystemState :=
     { (default : SystemState) with machine := { (default : MachineState) with memoryMap := mc.memoryMap } }
   let twoGiB := SeLe4n.PAddr.ofNat 0x8000_0000
-  let lowAddr := SeLe4n.PAddr.ofNat 0x1000
+  -- `v0.36.36`: inside RAM means past the image origin — `[0, 0x80000)` is the
+  -- secure monitor's, and no configuration calls it RAM.
+  let lowAddr := SeLe4n.PAddr.ofNat 0x81000
+  let atfAddr := SeLe4n.PAddr.ofNat 0x1000
   let small := rpi5MachineConfigForVariant rpi5SmallestVariant
   let full := rpi5MachineConfig
   expect "review9 the 4 GiB board authorises a read 2 GiB up"
@@ -2231,6 +2257,9 @@ def review9_runtime_contract_follows_the_installed_map : IO Unit := do
     (!@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor small) twoGiB))
   expect "review9 the 1 GiB board still authorises a read inside its RAM"
     (@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor small) lowAddr))
+  expect "NEGATIVE v0.36.36 no board authorises a read of the secure monitor's memory"
+    (!@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor small) atfAddr) &&
+      !@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor full) atfAddr))
   expect "NEGATIVE review9 the restrictive contract agrees on the small board"
     (!@decide _ (rpi5RuntimeContractRestrictive.memoryAccessAllowedDecidable (stFor small) twoGiB))
 

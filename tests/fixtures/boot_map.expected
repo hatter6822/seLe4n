@@ -8,10 +8,12 @@ mmio uart 0x107d001000 0x200
 mmio gicd 0x107fff9000 0x1000
 mmio gicc 0x107fffa000 0x2000
 variant 0x40000000 lowRamTop 0x40000000
-region 0x0 0x40000000 ram
+region 0x80000 0x3ff80000 ram
 region 0x107c000000 0x4000000 device
 extend 0x10000000 0x30000000
-probe 0x0 ram
+probe 0x0 reserved
+probe 0x7ffff reserved
+probe 0x80000 ram
 probe 0x3fffffff ram
 probe 0x40000000 reserved
 probe 0x107bffffff reserved
@@ -20,12 +22,14 @@ probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
 variant 0x80000000 lowRamTop 0x40000000
-region 0x0 0x40000000 ram
+region 0x80000 0x3ff80000 ram
 region 0x40000000 0x40000000 ram
 region 0x107c000000 0x4000000 device
 extend 0x10000000 0x30000000
 extend 0x40000000 0x40000000
-probe 0x0 ram
+probe 0x0 reserved
+probe 0x7ffff reserved
+probe 0x80000 ram
 probe 0x3fffffff ram
 probe 0x40000000 ram
 probe 0x7fffffff ram
@@ -36,12 +40,14 @@ probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
 variant 0x100000000 lowRamTop 0x40000000
-region 0x0 0x40000000 ram
+region 0x80000 0x3ff80000 ram
 region 0x40000000 0xc0000000 ram
 region 0x107c000000 0x4000000 device
 extend 0x10000000 0x30000000
 extend 0x40000000 0xc0000000
-probe 0x0 ram
+probe 0x0 reserved
+probe 0x7ffff reserved
+probe 0x80000 ram
 probe 0x3fffffff ram
 probe 0x40000000 ram
 probe 0xffffffff ram
@@ -52,12 +58,14 @@ probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
 variant 0x200000000 lowRamTop 0x40000000
-region 0x0 0x40000000 ram
+region 0x80000 0x3ff80000 ram
 region 0x40000000 0x1c0000000 ram
 region 0x107c000000 0x4000000 device
 extend 0x10000000 0x30000000
 extend 0x40000000 0x1c0000000
-probe 0x0 ram
+probe 0x0 reserved
+probe 0x7ffff reserved
+probe 0x80000 ram
 probe 0x3fffffff ram
 probe 0x40000000 ram
 probe 0x1ffffffff ram
@@ -68,12 +76,14 @@ probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
 variant 0x400000000 lowRamTop 0x40000000
-region 0x0 0x40000000 ram
+region 0x80000 0x3ff80000 ram
 region 0x40000000 0x3c0000000 ram
 region 0x107c000000 0x4000000 device
 extend 0x10000000 0x30000000
 extend 0x40000000 0x3c0000000
-probe 0x0 ram
+probe 0x0 reserved
+probe 0x7ffff reserved
+probe 0x80000 ram
 probe 0x3fffffff ram
 probe 0x40000000 ram
 probe 0x3ffffffff ram
@@ -84,12 +94,14 @@ probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
 variant 0x200000000 lowRamTop 0x3fc00000
-region 0x0 0x3fc00000 ram
+region 0x80000 0x3fb80000 ram
 region 0x40000000 0x1c0000000 ram
 region 0x107c000000 0x4000000 device
 extend 0x10000000 0x2fc00000
 extend 0x40000000 0x1c0000000
-probe 0x0 ram
+probe 0x0 reserved
+probe 0x7ffff reserved
+probe 0x80000 ram
 probe 0x3fbfffff ram
 probe 0x3fc00000 reserved
 probe 0x3fffffff reserved
@@ -102,12 +114,14 @@ probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
 variant 0x100000000 lowRamTop 0x3fa00000
-region 0x0 0x3fa00000 ram
+region 0x80000 0x3f980000 ram
 region 0x40000000 0xc0000000 ram
 region 0x107c000000 0x4000000 device
 extend 0x10000000 0x2fa00000
 extend 0x40000000 0xc0000000
-probe 0x0 ram
+probe 0x0 reserved
+probe 0x7ffff reserved
+probe 0x80000 ram
 probe 0x3f9fffff ram
 probe 0x3fa00000 reserved
 probe 0x3fffffff reserved
@@ -120,10 +134,12 @@ probe 0x107fffffff device
 probe 0x1080000000 reserved
 probe 0x4000000000 reserved
 variant 0x40000000 lowRamTop 0x10200000
-region 0x0 0x10200000 ram
+region 0x80000 0x10180000 ram
 region 0x107c000000 0x4000000 device
 extend 0x10000000 0x200000
-probe 0x0 ram
+probe 0x0 reserved
+probe 0x7ffff reserved
+probe 0x80000 ram
 probe 0x101fffff ram
 probe 0x10200000 reserved
 probe 0x107bffffff reserved

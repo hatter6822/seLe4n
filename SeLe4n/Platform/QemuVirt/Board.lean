@@ -77,9 +77,20 @@ def qemuVirtGicCpuInterfaceBase : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x0801_0000
     so the GICv2 carries SPIs 32 … 287. -/
 def qemuVirtGicSpiCount : Nat := 256
 
-/-- The deployment's memory map: the RAM and the device window. -/
+/-- **`v0.36.36`: the first byte of RAM the deployment declares** — the image's
+    load origin, 512 KiB above the base of RAM, as on the Raspberry Pi 5
+    (`rpi5RamOrigin`).  The HAL maps nothing below it on any board
+    (`mmu::IMAGE_ORIGIN`), so the model calls nothing below it RAM: the boot
+    map's Normal window and the declared RAM are one set on both boards.  The
+    hole stays inside the kernel's reserved extent, so no untyped describes
+    it. -/
+def qemuVirtRamOrigin : Nat := qemuVirtRamBase + 0x8_0000
+
+/-- The deployment's memory map: the RAM from the image origin, and the device
+    window. -/
 def qemuVirtMemoryMap : List SeLe4n.MemoryRegion :=
-  [ { base := SeLe4n.PAddr.ofNat qemuVirtRamBase, size := qemuVirtRamSize, kind := .ram }
+  [ { base := SeLe4n.PAddr.ofNat qemuVirtRamOrigin, size := qemuVirtRamTop - qemuVirtRamOrigin,
+      kind := .ram }
   , { base := SeLe4n.PAddr.ofNat qemuVirtDeviceWindowBase, size := qemuVirtDeviceWindowSize
       kind := .device } ]
 

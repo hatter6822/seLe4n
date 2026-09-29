@@ -1,3 +1,40 @@
+## v0.36.36 — A Raspberry Pi 5's RAM begins at the image origin
+
+The post-landing audit of BP7.10 found that the deployment could not boot on a
+board whose firmware reserves the ARM Trusted Firmware's range, which the
+BCM2712's own device tree does: `bcm2712.dtsi` (`raspberrypi/linux`
+`rpi-6.6.y`) carries `reserved-memory/atf@0 { reg = <0x0 0x0 0x80000>; no-map; }`.
+The verified parser subtracts every carve-out from `/memory`, so the parsed
+account begins RAM at `0x8_0000`, and `ramPrefixTop` — the account's reach from
+`0` — answered `0`: every such board fell to the floor top and failed the
+coverage check, halting the boot.  Fail-closed, not a security defect.  The
+HAL's constant boot map also described the reservation as the kernel's own
+Normal, writable memory.
+
+- **Lean.**  `rpi5RamOrigin` (`0x8_0000`) is the RAM origin and `link.ld`'s
+  image origin; `rpi5MemoryMapForConfig`'s first region is
+  `[rpi5RamOrigin, lowRamTop)`.  `Boot.ramReachFrom board start` generalises the
+  reach to any start (`ramReachFrom_sound`, over the generalised
+  `memoryRegionCovered_of_le_coverReach`), and `ramPrefixTop` is retired with a
+  tombstone and a Tier 3 negative.  New: `rpi5VariantFor_rpi5_parsed_account`
+  (the account as parsed binds `{8 GiB, 0x3FC00000}`) and
+  `rpi5VariantFor_origin_not_ram`.  The deployment's untyped-placement proof is
+  restated over two generic lemmas (`extension_placed`,
+  `extensions_disjoint_untyped`), because the kernel otherwise unfolded
+  `lowRamTop - 0x80000` one unit at a time.  QEMU `virt` follows the same rule
+  (`qemuVirtRamOrigin`).
+- **HAL.**  `mmu::IMAGE_ORIGIN` and `in_kernel_memory_window` —
+  `[IMAGE_ORIGIN, KERNEL_RESERVED_END)` — are the constant Normal window, read by
+  `boot_mapping_for`, `ram_range_covered`, `dtb_window_admissible` and
+  `ImageLayout::is_well_formed`; the reservation is unmapped.  `IMAGE_ORIGIN` is
+  the first image boundary, so its 2 MiB block is split into pages
+  (`IMAGE_BOUNDARY_COUNT` 3 → 4).
+- **Fixtures.**  The DTB corpus's `eight_gib_rpi5_firmware` carries the `atf@0`
+  node; both shared boot-map fixtures are regenerated; `Ak9PlatformSuite` boots
+  the parsed account and checks that the retired reach answers `0` on it.
+- **Docs.**  `CLAUDE.md`/`AGENTS.md`, the spec (§6.2.12, §6.2.17, new §6.2.19),
+  the claim index, the BP7.10 plan row and a closed table B row.
+
 ## v0.36.35 — A live VSpace root is never destroyed in place
 
 The post-landing audit of BP7.1 found the other half of v0.36.9's finding,

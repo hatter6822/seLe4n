@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/loving-babbage-2z8r8z",
-      "commit_sha": "147550deeb151226a643157222022d8b1b7aa201",
-      "tree_sha": "15035a087cdf5d385f19da6424ad9dea4c99d6be",
-      "committed_at_utc": "2026-09-29T00:39:44+00:00"
+      "commit_sha": "195b62c09664d2537fa96b22b17babde659b9c53",
+      "tree_sha": "e26101e56f2b7ca9ae08faee7f7c5c94b479510c",
+      "committed_at_utc": "2026-09-29T01:38:03+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1ca843ab958291327fe5ee46f603ec0cae969c710d52f7ae480520a1bd686848"
+    "source_digest": "1852fad1597de21af00da2711f504eee83429848125e8cb79d482ab0aa1144a9"
   },
   "summary": {
     "module_count": 432,
-    "declaration_count": 24202
+    "declaration_count": 24209
   },
   "readme_sync": {
-    "version": "0.36.35",
+    "version": "0.36.36",
     "lean_toolchain": "v4.28.0",
     "production_files": 361,
-    "production_loc": 432801,
+    "production_loc": 432901,
     "test_files": 71,
-    "test_loc": 88304,
-    "proved_theorem_lemma_decls": 14371,
+    "test_loc": 88333,
+    "proved_theorem_lemma_decls": 14376,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -278947,7 +278947,7 @@
         {
           "kind": "theorem",
           "name": "memoryRegionCovered_of_le_coverReach",
-          "line": 291,
+          "line": 292,
           "called": [
             "MemoryRegion",
             "coverFrom_eq_le_coverReach",
@@ -278961,8 +278961,8 @@
         },
         {
           "kind": "def",
-          "name": "ramPrefixTop",
-          "line": 301,
+          "name": "ramReachFrom",
+          "line": 307,
           "called": [
             "MachineConfig",
             "coverReach",
@@ -278971,21 +278971,21 @@
         },
         {
           "kind": "theorem",
-          "name": "ramPrefixTop_sound",
-          "line": 306,
+          "name": "ramReachFrom_sound",
+          "line": 312,
           "called": [
             "MachineConfig",
             "coverReach_sound",
             "endAddr",
             "length",
-            "ramPrefixTop",
+            "ramReachFrom",
             "toNat"
           ]
         },
         {
           "kind": "def",
           "name": "machineConfigCovers",
-          "line": 326,
+          "line": 335,
           "called": [
             "MachineConfig",
             "all",
@@ -278996,7 +278996,7 @@
         {
           "kind": "theorem",
           "name": "machineConfigCovers_self",
-          "line": 334,
+          "line": 343,
           "called": [
             "MachineConfig",
             "le_refl",
@@ -279007,7 +279007,7 @@
         {
           "kind": "theorem",
           "name": "machineConfigCovers_sound",
-          "line": 347,
+          "line": 356,
           "called": [
             "MachineConfig",
             "endAddr",
@@ -279020,7 +279020,7 @@
         {
           "kind": "structure",
           "name": "RequiredMmioWindow",
-          "line": 380,
+          "line": 389,
           "called": [
             "MemoryRegion"
           ]
@@ -289433,7 +289433,7 @@
     {
       "module": "SeLe4n.Platform.QemuVirt.Board",
       "path": "SeLe4n/Platform/QemuVirt/Board.lean",
-      "declaration_count": 27,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
@@ -289515,22 +289515,30 @@
         },
         {
           "kind": "def",
+          "name": "qemuVirtRamOrigin",
+          "line": 87,
+          "called": [
+            "qemuVirtRamBase"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "qemuVirtMemoryMap",
-          "line": 81,
+          "line": 91,
           "called": [
             "MemoryRegion",
             "ofNat",
             "qemuVirtDeviceWindowBase",
             "qemuVirtDeviceWindowSize",
-            "qemuVirtRamBase",
-            "qemuVirtRamSize",
+            "qemuVirtRamOrigin",
+            "qemuVirtRamTop",
             "size"
           ]
         },
         {
           "kind": "def",
           "name": "qemuVirtKernelReserved",
-          "line": 88,
+          "line": 99,
           "called": [
             "MemoryRegion",
             "ofNat",
@@ -289542,13 +289550,13 @@
         {
           "kind": "def",
           "name": "qemuVirtBootTablePoolPages",
-          "line": 94,
+          "line": 105,
           "called": []
         },
         {
           "kind": "def",
           "name": "qemuVirtBootTablePoolBase",
-          "line": 98,
+          "line": 109,
           "called": [
             "qemuVirtBootTablePoolPages",
             "qemuVirtKernelReservedEnd"
@@ -289557,7 +289565,7 @@
         {
           "kind": "def",
           "name": "qemuVirtBootTablePool",
-          "line": 102,
+          "line": 113,
           "called": [
             "PAddr",
             "ofNat",
@@ -289568,7 +289576,7 @@
         {
           "kind": "def",
           "name": "qemuVirtBootTablePage",
-          "line": 107,
+          "line": 118,
           "called": [
             "PAddr",
             "ofNat",
@@ -289578,7 +289586,7 @@
         {
           "kind": "def",
           "name": "qemuVirtMachineConfig",
-          "line": 114,
+          "line": 125,
           "called": [
             "MachineConfig",
             "qemuVirtBootTablePool",
@@ -289589,7 +289597,7 @@
         {
           "kind": "theorem",
           "name": "qemuVirtMachineConfig_wellFormed",
-          "line": 126,
+          "line": 137,
           "called": [
             "wellFormed"
           ]
@@ -289597,7 +289605,7 @@
         {
           "kind": "def",
           "name": "qemuVirtMmioRegions",
-          "line": 134,
+          "line": 145,
           "called": [
             "MemoryRegion",
             "qemuVirtGicCpuInterfaceBase",
@@ -289609,7 +289617,7 @@
         {
           "kind": "def",
           "name": "qemuVirtRequiredMmioWindows",
-          "line": 144,
+          "line": 155,
           "called": [
             "RequiredMmioWindow",
             "qemuVirtMmioRegions"
@@ -289618,7 +289626,7 @@
         {
           "kind": "theorem",
           "name": "qemuVirtRequiredMmioWindows_regions_eq",
-          "line": 153,
+          "line": 164,
           "called": [
             "qemuVirtMmioRegions"
           ]
@@ -289626,7 +289634,7 @@
         {
           "kind": "theorem",
           "name": "qemuVirtMmioRegions_in_deviceWindow",
-          "line": 157,
+          "line": 168,
           "called": [
             "all",
             "endAddr",
@@ -289638,7 +289646,7 @@
         {
           "kind": "theorem",
           "name": "qemuVirtMmioRegions_pairwiseDisjoint",
-          "line": 164,
+          "line": 175,
           "called": [
             "all",
             "overlaps"
@@ -289647,7 +289655,7 @@
         {
           "kind": "def",
           "name": "qemuVirtBootRamExtensions",
-          "line": 174,
+          "line": 185,
           "called": [
             "qemuVirtKernelReservedEnd",
             "qemuVirtRamTop"
@@ -289656,7 +289664,7 @@
         {
           "kind": "theorem",
           "name": "qemuVirtBootRamExtensions_exact",
-          "line": 180,
+          "line": 191,
           "called": [
             "qemuVirtBootRamExtensions",
             "qemuVirtKernelReservedEnd",
@@ -289668,7 +289676,7 @@
         {
           "kind": "theorem",
           "name": "qemuVirtBootRamExtensions_aligned",
-          "line": 189,
+          "line": 200,
           "called": [
             "all"
           ]
@@ -290798,7 +290806,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.Board",
       "path": "SeLe4n/Platform/RPi5/Board.lean",
-      "declaration_count": 104,
+      "declaration_count": 107,
       "declarations": [
         {
           "kind": "namespace",
@@ -290877,14 +290885,20 @@
         },
         {
           "kind": "def",
+          "name": "rpi5RamOrigin",
+          "line": 136,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "rpi5LowRamGranule",
-          "line": 129,
+          "line": 142,
           "called": []
         },
         {
           "kind": "def",
           "name": "rpi5LowRamTopFloor",
-          "line": 135,
+          "line": 148,
           "called": [
             "rpi5KernelReservedEnd",
             "rpi5LowRamGranule"
@@ -290893,7 +290907,7 @@
         {
           "kind": "def",
           "name": "rpi5LowRamTopAdmissible",
-          "line": 141,
+          "line": 154,
           "called": [
             "rpi5FirstGigabyteTop",
             "rpi5LowRamGranule",
@@ -290903,7 +290917,7 @@
         {
           "kind": "theorem",
           "name": "rpi5LowRamTopAdmissible_iff",
-          "line": 145,
+          "line": 158,
           "called": [
             "rpi5FirstGigabyteTop",
             "rpi5LowRamGranule",
@@ -290914,7 +290928,7 @@
         {
           "kind": "theorem",
           "name": "rpi5LowRamTopFloor_admissible",
-          "line": 152,
+          "line": 165,
           "called": [
             "rpi5LowRamTopAdmissible",
             "rpi5LowRamTopFloor"
@@ -290923,7 +290937,7 @@
         {
           "kind": "theorem",
           "name": "rpi5FirstGigabyteTop_admissible",
-          "line": 157,
+          "line": 170,
           "called": [
             "rpi5FirstGigabyteTop",
             "rpi5LowRamTopAdmissible"
@@ -290932,7 +290946,7 @@
         {
           "kind": "theorem",
           "name": "rpi5KernelReservedEnd_lt_of_admissible",
-          "line": 163,
+          "line": 176,
           "called": [
             "rpi5KernelReservedEnd",
             "rpi5LowRamGranule",
@@ -290944,7 +290958,7 @@
         {
           "kind": "structure",
           "name": "BCM2712Config",
-          "line": 183,
+          "line": 196,
           "called": [
             "rpi5FirstGigabyteTop"
           ]
@@ -290952,7 +290966,7 @@
         {
           "kind": "def",
           "name": "bcm2712DefaultConfig",
-          "line": 192,
+          "line": 205,
           "called": [
             "BCM2712Config"
           ]
@@ -290960,7 +290974,7 @@
         {
           "kind": "def",
           "name": "BCM2712Config.uncut",
-          "line": 196,
+          "line": 209,
           "called": [
             "BCM2712Config",
             "rpi5FirstGigabyteTop"
@@ -290969,13 +290983,14 @@
         {
           "kind": "def",
           "name": "rpi5MemoryMapForConfig",
-          "line": 225,
+          "line": 240,
           "called": [
             "BCM2712Config",
             "MemoryRegion",
             "config",
             "ofNat",
             "rpi5FirstGigabyteTop",
+            "rpi5RamOrigin",
             "size",
             "socPeripheralBase",
             "socPeripheralSize"
@@ -290984,7 +290999,7 @@
         {
           "kind": "def",
           "name": "rpi5MemoryMap",
-          "line": 240,
+          "line": 255,
           "called": [
             "MemoryRegion",
             "bcm2712DefaultConfig",
@@ -290994,7 +291009,7 @@
         {
           "kind": "def",
           "name": "rpi5KernelReserved",
-          "line": 249,
+          "line": 264,
           "called": [
             "MemoryRegion",
             "ofNat",
@@ -291005,13 +291020,13 @@
         {
           "kind": "def",
           "name": "rpi5BootTablePoolPages",
-          "line": 256,
+          "line": 271,
           "called": []
         },
         {
           "kind": "def",
           "name": "rpi5BootTablePoolBase",
-          "line": 261,
+          "line": 276,
           "called": [
             "rpi5BootTablePoolPages",
             "rpi5KernelReservedEnd"
@@ -291020,7 +291035,7 @@
         {
           "kind": "def",
           "name": "rpi5BootTablePool",
-          "line": 264,
+          "line": 279,
           "called": [
             "PAddr",
             "ofNat",
@@ -291031,7 +291046,7 @@
         {
           "kind": "def",
           "name": "rpi5BootTablePage",
-          "line": 269,
+          "line": 284,
           "called": [
             "PAddr",
             "ofNat",
@@ -291041,7 +291056,7 @@
         {
           "kind": "def",
           "name": "rpi5MachineConfig",
-          "line": 273,
+          "line": 288,
           "called": [
             "MachineConfig",
             "rpi5BootTablePool",
@@ -291052,13 +291067,13 @@
         {
           "kind": "def",
           "name": "gicSpiCount",
-          "line": 317,
+          "line": 332,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerPpiId",
-          "line": 321,
+          "line": 336,
           "called": [
             "Irq"
           ]
@@ -291066,7 +291081,7 @@
         {
           "kind": "def",
           "name": "virtualTimerPpiId",
-          "line": 324,
+          "line": 339,
           "called": [
             "Irq"
           ]
@@ -291074,7 +291089,7 @@
         {
           "kind": "def",
           "name": "mmioRegions",
-          "line": 343,
+          "line": 358,
           "called": [
             "MemoryRegion",
             "gicCpuInterfaceBase",
@@ -291086,7 +291101,7 @@
         {
           "kind": "def",
           "name": "requiredMmioWindows",
-          "line": 367,
+          "line": 382,
           "called": [
             "RequiredMmioWindow",
             "mmioRegions"
@@ -291095,7 +291110,7 @@
         {
           "kind": "theorem",
           "name": "requiredMmioWindows_regions_eq",
-          "line": 378,
+          "line": 393,
           "called": [
             "mmioRegions"
           ]
@@ -291103,7 +291118,7 @@
         {
           "kind": "theorem",
           "name": "requiredMmioWindows_compatible_nonempty",
-          "line": 384,
+          "line": 399,
           "called": [
             "all",
             "isEmpty"
@@ -291112,7 +291127,7 @@
         {
           "kind": "def",
           "name": "mmioRegionDisjointCheck",
-          "line": 390,
+          "line": 405,
           "called": [
             "all",
             "overlaps"
@@ -291121,7 +291136,7 @@
         {
           "kind": "theorem",
           "name": "mmioRegionDisjoint_holds",
-          "line": 399,
+          "line": 414,
           "called": [
             "mmioRegionDisjointCheck"
           ]
@@ -291129,7 +291144,7 @@
         {
           "kind": "def",
           "name": "mmioRegionsPairwiseDisjointCheck",
-          "line": 406,
+          "line": 421,
           "called": [
             "all",
             "overlaps"
@@ -291138,7 +291153,7 @@
         {
           "kind": "theorem",
           "name": "mmioRegionsPairwiseDisjoint_holds",
-          "line": 419,
+          "line": 434,
           "called": [
             "mmioRegionsPairwiseDisjointCheck"
           ]
@@ -291146,7 +291161,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfig_wellFormed",
-          "line": 426,
+          "line": 441,
           "called": [
             "wellFormed"
           ]
@@ -291154,7 +291169,7 @@
         {
           "kind": "def",
           "name": "rpi5DeviceTree",
-          "line": 481,
+          "line": 496,
           "called": [
             "DeviceTree",
             "DeviceTree.fromBoardConstants",
@@ -291171,7 +291186,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeviceTree_valid",
-          "line": 498,
+          "line": 513,
           "called": [
             "validate"
           ]
@@ -291179,7 +291194,7 @@
         {
           "kind": "def",
           "name": "rpi5Variants",
-          "line": 560,
+          "line": 575,
           "called": [
             "BCM2712Config"
           ]
@@ -291187,7 +291202,7 @@
         {
           "kind": "def",
           "name": "rpi5SmallestVariant",
-          "line": 579,
+          "line": 594,
           "called": [
             "BCM2712Config"
           ]
@@ -291195,7 +291210,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Variants_head",
-          "line": 581,
+          "line": 596,
           "called": [
             "head",
             "rpi5SmallestVariant"
@@ -291204,7 +291219,7 @@
         {
           "kind": "theorem",
           "name": "rpi5SmallestVariant_mem",
-          "line": 583,
+          "line": 598,
           "called": [
             "rpi5SmallestVariant",
             "rpi5Variants"
@@ -291213,7 +291228,7 @@
         {
           "kind": "theorem",
           "name": "bcm2712DefaultConfig_mem_rpi5Variants",
-          "line": 586,
+          "line": 601,
           "called": [
             "bcm2712DefaultConfig",
             "rpi5Variants"
@@ -291222,13 +291237,13 @@
         {
           "kind": "theorem",
           "name": "rpi5Variants_ascending",
-          "line": 590,
+          "line": 605,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "rpi5Variants_uncut",
-          "line": 596,
+          "line": 611,
           "called": [
             "rpi5Variants",
             "uncut"
@@ -291237,7 +291252,7 @@
         {
           "kind": "def",
           "name": "BCM2712Config.Admissible",
-          "line": 602,
+          "line": 617,
           "called": [
             "BCM2712Config",
             "rpi5LowRamTopAdmissible",
@@ -291248,7 +291263,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Variants_admissible",
-          "line": 605,
+          "line": 620,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -291262,7 +291277,7 @@
         {
           "kind": "theorem",
           "name": "admissible_of_mem_cut",
-          "line": 613,
+          "line": 628,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -291275,7 +291290,7 @@
         {
           "kind": "def",
           "name": "rpi5MachineConfigForVariant",
-          "line": 623,
+          "line": 638,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -291286,7 +291301,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_default",
-          "line": 627,
+          "line": 642,
           "called": [
             "bcm2712DefaultConfig",
             "rpi5MachineConfig",
@@ -291296,7 +291311,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_declaredCoreCount",
-          "line": 632,
+          "line": 647,
           "called": [
             "BCM2712Config",
             "rpi5MachineConfigForVariant"
@@ -291305,7 +291320,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_kernelReserved",
-          "line": 637,
+          "line": 652,
           "called": [
             "BCM2712Config",
             "rpi5KernelReserved",
@@ -291315,7 +291330,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_physicalAddressWidth",
-          "line": 641,
+          "line": 656,
           "called": [
             "BCM2712Config",
             "rpi5MachineConfigForVariant"
@@ -291324,7 +291339,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Variants_wellFormed",
-          "line": 649,
+          "line": 664,
           "called": [
             "all",
             "rpi5MachineConfigForVariant",
@@ -291334,12 +291349,11 @@
         {
           "kind": "theorem",
           "name": "rpi5MemoryMapForConfig_within_uncut",
-          "line": 656,
+          "line": 671,
           "called": [
             "BCM2712Config",
             "BCM2712Config.uncut",
             "MemoryRegion",
-            "endAddr",
             "le_refl",
             "regionNonEmptyWithin",
             "regionsNonEmptyWithin",
@@ -291349,6 +291363,7 @@
             "rpi5LowRamTopAdmissible",
             "rpi5LowRamTopAdmissible_iff",
             "rpi5MemoryMapForConfig",
+            "rpi5RamOrigin",
             "size",
             "uncut"
           ]
@@ -291356,7 +291371,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_wellFormed",
-          "line": 681,
+          "line": 698,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -291372,20 +291387,21 @@
         {
           "kind": "def",
           "name": "rpi5LowRamTopFor",
-          "line": 703,
+          "line": 721,
           "called": [
             "MachineConfig",
-            "ramPrefixTop",
+            "ramReachFrom",
             "rpi5FirstGigabyteTop",
             "rpi5LowRamGranule",
             "rpi5LowRamTopAdmissible",
-            "rpi5LowRamTopFloor"
+            "rpi5LowRamTopFloor",
+            "rpi5RamOrigin"
           ]
         },
         {
           "kind": "theorem",
           "name": "rpi5LowRamTopFor_admissible",
-          "line": 709,
+          "line": 727,
           "called": [
             "MachineConfig",
             "rpi5LowRamTopAdmissible",
@@ -291396,28 +291412,34 @@
         {
           "kind": "theorem",
           "name": "rpi5LowRamTopFor_le_prefix",
-          "line": 721,
+          "line": 739,
           "called": [
             "MachineConfig",
-            "ramPrefixTop",
+            "ramReachFrom",
             "rpi5LowRamTopFloor",
-            "rpi5LowRamTopFor"
+            "rpi5LowRamTopFor",
+            "rpi5RamOrigin"
           ]
         },
         {
           "kind": "theorem",
           "name": "rpi5LowRamTop_covered",
-          "line": 736,
+          "line": 753,
           "called": [
             "MachineConfig",
             "endAddr",
             "memoryRegionCovered",
             "memoryRegionCovered_of_le_coverReach",
             "ofNat",
-            "ramPrefixTop",
+            "ramReachFrom",
+            "rpi5KernelReservedEnd",
+            "rpi5LowRamGranule",
+            "rpi5LowRamTopAdmissible_iff",
             "rpi5LowRamTopFloor",
             "rpi5LowRamTopFor",
+            "rpi5LowRamTopFor_admissible",
             "rpi5LowRamTopFor_le_prefix",
+            "rpi5RamOrigin",
             "size",
             "toNat"
           ]
@@ -291425,7 +291447,7 @@
         {
           "kind": "def",
           "name": "rpi5VariantsCoveredBy",
-          "line": 750,
+          "line": 770,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -291438,7 +291460,7 @@
         {
           "kind": "def",
           "name": "rpi5RamVariantFor",
-          "line": 763,
+          "line": 783,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -291450,7 +291472,7 @@
         {
           "kind": "def",
           "name": "rpi5VariantFor",
-          "line": 773,
+          "line": 793,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -291461,7 +291483,7 @@
         {
           "kind": "def",
           "name": "rpi5BoundMachineConfig",
-          "line": 779,
+          "line": 799,
           "called": [
             "MachineConfig",
             "rpi5MachineConfigForVariant",
@@ -291471,7 +291493,7 @@
         {
           "kind": "theorem",
           "name": "mem_rpi5VariantsCoveredBy",
-          "line": 782,
+          "line": 802,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -291485,7 +291507,7 @@
         {
           "kind": "theorem",
           "name": "rpi5RamVariantFor_mem",
-          "line": 792,
+          "line": 812,
           "called": [
             "MachineConfig",
             "mem_rpi5VariantsCoveredBy",
@@ -291499,7 +291521,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_admissible",
-          "line": 803,
+          "line": 823,
           "called": [
             "Admissible",
             "MachineConfig",
@@ -291512,7 +291534,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_mem_family",
-          "line": 812,
+          "line": 832,
           "called": [
             "Admissible",
             "MachineConfig",
@@ -291525,7 +291547,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_declaredCoreCount",
-          "line": 818,
+          "line": 838,
           "called": [
             "MachineConfig",
             "rpi5BoundMachineConfig"
@@ -291534,7 +291556,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_covers_of_getLast",
-          "line": 821,
+          "line": 841,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -291548,7 +291570,7 @@
         {
           "kind": "theorem",
           "name": "rpi5RamVariantFor_of_uncovered",
-          "line": 829,
+          "line": 849,
           "called": [
             "MachineConfig",
             "machineConfigCovers",
@@ -291563,7 +291585,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_covered_iff",
-          "line": 851,
+          "line": 871,
           "called": [
             "MachineConfig",
             "machineConfigCovers",
@@ -291583,7 +291605,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_maximal",
-          "line": 874,
+          "line": 894,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -291603,7 +291625,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_rpi5MachineConfig",
-          "line": 904,
+          "line": 924,
           "called": [
             "bcm2712DefaultConfig",
             "rpi5MachineConfig",
@@ -291613,7 +291635,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_rpi5MachineConfig",
-          "line": 908,
+          "line": 928,
           "called": [
             "rpi5BoundMachineConfig",
             "rpi5MachineConfig",
@@ -291624,7 +291646,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_defaultMachineConfig",
-          "line": 918,
+          "line": 938,
           "called": [
             "defaultMachineConfig",
             "rpi5LowRamTopFloor",
@@ -291635,7 +291657,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_one_gib",
-          "line": 926,
+          "line": 946,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -291646,7 +291668,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_two_gib",
-          "line": 932,
+          "line": 952,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -291657,7 +291679,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_eight_gib_two_banks",
-          "line": 941,
+          "line": 961,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -291668,7 +291690,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_foreign_base",
-          "line": 953,
+          "line": 973,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -291679,7 +291701,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_rpi5_firmware_account",
-          "line": 965,
+          "line": 985,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -291689,8 +291711,30 @@
         },
         {
           "kind": "theorem",
+          "name": "rpi5VariantFor_rpi5_parsed_account",
+          "line": 1000,
+          "called": [
+            "ofNat",
+            "rpi5MachineConfig",
+            "rpi5VariantFor",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5VariantFor_origin_not_ram",
+          "line": 1012,
+          "called": [
+            "ofNat",
+            "rpi5MachineConfig",
+            "rpi5VariantsCoveredBy",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "rpi5VariantFor_cm5_firmware_account",
-          "line": 978,
+          "line": 1024,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -291701,7 +291745,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_kernel_extent_not_ram",
-          "line": 991,
+          "line": 1037,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -291712,7 +291756,7 @@
         {
           "kind": "theorem",
           "name": "rpi5FirstGigabyteTop_eq_smallest",
-          "line": 1005,
+          "line": 1051,
           "called": [
             "rpi5FirstGigabyteTop"
           ]
@@ -291720,7 +291764,7 @@
         {
           "kind": "def",
           "name": "bootRamExtensionOf",
-          "line": 1011,
+          "line": 1057,
           "called": [
             "MemoryRegion",
             "endAddr",
@@ -291732,11 +291776,12 @@
         {
           "kind": "theorem",
           "name": "bootRamExtensionOf",
-          "line": 1019,
+          "line": 1065,
           "called": [
             "endAddr",
             "ofNat",
             "rpi5KernelReservedEnd",
+            "rpi5RamOrigin",
             "size",
             "toNat"
           ]
@@ -291744,7 +291789,7 @@
         {
           "kind": "theorem",
           "name": "bootRamExtensionOf",
-          "line": 1030,
+          "line": 1080,
           "called": [
             "endAddr",
             "ofNat",
@@ -291757,7 +291802,7 @@
         {
           "kind": "theorem",
           "name": "bootRamExtensionOf",
-          "line": 1046,
+          "line": 1096,
           "called": [
             "none",
             "size",
@@ -291768,7 +291813,7 @@
         {
           "kind": "def",
           "name": "bootRamExtensionsOf",
-          "line": 1068,
+          "line": 1118,
           "called": [
             "MemoryRegion",
             "bootRamExtensionOf"
@@ -291777,7 +291822,7 @@
         {
           "kind": "theorem",
           "name": "mem_bootRamExtensionsOf",
-          "line": 1075,
+          "line": 1125,
           "called": [
             "MemoryRegion",
             "bootRamExtensionOf",
@@ -291790,7 +291835,7 @@
         {
           "kind": "theorem",
           "name": "bootRamExtensionsOf_covers",
-          "line": 1098,
+          "line": 1148,
           "called": [
             "MemoryRegion",
             "bootRamExtensionOf",
@@ -291803,7 +291848,7 @@
         {
           "kind": "def",
           "name": "rpi5BootRamExtensions",
-          "line": 1115,
+          "line": 1165,
           "called": [
             "BCM2712Config",
             "bootRamExtensionsOf",
@@ -291813,7 +291858,7 @@
         {
           "kind": "def",
           "name": "rpi5BootRamExtensionsFor",
-          "line": 1121,
+          "line": 1171,
           "called": [
             "MachineConfig",
             "bootRamExtensionsOf",
@@ -291823,7 +291868,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootRamExtensionsFor_eq",
-          "line": 1124,
+          "line": 1174,
           "called": [
             "MachineConfig",
             "rpi5BootRamExtensions",
@@ -291834,12 +291879,13 @@
         {
           "kind": "theorem",
           "name": "rpi5MemoryMapForConfig_of_gt",
-          "line": 1129,
+          "line": 1179,
           "called": [
             "BCM2712Config",
             "ofNat",
             "rpi5FirstGigabyteTop",
             "rpi5MemoryMapForConfig",
+            "rpi5RamOrigin",
             "size",
             "socPeripheralBase",
             "socPeripheralSize"
@@ -291848,12 +291894,13 @@
         {
           "kind": "theorem",
           "name": "rpi5MemoryMapForConfig_of_le",
-          "line": 1138,
+          "line": 1189,
           "called": [
             "BCM2712Config",
             "ofNat",
             "rpi5FirstGigabyteTop",
             "rpi5MemoryMapForConfig",
+            "rpi5RamOrigin",
             "size",
             "socPeripheralBase",
             "socPeripheralSize"
@@ -291862,7 +291909,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootRamExtensions_eq",
-          "line": 1147,
+          "line": 1199,
           "called": [
             "BCM2712Config",
             "bootRamExtensionOf",
@@ -291877,7 +291924,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootRamExtensions_values",
-          "line": 1170,
+          "line": 1222,
           "called": [
             "rpi5BootRamExtensions"
           ]
@@ -291885,7 +291932,7 @@
         {
           "kind": "def",
           "name": "rpi5BootRamExtensionAccepted",
-          "line": 1187,
+          "line": 1239,
           "called": [
             "rpi5FirstGigabyteTop",
             "rpi5KernelReservedEnd"
@@ -291894,7 +291941,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootRamExtensions_admissible",
-          "line": 1198,
+          "line": 1250,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292223,7 +292270,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.Deployment",
       "path": "SeLe4n/Platform/RPi5/Deployment.lean",
-      "declaration_count": 87,
+      "declaration_count": 90,
       "declarations": [
         {
           "kind": "namespace",
@@ -292453,19 +292500,30 @@
         },
         {
           "kind": "theorem",
-          "name": "rpi5RootTaskUntypeds_regions",
-          "line": 230,
+          "name": "untypedsOver_regions",
+          "line": 233,
           "called": [
-            "BCM2712Config",
-            "rpi5BootRamExtensions",
-            "rpi5RootTaskUntypeds",
+            "rpi5InitialUntyped",
+            "rpi5RootTaskUntypedId",
             "toNat"
           ]
         },
         {
           "kind": "theorem",
+          "name": "rpi5RootTaskUntypeds_regions",
+          "line": 243,
+          "called": [
+            "BCM2712Config",
+            "rpi5BootRamExtensions",
+            "rpi5RootTaskUntypeds",
+            "toNat",
+            "untypedsOver_regions"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "rpi5BootRamExtensions_length",
-          "line": 242,
+          "line": 252,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292479,7 +292537,7 @@
         {
           "kind": "def",
           "name": "rpi5RootTaskCNodeSlotsOfCount",
-          "line": 251,
+          "line": 261,
           "called": [
             "Capability",
             "Slot",
@@ -292496,7 +292554,7 @@
         {
           "kind": "def",
           "name": "rpi5RootTaskCNodeSlots",
-          "line": 261,
+          "line": 271,
           "called": [
             "BCM2712Config",
             "Capability",
@@ -292509,7 +292567,7 @@
         {
           "kind": "def",
           "name": "rpi5RootTaskCNodeFor",
-          "line": 266,
+          "line": 276,
           "called": [
             "BCM2712Config",
             "CNode",
@@ -292520,7 +292578,7 @@
         {
           "kind": "theorem",
           "name": "rpi5RootTaskCNodeFor_slotsAddressable",
-          "line": 275,
+          "line": 285,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292534,7 +292592,7 @@
         {
           "kind": "def",
           "name": "rpi5UntrustedCNode",
-          "line": 284,
+          "line": 294,
           "called": [
             "CNode",
             "ofNat",
@@ -292548,7 +292606,7 @@
         {
           "kind": "def",
           "name": "tcbEntry",
-          "line": 290,
+          "line": 300,
           "called": [
             "ObjId",
             "ObjectEntry",
@@ -292558,7 +292616,7 @@
         {
           "kind": "def",
           "name": "cnodeEntry",
-          "line": 296,
+          "line": 306,
           "called": [
             "CNode",
             "ObjId",
@@ -292569,7 +292627,7 @@
         {
           "kind": "def",
           "name": "vspaceEntry",
-          "line": 301,
+          "line": 311,
           "called": [
             "ASID",
             "ObjId",
@@ -292581,7 +292639,7 @@
         {
           "kind": "def",
           "name": "untypedEntry",
-          "line": 307,
+          "line": 317,
           "called": [
             "ObjId",
             "ObjectEntry",
@@ -292591,7 +292649,7 @@
         {
           "kind": "theorem",
           "name": "untypedEntry_id",
-          "line": 313,
+          "line": 323,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -292601,7 +292659,7 @@
         {
           "kind": "def",
           "name": "notificationEntry",
-          "line": 316,
+          "line": 326,
           "called": [
             "ObjId",
             "ObjectEntry",
@@ -292613,7 +292671,7 @@
         {
           "kind": "def",
           "name": "rpi5InitialObjectsFor",
-          "line": 338,
+          "line": 348,
           "called": [
             "BCM2712Config",
             "ObjectEntry",
@@ -292641,7 +292699,7 @@
         {
           "kind": "def",
           "name": "rpi5IrqTable",
-          "line": 353,
+          "line": 363,
           "called": [
             "IrqEntry",
             "gicSpiCount",
@@ -292652,7 +292710,7 @@
         {
           "kind": "def",
           "name": "rpi5PlatformConfigFor",
-          "line": 364,
+          "line": 374,
           "called": [
             "MachineConfig",
             "PlatformConfig",
@@ -292664,7 +292722,7 @@
         {
           "kind": "def",
           "name": "rpi5BoundPlatformConfigAt",
-          "line": 372,
+          "line": 382,
           "called": [
             "BCM2712Config",
             "PlatformBinding.initialThreads",
@@ -292679,7 +292737,7 @@
         {
           "kind": "theorem",
           "name": "bindPlatformConfig_rpi5PlatformConfigFor",
-          "line": 381,
+          "line": 391,
           "called": [
             "MachineConfig",
             "RPi5Platform",
@@ -292692,7 +292750,7 @@
         {
           "kind": "theorem",
           "name": "member_wellFormed",
-          "line": 396,
+          "line": 406,
           "called": [
             "PlatformConfig.wellFormed",
             "irqsUnique_eq_transparent",
@@ -292706,7 +292764,7 @@
         {
           "kind": "theorem",
           "name": "member_bootSafe",
-          "line": 403,
+          "line": 413,
           "called": [
             "all",
             "bootSafeObjectCheck",
@@ -292718,7 +292776,7 @@
         {
           "kind": "theorem",
           "name": "member_asidsDistinct",
-          "line": 408,
+          "line": 418,
           "called": [
             "bootVSpaceAsidsDistinct",
             "rpi5BoundPlatformConfigAt",
@@ -292729,7 +292787,7 @@
         {
           "kind": "theorem",
           "name": "member_irqHandlers",
-          "line": 412,
+          "line": 422,
           "called": [
             "irqHandlersReferenceNotifications",
             "rpi5BoundPlatformConfigAt",
@@ -292740,7 +292798,7 @@
         {
           "kind": "theorem",
           "name": "member_rootDistinct",
-          "line": 416,
+          "line": 426,
           "called": [
             "bootVSpaceRootObjIdDistinct",
             "rpi5BoundPlatformConfigAt",
@@ -292751,7 +292809,7 @@
         {
           "kind": "theorem",
           "name": "member_affinities",
-          "line": 420,
+          "line": 430,
           "called": [
             "PlatformBinding.declaredCores",
             "RPi5Platform",
@@ -292764,7 +292822,7 @@
         {
           "kind": "theorem",
           "name": "objectEntry_eq",
-          "line": 428,
+          "line": 438,
           "called": [
             "ObjectEntry"
           ]
@@ -292772,7 +292830,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_withoutExtents",
-          "line": 439,
+          "line": 449,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292800,7 +292858,7 @@
         {
           "kind": "theorem",
           "name": "untyped_of_mem",
-          "line": 467,
+          "line": 477,
           "called": [
             "BCM2712Config",
             "ObjectEntry",
@@ -292817,7 +292875,7 @@
         {
           "kind": "theorem",
           "name": "extensions_pairwise_disjoint",
-          "line": 489,
+          "line": 499,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292829,37 +292887,57 @@
         },
         {
           "kind": "theorem",
-          "name": "rpi5BoundPlatformConfigAt_placement",
-          "line": 504,
+          "name": "extension_placed",
+          "line": 515,
           "called": [
-            "Admissible",
-            "BCM2712Config",
+            "MachineConfig",
+            "bootRamExtensionsOf",
             "endAddr",
-            "extensions_pairwise_disjoint",
-            "lt_or_gt_of_ne",
             "mem_bootRamExtensionsOf",
             "ofNat",
-            "rpi5BoundPlatformConfigAt",
             "rpi5InitialUntyped",
             "rpi5InitialUntyped_base",
             "rpi5InitialUntyped_size",
             "rpi5KernelReserved",
-            "rpi5MachineConfigForVariant_kernelReserved",
-            "symm",
             "toNat",
-            "trans",
             "untypedClearOfKernel",
+            "untypedRegionKind",
+            "untypedWithinDeclaredRegion"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "extensions_disjoint_untyped",
+          "line": 538,
+          "called": [
+            "ofNat",
+            "rpi5InitialUntyped"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5BoundPlatformConfigAt_placement",
+          "line": 548,
+          "called": [
+            "Admissible",
+            "BCM2712Config",
+            "extension_placed",
+            "extensions_disjoint_untyped",
+            "extensions_pairwise_disjoint",
+            "lt_or_gt_of_ne",
+            "rpi5BoundPlatformConfigAt",
+            "rpi5MachineConfigForVariant",
+            "symm",
+            "trans",
             "untypedEntriesDisjoint",
             "untypedPlacementRespected",
-            "untypedRegionKind",
-            "untypedWithinDeclaredRegion",
             "untyped_of_mem"
           ]
         },
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_wellFormed",
-          "line": 557,
+          "line": 585,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292874,7 +292952,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_bootSafe",
-          "line": 563,
+          "line": 591,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292889,7 +292967,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_asidsDistinct",
-          "line": 572,
+          "line": 600,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292903,7 +292981,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_irqHandlers",
-          "line": 579,
+          "line": 607,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292917,7 +292995,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_machineConfig_wellFormed",
-          "line": 588,
+          "line": 616,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292929,7 +293007,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_physicalAddressWidth",
-          "line": 594,
+          "line": 622,
           "called": [
             "BCM2712Config",
             "rpi5BoundPlatformConfigAt",
@@ -292940,7 +293018,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_rootDistinct",
-          "line": 602,
+          "line": 630,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -292954,7 +293032,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_bootVSpaceRoot",
-          "line": 610,
+          "line": 638,
           "called": [
             "BCM2712Config",
             "rpi5BootVSpaceRootEntry",
@@ -292964,7 +293042,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_rootNonSentinel",
-          "line": 614,
+          "line": 642,
           "called": [
             "BCM2712Config",
             "bootVSpaceRootObjIdNonSentinel",
@@ -292975,7 +293053,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_rootSafe",
-          "line": 621,
+          "line": 649,
           "called": [
             "BCM2712Config",
             "bootVSpaceRootSafe",
@@ -292986,7 +293064,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_affinities",
-          "line": 629,
+          "line": 657,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293002,7 +293080,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_checked",
-          "line": 640,
+          "line": 668,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293027,7 +293105,7 @@
         {
           "kind": "def",
           "name": "rpi5DeploymentIdleStateAt",
-          "line": 664,
+          "line": 692,
           "called": [
             "BCM2712Config",
             "IntermediateState",
@@ -293043,7 +293121,7 @@
         {
           "kind": "def",
           "name": "rpi5DeploymentBootStateAt",
-          "line": 676,
+          "line": 704,
           "called": [
             "BCM2712Config",
             "IntermediateState",
@@ -293056,7 +293134,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_idleBoot",
-          "line": 682,
+          "line": 710,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293073,7 +293151,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_idleBoot_allCores",
-          "line": 692,
+          "line": 720,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293088,7 +293166,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Deployment_tcb_idle",
-          "line": 700,
+          "line": 728,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293105,7 +293183,7 @@
         {
           "kind": "theorem",
           "name": "rpi5_initialThreads",
-          "line": 709,
+          "line": 737,
           "called": [
             "PlatformBinding.initialThreads",
             "RPi5Platform"
@@ -293114,7 +293192,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_initialThreads",
-          "line": 715,
+          "line": 743,
           "called": [
             "BCM2712Config",
             "PlatformBinding.initialThreads",
@@ -293126,7 +293204,7 @@
         {
           "kind": "theorem",
           "name": "rpi5_initialThreads_not_idle",
-          "line": 720,
+          "line": 748,
           "called": [
             "ThreadId",
             "idleThreadId"
@@ -293135,7 +293213,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Deployment_rootTask_startable",
-          "line": 726,
+          "line": 754,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293155,7 +293233,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Deployment_untrusted_startable",
-          "line": 737,
+          "line": 765,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293173,7 +293251,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Deployment_initialThreads_startable",
-          "line": 748,
+          "line": 776,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293190,7 +293268,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Deployment_startInitialThreads",
-          "line": 760,
+          "line": 788,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293207,7 +293285,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundPlatformConfigAt_boot",
-          "line": 768,
+          "line": 796,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293225,7 +293303,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeploymentIdleStateAt_witnessesInstalled",
-          "line": 779,
+          "line": 807,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293248,7 +293326,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeploymentBootStateAt_witnessesInstalled",
-          "line": 796,
+          "line": 824,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293265,7 +293343,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeploymentBootStateAt_initialThreadsStarted",
-          "line": 810,
+          "line": 838,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293282,7 +293360,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_rpi5PlatformConfigFor",
-          "line": 829,
+          "line": 857,
           "called": [
             "MachineConfig",
             "PlatformBinding.labeling",
@@ -293308,7 +293386,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor",
-          "line": 846,
+          "line": 874,
           "called": [
             "MachineConfig",
             "PlatformBinding.labeling",
@@ -293326,7 +293404,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeploymentBootStateAt_invariantBridge",
-          "line": 862,
+          "line": 890,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -293343,7 +293421,7 @@
         {
           "kind": "theorem",
           "name": "rpi5PlatformConfigFromDtb_deployment_ok",
-          "line": 876,
+          "line": 904,
           "called": [
             "PlatformConfig",
             "config",
@@ -293358,7 +293436,7 @@
         {
           "kind": "theorem",
           "name": "rpi5InitialObjectsFor_covers_ram",
-          "line": 895,
+          "line": 923,
           "called": [
             "BCM2712Config",
             "MemoryRegion",
@@ -293380,7 +293458,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeploymentBootStateAt_untypedInstalled",
-          "line": 917,
+          "line": 945,
           "called": [
             "Admissible",
             "BCM2712Config",
@@ -306167,7 +306245,9 @@
           "name": "boardDtbRegions",
           "line": 921,
           "called": [
+            "addressCellsNameOff",
             "assembleDtb",
+            "be32",
             "be64",
             "deviceTypeNameOff",
             "fdtBeginNode",
@@ -306177,13 +306257,14 @@
             "fdtString",
             "peripheralNode",
             "regNameOff",
-            "rootCellProperties"
+            "rootCellProperties",
+            "sizeCellsNameOff"
           ]
         },
         {
           "kind": "def",
           "name": "boardDtb",
-          "line": 941,
+          "line": 954,
           "called": [
             "boardDtbRegions"
           ]
@@ -306191,7 +306272,7 @@
         {
           "kind": "def",
           "name": "assembleDtbReserving",
-          "line": 952,
+          "line": 965,
           "called": [
             "be32",
             "be64",
@@ -306204,7 +306285,7 @@
         {
           "kind": "def",
           "name": "assembleDtbWithoutRsvBlock",
-          "line": 974,
+          "line": 987,
           "called": [
             "be32",
             "size",
@@ -306214,17 +306295,6 @@
         {
           "kind": "def",
           "name": "assembleDtbAtOffsets",
-          "line": 992,
-          "called": [
-            "be32",
-            "emptyRsvBlock",
-            "size",
-            "stringsBlock"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "assembleDtbVersioned",
           "line": 1005,
           "called": [
             "be32",
@@ -306235,8 +306305,19 @@
         },
         {
           "kind": "def",
+          "name": "assembleDtbVersioned",
+          "line": 1018,
+          "called": [
+            "be32",
+            "emptyRsvBlock",
+            "size",
+            "stringsBlock"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "assembleDtbDeclaring",
-          "line": 1023,
+          "line": 1036,
           "called": [
             "be32",
             "emptyRsvBlock",
@@ -306247,7 +306328,7 @@
         {
           "kind": "def",
           "name": "canonicalStructBlock",
-          "line": 1036,
+          "line": 1049,
           "called": [
             "be64",
             "deviceTypeNameOff",
@@ -306264,7 +306345,7 @@
         {
           "kind": "def",
           "name": "terminatorOutsideStructBlockDtb",
-          "line": 1057,
+          "line": 1070,
           "called": [
             "assembleDtbDeclaring",
             "canonicalStructBlock",
@@ -306274,7 +306355,7 @@
         {
           "kind": "def",
           "name": "nameOutsideStringsBlockDtb",
-          "line": 1069,
+          "line": 1082,
           "called": [
             "assembleDtbDeclaring",
             "canonicalStructBlock",
@@ -306285,7 +306366,7 @@
         {
           "kind": "def",
           "name": "memoryNamedRootDtb",
-          "line": 1078,
+          "line": 1091,
           "called": [
             "assembleDtb",
             "be64",
@@ -306301,7 +306382,7 @@
         {
           "kind": "def",
           "name": "twoRootDtb",
-          "line": 1086,
+          "line": 1099,
           "called": [
             "assembleDtb",
             "be64",
@@ -306318,7 +306399,7 @@
         {
           "kind": "def",
           "name": "overlappingMemoryDtb",
-          "line": 1106,
+          "line": 1119,
           "called": [
             "boardDtbRegions"
           ]
@@ -306326,7 +306407,7 @@
         {
           "kind": "def",
           "name": "unterminatedBoardDtb",
-          "line": 1117,
+          "line": 1130,
           "called": [
             "assembleDtb",
             "be64",
@@ -306343,7 +306424,7 @@
         {
           "kind": "def",
           "name": "unknownTokenBoardDtb",
-          "line": 1131,
+          "line": 1144,
           "called": [
             "assembleDtb",
             "be32",
@@ -306361,7 +306442,7 @@
         {
           "kind": "def",
           "name": "boardDtbWithMemoryStatus",
-          "line": 1141,
+          "line": 1154,
           "called": [
             "assembleDtb",
             "be64",
@@ -306380,7 +306461,7 @@
         {
           "kind": "def",
           "name": "singleGicNodeBoardDtb",
-          "line": 1159,
+          "line": 1172,
           "called": [
             "assembleDtb",
             "be64",
@@ -306399,7 +306480,7 @@
         {
           "kind": "def",
           "name": "canonicalBodyWithMemory",
-          "line": 1176,
+          "line": 1189,
           "called": [
             "deviceTypeNameOff",
             "fdtBeginNode",
@@ -306415,7 +306496,7 @@
         {
           "kind": "def",
           "name": "headerReservedBoardDtb",
-          "line": 1189,
+          "line": 1202,
           "called": [
             "assembleDtbReserving",
             "be64",
@@ -306425,7 +306506,7 @@
         {
           "kind": "def",
           "name": "reservedMemoryNodeBoardDtb",
-          "line": 1195,
+          "line": 1208,
           "called": [
             "addressCellsNameOff",
             "assembleDtb",
@@ -306446,7 +306527,7 @@
         {
           "kind": "def",
           "name": "futureVersionBoardDtb",
-          "line": 1216,
+          "line": 1229,
           "called": [
             "assembleDtbReserving",
             "be64",
@@ -306456,7 +306537,7 @@
         {
           "kind": "def",
           "name": "latePropertyBoardDtb",
-          "line": 1222,
+          "line": 1235,
           "called": [
             "addressCellsNameOff",
             "assembleDtb",
@@ -306475,7 +306556,7 @@
         {
           "kind": "def",
           "name": "duplicateStatusBoardDtb",
-          "line": 1235,
+          "line": 1248,
           "called": [
             "assembleDtb",
             "be64",
@@ -306493,7 +306574,7 @@
         {
           "kind": "def",
           "name": "wrongDevicesAtRightWindowsDtb",
-          "line": 1252,
+          "line": 1265,
           "called": [
             "assembleDtb",
             "be64",
@@ -306511,7 +306592,7 @@
         {
           "kind": "def",
           "name": "twoMemoryNodeDtb",
-          "line": 1268,
+          "line": 1281,
           "called": [
             "assembleDtb",
             "be64",
@@ -306530,7 +306611,7 @@
         {
           "kind": "def",
           "name": "singleCellBoardDtb",
-          "line": 1286,
+          "line": 1299,
           "called": [
             "addressCellsNameOff",
             "assembleDtb",
@@ -306549,7 +306630,7 @@
         {
           "kind": "def",
           "name": "truncatedRegBoardDtb",
-          "line": 1302,
+          "line": 1315,
           "called": [
             "assembleDtb",
             "be64",
@@ -306566,7 +306647,7 @@
         {
           "kind": "def",
           "name": "emptyUnitAddressDtb",
-          "line": 1313,
+          "line": 1326,
           "called": [
             "assembleDtb",
             "be64",
@@ -306583,7 +306664,7 @@
         {
           "kind": "def",
           "name": "reservedMemoryOnlyDtb",
-          "line": 1324,
+          "line": 1337,
           "called": [
             "assembleDtb",
             "be64",
@@ -306600,7 +306681,7 @@
         {
           "kind": "def",
           "name": "boundMapOf",
-          "line": 1336,
+          "line": 1349,
           "called": [
             "MemoryRegion",
             "PlatformConfig",
@@ -306612,7 +306693,7 @@
         {
           "kind": "def",
           "name": "variantMap",
-          "line": 1340,
+          "line": 1353,
           "called": [
             "MemoryRegion",
             "rpi5MemoryMapForConfig"
@@ -306621,7 +306702,7 @@
         {
           "kind": "def",
           "name": "kernelEntryBoot",
-          "line": 1347,
+          "line": 1360,
           "called": [
             "IntermediateState",
             "PlatformBinding.declaredCores",
@@ -306639,7 +306720,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_01_fixture_blob_parses",
-          "line": 1360,
+          "line": 1373,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -306650,7 +306731,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_02_matching_board_accepted",
-          "line": 1373,
+          "line": 1386,
           "called": [
             "boardDtb",
             "config",
@@ -306664,7 +306745,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_03_short_ram_refused",
-          "line": 1394,
+          "line": 1407,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -306679,7 +306760,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_04_missing_mmio_refused",
-          "line": 1409,
+          "line": 1422,
           "called": [
             "boardDtb",
             "expect",
@@ -306690,7 +306771,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_05_unparseable_blob_refused",
-          "line": 1417,
+          "line": 1430,
           "called": [
             "expect",
             "none",
@@ -306700,7 +306781,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_06_coverage_is_refusable",
-          "line": 1426,
+          "line": 1439,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -306715,7 +306796,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_07_small_variants_bind_their_own_map",
-          "line": 1441,
+          "line": 1454,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -306729,7 +306810,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_08_canonical_board_binds_canonical_map",
-          "line": 1460,
+          "line": 1473,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -306742,7 +306823,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_09_eight_gib_two_banks",
-          "line": 1472,
+          "line": 1485,
           "called": [
             "boardDtbRegions",
             "boundMapOf",
@@ -306757,7 +306838,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_10_between_variants_binds_largest_covered",
-          "line": 1485,
+          "line": 1498,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -306771,7 +306852,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_11_foreign_base_refused",
-          "line": 1496,
+          "line": 1509,
           "called": [
             "boardDtbRegions",
             "expect",
@@ -306782,7 +306863,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_12_split_aperture_binds_canonical_map",
-          "line": 1505,
+          "line": 1518,
           "called": [
             "boardDtbRegions",
             "boundMapOf",
@@ -306796,7 +306877,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_13_direct_path_fallback_is_smallest",
-          "line": 1529,
+          "line": 1542,
           "called": [
             "PlatformConfig",
             "all",
@@ -306816,7 +306897,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_22_every_register_block_is_a_window",
-          "line": 1553,
+          "line": 1566,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -306831,7 +306912,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_23_extent_past_the_window_is_refused",
-          "line": 1573,
+          "line": 1586,
           "called": [
             "any",
             "expect",
@@ -306846,7 +306927,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_18_every_memory_node_contributes",
-          "line": 1602,
+          "line": 1615,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -306865,7 +306946,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_19_root_cell_widths_are_honoured",
-          "line": 1621,
+          "line": 1634,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -306880,7 +306961,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_20_partial_reg_pair_refused",
-          "line": 1633,
+          "line": 1646,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -306890,7 +306971,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_21_empty_unit_address_is_not_memory",
-          "line": 1640,
+          "line": 1653,
           "called": [
             "DeviceTree.fromDtbFull",
             "emptyUnitAddressDtb",
@@ -306900,7 +306981,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_14_unterminated_blob_refused",
-          "line": 1652,
+          "line": 1665,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -306914,7 +306995,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_15_unknown_token_refused",
-          "line": 1665,
+          "line": 1678,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -306924,7 +307005,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_16_disabled_memory_refused",
-          "line": 1674,
+          "line": 1687,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtbWithMemoryStatus",
@@ -306936,7 +307017,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_17_reserved_memory_child_is_not_ram",
-          "line": 1689,
+          "line": 1702,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -306946,7 +307027,7 @@
         {
           "kind": "def",
           "name": "review8_mmio_windows_require_the_right_devices",
-          "line": 1697,
+          "line": 1710,
           "called": [
             "DeviceTree.fromDtbFull",
             "all",
@@ -306969,7 +307050,7 @@
         {
           "kind": "def",
           "name": "uartWindowIsTheDeviceTreesRegisterBlock",
-          "line": 1739,
+          "line": 1752,
           "called": [
             "boardDtb",
             "expect",
@@ -306982,7 +307063,7 @@
         {
           "kind": "def",
           "name": "rangesWalkStarvedOfFuelRefuses",
-          "line": 1765,
+          "line": 1778,
           "called": [
             "FdtRangeEntry",
             "be64",
@@ -306994,7 +307075,7 @@
         {
           "kind": "def",
           "name": "bootRefusesConfiguredFrames",
-          "line": 1794,
+          "line": 1807,
           "called": [
             "FrameObject",
             "all",
@@ -307009,7 +307090,7 @@
         {
           "kind": "def",
           "name": "bootUntypedMustBePristine",
-          "line": 1815,
+          "line": 1828,
           "called": [
             "UntypedObject",
             "all",
@@ -307024,7 +307105,7 @@
         {
           "kind": "def",
           "name": "realFirmwareAccountBindsTheReportedRam",
-          "line": 1848,
+          "line": 1861,
           "called": [
             "BCM2712Config",
             "DeviceTree.fromDtbFull",
@@ -307038,6 +307119,7 @@
             "machineConfigCovers",
             "none",
             "ofNat",
+            "ramReachFrom",
             "rpi5MachineConfigForVariant",
             "rpi5MemoryMapForConfig",
             "rpi5RootTaskUntypedId",
@@ -307048,13 +307130,13 @@
         {
           "kind": "def",
           "name": "ramUntypedCount",
-          "line": 1883,
+          "line": 1906,
           "called": []
         },
         {
           "kind": "def",
           "name": "kernelEntry_boots_the_deployment_on_every_variant",
-          "line": 1893,
+          "line": 1916,
           "called": [
             "CNode",
             "Capability",
@@ -307089,7 +307171,7 @@
         {
           "kind": "def",
           "name": "review7_declared_block_extents_are_enforced",
-          "line": 1946,
+          "line": 1969,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtBlob.of",
@@ -307111,7 +307193,7 @@
         {
           "kind": "def",
           "name": "review9_parser_conformance_and_reservations",
-          "line": 2006,
+          "line": 2029,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtBlob.of",
@@ -307158,7 +307240,7 @@
         {
           "kind": "def",
           "name": "review9_runtime_contract_follows_the_installed_map",
-          "line": 2221,
+          "line": 2244,
           "called": [
             "MachineConfig",
             "MachineState",
@@ -307174,13 +307256,13 @@
         {
           "kind": "def",
           "name": "dtbCorpusDir",
-          "line": 2250,
+          "line": 2279,
           "called": []
         },
         {
           "kind": "def",
           "name": "corpusHexDigit",
-          "line": 2252,
+          "line": 2281,
           "called": [
             "none",
             "toNat"
@@ -307189,7 +307271,7 @@
         {
           "kind": "def",
           "name": "parseCorpusHex",
-          "line": 2260,
+          "line": 2289,
           "called": [
             "corpusHexDigit",
             "empty",
@@ -307204,7 +307286,7 @@
         {
           "kind": "def",
           "name": "parseCorpusNat",
-          "line": 2275,
+          "line": 2304,
           "called": [
             "corpusHexDigit",
             "isEmpty",
@@ -307214,7 +307296,7 @@
         {
           "kind": "def",
           "name": "parseCorpusRegions",
-          "line": 2285,
+          "line": 2314,
           "called": [
             "foldr",
             "none",
@@ -307225,7 +307307,7 @@
         {
           "kind": "def",
           "name": "corpusDeclaredRegions",
-          "line": 2303,
+          "line": 2332,
           "called": [
             "fdtRoot",
             "memoryRegionsFromNodes",
@@ -307238,7 +307320,7 @@
         {
           "kind": "def",
           "name": "corpusStructureReadable",
-          "line": 2318,
+          "line": 2347,
           "called": [
             "fdtRoot",
             "none",
@@ -307249,7 +307331,7 @@
         {
           "kind": "def",
           "name": "dtbCorpus_every_fixture_agrees_with_the_manifest",
-          "line": 2326,
+          "line": 2355,
           "called": [
             "corpusDeclaredRegions",
             "corpusStructureReadable",
@@ -307268,7 +307350,7 @@
         {
           "kind": "def",
           "name": "bootMapHex",
-          "line": 2388,
+          "line": 2417,
           "called": [
             "ofList"
           ]
@@ -307276,7 +307358,7 @@
         {
           "kind": "def",
           "name": "bootMapKindName",
-          "line": 2391,
+          "line": 2420,
           "called": [
             "MemoryKind"
           ]
@@ -307284,13 +307366,13 @@
         {
           "kind": "def",
           "name": "bootMapFarProbe",
-          "line": 2398,
+          "line": 2427,
           "called": []
         },
         {
           "kind": "def",
           "name": "bootMapProbes",
-          "line": 2400,
+          "line": 2429,
           "called": [
             "MemoryRegion",
             "bootMapFarProbe",
@@ -307301,7 +307383,7 @@
         {
           "kind": "def",
           "name": "bootMapConfigurations",
-          "line": 2412,
+          "line": 2441,
           "called": [
             "BCM2712Config",
             "rpi5LowRamTopFloor",
@@ -307312,7 +307394,7 @@
         {
           "kind": "theorem",
           "name": "bootMapConfigurations_admissible",
-          "line": 2420,
+          "line": 2449,
           "called": [
             "Admissible",
             "bootMapConfigurations",
@@ -307322,7 +307404,7 @@
         {
           "kind": "def",
           "name": "bootMapTableLines",
-          "line": 2429,
+          "line": 2458,
           "called": [
             "RPi5Platform",
             "bootMapHex",
@@ -307344,7 +307426,7 @@
         {
           "kind": "def",
           "name": "deployment_roots_own_distinct_pool_pages",
-          "line": 2485,
+          "line": 2514,
           "called": [
             "bootRootTablesPlaced",
             "configuredRootTableBases",
@@ -307360,7 +307442,7 @@
         {
           "kind": "def",
           "name": "bootMap_the_lean_map_is_the_shared_table",
-          "line": 2496,
+          "line": 2525,
           "called": [
             "bootMapTableLines",
             "checkSharedFixture"
@@ -307369,7 +307451,7 @@
         {
           "kind": "def",
           "name": "deployment_starts_both_initial_threads",
-          "line": 2509,
+          "line": 2538,
           "called": [
             "PlatformBinding.declaredCores",
             "RPi5Platform",
@@ -307401,7 +307483,7 @@
         {
           "kind": "def",
           "name": "boot_refuses_unstartable_initial_threads",
-          "line": 2555,
+          "line": 2584,
           "called": [
             "PlatformBinding.declaredCores",
             "RPi5Platform",
@@ -307422,7 +307504,7 @@
         {
           "kind": "def",
           "name": "qemuVirtBootMapTableLines",
-          "line": 2599,
+          "line": 2628,
           "called": [
             "QemuVirtPlatform",
             "bootMapHex",
@@ -307442,7 +307524,7 @@
         {
           "kind": "def",
           "name": "bootMap_the_qemu_virt_map_is_the_shared_table",
-          "line": 2616,
+          "line": 2645,
           "called": [
             "checkSharedFixture",
             "qemuVirtBootMapTableLines"
@@ -307451,7 +307533,7 @@
         {
           "kind": "def",
           "name": "qemuVirt_board_check_on_qemus_own_device_tree",
-          "line": 2630,
+          "line": 2659,
           "called": [
             "boardDtb",
             "config",
@@ -307474,7 +307556,7 @@
         {
           "kind": "def",
           "name": "qemuVirt_deployment_boots",
-          "line": 2663,
+          "line": 2692,
           "called": [
             "PlatformBinding.declaredCores",
             "QemuVirtPlatform",
@@ -307496,7 +307578,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2689,
+          "line": 2718,
           "called": [
             "ak9a_01_mmioRead32_rejects_unaligned",
             "ak9a_02_mmioRead64_rejects_unaligned",

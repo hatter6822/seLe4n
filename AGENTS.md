@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.35.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.36.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7929,8 +7929,9 @@ new code must respect.  (1) **A configuration carries its first-gigabyte top**:
 `BCM2712Config.lowRamTop` (default `rpi5FirstGigabyteTop`, so every member of
 `rpi5Variants` is the uncut form it was) ends the first RAM region
 `rpi5MemoryMapForConfig` declares, and `rpi5VariantFor` binds the covered member
-cut to `rpi5LowRamTopFor board` — the account's RAM prefix from `0`
-(`ramPrefixTop`, the union reading's own cursor), capped at the gigabyte and
+cut to `rpi5LowRamTopFor board` — the account's RAM reach from the image
+origin (`ramReachFrom board rpi5RamOrigin`, the union reading's own cursor;
+from `0` until `v0.36.36`, below), capped at the gigabyte and
 rounded **down** to the 2 MiB granule, or the floor when it reaches less.  The
 real Pi 5 8 GiB account binds `{8 GiB, 0x3FC00000}`; a CM5's rounds to
 `0x3FA00000`; an account reporting less than the floor (the kernel's extent plus
@@ -7944,7 +7945,8 @@ decided once on the uncut member; the placement is proved symbolically and the
 machine config's well-formedness by `MachineConfig.wellFormed_of_within`.  (4)
 **The HAL maps nothing past the kernel's extent from constants**:
 `GUARANTEED_RAM_TOP` is retired (a Tier 3 negative refuses it), the constant
-Normal window is `[0, KERNEL_RESERVED_END)`, `link.ld`'s RAM region ends there
+Normal window is `[IMAGE_ORIGIN, KERNEL_RESERVED_END)` (from `0` until
+`v0.36.36`), `link.ld`'s RAM region ends there
 (`ASSERT`), and an extension may not start inside it
 (`RamExtensionRefusal::InsideKernelReserved`).  The first gigabyte's reported
 part is an extension like any other, written in 2 MiB blocks into `l2_ram`.  (5)
@@ -7956,6 +7958,33 @@ configurations**: `tests/fixtures/boot_map.expected` has the five variants and
 three firmware-cut configurations, each line `variant <ramSize> lowRamTop <t>`,
 and the HAL test requires the constant window to be the extent and each
 extended window to be exactly its configuration's RAM.
+
+**...and a Raspberry Pi 5's RAM begins at the image origin** (`v0.36.36`, the
+post-landing audit's finding F1, confirmed against `bcm2712.dtsi` at
+`raspberrypi/linux` `rpi-6.6.y`).  The tree reserves the secure monitor's
+`[0, 0x80000)` as `reserved-memory/atf@0` with `no-map`, the parser subtracts
+every reservation, so no parsed account of a real board reached past `0`: the
+BP7.10 derivation fell to the floor and the bridge refused **every** real Pi 5 —
+and the HAL mapped that secure memory Normal-cacheable, where a speculative
+fetch can raise an external abort.  Four things new code must respect.  (1)
+**Declared RAM begins at the image origin on every board**: `rpi5RamOrigin` and
+`qemuVirtRamOrigin` (the RAM base plus `0x80000`, `link.ld`'s `ORIGIN`) start
+the first RAM region, the first gigabyte's top is measured from there
+(`Boot.ramReachFrom`, which replaces `ramPrefixTop`), and the reserved extent
+still starts at the RAM base, so the hole is reserved from every untyped and is
+neither RAM nor mapped.  (2) **The boot map, the cacheable window and the
+device tree's window ask one predicate**, `mmu::in_kernel_memory_window`
+(`[IMAGE_ORIGIN, KERNEL_RESERVED_END)`), and `IMAGE_ORIGIN` is a boundary
+forcing page granularity on its block (`IMAGE_BOUNDARY_COUNT` is four, one more
+4 KiB boot table).  (3) **A symbolic `x - 0x80000` is a kernel hazard**: the
+kernel's `Nat.sub` unfolds once per unit of its literal second argument, so a
+proof must not let the kernel evaluate a configuration's extension list over a
+symbolic top — state the fact over the list or the extension
+(`untypedsOver_regions`, `extension_placed` in `Deployment.lean`).  (4) **The
+witnesses use the real tree**: the Ak9 firmware test and the shared corpus's
+`eight_gib_rpi5_firmware` carry `atf@0` exactly as `bcm2712.dtsi` declares it
+(two address cells, one size cell, `ranges`, `no-map`), and
+`rpi5VariantFor_rpi5_parsed_account` binds the subtracted account.
 
 **The RPi5 binding is the BCM2712's address map** (`v0.36.2`, found while
 scoping BP5.4).  Until then the model and the HAL both carried the **BCM2711**'s

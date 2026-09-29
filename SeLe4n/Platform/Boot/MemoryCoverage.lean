@@ -285,30 +285,39 @@ theorem coverReach_sound (regions : List SeLe4n.MemoryRegion) (kind : SeLe4n.Mem
   rw [decide_eq_true (Nat.le_refl _)] at h
   exact coverFrom_sound regions kind _ fuel cursor h a hLo hHi
 
-/-- **WS-BP BP7.10**: a region starting at `0` whose end is within the
-account's reach from `0` is covered — by the union reading, whatever pieces the
-account cut it into. -/
+/-- **WS-BP BP7.10**: a region whose end is within the account's reach from
+the region's own base is covered — by the union reading, whatever pieces the
+account cut it into.  (`v0.36.36`: stated from the region's base rather than
+from `0`, since a Raspberry Pi 5's declared RAM begins at the image origin.) -/
 theorem memoryRegionCovered_of_le_coverReach (regions : List SeLe4n.MemoryRegion)
-    (r : SeLe4n.MemoryRegion) (hBase : r.base.toNat = 0)
-    (hEnd : r.endAddr ≤ coverReach regions r.kind regions.length 0) :
+    (r : SeLe4n.MemoryRegion)
+    (hEnd : r.endAddr ≤ coverReach regions r.kind regions.length r.base.toNat) :
     memoryRegionCovered regions r = true := by
   unfold memoryRegionCovered memoryRegionCoveredByUnion
-  rw [hBase, coverFrom_eq_le_coverReach, decide_eq_true hEnd, Bool.or_true]
+  rw [coverFrom_eq_le_coverReach, decide_eq_true hEnd, Bool.or_true]
 
-/-- **WS-BP BP7.10**: how much RAM a board's account reports contiguously from
-address `0` — the first byte it does not.  `0` when no RAM region of the
-account starts at or below `0`. -/
-def ramPrefixTop (board : SeLe4n.MachineConfig) : Nat :=
-  coverReach board.memoryMap .ram board.memoryMap.length 0
+/-- **`v0.36.36`**: how much RAM a board's account reports contiguously from
+address `start` — the first byte at or past `start` it does not.  `start`
+itself when no RAM region of the account contains it.
 
-/-- **WS-BP BP7.10**: every address below the prefix is RAM the account
-reports. -/
-theorem ramPrefixTop_sound (board : SeLe4n.MachineConfig) (a : Nat)
-    (h : a < ramPrefixTop board) :
+It replaced `ramPrefixTop` (the reach from `0`), which read a Raspberry Pi 5 as
+having no RAM at all: its device tree reserves `[0, 0x80000)` for the secure
+monitor (`bcm2712.dtsi`'s `atf@0`, `no-map`), the parser subtracts every
+reservation, and so no account a real board produces reaches past `0`. -/
+def ramReachFrom (board : SeLe4n.MachineConfig) (start : Nat) : Nat :=
+  coverReach board.memoryMap .ram board.memoryMap.length start
+
+/-- **`v0.36.36`**: every address in `[start, ramReachFrom board start)` is RAM
+the account reports. -/
+theorem ramReachFrom_sound (board : SeLe4n.MachineConfig) (start a : Nat)
+    (hLo : start ≤ a) (h : a < ramReachFrom board start) :
     ∃ q ∈ board.memoryMap, q.kind = SeLe4n.MemoryKind.ram ∧ q.base.toNat ≤ a ∧ a < q.endAddr := by
   obtain ⟨q, hq, hK, hB, hE⟩ :=
-    coverReach_sound board.memoryMap .ram board.memoryMap.length 0 a (Nat.zero_le _) h
+    coverReach_sound board.memoryMap .ram board.memoryMap.length start a hLo h
   exact ⟨q, hq, by simpa using hK, hB, hE⟩
+
+/- **Tombstone (`v0.36.36`)**: `ramPrefixTop` and `ramPrefixTop_sound` are
+`ramReachFrom board 0` and `ramReachFrom_sound` above. -/
 
 /-- **PR #892 review round 2**: does the board `board` describes have all the
 RAM `mc` declares, at least as wide a physical address space?

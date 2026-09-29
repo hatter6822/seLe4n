@@ -1042,8 +1042,9 @@ mod tests {
     fn test_apply_icache_invalidation_all_arms() {
         apply_icache_invalidation(ICacheInvalidation::Iallu);
         // WS-BP BP8.1: addresses in the board's kernel extent, which is where
-        // the identity map is on every board (`mmu::KERNEL_RESERVED_BASE`).
-        let base = crate::mmu::KERNEL_RESERVED_BASE;
+        // the identity map is on every board — from the image origin
+        // (`mmu::IMAGE_ORIGIN`, `v0.36.36`), below which nothing is mapped.
+        let base = crate::mmu::IMAGE_ORIGIN;
         apply_icache_invalidation(ICacheInvalidation::IvauPage(base + 0x2000));
         apply_icache_invalidation(ICacheInvalidation::UnifyPage(base + 0x3000));
         apply_icache_invalidation(ICacheInvalidation::CleanRangeIallu(base + 0x4000, 1024));

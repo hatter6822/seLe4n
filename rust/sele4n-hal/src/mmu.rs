@@ -554,6 +554,26 @@ pub const fn in_kernel_reserved_extent(addr: u64) -> bool {
     addr.wrapping_sub(KERNEL_RESERVED_BASE) < KERNEL_RESERVED_END - KERNEL_RESERVED_BASE
 }
 
+/// **`v0.36.36`: the image's load origin** — `link.ld`'s `ORIGIN(RAM)`, 512 KiB
+/// above the base of RAM (an `ASSERT` there holds it), and the first byte the
+/// boot map describes as memory.  Below it, inside the kernel's reserved
+/// extent, is memory the kernel neither maps nor calls RAM: on a Raspberry
+/// Pi 5 the secure monitor's `[0, 0x80000)`, which `bcm2712.dtsi` reserves as
+/// `reserved-memory/atf@0` with `no-map` — a Normal mapping of secure memory
+/// lets a speculative fetch raise an external abort.  The Lean binding agrees:
+/// `rpi5RamOrigin` is where its declared RAM begins.
+pub const IMAGE_ORIGIN: u64 = KERNEL_RESERVED_BASE + 0x8_0000;
+
+/// **`v0.36.36`**: is `addr` in the part of the kernel's reserved extent the
+/// boot map describes as memory, `[IMAGE_ORIGIN, KERNEL_RESERVED_END)`?  The
+/// one spelling of the question for the boot map, the cacheable window and the
+/// device tree's window, so the three cannot disagree about the hole below the
+/// image.
+#[must_use]
+pub const fn in_kernel_memory_window(addr: u64) -> bool {
+    addr.wrapping_sub(IMAGE_ORIGIN) < KERNEL_RESERVED_END - IMAGE_ORIGIN
+}
+
 /// **WS-BP BP8.1**: the level-1 index of the gigabyte holding the reserved
 /// extent — the one `l2_ram` describes.
 const RAM_GIB: usize = (KERNEL_RESERVED_BASE / L1_BLOCK_SIZE) as usize;
@@ -705,15 +725,22 @@ impl ImageLayout {
             && self.rodata_end.is_multiple_of(L3_PAGE_SIZE)
             && self.text_start < self.text_end
             && self.text_end <= self.rodata_end
-            && in_kernel_reserved_extent(self.text_start)
+            && in_kernel_memory_window(self.text_start)
             && self.rodata_end <= KERNEL_RESERVED_END
     }
 
-    /// The layout's three boundaries, in address order.  A boundary that falls
-    /// strictly inside a 2 MiB block is what forces that block to page
-    /// granularity.
+    /// The map's boundaries inside the kernel's extent, in address order: the
+    /// image origin (`v0.36.36` — the unmapped hole below it ends there) and
+    /// the layout's three.  A boundary that falls strictly inside a 2 MiB block
+    /// is what forces that block to page granularity.  In order because a
+    /// well-formed layout's text starts at or above [`IMAGE_ORIGIN`].
     const fn boundaries(&self) -> [u64; IMAGE_BOUNDARY_COUNT] {
-        [self.text_start, self.text_end, self.rodata_end]
+        [
+            IMAGE_ORIGIN,
+            self.text_start,
+            self.text_end,
+            self.rodata_end,
+        ]
     }
 }
 
@@ -721,12 +748,14 @@ impl ImageLayout {
 /// as `layout`.
 ///
 /// A function of the address and the image alone: no device tree, no RAM size,
-/// no state.  The kernel's reserved extent is Normal, with the image's text and
-/// read-only data carrying their own permissions; the device window is Device;
-/// every other address is unmapped.
+/// no state.  The kernel's reserved extent from the image origin is Normal,
+/// with the image's text and read-only data carrying their own permissions; the
+/// device window is Device; every other address is unmapped — the extent's
+/// prefix below [`IMAGE_ORIGIN`] included (`v0.36.36`: the secure monitor's
+/// `no-map` memory on a Raspberry Pi 5).
 #[must_use]
 pub const fn boot_mapping_for(addr: u64, layout: &ImageLayout) -> BootMapping {
-    if in_kernel_reserved_extent(addr) {
+    if in_kernel_memory_window(addr) {
         if layout.text_start <= addr && addr < layout.text_end {
             BootMapping::KernelText
         } else if layout.text_end <= addr && addr < layout.rodata_end {
@@ -803,7 +832,7 @@ pub const fn ram_range_covered(base: u64, size: u64, extensions: &[(u64, u64)]) 
             return true;
         }
         let mut next = None;
-        if in_kernel_reserved_extent(cursor) {
+        if in_kernel_memory_window(cursor) {
             next = Some(KERNEL_RESERVED_END);
         }
         let mut i = 0;
@@ -836,10 +865,12 @@ const L1_BLOCK_SIZE: u64 = 1 << 30;
 /// Bytes one L2 block descriptor maps (2 MiB).
 const L2_BLOCK_SIZE: u64 = 1 << 21;
 
-/// How many image boundaries [`ImageLayout`] has, and so the most 2 MiB blocks
-/// of the reserved extent that need page granularity: a block is uniform unless a
-/// boundary falls strictly inside it.
-const IMAGE_BOUNDARY_COUNT: usize = 3;
+/// How many boundaries the map has inside the kernel's extent — the image
+/// origin and [`ImageLayout`]'s three — and so the most 2 MiB blocks of the
+/// reserved extent that need page granularity: a block is uniform unless a
+/// boundary falls strictly inside it.  (Four since `v0.36.36`, which made the
+/// origin a boundary: the block holding it is half unmapped.)
+const IMAGE_BOUNDARY_COUNT: usize = 4;
 
 /// The L1 index of the gigabyte holding the device window.
 const DEVICE_GIB: usize = (DEVICE_WINDOW_BASE / L1_BLOCK_SIZE) as usize;
@@ -1344,7 +1375,8 @@ fn populate_boot_tables(tables: &mut BootPageTables, base_pa: u64, layout: &Imag
 ///
 /// The map is [`boot_mapping_for`]'s:
 ///
-/// - `[0, text_start)`:              Normal RAM, writable, execute-never
+/// - `[KERNEL_RESERVED_BASE, IMAGE_ORIGIN)`: unmapped (`v0.36.36`)
+/// - `[IMAGE_ORIGIN, text_start)`:   Normal RAM, writable, execute-never
 /// - `[text_start, text_end)`:       kernel text, read-only, executable at EL1
 /// - `[text_end, rodata_end)`:       kernel read-only data, execute-never
 /// - `[rodata_end, KERNEL_RESERVED_END)`: Normal RAM, writable, execute-never
@@ -1815,7 +1847,7 @@ pub const fn dtb_window_admissible(window: (u64, u64), kernel: (u64, u64)) -> bo
         return true;
     }
     match base.checked_add(size) {
-        Some(end) if in_kernel_reserved_extent(base) && end <= BOOT_TABLE_POOL_BASE => {
+        Some(end) if in_kernel_memory_window(base) && end <= BOOT_TABLE_POOL_BASE => {
             dtb_disjoint_from_image(window, &[kernel])
         }
         _ => false,
@@ -2353,7 +2385,8 @@ mod tests {
     #[test]
     fn boot_table_extent_is_every_translation_table() {
         // **WS-BP BP2.6**: one L0, one L1, two L2 (the first gigabyte, the
-        // device window) and three L3 for the image's boundary blocks, each 512
+        // device window) and four L3 for the boundary blocks (the image
+        // origin's since `v0.36.36`, and the layout's three), each 512
         // entries × 8 bytes = 4096 bytes (the device tail's L3 went with the
         // BCM2712 address-map correction).  `enable_mmu`
         // cleans exactly this extent to
@@ -2361,7 +2394,7 @@ mod tests {
         // extent that under-reports the tables would leave a table dirty in
         // the D-cache while the walker reads memory.
         assert_eq!(PageTableCell::size(), BOOT_TABLE_COUNT * 4096);
-        assert_eq!(PageTableCell::size(), 28672);
+        assert_eq!(PageTableCell::size(), 32768);
     }
 
     #[test]
@@ -2576,14 +2609,16 @@ mod boot_table_walk {
         rodata_end: KERNEL_RESERVED_BASE + 0x3C_5000,
     };
 
-    /// Every boundary in a block of its own: all three L3 image tables used.
+    /// Every layout boundary in a block of its own: all four L3 tables used
+    /// (the origin shares the text's block).
     pub(super) const SPREAD_LAYOUT: ImageLayout = ImageLayout {
         text_start: KERNEL_RESERVED_BASE + 0x8_0000,
         text_end: KERNEL_RESERVED_BASE + 0x61_F000,
         rodata_end: KERNEL_RESERVED_BASE + 0xA0_5000,
     };
 
-    /// Every boundary on a block boundary: no L3 image table used.
+    /// Every layout boundary on a block boundary: only the origin's block —
+    /// half unmapped since `v0.36.36` — needs an L3 table.
     pub(super) const BLOCK_ALIGNED_LAYOUT: ImageLayout = ImageLayout {
         text_start: KERNEL_RESERVED_BASE + 0x20_0000,
         text_end: KERNEL_RESERVED_BASE + 0x40_0000,
@@ -2712,8 +2747,8 @@ mod qemu_virt_boot_map_tests {
             .collect();
         assert_eq!(ram.len(), 1, "the virt binding declares one RAM region");
         assert_eq!(
-            ram[0].0, KERNEL_RESERVED_BASE,
-            "the kernel extent is at the RAM's base"
+            ram[0].0, IMAGE_ORIGIN,
+            "the declared RAM begins at the image origin (v0.36.36)"
         );
         assert_eq!(
             device,
@@ -2776,8 +2811,8 @@ mod qemu_virt_boot_map_tests {
                 );
                 assert_eq!(
                     kind.is_normal(),
-                    in_kernel_reserved_extent(a),
-                    "{a:#x}: the constant Normal window is the kernel's extent"
+                    in_kernel_memory_window(a),
+                    "{a:#x}: the constant Normal window is the kernel's extent from the origin"
                 );
                 let extended_normal = walk(&extended, base_pa, a)
                     .is_some_and(|(_, attrs)| attrs & ATTR_IDX_DEVICE == 0);
@@ -3017,10 +3052,11 @@ mod boot_map_tests {
                         "configuration {cfg:x?}: {a:#x} is {lean} in the Lean map"
                     );
                     // WS-BP BP7.10: the constant Normal window is exactly the
-                    // kernel's reserved extent, on every configuration.
+                    // kernel's reserved extent from the image origin
+                    // (`v0.36.36`), on every configuration.
                     assert_eq!(
                         kind.is_normal(),
-                        a < KERNEL_RESERVED_END,
+                        (IMAGE_ORIGIN..KERNEL_RESERVED_END).contains(&a),
                         "{a:#x}: the constant Normal window is the kernel's extent"
                     );
                     // WS-BP BP4.6, BP7.10: with the configuration's extensions
@@ -3207,7 +3243,14 @@ mod boot_map_tests {
         let low_top = 0x3FC0_0000;
         let ext = [(KRE, low_top), (GIB, 3 * GIB), (4 * GIB, 8 * GIB)];
         assert!(ram_range_covered(KRE - 0x1000, 0x2000, &ext));
-        assert!(ram_range_covered(0, low_top, &ext));
+        assert!(ram_range_covered(
+            IMAGE_ORIGIN,
+            low_top - IMAGE_ORIGIN,
+            &ext
+        ));
+        // `v0.36.36`: the extent's prefix below the image origin is no window.
+        assert!(!ram_range_covered(KERNEL_RESERVED_BASE, 0x1000, &ext));
+        assert!(!ram_range_covered(IMAGE_ORIGIN - 0x1000, 0x2000, &ext));
         assert!(!ram_range_covered(low_top - 0x1000, 0x2000, &ext));
         assert!(!ram_range_covered(low_top, 0x1000, &ext));
         assert!(!ram_range_covered(GIB - 0x1000, 0x2000, &ext));
@@ -3221,7 +3264,11 @@ mod boot_map_tests {
         assert!(!ram_range_covered(u64::MAX - 3, 16, &ext));
         // Order of the record does not matter.
         let reversed = [(4 * GIB, 8 * GIB), (GIB, 3 * GIB), (KRE, low_top)];
-        assert!(ram_range_covered(0, low_top, &reversed));
+        assert!(ram_range_covered(
+            IMAGE_ORIGIN,
+            low_top - IMAGE_ORIGIN,
+            &reversed
+        ));
         assert!(ram_range_covered(4 * GIB, 4 * GIB, &reversed));
     }
 
@@ -3284,9 +3331,16 @@ mod boot_map_tests {
             let (tables, base_pa) = build(layout);
             let mut executable_pages = 0u64;
             let spans = [
-                (0, KERNEL_RESERVED_END),
+                (IMAGE_ORIGIN, KERNEL_RESERVED_END),
                 (DEVICE_WINDOW_BASE, DEVICE_WINDOW_TOP),
             ];
+            // `v0.36.36`: every page below the image origin is unmapped.
+            for page in (KERNEL_RESERVED_BASE..IMAGE_ORIGIN).step_by(L3_PAGE_SIZE as usize) {
+                assert!(
+                    walk(&tables, base_pa, page).is_none(),
+                    "{page:#x} is below the image origin and mapped"
+                );
+            }
             for (lo, hi) in spans {
                 for page in (lo..hi).step_by(L3_PAGE_SIZE as usize) {
                     let (_, attrs) = walk(&tables, base_pa, page).expect("mapped");
@@ -3322,14 +3376,17 @@ mod boot_map_tests {
                 "{va:#x} is rodata"
             );
         }
-        for va in [
-            0,
-            LAYOUT.text_start - 1,
-            LAYOUT.rodata_end,
-            KERNEL_RESERVED_END - 1,
-        ] {
+        for va in [LAYOUT.rodata_end, KERNEL_RESERVED_END - 1] {
             assert!(writable(at(va)) && !executable(at(va)), "{va:#x} is data");
             assert_ne!(at(va) & SH_INNER, 0, "RAM is Inner Shareable");
+        }
+        // `v0.36.36`: below the image origin — the secure monitor's `no-map`
+        // memory on a Raspberry Pi 5 — nothing is mapped at all.
+        for va in [KERNEL_RESERVED_BASE, IMAGE_ORIGIN - 1] {
+            assert!(
+                walk(&tables, base_pa, va).is_none(),
+                "{va:#x} is below the origin"
+            );
         }
     }
 
@@ -3437,7 +3494,8 @@ mod boot_map_tests {
             slots(&SPREAD_LAYOUT),
             [(0, 0), (0x60_0000, 1), (0xA0_0000, 2)]
         );
-        assert!(slots(&BLOCK_ALIGNED_LAYOUT).is_empty());
+        // `v0.36.36`: the origin's block is half unmapped, so it always has one.
+        assert_eq!(slots(&BLOCK_ALIGNED_LAYOUT), [(0, 0)]);
     }
 
     #[test]

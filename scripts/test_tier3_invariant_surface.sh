@@ -3832,13 +3832,14 @@ run_negative_check "INVARIANT" rg -U -n '^pub fn init_mmu\(dtb_ptr: u64\) \{[^\n
 run_check "INVARIANT" rg -n -U '^pub fn init_mmu\(dtb_ptr: u64\) \{\n    let layout = image_layout\(\);\n    if !layout\.is_well_formed\(\) \{\n(([ \t][^\n]*)?\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    if !dtb_window_admissible\(dtb_window\(dtb_ptr\), kernel_extent\(\)\) \{\n(([ \t][^\n]*)?\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(&layout\);' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{' rust/sele4n-hal/src/mmu.rs
 # WS-BP BP7.10: the constant Normal window is the kernel's reserved extent —
-# `boot_mapping_for` maps Normal below `KERNEL_RESERVED_END` and nowhere else —
+# `boot_mapping_for` maps Normal in `[IMAGE_ORIGIN, KERNEL_RESERVED_END)`
+# (from the image origin since v0.36.36) and nowhere else —
 # and the cacheable window is that interval unioned with the RAM BP4.6 records.
 # NEGATIVE: the retired first-gigabyte constant, which described the top of the
 # gigabyte the firmware keeps for itself as the kernel's own writable RAM.
-run_check "INVARIANT" rg -n -U '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{\n    if in_kernel_reserved_extent\(addr\) \{' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{\n    if in_kernel_memory_window\(addr\) \{' rust/sele4n-hal/src/mmu.rs
 run_negative_check "INVARIANT" rg -n '\bGUARANTEED_RAM_TOP\b' rust/sele4n-hal/src/
-run_check "INVARIANT" rg -n -U '^pub const fn ram_range_covered\(base: u64, size: u64, extensions: &\[\(u64, u64\)\]\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?        if in_kernel_reserved_extent\(cursor\) \{\n            next = Some\(KERNEL_RESERVED_END\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const fn ram_range_covered\(base: u64, size: u64, extensions: &\[\(u64, u64\)\]\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?        if in_kernel_memory_window\(cursor\) \{\n            next = Some\(KERNEL_RESERVED_END\);' rust/sele4n-hal/src/mmu.rs
 # WS-BP BP7.10: the first gigabyte is extended in 2 MiB blocks through its own
 # level-2 table, one answer for both passes of `extend_boot_tables`, and an
 # extension reaching back into the kernel's extent is refused.
@@ -3849,7 +3850,21 @@ run_negative_check "INVARIANT" rg -n '\bBelowGuaranteedRam\b' rust/sele4n-hal/sr
 # and admitted only inside the kernel's reserved extent (WS-BP BP3.2), below
 # the boot table-page pool (`v0.36.35`), and outside the image.
 run_check "INVARIANT" rg -n -U '^pub const fn dtb_window\(dtb_ptr: u64\) -> \(u64, u64\) \{\n    if dtb_ptr == 0 \{\n        \(0, 0\)\n    \} else \{\n        \(dtb_ptr, crate::cmdline::MAX_DTB_SIZE as u64\)' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n -U 'Some\(end\) if in_kernel_reserved_extent\(base\) && end <= BOOT_TABLE_POOL_BASE => \{\n            dtb_disjoint_from_image\(window, &\[kernel\]\)' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'Some\(end\) if in_kernel_memory_window\(base\) && end <= BOOT_TABLE_POOL_BASE => \{\n            dtb_disjoint_from_image\(window, &\[kernel\]\)' rust/sele4n-hal/src/mmu.rs
+# v0.36.36: the boot map describes nothing below the image origin (on a
+# Raspberry Pi 5 the secure monitor's `no-map` [0, 0x80000)); the boot map, the
+# cacheable window and the device tree's window ask one predicate, and the
+# origin is a boundary forcing page granularity on its block.  The Lean model
+# declares RAM from the same origin on both boards, and measures the first
+# gigabyte's RAM from it rather than from 0, which no real board's parsed
+# account reaches.
+run_check "INVARIANT" rg -n '^pub const IMAGE_ORIGIN: u64 = KERNEL_RESERVED_BASE \+ 0x8_0000;' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{\n    if in_kernel_memory_window\(addr\) \{' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'if in_kernel_memory_window\(cursor\) \{\n            next = Some\(KERNEL_RESERVED_END\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'const fn boundaries\(&self\) -> \[u64; IMAGE_BOUNDARY_COUNT\] \{\n        \[\n            IMAGE_ORIGIN,\n            self\.text_start,' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^def rpi5MemoryMapForConfig \(config : BCM2712Config\) : List SeLe4n\.MemoryRegion :=\n  \[ \{ base := SeLe4n\.PAddr\.ofNat rpi5RamOrigin$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n 'let reach := min \(SeLe4n\.Platform\.Boot\.ramReachFrom board rpi5RamOrigin\) rpi5FirstGigabyteTop' SeLe4n/Platform/RPi5/Board.lean
+run_negative_check "INVARIANT" rg -n '^def ramPrefixTop\b' SeLe4n
 # NEGATIVE: the BP2.6 bound, under which a blob could lie in RAM a boot untyped
 # describes and a user retype would then overwrite.
 run_negative_check "INVARIANT" rg -n 'Some\(end\) if end <= GUARANTEED_RAM_TOP => dtb_disjoint_from_image' rust/sele4n-hal/src/mmu.rs
@@ -15248,8 +15263,13 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_cm5_firmware_account
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_kernel_extent_not_ram
 #check @SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant_wellFormed
-#check @ramPrefixTop_sound
+#check @ramReachFrom_sound
 #check @memoryRegionCovered_of_le_coverReach
+-- v0.36.36: declared RAM begins at the image origin (the ATF hole below it).
+#check @SeLe4n.Platform.RPi5.rpi5RamOrigin
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_rpi5_parsed_account
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_origin_not_ram
+#check @SeLe4n.Platform.QemuVirt.qemuVirtRamOrigin
 #check @SeLe4n.MachineConfig.wellFormed_of_within
 #check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_of_withoutExtents
 #check @SeLe4n.Platform.RPi5.rpi5_bindMachineConfig

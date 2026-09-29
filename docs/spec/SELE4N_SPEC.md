@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.35` (`lakefile.toml`) |
+| **Package version** | `0.36.36` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 432,801 across 361 Lean files |
-| **Test LoC** | 88,304 across 71 Lean test suites |
-| **Proved declarations** | 14,371 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 432,901 across 361 Lean files |
+| **Test LoC** | 88,333 across 71 Lean test suites |
+| **Proved declarations** | 14,376 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -405,9 +405,12 @@ no size.
 
 - **The map.**  `boot_mapping_for(addr, layout)` is a function of the address
   and the image's layout alone:
-  - `[0, KERNEL_RESERVED_END)` (`0x1000_0000`, the kernel's reserved extent)
-    is Normal — until BP7.10 (§6.2.17) this was `[0, GUARANTEED_RAM_TOP)`, the
-    first gigabyte, which no board's firmware reports whole;
+  - `[IMAGE_ORIGIN, KERNEL_RESERVED_END)` (`[0x8_0000, 0x1000_0000)`, the
+    kernel's reserved extent from the image origin) is Normal — until BP7.10
+    (§6.2.17) this was `[0, GUARANTEED_RAM_TOP)`, the first gigabyte, which no
+    board's firmware reports whole, and until v0.36.36 it began at `0`, whose
+    first 512 KiB the firmware reserves `no-map` for the ARM Trusted Firmware
+    (`bcm2712.dtsi`'s `atf@0`);
   - the device window `[0x10_7C00_0000, 0x10_8000_0000)` — the BCM2712's
     SoC-bus window, holding UART10 and the GIC-400 (§6.2.14) — is Device;
   - everything else is unmapped.
@@ -437,10 +440,10 @@ no size.
 - **The device tree is not read.**  `init_mmu` checks only the window a reader
   may dereference: `MAX_DTB_SIZE` bytes from the pointer, the bound every
   reader enforces.  The window must lie in the kernel's reserved extent
-  `[0, KERNEL_RESERVED_END)` (since BP3.2, §6.2.8; before it, anywhere in
-  the first gigabyte) and outside `[_start, __lean_heap_end)`; otherwise the boot
-  is refused.
-- **Cache maintenance.**  `is_boot_cacheable_range` is `[0, KERNEL_RESERVED_END)`
+  `[IMAGE_ORIGIN, BOOT_TABLE_POOL_BASE)` (since BP3.2, §6.2.8, and from the
+  image origin since v0.36.36; before BP3.2, anywhere in the first gigabyte)
+  and outside `[_start, __lean_heap_end)`; otherwise the boot is refused.
+- **Cache maintenance.**  `is_boot_cacheable_range` is `[IMAGE_ORIGIN, KERNEL_RESERVED_END)`
   together with the RAM BP4.6 maps after the verified parse (§6.2.12).  An
   operand outside that union fails closed.
 
@@ -789,7 +792,8 @@ The kernel is one bare-metal binary, `sele4n-kernel`
   running `scripts/kernel_image_report.py`, which reads `kernel8.img`'s size
   from the file and refuses one that is not the loaded extent, then reports it
   with the loaded, text, padding and `NOLOAD` bytes, the share of
-  `[0, KERNEL_RESERVED_END)` the image uses, and every allocated section's
+  the address range `[0, KERNEL_RESERVED_END)` the image uses up to its
+  device-tree window, and every allocated section's
   extent and kind — appended to the CI step summary and written as
   `kernel-image-report.json`, which the `Lean aarch64 Archive` job uploads with
   the image and its boot files (`rpi5-kernel-image`).
@@ -958,9 +962,11 @@ memory had the board been accepted.
 - **A configuration carries its first-gigabyte top.**  `BCM2712Config.lowRamTop`
   (default the gigabyte's top, so every member of `rpi5Variants` is the uncut
   configuration it was) ends the first RAM region `rpi5MemoryMapForConfig`
-  declares.  `rpi5LowRamTopFor` derives it from an account: the account's RAM
-  prefix from `0` (`ramPrefixTop`, the union reading's cursor —
-  `ramPrefixTop_sound`), capped at the gigabyte and rounded **down** to the
+  declares, which begins at the image origin `rpi5RamOrigin` (`0x8_0000`)
+  since v0.36.36 (§6.2.19).  `rpi5LowRamTopFor` derives it from an account: the
+  account's RAM reach from that origin (`ramReachFrom`, the union reading's
+  cursor — `ramReachFrom_sound`; until v0.36.36 `ramPrefixTop`, the reach from
+  `0`), capped at the gigabyte and rounded **down** to the
   2 MiB granule the HAL extends by, or the floor
   `rpi5KernelReservedEnd + 2 MiB` when it reaches less.  `rpi5VariantFor` is
   the covered member cut to that top; `rpi5LowRamTop_covered` says an account
@@ -981,7 +987,8 @@ memory had the board been accepted.
   well-formedness).
 - **The constant boot map is the kernel's extent.**  `GUARANTEED_RAM_TOP` is
   retired; the constant Normal window, the linker's RAM region and the
-  cacheable window's constant part are all `[0, KERNEL_RESERVED_END)`, and the
+  cacheable window's constant part are all `[0, KERNEL_RESERVED_END)` (from
+  `IMAGE_ORIGIN` since v0.36.36, §6.2.19), and the
   first gigabyte's reported part is an extension written into `l2_ram`.
 - **One list.**  The extensions are clipped at the kernel's extent and the root
   task holds one untyped per extension (`rpi5RootTaskUntypeds`), so the
@@ -1092,6 +1099,40 @@ relation from the printed words — verdict `1`, the containment of the words it
 was decided on, a tick and an IRQ on every serving core, every word inside its
 bracket, the four SGI counts distinct — rather than trusting the driver's
 verdict.  The verdict on a core is pure and host-tested.
+
+### 6.2.19 A Raspberry Pi 5's RAM begins at the image origin (v0.36.36)
+
+The BCM2712's device tree reserves `[0, 0x8_0000)` for the ARM Trusted
+Firmware (`bcm2712.dtsi`, `reserved-memory/atf@0`, `no-map`), and the real
+firmware's `/memory@0` account reports that range separately from the RAM
+after it.  The verified parser subtracts every `/reserved-memory` carve-out, so
+the parsed account begins RAM at `0x8_0000` — and the deployment declared
+`[0, lowRamTop)`, so no variant was covered and every board carrying the
+reservation was refused.  The HAL's constant boot map also described the
+reserved 512 KiB as the kernel's own writable Normal memory, which a
+speculative walk may fetch into the cache over memory the secure world owns.
+
+- **The model's RAM begins at `rpi5RamOrigin` (`0x8_0000`)**, which is also
+  `link.ld`'s image origin: `rpi5MemoryMapForConfig`'s first region is
+  `[rpi5RamOrigin, lowRamTop)`.  `rpi5LowRamTopFor` reads the account's reach
+  from that origin (`ramReachFrom board rpi5RamOrigin`, sound by
+  `ramReachFrom_sound`); `ramPrefixTop`, the reach from `0`, is retired with a
+  Tier 3 negative.  `rpi5VariantFor_rpi5_parsed_account` binds the account as
+  the parser leaves it (from `0x8_0000`) to `{8 GiB, 0x3FC00000}`, and
+  `rpi5VariantFor_origin_not_ram` refuses an account whose RAM does not reach
+  the origin.
+- **The HAL's constant Normal window is `[IMAGE_ORIGIN, KERNEL_RESERVED_END)`**
+  (`mmu::in_kernel_memory_window`), read by `boot_mapping_for`,
+  `ram_range_covered`, `dtb_window_admissible` and `ImageLayout::is_well_formed`;
+  the reserved range is unmapped.  `IMAGE_ORIGIN` is the image table's first
+  boundary, so the 2 MiB block holding it is refined into 4 KiB pages
+  (`IMAGE_BOUNDARY_COUNT` = 4).
+- **QEMU `virt` follows the same rule** (`qemuVirtRamOrigin`, RAM base plus
+  512 KiB), so the Lean memory map equals the HAL's Normal window on both boards
+  and the shared fixtures hold each to the other.
+- **The corpus carries the reservation**: `eight_gib_rpi5_firmware` has the
+  `atf@0` node, and `tests/Ak9PlatformSuite.lean` boots it end to end, with a
+  witness that the retired reach from `0` answers `0` on it.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
