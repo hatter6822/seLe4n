@@ -1512,6 +1512,44 @@ theorem scheduleLocalSuccessor_of_post_running (pre post : SystemState) (execCor
   unfold localSuccessorNeeded
   simp [h]
 
+/-- **`v0.36.40`: dispatch a core another core vacated.**  A core entered
+from EL0 whose committed slot is already `none` is running, in hardware, a
+thread the model has taken off it — another core's transition cleared the slot
+(`removeRunnableOnCore`, reached by a remote `.tcbSuspend` or a donation
+holder's deschedule), and the `.reschedule` SGI that would have told this core
+has not yet been taken: it was pending while the core waited on the
+kernel-entry lock with IRQs masked.  An entry that names no thread to act on
+must still hand the core something to resume, or the trap layer has nothing to
+return through and halts the PE (`trap.rs`, after `take_restored`).
+
+`scheduleLocalSuccessor` is inert here by design — its guard is a *change*
+between two states the entry computed, and this core was vacated before the
+entry began — so the vacated case is its own rule: run the core's reschedule,
+which with no current thread admits any budget-eligible candidate and so
+dispatches at least the core's idle thread.  The `.error` arm keeps the state
+(fail-closed, as `scheduleLocalSuccessor`'s does); a populated slot is left
+alone, so the rule is the identity wherever the entry has a thread to act on. -/
+def dispatchVacatedCore (st : SystemState) (c : CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | some _ => st
+  | none =>
+    match handleRescheduleSgiOnCore st c with
+    | .ok st' => st'
+    | .error _ => st
+
+/-- `v0.36.40`: the rule does nothing on a core that runs a thread. -/
+theorem dispatchVacatedCore_of_current (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (h : st.scheduler.currentOnCore c = some tid) :
+    dispatchVacatedCore st c = st := by
+  simp [dispatchVacatedCore, h]
+
+/-- `v0.36.40`: on a vacated core the rule **is** the core's reschedule. -/
+theorem dispatchVacatedCore_of_vacated (st st' : SystemState) (c : CoreId)
+    (h : st.scheduler.currentOnCore c = none)
+    (hR : handleRescheduleSgiOnCore st c = .ok st') :
+    dispatchVacatedCore st c = st' := by
+  simp [dispatchVacatedCore, h, hR]
+
 -- WS-BP BP7.6 (v0.36.19): `scheduleLocalSuccessorLive` is retired.  It gated the
 -- vacated-core dispatch on the context-restore seam, because a successor the
 -- hardware could not install would have been attributed the next syscall

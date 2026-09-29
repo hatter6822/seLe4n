@@ -270,9 +270,20 @@ A table whose record is **stale** (`Architecture.pageTableInstallLive` — its
 root no longer holds it, which a finalising delete or revocation leaves behind)
 is installed nowhere and does not block the reset: it could not be unmapped
 first, having no capability left, so refusing it would strand its untyped.
-Unmap the table first. -/
+Unmap the table first.
+
+**`v0.36.40`: both sides are asked, from both ends.**  The per-member clauses
+read the *subtree's* records — a retired table's `installedIn`, a retired root's
+`tables` — and a surviving root outside the subtree whose `tables` names a
+retired table was excluded only because every writer keeps the two sides
+together (`pageTableMap`, `pageTableUnmap`; the finalising detach writes the root
+side and leaves the table's record stale, which is the safe direction).  Nothing
+decided it, while the reset decides its other preconditions rather than assuming
+them, and the cost of the pair ever parting is a live descriptor pointing at a
+page the next carve hands out as a user frame.  So the last clause asks every
+surviving root directly: none holds a slot naming a table the reset retires. -/
 def carvedSubtreeInstallsClosed (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
-  ids.all fun id =>
+  (ids.all fun id =>
     (match st.getPageTable? id with
       | some p => match p.installedIn with
         | some inst => ids.contains inst.root || !Architecture.pageTableInstallLive st id
@@ -280,7 +291,11 @@ def carvedSubtreeInstallsClosed (st : SystemState) (ids : List SeLe4n.ObjId) : B
       | none => true) &&
     (match st.getVSpaceRoot? id with
       | some root => root.tables.all (fun s => ids.contains s.table)
-      | none => true)
+      | none => true)) &&
+  st.objects.fold true (fun acc oid o => acc &&
+    match o with
+    | .vspaceRoot root => ids.contains oid || root.tables.all (fun s => !ids.contains s.table)
+    | _ => true)
 
 /-- **Every frame in the subtree lies in the untyped's region.**  What makes the
 region-wide unmap pass reach every retired page: a frame the carve placed
@@ -379,7 +394,8 @@ def carvedAt (st : SystemState) (oid : SeLe4n.ObjId) : Prop :=
     (∃ r, st.objects[oid]? = some (KernelObject.vspaceRoot r)) ∨
     (∃ p, st.objects[oid]? = some (KernelObject.pageTable p))
 
-/-- **Erase a carved object — a frame or an untyped — from the object store**,
+/-- **Erase a carved object — a frame, an untyped, a VSpace root or a page table
+— from the object store**,
 with its index row, its index-set entry and its object-type metadata.  A no-op
 at a key holding anything else, so no other kind of object can be erased through
 it: an erased TCB, Reply or SchedContext would leave every structure naming it
@@ -388,7 +404,11 @@ and its parent's child list — which the reset has already shown to be gone, or
 is about to clear.  A VSpace root (slice 4b, `v0.36.10`) is named besides by
 its ASID-table entry and by the `vspaceRoot` field of a thread running in it:
 the reset has shown no thread does (`carvedSubtreeUnreferenced`), and the entry
-is erased here, so the root's ASID is free for the next carve.
+is erased here, so the root's ASID is free for the next carve.  A page table
+(`v0.36.12`) is named besides by the root it is installed in and by its own
+`installedIn` record: the reset has shown both sides are inside the subtree or
+stale (`carvedSubtreeInstallsClosed`, which since `v0.36.40` asks every surviving
+root too).
 
 *Tombstone:* `retireFrame` (`v0.36.6`–`v0.36.7`) was this primitive at frames
 only; slice 4 (`v0.36.8`) retires child untypeds with the frames carved from

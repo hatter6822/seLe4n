@@ -4186,11 +4186,12 @@ theorem carveRequestOf?_ok (st : SystemState) (newType : KernelObjectType) (size
     · cases h
 
 /-- **WS-BP BP7.1 (`v0.36.5`, child untypeds at slice 4, `v0.36.8`): the live
-`.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype` at the frame
-and untyped types.
+`.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype` at the memory
+types: a frame, a child untyped, a VSpace root and a page table.
 
-Decode, then build the carve request (`carveRequestOf?`: a frame, or a child
-untyped of a bounded size — anything else `.invalidArgument`).  The child id is
+Decode, then build the carve request (`carveRequestOf?`: a frame, a child
+untyped of a bounded size, a VSpace root under a fresh ASID, or a page table —
+anything else `.invalidArgument`).  The child id is
 a raw operand, so it passes `validateObjIdArg` — no reserved idle object and not
 the sentinel — before anything is resolved.  Then the two slots, then
 `untypedRetypeObject`, whose own guards decide everything else. -/

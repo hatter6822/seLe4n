@@ -56,7 +56,7 @@ entirely within a single 4KB page. See `ipcBuffer_within_page` below.
 AJ4-C (L-06): Step 7 checks the physical address returned by the VSpace
 lookup against the platform's physical address width from `MachineState`.
 Without this check, a mapped VA could theoretically reference a PA outside
-the valid physical memory range (e.g., > 2^44 on RPi5 BCM2712).
+the valid physical memory range (e.g., ≥ 2^40 on the RPi5's Cortex-A76).
 
 Returns `.error` with appropriate error code on any failure. -/
 def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)

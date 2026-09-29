@@ -516,7 +516,7 @@ theorem classifyAddress_found (addr : PAddr) (pm : List MemoryRegion) (r : Memor
     lookup, `/chosen` and `/cpus` nodes) is deferred to WS-U. -/
 -- AJ3-B (M-18): `physicalAddressWidth` is now a required parameter (no default).
 -- Callers must explicitly specify the PA width for their platform to prevent
--- silent misconfiguration (RPi5 BCM2712 = 44-bit, not 48-bit).
+-- silent misconfiguration (RPi5: the Cortex-A76's 40 bits, not 48).
 def DeviceTree.fromDtbWithRegions (blob : ByteArray)
     (physicalAddressWidth : Nat)
     (memoryRegBytes : Option ByteArray := none) : Option DeviceTree := do

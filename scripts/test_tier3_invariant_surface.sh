@@ -4307,6 +4307,26 @@ run_check "INVARIANT" rg -n '^      \(Architecture\.IpcBufferRead\.syncUserWords
 run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      faultEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      unknownSyscallEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)\)\.state$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+# v0.36.40: a trap on a core another core vacated (a remote suspend cleared the
+# slot while its thread still ran here) dispatches a successor rather than
+# resuming nothing, which the trap layer answers by halting the PE.  The rule,
+# its use in the shared fault delivery and in the FP/SIMD step, the theorems
+# about both, and a negative refusing the retired inert arm of the delivery.
+run_check "INVARIANT" rg -n '^def dispatchVacatedCore \(st : SystemState\) \(c : CoreId\) : SystemState :=$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n -U '^  \| none =>\n([ \t]*(--[^\n]*)?\n)*      let st. := PriorityInheritance\.dispatchVacatedCore st c\n      \(PriorityInheritance\.computeCrossCoreSgis st st. c, st.\)$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^      \(res\.1, PriorityInheritance\.dispatchVacatedCore res\.2 c\)$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryDeliver_vacated($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryStep_vacated($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^  Concurrency\.recordCommittedCurrentThreadHw r\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def faultEntryDeliver [^\n]*(\n([ \t][^\n]*)?)*\| none => \(\[\], st\)" SeLe4n/Kernel/FaultEntry.lean'
+# v0.36.40: the boot-root physical-address bound is the Cortex-A76's 40 bits,
+# tied to the configuration's width, and the retired 2^44 does not return to
+# the checks; and the untyped reset asks every surviving root about the tables
+# it would retire.
+run_check "INVARIANT" rg -n '^def bootRootPaddrBound : Nat := 2 \^ 40$' SeLe4n/Platform/RPi5/VSpaceBoot.lean
+run_check "INVARIANT" rg -n '^theorem bootRootPaddrBound_eq_physicalAddressWidth($|[ ({:\[\]])' SeLe4n/Platform/RPi5/VSpaceBoot.lean
+run_negative_check "INVARIANT" rg -n '2 ?\^ ?44' SeLe4n/Platform/RPi5/VSpaceBoot.lean SeLe4n/Platform/Sim/Contract.lean
+run_check "INVARIANT" rg -n '^    \| \.vspaceRoot root => ids\.contains oid \|\| root\.tables\.all \(fun s => !ids\.contains s\.table\)$' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
 run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean

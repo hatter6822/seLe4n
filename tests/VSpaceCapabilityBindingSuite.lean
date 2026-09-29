@@ -1570,6 +1570,33 @@ private def decodeUnmapVia (rootSlot asid vaddr : Nat) : SyscallDecodeResult :=
 private def installOf (st : SystemState) (oid : Nat) : Option PageTableInstall :=
   (st.getPageTable? (SeLe4n.ObjId.ofNat oid)).bind (·.installedIn)
 
+/-- The installs-closed check as it read until `v0.36.40`: the subtree's own
+records only.  Kept here, and nowhere else, so the witness can show that a
+surviving root naming a retired table passed it. -/
+private def retiredInstallsClosed (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
+  ids.all fun id =>
+    (match st.getPageTable? id with
+      | some p => match p.installedIn with
+        | some inst => ids.contains inst.root || !Architecture.pageTableInstallLive st id
+        | none => true
+      | none => true) &&
+    (match st.getVSpaceRoot? id with
+      | some root => root.tables.all (fun s => ids.contains s.table)
+      | none => true)
+
+/-- A state whose pairing has parted — the surviving root `rootId` holding a slot
+naming `tableId`, which no live writer produces.  Built by hand, as the RR8.3
+witnesses write a corrupted back-pointer by hand, to exercise the one clause
+nothing on a reachable state can. -/
+private def withStraySlot (st : SystemState) (rootId tableId : Nat) : SystemState :=
+  match st.getVSpaceRoot? (SeLe4n.ObjId.ofNat rootId) with
+  | some root =>
+    let stray : PageTableSlot := { level := 3, index := 511, table := SeLe4n.ObjId.ofNat tableId }
+    let root' : VSpaceRoot := { root with tables := root.tables ++ [stray] }
+    let objs := st.objects.insert (SeLe4n.ObjId.ofNat rootId) (.vspaceRoot root')
+    { st with objects := objs }
+  | none => st
+
 /-- The (level, table) slots a root holds. -/
 private def slotsOf (st : SystemState) (oid : Nat) : Option (List (Nat × Nat)) :=
   (rootAt st oid).map (fun r => r.tables.map (fun s => (s.level, s.table.toNat)))
@@ -1774,6 +1801,13 @@ private def runPageTableChecks : IO Unit := do
               assertBool "so the child's subtree is unreferenced and closed"
                 (childIds == [SeLe4n.ObjId.ofNat 991] && carvedSubtreeUnreferenced st5 childIds &&
                  carvedSubtreeInstallsClosed st5 childIds)
+              -- v0.36.40: the pairing asked from the surviving root's side too.
+              let stStray := withStraySlot st5 980 991
+              assertBool "RETIRED: a surviving root naming the retired table passed the subtree-only check"
+                (retiredInstallsClosed stStray childIds)
+              assertBool "a surviving root naming a table the reset would retire is refused"
+                (!carvedSubtreeInstallsClosed stStray childIds &&
+                 isErr .revocationRequired (dispatchSyscall (decodeReset 19) carveOwner stStray))
               match dispatchSyscall (decodeReset 19) carveOwner st5 with
               | .error e => assertBool s!"resetting the child alone succeeds (got {repr e})" false
               | .ok ((), st5r) => do

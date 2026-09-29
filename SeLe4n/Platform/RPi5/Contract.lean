@@ -45,7 +45,7 @@ This is the first hardware target for seLe4n.
 `PlatformBinding` typeclass fields are populated with substantive
 values:
 
-- `machineConfig` — BCM2712 hardware constants (44-bit PA, 48-bit VA,
+- `machineConfig` — BCM2712 hardware constants (40-bit PA, 48-bit VA,
   4 KiB pages, 65 536 ASIDs).
 - `runtimeContract` — `rpi5RuntimeContract` (timer monotonicity,
   RAM-bounded memory access, deny register writes).

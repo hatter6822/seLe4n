@@ -1,3 +1,63 @@
+## v0.36.40 — A remotely vacated core dispatches a successor; audit hardening
+
+- **Security (reported as High, latent): a trap on a core another core had
+  vacated halted the PE.**  A remote deschedule — `.tcbSuspend`, or a
+  reclaim's holder deschedule — clears the victim's core's current slot while
+  that core's hardware still runs the thread at EL0.  If the thread then took an
+  abort, an unknown syscall or an FP/SIMD trap, `faultEntryDeliver`'s and
+  `fpAccessOnCore`'s `none` arms committed nothing, the entry staged
+  `RestoreTarget.none`, and `trap.rs` called `fatal_halt` because
+  `take_restored()` was false.  The window is the remote core's whole critical
+  section, since the trapping core spins on the kernel-entry lock with IRQs
+  masked and cannot take the `.reschedule` SGI first.  Any thread holding TCB
+  authority over two of its own threads on two cores could halt a core and every
+  other partition's threads scheduled on it.
+  `PriorityInheritance.dispatchVacatedCore` is the rule: on a core with no
+  current thread it runs the core's reschedule, which dispatches at least the
+  core's idle thread, and it is the identity on a core that runs a thread.  The
+  shared fault delivery and the FP/SIMD step both apply it
+  (`faultEntryDeliver_vacated`, `fpAccessEntryStep_vacated`), and
+  `fpAccessEntryStep_scheduler` is now stated for a running core, where it was
+  true only because the vacated case resumed nothing.  The FP entry also releases
+  a switched-out FP owner and records the committed current thread, as every
+  entry that can change what a core runs does.  The syscall seam needed nothing:
+  its vacated case answers `illegalState` into the thread, and the pending SGI
+  preempts it before its next instruction.  Witness:
+  `tests/FaultHandlingSuite.lean`'s vacated-core group, which computes the
+  retired restore target (`.none`) beside the live one; reverting the fault arm
+  fails it, and reverting the FP arm fails to elaborate.  What the same window
+  still costs — the trapped frame saved nowhere — is the existing register row,
+  narrowed.
+- **The boot-root check used the retired 44-bit address bound.**  The v0.36.2
+  audit set `physicalAddressWidth` to the Cortex-A76's 40 bits, and the
+  binding-root check (`VSpaceRootPaddrBounded`, `bootSafeVSpaceRootCheck`) still
+  admitted a mapping in `[2^40, 2^44)`, which the PE answers with an Address size
+  fault.  It reads `bootRootPaddrBound` now, which is
+  `2 ^ rpi5MachineConfig.physicalAddressWidth` by `rfl`, and the sweep corrected
+  the eight prose sites that still said 44.  Nothing shipped maps above `2^37`.
+  Witness: `TwoPhaseArchSuite` TPH-015r, a page at `2^40` refused and the page
+  below it admitted.
+- **The untyped reset asks the root-to-table pairing from both ends.**
+  `carvedSubtreeInstallsClosed` read only the subtree's own records, so a
+  surviving root outside the subtree whose `tables` named a retired table was
+  excluded only because every writer keeps the two sides together — a fact
+  nothing decided.  The last clause now asks every surviving root directly.
+  Witness: `VSpaceCapabilityBindingSuite` §5k, a hand-parted pair that the
+  retired check (spelled in the suite) passes and the live reset refuses.
+- **Docstrings that described a smaller carve.**  `retypeFromUntyped`'s contract
+  named `write` where the code requires `.retype`, and the device and alignment
+  rules as they were before frames and tables existed.  `CarveRequest`,
+  `untypedRetypeFromCap` and `retireCarvedObject` each named two carvable kinds
+  where there are four.
+- **Registered rather than fixed** (`docs/REGISTERED_DEBT.md` table B), each
+  with its measurement and remedy:
+  - kernel stacks with no guard pages, now that every trap runs the Lean dispatch on them;
+  - the HAL validating a physical write's address and never its value;
+  - `restoreTrapFrame` installing the translation before a restore commit that may decline;
+  - a frame capability's mapping record reviving after its ASID is reused;
+  - `freshAsid?`'s linear scan;
+  - the boot-entry contract not constraining its arguments' compiled closure.
+
 ## v0.36.39 — Every state-committing entry drains both hardware ledgers
 
 - **The ledger drain was the syscall and fault seams' alone.**  The timer

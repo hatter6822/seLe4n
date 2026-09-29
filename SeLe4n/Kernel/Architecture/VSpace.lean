@@ -60,7 +60,7 @@ def asidTranslationReady (st : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n
 
 /-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit LPA maximum).
     Used as the upper bound for model-level reasoning. Platform-specific bounds
-    (e.g., 44-bit for BCM2712) are enforced via `physicalAddressBoundForConfig`.
+    (e.g., 40-bit for the RPi5's Cortex-A76) are enforced via `physicalAddressBoundForConfig`.
 
     **Proof-layer default only** — production code must use
     `physicalAddressBoundForConfig` (explicit config) or

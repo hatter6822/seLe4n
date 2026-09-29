@@ -80,7 +80,7 @@ private def simBootPerms : PagePermissions :=
     ASID 0 with a single read-only identity mapping at virtual /
     physical address `0x1000`.  Satisfies the five
     `bootSafeVSpaceRoot` conjuncts (asid bounded, W^X compliant,
-    non-empty mappings, paddr < 2^44, vaddr canonical < 2^48) but
+    non-empty mappings, paddr < 2^40, vaddr canonical < 2^48) but
     does not exercise any hardware-specific MMIO regions because the
     simulation harness runs entirely in software.
 
@@ -116,7 +116,7 @@ theorem simBootVSpaceRoot_bootSafe :
     decide
   · -- non-empty mappings
     decide
-  · -- paddr < 2^44
+  · -- paddr < 2^40 (`bootRootPaddrBound`)
     decide
   · -- vaddr canonical (0x1000 < 2^48)
     decide

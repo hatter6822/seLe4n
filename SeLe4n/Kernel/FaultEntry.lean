@@ -189,7 +189,13 @@ def faultEntryDeliver (lctx : LabelingContext) (st : SystemState) (f : Fault)
     (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId) :
     List (CoreId × SgiKind) × SystemState :=
   match st.scheduler.currentOnCore c with
-  | none => ([], st)
+  | none =>
+      -- `v0.36.40`: another core vacated this one (a remote `.tcbSuspend` or
+      -- holder deschedule cleared the slot while the trapping thread still ran
+      -- here).  There is no thread to deliver for, but the core must be handed
+      -- something to resume, or the trap layer halts it.
+      let st' := PriorityInheritance.dispatchVacatedCore st c
+      (PriorityInheritance.computeCrossCoreSgis st st' c, st')
   | some tid =>
       let st' := faultDeliveredState lctx st f ectx w c tid
       let st'' := PriorityInheritance.scheduleLocalSuccessor st st' c
@@ -251,6 +257,22 @@ def unknownSyscallEntryStep (lctx : LabelingContext) (st : SystemState)
       faultEntryDeliver lctx st (.unknownSyscall (w.gprAt 7)) ectx w ⟨coreId.toNat, h⟩
     else ([], st)
   else ([], st)
+
+/-- **`v0.36.40`: a trap on a core another core vacated hands the core a
+successor.**  The shared delivery body, on a core whose committed slot is
+already `none`, commits the core's reschedule — so neither fault producer leaves
+the trap layer with nothing to return through (it halts the PE when no restore
+was staged).  No fault is delivered: the model no longer runs the thread that
+trapped here, and attributing the trap to it would act on a thread another core
+has already taken off this one. -/
+theorem faultEntryDeliver_vacated (lctx : LabelingContext) (st st' : SystemState)
+    (f : Fault) (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
+    (hVac : st.scheduler.currentOnCore c = none)
+    (hR : handleRescheduleSgiOnCore st c = .ok st') :
+    (faultEntryDeliver lctx st f ectx w c).2 = st' := by
+  unfold faultEntryDeliver
+  rw [hVac]
+  exact PriorityInheritance.dispatchVacatedCore_of_vacated st st' c hVac hR
 
 /-- WS-RR RR4.23: an out-of-range core id commits nothing — the FFI bound
 check, stated so a caller cannot mistake the inert arm for a delivery. -/
@@ -378,7 +400,11 @@ def fpAccessEntryStep (st : SystemState) (coreId : UInt64) (live : Option FpCont
     Architecture.FpAccessOutcome × SystemState :=
   match Concurrency.coreIdOfUInt64? coreId with
   | none => (.inert, st)
-  | some c => Architecture.fpAccessOnCore st c live
+  | some c =>
+      -- `v0.36.40`: a core another core vacated has no thread to switch FP/SIMD
+      -- state for, and dispatches a successor instead of resuming nothing.
+      let res := Architecture.fpAccessOnCore st c live
+      (res.1, PriorityInheritance.dispatchVacatedCore res.2 c)
 
 /-- **WS-BP BP7.9**: what the HAL does with the switch's outcome — load the
 answered context and lift the trap, or nothing (the restore then leaves the trap
@@ -399,8 +425,16 @@ loads the context it answers (`.load`) and lifts the trap, and restores what the
 core resumes — the faulting thread, whose `ELR_EL1` still names the FP/SIMD
 instruction, so it re-executes with its own FP state.  On `.retry` nothing is
 loaded and the restore leaves the trap armed, so the thread traps again until the
-core holding its live values has released them.  Nothing here schedules, so no
-SGI is fired and no successor is chosen. -/
+core holding its live values has released them.  On a core that runs a thread
+nothing here schedules, so no SGI is fired and no successor is chosen
+(`fpAccessEntryStep_scheduler`).
+
+**`v0.36.40`**: on a core another core has vacated, the step dispatches a
+successor (`PriorityInheritance.dispatchVacatedCore`), so the restore has
+something to install; the entry then releases a switched-out FP owner and records
+the committed current thread on the HAL, as every entry that can change what a
+core runs does.  Both are inert on the ordinary path — the owner is the current
+thread or nobody, and the recorded thread is the one already recorded. -/
 @[export lean_handle_fp_access]
 def fpAccessEntry (coreId : UInt64) : BaseIO Unit := do
   let frame ← Platform.FFI.captureTrapFrame
@@ -408,9 +442,13 @@ def fpAccessEntry (coreId : UInt64) : BaseIO Unit := do
   let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
     let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
     let res := fpAccessEntryStep st coreId live
-    ((res.1, Concurrency.restoreTargetAt res.2 coreId), res.2))
+    ((res.1, Concurrency.restoreTargetAt res.2 coreId,
+      (Concurrency.coreIdOfUInt64? coreId).map
+        (fun c => (c, res.2.scheduler.currentOnCore c))), res.2))
   applyFpAccessOutcome r.1
-  Platform.FFI.restoreTrapFrame r.2
+  Concurrency.releaseSwitchedFpOwner coreId
+  Platform.FFI.restoreTrapFrame r.2.1
+  Concurrency.recordCommittedCurrentThreadHw r.2.2
 
 /-- **WS-BP BP7.9** structural marker: the FP/SIMD access entry is the frame
 save, the owner capture, the lazy switch, the load it answers and the restore —
@@ -424,19 +462,48 @@ theorem fpAccessEntry_def (coreId : UInt64) :
         let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
           let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
           let res := fpAccessEntryStep st coreId live
-          ((res.1, Concurrency.restoreTargetAt res.2 coreId), res.2))
+          ((res.1, Concurrency.restoreTargetAt res.2 coreId,
+            (Concurrency.coreIdOfUInt64? coreId).map
+              (fun c => (c, res.2.scheduler.currentOnCore c))), res.2))
         applyFpAccessOutcome r.1
-        Platform.FFI.restoreTrapFrame r.2) := rfl
+        Concurrency.releaseSwitchedFpOwner coreId
+        Platform.FFI.restoreTrapFrame r.2.1
+        Concurrency.recordCommittedCurrentThreadHw r.2.2) := rfl
 
-/-- **WS-BP BP7.9**: the FP/SIMD access schedules nothing — the step commits no
-scheduler change, so the core resumes the thread that trapped. -/
+/-- **WS-BP BP7.9**: on a core that runs a thread, the FP/SIMD access schedules
+nothing — the step commits no scheduler change, so the core resumes the thread
+that trapped.  (Until `v0.36.40` this was stated for every core, and held only
+because a vacated core was left resuming nothing — see the next theorem.) -/
 theorem fpAccessEntryStep_scheduler (st : SystemState) (coreId : UInt64)
-    (live : Option FpContext) :
+    (live : Option FpContext) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hC : Concurrency.coreIdOfUInt64? coreId = some c)
+    (hCur : st.scheduler.currentOnCore c = some tid) :
     (fpAccessEntryStep st coreId live).2.scheduler = st.scheduler := by
   unfold fpAccessEntryStep
-  split
-  · rfl
-  · exact Architecture.fpAccessOnCore_scheduler st _ live
+  rw [hC]
+  dsimp only
+  have hS := Architecture.fpAccessOnCore_scheduler st c live
+  rw [PriorityInheritance.dispatchVacatedCore_of_current _ c tid
+    (by rw [hS]; exact hCur)]
+  exact hS
+
+/-- **`v0.36.40`**: on a core another core vacated, the FP/SIMD access
+dispatches the core's reschedule — the committed state is the reschedule's, so
+the restore installs a successor rather than nothing, and the trap layer does not
+halt the core. -/
+theorem fpAccessEntryStep_vacated (st st' : SystemState) (coreId : UInt64)
+    (live : Option FpContext) (c : CoreId)
+    (hC : Concurrency.coreIdOfUInt64? coreId = some c)
+    (hVac : st.scheduler.currentOnCore c = none)
+    (hR : handleRescheduleSgiOnCore st c = .ok st') :
+    (fpAccessEntryStep st coreId live).2 = st' := by
+  unfold fpAccessEntryStep
+  rw [hC]
+  dsimp only
+  have hInert : Architecture.fpAccessOnCore st c live = (.inert, st) := by
+    simp [Architecture.fpAccessOnCore, hVac]
+  rw [hInert]
+  exact PriorityInheritance.dispatchVacatedCore_of_vacated st st' c hVac hR
 
 /-- WS-RR RR4.23 structural marker: `faultEntry` unfolds to the atomic commit
 of the verified step followed by the SGI firing.

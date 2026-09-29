@@ -182,16 +182,19 @@ theorem scrubObjectMemory_establishes_memoryZeroed
 
 Deterministic branch contract:
 1. The source object must exist and be an `UntypedObject` (`untypedTypeMismatch` otherwise).
-2. Device untypeds cannot back typed kernel objects except the memory-backed
-   kinds — other untypeds and frames (`untypedDeviceRestriction` if violated).
+2. A device untyped backs only the kinds `KernelObjectType.deviceBackable`
+   admits — other untypeds and frames; never a translation table, since a table
+   walk reading a device reads a register (`untypedDeviceRestriction` if
+   violated).
 3. The allocation size must be at least `objectTypeAllocSize` for the target type
    (`untypedAllocSizeTooSmall` otherwise).
-4. S5-G: For VSpace roots and CNodes, the allocation base address
+4. S5-G: For the kinds `requiresPageAlignment` names — VSpace roots, CNodes,
+   frames, page tables and child untypeds — the allocation base address
    (`regionBase + watermark`) must be page-aligned (4KB boundary).
    Returns `allocationMisaligned` if violated. This matches seL4's requirement
    that page-table backing memory be page-aligned.
-5. Authority capability must target the untyped object and include `write` rights
-   (`illegalAuthority` otherwise).
+5. Authority capability must target the untyped object and include the `retype`
+   right (`lifecycleRetypeAuthority`; `illegalAuthority` otherwise).
 6. The requested allocation size must fit within the remaining region space
    (`untypedRegionExhausted` otherwise).
 7. U-H02: Post-allocation alignment re-verification — after advancing the watermark,
@@ -914,9 +917,10 @@ def untypedCapability (untypedId : SeLe4n.ObjId) : Capability :=
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`): what a carve can make.**
 
-The two kinds an untyped's memory backs *as memory*: a frame (one page a thread
-maps) and a child untyped (a sub-region it carves from in turn).  Kernel objects
-keep the in-place retype.  A request is built only by the syscall arm's decode
+The four kinds an untyped's memory backs *as memory*: a frame (one page a thread
+maps), a child untyped (a sub-region it carves from in turn), and — since slice 4b
+(`v0.36.10`) and `v0.36.12` — a VSpace root and an intermediate page table, each
+one page of translation table.  Kernel objects keep the in-place retype.  A request is built only by the syscall arm's decode
 (`carveRequestOf?`), which bounds a child untyped's size; every other guard —
 authority, capacity, fresh id, device rule, alignment, region — is the carve
 primitive's. -/

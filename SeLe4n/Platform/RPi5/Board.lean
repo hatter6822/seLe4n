@@ -436,7 +436,7 @@ theorem mmioRegionsPairwiseDisjoint_holds :
 
 /-- WS-H15b/A-41/W4-C: The RPi5 machine configuration is well-formed: nonzero region
     sizes, no overlapping regions, power-of-two page size, positive widths,
-    and all region end addresses fit within the 44-bit physical address space.
+    and all region end addresses fit within the 40-bit physical address space.
     W4-C (MED-02): Uses `decide` instead of `native_decide`. -/
 theorem rpi5MachineConfig_wellFormed : rpi5MachineConfig.wellFormed = true := by decide
 

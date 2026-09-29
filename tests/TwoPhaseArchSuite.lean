@@ -737,6 +737,24 @@ private def tph015h_simBootVSpaceRoot : IO Unit := do
     (!bootSafeObjectCheck (KernelObject.vspaceRoot
       SeLe4n.Platform.Sim.simBootVSpaceRoot))
 
+/-- **`v0.36.40`**: a binding root with one read-only identity mapping at
+    physical address `pa` — the simulation root's shape, moved. -/
+private def rootMappingAt (pa : Nat) : VSpaceRoot :=
+  { asid := SeLe4n.ASID.ofNat 0
+    mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16 :
+        SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert
+      (SeLe4n.VAddr.ofNat pa) (SeLe4n.PAddr.ofNat pa, { read := true }) }
+
+/-- TPH-015r (`v0.36.40`): the binding-root check holds a mapping to the
+    Cortex-A76's 40-bit physical address space.  A page at `2^40` is refused and
+    the page below it admitted; the retired `2^44` bound admitted both, so the
+    first assertion is the one that discriminates. -/
+private def tph015n_paddrBound : IO Unit := do
+  expect "TPH-015r a binding root mapping physical address 2^40 is refused"
+    (!SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck (rootMappingAt (2 ^ 40)))
+  expect "TPH-015r CONTROL: the page below 2^40 is admitted"
+    (SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck (rootMappingAt (2 ^ 40 - 4096)))
+
 /-- WS-BP BP7.1: the table page a configured root at `id` owns — one page of
     the fixture's pool (`withRpi5Root`), distinct per id, since two roots over
     one table would be one address space (`bootRootTablesPlaced`). -/
@@ -897,6 +915,7 @@ def main : IO Unit := do
   tph015f_objIdCollisionRejected
   tph015g_admissionWitness
   tph015h_simBootVSpaceRoot
+  tph015n_paddrBound
   tph015i_vspaceRootInInitialObjectsRejected
   tph015n_userVSpaceAdmittedAndRegistered
   tph015o_asidCollisionRefused
