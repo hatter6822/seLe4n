@@ -1,3 +1,52 @@
+## v0.36.35 — A live VSpace root is never destroyed in place
+
+The post-landing audit of BP7.1 found the other half of v0.36.9's finding,
+reported before the fix.  `lifecyclePreRetypeCleanup` was the identity on a
+VSpace-root target, so `.lifecycleRetype` through a `.retype`-bearing
+capability replaced a live root with another kernel object while its page
+tables kept their pages (live leaf descriptors included) and no ASID
+invalidation was recorded.  `pageTableMap` reinstalls a stale table without
+zeroing it, so the holder could let the frames those tables translate be reset
+and recarved to another thread, carve a new root and reinstall the old table:
+a writable hardware walk to that thread's page with nothing mapped in the
+model.  Latent (a carved root's capability
+carries no `.retype`); High where a configured capability does.
+
+- The cleanup's `.vspaceRoot` arm is `.error .revocationRequired`, beside the
+  frame, page-table and untyped arms; a root's memory returns through the
+  untyped it was carved from.
+- Retired, with a tombstone in `RetypeWrappers.lean`: `lifecyclePreRetypeCleanup_vspaceRoot_id`
+  (now false), `retypeShootdownAsidList_mem_installed` and the SM7.F.4(b)(iii)
+  VSpace-root-target TLB preservation family — statements about a refused
+  input.  New: `lifecyclePreRetypeCleanup_vspaceRoot_refused` and
+  `…_refuses_vspaceRoot` for every wrapper the live arm composes.  The retype's
+  ASID shootdown layer is now vacuous and kept as a defensive layer.
+- Proof sites that injected `.ok` for a root target now treat it as refused
+  (`RetypeReservation`, `SyscallSchedFootprint`, `DispatchArmPreservation`,
+  `NonInterferenceCrossCore`).
+- Tests: `VSpaceCapabilityBindingSuite` §5h asserts the owner's root is refused
+  and an endpoint beside it is retyped through the same arm;
+  `SmpTlbShootdownSuite` and `SmpCacheMaintenanceSuite` retarget their live
+  retype scenarios onto an endpoint and assert the root's refusal.
+- `mmu::dtb_window_admissible` refuses a device-tree window reaching the boot
+  table pool (audit finding F2).  The pool is zeroed and handed out as
+  translation tables during boot, so "nothing writes the blob during boot"
+  held only because the copy onto the Lean heap precedes the zeroing; it now
+  holds by placement.  `link.ld` already asserted the linker's window lies
+  below the pool; the check is what a firmware- or QEMU-placed blob meets.
+- Audit finding L2 (a device frame as an IPC buffer) checked and not a
+  defect: `ipcBufferSlotPAddr?` requires declared RAM (`addrInRange`), and
+  untyped placement keeps a device frame out of every RAM region.
+- Registered (table B, owner WS-BP, before BP8.3): a thread descheduled by
+  another core loses its registers since its last kernel entry, because the
+  owning core's next entry saves into its current slot, which the remote
+  deschedule cleared.  Not a leak (remote transitions only clear a slot);
+  the remedy is a per-core register owner with a dispatch guard, seL4's
+  `remoteTCBStall` shape.
+- Also: CI run 36504217376 (v0.36.34) passed.
+- Docs: CLAUDE.md/AGENTS.md, spec, `REGISTERED_DEBT.md` table B (closed row),
+  the BP7.1 and SM7.F.4 plan rows.
+
 ## v0.36.34 — The Lean runtime runs under the kernel-entry lock, and that is now checked
 
 The CI run dispatched on `v0.36.33` (Lean Action CI run 36499869963) confirmed that

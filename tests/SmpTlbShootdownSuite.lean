@@ -654,11 +654,11 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.retypeInitiatorDrain_drained
 #check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore
 #check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore_initiator_drained
--- SM7.F.4(b)(iii) residual CLOSED: the WHOLE-invariant retype preservation
--- (both wrappers preserve `tlbInvalidationConsistent_perCore` for a VSpaceRoot
--- target, under `hNoRebind` — the necessary no-ASID-collision precondition):
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
+-- SM7.F.4(b)(iii)'s VSpace-root-target preservation theorems are RETIRED at
+-- `v0.36.35`: a VSpace root is never destroyed in place (the pre-retype cleanup
+-- refuses it), so what stands in their place is the refusal itself:
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup_refuses_vspaceRoot
+#check @SeLe4n.Kernel.lifecycleRetypeWithCleanup_refuses_vspaceRoot
 -- The live catch-up fold's ORDER-INDEPENDENCE (the §6 stress group's
 -- concurrency claim): SM7.B proved commutativity for the single-view handler,
 -- but the live `completeShootdownRounds` seam folds the PER-CORE handler, so
@@ -1791,16 +1791,18 @@ private def runCompletionCutChecks : IO Unit := do
   -- state is `rtMultiState` (top level, §8) so this group and §8's
   -- multi-round-window group drive the same objects through the same entry.
   let rtSt := rtMultiState
-  assertBool "the CSpaceAddr retype of a live vspaceRoot posts the .aside1 round"
+  -- `v0.36.35`: a VSpace root is never destroyed in place, so the CSpaceAddr
+  -- retype of a live root is refused by the cleanup (`revocationRequired`)
+  -- and posts nothing; a root's ASID is released by resetting the untyped it
+  -- was carved from.  Until `v0.36.35` this retype committed and posted the
+  -- `.aside1` round, leaving every thread running in the root naming an
+  -- object of another kind.
+  assertBool "the CSpaceAddr retype of a live vspaceRoot is refused (revocationRequired)"
     (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown core0
         { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp
         (.endpoint {}) rtSt with
-     | .ok ((), st') =>
-         [core1, core2, core3].all (fun c =>
-           queueHasOp (st'.tlbShootdown.pendingOnCore c)
-             (encodeAsidInvalidation asid5) core0) &&
-         decide (pendingBounded st'.tlbShootdown)
-     | .error _ => false)
+     | .error .revocationRequired => true
+     | _ => false)
   let rtNewNtfn : SeLe4n.Model.KernelObject :=
     .notification
       { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,

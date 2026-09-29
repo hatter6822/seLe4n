@@ -3846,10 +3846,10 @@ run_check "INVARIANT" rg -n -U '^fn level2_table\(tables: &mut BootPageTables, g
 run_check "INVARIANT" rg -n -U '^    if base < KERNEL_RESERVED_END \{\n        return Err\(RamExtensionRefusal::InsideKernelReserved\);' rust/sele4n-hal/src/mmu.rs
 run_negative_check "INVARIANT" rg -n '\bBelowGuaranteedRam\b' rust/sele4n-hal/src/
 # The device tree's window is the readers' own bound, taken from the pointer,
-# and admitted only inside the kernel's reserved extent (WS-BP BP3.2) and
-# outside the image.
+# and admitted only inside the kernel's reserved extent (WS-BP BP3.2), below
+# the boot table-page pool (`v0.36.35`), and outside the image.
 run_check "INVARIANT" rg -n -U '^pub const fn dtb_window\(dtb_ptr: u64\) -> \(u64, u64\) \{\n    if dtb_ptr == 0 \{\n        \(0, 0\)\n    \} else \{\n        \(dtb_ptr, crate::cmdline::MAX_DTB_SIZE as u64\)' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n -U 'Some\(end\) if in_kernel_reserved_extent\(base\) && end <= KERNEL_RESERVED_END => \{\n            dtb_disjoint_from_image\(window, &\[kernel\]\)' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'Some\(end\) if in_kernel_reserved_extent\(base\) && end <= BOOT_TABLE_POOL_BASE => \{\n            dtb_disjoint_from_image\(window, &\[kernel\]\)' rust/sele4n-hal/src/mmu.rs
 # NEGATIVE: the BP2.6 bound, under which a blob could lie in RAM a boot untyped
 # describes and a user retype would then overwrite.
 run_negative_check "INVARIANT" rg -n 'Some\(end\) if end <= GUARANTEED_RAM_TOP => dtb_disjoint_from_image' rust/sele4n-hal/src/mmu.rs
@@ -5690,8 +5690,14 @@ run_check "INVARIANT" rg -n '^def retypeInitiatorDrain($|[ ({:\[\]])' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem retypeInitiatorDrain_drained($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 # WS-SM SM7.F.4(b)(iii) residual CLOSED: whole-invariant retype preservation.
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+# `v0.36.35`: the VSpace-root-target preservation theorems are retired — a root
+# is never destroyed in place — and must not come back; the refusal replaces them.
+run_negative_check "INVARIANT" rg -n '^theorem [A-Za-z]*_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_negative_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_vspaceRoot_id($|[ ({:\[\]])' SeLe4n
+run_check "INVARIANT" rg -n -U '^  \| \.vspaceRoot _ =>\n([ \t]*\n)*    \.error \.revocationRequired\n  \| _ => \.ok st$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_vspaceRoot_refused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_refuses_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_refuses_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 
 # ============================================================================
 # WS-SM SM8.A — Per-core observable state

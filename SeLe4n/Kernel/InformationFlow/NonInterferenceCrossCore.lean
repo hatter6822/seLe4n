@@ -4423,11 +4423,12 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
-  | frame _ | pageTable _ | untyped _ =>
+  | frame _ | pageTable _ | untyped _ | vspaceRoot _ =>
     -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
-    -- an untyped one — so there is no `.ok` post-state.
+    -- an untyped one, and since `v0.36.35` a VSpace root — so there is no
+    -- `.ok` post-state.
     simp [lifecyclePreRetypeCleanup] at hOk
-  | notification _ | vspaceRoot _ =>
+  | notification _ =>
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
   | schedContext _ =>

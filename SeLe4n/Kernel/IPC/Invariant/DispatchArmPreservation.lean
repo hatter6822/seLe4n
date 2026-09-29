@@ -4400,11 +4400,9 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
   | notification n =>
       cases hStep
       exact ⟨rfl, rfl, rfl⟩
-  | vspaceRoot v =>
-      cases hStep
-      exact ⟨rfl, rfl, rfl⟩
-  | untyped u =>
-      -- WS-BP BP7.1 slice 4: an untyped target is refused, as a frame is.
+  | untyped _ | vspaceRoot _ =>
+      -- WS-BP BP7.1 slice 4: an untyped target is refused, as a frame is;
+      -- `v0.36.35`: and so is a VSpace root.
       cases hStep
   | frame _ | pageTable _ =>
       -- WS-BP BP7.1: a frame target is refused, so there is no `.ok` step.

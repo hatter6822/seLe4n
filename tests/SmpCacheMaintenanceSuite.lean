@@ -290,7 +290,7 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache_ok
 #check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore
 #check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_perCore_memory_invariants
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_refuses_vspaceRoot
 
 -- SM7.D carriage: freeze, congruence, boot, information flow, FFI seam:
 #check @SeLe4n.Model.FrozenSystemState.perCoreICache
@@ -635,6 +635,9 @@ private def runLiveUnmapChecks : IO Unit := do
 -- §3.8  SM7.D.1 live wiring — the `.lifecycleRetype` production seam
 -- ----------------------------------------------------------------------------
 
+/-- An endpoint beside the scenario's root, the in-place retype's target. -/
+private def retypeEp : SeLe4n.ObjId := ⟨886⟩
+
 private def runLiveRetypeChecks : IO Unit := do
   IO.println "-- §3.8 SM7.D.1 live `.lifecycleRetype` instruction-cache seam"
   match vspaceMapPageWithFlush asid5 vaddrPage paddrPage permsExec (cacheState []) with
@@ -642,14 +645,30 @@ private def runLiveRetypeChecks : IO Unit := do
   | .ok ((), stMapped) => do
     let stAll : SystemState :=
       allCores.foldl (fun st c => icFetchOnCore st c lineExec) stMapped
-    let authCap : Capability :=
+    -- `v0.36.35`: a VSpace root is never destroyed in place — the seam
+    -- refuses it before any maintenance, leaving every core's cache as it was.
+    let vspCap : Capability :=
       { target := .object udVsp,
         rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
+    assertBool "the live retype seam refuses a live VSpace root (revocationRequired)"
+      (match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
+          core0 vspCap udVsp (.endpoint {}) stAll with
+       | .error .revocationRequired => true
+       | _ => false)
+    -- An endpoint beside it is retyped in place, and the seam drops every
+    -- core's instruction cache (IC IALLUIS) whatever the target was.
+    match storeObject retypeEp (.endpoint {}) stAll with
+    | .error _ => assertBool "the scenario stores an endpoint" false
+    | .ok ((), stEp) =>
+    let epCap : Capability :=
+      { target := .object retypeEp,
+        rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
     match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
-        core0 authCap udVsp
-        (.endpoint {})  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
-        stAll with
-    | .error _ => assertBool "the live retype seam commits" false
+        core0 epCap retypeEp
+        (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                         pendingBadge := none })  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
+        stEp with
+    | .error e => assertBool s!"the live retype seam commits (got {repr e})" false
     | .ok ((), stPost) => do
       -- The retype re-purposes the target's backing memory: every core's
       -- instruction cache is dropped (IC IALLUIS), so the post-state is
@@ -658,8 +677,8 @@ private def runLiveRetypeChecks : IO Unit := do
         (allCores.all fun c => (icacheOnCore stPost c).lines.isEmpty)
       assertBool "the post-state satisfies the 14th conjunct unconditionally"
         (icacheCoherentCheck_perCore stPost)
-      assertBool "the retype still posts its `.aside1` cross-core TLB round"
-        (!(shootdownQuiescent stPost.tlbShootdown))
+      assertBool "an endpoint retype retires no ASID, so it posts no TLB round"
+        (shootdownQuiescent stPost.tlbShootdown)
 
 -- ----------------------------------------------------------------------------
 -- §3.9  SM7.D — runtime seam + FFI encoding conformance
@@ -769,25 +788,29 @@ private def runLedgerChecks : IO Unit := do
           (!(shootdownQuiescent stROPost.tlbShootdown))
     -- Retype records its clean-then-invalidate operand even though its own
     -- shootdown round may be absent — the residual the shootdown-diff key
-    -- could not see.
+    -- could not see.  (`v0.36.35`: the target is an endpoint beside the root;
+    -- a live VSpace root is never destroyed in place.)
     let stAll : SystemState :=
       allCores.foldl (fun st c => icFetchOnCore st c lineExec) stMapped
+    match storeObject retypeEp (.endpoint {}) stAll with
+    | .error _ => assertBool "the scenario stores an endpoint" false
+    | .ok ((), stEp) =>
     let authCap : Capability :=
-      { target := .object udVsp,
+      { target := .object retypeEp,
         rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
     match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
-        core0 authCap udVsp
+        core0 authCap retypeEp
         (.endpoint {})  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
-        stAll with
-    | .error _ => assertBool "the retype seam commits" false
+        stEp with
+    | .error e => assertBool s!"the retype seam commits (got {repr e})" false
     | .ok ((), stPost) =>
-      -- The target is a `.vspaceRoot`, whose `objectTypeAllocSize` is 4096, so
-      -- the scrub zeroes [udVsp × 4096, +4096) and the operand cleans exactly
+      -- The target is an `.endpoint`, whose `objectTypeAllocSize` is 64, so
+      -- the scrub zeroes [retypeEp × 64, +64) and the operand cleans exactly
       -- that before the domain-wide invalidate.
       assertBool "a retype records the clean-then-invalidate range operand"
         (stPost.pendingIcacheMaintenance ==
           [ICacheInvalidation.cleanRangeIallu
-            (SeLe4n.PAddr.ofNat (udVsp.toNat * 4096)) 4096])
+            (SeLe4n.PAddr.ofNat (retypeEp.toNat * 64)) 64])
 
 -- ----------------------------------------------------------------------------
 -- §3.11  SM7.D.2 — the data-side dual: the clean-to-PoU obligation tripwire.
@@ -1073,26 +1096,30 @@ private def runRetypeCleanToPoUChecks : IO Unit := do
       ([ICacheInvalidation.iallu, .ivauPage paddrPage, .unifyPage paddrPage].all
         fun op => op.toSize == 0)
     -- Live, end to end: the retype leaves every core's I-cache cold AND the
-    -- ledger owing the clean.
+    -- ledger owing the clean.  (`v0.36.35`: the target is an endpoint beside
+    -- the root; a live VSpace root is never destroyed in place.)
     let authCap : Capability :=
-      { target := .object udVsp,
+      { target := .object retypeEp,
         rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
     match vspaceMapPageWithFlush asid5 vaddrPage paddrPage permsExec
         (cacheState [(SeLe4n.Slot.ofNat 0, authCap)]) with
     | .error _ => assertBool "the CSpaceAddr scenario maps the page" false
     | .ok ((), stWithCap) => do
+    match storeObject retypeEp (.endpoint {}) stWithCap with
+    | .error _ => assertBool "the CSpaceAddr scenario stores an endpoint" false
+    | .ok ((), stEp) => do
     let stAll : SystemState :=
-      allCores.foldl (fun st c => icFetchOnCore st c lineExec) stWithCap
+      allCores.foldl (fun st c => icFetchOnCore st c lineExec) stEp
     match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache
-        core0 { cnode := udCn, slot := SeLe4n.Slot.ofNat 0 } udVsp
+        core0 { cnode := udCn, slot := SeLe4n.Slot.ofNat 0 } retypeEp
         (.endpoint {})  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
         stAll with
-    | .error _ => assertBool "the CSpaceAddr retype seam commits" false
+    | .error e => assertBool s!"the CSpaceAddr retype seam commits (got {repr e})" false
     | .ok ((), stPost) => do
       assertBool "the CSpaceAddr seam records the same range operand"
         (stPost.pendingIcacheMaintenance ==
           [ICacheInvalidation.cleanRangeIallu
-            (SeLe4n.PAddr.ofNat (udVsp.toNat * 4096)) 4096])
+            (SeLe4n.PAddr.ofNat (retypeEp.toNat * 64)) 64])
       assertBool "and still leaves every core's instruction cache cold"
         (allCores.all fun c => (icacheOnCore stPost c).lines.isEmpty)
       assertBool "the post-state satisfies the 14th conjunct"

@@ -1064,6 +1064,30 @@ private def asidZeroScenario : SystemState :=
   | .ok ((), st) => st
   | .error _ => base
 
+/-- A kernel object that is not memory: the control target for the in-place
+retype, so a refusal of the VSpace root is shown to be about the root and not
+about the authority or the arm. -/
+private def plainTargetId : SeLe4n.ObjId := ⟨947⟩
+
+/-- The owner's CSpace slot holding a `.retype`-bearing capability to
+`plainTargetId` (unused by every other section). -/
+private def slotPlainRetype : Nat := 10
+
+/-- `asidZeroScenario` with an endpoint stored at `plainTargetId` and a
+`.retype`-bearing capability to it at `slotPlainRetype`. -/
+private def inPlaceControlScenario : SystemState :=
+  let st := asidZeroScenario
+  match storeObject plainTargetId (.endpoint {}) st with
+  | .error _ => st
+  | .ok ((), st1) =>
+    match st1.getCNode? carveCn with
+    | none => st1
+    | some cn =>
+      match storeObject carveCn (.cnode (cn.insert (SeLe4n.Slot.ofNat slotPlainRetype)
+          (frameCapTo plainTargetId [.read, .retype]))) st1 with
+      | .ok ((), st2) => st2
+      | .error _ => st1
+
 /-- `.lifecycleRetype` of `target` into the kind at `tag`, invoked on the
 capability at `capSlot`. -/
 private def decodeInPlaceRetypeTo (capSlot target tag : Nat) : SyscallDecodeResult :=
@@ -1082,7 +1106,7 @@ private def retiredAdmissible (newObj : KernelObject) (target : SeLe4n.ObjId)
     !(newObj.objectType == .untyped || newObj.objectType == .frame)
 
 private def runInPlaceVSpaceRootChecks : IO Unit := do
-  IO.println "-- §5h a VSpace root is never created in place (v0.36.9)"
+  IO.println "-- §5h a VSpace root is never created or destroyed in place (v0.36.9, v0.36.35)"
   let st := asidZeroScenario
   let zero := SeLe4n.ASID.ofNat 0
   assertBool "setup: ASID 0 is registered to the ASID-0 root"
@@ -1107,13 +1131,30 @@ private def runInPlaceVSpaceRootChecks : IO Unit := do
   | .error e =>
     assertBool "the live `.lifecycleRetype` into a VSpace root is refused (illegalState)"
       (e == .illegalState)
-  -- CONTROL: the same capability, the same target, another kind succeeds, so the
-  -- refusal is about the kind and not the authority.
+  -- `v0.36.35`: nor is one DESTROYED in place.  The same capability, the same
+  -- target, retyped into an endpoint, is refused by the pre-retype cleanup
+  -- (`revocationRequired`): a root's mappings, its registered ASID and every
+  -- thread running in it are released by a reset of the untyped it was carved
+  -- from, never by overwriting the object.  Until `v0.36.35` this succeeded —
+  -- the owner kept `vspaceRoot := carveVsp` naming an endpoint, and the ASID
+  -- entry named it too.
+  assertBool "setup: the owner runs in the root the retype targets"
+    (match st.getTcb? carveOwner with | some t => t.vspaceRoot == carveVsp | none => false)
   match dispatchSyscall (decodeInPlaceRetypeTo slotVspRetype carveVsp.toNat 1) carveOwner st with
-  | .error e => assertBool s!"CONTROL: the same retype into an endpoint succeeds (got {repr e})" false
+  | .ok _ => assertBool "a VSpace root is not destroyed in place (retype into an endpoint)" false
+  | .error e =>
+    assertBool s!"a VSpace root is not destroyed in place (revocationRequired, got {repr e})"
+      (e == .revocationRequired)
+  -- CONTROL: the same arm, the same kind of capability, a target that is not
+  -- memory — the retype succeeds, so the refusal above is about the root.
+  let stC := inPlaceControlScenario
+  assertBool "setup: the control target is an endpoint"
+    ((stC.getEndpoint? plainTargetId).isSome)
+  match dispatchSyscall (decodeInPlaceRetypeTo slotPlainRetype plainTargetId.toNat 2) carveOwner stC with
+  | .error e => assertBool s!"CONTROL: an endpoint retyped into a notification succeeds (got {repr e})" false
   | .ok ((), stOk) =>
-    assertBool "CONTROL: the same retype into an endpoint succeeds, and ASID 0 stays the ASID-0 root's"
-      ((stOk.getEndpoint? carveVsp).isSome && stOk.asidTable[zero]? == some asidZeroRootId)
+    assertBool "CONTROL: an endpoint retyped into a notification succeeds, and ASID 0 stays the ASID-0 root's"
+      ((stOk.getNotification? plainTargetId).isSome && stOk.asidTable[zero]? == some asidZeroRootId)
 
 -- ============================================================================
 -- §5i  WS-BP BP7.1 slice 4b (`v0.36.10`) — an address space is carved memory

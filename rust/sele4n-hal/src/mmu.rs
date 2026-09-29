@@ -1687,10 +1687,11 @@ pub fn init_mmu(dtb_ptr: u64) {
     if !dtb_window_admissible(dtb_window(dtb_ptr), kernel_extent()) {
         crate::kprintln!(
             "[boot] FATAL: the device tree at {:#x} is not in the kernel's reserved extent \
-             [{:#x}, {:#x}) outside the image, its stacks and the Lean heap arena; refusing to read it",
+             below the boot table pool [{:#x}, {:#x}) outside the image, its stacks and the \
+             Lean heap arena; refusing to read it",
             dtb_ptr,
             KERNEL_RESERVED_BASE,
-            KERNEL_RESERVED_END
+            BOOT_TABLE_POOL_BASE
         );
         crate::cpu::fatal_halt();
     }
@@ -1800,7 +1801,11 @@ pub const fn dtb_window(dtb_ptr: u64) -> (u64, u64) {
 /// The window must lie wholly inside the kernel's reserved extent —
 /// `[KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)`, which the boot map covers and no boot untyped
 /// may describe (WS-BP BP3.2), so the blob is never memory a thread was handed
-/// — and be disjoint from `kernel`, the memory the image owns.  An empty window
+/// — below the boot table-page pool, which the boot zeroes and then hands to
+/// the configured address spaces as translation tables (`v0.36.35`: a window
+/// reaching into it was admitted, which made "nothing writes the blob during
+/// boot" a fact about the order of two calls rather than about placement),
+/// and be disjoint from `kernel`, the memory the image owns.  An empty window
 /// (a null pointer) reads nothing and is accepted; a window whose end overflows
 /// is refused.
 #[must_use]
@@ -1810,7 +1815,7 @@ pub const fn dtb_window_admissible(window: (u64, u64), kernel: (u64, u64)) -> bo
         return true;
     }
     match base.checked_add(size) {
-        Some(end) if in_kernel_reserved_extent(base) && end <= KERNEL_RESERVED_END => {
+        Some(end) if in_kernel_reserved_extent(base) && end <= BOOT_TABLE_POOL_BASE => {
             dtb_disjoint_from_image(window, &[kernel])
         }
         _ => false,
@@ -3560,15 +3565,19 @@ mod boot_map_tests {
         assert!(dtb_window_admissible((0, 0), kernel));
         // Inside the reserved extent, touching the image's end (which is where
         // `link.ld`'s `.dtb_window` begins when nothing pads the heap -- WS-BP
-        // BP5.3), and ending exactly at the reserved extent's end.
-        for base in [0x0EFF_0000u64, kernel_end, KERNEL_RESERVED_END - size] {
+        // BP5.3), and ending exactly at the boot table pool's base.
+        for base in [0x0EFF_0000u64, kernel_end, BOOT_TABLE_POOL_BASE - size] {
             assert!(dtb_window_admissible((base, size), kernel), "{base:#x}");
         }
-        // One byte into the image, straddling the reserved extent's end,
+        // One byte into the boot table pool (`v0.36.35`), ending exactly at the
+        // reserved extent's end (so wholly over the pool's last page), one byte
+        // into the image, straddling the reserved extent's end,
         // in first-gigabyte RAM a boot untyped may describe (the pre-BP3.2
         // admissible placement), straddling the first gigabyte's top, above
         // it, in the device window, and overflowing.
         for base in [
+            BOOT_TABLE_POOL_BASE - size + 1,
+            KERNEL_RESERVED_END - size,
             kernel_end - 1,
             kernel.0 - 0x1000,
             KERNEL_RESERVED_END - size + 1,

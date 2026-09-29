@@ -1921,6 +1921,25 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- at all; its memory returns through the untyped it was carved from
     -- (`untypedReset`), and a boot untyped is never destroyed.
     .error .revocationRequired
+  | .vspaceRoot _ =>
+    -- **`v0.36.35`: nor can a VSpace root — the fourth memory-backed kind, and
+    -- the one this match had missed.**  `v0.36.9` refused *creating* a root in
+    -- place (`retypeReplacementAdmissible`) and nothing refused *destroying*
+    -- one: a root fell to the wildcard below, so an in-place retype freed its
+    -- ASID and replaced the object while every page table installed under it
+    -- kept its page — live leaf descriptors included — and its install record,
+    -- which then read as stale (`pageTableInstallLive`).  `pageTableMap`
+    -- reinstalls a stale table without zeroing it, so a holder of a `.retype`
+    -- right on a root could retype it, let the frames its tables still
+    -- translate be reset and recarved to another thread, carve a new root and
+    -- reinstall the old table: a hardware walk to that thread's page, writable,
+    -- with nothing mapped in the model.  No ASID invalidation was recorded
+    -- either, so the freed ASID's stale TLB entries met the next root carved
+    -- under it.  The untyped reset is the path that finalises a root — it
+    -- refuses while a thread's `vspaceRoot` names it, removes its mappings,
+    -- detaches and zeroes its tables and invalidates its ASID — so a root goes
+    -- back where it came from, as every other memory-backed kind does.
+    .error .revocationRequired
   | _ => .ok st
 
 /-- **WS-OD OD5.4 / `v0.35.4`: a Reply that is a reply-stack frame cannot be
@@ -2170,10 +2189,11 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk
     rw [cleanupEndpointServiceRegistrations_scheduler_eq] at h; exact h
-  | notification _ | vspaceRoot _ =>
+  | notification _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; exact h
-  | untyped _ =>
+  | untyped _ | vspaceRoot _ =>
+    -- `v0.36.35`: a VSpace root is refused too (vacuous on `.ok`).
     -- WS-BP BP7.1 slice 4: an untyped target is refused (vacuous on `.ok`).
     simp [lifecyclePreRetypeCleanup] at hOk
   | schedContext _ =>
@@ -2247,10 +2267,11 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk
     exact cleanupEndpointServiceRegistrations_tlbShootdown_eq st target
-  | notification _ | vspaceRoot _ =>
+  | notification _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; rfl
-  | untyped _ =>
+  | untyped _ | vspaceRoot _ =>
+    -- `v0.36.35`: a VSpace root is refused too (vacuous on `.ok`).
     simp [lifecyclePreRetypeCleanup] at hOk
   | schedContext _ =>
     -- WS-OD OD5.4: the stack-head refusal is vacuous on `.ok`.  `v0.35.165`: the
