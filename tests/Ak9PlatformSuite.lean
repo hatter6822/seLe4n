@@ -20,6 +20,7 @@ import SeLe4n.Platform.RPi5.VSpaceBoot
 import SeLe4n.Platform.Sim.BootContract
 import SeLe4n.Platform.DeviceTree
 import SeLe4n.Platform.FFI
+import SeLe4n.Platform.QemuVirt.KernelMain
 import SeLe4n.Testing.Helpers
 
 /-! # AK9 Platform Regression Suite — Phase AK9 audit remediation
@@ -918,13 +919,26 @@ entry of `regions` (base, size), plus the three MMIO windows the RPi5 binding
 programs.  Several pairs is how the firmware reports a board whose RAM is not
 one contiguous run — every RPi5 above 2 GiB. -/
 private def boardDtbRegions (regions : List (Nat × Nat)) (withMmio : Bool := true)
-    (uartSize : Nat := 0x200) : ByteArray :=
+    (uartSize : Nat := 0x200) (atf : Bool := false) : ByteArray :=
   let regPairs := regions.foldl (fun acc r => acc ++ be64 r.1 ++ be64 r.2) #[]
+  -- `v0.36.36`: `bcm2712.dtsi`'s `reserved-memory/atf@0` — the secure
+  -- monitor's `[0, 0x80000)`, two address cells and one size cell, exactly as
+  -- the firmware's tree declares it.
+  let atfNode :=
+    if atf then
+      fdtBeginNode "reserved-memory"
+        ++ fdtProp addressCellsNameOff (be32 2) ++ fdtProp sizeCellsNameOff (be32 1)
+        ++ (fdtBeginNode "atf@0"
+            ++ fdtProp regNameOff (be64 0 ++ be32 0x80000)
+            ++ fdtEndNodeTok)
+        ++ fdtEndNodeTok
+    else #[]
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
       ++ fdtProp regNameOff regPairs
       ++ fdtEndNodeTok
+      ++ atfNode
   let peripherals :=
     if withMmio then
       peripheralNode "serial@107d001000" 0x107D001000 uartSize "arm,pl011"
@@ -1380,17 +1394,27 @@ def deviceTreeBridge_02_matching_board_accepted : IO Unit := do
         (config.irqTable.isEmpty && config.initialObjects.isEmpty
           && config.bootVSpaceRoot.isNone)
 
-/-- WS-RR RR7.27: a board with less RAM than the **smallest** variant the
-binding declares is refused.  The mutation that finds a vacuous check: the blob
-is well formed, the peripherals are all there, and only the RAM extent differs.
-PR #892 review round 2 moved the bar from the fixed 4 GiB map to the family's
-smallest member — 512 MiB is short of every Raspberry Pi 5 ever shipped, where
-1 GiB (the old fixture) is a board this image is built for. -/
+/-- WS-RR RR7.27: a board with less RAM than the deployment stands on is
+refused.  The mutation that finds a vacuous check: the blob is well formed, the
+peripherals are all there, and only the RAM extent differs.  PR #892 review
+round 2 moved the bar from the fixed 4 GiB map to the family's smallest member;
+**WS-BP BP7.10** moves it to what the deployment actually needs from the first
+gigabyte — the kernel's reserved extent and one granule past it
+(`rpi5LowRamTopFloor`) — because the first gigabyte's RAM is now read off the
+account rather than assumed.  A board reporting exactly the kernel's extent
+(256 MiB) is refused; one reporting 512 MiB is bound the smallest member cut to
+the 512 MiB it reported, so it declares nothing it was not told is RAM. -/
 def deviceTreeBridge_03_short_ram_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x10000000) [] (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
-      expect "RR7.27-03 short-RAM board refused" true
-  | _ => expect "RR7.27-03 short-RAM board refused" false
+      expect "RR7.27-03 a board short of the first-gigabyte floor is refused" true
+  | _ => expect "RR7.27-03 a board short of the first-gigabyte floor is refused" false
+  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) [] (fun _ => []) none with
+  | .ok config =>
+      expect "RR7.27-03 a 512 MiB board declares exactly the RAM it reported"
+        (decide (boundMapOf config =
+          rpi5MemoryMapForConfig { rpi5SmallestVariant with lowRamTop := 0x20000000 }))
+  | .error _ => expect "RR7.27-03 a 512 MiB board declares exactly the RAM it reported" false
 
 /-- WS-RR RR7.27: a board whose device tree discovered none of the MMIO the
 binding programs is refused — the half a RAM-only check would miss.  Same RAM,
@@ -1519,8 +1543,12 @@ def deviceTreeBridge_13_direct_path_fallback_is_smallest : IO Unit := do
   let bare : PlatformConfig :=
     { irqTable := [], initialObjects := [],
       machineConfig := defaultMachineConfig, bootVSpaceRoot := none }
-  expect "PR892-13 an empty account binds the smallest variant"
-    (decide (boundMapOf bare = rpi5MemoryMapForConfig rpi5SmallestVariant))
+  -- WS-BP BP7.10: an account reporting no RAM from `0` binds the smallest
+  -- variant at the admissible floor — the least first-gigabyte RAM the
+  -- deployment stands on.
+  expect "PR892-13 an empty account binds the smallest variant at the floor"
+    (decide (boundMapOf bare =
+      rpi5MemoryMapForConfig { rpi5SmallestVariant with lowRamTop := rpi5LowRamTopFloor }))
   expect "PR892-13 NEGATIVE: an empty account is not bound the 4 GiB default"
     (decide (boundMapOf bare ≠ rpi5MachineConfig.memoryMap))
   let canonical : PlatformConfig := { bare with machineConfig := rpi5MachineConfig }
@@ -1769,6 +1797,27 @@ def rangesWalkStarvedOfFuelRefuses : IO Unit := do
   expect "audit one unit per entry plus one for the end is enough"
     (fields (parseFdtRanges bytes 2 2 2 (fuel := 4)) == whole)
 
+/-- **WS-BP BP7.1**: a configured frame is refused at boot.  A frame is
+authority over the page at its `base`, so admitting one would hand whoever holds
+its capability memory no boot check has placed; frames are carved from the
+boot's untypeds instead.  The CONTROL is the aligned, ordinary-memory frame the
+kernel *would* build — refused all the same, because the refusal is about the
+kind, not the frame's shape — and the Prop side (`bootSafeObject`'s last
+conjunct) is the same answer, by `bootSafeObjectCheck_not_frame`. -/
+def bootRefusesConfiguredFrames : IO Unit := do
+  let frame : FrameObject := { base := PAddr.ofNat 0x10000000 }
+  expect "BP7.1 the frame is well formed (page aligned)" (decide frame.wellFormed)
+  expect "NEGATIVE BP7.1 a configured frame is refused by the boot check"
+    (!bootSafeObjectCheck (.frame frame))
+  expect "NEGATIVE BP7.1 a configured device frame is refused too"
+    (!bootSafeObjectCheck (.frame { frame with isDevice := true }))
+  expect "BP7.1 no RPi5 deployment object is a frame"
+    (rpi5Variants.all fun v =>
+      (rpi5InitialObjectsFor v).all fun e =>
+        match e.obj with
+        | .frame _ => false
+        | _ => true)
+
 /-- **The `v0.36.2` audit**: a boot untyped is *pristine* — nothing carved
 (`watermark = 0`, `children = []`) and no ancestry (`parent = none`).
 `bootSafeUntypedCheck` accepted every record, so a configuration could ship a
@@ -1796,40 +1845,67 @@ def bootUntypedMustBePristine : IO Unit := do
         | .untyped ut => bootSafeUntypedCheck ut
         | _ => true)
 
-/-- **The `v0.36.2` audit, registered rather than fixed** (register table B;
-plan row BP7.10): a Raspberry Pi 5's firmware reports its RAM as three ranges
-— `[0, 0x80000)`, `[0x80000, 0x3fc00000)` and `[0x40000000, top)` — withholding
-a few MiB at the top of the first gigabyte for itself (Pi 5 8 GiB Rev 1.1 and
-CM5 4 GiB Rev 1.0 accounts read 2026-09-25: `0x3fbfffff` and `0x3fafffff`).
-The binding's variants each declare `[0, ramSize)` whole, and
-`machineConfigCovers` requires every declared RAM byte to be in the account,
-so **no variant is covered** and the bridge refuses the real board — the boot
-halts before any state is installed.  Fail-closed, not a hole; what closes it
-is deriving the deployment's first-gigabyte RAM from the account (BP7.10),
-which also keeps the root task's boot untypeds off the firmware's memory.
-This witness pins the refusal so the closure cannot land without flipping it,
-and the shared corpus carries the same account as `eight_gib_rpi5_firmware`. -/
-def realFirmwareAccountIsRefusedUntilDerived : IO Unit := do
+/-- **WS-BP BP7.10** — the `v0.36.2` audit's finding, closed.  A Raspberry Pi
+5's firmware reports its RAM as three ranges — `[0, 0x80000)`,
+`[0x80000, 0x3fc00000)` and `[0x40000000, top)` — withholding a few MiB at the
+top of the first gigabyte for itself (Pi 5 8 GiB Rev 1.1 and CM5 4 GiB Rev 1.0
+accounts read 2026-09-25: `0x3fbfffff` and `0x3fafffff`).  Until this row every
+variant declared `[0, ramSize)` whole, so no variant was covered and the bridge
+refused every real board.  The deployment's first-gigabyte RAM is now derived
+from the account (`rpi5LowRamTopFor`), so the board is accepted, bound to the
+8 GiB member cut at `0x3fc00000`, and the root task's untypeds describe the
+reported RAM outside the kernel's extent and nothing the firmware kept.  The
+negative is the retired reading: the uncut members are covered by none of the
+account's ranges.  The shared corpus carries the same account as
+`eight_gib_rpi5_firmware`. -/
+def realFirmwareAccountBindsTheReportedRam : IO Unit := do
   let firmwareAccount : List (Nat × Nat) :=
     [(0, 0x80000), (0x80000, 0x3fb80000), (0x40000000, 0x1c0000000)]
-  let blob := boardDtbRegions firmwareAccount
+  -- `v0.36.36`: with the tree's own `atf@0` reservation, which the parser
+  -- subtracts — the account a real board produces.
+  let blob := boardDtbRegions firmwareAccount (atf := true)
+  let cut : BCM2712Config := { ramSize := 8 * 1024 * 1024 * 1024, lowRamTop := 0x3fc00000 }
   match DeviceTree.fromDtbFull blob rpi5MachineConfig.physicalAddressWidth with
-  | .error _ => expect "audit the firmware's account parses" false
+  | .error _ => expect "BP7.10 the firmware's account parses" false
   | .ok dt =>
-      expect "audit the firmware's account covers no variant"
-        (decide (rpi5VariantsCoveredBy dt.machineConfig = []))
-  match rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjectsFor none with
-  | .error .boardDoesNotMatchBinding =>
-      expect "REGISTERED audit the real firmware account is refused (BP7.10 flips this)" true
-  | _ => expect "REGISTERED audit the real firmware account is refused (BP7.10 flips this)" false
+      expect "v0.36.36 the parsed account begins at the image origin (atf@0 subtracted)"
+        (classifyAddress (PAddr.ofNat 0) dt.machineConfig.memoryMap != .ram &&
+          classifyAddress (PAddr.ofNat 0x80000) dt.machineConfig.memoryMap == .ram)
+      expect "v0.36.36 RETIRED the reach from 0 is nothing, so the pre-v0.36.36 derivation refused"
+        (Platform.Boot.ramReachFrom dt.machineConfig 0 == 0)
+      expect "BP7.10 the firmware's account binds the 8 GiB member cut at 0x3fc00000"
+        (decide (rpi5VariantFor dt.machineConfig = cut))
+      expect "BP7.10 NEGATIVE the firmware's account covers no uncut variant"
+        (rpi5Variants.all fun v =>
+          !machineConfigCovers dt.machineConfig (rpi5MachineConfigForVariant v))
+  match kernelEntryBoot? blob with
+  | none => expect "BP7.10 the entry boots the deployment on the real firmware account" false
+  | some (config, ist) =>
+      expect "BP7.10 the entry boots the deployment on the real firmware account" true
+      expect "BP7.10 the bound map is the cut member's"
+        (decide (boundMapOf config = rpi5MemoryMapForConfig cut))
+      expect "BP7.10 the bound map declares the withheld top of the first gigabyte as no RAM"
+        (decide (classifyAddress (PAddr.ofNat 0x3fc00000) (boundMapOf config) ≠ .ram))
+      expect "v0.36.36 the bound map declares the secure monitor's [0, 0x80000) as no RAM"
+        (decide (classifyAddress (PAddr.ofNat 0x7ffff) (boundMapOf config) ≠ .ram) &&
+          decide (classifyAddress (PAddr.ofNat 0x80000) (boundMapOf config) = .ram))
+      let untypeds : List (Nat × Nat) :=
+        (List.range 3).filterMap fun i =>
+          match ist.state.objects[rpi5RootTaskUntypedId i]? with
+          | some (.untyped ut) => some (ut.regionBase.toNat, ut.regionSize)
+          | _ => none
+      expect "BP7.10 the root task owns exactly the reported RAM outside the kernel's extent"
+        (decide (untypeds = [(0x10000000, 0x3fc00000 - 0x10000000),
+          (0x40000000, 0x200000000 - 0x40000000)]))
 
-/-- The number of RAM regions above the guaranteed gigabyte each fixture
+/-- The number of RAM regions outside the kernel's reserved extent each fixture
 variant has, written by hand from `rpi5MemoryMapForConfig` rather than
 computed, so the check below compares the derivation against the map.  One on
-every board above the gigabyte: the BCM2712's DRAM is contiguous from 0. -/
+every board — the first gigabyte past the extent (WS-BP BP7.10) — and a second
+on every board above the gigabyte: the BCM2712's DRAM is contiguous from 0. -/
 private def ramUntypedCount : Nat → Nat
-  | 1 => 0
-  | _ => 1
+  | 1 => 1
+  | _ => 2
 
 /-- **WS-BP BP4.4**: the deployment the hardware entry installs boots on every
 board the device tree describes — 1, 2, 3 (bound as 2), 4 and 8 GiB — binding
@@ -1851,32 +1927,32 @@ def kernelEntry_boots_the_deployment_on_every_variant : IO Unit := do
           (decide (boundMapOf config = variantMap gib))
         expect s!"BP4.4 the {name} board installs both separation witnesses"
           (declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := RPi5Platform)))
-        -- WS-BP BP4.7: the RAM the boot maps above the gigabyte is the RAM the
-        -- root task owns — one installed untyped per extension of the bound
-        -- variant, over exactly that extension, named by the root CNode at
-        -- slot `7 + i`, and no untyped id past the last.
+        -- WS-BP BP4.7, BP7.10: the RAM the boot maps outside the kernel's
+        -- extent is the RAM the root task owns — one installed untyped per
+        -- extension of the bound variant, over exactly that extension, named
+        -- by the root CNode at slot `5 + i`, and no untyped id past the last.
         let exts := rpi5BootRamExtensions (rpi5VariantFor config.machineConfig)
-        expect s!"BP4.7 the {name} board has {ramUntypedCount gib} RAM untyped(s) above 1 GiB"
+        expect s!"BP4.7 the {name} board has {ramUntypedCount gib} RAM untyped(s) outside the kernel's extent"
           (decide (exts.length = ramUntypedCount gib))
         let rootSlots : List (SeLe4n.Slot × Capability) :=
           match ist.state.objects[rpi5RootTaskCNodeId]? with
           | some (.cnode cn) => cn.slots.toList
           | _ => []
         for (e, i) in exts.zipIdx do
-          let installed := match ist.state.objects[rpi5RootTaskRamUntypedId i]? with
+          let installed := match ist.state.objects[rpi5RootTaskUntypedId i]? with
             | some (.untyped ut) =>
                 decide (ut.regionBase.toNat = e.1) && decide (ut.regionSize = e.2) && !ut.isDevice
             | _ => false
           expect s!"BP4.7 the {name} board installs untyped {i} over its extension {i}" installed
-          expect s!"BP4.7 the {name} root CNode names untyped {i} at slot {7 + i} with retype"
+          expect s!"BP4.7 the {name} root CNode names untyped {i} at slot {5 + i} with retype"
             (rootSlots.any fun (sl, cap) =>
-              decide (sl = rpi5RootTaskRamUntypedSlot i) &&
-                decide (cap.target = .object (rpi5RootTaskRamUntypedId i)) &&
+              decide (sl = rpi5RootTaskUntypedSlot i) &&
+                decide (cap.target = .object (rpi5RootTaskUntypedId i)) &&
                 cap.rights.mem .retype)
         expect s!"BP4.7 the {name} board installs no RAM untyped past the last extension"
-          (ist.state.objects[rpi5RootTaskRamUntypedId exts.length]?).isNone
-  expect "BP4.4 NEGATIVE: a board short of the smallest variant boots nothing"
-    (kernelEntryBoot? (boardDtb 0x20000000)).isNone
+          (ist.state.objects[rpi5RootTaskUntypedId exts.length]?).isNone
+  expect "BP4.4 NEGATIVE: a board short of the first-gigabyte floor boots nothing"
+    (kernelEntryBoot? (boardDtb 0x10000000)).isNone
   expect "BP4.4 NEGATIVE: an empty blob — what the HAL hands over for an unreadable pointer — boots nothing"
     (kernelEntryBoot? ByteArray.empty).isNone
   expect "BP4.4 NEGATIVE: a board without the binding's MMIO boots nothing"
@@ -2169,7 +2245,10 @@ def review9_runtime_contract_follows_the_installed_map : IO Unit := do
   let stFor (mc : SeLe4n.MachineConfig) : SystemState :=
     { (default : SystemState) with machine := { (default : MachineState) with memoryMap := mc.memoryMap } }
   let twoGiB := SeLe4n.PAddr.ofNat 0x8000_0000
-  let lowAddr := SeLe4n.PAddr.ofNat 0x1000
+  -- `v0.36.36`: inside RAM means past the image origin — `[0, 0x80000)` is the
+  -- secure monitor's, and no configuration calls it RAM.
+  let lowAddr := SeLe4n.PAddr.ofNat 0x81000
+  let atfAddr := SeLe4n.PAddr.ofNat 0x1000
   let small := rpi5MachineConfigForVariant rpi5SmallestVariant
   let full := rpi5MachineConfig
   expect "review9 the 4 GiB board authorises a read 2 GiB up"
@@ -2178,6 +2257,9 @@ def review9_runtime_contract_follows_the_installed_map : IO Unit := do
     (!@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor small) twoGiB))
   expect "review9 the 1 GiB board still authorises a read inside its RAM"
     (@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor small) lowAddr))
+  expect "NEGATIVE v0.36.36 no board authorises a read of the secure monitor's memory"
+    (!@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor small) atfAddr) &&
+      !@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor full) atfAddr))
   expect "NEGATIVE review9 the restrictive contract agrees on the small board"
     (!@decide _ (rpi5RuntimeContractRestrictive.memoryAccessAllowedDecidable (stFor small) twoGiB))
 
@@ -2349,8 +2431,32 @@ private def bootMapProbes (map : List SeLe4n.MemoryRegion) : List Nat :=
   let points := 0 :: bootMapFarProbe :: edges.flatMap fun b => if b == 0 then [0] else [b - 1, b]
   (points.mergeSort (· ≤ ·)).eraseDups
 
+/-- **WS-BP BP7.10**: the configurations the shared boot-map table carries —
+every member of `rpi5Variants` (uncut: its first gigabyte whole), and the cut
+configurations the firmware accounts in this suite bind: a Raspberry Pi 5
+8 GiB's (`rpi5VariantFor_rpi5_firmware_account`), a CM5 4 GiB's, rounded down
+off the granule (`rpi5VariantFor_cm5_firmware_account`), and the admissible
+floor on the smallest board, so the HAL is driven over the narrowest
+first-gigabyte extension the deployment admits as well as the widest. -/
+private def bootMapConfigurations : List BCM2712Config :=
+  rpi5Variants ++
+    [ { ramSize := 8 * 1024 * 1024 * 1024, lowRamTop := 0x3FC00000 },
+      { ramSize := 4 * 1024 * 1024 * 1024, lowRamTop := 0x3FA00000 },
+      { rpi5SmallestVariant with lowRamTop := rpi5LowRamTopFloor } ]
+
+/-- Every configuration the table carries is one the deployment admits, so
+the HAL is never driven over a map the boot would refuse. -/
+private theorem bootMapConfigurations_admissible :
+    ∀ v ∈ bootMapConfigurations, v.Admissible := by
+  intro v hv
+  simp only [bootMapConfigurations, List.mem_append, List.mem_cons, List.not_mem_nil,
+    or_false] at hv
+  rcases hv with hv | hv | hv | hv
+  · exact rpi5Variants_admissible v hv
+  all_goals subst hv; exact ⟨by decide, by decide⟩
+
 private def bootMapTableLines : List String :=
-  "# RPi5 boot map: the Lean memory map per RAM variant, and its kind at every probe (Lean/Rust cross-check)"
+  "# RPi5 boot map: the Lean memory map per RAM configuration (every variant, and firmware-cut ones), and its kind at every probe (Lean/Rust cross-check)"
     -- WS-BP BP3.2: the kernel's reserved extent the bound machine configuration
     -- carries, as `kernelReserved <base> <end>` — read back by the HAL's
     -- `the_kernel_reserved_extent_is_the_lean_and_linker_one` and by
@@ -2364,6 +2470,16 @@ private def bootMapTableLines : List String :=
     -- `TCR_EL1.IPS` from, so the model's bound and the PE's are compared by
     -- running both rather than by two literals each claiming the board.
     ++ [s!"physicalAddressWidth {bootMapHex rpi5MachineConfig.physicalAddressWidth}"]
+    -- WS-BP BP7.2: the ASID space the model allocates from, as `asidSpace <n>`
+    -- — read back by the HAL's `the_lean_asid_space_is_the_one_the_hal_programs`,
+    -- which holds it to the 16-bit hardware ASID `TCR_EL1.AS` selects, so two
+    -- model ASIDs can never share one hardware tag.
+    ++ [s!"asidSpace {bootMapHex rpi5MachineConfig.maxASID}"]
+    -- WS-BP BP7.1: the table-page pool the boot takes each configured address
+    -- space's top-level table from, as `tablePool <base> <pages>` — read back by
+    -- the HAL's `the_boot_table_pool_is_the_lean_and_linker_one` and by
+    -- `scripts/check_link_script.py` against `link.ld`'s `.boot_table_pool`.
+    ++ [s!"tablePool {bootMapHex rpi5BootTablePoolBase} {bootMapHex rpi5BootTablePoolPages}"]
     -- ...and the PE count the binding declares, as `declaredCores <n>` — read
     -- back by `boot.rs`'s `lean_declared_core_count_matches_the_rpi5_binding`,
     -- so the handoff's `LEAN_DECLARED_CORE_COUNT` is the binding's `coreCount`
@@ -2376,24 +2492,225 @@ private def bootMapTableLines : List String :=
     -- constants by running both rather than by a literal beside a comment.
     ++ (["uart", "gicd", "gicc"].zip mmioRegions).map (fun (name, r) =>
         s!"mmio {name} {bootMapHex r.base.toNat} {bootMapHex r.size}")
-    ++ rpi5Variants.flatMap fun v =>
+    ++ bootMapConfigurations.flatMap fun v =>
       let map := rpi5MemoryMapForConfig v
-      let ramTop := (map.filter (·.kind == .ram)).foldl (fun acc r => max acc r.endAddr) 0
-      s!"variant {bootMapHex v.ramSize} ramTop {bootMapHex ramTop}"
+      s!"variant {bootMapHex v.ramSize} lowRamTop {bootMapHex v.lowRamTop}"
         :: map.map (fun r =>
             s!"region {bootMapHex r.base.toNat} {bootMapHex r.size} {bootMapKindName r.kind}")
-        -- WS-BP BP4.6: what the boot maps above the guaranteed gigabyte on this
-        -- variant, as `extend <base> <size>` — the HAL's test applies each to
-        -- its tables through `mmu::extend_boot_tables` and then requires the
-        -- Normal window to be exactly this variant's RAM.
+        -- WS-BP BP4.6, BP7.10: what the boot maps outside the kernel's reserved
+        -- extent on this configuration, as `extend <base> <size>` — the HAL's
+        -- test applies each to its tables through `mmu::extend_boot_tables`
+        -- and then requires the Normal window to be exactly this
+        -- configuration's RAM, the firmware's withheld top of the first
+        -- gigabyte unmapped.
         ++ (rpi5BootRamExtensions v).map (fun e =>
             s!"extend {bootMapHex e.1} {bootMapHex e.2}")
         ++ (bootMapProbes map).map fun a =>
             s!"probe {bootMapHex a} {bootMapKindName (classifyAddress (SeLe4n.PAddr.ofNat a) map)}"
 
+/-- **WS-BP BP7.1 (`v0.36.13`)**: the deployment's two address spaces take the
+first two pages of the pool, one each, on every variant — and the pool is the
+last sixteen pages of the kernel's reserved extent. -/
+def deployment_roots_own_distinct_pool_pages : IO Unit := do
+  for v in rpi5Variants do
+    let bases := SeLe4n.Platform.Boot.configuredRootTableBases (rpi5BoundPlatformConfigAt v)
+    unless bases == [some (rpi5BootTablePage 0), some (rpi5BootTablePage 1)] do
+      throw <| IO.userError s!"deployment roots' table pages on {v.ramSize}: {reprStr bases}"
+    unless SeLe4n.Platform.Boot.bootRootTablesPlaced (rpi5BoundPlatformConfigAt v) do
+      throw <| IO.userError s!"deployment on {v.ramSize}: bootRootTablesPlaced is false"
+  unless rpi5BootTablePoolBase + rpi5BootTablePoolPages * 4096 == rpi5KernelReservedEnd do
+    throw <| IO.userError "the pool does not end at the kernel's reserved extent"
+  IO.println "deployment roots own distinct pool pages on every variant: PASS"
+
 def bootMap_the_lean_map_is_the_shared_table : IO Unit :=
   checkSharedFixture "WS-BP BP0.4 boot map" "tests/fixtures/boot_map.expected"
     "rust/sele4n-hal/src/mmu.rs" bootMapTableLines
+
+/-- **WS-BP BP7.11**: the deployment's boot **starts both initial threads**, one
+per domain — the root task on the boot core, the untrusted thread on core 1 —
+`.Ready` and queued, with every current slot still `none`, on every variant.
+
+The idle stage (the boot as it was before BP7.11) is computed beside the started
+one on the same configuration and must queue neither thread, so each positive
+assertion is known to be about the start rather than about the configuration.
+The first scheduling point of each core then selects the started thread ahead
+of that core's idle thread (priority 255 against 0). -/
+def deployment_starts_both_initial_threads : IO Unit := do
+  let cores := SeLe4n.Platform.PlatformBinding.declaredCores (platform := RPi5Platform)
+  let root : SeLe4n.ThreadId := ⟨rpi5RootTaskTcbId.val⟩
+  let untrusted : SeLe4n.ThreadId := ⟨rpi5UntrustedTcbId.val⟩
+  let boot := SeLe4n.Kernel.Concurrency.bootCoreId
+  for v in rpi5Variants do
+    let cfg := rpi5BoundPlatformConfigAt v
+    let idle ← match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor cores cfg with
+      | .ok i => pure i
+      | .error e => throw <| IO.userError s!"idle stage refused on {v.ramSize}: {e}"
+    let started ← match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor cores cfg with
+      | .ok i => pure i
+      | .error e => throw <| IO.userError s!"started boot refused on {v.ramSize}: {e}"
+    -- CONTROL: the idle stage queues neither thread.
+    unless !SeLe4n.Kernel.runnableOnSomeCore idle.state root &&
+        !SeLe4n.Kernel.runnableOnSomeCore idle.state untrusted do
+      throw <| IO.userError s!"idle stage already queues an initial thread on {v.ramSize}"
+    -- Each is queued on its own core, and only there.
+    let q0 := started.state.scheduler.runQueueOnCore boot
+    let q1 := started.state.scheduler.runQueueOnCore rpi5UntrustedCore
+    unless q0.contains root && !q0.contains untrusted && q1.contains untrusted &&
+        !q1.contains root do
+      throw <| IO.userError s!"initial threads not queued one per core on {v.ramSize}"
+    -- Both are stored `.Ready`.
+    unless (started.state.getTcb? root).map (·.threadState) == some .Ready &&
+        (started.state.getTcb? untrusted).map (·.threadState) == some .Ready do
+      throw <| IO.userError s!"initial threads not stored .Ready on {v.ramSize}"
+    -- Nothing is dispatched: every core's current slot is still empty.
+    unless SeLe4n.Kernel.Concurrency.allCores.all
+        (fun c => started.state.scheduler.currentOnCore c == none) do
+      throw <| IO.userError s!"the start dispatched a thread on {v.ramSize}"
+    -- Each core's first scheduling point selects the started thread over idle.
+    let chosen := fun st c => match SeLe4n.Kernel.chooseThreadOnCore st c with
+      | .ok t => t
+      | .error _ => none
+    unless chosen started.state boot == some root &&
+        chosen started.state rpi5UntrustedCore == some untrusted do
+      throw <| IO.userError s!"the first scheduling point does not select the initial threads on {v.ramSize}"
+    -- CONTROL: on the idle stage the same cores select their idle threads.
+    unless chosen idle.state boot == some (SeLe4n.Kernel.idleThreadId boot) do
+      throw <| IO.userError s!"idle stage's boot core does not select idle on {v.ramSize}"
+  IO.println "deployment starts both initial threads, one per domain, on every variant: PASS"
+
+/-- **WS-BP BP7.11**: the stage **refuses** a named thread it cannot start —
+absent, an idle thread (already queued), or named twice (queued by its first
+start) — rather than skipping it; and naming none is the idle boot. -/
+def boot_refuses_unstartable_initial_threads : IO Unit := do
+  let cores := SeLe4n.Platform.PlatformBinding.declaredCores (platform := RPi5Platform)
+  let cfg := rpi5BoundPlatformConfigAt { ramSize := 4 * 1024 * 1024 * 1024 }
+  let root : SeLe4n.ThreadId := ⟨rpi5RootTaskTcbId.val⟩
+  let refused := fun (L : List SeLe4n.ThreadId) =>
+    match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor cores
+        { cfg with initialThreads := L } with
+    | .error e => e == SeLe4n.Platform.Boot.unstartableInitialThreadBootError
+    | .ok _ => false
+  unless refused [⟨12345⟩] do
+    throw <| IO.userError "an absent initial thread was not refused"
+  unless refused [SeLe4n.Kernel.idleThreadId SeLe4n.Kernel.Concurrency.bootCoreId] do
+    throw <| IO.userError "an idle thread named as initial was not refused"
+  unless refused [root, root] do
+    throw <| IO.userError "an initial thread named twice was not refused"
+  -- CONTROL: the same thread named once starts.
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor cores
+      { cfg with initialThreads := [root] } with
+  | .ok ist =>
+    unless SeLe4n.Kernel.runnableOnSomeCore ist.state root do
+      throw <| IO.userError "the control start did not queue the root task"
+  | .error e => throw <| IO.userError s!"the control start was refused: {e}"
+  -- Naming none leaves every configured thread unqueued.
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor cores
+      { cfg with initialThreads := [] } with
+  | .ok ist =>
+    if SeLe4n.Kernel.runnableOnSomeCore ist.state root then
+      throw <| IO.userError "naming no initial thread still queued the root task"
+  | .error e => throw <| IO.userError s!"the empty start was refused: {e}"
+  IO.println "the boot refuses an unstartable initial thread and starts nothing unnamed: PASS"
+
+-- ============================================================================
+-- WS-BP BP8.1 — the QEMU `virt` binding
+-- ============================================================================
+
+open SeLe4n.Platform.QemuVirt in
+/-- **WS-BP BP8.1**: the `virt` boot map as the Lean binding declares it — the
+kernel's reserved extent, the address and ASID widths, the table pool, the PE
+count, the three MMIO windows, the memory map, the RAM the boot maps after the
+parse, and the kind at every boundary probe.  `rust/sele4n-hal`'s tests under
+`board_qemu_virt` read the same file (`mmu::lean_boot_map_scalar`,
+`mmu::lean_mmio_window`, `board::tests`), so the HAL's `QEMU_VIRT` map and this
+binding are compared by running both rather than by two literals each naming
+the board — the arrangement `boot_map.expected` gives the RPi5. -/
+private def qemuVirtBootMapTableLines : List String :=
+  let map := qemuVirtMachineConfig.memoryMap
+  "# QEMU virt boot map: the Lean binding's memory map and constants, and its kind at every probe (Lean/Rust cross-check)"
+    :: qemuVirtMachineConfig.kernelReserved.map (fun r =>
+        s!"kernelReserved {bootMapHex r.base.toNat} {bootMapHex r.endAddr}")
+    ++ [s!"physicalAddressWidth {bootMapHex qemuVirtMachineConfig.physicalAddressWidth}"]
+    ++ [s!"asidSpace {bootMapHex qemuVirtMachineConfig.maxASID}"]
+    ++ [s!"tablePool {bootMapHex qemuVirtBootTablePoolBase} {bootMapHex qemuVirtBootTablePoolPages}"]
+    ++ [s!"declaredCores {bootMapHex (SeLe4n.Platform.PlatformBinding.coreCount (platform := QemuVirtPlatform))}"]
+    ++ (["uart", "gicd", "gicc"].zip qemuVirtMmioRegions).map (fun (name, r) =>
+        s!"mmio {name} {bootMapHex r.base.toNat} {bootMapHex r.size}")
+    ++ map.map (fun r =>
+        s!"region {bootMapHex r.base.toNat} {bootMapHex r.size} {bootMapKindName r.kind}")
+    ++ qemuVirtBootRamExtensions.map (fun e => s!"extend {bootMapHex e.1} {bootMapHex e.2}")
+    ++ (bootMapProbes map).map fun a =>
+        s!"probe {bootMapHex a} {bootMapKindName (classifyAddress (SeLe4n.PAddr.ofNat a) map)}"
+
+def bootMap_the_qemu_virt_map_is_the_shared_table : IO Unit :=
+  checkSharedFixture "WS-BP BP8.1 QEMU virt boot map" "tests/fixtures/boot_map_qemu_virt.expected"
+    "rust/sele4n-hal/src/mmu.rs" qemuVirtBootMapTableLines
+
+open SeLe4n.Platform.QemuVirt in
+/-- **WS-BP BP8.1**: the `virt` board check on the device tree **QEMU itself**
+hands the kernel (`tests/fixtures/qemu_virt_dtb.hex`, rendered from QEMU's own
+dump by `scripts/qemu_virt_dtb_fixture.py`).
+
+Four facts, each with the control that makes it a statement about the board
+rather than about the blob: the `virt` bridge accepts QEMU's tree and yields
+this deployment's configuration; the RPi5 bridge refuses the **same** tree as a
+foreign board; the `virt` bridge refuses an RPi5 board's tree as a foreign
+board; and both refuse an empty blob as unparseable. -/
+def qemuVirt_board_check_on_qemus_own_device_tree : IO Unit := do
+  IO.println "--- WS-BP BP8.1 QEMU virt board check on QEMU's device tree ---"
+  let text ← IO.FS.readFile "tests/fixtures/qemu_virt_dtb.hex"
+  let blob ← match parseCorpusHex text with
+    | .ok b => pure b
+    | .error e => throw <| IO.userError s!"qemu_virt_dtb.hex: {e}"
+  match qemuVirtPlatformConfigFromDtb blob qemuVirtIrqTable qemuVirtInitialObjects none with
+  | .ok config =>
+      unless SeLe4n.Platform.Boot.machineConfigCovers config.machineConfig
+          qemuVirtMachineConfig do
+        throw <| IO.userError "the accepted account does not cover the binding's RAM"
+      unless config.initialObjects.length == qemuVirtInitialObjects.length
+          && config.irqTable.length == qemuVirtGicSpiCount do
+        throw <| IO.userError "the accepted configuration is not this deployment's"
+      IO.println "  PASS: the virt bridge accepts QEMU's own device tree"
+  | .error e => throw <| IO.userError s!"the virt bridge refused QEMU's device tree: {repr e}"
+  match SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb blob [] (fun _ => []) none with
+  | .error .boardDoesNotMatchBinding =>
+      IO.println "  PASS: the RPi5 bridge refuses QEMU's tree as a foreign board"
+  | other => throw <| IO.userError s!"the RPi5 bridge on QEMU's tree: {reprStr (other.map (·.irqTable.length))}"
+  match qemuVirtPlatformConfigFromDtb (boardDtb 0x100000000) [] [] none with
+  | .error .boardDoesNotMatchBinding =>
+      IO.println "  PASS: the virt bridge refuses an RPi5 board's tree as a foreign board"
+  | other => throw <| IO.userError s!"the virt bridge on an RPi5 tree: {reprStr (other.map (·.irqTable.length))}"
+  match qemuVirtPlatformConfigFromDtb ByteArray.empty [] [] none with
+  | .error (.unparseableBlob _) =>
+      IO.println "  PASS: the virt bridge refuses an empty blob as unparseable"
+  | other => throw <| IO.userError s!"the virt bridge on an empty blob: {reprStr (other.map (·.irqTable.length))}"
+
+open SeLe4n.Platform.QemuVirt in
+/-- **WS-BP BP8.1**: the `virt` deployment boots — its two address spaces own
+the pool's first two pages, both initial threads are started one per domain,
+and the root task's untyped is the RAM the boot maps. -/
+def qemuVirt_deployment_boots : IO Unit := do
+  IO.println "--- WS-BP BP8.1 QEMU virt deployment ---"
+  let bases := SeLe4n.Platform.Boot.configuredRootTableBases qemuVirtBoundPlatformConfig
+  unless bases == [some (qemuVirtBootTablePage 0), some (qemuVirtBootTablePage 1)] do
+    throw <| IO.userError s!"virt deployment roots' table pages: {reprStr bases}"
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor
+      (SeLe4n.Platform.PlatformBinding.declaredCores (platform := QemuVirtPlatform))
+      qemuVirtBoundPlatformConfig with
+  | .error e => throw <| IO.userError s!"the virt deployment's boot refused: {e}"
+  | .ok ist =>
+      let root : SeLe4n.ThreadId := ⟨qemuVirtRootTaskTcbId.val⟩
+      let untrusted : SeLe4n.ThreadId := ⟨qemuVirtUntrustedTcbId.val⟩
+      let q0 := ist.state.scheduler.runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId
+      let q1 := ist.state.scheduler.runQueueOnCore qemuVirtUntrustedCore
+      unless q0.contains root && !q0.contains untrusted && q1.contains untrusted &&
+          !q1.contains root do
+        throw <| IO.userError "the virt deployment's initial threads are not queued one per core"
+      IO.println "  PASS: the virt deployment boots and starts both initial threads, one per domain"
+  unless [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)]
+      == qemuVirtBootRamExtensions do
+    throw <| IO.userError "the root task's untyped is not the RAM the boot maps"
+  IO.println "  PASS: the root task's untyped is the RAM the boot maps"
 
 end SeLe4n.Testing.Ak9PlatformSuite
 
@@ -2476,7 +2793,8 @@ def main : IO Unit := do
   uartWindowIsTheDeviceTreesRegisterBlock
   rangesWalkStarvedOfFuelRefuses
   bootUntypedMustBePristine
-  realFirmwareAccountIsRefusedUntilDerived
+  bootRefusesConfiguredFrames
+  realFirmwareAccountBindsTheReportedRam
   review9_parser_conformance_and_reservations
   review9_runtime_contract_follows_the_installed_map
   deviceTreeBridge_18_every_memory_node_contributes
@@ -2487,6 +2805,12 @@ def main : IO Unit := do
   deviceTreeBridge_23_extent_past_the_window_is_refused
   dtbCorpus_every_fixture_agrees_with_the_manifest
   bootMap_the_lean_map_is_the_shared_table
+  deployment_roots_own_distinct_pool_pages
   kernelEntry_boots_the_deployment_on_every_variant
+  deployment_starts_both_initial_threads
+  boot_refuses_unstartable_initial_threads
+  bootMap_the_qemu_virt_map_is_the_shared_table
+  qemuVirt_board_check_on_qemus_own_device_tree
+  qemuVirt_deployment_boots
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

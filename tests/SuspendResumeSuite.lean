@@ -840,7 +840,7 @@ private def sr035_resumeFootprintNamesHomeAndExecutingCores : IO Unit := do
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
       !decide ((SeLe4n.Kernel.SchedLockId.replenishQueue ⟨c⟩,
         SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp)))
-  match resumeThreadOnCoreLive st vB bootCore with
+  match resumeThreadOnCore st vB bootCore with
   | .ok (st', _) =>
     expect "SR-035 the live arm enqueues B on its own home core, not the executing one"
       ((st'.scheduler.runQueueOnCore core1).contains bTid)

@@ -73,7 +73,7 @@ The syscall boundary uses a two-layer decode architecture that converts raw ARM6
 | CSpace move | `CSpaceMoveArgs` | 2 | srcSlot, dstSlot |
 | CSpace delete | `CSpaceDeleteArgs` | 1 | targetSlot |
 | Lifecycle retype | `LifecycleRetypeArgs` | 3 | targetObj, newType, size |
-| VSpace map | `VSpaceMapArgs` | 4 | asid, vaddr, paddr, perms |
+| VSpace map | `VSpaceMapArgs` | 4 | asid, vaddr, frame (a frame-capability address — never a physical address, since v0.36.4), perms |
 | VSpace unmap | `VSpaceUnmapArgs` | 2 | asid, vaddr |
 | Service register | `ServiceRegisterArgs` | 2 | serviceId, dependencies |
 | Service revoke | `ServiceRevokeArgs` | 1 | serviceId |

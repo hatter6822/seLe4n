@@ -889,6 +889,65 @@ pub fn snapshot_round_ops_in(
     }
 }
 
+/// The mailbox tag of an `.aside1` operand (`TlbInvalidation.toOpTag`).
+pub const ASIDE1_OP_TAG: u32 = 2;
+
+/// **Does a PE running under `ttbr0` have to leave it when `retired` is
+/// retired?**  Exactly when its `TTBR0_EL1` carries that ASID (bits [63:48]) and
+/// the ASID is a thread's: ASID `0` is the kernel's boot tables, which no round
+/// retires.
+#[must_use]
+pub const fn translation_retired_by(ttbr0: u64, retired: u16) -> bool {
+    retired != 0 && (ttbr0 >> 48) as u16 == retired
+}
+
+/// **An `.aside1` round retires its ASID on the executing PE** (`v0.36.37`).
+///
+/// Every `.aside1` round this kernel posts names an ASID no thread may run under
+/// any more: a VSpace root the untyped reset retired
+/// (`untypedResetRetiredRootAsids`), an address space a retype destroyed or
+/// rebound, or an ASID the pool is handing to a new owner.  The model decides
+/// that from which thread is *current*, but a PE's `TTBR0_EL1` changes only at
+/// its own next context restore, so a PE whose thread another core descheduled
+/// can still hold the retired root's table page there.  Invalidating the TLB
+/// does not change the register, and the reset returns the page to its
+/// untyped, from which the next carve may hand it to another thread as a
+/// frame.  A PE that walked it then would read that thread's descriptors: at
+/// EL0 any physical page, at EL1 the kernel window, which is the page's entry 0.
+///
+/// So a PE servicing the round leaves the address space first — `TTBR0_EL1`
+/// takes the kernel's boot tables — and the initiator's wait for its
+/// acknowledgment is what makes "no PE runs under a retired ASID" true before
+/// the reset commits.  The PE's next restore installs whatever it resumes.
+/// A thread interrupted at EL0 under the retired ASID resumes under the boot
+/// tables, which grant EL0 nothing, so it faults rather than running on.
+pub fn evict_retired_translation(retired: u16) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        if translation_retired_by(crate::registers::read_ttbr0_el1(), retired) {
+            crate::user_translation::install_translation(
+                crate::user_translation::Translation::Kernel,
+            );
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    let _ = retired;
+}
+
+/// Leave any thread's address space for the kernel's boot tables — the
+/// conservative form of [`evict_retired_translation`], for a round whose
+/// operands cannot be read.
+pub fn evict_user_translation() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        if crate::registers::read_ttbr0_el1() >> 48 != 0 {
+            crate::user_translation::install_translation(
+                crate::user_translation::Translation::Kernel,
+            );
+        }
+    }
+}
+
 /// **WS-SM SM7.B**: retire the published round operands on the LOCAL PE
 /// (one `tlbi` per descriptor), from an explicit mailbox.  Returns the
 /// number of per-descriptor invalidations issued, or `None` if it fell
@@ -904,7 +963,15 @@ pub fn retire_round_ops_in(mb: &ShootdownOpMailbox, expected_gen: u64) -> Option
         Some((ops, len, body_gen)) if len > 0 && body_gen == expected_gen => {
             for op in ops.iter().take(len) {
                 match crate::tlb::decode_tlb_invalidation(op.op_tag, op.asid, op.vaddr) {
-                    Some(decoded) => crate::tlb::tlbi_local(decoded),
+                    Some(decoded) => {
+                        // An `.aside1` round retires its ASID (see
+                        // [`evict_retired_translation`]): a PE still running
+                        // under it leaves that address space first.
+                        if let crate::tlb::TlbInvalidation::Aside1 { asid } = decoded {
+                            evict_retired_translation(asid);
+                        }
+                        crate::tlb::tlbi_local(decoded)
+                    }
                     None => {
                         // An operand we cannot decode → fail safe.
                         crate::tlb::tlbi_vmalle1();
@@ -1153,6 +1220,20 @@ pub fn self_service_round_in(
     if acked_gen_in_slice(slots, core_id) >= gen {
         return false; // nothing outstanding for this core
     }
+    // An `.aside1` operand retires its ASID: leave that address space before
+    // the flush, as the precise path does.  An unreadable snapshot leaves any
+    // user translation — every self-service caller is kernel code that
+    // restores a translation before it returns to EL0.
+    match snapshot_round_ops_in(mb) {
+        Some((ops, len, body_gen)) if body_gen == gen => {
+            for op in ops.iter().take(len) {
+                if op.op_tag == ASIDE1_OP_TAG {
+                    evict_retired_translation(op.asid);
+                }
+            }
+        }
+        _ => evict_user_translation(),
+    }
     crate::tlb::tlbi_vmalle1();
     ack_round_in_slice(slots, core_id, gen);
     crate::cpu::sev();
@@ -1259,6 +1340,48 @@ mod tests {
     // The round lock no longer uses a flag (PR #889 review); the stress
     // harnesses below still do.
     use core::sync::atomic::AtomicBool;
+
+    // ------------------------------------------------------------------------
+    // An `.aside1` round evicts the retired ASID from TTBR0_EL1
+    // ------------------------------------------------------------------------
+
+    /// The mailbox tag the eviction keys on is the one the decoder reads as a
+    /// full-ASID invalidation, and no other tag decodes to one.
+    #[test]
+    fn the_aside1_op_tag_decodes_to_a_full_asid_invalidation() {
+        assert_eq!(
+            crate::tlb::decode_tlb_invalidation(ASIDE1_OP_TAG, 7, 0),
+            Some(crate::tlb::TlbInvalidation::Aside1 { asid: 7 })
+        );
+        for tag in 0..8u32 {
+            if tag != ASIDE1_OP_TAG {
+                assert!(!matches!(
+                    crate::tlb::decode_tlb_invalidation(tag, 7, 0),
+                    Some(crate::tlb::TlbInvalidation::Aside1 { .. })
+                ));
+            }
+        }
+    }
+
+    /// A PE leaves exactly the address space whose ASID the round retires:
+    /// the ASID is `TTBR0_EL1[63:48]`, the table base below it is irrelevant,
+    /// and the kernel's ASID 0 is never retired.
+    #[test]
+    fn translation_retired_by_reads_the_asid_field_alone() {
+        let under = |asid: u64, base: u64| (asid << 48) | base;
+        assert!(translation_retired_by(under(5, 0x4000_0000), 5));
+        assert!(translation_retired_by(under(0xFFFF, 0x1000), 0xFFFF));
+        // Another thread's address space is left alone.
+        assert!(!translation_retired_by(under(6, 0x4000_0000), 5));
+        // The low 16 bits of an ASID alone do not match a wider field.
+        assert!(!translation_retired_by(under(0x0105, 0), 5));
+        // A table base whose bits resemble the ASID does not match.
+        assert!(!translation_retired_by(under(0, 5), 5));
+        assert!(!translation_retired_by(5 << 32, 5));
+        // The kernel's boot tables (ASID 0) are never evicted.
+        assert!(!translation_retired_by(under(0, 0x4000_0000), 0));
+        assert!(!translation_retired_by(0, 0));
+    }
 
     // ------------------------------------------------------------------------
     // SM7.A.3.A — struct layout invariants

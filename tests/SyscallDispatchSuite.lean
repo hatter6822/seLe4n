@@ -1167,8 +1167,10 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
   -- count is the binding's on every member.
   expect "sd056_bare_account_binds_the_smallest_variant"
     (decide (bound.machineConfig.memoryMap =
-      SeLe4n.Platform.RPi5.rpi5MemoryMapForConfig SeLe4n.Platform.RPi5.rpi5SmallestVariant))
-    "an account describing no memory must bind the smallest RPi5 variant, not the 4 GiB default"
+      SeLe4n.Platform.RPi5.rpi5MemoryMapForConfig
+        { SeLe4n.Platform.RPi5.rpi5SmallestVariant with
+            lowRamTop := SeLe4n.Platform.RPi5.rpi5LowRamTopFloor }))
+    "an account describing no memory must bind the smallest RPi5 variant at the first-gigabyte floor, not the 4 GiB default"
   expect "sd056_bound_config_declares_the_binding_core_count"
     (bound.machineConfig.declaredCoreCount == 4)
     "every member of the RPi5 family must declare the binding's four PEs"
@@ -1233,13 +1235,17 @@ private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
               (SeLe4n.Kernel.idleThreadId c).toNat.toUInt64 c0 st with
           | ((code, _), _) => code == invalidArgument))
         "every core's idle id is refused"
-      -- An ordinary installed thread reaches the transition: the inactive
-      -- lower witness is refused by `suspendThreadOnCore`'s own `.illegalState`.
+      -- An ordinary installed thread reaches the transition and is suspended:
+      -- since WS-BP BP7.11 the platform boot **starts** its labeling's lower
+      -- witness (`PlatformBinding.initialThreads`), so it is queued and
+      -- `.Ready`, and the transition succeeds — where before BP7.11 it was
+      -- `.Inactive` and the transition refused it `.illegalState`.  Either way
+      -- the point stands: the seam's idle check does not refuse it.
       let (witnessStatus, _) ← modifyGetKernelState
         (suspendThreadCrossCoreStep SeLe4n.Kernel.harnessLowerWitnessIndex.toUInt64 c0)
       expect "sd057_ordinary_thread_reaches_the_transition"
-        (witnessStatus == KernelError.toUInt32 .illegalState)
-        s!"an inactive witness is refused by the transition, got {witnessStatus}"
+        (witnessStatus == 0)
+        s!"the started witness is suspended by the transition, got {witnessStatus}"
       -- The sentinel keeps its refusal.
       let (sentinelStatus, _) ← modifyGetKernelState (suspendThreadCrossCoreStep 0 c0)
       expect "sd057_sentinel_refused" (sentinelStatus == invalidArgument)
@@ -1369,7 +1375,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
       | .error e =>
           failLine "sd058_revoke_of_the_mint_source"
             s!"revoking the mint source must succeed; got: {repr e}"
-      | .ok ((), stRevoked) =>
+      | .ok (_, stRevoked) =>
           expect "sd058_revoke_removes_the_minted_cap"
             (match SeLe4n.Kernel.cspaceLookupSlot dst stRevoked with
              | .error _ => true | .ok _ => false)
@@ -1651,6 +1657,73 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
      | .error .invalidCapability => true
      | _ => false)
     "an empty CSpace slot must fail with invalidCapability"
+
+/-- SD-061 (WS-BP BP7.1): **an in-place retype never mints memory authority, and
+never destroys a frame.**
+
+An untyped names memory it may be carved into and a frame names the page a
+mapping installs, so a capability to either is authority over physical memory.
+`objectOfKernelType .untyped` builds an untyped at address 0 with a caller-chosen
+size, so a retype to it would forge a region no authority covered;
+`retypeReplacementAdmissible` refuses both memory kinds
+(`KernelObjectType.memoryBacked`).  And a frame may still be mapped — a mapping
+records the frame's address, not its id — so the pre-retype cleanup refuses a
+frame target until the destroy path unmaps it.  Through `dispatchSyscall`: an
+endpoint retyped to a notification commits (the CONTROL); to an untyped or a
+frame is refused and the endpoint survives; a frame retyped to anything is
+refused and the frame survives. -/
+private def sd061_retype_never_mints_or_destroys_memory_authority : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let cnId  : SeLe4n.ObjId := ⟨50⟩
+  let epObj : SeLe4n.ObjId := ⟨80⟩
+  let frObj : SeLe4n.ObjId := ⟨81⟩
+  let epCap : Capability := { target := .object epObj, rights := AccessRightSet.ofList [.retype] }
+  let frCap : Capability := { target := .object frObj, rights := AccessRightSet.ofList [.retype] }
+  -- The retype reads the kind table beside the store, so the fixture records
+  -- each object's kind there (`mkState` records none).
+  let builder : SeLe4n.Testing.BootstrapBuilder := {
+    objects := [
+      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (epObj, .endpoint {}),
+      (frObj, .frame { base := SeLe4n.PAddr.ofNat 0x20000 }),
+      (cnId, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, epCap), (SeLe4n.Slot.ofNat 1, frCap)] }) ]
+    lifecycleObjectTypes := [
+      (caller.toObjId, .tcb), (epObj, .endpoint), (frObj, .frame), (cnId, .cnode) ] }
+  let st : SystemState := builder.buildChecked
+  let retype (slot target tag : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat slot,
+      msgInfo := { length := 3, extraCaps := 0, label := 0 },
+      syscallId := .lifecycleRetype,
+      msgRegs := #[SeLe4n.RegValue.ofNat target, SeLe4n.RegValue.ofNat tag,
+                   SeLe4n.RegValue.ofNat 4096],
+      inlineCount := 3, overflowCount := 0 }
+  let kindAt (s : SystemState) (o : ObjId) : Option KernelObjectType :=
+    (s.getObject? o).map KernelObject.objectType
+  -- CONTROL: an ordinary kind is retyped in place.
+  match dispatchSyscall (retype 0 epObj.toNat 2) caller st with
+  | .ok ((), st') =>
+      expect "sd061_control_endpoint_to_notification_commits"
+        (kindAt st' epObj == some .notification)
+        "an endpoint retyped to a notification must commit"
+  | .error e =>
+      failLine "sd061_control_endpoint_to_notification_commits"
+        s!"unexpected refusal: {repr e}"
+  -- A retype to an untyped (tag 5) or a frame (tag 8) forges memory authority.
+  for tag in [5, 8] do
+    expect s!"sd061_retype_to_memory_kind_{tag}_refused"
+      (match dispatchSyscall (retype 0 epObj.toNat tag) caller st with
+       | .error .illegalState => kindAt st epObj == some .endpoint
+       | _ => false)
+      s!"a retype to memory kind tag {tag} must be refused with the endpoint intact"
+  -- A frame target is refused, whatever it would become.
+  expect "sd061_frame_target_refused"
+    (match dispatchSyscall (retype 1 frObj.toNat 1) caller st with
+     | .error .revocationRequired => kindAt st frObj == some .frame
+     | _ => false)
+    "retyping a frame away must be refused (revocationRequired) with the frame intact"
 
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
@@ -2109,4 +2182,6 @@ def main : IO Unit := do
   sd059_cspaceRevokeThroughTheSyscallGate
   IO.println "--- v0.35.204: .schedContextBind takes a TCB capability, not a thread id ---"
   sd060_schedContextBind_requires_tcb_capability
+  IO.println "--- WS-BP BP7.1: an in-place retype never mints or destroys memory authority ---"
+  sd061_retype_never_mints_or_destroys_memory_authority
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

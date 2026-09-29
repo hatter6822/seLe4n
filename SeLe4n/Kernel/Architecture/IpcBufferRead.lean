@@ -261,6 +261,168 @@ theorem ipcBufferReadMr_reads_only_caller_tcb
       | vspaceRoot _ => rfl
       | untyped _ => rfl
       | schedContext _ => rfl
-      | reply _ => rfl
+      | reply _ | frame _ | pageTable _ => rfl
+
+-- ============================================================================
+-- WS-BP BP7.8: the slot resolver both directions share, and the RAM sync
+-- ============================================================================
+
+/-- **WS-BP BP7.8: where overflow slot `idx` of a thread's IPC buffer lives in
+RAM, as the kernel may touch it for that thread** — `none` unless the slot's
+page resolves through the thread's own VSpace, the word is eight-byte aligned
+(so it lies in one page), and the address is declared RAM (`addrInRange`, never
+a device region).  `needWrite` additionally requires a writable mapping: a
+delivered message register is written only where the receiver may write, which
+is the permission check `ipcBufferReadMr` does not make and a write path must
+(`AuditRead`'s stated non-goal, discharged).
+
+It is the **one** resolver the two directions share: the entry reads a sender's
+words from RAM at the addresses it answers (`callerOverflowAddrs`), and a
+delivery writes a receiver's at the addresses it answers
+(`Architecture.overflowDeliveryWrites`), so the kernel can name no address in
+either direction that this function did not.  Since the HAL admits exactly an
+eight-byte aligned word of RAM past the kernel's reserved extent
+(`user_translation::user_word_admissible`), every address it answers is one the
+HAL performs: a mapped frame is carved from an untyped, and the boot refuses an
+untyped over the kernel's extent. -/
+def ipcBufferSlotPAddr? (st : SystemState) (tcb : SeLe4n.Model.TCB) (idx : Nat)
+    (needWrite : Bool) : Option PAddr :=
+  if idx < maxOverflowSlots then
+    match st.getVSpaceRoot? tcb.vspaceRoot with
+    | some root =>
+      match root.lookup (ipcBufferSlotPage tcb.ipcBuffer idx) with
+      | some (paddr, perms) =>
+        let pa := PAddr.ofNat (paddr.toNat + (ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset)
+        if pa.toNat % 8 == 0 && st.machine.addrInRange pa && (!needWrite || perms.write) then
+          some pa
+        else none
+      | none => none
+    | none => none
+  else none
+
+/-- **WS-BP BP7.8**: where the resolver answers, the read reads exactly that
+word — so the entry's RAM sync and the decode's read name one address. -/
+theorem ipcBufferReadMr_of_slotPAddr? (st : SystemState) (tid : ThreadId)
+    (tcb : SeLe4n.Model.TCB) (idx : Nat) (needWrite : Bool) (pa : PAddr)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hPa : ipcBufferSlotPAddr? st tcb idx needWrite = some pa) :
+    ipcBufferReadMr st tid idx
+      = .ok (SeLe4n.Kernel.Architecture.readUInt64 st.machine.memory pa) := by
+  unfold ipcBufferSlotPAddr? at hPa
+  split at hPa
+  · rename_i hBound
+    split at hPa
+    · rename_i root hRoot
+      split at hPa
+      · rename_i paddr perms hMapped
+        dsimp only at hPa
+        split at hPa
+        · cases hPa
+          exact ipcBufferReadMr_ok_of_mapped st tid tcb root idx paddr perms hBound hTcb
+            hRoot hMapped
+        · cases hPa
+      · cases hPa
+    · cases hPa
+  · cases hPa
+
+/-- An answered slot is eight-byte aligned. -/
+theorem ipcBufferSlotPAddr?_aligned (st : SystemState) (tcb : SeLe4n.Model.TCB)
+    (idx : Nat) (needWrite : Bool) (pa : PAddr)
+    (hPa : ipcBufferSlotPAddr? st tcb idx needWrite = some pa) : pa.toNat % 8 = 0 := by
+  unfold ipcBufferSlotPAddr? at hPa
+  split at hPa
+  · split at hPa
+    · split at hPa
+      · dsimp only at hPa
+        split at hPa
+        · rename_i hOk
+          cases hPa
+          simp only [Bool.and_eq_true, beq_iff_eq] at hOk
+          exact hOk.1.1
+        · cases hPa
+      · cases hPa
+    · cases hPa
+  · cases hPa
+
+/-- An answered slot is declared RAM. -/
+theorem ipcBufferSlotPAddr?_ram (st : SystemState) (tcb : SeLe4n.Model.TCB)
+    (idx : Nat) (needWrite : Bool) (pa : PAddr)
+    (hPa : ipcBufferSlotPAddr? st tcb idx needWrite = some pa) :
+    st.machine.addrInRange pa = true := by
+  unfold ipcBufferSlotPAddr? at hPa
+  split at hPa
+  · split at hPa
+    · split at hPa
+      · dsimp only at hPa
+        split at hPa
+        · rename_i hOk
+          cases hPa
+          simp only [Bool.and_eq_true] at hOk
+          exact hOk.1.2
+        · cases hPa
+      · cases hPa
+    · cases hPa
+  · cases hPa
+
+/-- **WS-BP BP7.8: the model learns a word the thread holds in RAM.**  Writes
+only `machine.memory`; every object, the scheduler and every ledger are
+untouched (`syncUserWord_objects`, `_scheduler`). -/
+def syncUserWord (st : SystemState) (pa : PAddr) (w : UInt64) : SystemState :=
+  { st with machine :=
+      { st.machine with memory := SeLe4n.Kernel.Architecture.writeUInt64 st.machine.memory pa w } }
+
+@[simp] theorem syncUserWord_objects (st : SystemState) (pa : PAddr) (w : UInt64) :
+    (syncUserWord st pa w).objects = st.objects := rfl
+@[simp] theorem syncUserWord_scheduler (st : SystemState) (pa : PAddr) (w : UInt64) :
+    (syncUserWord st pa w).scheduler = st.scheduler := rfl
+@[simp] theorem syncUserWord_memory (st : SystemState) (pa : PAddr) (w : UInt64) :
+    (syncUserWord st pa w).machine.memory
+      = SeLe4n.Kernel.Architecture.writeUInt64 st.machine.memory pa w := rfl
+
+/-- **WS-BP BP7.8: the addresses of the overflow words a syscall will read** —
+the caller's slots `0 .. overflow` that the shared resolver answers, where
+`overflow` is how many message registers past the four inline ones the
+`MessageInfo` word asks for.  A slot the resolver refuses is not read, and the
+decode then fails it closed exactly as before (`.invalidMessageInfo`). -/
+def callerOverflowAddrs (st : SystemState) (tid : ThreadId) (msgInfo : UInt64) : List PAddr :=
+  match st.getTcb? tid, SeLe4n.Model.MessageInfo.decode msgInfo.toNat with
+  | some tcb, some mi =>
+      (List.range (min (mi.length - 4) maxOverflowSlots)).filterMap
+        (fun i => ipcBufferSlotPAddr? st tcb i false)
+  | _, _ => []
+
+/-- **WS-BP BP7.8: make the model's memory hold what RAM holds** at the words
+the entry read — applied in the atomic step before the decode, so the decode
+reads the sender's message registers rather than the model's stale copy of
+its frame. -/
+def syncUserWords (st : SystemState) (words : List (PAddr × UInt64)) : SystemState :=
+  words.foldl (fun s pw => syncUserWord s pw.1 pw.2) st
+
+@[simp] theorem syncUserWords_objects (st : SystemState) (words : List (PAddr × UInt64)) :
+    (syncUserWords st words).objects = st.objects := by
+  induction words generalizing st with
+  | nil => rfl
+  | cons pw rest ih => simp [syncUserWords, List.foldl] at ih ⊢; exact ih _
+
+@[simp] theorem syncUserWords_scheduler (st : SystemState) (words : List (PAddr × UInt64)) :
+    (syncUserWords st words).scheduler = st.scheduler := by
+  induction words generalizing st with
+  | nil => rfl
+  | cons pw rest ih => simp [syncUserWords, List.foldl] at ih ⊢; exact ih _
+
+/-- **WS-BP BP7.8: the sync is what the decode reads.**  After syncing the word
+`w` at the address the resolver answers for slot `idx`, the decode's read of
+that slot is `w`. -/
+theorem ipcBufferReadMr_syncUserWord (st : SystemState) (tid : ThreadId)
+    (tcb : SeLe4n.Model.TCB) (idx : Nat) (pa : PAddr) (w : UInt64)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hPa : ipcBufferSlotPAddr? st tcb idx false = some pa) :
+    ipcBufferReadMr (syncUserWord st pa w) tid idx = .ok w := by
+  have hTcb' : (syncUserWord st pa w).getTcb? tid = some tcb := by
+    simpa [SystemState.getTcb?, syncUserWord] using hTcb
+  have hPa' : ipcBufferSlotPAddr? (syncUserWord st pa w) tcb idx false = some pa := by
+    simpa [ipcBufferSlotPAddr?, SystemState.getVSpaceRoot?, syncUserWord] using hPa
+  rw [ipcBufferReadMr_of_slotPAddr? _ tid tcb idx false pa hTcb' hPa', syncUserWord_memory,
+    SeLe4n.Kernel.Architecture.readUInt64_writeUInt64]
 
 end SeLe4n.Kernel.Architecture.IpcBufferRead

@@ -212,6 +212,7 @@
 //             typed `Fin numCores` identifier.
 
 pub mod barriers;
+pub mod board;
 pub mod boot;
 pub mod cache;
 pub mod cpu;
@@ -369,3 +370,21 @@ pub mod lean_runtime;
 // convention.  WS-BP BP4.2: the entry returns the `SecondaryReleasePermit` every
 // secondary bring-up consumes, so the install precedes the release by a type too.
 pub mod lean_entry;
+
+// WS-BP BP7.2: a thread's translation, in memory and in `TTBR0_EL1`.  The
+// physical writes a committed transition recorded (descriptor stores, page
+// zeroings, ASID invalidations) are performed here, validated first and halting
+// the system on a refusal; and an address space is installed with the kernel
+// window at its top-level entry 0.
+pub mod user_translation;
+
+// WS-BP BP7.9: the lazy FP/SIMD switch's register side — the per-core capture
+// and load buffers and the four `fp_context.S` routines, the only kernel code
+// that names an FP/SIMD register.
+pub mod fp_context;
+
+/// **WS-BP BP8.4**: the Tier-4 in-image exercisers — compiled into a test
+/// image only (`smp_exercisers`); see the module docs for what runs and why
+/// no shipped image carries it.
+#[cfg(feature = "smp_exercisers")]
+pub mod smp_exercisers;

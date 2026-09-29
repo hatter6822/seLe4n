@@ -10,7 +10,10 @@ import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
+import SeLe4n.Platform.Boot.InitialThreads
 import SeLe4n.Platform.RPi5.Contract
+import SeLe4n.Kernel.Architecture.TrapFrameSave
+import SeLe4n.Kernel.Architecture.ContextRestore
 
 /-!
 # FFI Bridge: Lean Kernel ↔ Rust HAL
@@ -435,7 +438,7 @@ opaque ffiFatalHaltAll : BaseIO Unit
     Normal RAM — writable, never executable — and widen the HAL's cacheable
     window to the same extent.  The HAL writes only descriptors its boot tables
     leave invalid, so no break-before-make and no TLB invalidation is needed;
-    a range it cannot map (unaligned, below the guaranteed gigabyte, over an
+    a range it cannot map (unaligned, inside the kernel's reserved extent, over an
     already-valid entry, or after the boot map is sealed) **halts the system**
     rather than returning, since a kernel that went on would hold memory it
     cannot address.  Called only by `extendBootRamMap`, on the extensions the
@@ -594,6 +597,37 @@ opaque ffiEnableInterrupts : BaseIO Unit
     Rust: `ffi_current_core_id` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "ffi_current_core_id"]
 opaque ffiCurrentCoreId : BaseIO UInt64
+
+-- ============================================================================
+-- WS-BP BP7.3 — the in-flight trap frame
+-- ============================================================================
+
+/-- **WS-BP BP7.3**: `1` when the executing PE is inside a trap handler that
+    published its frame (`trap::InFlightFrame`), `0` otherwise.
+
+    Rust: `ffi_trap_frame_present` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_trap_frame_present"]
+opaque ffiTrapFramePresent : BaseIO UInt8
+
+/-- **WS-BP BP7.3**: word `index` of the executing PE's in-flight trap frame
+    (`Architecture.trapFrameWordCount` words: `x0`–`x30`, `SP_EL0`, `ELR_EL1`,
+    `SPSR_EL1`); `0` past the context.
+
+    Rust: `ffi_trap_frame_word` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_trap_frame_word"]
+opaque ffiTrapFrameWord : UInt32 → BaseIO UInt64
+
+/-- **WS-BP BP7.3: the whole context the executing PE trapped with**, or `none`
+    when no frame is published (an entry called outside a trap handler).  Read
+    word by word, before the atomic step, so the save and the transition see one
+    frame. -/
+def captureTrapFrame : BaseIO (Option SeLe4n.RegisterFile) := do
+  if (← ffiTrapFramePresent) == 0 then
+    return none
+  let mut words : Array UInt64 := Array.mkEmpty SeLe4n.Kernel.Architecture.trapFrameWordCount
+  for i in [0:SeLe4n.Kernel.Architecture.trapFrameWordCount] do
+    words := words.push (← ffiTrapFrameWord i.toUInt32)
+  return some (SeLe4n.Kernel.Architecture.registerFileOfTrapWords fun i => words.getD i 0)
 
 -- ============================================================================
 -- WS-SM SM1.I.3 — Per-core IDLE thread FFI declarations
@@ -1148,7 +1182,7 @@ def bootAndInitialiseFromPlatformOn
   if isInsecureDefaultContext ctx then
     pure (Except.error insecureLabelingContextBootError)
   else
-    match bootFromPlatformCheckedWithIdleThreadsFor cores config with
+    match bootFromPlatformCheckedStartedFor cores config with
     | Except.error e => pure (Except.error e)
     | Except.ok ist =>
       if declaredWitnessesInstalled ist.state ctx then
@@ -1225,6 +1259,16 @@ folds a per-core idle enqueue over `allCores`.  The hypothesis is discharged fro
 the state the kernel actually comes up in
 (`bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore`).
 
+**WS-BP BP7.11 — and then starts the configuration's initial threads.**  The idle
+stage installs every configured thread `.Inactive`, so until BP7.11 no deployment
+thread ever ran.  The wrapper now runs `bootFromPlatformCheckedStartedFor`: the
+idle-enqueued boot, then each thread `PlatformConfig.initialThreads` names
+started through the kernel model's own start (`Kernel.startInitialThreadOnCore`)
+— `.Ready`, on its home core's run queue, no current slot set — refusing the boot
+for a named thread it cannot start.  With no named thread the stage is the idle
+boot verbatim (`bootFromPlatformCheckedStartedFor_of_nil`); a platform binding
+names its labeling's two separation witnesses (`bindPlatformConfig`).
+
 **RR5.2 — the labeling context is mandatory.**  It used to be
 `ctx : Option LabelingContext := none`, and on the `none` path the wrapper
 installed the boot state and left whatever the labeling reference already held
@@ -1245,9 +1289,9 @@ labeling reference at its fail-closed pre-boot value — rather than leaving a
 live post-boot state paired with a policy that enforces nothing.
 
 Returns the post-boot state on success, or an error string on failure: the boot
-error from `bootFromPlatformChecked` (which the idle entry forwards verbatim —
-`bootFromPlatformCheckedWithIdleThreads_rejects_invalid`), or
-`insecureLabelingContextBootError`.
+error from `bootFromPlatformChecked` (which the started entry forwards verbatim —
+`bootFromPlatformCheckedStartedFor_rejects_invalid`),
+`unstartableInitialThreadBootError`, or `insecureLabelingContextBootError`.
 Neither IO.Ref is updated on either failure path — callers can detect the
 failure explicitly without seeing partial state. -/
 def bootAndInitialiseFromPlatform
@@ -1282,12 +1326,20 @@ board boots the 2 GiB configuration and a caller that describes nothing boots
 the smallest.  Round 7's guarantee is kept in the form that survives a family:
 the bound configuration is a member of the binding's family whatever the caller
 said (`rpi5BoundMachineConfig_mem_family`), and it declares the binding's PE
-count (`bindPlatformConfig_declaredCoreCount`). -/
+count (`bindPlatformConfig_declaredCoreCount`).
+
+**WS-BP BP7.11**: the binding also names the threads its boot starts
+(`PlatformBinding.initialThreads` — its labeling's two separation witnesses),
+for the reason it names the root: which threads run first is a property of the
+deployment the binding states, not of a caller's configuration, and deriving it
+from the labeling makes the witnesses the guard is decided on the threads that
+run (`bindPlatformConfig_initialThreads`). -/
 def bindPlatformConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) : PlatformConfig :=
   { config with
     machineConfig := PlatformBinding.bindMachineConfig (platform := platform) config.machineConfig
-    bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := platform) }
+    bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := platform)
+    initialThreads := PlatformBinding.initialThreads (platform := platform) }
 
 theorem bindPlatformConfig_machineConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
@@ -1312,12 +1364,21 @@ configuration's obligation; `bootAndInitialisePlatform_eq_checked_boot` is what
 says the platform entry runs exactly this checked boot. -/
 theorem bootAndInitialisePlatform_checked_declaredCoreCount (platform : Type)
     [PlatformBinding platform] (config : PlatformConfig) (ist : IntermediateState)
-    (h : bootFromPlatformCheckedWithIdleThreadsFor
+    (h : bootFromPlatformCheckedStartedFor
         (PlatformBinding.declaredCores (platform := platform))
         (bindPlatformConfig platform config) = .ok ist) :
     ist.state.machine.declaredCoreCount = PlatformBinding.coreCount (platform := platform) := by
-  rw [bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ h]
+  obtain ⟨base, hBase, hStart⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
+  rw [startInitialThreads_machine _ _ _ hStart,
+    bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ hBase]
   exact bindPlatformConfig_declaredCoreCount platform config
+
+/-- **WS-BP BP7.11**: the bound configuration starts the binding's labeling's
+two separation witnesses. -/
+theorem bindPlatformConfig_initialThreads (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).initialThreads =
+      PlatformBinding.initialThreads (platform := platform) := rfl
 
 theorem bindPlatformConfig_bootVSpaceRoot (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
@@ -1353,7 +1414,8 @@ Because the binding stores the source, the guard's admission
 proofs each one carries, so the refusal arm of `bootAndInitialiseFromPlatform`
 is unreachable from here — machine-checked as
 `bootAndInitialisePlatform_eq_checked_boot`: this entry accepts and rejects
-exactly what `bootFromPlatformCheckedWithIdleThreads` does.
+exactly what the started boot `bootFromPlatformCheckedStartedFor` does over the
+binding's cores.
 
 **The binding supplies the machine configuration and the boot VSpace root too**
 (PR #889 review round 7).  This entry used to take the binding's cores and
@@ -1507,12 +1569,12 @@ def rpi5PlatformConfigFromDtb (blob : ByteArray)
 /-- **WS-BP BP4.6**: map every extension of the verified board's RAM, in order.
 
 The extensions are `rpi5BootRamExtensionsFor` of the accepted configuration's
-board account: the RAM regions, above the guaranteed gigabyte, of the variant
-the binding installs for that account — the same variant whose memory map the
+board account: the RAM regions, outside the kernel's reserved extent (WS-BP
+BP7.10), of the configuration the binding installs for that account — the same variant whose memory map the
 boot state carries (`rpi5BootRamExtensionsFor_eq`), so the RAM the HAL maps and
 the RAM the kernel's model declares are one map.  `mem_bootRamExtensionsOf`
 proves every extension is RAM of that map and `bootRamExtensionsOf_covers`
-that every RAM address of it above the gigabyte is in some extension;
+that every RAM address of it outside the kernel's extent is in some extension;
 `rpi5BootRamExtensions_admissible` that each is one the HAL accepts. -/
 def extendBootRamMap (extensions : List (Nat × Nat)) : BaseIO Unit :=
   extensions.forM fun e => ffiExtendBootRamMap (UInt64.ofNat e.1) (UInt64.ofNat e.2)
@@ -1533,15 +1595,16 @@ carry an effectful prologue, and since WS-BP BP4.4 it is that contract's
 `approvedBootCall`: `lean_kernel_main` is this wrapper on the firmware's blob,
 which the HAL copies into a `ByteArray` on the kernel's Lean heap (BP4.3).
 
-**WS-BP BP4.6**: an accepted board's RAM above the guaranteed gigabyte is mapped
-first (`extendBootRamMap`), before the boot state is installed — the variant is
+**WS-BP BP4.6, BP7.10**: an accepted board's RAM outside the kernel's reserved
+extent — the first gigabyte's part the firmware reports, and everything above
+the gigabyte — is mapped first (`extendBootRamMap`), before the boot state is installed — the variant is
 known from the verified parse and from nothing earlier, and every secondary is
 still parked, so the boot tables have one writer.  The install then boots on the
 same variant.
 
 **WS-BP BP4.7**: and the objects it boots are that variant's
 (`rpi5PlatformConfigFromDtb`'s `initialObjectsFor`), so the RAM the HAL maps
-above the gigabyte and the untypeds that describe it are read off one variant. -/
+and the untypeds that describe it are read off one configuration. -/
 def bootAndInitialiseRPi5FromDtbOrHalt (blob : ByteArray)
     (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
@@ -1569,8 +1632,8 @@ theorem bootAndInitialiseRPi5FromDtbOrHalt_unparseable (blob : ByteArray)
 
 /-- **WS-RR RR7.27**: an accepted board boots through the checked entry and
 nothing else — the property that makes this wrapper safe to name from the boot
-entry contract.  **WS-BP BP4.6**: preceded by mapping that board's RAM above the
-guaranteed gigabyte, and by nothing else. -/
+entry contract.  **WS-BP BP4.6**: preceded by mapping that board's RAM outside
+the kernel's reserved extent (WS-BP BP7.10), and by nothing else. -/
 theorem bootAndInitialiseRPi5FromDtbOrHalt_accepted (blob : ByteArray)
     (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
@@ -1619,7 +1682,8 @@ theorem rpi5PlatformConfigFromDtb_refuses_uncovered_family (blob : ByteArray)
       SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
     (hNone : ∀ v ∈ SeLe4n.Platform.RPi5.rpi5Variants,
       SeLe4n.Platform.Boot.machineConfigCovers dt.machineConfig
-        (SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant v) = false) :
+        (SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant
+          { v with lowRamTop := SeLe4n.Platform.RPi5.rpi5LowRamTopFor dt.machineConfig }) = false) :
     rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot
       = .error .boardDoesNotMatchBinding := by
   apply rpi5PlatformConfigFromDtb_refuses_foreign_board blob irqTable initialObjectsFor
@@ -1760,7 +1824,7 @@ theorem rpi5PlatformConfigFromDtb_ok_binds_detected_variant (blob : ByteArray)
 theorem bootAndInitialisePlatform_eq_checked_boot (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
     bootAndInitialisePlatform platform config =
-      (match bootFromPlatformCheckedWithIdleThreadsFor
+      (match bootFromPlatformCheckedStartedFor
           (PlatformBinding.declaredCores (platform := platform))
           (bindPlatformConfig platform config) with
         | Except.error e => pure (Except.error e)
@@ -1800,12 +1864,15 @@ theorem bootAndInitialiseRPi5_bound_config (config : PlatformConfig) :
     (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
         SeLe4n.Platform.RPi5.rpi5BoundMachineConfig config.machineConfig := ⟨rfl, rfl⟩
 
-/-- **PR #892 review round 2**: round 7's guarantee in the form that survives a
-family — whatever the caller's configuration describes, the hardware boot's
-machine configuration is a member of the RPi5's declared variants.  A caller
-selects among them; it cannot describe hardware outside them. -/
+/-- **PR #892 review round 2, WS-BP BP7.10**: round 7's guarantee in the form
+that survives a family — whatever the caller's configuration describes, the
+hardware boot's machine configuration is an admissible cut of one of the RPi5's
+declared variants: a member's RAM above the first gigabyte, and at most its
+first gigabyte below.  A caller selects among them; it cannot describe hardware
+outside them, and the first-gigabyte top only ever declares less than the
+member. -/
 theorem bootAndInitialiseRPi5_bound_config_mem_family (config : PlatformConfig) :
-    ∃ v ∈ SeLe4n.Platform.RPi5.rpi5Variants,
+    ∃ v, v.Admissible ∧
       (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
         SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant v :=
   SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_mem_family config.machineConfig
@@ -1965,7 +2032,8 @@ definition would break:
 * a blocked caller's outcome carries **no frame at all** — not a zero frame, not
   a stale one.  That is what the interim trap layer relies on when it poisons
   `x0`-`x5` with `blocked_resume_sentinel_regs()` rather than delivering
-  anything, and what SM10.1 will replace with a successor install;
+  anything, and what the context restore (WS-BP BP7.6) supersedes with a
+  successor install wherever one is staged;
 * the staged registers are **not read** on that arm, so a blocked caller's own
   argument spill can never reach the boundary as a return value — the §1.2
   defect, in the one place that would reintroduce it silently.
@@ -2061,7 +2129,8 @@ theorem syscallReturnOutcome_blocks_iff
 returns **no frame**.  Not a zero frame and not a stale one — there is no
 `SyscallReturnFrame` the boundary hands back, which is what makes the interim
 `blocked_resume_sentinel_regs()` poisoning the only thing a blocked caller's
-registers can hold before SM10.1. -/
+registers can hold on a core where the context restore (WS-BP BP7.6) staged no
+successor. -/
 theorem blockingArm_returns_no_frame
     (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb)
@@ -2629,6 +2698,8 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .cspaceMove             => some false
   | .cspaceDelete           => some false
   | .cspaceRevoke           => some false
+  | .untypedRetype          => some false
+  | .untypedReset           => some false
   | .lifecycleRetype        => some false
   | .vspaceMap              => some false
   | .vspaceUnmap            => some false
@@ -2656,6 +2727,9 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .auditDrain             => some false
   | .declassifySignal       => none
   | .tcbSetFaultHandler     => some false
+  | .tcbSetSpace            => some false
+  | .pageTableMap           => some false
+  | .pageTableUnmap         => some false
 
 /-- The partition, pinned against the ledger rather than listed twice: a
 syscall returns its lookup failure exactly when the refusal seam records it.
@@ -2726,9 +2800,10 @@ abort entry's delivery, at the SVC seam: spill the trap frame's window, build
 the context from the spilled file with the `SVC` instruction as the restart
 PC, and run the flow-checked delivery on the executing core.  The result is
 the committed state; the outcome is `.faulted` (tag 2), because the faulting
-thread is now waiting on its handler, no frame exists for it, and — until
-SM10.1 installs successors — the trap layer must halt rather than `eret` the
-thread past the `SVC` the handler's reply will restart it at (PR #887 review
+thread is now waiting on its handler, no frame exists for it, and the trap
+layer must never `eret` the thread past the `SVC` the handler's reply will
+restart it at: it resumes the successor the context restore staged (WS-BP
+BP7.6), or halts where none was (PR #887 review
 round 5). -/
 def deliverSyscallCapFault (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
@@ -2804,8 +2879,8 @@ Pipeline:
      deliver a `capFault` to the thread's fault handler instead of returning
      the error — seL4's `handleInvocation` / `handleRecv` — and hand back
      `.faulted` (outcome tag 2; PR #887 review round 5): a delivered fault,
-     on which the trap layer halts pending SM10.1 as it does for an
-     unknown-syscall delivery, never the `.blocks` sentinel that would
+     on which the trap layer resumes the staged successor (WS-BP BP7.6), or
+     halts where none was, as it does for an unknown-syscall delivery, never the `.blocks` sentinel that would
      resume the thread past the `SVC`.
      The trap frame's `ELR_EL1`, `SPSR_EL1`, `SP_EL0` and `x30` cross for
      this: the fault context is built from the spilled window
@@ -3080,6 +3155,241 @@ opaque ffiIcMaintenance : UInt32 → UInt64 → UInt64 → BaseIO Unit
 def icMaintenanceBroadcast
     (op : SeLe4n.Kernel.Architecture.ICacheInvalidation) : BaseIO Unit :=
   ffiIcMaintenance op.toOpTag op.toPaddr op.toSize
+
+/-- **WS-BP BP7.2: perform one physical write a committed transition
+    recorded.**  `(tag, addr, value)` is `PhysicalWrite`'s encoding (tag 0 zeroes
+    the page at `addr`, tag 1 stores the descriptor `value` at `addr`, tag 2
+    invalidates every translation tagged with the ASID `addr`, tag 3 stores the
+    user word `value` at `addr` in a thread's RAM frame — WS-BP BP7.8).
+
+    Rust: `ffi::mmu_apply_physical_write` in `sele4n-hal/src/ffi.rs`, which
+    validates the operands against the pages the kernel may write for a thread
+    (`user_translation::decode_physical_write`) and halts the system on a
+    refusal. -/
+@[extern "mmu_apply_physical_write"]
+opaque ffiApplyPhysicalWrite : UInt64 → UInt64 → UInt64 → BaseIO Unit
+
+/-- **WS-BP BP7.8: the user word at `addr`** — a word of the caller's own RAM
+    frame, read so the kernel decodes the message registers the thread wrote
+    into its IPC buffer rather than its model of that memory.  The HAL admits
+    only an eight-byte aligned word of RAM past the kernel's reserved extent
+    and halts the system on anything else.
+
+    Rust: `ffi_read_user_word` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_read_user_word"]
+opaque ffiReadUserWord : UInt64 → BaseIO UInt64
+
+/-- **WS-BP BP7.2**: typed wrapper over `ffiApplyPhysicalWrite`. -/
+def physicalWriteApply (w : SeLe4n.Kernel.Architecture.PhysicalWrite) : BaseIO Unit :=
+  ffiApplyPhysicalWrite w.tag w.addr w.value
+
+/-- **WS-BP BP7.2** (the physical-write seam): perform the physical-memory writes
+the just-committed transition recorded, in record order.
+
+A transition that changes an address space — a mapping, an installed or removed
+table, a page carved for an address space, a table page returned to its untyped
+— is a pure state function, so what makes the translation tables in memory agree
+with the model is recorded in `SystemState.pendingPhysicalWrites`
+(`Architecture.recordPhysicalWrites`) and performed here, exactly as the
+instruction-cache ledger is.  The ledger is read and cleared in the atomic step,
+so a write is performed once and never stranded into the next syscall.
+
+**Order is the content.**  The writes run in the order recorded, because a
+detach records the parent-entry clear before the zeroing of the pages beneath
+it and the ASID invalidation after both; and the whole list runs before the
+cross-core SGIs and the shootdown round, so no core refills a TLB entry from a
+descriptor the model has already cleared.  Inert when nothing was recorded
+(`completePhysicalWrites_nil`), which is every syscall that changed no address
+space.
+
+**WS-BP BP7.8**: every entry whose commit can record a write drains the
+ledger through this one function — the syscall seam and, since a fault
+message carries thirteen words, both fault seams. -/
+def completePhysicalWrites (owed : List Architecture.PhysicalWrite) : BaseIO Unit :=
+  owed.forM physicalWriteApply
+
+/-- **WS-BP BP7.2**: a commit that recorded no physical write performs none. -/
+theorem completePhysicalWrites_nil : completePhysicalWrites [] = pure () := rfl
+
+/-- **WS-BP BP7.2**: the seam performs **every** recorded write, in record
+order — pinned so a refactor that keeps only the last one (the descriptor store
+of a detach, say, and not the zeroing of the pages beneath it) fails here. -/
+theorem completePhysicalWrites_cons (w : Architecture.PhysicalWrite)
+    (rest : List Architecture.PhysicalWrite) :
+    completePhysicalWrites (w :: rest) =
+      (do physicalWriteApply w; completePhysicalWrites rest) := rfl
+
+/-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the
+instruction-cache maintenance the just-committed transition recorded.
+
+**How the work is recovered.**  Kernel transitions are pure state functions, so
+every hardware effect is emitted here, after the commit.  The TLB round is
+recoverable from the `(pre, post)` diff because it *posts descriptors* into
+`tlbShootdown`; the instruction-cache maintenance has no such queue, so the
+model records the operand it applied in `SystemState.pendingIcacheMaintenance`
+(`Architecture.recordIcacheMaintenance`) and this seam emits exactly that.  The
+ledger is cleared in the same atomic step that reads it, so no operand can be
+emitted twice and none can be stranded into the next syscall.
+
+**Why not key on the shootdown diff.**  That was the SM7.D landing's
+approximation, and it was doubly imprecise: it fired the *strongest* operand
+(`IC IALLUIS`) for every unmap — including the common non-executable one, which
+owes nothing at all — and it missed a retype that posted no round.  Recovering
+the precise operand from the round's encoded `.vae1` instead would need an
+`ASID`/`VAddr` round-trip whose failure mode is **under**-invalidation, the one
+direction that is unsafe.  The ledger avoids both: the runtime emits the
+model's operand, no reconstruction and no over-approximation.
+
+**Why a list.**  The ledger holds the operands *in record order* rather than a
+single joined operand, because the operands do not form a join-semilattice:
+`iallu` (`IC IALLUIS`) invalidates instruction caches but issues no `DC CVAU`,
+so it does not discharge a `unifyPage`'s clean to the Point of Unification, and
+collapsing into it would silently drop that clean.  The seam therefore emits
+every entry.  On the live path the list holds at most one operand (one
+maintenance-bearing transition per syscall, drained here), so this is a `forM`
+over a singleton or the empty list.
+
+**Every state-committing entry drains this ledger** (`v0.36.39`, moved here
+from `SyscallDispatchEntry` so the timer, reschedule, secondary and fault entries
+can reach it): only syscall arms record into it today, and an entry that
+committed a recording step and did not drain it would leave the operand owed
+until an unrelated syscall emitted it.
+
+**Ordering.**  Called *after* `completeShootdownRounds`, so the translations a
+transition retired are gone from every core's TLB before the instruction lines
+fetched through them are dropped.  Inert when the transition owed nothing
+(`completeIcacheMaintenance_nil`), which is every syscall that touched no
+executable mapping and re-purposed no memory. -/
+def completeIcacheMaintenance
+    (owed : List SeLe4n.Kernel.Architecture.ICacheInvalidation) : BaseIO Unit :=
+  owed.forM icMaintenanceBroadcast
+
+/-- **WS-SM SM7.D.1** (structural marker): a commit that owed no
+instruction-cache maintenance emits none — no maintenance instruction, no
+barriers.  The definition-level inertness of the SM7.D runtime bracket,
+mirroring `completeShootdownRounds_nil`. -/
+theorem completeIcacheMaintenance_nil :
+    completeIcacheMaintenance [] = pure () := rfl
+
+/-- **WS-SM SM7.D.1**: when maintenance *was* owed the seam emits exactly the
+recorded operand — pinned so a refactor that widened it back to the domain-wide
+invalidate, or dropped the emission, breaks here. -/
+theorem completeIcacheMaintenance_singleton (op : SeLe4n.Kernel.Architecture.ICacheInvalidation) :
+    completeIcacheMaintenance [op] =
+      icMaintenanceBroadcast op := rfl
+
+/-- **WS-SM SM7.D**: the seam emits **every** recorded operand, in record order.
+Pinned so a refactor that collapses the ledger to one operand — the unsound
+direction, since `iallu` does not discharge a `unifyPage`'s clean-to-PoU — fails
+here rather than silently under-maintaining. -/
+theorem completeIcacheMaintenance_cons (op : SeLe4n.Kernel.Architecture.ICacheInvalidation)
+    (rest : List SeLe4n.Kernel.Architecture.ICacheInvalidation) :
+    completeIcacheMaintenance (op :: rest) =
+      (do icMaintenanceBroadcast op; completeIcacheMaintenance rest) := rfl
+
+/-- **WS-BP BP7.2: install a translation on the executing PE.**  `(0, 0)` is the
+    kernel's own boot tables under ASID 0; anything else is an address space's
+    top-level table page and its ASID, which the HAL writes into `TTBR0_EL1`
+    after making the page's entry 0 the kernel window.
+
+    Rust: `ffi::mmu_install_translation` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "mmu_install_translation"]
+opaque ffiInstallTranslation : UInt64 → UInt64 → BaseIO Unit
+
+/-- **WS-BP BP7.2**: install the translation a thread runs under — its own
+    address space, or the kernel's (`Architecture.threadTranslationOperands`).
+    The context restore (BP7.6) calls it for the thread it resumes. -/
+def installThreadTranslation (st : SystemState) (tid : SeLe4n.ThreadId) : BaseIO Unit :=
+  let ops := SeLe4n.Kernel.Architecture.threadTranslationOperands st tid
+  ffiInstallTranslation ops.1 ops.2
+
+/-- **WS-BP BP7.4**: stage word `index` of the context the executing PE resumes
+    (the `captureTrapFrame` layout) in its per-core staging buffer.  Nothing
+    reaches the trap frame until `ffiRestoreCommit`.
+
+    Rust: `ffi_restore_stage_word` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_restore_stage_word"]
+opaque ffiRestoreStageWord : UInt32 → UInt64 → BaseIO Unit
+
+/-- **WS-BP BP7.4**: commit the staged context into the executing PE's in-flight
+    trap frame — kind `0` a thread at EL0 (its processor state sanitised to
+    `EL0t` and the condition flags), kind `1` the kernel's idle wait loop at EL1.
+    The trap handler then returns through it instead of through the thread that
+    trapped.
+
+    **WS-BP BP7.9**: kind `2` is kind `0` for a thread whose FP/SIMD values the
+    core's registers hold (`RestoreTarget.user`'s `fpLive`): the commit lifts the
+    FP/SIMD trap for it, where kinds `0` and `1` arm it.
+
+    **PR #904 (`v0.36.41`)**: the translation the core resumes under rides
+    with the commit — an address space's table page and ASID, or `(0, 0)` for
+    the kernel's own — and the HAL installs it only once the frame is replaced,
+    so a commit that declines leaves the core under the kernel's translation.
+
+    Rust: `ffi_restore_commit` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_restore_commit"]
+opaque ffiRestoreCommit : UInt32 → UInt64 → UInt64 → BaseIO Unit
+
+/-- **WS-BP BP7.4: install what a core resumes** — a thread's context, staged
+    word by word and then its translation and the commit; the idle loop under
+    the kernel's translation; or nothing. -/
+def restoreTrapFrame : SeLe4n.Kernel.Architecture.RestoreTarget → BaseIO Unit
+  | .user ctx tableBase asid fpLive => do
+    for i in [0:SeLe4n.Kernel.Architecture.trapFrameWordCount] do
+      ffiRestoreStageWord i.toUInt32 (SeLe4n.Kernel.Architecture.trapWordsOfRegisterFile ctx i)
+    ffiRestoreCommit (if fpLive then 2 else 0) tableBase asid
+  | .idle => ffiRestoreCommit 1 0 0
+  | .none => pure ()
+
+-- ============================================================================
+-- WS-BP BP7.9 — the lazy FP/SIMD switch
+-- ============================================================================
+
+/-- **WS-BP BP7.9**: save the executing PE's live FP/SIMD registers into its
+    per-core capture buffer (`fp_context.S`'s `sele4n_fp_save_context`), which
+    leaves the FP/SIMD trap **armed**: a capture is taken exactly when the values
+    are about to stop being the running thread's.
+
+    Rust: `ffi_fp_capture` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_fp_capture"]
+opaque ffiFpCapture : BaseIO Unit
+
+/-- **WS-BP BP7.9**: word `index` of the capture buffer (`fpContextWordCount`
+    words, the `FpContext.word` layout); `0` past it.
+
+    Rust: `ffi_fp_captured_word` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_fp_captured_word"]
+opaque ffiFpCapturedWord : UInt32 → BaseIO UInt64
+
+/-- **WS-BP BP7.9**: stage word `index` of the context the executing PE loads.
+
+    Rust: `ffi_fp_stage_word` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_fp_stage_word"]
+opaque ffiFpStageWord : UInt32 → UInt64 → BaseIO Unit
+
+/-- **WS-BP BP7.9**: load the staged context into the executing PE's FP/SIMD
+    registers (`sele4n_fp_load_context`), every register it names overwritten,
+    with the trap re-armed: the restore commit lifts it when the core resumes
+    the owner (PR #904, `v0.36.41`), so nothing is live before that commit.
+
+    Rust: `ffi_fp_load_commit` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_fp_load_commit"]
+opaque ffiFpLoadCommit : BaseIO Unit
+
+/-- **WS-BP BP7.9: the live FP/SIMD values in the executing PE's registers.** -/
+def captureLiveFp : BaseIO SeLe4n.FpContext := do
+  ffiFpCapture
+  let mut words : Array UInt64 := Array.mkEmpty SeLe4n.fpContextWordCount
+  for i in [0:SeLe4n.fpContextWordCount] do
+    words := words.push (← ffiFpCapturedWord i.toUInt32)
+  return SeLe4n.FpContext.ofWords fun i => words.getD i 0
+
+/-- **WS-BP BP7.9: load a thread's FP/SIMD context** into the executing PE; the
+    restore commit lifts the trap. -/
+def loadFpContext (ctx : SeLe4n.FpContext) : BaseIO Unit := do
+  for i in [0:SeLe4n.fpContextWordCount] do
+    ffiFpStageWord i.toUInt32 (ctx.word i)
+  ffiFpLoadCommit
 
 /-- **WS-SM SM7.D.1**: the invalidate-all operand routes to op tag 0. -/
 theorem icMaintenanceBroadcast_iallu_encoding :
@@ -3664,7 +3974,7 @@ theorem writeFfiRegistersToTcb_id_when_not_tcb
       | vspaceRoot _ => rfl
       | untyped _ => rfl
       | schedContext _ => rfl
-      | reply _ => rfl
+      | reply _ | frame _ | pageTable _ => rfl
   unfold writeFfiRegistersToTcb
   exact SystemState.updateTcb_eq_self_of_none hNone _
 
@@ -3689,6 +3999,6 @@ theorem readReturnValue_zero_when_not_tcb
     | vspaceRoot _ => rfl
     | untyped _ => rfl
     | schedContext _ => rfl
-    | reply _ => rfl
+    | reply _ | frame _ | pageTable _ => rfl
 
 end SeLe4n.Platform.FFI

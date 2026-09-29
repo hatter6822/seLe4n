@@ -169,12 +169,13 @@ class PlatformBinding (platform : Type) where
       the binding's declared configurations and never becomes one: the caller
       of the direct entry still cannot describe hardware the image does not run
       on (PR #889 review round 7), and on the RPi5 the bound configuration is a
-      member of `rpi5Variants` whatever the account says
-      (`rpi5BoundMachineConfig_mem_family`).  Selecting a *smaller* member is
-      the lost-resource direction and never a false claim; selecting a larger
-      one requires the account to cover it, and on the production path the
-      account is the board's device tree, validated by the bridge against this
-      very function (`rpi5PlatformConfigFromDtb`). -/
+      member of `rpi5Variants` — cut, since WS-BP BP7.10, to the first-gigabyte
+      RAM the account reports, which can only shrink it — whatever the account
+      says (`rpi5BoundMachineConfig_mem_family`).  Selecting a *smaller* member
+      or a lower cut is the lost-resource direction and never a false claim;
+      selecting a larger one requires the account to cover it, and on the
+      production path the account is the board's device tree, validated by the
+      bridge against this very function (`rpi5PlatformConfigFromDtb`). -/
   bindMachineConfig : SeLe4n.MachineConfig → SeLe4n.MachineConfig := fun _ => machineConfig
   /-- **PR #892 review round 2**: every configuration the binding can install
       declares the binding's PE count — `declaredCoreCountAgrees` extended over
@@ -305,6 +306,36 @@ theorem PlatformBinding.labeling_admitted [PlatformBinding platform] :
     SeLe4n.Kernel.isInsecureDefaultContext (PlatformBinding.labeling (platform := platform))
       = false :=
   SeLe4n.Kernel.isInsecureDefaultContext_deploymentLabelingContext _
+
+/-- **WS-BP BP7.11**: the threads a hardware boot of this binding **starts** —
+    its labeling's two declared separation witnesses, lower then upper, one per
+    domain.
+
+    Derived rather than declared, so the threads the labeling guard is decided
+    on and the threads that run cannot be two lists: the guard admits a
+    labeling for separating two admissible threads, the boot refuses unless
+    both are installed (`Platform.Boot.declaredWitnessesInstalled`), and now
+    starts both.  Before WS-BP BP7.11 neither ever ran, so the separation the
+    guard was decided on separated two threads that could never originate or
+    receive a flow — the vacuity `separationWitnessAdmissible` excludes for the
+    idle threads, one object over.  Starting both — rather than giving one of
+    them a capability to the other — keeps every capability inside its own
+    domain, which is what the confined labeling states. -/
+@[inline] def PlatformBinding.initialThreads [PlatformBinding platform] :
+    List SeLe4n.ThreadId :=
+  [(PlatformBinding.deploymentLabeling (platform := platform)).separatedLower,
+   (PlatformBinding.deploymentLabeling (platform := platform)).separatedUpper]
+
+/-- **WS-BP BP7.11**: the started threads are exactly the labeling's declared
+    separation witnesses — definitional. -/
+theorem PlatformBinding.labeling_separatedThreads_initialThreads [PlatformBinding platform] :
+    (PlatformBinding.labeling (platform := platform)).separatedThreads =
+      some ((PlatformBinding.deploymentLabeling (platform := platform)).separatedLower,
+        (PlatformBinding.deploymentLabeling (platform := platform)).separatedUpper) ∧
+    PlatformBinding.initialThreads (platform := platform) =
+      [(PlatformBinding.deploymentLabeling (platform := platform)).separatedLower,
+       (PlatformBinding.deploymentLabeling (platform := platform)).separatedUpper] :=
+  ⟨rfl, rfl⟩
 
 /-- PR #889 review round 3: the cores the binding **declares**, as model core
     ids — the first `coreCount` of `allCores` (`cores` is the count itself).

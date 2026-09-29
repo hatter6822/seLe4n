@@ -676,8 +676,8 @@ pub extern "C" fn ffi_fatal_halt_all() -> ! {
 /// Normal RAM and widen the cacheable window to match
 /// ([`crate::mmu::extend_boot_ram_map`]).
 ///
-/// The verified Lean boot calls it once per RAM region, above the guaranteed
-/// gigabyte, of the variant the device tree selected — before the boot state is
+/// The verified Lean boot calls it once per RAM region outside the kernel's
+/// reserved extent (WS-BP BP7.10), of the configuration the device tree selected — before the boot state is
 /// installed and before any secondary exists.  A refusal is a disagreement
 /// between the verified map and the tables this image built, which no caller
 /// can recover from, so it halts the system rather than returning: a kernel
@@ -1571,6 +1571,180 @@ pub extern "C" fn cache_ic_maintenance(
     match crate::cache::decode_icache_invalidation(op_tag, addr, size) {
         Some(op) => crate::cache::apply_icache_invalidation(op),
         None => panic!("cache_ic_maintenance: invalid op_tag {op_tag}"),
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.3**: is a trap frame published on the executing PE?  `1` inside
+/// a trap handler (`trap::InFlightFrame`), `0` otherwise — the Lean entry saves
+/// the outgoing context only from a published frame.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTrapFramePresent`.
+#[no_mangle]
+pub extern "C" fn ffi_trap_frame_present() -> u8 {
+    u8::from(crate::trap::in_flight_frame_present())
+}
+
+/// **WS-BP BP7.3**: word `index` of the executing PE's in-flight trap frame
+/// (`trap::TRAP_FRAME_CONTEXT_WORDS` words: `x0`–`x30`, `SP_EL0`, `ELR_EL1`,
+/// `SPSR_EL1`).  `0` when no frame is published or the index is past the
+/// context; the Lean entry asks [`ffi_trap_frame_present`] first.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTrapFrameWord`.
+#[no_mangle]
+pub extern "C" fn ffi_trap_frame_word(index: u32) -> u64 {
+    crate::trap::in_flight_frame_word(index).unwrap_or(0)
+}
+
+/// **WS-BP BP7.4**: stage word `index` of the executing PE's resume context
+/// (`trap::restore_stage_word`).  A word past the context is a kernel defect —
+/// the Lean restore stages exactly `trap::TRAP_FRAME_CONTEXT_WORDS` — so it
+/// **halts the system** rather than resuming a partly staged context.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRestoreStageWord`.
+#[no_mangle]
+pub extern "C" fn ffi_restore_stage_word(index: u32, value: u64) -> crate::lean_runtime::Obj {
+    if crate::trap::restore_stage_word(index, value).is_err() {
+        crate::gic::halt_all();
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.9**: save the executing PE's live FP/SIMD registers into its
+/// capture buffer, arming the trap (`fp_context::capture`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFpCapture`.
+#[no_mangle]
+pub extern "C" fn ffi_fp_capture() -> crate::lean_runtime::Obj {
+    crate::fp_context::capture();
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.9**: word `index` of the executing PE's FP/SIMD capture buffer
+/// (`fp_context::captured_word`); `0` past the context.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFpCapturedWord`.
+#[no_mangle]
+pub extern "C" fn ffi_fp_captured_word(index: u32) -> u64 {
+    crate::fp_context::captured_word(index)
+}
+
+/// **WS-BP BP7.9**: stage word `index` of the FP/SIMD context the executing PE
+/// loads (`fp_context::stage_word`); a word past the context **halts the
+/// system**.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFpStageWord`.
+#[no_mangle]
+pub extern "C" fn ffi_fp_stage_word(index: u32, value: u64) -> crate::lean_runtime::Obj {
+    crate::fp_context::stage_word(index, value);
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.9**: load the staged FP/SIMD context into the executing PE's
+/// registers, re-arming the trap for the restore commit to lift
+/// (`fp_context::load_commit`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFpLoadCommit`.
+#[no_mangle]
+pub extern "C" fn ffi_fp_load_commit() -> crate::lean_runtime::Obj {
+    crate::fp_context::load_commit();
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.4**: commit the executing PE's staged resume into the frame
+/// its handler will `eret` through (`trap::restore_commit`) — kind `0` a user
+/// thread, kind `1` the idle loop, and (WS-BP BP7.9) kind `2` a user thread
+/// whose FP/SIMD values the registers hold, for which the trap is lifted.  An
+/// unknown kind **halts the system**.
+///
+/// **PR #904 (`v0.36.41`)**: the translation the resumed thread runs under
+/// rides with the commit — `(0, 0)` for the kernel's own — and is validated
+/// (`user_translation::decode_install`) before anything is written, then
+/// installed by `trap::restore_commit` only once the frame is replaced.  The
+/// idle loop runs under the kernel's translation, so an idle commit naming any
+/// other is a kernel defect and halts, as a refused install does.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRestoreCommit`.
+#[no_mangle]
+pub extern "C" fn ffi_restore_commit(
+    kind: u32,
+    table_base: u64,
+    asid: u64,
+) -> crate::lean_runtime::Obj {
+    let translation = match crate::user_translation::decode_install(
+        table_base,
+        asid,
+        crate::mmu::is_boot_cacheable_range,
+    ) {
+        Ok(t) => t,
+        Err(_) => crate::gic::halt_all(),
+    };
+    if kind == crate::trap::RESTORE_KIND_IDLE
+        && translation != crate::user_translation::Translation::Kernel
+    {
+        crate::gic::halt_all();
+    }
+    if crate::trap::restore_commit(kind, translation).is_err() {
+        crate::gic::halt_all();
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.2**: perform one physical write a committed transition
+/// recorded — `Platform.FFI.ffiApplyPhysicalWrite`, driven by the syscall
+/// seam's `completePhysicalWrites`.  The operands are validated against the
+/// pages the kernel may write for a thread
+/// (`user_translation::decode_physical_write`) before anything is written, and
+/// a refusal **halts the system**: the Lean kernel names only pages it owns, so
+/// a refused operand is a kernel defect, and performing it would write memory
+/// the kernel did not mean to touch.
+#[no_mangle]
+pub extern "C" fn mmu_apply_physical_write(
+    tag: u64,
+    addr: u64,
+    value: u64,
+) -> crate::lean_runtime::Obj {
+    match crate::user_translation::decode_physical_write(
+        tag,
+        addr,
+        value,
+        crate::mmu::is_boot_cacheable_range,
+    ) {
+        Ok(write) => crate::user_translation::apply_physical_write(write),
+        Err(_) => crate::gic::halt_all(),
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
+/// **WS-BP BP7.8**: read the user word at `addr` — a sender's message register
+/// past the four its trap frame carries — `Platform.FFI.ffiReadUserWord`.  The
+/// Lean kernel names only a word of its caller's own RAM frame
+/// (`IpcBufferRead.ipcBufferSlotPAddr?`), so an address
+/// [`crate::user_translation::user_word_admissible`] refuses is a kernel defect
+/// and **halts the system**, for the reason [`mmu_apply_physical_write`] gives.
+#[no_mangle]
+pub extern "C" fn ffi_read_user_word(addr: u64) -> u64 {
+    match crate::user_translation::read_user_word(addr, crate::mmu::is_boot_cacheable_range) {
+        Some(word) => word,
+        None => crate::gic::halt_all(),
+    }
+}
+
+/// **WS-BP BP7.2**: install a translation on the executing PE —
+/// `Platform.FFI.ffiInstallTranslation`.  `(0, 0)` is the kernel's own boot
+/// tables; anything else is an address space's top-level table page and its
+/// ASID, validated (`user_translation::decode_install`) before `TTBR0_EL1` is
+/// written, with a refusal halting the system for the reason
+/// [`mmu_apply_physical_write`] gives.
+#[no_mangle]
+pub extern "C" fn mmu_install_translation(table_base: u64, asid: u64) -> crate::lean_runtime::Obj {
+    match crate::user_translation::decode_install(
+        table_base,
+        asid,
+        crate::mmu::is_boot_cacheable_range,
+    ) {
+        Ok(translation) => crate::user_translation::install_translation(translation),
+        Err(_) => crate::gic::halt_all(),
     }
     crate::lean_runtime::base_io_unit()
 }
@@ -2527,7 +2701,10 @@ mod tests {
     fn cleaning_a_pagetable_range_inside_the_identity_map_returns() {
         // The complementary case, so the refusal witness below is not
         // satisfied by a seam that halts unconditionally.
-        clean_pagetable_range_within_identity_map(0x0010_0000, 0x1000);
+        clean_pagetable_range_within_identity_map(
+            crate::mmu::KERNEL_RESERVED_BASE + 0x0010_0000,
+            0x1000,
+        );
     }
 
     #[test]
@@ -2548,6 +2725,6 @@ mod tests {
     fn cleaning_a_pagetable_range_that_runs_past_the_ram_top_halts() {
         // The base is a good RAM frame and the range is not — the relation a
         // base-address check would miss.
-        clean_pagetable_range_within_identity_map(crate::mmu::GUARANTEED_RAM_TOP - 0x1000, 0x2000);
+        clean_pagetable_range_within_identity_map(crate::mmu::KERNEL_RESERVED_END - 0x1000, 0x2000);
     }
 }

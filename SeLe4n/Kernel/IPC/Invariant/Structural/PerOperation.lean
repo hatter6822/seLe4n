@@ -154,13 +154,13 @@ theorem ipcTransferSingleCap_preserves_badgeWellFormed
         | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
         | true =>
         simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
         | error e => simp [hIns] at hStep
         | ok pair =>
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
           have hBadgeMid := cspaceInsertSlot_preserves_badgeWellFormed st pair.2
-            { cnode := receiverRoot, slot := emptySlot } cap hInv hObjInv hCapValid
+            { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv hObjInv hCapValid
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
           have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
             { cnode := receiverRoot, slot := emptySlot }
@@ -792,7 +792,7 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp at hStep
     | endpoint ep =>
       cases hLookup : lookupTcb st tid with
       | none => simp [hLookup] at hStep
@@ -2071,7 +2071,7 @@ theorem endpointQueuePopHead_preserves_blockedThreadsPendingMessageConsistent
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -2138,7 +2138,7 @@ theorem endpointQueueEnqueue_preserves_blockedThreadsPendingMessageConsistent
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st enqueueTid with
@@ -2203,7 +2203,7 @@ theorem endpointSendDual_preserves_blockedThreadsPendingMessageConsistent
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
@@ -2378,7 +2378,7 @@ theorem endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.sendQ.head with
@@ -2540,7 +2540,7 @@ theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
     · cases hObj : st.objects[endpointId]? with
       | none => simp [hObj] at hStep
       | some obj => cases obj with
-        | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+        | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
         | endpoint ep =>
           simp only [hObj] at hStep
           cases hHead : ep.receiveQ.head with

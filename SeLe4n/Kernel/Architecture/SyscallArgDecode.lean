@@ -113,15 +113,48 @@ structure LifecycleRetypeArgs where
   size      : Nat
   deriving Repr, DecidableEq
 
+/-- **WS-BP BP7.1 (`v0.36.5`)**: per-syscall argument structure for
+`untypedRetype` — seL4's `seL4_Untyped_Retype`, invoked on an untyped
+capability.  Register mapping: x2=newType tag in bits `[0, 8)` and the object's
+size in bits `[8, 64)` as a power of two (seL4's `size_bits`), x3=childId (the
+object id the carved object takes), x4=destination CNode capability address,
+x5=destination slot.  `newType` is typed at the decode boundary, as the in-place
+retype's is; the arm then carves only the kinds an untyped's memory can back
+directly — a frame, whose size is fixed (`sizeBits` must be `0`), or a child
+untyped, whose size `sizeBits` names (WS-BP BP7.1 slice 4, `v0.36.8`).
+
+The size shares MR0 with the tag because every register a syscall can read is
+already taken — the four argument registers x2–x5 — and seL4's own
+`seL4_Untyped_Retype` carries `size_bits` beside `type`.  A frame's MR0 is its
+tag alone, exactly as before this field existed. -/
+structure UntypedRetypeArgs where
+  newType  : KernelObjectType
+  sizeBits : Nat
+  childId  : ObjId
+  dstCNode : CPtr
+  dstSlot  : Slot
+  deriving Repr, DecidableEq
+
 /-- Per-syscall argument structure for `vspaceMap`.
-    Register mapping: x2=asid, x3=vaddr, x4=paddr, x5=perms word.
+    Register mapping: x2=asid, x3=vaddr, x4=frame capability address, x5=perms word.
     T6-C/M-ARCH-1: `perms` is typed as `PagePermissions` instead of raw `Nat`.
     Validation occurs at decode time via `PagePermissions.ofNat?`, rejecting
-    values outside the valid 5-bit range (0–31). -/
+    values outside the valid 5-bit range (0–31).
+
+    **WS-BP BP7.1: MR2 names a frame capability, not a physical address.**  It
+    was `paddr : PAddr`, a raw number the arm mapped after checking only that it
+    was in range and page-aligned — so any holder of a writable VSpace
+    capability could map *any* physical memory, the kernel's own image and
+    every other domain's pages included.  seL4's `seL4_ARM_Page_Map` is invoked
+    on a frame capability: the address comes from the object the capability
+    names, and holding the capability is the authority over that memory.  This
+    is that: `frame` is resolved through the caller's own CSpace
+    (`resolveVSpaceMapFrame`) and the mapping installs the resolved frame's
+    `base`. -/
 structure VSpaceMapArgs where
   asid  : ASID
   vaddr : VAddr
-  paddr : PAddr
+  frame : CPtr
   perms : PagePermissions
   deriving Repr, DecidableEq
 
@@ -207,8 +240,27 @@ def decodeLifecycleRetypeArgs (decoded : SyscallDecodeResult)
            size      := r2.val }
   | none => .error .invalidTypeTag
 
+/-- **WS-BP BP7.1**: decode untyped-retype arguments from message registers.
+Requires 4 message registers; an unrecognised type tag is `.invalidTypeTag`,
+exactly as for the in-place retype. -/
+def decodeUntypedRetypeArgs (decoded : SyscallDecodeResult)
+    : Except KernelError UntypedRetypeArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  let r2 ← requireMsgReg decoded.msgRegs 2
+  let r3 ← requireMsgReg decoded.msgRegs 3
+  match KernelObjectType.ofNat? (r0.val % 256) with
+  | some objType =>
+    pure { newType  := objType
+           sizeBits := r0.val / 256
+           childId  := ObjId.ofNat r1.val
+           dstCNode := CPtr.ofNat r2.val
+           dstSlot  := Slot.ofNat r3.val }
+  | none => .error .invalidTypeTag
+
 /-- Decode VSpace map arguments from message registers.
-    Requires 4 message registers (asid, vaddr, paddr, perms word).
+    Requires 4 message registers (asid, vaddr, frame capability address,
+    perms word).
     T6-C/M-ARCH-1: Validates the permissions word at decode time via
     `PagePermissions.ofNat?`. Returns `invalidArgument` for values ≥ 32
     (undefined permission bits set — U5-E/U-M07: decode error, not policy).
@@ -233,57 +285,22 @@ def decodeVSpaceMapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
     | some perms =>
       pure { asid  := asid
              vaddr := vaddr
-             paddr := PAddr.ofNat r2.val
+             frame := CPtr.ofNat r2.val
              perms := perms }
     -- U5-E/U-M07: Invalid permission bits are a decode error, not a policy violation.
     -- Prior to U5-E this incorrectly returned `.policyDenied`.
     -- X5-E/M-11: Use `invalidSyscallArgument` for syscall-specific decode context.
     | none => .error .invalidSyscallArgument
 
-/-- AK3-E (A-M01 / MEDIUM): Defense-in-depth wrapper adding a PA bounds check
-    to the VSpace map decode. Callers pass `2^st.machine.physicalAddressWidth`
-    as `maxPA`; any PA at or above the bound is rejected at decode time.
-
-    The underlying `decodeVSpaceMapArgs` is unchanged; the downstream
-    production path (`vspaceMapPageCheckedWithFlushFromState`) also performs
-    this check — this wrapper enforces it one layer earlier, preventing
-    invalid PAs from entering `VSpaceMapArgs` that flow through model-level
-    analyses. -/
-def decodeVSpaceMapArgsChecked (decoded : SyscallDecodeResult)
-    (maxASID : Nat) (maxPA : Nat) : Except KernelError VSpaceMapArgs := do
-  let args ← decodeVSpaceMapArgs decoded maxASID
-  if args.paddr.toNat ≥ maxPA then .error .addressOutOfBounds
-  else pure args
-
-/-- AK3-E: A successful checked decode produces a PA within bounds. -/
-theorem decodeVSpaceMapArgsChecked_paddr_bounded
-    (d : SyscallDecodeResult) (maxASID maxPA : Nat) (args : VSpaceMapArgs)
-    (hOk : decodeVSpaceMapArgsChecked d maxASID maxPA = .ok args) :
-    args.paddr.toNat < maxPA := by
-  unfold decodeVSpaceMapArgsChecked at hOk
-  simp only [bind, Except.bind] at hOk
-  cases hInner : decodeVSpaceMapArgs d maxASID with
-  | error e => rw [hInner] at hOk; simp at hOk
-  | ok a =>
-    rw [hInner] at hOk; simp only at hOk
-    split at hOk
-    · simp at hOk
-    · rename_i hGe
-      simp only [pure, Except.pure, Except.ok.injEq] at hOk
-      subst hOk
-      exact Nat.not_le.mp hGe
-
-/-- AK3-E: The checked decode agrees with the base decode when the PA bound
-    is satisfied. -/
-theorem decodeVSpaceMapArgsChecked_eq_of_bounded
-    (d : SyscallDecodeResult) (maxASID maxPA : Nat) (args : VSpaceMapArgs)
-    (hBase : decodeVSpaceMapArgs d maxASID = .ok args)
-    (hPA : args.paddr.toNat < maxPA) :
-    decodeVSpaceMapArgsChecked d maxASID maxPA = .ok args := by
-  unfold decodeVSpaceMapArgsChecked
-  simp only [bind, Except.bind, hBase]
-  have : ¬(args.paddr.toNat ≥ maxPA) := Nat.not_le.mpr hPA
-  simp [this, pure, Except.pure]
+-- **WS-BP BP7.1: `decodeVSpaceMapArgsChecked` and its two theorems
+-- (`decodeVSpaceMapArgsChecked_paddr_bounded`,
+-- `decodeVSpaceMapArgsChecked_eq_of_bounded`) are DELETED.**  AK3-E's
+-- decode-time physical-address bound had a subject only while MR2 carried a
+-- physical address; it carries a frame capability address now, so the address
+-- the arm maps is the resolved frame's own `base`, and the downstream
+-- `vspaceMapPageCheckedWithFlushFromState` bound — which AK3-E already named as
+-- the production check — is the one that applies to it.  The arm calls
+-- `decodeVSpaceMapArgs` directly.
 
 /-- Decode VSpace unmap arguments from message registers.
     Requires 2 message registers (asid, vaddr). -/
@@ -330,28 +347,48 @@ theorem decodeVSpaceUnifyInstructionArgs_eq (decoded : SyscallDecodeResult)
     against the target physical address's `MemoryKind`. Device regions must not
     receive execute permission (execute-from-device is undefined on ARM64).
 
-    This validation occurs after `decodeVSpaceMapArgs` because the memory map
-    is not available at the register-decode layer. Callers (API dispatch) should
-    invoke this check before passing arguments to `vspaceMapPageWithFlush`. -/
+    This validation occurs after the frame is resolved, because the address it
+    checks is the frame's (`FrameObject.base`, WS-BP BP7.1) and the memory map is
+    not available at the register-decode layer. -/
 def validateVSpaceMapPermsForMemoryKind
-    (args : VSpaceMapArgs) (memoryMap : List MemoryRegion) : Except KernelError VSpaceMapArgs :=
-  let regionKind := memoryMap.find? (fun r => r.contains args.paddr)
+    (paddr : PAddr) (perms : PagePermissions) (memoryMap : List MemoryRegion) :
+    Except KernelError PagePermissions :=
+  let regionKind := memoryMap.find? (fun r => r.contains paddr)
     |>.map (fun r => r.kind)
   match regionKind with
   | some MemoryKind.device =>
     -- Device regions must not have execute permission
-    if args.perms.execute then .error .policyDenied
-    else .ok args
-  | _ => .ok args
+    if perms.execute then .error .policyDenied
+    else .ok perms
+  | _ => .ok perms
 
 /-- V4-F: Device regions with execute permission are rejected. -/
 theorem validateVSpaceMapPermsForMemoryKind_device_noexec
-    (args : VSpaceMapArgs) (memoryMap : List MemoryRegion)
-    (hFind : memoryMap.find? (fun r => r.contains args.paddr) = some region)
+    (paddr : PAddr) (perms : PagePermissions) (memoryMap : List MemoryRegion)
+    (hFind : memoryMap.find? (fun r => r.contains paddr) = some region)
     (hDevice : region.kind = .device)
-    (hExec : args.perms.execute = true) :
-    ∃ e, validateVSpaceMapPermsForMemoryKind args memoryMap = .error e := by
+    (hExec : perms.execute = true) :
+    ∃ e, validateVSpaceMapPermsForMemoryKind paddr perms memoryMap = .error e := by
   simp [validateVSpaceMapPermsForMemoryKind, hFind, hDevice, hExec]
+
+/-- **WS-BP BP7.1**: a successful validation returns the permissions it was
+    given — it refuses, it never rewrites. -/
+theorem validateVSpaceMapPermsForMemoryKind_ok_eq
+    (paddr : PAddr) (perms perms' : PagePermissions) (memoryMap : List MemoryRegion)
+    (h : validateVSpaceMapPermsForMemoryKind paddr perms memoryMap = .ok perms') :
+    perms' = perms := by
+  unfold validateVSpaceMapPermsForMemoryKind at h
+  simp only at h
+  cases hK : (memoryMap.find? (fun r => r.contains paddr)).map (fun r => r.kind) with
+  | none => rw [hK] at h; exact (Except.ok.inj h).symm
+  | some k =>
+    rw [hK] at h
+    cases k <;> simp at h
+    all_goals first
+      | exact h.symm
+      | (split at h
+         · cases h
+         · exact (Except.ok.inj h).symm)
 
 -- ============================================================================
 -- Encode functions (inverse of decode, for round-trip proofs)
@@ -382,10 +419,16 @@ theorem validateVSpaceMapPermsForMemoryKind_device_noexec
 @[inline] def encodeLifecycleRetypeArgs (args : LifecycleRetypeArgs) : Array RegValue :=
   #[⟨args.targetObj.toNat⟩, ⟨args.newType.toNat⟩, ⟨args.size⟩]
 
+/-- **WS-BP BP7.1**: encode untyped-retype arguments into message registers.
+    Inverse of `decodeUntypedRetypeArgs`. -/
+@[inline] def encodeUntypedRetypeArgs (args : UntypedRetypeArgs) : Array RegValue :=
+  #[⟨args.newType.toNat + args.sizeBits * 256⟩, ⟨args.childId.toNat⟩,
+    ⟨args.dstCNode.toNat⟩, ⟨args.dstSlot.toNat⟩]
+
 /-- Encode VSpace map arguments into message registers.
     Inverse of `decodeVSpaceMapArgs`. T6-C: encodes PagePermissions via toNat. -/
 @[inline] def encodeVSpaceMapArgs (args : VSpaceMapArgs) : Array RegValue :=
-  #[⟨args.asid.toNat⟩, ⟨args.vaddr.toNat⟩, ⟨args.paddr.toNat⟩, ⟨args.perms.toNat⟩]
+  #[⟨args.asid.toNat⟩, ⟨args.vaddr.toNat⟩, ⟨args.frame.toNat⟩, ⟨args.perms.toNat⟩]
 
 /-- Encode VSpace unmap arguments into message registers.
     Inverse of `decodeVSpaceUnmapArgs`. -/
@@ -535,6 +578,23 @@ theorem decodeLifecycleRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeR
     by_cases h1 : 1 < d.msgRegs.size
     · rw [requireMsgReg_unfold_ok _ _ h1]; simp
       rw [requireMsgReg_unfold_err _ _ (by omega)]
+    · rw [requireMsgReg_unfold_err _ _ h1]
+  · rw [requireMsgReg_unfold_err _ _ h0]
+
+/-- **WS-BP BP7.1**: untyped-retype decode fails if fewer than 4 message registers. -/
+theorem decodeUntypedRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeResult)
+    (h : d.msgRegs.size < 4) :
+    ∃ e, decodeUntypedRetypeArgs d = .error e := by
+  refine ⟨.invalidMessageInfo, ?_⟩
+  simp only [decodeUntypedRetypeArgs, bind, Except.bind]
+  by_cases h0 : 0 < d.msgRegs.size
+  · rw [requireMsgReg_unfold_ok _ _ h0]; simp
+    by_cases h1 : 1 < d.msgRegs.size
+    · rw [requireMsgReg_unfold_ok _ _ h1]; simp
+      by_cases h2 : 2 < d.msgRegs.size
+      · rw [requireMsgReg_unfold_ok _ _ h2]; simp
+        rw [requireMsgReg_unfold_err _ _ (by omega)]
+      · rw [requireMsgReg_unfold_err _ _ h2]
     · rw [requireMsgReg_unfold_err _ _ h1]
   · rw [requireMsgReg_unfold_err _ _ h0]
 
@@ -805,6 +865,21 @@ theorem decodeLifecycleRetypeArgs_roundtrip (args : LifecycleRetypeArgs) :
     requireMsgReg, KernelObjectType.toNat]
   cases t <;> rfl
 
+/-- **WS-BP BP7.1**: round-trip for UntypedRetypeArgs — the type tag's `ofNat?`
+and `toNat` are inverses per variant, every tag is below `256` so the size in
+the word's upper bits reads back whole, and the three identifier registers carry
+their values verbatim. -/
+theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs) :
+    decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args := by
+  rcases args with ⟨t, b, c, d, sl⟩
+  have hLt : t.toNat < 256 := by cases t <;> decide
+  have hDiv : (t.toNat + b * 256) / 256 = b := by omega
+  have hTag' : KernelObjectType.ofNat? (t.toNat % 256) = some t := by
+    rw [Nat.mod_eq_of_lt hLt]; cases t <;> rfl
+  simp [hTag', decodeUntypedRetypeArgs, encodeUntypedRetypeArgs, stubDecoded,
+    requireMsgReg, hDiv, bind, Except.bind, pure, Except.pure]
+  exact ⟨rfl, rfl, rfl⟩
+
 /-- T6-C: Round-trip requires that the permissions encode to a valid range.
     `PagePermissions.toNat` always produces values < 32 (5-bit bitfield). -/
 private theorem pagePermissions_toNat_lt_32 (p : PagePermissions) :
@@ -848,7 +923,7 @@ theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) (maxASID : Nat)
     simp_all [decodeVSpaceMapArgs, encodeVSpaceMapArgs, stubDecoded,
       bind, Except.bind, requireMsgReg, PagePermissions.wxCompliant,
       PagePermissions.toNat, PagePermissions.ofNat?, PagePermissions.ofNat,
-      ASID.ofNat_toNat, VAddr.ofNat_toNat, PAddr.ofNat_toNat, pure, Except.pure]
+      ASID.ofNat_toNat, VAddr.ofNat_toNat, CPtr.ofNat_toNat, pure, Except.pure]
 
 /-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original.
     U2-G: Requires ASID is valid for the platform-configured maxASID.
@@ -1205,7 +1280,8 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
 
 /-- AK3-J (A-M07 / MEDIUM): Validation wrapper that rejects configurations
     violating core CBS/scheduler invariants before reaching the scheduler
-    subsystem. Mirror of AK3-E's `decodeVSpaceMapArgsChecked` pattern.
+    subsystem. Mirror of AK3-E's decode-time-bound pattern (the retired
+    `decodeVSpaceMapArgsChecked`; WS-BP BP7.1 tombstone in this file).
 
     Checks:
     - priority ≤ 255   (fits in `Priority` type)
@@ -1372,6 +1448,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
     (∀ args, decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
     (∀ args, decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args) ∧
+    (∀ args, decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args) ∧
     (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
       args.perms.wxCompliant = true →
       decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) maxASID = .ok args) ∧
@@ -1396,6 +1473,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    decodeCSpaceMoveArgs_roundtrip,
    decodeCSpaceDeleteArgs_roundtrip,
    decodeLifecycleRetypeArgs_roundtrip,
+   decodeUntypedRetypeArgs_roundtrip,
    fun args hA hV hWx => decodeVSpaceMapArgs_roundtrip args maxASID hA hV hWx,
    fun args hA hV => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV,
    fun args hMc hMms hMrs => decodeServiceRegisterArgs_roundtrip args hMc hMms hMrs,
@@ -1828,5 +1906,68 @@ theorem decodeAuditDrainArgs_roundtrip (args : AuditDrainArgs) :
   simp [decodeAuditDrainArgs, encodeAuditDrainArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure]
 
+
+-- ============================================================================
+-- WS-BP BP7.1 (`v0.36.11`): thread-space configuration decode (`tcbSetSpace`)
+-- ============================================================================
+
+/-- WS-BP BP7.1 (`v0.36.11`): per-syscall argument structure for `tcbSetSpace`
+    — seL4's `TCB_SetSpace`.  Register mapping: x2 = the address, in the
+    caller's CSpace, of a capability to the new **CSpace root** (a CNode); x3 =
+    the address of a capability to the new **VSpace root**.  The target thread
+    comes from the invoked capability. -/
+structure SetSpaceArgs where
+  cspaceRoot : SeLe4n.CPtr
+  vspaceRoot : SeLe4n.CPtr
+  deriving Repr, DecidableEq
+
+/-- WS-BP BP7.1: decode `tcbSetSpace` arguments.  Requires 2 message registers. -/
+def decodeSetSpaceArgs (decoded : SyscallDecodeResult)
+    : Except KernelError SetSpaceArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  pure { cspaceRoot := SeLe4n.CPtr.ofNat r0.val, vspaceRoot := SeLe4n.CPtr.ofNat r1.val }
+
+/-- WS-BP BP7.1: encode `tcbSetSpace` arguments into message registers. -/
+@[inline] def encodeSetSpaceArgs (args : SetSpaceArgs) : Array RegValue :=
+  #[⟨args.cspaceRoot.toNat⟩, ⟨args.vspaceRoot.toNat⟩]
+
+/-- WS-BP BP7.1: SetSpaceArgs decode round-trip. -/
+theorem decodeSetSpaceArgs_roundtrip (args : SetSpaceArgs) :
+    decodeSetSpaceArgs (stubDecoded (encodeSetSpaceArgs args)) = .ok args := by
+  simp [decodeSetSpaceArgs, encodeSetSpaceArgs, stubDecoded, requireMsgReg, Bind.bind,
+        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat, SeLe4n.CPtr.toNat]
+
+-- ============================================================================
+-- WS-BP BP7.1 (`v0.36.12`): page-table install decode (`pageTableMap`)
+-- ============================================================================
+
+/-- WS-BP BP7.1 (`v0.36.12`): per-syscall argument structure for `pageTableMap`
+    — seL4's `seL4_ARM_PageTable_Map`.  Register mapping: x2 = the address, in
+    the caller's CSpace, of a capability to the **address space** the table is
+    installed in (a VSpace root); x3 = a virtual address whose walk the table
+    serves.  The table comes from the invoked capability. -/
+structure PageTableMapArgs where
+  vspaceRoot : SeLe4n.CPtr
+  vaddr : SeLe4n.VAddr
+  deriving Repr, DecidableEq
+
+/-- WS-BP BP7.1: decode `pageTableMap` arguments.  Requires 2 message registers. -/
+def decodePageTableMapArgs (decoded : SyscallDecodeResult)
+    : Except KernelError PageTableMapArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  pure { vspaceRoot := SeLe4n.CPtr.ofNat r0.val, vaddr := SeLe4n.VAddr.ofNat r1.val }
+
+/-- WS-BP BP7.1: encode `pageTableMap` arguments into message registers. -/
+@[inline] def encodePageTableMapArgs (args : PageTableMapArgs) : Array RegValue :=
+  #[⟨args.vspaceRoot.toNat⟩, ⟨args.vaddr.toNat⟩]
+
+/-- WS-BP BP7.1: PageTableMapArgs decode round-trip. -/
+theorem decodePageTableMapArgs_roundtrip (args : PageTableMapArgs) :
+    decodePageTableMapArgs (stubDecoded (encodePageTableMapArgs args)) = .ok args := by
+  simp [decodePageTableMapArgs, encodePageTableMapArgs, stubDecoded, requireMsgReg, Bind.bind,
+        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat, SeLe4n.CPtr.toNat,
+        SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat]
 
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

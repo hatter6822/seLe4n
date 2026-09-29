@@ -654,11 +654,11 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.retypeInitiatorDrain_drained
 #check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore
 #check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore_initiator_drained
--- SM7.F.4(b)(iii) residual CLOSED: the WHOLE-invariant retype preservation
--- (both wrappers preserve `tlbInvalidationConsistent_perCore` for a VSpaceRoot
--- target, under `hNoRebind` — the necessary no-ASID-collision precondition):
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
+-- SM7.F.4(b)(iii)'s VSpace-root-target preservation theorems are RETIRED at
+-- `v0.36.35`: a VSpace root is never destroyed in place (the pre-retype cleanup
+-- refuses it), so what stands in their place is the refusal itself:
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup_refuses_vspaceRoot
+#check @SeLe4n.Kernel.lifecycleRetypeWithCleanup_refuses_vspaceRoot
 -- The live catch-up fold's ORDER-INDEPENDENCE (the §6 stress group's
 -- concurrency claim): SM7.B proved commutativity for the single-view handler,
 -- but the live `completeShootdownRounds` seam folds the PER-CORE handler, so
@@ -1791,16 +1791,18 @@ private def runCompletionCutChecks : IO Unit := do
   -- state is `rtMultiState` (top level, §8) so this group and §8's
   -- multi-round-window group drive the same objects through the same entry.
   let rtSt := rtMultiState
-  assertBool "the CSpaceAddr retype of a live vspaceRoot posts the .aside1 round"
+  -- `v0.36.35`: a VSpace root is never destroyed in place, so the CSpaceAddr
+  -- retype of a live root is refused by the cleanup (`revocationRequired`)
+  -- and posts nothing; a root's ASID is released by resetting the untyped it
+  -- was carved from.  Until `v0.36.35` this retype committed and posted the
+  -- `.aside1` round, leaving every thread running in the root naming an
+  -- object of another kind.
+  assertBool "the CSpaceAddr retype of a live vspaceRoot is refused (revocationRequired)"
     (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown core0
         { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp
         (.endpoint {}) rtSt with
-     | .ok ((), st') =>
-         [core1, core2, core3].all (fun c =>
-           queueHasOp (st'.tlbShootdown.pendingOnCore c)
-             (encodeAsidInvalidation asid5) core0) &&
-         decide (pendingBounded st'.tlbShootdown)
-     | .error _ => false)
+     | .error .revocationRequired => true
+     | _ => false)
   let rtNewNtfn : SeLe4n.Model.KernelObject :=
     .notification
       { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
@@ -2870,36 +2872,62 @@ private def runRoundWindowBoundChecks : IO Unit := do
             shootdownCatchUpPerCoreInWindow st c [stressOpOf c] i (i + 1))
           stStorm).tlbShootdown))
 
-/-- §8, part 3 of 3: a round window WIDER than one generation — the live
-two-ASID retype.  Split out per the CLAUDE.md thin-dispatcher guidance. -/
+/-- A second page under `asid5`, so one teardown removes two live mappings. -/
+private def vaddrPage2 : SeLe4n.VAddr := SeLe4n.VAddr.ofNat 0x3000
+
+/-- `vspaceScenarioState` with `vaddrPage` and `vaddrPage2` mapped, through the
+live map, so the teardown below runs against mappings the kernel made. -/
+private def twoPageState : Option SeLe4n.Model.SystemState :=
+  match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000) .readOnly
+      vspaceScenarioState with
+  | .error _ => none
+  | .ok ((), st1) =>
+    match vspaceMapPageWithFlush asid5 vaddrPage2 (SeLe4n.PAddr.ofNat 0x4000) .readOnly st1 with
+    | .error _ => none
+    | .ok ((), st2) => some st2
+
+/-- §8, part 3 of 3: a round window WIDER than one generation — a two-page
+teardown.  Split out per the CLAUDE.md thin-dispatcher guidance. -/
 private def runRoundWindowWidthChecks : IO Unit := do
   -- (10) A window WIDER than one generation.  Every other group here exercises
   -- a one-round commit, where `roundGen := window.2` and a width-1 window would
-  -- be indistinguishable from a correct one.  Retyping a live `.vspaceRoot` into
-  -- a *different* `.vspaceRoot` is the production path that breaks that tie: its
-  -- flush set holds two distinct ASIDs, so ONE commit opens TWO rounds and the
-  -- recovered window must admit both.  A width-1 window would strand the first
-  -- round's descriptors on every remote core — the model reporting quiescence
-  -- with an ASID's translations still cached.
-  let stPre := rtMultiState
-  assertBool "a two-ASID retype's flush set holds both the destroyed and installed ASID"
-    (SeLe4n.Kernel.retypeShootdownAsidList stPre rtVsp rtNewVsp == [asid5, rtAsidNew])
-  match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore core0
-      { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp rtNewVsp stPre with
-  | .error _ => assertBool "the two-ASID retype commits" false
+  -- be indistinguishable from a correct one.  One commit that opens TWO rounds
+  -- breaks the tie, and the recovered window must admit both — a width-1 window
+  -- would strand the first round's descriptors on every remote core, the model
+  -- reporting quiescence with a translation still cached.
+  --
+  -- The commit is the page teardown the untyped reset and the finalising
+  -- revocation share (`unmapLivePages`) over two live mappings: each removal is
+  -- a round.  Until `v0.36.9` this group retyped a live `.vspaceRoot` into a
+  -- *different* `.vspaceRoot` (two ASIDs, two rounds); that retype is refused
+  -- now — an in-place retype never creates a VSpace root — and the refusal is
+  -- asserted below so the group says why it moved.
+  assertBool "the retired two-ASID retype is refused (a VSpace root is never created in place)"
+    (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore core0
+        { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp rtNewVsp rtMultiState with
+     | .error .illegalState => true
+     | _ => false)
+  match twoPageState with
+  | none => assertBool "the two-page setup maps both pages" false
+  | some stPre =>
+  let pages : List SeLe4n.Model.MappedPage :=
+    [{ asid := asid5, vaddr := vaddrPage, paddr := SeLe4n.PAddr.ofNat 0x2000 },
+     { asid := asid5, vaddr := vaddrPage2, paddr := SeLe4n.PAddr.ofNat 0x4000 }]
+  let op1 := encodePageInvalidation asid5 vaddrPage
+  let op2 := encodePageInvalidation asid5 vaddrPage2
+  match SeLe4n.Kernel.unmapLivePages core0 pages stPre with
+  | .error _ => assertBool "the two-page teardown commits" false
   | .ok ((), stPost) => do
     let w := windowOf stPre stPost
     assertBool "one commit opened two rounds, so its window is two generations wide"
-      (w.1 == 0 && w.2 == 2)
+      (w.2 == w.1 + 2)
     assertBool "both rounds' descriptors are queued on every remote core"
       ([core1, core2, core3].all fun c =>
-        queueHasOp (stPost.tlbShootdown.pendingOnCore c)
-          (encodeAsidInvalidation asid5) core0 &&
-        queueHasOp (stPost.tlbShootdown.pendingOnCore c)
-          (encodeAsidInvalidation rtAsidNew) core0)
-    assertBool "the two queued descriptors carry generations 1 and 2"
+        queueHasOp (stPost.tlbShootdown.pendingOnCore c) op1 core0 &&
+        queueHasOp (stPost.tlbShootdown.pendingOnCore c) op2 core0)
+    assertBool "the two queued descriptors carry the window's two generations"
       ([core1, core2, core3].all fun c =>
-        ((stPost.tlbShootdown.pendingOnCore c).map (·.generation)) == [1, 2])
+        ((stPost.tlbShootdown.pendingOnCore c).map (·.generation)) == [w.1 + 1, w.1 + 2])
     assertBool "a two-round commit still respects the capacity bound"
       (decide (pendingBounded stPost.tlbShootdown))
     -- The commit's own catch-up drains BOTH of its rounds.
@@ -2912,15 +2940,14 @@ private def runRoundWindowWidthChecks : IO Unit := do
     -- The tie-breaker: a width-1 window (the bug a single-round test cannot
     -- see) strands the FIRST round's descriptors on every remote core.
     let narrow := shootdownCatchUpPerCoreInWindow stPost core0
-      (shootdownPostedOps stPre stPost) 1 2
+      (shootdownPostedOps stPre stPost) (w.1 + 1) w.2
     assertBool "a width-1 window would strand the first round on every remote core"
       ([core1, core2, core3].all fun c =>
-        (narrow.tlbShootdown.pendingOnCore c).map (·.generation) == [1])
+        (narrow.tlbShootdown.pendingOnCore c).map (·.generation) == [w.1 + 1])
     -- Diff recovery is window-restricted too: the runtime broadcasts and
     -- publishes BOTH operands, deduplicated, and nothing else.
     assertBool "the diff-recovered operand list is both rounds' operands"
-      (shootdownPostedOps stPre stPost ==
-        [encodeAsidInvalidation asid5, encodeAsidInvalidation rtAsidNew])
+      (shootdownPostedOps stPre stPost == [op1, op2])
     assertBool "the diff-recovered changed-target set is every remote core"
       (shootdownChangedTargets stPre stPost == shootdownTargets core0)
 

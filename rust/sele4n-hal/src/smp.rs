@@ -410,6 +410,10 @@ pub fn bring_up_secondaries_inner(
     if !enabled.load(Ordering::Acquire) {
         return 0;
     }
+    // v0.36.31: the release is a line of its own, printed before the first
+    // `CPU_ON`, so a boot log shows the install's line, then this one, then
+    // any secondary's first line — WS-BP BP4.2's order, read off a run.
+    crate::kprintln!("[smp] releasing the secondaries under the install permit");
 
     let mut online: u32 = 0;
     for (idx, &mpidr) in mpidr_table.iter().enumerate() {
@@ -752,16 +756,24 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
         let _ = crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
     }
 
-    crate::kprintln!("[smp] core {core_id}: entering per-core init");
-
     // -----------------------------------------------------------------
     // Step 1 — MMU enable.
     //
     // Reuses the boot core's `BOOT_L1_TABLE` (a read-only global
     // populated by the primary's `init_mmu`).  Applies the AK5-C
     // SCTLR_EL1 bitmap including W^X (WXN).
+    //
+    // WS-BP BP8.2: this core prints nothing before this call.  With
+    // translation off the console cannot take its ticket lock
+    // (`uart::ticket_lock_usable`) and writes unlocked, which is sound only
+    // while no other PE prints — and here the boot core and the other
+    // secondaries are printing.  The banner that used to precede this call
+    // tore against theirs character by character on the first four-core
+    // boot, contradicting `uart::with_uart_under`'s own statement that a
+    // secondary's one pre-translation print is the fatal refusal above.
     // -----------------------------------------------------------------
     crate::mmu::init_mmu_secondary(core_id);
+    crate::kprintln!("[smp] core {core_id}: entering per-core init");
     crate::kprintln!("[smp] core {core_id}: MMU enabled (WXN, SA, SA0, EIS, EOS)");
     // The v0.36.2 audit: this PE's `CTR_EL0` admits the cache-maintenance
     // stride, or this PE parks and the boot core's Phase-7 wait counts it
@@ -781,6 +793,10 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // The v0.36.2 audit: an SError on this PE is reported and halts from here
     // on (`trap::handle_serror`), as on the boot core.
     crate::interrupts::enable_serror();
+    // v0.36.30: EL0 reaches no timer, PMU, debug channel or thread-pointer
+    // residue on this PE (`cpu::lock_el0_system_access`), before any IRQ is
+    // unmasked and so before any thread can run here.
+    crate::cpu::lock_el0_system_access();
 
     // -----------------------------------------------------------------
     // Step 3 — GIC CPU interface.
@@ -839,6 +855,78 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     crate::lean_ready::become_ready_or_halt(core_idx, crate::cpu::fatal_halt);
 
     // -----------------------------------------------------------------
+    // Step 5 — Lean kernel bring-up entry (the core's first reschedule),
+    // [`first_reschedule`].  A refusal parks this PE (`cpu::fatal_halt`),
+    // so the boot core's bounded readiness wait counts it short.
+    // -----------------------------------------------------------------
+    first_reschedule(core_idx, crate::cpu::fatal_halt);
+
+    // -----------------------------------------------------------------
+    // Step 6 — IRQ unmask.
+    //
+    // Enable IRQ delivery (clear PSTATE.I) now that GIC, timer, VBAR,
+    // and this core's scheduler state are configured.  After this point
+    // the GIC may deliver timer ticks (PPI 30), inter-core SGIs
+    // (INTID 0..4 per SM0.H), and SPIs to this PE.
+    // -----------------------------------------------------------------
+    crate::interrupts::enable_irq();
+    crate::kprintln!("[smp] core {core_id}: IRQ delivery enabled");
+
+    // WS-SM SM7.B (PR #839 review P1): publish IRQ-serviceable *after*
+    // `enable_irq` — this is the point past which core `core_id` can
+    // actually take a `.tlbShootdownReq` SGI, so only now may it be a
+    // shootdown target (see `CORE_IRQ_READY`).  A core that never
+    // reaches this line (e.g. the timer-init-failure halt loop above)
+    // stays excluded from every round, fail-safe.  Release-paired with
+    // the Acquire reads in `shootdown::{online_mask, irq_ready_online}`.
+    if core_idx < CORE_IRQ_READY.len() {
+        CORE_IRQ_READY[core_idx].store(true, Ordering::Release);
+    }
+    crate::kprintln!("[smp] core {core_id}: IRQ-serviceable (shootdown-eligible)");
+
+    crate::kprintln!("[smp] core {core_id}: ready, entering kernel");
+
+    // -----------------------------------------------------------------
+    // Step 7 — Interrupt-driven idle.
+    //
+    // The bring-up entry (Step 5) returned after committing this
+    // core's scheduler state; from here the core is entirely
+    // interrupt-driven.  Park in a low-power WFE loop: each per-core
+    // timer tick (PPI 30) drives the verified scheduler tick and each
+    // `.reschedule` SGI drives the verified reschedule, both via
+    // `trap.rs::handle_irq_per_core` under the kernel-entry lock, and
+    // each returns through the context the kernel installed for this
+    // core (WS-BP BP7.6) — a dispatched thread at EL0, or the idle loop.
+    //
+    // WS-BP BP8.1: the core enters that wait through
+    // `trap::enter_idle_wait`, which marks it handed off.  Every step above
+    // after the IRQ unmask ran with interrupts live, and a restore declines
+    // an EL1 frame until its core hands off — so a tick taken there resumes
+    // this bring-up rather than replacing it, and the IRQ-readiness
+    // publication cannot be abandoned (`trap::IdleHandoffFlags`).
+    // -----------------------------------------------------------------
+    crate::trap::enter_idle_wait()
+}
+
+/// **The core's first reschedule** — WS-SM SM5.C.5's bring-up entry, and since
+/// WS-BP BP8.1 every core's, the boot core's included.
+///
+/// A freshly booted state has every current slot `none`, and a tick on a core
+/// with no current thread charges nothing and dispatches nothing (the
+/// `currentOnCore c = none` arm of `timerTickOnCore` acts only on a local
+/// replenish wake).  So a core whose first scheduling point never runs never
+/// dispatches at all: the boot core, until BP8.1, ran no first reschedule, and
+/// the first Lean-linked boot under QEMU showed it — its idle thread, and any
+/// initial thread homed on it, never ran.  The Lean entry this calls is
+/// definitionally the per-core `.reschedule` receiver, so it is correct on any
+/// core; the Lean name `secondaryKernelMain` predates the boot core using it.
+///
+/// `halt` is the caller's refusal barrier: `cpu::fatal_halt` on a secondary,
+/// whose absence the boot core's readiness wait then reports; `gic::halt_all`
+/// on the boot core, which has released no secondary yet.
+pub(crate) fn first_reschedule(core_idx: usize, halt: fn() -> !) {
+    let core_id = core_idx as u64;
+    // -----------------------------------------------------------------
     // Step 5 — Lean kernel bring-up entry (the core's first reschedule).
     //
     // Calls into `SeLe4n.Kernel.secondaryKernelMain` (defined in
@@ -861,8 +949,9 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     //     is not reentrant, and a per-core timer tick taken mid-bracket
     //     would queue behind a ticket this core already holds — the
     //     IRQs-masked-while-held discipline every other kernel entry
-    //     observes.  DAIF has been masked since `secondary_entry`
-    //     (boot.S), so no extra masking is needed.
+    //     observes.  DAIF has been masked since the core's entry
+    //     (`boot.S`'s `_start` / `secondary_entry`), so no extra masking is
+    //     needed.
     //   * The bracket's spin self-services shootdown obligations, but a
     //     core that has not yet published `CORE_IRQ_READY` is excluded
     //     from every shootdown round, so acquisition terminates without
@@ -895,7 +984,7 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
         assert_eq!(
             core_idx as u64,
             crate::per_cpu::current_core_id_from_tpidr(),
-            "rust_secondary_main: the PSCI context id must match the executing core's TPIDR_EL1"
+            "first_reschedule: the core id must match the executing core's TPIDR_EL1"
         );
         if crate::lean_ready::lean_ready(core_idx) {
             extern "C" {
@@ -932,55 +1021,15 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
             );
         } else {
             crate::kprintln!(
-                "[smp] core {core_id}: FATAL: not ready after marking itself; halting this core"
+                "[smp] core {core_id}: FATAL: not ready after marking itself; halting"
             );
-            crate::cpu::fatal_halt();
+            halt();
         }
     }
     #[cfg(not(feature = "hw_target"))]
-    crate::kprintln!("[smp] core {core_id}: kernel bring-up entry complete (first reschedule)");
-
-    // -----------------------------------------------------------------
-    // Step 6 — IRQ unmask.
-    //
-    // Enable IRQ delivery (clear PSTATE.I) now that GIC, timer, VBAR,
-    // and this core's scheduler state are configured.  After this point
-    // the GIC may deliver timer ticks (PPI 30), inter-core SGIs
-    // (INTID 0..4 per SM0.H), and SPIs to this PE.
-    // -----------------------------------------------------------------
-    crate::interrupts::enable_irq();
-    crate::kprintln!("[smp] core {core_id}: IRQ delivery enabled");
-
-    // WS-SM SM7.B (PR #839 review P1): publish IRQ-serviceable *after*
-    // `enable_irq` — this is the point past which core `core_id` can
-    // actually take a `.tlbShootdownReq` SGI, so only now may it be a
-    // shootdown target (see `CORE_IRQ_READY`).  A core that never
-    // reaches this line (e.g. the timer-init-failure halt loop above)
-    // stays excluded from every round, fail-safe.  Release-paired with
-    // the Acquire reads in `shootdown::{online_mask, irq_ready_online}`.
-    if core_idx < CORE_IRQ_READY.len() {
-        CORE_IRQ_READY[core_idx].store(true, Ordering::Release);
-    }
-    crate::kprintln!("[smp] core {core_id}: IRQ-serviceable (shootdown-eligible)");
-
-    crate::kprintln!("[smp] core {core_id}: ready, entering kernel");
-
-    // -----------------------------------------------------------------
-    // Step 7 — Interrupt-driven idle.
-    //
-    // The bring-up entry (Step 5) returned after committing this
-    // core's scheduler state; from here the core is entirely
-    // interrupt-driven.  Park in a low-power WFE loop: each per-core
-    // timer tick (PPI 30) drives the verified scheduler tick and each
-    // `.reschedule` SGI drives the verified reschedule, both via
-    // `trap.rs::handle_irq_per_core` under the kernel-entry lock, and
-    // each returns here.  Actually *running* a dispatched thread's
-    // context on this core is the SM10.1 context-restore seam
-    // (`contextRestoreSeamLive`); until it flips, kernel state tracks
-    // the dispatch decisions while the core idles between interrupts.
-    // -----------------------------------------------------------------
-    loop {
-        crate::cpu::wfe();
+    {
+        let _ = halt;
+        crate::kprintln!("[smp] core {core_id}: kernel bring-up entry complete (first reschedule)");
     }
 }
 

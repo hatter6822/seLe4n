@@ -5,32 +5,32 @@
 # This is free software, and you are welcome to redistribute it
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 #
-# WS-SM SM0.T → SM1.H — Tier-4 SMP boot-check (populated at SM1.H).
+# WS-SM SM0.T → SM1.H → WS-BP BP8.4 — the Tier-4 SMP acceptance gates.
 #
-# At SM0 this slot was reserved as a SKIP-only stub.  Now (post-SM1.H)
-# the slot routes through three concrete QEMU tests:
+# Reserved at SM0 as a SKIP-only stub and populated through SM1.G/H, SM3.D,
+# SM5, SM6 and SM7, every gate here SKIPped on every run until WS-BP BP8.2 (the
+# bring-up) and BP8.4 (the rest): each asked for a kernel ELF no target built
+# and looked for its driver's banner in it with `strings`.  Since BP8.4:
 #
-#   1. SM1.H.1 — `test_qemu_smp_bringup.sh` (`-smp 4`, full bringup)
-#   2. SM1.H.3 — `test_qemu_smp_minimal.sh` (`-smp 2`, minimal smoke)
-#   3. SM1.H.5 — `test_qemu_smp_sgi_roundtrip.sh` (cross-core SGI)
+# * The six gates that need no user program — the four-PE bring-up, the
+#   PE-withheld boot, the cross-core SGI round trip, the console stress and
+#   the two TLB shootdown exercisers — boot the `virt` image
+#   `scripts/qemu_boot_lib.sh` builds and report a result: on the HAL-only
+#   image always, and on the Lean-linked image too when the archive
+#   `scripts/test_lean_aarch64_archive.sh` builds is present.  Without the
+#   archive the Lean-linked half is recorded NOT RUN, never silently omitted.
+# * The eight gates that need a user-level driver program report NOT RUN with
+#   that reason (`exerciser_user_program_gate`): the image carries no user
+#   program until SM10's root task.
 #
-# Each sub-test handles its own SKIP conditions (qemu missing, kernel
-# image missing, kernel-side handlers unwired).  A sub-test that cannot
-# run exits `SELE4N_SKIP_EXIT` and is invoked through `run_gate_check`,
-# which records it as NOT RUN — never as PASS.  A bare environment
-# therefore reports how many acceptance gates did not execute instead
-# of printing "All checks passed" over work nothing performed.
+# A gate that cannot run exits `SELE4N_SKIP_EXIT` and is invoked through
+# `run_gate_check`, which records it as NOT RUN — never as PASS.  A bare
+# environment therefore reports how many acceptance gates did not execute
+# instead of printing "All checks passed" over work nothing performed.
 #
-# `SELE4N_REQUIRE_GATES=1` promotes any skipped gate to a hard failure;
-# that is the mode the v1.0.0 release validation (SM10.5) must run in,
-# since a release may not certify phases whose gates never ran.
-#
-# Future phases populate additional sub-tests:
-#   * SM7.E — TLB shootdown ACK timing
-#   * SM8.E — information flow non-interference under SMP
-# Populated so far beyond SM1.H: SM3.D.7 (deadlock stress), SM5.C/.D/.F/.G/.H/.K
-# (wake / timer / PIP / domain / CBS / scheduler), SM6.F.5 (cross-core IPC
-# handshake).
+# `SELE4N_REQUIRE_GATES=1` promotes any skipped gate to a hard failure; that is
+# the mode the v1.0.0 release validation (SM10.5) must run in, since a release
+# may not certify phases whose gates never ran.
 
 set -euo pipefail
 
@@ -41,141 +41,89 @@ source "${SCRIPT_DIR}/test_lib.sh"
 parse_common_args "$@"
 cd "${REPO_ROOT}"
 
-log_section "META" "WS-SM tier-4 SMP boot-check (populated at SM1.H)"
+LEAN_ARCHIVE="${REPO_ROOT}/.lake/build/aarch64-unknown-none-softfloat/libsele4n.a"
+
+log_section "META" "WS-SM tier-4 SMP acceptance gates (executable since WS-BP BP8.2/BP8.4)"
 log_section "META" "  A gate that cannot run is reported NOT RUN, never PASS."
-log_section "META" "  Future phases (SM7.E, SM8.E) extend this slot."
 
-# SM1.H.1 — full 4-core bringup.
-run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_bringup.sh"
+LEAN_MODE=0
+if [[ -f "${LEAN_ARCHIVE}" ]]; then
+    LEAN_MODE=1
+    log_section "META" "  Lean archive present: every executable gate also runs on the Lean-linked image."
+else
+    record_skip "META" "the Lean-linked runs of the executable gates: no archive at ${LEAN_ARCHIVE} (run scripts/test_lean_aarch64_archive.sh first)"
+fi
 
-# SM1.H.3 — minimal 2-core bringup (boot + 1 secondary).
-run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_minimal.sh"
+# gate SCRIPT: run an executable gate on the HAL-only image, and on the
+# Lean-linked one when the archive is present.
+gate() {
+    run_gate_check "META" "${SCRIPT_DIR}/$1"
+    if [[ "${LEAN_MODE}" -eq 1 ]]; then
+        run_gate_check "META" "${SCRIPT_DIR}/$1" --lean-kernel
+    fi
+}
 
-# SM1.H.5 — cross-core SGI round-trip.  SKIPs at SM1.H if kernel-side
-# handlers are not yet wired (SM5+ follow-on).
-run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_sgi_roundtrip.sh"
+# gate_lean_only SCRIPT: a gate whose subject is the Lean kernel's, so it runs
+# on the Lean-linked image alone and is NOT RUN without the archive.
+gate_lean_only() {
+    if [[ "${LEAN_MODE}" -eq 1 ]]; then
+        run_gate_check "META" "${SCRIPT_DIR}/$1" --lean-kernel
+    else
+        record_skip "META" "$1 --lean-kernel: needs the Lean-linked image (no archive at ${LEAN_ARCHIVE})"
+    fi
+}
 
-# SM1.G.3 — cross-core kprintln stress test.  SKIPs at SM1.G if the
-# stress-test routine isn't wired in the kernel image (SM5+ follow-on).
-run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_kprintln_stress.sh"
+# SM1.H.1 / WS-BP BP8.2 — the four-PE bring-up, at EL1 and EL2.
+gate test_qemu_smp_bringup.sh
 
-# SM3.D.7 — cross-core deadlock-freedom stress (plan §6.3).  SKIPs at
-# SM3.D if the multi-core lock-contention driver isn't wired in the
-# kernel image (needs SM5+ per-core scheduler state).  Deadlock-freedom
-# is established FORMALLY for all executions in
-# tests/DeadlockFreedomSuite.lean; this is a complementary runtime
-# spot-check on real hardware-modelled cores.
+# SM1.H.3 / WS-BP BP6.3 — the PE-withheld boot: the HAL-only image boots on
+# two PEs, the Lean-linked one refuses them.
+gate test_qemu_smp_minimal.sh
+
+# SM1.H.5 — the cross-core SGI round trip.
+gate test_qemu_smp_sgi_roundtrip.sh
+
+# SM1.G.3 — the cross-core console stress.
+gate test_qemu_smp_kprintln_stress.sh
+
+# SM7.E.2 — the cross-core TLB shootdown round trip through the live protocol.
+# The shootdown correctness is established FORMALLY for all executions in
+# tests/SmpTlbShootdownSuite.lean; this is its runtime witness on emulated
+# cores, and the run that decides `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
+# §8's acceptance box.
+gate test_qemu_smp_shootdown.sh
+
+# SM7.E.3 — four concurrent initiators, eight generations: the round lock's
+# serialisation and the acknowledgment under contention.
+gate test_qemu_smp_shootdown_stress.sh
+
+# WS-BP BP8.5 — the per-core counters read through the Lean seam on the booted
+# machine: `Concurrency.perCoreStats` executed on every core and
+# `perCoreStatsPlausible` decided there, each word held inside the bracket of
+# two Rust reads of the same slot.  The reader and the verdict are the kernel's,
+# so the Lean-linked image alone.
+gate_lean_only test_qemu_smp_per_core_stats.sh
+
+# The gates that need a user program: each reports NOT RUN with its reason.
+# SM3.D.7 — cross-core deadlock-freedom stress (formal:
+# tests/DeadlockFreedomSuite.lean).
 run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_deadlock_stress.sh"
-
-# SM5.C.12 — cross-core wake-via-SGI round-trip (plan §6).  SKIPs at
-# SM5.C if the cross-core wake driver isn't wired in the kernel image
-# (needs SM5.D+ per-core scheduler state + the @[export] wake body under
-# withLockSet).  The wake correctness — the woken thread is not lost,
-# the .reschedule SGI is emitted, and the target dispatches it — is
-# established FORMALLY for all executions in tests/SmpWakeSuite.lean;
-# this is a complementary runtime spot-check on real cores with a real
-# GIC delivering the SGI.
+# SM5.C.12 — cross-core wake via SGI (formal: tests/SmpWakeSuite.lean).
 run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_wake.sh"
-
-# SM5.D — per-core timer-tick boot test (plan §6).  SKIPs at SM5.D if the
-# per-core timer driver isn't wired in the kernel image (needs SM5.I
-# per-core scheduler state + the per-core ISR driving timerTickOnCore under
-# withLockSet).  The tick correctness — each core advances its OWN local
-# accounting without advancing the single global timer, rotates its domain,
-# preempts on budget exhaustion, and fires cross-core CBS-replenish wakes —
-# is established FORMALLY for all executions in tests/SmpTimerSuite.lean;
-# this is a complementary runtime spot-check on real cores with a real GIC.
+# SM5.D — per-core timer tick (formal: tests/SmpTimerSuite.lean).
 run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_timer.sh"
-
-# SM5.F — cross-core priority-inheritance round-trip test (plan §6).  SKIPs at
-# SM5.F if the cross-core PIP driver isn't wired in the kernel image (needs
-# SM5.I per-core scheduler state + the IPC donation @[export] body routing
-# through pipBoostWithWake + firing the SGIs over fireCrossCoreSgis).  The
-# cross-core PIP correctness — a remote, runnable, material boost fires exactly
-# a .reschedule SGI to the holder's home core, every remote chain link is
-# poked, the global boost is the exact supremum of the per-core slices, and the
-# boost happens-before the home core observes it on the SGI — is established
-# FORMALLY for all executions in tests/SmpPipSuite.lean; this is a complementary
-# runtime spot-check on real cores with a real GIC.
+# SM5.F.10 — cross-core priority inheritance (formal: tests/SmpPipSuite.lean).
 run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_pip.sh"
-
-# SM5.G — per-core domain-scheduling rotation test (plan §6).  SKIPs at SM5.G if
-# the per-core domain-rotation driver isn't wired in the kernel image (needs
-# SM5.I's per-core scheduler tick driving scheduleDomainOnCore on each core plus a
-# multi-domain schedule configured at boot).  The per-core domain-scheduling
-# correctness — each core rotates its OWN domain schedule with the round-robin
-# period, the active domain always lands in the schedule (preserved by the live
-# tick), selection respects the active-domain barrier, and a rotation on one core
-# leaves the others' selection unchanged — is established FORMALLY for all
-# executions in tests/SmpDomainSuite.lean; this is a complementary runtime
-# spot-check on real cores.
+# SM5.G.6 — per-core domain rotation (formal: tests/SmpDomainSuite.lean).
 run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_domain.sh"
-
-# WS-SM SM5.H — per-core CBS replenishment + affinity-driven thread migration.
-# SKIP-only until SM5.I wires the per-core scheduler tick (driving timerTickOnCore
-# on each core) plus a tcbSetAffinity-driven migration.  The per-core CBS
-# correctness — each core runs its OWN replenishment queue, the live budget tick's
-# replenish write IS the verified `replenishOnCore` primitive (A2) and preserves
-# replenish-queue validity (A4), an affinity change migrates a thread's
-# replenishments AND its run-queue entry to the new home core (restoring per-core
-# CBS affinity consistency, B7/A5) and emits the cross-core SGI under the verified
-# happens-before ordering (C10) — is established FORMALLY for all executions in
-# tests/SmpCbsSuite.lean; this is a complementary runtime spot-check on real cores.
+# SM5.H — per-core CBS replenishment and migration (formal:
+# tests/SmpCbsSuite.lean).
 run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_cbs.sh"
-
-# WS-SM SM5.K.5 — the 4-thread/4-core per-core scheduler acceptance test (plan §6 /
-# §8).  SKIPs at SM5.K if the per-core scheduler run loop isn't wired in the kernel
-# image (needs SM5.I+ driving chooseThreadOnCore / switchToThreadOnCore on each core
-# plus the cross-core wake SGI firing seam).  The per-core scheduler correctness —
-# each core selects + runs its OWN bound thread from its OWN run queue independently,
-# a cross-core wake delivers a .reschedule SGI to the target core, the per-core idle
-# thread guarantees no core stalls, and every op's WCRT under fine locks is bounded —
-# is established FORMALLY for all executions in tests/SmpSchedulerSuite.lean (the
-# 4-thread/4-core aggregate, 50+ scenarios + the golden trace fixture) and
-# tests/SmpWcrtSuite.lean; this is a complementary runtime spot-check on real cores.
+# SM5.K.5 — four threads on four cores (formal: tests/SmpSchedulerSuite.lean,
+# tests/SmpWcrtSuite.lean).
 run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_scheduler.sh"
-
-# WS-SM SM6.F.5 — the cross-core IPC handshake exerciser (plan §SM6.F).  SKIPs at
-# SM6.F if the cross-core IPC driver isn't wired in the kernel image (needs the
-# SM10.1 bootable kernel-image [[bin]] target; the live Lean dispatch is already
-# fully cross-core — .call/.reply/.replyRecv/.notificationSignal/.notificationWait
-# route through the SM6 OnCore operations and the SGI-firing seam).  The
-# cross-core IPC correctness — a rendezvous with a remote-homed receiver fires a
-# .reschedule SGI to its home core, the caller blocks on its own core, the reply
-# wakes the caller back on ITS home core with the payload delivered to exactly
-# the recorded caller, and every operation preserves every core's twenty-conjunct
-# invariant-bundle view — is established FORMALLY for all executions in
-# tests/SmpIpcSuite.lean + tests/SmpNotificationSuite.lean (the 4-thread/4-core
-# aggregates + the smp_ipc_4core golden trace fixture) and the per-phase SM6
-# suites; this is a complementary runtime spot-check on real cores with a real
-# GIC delivering the SGIs.
+# SM6.F.5 — the cross-core IPC handshake (formal: tests/SmpIpcSuite.lean,
+# tests/SmpNotificationSuite.lean).
 run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_ipc.sh"
-
-# WS-SM SM7.B (plan Appendix A Tier-4): TLB shootdown round-trip — a core-0
-# unmap invalidating a translation core 1 has cached, through the live
-# completeShootdownRounds bracket (masked reset → .tlbShootdownReq SGIs at
-# online targets → local broadcast TLBIs → bounded allAcked wait → catch-up).
-# SKIPs until the SM10.1 bootable kernel image + in-image shootdown driver
-# exist.  The shootdown correctness — Theorem 3.3.1 over per-core views, the
-# coalescing remote case, the B.4 release-acquire publication (single- and
-# multi-pair witnesses), and the exact B.6 timeout verdict — is established
-# FORMALLY for all executions in tests/SmpTlbShootdownSuite.lean; this is a
-# complementary runtime spot-check with a real GIC delivering the SGIs.
-run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown.sh"
-
-# WS-SM SM7.E.3 (plan §5 SM7.E / §7 risk inventory): the concurrent-unmap
-# stress — four cores issuing shootdown rounds inside one another's windows,
-# the hardware-tier companion of the model-level storm in
-# tests/SmpTlbShootdownSuite.lean §6.  It hunts the two contention-only failure
-# modes: a round-serialisation break (an initiator observing someone else's
-# allAcked and returning with a stale TLB live — SMP-C4) and a round-lock
-# deadlock (the SM7.B.6 fail-closed timeout, or a hang).  SKIPs until the SM10.1
-# bootable kernel image + in-image stress driver exist.  Interleaving-
-# independence itself is established FORMALLY for all executions by
-# handleTlbShootdownReqOnCorePerCore_comm (distinct cores' handler steps
-# commute, so the model's one catch-up order stands for every hardware
-# interleaving); this is a complementary runtime spot-check under real
-# contention.
-run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown_stress.sh"
 
 finalize_report

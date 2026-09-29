@@ -72,11 +72,15 @@ jobs:
           qemu-system-aarch64 --version
 
       # Tier 4 reports NOT RUN (exit 77) when its acceptance gates cannot
-      # execute, and that status propagates to here.  Today every QEMU gate
-      # skips for want of a bootable kernel image, which SM10.E.D1 owes and
-      # which no amount of CI configuration can supply — so a hard failure
-      # would paint this job red on every scheduled run until that phase
-      # lands, and a signal that is always red is one nobody reads.
+      # execute, and that status propagates to here.  Since WS-BP BP8.4 the
+      # bring-up, the PE-withheld boot and the in-image exercisers run on
+      # the `virt` image and pass (the per-core counter check, BP8.5, on the
+      # Lean-linked one alone); the eight gates that drive kernel
+      # transitions from user space still skip, for want of a user program
+      # that SM10's root task owes and which no amount of CI configuration
+      # can supply — so a hard failure would paint this job red on every
+      # scheduled run until that lands, and a signal that is always red is
+      # one nobody reads.
       #
       # Incomplete coverage is therefore surfaced as a warning annotation and
       # in the run summary, never as a silent pass: the tier's own output
@@ -92,14 +96,14 @@ jobs:
           rc=$?
           set -e
           if [[ "${rc}" -eq 77 ]]; then
-            echo "::warning title=Tier-4 coverage incomplete::One or more acceptance gates did not run (no bootable kernel image; owed by SM10.E.D1). This is tracked, not a pass — see the tier output for the gates that were skipped."
+            echo "::warning title=Tier-4 coverage incomplete::One or more acceptance gates did not run (the gates that need a user program; owed by SM10, the root task). This is tracked, not a pass — see the tier output for the gates that were skipped."
             {
               echo "### Tier-4 acceptance gates: NOT RUN"
               echo
               echo "The nightly completed, but one or more Tier-4 acceptance gates could not"
               echo "execute. Coverage is incomplete; this is **not** a clean run."
               echo
-              echo "Cause: no bootable kernel image (\`SELE4N_KERNEL_IMAGE\`), owed by SM10.E.D1."
+              echo "Cause: the gates that need a user program the image does not carry, owed by SM10 (the root task)."
               echo "Re-run with \`SELE4N_REQUIRE_GATES=1\` to treat a skipped gate as a failure."
             } >> "${GITHUB_STEP_SUMMARY}"
             exit 0

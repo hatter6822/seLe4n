@@ -124,16 +124,38 @@ run_cargo_step() {
 # the step still reports a clean pass over one fewer binary.  That is
 # the same shape as a skipped test, which this script already rejects,
 # and `scripts/check_aarch64_cross_target.py` pins the flag.
-echo "[1/5] Building all crates (host target)..."
+echo "[1/8] Building all crates (host target)..."
 run_cargo_step "Build succeeded" cargo build --all --features host_tools
 echo ""
 
-echo "[2/5] Running unit tests..."
+echo "[2/8] Running unit tests..."
 run_cargo_step "Unit tests passed" cargo test --all --features std,host_tools
 echo ""
 
-echo "[3/5] Running conformance tests (RUST-XVAL-001..014)..."
+echo "[3/8] Running conformance tests (RUST-XVAL-001..014)..."
 run_cargo_step "Conformance tests passed" cargo test -p sele4n-abi --features std --test conformance
+echo ""
+
+# WS-BP BP8.1: the HAL's unit tests again, built for QEMU's `virt` board.  A
+# board is a build-time choice (`src/board.rs`), so the default run above holds
+# the RPi5's constants to `tests/fixtures/boot_map.expected` and this one holds
+# `virt`'s to `tests/fixtures/boot_map_qemu_virt.expected` — the Lean `virt`
+# binding's table — through the same tests (`mmu::LEAN_BOOT_MAP`,
+# `mmu::BOARD_LINK_SCRIPT`), plus the `virt` boot-map agreement test.  Without
+# this step nothing would compare the `virt` image's device map with the
+# binding the Lean `virt` entry boots under.
+echo "[4/8] Running the HAL's unit tests for QEMU virt (board_qemu_virt)..."
+run_cargo_step "virt unit tests passed" cargo test -p sele4n-hal --lib --features board_qemu_virt
+echo ""
+
+# WS-BP BP8.4: the Tier-4 in-image exercisers' unit tests.  The drivers are
+# behind `smp_exercisers`, which neither the default run nor `std,host_tools`
+# enables, so without this step their tests -- the agent protocol, the round
+# protocol against a silent target, a wedged lock and a second initiator, the
+# window's admission and its descriptors -- compile under the `--all-features`
+# clippy below and run nowhere.
+echo "[5/8] Running the Tier-4 exercisers' unit tests (smp_exercisers)..."
+run_cargo_step "exerciser unit tests passed" cargo test -p sele4n-hal --lib --features smp_exercisers
 echo ""
 
 # ----------------------------------------------------------------------------
@@ -158,12 +180,21 @@ echo ""
 # workspace-wide: `sele4n-hal` has no such feature and cargo rejects it.)
 # ----------------------------------------------------------------------------
 
-echo "[4/5] Checking formatting (cargo fmt --check)..."
+echo "[6/8] Checking formatting (cargo fmt --check)..."
 run_cargo_step "Formatting is clean" cargo fmt --all --check
 echo ""
 
-echo "[5/5] Linting (cargo clippy --all-targets --all-features -D warnings)..."
+echo "[7/8] Linting (cargo clippy --all-targets --all-features -D warnings)..."
 run_cargo_step "Clippy is clean" cargo clippy --all-targets --all-features -- -D warnings
+echo ""
+
+# WS-BP BP8.1: `--all-features` enables `board_qemu_virt`, which selects the
+# `virt` board, so the step above lints the HAL's `virt` configuration and never
+# its RPi5 one — the RPi5 boot-map tests are `cfg(not(feature =
+# "board_qemu_virt"))` and would go unlinted.  The HAL is linted again with
+# every feature but the board selector.
+echo "[8/8] Linting the HAL for the Raspberry Pi 5 (every feature but board_qemu_virt)..."
+run_cargo_step "RPi5 HAL clippy is clean" cargo clippy -p sele4n-hal --all-targets --features hw_target,host_tools,kernel_image,smp_exercisers -- -D warnings
 echo ""
 
 echo "=== All Rust tests passed ==="

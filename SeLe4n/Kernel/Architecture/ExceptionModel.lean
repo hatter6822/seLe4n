@@ -308,6 +308,10 @@ def dispatchSynchronousException (ectx : ExceptionContext) (st : SystemState)
   -- (`faultEntryStep`'s `takenFromEl0` gate), which is the second half of
   -- the same rule for the classes whose EC does not encode the level.
   | .kernelAbort => .error .illegalState
+  -- WS-BP BP7.9: an FP/SIMD access is the lazy switch's
+  -- (`Architecture.fpAccessOnCore`, entered by `lean_handle_fp_access`), not a
+  -- fault; this shape model, which has no registers to capture, commits nothing.
+  | .fpAccess => .ok (none, st)
   | .dataAbort | .instrAbort | .pcAlignment | .spAlignment | .unknownReason =>
       match faultOfExceptionContext ectx with
       | none => .error .illegalState
@@ -441,15 +445,17 @@ theorem dispatchSynchronousException_nonSvc_thread_not_dispatchable
     (sgi? : Option (CoreId × SgiKind)) (st' : SystemState)
     (hCls : classifySynchronousException ectx ≠ .svc)
     (hK : classifySynchronousException ectx ≠ .kernelAbort)
+    (hFp : classifySynchronousException ectx ≠ .fpAccess)
     (hCur : st.scheduler.currentOnCore c = some tid)
     (hStep : dispatchSynchronousException ectx st c = .ok (sgi?, st')) :
     ¬ SeLe4n.Kernel.dispatchableOnCore st' tid c := by
   have hFault : (faultOfExceptionContext ectx).isSome :=
-    faultOfExceptionContext_isSome_of_ne_svc ectx hCls hK
+    faultOfExceptionContext_isSome_of_ne_svc ectx hCls hK hFp
   unfold dispatchSynchronousException at hStep
   cases hC : classifySynchronousException ectx with
   | svc => exact absurd hC hCls
   | kernelAbort => exact absurd hC hK
+  | fpAccess => exact absurd hC hFp
   | dataAbort | instrAbort | pcAlignment | spAlignment | unknownReason =>
       rw [hC] at hStep
       simp only at hStep

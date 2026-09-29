@@ -4,7 +4,7 @@
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 109–115.
 
 use super::type_tag::TypeTag;
-use sele4n_types::{KernelError, KernelResult, ObjId};
+use sele4n_types::{CPtr, KernelError, KernelResult, ObjId, Slot};
 
 /// Arguments for `lifecycleRetype` (syscall 8).
 /// Register mapping: x2=targetObj, x3=newType tag, x4=size hint.
@@ -14,9 +14,10 @@ use sele4n_types::{KernelError, KernelResult, ObjId};
 /// V1-C (M-RS-1): `new_type` is now `TypeTag` (validated enum) rather than
 /// raw `u64`, preventing invalid type tag values from reaching kernel logic.
 ///
-/// AK4-H (R-ABI-L1) / WS-SM SM6.D: `TypeTag` currently accepts 8 values:
+/// AK4-H (R-ABI-L1) / WS-SM SM6.D / WS-BP BP7.1: `TypeTag` accepts 10 values:
 /// `0=Tcb, 1=Endpoint, 2=Notification, 3=CNode, 4=VSpaceRoot,
-/// 5=Untyped, 6=SchedContext, 7=Reply`. See `type_tag.rs::TypeTag::from_u64`.
+/// 5=Untyped, 6=SchedContext, 7=Reply, 8=Frame, 9=PageTable`. See
+/// `type_tag.rs::TypeTag::from_u64`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LifecycleRetypeArgs {
     pub target_obj: ObjId,
@@ -32,7 +33,7 @@ impl LifecycleRetypeArgs {
     /// Decode from message registers. Requires 3 registers.
     ///
     /// V1-C: Validates `regs[1]` through `TypeTag::from_u64()`, which rejects
-    /// values > 7. Returns `InvalidTypeTag` for invalid type tags,
+    /// values > 9. Returns `InvalidTypeTag` for invalid type tags,
     /// `InvalidMessageInfo` for insufficient registers.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 3 {
@@ -47,9 +48,106 @@ impl LifecycleRetypeArgs {
     }
 }
 
+/// Arguments for `untypedRetype` (syscall 36) — seL4's `seL4_Untyped_Retype`.
+/// Register mapping: x2=newType tag in bits `[0, 8)` and the object's size as a
+/// power of two in bits `[8, 64)` (seL4's `size_bits`), x3=childId, x4=destination
+/// CNode capability address, x5=destination slot.
+///
+/// Lean: `UntypedRetypeArgs` (SyscallArgDecode.lean), decoded by
+/// `decodeUntypedRetypeArgs`.  The syscall is invoked on the **untyped**
+/// capability; the kernel carves [`TypeTag::Frame`] (whose `size_bits` must be
+/// `0` — a frame is one page) and, since slice 4, [`TypeTag::Untyped`] of
+/// `2^size_bits` bytes with `size_bits` in [`MIN_UNTYPED_SIZE_BITS`,
+/// `MAX_UNTYPED_SIZE_BITS`], and since slice 4b [`TypeTag::VSpaceRoot`] (whose
+/// `size_bits` must be `0` — a root is one table page, registered under an ASID
+/// the kernel picks); anything else is `InvalidArgument`.
+///
+/// `size_bits` shares MR0 with the tag because all four argument registers are
+/// taken.  A frame's MR0 is its tag alone, exactly as before the field existed.
+/// `encode` keeps the low 56 bits of `size_bits`; every size the kernel accepts
+/// is far below that.
+///
+/// WS-BP BP7.1 (`v0.36.5`; `size_bits` at slice 4, `v0.36.8`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UntypedRetypeArgs {
+    pub new_type: TypeTag,
+    pub size_bits: u64,
+    pub child_id: ObjId,
+    pub dst_cnode: CPtr,
+    pub dst_slot: Slot,
+}
+
+/// The smallest child untyped a carve makes, as a power of two: one page.
+/// Lean: `minUntypedSizeBits`.
+pub const MIN_UNTYPED_SIZE_BITS: u64 = 12;
+/// The largest child untyped a carve makes, as a power of two — seL4's
+/// `seL4_MaxUntypedBits` on AArch64.  Lean: `maxUntypedSizeBits`.
+pub const MAX_UNTYPED_SIZE_BITS: u64 = 47;
+
+impl UntypedRetypeArgs {
+    pub const fn encode(&self) -> [u64; 4] {
+        [
+            self.new_type.to_u64() | (self.size_bits << 8),
+            self.child_id.raw(),
+            self.dst_cnode.raw(),
+            self.dst_slot.raw(),
+        ]
+    }
+
+    /// Decode from message registers. Requires 4 registers; the low byte of
+    /// `regs[0]` must be a valid type tag (`InvalidTypeTag` otherwise), as the
+    /// Lean decoder requires, and the rest of the word is `size_bits`.
+    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
+        if regs.len() < 4 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        let new_type = TypeTag::from_u64(regs[0] & 0xFF)?;
+        Ok(Self {
+            new_type,
+            size_bits: regs[0] >> 8,
+            child_id: ObjId::from(regs[1]),
+            dst_cnode: CPtr::from(regs[2]),
+            dst_slot: Slot::from(regs[3]),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn untyped_retype_roundtrip() {
+        let args = UntypedRetypeArgs {
+            new_type: TypeTag::Frame,
+            size_bits: 0,
+            child_id: ObjId::from(77u64),
+            dst_cnode: CPtr::from(3u64),
+            dst_slot: Slot::from(12u64),
+        };
+        assert_eq!(UntypedRetypeArgs::decode(&args.encode()).unwrap(), args);
+        // A frame's MR0 is its tag alone.
+        assert_eq!(args.encode()[0], TypeTag::Frame.to_u64());
+        let child = UntypedRetypeArgs {
+            new_type: TypeTag::Untyped,
+            size_bits: 21,
+            ..args
+        };
+        assert_eq!(child.encode()[0], 5 | (21 << 8));
+        assert_eq!(UntypedRetypeArgs::decode(&child.encode()).unwrap(), child);
+    }
+
+    #[test]
+    fn untyped_retype_insufficient_regs_and_bad_tag() {
+        assert_eq!(
+            UntypedRetypeArgs::decode(&[8, 1, 2]),
+            Err(KernelError::InvalidMessageInfo)
+        );
+        assert_eq!(
+            UntypedRetypeArgs::decode(&[10, 1, 2, 3]),
+            Err(KernelError::InvalidTypeTag)
+        );
+    }
 
     #[test]
     fn roundtrip() {
@@ -72,8 +170,9 @@ mod tests {
     // V1-C: Invalid type tag values must be rejected
     #[test]
     fn invalid_type_tag_rejected() {
+        // WS-BP BP7.1: 10 is the first invalid tag (PageTable = 9).
         assert_eq!(
-            LifecycleRetypeArgs::decode(&[42, 8, 0]),
+            LifecycleRetypeArgs::decode(&[42, 10, 0]),
             Err(KernelError::InvalidTypeTag)
         );
         assert_eq!(
@@ -88,7 +187,7 @@ mod tests {
 
     #[test]
     fn all_valid_type_tags() {
-        for i in 0..=7u64 {
+        for i in 0..=9u64 {
             let args = LifecycleRetypeArgs::decode(&[1, i, 0]).unwrap();
             assert_eq!(args.new_type.to_u64(), i);
         }

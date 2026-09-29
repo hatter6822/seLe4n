@@ -725,7 +725,7 @@ private theorem restoreIncomingContext_preserves_projection
       | cnode _ => simp_all
       | vspaceRoot _ => simp_all
       | untyped _ => simp_all
-      | schedContext _ | reply _ => simp_all
+      | schedContext _ | reply _ | frame _ | pageTable _ => simp_all
 
 /-- WS-H12c: projectObjects depends only on the objects field. -/
 private theorem projectObjects_ext_objects
@@ -963,13 +963,14 @@ theorem vspaceMapPage_preserves_projection
       · simp at hStep
       · split at hStep <;> simp at hStep
     | some root' =>
-      -- PR #845 review (P2): a successful `mapPage` witnesses page alignment,
-      -- which discharges the guard the transition checks before delegating.
-      have hAligned : paddr.toNat % Architecture.pageBytes = 0 :=
-        SeLe4n.Model.VSpaceRoot.mapPage_pageAligned hMap
-      simp only [hMap, hAligned] at hStep
+      -- PR #845 review (P2), WS-BP BP7.2: a successful `mapPage` witnesses that
+      -- both addresses are page-aligned, which discharges the guard the
+      -- transition checks before delegating.
+      simp only [hMap, Architecture.pageMappingAligned_of_mapPage hMap, Bool.not_true,
+        Bool.false_eq_true, ↓reduceIte] at hStep
       have hHigh := hRootHigh rootId root hResolve
-      exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hObjInv hStep
+      exact storeObject_preserves_projection ctx observer
+        (Architecture.recordPhysicalWrites st _) st' rootId _ hHigh hObjInv hStep
 
 /-- WS-H9: vspaceMapPage preserves low-equivalence. -/
 theorem vspaceMapPage_preserves_lowEquivalent
@@ -1012,7 +1013,8 @@ theorem vspaceUnmapPage_preserves_projection
     | some root' =>
       simp only [hUnmap] at hStep
       have hHigh := hRootHigh rootId root hResolve
-      exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hObjInv hStep
+      exact storeObject_preserves_projection ctx observer
+        (Architecture.recordPhysicalWrites st _) st' rootId _ hHigh hObjInv hStep
 
 /-- WS-H9: vspaceUnmapPage preserves low-equivalence. -/
 theorem vspaceUnmapPage_preserves_lowEquivalent
@@ -1130,7 +1132,7 @@ theorem cspaceDeleteSlotCore_preserves_projection
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | cnode cn =>
       simp only [hObj] at hStep
       cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
@@ -1197,7 +1199,7 @@ theorem cspaceRevoke_preserves_projection
     | none => simp [hL, hC] at hStep
     | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL, hC] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hL, hC] at hStep
       | cnode cn =>
         simp [hL, hC, storeObject] at hStep; cases hStep
         simp only [projectState]; congr 1
@@ -1290,7 +1292,7 @@ theorem cspaceCopy_preserves_projection
     have hToNN : cap.toNonNull? = some ⟨cap, hNotNull⟩ :=
       Capability.toNonNull?_of_not_null hNotNull
     simp only [hToNN] at hStep
-    cases hInsert : cspaceInsertSlot dst cap st with
+    cases hInsert : cspaceInsertSlot dst cap.withoutMapping st with
     | error e => simp [hInsert] at hStep
     | ok pair₂ =>
       rcases pair₂ with ⟨_, stIns⟩
@@ -1302,7 +1304,7 @@ theorem cspaceCopy_preserves_projection
       rw [hAddEdge,
           ensureCdtNodeForSlot_preserves_projection' ctx observer _ dst,
           ensureCdtNodeForSlot_preserves_projection' ctx observer _ src,
-          cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
+          cspaceInsertSlot_preserves_projection ctx observer dst cap.withoutMapping st stIns hDstHigh hObjInv hInsert]
 
 /-- WS-H9: cspaceCopy preserves low-equivalence. -/
 private theorem cspaceCopy_preserves_lowEquivalent
@@ -1446,7 +1448,7 @@ theorem endpointQueuePopHead_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -1525,7 +1527,7 @@ theorem endpointQueueEnqueue_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st tid with
@@ -1623,7 +1625,7 @@ theorem endpointSendDual_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hRecvHead : ep.receiveQ.head with
@@ -1819,7 +1821,7 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
         simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -1919,7 +1921,7 @@ theorem endpointReceiveDual_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hSendHead : ep.sendQ.head with
@@ -2276,7 +2278,7 @@ theorem endpointCall_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hRecvHead : ep.receiveQ.head with
@@ -3048,7 +3050,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
       | none => simp [hL, hC] at hRevoke
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL, hC] at hRevoke
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hL, hC] at hRevoke
         | cnode cn =>
           simp [hL, hC, storeObject] at hRevoke; cases hRevoke
           exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
@@ -3063,7 +3065,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
       | none => simp [hObj] at hDelete
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hDelete
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hDelete
         | cnode cn =>
           simp only [hObj] at hDelete
           cases hSt : storeObject cleanup.cnode (.cnode (cn.remove cleanup.slot)) stRevoked with
@@ -3662,7 +3664,7 @@ theorem queueNeighbourPatch_preserves_projection_high
           exact objects_insert_preserves_projection_high ctx observer
             { st with objects := objs } nid.toObjId (.tcb (upd t)) (hHigh nid hN) hInv
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rfl
+      | schedContext _ | reply _ | frame _ | pageTable _ => rfl
 
 /-- **WS-RR RR8.8 (`v0.35.193`)**: `endpointSpliceHigh` names the predecessor
 through `queuePPrev`; the single removal reads `queuePrev`.  Under RR8.3's
@@ -4092,6 +4094,17 @@ theorem pendingIcacheMaintenance_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (m : List SeLe4n.Kernel.Architecture.ICacheInvalidation) :
     projectState ctx observer { st with pendingIcacheMaintenance := m } =
+      projectState ctx observer st := rfl
+
+/-- WS-BP BP7.2 (non-interference): a write to the physical-write ledger is
+invisible to the information-flow projection.  The ledger names memory the
+kernel owns — table pages, carved pages — and an ASID, so projecting it would
+publish an address-space layout the projection deliberately withholds; it is
+drained in the atomic step that commits the transition besides. -/
+theorem pendingPhysicalWrites_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (m : List SeLe4n.Kernel.Architecture.PhysicalWrite) :
+    projectState ctx observer { st with pendingPhysicalWrites := m } =
       projectState ctx observer st := rfl
 
 /-- WS-SM SM8.C.8 (non-interference): a write to the mounted declassification
@@ -4708,36 +4721,6 @@ theorem priorityRescheduleOnCore_preserves_projection
     obtain ⟨hs, -⟩ := hStep
     exact hs ▸ hMid
 
-/-- WS-SM SM8.B (PR #861 review round 34): the **wrapper** preserves the
-projection, in *both* settings of the restore seam.
-
-The point of the wrapper form: this is proved by cases on the flag, so neither
-branch is dead. The live branch defers to the base theorem below; the gated
-branch changes no state at all (`priorityRescheduleEnqueueOnly_state`), so the
-projection is `hMid` unchanged. The `hReschedProj` witness is still required —
-it is what the live branch consumes, and dropping it would make the theorem
-weaker the moment SM10.1 flips the constant. -/
-theorem priorityRescheduleOnCoreLive_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st stMid stFinal : SystemState) (running? : Option SeLe4n.Kernel.Concurrency.CoreId)
-    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (shouldPreempt : Bool)
-    (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
-    (hMid : projectState ctx observer stMid = projectState ctx observer st)
-    (hReschedProj : ∀ stIn stOut c,
-                      projectState ctx observer stIn = projectState ctx observer st →
-                      handleRescheduleSgiOnCore stIn c = .ok stOut →
-                      projectState ctx observer stOut = projectState ctx observer st)
-    (hStep : SchedContext.PriorityManagement.priorityRescheduleOnCoreLive stMid running?
-              executingCore shouldPreempt = .ok (stFinal, sgi)) :
-    projectState ctx observer stFinal = projectState ctx observer st := by
-  unfold SchedContext.PriorityManagement.priorityRescheduleOnCoreLive at hStep
-  split at hStep
-  · exact priorityRescheduleOnCore_preserves_projection ctx observer st stMid stFinal
-      running? executingCore shouldPreempt sgi hMid hReschedProj hStep
-  · rw [SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly_state
-      stMid stFinal running? executingCore shouldPreempt sgi hStep]
-    exact hMid
-
 /-- WS-SM SM8.B: `setPriorityOnCore` preserves the projection under exactly the
 hypotheses `setPriorityOp_preserves_projection` takes, with the preemption
 witness restated for the per-core reschedule the op actually runs.
@@ -4786,7 +4769,7 @@ theorem setPriorityOnCore_preserves_projection
                newPriority _ hTargetThreadHigh]
           exact hProj1
         simp only [] at hStep
-        exact priorityRescheduleOnCoreLive_preserves_projection ctx observer st _ st' _
+        exact priorityRescheduleOnCore_preserves_projection ctx observer st _ st' _
           executingCore _ sgi hProj2 hReschedProj hStep
       · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
@@ -4937,7 +4920,7 @@ theorem setMCPriorityOnCore_preserves_projection
             rw [migrateRunQueueBucketOnCore_preserves_projection ctx observer _ vTargetTid.val
                  newMCP _ hTargetThreadHigh]
             exact hProj1
-          exact priorityRescheduleOnCoreLive_preserves_projection ctx observer st _ st' _
+          exact priorityRescheduleOnCore_preserves_projection ctx observer st _ st' _
             executingCore true sgi hProj2 hReschedProj hStep
         · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hs, -⟩ := hStep

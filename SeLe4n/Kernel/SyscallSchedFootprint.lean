@@ -131,41 +131,11 @@ theorem resumeThreadOnCore_replenishQueueOnCore (st st' : SystemState)
             PriorityInheritance.resumeReadyMidState_scheduler_eq]
   · exact absurd h (by simp)
 
-/-- `v0.35.167`: and so does the enqueue-only form the gated wrapper takes while
-the context-restore seam is dark — a strict subset of the above. -/
-theorem resumeThreadEnqueueOnly_replenishQueueOnCore (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
-    (h : Lifecycle.Suspend.resumeThreadEnqueueOnly st vtid executingCore = .ok (st', sgi)) :
-    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold Lifecycle.Suspend.resumeThreadEnqueueOnly at h
-  dsimp only at h
-  split at h
-  · split at h
-    · exact absurd h (by simp)
-    · split at h <;>
-        (rw [Except.ok.injEq, Prod.mk.injEq] at h
-         rw [← h.1, enqueueRunnableOnCore_replenishQueueOnCore,
-            PriorityInheritance.resumeReadyMidState_scheduler_eq])
-  · exact absurd h (by simp)
-
-/-- `v0.35.167`: so the gated wrapper the live `.tcbResume` arm runs writes none
-either, on both settings of the seam. -/
-theorem resumeThreadOnCoreLive_replenishQueueOnCore (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
-    (h : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid executingCore = .ok (st', sgi)) :
-    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold Lifecycle.Suspend.resumeThreadOnCoreLive at h
-  split at h
-  · exact resumeThreadOnCore_replenishQueueOnCore st st' vtid executingCore sgi c h
-  · exact resumeThreadEnqueueOnly_replenishQueueOnCore st st' vtid executingCore sgi c h
-
 /-- **`v0.35.167`: the live `.tcbResume` arm's scheduler-domain footprint.**
 
 `schedFootprintOfCores` of the arm's own SM8.B write set, with an **empty**
 replenish segment: a resume moves no scheduling context, which
-`resumeThreadOnCoreLive_replenishQueueOnCore` is the statement of.
+`resumeThreadOnCore_replenishQueueOnCore` is the statement of.
 
 The fault retire the arm runs first (`retirePendingFaultForResume`, WS-RR RR4.11)
 needs no member of its own: it writes one TCB's `pendingFault` and no scheduler
@@ -190,7 +160,7 @@ theorem schedLockSet_resumeThreadOnCore_contains_executing_runQueue_write (st : 
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (by simp [resumeThreadOnCoreWriteSet])
 
 /-- `v0.35.167`: and **no** replenish-queue lock, on any core — the declaration's
-exact half, against `resumeThreadOnCoreLive_replenishQueueOnCore`'s. -/
+exact half, against `resumeThreadOnCore_replenishQueueOnCore`'s. -/
 theorem schedLockSet_resumeThreadOnCore_no_replenishQueue (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) (c : CoreId) :
     (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
@@ -238,21 +208,6 @@ theorem priorityRescheduleOnCore_replenishQueueOnCore (st st' : SystemState)
     · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]
   · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]
 
-/-- `v0.35.167`: and the gated seam the live arms run, which is that or the
-enqueue-only form — and the enqueue-only form returns its input outright. -/
-theorem priorityRescheduleOnCoreLive_replenishQueueOnCore (st st' : SystemState)
-    (running? : Option CoreId) (executingCore : CoreId) (shouldPreempt : Bool)
-    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
-    (h : SchedContext.PriorityManagement.priorityRescheduleOnCoreLive st running? executingCore
-      shouldPreempt = .ok (st', sgi)) :
-    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold SchedContext.PriorityManagement.priorityRescheduleOnCoreLive at h
-  split at h
-  · exact priorityRescheduleOnCore_replenishQueueOnCore st st' running? executingCore
-      shouldPreempt sgi c h
-  · rw [SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly_state st st' running?
-      executingCore shouldPreempt sgi h]
-
 /-- `v0.35.167`: the whole priority change — the source store (which writes
 objects only), the bucket migration (one run queue) and the preemption seam. -/
 theorem applyPriorityChangeOnCore_replenishQueueOnCore (st st' : SystemState)
@@ -263,7 +218,7 @@ theorem applyPriorityChangeOnCore_replenishQueueOnCore (st st' : SystemState)
       executingCore shouldPreempt = .ok (st', sgi)) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at h
-  rw [priorityRescheduleOnCoreLive_replenishQueueOnCore _ st' _ executingCore shouldPreempt
+  rw [priorityRescheduleOnCore_replenishQueueOnCore _ st' _ executingCore shouldPreempt
       sgi c h,
     SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_replenishQueueOnCore]
   obtain ⟨objs, hEq⟩ :=
@@ -1526,7 +1481,9 @@ theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne (st st' : SystemState)
       simp only at h
       split at h
       · exact absurd h (by simp)
-      · injection h with h
+      · split at h
+        · exact absurd h (by simp)
+        injection h with h
         subst h
         rw [detachCNodeSlots_scheduler_eq]
   | reply r =>
@@ -1535,6 +1492,11 @@ theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne (st st' : SystemState)
       split at h
       · exact absurd h (by simp)
       · injection h with h; subst h; rfl
+  | frame _ | pageTable _ | untyped _ | vspaceRoot _ =>
+      -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
+      -- an untyped one — so there is no `.ok` step.
+      subst hC
+      simp at h
   | _ =>
       subst hC
       simp only at h
@@ -2167,10 +2129,11 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
                     (schedLockSet_endpointReplyRecvOnCore epId ops.caller rid prevCaller msg
                       receiver.cspaceRoot slotBase executingCore st)
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
+  | .untypedRetype | .untypedReset
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler
+  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .auditRead | .auditDrain => none
@@ -2185,14 +2148,22 @@ footprint without listing it here breaks
 still answers `none` is refused by that arm's own `_isSome_iff`, which states
 the exact operands under which it declares.
 
-There are `SyscallId.count = 36` arms; **sixteen** declare and twenty answer
-`none`.  *Which* of those twenty write a scheduler slot at all is this
+There are `SyscallId.count = 41` arms; **sixteen** declare and twenty-five
+answer `none`.  *Which* of those twenty-five write a scheduler slot at all is this
 enumeration's own open question — the arms above are the ones WS-RR RR8.12's
-sequence identified, and a twenty-first found to write one is a footprint to
+sequence identified, and a twenty-sixth found to write one is a footprint to
 declare rather than a row to move.  `.cspaceRevoke` (`v0.35.190`) is in the
 `none` group for the same reason its `.cspaceDelete` sibling is: the revocation
 family writes CNodes, the derivation tree and in-flight messages, and no
-run-queue or replenish-queue slot on any core. -/
+run-queue or replenish-queue slot on any core.  `.untypedRetype` (`v0.36.5`) is
+there too: a carve writes an untyped, a fresh frame, one CNode slot, the CDT and
+a page of machine memory — no scheduler field at all.  `.untypedReset` (`v0.36.6`)
+writes VSpace roots, TLB, shootdown and instruction-cache state, erased frames
+and the untyped — the `.vspaceUnmap` arm's writes, per mapping, and no run-queue
+or replenish-queue slot on any core (`untypedReset_ok_frame`: the scheduler is
+unchanged).  `.tcbSetSpace` (`v0.36.11`) rewrites one suspended TCB's two root
+fields and nothing else (`setThreadSpace_ok`: the post-state is the pre-state
+with one object-table insert). -/
 def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetAffinity
@@ -2201,10 +2172,11 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .notificationSignal | .notificationWait
   | .send | .receive | .call | .reply | .replyRecv => true
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
+  | .untypedRetype | .untypedReset
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler
+  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .auditRead | .auditDrain => false

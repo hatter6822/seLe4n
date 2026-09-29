@@ -3,15 +3,40 @@
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiVspaceMap`, `apiVspaceUnmap`.
 
-use sele4n_abi::args::{PagePerms, VSpaceMapArgs, VSpaceUnifyInstructionArgs, VSpaceUnmapArgs};
+use sele4n_abi::args::{
+    PagePerms, PageTableMapArgs, VSpaceMapArgs, VSpaceUnifyInstructionArgs, VSpaceUnmapArgs,
+};
 use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
 #[cfg(test)]
 use sele4n_types::KernelError;
-use sele4n_types::{Asid, CPtr, KernelResult, PAddr, SyscallId, VAddr};
+use sele4n_types::{Asid, CPtr, KernelResult, SyscallId, VAddr};
 
-/// Map a physical page into a virtual address space.
+/// Map a frame into a virtual address space.
 ///
-/// Lean: `apiVspaceMap` (API.lean) — requires `.write` right on `vspace_cap`.
+/// Lean: the `.vspaceMap` arm of `dispatchCapabilityOnly` (API.lean), through
+/// `vspaceMapFromFrameCap`.
+///
+/// **Authority (WS-BP BP7.1).**  Two capabilities, each for what it governs.
+/// `vspace_cap` must carry `.write` and name the VSpace root bound to `asid` —
+/// authority over the address space.  `frame_cap` is the address, in the
+/// caller's own CSpace, of a capability to the **frame** being mapped —
+/// authority over the memory.  The page installed is that frame's own base;
+/// no physical address crosses this interface, so a caller can map only memory
+/// it holds a frame capability for.  The frame capability must carry `.read`
+/// (every mapping is at least readable), and `.write` as well for a writable
+/// mapping (`IllegalAuthority` otherwise).  A **device** frame may be mapped
+/// neither executable nor cacheable, and a **RAM** frame must be mapped
+/// cacheable (`PolicyDenied` otherwise): set `PagePerms::CACHEABLE` exactly
+/// when the frame is RAM.  An uncached alias of RAM the kernel writes through
+/// its cacheable identity map would be a mismatched-attribute alias (ARM ARM
+/// B2.8), so it is refused.  A capability to anything but a frame, or an
+/// empty slot, is `InvalidCapability`.
+///
+/// The mapping is recorded on the frame capability that made it, so deleting
+/// or revoking that capability unmaps it.  A frame capability maps its frame
+/// **once**: mapping through a capability whose recorded mapping is still in
+/// place is `InvalidCapability` — copy the capability (a copy carries no
+/// record) to map the same frame again.
 ///
 /// Enforces W^X: the WRITE and EXECUTE permission bits cannot both be set.
 /// Returns `PolicyDenied` if the W^X constraint is violated.
@@ -20,7 +45,7 @@ pub fn vspace_map(
     vspace_cap: CPtr,
     asid: Asid,
     vaddr: VAddr,
-    paddr: PAddr,
+    frame_cap: CPtr,
     perms: PagePerms,
 ) -> KernelResult<SyscallResponse> {
     // W^X pre-check (client-side, before syscall)
@@ -29,7 +54,7 @@ pub fn vspace_map(
     let args = VSpaceMapArgs {
         asid,
         vaddr,
-        paddr,
+        frame: frame_cap,
         perms,
     };
     let encoded = args.encode();
@@ -38,6 +63,51 @@ pub fn vspace_map(
         msg_info: MessageInfo::new_const(4, 0, 0),
         msg_regs: encoded,
         syscall_id: SyscallId::VSpaceMap,
+    })
+}
+
+/// Install an intermediate page table — seL4's `seL4_ARM_PageTable_Map`.
+///
+/// `table_cap` names the table (held with `Write`); `vspace_root` is the
+/// address, **in the caller's CSpace**, of a capability to the address space
+/// (held with `Write`).  The table is installed at the shallowest level the walk
+/// to `vaddr` is missing, so three calls make an address mappable; a fourth is
+/// refused with `MappingConflict`.  A carved address space maps a frame only
+/// where its walk is complete (`TranslationFault` otherwise).
+///
+/// Lean: `pageTableMap` (Architecture/PageTableInstall.lean), dispatched as
+/// `SyscallId.pageTableMap` in `API.lean` (WS-BP BP7.1).
+#[inline]
+pub fn page_table_map(
+    table_cap: CPtr,
+    vspace_root: CPtr,
+    vaddr: VAddr,
+) -> KernelResult<SyscallResponse> {
+    let args = PageTableMapArgs {
+        vspace_root: vspace_root.raw(),
+        vaddr: vaddr.raw(),
+    };
+    let encoded = args.encode();
+    invoke_syscall(SyscallRequest {
+        cap_addr: table_cap,
+        msg_info: MessageInfo::new_const(2, 0, 0),
+        msg_regs: [encoded[0], encoded[1], 0, 0],
+        syscall_id: SyscallId::PageTableMap,
+    })
+}
+
+/// Take an intermediate page table out of its address space — seL4's
+/// `seL4_ARM_PageTable_Unmap`.  Refused with `RevocationRequired` while a
+/// mapping or a deeper table still passes through it.
+///
+/// Lean: `pageTableUnmap` (Architecture/PageTableInstall.lean), WS-BP BP7.1.
+#[inline]
+pub fn page_table_unmap(table_cap: CPtr) -> KernelResult<SyscallResponse> {
+    invoke_syscall(SyscallRequest {
+        cap_addr: table_cap,
+        msg_info: MessageInfo::new_const(0, 0, 0),
+        msg_regs: [0, 0, 0, 0],
+        syscall_id: SyscallId::PageTableUnmap,
     })
 }
 
@@ -112,9 +182,9 @@ pub fn vspace_map_read_only(
     vspace_cap: CPtr,
     asid: Asid,
     vaddr: VAddr,
-    paddr: PAddr,
+    frame_cap: CPtr,
 ) -> KernelResult<SyscallResponse> {
-    vspace_map(vspace_cap, asid, vaddr, paddr, PagePerms::READ)
+    vspace_map(vspace_cap, asid, vaddr, frame_cap, PagePerms::READ)
 }
 
 /// Convenience: map a read-write page.
@@ -122,13 +192,13 @@ pub fn vspace_map_read_write(
     vspace_cap: CPtr,
     asid: Asid,
     vaddr: VAddr,
-    paddr: PAddr,
+    frame_cap: CPtr,
 ) -> KernelResult<SyscallResponse> {
     vspace_map(
         vspace_cap,
         asid,
         vaddr,
-        paddr,
+        frame_cap,
         PagePerms::READ | PagePerms::WRITE,
     )
 }
@@ -138,13 +208,13 @@ pub fn vspace_map_read_execute(
     vspace_cap: CPtr,
     asid: Asid,
     vaddr: VAddr,
-    paddr: PAddr,
+    frame_cap: CPtr,
 ) -> KernelResult<SyscallResponse> {
     vspace_map(
         vspace_cap,
         asid,
         vaddr,
-        paddr,
+        frame_cap,
         PagePerms::READ | PagePerms::EXECUTE,
     )
 }
@@ -160,7 +230,7 @@ mod tests {
             CPtr::from(1u64),
             Asid::from(1u64),
             VAddr::from(0x1000u64),
-            PAddr::from(0x2000u64),
+            CPtr::from(2u64),
             wx,
         );
         assert_eq!(result, Err(KernelError::PolicyDenied));

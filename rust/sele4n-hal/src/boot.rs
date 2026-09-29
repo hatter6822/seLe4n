@@ -25,7 +25,7 @@
 //!          bounded window, or the system halts (WS-BP BP6.3)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.36.2";
+const KERNEL_VERSION: &str = "0.36.41";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -109,8 +109,12 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // -----------------------------------------------------------------------
     crate::uart::init_boot_uart();
     crate::kprintln!();
-    crate::kprintln!("seLe4n v{} booting on Raspberry Pi 5", KERNEL_VERSION);
-    crate::kprintln!("  ARM64 / BCM2712 / Cortex-A76");
+    crate::kprintln!(
+        "seLe4n v{} booting on {}",
+        KERNEL_VERSION,
+        crate::board::BOARD.name
+    );
+    crate::kprintln!("  ARM64 / Cortex-A76");
     crate::kprintln!();
 
     // Report the level the firmware entered at and the level the kernel
@@ -184,11 +188,11 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // **WS-BP BP2.6**: the identity map is built from the image's layout and
     // board constants — nothing is parsed before translation is enabled.  The
     // device-tree pointer is only checked: the window a reader may dereference
-    // must lie in guaranteed RAM and outside the image.
+    // must lie in the kernel's reserved extent and outside the image.
     crate::mmu::init_mmu(dtb_ptr);
     crate::kprintln!(
-        "[boot] MMU enabled (identity map, guaranteed RAM to {:#x})",
-        crate::mmu::GUARANTEED_RAM_TOP
+        "[boot] MMU enabled (identity map, kernel extent to {:#x})",
+        crate::mmu::KERNEL_RESERVED_END
     );
 
     // Set VBAR_EL1 to exception vector table.  WS-SM SM1.C.2 extracted
@@ -204,13 +208,21 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // ...and the cache-maintenance stride this HAL assumes is checked against
     // the PE's own `CTR_EL0` rather than trusted from the TRM.
     crate::cache::verify_cache_line_stride_or_halt(crate::cpu::fatal_halt);
+    // v0.36.30: EL0 reaches no timer, PMU, debug channel or thread-pointer
+    // residue on this PE (`cpu::lock_el0_system_access`), before any IRQ is
+    // unmasked and so before any thread can run here.
+    crate::cpu::lock_el0_system_access();
 
     // -----------------------------------------------------------------------
     // Phase 3: GIC-400 and timer initialization (AG5)
     // -----------------------------------------------------------------------
-    crate::kprintln!("[boot] Initializing GIC-400...");
+    crate::kprintln!("[boot] Initializing the GICv2...");
     crate::gic::init_gic();
-    crate::kprintln!("[boot] GIC-400 initialized (distributor + CPU interface)");
+    crate::kprintln!(
+        "[boot] GICv2 initialized (distributor {:#x}, CPU interface {:#x})",
+        crate::gic::GICD_BASE,
+        crate::gic::GICC_BASE
+    );
 
     // WS-SM SM7.B.3: register the `.tlbShootdownReq` (INTID 1) handler in
     // the SM1.F.5 SGI table.  Single-core, IRQs still masked, before
@@ -250,6 +262,21 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     }
     crate::kprintln!("[boot] reschedule SGI handler registered (INTID 0)");
 
+    // WS-BP BP8.4: a test image registers the Tier-4 exercisers' agent SGI
+    // handler (INTID 15) under the same boot-phase-3 conditions.
+    //
+    // SAFETY: same boot-phase-3 conditions as the registrations above --
+    // primary core alone, PSTATE.I set, no secondary online yet.
+    #[cfg(feature = "smp_exercisers")]
+    unsafe {
+        crate::smp_exercisers::register_agent_handler();
+    }
+    #[cfg(feature = "smp_exercisers")]
+    crate::kprintln!(
+        "[boot] Tier-4 exerciser agent SGI handler registered (INTID {})",
+        crate::smp_exercisers::AGENT_SGI_INTID
+    );
+
     crate::kprintln!("[boot] Initializing timer (1000 Hz)...");
     // AJ5-C/L-14 + AK5-J/AK5-L: init_timer returns Result — on failure,
     // log the error and halt via idle_loop since the kernel cannot function
@@ -263,7 +290,10 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
             idle_loop();
         }
     }
-    crate::kprintln!("[boot] Timer initialized (54 MHz counter, 1ms ticks)");
+    crate::kprintln!(
+        "[boot] Timer initialized ({} Hz counter, 1ms ticks)",
+        crate::timer::read_frequency()
+    );
 
     // -----------------------------------------------------------------------
     // Phase 4: TPIDR_EL1 setup (the IRQ enable moved after Phase 5, BP6.2)
@@ -374,11 +404,29 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     let secondary_release = {
         // WS-BP BP2.3/BP2.4: initialize the Lean library, halting the system
         // if it refuses, then enter the kernel with the proof that it ran.
+        #[cfg(not(feature = "lean_init_refusal_probe"))]
         let initialised = crate::lean_entry::initialise_lean_library();
+        // v0.36.31: the refusal probe's `virt` test image drives a refused
+        // initialization through the same report-and-halt path, so the
+        // refusal is executed on the target rather than asserted
+        // (`scripts/test_qemu_lean_init_refusal.sh`).  It never returns.
+        #[cfg(feature = "lean_init_refusal_probe")]
+        let initialised = crate::lean_entry::refusal_probe::initialise_refusing(dtb_ptr);
+        // v0.36.31: a census on each side of the install, so the run shows the
+        // Lean kernel's own `IO` action allocating on the target and completing
+        // with the heap's invariants intact (WS-BP BP2.5).
+        crate::lean_entry::report_heap_census("the library initializer");
         let permit = crate::lean_entry::enter_lean_kernel(initialised, dtb_ptr);
         crate::kprintln!("[boot] Phase 5: kernel state installed");
+        crate::lean_entry::report_heap_census("the install");
         permit
     };
+    // WS-BP BP8.4: the HAL-only image extends the boot map nowhere — the
+    // extensions are the verified boot's (BP4.6) — so it seals the map here,
+    // where the Lean-linked image seals it (`enter_lean_kernel`): before any
+    // secondary is released, so the map has one writer no more.
+    #[cfg(not(feature = "hw_target"))]
+    crate::mmu::seal_boot_map();
     #[cfg(not(feature = "hw_target"))]
     let secondary_release = crate::lean_entry::SecondaryReleasePermit::no_lean_kernel();
 
@@ -392,6 +440,13 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // holds this statement after the install and before `enable_irq`.
     #[cfg(feature = "hw_target")]
     crate::lean_ready::become_ready_or_halt(0, crate::gic::halt_all);
+    // WS-BP BP8.1: the boot core's first reschedule — the same bring-up entry
+    // every secondary runs (`smp::first_reschedule`), in the same place: after
+    // readiness, before the unmask, under the kernel-entry lock.  A booted
+    // state has no current thread on any core and a tick on such a core
+    // dispatches nothing, so without it the boot core would never dispatch —
+    // not its idle thread, nor an initial thread homed on it.
+    crate::smp::first_reschedule(0, crate::gic::halt_all);
     crate::interrupts::enable_irq();
     crate::kprintln!("[boot] IRQ delivery enabled");
 
@@ -458,11 +513,18 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // -----------------------------------------------------------------------
     crate::kprintln!();
     crate::kprintln!("[boot] Hardware initialization complete:");
-    crate::kprintln!("  UART   : PL011 UART10 @ 0x10_7D00_1000 (115200 8N1)");
-    crate::kprintln!("  MMU    : identity map (guaranteed RAM + device window)");
+    crate::kprintln!("  Board  : {}", crate::board::BOARD.name);
+    crate::kprintln!(
+        "  UART   : PL011 @ {:#x} (115200 8N1)",
+        crate::uart::UART0_BASE
+    );
+    crate::kprintln!("  MMU    : identity map (kernel extent + device window; board RAM after the verified parse)");
     crate::kprintln!("  VBAR   : exception vectors installed");
-    crate::kprintln!("  GIC    : GIC-400 distributor + CPU interface");
-    crate::kprintln!("  Timer  : 1000 Hz (54 MHz / 54000 counts per tick)");
+    crate::kprintln!("  GIC    : GICv2 distributor + CPU interface");
+    crate::kprintln!(
+        "  Timer  : 1000 Hz ({} Hz counter)",
+        crate::timer::read_frequency()
+    );
     crate::kprintln!(
         "  SMP    : {} (max cores: {})",
         if cmdline_cfg.smp_enabled {
@@ -555,11 +617,33 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
             // for a per-PE fault — the VBAR check below is one.
             crate::gic::halt_all();
         }
+        // WS-BP BP8.1: the refusal did not fire, and the boot log says so —
+        // "Boot complete" above precedes this wait, so without this line a log
+        // cannot tell a boot that passed the topology check from one still in
+        // it.  `scripts/test_qemu.sh --lean-kernel` requires it.
+        crate::kprintln!(
+            "[boot] Phase 7: all {} declared PE(s) serve the kernel",
+            running_cores
+        );
     }
 
-    // Idle fallback: enter WFE loop when no kernel main is linked (simulation)
-    // or if kernel_main returns (should not happen in production).
-    idle_loop()
+    // WS-BP BP8.1: the boot core hands itself to the kernel's idle wait,
+    // which marks it handed off (`trap::IdleHandoffFlags`): until here every
+    // tick it took since the IRQ unmask resumed this bring-up, so the topology
+    // refusal above cannot be abandoned to a restore; from here the kernel's
+    // next scheduling decision on this core is what it runs.
+    // WS-BP BP8.4: a test image runs the Tier-4 in-image drivers here — every
+    // declared PE serves the kernel, and this core has not yet handed itself
+    // to the idle wait, so a tick taken during a driver returns to it.
+    #[cfg(feature = "smp_exercisers")]
+    crate::smp_exercisers::run_on_boot_core(cmdline_cfg.smp_enabled);
+
+    #[cfg(feature = "hw_target")]
+    crate::trap::enter_idle_wait();
+    // With no Lean kernel linked (simulation, the HAL-only images) nothing is
+    // ever staged for this core to resume, so it waits on its own.
+    #[cfg(not(feature = "hw_target"))]
+    idle_loop();
 }
 
 /// **WS-SM SM1.C.2** (closes SMP-C2 VBAR step): Install the EL1
@@ -748,7 +832,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.36.2");
+        assert_eq!(KERNEL_VERSION, "0.36.41");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

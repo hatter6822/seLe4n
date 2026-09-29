@@ -58,9 +58,9 @@ The destroy path's precondition.  `cleanupTcbReferences` sweeps every core and
 its step clears `currentOnCore c` wherever it finds the thread — including the
 **executing** core, which is where the caller itself runs.  A thread holding a
 `.retype`-capable capability to its own TCB could therefore destroy itself: the
-core's `current` slot is cleared, no successor is scheduled
-(`scheduleLocalSuccessorLive` is inert until SM10.1), and execution returns
-through a frame whose TCB the retype has scrubbed and re-purposed.  Subsequent
+core's `current` slot is cleared, and before WS-BP BP7.6 no successor was
+scheduled and execution returned through a frame whose TCB the retype had
+scrubbed and re-purposed.  Subsequent
 syscalls from that core resolve `determineExecutingCore` to `bootCoreId`, so
 their scheduling effects land on the wrong core — a denial of service against
 every thread on that core, not only the caller.
@@ -79,6 +79,31 @@ def threadCurrentOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   SeLe4n.Kernel.Concurrency.allCores.any (fun c =>
     st.scheduler.currentOnCore c == some tid)
 
+/-- **WS-BP BP7.9: a thread some core still holds** — current there, or the
+owner of that core's FP/SIMD registers (`MachineState.fpOwnedOnSomeCore`).
+
+The destroy path refuses both, for one reason: the core has state that belongs
+to the thread and will be written back under its id.  A current thread's is its
+scheduler slot; an FP owner's is its live FP/SIMD values, which the core's next
+entry saves into the thread's TCB (`Architecture.fpReleaseOnCore`).  An owner is
+current wherever it owns, except in the window between a remote core taking it
+off that core's `current` slot and that core taking the SGI the change sent it —
+and a retype in that window would let the release write a destroyed thread's FP
+state into whatever TCB is created under its id, which the new thread would then
+load: one thread reading another's registers.  Refusing it
+(`.revocationRequired`, "switch away first") closes the window without a second
+writer of the owner table.
+
+**PR #904 review (`v0.36.41`)**: and a thread some core's registers still hold
+as its resident EL0 context (`MachineState.residentOnSomeCore`).  The window is
+the same one — a remote deschedule clears the slot while the thread still runs
+there — and the write-back is the vacated core's saving of its trap frame into
+the resident's TCB at its next entry, so a retype there would hand one thread's
+general-purpose registers to the thread created under the id. -/
+def threadHeldOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  threadCurrentOnSomeCore st tid || st.machine.fpOwnedOnSomeCore tid ||
+    st.machine.residentOnSomeCore tid
+
 /-- **WS-SM SM8.B (PR #861 review round 39): the retype's running-target
 rejection**, as a named predicate on the object being destroyed.
 
@@ -93,11 +118,11 @@ running, so every other object kind is admitted outright
 non-TCB arms reduce by `rfl`). -/
 def retypeRunningTargetRejected (st : SystemState) (currentObj : KernelObject) : Bool :=
   match currentObj with
-  | .tcb tcb => threadCurrentOnSomeCore st tcb.tid
+  | .tcb tcb => threadHeldOnSomeCore st tcb.tid
   | _ => false
 
 @[simp] theorem retypeRunningTargetRejected_tcb (st : SystemState) (tcb : TCB) :
-    retypeRunningTargetRejected st (.tcb tcb) = threadCurrentOnSomeCore st tcb.tid := rfl
+    retypeRunningTargetRejected st (.tcb tcb) = threadHeldOnSomeCore st tcb.tid := rfl
 
 /-- WS-SM SM8.B: the guard is exactly "some core has this thread current". -/
 theorem threadCurrentOnSomeCore_iff (st : SystemState) (tid : SeLe4n.ThreadId) :

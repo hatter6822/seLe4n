@@ -1018,6 +1018,14 @@ theorem onCore_pendingIcacheMaintenance (ctx : LabelingContext) (L : SecurityLab
       = ObservableState.onCore ctx c L s :=
   onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
+/-- WS-BP BP7.2: the physical-write ledger is invisible on every core. -/
+theorem onCore_pendingPhysicalWrites (ctx : LabelingContext) (L : SecurityLabel)
+    (s : SystemState) (c : CoreId)
+    (v : List SeLe4n.Kernel.Architecture.PhysicalWrite) :
+    ObservableState.onCore ctx c L { s with pendingPhysicalWrites := v }
+      = ObservableState.onCore ctx c L s :=
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
 /-- SM8.A.4: the SM7.A/B TLB-shootdown state (per-core pending queues +
 acknowledgment vector + round generation) is invisible on every core. -/
 theorem onCore_tlbShootdown (ctx : LabelingContext) (L : SecurityLabel)

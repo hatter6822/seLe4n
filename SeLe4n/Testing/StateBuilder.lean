@@ -234,7 +234,8 @@ def emptyFrozenSystemState : FrozenSystemState :=
     declassificationTaint := SeLe4n.Kernel.TaintTable.empty
     perCoreICache :=
       _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
-    pendingIcacheMaintenance := [] }
+    pendingIcacheMaintenance := []
+    pendingPhysicalWrites := [] }
 
 /-- A `FrozenSystemState` holding `objs`, with the run queue a live state would
 have: a bucket per distinct TCB priority, holding the threads that are `.ready`.
@@ -263,5 +264,28 @@ def frozenStateOf (objs : List (SeLe4n.ObjId × FrozenKernelObject))
                        byPriority := freezeMap byPrio
                        threadPriority := freezeMap thrPrio
                        membership := freezeMap memb } }
+
+/-- **WS-BP BP7.2**: the fixture address `offset` bytes into the user window
+(`VAddr.userWindowBase`) — the lowest addresses a thread may map, and the ones
+`fixtureMappableRoot`'s walk covers for `offset < 0x200000`. -/
+def fixtureUserVAddr (offset : Nat) : SeLe4n.VAddr :=
+  SeLe4n.VAddr.ofNat (SeLe4n.VAddr.userWindowBase + offset)
+
+/-- **WS-BP BP7.1 (`v0.36.13`)**: a fixture address space a frame can be mapped
+into directly — a table page, and table slots at all three levels for the first
+2 MiB of the user window (WS-BP BP7.2: every level's index is the one the walk
+to `VAddr.userWindowBase` takes), so `VSpaceRoot.translationReady` holds at
+every `fixtureUserVAddr offset` with `offset < 0x200000`.  Since `v0.36.13` a
+root with no table page maps nothing, so a fixture that means to exercise a map
+rather than the walk starts from this.  The slots name table ids the fixture
+does not install: the walk's *presence* is what the map arm reads, and a
+scenario about the tables themselves builds them through `.pageTableMap`
+instead (`tests/VSpaceCapabilityBindingSuite.lean` §5k). -/
+def fixtureMappableRoot (asid : SeLe4n.ASID)
+    (tableBase : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x7F000) : VSpaceRoot :=
+  { asid := asid, mappings := {}, tableBase := some tableBase,
+    tables := [1, 2, 3].map fun l =>
+      { level := l, index := PageTableSlot.indexOf l (fixtureUserVAddr 0),
+        table := SeLe4n.ObjId.ofNat (0xF_0000 + l) } }
 
 end SeLe4n.Testing

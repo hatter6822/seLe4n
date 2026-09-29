@@ -2529,6 +2529,70 @@ theorem switchToThreadOnCore_preserves_unplaced
     rw [h] at hPlaced
     exact Bool.false_ne_true hPlaced
 
+/-- **WS-BP BP7.6**: the preempt adds to core `c`'s queue only the thread that
+was current on `c` — so a thread neither queued nor current there before is not
+queued there after. -/
+theorem preemptCurrentOnCore_mem_runQueueOnCore_self (st : SystemState) (c : CoreId)
+    (incoming u : SeLe4n.ThreadId)
+    (h : u ∈ (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c) :
+    u ∈ st.scheduler.runQueueOnCore c ∨ st.scheduler.currentOnCore c = some u := by
+  cases hCur : st.scheduler.currentOnCore c with
+  | none =>
+    left
+    have hId : preemptCurrentOnCore st c incoming = st := by
+      unfold preemptCurrentOnCore; rw [hCur]
+    rw [hId] at h; exact h
+  | some prev =>
+    by_cases hEq : (prev == incoming) = true
+    · left
+      have hId : preemptCurrentOnCore st c incoming = st := by
+        unfold preemptCurrentOnCore; rw [hCur]; dsimp only; rw [if_pos hEq]
+      rw [hId] at h; exact h
+    · cases hPT : st.getTcb? prev with
+      | none =>
+        left
+        have hId : preemptCurrentOnCore st c incoming = st := by
+          unfold preemptCurrentOnCore; rw [hCur]; dsimp only
+          rw [if_neg hEq, SystemState.getTcbWitnessed?_eq_none hPT]
+        rw [hId] at h; exact h
+      | some ptcb =>
+        have hRq : (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c
+            = (st.scheduler.runQueueOnCore c).insert prev ptcb.boostedPriority := by
+          unfold preemptCurrentOnCore; rw [hCur]; dsimp only
+          rw [if_neg hEq, SystemState.getTcbWitnessed?_eq_some hPT]
+          exact SchedulerState.setRunQueueOnCore_runQueueOnCore_self _ _ _
+        rw [hRq, RunQueue.mem_insert] at h
+        rcases h with h | h
+        · exact Or.inl h
+        · exact Or.inr (by rw [h])
+
+/-- **WS-BP BP7.6**: a context switch on core `c` makes no thread dispatchable
+there except the one it dispatches.  Per-core, where
+`switchToThreadOnCore_preserves_unplaced` is global: a thread that is queued on
+another core is not unplaced, and is still not dispatchable on this one. -/
+theorem switchToThreadOnCore_preserves_not_dispatchable_onCore
+    (st st' : SystemState) (c : CoreId) (tid u : SeLe4n.ThreadId) (hu : u ≠ tid)
+    (hStep : switchToThreadOnCore st c tid = .ok st')
+    (hQ : u ∉ st.scheduler.runQueueOnCore c)
+    (hC : st.scheduler.currentOnCore c ≠ some u) :
+    u ∉ st'.scheduler.runQueueOnCore c ∧ st'.scheduler.currentOnCore c ≠ some u := by
+  rw [switchToThreadOnCore_ok_scheduler st st' c tid hStep]
+  refine ⟨?_, ?_⟩
+  · show u ∉ (((preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
+        (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore
+          c (some tid)).runQueueOnCore c
+    rw [SchedulerState.setCurrentOnCore_runQueueOnCore,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_remove]
+    rintro ⟨hm, -⟩
+    rcases preemptCurrentOnCore_mem_runQueueOnCore_self st c tid u hm with h | h
+    · exact hQ h
+    · exact hC h
+  · show (((preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
+        (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore
+          c (some tid)).currentOnCore c ≠ some u
+    rw [SchedulerState.setCurrentOnCore_currentOnCore_self]
+    intro h; exact hu (Option.some.inj h).symm
+
 /-- `v0.35.158`: placement is the resolver's `isSome` — the classification's
 Boolean and `placedCoreOf?`'s witness are one question, so a consumer holding
 `placedCoreOf? st u = none` reads "unplaced" in the vocabulary the suspend

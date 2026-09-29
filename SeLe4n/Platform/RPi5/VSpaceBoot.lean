@@ -32,7 +32,7 @@ exclusion deferred item) by providing:
    the root with **five conjuncts** (third-audit hardening, WS-RC R3):
    ASID within hardware bounds, every mapping's permissions satisfy
    W^X, at least one mapping is present, every mapping's
-   `paddr.toNat` lies within the BCM2712 44-bit physical address
+   `paddr.toNat` lies within the Cortex-A76's 40-bit physical address
    space, and every mapping's virtual address is canonical
    (`vaddr.val < 2^48`).
 
@@ -71,7 +71,8 @@ time.
 
 AK3-B and AK5-C enumerate the four-layer W^X defense:
 
-1. **API-layer** — `decodeVSpaceMapArgsChecked` rejects W+X perms at the ABI.
+1. **API-layer** — `decodeVSpaceMapArgs` rejects W+X perms at the ABI, through
+   `PagePermissions.ofNat?` (`.invalidSyscallArgument`).
 2. **VSpace backend** — `vspaceMapPage` returns `.error .policyDenied` on
    non-compliant permissions.
 3. **Page-table encoder** — `pageTableDescriptorToPerms` rejects W+X descriptor
@@ -156,14 +157,19 @@ theorem permsMmioRW_wxCompliant : permsMmioRW.wxCompliant = true := by decide
 -- ============================================================================
 
 /-- Convenience: insert a single identity mapping into a `VSpaceRoot`.  Used
-    to build the boot root incrementally so each mapping is traceable. -/
-private def insertIdentity (root : VSpaceRoot) (paddr : PAddr)
+    to build the boot root incrementally so each mapping is traceable.
+
+    **WS-BP BP8.1**: public, because the QEMU `virt` binding builds its boot
+    root the same way (`QemuVirt.qemuVirtBootVSpaceRoot`) — one builder for
+    both boards' kernel roots rather than a second copy of it. -/
+def insertIdentity (root : VSpaceRoot) (paddr : PAddr)
     (perms : PagePermissions) : VSpaceRoot :=
   let vaddr : VAddr := VAddr.ofNat paddr.toNat
   { root with mappings := root.mappings.insert vaddr (paddr, perms) }
 
-/-- Empty boot root with ASID 0 (kernel ASID). -/
-private def emptyBootRoot : VSpaceRoot :=
+/-- Empty boot root with ASID 0 (kernel ASID).  Public since WS-BP BP8.1, for
+    the reason `insertIdentity` is. -/
+def emptyBootRoot : VSpaceRoot :=
   { asid := ASID.ofNat 0
     mappings := RHTable.empty 16 }
 
@@ -197,15 +203,30 @@ theorem rpi5BootVSpaceRoot_asid : rpi5BootVSpaceRoot.asid = ASID.ofNat 0 := rfl
 def VSpaceRootWxCompliant (root : VSpaceRoot) : Prop :=
   root.mappings.fold true (fun acc _ entry => acc && entry.2.wxCompliant) = true
 
+/-- **`v0.36.40`: the physical-address bound a boot root is held to** — the
+    Cortex-A76's implemented physical address size, `ID_AA64MMFR0_EL1.PARange
+    = 0b0010`, 40 bits (Cortex-A76 TRM r4p1 §B2.58).  It is the RPi5 machine
+    configuration's own width (`bootRootPaddrBound_eq_physicalAddressWidth`), so
+    the boot-root check and the bound every other physical address is held to
+    are one number.  The check read `2^44` — the value the v0.36.2 audit retired
+    from `physicalAddressWidth` because the PE answers an address in
+    `[2^40, 2^44)` with an Address size fault — and the sweep that retired it did
+    not reach this check. -/
+def bootRootPaddrBound : Nat := 2 ^ 40
+
+/-- `v0.36.40`: the boot-root bound **is** the RPi5 configuration's width. -/
+theorem bootRootPaddrBound_eq_physicalAddressWidth :
+    bootRootPaddrBound = 2 ^ SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth := rfl
+
 /-- **AN7-D.2.2**: per-root physical-address bounds predicate.  Every
-    mapping's physical address component must fit within the BCM2712
-    44-bit PA space (`paddr.toNat < 2^44 = 0x100000000000`).  A boot
-    VSpaceRoot containing a PA ≥ 2^44 would trigger a translation fault
+    mapping's physical address component must lie below `bootRootPaddrBound`
+    (`2^40`, the Cortex-A76's implemented physical address size).  A boot
+    VSpaceRoot containing a PA at or above it would take an Address size fault
     on real hardware; this predicate surfaces the violation structurally.
     The fold form is closed under `decide` on a fixed-shape boot root. -/
 def VSpaceRootPaddrBounded (root : VSpaceRoot) : Prop :=
   root.mappings.fold true
-    (fun acc _ entry => acc && decide (entry.1.toNat < 2^44)) = true
+    (fun acc _ entry => acc && decide (entry.1.toNat < bootRootPaddrBound)) = true
 
 /-- **WS-RC R3 (DEEP-BOOT-01) — third-audit hardening**: per-root virtual-
     address canonical-form predicate.  Every mapping's virtual-address
@@ -217,7 +238,7 @@ def VSpaceRootPaddrBounded (root : VSpaceRoot) : Prop :=
 
     Defense-in-depth: the canonical `rpi5BootVSpaceRoot` and
     `simBootVSpaceRoot` use `insertIdentity vaddr := VAddr.ofNat
-    paddr.toNat` with `paddr < 2^44`, so vaddr `< 2^44 < 2^48` holds
+    paddr.toNat` with `paddr < 2^40`, so vaddr `< 2^40 < 2^48` holds
     incidentally.  But a third-party `BootVSpaceRootEntry` (constructed
     via the public structure constructor on `Platform.Contract`) could
     embed an arbitrary vaddr; this predicate catches the violation at
@@ -237,7 +258,7 @@ def VSpaceRootVaddrCanonical (root : VSpaceRoot) : Prop :=
       L1 table cannot serve the kernel's first instruction fetch after MMU
       enable, so an empty boot root is actively unsafe).
     - `paddrBounded`: every mapping's `paddr.toNat` fits within the
-      BCM2712 44-bit PA space (pa < 2^44).
+      Cortex-A76's 40-bit PA space (pa < `bootRootPaddrBound`).
     - `vaddrCanonical` (WS-RC R3 third-audit hardening): every mapping's
       virtual address fits within the ARMv8-A 48-bit canonical-form
       range (`vaddr.val < 2^48`). -/
@@ -265,10 +286,10 @@ theorem rpi5BootVSpaceRoot_wxCompliant :
   decide
 
 /-- **AN7-D.2.2**: The canonical RPi5 boot root's mapped physical
-    addresses all fit within the BCM2712 44-bit PA space.  Every base
+    addresses all fit within the Cortex-A76's 40-bit PA space.  Every base
     (kernel text 0x80000, data 0x180000, stack 0x200000, UART10 0x10_7D00_1000,
-    GIC dist 0x10_7FFF_9000, GIC CPU 0x10_7FFF_A000) is well below 2^44 ≈
-    1.76e13.  Discharged by `decide` on the finite six-element fold. -/
+    GIC dist 0x10_7FFF_9000, GIC CPU 0x10_7FFF_A000) is below 2^37, well below
+    `bootRootPaddrBound` = 2^40.  Discharged by `decide` on the finite six-element fold. -/
 theorem rpi5BootVSpaceRoot_paddrBounded :
     VSpaceRootPaddrBounded rpi5BootVSpaceRoot := by
   unfold VSpaceRootPaddrBounded
@@ -278,7 +299,7 @@ theorem rpi5BootVSpaceRoot_paddrBounded :
     RPi5 boot root's mapped virtual addresses all fit within the
     ARMv8-A 48-bit canonical-form range.  `insertIdentity` constructs
     each vaddr from the matching paddr (`vaddr := VAddr.ofNat
-    paddr.toNat`), so `paddr < 2^44 < 2^48` directly implies
+    paddr.toNat`), so `paddr < 2^40 < 2^48` directly implies
     `vaddr < 2^48`.  Discharged by `decide` on the finite six-element
     fold. -/
 theorem rpi5BootVSpaceRoot_vaddrCanonical :
@@ -308,7 +329,7 @@ theorem rpi5BootVSpaceRoot_wellFormed :
 /-- **AN7-D.2.4 / WS-RC R3**: Per-VSpaceRoot boot-safety predicate.  A
     VSpaceRoot is boot-safe iff it is well-formed: ASID bounded, all
     mappings W^X compliant, at least one mapping present, all
-    physical addresses fit within the BCM2712 44-bit PA space, and
+    physical addresses fit within the Cortex-A76's 40-bit PA space, and
     all virtual addresses canonical (< 2^48; third-audit hardening).
     Callers that wish to admit VSpaceRoots in the
     `bootFromPlatformChecked` object sweep compose this predicate
@@ -357,8 +378,8 @@ theorem rpi5BootVSpaceRoot_admits_bootSafe :
     3. `mappings.size > 0` — the root must contain at least one mapping
        (an empty L1 table cannot serve the kernel's first instruction
        fetch after MMU enable).
-    4. Every mapping's physical address fits within the BCM2712 44-bit
-       PA space (`paddr.toNat < 2^44`).
+    4. Every mapping's physical address fits within the Cortex-A76's 40-bit
+       PA space (`paddr.toNat < bootRootPaddrBound`).
     5. **WS-RC R3 third-audit hardening** — every mapping's virtual
        address is canonical (`vaddr.val < 2^48`).  Non-canonical
        addresses fall in the ARMv8-A reserved gap `[2^48, 2^64 - 2^48)`
@@ -372,7 +393,7 @@ def bootSafeVSpaceRootCheck (root : VSpaceRoot) : Bool :=
   decide (root.asid.val ≤ maxAsidValue) &&
   (root.mappings.fold true (fun acc _ entry => acc && entry.2.wxCompliant)) &&
   decide (root.mappings.size > 0) &&
-  (root.mappings.fold true (fun acc _ entry => acc && decide (entry.1.toNat < 2^44))) &&
+  (root.mappings.fold true (fun acc _ entry => acc && decide (entry.1.toNat < bootRootPaddrBound))) &&
   (root.mappings.fold true (fun acc vaddr _ => acc && VAddr.isCanonical vaddr))
 
 /-- **WS-RC R3**: The Bool-valued check coincides with the Prop-level
@@ -416,18 +437,26 @@ theorem rpi5BootVSpaceRoot_bootSafeCheck :
       exists, and a later cut that maps one widens this predicate with the
       placement check its frames need. -/
 def bootSafeUserVSpaceRoot (root : VSpaceRoot) : Prop :=
-  0 < root.asid.val ∧ root.asid.val ≤ maxAsidValue ∧ root.mappings.size = 0
+  0 < root.asid.val ∧ root.asid.val ≤ maxAsidValue ∧ root.mappings.size = 0 ∧
+    root.tables = []
 
-/-- **WS-BP BP3.2**: the Bool form the boot's object sweep evaluates. -/
+/-- **WS-BP BP3.2**: the Bool form the boot's object sweep evaluates.
+
+    **WS-BP BP7.1**: and it holds no intermediate table — a configured table slot
+    would name a page-table object the boot does not create (the boot refuses
+    memory-backed objects), so the walk would pass through memory nothing owns.
+    Its *top-level* table page is placed by the configuration-level check
+    (`Platform.Boot.bootRootTablesPlaced`), since whether two roots share a page
+    is a question about the configuration, not about one root. -/
 def bootSafeUserVSpaceRootCheck (root : VSpaceRoot) : Bool :=
   decide (0 < root.asid.val) && decide (root.asid.val ≤ maxAsidValue) &&
-    decide (root.mappings.size = 0)
+    decide (root.mappings.size = 0) && root.tables.isEmpty
 
 /-- **WS-BP BP3.2**: the Bool check decides the predicate. -/
 theorem bootSafeUserVSpaceRootCheck_iff (root : VSpaceRoot) :
     bootSafeUserVSpaceRootCheck root = true ↔ bootSafeUserVSpaceRoot root := by
   unfold bootSafeUserVSpaceRootCheck bootSafeUserVSpaceRoot
-  simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc]
+  simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc, List.isEmpty_iff]
 
 /-- **WS-BP BP3.2**: the kernel's own boot root is not a user root — its ASID
     is the kernel's.  So the two checks cannot be substituted for each other,
@@ -483,7 +512,7 @@ def bootVSpaceRootMappingsSafe (root : VSpaceRoot) : Prop :=
 
 /-- **WS-BP BP3.5**: the binding's boot root satisfies the per-mapping facts —
     each of its three mapping checks is a fold, read back per lookup by
-    `RHTable.fold_and_true_of_get?`, and the BCM2712's 44-bit physical address space
+    `RHTable.fold_and_true_of_get?`, and the Cortex-A76's 40-bit physical address space
     lies below the LPA bound. -/
 theorem bootSafeVSpaceRoot_mappingsSafe {root : VSpaceRoot}
     (h : bootSafeVSpaceRoot root) : bootVSpaceRootMappingsSafe root := by
@@ -493,10 +522,10 @@ theorem bootSafeVSpaceRoot_mappingsSafe {root : VSpaceRoot}
   have hWx' := RHTable.fold_and_true_of_get? root.mappings
     (fun _ (entry : PAddr × PagePermissions) => entry.2.wxCompliant) hWx hMap
   have hPa' := RHTable.fold_and_true_of_get? root.mappings
-    (fun _ (entry : PAddr × PagePermissions) => decide (entry.1.toNat < 2^44)) hPa hMap
+    (fun _ (entry : PAddr × PagePermissions) => decide (entry.1.toNat < bootRootPaddrBound)) hPa hMap
   have hVa' := RHTable.fold_and_true_of_get? root.mappings
     (fun (vaddr : VAddr) (_ : PAddr × PagePermissions) => VAddr.isCanonical vaddr) hVa hMap
-  simp only [decide_eq_true_eq] at hPa'
+  simp only [decide_eq_true_eq, bootRootPaddrBound] at hPa'
   exact ⟨hWx', by omega, hVa'⟩
 
 /-- **WS-BP BP3.5**: a thread's boot root satisfies the per-mapping facts
@@ -507,7 +536,7 @@ theorem bootSafeUserVSpaceRoot_mappingsSafe {root : VSpaceRoot}
     bootVSpaceRootMappingsSafe root := by
   intro v p perms hMap
   rw [RHTable_getElem?_eq_get?,
-    RHTable.get?_none_of_size_zero root.mappings hExt h.2.2 v] at hMap
+    RHTable.get?_none_of_size_zero root.mappings hExt h.2.2.1 v] at hMap
   cases hMap
 
 end SeLe4n.Platform.RPi5.VSpaceBoot

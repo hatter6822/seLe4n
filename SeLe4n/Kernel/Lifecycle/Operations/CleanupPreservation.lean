@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations.Cleanup
+import SeLe4n.Kernel.Architecture.PageTableInstall
 -- WS-SM SM6.E: `returnDonatedSchedContext_preserves_objects_invExt` (AI4-A),
 -- consumed by `cleanupDonatedSchedContext_preserves_objects_invExt`.
 import SeLe4n.Kernel.IPC.Invariant.Defs
@@ -1739,7 +1740,11 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
         -- Placed inside the arm that already cases on `currentObj`, and reading
         -- the **pre-state** `st`: every later `let` shadows `st` with the swept
         -- state, in which the slot this tests has already been cleared.
-        if threadCurrentOnSomeCore st tcb.tid then
+        --
+        -- **WS-BP BP7.9**: nor a thread whose live FP/SIMD values a core still
+        -- holds (`threadHeldOnSomeCore`): that core's release would write them
+        -- into whatever TCB the retype creates under this id.
+        if threadHeldOnSomeCore st tcb.tid then
           (.error .revocationRequired : Except KernelError SystemState)
         else
           -- **`v0.35.164`: end the reservation the way the suspend's G3 does.**
@@ -1797,7 +1802,22 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- node's ancestor takes the unrelated newcomer with it.  Past the guard the
     -- detach is unconditionally correct — every mapping it erases belongs to a
     -- node with no descendants and no transfer in flight.
+    --
+    -- **WS-BP BP7.1 (`v0.36.7`): and a slot holding a capability that records a
+    -- frame mapping cannot be destroyed here either** — destroying it owes the
+    -- unmapping of what it mapped (seL4's `finaliseCap`), which only the
+    -- finalising delete performs (`cspaceDeleteSlotFinalising`); a retype that
+    -- dropped it would leave its page mapped with no capability left to name
+    -- the mapping.  Refused with the same error: delete those capabilities
+    -- first.
     if cnodeHasDerivationParentSlot st target cn then
+      .error .revocationRequired
+    --
+    -- WS-BP BP7.1 (`v0.36.12`): nor a capability naming an installed page
+    -- table — destroying the last one owes taking the table out of its address
+    -- space (`finaliseDestroyedCapabilities`), which only the finalising delete
+    -- and revocation perform.
+    else if cn.holdsFrameMappingRecord || Architecture.cnodeHoldsInstalledPageTableCap st cn then
       .error .revocationRequired
     else
       .ok (detachCNodeSlots st target cn)
@@ -1866,6 +1886,60 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- `schedContextUnbind`'s own primitives.
     if sc.scReply.isSome then .error .revocationRequired
     else .ok (releaseSchedContextBinding st (SeLe4n.SchedContextId.ofObjId target) sc)
+  | .frame _ =>
+    -- **WS-BP BP7.1: a frame cannot be retyped in place, and that is final.**
+    -- A frame *is* a page of physical memory, and a VSpace mapping of it
+    -- records that memory's address (`frame.base`), not the object's id.
+    -- Replacing the object would leave every such mapping naming memory the
+    -- kernel no longer accounts for — a mapping outliving the authority that
+    -- created it.  Nor would an unmap here be the right repair: turning a page
+    -- of an untyped's memory into a kernel object in place would leave that
+    -- memory counted by the untyped's watermark and named by nothing.  Memory
+    -- goes back where it came from, as in seL4: a frame is destroyed by the
+    -- **untyped reset** (`untypedReset`, `v0.36.6`), which removes every mapping
+    -- of the region, erases the frames and returns the pages to the untyped
+    -- once no capability names them.  `.revocationRequired` is the error this
+    -- path uses for "clear this precondition first" — here, revoke the untyped
+    -- capability and reset it.
+    .error .revocationRequired
+  | .pageTable _ =>
+    -- **WS-BP BP7.1 (`v0.36.12`): nor can a page table**, for the frame's reason
+    -- and one more: a table is a page an address space's slot may name, so
+    -- replacing it in place would leave that slot naming a kernel object that is
+    -- not a table.  It returns to its untyped through the reset.
+    .error .revocationRequired
+  | .untyped _ =>
+    -- **WS-BP BP7.1 slice 4 (`v0.36.8`): nor can an untyped, for the same
+    -- reason one level up.**  An untyped *is* a region of physical memory, and
+    -- the objects carved from it — frames, child untypeds and their own carves
+    -- — are named by its child list, which the parent's reset walks to retire
+    -- them.  Replacing it in place would orphan every carved object (a frame
+    -- whose page no untyped accounts for any more) and, for a child untyped,
+    -- leave its parent's child list naming a kernel object the parent's reset
+    -- can never retire, so one holder of the child's capability could wedge
+    -- the parent's reset for good.  seL4 has no in-place retype of an untyped
+    -- at all; its memory returns through the untyped it was carved from
+    -- (`untypedReset`), and a boot untyped is never destroyed.
+    .error .revocationRequired
+  | .vspaceRoot _ =>
+    -- **`v0.36.35`: nor can a VSpace root — the fourth memory-backed kind, and
+    -- the one this match had missed.**  `v0.36.9` refused *creating* a root in
+    -- place (`retypeReplacementAdmissible`) and nothing refused *destroying*
+    -- one: a root fell to the wildcard below, so an in-place retype freed its
+    -- ASID and replaced the object while every page table installed under it
+    -- kept its page — live leaf descriptors included — and its install record,
+    -- which then read as stale (`pageTableInstallLive`).  `pageTableMap`
+    -- reinstalls a stale table without zeroing it, so a holder of a `.retype`
+    -- right on a root could retype it, let the frames its tables still
+    -- translate be reset and recarved to another thread, carve a new root and
+    -- reinstall the old table: a hardware walk to that thread's page, writable,
+    -- with nothing mapped in the model.  No ASID invalidation was recorded
+    -- either, so the freed ASID's stale TLB entries met the next root carved
+    -- under it.  The untyped reset is the path that finalises a root — it
+    -- refuses while a thread's `vspaceRoot` names it, removes its mappings,
+    -- detaches and zeroes its tables and invalidates its ASID — so a root goes
+    -- back where it came from, as every other memory-backed kind does.
+    .error .revocationRequired
   | _ => .ok st
 
 /-- **WS-OD OD5.4 / `v0.35.4`: a Reply that is a reply-stack frame cannot be
@@ -2036,7 +2110,7 @@ theorem lifecyclePreRetypeCleanup_rejects_current_anywhere
     lifecyclePreRetypeCleanup st target (.tcb tcb) newObj = .error .revocationRequired := by
   unfold lifecyclePreRetypeCleanup
   simp only []
-  rw [if_pos (threadCurrentOnSomeCore_iff st tcb.tid |>.mpr ⟨c, hCur⟩)]
+  rw [if_pos (by simp [threadHeldOnSomeCore, (threadCurrentOnSomeCore_iff st tcb.tid).mpr ⟨c, hCur⟩])]
 
 /-- WS-SM SM8.B.2: the TCB reference scrub writes no register bank.
 
@@ -2104,7 +2178,9 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     -- detached one, whose scheduler is framed.
     split at hOk
     · exact absurd hOk (by simp)
-    · injection hOk with hOk; subst hOk
+    · split at hOk
+      · exact absurd hOk (by simp)
+      injection hOk with hOk; subst hOk
       have hSched := detachCNodeSlots_scheduler_eq st target cn
       rw [show ((detachCNodeSlots st target cn).scheduler.runQueueOnCore bootCoreId).flat =
             (st.scheduler.runQueueOnCore bootCoreId).flat from by rw [hSched]] at h
@@ -2113,9 +2189,13 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk
     rw [cleanupEndpointServiceRegistrations_scheduler_eq] at h; exact h
-  | notification _ | vspaceRoot _ | untyped _ =>
+  | notification _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; exact h
+  | untyped _ | vspaceRoot _ =>
+    -- `v0.36.35`: a VSpace root is refused too (vacuous on `.ok`).
+    -- WS-BP BP7.1 slice 4: an untyped target is refused (vacuous on `.ok`).
+    simp [lifecyclePreRetypeCleanup] at hOk
   | schedContext _ =>
     -- WS-OD OD5.4: a context that heads a reply stack errors (vacuous on `.ok`).
     -- `v0.35.165`: one that heads none releases the binding it still holds, and
@@ -2134,6 +2214,9 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; exact h
+  | frame _ | pageTable _ =>
+    -- WS-BP BP7.1: a frame target is refused (vacuous on `.ok`).
+    simp [lifecyclePreRetypeCleanup] at hOk
 
 /-- WS-SM SM7.B: the pre-retype cleanup pipeline never touches the
 TLB-shootdown state — every step (the reservation arm: an unbind or a
@@ -2176,15 +2259,20 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     -- and the detach frames the shootdown state.
     split at hOk
     · exact absurd hOk (by simp)
-    · injection hOk with hOk; subst hOk
+    · split at hOk
+      · exact absurd hOk (by simp)
+      injection hOk with hOk; subst hOk
       exact detachCNodeSlots_tlbShootdown_eq st target cn
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk
     exact cleanupEndpointServiceRegistrations_tlbShootdown_eq st target
-  | notification _ | vspaceRoot _ | untyped _ =>
+  | notification _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; rfl
+  | untyped _ | vspaceRoot _ =>
+    -- `v0.36.35`: a VSpace root is refused too (vacuous on `.ok`).
+    simp [lifecyclePreRetypeCleanup] at hOk
   | schedContext _ =>
     -- WS-OD OD5.4: the stack-head refusal is vacuous on `.ok`.  `v0.35.165`: the
     -- binding release is shootdown-silent (`releaseSchedContextBinding_tlbShootdown`).
@@ -2198,6 +2286,8 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; rfl
+  | frame _ | pageTable _ =>
+    simp [lifecyclePreRetypeCleanup] at hOk
 
 namespace Internal
 
@@ -2442,7 +2532,7 @@ theorem endpointQueueRemove_ok_getEndpoint?
     cases obj with
     | endpoint ep =>
       exact ⟨ep, (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj⟩
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
       exact absurd hStep (by simp)
 

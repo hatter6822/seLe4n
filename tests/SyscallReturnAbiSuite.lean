@@ -8,6 +8,9 @@
 -/
 
 import SeLe4n.Platform.FFI
+import SeLe4n.Kernel.SchedLockBracket
+import SeLe4n.Kernel.SyscallDispatchEntry
+import SeLe4n.Kernel.Scheduler.Operations.ResumeDelivery
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.Helpers
 
@@ -1156,6 +1159,251 @@ private def runAbiLayoutFixtureCheck : IO Unit :=
     "rust/sele4n-abi/tests/conformance.rs" abiLayoutTableLines
 
 -- ============================================================================
+-- §11  WS-BP BP7.7 — the declassified badge, delivered
+-- ============================================================================
+--
+-- SM9.C's data-carrying declassification is the one flow the kernel makes
+-- visible on purpose, and in the wait-before-signal ordering its badge reaches
+-- the waiter only through the return frame: the waiter blocked first, so its
+-- own syscall returned nothing.  §9a shows the badge *staged*; this group runs
+-- the whole path through the live entry — the waiter's `.notificationWait`, a
+-- cleared sender's `.declassifySignal` on another core, the waiter's core
+-- taking the `.reschedule` the signal posts — and reads what the context
+-- restore hands the hardware.  A sentinel, or the waiter's own stale argument
+-- spill, in that `x0` is a failure of this row, not of SM9.
+
+/-- The declassified badge — deliberately not §9a's 42, so a scenario that
+fell back to the plain signal path could not satisfy the assertions. -/
+private def declassBadge : Nat := 0x5C
+
+/-- The signaller's label: `kernelTrusted` (high confidentiality). -/
+private def declassHigh : SecurityLabel := SecurityLabel.kernelTrusted
+
+/-- The waiter's and the notification's label: `publicLabel` (low). -/
+private def declassLow : SecurityLabel := SecurityLabel.publicLabel
+
+/-- `trustedLabeling` with the signaller raised to `declassHigh`, the waiter and
+the notification lowered to `declassLow`, and a declassification policy that
+authorizes exactly that downgrade.  So the base lattice DENIES the signal's
+first hop (high → low), the policy authorizes it, and the second hop (the
+notification to its low waiter) is an ordinary flow — one record. -/
+private def declassLabeling : LabelingContext :=
+  { trustedLabeling with
+      threadLabelOf := fun t =>
+        if t = peerTid then declassHigh
+        else if t = callerTid then declassLow
+        else trustedLabeling.threadLabelOf t,
+      objectLabelOf := fun o =>
+        if o = ntfnId ∨ o = callerTid.toObjId then declassLow
+        else trustedLabeling.objectLabelOf o,
+      endpointLabelOf := fun o =>
+        if o = ntfnId then declassLow else trustedLabeling.endpointLabelOf o,
+      declassificationPolicy := { canDeclassify := (fun s d =>
+        decide (s = embedLegacyLabel declassHigh) && decide (d = embedLegacyLabel declassLow)) } }
+
+/-- The same labelling under the deny-all policy an unconfigured deployment
+carries — the control that shows the badge is delivered BECAUSE the policy
+authorized it. -/
+private def declassDeniedLabeling : LabelingContext :=
+  { declassLabeling with declassificationPolicy := { canDeclassify := fun _ _ => false } }
+
+/-- One syscall through the live, bracketed entry step on `core`: the
+dispatch, the caller's return staging, the local scheduling point and the
+restore target, exactly as `syscallDispatchCrossCoreEntry` commits them. -/
+private def entryStepOn (ctx : LabelingContext) (core : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : Nat) (msgInfoRaw capPtr x2 : UInt64) (st : SystemState) :=
+  SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep ctx core syscallId.toUInt32
+    msgInfoRaw capPtr msgInfoRaw x2 0 0 0 0 0 0 0 0 st
+
+/-- The end-to-end run: wait on the boot core, declassify-signal from core 1,
+then the boot core takes the `.reschedule` the signal posted.  Returns the wait's
+outcome, the signal's outcome and posted SGIs, the post-signal audit trail, and
+what the boot core's restore hands the hardware. -/
+private def declassifiedBadgeRun (ctx : LabelingContext) :
+    Kernel.Architecture.SyscallOutcome × Kernel.Architecture.SyscallOutcome ×
+      List (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind) ×
+      List DeclassificationEvent × Option Kernel.Architecture.SyscallReturnFrame :=
+  let (r1, st1) := entryStepOn ctx SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 twoThreadState
+  let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal.toNat 1
+    capPtrValue.toUInt64 declassBadge.toUInt64 st1
+  let st3 := (SeLe4n.Kernel.rescheduleUnderDeclaredLockSet 0 st2).state
+  (r1.1, r2.1, r2.2.1, st2.declassificationAuditLog,
+    (SeLe4n.Kernel.Concurrency.restoreTargetAt st3 0).deliveredFrame?)
+
+private def runDeclassifiedBadgeDeliveryWitnesses : IO Unit := do
+  IO.println "-- §11 WS-BP BP7.7: the declassified badge reaches the waiter through the live restore"
+  let (wait, signal, sgis, trail, delivered) := declassifiedBadgeRun declassLabeling
+  assertBool "11: the waiter's own wait blocked — no frame of its own to read the badge from"
+    (wait == .blocks)
+  assertBool "11: the declassifying signal succeeded as a unit syscall"
+    (match signal with | .returns f => f == .zero | _ => false)
+  assertBool "11: the fixture is a genuine downgrade — the base lattice denies high → low"
+    (securityFlowsTo declassHigh declassLow == false)
+  assertBool "11: the signal posted a .reschedule to the waiter's core, and only that"
+    (sgis == [(SeLe4n.Kernel.Concurrency.bootCoreId, .reschedule)])
+  assertBool "11: the trail carries exactly one record: high → low at the notification, by the signaller"
+    (match trail with
+     | [e] => decide (e.srcDomain = embedLegacyLabel declassHigh) &&
+              decide (e.dstDomain = embedLegacyLabel declassLow) &&
+              decide (e.targetObject = ntfnId) &&
+              decide (e.actor.subject = peerTid)
+     | _ => false)
+  assertBool "11: the waiter resumes reading THAT badge in x0, with the success label in x1"
+    (match delivered with
+     | some f => f.x0 == declassBadge.toUInt64 && f.x1 == 0
+     | none => false)
+  assertBool "11: the delivered frame decodes as the badge, end to end"
+    (match delivered with
+     | some f => rustDecodeResponse (postTrapRegs f) == .ok declassBadge.toUInt64 #[0, 0, 0, 0]
+     | none => false)
+  assertBool "NEGATIVE: the delivered x0 is not the waiter's own stale cap ptr (the §3.5 hazard)"
+    (match delivered with
+     | some f => f.x0 != capPtrValue.toUInt64
+     | none => false)
+  -- CONTROL: the same run under the deny-all policy.  The signal is refused, the
+  -- trail stays empty, nothing is posted, and the waiter's core has nothing to
+  -- resume — which is what makes the positive run a statement about the policy.
+  let (_, signalD, sgisD, trailD, deliveredD) := declassifiedBadgeRun declassDeniedLabeling
+  assertBool "11 CONTROL: under the deny-all policy the signal is refused as a declassification denial"
+    (signalD == .returns (Kernel.Architecture.errorFrame .declassificationDenied))
+  assertBool "11 CONTROL: ...no SGI is posted and no record is written"
+    (sgisD.isEmpty && trailD.isEmpty)
+  assertBool "11 CONTROL: ...and the waiter's core resumes no badge"
+    (deliveredD.isNone)
+
+-- ============================================================================
+-- §12  WS-BP BP7.8 — message registers past the fourth, both directions
+-- ============================================================================
+--
+-- The decode reads a sender's `MR4` onward out of its IPC buffer, and it read
+-- them from the model's memory, which holds no thread's writes; and no delivery
+-- wrote a receiver's.  So on hardware a message longer than four registers
+-- arrived as its first four and whatever the model held.  This group runs a
+-- seven-register send through the live dispatch between two threads whose IPC
+-- buffers are mapped to RAM: the sender's three overflow words are read from
+-- "RAM" (synced into the model as the entry does), and the receiver's are
+-- recorded as user-word stores into its buffer, with the frame's length
+-- counting them.
+
+/-- The receiver's IPC-buffer frame (`callerTid`'s buffer at VA 4096). -/
+private def rxBufferPA : Nat := 0x10_1000
+/-- The sender's IPC-buffer frame (`peerTid`'s buffer at VA 8192). -/
+private def txBufferPA : Nat := 0x10_2000
+
+/-- The three words the sender wrote past its four inline registers. -/
+private def overflowWords : List UInt64 := [0x55, 0x66, 0x77]
+
+/-- `twoThreadState` with both threads' IPC-buffer pages mapped to RAM, and that
+RAM declared.  `rxWrite` is the receiver mapping's write permission — the
+control that a read-only buffer receives nothing. -/
+private def mappedBuffersState (rxWrite : Bool) : SystemState :=
+  let root : SeLe4n.Model.VSpaceRoot :=
+    { asid := SeLe4n.ASID.ofNat 7,
+      mappings := SeLe4n.Kernel.RobinHood.RHTable.ofList
+        [(SeLe4n.VAddr.ofNat 4096, (SeLe4n.PAddr.ofNat rxBufferPA, { read := true, write := rxWrite })),
+         (SeLe4n.VAddr.ofNat 8192, (SeLe4n.PAddr.ofNat txBufferPA, { read := true, write := true }))] }
+  let st := twoThreadState
+  { st with
+      objects := st.objects.insert callerVsp (.vspaceRoot root),
+      machine := { st.machine with
+        memoryMap := [{ base := SeLe4n.PAddr.ofNat 0x10_0000, size := 0x10_0000, kind := .ram }] } }
+
+/-- What the entry does before the decode: read the caller's overflow words
+from RAM and write them into the model.  Here "RAM" is `overflowWords`. -/
+private def syncSenderOverflow (st : SystemState) (msgInfo : UInt64) : SystemState :=
+  let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st peerTid msgInfo
+  Kernel.Architecture.IpcBufferRead.syncUserWords st (addrs.zip overflowWords)
+
+/-- A seven-register message: length 7 in the `MessageInfo` word. -/
+private def sevenRegisters : UInt64 := 7
+
+/-- The receiver blocks in `.receive`; the sender sends seven registers
+(`1 2 3 4` inline, `overflowWords` in its buffer).  `sync` says whether the
+sender's words were read from RAM first — the retired reading is `false`. -/
+private def overflowSendRun (rxWrite sync : Bool) :
+    Except KernelError (Kernel.Architecture.SyscallReturnFrame ×
+      List Kernel.Architecture.PhysicalWrite × List SeLe4n.PAddr) := do
+  let st0 := mappedBuffersState rxWrite
+  let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 st0
+  if out1 != .blocks then throw .illegalState
+  let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st1 peerTid sevenRegisters
+  let stS := if sync then syncSenderOverflow st1 sevenRegisters else st1
+  let (_, st2) ← SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core1
+    SyscallId.send.toNat.toUInt32 sevenRegisters epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
+    0 0 0 0 stS
+  pure (stagedFrame st2 callerTid, st2.pendingPhysicalWrites, addrs)
+
+private def runOverflowDeliveryWitnesses : IO Unit := do
+  IO.println "-- §12 WS-BP BP7.8: message registers past the fourth, read from and written to IPC buffers"
+  match overflowSendRun true true with
+  | .error e => assertBool s!"12: the overflow send runs (got .error {reprStr e})" false
+  | .ok (frame, writes, addrs) => do
+      assertBool "12: the sender's three overflow slots resolve to its RAM frame"
+        (addrs == [SeLe4n.PAddr.ofNat txBufferPA, SeLe4n.PAddr.ofNat (txBufferPA + 8),
+                   SeLe4n.PAddr.ofNat (txBufferPA + 16)])
+      assertBool "12: the receiver's inline window is the sender's first four registers"
+        (frame.x2 == 1 && frame.x3 == 2 && frame.x4 == 3 && frame.x5 == 4)
+      assertBool "12: the three words past the fourth are stored into the receiver's buffer, in order"
+        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0x66,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0x77])
+      assertBool "12: ...and the frame's length counts them: seven registers delivered"
+        ((SeLe4n.Model.MessageInfo.decode frame.x1.toNat).map (·.length) == some 7)
+  -- CONTROL: the same send without the entry's RAM read — the retired reading.
+  -- The decode reads the model's memory, which holds zeroes for the sender's
+  -- frame, so what the receiver is handed is not what the sender wrote.
+  match overflowSendRun true false with
+  | .error e => assertBool s!"12 CONTROL: the unsynced send runs (got .error {reprStr e})" false
+  | .ok (_, writes, _) =>
+      assertBool "12 CONTROL: without the RAM read the receiver is handed the model's zeroes"
+        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0, .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0])
+  -- THE SEAM: the same send through the atomic step the hardware entry commits
+  -- surfaces the three stores to the runtime and commits a state that owes none.
+  match dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+      SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 (mappedBuffersState true) with
+  | .error e => assertBool s!"12 SEAM: the receive runs (got .error {reprStr e})" false
+  | .ok (_, st1) => do
+      let (r, stC) := SeLe4n.Kernel.syscallDispatchCrossCoreStep trustedLabeling core1
+        SyscallId.send.toNat.toUInt32 sevenRegisters epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
+        0 0 0 0 (syncSenderOverflow st1 sevenRegisters)
+      assertBool "12 SEAM: the step hands the runtime the three user-word stores"
+        (r.2.2.2.2.2.2.1 == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,
+                             .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0x66,
+                             .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0x77])
+      assertBool "12 SEAM: ...and the state it commits owes no physical write"
+        stC.pendingPhysicalWrites.isEmpty
+  -- A fault message's width: thirteen words (`unknownSyscall`) staged for a woken
+  -- handler write nine words past the fourth — the delivery is the one every
+  -- wake shares, so a fault handler reads every word the model encodes.
+  let st0 := mappedBuffersState true
+  let thirteen : IpcMessage :=
+    { registers := (Array.range 13).map (fun i => (⟨100 + i⟩ : SeLe4n.RegValue)) }
+  let stW : SystemState :=
+    match st0.objects[callerTid.toObjId]? with
+    | some (.tcb tcb) =>
+        let tcbW : TCB := { tcb with ipcState := .ready, pendingMessage := some thirteen }
+        { st0 with objects := st0.objects.insert callerTid.toObjId (.tcb tcbW) }
+    | _ => st0
+  let stD := Kernel.Architecture.stageWokenDelivery stW (some callerTid) 0
+  assertBool "12: a thirteen-word delivery stores its nine words past the fourth"
+    (stD.pendingPhysicalWrites ==
+      (List.range 9).map (fun i => Kernel.Architecture.PhysicalWrite.storeUserWord
+        (SeLe4n.PAddr.ofNat (rxBufferPA + 8 * i)) (104 + i).toUInt64))
+  assertBool "12: ...and the handler's frame reports thirteen"
+    ((SeLe4n.Model.MessageInfo.decode (stagedFrame stD callerTid).x1.toNat).map (·.length) == some 13)
+  -- CONTROL: a receiver whose buffer is read-only receives only the inline four.
+  match overflowSendRun false true with
+  | .error e => assertBool s!"12 CONTROL: the read-only send runs (got .error {reprStr e})" false
+  | .ok (frame, writes, _) => do
+      assertBool "12 CONTROL: a read-only receiver buffer is written nothing"
+        (writes.isEmpty)
+      assertBool "12 CONTROL: ...and its frame's length is the inline four, not seven"
+        ((SeLe4n.Model.MessageInfo.decode frame.x1.toNat).map (·.length) == some 4)
+
+-- ============================================================================
 -- Runner
 -- ============================================================================
 
@@ -1173,6 +1421,8 @@ def runSyscallReturnAbiChecks : IO Unit := do
   runBlockedOutcomeWitness
   runBlockedWaiterStagingWitnesses
   runAuditReadEndToEnd
+  runDeclassifiedBadgeDeliveryWitnesses
+  runOverflowDeliveryWitnesses
   runTraceFixtureCheck
   runReturnShapeFixtureCheck
   runAbiLayoutFixtureCheck

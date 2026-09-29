@@ -889,7 +889,7 @@ inductive StateField where
   | cdt | cdtSlotNode | cdtNodeSlot | cdtNextNode
   | scThreadIndex | tlb
   | objStoreLock | schedulerLocks | tlbShootdown
-  | perCoreTlb | perCoreICache | pendingIcacheMaintenance
+  | perCoreTlb | perCoreICache | pendingIcacheMaintenance | pendingPhysicalWrites
   | declassificationAuditLog | declassificationAuditEpoch
   | declassificationRefusals | declassificationTaint
   deriving DecidableEq, Repr
@@ -1346,6 +1346,7 @@ def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
   | .perCoreTlb,                 st, st' => st'.perCoreTlb = st.perCoreTlb
   | .perCoreICache,              st, st' => st'.perCoreICache = st.perCoreICache
   | .pendingIcacheMaintenance,   st, st' => st'.pendingIcacheMaintenance = st.pendingIcacheMaintenance
+  | .pendingPhysicalWrites,      st, st' => st'.pendingPhysicalWrites = st.pendingPhysicalWrites
   | .declassificationAuditLog,   st, st' => st'.declassificationAuditLog = st.declassificationAuditLog
   | .declassificationAuditEpoch, st, st' => st'.declassificationAuditEpoch = st.declassificationAuditEpoch
   | .declassificationRefusals,   st, st' => st'.declassificationRefusals = st.declassificationRefusals
@@ -1372,7 +1373,7 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
     h .cdt, h .cdtSlotNode, h .cdtNodeSlot, h .cdtNextNode,
     h .scThreadIndex, h .tlb,
     h .objStoreLock, h .schedulerLocks, h .tlbShootdown,
-    h .perCoreTlb, h .perCoreICache, h .pendingIcacheMaintenance,
+    h .perCoreTlb, h .perCoreICache, h .pendingIcacheMaintenance, h .pendingPhysicalWrites,
     h .declassificationAuditLog, h .declassificationAuditEpoch,
     h .declassificationRefusals, h .declassificationTaint⟩
 
@@ -4250,7 +4251,8 @@ theorem collectQueueMembers_some_start_nonEmpty_result
     | some (KernelObject.vspaceRoot _)
     | some (KernelObject.untyped _)
     | some (KernelObject.schedContext _)
-    | some (KernelObject.reply _) =>
+    | some (KernelObject.reply _) | some (KernelObject.frame _)
+    | some (KernelObject.pageTable _) =>
       rw [hLookup] at hWalk
       simp at hWalk; subst result; simp
 
@@ -4288,7 +4290,8 @@ theorem collectQueueMembers_head_is_start
     | some (KernelObject.vspaceRoot _)
     | some (KernelObject.untyped _)
     | some (KernelObject.schedContext _)
-    | some (KernelObject.reply _) =>
+    | some (KernelObject.reply _) | some (KernelObject.frame _)
+    | some (KernelObject.pageTable _) =>
       rw [hLookup] at hWalk
       simp at hWalk; subst result; simp
 

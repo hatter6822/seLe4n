@@ -60,7 +60,15 @@ __exception_vectors:
 // =========================================================================
 
 // 0x200: Synchronous — Current EL, SPx (e.g., kernel page fault)
+//
+// PR #904 (`v0.36.41`): the kernel's own fault always halts the PE, and it may
+// be the kernel stack overflowing into its guard page — where the frame this
+// entry saves cannot be pushed.  So the entry switches to SP_EL0, which every
+// PE holds at its fault stack's top while it runs at EL1 (`boot.S`, `trap.S`'s
+// EL0 entries), before anything touches the stack.  A fault taken on that
+// stack arrives at the SP0 vectors, which park the PE without using a stack.
 .balign 128
+    msr spsel, #0
     b   __el1_sync_entry
 
 // 0x280: IRQ — Current EL, SPx (interrupt while in kernel)
@@ -71,8 +79,9 @@ __exception_vectors:
 .balign 128
     b   __exception_stub
 
-// 0x380: SError — Current EL, SPx
+// 0x380: SError — Current EL, SPx (halts; on the fault stack, as 0x200)
 .balign 128
+    msr spsel, #0
     b   __el1_serror_entry
 
 // =========================================================================

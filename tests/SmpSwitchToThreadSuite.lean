@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
 import SeLe4n.Kernel.Concurrency.Runtime
+import SeLe4n.Kernel.Architecture.ContextRestore
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -434,12 +435,145 @@ private def runAffinityAlgebraChecks : IO Unit := do
   assertBool "core1-bound thread REJECTED on the boot core"
     (!affinityAdmitsCore { mkTcb 102 10 0 with cpuAffinity := some core1 } bootCoreId)
 
+/-- §3.11 (WS-BP BP7.3): the whole trap frame reaches the outgoing thread.  A
+frame whose word `i` is `0x1000 + i`, taken from EL0 with the carry flag set. -/
+private def trapWords (i : Nat) : UInt64 :=
+  if i = Architecture.trapFramePstateWord then 0x2000_0000 else 0x1000 + i.toUInt64
+
+private def savedFrame : RegisterFile := Architecture.registerFileOfTrapWords trapWords
+
+/-- The saved context of `tid`, or the default file when it has no TCB. -/
+private def savedContextOf (st : SystemState) (tid : SeLe4n.ThreadId) : RegisterFile :=
+  ((st.getTcb? tid).map (·.registerContext)).getD default
+
+private def runTrapFrameSaveChecks : IO Unit := do
+  IO.println "--- §3.11 WS-BP BP7.3 the whole trap frame is saved ---"
+  assertBool "the frame's words are x0-x30, SP, PC and PSTATE, and x31 reads zero"
+    (savedFrame.gpr ⟨6⟩ == ⟨0x1006⟩ && savedFrame.gpr ⟨30⟩ == ⟨0x101E⟩ &&
+     savedFrame.gpr ⟨31⟩ == ⟨0⟩ && savedFrame.sp == ⟨0x101F⟩ &&
+     savedFrame.pc == ⟨0x1020⟩ && savedFrame.pstate == ⟨0x2000_0000⟩)
+  -- v0.36.30: word 34 is the thread pointer `TPIDR_EL0`, which EL0 writes with
+  -- no trap.
+  assertBool "word 34 is the thread pointer TPIDR_EL0"
+    (savedFrame.tpidr == ⟨0x1022⟩ && Architecture.trapFrameWordCount == 35)
+  assertBool "a frame taken from EL0 is a thread's; one taken at EL1h is the kernel's"
+    (Architecture.trapFromEl0 savedFrame &&
+     !Architecture.trapFromEl0 { savedFrame with pstate := ⟨0x3C5⟩ })
+  let saved := Architecture.saveTrapFrameOnCore stPreempt bootCoreId savedFrame
+  assertBool "the save writes the core's bank and the current thread's context with one frame"
+    (saved.machine.regsOnCore bootCoreId == savedFrame &&
+     savedContextOf saved tidP == savedFrame)
+  assertBool "switching away then saves every register the thread trapped with (x6, x30, SP, PC, PSTATE)"
+    (switchOkAnd saved bootCoreId tidA (fun st' =>
+      let ctx := savedContextOf st' tidP
+      ctx.gpr ⟨6⟩ == ⟨0x1006⟩ && ctx.gpr ⟨30⟩ == ⟨0x101E⟩ && ctx.sp == ⟨0x101F⟩ &&
+      ctx.pc == ⟨0x1020⟩ && ctx.pstate == ⟨0x2000_0000⟩ && ctx.tpidr == ⟨0x1022⟩))
+  assertBool "RETIRED: with only the syscall window spilled, the switch saved x6 and the flags as zero"
+    (switchOkAnd stPreempt bootCoreId tidA (fun st' =>
+      let ctx := savedContextOf st' tidP
+      ctx.gpr ⟨6⟩ == ⟨0⟩ && ctx.pstate == ⟨0⟩))
+  assertBool "a frame taken at EL1 saves nothing"
+    (let s := Architecture.saveTrapFrameOnCore stPreempt bootCoreId { savedFrame with pstate := ⟨0x3C5⟩ }
+     s.machine.regsOnCore bootCoreId == stPreempt.machine.regsOnCore bootCoreId &&
+     savedContextOf s tidP == savedContextOf stPreempt tidP)
+  assertBool "a core running no thread saves nothing"
+    (let s := Architecture.saveTrapFrameOnCore stPreempt core1 savedFrame
+     s.machine.regsOnCore core1 == stPreempt.machine.regsOnCore core1)
+  assertBool "an entry with no published frame saves nothing"
+    (let s := Architecture.saveCapturedTrapFrame stPreempt bootCoreId none
+     s.machine.regsOnCore bootCoreId == stPreempt.machine.regsOnCore bootCoreId)
+
+/-- §3.12 (WS-BP BP7.4): the result frame a syscall returns. -/
+private def resultFrame : Architecture.SyscallReturnFrame :=
+  { x0 := 0xA0, x1 := 0xA1, x2 := 0xA2, x3 := 0xA3, x4 := 0xA4, x5 := 0xA5 }
+
+/-- The boot core running its idle thread. -/
+private def stIdle : SystemState :=
+  let base := BootstrapBuilder.empty.build
+  { base with scheduler := base.scheduler.setCurrentOnCore bootCoreId (some (idleThreadId bootCoreId)) }
+
+private def restoresUser (t : Architecture.RestoreTarget) (ctx : RegisterFile) : Bool :=
+  match t with
+  | .user c _ _ _ => c == ctx
+  | _ => false
+
+private def restoresIdle (t : Architecture.RestoreTarget) : Bool :=
+  match t with
+  | .idle => true
+  | _ => false
+
+private def restoresNothing (t : Architecture.RestoreTarget) : Bool :=
+  match t with
+  | .none => true
+  | _ => false
+
+private def runContextRestoreChecks : IO Unit := do
+  IO.println "--- §3.12 WS-BP BP7.4 the caller's result survives a same-entry switch ---"
+  let saved := Architecture.saveTrapFrameOnCore stPreempt bootCoreId savedFrame
+  let staged := Architecture.stageCallerReturn saved saved bootCoreId (.returns resultFrame)
+  assertBool "staging writes the result into the caller's context and the core's bank"
+    (let ctx := savedContextOf staged tidP
+     ctx.gpr ⟨0⟩ == ⟨0xA0⟩ && ctx.gpr ⟨5⟩ == ⟨0xA5⟩ && ctx.gpr ⟨6⟩ == ⟨0x1006⟩ &&
+     ctx.pc == ⟨0x1020⟩ && (staged.machine.regsOnCore bootCoreId).gpr ⟨0⟩ == ⟨0xA0⟩)
+  assertBool "switching away then keeps the result: the caller resumes with x0-x5 its syscall returned"
+    (switchOkAnd staged bootCoreId tidA (fun st' =>
+      let ctx := savedContextOf st' tidP
+      ctx.gpr ⟨0⟩ == ⟨0xA0⟩ && ctx.gpr ⟨3⟩ == ⟨0xA3⟩ && ctx.gpr ⟨6⟩ == ⟨0x1006⟩))
+  assertBool "RETIRED: without staging, the switch saved the syscall's arguments as its result"
+    (switchOkAnd saved bootCoreId tidA (fun st' =>
+      (savedContextOf st' tidP).gpr ⟨0⟩ == ⟨0x1000⟩))
+  assertBool "a blocking or faulting outcome stages nothing"
+    (let b := Architecture.stageCallerReturn saved saved bootCoreId .blocks
+     let f := Architecture.stageCallerReturn saved saved bootCoreId .faulted
+     savedContextOf b tidP == savedFrame && savedContextOf f tidP == savedFrame)
+  -- WS-BP BP7.6: a caller its own syscall switched out (a `.tcbResume` of a
+  -- higher-priority thread, a self-demoting `.tcbSetPriority`) still gets its
+  -- result, in its context — and the core's bank, which holds the thread now
+  -- running, is left alone.
+  assertBool "a caller switched out by its own syscall has its result in its context"
+    (let post := { saved with scheduler := saved.scheduler.setCurrentOnCore bootCoreId (some tidA) }
+     let s := Architecture.stageCallerReturn saved post bootCoreId (.returns resultFrame)
+     let ctx := savedContextOf s tidP
+     ctx.gpr ⟨0⟩ == ⟨0xA0⟩ && ctx.gpr ⟨5⟩ == ⟨0xA5⟩ && ctx.gpr ⟨6⟩ == ⟨0x1006⟩ &&
+     s.machine.regsOnCore bootCoreId == post.machine.regsOnCore bootCoreId)
+  assertBool "RETIRED: staging only a still-current caller left it its arguments"
+    (let post := { saved with scheduler := saved.scheduler.setCurrentOnCore bootCoreId (some tidA) }
+     savedContextOf post tidP == savedFrame)
+  IO.println "--- §3.12 WS-BP BP7.4 the restore target is the committed current thread ---"
+  assertBool "a user thread's saved context is what the core resumes"
+    (restoresUser (Architecture.restoreTargetOnCore staged bootCoreId) (savedContextOf staged tidP))
+  assertBool "after a switch the core resumes the incoming thread, not the one that trapped"
+    (switchOkAnd staged bootCoreId tidA (fun st' =>
+      restoresUser (Architecture.restoreTargetOnCore st' bootCoreId) (savedContextOf st' tidA) &&
+      !restoresUser (Architecture.restoreTargetOnCore st' bootCoreId) (savedContextOf st' tidP)))
+  -- v0.36.30: the thread pointer is part of what the core resumes, so the
+  -- incoming thread gets its own and never the value the outgoing thread
+  -- wrote.  Before the fix the hardware register was never saved or
+  -- restored, and the incoming thread read `0x1022` — the outgoing thread's.
+  assertBool "the incoming thread resumes with its own thread pointer, not the outgoing thread's"
+    (switchOkAnd staged bootCoreId tidA (fun st' =>
+      match Architecture.restoreTargetOnCore st' bootCoreId with
+      | .user c _ _ _ =>
+        let staged := Architecture.trapWordsOfRegisterFile c Architecture.trapFrameTpidrWord
+        staged == (savedContextOf st' tidA).tpidr.val.toUInt64 && staged != 0x1022
+      | _ => false))
+  assertBool "the outgoing thread keeps its thread pointer for its next resume"
+    (switchOkAnd staged bootCoreId tidA (fun st' => (savedContextOf st' tidP).tpidr == ⟨0x1022⟩))
+  assertBool "a core running its idle thread resumes the idle loop"
+    (restoresIdle (Architecture.restoreTargetOnCore stIdle bootCoreId))
+  assertBool "a core running nothing restores nothing"
+    (restoresNothing (Architecture.restoreTargetOnCore stPreempt core1))
+  assertBool "the trap words of a context read back as that context"
+    (Architecture.registerFileOfTrapWords (Architecture.trapWordsOfRegisterFile savedFrame) == savedFrame)
+
 def runSmpSwitchToThreadChecks : IO Unit := do
   IO.println "WS-SM SM5.B — Per-core switchToThread suite"
   IO.println "===================================="
   runSwitchScenarios
   runLockSetChecks
   runAffinityAlgebraChecks
+  runTrapFrameSaveChecks
+  runContextRestoreChecks
   IO.println "===================================="
   IO.println "All SM5.B per-core switchToThread checks PASS."
 

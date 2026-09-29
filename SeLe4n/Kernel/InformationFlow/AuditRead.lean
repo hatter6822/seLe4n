@@ -126,11 +126,14 @@ is *unlike* the trail rather than by symmetry with it:
 
 ## What this module deliberately does not do
 
-It adds **no kernel→user memory write path**.  A write mirror of `ipcBufferReadMr`
-is feasible, but it would grow the trusted computing base — and note that
-`ipcBufferReadMr` ignores `PagePermissions` entirely, which a write path must
-not.  A monitor draining a 256-entry trail does not need the throughput.
-Recorded as a deliberate non-goal, revisitable if throughput ever demands it.
+It adds **no kernel→user memory write path of its own**.  The kernel has one
+since WS-BP BP7.8 — a delivered message's registers past the fourth, written
+into the receiver's IPC buffer at the address `IpcBufferRead.ipcBufferSlotPAddr?`
+answers for a *writable* mapping, which is the permission check `ipcBufferReadMr`
+does not make and this note said a write path must.  The reader could return a
+batch of records through that path; a monitor draining a 256-entry trail does
+not need the throughput, so it stays a deliberate non-goal, revisitable if
+throughput ever demands it.
 -/
 import SeLe4n.Kernel.InformationFlow.Declassification
 -- WS-SM SM9.B.10: the canonical `KernelError` numbering (WS-RA's

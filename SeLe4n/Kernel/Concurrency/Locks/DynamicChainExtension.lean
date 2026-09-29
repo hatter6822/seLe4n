@@ -1165,9 +1165,8 @@ theorem acquireLockOnObject_preserves_blockingServer (s : SystemState)
   · unfold acquireLockOnObject
     cases hk : l.kind with
     | objStore => rfl
-    | page => rfl
     | tcb | endpoint | notification | cnode
-    | vspaceRoot | untyped | schedContext | reply =>
+    | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals (
         unfold updateObjectLockAt
         cases hL : LockId.lookup s l with

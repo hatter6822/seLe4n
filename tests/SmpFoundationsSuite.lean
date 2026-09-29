@@ -369,11 +369,24 @@ example (coreId : UInt64) :
 example (coreId : UInt64) :
     SeLe4n.Kernel.secondaryKernelMain coreId
       = (do
+          let frame ← SeLe4n.Platform.FFI.captureTrapFrame
           let record ← SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>
-            let st' := (SeLe4n.Kernel.rescheduleUnderDeclaredLockSet coreId st).state
-            ((SeLe4n.Kernel.Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c)), st'))
-          SeLe4n.Kernel.Concurrency.recordCommittedCurrentThreadHw record) :=
+            let st' := (SeLe4n.Kernel.rescheduleUnderDeclaredLockSet coreId
+              (SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+            -- PR #904 review (`v0.36.41`): the core's residency settles on the
+            -- successor the reschedule staged.
+            let st' := SeLe4n.Kernel.PriorityInheritance.settleResidencyAt st' coreId
+            (((SeLe4n.Kernel.Concurrency.coreIdOfUInt64? coreId).map
+              (fun c => (c, st'.scheduler.currentOnCore c)),
+              SeLe4n.Kernel.Concurrency.restoreTargetAt st' coreId,
+              (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+              SeLe4n.Kernel.Architecture.clearIcacheMaintenance
+                (SeLe4n.Kernel.Architecture.clearPhysicalWrites st')))
+          SeLe4n.Platform.FFI.completePhysicalWrites record.2.2.1
+          SeLe4n.Platform.FFI.completeIcacheMaintenance record.2.2.2
+          SeLe4n.Kernel.Concurrency.releaseSwitchedFpOwner coreId
+          SeLe4n.Platform.FFI.restoreTrapFrame record.2.1
+          SeLe4n.Kernel.Concurrency.recordCommittedCurrentThreadHw record.1) :=
   SeLe4n.Kernel.secondaryKernelMain_def coreId
 -- Concrete-instance checks at each secondary context id (1, 2, 3) and
 -- the boot-core context id (0): the seam identity holds at every core.

@@ -8,7 +8,7 @@
 //!
 //! ## Mirror discipline
 //!
-//! `SyscallId` here mirrors the 36-variant enum in
+//! `SyscallId` here mirrors the 41-variant enum in
 //! `sele4n-types/src/syscall.rs`.  We do NOT depend on `sele4n-types`
 //! in the runtime build (the HAL crate is the lowest-level workspace
 //! member with zero runtime dependencies, by design — see
@@ -82,7 +82,7 @@ impl DispatchError {
     }
 }
 
-/// AN9-F: 35-variant syscall ID enum mirroring
+/// AN9-F: 41-variant syscall ID enum mirroring
 /// `sele4n-types::SyscallId`.  Discriminants align with the Lean
 /// `SyscallId.toNat` encoding so a `u64` syscall id read from the
 /// trap frame's `x7` register decodes identically on both sides.
@@ -145,14 +145,34 @@ pub enum SyscallId {
     /// in the named slot (seL4's `seL4_CNode_Revoke`).  The source slot itself
     /// survives — revocation destroys derivations, not the capability.
     CspaceRevoke = 35,
+    /// WS-BP BP7.1 (`v0.36.5`): carve a frame out of an untyped the caller
+    /// holds (seL4's `seL4_Untyped_Retype`); invoked on the untyped
+    /// capability, x2..x5 = type tag, child object id, destination CNode
+    /// capability address, destination slot.
+    UntypedRetype = 36,
+    /// WS-BP BP7.1 (`v0.36.6`): hand an untyped's memory back to it once no
+    /// capability names a carved child (seL4's `resetUntypedCap`); invoked on
+    /// the untyped capability, with no message registers.
+    UntypedReset = 37,
+    /// WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and VSpace
+    /// roots (seL4's `TCB_SetSpace`); x2/x3 = capability addresses of the two
+    /// roots in the caller's CSpace.
+    TcbSetSpace = 38,
+    /// WS-BP BP7.1 (`v0.36.12`): install an intermediate page table (seL4's
+    /// `seL4_ARM_PageTable_Map`); x2 = the address-space capability address,
+    /// x3 = the virtual address.
+    PageTableMap = 39,
+    /// WS-BP BP7.1 (`v0.36.12`): take one out (`seL4_ARM_PageTable_Unmap`); no
+    /// message registers.
+    PageTableUnmap = 40,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 36;
+    pub const COUNT: u32 = 41;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
-    /// outside the valid 0..=33 range with `None`.
+    /// outside the valid `0..COUNT` range with `None`.
     pub const fn from_u32(v: u32) -> Option<Self> {
         match v {
             0 => Some(Self::Send),
@@ -191,6 +211,11 @@ impl SyscallId {
             33 => Some(Self::DeclassifySignal),
             34 => Some(Self::TcbSetFaultHandler),
             35 => Some(Self::CspaceRevoke),
+            36 => Some(Self::UntypedRetype),
+            37 => Some(Self::UntypedReset),
+            38 => Some(Self::TcbSetSpace),
+            39 => Some(Self::PageTableMap),
+            40 => Some(Self::PageTableUnmap),
             _ => None,
         }
     }
@@ -229,6 +254,17 @@ impl SyscallId {
             // WS-RR RR8.16: the revoke takes the delete's argument layout —
             // x2 = the slot of the invoked CNode whose derivations go.
             Self::CspaceRevoke => 1,
+            // WS-BP BP7.1: type tag, child id, destination CNode, destination
+            // slot — all four inline message registers.
+            Self::UntypedRetype => 4,
+            // WS-BP BP7.1: the reset's only operand is the invoked capability.
+            Self::UntypedReset => 0,
+            // WS-BP BP7.1: the two root capability addresses.
+            Self::TcbSetSpace => 2,
+            // WS-BP BP7.1: the address-space capability address and the address.
+            Self::PageTableMap => 2,
+            // WS-BP BP7.1: the unmap's only operand is the invoked capability.
+            Self::PageTableUnmap => 0,
             Self::LifecycleRetype => 3,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
@@ -497,12 +533,12 @@ pub enum SvcOutcome {
     Frame([u64; 6]),
     /// The caller blocked: **no return frame exists for it** (its stale
     /// registers are not a return value; the real frame is staged by the
-    /// unblocking arm and delivered by the SM10.1 context restore).  This
-    /// variant is that seam's trap-layer hook — when
-    /// `contextRestoreSeamLive` flips, the trap layer installs a runnable
-    /// successor's context here.  Until then the hardware `eret`s back
-    /// INTO the blocked caller, so the trap layer must poison its frame
-    /// with [`blocked_resume_sentinel_regs`]: without the sentinel the
+    /// unblocking arm and delivered by the context restore).  Since WS-BP
+    /// BP7.6 the dispatch installs this core's successor and the trap layer
+    /// returns through it; this variant is reached only when it installed
+    /// nothing, where the hardware would `eret` back INTO the blocked
+    /// caller, so the trap layer poisons its frame with
+    /// [`blocked_resume_sentinel_regs`]: without the sentinel the
     /// caller's own request registers (an `x1` whose label is typically
     /// `0`) decode as a **false success** — the same fail-open class the
     /// retired pre-WS-RA protocol had (PR #866 review).
@@ -514,9 +550,10 @@ pub enum SvcOutcome {
     /// the model restarts this caller *at* the `SVC` on its handler's
     /// reply, so the `Blocked` sentinel — which `eret`s the caller past the
     /// `SVC` — would resume a thread the model has waiting on a fault.  The
-    /// trap layer halts on this variant pending the SM10.1 successor
-    /// install, exactly as it does after a delivered unknown-syscall or
-    /// abort fault (`halt_after_delivered_syscall_fault`).
+    /// trap layer returns through the successor the dispatch installed, and
+    /// halts on this variant only when it installed nothing, exactly as it
+    /// does after a delivered unknown-syscall or abort fault
+    /// (`halt_after_delivered_syscall_fault`).
     Faulted,
 }
 
@@ -567,9 +604,9 @@ const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE > 56);
 ///
 /// A blocked caller has **no** return value — its real frame is staged
 /// into its TCB by the unblocking arm (plan §4d) and delivered by the
-/// SM10.1 context restore.  Until `contextRestoreSeamLive` flips, the
-/// trap path cannot install a successor, so `trap.S` restores and
-/// `eret`s through the blocked caller's own saved frame; left
+/// context restore (WS-BP BP7.6).  When a dispatch installs no successor,
+/// `trap.S` restores and `eret`s through the blocked caller's own saved
+/// frame; left
 /// untouched, those registers are the caller's request (`x1` typically
 /// a label-`0` `MessageInfo`), which `decode_response` reads as a
 /// **false success** whose `x0` "badge" is the caller's own capability
@@ -578,9 +615,9 @@ const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE > 56);
 /// [`BLOCKED_RESUME_SENTINEL_LABEL`] decodes as `UnknownKernelError`,
 /// never as success and never as any kernel-emitted error.
 ///
-/// The SM10.1 context restore REPLACES the write with the successor's
-/// frame install; the sentinel is the interim occupant of that seam,
-/// not part of the verified return convention (the Lean model stages
+/// The context restore replaces the whole frame with the successor's
+/// before this write could run; the sentinel is the fallback when nothing
+/// was installed, not part of the verified return convention (the Lean model stages
 /// real frames only — `SyscallOutcome.mailboxFrame .blocks = .zero`).
 pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
     [0, BLOCKED_RESUME_SENTINEL_LABEL << 9, 0, 0, 0, 0]
@@ -610,12 +647,12 @@ pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
 ///                                   exists (the trap layer poisons the
 ///                                   frame with the fail-closed
 ///                                   [`blocked_resume_sentinel_regs`]
-///                                   until the SM10.1 context restore
-///                                   installs a successor instead).
+///                                   when the context restore installed no
+///                                   successor).
 ///   `Ok(SvcOutcome::Faulted)`     — the caller took a fault at the seam
 ///                                   (tag 2); no frame exists and the trap
-///                                   layer halts pending SM10.1 rather
-///                                   than resume the caller past the `SVC`
+///                                   layer halts if no successor was
+///                                   installed rather than resume the caller past the `SVC`
 ///                                   its handler's reply restarts it at.
 ///   `Err(error)`                  — prefilter rejection (invalid syscall
 ///                                   id / argument count); the trap layer
@@ -904,6 +941,8 @@ mod tests {
             spsr_el1: 0,
             esr_el1: 0,
             far_el1: 0,
+            tpidr_el0: 0,
+            reserved: 0,
         }
     }
 
@@ -1162,7 +1201,7 @@ mod tests {
     /// userspace decoder reads the sentinel as `UnknownKernelError`, an
     /// error the verified kernel never emits.  This is the property the
     /// trap-layer write exists for: a blocked caller that the hardware
-    /// resumes prematurely (the SM10.1 context restore is not live)
+    /// resumes with no context restored
     /// observes a fail-closed error, never a false success built from its
     /// own stale request registers.
     #[test]
@@ -1220,7 +1259,21 @@ mod tests {
         // WS-RR RR8.16: the revoke takes the delete's one-register layout.
         assert_eq!(SyscallId::CspaceRevoke.min_inline_args(), 1);
         assert_eq!(SyscallId::from_u32(35), Some(SyscallId::CspaceRevoke));
-        assert_eq!(SyscallId::from_u32(36), None);
+        // WS-BP BP7.1: the carve takes all four inline registers.
+        assert_eq!(SyscallId::UntypedRetype.min_inline_args(), 4);
+        assert_eq!(SyscallId::from_u32(36), Some(SyscallId::UntypedRetype));
+        // WS-BP BP7.1: the reset takes no message registers.
+        assert_eq!(SyscallId::UntypedReset.min_inline_args(), 0);
+        assert_eq!(SyscallId::from_u32(37), Some(SyscallId::UntypedReset));
+        // WS-BP BP7.1: the space change takes its two root addresses.
+        assert_eq!(SyscallId::TcbSetSpace.min_inline_args(), 2);
+        assert_eq!(SyscallId::from_u32(38), Some(SyscallId::TcbSetSpace));
+        // WS-BP BP7.1: the page-table install takes two, its removal none.
+        assert_eq!(SyscallId::PageTableMap.min_inline_args(), 2);
+        assert_eq!(SyscallId::PageTableUnmap.min_inline_args(), 0);
+        assert_eq!(SyscallId::from_u32(39), Some(SyscallId::PageTableMap));
+        assert_eq!(SyscallId::from_u32(40), Some(SyscallId::PageTableUnmap));
+        assert_eq!(SyscallId::from_u32(41), None);
     }
 
     // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid

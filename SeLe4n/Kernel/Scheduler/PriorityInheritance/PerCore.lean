@@ -11,7 +11,6 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.BoundedInversion
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.Concurrency.Runtime
-import SeLe4n.Kernel.Concurrency.ContextRestoreSeam
 
 /-!
 # WS-SM SM5.F — Per-core priority inheritance protocol (theorem surface)
@@ -1425,13 +1424,11 @@ theorem currentSlotChangeSgis_fires_on_change (pre post : SystemState)
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq]
     exact ⟨hne, hChanged⟩⟩, rfl⟩
 
-/-! `contextRestoreSeamLive` — the seam flag every consumer reads — now lives
-in `SeLe4n.Kernel.Concurrency.ContextRestoreSeam`, imported above and
-re-exported by this namespace.  It moved down (PR #861 review round 29)
-because `SchedContext/OperationsPerCore.lean` needs the *same* flag for its
-own local-reschedule guard and cannot import this module: that edge closes a
-cycle through `Kernel.API` / `Model.FreezeProofs` / `Platform.Boot`.  A second
-literal would have been the round-20 drift defect all over again. -/
+/-! WS-BP BP7.6 (v0.36.19): `contextRestoreSeamLive` and its module
+`SeLe4n.Kernel.Concurrency.ContextRestoreSeam` are retired.  The flag held the
+one fact that no core could install a switched-in thread's context; every state-
+committing entry now does, so the three guards that read it are gone with it and
+the transitions they gated run unconditionally. -/
 
 /-- WS-SM SM8.B (PR #861 review round 17): did this transition **vacate the
 executing core** — leave it with no current thread when it had one?
@@ -1515,55 +1512,153 @@ theorem scheduleLocalSuccessor_of_post_running (pre post : SystemState) (execCor
   unfold localSuccessorNeeded
   simp [h]
 
-/-- WS-SM SM8.B (PR #861 review round 20): **the successor dispatch as the live
-entries run it** — gated on the restore seam it depends on.
+/-- **`v0.36.40`: dispatch a core another core vacated.**  A core entered
+from EL0 whose committed slot is already `none` is running, in hardware, a
+thread the model has taken off it — another core's transition cleared the slot
+(`removeRunnableOnCore`, reached by a remote `.tcbSuspend` or a donation
+holder's deschedule), and the `.reschedule` SGI that would have told this core
+has not yet been taken: it was pending while the core waited on the
+kernel-entry lock with IRQs masked.  An entry that names no thread to act on
+must still hand the core something to resume, or the trap layer has nothing to
+return through and halts the PE (`trap.rs`, after `take_restored`).
 
-`scheduleLocalSuccessor` is correct at the model level and its theorems say so.
-But dispatching a successor the runtime cannot install is not an improvement on
-not dispatching one.
+`scheduleLocalSuccessor` is inert here by design — its guard is a *change*
+between two states the entry computed, and this core was vacated before the
+entry began — so the vacated case is its own rule: run the core's reschedule,
+which with no current thread admits any budget-eligible candidate and so
+dispatches at least the core's idle thread.  The `.error` arm keeps the state
+(fail-closed, as `scheduleLocalSuccessor`'s does); a populated slot is left
+alone, so the rule is the identity wherever the entry has a thread to act on. -/
+def dispatchVacatedCore (st : SystemState) (c : CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | some _ => st
+  | none =>
+    match handleRescheduleSgiOnCore st c with
+    | .ok st' => st'
+    | .error _ => st
 
-**Neither state is safe, and this gate does not make one safe** (PR #861 review
-round 21 — an earlier version of this note claimed otherwise and was wrong).
-Without a context-restore seam the SVC path returns through the blocked caller's
-own frame either way, so the caller **keeps executing user code it should not be
-running**, on both sides of this guard.  What differs is only what happens at
-its *next* syscall: with `currentOnCore = none` the dispatch rejects it
-(`syscallDispatchFromAbi` returns `.illegalState` — proven, not asserted:
-`Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current`, instantiated
-over this wrapper's own output by `SyscallDispatchEntry`'s
-`vacatedCore_next_syscall_rejected`), while with a named successor it is
-**attributed to that successor**.  Rejection is better than
-misattribution, so the gate picks the less-bad of two broken states — it is a
-relative choice, not a safety property, and "fails closed" describes the syscall
-boundary alone.
+/-- `v0.36.40`: the rule does nothing on a core that runs a thread. -/
+theorem dispatchVacatedCore_of_current (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (h : st.scheduler.currentOnCore c = some tid) :
+    dispatchVacatedCore st c = st := by
+  simp [dispatchVacatedCore, h]
 
-The switch is therefore coupled to its prerequisite rather than described
-alongside it.  Today this is `post`; when SM10.1 flips `contextRestoreSeamLive`
-it becomes the dispatch, with no other edit.  The vacated-core liveness defect
-stays open and stays recorded (`contextSwitchSites_restore_pending`), as does
-the larger fact it belongs to: with no context restore and no registered
-INTID-0 handler, *no* modelled thread switch reaches hardware on any path —
-timer preemption, cross-core wake, or syscall.
+/-- `v0.36.40`: on a vacated core the rule **is** the core's reschedule. -/
+theorem dispatchVacatedCore_of_vacated (st st' : SystemState) (c : CoreId)
+    (h : st.scheduler.currentOnCore c = none)
+    (hR : handleRescheduleSgiOnCore st c = .ok st') :
+    dispatchVacatedCore st c = st' := by
+  simp [dispatchVacatedCore, h, hR]
 
-Deliberately a *wrapper*: folding the guard into `scheduleLocalSuccessor` would
-make every theorem about it conditional, and those theorems are what SM10.1
-enables rather than has to re-prove. -/
-def scheduleLocalSuccessorLive (pre post : SystemState) (execCore : CoreId) : SystemState :=
-  if contextRestoreSeamLive then scheduleLocalSuccessor pre post execCore else post
+/-- **PR #904 review (`v0.36.41`): is `tid` still resident on a core other than
+`c`?**  Some other core's registers still hold `tid`'s EL0 context
+(`MachineState.residentOnCore`): that core was vacated remotely and has not yet
+taken the exception that saves the context. -/
+def residentElsewhere (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
+  Concurrency.allCores.any fun c' => c' != c && st.machine.residentOnCore c' == some tid
 
-/-- WS-SM SM8.B: what the kernel does **today** — nothing.  `rfl`, so this is
-the definition rather than a claim about it. -/
-theorem scheduleLocalSuccessorLive_inert (pre post : SystemState) (execCore : CoreId) :
-    scheduleLocalSuccessorLive pre post execCore = post := rfl
+/-- **PR #904 review (`v0.36.41`): a thread still resident elsewhere is not
+resumed here.**  Its saved context is stale until the core it is resident on
+saves it, and resuming it here would run it on two cores at once; switching it
+out later would also save this core's stale copy over the fresh one.  So the
+core switches to its idle thread instead, which re-enqueues the thread on this
+core's run queue (`switchToThreadOnCore` → `preemptCurrentOnCore`); the next
+scheduling point here selects it again once the other core has saved it.  The
+save that preemption performs writes back the context the switch just loaded,
+so it changes nothing.  Should the switch fail (no idle thread the core admits,
+which the boot rules out), the thread is still taken off the core: re-enqueued
+and the slot cleared, so the property never depends on the idle switch. -/
+def deferResidentElsewhere (st : SystemState) (c : CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | some tid =>
+    if residentElsewhere st c tid then
+      match switchToThreadOnCore st c (idleThreadId c) with
+      | .ok st' => st'
+      | .error _ =>
+        let st1 := preemptCurrentOnCore st c (idleThreadId c)
+        { st1 with scheduler := st1.scheduler.setCurrentOnCore c none }
+    else st
+  | none => st
 
-/-- WS-SM SM8.B: and what it does once the seam is live — the full dispatch, so
-the flip loses nothing. -/
-theorem scheduleLocalSuccessorLive_eq_of_seam_live (pre post : SystemState) (execCore : CoreId)
-    (h : contextRestoreSeamLive = true) :
-    scheduleLocalSuccessorLive pre post execCore = scheduleLocalSuccessor pre post execCore := by
-  unfold scheduleLocalSuccessorLive
-  rw [h]
-  rfl
+/-- **PR #904 review (`v0.36.41`): settle what core `c` resumes, and record it.**
+
+The last step of every state-committing entry, after its transition and before
+its restore target is read:
+
+1. a vacated core dispatches a successor (`dispatchVacatedCore`) — every entry,
+   not only the fault and FP/SIMD ones `v0.36.40` gave the rule, since a syscall
+   or a tick on a vacated core would otherwise resume nothing;
+2. a thread still resident on another core is not resumed here
+   (`deferResidentElsewhere`);
+3. the thread the core will resume at EL0 becomes its resident thread
+   (`MachineState.residentOnCore`), and a core resuming its idle loop or nothing
+   holds none — which is what the next exception's save reads when a remote
+   deschedule has emptied the slot (`Architecture.saveVacatedFrameOnCore`). -/
+def settleResidencyOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  let st2 := deferResidentElsewhere (dispatchVacatedCore st c) c
+  let resident : Option SeLe4n.ThreadId :=
+    match Architecture.restoreTargetOnCore st2 c with
+    | .user .. => st2.scheduler.currentOnCore c
+    | _ => none
+  { st2 with machine := st2.machine.setResidentOnCore c resident }
+
+/-- `settleResidencyOnCore` for a per-core entry's raw core id — nothing when the
+id names no core, as the verified steps commit nothing for such an id. -/
+def settleResidencyAt (st : SystemState) (coreId : UInt64) : SystemState :=
+  match Concurrency.coreIdOfUInt64? coreId with
+  | some c => settleResidencyOnCore st c
+  | none => st
+
+/-- **The record is what the core resumes**: after settling, core `c`'s resident
+thread is its current thread exactly when the core resumes a thread at EL0. -/
+theorem settleResidencyOnCore_resident (st : SystemState) (c : CoreId) :
+    (settleResidencyOnCore st c).machine.residentOnCore c =
+      match Architecture.restoreTargetOnCore
+          (deferResidentElsewhere (dispatchVacatedCore st c) c) c with
+      | .user .. => (deferResidentElsewhere (dispatchVacatedCore st c) c).scheduler.currentOnCore c
+      | _ => none := by
+  simp [settleResidencyOnCore]
+
+/-- **No thread runs on two cores**: a non-idle thread the core is left running
+after the deferral is resident on no other core. -/
+theorem deferResidentElsewhere_current_not_elsewhere (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId)
+    (hCur : (deferResidentElsewhere st c).scheduler.currentOnCore c = some tid)
+    (hIdle : isIdleThreadId tid = false) :
+    residentElsewhere st c tid = false := by
+  unfold deferResidentElsewhere at hCur
+  cases hC : st.scheduler.currentOnCore c with
+  | none => rw [hC] at hCur; simp only at hCur; rw [hC] at hCur; cases hCur
+  | some t =>
+    rw [hC] at hCur; simp only at hCur
+    cases hR : residentElsewhere st c t with
+    | false =>
+      rw [hR] at hCur; simp only [Bool.false_eq_true, if_false] at hCur
+      rw [hC] at hCur; cases hCur; exact hR
+    | true =>
+      rw [hR] at hCur; simp only [if_true] at hCur
+      cases hS : switchToThreadOnCore st c (idleThreadId c) with
+      | ok st' =>
+        rw [hS] at hCur; simp only at hCur
+        rw [switchToThreadOnCore_sets_current st c _ st' hS] at hCur
+        cases hCur
+        rw [isIdleThreadId_idleThreadId] at hIdle; cases hIdle
+      | error e =>
+        rw [hS] at hCur; simp at hCur
+
+/-- The settle step writes the scheduler only through the reschedule and the
+switch; the record touches the machine's residency table alone. -/
+theorem settleResidencyOnCore_machine_regs (st : SystemState) (c : CoreId) :
+    (settleResidencyOnCore st c).machine.coreRegs =
+      (deferResidentElsewhere (dispatchVacatedCore st c) c).machine.coreRegs := by
+  simp [settleResidencyOnCore]
+
+-- WS-BP BP7.6 (v0.36.19): `scheduleLocalSuccessorLive` is retired.  It gated the
+-- vacated-core dispatch on the context-restore seam, because a successor the
+-- hardware could not install would have been attributed the next syscall
+-- (`syscallDispatchFromAbi` names its caller by `currentOnCore`).  The restore is
+-- live, so every entry runs `scheduleLocalSuccessor` itself and the core resumes
+-- the thread it dispatched (`Architecture.restoreTargetOnCore`).
 
 /-- WS-SM SM8.B: the two halves of the guard, forward. -/
 theorem localSuccessorNeeded_post_none (pre post : SystemState) (execCore : CoreId)
@@ -1890,142 +1985,19 @@ def contextSwitchSites : List ContextSwitchSite :=
 
 /-- WS-SM SM8.B (the tripwire): every constructor is listed.  A new site that
 changes a core's current thread breaks this `decide`, which is the reminder
-that it owes the hardware restore below. -/
+that it owes the hardware restore every present site carries (WS-BP BP7.6). -/
 theorem contextSwitchSites_complete (s : ContextSwitchSite) : s ∈ contextSwitchSites := by
   cases s <;> decide
 
-/-- WS-SM SM8.B: **does this site restore the incoming thread's context to
-hardware before exception return?**
-
-For v0.33.5 the answer is uniformly `false`, and that is a statement about the
-runtime rather than about any of these transitions:
-
-* the SVC path writes its result into the *original caller's* `ExceptionFrame`
-  and returns from that frame (`rust/sele4n-hal/src/trap.rs`, the
-  `ec::SVC_AARCH64` arm);
-* `lean_per_core_timer_tick` returns `void`, so the timer ISR discards whatever
-  the model decided (`rust/sele4n-hal/src/timer.rs`);
-* SGI INTID 0 (`.reschedule`) has **no registered handler at all** — only the
-  TLB-shootdown request and halt-all INTIDs are registered
-  (`rust/sele4n-hal/src/gic.rs`);
-* and `machine.regsOnCore` is named nowhere in `SeLe4n/Platform/FFI.lean`, so
-  no seam exists to carry a register bank across the boundary in either
-  direction.
-
-The consequence is model/hardware divergence about which thread is running,
-and it is not merely cosmetic: `syscallDispatchFromAbi` identifies its caller
-*solely* by `st.scheduler.currentOnCore executingCore`, so a syscall arriving
-from the thread hardware actually resumed would be attributed to the thread the
-model believes is current.
-
-Registered rather than fixed because the fix is the SM10.1 bring-up seam —
-outgoing-context save, incoming-context restore, `ELR`/`SPSR`/`TTBR0`/ASID —
-which is a coherent slice of its own and not part of a non-interference proof
-cut.  `contextRestoreWired` is the partition: wiring one means flipping its
-entry, which breaks the theorem below and forces the change to be reviewed
-rather than absorbed silently. -/
-def contextRestoreWired : ContextSwitchSite → Bool
-  -- The timer ISR calls `lean_per_core_timer_tick`, which returns `void`, and
-  -- SGI INTID 0 has no registered handler — neither has a trap frame to install
-  -- into, independently of the syscall seam.
-  | .timerPreemption      => false
-  | .rescheduleSgi        => false
-  -- The two syscall-entry sites are wired exactly when the seam is.  Read from
-  -- `contextRestoreSeamLive` rather than repeated as literals (round 20), so
-  -- this register and the guard on `scheduleLocalSuccessorLive` cannot drift:
-  -- the successor is dispatched precisely when its context can be installed.
-  | .suspendReschedule    => contextRestoreSeamLive
-  | .vacatedCoreSuccessor => contextRestoreSeamLive
-
-/-- WS-SM SM8.B (the honesty marker): **no** context-switch site restores
-hardware context yet.
-
-Stated as the full list rather than as "some are pending", because today the
-gap is total — this is the one form that makes the *scope* of the divergence
-checkable.  When SM10.1 wires the first restore, this theorem fails and the
-register must be updated in the same commit.
-
-Note the direction of the round-17 change against this backdrop.  Before it, a
-blocking syscall left `currentOnCore = none`, and `syscallDispatchFromAbi`
-fails *closed* on that (`.illegalState`).  After it the slot names a real
-successor, so the same divergence would misidentify a caller rather than
-reject it — worse, on a system that had a restore seam to diverge from.  It is
-still the right change (a kernel that never dispatches a successor is not a
-kernel), but the two must land in that order, which is what this marker
-records.
-
-**Which switches are gated, and why not all of them** (PR #861 review rounds 23,
-28, 32, 33 and 34 — the position moved twice, so the history is worth keeping).
-
-The rule is *this PR does not add new instances of a pre-existing defect class*,
-not *this PR fixes the class*.  Three scheduling points this PR introduced or
-newly reached on a secondary core are gated, each behind a **wrapper** so the
-underlying transition keeps its unconditional theorems:
-
-* `.vacatedCoreSuccessor` — `scheduleLocalSuccessorLive`;
-* `.tcbResume` — `Lifecycle.Suspend.resumeThreadOnCoreLive`;
-* `.tcbSetPriority` / `.tcbSetMCPriority` —
-  `SchedContext.PriorityManagement.priorityRescheduleOnCoreLive`.
-
-In each case the *remote* arm is ungated: a cross-core `.reschedule` SGI is a
-real poke at another processor and has nothing to do with the missing restore.
-
-**`.schedContextUnbind` is deliberately NOT gated.**  Round 28 gated it; round 33
-showed that was wrong.  `schedContextUnbind` clears the executing core's
-`current` (the Z5-H1 guard) precisely *in order to* force a reschedule, so
-suppressing the tail leaves a core with nothing current — the round-15 defect
-that scheduling point was added to fix.  **A gate is only sound where the state
-it leaves behind is coherent**: for resume the thread stays queued and merely
-undispatched, which is coherent; for unbind it is not.
-
-**`.timerPreemption` is ungated and cannot be gated** — it is how threads get
-scheduled at all.  That is also why gating is not a fix but a containment: with
-the tick ungated, a gated syscall path delays a misattributed context by one
-tick rather than preventing one.  The gates exist so this cut adds no new
-instances, not because they close the class; SM10.1 closes it.
-
-**Why wrappers rather than in-transition guards** (round 34).  An earlier cut of
-this PR folded the guard into `resumeThreadOnCore` and `priorityRescheduleOnCore`
-directly.  Because `contextRestoreSeamLive` is a literal, Lean reduced the `if`
-and collapsed three proofs onto the dead branch — they kept their names and lost
-their content — and it broke `SmpPipSuite`'s P2-5 assertion, which tests exactly
-the behaviour the guard removed.  Collapsing a theorem *about the gate* is
-honest; collapsing one *about a transition's semantics* is not.  Hence the
-wrapper form, and hence `…Live_inert` is **not** `@[simp]`: an automatic rewrite
-would reintroduce the same collapse one level up, in the wrapper's consumers.
-
-All the guards read the one flag, which since round 29 lives in
-`SeLe4n.Kernel.Concurrency.ContextRestoreSeam` — low enough that the
-`SchedContext` operations can import it, which this module is not (that edge
-closes a cycle through `Kernel.API` / `Model.FreezeProofs` / `Platform.Boot`).
-One definition, so the flip stays a one-constant change. -/
-theorem contextSwitchSites_restore_pending :
-    contextSwitchSites.filter (fun s => !contextRestoreWired s) = contextSwitchSites := by
-  decide
-
-/-- WS-SM SM8.B: the same fact in the form a consumer would read. -/
-theorem contextRestoreWired_none (s : ContextSwitchSite) : contextRestoreWired s = false := by
-  cases s <;> rfl
-
-/-- WS-SM SM8.B (PR #861 review round 20, **the coupling**): the live successor
-dispatch is inert exactly while its own site is unwired.
-
-This is what makes the ordering a mechanism rather than a note.  A transition
-that changes `currentOnCore` on a core whose restore is not wired leaves the
-model and the hardware disagreeing about who is running — and
-`syscallDispatchFromAbi` identifies its caller *solely* by
-`currentOnCore executingCore`, so that disagreement misattributes the next
-syscall.  Since `currentOnCore = none` instead fails closed (`.illegalState`),
-dispatching an uninstallable successor is strictly worse than dispatching none.
-
-Both sides read `contextRestoreSeamLive`, so SM10.1 flips one constant and the
-dispatch and its register move together. -/
-theorem scheduleLocalSuccessorLive_guard_eq_register :
-    contextRestoreSeamLive = contextRestoreWired .vacatedCoreSuccessor := rfl
-
-/-- WS-SM SM8.B: and the same for the suspend entry, which installs through the
-identical seam. -/
-theorem suspendReschedule_guard_eq_register :
-    contextRestoreSeamLive = contextRestoreWired .suspendReschedule := rfl
+-- WS-BP BP7.6 (v0.36.19): `contextRestoreWired`, `contextSwitchSites_restore_pending`,
+-- `contextRestoreWired_none`, `scheduleLocalSuccessorLive_guard_eq_register` and
+-- `suspendReschedule_guard_eq_register` are retired.  They were the honesty
+-- marker that no site restored hardware context; every site now does.  Each is
+-- reached only through a state-committing entry, and every such entry ends by
+-- handing the HAL the context its core resumes (`Platform.FFI.restoreTrapFrame`
+-- on `Architecture.restoreTargetOnCore`): the syscall seam, the timer tick, the
+-- `.reschedule` receiver, the secondary bring-up and both fault entries.  A new
+-- site breaks `contextSwitchSites_complete`, which is the reminder that it owes
+-- the same restore.
 
 end SeLe4n.Kernel.PriorityInheritance

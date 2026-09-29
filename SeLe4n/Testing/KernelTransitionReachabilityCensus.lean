@@ -1149,9 +1149,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.restoreIncomingContextChecked
   , `SeLe4n.Kernel.restoredAndConsumed
   , `SeLe4n.Kernel.returnDonatedSchedContextValid
-  , `SeLe4n.Kernel.retypeAsidRoundFold
-  , `SeLe4n.Kernel.retypeAsidRoundStep
-  , `SeLe4n.Kernel.retypeFromUntyped
   , `SeLe4n.Kernel.revokeCdtReportingOutcome
   , `SeLe4n.Kernel.revokeCdtReportingStep
   , `SeLe4n.Kernel.revokeCdtStreamingTraversal
@@ -1210,7 +1207,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Platform.Boot.bootFromPlatformWithWarnings
   , `SeLe4n.Platform.Boot.installIdleThread
   , `SeLe4n.Platform.FFI.bootAndInitialiseFromPlatform
-  , `SeLe4n.Platform.FFI.getKernelState
   , `SeLe4n.Platform.RPi5.mmioRead
   , `SeLe4n.Platform.RPi5.mmioRead32
   , `SeLe4n.Platform.RPi5.mmioRead64
@@ -1220,6 +1216,9 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Platform.RPi5.mmioWrite32W1C
   , `SeLe4n.Platform.RPi5.mmioWrite64
   , `SeLe4n.Platform.RPi5.rpi5DeploymentBootStateAt
+  , `SeLe4n.Platform.RPi5.rpi5DeploymentIdleStateAt
+  , `SeLe4n.Platform.QemuVirt.qemuVirtDeploymentBootState
+  , `SeLe4n.Platform.QemuVirt.qemuVirtDeploymentIdleState
   , `SeLe4n.Testing.KernelTransitionReachabilityCensus._cstage1.censusWitnessMintedTransformer
   ]
 

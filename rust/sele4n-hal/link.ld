@@ -1,10 +1,14 @@
 /* seLe4n Kernel Linker Script for Raspberry Pi 5
  *
  * Memory layout:
- *   0x00000000 – 0x40000000 : RAM every Raspberry Pi 5 has (the smallest
- *                             board's 1 GiB) — the image, arena included,
- *                             must lie inside it, because it is the RAM the
- *                             boot map covers (`mmu::GUARANTEED_RAM_TOP`)
+ *   0x00000000 – 0x10000000 : the kernel's reserved extent
+ *                             (`KERNEL_RESERVED_END`) — the image, arena and
+ *                             device-tree window included, must lie inside it,
+ *                             because it is the only RAM the boot map covers
+ *                             before the verified parse (WS-BP BP7.10: the
+ *                             rest of the first gigabyte is RAM only as far as
+ *                             the firmware reports it, and the firmware keeps
+ *                             its top for itself)
  *   0x107C000000 – 0x1080000000 : the BCM2712 SoC-bus window (UART10 +
  *                             GIC-400), mapped Device by the boot tables;
  *                             DRAM is contiguous from 0 below it
@@ -12,8 +16,9 @@
  * Kernel load address: 0x80000 (standard RPi5 kernel entry point, matching
  * the address used by U-Boot and the RPi firmware bootloader).
  *
- * Section order: .text.boot → .text.vectors → .text → .rodata → .data → .bss
- *   → .stack → .smp_stacks → .lean_heap → .dtb_window (all NOLOAD from .bss)
+ * Section order: .text.boot → .text.vectors → .text.sele4n_fp_context → .text → .rodata → .data → .bss
+ *   → .stack → .smp_stacks → .lean_heap → .dtb_window → .boot_table_pool
+ *   (all NOLOAD from .bss)
  */
 
 ENTRY(_start)
@@ -22,7 +27,7 @@ ENTRY(_start)
  * Lean runtime is served from `.lean_heap` below and from nothing else, so the
  * heap is exactly this big on every board and no firmware or device tree can
  * change it.  Raising it is this one line; the ASSERTs at the end refuse a
- * value the smallest Raspberry Pi 5 cannot hold. */
+ * value the kernel's reserved extent cannot hold. */
 LEAN_HEAP_SIZE = 64M;
 
 /* WS-BP BP3.2: the end of the kernel's reserved extent [0, KERNEL_RESERVED_END)
@@ -35,6 +40,24 @@ LEAN_HEAP_SIZE = 64M;
  * line, which is the form both of those read. */
 KERNEL_RESERVED_END = 0x10000000;
 
+/* WS-BP BP8.1: the base of the board's RAM, and so of the kernel's reserved
+ * extent [RAM_BASE, KERNEL_RESERVED_END).  `0` on the Raspberry Pi 5, whose
+ * DRAM is contiguous from 0.  This script is the Raspberry Pi 5's; the QEMU
+ * `virt` image's is derived from it by `build.rs`, which rewrites exactly this
+ * line, `KERNEL_RESERVED_END` and `MEMORY`'s `ORIGIN` from `src/board.rs`'s
+ * `QEMU_VIRT` and nothing else — and refuses to build either image if these
+ * three do not state `RPI5`'s numbers.  Hex on one line, as above. */
+RAM_BASE = 0x0;
+
+/* PR #904 (`v0.36.41`): the kernel stacks' guard pages and slots, and the
+ * per-PE fault stacks.  `mmu::STACK_GUARD_SIZE`, `mmu::SECONDARY_STACK_STRIDE`
+ * and `mmu::FAULT_STACK_SIZE` state the same numbers and the HAL's test holds
+ * them equal; `boot.S`'s `lsl #17` and the `trap.S` fault-stack arithmetic's
+ * `lsl #14` are their logarithms.  Hex on one line, as above. */
+STACK_GUARD_SIZE = 0x1000;
+SECONDARY_STACK_STRIDE = 0x20000;
+FAULT_STACK_SIZE = 0x4000;
+
 /* WS-BP BP5.3: the size of the window the image build places the device tree
  * in (`.dtb_window` below).  It is `cmdline::MAX_DTB_SIZE`, the bound every
  * reader of the blob enforces before it forms a slice and the extent
@@ -43,9 +66,20 @@ KERNEL_RESERVED_END = 0x10000000;
  * HAL's test holds the two equal.  Hex on one line, as above. */
 DTB_WINDOW_SIZE = 0x200000;
 
+/* WS-BP BP7.1: the pool the boot takes each configured address space's
+ * top-level table page from — `BOOT_TABLE_POOL_PAGES` pages ending exactly at
+ * `KERNEL_RESERVED_END`, so the pool is the last memory of the kernel's
+ * reserved extent: no boot untyped describes it (BP3.2), and a thread's
+ * translation table can never be retyped out from under it.  The Lean
+ * `rpi5BootTablePoolBase` / `rpi5BootTablePoolPages` state the same pool and
+ * `tests/fixtures/boot_map.expected` carries it (`tablePool <base> <pages>`), so
+ * the HAL's test and scripts/check_link_script.py hold the three together.
+ * Hex on one line, as above. */
+BOOT_TABLE_POOL_PAGES = 0x10;
+
 MEMORY
 {
-    RAM (rwx) : ORIGIN = 0x80000, LENGTH = 0x3FF80000
+    RAM (rwx) : ORIGIN = 0x80000, LENGTH = 0xFF80000
 }
 
 SECTIONS
@@ -58,6 +92,16 @@ SECTIONS
     /* Exception vector table — 2048-byte aligned per ARM ARM D1.10.2 */
     .text.vectors : ALIGN(2048) {
         KEEP(*(.text.vectors))
+    } > RAM
+
+    /* WS-BP BP7.9: the only two kernel routines that name an FP/SIMD register
+     * (`fp_context.S`, the lazy FP switch).  An output section of their own so
+     * the linked image keeps the boundary `check_fp_simd_free_objects.py`
+     * exempts them by: merged into `.text`, the disassembly would no longer say
+     * which instructions are theirs.  Inside `[_start, __text_end)`, so mapped
+     * executable like every other text. */
+    .text.sele4n_fp_context : ALIGN(16) {
+        KEEP(*(.text.sele4n_fp_context))
     } > RAM
 
     /* Kernel code.  WS-BP BP2.6: the boot map's permission boundaries are
@@ -122,8 +166,17 @@ SECTIONS
      * a 4 KiB boundary, matching the TTBR0_EL1 BAADDR contract.
      */
 
-    /* Kernel stack — 64 KiB, 16-byte aligned (AArch64 SP requirement) */
-    .stack (NOLOAD) : ALIGN(16) {
+    /* Kernel stack — 64 KiB, 16-byte aligned (AArch64 SP requirement).
+     *
+     * PR #904 (`v0.36.41`): below it, one **guard page** the boot map leaves
+     * unmapped (`mmu::ImageLayout::stack_guards`), so an overflow takes a
+     * translation fault instead of writing the end of `.bss` — the boot
+     * tables and the per-core flag arrays.  The fault is taken on the
+     * executing PE's fault stack (`.fault_stacks`, below), because the stack
+     * that overflowed cannot hold the exception's own frame. */
+    .stack (NOLOAD) : ALIGN(4096) {
+        __stack_guard = .;
+        . += STACK_GUARD_SIZE;
         __stack_bottom = .;
         . += 64K;
         __stack_top = .;
@@ -131,21 +184,40 @@ SECTIONS
 
     /* AN9-J (DEF-R-HAL-L20): per-core stacks for SMP secondaries.
      *
-     * Three 64 KiB regions, one per secondary core (BCM2712 has 3
-     * secondaries — 4 cores total, primary uses `.stack` above).
-     * Each secondary's `secondary_entry` (boot.S) computes its own
-     * stack top via `__smp_secondary_stack_top - (context_id - 1) *
-     * 0x10000`.
+     * Three SECONDARY_STACK_STRIDE (128 KiB) slots, one per secondary
+     * core (BCM2712 has 3 secondaries — 4 cores total, primary uses
+     * `.stack` above).  Each secondary's `secondary_entry` (boot.S)
+     * computes its own stack top via `__smp_secondary_stack_top -
+     * (context_id - 1) * SECONDARY_STACK_STRIDE`.  PR #904 (`v0.36.41`):
+     * the lowest page of every slot is a guard page the boot map leaves
+     * unmapped, so each secondary has 124 KiB of stack and an overflow
+     * faults rather than running into the slot below (or, for core 3,
+     * the top of the boot core's live stack).
      *
      * Reachable only when `SMP_ENABLED=true`, which is the default
      * since SM5.I serialised kernel entry (v0.32.142); the linker keeps
      * the section present so the symbol resolves in either
      * configuration.
      */
-    .smp_stacks (NOLOAD) : ALIGN(16) {
+    .smp_stacks (NOLOAD) : ALIGN(4096) {
         __smp_secondary_stacks_bottom = .;
-        . += (3 * 64K);
+        . += (3 * SECONDARY_STACK_STRIDE);
         __smp_secondary_stack_top = .;
+    } > RAM
+
+    /* PR #904 (`v0.36.41`): one fault stack per PE.  A synchronous exception
+     * or SError taken **from EL1** is the kernel's own fault and halts the
+     * PE; its vector switches to `SP_EL0` (`msr spsel, #0`), which every PE
+     * holds at its fault stack's top while it runs at EL1 (`boot.S`, and the
+     * EL0 entries in `trap.S`), so the halt path has a stack even when the
+     * fault is the kernel stack overflowing into its guard.  Core `c`'s top is
+     * `__fault_stacks_bottom + (c + 1) * FAULT_STACK_SIZE`.  The halt path is
+     * bounded, non-recursive Rust (a diagnostic line and the halt), which is
+     * what makes a fixed size sufficient. */
+    .fault_stacks (NOLOAD) : ALIGN(4096) {
+        __fault_stacks_bottom = .;
+        . += (4 * FAULT_STACK_SIZE);
+        __fault_stacks_top = .;
     } > RAM
 
     /* WS-BP BP2.1: the Lean heap arena.  `NOLOAD`, so it costs the image
@@ -154,8 +226,8 @@ SECTIONS
      * metadata byte it reads and never reads the pages it serves.  4 KiB
      * aligned, because the allocator's pages are MMU granules.  Its bounds are
      * the only way the Rust side learns the extent
-     * (`lean_heap::arena_extent`); it lies inside the guaranteed gigabyte the
-     * boot map covers (`mmu::GUARANTEED_RAM_TOP`, asserted below), and
+     * (`lean_heap::arena_extent`); it lies inside the kernel's reserved extent,
+     * the RAM the boot map covers before the verified parse (asserted below), and
      * `mmu::kernel_extent` keeps the device-tree window off it, so translation
      * is never enabled over tables that leave the heap unmapped. */
     .lean_heap (NOLOAD) : ALIGN(4096) {
@@ -180,6 +252,16 @@ SECTIONS
         __dtb_window_end = .;
     } > RAM
 
+    /* WS-BP BP7.1: the boot's table-page pool, at the top of the reserved
+     * extent.  `NOLOAD`: the HAL zeroes it before the Lean kernel is
+     * entered (`mmu::zero_boot_table_pool`), so a configured address space's
+     * table starts empty whatever the RAM held. */
+    .boot_table_pool (KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096) (NOLOAD) : {
+        __boot_table_pool_start = .;
+        . += BOOT_TABLE_POOL_PAGES * 4096;
+        __boot_table_pool_end = .;
+    } > RAM
+
     /* Discard unneeded sections */
     /DISCARD/ : {
         *(.comment)
@@ -188,19 +270,31 @@ SECTIONS
     }
 }
 
-/* WS-BP BP2.1: the arena is a whole number of pages, and the whole image —
- * arena included — ends inside the smallest Raspberry Pi 5's RAM, which is
- * [0, 1 GiB) (`rpi5Variants` in SeLe4n/Platform/RPi5/Board.lean, and
- * `mmu::GUARANTEED_RAM_TOP`, the RAM the boot map covers).  A heap that does
- * not fit is a link error, never a boot-time surprise. */
+/* WS-BP BP8.1: the arm64 Image header's `image_size` (`boot.S`) — the memory
+ * the image owns from `_start`, its NOLOAD stacks and Lean heap included, so a
+ * loader following the Linux arm64 boot protocol places nothing (the device
+ * tree above all) inside it. */
+__kernel_image_size = __lean_heap_end - _start;
+
+/* WS-BP BP2.1: the arena is a whole number of pages.  A heap that does not
+ * fit is a link error, never a boot-time surprise. */
 ASSERT(LEAN_HEAP_SIZE % 4096 == 0, "LEAN_HEAP_SIZE must be a whole number of 4 KiB pages")
 ASSERT(__lean_heap_start % 4096 == 0, "the Lean heap arena must be 4 KiB aligned")
-ASSERT(__lean_heap_end <= 0x40000000, "the image, Lean heap included, must end inside the smallest RPi5's 1 GiB of RAM")
 
 /* WS-BP BP3.2: the whole image, arena included, lies inside the kernel's
- * reserved extent, which is page aligned and inside the guaranteed RAM. */
+ * reserved extent.  WS-BP BP7.10: the extent is whole 2 MiB blocks inside the
+ * first gigabyte — the level-2 table the boot map describes it with, and the
+ * block an extension past it starts on (`mmu::extend_boot_tables`) — and the
+ * RAM region the linker may place anything in ends exactly there, so the
+ * linker itself cannot put a byte of the image where the boot map does not
+ * reach.  (The retired assertion that the heap ends inside "the smallest
+ * RPi5's 1 GiB" is implied by these, and claimed a gigabyte no board's
+ * firmware reports whole.) */
 ASSERT(__lean_heap_end <= KERNEL_RESERVED_END, "the image, Lean heap included, must end inside the kernel's reserved extent")
-ASSERT(KERNEL_RESERVED_END % 4096 == 0 && KERNEL_RESERVED_END <= 0x40000000, "the kernel's reserved extent must be whole pages inside the smallest RPi5's RAM")
+ASSERT(KERNEL_RESERVED_END % 0x200000 == 0, "the kernel's reserved extent must be whole 2 MiB blocks")
+ASSERT(RAM_BASE % 0x40000000 == 0 && KERNEL_RESERVED_END > RAM_BASE && KERNEL_RESERVED_END - RAM_BASE <= 0x40000000, "the kernel's reserved extent must lie inside the gigabyte at the base of RAM")
+ASSERT(ORIGIN(RAM) == RAM_BASE + 0x80000, "the image must load 512 KiB above the base of RAM, the offset its arm64 Image header declares")
+ASSERT(ORIGIN(RAM) + LENGTH(RAM) == KERNEL_RESERVED_END, "link.ld's RAM region must end exactly at the kernel's reserved extent")
 
 /* WS-BP BP5.3: the device tree's window is the size every reader bounds a
  * blob by, on a page, after the Lean heap and inside the reserved extent --
@@ -209,9 +303,18 @@ ASSERT(__dtb_window_end - __dtb_window_start == DTB_WINDOW_SIZE && __dtb_window_
 ASSERT(__dtb_window_start >= __lean_heap_end, "the device tree's window must lie after the Lean heap, outside the memory the image owns")
 ASSERT(__dtb_window_end <= KERNEL_RESERVED_END, "the device tree's window must end inside the kernel's reserved extent")
 
+/* WS-BP BP7.1: the table-page pool is whole pages ending exactly at the
+ * reserved extent's end, after everything else the image places. */
+ASSERT(__boot_table_pool_end == KERNEL_RESERVED_END, "the boot table-page pool must end exactly at the kernel's reserved extent")
+ASSERT(__boot_table_pool_start % 4096 == 0 && BOOT_TABLE_POOL_PAGES > 0, "the boot table-page pool must be whole 4 KiB pages")
+ASSERT(__boot_table_pool_start >= __dtb_window_end, "the boot table-page pool must lie after the device tree's window")
+
 /* WS-BP BP2.6: the permission boundaries `mmu::ImageLayout::is_well_formed`
  * requires — each on a page, the text non-empty and ahead of the read-only
  * data, which starts where the text ends. */
+ASSERT(__stack_guard % 4096 == 0 && __stack_bottom == __stack_guard + STACK_GUARD_SIZE && STACK_GUARD_SIZE == 4096, "the boot stack must sit directly above one 4 KiB guard page")
+ASSERT(__smp_secondary_stacks_bottom % 4096 == 0 && __smp_secondary_stack_top - __smp_secondary_stacks_bottom == 3 * SECONDARY_STACK_STRIDE && SECONDARY_STACK_STRIDE == 0x20000, "the secondary stack slots must be three page-aligned 128 KiB slots, each with its guard at its base")
+ASSERT(__fault_stacks_top - __fault_stacks_bottom == 4 * FAULT_STACK_SIZE && FAULT_STACK_SIZE == 0x4000 && __fault_stacks_top % 16 == 0, "the fault stacks must be four 16 KiB stacks, one per PE")
 ASSERT(_start % 4096 == 0, "the kernel text must start on a 4 KiB page")
 ASSERT(__text_end % 4096 == 0 && __text_end > _start, "the kernel text must end on a 4 KiB page after it starts")
 ASSERT(__rodata_start == __text_end, "the read-only data must begin where the kernel text ends")

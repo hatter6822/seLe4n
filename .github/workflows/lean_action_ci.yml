@@ -44,6 +44,17 @@ jobs:
               exit 0
             fi
           fi
+          # `workflow_dispatch` and `schedule` carry no base at all (no PR, no
+          # `before`), so the cut is the last commit: deepen the shallow
+          # checkout by one and name HEAD's parent.  Without this a dispatched
+          # run had no change set, and the changed-file anchor sweep refused
+          # to report a clean sweep over it.
+          git fetch --no-tags --deepen=1 origin "${GITHUB_SHA}" 2>/dev/null || true
+          if parent="$(git rev-parse --verify -q "HEAD^1^{commit}")"; then
+            echo "SELE4N_PLAN_BASE_REF=${parent}" >> "${GITHUB_ENV}"
+            echo "plan-gate base (HEAD's parent; this event carries no base): ${parent}"
+            exit 0
+          fi
           echo "no base revision resolved; the gate will say so in its output"
 
       - name: Restore Lean and Lake caches
@@ -395,9 +406,12 @@ jobs:
     # regenerated stdlib C is cached under `.lake/build` keyed by the
     # toolchain, so only the first run on a new toolchain pays for it.
     #
-    # WS-BP BP5.2: the lane's last step links the kernel image with the Lean
+    # WS-BP BP5.2: the lane then links the kernel image with the Lean
     # kernel in it -- `libsele4n.a` and the roots script the builder writes,
     # under `--gc-sections` -- and checks and disassembles that image.
+    #
+    # WS-BP BP8.1: and last, it boots the Lean-linked `virt` image under QEMU
+    # on four PEs at EL1 and EL2, to every core's first idle dispatch.
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -427,6 +441,16 @@ jobs:
           toolchain: 1.94.1
           components: llvm-tools
           targets: aarch64-unknown-none-softfloat
+
+      # WS-BP BP8.1: the lane's last step boots the Lean-linked kernel under
+      # QEMU's `virt` machine (`scripts/test_qemu.sh --lean-kernel`), and runs
+      # it with `REQUIRE_QEMU=1`, so an absent emulator fails the job rather
+      # than skipping the one run of the kernel a PR gets.
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-arm
+          qemu-system-aarch64 --version
 
       - name: Build and reconcile the kernel's Lean archive for aarch64
         run: ./scripts/test_lean_aarch64_archive.sh

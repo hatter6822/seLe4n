@@ -8,6 +8,8 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.Architecture.HardwareTables
+import SeLe4n.Kernel.Architecture.IpcBufferRead
 
 /-!
 # Syscall return convention (WS-RA)
@@ -24,9 +26,10 @@ kernel never had.  The argument direction lives in the sibling modules
   label carrying the discriminant directly would alias the first error with
   success — the silent-aliasing class WS-RA exists to remove
   (`errorLabel_never_zero`).
-* `x2`-`x5` — message registers (the inline window; a delivered message
-  longer than 4 registers keeps its full payload in `pendingMessage`, and the
-  frame reports the window — `returnFrame_message_window`).
+* `x2`-`x5` — message registers (the inline window).  Since WS-BP BP7.8 the
+  registers past the fourth are written into the receiver's IPC buffer
+  (`overflowDeliveryWrites`), and the frame's length counts the inline window
+  plus the words actually written (`returnFrame_message_window`).
 
 Nothing in this module is live until the WS-RA flip: the FFI boundary keeps
 the bit-63 `encodeOk` / `encodeError` protocol until `Platform/FFI.lean` and
@@ -274,6 +277,13 @@ def syscallReturnShape : SyscallId → ReturnShape
   -- authority over, so returning it would make the CDT's shape readable
   -- from a slot the caller merely owns.
   | .cspaceRevoke          => .unit
+  -- **WS-BP BP7.1 (`v0.36.5`)**: a carve returns nothing — seL4's
+  -- `seL4_Untyped_Retype` returns only an error code; what it produced is the
+  -- capability it installed at the slot the caller named.
+  | .untypedRetype         => .unit
+  -- **WS-BP BP7.1 (`v0.36.6`)**: a reset returns nothing — what it produced is
+  -- the untyped's memory, which the next carve hands out.
+  | .untypedReset          => .unit
   | .lifecycleRetype       => .unit
   | .vspaceMap             => .unit
   | .vspaceUnmap           => .unit
@@ -293,6 +303,9 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .tcbSetIPCBuffer       => .unit
   | .tcbSetAffinity        => .unit
   | .tcbSetFaultHandler    => .unit
+  | .tcbSetSpace           => .unit
+  | .pageTableMap          => .unit
+  | .pageTableUnmap        => .unit
   | .tcbBindNotification   => .unit
   | .tcbUnbindNotification => .unit
   | .mintReplyCap          => .unit
@@ -441,31 +454,40 @@ site that cannot name its installed count has no business synthesizing a
 message frame.  Arms whose path runs no unwrap at all (the receive legs
 — tracked debt, see the plan — the reply delivery, and badge-only
 notification wakes) pass `0`, the honest count for a path that installs
-nothing. -/
-def returnMessageInfo (msg : IpcMessage) (installedCaps : Nat) : MessageInfo :=
-  { length    := min msg.registers.size 4
+nothing.
+
+**`overflow` is the count of message registers past the fourth the delivery
+actually wrote into the receiver's IPC buffer** (WS-BP BP7.8,
+`overflowDeliveryWrites`), and the length reports exactly what arrived: the
+inline window plus those words, never more than the message holds.  Like
+`installedCaps` it is not defaulted — a delivery that wrote none says `0`, and a
+receiver whose buffer resolves nowhere reads a length of at most four, which is
+seL4's own answer for a receiver with no IPC buffer (`copyMRs` copies the
+registers alone). -/
+def returnMessageInfo (msg : IpcMessage) (installedCaps overflow : Nat) : MessageInfo :=
+  { length    := min (min msg.registers.size (4 + overflow)) maxMessageRegisters
     extraCaps := min installedCaps Model.maxExtraCaps
     label     := min msg.label (errorLabelBase - 1) }
 
-/-- The §3.7 window bound, stated: the returned length never exceeds the
-four inline message registers. -/
-theorem returnFrame_message_window (msg : IpcMessage) (installedCaps : Nat) :
-    (returnMessageInfo msg installedCaps).length ≤ 4 :=
-  Nat.min_le_right _ _
+/-- The window bound, stated: the returned length never exceeds the four inline
+message registers plus the overflow words the delivery wrote. -/
+theorem returnFrame_message_window (msg : IpcMessage) (installedCaps overflow : Nat) :
+    (returnMessageInfo msg installedCaps overflow).length ≤ 4 + overflow :=
+  Nat.le_trans (Nat.min_le_left _ _) (Nat.min_le_right _ _)
 
 /-- The synthesized word is well-formed for the 20-bit-label encoding:
 length ≤ 120, extraCaps ≤ 3, label ≤ 2^20 − 1. -/
-theorem returnMessageInfo_wellFormed (msg : IpcMessage) (installedCaps : Nat) :
-    (returnMessageInfo msg installedCaps).wellFormed := by
-  refine ⟨Nat.le_trans (Nat.min_le_right _ _) (by decide), ?_, ?_⟩
+theorem returnMessageInfo_wellFormed (msg : IpcMessage) (installedCaps overflow : Nat) :
+    (returnMessageInfo msg installedCaps overflow).wellFormed := by
+  refine ⟨Nat.min_le_right _ _, ?_, ?_⟩
   · exact Nat.min_le_right _ _
   · exact Nat.le_trans (Nat.min_le_right _ _) (by rw [errorLabelBase_eq]; decide)
 
 /-- **A delivered message never carries a status label** (ABI v3): the
 synthesized label is below `errorLabelBase`, so a receiver's decoder cannot
 read a delivery as a kernel error whatever the message's label was. -/
-theorem returnMessageInfo_label_lt_errorLabelBase (msg : IpcMessage) (installedCaps : Nat) :
-    (returnMessageInfo msg installedCaps).label < errorLabelBase := by
+theorem returnMessageInfo_label_lt_errorLabelBase (msg : IpcMessage) (installedCaps overflow : Nat) :
+    (returnMessageInfo msg installedCaps overflow).label < errorLabelBase := by
   unfold returnMessageInfo
   have : errorLabelBase - 1 < errorLabelBase := by rw [errorLabelBase_eq]; decide
   exact Nat.lt_of_le_of_lt (Nat.min_le_right _ _) this
@@ -476,16 +498,16 @@ out-of-range label, never a rewrite of a real one.  Every kernel-emitted label
 satisfies the hypothesis (`Architecture.faultLabel_lt_errorLabelBase` for a
 fault message; a user send carries label `0`), so on every live path this
 reads as the identity. -/
-@[simp] theorem returnMessageInfo_label_of_lt (msg : IpcMessage) (installedCaps : Nat)
+@[simp] theorem returnMessageInfo_label_of_lt (msg : IpcMessage) (installedCaps overflow : Nat)
     (h : msg.label < errorLabelBase) :
-    (returnMessageInfo msg installedCaps).label = msg.label :=
+    (returnMessageInfo msg installedCaps overflow).label = msg.label :=
   Nat.min_eq_left (Nat.le_sub_one_of_lt h)
 
 /-- WS-RR RR4.4: a message carrying no label (the default, and every message
 built before RR4) delivers the `0` label the pre-RR4 synthesis hard-coded —
 the backward-compatibility bridge. -/
-@[simp] theorem returnMessageInfo_label_zero (msg : IpcMessage) (installedCaps : Nat)
-    (h : msg.label = 0) : (returnMessageInfo msg installedCaps).label = 0 := by
+@[simp] theorem returnMessageInfo_label_zero (msg : IpcMessage) (installedCaps overflow : Nat)
+    (h : msg.label = 0) : (returnMessageInfo msg installedCaps overflow).label = 0 := by
   simp [returnMessageInfo, h]
 
 /-- The honesty bound (PR #866 round-2): the returned `extraCaps` never
@@ -493,12 +515,12 @@ exceeds the installed count — in particular, a path that installed
 nothing reports zero, whatever the delivered message's `caps` array
 still carries. -/
 theorem returnMessageInfo_extraCaps_le_installed
-    (msg : IpcMessage) (installedCaps : Nat) :
-    (returnMessageInfo msg installedCaps).extraCaps ≤ installedCaps :=
+    (msg : IpcMessage) (installedCaps overflow : Nat) :
+    (returnMessageInfo msg installedCaps overflow).extraCaps ≤ installedCaps :=
   Nat.min_le_left _ _
 
-@[simp] theorem returnMessageInfo_extraCaps_zero (msg : IpcMessage) :
-    (returnMessageInfo msg 0).extraCaps = 0 := rfl
+@[simp] theorem returnMessageInfo_extraCaps_zero (msg : IpcMessage) (overflow : Nat) :
+    (returnMessageInfo msg 0 overflow).extraCaps = 0 := rfl
 
 /-- A delivered `IpcMessage` as a return frame — badge to `x0`, synthesized
 `MessageInfo` to `x1`, the inline register window to `x2`-`x5` (RA.A.3).
@@ -506,10 +528,10 @@ The **single** place a message becomes a frame, used by every RA.B.5b
 staging site, so the synthesis cannot drift between sites.
 `installedCaps` per `returnMessageInfo`: the count of caps actually
 installed by this delivery's transfer, `0` for paths that run none. -/
-def returnFrameOfMessage (msg : IpcMessage) (installedCaps : Nat) :
+def returnFrameOfMessage (msg : IpcMessage) (installedCaps overflow : Nat) :
     SyscallReturnFrame :=
   { x0 := ((msg.badge.map Badge.val).getD 0).toUInt64
-    x1 := (returnMessageInfo msg installedCaps).encode.toUInt64
+    x1 := (returnMessageInfo msg installedCaps overflow).encode.toUInt64
     x2 := ((msg.registers[0]?.map RegValue.val).getD 0).toUInt64
     x3 := ((msg.registers[1]?.map RegValue.val).getD 0).toUInt64
     x4 := ((msg.registers[2]?.map RegValue.val).getD 0).toUInt64
@@ -610,11 +632,12 @@ enough in the import graph that the dispatch arms can call it.
 Writes `x0`-`x5` of `tcb.registerContext` from the frame and touches
 nothing else: not `x7`, not `pc`/`sp`, no other TCB field
 (`TCB.withReturnFrame`), and **deliberately not `machine.regs` /
-`regsOnCore`** — that mirror is already stale for x6, x8..x30 after the
-argument spill (the `ContextRestoreSeam` note), the SM10.1 outgoing-frame
-save is the registered closure for the whole staleness class, and keeping
-the write out of `machine` is part of what makes the RA.B.10 projection
-preservation hold for every observer.
+`regsOnCore`** — keeping the write out of `machine` is part of what makes the
+RA.B.10 projection preservation hold for every observer.  Since WS-BP BP7.3 the
+bank and the current thread's context are one value at every trap entry
+(`Architecture.saveTrapFrameOnCore`); what reconciles a frame staged for the
+*current* thread with the bank is `Architecture.stageCallerReturn` (WS-BP BP7.4),
+which writes both.
 
 Total: a non-TCB target returns the state unchanged, mirroring
 `writeFfiRegistersToTcb`'s posture (the caller surfaces the error).
@@ -721,6 +744,59 @@ theorem writeReturnFrameToTcb_id_when_not_tcb
   unfold writeReturnFrameToTcb
   exact SystemState.updateTcb_eq_self_of_none hNot _
 
+/-- **WS-BP BP7.8: the message registers past the fourth, written into the
+receiver's IPC buffer.**  Register `4 + i` goes to overflow slot `i`, at the
+address the shared resolver answers for a **writable** mapping
+(`IpcBufferRead.ipcBufferSlotPAddr?` with `needWrite := true`), and the list
+stops at the first slot it refuses — so what arrives is always a prefix, and
+the frame's length (`returnMessageInfo`'s `overflow`) is that prefix's length.
+seL4 answers a receiver with no usable buffer the same way: `copyMRs` copies the
+registers alone and `setMessageInfo` reports what was copied.
+
+Each word is a `PhysicalWrite.storeUserWord`, recorded on the ledger the syscall
+seam drains (`Architecture.recordPhysicalWrites`) rather than written into the
+model's `machine.memory`: the model holds no thread's memory — the entry reads a
+sender's words from RAM when it needs them (`IpcBufferRead.syncUserWords`) — so
+the store is owed to RAM, exactly as a descriptor store is. -/
+def overflowDeliveryWrites (st : SystemState) (tcb : TCB) :
+    List SeLe4n.RegValue → Nat → List PhysicalWrite
+  | [], _ => []
+  | w :: rest, idx =>
+      match IpcBufferRead.ipcBufferSlotPAddr? st tcb idx true with
+      | some pa => .storeUserWord pa w.val.toUInt64 :: overflowDeliveryWrites st tcb rest (idx + 1)
+      | none => []
+
+/-- The overflow words a delivery of `msg` to `tcb` writes. -/
+def messageOverflowWrites (st : SystemState) (tcb : TCB) (msg : IpcMessage) :
+    List PhysicalWrite :=
+  overflowDeliveryWrites st tcb (msg.registers.toList.drop 4) 0
+
+/-- Every word a delivery writes is a user-word store. -/
+theorem overflowDeliveryWrites_storeUserWord (st : SystemState) (tcb : TCB) :
+    ∀ (ws : List SeLe4n.RegValue) (idx : Nat) (w : PhysicalWrite),
+      w ∈ overflowDeliveryWrites st tcb ws idx → ∃ pa v, w = .storeUserWord pa v
+  | [], _, _, h => by simp [overflowDeliveryWrites] at h
+  | x :: rest, idx, w, h => by
+      unfold overflowDeliveryWrites at h
+      split at h
+      · rename_i pa _
+        rcases List.mem_cons.mp h with h | h
+        · exact ⟨pa, _, h⟩
+        · exact overflowDeliveryWrites_storeUserWord st tcb rest (idx + 1) w h
+      · simp at h
+
+/-- A delivery writes no more words than the message carries past the fourth. -/
+theorem overflowDeliveryWrites_length_le (st : SystemState) (tcb : TCB) :
+    ∀ (ws : List SeLe4n.RegValue) (idx : Nat),
+      (overflowDeliveryWrites st tcb ws idx).length ≤ ws.length
+  | [], _ => by simp [overflowDeliveryWrites]
+  | x :: rest, idx => by
+      unfold overflowDeliveryWrites
+      split
+      · simp only [List.length_cons]
+        exact Nat.succ_le_succ (overflowDeliveryWrites_length_le st tcb rest (idx + 1))
+      · simp
+
 /-- WS-RA RA.B.6: stage the message a completed receive-shaped syscall
 delivered into the **caller's own** `pendingMessage` — the arm-level
 staging for the non-blocking consume paths (`.receive` / `.replyRecv`).
@@ -728,8 +804,8 @@ staging for the non-blocking consume paths (`.receive` / `.replyRecv`).
 Guarded on the caller's post-state being `.ready`: a caller that blocked
 has no fresh delivery (its `pendingMessage` may hold a stale message from
 an earlier exchange), stages nothing here, and its frame is owed by the
-unblocking transition (RA.B.5b) with delivery at the SM10.1 context
-restore.  A `.ready` caller with no `pendingMessage` (a zero-length
+unblocking transition (RA.B.5b) with delivery at the context restore
+(WS-BP BP7.6).  A `.ready` caller with no `pendingMessage` (a zero-length
 delivery is still `some` with an empty register array) stages nothing —
 the boundary's shape-driven read then sees whatever the arm staged, so
 receive arms pair this with the shape theorem rather than relying on
@@ -739,7 +815,11 @@ incidental register content.
 delivering transfer **actually installed** — the arm's transfer-summary
 `installedCount`, or `0` on a path that runs no unwrap.  It is never the
 delivered message's own `caps.size`, which records what the sender
-*requested*. -/
+*requested*.
+
+**WS-BP BP7.8**: the registers past the fourth are written into the
+receiver's IPC buffer (`messageOverflowWrites`), recorded on the physical-write
+ledger, and the frame's length counts them. -/
 def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId)
     (installedCaps : Nat) : SystemState :=
   match st.getTcb? tid with
@@ -747,7 +827,10 @@ def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId)
       if tcb.ipcState = .ready then
         match tcb.pendingMessage with
         | some msg =>
-            writeReturnFrameToTcb st tid (returnFrameOfMessage msg installedCaps)
+            recordPhysicalWrites
+              (writeReturnFrameToTcb st tid (returnFrameOfMessage msg installedCaps
+                (messageOverflowWrites st tcb msg).length))
+              (messageOverflowWrites st tcb msg)
         | none => st
       else st
   | none => st
@@ -840,7 +923,7 @@ def returnFrameOfWord (w : UInt64) : SyscallReturnFrame :=
 -- The blocked-waiter half of §3.5: when an unblocking syscall wakes a
 -- counterparty that was blocked in ITS OWN syscall, the woken thread's
 -- return frame must be staged now — its own boundary crossing ended in
--- `.blocks` with no frame written, and the SM10.1 context restore delivers
+-- `.blocks` with no frame written, and the context restore (WS-BP BP7.6) delivers
 -- whatever its `registerContext` holds.  Every wake in the tree delivers
 -- through one of two shapes, and each gets a guarded Option-lifted stager
 -- so the dispatch arms compose them in one call:
@@ -1054,9 +1137,10 @@ leaves the woken waiter's frame staged: whenever a wake delivered `msg`
 into a counterparty (post-state `.ready` with `pendingMessage = some msg`
 — the `storeTcbIpcStateAndMessage`/`storeTcbReceiveComplete` shape every
 wake in the tree produces), the staging step writes exactly
-`returnFrameOfMessage msg` into its saved register context, and the
-boundary read recovers it bit for bit.  Delivery is the SM10.1 context
-restore's; what this pins is that the frame is *there* to deliver. -/
+`returnFrameOfMessage msg` into its saved register context — its length
+counting the overflow words written into the waiter's IPC buffer (WS-BP BP7.8)
+— and the boundary read recovers it bit for bit.  Delivery is the context restore
+(WS-BP BP7.6)'s; what this pins is that the frame is *there* to deliver. -/
 theorem blockedReturn_staged_in_waiter_frame
     (st : SystemState) (w : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage)
     (installedCaps : Nat)
@@ -1065,14 +1149,15 @@ theorem blockedReturn_staged_in_waiter_frame
     (hMsg : tcb.pendingMessage = some msg)
     (hObjInv : st.objects.invExt) :
     readReturnFrame (stageWokenDelivery st (some w) installedCaps) w
-      = returnFrameOfMessage msg installedCaps := by
+      = returnFrameOfMessage msg installedCaps (messageOverflowWrites st tcb msg).length := by
   show readReturnFrame (stageDeliveredMessage st w installedCaps) w
-    = returnFrameOfMessage msg installedCaps
+    = returnFrameOfMessage msg installedCaps (messageOverflowWrites st tcb msg).length
   unfold stageDeliveredMessage
   rw [hTcb]
   simp only [hReady, hMsg]
   exact readReturnFrame_writeReturnFrame st w
-    (returnFrameOfMessage msg installedCaps) tcb hTcb hObjInv
+    (returnFrameOfMessage msg installedCaps (messageOverflowWrites st tcb msg).length)
+    tcb hTcb hObjInv
 
 /-- WS-RA RA.B.5b — the completion dual: a woken plain sender's staged
 frame is the zero frame (unit success), recovered by the boundary read. -/
@@ -1213,8 +1298,8 @@ The unblocking paths — `timeoutThread` and `cancelIpcBlocking` — take a thre
 out of a blocking IPC with **no value to deliver**, and until this row they
 staged nothing at all.  That is not a neutral omission.  A blocked thread's
 boundary crossing ended in `.blocks`, so its `x0`-`x5` still hold whatever the
-argument spill left there (or the trap layer's fail-closed sentinel); the SM10.1
-context restore delivers whatever `registerContext` holds, so the thread would
+argument spill left there (or the trap layer's fail-closed sentinel); the context
+restore (WS-BP BP7.6) delivers whatever `registerContext` holds, so the thread would
 resume reading its own stale request registers as a return value.
 
 The honest frame is an **error** frame, and which error is the design question
@@ -1339,7 +1424,7 @@ theorem stageCancelledIpcFrame_objects_ne (st : SystemState) (tid : SeLe4n.Threa
 
 /-- What a syscall execution hands the FFI boundary: a frame to write back,
 or the fact that the caller blocked and the frame will be staged by the
-unblocking transition (delivered at the SM10.1 context restore).  Outcome
+unblocking transition (delivered at the context restore (WS-BP BP7.6)).  Outcome
 is decided from the caller's **post-state** — whether `.notificationWait`
 blocks depends on `pendingBadge`, `.receive` on the sender queue, `.send`
 on a waiting receiver — never from the syscall id alone. -/
@@ -1351,10 +1436,10 @@ inductive SyscallOutcome where
   suspend when no handler could take it.  Like `.blocks`, no frame exists for
   it; unlike `.blocks`, the caller is not waiting on an IPC partner but on a
   fault reply that restarts it *at* the `SVC` (`svcFaultIP`), so the interim
-  trap layer must not `eret` it past the `SVC` behind a sentinel frame — it
-  halts, as it does after every other delivered fault pending SM10.1
-  (`halt_after_delivered_syscall_fault`).  When SM10.1 installs successors,
-  `.faulted` and `.blocks` install one alike. -/
+  trap layer must not `eret` it past the `SVC` behind a sentinel frame.  Since
+  WS-BP BP7.6 `.faulted` and `.blocks` alike resume the successor the context
+  restore staged; the halt (`halt_after_delivered_syscall_fault`) is reached
+  only on a core with no restore staged. -/
   | faulted
   deriving Repr, DecidableEq
 
@@ -1364,7 +1449,8 @@ namespace SyscallOutcome
 (the frame itself crosses through the per-core mailbox — plan §3.3):
 `0` = a frame was written, `1` = the caller blocked and no frame exists,
 `2` = the caller faulted at the seam (PR #887 review round 5) — no frame,
-and the trap layer halts rather than resumes. -/
+and, where the context restore staged no successor, the trap layer halts
+rather than resumes it. -/
 def tagWord : SyscallOutcome → UInt64
   | .returns _ => 0
   | .blocks    => 1
@@ -1382,14 +1468,14 @@ theorem tagWord_faulted_ne_returns (f : SyscallReturnFrame) :
   simp [tagWord]
 
 /-- …nor a faulted one for a block: the trap layer's `Blocked` arm resumes
-the caller behind a sentinel, its `Faulted` arm halts, and the two must
-never be confused at the boundary. -/
+the caller behind a sentinel and its `Faulted` arm halts wherever the context
+restore (WS-BP BP7.6) staged no successor, and the two must never be confused at the boundary. -/
 theorem tagWord_faulted_ne_blocks : tagWord .faulted ≠ tagWord .blocks := by
   simp [tagWord]
 
 /-- The mailbox frame for an outcome: a blocked caller's mailbox stays
 zeroed (no return value exists for it — RA.C.9; its real frame is staged
-by the unblocking arm and delivered by the SM10.1 context restore).
+by the unblocking arm and delivered by the context restore (WS-BP BP7.6)).
 Until that seam flips, the hardware trap layer substitutes a fail-closed
 poison frame for the premature resume (`blocked_resume_sentinel_regs` in
 `svc_dispatch.rs`) — an interim HAL artifact, deliberately NOT part of
@@ -1612,7 +1698,7 @@ separate act the delivery's counterpart performs. -/
   unfold writeRestartFrameToTcb; exact SystemState.updateTcb_scheduler st tid _
 
 /-- WS-RR RR4.16 (frame): nor the machine mirror — same posture as
-`writeReturnFrameToTcb`, and for the same reason (the SM10.1 context restore
+`writeReturnFrameToTcb`, and for the same reason (the context restore (WS-BP BP7.6)
 owns that mirror). -/
 @[simp] theorem writeRestartFrameToTcb_machine_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame) :

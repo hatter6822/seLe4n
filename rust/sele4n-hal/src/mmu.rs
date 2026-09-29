@@ -55,7 +55,7 @@ const PXN: u64 = 1 << 53;
 const NORMAL_BASE: u64 = DESC_VALID | AF | SH_INNER | ATTR_IDX_NORMAL | UXN;
 
 /// Block descriptor for writable Normal memory: data, `.bss`, stacks, the Lean
-/// heap and every byte of guaranteed RAM outside the image.  **PXN**, so no
+/// heap and every byte of RAM outside the image.  **PXN**, so no
 /// writable page is executable at EL1.
 ///
 /// **WS-BP BP2.6**: this was the only Normal descriptor, and it carried no
@@ -121,6 +121,15 @@ const MAIR_VALUE: u64 = 0xFF | (0x44 << 16);
 /// - ORGN1 = 0b01 (bits [27:26]): Write-Back cacheable for TTBR1
 /// - IRGN1 = 0b01 (bits [25:24]): Write-Back cacheable for TTBR1
 /// - EPD1  = 1 (bit 23):        TTBR1 walks disabled (WS-RR RR7.1)
+/// - AS    = 1 (bit 36):        16-bit ASIDs (WS-BP BP7.2)
+///
+/// **WS-BP BP7.2 — `AS`**: the model allocates ASIDs from a 16-bit space
+/// (`MachineConfig.maxASID = 65536`), and a thread's root is installed in
+/// `TTBR0_EL1` tagged with its ASID.  With `AS` clear the hardware compares
+/// only `TTBR0_EL1[55:48]`, so two address spaces whose ASIDs agree in their
+/// low eight bits would share TLB entries — one thread translating through
+/// another's cached mappings.  [`asid_bits_of_this_pe_or_halt`] refuses a PE
+/// that does not implement 16-bit ASIDs before this value is written.
 ///
 /// **WS-RR RR7.1 — `EPD1`**: the boot path installs no TTBR1 table, so a
 /// translation in the top half of the virtual address space must **fault**.
@@ -148,7 +157,53 @@ pub const fn tcr_el1_value(ips_encoding: u64) -> u64 {
     let orgn1: u64 = 0b01 << 26;
     let irgn1: u64 = 0b01 << 24;
     let epd1: u64 = 1 << 23; // WS-RR RR7.1: no TTBR1 table exists yet
-    t0sz | t1sz | tg0 | tg1 | ips | sh0 | sh1 | orgn0 | irgn0 | orgn1 | irgn1 | epd1
+    let asid16: u64 = 1 << 36; // WS-BP BP7.2: 16-bit ASIDs
+    t0sz | t1sz | tg0 | tg1 | ips | sh0 | sh1 | orgn0 | irgn0 | orgn1 | irgn1 | epd1 | asid16
+}
+
+/// **WS-BP BP7.2**: the ASID width `TCR_EL1.AS` selects, in bits — the width
+/// the model's ASID space (`MachineConfig.maxASID`) is `2^`.
+pub const ASID_BITS_REQUIRED: u32 = 16;
+
+/// Decode `ID_AA64MMFR0_EL1.ASIDBits`, bits [7:4]: `0b0000` is 8-bit ASIDs,
+/// `0b0010` 16-bit, every other value reserved (ARM ARM D19.2.64).
+pub const fn asid_bits_of(memory_model_features: u64) -> Option<u32> {
+    match (memory_model_features >> 4) & 0xF {
+        0b0000 => Some(8),
+        0b0010 => Some(16),
+        _ => None,
+    }
+}
+
+/// The executing PE's ASID width, or a halt unless it is
+/// [`ASID_BITS_REQUIRED`].  A PE with 8-bit ASIDs ignores `TCR_EL1.AS` and
+/// tags TLB entries by `TTBR0_EL1[55:48]` alone, which would let two model
+/// ASIDs alias; `halt` is the caller's, as
+/// [`physical_address_size_of_this_pe_or_halt`]'s is.  On the host the answer
+/// is the Cortex-A76's, which implements 16-bit ASIDs.
+pub fn asid_bits_of_this_pe_or_halt(halt: fn() -> !) -> u32 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let features = crate::read_sysreg!("id_aa64mmfr0_el1");
+        match asid_bits_of(features) {
+            Some(ASID_BITS_REQUIRED) => ASID_BITS_REQUIRED,
+            other => {
+                crate::kprintln!(
+                    "[mmu] FATAL: ID_AA64MMFR0_EL1 = {features:#x}: ASIDBits {:#06b} ({other:?} \
+                     bits); the kernel tags address spaces with {} bit ASIDs; refusing to \
+                     enable translation",
+                    (features >> 4) & 0xF,
+                    ASID_BITS_REQUIRED
+                );
+                halt();
+            }
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = halt;
+        ASID_BITS_REQUIRED
+    }
 }
 
 /// **The v0.36.2 audit**: what `ID_AA64MMFR0_EL1.PARange` — bits [3:0] of the
@@ -419,41 +474,48 @@ pub const fn compute_sctlr_el1_bitmap() -> u64 {
 // heap arena, the device tree's own bytes and the device window, and every one
 // of those is a linker symbol or a board constant.  So the map is:
 //
-//   * `[0, GUARANTEED_RAM_TOP)`: Normal RAM — the memory **every** Raspberry
-//     Pi 5 has, so mapping it claims nothing about the board.  Inside it the
-//     image's text is read-only and executable, its read-only data read-only,
-//     and everything else — data, `.bss`, both stack regions, the Lean heap and
-//     the rest of the gigabyte — writable and never executable.
+//   * `[0, KERNEL_RESERVED_END)`: Normal RAM — the kernel's reserved extent,
+//     which holds everything the boot stands on and which every board the
+//     deployment admits reports as RAM.  Inside it the image's text is
+//     read-only and executable, its read-only data read-only, and everything
+//     else — data, `.bss`, both stack regions, the Lean heap and the
+//     device-tree window — writable and never executable.
 //   * `[DEVICE_WINDOW_BASE, DEVICE_WINDOW_TOP)`: Device.
 //   * everything else: unmapped.
 //
-// **WS-BP BP4.6**: RAM above the guaranteed gigabyte is mapped once the verified
-// Lean parser has read the device tree with translation on and chosen the
-// variant — the one reader of that blob the kernel keeps for memory.  Lean
-// derives the variant's RAM above the gigabyte (`bootRamExtensionsOf`) and hands
-// each region to [`extend_boot_ram_map`], which adds descriptors only to entries
-// these tables leave invalid and widens [`is_boot_cacheable_range`] by the same
-// record.  The boot map stays a function of the image and the board; the board
-// is decided by the verified parser rather than before translation is on.
+// **WS-BP BP7.10**: the constant Normal window was `[0, GUARANTEED_RAM_TOP)`,
+// the first gigabyte, on the reading that every Raspberry Pi 5 has it.  None
+// does: the firmware keeps the top few MiB of the first gigabyte for itself
+// (`[0x80000, 0x3FC00000)` is RAM on a Pi 5 8 GiB Rev 1.1), so the boot map
+// described VideoCore memory as the kernel's own writable RAM, and the
+// cacheable window let the cache FFI maintain it.  The constant is retired;
+// nothing past the kernel's extent is mapped before the verified parse.
+//
+// **WS-BP BP4.6, BP7.10**: every other byte of RAM — the part of the first
+// gigabyte the firmware reported, and everything above it — is mapped once the
+// verified Lean parser has read the device tree with translation on.  Lean
+// derives the RAM the bound configuration declares outside the kernel's extent
+// (`bootRamExtensionsOf`) and hands each region to [`extend_boot_ram_map`], which
+// adds descriptors only to entries these tables leave invalid and widens
+// [`is_boot_cacheable_range`] by the same record.  The boot map stays a
+// function of the image and the board; the board is decided by the verified
+// parser rather than before translation is on.
 //
 // The map is checked against `rpi5MemoryMapForConfig` in
 // `SeLe4n/Platform/RPi5/Board.lean` by driving, not mirroring (WS-BP BP0.4):
-// `the_boot_map_agrees_with_the_lean_map` requires every address the boot maps
-// Normal to be RAM, and every address it maps Device to be a device region, in
-// **every** RAM variant's Lean map — and on the smallest variant the Normal
-// window to be exactly its RAM; since BP4.6, with each variant's `extend` lines
-// applied, the extended Normal window is exactly **that** variant's RAM.  `scripts/check_physical_address_width.sh`
-// holds `link.ld`'s RAM region to [`GUARANTEED_RAM_TOP`], which no Lean
-// definition states.
+// `the_boot_map_agrees_with_the_lean_map` requires every address the constant
+// map maps Normal to be RAM in **every** configuration the Lean table carries,
+// and with each configuration's `extend` lines applied, the extended Normal
+// window to be exactly **that** configuration's RAM — the firmware's withheld
+// top of the first gigabyte unmapped.  `scripts/check_physical_address_width.sh`
+// holds `link.ld`'s RAM region to [`KERNEL_RESERVED_END`], so the linker cannot
+// place any part of the image outside the constant map.
 
-/// One past the last byte of the RAM every Raspberry Pi 5 has: the smallest
-/// variant's, `[0, 1 GiB)` (`rpi5Variants` in `SeLe4n/Platform/RPi5/Board.lean`;
-/// the driven comparison below requires it to be RAM in every variant and all
-/// of the smallest one's).
-///
-/// `link.ld`'s RAM region ends here, so the linker cannot place any part of the
-/// image — the Lean heap arena included — outside the memory the boot maps.
-pub const GUARANTEED_RAM_TOP: u64 = 0x4000_0000;
+/* **Tombstone (WS-BP BP7.10)**: `GUARANTEED_RAM_TOP` (`0x4000_0000`, "one past
+ * the RAM every Raspberry Pi 5 has") is retired: no RAM beyond the kernel's
+ * reserved extent is guaranteed.  The constant Normal window ends at
+ * [`KERNEL_RESERVED_END`]; the first gigabyte's top survives on the Lean side
+ * (`rpi5FirstGigabyteTop`) as the upper bound on the firmware's report. */
 
 /// **WS-BP BP3.2**: the end of the kernel's reserved extent
 /// `[0, KERNEL_RESERVED_END)` — the firmware's stub below `_start`, the image,
@@ -463,7 +525,11 @@ pub const GUARANTEED_RAM_TOP: u64 = 0x4000_0000;
 /// The boot refuses an untyped that overlaps it (the Lean side's
 /// `Platform.Boot.untypedPlacementRespected`, over
 /// `MachineConfig.kernelReserved`), so nothing here is ever handed to a
-/// thread.  Three artefacts state the number and are held to one another:
+/// thread.  **WS-BP BP7.10**: it is also the whole of the RAM the boot map
+/// describes before the verified parse — the image, its stacks, the Lean heap
+/// and the device-tree window all lie inside it (`link.ld`'s `ASSERT`s), and
+/// the deployment refuses a board whose firmware does not report it as RAM
+/// (`rpi5LowRamTopFloor`).  Three artefacts state the number and are held to one another:
 /// `link.ld`'s `KERNEL_RESERVED_END`, whose `ASSERT` refuses an image that
 /// outgrows it; the Lean `rpi5KernelReservedEnd`, which
 /// `tests/Ak9PlatformSuite.lean` writes into `tests/fixtures/boot_map.expected`;
@@ -471,13 +537,108 @@ pub const GUARANTEED_RAM_TOP: u64 = 0x4000_0000;
 /// `tests::the_kernel_reserved_extent_is_the_lean_and_linker_one` compares with
 /// both.  `scripts/check_link_script.py` reads the linked symbol against the
 /// same fixture line.
-pub const KERNEL_RESERVED_END: u64 = 0x1000_0000;
+pub const KERNEL_RESERVED_END: u64 = crate::board::BOARD.kernel_reserved_end;
 
-// The reserved extent is whole pages inside the RAM every board has — a fact
-// about two constants, so the compiler decides it rather than a test.
+/// **WS-BP BP8.1**: the first byte of the kernel's reserved extent — the base
+/// of the board's RAM (`board::BoardMap::ram_base`): `0` on the Raspberry Pi 5,
+/// `0x4000_0000` on QEMU's `virt`.  The extent is
+/// `[KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)`, and nothing below it is RAM
+/// on either board, so the boot map maps nothing there Normal.
+pub const KERNEL_RESERVED_BASE: u64 = crate::board::BOARD.ram_base;
+
+/// **WS-BP BP8.1**: is `addr` inside the kernel's reserved extent
+/// `[KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)`?  The one spelling of the
+/// question: an address below the base wraps to above the extent's length.
+#[must_use]
+pub const fn in_kernel_reserved_extent(addr: u64) -> bool {
+    addr.wrapping_sub(KERNEL_RESERVED_BASE) < KERNEL_RESERVED_END - KERNEL_RESERVED_BASE
+}
+
+/// **`v0.36.36`: the image's load origin** — `link.ld`'s `ORIGIN(RAM)`, 512 KiB
+/// above the base of RAM (an `ASSERT` there holds it), and the first byte the
+/// boot map describes as memory.  Below it, inside the kernel's reserved
+/// extent, is memory the kernel neither maps nor calls RAM: on a Raspberry
+/// Pi 5 the secure monitor's `[0, 0x80000)`, which `bcm2712.dtsi` reserves as
+/// `reserved-memory/atf@0` with `no-map` — a Normal mapping of secure memory
+/// lets a speculative fetch raise an external abort.  The Lean binding agrees:
+/// `rpi5RamOrigin` is where its declared RAM begins.
+pub const IMAGE_ORIGIN: u64 = KERNEL_RESERVED_BASE + 0x8_0000;
+
+/// **`v0.36.36`**: is `addr` in the part of the kernel's reserved extent the
+/// boot map describes as memory, `[IMAGE_ORIGIN, KERNEL_RESERVED_END)`?  The
+/// one spelling of the question for the boot map, the cacheable window and the
+/// device tree's window, so the three cannot disagree about the hole below the
+/// image.
+#[must_use]
+pub const fn in_kernel_memory_window(addr: u64) -> bool {
+    addr.wrapping_sub(IMAGE_ORIGIN) < KERNEL_RESERVED_END - IMAGE_ORIGIN
+}
+
+/// **WS-BP BP8.1**: the level-1 index of the gigabyte holding the reserved
+/// extent — the one `l2_ram` describes.
+const RAM_GIB: usize = (KERNEL_RESERVED_BASE / L1_BLOCK_SIZE) as usize;
+
+// The reserved extent is whole 2 MiB blocks inside the first gigabyte, whose
+// level-2 table describes it — a fact about constants, so the compiler decides
+// it rather than a test.  Whole blocks, because the RAM an extension adds past
+// it starts on a block boundary (`extend_boot_tables`).
 const _: () = assert!(
-    KERNEL_RESERVED_END <= GUARANTEED_RAM_TOP && KERNEL_RESERVED_END.is_multiple_of(L3_PAGE_SIZE)
+    KERNEL_RESERVED_BASE.is_multiple_of(L1_BLOCK_SIZE)
+        && KERNEL_RESERVED_BASE < KERNEL_RESERVED_END
+        && KERNEL_RESERVED_END - KERNEL_RESERVED_BASE <= L1_BLOCK_SIZE
+        && KERNEL_RESERVED_END.is_multiple_of(L2_BLOCK_SIZE)
 );
+
+/// **WS-BP BP7.1**: the number of 4 KiB pages in the boot's table-page pool —
+/// the pages the boot takes each configured address space's top-level table
+/// from.  `link.ld`'s `BOOT_TABLE_POOL_PAGES` and the Lean
+/// `rpi5BootTablePoolPages` state the same number (`tests::the_boot_table_pool_is_the_lean_and_linker_one`).
+pub const BOOT_TABLE_POOL_PAGES: u64 = 0x10;
+
+/// **WS-BP BP7.1**: the pool's first page — the pool ends exactly at
+/// [`KERNEL_RESERVED_END`], so it is the last memory of the kernel's reserved
+/// extent and no boot untyped can describe it.
+pub const BOOT_TABLE_POOL_BASE: u64 = KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096;
+
+const _: () = assert!(BOOT_TABLE_POOL_PAGES > 0 && BOOT_TABLE_POOL_BASE.is_multiple_of(4096));
+
+/// **WS-BP BP7.1**: zero the boot's table-page pool.
+///
+/// The pool is `NOLOAD`, so it holds whatever the RAM held; a configured
+/// address space's top-level table must start with no descriptor in it, or a
+/// thread would translate through whatever the previous boot left there.  Run
+/// on the boot core with translation on, before the Lean kernel is entered and
+/// so before any thread can be dispatched.  The extent written is the linker's
+/// `[__boot_table_pool_start, __boot_table_pool_end)`, which must be the
+/// constant pool — a link that placed it elsewhere halts rather than zeroing
+/// memory the model does not name.  The host has no pool and does nothing.
+pub fn zero_boot_table_pool() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" {
+            static __boot_table_pool_start: u8;
+            static __boot_table_pool_end: u8;
+        }
+        let start = &raw const __boot_table_pool_start as u64;
+        let end = &raw const __boot_table_pool_end as u64;
+        if start != BOOT_TABLE_POOL_BASE || end != KERNEL_RESERVED_END {
+            crate::gic::halt_all();
+        }
+        let words = (end - start) / 8;
+        let base = start as *mut u64;
+        for i in 0..words {
+            // SAFETY: `[start, end)` is the linker's NOLOAD pool, checked above
+            // to be the constant pool inside the kernel's reserved extent, which
+            // the boot map covers as Normal writable memory; nothing else
+            // references it before the Lean kernel is entered, and `i < words`
+            // keeps every store inside it.
+            unsafe { core::ptr::write_volatile(base.add(i as usize), 0) };
+        }
+        // SAFETY: a data synchronization barrier has no memory-safety
+        // precondition; it orders the stores above before any later table walk.
+        unsafe { core::arch::asm!("dsb ish", options(nostack, preserves_flags)) };
+    }
+}
 
 /// Base of the device (peripheral) window: the BCM2712's SoC-bus window,
 /// `bcm2712.dtsi`'s `soc` node `ranges = <0x7c000000 0x10 0x7c000000
@@ -491,7 +652,7 @@ const _: () = assert!(
 /// UART and interrupt controller unmapped, and the first console write or GIC
 /// access would have gone to RAM.  Every address between the RAM the boot
 /// maps and this one is **unmapped**.
-pub const DEVICE_WINDOW_BASE: u64 = 0x10_7C00_0000;
+pub const DEVICE_WINDOW_BASE: u64 = crate::board::BOARD.device_window_base;
 
 /// One past the last byte of the device window — exactly the end of the
 /// `.device` region `rpi5MemoryMapForConfig` declares, and the end of the
@@ -502,7 +663,7 @@ pub const DEVICE_WINDOW_BASE: u64 = 0x10_7C00_0000;
 /// `0xFF85_0000`, not a block boundary, and a level-3 table described the one
 /// straddling block; with nothing left to straddle that table is deleted
 /// rather than kept describing nothing.)
-pub const DEVICE_WINDOW_TOP: u64 = 0x10_8000_0000;
+pub const DEVICE_WINDOW_TOP: u64 = crate::board::BOARD.device_window_top;
 
 /// What the boot tables map an address as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -511,7 +672,8 @@ pub enum BootMapping {
     KernelText,
     /// The kernel's read-only data: Normal, read-only, never executable.
     KernelReadOnly,
-    /// Every other byte of guaranteed RAM: Normal, writable, never executable.
+    /// Every other byte of RAM the map describes: Normal, writable, never
+    /// executable.
     NormalRam,
     /// Device-nGnRnE, PXN|UXN — MMIO.
     Device,
@@ -537,6 +699,12 @@ impl BootMapping {
 /// `.text.vectors`, `.text`) and `[text_end, rodata_end)` its read-only data.
 /// On hardware the three are `link.ld`'s `_start`, `__text_end` and
 /// `__rodata_end` ([`image_layout`]); the host tests pass their own.
+///
+/// **PR #904 (`v0.36.41`)**: and where the kernel stacks' guard pages sit —
+/// the page below the boot stack and the lowest page of each secondary slot
+/// (`link.ld`'s `__stack_guard` and `__smp_secondary_stacks_bottom + k *
+/// SECONDARY_STACK_STRIDE`), which the map leaves unmapped so a stack overflow
+/// takes a translation fault instead of writing the memory below it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImageLayout {
     /// First byte of the kernel's text: the load address.
@@ -545,6 +713,34 @@ pub struct ImageLayout {
     pub text_end: u64,
     /// One past the read-only data.
     pub rodata_end: u64,
+    /// The base of each kernel stack's guard page, in address order.
+    pub stack_guards: [u64; STACK_GUARD_COUNT],
+}
+
+/// **PR #904 (`v0.36.41`)**: bytes of one kernel-stack guard page
+/// (`link.ld`'s `STACK_GUARD_SIZE`).
+pub const STACK_GUARD_SIZE: u64 = 0x1000;
+/// **PR #904**: the stride between secondary stack slots (`link.ld`'s
+/// `SECONDARY_STACK_STRIDE`; `boot.S`'s `lsl #17`).
+pub const SECONDARY_STACK_STRIDE: u64 = 0x2_0000;
+/// **PR #904**: bytes of one PE's fault stack (`link.ld`'s `FAULT_STACK_SIZE`;
+/// `boot.S`'s and `trap.S`'s `lsl #14`).
+pub const FAULT_STACK_SIZE: u64 = 0x4000;
+/// **PR #904**: one guard page per kernel stack — the boot core's and the
+/// three secondaries'.
+pub const STACK_GUARD_COUNT: usize = 4;
+
+/// **PR #904**: the four guard pages for a boot stack guard at `boot_guard`
+/// and secondary slots from `secondary_bottom` — the arithmetic `link.ld`
+/// lays out and `boot.S` indexes.
+#[must_use]
+pub const fn stack_guards_for(boot_guard: u64, secondary_bottom: u64) -> [u64; STACK_GUARD_COUNT] {
+    [
+        boot_guard,
+        secondary_bottom,
+        secondary_bottom + SECONDARY_STACK_STRIDE,
+        secondary_bottom + 2 * SECONDARY_STACK_STRIDE,
+    ]
 }
 
 impl ImageLayout {
@@ -552,7 +748,7 @@ impl ImageLayout {
     ///
     /// Every boundary is page aligned (a permission cannot change inside a
     /// 4 KiB page), the text is not empty, the two spans are ordered, and both
-    /// lie inside guaranteed RAM.  `link.ld`'s `ASSERT`s make every linked image
+    /// lie inside the kernel's reserved extent.  `link.ld`'s `ASSERT`s make every linked image
     /// satisfy this; [`init_mmu`] still refuses one that does not, because a
     /// map built over a malformed layout would describe permissions the tables
     /// cannot express.
@@ -563,14 +759,65 @@ impl ImageLayout {
             && self.rodata_end.is_multiple_of(L3_PAGE_SIZE)
             && self.text_start < self.text_end
             && self.text_end <= self.rodata_end
-            && self.rodata_end <= GUARANTEED_RAM_TOP
+            && in_kernel_memory_window(self.text_start)
+            && self.rodata_end <= KERNEL_RESERVED_END
+            && self.guards_well_formed()
     }
 
-    /// The layout's three boundaries, in address order.  A boundary that falls
-    /// strictly inside a 2 MiB block is what forces that block to page
-    /// granularity.
+    /// PR #904: every guard page is page aligned, lies above the read-only
+    /// data, inside the reserved extent, and after the one before it.
+    const fn guards_well_formed(&self) -> bool {
+        let mut floor = self.rodata_end;
+        let mut i = 0;
+        while i < STACK_GUARD_COUNT {
+            let g = self.stack_guards[i];
+            if !g.is_multiple_of(L3_PAGE_SIZE) || g < floor {
+                return false;
+            }
+            match g.checked_add(STACK_GUARD_SIZE) {
+                Some(end) if end <= KERNEL_RESERVED_END => floor = end,
+                _ => return false,
+            }
+            i += 1;
+        }
+        true
+    }
+
+    /// PR #904: is `addr` inside one of the stack guard pages?
+    #[must_use]
+    pub const fn in_stack_guard(&self, addr: u64) -> bool {
+        let mut i = 0;
+        while i < STACK_GUARD_COUNT {
+            let g = self.stack_guards[i];
+            if g <= addr && addr - g < STACK_GUARD_SIZE {
+                return true;
+            }
+            i += 1;
+        }
+        false
+    }
+
+    /// The map's boundaries inside the kernel's extent, in address order: the
+    /// image origin (`v0.36.36` — the unmapped hole below it ends there), the
+    /// layout's three, and both edges of each stack guard page (PR #904).  A boundary that falls strictly inside a 2 MiB block
+    /// is what forces that block to page granularity.  In order because a
+    /// well-formed layout's text starts at or above [`IMAGE_ORIGIN`].
     const fn boundaries(&self) -> [u64; IMAGE_BOUNDARY_COUNT] {
-        [self.text_start, self.text_end, self.rodata_end]
+        let g = &self.stack_guards;
+        [
+            IMAGE_ORIGIN,
+            self.text_start,
+            self.text_end,
+            self.rodata_end,
+            g[0],
+            g[0] + STACK_GUARD_SIZE,
+            g[1],
+            g[1] + STACK_GUARD_SIZE,
+            g[2],
+            g[2] + STACK_GUARD_SIZE,
+            g[3],
+            g[3] + STACK_GUARD_SIZE,
+        ]
     }
 }
 
@@ -578,13 +825,18 @@ impl ImageLayout {
 /// as `layout`.
 ///
 /// A function of the address and the image alone: no device tree, no RAM size,
-/// no state.  Guaranteed RAM is Normal, with the image's text and read-only
-/// data carrying their own permissions; the device window is Device; every
-/// other address is unmapped.
+/// no state.  The kernel's reserved extent from the image origin is Normal,
+/// with the image's text and read-only data carrying their own permissions; the
+/// device window is Device; every other address is unmapped — the extent's
+/// prefix below [`IMAGE_ORIGIN`] included (`v0.36.36`: the secure monitor's
+/// `no-map` memory on a Raspberry Pi 5).
 #[must_use]
 pub const fn boot_mapping_for(addr: u64, layout: &ImageLayout) -> BootMapping {
-    if addr < GUARANTEED_RAM_TOP {
-        if layout.text_start <= addr && addr < layout.text_end {
+    if in_kernel_memory_window(addr) {
+        if layout.in_stack_guard(addr) {
+            // PR #904: a kernel stack's guard page — an overflow faults.
+            BootMapping::Unmapped
+        } else if layout.text_start <= addr && addr < layout.text_end {
             BootMapping::KernelText
         } else if layout.text_end <= addr && addr < layout.rodata_end {
             BootMapping::KernelReadOnly
@@ -611,15 +863,20 @@ pub const fn boot_mapping_for(addr: u64, layout: &ImageLayout) -> BootMapping {
 /// Asks the question for a *range* rather than for its first byte, because a
 /// range that starts in RAM and runs off the end of it is exactly the
 /// under-maintenance a per-address check would miss.  **WS-BP BP2.6**: the
-/// Normal window was one interval, `[0, GUARANTEED_RAM_TOP)`, whatever the
-/// image's permissions inside it (cache maintenance by address needs read
-/// access, which every Normal page grants).  **WS-BP BP4.6**: it is that
+/// Normal window was one interval, whatever the image's permissions inside it
+/// (cache maintenance by address needs read access, which every Normal page
+/// grants); since **WS-BP BP7.10** that interval is `[0, KERNEL_RESERVED_END)`,
+/// not the first gigabyte the firmware partly withholds.  **WS-BP BP4.6**: it is that
 /// interval together with every extension [`extend_boot_ram_map`] has
 /// recorded — the RAM of the variant the verified device-tree parse selected —
 /// so the window and the tables are widened by one call and cannot disagree.
 /// [`ram_range_covered`] is the pure form, pinned against a walk of extended
 /// tables by `boot_map_tests`.  An empty range is vacuously contained; a range
 /// whose end overflows `u64` is refused.
+///
+/// **PR #904 (`v0.36.41`)**: and none of it is a kernel stack's guard page,
+/// which the map leaves unmapped inside the extent
+/// ([`boot_cacheable_range_for`] is the pure form over a given layout).
 #[must_use]
 pub fn is_boot_cacheable_range(base: u64, size: u64) -> bool {
     let recorded = RAM_EXTENSION_COUNT
@@ -632,14 +889,43 @@ pub fn is_boot_cacheable_range(base: u64, size: u64) -> bool {
             RAM_EXTENSIONS[i].1.load(Ordering::Relaxed),
         );
     }
-    ram_range_covered(base, size, &extensions[..recorded])
+    boot_cacheable_range_for(base, size, &extensions[..recorded], &image_layout())
 }
 
-/// **WS-BP BP4.6**: is every byte of `[base, base + size)` inside guaranteed
-/// RAM or one of `extensions` (each a `(base, end)` interval)?
+/// **PR #904 (`v0.36.41`)**: [`is_boot_cacheable_range`] over a given layout —
+/// covered by the reserved extent or an extension ([`ram_range_covered`]) and
+/// meeting no stack guard page of `layout`.  A layout the tables cannot
+/// describe (the host's empty one) has no guards to avoid.
+#[must_use]
+pub const fn boot_cacheable_range_for(
+    base: u64,
+    size: u64,
+    extensions: &[(u64, u64)],
+    layout: &ImageLayout,
+) -> bool {
+    if !ram_range_covered(base, size, extensions) {
+        return false;
+    }
+    if size == 0 || !layout.is_well_formed() {
+        return true;
+    }
+    let end = base + size; // no overflow: `ram_range_covered` refused one
+    let mut i = 0;
+    while i < STACK_GUARD_COUNT {
+        let g = layout.stack_guards[i];
+        if base < g + STACK_GUARD_SIZE && g < end {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// **WS-BP BP4.6**: is every byte of `[base, base + size)` inside the kernel's
+/// reserved extent or one of `extensions` (each a `(base, end)` interval)?
 ///
-/// The intervals may abut — the first extension begins where guaranteed RAM
-/// ends — so containment is asked of their union: advance a cursor through
+/// The intervals may abut — the first extension begins where the reserved
+/// extent ends (**WS-BP BP7.10**) — so containment is asked of their union: advance a cursor through
 /// whichever interval holds it until the range is covered or no interval holds
 /// the cursor.  Each step moves the cursor to an interval's end, strictly past
 /// where it was, so the loop runs at most once per interval plus one.
@@ -659,8 +945,8 @@ pub const fn ram_range_covered(base: u64, size: u64, extensions: &[(u64, u64)]) 
             return true;
         }
         let mut next = None;
-        if cursor < GUARANTEED_RAM_TOP {
-            next = Some(GUARANTEED_RAM_TOP);
+        if in_kernel_memory_window(cursor) {
+            next = Some(KERNEL_RESERVED_END);
         }
         let mut i = 0;
         while i < extensions.len() {
@@ -692,10 +978,13 @@ const L1_BLOCK_SIZE: u64 = 1 << 30;
 /// Bytes one L2 block descriptor maps (2 MiB).
 const L2_BLOCK_SIZE: u64 = 1 << 21;
 
-/// How many image boundaries [`ImageLayout`] has, and so the most 2 MiB blocks
-/// of guaranteed RAM that need page granularity: a block is uniform unless a
-/// boundary falls strictly inside it.
-const IMAGE_BOUNDARY_COUNT: usize = 3;
+/// How many boundaries the map has inside the kernel's extent — the image
+/// origin, [`ImageLayout`]'s three and both edges of each stack guard page —
+/// and so the most 2 MiB blocks of the reserved extent that need page
+/// granularity: a block is uniform unless a boundary falls strictly inside it.
+/// (Four since `v0.36.36`, which made the origin a boundary: the block holding
+/// it is half unmapped; twelve since PR #904 added the guard pages.)
+const IMAGE_BOUNDARY_COUNT: usize = 4 + 2 * STACK_GUARD_COUNT;
 
 /// The L1 index of the gigabyte holding the device window.
 const DEVICE_GIB: usize = (DEVICE_WINDOW_BASE / L1_BLOCK_SIZE) as usize;
@@ -716,7 +1005,7 @@ const DESC_ADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
 
 /// Boot translation tables.
 ///
-/// Laid out as one `#[repr(C, align(4096))]` struct so all eight tables are
+/// Laid out as one `#[repr(C, align(4096))]` struct so all its tables are
 /// contiguous and 4 KiB aligned (each array is exactly one 4 KiB page), which
 /// lets [`enable_mmu`] clean the whole extent to the Point of Coherency in one
 /// range operation.
@@ -725,9 +1014,11 @@ const DESC_ADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
 ///   `[0, 512 GiB)`.  Every other L0 entry is invalid.
 /// - **L1**: entry 0 reaches `l2_ram` and entry [`DEVICE_GIB`] reaches
 ///   `l2_device`; every other entry is invalid.
-/// - **L2** (`l2_ram`): 2 MiB blocks describing guaranteed RAM, except the
-///   blocks an image boundary falls inside, which are Table descriptors to
-///   `l3_image`.
+/// - **L2** (`l2_ram`): 2 MiB blocks describing the kernel's reserved extent,
+///   except the blocks an image boundary falls inside, which are Table
+///   descriptors to `l3_image`.  The rest of the first gigabyte is invalid
+///   until [`extend_boot_ram_map`] maps the part the firmware reported as RAM
+///   (**WS-BP BP7.10**).
 /// - **L2** (`l2_device`): 2 MiB Device blocks over the device window.
 /// - **L3**: 4 KiB pages for the straddled image blocks.
 #[repr(C, align(4096))]
@@ -844,12 +1135,8 @@ const _: () = assert!(
     core::mem::size_of::<BootPageTables>() == BOOT_TABLE_COUNT * 4096,
     "BootPageTables must be a whole number of 4 KiB translation tables"
 );
-// Guaranteed RAM is described by one L2 table, so it fits in the first
-// gigabyte and ends on a block boundary.
-const _: () = assert!(GUARANTEED_RAM_TOP <= L1_BLOCK_SIZE);
-const _: () = assert!(GUARANTEED_RAM_TOP.is_multiple_of(L2_BLOCK_SIZE));
 // The device window is described by one L2 table, in a gigabyte of its own.
-const _: () = assert!(DEVICE_GIB != 0);
+const _: () = assert!(DEVICE_GIB != RAM_GIB);
 const _: () = assert!(DEVICE_WINDOW_BASE.is_multiple_of(L2_BLOCK_SIZE));
 const _: () = assert!(DEVICE_WINDOW_TOP <= (DEVICE_GIB as u64 + 1) * L1_BLOCK_SIZE);
 // The BCM2712 address-map correction: the window's top is the Lean extent and a
@@ -860,7 +1147,7 @@ const _: () = assert!(DEVICE_WINDOW_BASE < DEVICE_WINDOW_TOP);
 const _: () = assert!(L2_BLOCK_SIZE == 1 << 21);
 
 // ---------------------------------------------------------------------------
-// WS-BP BP4.6 — the verified board's RAM above the guaranteed gigabyte
+// WS-BP BP4.6, BP7.10 — the verified board's RAM outside the kernel's extent
 // ---------------------------------------------------------------------------
 
 /// **WS-BP BP4.6**: one past the last address the boot tables can describe —
@@ -871,9 +1158,11 @@ const _: () = assert!(L2_BLOCK_SIZE == 1 << 21);
 pub const BOOT_TABLE_REACH: u64 = 1 << 39;
 
 /// **WS-BP BP4.6**: how many RAM extensions the boot map can record.  Every
-/// Raspberry Pi 5 needs at most one — its DRAM above the guaranteed gigabyte,
-/// which is contiguous on the BCM2712 — and a second is refused on no board;
-/// the slack is for a future variant, never a reason to leave one unrecorded.
+/// Raspberry Pi 5 needs at most two (**WS-BP BP7.10**): the part of the first
+/// gigabyte the firmware reports past the kernel's reserved extent, and — on
+/// a board larger than a gigabyte — its DRAM above the first gigabyte, which
+/// is contiguous on the BCM2712.  The slack is for a future variant, never a
+/// reason to leave one unrecorded.
 pub const MAX_RAM_EXTENSIONS: usize = 4;
 
 /// **WS-BP BP4.6**: why [`extend_boot_tables`] or [`extend_boot_ram_map`]
@@ -888,18 +1177,21 @@ pub enum RamExtensionRefusal {
     /// `base` or `base + size` is not on a 2 MiB boundary — the smallest block
     /// an extension writes.
     Unaligned,
-    /// The range begins inside guaranteed RAM, which the boot map already
-    /// describes with the image's own permissions.
-    BelowGuaranteedRam,
+    /// The range begins inside the kernel's reserved extent
+    /// `[0, KERNEL_RESERVED_END)`, which the boot map already describes with
+    /// the image's own permissions.  (**WS-BP BP7.10** — was
+    /// `BelowGuaranteedRam`, over the retired first-gigabyte window.)
+    InsideKernelReserved,
     /// The range ends past [`BOOT_TABLE_REACH`].
     BeyondTableReach,
     /// The range covers part of a gigabyte whose level-1 entry is invalid: the
     /// tables have no level-2 table for it, so only a whole gigabyte (one
-    /// 1 GiB block) can be mapped there.  The device window's gigabyte has its
-    /// own level-2 table and takes 2 MiB blocks.
+    /// 1 GiB block) can be mapped there.  The first gigabyte and the device
+    /// window's gigabyte have level-2 tables of their own and take 2 MiB
+    /// blocks ([`level2_table`]).
     PartialGigabyte,
-    /// A descriptor the range needs is already valid — guaranteed RAM, the
-    /// device window, or an earlier extension.  Extending never rewrites a
+    /// A descriptor the range needs is already valid — the kernel's reserved
+    /// extent, the device window, or an earlier extension.  Extending never rewrites a
     /// valid descriptor, which is what makes it safe without break-before-make
     /// and without a TLB invalidation: a translation that faults is never
     /// cached (ARM ARM D8.14).
@@ -923,15 +1215,34 @@ fn gigabytes_of(base: u64, end: u64) -> impl Iterator<Item = (usize, u64, u64)> 
     })
 }
 
+/// **WS-BP BP7.10**: the level-2 table the boot tables hold for gigabyte `g`,
+/// if they hold one — `l2_ram` for the first gigabyte (the kernel's reserved
+/// extent and whatever the firmware reports past it), `l2_device` for the
+/// device window's.  Every other gigabyte has no level-2 table, so an
+/// extension maps it only as one 1 GiB block.
+///
+/// One answer for both passes of [`extend_boot_tables`], so the pass that
+/// decides and the pass that writes cannot pick different tables.
+fn level2_table(tables: &mut BootPageTables, g: usize) -> Option<&mut [u64; TABLE_ENTRIES]> {
+    if g == RAM_GIB {
+        Some(&mut tables.l2_ram)
+    } else if g == DEVICE_GIB {
+        Some(&mut tables.l2_device)
+    } else {
+        None
+    }
+}
+
 /// **WS-BP BP4.6**: extend `tables`' identity map over `[base, base + size)` as
 /// Normal RAM — writable, never executable ([`BootMapping::NormalRam`]).
 ///
 /// Pure over its arguments so the host suite drives it against the Lean map.
 /// Two passes: every refusal ([`RamExtensionRefusal`]) is decided by the first,
 /// so the second, which writes, cannot fail half way.  A whole gigabyte is one
-/// level-1 block descriptor; the device window's gigabyte, which has a level-2
-/// table, takes 2 MiB block descriptors in its invalid entries.  Only entries
-/// the tables leave **invalid** are written, never a valid one.
+/// level-1 block descriptor; a gigabyte with a level-2 table ([`level2_table`]:
+/// the first, since **WS-BP BP7.10**, and the device window's) takes 2 MiB
+/// block descriptors in its invalid entries.  Only entries the tables leave
+/// **invalid** are written, never a valid one.
 ///
 /// # Errors
 ///
@@ -950,18 +1261,18 @@ pub fn extend_boot_tables(
     if !base.is_multiple_of(L2_BLOCK_SIZE) || !end.is_multiple_of(L2_BLOCK_SIZE) {
         return Err(RamExtensionRefusal::Unaligned);
     }
-    if base < GUARANTEED_RAM_TOP {
-        return Err(RamExtensionRefusal::BelowGuaranteedRam);
+    if base < KERNEL_RESERVED_END {
+        return Err(RamExtensionRefusal::InsideKernelReserved);
     }
     if end > BOOT_TABLE_REACH {
         return Err(RamExtensionRefusal::BeyondTableReach);
     }
     for (g, lo, hi) in gigabytes_of(base, end) {
         let gib = g as u64 * L1_BLOCK_SIZE;
-        if g == DEVICE_GIB {
+        if let Some(l2) = level2_table(tables, g) {
             let mut block = lo;
             while block < hi {
-                if tables.l2_device[((block - gib) / L2_BLOCK_SIZE) as usize] != 0 {
+                if l2[((block - gib) / L2_BLOCK_SIZE) as usize] != 0 {
                     return Err(RamExtensionRefusal::AlreadyMapped);
                 }
                 block += L2_BLOCK_SIZE;
@@ -977,10 +1288,10 @@ pub fn extend_boot_tables(
     }
     for (g, lo, hi) in gigabytes_of(base, end) {
         let gib = g as u64 * L1_BLOCK_SIZE;
-        if g == DEVICE_GIB {
+        if let Some(l2) = level2_table(tables, g) {
             let mut block = lo;
             while block < hi {
-                tables.l2_device[((block - gib) / L2_BLOCK_SIZE) as usize] =
+                l2[((block - gib) / L2_BLOCK_SIZE) as usize] =
                     block_descriptor(block, BootMapping::NormalRam);
                 block += L2_BLOCK_SIZE;
             }
@@ -1145,13 +1456,16 @@ fn populate_boot_tables(tables: &mut BootPageTables, base_pa: u64, layout: &Imag
     tables.l0 = [0; TABLE_ENTRIES];
     tables.l0[0] = table_descriptor(base_pa, L1_TABLE);
 
-    // Level 1: guaranteed RAM and the device window; nothing else.
+    // Level 1: the first gigabyte (the kernel's reserved extent, and room for
+    // the RAM the firmware reports past it) and the device window; nothing
+    // else.
     tables.l1 = [0; TABLE_ENTRIES];
-    tables.l1[0] = table_descriptor(base_pa, L2_RAM_TABLE);
+    tables.l1[RAM_GIB] = table_descriptor(base_pa, L2_RAM_TABLE);
     tables.l1[DEVICE_GIB] = table_descriptor(base_pa, L2_DEVICE_TABLE);
 
+    let ram_gib_base = (RAM_GIB as u64) * L1_BLOCK_SIZE;
     for (i, entry) in tables.l2_ram.iter_mut().enumerate() {
-        let base = (i as u64) * L2_BLOCK_SIZE;
+        let base = ram_gib_base + (i as u64) * L2_BLOCK_SIZE;
         *entry = match image_l3_slot(layout, base) {
             Some(slot) => table_descriptor(base_pa, L3_IMAGE_TABLE_BASE + slot as u64),
             None => block_descriptor(base, boot_mapping_for(base, layout)),
@@ -1175,10 +1489,11 @@ fn populate_boot_tables(tables: &mut BootPageTables, base_pa: u64, layout: &Imag
 ///
 /// The map is [`boot_mapping_for`]'s:
 ///
-/// - `[0, text_start)`:              Normal RAM, writable, execute-never
+/// - `[KERNEL_RESERVED_BASE, IMAGE_ORIGIN)`: unmapped (`v0.36.36`)
+/// - `[IMAGE_ORIGIN, text_start)`:   Normal RAM, writable, execute-never
 /// - `[text_start, text_end)`:       kernel text, read-only, executable at EL1
 /// - `[text_end, rodata_end)`:       kernel read-only data, execute-never
-/// - `[rodata_end, 0x4000_0000)`:    Normal RAM, writable, execute-never
+/// - `[rodata_end, KERNEL_RESERVED_END)`: Normal RAM, writable, execute-never
 /// - `0x10_7C00_0000 – 0x10_7FFF_FFFF`: Device (the BCM2712 SoC-bus window:
 ///   UART10 + GIC-400)
 /// - everything else:                unmapped
@@ -1206,7 +1521,156 @@ fn build_identity_tables(layout: &ImageLayout) {
 
 /// AK5-E.3: TTBR0_EL1 BAADDR mask — bits [47:12] on ARMv8 (clears CnP bit 0,
 /// common-not-private bit, and any reserved bits set on the raw PA).
-const TTBR_BAADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
+pub(crate) const TTBR_BAADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
+
+/// **WS-BP BP7.2**: the value `TTBR0_EL1` takes for the kernel's own
+/// translation — the boot tables, under ASID 0.  The value [`enable_mmu`]
+/// programs, and the one `user_translation::install_translation` restores on a
+/// core running no thread's address space.
+#[must_use]
+pub fn boot_ttbr0_value() -> u64 {
+    (BOOT_TABLES.pa() as u64) & TTBR_BAADDR_MASK
+}
+
+/// **WS-BP BP7.2: the kernel window** — the boot tables' top-level entry `0`,
+/// which every thread's address space carries at its own entry `0`
+/// (`user_translation::kernel_window_entry`).  It covers `[0, 2^39)`, every
+/// byte the boot map maps, and it is fixed once the map is sealed: the boot
+/// writes it before translation is enabled and [`extend_boot_ram_map`] writes
+/// only entries of the tables beneath it.
+#[must_use]
+pub fn boot_l0_entry0() -> u64 {
+    let entry = BOOT_TABLES.pa() as *const u64;
+    // SAFETY: `BOOT_TABLES` is a static, 4 KiB-aligned `BootPageTables` whose
+    // first member is the level-0 array, so its address is that array's entry 0:
+    // aligned, initialised (to zero until `populate_boot_tables` runs) and
+    // readable for the life of the kernel.  The read is volatile because the
+    // boot writes the tables through `with_inner_mut`, which the compiler does
+    // not see from here.
+    unsafe { core::ptr::read_volatile(entry) }
+}
+
+// ---------------------------------------------------------------------------
+// WS-BP BP8.4 — the Tier-4 exercisers' window (test images only)
+// ---------------------------------------------------------------------------
+
+/// **WS-BP BP8.4**: the boot level-1 entry the exercisers' window hangs off —
+/// the last one, whose gigabyte no board's RAM, device window or RAM extension
+/// describes (a Raspberry Pi 5 tops out at 16 GiB; the assertions below hold
+/// the two constant users off it), inside level-0 entry 0's subtree, which
+/// every thread's address space shares (`user_translation::kernel_window_entry`).
+/// Compiled only into a test image (`smp_exercisers`).
+#[cfg(feature = "smp_exercisers")]
+pub const EXERCISER_WINDOW_L1_INDEX: usize = TABLE_ENTRIES - 1;
+
+/// **WS-BP BP8.4**: the first byte of that entry.
+#[cfg(feature = "smp_exercisers")]
+pub const EXERCISER_WINDOW_BASE: u64 = EXERCISER_WINDOW_L1_INDEX as u64 * L1_BLOCK_SIZE;
+
+#[cfg(feature = "smp_exercisers")]
+const _: () =
+    assert!(EXERCISER_WINDOW_L1_INDEX != RAM_GIB && EXERCISER_WINDOW_L1_INDEX != DEVICE_GIB);
+#[cfg(feature = "smp_exercisers")]
+const _: () = assert!(EXERCISER_WINDOW_BASE + L1_BLOCK_SIZE <= BOOT_TABLE_REACH);
+
+/// **WS-BP BP8.4**: why the exercisers' window was refused.
+#[cfg(feature = "smp_exercisers")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExerciserWindowRefusal {
+    /// The boot map is not sealed: RAM extensions may still be written, and
+    /// the window is hung only once the map has one writer no more.
+    NotSealed,
+    /// The level-2 table is not 4 KiB-aligned.
+    TableUnaligned,
+    /// The level-2 table is not a page of the kernel image's own memory.
+    TableOutsideKernelExtent,
+    /// The level-1 entry already holds a valid descriptor.
+    EntryInUse,
+}
+
+/// **WS-BP BP8.4**: may the exercisers' level-2 table at `l2_table_pa` be
+/// hung off the boot map — sealed, with `entry` the level-1 entry's current
+/// value and `kernel` the image's extent as `(start, length)`?  The whole
+/// decision, so it is decided on the host; [`install_exerciser_window`] reads
+/// the three facts off the machine and writes nothing unless this says `Ok`.
+#[cfg(feature = "smp_exercisers")]
+pub const fn exerciser_window_admissible(
+    l2_table_pa: u64,
+    sealed: bool,
+    entry: u64,
+    kernel: (u64, u64),
+) -> Result<(), ExerciserWindowRefusal> {
+    if !sealed {
+        return Err(ExerciserWindowRefusal::NotSealed);
+    }
+    if !l2_table_pa.is_multiple_of(4096) {
+        return Err(ExerciserWindowRefusal::TableUnaligned);
+    }
+    let (start, length) = kernel;
+    if l2_table_pa < start || l2_table_pa.saturating_add(4096) > start.saturating_add(length) {
+        return Err(ExerciserWindowRefusal::TableOutsideKernelExtent);
+    }
+    if entry & DESC_VALID != 0 {
+        return Err(ExerciserWindowRefusal::EntryInUse);
+    }
+    Ok(())
+}
+
+/// **WS-BP BP8.4**: a Table descriptor naming the table at `table_pa`.
+#[cfg(feature = "smp_exercisers")]
+#[must_use]
+pub const fn exerciser_table_descriptor(table_pa: u64) -> u64 {
+    (table_pa & DESC_ADDR_MASK) | DESC_TABLE
+}
+
+/// **WS-BP BP8.4**: the page descriptor the exercisers map a backing page
+/// with — the kernel's own Normal RAM descriptor: EL1 read-write, never
+/// executable, global.
+#[cfg(feature = "smp_exercisers")]
+#[must_use]
+pub const fn exerciser_page_descriptor(page_pa: u64) -> u64 {
+    page_descriptor(page_pa & DESC_ADDR_MASK, BootMapping::NormalRam)
+}
+
+/// **WS-BP BP8.4**: hang the exercisers' level-2 table at `l2_table_pa` off
+/// the boot map's level-1 table at [`EXERCISER_WINDOW_L1_INDEX`].
+///
+/// One 64-bit store, invalid to valid, so a walker sees the old entry or the
+/// new one and never a partial update; then `DSB ISH` and `ISB`, as
+/// [`extend_boot_ram_map`] publishes its entries.  Run on the boot core with
+/// IRQs masked for the store, which is [`PageTableCell::with_inner_mut`]'s
+/// precondition.
+///
+/// # Errors
+///
+/// [`exerciser_window_admissible`]'s refusal, with nothing written.
+#[cfg(feature = "smp_exercisers")]
+pub fn install_exerciser_window(l2_table_pa: u64) -> Result<(), ExerciserWindowRefusal> {
+    let saved = crate::interrupts::disable_interrupts();
+    let sealed = BOOT_MAP_SEALED.load(Ordering::Acquire);
+    let kernel = kernel_extent();
+    // SAFETY: the boot core, with IRQs masked (above), is the one writer
+    // `with_inner_mut` requires.  `entry` is an aligned `u64` inside the live
+    // boot tables, read and — only after the admission check has refused every
+    // value the store may not replace — written volatile, because the walker
+    // reads it behind the compiler's back; the one store is single-copy
+    // atomic, from an invalid entry, so no walk observes a partial update.
+    let outcome = unsafe {
+        BOOT_TABLES.with_inner_mut(|tables| {
+            let entry = &raw mut tables.l1[EXERCISER_WINDOW_L1_INDEX];
+            let current = core::ptr::read_volatile(entry);
+            let verdict = exerciser_window_admissible(l2_table_pa, sealed, current, kernel);
+            if verdict.is_ok() {
+                core::ptr::write_volatile(entry, (l2_table_pa & DESC_ADDR_MASK) | DESC_TABLE);
+            }
+            verdict
+        })
+    };
+    crate::barriers::dsb_ish();
+    crate::barriers::isb();
+    crate::interrupts::restore_interrupts(saved);
+    outcome
+}
 
 /// Set TTBR0/TTBR1 and enable the MMU — AK5-D/AK5-C/AK5-E.3 full sequence.
 ///
@@ -1257,6 +1721,9 @@ fn enable_mmu() {
     // A reserved encoding, or a PE narrower than the tables' reach, halts here
     // — the primary before any secondary exists, a secondary parking itself.
     let pa = physical_address_size_of_this_pe_or_halt(crate::cpu::fatal_halt);
+    // WS-BP BP7.2: the PE tags TLB entries with the 16-bit ASIDs `TCR_EL1.AS`
+    // selects, or it halts here — before the value that sets `AS` is written.
+    let _ = asid_bits_of_this_pe_or_halt(crate::cpu::fatal_halt);
 
     // Step 1: Invalidate stale TLB entries (cold reset / warm-reset safety).
     // `tlbi_vmalle1()` emits DSB ISH + ISB internally.
@@ -1366,9 +1833,11 @@ pub fn init_mmu(dtb_ptr: u64) {
     if !dtb_window_admissible(dtb_window(dtb_ptr), kernel_extent()) {
         crate::kprintln!(
             "[boot] FATAL: the device tree at {:#x} is not in the kernel's reserved extent \
-             [0, {:#x}) outside the image, its stacks and the Lean heap arena; refusing to read it",
+             below the boot table pool [{:#x}, {:#x}) outside the image, its stacks and the \
+             Lean heap arena; refusing to read it",
             dtb_ptr,
-            KERNEL_RESERVED_END
+            KERNEL_RESERVED_BASE,
+            BOOT_TABLE_POOL_BASE
         );
         crate::cpu::fatal_halt();
     }
@@ -1391,11 +1860,17 @@ fn image_layout() -> ImageLayout {
             static _start: u8;
             static __text_end: u8;
             static __rodata_end: u8;
+            static __stack_guard: u8;
+            static __smp_secondary_stacks_bottom: u8;
         }
         ImageLayout {
             text_start: &raw const _start as u64,
             text_end: &raw const __text_end as u64,
             rodata_end: &raw const __rodata_end as u64,
+            stack_guards: stack_guards_for(
+                &raw const __stack_guard as u64,
+                &raw const __smp_secondary_stacks_bottom as u64,
+            ),
         }
     }
     #[cfg(not(target_arch = "aarch64"))]
@@ -1404,6 +1879,7 @@ fn image_layout() -> ImageLayout {
             text_start: 0,
             text_end: 0,
             rodata_end: 0,
+            stack_guards: [0; STACK_GUARD_COUNT],
         }
     }
 }
@@ -1476,9 +1952,13 @@ pub const fn dtb_window(dtb_ptr: u64) -> (u64, u64) {
 /// **WS-BP BP2.6**: may the boot read the device tree at `window`?
 ///
 /// The window must lie wholly inside the kernel's reserved extent —
-/// `[0, KERNEL_RESERVED_END)`, which the boot map covers and no boot untyped
+/// `[KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)`, which the boot map covers and no boot untyped
 /// may describe (WS-BP BP3.2), so the blob is never memory a thread was handed
-/// — and be disjoint from `kernel`, the memory the image owns.  An empty window
+/// — below the boot table-page pool, which the boot zeroes and then hands to
+/// the configured address spaces as translation tables (`v0.36.35`: a window
+/// reaching into it was admitted, which made "nothing writes the blob during
+/// boot" a fact about the order of two calls rather than about placement),
+/// and be disjoint from `kernel`, the memory the image owns.  An empty window
 /// (a null pointer) reads nothing and is accepted; a window whose end overflows
 /// is refused.
 #[must_use]
@@ -1488,7 +1968,9 @@ pub const fn dtb_window_admissible(window: (u64, u64), kernel: (u64, u64)) -> bo
         return true;
     }
     match base.checked_add(size) {
-        Some(end) if end <= KERNEL_RESERVED_END => dtb_disjoint_from_image(window, &[kernel]),
+        Some(end) if in_kernel_memory_window(base) && end <= BOOT_TABLE_POOL_BASE => {
+            dtb_disjoint_from_image(window, &[kernel])
+        }
         _ => false,
     }
 }
@@ -1586,6 +2068,85 @@ pub fn init_mmu_secondary(core_id: u64) {
         "init_mmu_secondary called with core_id 0 — use init_mmu() for the primary"
     );
     init_mmu_per_core(core_id);
+}
+
+/// **WS-BP BP8.1**: the Lean binding's shared boot-map table for the board this
+/// build is for — `tests/fixtures/boot_map.expected` (the RPi5, which
+/// `tests/Ak9PlatformSuite.lean` writes from the RPi5 binding) or, under
+/// `board_qemu_virt`, `tests/fixtures/boot_map_qemu_virt.expected` (written by
+/// the same suite from the `virt` binding).  Every test that holds a HAL
+/// constant to the Lean binding reads it here, so on each board the HAL is held
+/// to that board's binding and not to the other's.
+#[cfg(test)]
+#[cfg(not(feature = "board_qemu_virt"))]
+pub(crate) const LEAN_BOOT_MAP: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+/// The `virt` table (see the RPi5 one above).
+#[cfg(test)]
+#[cfg(feature = "board_qemu_virt")]
+pub(crate) const LEAN_BOOT_MAP: &str =
+    include_str!("../../../tests/fixtures/boot_map_qemu_virt.expected");
+
+/// **WS-BP BP8.1**: the link script the image for this build's board links
+/// under — `link.ld`, or under `board_qemu_virt` the script `build.rs` derives
+/// from it (`board_link_script`), which it writes on every build so these host
+/// tests read the file the `virt` image actually links with.  `build.rs`
+/// publishes the script's absolute path as `SELE4N_BOARD_LINK_SCRIPT` — the
+/// path it hands the image's link, so the tests and the link read one file.
+#[cfg(test)]
+pub(crate) const BOARD_LINK_SCRIPT: &str = include_str!(env!("SELE4N_BOARD_LINK_SCRIPT"));
+
+/// **The BCM2712 address-map correction (v0.36.2)**: the MMIO window the Lean
+/// binding programs under `name` (`uart`, `gicd`, `gicc`), as `(base, size)`,
+/// read from the `mmio` lines `tests/Ak9PlatformSuite.lean` writes into
+/// `tests/fixtures/boot_map.expected` from `mmioRegions`.
+///
+/// The UART and GIC drivers' tests compare their base constants with this, so
+/// the two sides are compared by running both.  Before it they asserted a
+/// literal beside a comment naming `Board.lean`, and both sides then carried
+/// the BCM2711's addresses together while every test passed.
+#[cfg(test)]
+pub(crate) fn lean_mmio_window(name: &str) -> (u64, u64) {
+    const LEAN_TABLE: &str = LEAN_BOOT_MAP;
+    let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
+    let mut found = None;
+    for line in LEAN_TABLE.lines() {
+        let mut cols = line.split_whitespace();
+        if cols.next() == Some("mmio") && cols.next() == Some(name) {
+            let base = hex(cols.next().expect("an mmio line carries a base"));
+            let size = hex(cols.next().expect("an mmio line carries a size"));
+            assert!(
+                found.is_none(),
+                "two `mmio {name}` lines in the boot-map table"
+            );
+            found = Some((base, size));
+        }
+    }
+    found.unwrap_or_else(|| panic!("no `mmio {name}` line in the boot-map table"))
+}
+
+/// **The v0.36.2 audit**: a single-valued line of the shared boot-map table —
+/// `physicalAddressWidth <bits>` (read back against the PE's `PARange` above)
+/// and `declaredCores <n>` (read back by `boot.rs` against the handoff's
+/// `LEAN_DECLARED_CORE_COUNT`) — as `tests/Ak9PlatformSuite.lean` writes it
+/// into `tests/fixtures/boot_map.expected`.  Exactly one line carries `key`,
+/// and it carries exactly one hexadecimal value.
+#[cfg(test)]
+pub(crate) fn lean_boot_map_scalar(key: &str) -> u64 {
+    const LEAN_TABLE: &str = LEAN_BOOT_MAP;
+    let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
+    let mut found = None;
+    for line in LEAN_TABLE.lines() {
+        let mut cols = line.split_whitespace();
+        if cols.next() == Some(key) {
+            let value = hex(cols
+                .next()
+                .unwrap_or_else(|| panic!("a `{key}` line carries a value")));
+            assert!(cols.next().is_none(), "a `{key}` line carries one value");
+            assert!(found.is_none(), "two `{key}` lines in the boot-map table");
+            found = Some(value);
+        }
+    }
+    found.unwrap_or_else(|| panic!("no `{key}` line in the boot-map table"))
 }
 
 #[cfg(test)]
@@ -1736,6 +2297,44 @@ mod tests {
         assert!(
             BOOT_TABLE_REACH <= 1u64 << lean_width,
             "every address the boot tables can describe is one the Lean model admits"
+        );
+    }
+
+    /// WS-BP BP7.2: `TCR_EL1.AS` selects 16-bit ASIDs, and the model allocates
+    /// from exactly that space — read from the Lean suite's `asidSpace` line
+    /// rather than a literal, so a model ASID space wider than the hardware's
+    /// tag, which would let two address spaces share TLB entries, fails here.
+    #[test]
+    fn the_lean_asid_space_is_the_one_the_hal_programs() {
+        assert_eq!((TCR_VALUE >> 36) & 1, 1, "TCR_EL1.AS selects 16-bit ASIDs");
+        assert_eq!(
+            lean_boot_map_scalar("asidSpace"),
+            1u64 << ASID_BITS_REQUIRED,
+            "tests/fixtures/boot_map.expected's asidSpace is the 16-bit hardware ASID space"
+        );
+    }
+
+    /// WS-BP BP7.2: `ID_AA64MMFR0_EL1.ASIDBits` (bits [7:4]) decodes to 8 or
+    /// 16 bits and nothing else, and ignores every other field.
+    #[test]
+    fn asid_bits_decode_the_architecture_table() {
+        assert_eq!(asid_bits_of(0x0000), Some(8));
+        assert_eq!(asid_bits_of(0x0020), Some(16));
+        for reserved in [0b0001u64, 0b0011, 0b0100, 0b1000, 0b1111] {
+            assert_eq!(
+                asid_bits_of(reserved << 4),
+                None,
+                "ASIDBits {reserved:#06b}"
+            );
+        }
+        assert_eq!(
+            asid_bits_of(0xFFFF_FF0F | 0x20),
+            Some(16),
+            "PARange and the fields above ASIDBits are ignored"
+        );
+        assert_eq!(
+            asid_bits_of_this_pe_or_halt(|| panic!("the host answers the A76's")),
+            16
         );
     }
 
@@ -1906,8 +2505,9 @@ mod tests {
 
     #[test]
     fn boot_table_extent_is_every_translation_table() {
-        // **WS-BP BP2.6**: one L0, one L1, two L2 (guaranteed RAM, the device
-        // window) and three L3 for the image's boundary blocks, each 512
+        // **WS-BP BP2.6**: one L0, one L1, two L2 (the first gigabyte, the
+        // device window) and four L3 for the boundary blocks (the image
+        // origin's since `v0.36.36`, and the layout's three), each 512
         // entries × 8 bytes = 4096 bytes (the device tail's L3 went with the
         // BCM2712 address-map correction).  `enable_mmu`
         // cleans exactly this extent to
@@ -1915,7 +2515,10 @@ mod tests {
         // extent that under-reports the tables would leave a table dirty in
         // the D-cache while the walker reads memory.
         assert_eq!(PageTableCell::size(), BOOT_TABLE_COUNT * 4096);
-        assert_eq!(PageTableCell::size(), 28672);
+        // PR #904: four fixed tables and twelve page-granular image tables
+        // (the origin, the layout's three boundaries, both edges of four
+        // stack guard pages).
+        assert_eq!(PageTableCell::size(), 65536);
     }
 
     #[test]
@@ -2011,6 +2614,98 @@ mod tests {
     }
 }
 
+// WS-BP BP8.1: the reserved extent and the table-page pool held to the Lean
+// binding's table and to the link script — board-generic, so each board's
+// build checks its own binding and its own script.
+#[cfg(test)]
+mod lean_linker_agreement_tests {
+    use super::*;
+    extern crate std;
+    use std::vec::Vec;
+
+    /// **WS-BP BP8.1**: board-generic — the table and the script are the ones
+    /// this build's board reads (`LEAN_BOOT_MAP`, `BOARD_LINK_SCRIPT`), so on
+    /// `board_qemu_virt` the `virt` binding and the derived `virt` script are
+    /// held to the HAL's `QEMU_VIRT` constants.
+    ///
+    /// **WS-BP BP7.1**: the boot table-page pool is one pool in three places —
+    /// these constants, the Lean `rpi5BootTablePool*` (the fixture's
+    /// `tablePool <base> <pages>` line) and `link.ld`'s `BOOT_TABLE_POOL_PAGES`.
+    #[test]
+    fn the_boot_table_pool_is_the_lean_and_linker_one() {
+        const LEAN_TABLE: &str = LEAN_BOOT_MAP;
+        const LINK_SCRIPT: &str = BOARD_LINK_SCRIPT;
+        let lean: Vec<(u64, u64)> = LEAN_TABLE
+            .lines()
+            .filter_map(
+                |l| match l.split_whitespace().collect::<Vec<_>>().as_slice() {
+                    ["tablePool", base, pages] => Some((
+                        u64::from_str_radix(base.trim_start_matches("0x"), 16).expect("hex"),
+                        u64::from_str_radix(pages.trim_start_matches("0x"), 16).expect("hex"),
+                    )),
+                    _ => None,
+                },
+            )
+            .collect();
+        assert_eq!(
+            lean,
+            std::vec![(BOOT_TABLE_POOL_BASE, BOOT_TABLE_POOL_PAGES)],
+            "the Lean table-page pool"
+        );
+        let linker: Vec<u64> = LINK_SCRIPT
+            .lines()
+            .filter_map(|l| {
+                let rest = l.trim().strip_prefix("BOOT_TABLE_POOL_PAGES = ")?;
+                let hex = rest.strip_suffix(';')?.trim_start_matches("0x");
+                Some(u64::from_str_radix(hex, 16).expect("hex in link.ld"))
+            })
+            .collect();
+        assert_eq!(linker, std::vec![BOOT_TABLE_POOL_PAGES], "link.ld's pool");
+    }
+
+    /// **WS-BP BP3.2**: the reserved extent is one number in three places —
+    /// this constant, the Lean `rpi5KernelReservedEnd` (read here out of the
+    /// fixture the Lean suite writes), and `link.ld`'s `KERNEL_RESERVED_END`
+    /// (read out of the script).  It is whole 2 MiB blocks of the first
+    /// gigabyte, so the boot map describes it exactly and an extension past it
+    /// starts on a block boundary.
+    #[test]
+    fn the_kernel_reserved_extent_is_the_lean_and_linker_one() {
+        const LEAN_TABLE: &str = LEAN_BOOT_MAP;
+        const LINK_SCRIPT: &str = BOARD_LINK_SCRIPT;
+        let lean: Vec<(u64, u64)> = LEAN_TABLE
+            .lines()
+            .filter_map(
+                |l| match l.split_whitespace().collect::<Vec<_>>().as_slice() {
+                    ["kernelReserved", base, end] => Some((
+                        u64::from_str_radix(base.trim_start_matches("0x"), 16).expect("hex"),
+                        u64::from_str_radix(end.trim_start_matches("0x"), 16).expect("hex"),
+                    )),
+                    _ => None,
+                },
+            )
+            .collect();
+        assert_eq!(
+            lean,
+            std::vec![(KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)],
+            "the Lean reserved extent"
+        );
+        let linker: Vec<u64> = LINK_SCRIPT
+            .lines()
+            .filter_map(|l| {
+                let rest = l.trim().strip_prefix("KERNEL_RESERVED_END = ")?;
+                let hex = rest.strip_suffix(';')?.trim_start_matches("0x");
+                Some(u64::from_str_radix(hex, 16).expect("hex in link.ld"))
+            })
+            .collect();
+        assert_eq!(
+            linker,
+            std::vec![KERNEL_RESERVED_END],
+            "link.ld's reserved extent"
+        );
+    }
+}
+
 // ===========================================================================
 // WS-RR RR7.1: boot-memory-map and translation-table witnesses
 //
@@ -2021,94 +2716,59 @@ mod tests {
 // predicate address by address rather than checking that both exist.
 // ===========================================================================
 
-/// **The BCM2712 address-map correction (v0.36.2)**: the MMIO window the Lean
-/// binding programs under `name` (`uart`, `gicd`, `gicc`), as `(base, size)`,
-/// read from the `mmio` lines `tests/Ak9PlatformSuite.lean` writes into
-/// `tests/fixtures/boot_map.expected` from `mmioRegions`.
-///
-/// The UART and GIC drivers' tests compare their base constants with this, so
-/// the two sides are compared by running both.  Before it they asserted a
-/// literal beside a comment naming `Board.lean`, and both sides then carried
-/// the BCM2711's addresses together while every test passed.
+// WS-BP BP8.1: the table walk and the image layouts the boot-map tests drive,
+// shared by both boards' tests.  Board-generic: every layout sits at the base
+// of the board's kernel extent (`KERNEL_RESERVED_BASE`, `0` on the RPi5), and
+// the walk follows descriptor types from level 0 whatever the addresses.
 #[cfg(test)]
-pub(crate) fn lean_mmio_window(name: &str) -> (u64, u64) {
-    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
-    let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
-    let mut found = None;
-    for line in LEAN_TABLE.lines() {
-        let mut cols = line.split_whitespace();
-        if cols.next() == Some("mmio") && cols.next() == Some(name) {
-            let base = hex(cols.next().expect("an mmio line carries a base"));
-            let size = hex(cols.next().expect("an mmio line carries a size"));
-            assert!(
-                found.is_none(),
-                "two `mmio {name}` lines in the boot-map table"
-            );
-            found = Some((base, size));
-        }
-    }
-    found.unwrap_or_else(|| panic!("no `mmio {name}` line in the boot-map table"))
-}
-
-/// **The v0.36.2 audit**: a single-valued line of the shared boot-map table —
-/// `physicalAddressWidth <bits>` (read back against the PE's `PARange` above)
-/// and `declaredCores <n>` (read back by `boot.rs` against the handoff's
-/// `LEAN_DECLARED_CORE_COUNT`) — as `tests/Ak9PlatformSuite.lean` writes it
-/// into `tests/fixtures/boot_map.expected`.  Exactly one line carries `key`,
-/// and it carries exactly one hexadecimal value.
-#[cfg(test)]
-pub(crate) fn lean_boot_map_scalar(key: &str) -> u64 {
-    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
-    let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex");
-    let mut found = None;
-    for line in LEAN_TABLE.lines() {
-        let mut cols = line.split_whitespace();
-        if cols.next() == Some(key) {
-            let value = hex(cols
-                .next()
-                .unwrap_or_else(|| panic!("a `{key}` line carries a value")));
-            assert!(cols.next().is_none(), "a `{key}` line carries one value");
-            assert!(found.is_none(), "two `{key}` lines in the boot-map table");
-            found = Some(value);
-        }
-    }
-    found.unwrap_or_else(|| panic!("no `{key}` line in the boot-map table"))
-}
-
-#[cfg(test)]
-mod boot_map_tests {
+mod boot_table_walk {
     use super::*;
-    // WS-BP BP0.4: the Lean-table test parses a checked-in fixture into `Vec`s.
-    extern crate std;
-    use std::vec::Vec;
 
     /// An image shaped like `link.ld` produces: text from the load address
     /// across a block boundary, and read-only data ending in the same block as
     /// the text — two blocks need page granularity.
-    const LAYOUT: ImageLayout = ImageLayout {
-        text_start: 0x8_0000,
-        text_end: 0x2A_3000,
-        rodata_end: 0x3C_5000,
+    pub(super) const LAYOUT: ImageLayout = ImageLayout {
+        text_start: KERNEL_RESERVED_BASE + 0x8_0000,
+        text_end: KERNEL_RESERVED_BASE + 0x2A_3000,
+        rodata_end: KERNEL_RESERVED_BASE + 0x3C_5000,
+        stack_guards: stack_guards_for(
+            KERNEL_RESERVED_BASE + 0x40_0000,
+            KERNEL_RESERVED_BASE + 0x41_1000,
+        ),
     };
 
-    /// Every boundary in a block of its own: all three L3 image tables used.
-    const SPREAD_LAYOUT: ImageLayout = ImageLayout {
-        text_start: 0x8_0000,
-        text_end: 0x61_F000,
-        rodata_end: 0xA0_5000,
+    /// Every layout boundary in a block of its own: all four L3 tables used
+    /// (the origin shares the text's block).
+    pub(super) const SPREAD_LAYOUT: ImageLayout = ImageLayout {
+        text_start: KERNEL_RESERVED_BASE + 0x8_0000,
+        text_end: KERNEL_RESERVED_BASE + 0x61_F000,
+        rodata_end: KERNEL_RESERVED_BASE + 0xA0_5000,
+        stack_guards: stack_guards_for(
+            KERNEL_RESERVED_BASE + 0xC0_0000,
+            KERNEL_RESERVED_BASE + 0xC1_1000,
+        ),
     };
 
-    /// Every boundary on a block boundary: no L3 image table used.
-    const BLOCK_ALIGNED_LAYOUT: ImageLayout = ImageLayout {
-        text_start: 0x20_0000,
-        text_end: 0x40_0000,
-        rodata_end: 0x60_0000,
+    /// Every layout boundary on a block boundary: only the origin's block —
+    /// half unmapped since `v0.36.36` — needs an L3 table.
+    pub(super) const BLOCK_ALIGNED_LAYOUT: ImageLayout = ImageLayout {
+        text_start: KERNEL_RESERVED_BASE + 0x20_0000,
+        text_end: KERNEL_RESERVED_BASE + 0x40_0000,
+        rodata_end: KERNEL_RESERVED_BASE + 0x60_0000,
+        stack_guards: stack_guards_for(
+            KERNEL_RESERVED_BASE + 0x60_0000,
+            KERNEL_RESERVED_BASE + 0x61_1000,
+        ),
     };
 
-    const LAYOUTS: [ImageLayout; 3] = [LAYOUT, SPREAD_LAYOUT, BLOCK_ALIGNED_LAYOUT];
+    pub(super) const LAYOUTS: [ImageLayout; 3] = [LAYOUT, SPREAD_LAYOUT, BLOCK_ALIGNED_LAYOUT];
 
     /// The table at `pa`, if `pa` is one of the struct's tables other than L0.
-    fn table_at(tables: &BootPageTables, base_pa: u64, pa: u64) -> Option<&[u64; TABLE_ENTRIES]> {
+    pub(super) fn table_at(
+        tables: &BootPageTables,
+        base_pa: u64,
+        pa: u64,
+    ) -> Option<&[u64; TABLE_ENTRIES]> {
         let index = pa.checked_sub(base_pa)? / 4096;
         if pa != table_pa(base_pa, index) {
             return None;
@@ -2132,7 +2792,7 @@ mod boot_map_tests {
     /// Follows descriptor *types*: a block at level 0 or a page type anywhere
     /// but level 3 does not resolve, which is what makes the walk a witness
     /// rather than a reading of chosen arrays.
-    fn walk(tables: &BootPageTables, base_pa: u64, va: u64) -> Option<(u64, u64)> {
+    pub(super) fn walk(tables: &BootPageTables, base_pa: u64, va: u64) -> Option<(u64, u64)> {
         let mut table: &[u64; TABLE_ENTRIES] = &tables.l0;
         for level in 0..4u32 {
             let shift = 39 - 9 * level;
@@ -2151,35 +2811,221 @@ mod boot_map_tests {
     }
 
     /// Build a table set for `layout` at a synthetic (4 KiB-aligned) base.
-    fn build(layout: &ImageLayout) -> (BootPageTables, u64) {
-        let base_pa: u64 = 0x10_0000;
+    pub(super) fn build(layout: &ImageLayout) -> (BootPageTables, u64) {
+        let base_pa: u64 = KERNEL_RESERVED_BASE + 0x10_0000;
         let mut tables = BootPageTables::new();
         populate_boot_tables(&mut tables, base_pa, layout);
         (tables, base_pa)
     }
 
     /// Is this descriptor's page writable at EL1?  (`AP[2] == 0`.)
-    fn writable(attrs: u64) -> bool {
+    pub(super) fn writable(attrs: u64) -> bool {
         attrs & AP_RO_EL1 == 0
     }
 
     /// Is this descriptor's page executable at EL1?  (`PXN` clear.)
-    fn executable(attrs: u64) -> bool {
+    pub(super) fn executable(attrs: u64) -> bool {
         attrs & PXN == 0
     }
+}
+
+// WS-BP BP8.1: the QEMU `virt` board's boot map, driven against
+// `tests/fixtures/boot_map_qemu_virt.expected` — the Lean `virt` binding's
+// account, written by `tests/Ak9PlatformSuite.lean` — exactly as
+// `boot_map_tests` drives the RPi5's against `boot_map.expected`.
+#[cfg(test)]
+#[cfg(feature = "board_qemu_virt")]
+mod qemu_virt_boot_map_tests {
+    use super::boot_table_walk::*;
+    use super::*;
+    extern crate std;
+    use std::vec::Vec;
+
+    /// **WS-BP BP8.1**: on `virt`, the constant Normal window is the Lean
+    /// binding's kernel extent, the Device window is its device region, the
+    /// one extension is the rest of its RAM, and with that extension applied
+    /// the Normal window is exactly the Lean RAM — at every probe the Lean
+    /// suite wrote, every boundary of both maps and every image boundary,
+    /// through `boot_mapping_for` and through a walk of the built tables.
+    #[test]
+    fn the_virt_boot_map_agrees_with_the_lean_map() {
+        fn hex(s: &str) -> u64 {
+            u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex in the boot-map table")
+        }
+        let mut regions: Vec<(u64, u64, &str)> = Vec::new();
+        let mut probes: Vec<(u64, &str)> = Vec::new();
+        let mut extensions: Vec<(u64, u64)> = Vec::new();
+        let mut reserved: Vec<(u64, u64)> = Vec::new();
+        for line in LEAN_BOOT_MAP.lines().filter(|l| !l.starts_with('#')) {
+            match line.split_whitespace().collect::<Vec<_>>().as_slice() {
+                ["region", base, size, kind] => regions.push((hex(base), hex(size), kind)),
+                ["probe", addr, kind] => probes.push((hex(addr), kind)),
+                ["extend", base, size] => extensions.push((hex(base), hex(size))),
+                ["kernelReserved", base, end] => reserved.push((hex(base), hex(end))),
+                ["mmio", _, _, _]
+                | ["physicalAddressWidth", _]
+                | ["declaredCores", _]
+                | ["tablePool", _, _]
+                | ["asidSpace", _] => {}
+                _ => panic!("unrecognised virt boot-map line {line:?}"),
+            }
+        }
+        assert_eq!(reserved, [(KERNEL_RESERVED_BASE, KERNEL_RESERVED_END)]);
+        let ram: Vec<(u64, u64)> = regions
+            .iter()
+            .filter(|r| r.2 == "ram")
+            .map(|r| (r.0, r.1))
+            .collect();
+        let device: Vec<(u64, u64)> = regions
+            .iter()
+            .filter(|r| r.2 == "device")
+            .map(|r| (r.0, r.1))
+            .collect();
+        assert_eq!(ram.len(), 1, "the virt binding declares one RAM region");
+        assert_eq!(
+            ram[0].0, IMAGE_ORIGIN,
+            "the declared RAM begins at the image origin (v0.36.36)"
+        );
+        assert_eq!(
+            device,
+            [(DEVICE_WINDOW_BASE, DEVICE_WINDOW_TOP - DEVICE_WINDOW_BASE)]
+        );
+        let ram_end = ram[0].0 + ram[0].1;
+        assert_eq!(
+            extensions,
+            [(KERNEL_RESERVED_END, ram_end - KERNEL_RESERVED_END)],
+            "the one extension is the RAM past the kernel's extent"
+        );
+        let lean_kind = |a: u64| -> &str {
+            regions
+                .iter()
+                .find(|&&(b, sz, _)| b <= a && a < b + sz)
+                .map_or("reserved", |&(_, _, k)| k)
+        };
+        for layout in &LAYOUTS {
+            let (tables, base_pa) = build(layout);
+            let (mut extended, _) = build(layout);
+            let mut ranges: Vec<(u64, u64)> = Vec::new();
+            for &(base, size) in &extensions {
+                extend_boot_tables(&mut extended, base, size)
+                    .unwrap_or_else(|r| panic!("[{base:#x}, +{size:#x}) refused: {r:?}"));
+                ranges.push((base, base + size));
+            }
+            let mut addrs: Vec<u64> = Vec::new();
+            for &(a, kind) in &probes {
+                assert_eq!(
+                    kind,
+                    lean_kind(a),
+                    "the table's probe at {a:#x} names its own regions"
+                );
+                addrs.push(a);
+            }
+            for c in [
+                KERNEL_RESERVED_BASE,
+                KERNEL_RESERVED_END,
+                DEVICE_WINDOW_BASE,
+                DEVICE_WINDOW_TOP,
+                ram_end,
+                layout.text_start,
+                layout.text_end,
+                layout.rodata_end,
+                1 << 39,
+            ] {
+                addrs.push(c - 1);
+                addrs.push(c);
+            }
+            for a in addrs {
+                let kind = boot_mapping_for(a, layout);
+                let lean = lean_kind(a);
+                if kind.is_normal() {
+                    assert_eq!(lean, "ram", "{a:#x} maps Normal");
+                }
+                assert_eq!(
+                    kind == BootMapping::Device,
+                    lean == "device",
+                    "{a:#x} is {lean}"
+                );
+                // PR #904: less the stack guard pages, which are unmapped.
+                let guard = layout.in_stack_guard(a);
+                assert_eq!(
+                    kind.is_normal(),
+                    in_kernel_memory_window(a) && !guard,
+                    "{a:#x}: the constant Normal window is the kernel's extent from the origin"
+                );
+                let extended_normal = walk(&extended, base_pa, a)
+                    .is_some_and(|(_, attrs)| attrs & ATTR_IDX_DEVICE == 0);
+                assert_eq!(
+                    extended_normal,
+                    lean == "ram" && !guard,
+                    "extended: {a:#x} is {lean}"
+                );
+                assert_eq!(
+                    ram_range_covered(a, 1, &ranges),
+                    lean == "ram",
+                    "the covered window at {a:#x} is not the virt RAM"
+                );
+                assert_eq!(
+                    boot_cacheable_range_for(a, 1, &ranges, layout),
+                    lean == "ram" && !guard,
+                    "the cacheable window at {a:#x} is not the virt's mapped RAM"
+                );
+                if let Some((pa, attrs)) = walk(&extended, base_pa, a) {
+                    assert_eq!(pa, a, "the extended map is an identity map");
+                    if !in_kernel_reserved_extent(a) && attrs & ATTR_IDX_DEVICE == 0 {
+                        assert!(
+                            writable(attrs) && !executable(attrs),
+                            "{a:#x}: extended RAM is writable and never executable"
+                        );
+                    }
+                }
+                match (kind, walk(&tables, base_pa, a)) {
+                    (BootMapping::Unmapped, walked) => {
+                        assert!(walked.is_none(), "{a:#x} must fault")
+                    }
+                    (_, walked) => {
+                        let (pa, attrs) = walked.unwrap_or_else(|| panic!("{a:#x} must map"));
+                        assert_eq!(pa, a, "the boot map is an identity map");
+                        assert_eq!(
+                            attrs & ATTR_IDX_DEVICE != 0,
+                            kind == BootMapping::Device,
+                            "{a:#x} has the wrong memory type"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+// WS-BP BP8.1: these tests drive the Raspberry Pi 5's boot map against
+// `tests/fixtures/boot_map.expected`, the Lean suite's account of the RPi5, so
+// they are the RPi5 board's; the QEMU `virt` board is held to its own Lean
+// binding by the slice that writes it.
+#[cfg(test)]
+#[cfg(not(feature = "board_qemu_virt"))]
+mod boot_map_tests {
+    use super::boot_table_walk::*;
+    use super::*;
+    // WS-BP BP0.4: the Lean-table test parses a checked-in fixture into `Vec`s.
+    extern crate std;
+    use std::vec::Vec;
 
     /// **WS-BP BP0.4 / BP2.6**: the boot map, driven through the Lean map
     /// rather than mirrored from it.
     ///
     /// `tests/fixtures/boot_map.expected` is emitted by
     /// `tests/Ak9PlatformSuite.lean` from `rpi5MemoryMapForConfig` itself: for
-    /// every RAM variant, the regions the map declares and the kind
-    /// `classifyAddress` gives at every probe.  Since BP2.6 the boot map is the
-    /// same on every board, so the relation is an *inclusion* rather than an
-    /// equality: every address it maps Normal is RAM in **every** variant, and
-    /// every address it maps Device is a device region in every variant and
-    /// conversely.  On the smallest variant — the one [`GUARANTEED_RAM_TOP`]
-    /// names — the inclusion is an equality: the boot maps all of its RAM.
+    /// every RAM configuration — each variant uncut, and the firmware-cut
+    /// configurations the suite's accounts bind — the regions the map declares
+    /// and the kind `classifyAddress` gives at every probe.  Since BP2.6 the
+    /// boot map is the same on every board, so the relation is an *inclusion*
+    /// rather than an equality: every address it maps Normal is RAM in
+    /// **every** configuration, and every address it maps Device is a device
+    /// region in every configuration and conversely.  **WS-BP BP7.10**: the
+    /// constant Normal window is exactly the kernel's reserved extent the table
+    /// declares, and with each configuration's `extend` lines applied the
+    /// extended Normal window is exactly that configuration's RAM — the top of
+    /// the first gigabyte a cut configuration's firmware withholds unmapped.
     ///
     /// Probed at every fixture probe, every boundary constant of this map and
     /// every image boundary, each with the byte below it, through
@@ -2191,17 +3037,20 @@ mod boot_map_tests {
             u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex in the boot-map table")
         }
         struct Variant<'a> {
-            ram_top: u64,
+            ram_size: u64,
+            low_ram_top: u64,
             regions: Vec<(u64, u64, &'a str)>,
             probes: Vec<(u64, &'a str)>,
             extensions: Vec<(u64, u64)>,
         }
         let mut variants: Vec<Variant> = Vec::new();
+        let mut reserved: Vec<(u64, u64)> = Vec::new();
         for line in LEAN_TABLE.lines().filter(|l| !l.starts_with('#')) {
             let cols: Vec<&str> = line.split_whitespace().collect();
             match cols.as_slice() {
-                ["variant", _, "ramTop", top] => variants.push(Variant {
-                    ram_top: hex(top),
+                ["variant", size, "lowRamTop", low] => variants.push(Variant {
+                    ram_size: hex(size),
+                    low_ram_top: hex(low),
                     regions: Vec::new(),
                     probes: Vec::new(),
                     extensions: Vec::new(),
@@ -2216,8 +3065,8 @@ mod boot_map_tests {
                     .expect("a probe belongs to a variant")
                     .probes
                     .push((hex(addr), kind)),
-                // WS-BP BP4.6: what the boot maps above the guaranteed gigabyte
-                // on this variant, as `(base, size)`.
+                // WS-BP BP4.6, BP7.10: what the boot maps outside the kernel's
+                // reserved extent on this configuration, as `(base, size)`.
                 ["extend", base, size] => variants
                     .last_mut()
                     .expect("an extension belongs to a variant")
@@ -2225,7 +3074,7 @@ mod boot_map_tests {
                     .push((hex(base), hex(size))),
                 // WS-BP BP3.2: the reserved extent, which
                 // `the_kernel_reserved_extent_is_the_lean_and_linker_one` reads.
-                ["kernelReserved", _, _] => {}
+                ["kernelReserved", base, end] => reserved.push((hex(base), hex(end))),
                 // The BCM2712 address-map correction: the MMIO windows, which
                 // `lean_mmio_window` reads for the UART and GIC tests.
                 ["mmio", _, _, _] => {}
@@ -2234,31 +3083,55 @@ mod boot_map_tests {
                 // `the_lean_physical_address_width_is_the_pe_the_hal_programs_for`
                 // and `boot.rs`'s core-count pin.
                 ["physicalAddressWidth", _] | ["declaredCores", _] => {}
+                // WS-BP BP7.1: the boot table pool, which
+                // `the_boot_table_pool_is_the_lean_and_linker_one` reads.
+                ["tablePool", _, _] => {}
+                // WS-BP BP7.2: the model's ASID space, which
+                // `the_lean_asid_space_is_the_one_the_hal_programs` reads.
+                ["asidSpace", _] => {}
                 _ => panic!("unrecognised boot-map line {line:?}"),
             }
         }
         assert_eq!(
             variants.len(),
-            5,
-            "the Lean table carries the five RPi5 RAM variants"
+            8,
+            "the Lean table carries the five RPi5 RAM variants and three firmware-cut configurations"
         );
-        // The guaranteed window is the smallest variant's RAM, and it begins at
-        // address 0 in every variant.
-        let smallest = variants.iter().map(|v| v.ram_top).min().unwrap();
-        // WS-BP BP4.6: a board larger than the guaranteed gigabyte is extended,
-        // and the smallest is not — so the exact comparison below is not
-        // satisfied by a table that carries no `extend` lines at all.
+        assert_eq!(
+            reserved,
+            [(0, KERNEL_RESERVED_END)],
+            "the constant Normal window is the Lean kernel's reserved extent"
+        );
+        // WS-BP BP7.10: every configuration is extended over its first-gigabyte
+        // RAM past the kernel's extent, and — above a gigabyte — over its DRAM
+        // past the gigabyte; so the exact comparison below is not satisfied by a
+        // table that carries no `extend` lines at all.
         for v in &variants {
+            assert!(
+                v.low_ram_top > KERNEL_RESERVED_END && v.low_ram_top <= L1_BLOCK_SIZE,
+                "configuration {:#x}/{:#x}: the first-gigabyte RAM top is admissible",
+                v.ram_size,
+                v.low_ram_top
+            );
+            let expected_extensions = if v.ram_size > L1_BLOCK_SIZE { 2 } else { 1 };
             assert_eq!(
-                v.extensions.is_empty(),
-                v.ram_top <= GUARANTEED_RAM_TOP,
-                "variant {:#x}: extensions present exactly when it has RAM above the gigabyte",
-                v.ram_top
+                v.extensions.len(),
+                expected_extensions,
+                "configuration {:#x}/{:#x}: one extension per RAM region outside the extent",
+                v.ram_size,
+                v.low_ram_top
+            );
+            assert_eq!(
+                v.extensions[0],
+                (KERNEL_RESERVED_END, v.low_ram_top - KERNEL_RESERVED_END),
+                "configuration {:#x}/{:#x}: the first extension starts where the extent ends",
+                v.ram_size,
+                v.low_ram_top
             );
         }
-        assert_eq!(
-            GUARANTEED_RAM_TOP, smallest,
-            "GUARANTEED_RAM_TOP is the smallest RPi5's RAM top"
+        assert!(
+            variants.iter().any(|v| v.low_ram_top < L1_BLOCK_SIZE),
+            "the table carries a configuration whose firmware withholds part of the first gigabyte"
         );
         for layout in &LAYOUTS {
             let (tables, base_pa) = build(layout);
@@ -2279,10 +3152,12 @@ mod boot_map_tests {
                     addrs.push(a);
                 }
                 for c in [
-                    GUARANTEED_RAM_TOP,
+                    KERNEL_RESERVED_END,
+                    L1_BLOCK_SIZE,
                     DEVICE_WINDOW_BASE,
                     DEVICE_WINDOW_TOP,
-                    v.ram_top,
+                    v.low_ram_top,
+                    v.ram_size,
                     layout.text_start,
                     layout.text_end,
                     layout.rodata_end,
@@ -2291,14 +3166,13 @@ mod boot_map_tests {
                     addrs.push(c - 1);
                     addrs.push(c);
                 }
-                let exact = v.ram_top == smallest;
                 let (mut extended, _) = build(layout);
                 let mut ranges: Vec<(u64, u64)> = Vec::new();
                 for &(base, size) in &v.extensions {
                     extend_boot_tables(&mut extended, base, size).unwrap_or_else(|r| {
                         panic!(
-                            "variant {:#x}: [{base:#x}, +{size:#x}) refused: {r:?}",
-                            v.ram_top
+                            "configuration {:#x}/{:#x}: [{base:#x}, +{size:#x}) refused: {r:?}",
+                            v.ram_size, v.low_ram_top
                         )
                     });
                     ranges.push((base, base + size));
@@ -2315,43 +3189,53 @@ mod boot_map_tests {
                 for a in addrs {
                     let kind = boot_mapping_for(a, layout);
                     let lean = lean_kind(a);
+                    let cfg = (v.ram_size, v.low_ram_top);
                     if kind.is_normal() {
-                        assert_eq!(lean, "ram", "variant {:#x}: {a:#x} maps Normal", v.ram_top);
+                        assert_eq!(lean, "ram", "configuration {cfg:x?}: {a:#x} maps Normal");
                     }
                     assert_eq!(
                         kind == BootMapping::Device,
                         lean == "device",
-                        "variant {:#x}: {a:#x} is {lean} in the Lean map",
-                        v.ram_top
+                        "configuration {cfg:x?}: {a:#x} is {lean} in the Lean map"
                     );
-                    if exact {
-                        assert_eq!(
-                            kind.is_normal(),
-                            lean == "ram",
-                            "smallest variant: {a:#x} is {lean} in the Lean map"
-                        );
-                    }
-                    // WS-BP BP4.6: with the variant's extensions applied, the
-                    // Normal window is exactly the variant's RAM — on every
-                    // variant, not only the smallest — through a walk of the
-                    // extended tables and through the cacheable predicate.
+                    // WS-BP BP7.10: the constant Normal window is exactly the
+                    // kernel's reserved extent from the image origin
+                    // (`v0.36.36`), on every configuration.
+                    // PR #904: less the stack guard pages, which are unmapped.
+                    assert_eq!(
+                        kind.is_normal(),
+                        (IMAGE_ORIGIN..KERNEL_RESERVED_END).contains(&a)
+                            && !layout.in_stack_guard(a),
+                        "{a:#x}: the constant Normal window is the kernel's extent"
+                    );
+                    // WS-BP BP4.6, BP7.10: with the configuration's extensions
+                    // applied, the Normal window is exactly its RAM — through a
+                    // walk of the extended tables and through the cacheable
+                    // predicate — so the firmware's withheld top of the first
+                    // gigabyte stays unmapped and uncacheable.
                     let extended_normal = walk(&extended, base_pa, a)
                         .is_some_and(|(_, attrs)| attrs & ATTR_IDX_DEVICE == 0);
+                    // PR #904: a stack guard page is RAM the kernel owns and
+                    // leaves unmapped, so it is neither mapped nor cacheable.
+                    let guard = layout.in_stack_guard(a);
                     assert_eq!(
                         extended_normal,
-                        lean == "ram",
-                        "variant {:#x} extended: {a:#x} is {lean} in the Lean map",
-                        v.ram_top
+                        lean == "ram" && !guard,
+                        "configuration {cfg:x?} extended: {a:#x} is {lean} in the Lean map"
                     );
                     assert_eq!(
                         ram_range_covered(a, 1, &ranges),
                         lean == "ram",
-                        "variant {:#x}: the cacheable window at {a:#x} is not its RAM",
-                        v.ram_top
+                        "configuration {cfg:x?}: the covered window at {a:#x} is not its RAM"
+                    );
+                    assert_eq!(
+                        boot_cacheable_range_for(a, 1, &ranges, layout),
+                        lean == "ram" && !guard,
+                        "configuration {cfg:x?}: the cacheable window at {a:#x} is not its mapped RAM"
                     );
                     if let Some((pa, attrs)) = walk(&extended, base_pa, a) {
                         assert_eq!(pa, a, "the extended map is an identity map");
-                        if a >= GUARANTEED_RAM_TOP && attrs & ATTR_IDX_DEVICE == 0 {
+                        if a >= KERNEL_RESERVED_END && attrs & ATTR_IDX_DEVICE == 0 {
                             assert!(
                                 writable(attrs) && !executable(attrs),
                                 "{a:#x}: extended RAM is writable and never executable"
@@ -2383,7 +3267,7 @@ mod boot_map_tests {
     #[test]
     fn a_refused_extension_writes_nothing() {
         const GIB: u64 = L1_BLOCK_SIZE;
-        let cases: [(u64, u64, RamExtensionRefusal); 9] = [
+        let cases: [(u64, u64, RamExtensionRefusal); 11] = [
             (GIB, 0, RamExtensionRefusal::Empty),
             (
                 u64::MAX - L2_BLOCK_SIZE + 1,
@@ -2392,11 +3276,13 @@ mod boot_map_tests {
             ),
             (GIB + 0x1000, L2_BLOCK_SIZE, RamExtensionRefusal::Unaligned),
             (GIB, L2_BLOCK_SIZE + 0x1000, RamExtensionRefusal::Unaligned),
+            // WS-BP BP7.10: a range reaching back into the kernel's extent.
             (
-                GUARANTEED_RAM_TOP - L2_BLOCK_SIZE,
-                GIB,
-                RamExtensionRefusal::BelowGuaranteedRam,
+                KERNEL_RESERVED_END - L2_BLOCK_SIZE,
+                2 * L2_BLOCK_SIZE,
+                RamExtensionRefusal::InsideKernelReserved,
             ),
+            (0, GIB, RamExtensionRefusal::InsideKernelReserved),
             (
                 BOOT_TABLE_REACH - GIB,
                 2 * GIB,
@@ -2409,6 +3295,15 @@ mod boot_map_tests {
                 DEVICE_WINDOW_BASE,
                 L2_BLOCK_SIZE,
                 RamExtensionRefusal::AlreadyMapped,
+            ),
+            // WS-BP BP7.10: the first gigabyte's RAM past the extent followed
+            // by half of the next gigabyte, which has no level-2 table: the
+            // second gigabyte's refusal must leave the first gigabyte's level-2
+            // entries unwritten.
+            (
+                KERNEL_RESERVED_END,
+                GIB - KERNEL_RESERVED_END + GIB / 2,
+                RamExtensionRefusal::PartialGigabyte,
             ),
             // A whole gigabyte followed by the device window's gigabyte: the
             // second gigabyte's refusal must leave the first unwritten.
@@ -2427,7 +3322,9 @@ mod boot_map_tests {
                 "[{base:#x}, +{size:#x})"
             );
             assert!(
-                tables.l1 == pristine.l1 && tables.l2_device == pristine.l2_device,
+                tables.l1 == pristine.l1
+                    && tables.l2_ram == pristine.l2_ram
+                    && tables.l2_device == pristine.l2_device,
                 "[{base:#x}, +{size:#x}): a refusal wrote a descriptor"
             );
         }
@@ -2459,29 +3356,77 @@ mod boot_map_tests {
         // The first block after the extension is still unmapped, and the
         // device window is still Device.
         assert!(walk(&tables, base_pa, end).is_none());
+        // WS-BP BP7.10: the first gigabyte has a level-2 table of its own too;
+        // its RAM past the kernel's extent extends by 2 MiB blocks, the
+        // reserved extent's own descriptors are never rewritten, and the block
+        // past the extension — the top the firmware withholds — stays unmapped.
+        let (pristine, _) = build(&LAYOUT);
+        let low_top = 0x3FC0_0000;
+        assert_eq!(
+            extend_boot_tables(
+                &mut tables,
+                KERNEL_RESERVED_END,
+                low_top - KERNEL_RESERVED_END
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            tables.l2_ram[..(KERNEL_RESERVED_END / L2_BLOCK_SIZE) as usize],
+            pristine.l2_ram[..(KERNEL_RESERVED_END / L2_BLOCK_SIZE) as usize],
+            "an extension never rewrites the kernel's extent"
+        );
+        assert_eq!(
+            extend_boot_tables(&mut tables, low_top - L2_BLOCK_SIZE, L2_BLOCK_SIZE),
+            Err(RamExtensionRefusal::AlreadyMapped)
+        );
+        let (pa, attrs) = walk(&tables, base_pa, low_top - 1).expect("reported RAM maps");
+        assert_eq!(pa, low_top - 1);
+        assert!(writable(attrs) && !executable(attrs) && attrs & ATTR_IDX_DEVICE == 0);
+        assert!(walk(&tables, base_pa, low_top).is_none());
+        assert!(walk(&tables, base_pa, L1_BLOCK_SIZE - 1).is_none());
         let (_, attrs) = walk(&tables, base_pa, DEVICE_WINDOW_BASE).expect("device maps");
         assert_ne!(attrs & ATTR_IDX_DEVICE, 0);
     }
 
-    /// **WS-BP BP4.6**: the cacheable window is the union of guaranteed RAM and
-    /// the extensions — a range crossing from one into an abutting one is
-    /// covered, one crossing into a gap is not.
+    /// **WS-BP BP4.6**: the cacheable window is the union of the kernel's
+    /// extent and the extensions — a range crossing from one into an abutting
+    /// one is covered, one crossing into a gap is not.  **WS-BP BP7.10**: the
+    /// gap may sit inside the first gigabyte, where the firmware withholds its
+    /// top.
     #[test]
     fn the_cacheable_window_is_a_union() {
         const GIB: u64 = L1_BLOCK_SIZE;
-        let ext = [(GIB, 3 * GIB), (4 * GIB, 8 * GIB)];
-        assert!(ram_range_covered(GIB - 0x1000, 0x2000, &ext));
-        assert!(ram_range_covered(0, 3 * GIB, &ext));
+        const KRE: u64 = KERNEL_RESERVED_END;
+        let low_top = 0x3FC0_0000;
+        let ext = [(KRE, low_top), (GIB, 3 * GIB), (4 * GIB, 8 * GIB)];
+        assert!(ram_range_covered(KRE - 0x1000, 0x2000, &ext));
+        assert!(ram_range_covered(
+            IMAGE_ORIGIN,
+            low_top - IMAGE_ORIGIN,
+            &ext
+        ));
+        // `v0.36.36`: the extent's prefix below the image origin is no window.
+        assert!(!ram_range_covered(KERNEL_RESERVED_BASE, 0x1000, &ext));
+        assert!(!ram_range_covered(IMAGE_ORIGIN - 0x1000, 0x2000, &ext));
+        assert!(!ram_range_covered(low_top - 0x1000, 0x2000, &ext));
+        assert!(!ram_range_covered(low_top, 0x1000, &ext));
+        assert!(!ram_range_covered(GIB - 0x1000, 0x2000, &ext));
+        assert!(ram_range_covered(GIB, 2 * GIB, &ext));
         assert!(!ram_range_covered(3 * GIB - 0x1000, 0x2000, &ext));
         assert!(ram_range_covered(4 * GIB, 4 * GIB, &ext));
         assert!(!ram_range_covered(4 * GIB, 4 * GIB + 1, &ext));
-        assert!(!ram_range_covered(GIB, 0x1000, &[]));
-        assert!(ram_range_covered(GUARANTEED_RAM_TOP - 0x1000, 0x1000, &[]));
+        assert!(!ram_range_covered(KRE, 0x1000, &[]));
+        assert!(ram_range_covered(KRE - 0x1000, 0x1000, &[]));
         assert!(ram_range_covered(8 * GIB, 0, &[]));
         assert!(!ram_range_covered(u64::MAX - 3, 16, &ext));
         // Order of the record does not matter.
-        let reversed = [(4 * GIB, 8 * GIB), (GIB, 3 * GIB)];
-        assert!(ram_range_covered(0, 3 * GIB, &reversed));
+        let reversed = [(4 * GIB, 8 * GIB), (GIB, 3 * GIB), (KRE, low_top)];
+        assert!(ram_range_covered(
+            IMAGE_ORIGIN,
+            low_top - IMAGE_ORIGIN,
+            &reversed
+        ));
+        assert!(ram_range_covered(4 * GIB, 4 * GIB, &reversed));
     }
 
     #[test]
@@ -2506,7 +3451,7 @@ mod boot_map_tests {
     }
 
     #[test]
-    fn only_guaranteed_ram_and_the_device_window_are_reachable() {
+    fn only_the_first_gigabyte_and_the_device_window_are_reachable() {
         let (tables, _) = build(&LAYOUT);
         for (i, &entry) in tables.l0.iter().enumerate().skip(1) {
             assert_eq!(entry, 0, "L0 entry {i} must be invalid");
@@ -2515,7 +3460,7 @@ mod boot_map_tests {
             assert_eq!(
                 entry != 0,
                 g == 0 || g == DEVICE_GIB,
-                "L1 entry {g}: only guaranteed RAM and the device window are mapped"
+                "L1 entry {g}: only the first gigabyte's table and the device window are mapped"
             );
         }
     }
@@ -2543,11 +3488,28 @@ mod boot_map_tests {
             let (tables, base_pa) = build(layout);
             let mut executable_pages = 0u64;
             let spans = [
-                (0, GUARANTEED_RAM_TOP),
+                (IMAGE_ORIGIN, KERNEL_RESERVED_END),
                 (DEVICE_WINDOW_BASE, DEVICE_WINDOW_TOP),
             ];
+            // `v0.36.36`: every page below the image origin is unmapped.
+            for page in (KERNEL_RESERVED_BASE..IMAGE_ORIGIN).step_by(L3_PAGE_SIZE as usize) {
+                assert!(
+                    walk(&tables, base_pa, page).is_none(),
+                    "{page:#x} is below the image origin and mapped"
+                );
+            }
+            // PR #904: every stack guard page is unmapped, so an overflow faults.
+            for g in layout.stack_guards {
+                assert!(
+                    walk(&tables, base_pa, g).is_none(),
+                    "guard {g:#x} is mapped"
+                );
+            }
             for (lo, hi) in spans {
                 for page in (lo..hi).step_by(L3_PAGE_SIZE as usize) {
+                    if layout.in_stack_guard(page) {
+                        continue;
+                    }
                     let (_, attrs) = walk(&tables, base_pa, page).expect("mapped");
                     assert!(
                         !(writable(attrs) && executable(attrs)),
@@ -2581,14 +3543,17 @@ mod boot_map_tests {
                 "{va:#x} is rodata"
             );
         }
-        for va in [
-            0,
-            LAYOUT.text_start - 1,
-            LAYOUT.rodata_end,
-            GUARANTEED_RAM_TOP - 1,
-        ] {
+        for va in [LAYOUT.rodata_end, KERNEL_RESERVED_END - 1] {
             assert!(writable(at(va)) && !executable(at(va)), "{va:#x} is data");
             assert_ne!(at(va) & SH_INNER, 0, "RAM is Inner Shareable");
+        }
+        // `v0.36.36`: below the image origin — the secure monitor's `no-map`
+        // memory on a Raspberry Pi 5 — nothing is mapped at all.
+        for va in [KERNEL_RESERVED_BASE, IMAGE_ORIGIN - 1] {
+            assert!(
+                walk(&tables, base_pa, va).is_none(),
+                "{va:#x} is below the origin"
+            );
         }
     }
 
@@ -2596,12 +3561,18 @@ mod boot_map_tests {
     fn everything_outside_the_two_windows_is_unmapped() {
         let (tables, base_pa) = build(&LAYOUT);
         for va in [
-            GUARANTEED_RAM_TOP,
+            // WS-BP BP7.10: the first gigabyte past the kernel's extent — RAM
+            // on some boards, withheld by the firmware on every one at its
+            // top — is not in the constant map.
+            KERNEL_RESERVED_END,
+            0x3FC0_0000,
+            L1_BLOCK_SIZE - 1,
+            L1_BLOCK_SIZE,
             0x8000_0000,
             0xFC00_0000,
             // The BCM2711's UART and GIC distributor, which the boot map
             // mapped Device until the BCM2712 address-map correction: on this
-            // board they are DRAM above the guaranteed gigabyte.
+            // board they are DRAM above the first gigabyte.
             0xFE20_1000,
             0xFF84_1000,
             DEVICE_WINDOW_BASE - 1,
@@ -2680,17 +3651,20 @@ mod boot_map_tests {
     #[test]
     fn image_page_tables_are_assigned_one_per_straddled_block() {
         let slots = |layout: &ImageLayout| -> Vec<(u64, usize)> {
-            (0..GUARANTEED_RAM_TOP)
+            (0..KERNEL_RESERVED_END)
                 .step_by(L2_BLOCK_SIZE as usize)
                 .filter_map(|b| image_l3_slot(layout, b).map(|s| (b, s)))
                 .collect()
         };
-        assert_eq!(slots(&LAYOUT), [(0, 0), (0x20_0000, 1)]);
+        // PR #904: the four stack guard pages share one block in each layout,
+        // which needs a table of its own.
+        assert_eq!(slots(&LAYOUT), [(0, 0), (0x20_0000, 1), (0x40_0000, 2)]);
         assert_eq!(
             slots(&SPREAD_LAYOUT),
-            [(0, 0), (0x60_0000, 1), (0xA0_0000, 2)]
+            [(0, 0), (0x60_0000, 1), (0xA0_0000, 2), (0xC0_0000, 3)]
         );
-        assert!(slots(&BLOCK_ALIGNED_LAYOUT).is_empty());
+        // `v0.36.36`: the origin's block is half unmapped, so it always has one.
+        assert_eq!(slots(&BLOCK_ALIGNED_LAYOUT), [(0, 0), (0x60_0000, 1)]);
     }
 
     #[test]
@@ -2721,11 +3695,26 @@ mod boot_map_tests {
                 ..LAYOUT
             },
             ImageLayout {
-                rodata_end: GUARANTEED_RAM_TOP + page,
+                rodata_end: KERNEL_RESERVED_END + page,
                 ..LAYOUT
             },
         ];
         for layout in broken {
+            assert!(!layout.is_well_formed(), "{layout:#x?}");
+        }
+        // PR #904: a guard off a page boundary, below the read-only data, out
+        // of order, or past the reserved extent is refused too.
+        let g = LAYOUT.stack_guards;
+        for guards in [
+            [g[0] + 8, g[1], g[2], g[3]],
+            [LAYOUT.rodata_end - page, g[1], g[2], g[3]],
+            [g[1], g[0], g[2], g[3]],
+            [g[0], g[1], g[2], KERNEL_RESERVED_END],
+        ] {
+            let layout = ImageLayout {
+                stack_guards: guards,
+                ..LAYOUT
+            };
             assert!(!layout.is_well_formed(), "{layout:#x?}");
         }
         // Read-only data may be empty; the text may reach the top exactly.
@@ -2747,9 +3736,13 @@ mod boot_map_tests {
             0u64,
             0x8_0000,
             LAYOUT.text_end,
-            GUARANTEED_RAM_TOP - L2_BLOCK_SIZE,
-            GUARANTEED_RAM_TOP - 1,
-            GUARANTEED_RAM_TOP,
+            // PR #904: a guard page, and the page just below one.
+            LAYOUT.stack_guards[0],
+            LAYOUT.stack_guards[1] - 0x1000,
+            KERNEL_RESERVED_END - L2_BLOCK_SIZE,
+            KERNEL_RESERVED_END - 1,
+            KERNEL_RESERVED_END,
+            L1_BLOCK_SIZE - 1,
             DEVICE_WINDOW_BASE,
             DEVICE_WINDOW_TOP,
         ] {
@@ -2762,7 +3755,7 @@ mod boot_map_tests {
                             .is_some_and(|a| boot_mapping_for(a, &LAYOUT).is_normal())
                     });
                 assert_eq!(
-                    is_boot_cacheable_range(base, size),
+                    boot_cacheable_range_for(base, size, &[], &LAYOUT),
                     expected,
                     "range {base:#x}+{size:#x}"
                 );
@@ -2774,12 +3767,15 @@ mod boot_map_tests {
     }
 
     #[test]
-    fn a_range_that_runs_off_the_end_of_guaranteed_ram_is_refused() {
+    fn a_range_that_runs_off_the_end_of_the_constant_window_is_refused() {
         // The relation a per-address check would miss: the first byte is
         // cacheable and the range is not.
-        assert!(is_boot_cacheable_range(GUARANTEED_RAM_TOP - 0x1000, 0x1000));
+        assert!(is_boot_cacheable_range(
+            KERNEL_RESERVED_END - 0x1000,
+            0x1000
+        ));
         assert!(!is_boot_cacheable_range(
-            GUARANTEED_RAM_TOP - 0x1000,
+            KERNEL_RESERVED_END - 0x1000,
             0x2000
         ));
         // A range wholly inside the device window is not cacheable at all.
@@ -2814,20 +3810,24 @@ mod boot_map_tests {
         assert!(dtb_window_admissible((0, 0), kernel));
         // Inside the reserved extent, touching the image's end (which is where
         // `link.ld`'s `.dtb_window` begins when nothing pads the heap -- WS-BP
-        // BP5.3), and ending exactly at the reserved extent's end.
-        for base in [0x0EFF_0000u64, kernel_end, KERNEL_RESERVED_END - size] {
+        // BP5.3), and ending exactly at the boot table pool's base.
+        for base in [0x0EFF_0000u64, kernel_end, BOOT_TABLE_POOL_BASE - size] {
             assert!(dtb_window_admissible((base, size), kernel), "{base:#x}");
         }
-        // One byte into the image, straddling the reserved extent's end,
-        // in guaranteed RAM a boot untyped may describe (the pre-BP3.2
-        // admissible placement), straddling the guaranteed top, above it,
-        // in the device window, and overflowing.
+        // One byte into the boot table pool (`v0.36.35`), ending exactly at the
+        // reserved extent's end (so wholly over the pool's last page), one byte
+        // into the image, straddling the reserved extent's end,
+        // in first-gigabyte RAM a boot untyped may describe (the pre-BP3.2
+        // admissible placement), straddling the first gigabyte's top, above
+        // it, in the device window, and overflowing.
         for base in [
+            BOOT_TABLE_POOL_BASE - size + 1,
+            KERNEL_RESERVED_END - size,
             kernel_end - 1,
             kernel.0 - 0x1000,
             KERNEL_RESERVED_END - size + 1,
             0x2EFF_0000,
-            GUARANTEED_RAM_TOP - size + 1,
+            L1_BLOCK_SIZE - size + 1,
             0x8000_0000,
             DEVICE_WINDOW_BASE,
             u64::MAX - 4,
@@ -2866,47 +3866,6 @@ mod boot_map_tests {
         assert!(!dtb_disjoint_from_image((u64::MAX - 4, 0x10), &image));
     }
 
-    /// **WS-BP BP3.2**: the reserved extent is one number in three places —
-    /// this constant, the Lean `rpi5KernelReservedEnd` (read here out of the
-    /// fixture the Lean suite writes), and `link.ld`'s `KERNEL_RESERVED_END`
-    /// (read out of the script).  It lies inside guaranteed RAM and is page
-    /// aligned, so the boot map covers it and a frame boundary never cuts it.
-    #[test]
-    fn the_kernel_reserved_extent_is_the_lean_and_linker_one() {
-        const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
-        const LINK_SCRIPT: &str = include_str!("../link.ld");
-        let lean: Vec<(u64, u64)> = LEAN_TABLE
-            .lines()
-            .filter_map(
-                |l| match l.split_whitespace().collect::<Vec<_>>().as_slice() {
-                    ["kernelReserved", base, end] => Some((
-                        u64::from_str_radix(base.trim_start_matches("0x"), 16).expect("hex"),
-                        u64::from_str_radix(end.trim_start_matches("0x"), 16).expect("hex"),
-                    )),
-                    _ => None,
-                },
-            )
-            .collect();
-        assert_eq!(
-            lean,
-            std::vec![(0, KERNEL_RESERVED_END)],
-            "the Lean reserved extent"
-        );
-        let linker: Vec<u64> = LINK_SCRIPT
-            .lines()
-            .filter_map(|l| {
-                let rest = l.trim().strip_prefix("KERNEL_RESERVED_END = ")?;
-                let hex = rest.strip_suffix(';')?.trim_start_matches("0x");
-                Some(u64::from_str_radix(hex, 16).expect("hex in link.ld"))
-            })
-            .collect();
-        assert_eq!(
-            linker,
-            std::vec![KERNEL_RESERVED_END],
-            "link.ld's reserved extent"
-        );
-    }
-
     /// **WS-BP BP5.3**: the window `link.ld` places the device tree in is
     /// exactly the extent a reader may dereference from its pointer
     /// ([`dtb_window`], [`crate::cmdline::MAX_DTB_SIZE`]).  A smaller window
@@ -2931,9 +3890,25 @@ mod boot_map_tests {
         assert_eq!(dtb_window(0x1000).1, declared[0]);
     }
 
+    /// **WS-BP BP7.10**: `link.ld`'s `RAM` region — the one memory region the
+    /// linker may place the image in — ends exactly at the kernel's reserved
+    /// extent, the constant Normal window, so no part of the image can be
+    /// placed where the boot map does not reach.  Read out of the script
+    /// rather than restated.
     #[test]
-    fn the_guaranteed_window_is_the_linker_declared_extent() {
-        // `link.ld`: `RAM : ORIGIN = 0x80000, LENGTH = 0x3FF80000`.
-        assert_eq!(0x80000u64 + 0x3FF8_0000, GUARANTEED_RAM_TOP);
+    fn the_linker_ram_region_is_the_constant_window() {
+        const LINK_SCRIPT: &str = include_str!("../link.ld");
+        let regions: Vec<(u64, u64)> = LINK_SCRIPT
+            .lines()
+            .filter_map(|l| {
+                let rest = l.trim().strip_prefix("RAM (rwx) : ORIGIN = ")?;
+                let (origin, length) = rest.split_once(", LENGTH = ")?;
+                let parse = |h: &str| u64::from_str_radix(h.trim().trim_start_matches("0x"), 16);
+                Some((parse(origin).ok()?, parse(length).ok()?))
+            })
+            .collect();
+        assert_eq!(regions.len(), 1, "link.ld declares one RAM region");
+        let (origin, length) = regions[0];
+        assert_eq!(origin + length, KERNEL_RESERVED_END);
     }
 }

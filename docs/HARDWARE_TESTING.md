@@ -398,21 +398,40 @@ IRQ-ready **and** Lean-ready within one second, so `smp_enabled=false` or an
 ./scripts/test_qemu_smp_bringup.sh
 ```
 
-The script (requires `SELE4N_KERNEL_IMAGE` pointing at a built kernel
-image; it SKIPs without one):
-1. Boots QEMU `virt` with `-smp 4 -machine virt,secure=on,virtualization=on`.
-2. Passes the kernel command line (`smp_enabled` defaults to `true`).
-3. Captures the UART log and asserts `[smp] core N: ready, entering
-   kernel` for cores 1..3 plus the `[boot] Phase 5: N secondary
-   core(s) online` rollup.
+The script (WS-BP BP8.2) builds the image for QEMU's `virt` machine itself
+(`scripts/qemu_boot_lib.sh`; `--lean-kernel` builds the Lean-linked one, from
+the archive `scripts/test_lean_aarch64_archive.sh` builds) and:
+1. Boots it on four PEs, once at EL1 and once with `virtualization=on`
+   (EL2, the Raspberry Pi 5 firmware's entry level).
+2. Requires every secondary's per-core init, in order, from
+   `tests/fixtures/qemu_smp_bringup_expected.txt` — `entering per-core init`
+   through `ready, entering kernel` — plus the boot core's `[boot] Phase 6:
+   3 secondary core(s) online` rollup, and with `--lean-kernel` the Phase 7
+   topology check and every core's first idle dispatch.
+3. Requires every banner to be a **whole line**: a console tag anywhere but at
+   the start of a line is a torn line and fails the run.
 
-The cross-core SGI round-trip is the separate
-`./scripts/test_qemu_smp_sgi_roundtrip.sh` exerciser (primary signals
-each secondary; each secondary acknowledges); the broader SMP behaviour
-suites are orchestrated by `./scripts/test_tier4_smp_bootcheck.sh`.
+On the board there is no QEMU; read the same banners off the serial console
+(BP8.3).
 
-**Expected output** ends with the script's
-`[PASS] WS-SM SM1.H.1` line once all secondaries report ready.
+The cross-core SGI round trip, the per-core console stress, the TLB
+shootdown round trip and the shootdown stress are **in-image drivers** (WS-BP
+BP8.4, `rust/sele4n-hal/src/smp_exercisers.rs`, built into the `virt` test
+image by the `smp_exercisers` feature) that the boot core runs once every
+declared PE serves the kernel.  `./scripts/test_qemu_smp_exercisers.sh` reads
+all four from one boot; the per-driver gates
+(`test_qemu_smp_sgi_roundtrip.sh`, `test_qemu_smp_kprintln_stress.sh`,
+`test_qemu_smp_shootdown.sh`, `test_qemu_smp_shootdown_stress.sh`) each read
+one; the per-core counter check (WS-BP BP8.5,
+`./scripts/test_qemu_smp_per_core_stats.sh --lean-kernel`) is the fifth driver
+and runs on the Lean-linked image alone, since the reader and the verdict are
+the kernel's; and the PE-withheld boot is `./scripts/test_qemu_smp_minimal.sh`
+(`-smp 2`).  `./scripts/test_tier4_smp_bootcheck.sh` orchestrates every
+Tier-4 gate on both images, HAL-only and `--lean-kernel`; the eight gates
+that need a user program report NOT RUN until SM10's root task exists.
+
+**Expected output** ends with `[META] PASS: four-PE bring-up` and
+`[META] All checks passed.` once all secondaries report ready.
 
 **Failure diagnostic:** if any secondary fails to wake, examine the
 PSCI return code (`PsciResult::Denied`, `AlreadyOn`, etc.) logged
@@ -435,18 +454,23 @@ identifier lookup is a single `mrs xN, tpidr_el1` instruction.
 ./scripts/test_qemu.sh
 ```
 
-> Note: the script builds the real image (`sele4n-kernel`, BP5.1) and then
-> SKIPs unless `QEMU_MACHINE` names a machine, because QEMU models no
-> BCM2712 and the image's console and GIC are the BCM2712's (WS-BP BP8.1
-> owns the machine).  Once it runs, the assertions are **hard failures**:
-> empty serial output, a missing boot banner, or
-> any fragment of `tests/fixtures/qemu_boot_expected.txt` absent from the
-> boot log fails the script — a hung kernel cannot soft-pass.
+> Note: QEMU models no BCM2712, so the script builds the image for QEMU's
+> `virt` machine (`--features kernel_image,board_qemu_virt`, WS-BP BP8.1:
+> `virt`'s device map from `rust/sele4n-hal/src/board.rs`, its link script
+> derived from `link.ld`), cuts the raw binary — QEMU passes the device tree
+> in `x0` only to an image carrying the arm64 Image header — and boots it
+> twice: at QEMU's default EL1 entry, and with `virtualization=on` at EL2, as
+> the Raspberry Pi firmware enters.  The assertions are **hard failures**:
+> empty serial output, a fatal line, any fragment of
+> `tests/fixtures/qemu_boot_expected.txt` absent from the boot log **or out of
+> the fixture's order**, or a run whose entry level and PSCI conduit are not
+> the ones its machine implies — a hung kernel cannot soft-pass.  To boot
+> another image on another machine, name both (`KERNEL_BIN`, `QEMU_MACHINE`).
 
 The kernel boot log on the primary core MUST contain:
 
 ```
-[boot] Timer initialized (54 MHz counter, 1ms ticks)
+[boot] Timer initialized (<CNTFRQ_EL0> Hz counter, 1ms ticks)
 [boot] TPIDR_EL1 set early (Phase 1) to PER_CPU_DATA[0] = 0x<addr>
 [boot] current_core_id_from_tpidr() = 0
 [boot] IRQ delivery enabled
@@ -516,8 +540,10 @@ anything, so wire a hardware test in directly rather than behind a
 `command -v` guard:
 
 ```bash
-# Add to scripts/test_tier4_smp_bootcheck.sh:
-run_gate_check "META" "${SCRIPT_DIR}/test_qemu_smp_bringup.sh"
+# scripts/test_tier4_smp_bootcheck.sh (since WS-BP BP8.4): each executable
+# gate on the HAL-only image and, when the archive exists, --lean-kernel.
+gate test_qemu_smp_bringup.sh        # run_gate_check, both images
+gate_lean_only test_qemu_smp_per_core_stats.sh   # the Lean-linked image alone (BP8.5)
 # ... plus the SM10.3 scripts as they land
 ```
 
@@ -555,9 +581,12 @@ checklist before tagging:
         `NIGHTLY_ENABLE_EXPERIMENTAL=1` is what makes Tier 4 run at all, and
         without it the tier reports NOT RUN and strict mode fails — which is
         the intended behaviour, since a strict run that never reached the
-        gates certifies nothing. The image exists since v0.36.2 (BP5); run
-        this once WS-BP BP8.1 gives the QEMU lanes a machine that boots it —
-        until then the gates report NOT RUN and this box cannot be ticked.
+        gates certifies nothing. Since WS-BP BP8.4 (`v0.36.28`) the twelve
+        executable gate runs pass on QEMU `virt`
+        (`./scripts/test_tier4_smp_bootcheck.sh`, both images); the eight
+        gates that need a user program report NOT RUN until SM10's root task
+        exists, so the strict run cannot yet be ticked — which is what it is
+        for.
   - [ ] §4.1 — TLB+Cache coherency (AN9-A)
   - [ ] §4.2 — TLBI bracket audit (AN9-B)
   - [ ] §4.3 — `suspendThread` atomicity (AN9-D)

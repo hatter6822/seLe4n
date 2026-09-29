@@ -566,7 +566,8 @@ pub const fn boot_image_icache_operand(extent: (u64, u64)) -> ICacheInvalidation
 ///
 /// Routed through [`apply_icache_invalidation`], so an extent outside the
 /// identity map halts the PE rather than maintaining an address the kernel does
-/// not mean.  The image lies in guaranteed RAM (`link.ld`), so a linked image
+/// not mean.  The image lies in the kernel's reserved extent (`link.ld`), which
+/// the boot map covers before any extension, so a linked image
 /// cannot reach that refusal.  Called by `lean_entry::enter_lean_kernel` after
 /// the install and before it mints the secondary-release permit.
 pub fn clean_boot_image_to_pou() {
@@ -1040,9 +1041,13 @@ mod tests {
     #[test]
     fn test_apply_icache_invalidation_all_arms() {
         apply_icache_invalidation(ICacheInvalidation::Iallu);
-        apply_icache_invalidation(ICacheInvalidation::IvauPage(0x2000));
-        apply_icache_invalidation(ICacheInvalidation::UnifyPage(0x3000));
-        apply_icache_invalidation(ICacheInvalidation::CleanRangeIallu(0x4000, 1024));
+        // WS-BP BP8.1: addresses in the board's kernel extent, which is where
+        // the identity map is on every board — from the image origin
+        // (`mmu::IMAGE_ORIGIN`, `v0.36.36`), below which nothing is mapped.
+        let base = crate::mmu::IMAGE_ORIGIN;
+        apply_icache_invalidation(ICacheInvalidation::IvauPage(base + 0x2000));
+        apply_icache_invalidation(ICacheInvalidation::UnifyPage(base + 0x3000));
+        apply_icache_invalidation(ICacheInvalidation::CleanRangeIallu(base + 0x4000, 1024));
     }
 
     // AN8-D (RUST-M07): memory_fence is a pure DSB ISH — verify it does
@@ -1074,12 +1079,12 @@ mod tests {
 mod identity_map_operand_tests {
     use super::*;
 
-    /// An address inside the guaranteed RAM the boot tables map Normal.
-    const IN_WINDOW: u64 = 0x0010_0000;
+    /// An address inside the kernel's reserved extent the boot tables map Normal.
+    const IN_WINDOW: u64 = crate::mmu::KERNEL_RESERVED_BASE + 0x0010_0000;
     /// An address inside the BCM2712 peripheral window — mapped Device, so
     /// `IC IVAU` against it maintains nothing the kernel meant.
-    const IN_DEVICE_WINDOW: u64 = 0x10_7D00_1000;
-    /// An address above the guaranteed RAM the boot tables map — unmapped, so
+    const IN_DEVICE_WINDOW: u64 = crate::board::BOARD.uart_base as u64;
+    /// An address above the RAM the boot tables map — unmapped, so
     /// the instruction takes a translation fault at EL1.
     const ABOVE_RAM: u64 = 0x1_0000_0000;
 
@@ -1126,12 +1131,12 @@ mod identity_map_operand_tests {
         // the extent is the page, not the byte.  An address in the last page
         // of RAM is in range; one just past the RAM top is not, even though
         // its containing page starts inside RAM.
-        let last_page = crate::mmu::GUARANTEED_RAM_TOP - PAGE_SIZE;
+        let last_page = crate::mmu::KERNEL_RESERVED_END - PAGE_SIZE;
         assert!(icache_operand_within_identity_map(
             ICacheInvalidation::IvauPage(last_page + 0x40)
         ));
         assert!(!icache_operand_within_identity_map(
-            ICacheInvalidation::IvauPage(crate::mmu::GUARANTEED_RAM_TOP)
+            ICacheInvalidation::IvauPage(crate::mmu::KERNEL_RESERVED_END)
         ));
     }
 
@@ -1139,7 +1144,7 @@ mod identity_map_operand_tests {
     fn a_range_that_starts_in_ram_and_runs_past_its_end_is_refused() {
         // The relation a base-address check would miss.  The base is a
         // perfectly good RAM frame; the range is not.
-        let base = crate::mmu::GUARANTEED_RAM_TOP - PAGE_SIZE;
+        let base = crate::mmu::KERNEL_RESERVED_END - PAGE_SIZE;
         assert!(icache_operand_within_identity_map(
             ICacheInvalidation::CleanRangeIallu(base, PAGE_SIZE)
         ));
@@ -1194,12 +1199,12 @@ mod identity_map_operand_tests {
     }
 
     #[test]
-    fn a_boot_image_in_guaranteed_ram_is_maintainable() {
-        // `link.ld` places the image in guaranteed RAM, so the fail-closed
+    fn a_boot_image_in_the_kernel_extent_is_maintainable() {
+        // `link.ld` places the image in the kernel's reserved extent, so the fail-closed
         // refusal is unreachable for a linked image; an extent that ran past it
         // would halt rather than be under-maintained.
         assert!(icache_operand_within_identity_map(
-            boot_image_icache_operand((0x8_0000, 0x20_0000))
+            boot_image_icache_operand((crate::mmu::KERNEL_RESERVED_BASE + 0x8_0000, 0x20_0000))
         ));
         assert!(!icache_operand_within_identity_map(
             boot_image_icache_operand((ABOVE_RAM, PAGE_SIZE))

@@ -555,7 +555,7 @@ private def runRendezvousChecks : IO Unit := do
 #check @setIPCBufferOp_preserves_ipcInvariantFull
 #check @writeReturnFrameToTcb_preserves_ipcInvariantFull
 #check @suspendThreadOnCore_preserves_ipcInvariantFull
-#check @resumeThreadOnCoreLive_preserves_ipcInvariantFull
+#check @resumeThreadOnCore_preserves_ipcInvariantFull
 -- WS-RR RR3.22 — the composition layer: the return-frame staging writes and
 -- the replyRecv three-stage composite:
 #check @stageDeliveredMessage_preserves_ipcInvariantFull

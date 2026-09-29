@@ -440,67 +440,15 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- v0.32.136 — and no bootable image before SM10.1).
     Concurrency.shootdownRoundLockRelease
 
-/-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the
-instruction-cache maintenance the just-committed transition recorded.
+-- **v0.36.39**: `completeIcacheMaintenance` and its three equations moved to
+-- `Platform.FFI`, beside `completePhysicalWrites`, because every state-committing
+-- entry drains the instruction-cache ledger now, and the timer, reschedule and
+-- fault entries cannot reach this module.
 
-**How the work is recovered.**  Kernel transitions are pure state functions, so
-every hardware effect is emitted here, after the commit.  The TLB round is
-recoverable from the `(pre, post)` diff because it *posts descriptors* into
-`tlbShootdown`; the instruction-cache maintenance has no such queue, so the
-model records the operand it applied in `SystemState.pendingIcacheMaintenance`
-(`Architecture.recordIcacheMaintenance`) and this seam emits exactly that.  The
-ledger is cleared in the same atomic step that reads it, so no operand can be
-emitted twice and none can be stranded into the next syscall.
-
-**Why not key on the shootdown diff.**  That was the SM7.D landing's
-approximation, and it was doubly imprecise: it fired the *strongest* operand
-(`IC IALLUIS`) for every unmap — including the common non-executable one, which
-owes nothing at all — and it missed a retype that posted no round.  Recovering
-the precise operand from the round's encoded `.vae1` instead would need an
-`ASID`/`VAddr` round-trip whose failure mode is **under**-invalidation, the one
-direction that is unsafe.  The ledger avoids both: the runtime emits the
-model's operand, no reconstruction and no over-approximation.
-
-**Why a list.**  The ledger holds the operands *in record order* rather than a
-single joined operand, because the operands do not form a join-semilattice:
-`iallu` (`IC IALLUIS`) invalidates instruction caches but issues no `DC CVAU`,
-so it does not discharge a `unifyPage`'s clean to the Point of Unification, and
-collapsing into it would silently drop that clean.  The seam therefore emits
-every entry.  On the live path the list holds at most one operand (one
-maintenance-bearing transition per syscall, drained here), so this is a `forM`
-over a singleton or the empty list.
-
-**Ordering.**  Called *after* `completeShootdownRounds`, so the translations a
-transition retired are gone from every core's TLB before the instruction lines
-fetched through them are dropped.  Inert when the transition owed nothing
-(`completeIcacheMaintenance_nil`), which is every syscall that touched no
-executable mapping and re-purposed no memory. -/
-def completeIcacheMaintenance
-    (owed : List Architecture.ICacheInvalidation) : BaseIO Unit :=
-  owed.forM Platform.FFI.icMaintenanceBroadcast
-
-/-- **WS-SM SM7.D.1** (structural marker): a commit that owed no
-instruction-cache maintenance emits none — no maintenance instruction, no
-barriers.  The definition-level inertness of the SM7.D runtime bracket,
-mirroring `completeShootdownRounds_nil`. -/
-theorem completeIcacheMaintenance_nil :
-    completeIcacheMaintenance [] = pure () := rfl
-
-/-- **WS-SM SM7.D.1**: when maintenance *was* owed the seam emits exactly the
-recorded operand — pinned so a refactor that widened it back to the domain-wide
-invalidate, or dropped the emission, breaks here. -/
-theorem completeIcacheMaintenance_singleton (op : Architecture.ICacheInvalidation) :
-    completeIcacheMaintenance [op] =
-      Platform.FFI.icMaintenanceBroadcast op := rfl
-
-/-- **WS-SM SM7.D**: the seam emits **every** recorded operand, in record order.
-Pinned so a refactor that collapses the ledger to one operand — the unsound
-direction, since `iallu` does not discharge a `unifyPage`'s clean-to-PoU — fails
-here rather than silently under-maintaining. -/
-theorem completeIcacheMaintenance_cons (op : Architecture.ICacheInvalidation)
-    (rest : List Architecture.ICacheInvalidation) :
-    completeIcacheMaintenance (op :: rest) =
-      (do Platform.FFI.icMaintenanceBroadcast op; completeIcacheMaintenance rest) := rfl
+-- **WS-BP BP7.8**: `completePhysicalWrites` and its two equations moved to
+-- `Platform.FFI`, beside `physicalWriteApply`, because the fault entries drain the
+-- same ledger now (a fault message's words past the fourth are user-word stores)
+-- and `FaultEntry` cannot reach this module.
 
 /-- **WS-SM SM7.B** (structural marker): a commit that changed no
 pending-shootdown queue runs no round — no lock traffic, no reset, no
@@ -533,26 +481,67 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × Option SeLe4n.ThreadId) × SystemState :=
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st with
   | Except.ok (outcome, st') =>
-      let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
+      -- WS-BP BP7.4: the returning caller's result is in its saved context and
+      -- the core's bank before any local reschedule, so a switch saves it.
+      let stR := Architecture.stageCallerReturn st st' execCore outcome
+      -- PR #904 review (`v0.36.41`): settle what this core resumes — a thread
+      -- still resident on another core is deferred, and the one resumed here
+      -- becomes this core's resident thread (`settleResidencyOnCore`).
+      let st'' := PriorityInheritance.settleResidencyOnCore
+        (PriorityInheritance.scheduleLocalSuccessor st stR execCore) execCore
       ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
         Architecture.shootdownChangedTargets st st'',
         Architecture.shootdownPostedOps st st'',
         Architecture.shootdownRoundWindow st st'',
         st''.pendingIcacheMaintenance,
+        st''.pendingPhysicalWrites,
+        Architecture.restoreTargetOnCore st'' execCore,
         st''.scheduler.currentOnCore execCore),
-       Architecture.clearIcacheMaintenance st'')
+       Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st''))
   | Except.error e =>
-      ((Architecture.SyscallOutcome.returns (Architecture.errorFrame e),
+      -- WS-BP BP7.4: the error is the caller's result, staged as any is.
+      let outcome := Architecture.SyscallOutcome.returns (Architecture.errorFrame e)
+      -- PR #904 review (`v0.36.41`): a syscall refused on a vacated core — the
+      -- remote deschedule emptied the slot while the thread still ran here —
+      -- still hands the core a successor, so it does not resume the stale frame.
+      let stE := PriorityInheritance.settleResidencyOnCore
+        (Architecture.stageCallerReturn st st execCore outcome) execCore
+      ((outcome,
         ([] : List (CoreId × SgiKind)),
         ([] : List CoreId),
         ([] : List Architecture.TlbInvalidation),
         ((0, 0) : Nat × Nat),
         ([] : List Architecture.ICacheInvalidation),
-        st.scheduler.currentOnCore execCore), st)
+        ([] : List Architecture.PhysicalWrite),
+        Architecture.restoreTargetOnCore stE execCore,
+        stE.scheduler.currentOnCore execCore), stE)
+
+/-- **WS-BP BP7.2 (the ledger is drained exactly once)**: the state the step
+commits owes no physical write, and the writes it hands the runtime are the ones
+the committed transition recorded.  So a write is performed once — by the seam
+this commit returns to — and none is stranded into the next syscall. -/
+theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContext)
+    (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    ∃ outcome st',
+      Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+          ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (outcome, st') ∧
+      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+          ipcBufferAddr elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
+      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+          ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1 =
+        (PriorityInheritance.settleResidencyOnCore
+          (PriorityInheritance.scheduleLocalSuccessor st
+            (Architecture.stageCallerReturn st st' execCore outcome) execCore)
+          execCore).pendingPhysicalWrites := by
+  obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
+    msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+  refine ⟨outcome, st', h, ?_, ?_⟩ <;> simp [syscallDispatchCrossCoreStep, h]
 
 /-- **WS-RR RR7.12**: what a revalidation refusal returns to the caller.
 
@@ -568,19 +557,32 @@ conformance and error-matrix suites) exactly when the refusal becomes reachable
 is today one global read-modify-write over one `SystemState` and the growing
 phase writes nothing the resolver reads.
 
-No diffs are surfaced and the I-cache ledger is **not** cleared: nothing ran, so
-there is nothing to poke about and nothing owed was consumed. -/
+No diffs are surfaced and neither the I-cache ledger nor the physical-write
+ledger is cleared: nothing ran, so there is nothing to poke about and nothing
+owed was consumed.
+
+**WS-BP BP7.4**: the one write beyond the unwinding is the caller's own result.
+The error frame is staged into the caller's saved context and the core's bank
+(`Architecture.stageCallerReturn`), because the context restore resumes a thread
+*from* its saved context: a refusal that left the context holding the syscall's
+arguments would return them to the caller as its result. -/
 def syscallBracketRefusalResult (execCore : CoreId) (unwound : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × Option SeLe4n.ThreadId) × SystemState :=
-  ((Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState),
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
+  let outcome := Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState)
+  let staged := PriorityInheritance.settleResidencyOnCore
+    (Architecture.stageCallerReturn unwound unwound execCore outcome) execCore
+  ((outcome,
     ([] : List (CoreId × SgiKind)),
     ([] : List CoreId),
     ([] : List Architecture.TlbInvalidation),
     ((0, 0) : Nat × Nat),
     ([] : List Architecture.ICacheInvalidation),
-    unwound.scheduler.currentOnCore execCore), unwound)
+    ([] : List Architecture.PhysicalWrite),
+    Architecture.restoreTargetOnCore staged execCore,
+    staged.scheduler.currentOnCore execCore), staged)
 
 /-- **WS-RR RR7.12: the step, inside its declared per-object footprint.**
 
@@ -610,7 +612,8 @@ def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext) (execCore : Co
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × Option SeLe4n.ThreadId) × SystemState :=
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   match Concurrency.runBracketed schedulerLockBracketDomain
       (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5)
       execCore
@@ -666,6 +669,31 @@ theorem syscallDispatchCrossCoreBracketedStep_refused (ctx : LabelingContext)
   rw [Concurrency.runBracketed_refused _ _ _ _ st S hDecl hGuard]
   rfl
 
+/-- **WS-BP BP7.8: the sender's message registers past the fourth, read from
+RAM.**  The decode reads a syscall's overflow message registers out of the
+caller's IPC buffer (`RegisterDecode.decodeSyscallArgsFromState` →
+`IpcBufferRead.ipcBufferReadMr`), and it reads them from `machine.memory` —
+the model's memory, which holds no thread's writes.  So before this seam the
+kernel on hardware decoded a sender's `MR4` onward as whatever the model held
+for that frame (zeroes from the carve), never what the thread wrote.
+
+This reads each word the decode will read — the caller's slots the shared
+resolver answers (`IpcBufferRead.callerOverflowAddrs`) — from RAM through the
+HAL, and `syncUserWords` writes them into the model in the atomic step, before
+the decode runs.  The addresses are resolved on the state read here and the
+words written on the state the commit closure receives; those are one state,
+because the kernel-entry lock serialises every committing entry and nothing
+between the two reads writes an address space.  A syscall that asks for no
+overflow reads nothing (`callerOverflowAddrs` answers `[]`). -/
+def readCallerOverflowWords (execCore : CoreId) (msgInfo : UInt64) :
+    BaseIO (List (SeLe4n.PAddr × UInt64)) := do
+  let st ← Platform.FFI.getKernelState
+  match st.scheduler.currentOnCore execCore with
+  | none => pure []
+  | some tid =>
+      (Architecture.IpcBufferRead.callerOverflowAddrs st tid msgInfo).mapM fun pa => do
+        pure (pa, ← Platform.FFI.ffiReadUserWord pa.toNat.toUInt64)
+
 /-- **WS-SM SM6.A**: the cross-core-aware syscall dispatch entry — the live
 SGI-dispatch seam.  Reads the deployment labeling context and the executing core
 from the hardware (`currentCoreId`), runs the verified
@@ -682,12 +710,12 @@ return-frame mailbox (`ffiSyscallReturnFrame` — the `ShootdownOpMailbox`
 pattern, since a scalar export return cannot carry six words), and the export's
 scalar return is the **outcome tag**: `0` = the mailbox frame is the caller's
 return, `1` = the caller blocked and no frame exists for it (RA.C.9; the
-staged frame is delivered by the SM10.1 context restore).  The pure dispatch
+staged frame is delivered by the context restore (WS-BP BP7.6)).  The pure dispatch
 never takes the `.error` arm (`syscallDispatchFromAbi_total`); the arm is
 discharged inertly with an error frame.
 
 **WS-SM SM8.B (PR #861 review round 17): the local half of the reschedule.**
-`PriorityInheritance.scheduleLocalSuccessorLive` runs *inside* the atomic step,
+`PriorityInheritance.scheduleLocalSuccessor` runs *inside* the atomic step,
 before the diffs are taken, and dispatches a successor when the transition
 vacated this core (`localSuccessorNeeded`).  It is the inline dual of
 `currentSlotChangeSgis`, which pokes every *remote* core whose `current` slot
@@ -697,14 +725,13 @@ did not exist: every blocking IPC leg cleared the caller's slot and nothing
 selected a successor, and the periodic tick provably cannot cover for it
 (`timerTickOnCore_cannot_dispatch_vacated_core`).
 
-**Gated (round 20).**  The wrapper is `scheduleLocalSuccessorLive`, which is
-the identity until `contextRestoreSeamLive` is true.  Dispatching a successor
-whose context the runtime cannot install into the trap frame would be worse than
-dispatching none: hardware returns through the blocked caller's frame either
-way, but `currentOnCore = none` makes the caller's next syscall fail *closed*
-(`.illegalState` — `vacatedCore_next_syscall_rejected` below, over the state
-this entry commits) whereas a named successor **misattributes** it.  The switch
-therefore turns on with the seam it depends on, not before.
+**Live since WS-BP BP7.6.**  From round 20 until then the dispatch ran behind a
+gate on the context-restore seam, because a successor the runtime could not
+install into the trap frame would have been attributed the blocked caller's
+next syscall, where `currentOnCore = none` fails it *closed*
+(`vacatedCore_next_syscall_rejected` below).  The entry now hands the HAL the
+context its core resumes (`Platform.FFI.restoreTrapFrame`), so the successor it
+dispatches is the thread the hardware runs, and the gate is retired.
 
 Two properties of the placement are load-bearing.  It is **inside** the
 `modifyGetKernelState` closure, so the successor is dispatched in the same
@@ -728,9 +755,22 @@ def syscallDispatchCrossCoreEntry
   -- from this entry's own decode, acquires it, re-resolves at the state the
   -- growing phase ended in and refuses on any change; a syscall with no declared
   -- footprint runs exactly as it did before the bracket existed.
-  let result ← Platform.FFI.modifyGetKernelState
-    (syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30)
+  -- **WS-BP BP7.3**: the whole context the caller trapped with is saved into
+  -- this core's register bank and the caller's TCB before the step runs, so a
+  -- context switch the syscall causes saves every register, not the window.
+  -- PR #904 review (`v0.36.41`): on a core a remote deschedule vacated, the
+  -- frame goes to the core's resident thread rewound to the `SVC`
+  -- (`saveCapturedSyscallFrame`), so the interrupted syscall is re-issued.
+  let frame ← Platform.FFI.captureTrapFrame
+  -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
+  -- and synced into the model in the atomic step, so the decode reads what the
+  -- thread wrote.
+  let words ← readCallerOverflowWords execCore msgInfo
+  let result ← Platform.FFI.modifyGetKernelState fun st =>
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      ipcBufferAddr elr spsr spEl0 x30
+      (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st execCore frame) words)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
   -- immediately after the commit — `dispatch_svc` reads it back inside the
   -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
@@ -738,6 +778,13 @@ def syscallDispatchCrossCoreEntry
   -- frame exists for the caller — RA.C.9).
   let frame := result.1.mailboxFrame
   Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
+  -- **WS-BP BP7.2**: make physical memory agree with the committed address
+  -- spaces — the descriptor stores, page zeroings and ASID invalidations the
+  -- transition recorded, read and cleared in the atomic step above.  First,
+  -- before any core is poked and before the shootdown round: a remote core
+  -- must not refill its TLB from a descriptor the model has already cleared,
+  -- and a carved page must be zero before anything can name it.
+  Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1
   Concurrency.fireCrossCoreSgis result.2.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
@@ -748,18 +795,27 @@ def syscallDispatchCrossCoreEntry
   -- are dropped.  The operand is the model's own — the ledger was read and
   -- cleared in the atomic step above, so it is emitted exactly once and never
   -- stranded into the next syscall.  Inert when nothing was owed.
-  completeIcacheMaintenance result.2.2.2.2.2.1
+  Platform.FFI.completeIcacheMaintenance result.2.2.2.2.2.1
+  -- **WS-BP BP7.9**: a thread whose FP/SIMD values this core holds and which
+  -- the committed state no longer runs here has them saved into its TCB first.
+  Concurrency.releaseSwitchedFpOwnerOnCore execCore
+  -- **WS-BP BP7.4**: install what the committed state runs on this core — the
+  -- current thread's saved context and translation, or the idle wait loop —
+  -- into the in-flight trap frame, last, after every memory and TLB effect the
+  -- commit owed.
+  Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1
   -- **WS-RR RR7.26**: record on the HAL what this commit left running on the
   -- executing core, so `ffi::PER_CPU_CURRENT_THREAD` follows the verified
   -- scheduler rather than lagging it.  The value was read inside the atomic
-  -- step above (after `scheduleLocalSuccessorLive`, so it is the successor
+  -- step above (after `scheduleLocalSuccessor`, so it is the successor
   -- when the syscall vacated the core), and a syscall that left the core
   -- vacated clears the mirror rather than leaving it naming a blocked caller.
-  Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2))
+  Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
   -- WS-RA: the export's scalar return is the outcome tag (0 = the mailbox
   -- frame is the caller's return; 1 = the caller blocked, no frame; 2 = the
-  -- caller faulted at the seam, no frame, and the trap layer halts pending
-  -- SM10.1 — PR #887 review round 5).
+  -- caller faulted at the seam, no frame — PR #887 review round 5; since WS-BP
+  -- BP7.6 the trap layer resumes the context restore staged, and halts only
+  -- when none was).
   pure result.1.tagWord
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
@@ -779,28 +835,34 @@ theorem syscallDispatchCrossCoreEntry_def
       (do
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
-        let result ← Platform.FFI.modifyGetKernelState
-          (syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-            ipcBufferAddr elr spsr spEl0 x30)
+        let frame ← Platform.FFI.captureTrapFrame
+        let words ← readCallerOverflowWords execCore msgInfo
+        let result ← Platform.FFI.modifyGetKernelState fun st =>
+          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+            ipcBufferAddr elr spsr spEl0 x30
+            (Architecture.IpcBufferRead.syncUserWords
+              (Architecture.saveCapturedSyscallFrame st execCore frame) words)
         let frame := result.1.mailboxFrame
         Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
+        Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
-        completeIcacheMaintenance result.2.2.2.2.2.1
-        Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2))
+        Platform.FFI.completeIcacheMaintenance result.2.2.2.2.2.1
+        Concurrency.releaseSwitchedFpOwnerOnCore execCore
+        Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1
+        Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
         pure result.1.tagWord) := rfl
 
 /-- **WS-SM SM8.B** (PR #861 review rounds 39/41): the gating argument's
 "rejection, not misattribution" half, as a theorem rather than as prose.
 
-The gate above (`scheduleLocalSuccessorLive`, inert until the restore seam is
-live) is justified by a claim about what happens *next*: a blocking transition
-leaves `currentOnCore execCore = none`, and the caller's next syscall is then
-**rejected** rather than attributed to some other thread.  That claim has been
-challenged twice on the review — both times asserting the opposite, that the
-next syscall silently falls back to `bootCoreId` — so it is stated here at the
-entry, over the state the entry actually commits (the *gated* wrapper's output,
-so the theorem tracks whichever side of the seam is live).
+The gate that stood above until WS-BP BP7.6 was justified by a claim about what
+happens *next*: a transition that leaves `currentOnCore execCore = none` has the
+caller's next syscall **rejected** rather than attributed to some other thread.
+That claim was challenged twice on the review — both times asserting the
+opposite, that the next syscall silently falls back to `bootCoreId` — so it is
+stated here at the entry, over the state the entry commits.  With the dispatch
+live it covers a core whose run queue held no successor.
 
 The fallback the challenge describes is real but belongs to
 `determineExecutingCore`, which is reached only with a caller id already in
@@ -815,13 +877,13 @@ theorem vacatedCore_next_syscall_rejected
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (hMsg : msgInfo = x1)
     (hVacated :
-      (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore).scheduler.currentOnCore
+      (PriorityInheritance.scheduleLocalSuccessor pre post execCore).scheduler.currentOnCore
         execCore = none) :
     Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30
-        (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore)
+        (PriorityInheritance.scheduleLocalSuccessor pre post execCore)
       = Except.ok (.returns (Architecture.errorFrame .illegalState),
-                   PriorityInheritance.scheduleLocalSuccessorLive pre post execCore) :=
+                   PriorityInheritance.scheduleLocalSuccessor pre post execCore) :=
   Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId msgInfo
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hMsg hVacated
 
@@ -933,7 +995,7 @@ def suspendThreadCrossCoreStep (tid : UInt64) (execCore : CoreId) (st : SystemSt
             SystemState × (UInt32 × List (CoreId × SgiKind)) := fun s =>
           match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
           | Except.ok (s', _) =>
-              let s'' := PriorityInheritance.scheduleLocalSuccessorLive s s' execCore
+              let s'' := PriorityInheritance.scheduleLocalSuccessor s s' execCore
               (s'', ((0 : UInt32),
                     PriorityInheritance.computeCrossCoreSgis s s'' execCore))
           | Except.error e =>
@@ -979,12 +1041,48 @@ theorem suspendThreadCrossCoreStep_sentinel_refused (execCore : CoreId) (st : Sy
         ([] : List (CoreId × SgiKind))), st) := by
   rfl
 
+/-- The cross-core suspend step with both hardware ledgers drained
+(`v0.36.39`): `suspendThreadCrossCoreStep`, then the recorded physical writes
+and instruction-cache operands read out and cleared in the same atomic step.
+Named rather than written as a lambda at the seam, so the seam still hands
+`modifyGetKernelState` a named pure step and a refused suspend is refused here
+exactly as there (`suspendThreadCrossCoreDrainedStep_idle_refused`). -/
+def suspendThreadCrossCoreDrainedStep (tid : UInt64) (execCore : CoreId)
+    (st : SystemState) :
+    ((UInt32 × List (CoreId × SgiKind)) ×
+      (List Architecture.PhysicalWrite × List Architecture.ICacheInvalidation))
+      × SystemState :=
+  let (out, st') := suspendThreadCrossCoreStep tid execCore st
+  ((out, (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+    Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st'))
+
+/-- The drained step refuses an idle thread as the bare step does, and the
+state it commits is the bare step's with both ledgers cleared — the refusal
+recorded nothing, so the drain performs nothing. -/
+theorem suspendThreadCrossCoreDrainedStep_idle_refused (tid : UInt64)
+    (execCore : CoreId) (st : SystemState)
+    (hIdle : SeLe4n.Kernel.isIdleThreadId (SeLe4n.ThreadId.ofNat tid.toNat) = true) :
+    (suspendThreadCrossCoreDrainedStep tid execCore st).1.1 =
+      (Platform.FFI.KernelError.toUInt32 .invalidArgument,
+        ([] : List (CoreId × SgiKind))) := by
+  unfold suspendThreadCrossCoreDrainedStep
+  rw [suspendThreadCrossCoreStep_idle_refused tid execCore st hIdle]
+
+/-- The raw cross-core suspend seam.  **Every state-committing entry drains
+both hardware ledgers** (`v0.36.39`), this one included: the drained step
+reads and clears them atomically, the physical writes are performed before any
+core is poked and the instruction-cache operands after the SGIs, as the syscall
+and fault seams do, so a write a later transition records on this path can
+neither be skipped nor be performed late by some other core's entry. -/
 @[export suspend_thread_cross_core]
 def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
   let execCore ← Concurrency.currentCoreId
-  let result ← Platform.FFI.modifyGetKernelState (suspendThreadCrossCoreStep tid execCore)
-  Concurrency.fireCrossCoreSgis result.2
-  pure result.1
+  let result ← Platform.FFI.modifyGetKernelState
+    (suspendThreadCrossCoreDrainedStep tid execCore)
+  Platform.FFI.completePhysicalWrites result.2.1
+  Concurrency.fireCrossCoreSgis result.1.2
+  Platform.FFI.completeIcacheMaintenance result.2.2
+  pure result.1.1
 
 -- ============================================================================
 -- WS-SM SM9.B.9 — the refusal write does not disturb the runtime seam

@@ -36,6 +36,34 @@
 # by publishing the image's size and section map (`scripts/kernel_image_report.py`)
 # to the CI step summary and `kernel-image-report.json`.
 #
+# WS-BP BP8.1: and then the kernel runs.  `scripts/test_qemu.sh --lean-kernel`
+# links the same archive into the image built for QEMU's `virt` machine (in a
+# target directory of its own, so the Raspberry Pi 5 image above is what CI
+# uploads) and boots it on four PEs at EL1 and at EL2, to every core's first
+# idle dispatch.  `REQUIRE_QEMU=1` makes an absent QEMU a failure here.
+#
+# WS-BP BP8.2: and the four-PE bring-up gate, `scripts/test_qemu_smp_bringup.sh`,
+# on the HAL-only `virt` image and on the Lean-linked one: every secondary's
+# per-core init in order, every banner a whole line, at both entry levels.  Both
+# images build into target directories of their own (`scripts/qemu_boot_lib.sh`).
+#
+# WS-BP BP8.4: and the Tier-4 in-image exercisers,
+# `scripts/test_qemu_smp_exercisers.sh`, on the HAL-only `virt` test image and
+# on the Lean-linked one: the cross-core SGI round trip, the per-core console
+# stress, the TLB shootdown round trip and the shootdown stress, driven by the
+# boot core through the HAL's own shootdown round protocol, each banner held as
+# a whole line.  The test image carries the `smp_exercisers` feature and builds
+# into a target directory of its own; the Raspberry Pi 5 image above never
+# carries it, which `scripts/check_aarch64_cross_target.py` refuses.
+#
+# v0.36.31: and the Lean initialization refusal probe,
+# `scripts/test_qemu_lean_init_refusal.sh`: a Lean-linked `virt` test image
+# whose library initialization refuses as its command line names -- an `IO`
+# error, a malformed result, a second run -- booted on four PEs at the board's
+# EL2 entry, each run held to ending on the refusal with nothing after it
+# (WS-BP BP2.4, on the target).  The probe feature is fenced exactly as the
+# exercisers are.
+#
 # Needs the Lean toolchain (`setup_lean_env.sh`) and rustup's `llvm-tools`
 # component (listed in `rust/rust-toolchain.toml`), which supplies the
 # `llvm-nm` and `llvm-objdump` the builder reads object code with.
@@ -54,16 +82,16 @@ CROSS_TARGET="aarch64-unknown-none-softfloat"
 IMAGE_BIN="sele4n-kernel"
 ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"
 
-echo "[1/5] Host static archive (the reconciliation's other half)"
+echo "[1/6] Host static archive (the reconciliation's other half)"
 lake build SeLe4n:static
 
-echo "[2/5] Cross archive"
+echo "[2/6] Cross archive"
 python3 "${SCRIPT_DIR}/build_lean_aarch64_archive.py"
 
-echo "[3/5] Kernel-entry reconciliation over both archives"
+echo "[3/6] Kernel-entry reconciliation over both archives"
 python3 "${SCRIPT_DIR}/check_kernel_entry_exports.py" --require-cross
 
-echo "[4/5] The kernel image, linked with the Lean kernel, and checked"
+echo "[4/6] The kernel image, linked with the Lean kernel, and checked"
 cd "${PROJECT_ROOT}/rust"
 rm -f "target/${CROSS_TARGET}/release/${IMAGE_BIN}"
 cargo build --release --target "${CROSS_TARGET}" -p sele4n-hal \
@@ -74,8 +102,16 @@ python3 "${PROJECT_ROOT}/scripts/check_kernel_image.py" \
 python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
 
-echo "[5/5] The Raspberry Pi 5 boot files, cut from that image and checked"
+echo "[5/6] The Raspberry Pi 5 boot files, cut from that image and checked"
 "${PROJECT_ROOT}/scripts/build_rpi5_image.sh" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}" "${PROJECT_ROOT}/.lake/build/rpi5-image"
 
-echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it and is packaged."
+echo "[6/6] The Lean-linked kernel booted under QEMU (virt, four PEs, EL1 and EL2), the four-PE bring-up, the Tier-4 exercisers, and the initialization refusal probe"
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu.sh" --lean-kernel
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_bringup.sh"
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_bringup.sh" --lean-kernel
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_exercisers.sh"
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_smp_exercisers.sh" --lean-kernel
+REQUIRE_QEMU=1 "${PROJECT_ROOT}/scripts/test_qemu_lean_init_refusal.sh"
+
+echo "Lean aarch64 archive: built, checked and reconciled; the kernel image links it, is packaged, boots, its Tier-4 exercisers pass, and a refused initialization halts."

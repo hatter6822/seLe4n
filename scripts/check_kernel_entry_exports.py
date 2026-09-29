@@ -147,12 +147,15 @@ EXPECTED_UNRESOLVED: dict[str, str] = {}
 #: provider.
 EXTERN_FN = re.compile(
     rust_code_view.keyword("fn") + r"\s+(?:r#)?(" + rust_code_view.ident() + r")\s*\(")
-#: The symbol the boot entry exports (`SeLe4n.Platform.RPi5.kernelMain`, WS-BP
-#: BP4.1).  Only the link-level reconciliation reads it here — that both
-#: archives define it, like every other HAL declaration.  What the entry must *do* is
-#: `SeLe4n/Testing/BootEntryContract.lean`'s, decided over the elaborated
-#: environment (PR #889 review round 17).
-BOOT_ENTRY_SYMBOL = "lean_kernel_main"
+#: The symbols the boot entries export, one per board: `lean_kernel_main`
+#: (`SeLe4n.Platform.RPi5.kernelMain`, WS-BP BP4.1) and
+#: `lean_kernel_main_qemu_virt` (`SeLe4n.Platform.QemuVirt.kernelMain`, WS-BP
+#: BP8.1).  Only the link-level reconciliation reads them here — that both
+#: archives define each, like every other HAL declaration.  What each entry must
+#: *do* is `SeLe4n/Testing/BootEntryContract.lean`'s, decided over the elaborated
+#: environment (PR #889 review round 17), one row of its `bootEntries` table per
+#: symbol.
+BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt")
 #: `#[link_name = "…"]` — in both spellings — on an `extern` declaration: the
 #: symbol the linker is actually asked for, whatever the Rust item is called.
 #: Matched over the string-free view, where the literal's delimiters survive
@@ -183,7 +186,7 @@ def lean_exports_in_view(view: str) -> set[str]:
     PR #889 review round 12: read with the shared attribute-list parser, so a
     combined list (`@[inline, export lean_kernel_main]`) and a line break after
     the keyword count — both are what Lean emits, and both were invisible to
-    the `@\[export\s+…\]` regex this replaces.  The consequences ran in the
+    the `@\\[export\\s+…\\]` regex this replaces.  The consequences ran in the
     fail-open direction twice over: an export written that way was missing from
     the inventory, so the archive was never required to define it; and the boot
     entry carrying it was not recognised as the boot entry, so the check that
@@ -2418,10 +2421,14 @@ def main() -> int:
         return 1
 
     required = link_requirements(externs, asm_globals, EXPECTED_UNRESOLVED, exports)
-    boot_entry = (
-        "exported; its contract is checked by `SeLe4n/Testing/BootEntryContract.lean`"
-        if BOOT_ENTRY_SYMBOL in exports
-        else "not exported by the Lean source inventory, yet defined by every checked archive"
+    boot_entry = "; ".join(
+        f"`{symbol}` "
+        + (
+            "exported, its contract checked by `SeLe4n/Testing/BootEntryContract.lean`"
+            if symbol in exports
+            else "not exported by the Lean source inventory"
+        )
+        for symbol in BOOT_ENTRY_SYMBOLS
     )
     checked = " and ".join(f"{label} ({path.relative_to(REPO)})" for label, path in archives)
     print(
@@ -2430,8 +2437,7 @@ def main() -> int:
         f"({len(externs & asm_globals)} resolved by the HAL's assembly — {provider_basis}; "
         f"{len(EXPECTED_UNRESOLVED)} expected unresolved and reconciled; {signatures_checked} "
         f"declarations and {provided_checked} definitions agree with the C the Lean compiler "
-        f"generated); boot entry "
-        f"`{BOOT_ENTRY_SYMBOL}`: {boot_entry}"
+        f"generated); boot entries: {boot_entry}"
     )
     for symbol in required:
         print(f"         {symbol}")

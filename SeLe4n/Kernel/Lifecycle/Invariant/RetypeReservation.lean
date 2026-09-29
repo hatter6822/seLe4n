@@ -319,7 +319,9 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
     simp only at h
     split at h
     · exact absurd h (by simp)
-    · injection h with h
+    · split at h
+      · exact absurd h (by simp)
+      injection h with h
       subst h
       exact (replenishQueueAffinityConsistent_smp_frame
         (st := st) (st' := detachCNodeSlots st target cn)
@@ -341,6 +343,10 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
       subst h
       exact releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp
         st (SeLe4n.SchedContextId.ofObjId target) sc hInv hCons
+  | frame _ | pageTable _ | untyped _ | vspaceRoot _ =>
+    -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
+    -- an untyped one — so there is no `.ok` post-state.
+    subst hC; simp at h
   | _ =>
     subst hC
     simp only at h
@@ -584,7 +590,9 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
     simp only at h
     split at h
     · exact absurd h (by simp)
-    · injection h with h
+    · split at h
+      · exact absurd h (by simp)
+      injection h with h
       subst h
       exact schedContextBindingConsistent_of_objects_eq
         (detachCNodeSlots_objects_eq st target cn) hCons
@@ -597,6 +605,10 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
   | schedContext sc =>
     -- Excluded: the binding release refutes the invariant (above).
     exact absurd hC (hNotSc sc)
+  | frame _ | pageTable _ | untyped _ | vspaceRoot _ =>
+    -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
+    -- an untyped one — so there is no `.ok` post-state.
+    subst hC; simp at h
   | _ =>
     subst hC
     simp only at h
@@ -774,7 +786,9 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
     subst hC; simp only at h
     split at h
     · exact absurd h (by simp)
-    · injection h with h; subst h
+    · split at h
+      · exact absurd h (by simp)
+      injection h with h; subst h
       rw [detachCNodeSlots_objects_eq]; exact hInv
   | reply r =>
     subst hC; simp only at h
@@ -787,6 +801,10 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
     · exact absurd h (by simp)
     · injection h with h; subst h
       exact releaseSchedContextBinding_preserves_objects_invExt _ _ sc hInv
+  | frame _ | pageTable _ | untyped _ | vspaceRoot _ =>
+    -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
+    -- an untyped one — so there is no `.ok` post-state.
+    subst hC; simp at h
   | _ =>
     subst hC; simp only at h; injection h with h; subst h; exact hInv
 
@@ -877,7 +895,9 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
     subst hC; simp only at h
     split at h
     · exact absurd h (by simp)
-    · injection h with h; subst h
+    · split at h
+      · exact absurd h (by simp)
+      injection h with h; subst h
       exact retypeTargetUnpaired_of_objects_eq
         (detachCNodeSlots_objects_eq st target cn)
         ⟨fun t hT => by rw [hStored] at hT; exact absurd hT (by simp),
@@ -889,6 +909,10 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
     · injection h with h; subst h
       exact ⟨fun t hT => by rw [hStored] at hT; exact absurd hT (by simp),
              fun s0 hS => by rw [hStored] at hS; exact absurd hS (by simp)⟩
+  | frame _ | pageTable _ | untyped _ | vspaceRoot _ =>
+    -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
+    -- an untyped one — so there is no `.ok` post-state.
+    subst hC; simp at h
   | _ =>
     subst hC; simp only at h; injection h with h; subst h
     exact ⟨fun t hT => by rw [hStored] at hT; exact absurd hT (by simp),

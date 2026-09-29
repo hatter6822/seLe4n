@@ -243,6 +243,20 @@ structure RegisterFile where
   pc : RegValue
   sp : RegValue
   gpr : RegName → RegValue
+  /-- **WS-BP BP7.3**: the saved processor state (`SPSR_EL1` at the trap): the
+  condition flags, the exception level and stack selector (`M[3:0]`) and the
+  interrupt masks the thread returns to.  A thread preempted between a compare
+  and its branch resumes with the wrong condition unless this is saved with the
+  rest of its context.  `0` is `EL0t` with every flag clear and every interrupt
+  unmasked — a fresh thread's state. -/
+  pstate : RegValue := ⟨0⟩
+  /-- **The thread pointer `TPIDR_EL0`**, which EL0 writes and reads with no trap.
+  It is thread state, not core state: the core's register holds whatever the last
+  thread to run there wrote, so a switch that does not save and restore it hands
+  that value to the next thread — a 64-bit storage channel between any two
+  threads that share a core, domains included.  seL4 carries it as `TLS_BASE`.
+  `0` is a fresh thread's value. -/
+  tpidr : RegValue := ⟨0⟩
 
 instance : Inhabited RegisterFile where
   default := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun _ => ⟨0⟩ }
@@ -285,7 +299,7 @@ The safety analysis at X5-G (below) confirms this does NOT affect kernel
 correctness: `BEq` is used only in test infrastructure and trace
 validation, never in proof-critical paths. -/
 instance : BEq RegisterFile where
-  beq a b := a.pc == b.pc && a.sp == b.sp &&
+  beq a b := a.pc == b.pc && a.sp == b.sp && a.pstate == b.pstate && a.tpidr == b.tpidr &&
     (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
 
 /-- AG7-D: BEq reflexivity for RegisterFile. Although the BEq instance is not
@@ -300,7 +314,7 @@ of the `pc` / `sp` / 32-GPR-index `RegValue` comparisons.  Lets the partial-
 equivalence lemmas below reduce to component `RegValue` equalities (which *are*
 `LawfulBEq`) without unfolding the inner `==` to raw `decide`. -/
 theorem RegisterFile.beq_def (a b : RegisterFile) :
-    (a == b) = (a.pc == b.pc && a.sp == b.sp &&
+    (a == b) = (a.pc == b.pc && a.sp == b.sp && a.pstate == b.pstate && a.tpidr == b.tpidr &&
       (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩) := rfl
 
 /-- WS-SM SM5.I: `RegisterFile`'s structural `BEq` is **symmetric**.  Although it
@@ -314,10 +328,12 @@ theorem RegisterFile.beq_symm {a b : RegisterFile} (h : (a == b) = true) :
   rw [RegisterFile.beq_def] at h
   rw [RegisterFile.beq_def]
   simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at h ⊢
-  obtain ⟨⟨hpc, hsp⟩, hgpr⟩ := h
-  refine ⟨⟨?_, ?_⟩, ?_⟩
+  obtain ⟨⟨⟨⟨hpc, hsp⟩, hps⟩, htp⟩, hgpr⟩ := h
+  refine ⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩
   · rw [beq_iff_eq] at hpc ⊢; exact hpc.symm
   · rw [beq_iff_eq] at hsp ⊢; exact hsp.symm
+  · rw [beq_iff_eq] at hps ⊢; exact hps.symm
+  · rw [beq_iff_eq] at htp ⊢; exact htp.symm
   · intro i hi; have hgi := hgpr i hi; rw [beq_iff_eq] at hgi ⊢; exact hgi.symm
 
 /-- WS-SM SM5.I: `RegisterFile`'s structural `BEq` is **transitive** (companion to
@@ -328,11 +344,13 @@ theorem RegisterFile.beq_trans {a b c : RegisterFile}
   rw [RegisterFile.beq_def] at hab hbc
   rw [RegisterFile.beq_def]
   simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at hab hbc ⊢
-  obtain ⟨⟨hpcab, hspab⟩, hgprab⟩ := hab
-  obtain ⟨⟨hpcbc, hspbc⟩, hgprbc⟩ := hbc
-  refine ⟨⟨?_, ?_⟩, ?_⟩
+  obtain ⟨⟨⟨⟨hpcab, hspab⟩, hpsab⟩, htpab⟩, hgprab⟩ := hab
+  obtain ⟨⟨⟨⟨hpcbc, hspbc⟩, hpsbc⟩, htpbc⟩, hgprbc⟩ := hbc
+  refine ⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩
   · rw [beq_iff_eq] at hpcab hpcbc ⊢; exact hpcab.trans hpcbc
   · rw [beq_iff_eq] at hspab hspbc ⊢; exact hspab.trans hspbc
+  · rw [beq_iff_eq] at hpsab hpsbc ⊢; exact hpsab.trans hpsbc
+  · rw [beq_iff_eq] at htpab htpbc ⊢; exact htpab.trans htpbc
   · intro i hi
     have h1 := hgprab i hi; have h2 := hgprbc i hi
     rw [beq_iff_eq] at h1 h2 ⊢; exact h1.trans h2
@@ -377,11 +395,13 @@ theorem RegisterFile.not_lawfulBEq : ¬ LawfulBEq RegisterFile := by
 -- execution.
 
 /-- S1-J: Extensionality lemma for `RegisterFile`. Two register files are equal
-    when their `pc`, `sp`, and `gpr` functions agree. -/
+    when their `pc`, `sp`, `gpr` functions, (WS-BP BP7.3) `pstate` and the
+    thread pointer `tpidr` agree. -/
 theorem RegisterFile.ext {a b : RegisterFile}
-    (hpc : a.pc = b.pc) (hsp : a.sp = b.sp) (hgpr : ∀ r, a.gpr r = b.gpr r) :
+    (hpc : a.pc = b.pc) (hsp : a.sp = b.sp) (hgpr : ∀ r, a.gpr r = b.gpr r)
+    (hps : a.pstate = b.pstate) (htp : a.tpidr = b.tpidr) :
     a = b := by
-  cases a; cases b; simp at *; exact ⟨hpc, hsp, funext hgpr⟩
+  cases a; cases b; simp at *; exact ⟨hpc, hsp, funext hgpr, hps, htp⟩
 
 -- ============================================================================
 -- AG3-G (H3-ARCH-06): System Register Model
@@ -418,6 +438,58 @@ structure SystemRegisterFile where
 
 instance : Inhabited SystemRegisterFile where
   default := {}
+
+/-- **WS-BP BP7.9: a thread's FP/SIMD context** — `v0`–`v31`, `FPCR`, `FPSR`.
+
+Each 128-bit vector register is two doublewords, low first, so `q` holds
+`2 * 32` words: `q[2 * n]` is `v`n`'s bits [63:0] and `q[2 * n + 1]` its bits
+[127:64].  That is the order the HAL's save and load routines store and load
+them (`fp_context.S`, one `stp qN, qN+1` per pair), and `fpContextWordCount`
+words in all cross the FFI: the 64, then `FPCR`, then `FPSR`.
+
+A fresh thread's context is all zeroes (`default`), which is what the lazy switch
+loads the first time the thread uses FP/SIMD: the load overwrites every register
+it names, so nothing a previous occupant of the core's registers left behind is
+visible to it. -/
+structure FpContext where
+  q : _root_.Vector UInt64 64
+  fpcr : UInt64 := 0
+  fpsr : UInt64 := 0
+  deriving DecidableEq, Repr
+
+instance : Inhabited FpContext where
+  default := { q := _root_.Vector.replicate 64 0 }
+
+/-- **WS-BP BP7.9**: the words an `FpContext` occupies on the wire. -/
+def fpContextWordCount : Nat := 66
+
+/-- **WS-BP BP7.9**: word `i` of a context, in the wire layout — the 64 vector
+doublewords, `FPCR`, `FPSR`, and `0` past them. -/
+def FpContext.word (ctx : FpContext) (i : Nat) : UInt64 :=
+  if h : i < 64 then ctx.q.get ⟨i, h⟩
+  else if i = 64 then ctx.fpcr
+  else if i = 65 then ctx.fpsr
+  else 0
+
+/-- **WS-BP BP7.9**: the context the wire words describe — the inverse of
+`FpContext.word` on its 66 words. -/
+def FpContext.ofWords (w : Nat → UInt64) : FpContext :=
+  { q := _root_.Vector.ofFn fun i => w i.val, fpcr := w 64, fpsr := w 65 }
+
+/-- **WS-BP BP7.9**: reading a context back off its own words is the identity,
+so the save → wire → TCB and TCB → wire → load paths lose nothing. -/
+theorem FpContext.ofWords_word (ctx : FpContext) : FpContext.ofWords ctx.word = ctx := by
+  cases ctx with
+  | mk q fpcr fpsr =>
+    have hq : (_root_.Vector.ofFn fun i : Fin 64 =>
+        FpContext.word { q := q, fpcr := fpcr, fpsr := fpsr } i.val) = q := by
+      apply _root_.Vector.ext
+      intro i hi
+      simp only [_root_.Vector.getElem_ofFn, FpContext.word, dif_pos hi]
+      rfl
+    show FpContext.mk _ _ _ = FpContext.mk q fpcr fpsr
+    rw [hq]
+    rfl
 
 /-- Top-level abstract machine state manipulated by kernel transitions.
     AG3-B (P-04): All `MachineConfig` fields are now carried in machine state
@@ -517,6 +589,34 @@ structure MachineState where
       a circular import between `Machine.lean` and
       `Architecture/BarrierComposition.lean`. -/
   lastTlbBarrierKind : Nat := 0x05
+  /-- **WS-BP BP7.9: whose FP/SIMD state each core's registers hold.**
+      `some t` on core `c` means `c`'s `v0`–`v31`, `FPCR` and `FPSR` are
+      thread `t`'s *live* values and `t`'s `TCB.fpContext` may be stale;
+      `none` means the registers belong to nobody the model tracks, and a
+      thread's context lives only in its TCB.  The lazy switch sets it when a
+      thread first uses FP/SIMD on the core (`Architecture.fpAccessOnCore`) and
+      clears it, saving the live values into the owner's TCB, at the first
+      entry whose committed state no longer runs the owner there
+      (`Architecture.fpReleaseOnCore`).  The trap is lifted exactly while the
+      core resumes its owner (`RestoreTarget.user`'s `fpLive`). -/
+  fpOwner : _root_.Vector (Option ThreadId) numCores :=
+    _root_.Vector.replicate numCores none
+  /-- **PR #904 review (`v0.36.41`): the thread whose EL0 context each core's
+      registers hold** — the thread the core's last context restore resumed, or
+      `none` for a core resuming its idle loop or nothing.  Written by
+      `Concurrency.settleResidencyOnCore` at the end of every state-committing
+      entry, and read by the trap-frame save.
+
+      It is **not** the scheduler's `current` slot, and the difference is the
+      point.  A remote deschedule clears core `c`'s `current` slot while `c`'s
+      hardware still runs the thread at EL0; until `c` takes an exception, the
+      thread's live registers are on `c` and nowhere in the model.  So the save
+      reads this record where the slot is empty (the frame belongs to the
+      resident thread, not to nobody), and a thread resident on one core is not
+      resumed on another until the first has saved it
+      (`Architecture.residentElsewhere`). -/
+  resident : _root_.Vector (Option ThreadId) numCores :=
+    _root_.Vector.replicate numCores none
 
 instance : Inhabited MachineState where
   default := { coreRegs := _root_.Vector.replicate numCores default, memory := (fun _ => 0), timer := 0 }
@@ -533,6 +633,100 @@ instance : Inhabited MachineState where
 @[inline] def MachineState.setRegsOnCore (ms : MachineState) (c : CoreId)
     (v : RegisterFile) : MachineState :=
   { ms with coreRegs := ms.coreRegs.set c.val v c.isLt }
+
+/-- **WS-BP BP7.9**: the thread whose FP/SIMD state core `c`'s registers hold. -/
+@[inline] def MachineState.fpOwnerOnCore (ms : MachineState) (c : CoreId) : Option ThreadId :=
+  ms.fpOwner.get c
+
+/-- **WS-BP BP7.9**: record `t?` as the owner of core `c`'s FP/SIMD registers. -/
+@[inline] def MachineState.setFpOwnerOnCore (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : MachineState :=
+  { ms with fpOwner := ms.fpOwner.set c.val t? c.isLt }
+
+@[simp] theorem MachineState.fpOwnerOnCore_setFpOwnerOnCore_self (ms : MachineState)
+    (c : CoreId) (t? : Option ThreadId) : (ms.setFpOwnerOnCore c t?).fpOwnerOnCore c = t? := by
+  simp only [MachineState.fpOwnerOnCore, MachineState.setFpOwnerOnCore]
+  exact SeLe4n.PerCoreVector.get_set_eq ms.fpOwner c t?
+
+@[simp] theorem MachineState.fpOwnerOnCore_setFpOwnerOnCore_ne (ms : MachineState)
+    (c c' : CoreId) (t? : Option ThreadId) (h : c ≠ c') :
+    (ms.setFpOwnerOnCore c t?).fpOwnerOnCore c' = ms.fpOwnerOnCore c' := by
+  simp only [MachineState.fpOwnerOnCore, MachineState.setFpOwnerOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne ms.fpOwner c c' t? h
+
+/-- **PR #904 review (`v0.36.41`)**: the thread whose EL0 context core `c`'s
+registers hold. -/
+@[inline] def MachineState.residentOnCore (ms : MachineState) (c : CoreId) : Option ThreadId :=
+  ms.resident.get c
+
+/-- **PR #904 review (`v0.36.41`)**: record `t?` as core `c`'s resident thread. -/
+@[inline] def MachineState.setResidentOnCore (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : MachineState :=
+  { ms with resident := ms.resident.set c.val t? c.isLt }
+
+@[simp] theorem MachineState.residentOnCore_setResidentOnCore_self (ms : MachineState)
+    (c : CoreId) (t? : Option ThreadId) :
+    (ms.setResidentOnCore c t?).residentOnCore c = t? := by
+  simp only [MachineState.residentOnCore, MachineState.setResidentOnCore]
+  exact SeLe4n.PerCoreVector.get_set_eq ms.resident c t?
+
+@[simp] theorem MachineState.residentOnCore_setResidentOnCore_ne (ms : MachineState)
+    (c c' : CoreId) (t? : Option ThreadId) (h : c ≠ c') :
+    (ms.setResidentOnCore c t?).residentOnCore c' = ms.residentOnCore c' := by
+  simp only [MachineState.residentOnCore, MachineState.setResidentOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne ms.resident c c' t? h
+
+/-- A residency write touches nothing but the residency table. -/
+@[simp] theorem MachineState.setResidentOnCore_coreRegs (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : (ms.setResidentOnCore c t?).coreRegs = ms.coreRegs := rfl
+
+@[simp] theorem MachineState.setResidentOnCore_memory (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : (ms.setResidentOnCore c t?).memory = ms.memory := rfl
+
+@[simp] theorem MachineState.setResidentOnCore_fpOwner (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : (ms.setResidentOnCore c t?).fpOwner = ms.fpOwner := rfl
+
+/-- **WS-BP BP7.9**: some core's registers hold `tid`'s live FP/SIMD values. -/
+def MachineState.fpOwnedOnSomeCore (ms : MachineState) (tid : ThreadId) : Bool :=
+  SeLe4n.Kernel.Concurrency.allCores.any fun c => ms.fpOwnerOnCore c == some tid
+
+/-- **WS-BP BP7.9**: the owner test is exactly "some core records `tid`". -/
+theorem MachineState.fpOwnedOnSomeCore_eq_false_iff (ms : MachineState) (tid : ThreadId) :
+    ms.fpOwnedOnSomeCore tid = false ↔ ∀ c, ms.fpOwnerOnCore c ≠ some tid := by
+  unfold MachineState.fpOwnedOnSomeCore
+  constructor
+  · intro h c hc
+    have := List.any_eq_false.mp h c (SeLe4n.Kernel.Concurrency.mem_allCores c)
+    simp [hc] at this
+  · intro h
+    exact List.any_eq_false.mpr fun c _ => by simp [h c]
+
+/-- **PR #904 review (`v0.36.41`)**: some core's registers still hold `tid`'s EL0
+context — the core resumed it and has not yet saved it back.  The residency
+sibling of `fpOwnedOnSomeCore`, and refused by the destroy path for the same
+reason: that core's next entry saves those registers into the TCB stored under
+`tid`, so a thread retyped under the id would receive them. -/
+def MachineState.residentOnSomeCore (ms : MachineState) (tid : ThreadId) : Bool :=
+  SeLe4n.Kernel.Concurrency.allCores.any fun c => ms.residentOnCore c == some tid
+
+/-- **PR #904 review (`v0.36.41`)**: the residency test is exactly "some core
+records `tid` as resident". -/
+theorem MachineState.residentOnSomeCore_eq_false_iff (ms : MachineState) (tid : ThreadId) :
+    ms.residentOnSomeCore tid = false ↔ ∀ c, ms.residentOnCore c ≠ some tid := by
+  unfold MachineState.residentOnSomeCore
+  constructor
+  · intro h c hc
+    have := List.any_eq_false.mp h c (SeLe4n.Kernel.Concurrency.mem_allCores c)
+    simp [hc] at this
+  · intro h
+    exact List.any_eq_false.mpr fun c _ => by simp [h c]
+
+/-- **WS-BP BP7.9**: an owner write touches nothing but the owner table. -/
+@[simp] theorem MachineState.setFpOwnerOnCore_coreRegs (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : (ms.setFpOwnerOnCore c t?).coreRegs = ms.coreRegs := rfl
+
+@[simp] theorem MachineState.setFpOwnerOnCore_memory (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : (ms.setFpOwnerOnCore c t?).memory = ms.memory := rfl
 
 /-- WS-SM SM5.I: the executing-core / single-core register view — the **boot
 core's** bank.  This is the back-compatible accessor every pre-SM5 single-core
@@ -1051,6 +1245,17 @@ structure MachineConfig where
       with no image (the simulation bindings, the trace harness) reserves
       nothing. -/
   kernelReserved : List MemoryRegion := []
+  /-- **WS-BP BP7.1**: the pages the boot takes each configured address space's
+      top-level translation table from.  A thread's root needs a page of RAM for
+      a table walk to start at (`VSpaceRoot.tableBase`); a root carved from an
+      untyped is carved *on* one, and a root the boot configures has no untyped
+      to be carved from, so the binding reserves a pool inside the kernel's
+      reserved extent and the boot requires every configured root to take a
+      distinct page of it (`Platform.Boot.bootRootTablesPlaced`).  On the RPi5
+      it is `link.ld`'s `.boot_table_pool`, which the HAL zeroes before the
+      Lean kernel is entered.  The default is empty: a configuration that
+      configures no address space needs none. -/
+  bootTablePool : List SeLe4n.PAddr := []
   deriving Repr
 
 /-- AH2-E: Default machine configuration for use as a `PlatformConfig` default.
@@ -1110,6 +1315,85 @@ def wellFormed (cfg : MachineConfig) : Bool :=
   && cfg.virtualAddressWidth > 0
   && cfg.physicalAddressWidth > 0
   && cfg.memoryMap.all (·.endAddr ≤ 2 ^ cfg.physicalAddressWidth)
+
+/-- **WS-BP BP7.10**: `r'` is a non-empty sub-range of `r`. -/
+def regionNonEmptyWithin (r' r : MemoryRegion) : Prop :=
+  0 < r'.size ∧ r.base.toNat ≤ r'.base.toNat ∧ r'.endAddr ≤ r.endAddr
+
+/-- **WS-BP BP7.10**: `rs'` is `rs` with each region replaced, position by
+position, by a non-empty sub-range of itself. -/
+def regionsNonEmptyWithin : List MemoryRegion → List MemoryRegion → Prop
+  | [], [] => True
+  | r' :: rs', r :: rs => regionNonEmptyWithin r' r ∧ regionsNonEmptyWithin rs' rs
+  | _, _ => False
+
+/-- Shrinking two regions cannot make them overlap. -/
+private theorem not_overlaps_of_within {r r' x x' : MemoryRegion}
+    (hr : regionNonEmptyWithin r' r) (hx : regionNonEmptyWithin x' x)
+    (h : (!r.overlaps x) = true) : (!r'.overlaps x') = true := by
+  unfold regionNonEmptyWithin MemoryRegion.endAddr at hr hx
+  simp only [MemoryRegion.overlaps, MemoryRegion.endAddr, Bool.not_eq_true',
+    Bool.and_eq_false_iff, decide_eq_false_iff_not, Nat.not_lt] at h ⊢
+  omega
+
+private theorem all_not_overlaps_of_within {r r' : MemoryRegion} (hr : regionNonEmptyWithin r' r) :
+    ∀ (rs' rs : List MemoryRegion), regionsNonEmptyWithin rs' rs →
+      rs.all (fun x => !r.overlaps x) = true → rs'.all (fun x => !r'.overlaps x) = true
+  | [], [], _, _ => rfl
+  | x' :: rs', x :: rs, hw, h => by
+    simp only [regionsNonEmptyWithin] at hw
+    simp only [List.all_cons, Bool.and_eq_true] at h ⊢
+    exact ⟨not_overlaps_of_within hr hw.1 h.1, all_not_overlaps_of_within hr rs' rs hw.2 h.2⟩
+  | [], _ :: _, hw, _ => hw.elim
+  | _ :: _, [], hw, _ => hw.elim
+
+private theorem noOverlapAux_of_within :
+    ∀ (rs' rs : List MemoryRegion), regionsNonEmptyWithin rs' rs →
+      noOverlapAux rs = true → noOverlapAux rs' = true
+  | [], [], _, _ => rfl
+  | x' :: rs', x :: rs, hw, h => by
+    simp only [regionsNonEmptyWithin] at hw
+    simp only [noOverlapAux, Bool.and_eq_true] at h ⊢
+    exact ⟨all_not_overlaps_of_within hw.1 rs' rs hw.2 h.1, noOverlapAux_of_within rs' rs hw.2 h.2⟩
+  | [], _ :: _, hw, _ => hw.elim
+  | _ :: _, [], hw, _ => hw.elim
+
+/-- Every region of `rs'` lies inside its partner in `rs`. -/
+private theorem exists_within_of_mem :
+    ∀ (rs' rs : List MemoryRegion), regionsNonEmptyWithin rs' rs →
+      ∀ r' ∈ rs', ∃ r ∈ rs, regionNonEmptyWithin r' r
+  | [], [], _, _, h => nomatch h
+  | x' :: rs', x :: rs, hw, r', hr' => by
+    simp only [regionsNonEmptyWithin] at hw
+    rcases List.mem_cons.mp hr' with rfl | hIn
+    · exact ⟨x, List.mem_cons_self .., hw.1⟩
+    · obtain ⟨r, hr, h⟩ := exists_within_of_mem rs' rs hw.2 r' hIn
+      exact ⟨r, List.mem_cons_of_mem _ hr, h⟩
+  | [], _ :: _, hw, _, _ => hw.elim
+  | _ :: _, [], hw, _, _ => hw.elim
+
+/-- **WS-BP BP7.10**: a well-formed configuration stays well-formed when each
+of its regions is replaced by a non-empty sub-range of itself — positive sizes,
+no overlap and the address-width bound are all inherited from the wider
+regions.  What lets a platform whose declared RAM is cut short by a board's
+own account (the RPi5's first gigabyte, `rpi5MachineConfigForVariant`) reuse
+the well-formedness it decides once on the uncut map. -/
+theorem wellFormed_of_within (cfg : MachineConfig) (map' : List MemoryRegion)
+    (hWithin : regionsNonEmptyWithin map' cfg.memoryMap)
+    (hWf : cfg.wellFormed = true) : ({ cfg with memoryMap := map' }).wellFormed = true := by
+  unfold wellFormed at hWf ⊢
+  simp only [Bool.and_eq_true] at hWf ⊢
+  obtain ⟨⟨⟨⟨⟨⟨_, hNo⟩, hPow⟩, hReg⟩, hVa⟩, hPa⟩, hEnd⟩ := hWf
+  refine ⟨⟨⟨⟨⟨⟨?_, noOverlapAux_of_within _ _ hWithin hNo⟩, hPow⟩, hReg⟩, hVa⟩, hPa⟩, ?_⟩
+  · rw [List.all_eq_true]
+    intro r' hr'
+    obtain ⟨r, _, hw⟩ := exists_within_of_mem _ _ hWithin r' hr'
+    exact decide_eq_true hw.1
+  · rw [List.all_eq_true] at hEnd ⊢
+    intro r' hr'
+    obtain ⟨r, hr, hw⟩ := exists_within_of_mem _ _ hWithin r' hr'
+    have := of_decide_eq_true (hEnd r hr)
+    exact decide_eq_true (Nat.le_trans hw.2.2 this)
 
 end MachineConfig
 

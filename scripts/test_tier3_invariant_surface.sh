@@ -3831,15 +3831,41 @@ run_negative_check "INVARIANT" rg -n '\b(UNDESCRIBED_RAM_TOP|BOOT_TABLE_COVERAGE
 run_negative_check "INVARIANT" rg -U -n '^pub fn init_mmu\(dtb_ptr: u64\) \{[^\n]*(\n([ \t][^\n]*)?)*crate::cmdline::' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n -U '^pub fn init_mmu\(dtb_ptr: u64\) \{\n    let layout = image_layout\(\);\n    if !layout\.is_well_formed\(\) \{\n(([ \t][^\n]*)?\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    if !dtb_window_admissible\(dtb_window\(dtb_ptr\), kernel_extent\(\)\) \{\n(([ \t][^\n]*)?\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(&layout\);' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n '^pub const GUARANTEED_RAM_TOP: u64 = 0x4000_0000;$' rust/sele4n-hal/src/mmu.rs
-# The cacheable window is the guaranteed interval unioned with the RAM BP4.6
-# records: `ram_range_covered` starts from guaranteed RAM whatever the record.
-run_check "INVARIANT" rg -n -U '^pub const fn ram_range_covered\(base: u64, size: u64, extensions: &\[\(u64, u64\)\]\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?        if cursor < GUARANTEED_RAM_TOP \{\n            next = Some\(GUARANTEED_RAM_TOP\);' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP7.10: the constant Normal window is the kernel's reserved extent —
+# `boot_mapping_for` maps Normal in `[IMAGE_ORIGIN, KERNEL_RESERVED_END)`
+# (from the image origin since v0.36.36) and nowhere else —
+# and the cacheable window is that interval unioned with the RAM BP4.6 records.
+# NEGATIVE: the retired first-gigabyte constant, which described the top of the
+# gigabyte the firmware keeps for itself as the kernel's own writable RAM.
+run_check "INVARIANT" rg -n -U '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{\n    if in_kernel_memory_window\(addr\) \{' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n '\bGUARANTEED_RAM_TOP\b' rust/sele4n-hal/src/
+run_check "INVARIANT" rg -n -U '^pub const fn ram_range_covered\(base: u64, size: u64, extensions: &\[\(u64, u64\)\]\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?        if in_kernel_memory_window\(cursor\) \{\n            next = Some\(KERNEL_RESERVED_END\);' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP7.10: the first gigabyte is extended in 2 MiB blocks through its own
+# level-2 table, one answer for both passes of `extend_boot_tables`, and an
+# extension reaching back into the kernel's extent is refused.
+run_check "INVARIANT" rg -n -U '^fn level2_table\(tables: &mut BootPageTables, g: usize\) -> Option<&mut \[u64; TABLE_ENTRIES\]> \{\n    if g == RAM_GIB \{\n        Some\(&mut tables\.l2_ram\)\n    \} else if g == DEVICE_GIB \{\n        Some\(&mut tables\.l2_device\)' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^    if base < KERNEL_RESERVED_END \{\n        return Err\(RamExtensionRefusal::InsideKernelReserved\);' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n '\bBelowGuaranteedRam\b' rust/sele4n-hal/src/
 # The device tree's window is the readers' own bound, taken from the pointer,
-# and admitted only inside the kernel's reserved extent (WS-BP BP3.2) and
-# outside the image.
+# and admitted only inside the kernel's reserved extent (WS-BP BP3.2), below
+# the boot table-page pool (`v0.36.35`), and outside the image.
 run_check "INVARIANT" rg -n -U '^pub const fn dtb_window\(dtb_ptr: u64\) -> \(u64, u64\) \{\n    if dtb_ptr == 0 \{\n        \(0, 0\)\n    \} else \{\n        \(dtb_ptr, crate::cmdline::MAX_DTB_SIZE as u64\)' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n 'Some\(end\) if end <= KERNEL_RESERVED_END => dtb_disjoint_from_image\(window, &\[kernel\]\),' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'Some\(end\) if in_kernel_memory_window\(base\) && end <= BOOT_TABLE_POOL_BASE => \{\n            dtb_disjoint_from_image\(window, &\[kernel\]\)' rust/sele4n-hal/src/mmu.rs
+# v0.36.36: the boot map describes nothing below the image origin (on a
+# Raspberry Pi 5 the secure monitor's `no-map` [0, 0x80000)); the boot map, the
+# cacheable window and the device tree's window ask one predicate, and the
+# origin is a boundary forcing page granularity on its block.  The Lean model
+# declares RAM from the same origin on both boards, and measures the first
+# gigabyte's RAM from it rather than from 0, which no real board's parsed
+# account reaches.
+run_check "INVARIANT" rg -n '^pub const IMAGE_ORIGIN: u64 = KERNEL_RESERVED_BASE \+ 0x8_0000;' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{\n    if in_kernel_memory_window\(addr\) \{' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'if in_kernel_memory_window\(cursor\) \{\n            next = Some\(KERNEL_RESERVED_END\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'const fn boundaries\(&self\) -> \[u64; IMAGE_BOUNDARY_COUNT\] \{\n        let g = &self\.stack_guards;\n        \[\n            IMAGE_ORIGIN,\n            self\.text_start,' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^def rpi5MemoryMapForConfig \(config : BCM2712Config\) : List SeLe4n\.MemoryRegion :=\n  \[ \{ base := SeLe4n\.PAddr\.ofNat rpi5RamOrigin$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n 'let reach := min \(SeLe4n\.Platform\.Boot\.ramReachFrom board rpi5RamOrigin\) rpi5FirstGigabyteTop' SeLe4n/Platform/RPi5/Board.lean
+run_negative_check "INVARIANT" rg -n '^def ramPrefixTop\b' SeLe4n
+run_check "INVARIANT" rg -n '^def qemuVirtRamOrigin : Nat := qemuVirtRamBase \+ 0x8_0000$' SeLe4n/Platform/QemuVirt/Board.lean
 # NEGATIVE: the BP2.6 bound, under which a blob could lie in RAM a boot untyped
 # describes and a user retype would then overwrite.
 run_negative_check "INVARIANT" rg -n 'Some\(end\) if end <= GUARANTEED_RAM_TOP => dtb_disjoint_from_image' rust/sele4n-hal/src/mmu.rs
@@ -3874,15 +3900,26 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # BP3.2 — the kernel's reserved extent, stated in three places and held equal.
 run_check "INVARIANT" rg -n '^def rpi5KernelReservedEnd : Nat := 0x1000_0000$' SeLe4n/Platform/RPi5/Board.lean
-run_check "INVARIANT" rg -n '^pub const KERNEL_RESERVED_END: u64 = 0x1000_0000;$' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP8.1: the value lives in the board map (`board.rs`'s `RPI5`), and the
+# boot path's constant reads the board the image is built for.
+run_check "INVARIANT" rg -n '^pub const KERNEL_RESERVED_END: u64 = crate::board::BOARD\.kernel_reserved_end;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const RPI5: BoardMap = BoardMap \{[^\n]*(\n([ \t][^\n]*)?)*?\n    ram_base: 0x0,\n    kernel_reserved_end: 0x1000_0000,$' rust/sele4n-hal/src/board.rs
 run_prose_check "INVARIANT" rg -n '^KERNEL_RESERVED_END = 0x10000000;$' rust/sele4n-hal/link.ld
 run_prose_check "INVARIANT" rg -n -F 'ASSERT(__lean_heap_end <= KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
-run_prose_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END % 4096 == 0 && KERNEL_RESERVED_END <= 0x40000000,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END % 0x200000 == 0,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(RAM_BASE % 0x40000000 == 0 && KERNEL_RESERVED_END > RAM_BASE && KERNEL_RESERVED_END - RAM_BASE <= 0x40000000,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(ORIGIN(RAM) == RAM_BASE + 0x80000,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n '^RAM_BASE = 0x0;$' rust/sele4n-hal/link.ld
+run_prose_negative_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END <= 0x40000000,' rust/sele4n-hal/link.ld
+# WS-BP BP7.10: the linker's RAM region IS the kernel's reserved extent.
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(ORIGIN(RAM) + LENGTH(RAM) == KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n '^    RAM \(rwx\) : ORIGIN = 0x80000, LENGTH = 0xFF80000$' rust/sele4n-hal/link.ld
+run_prose_negative_check "INVARIANT" rg -n -F "smallest RPi5's 1 GiB" rust/sele4n-hal/link.ld
 run_check "INVARIANT" rg -n 'fn the_kernel_reserved_extent_is_the_lean_and_linker_one\(\)' rust/sele4n-hal/src/mmu.rs
 # BP3.3/BP3.4 — the deployment config boots, installs both separation
 # witnesses, and is what the hardware entry boots.
@@ -3891,7 +3928,7 @@ run_check "INVARIANT" rg -n '^theorem rpi5BoundPlatformConfigAt_checked($|[ ({:\
 run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_witnessesInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^    ∀ v ∈ rpi5Variants, \(rpi5BoundPlatformConfigAt v\)\.wellFormed = true := by$' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -n '^  have hv := rpi5VariantFor_mem board$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^  have hv := rpi5VariantFor_admissible board$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5PlatformConfigFromDtb_deployment_ok($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # NEGATIVE: the single-board deployment BP4.4 retired — it proved the boot on
@@ -3906,11 +3943,11 @@ run_check "INVARIANT" rg -n '^def bootObjectShape($|[ ({:\[\]])' SeLe4n/Platform
 run_check "INVARIANT" rg -n '^def bootQuiescentFields($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  refine proofLayerInvariantBundle_of_bootShape \(bootFromPlatform config\) \?_$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^    refine proofLayerInvariantBundle_of_bootShape \(cores\.foldl enqueueIdleThread base\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hAsid hUntyped hSched hCur \?_ \?_$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_checked($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_asidTableConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_invariantBridge($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -n '^  bootToRuntime_invariantBridge_checked _ PlatformBinding\.declaredCores_nodup _ _$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^  bootToRuntime_invariantBridge_started _ PlatformBinding\.declaredCores_nodup _ _$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem PlatformBinding\.declaredCores_nodup($|[ ({:\[\]])' SeLe4n/Platform/Contract.lean
 run_check "INVARIANT" rg -n '^theorem RHTable\.fold_and_true_of_get\?($|[ ({:\[\]])' SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
 run_check "INVARIANT" rg -n '^theorem bootSafeVSpaceRoot_mappingsSafe($|[ ({:\[\]])' SeLe4n/Platform/RPi5/VSpaceBoot.lean
@@ -3927,9 +3964,440 @@ run_negative_check "INVARIANT" rg -n 'bootSafeObjectCheck_sound_structural' SeLe
 run_check "INVARIANT" rg -n '^    ut\.watermark == 0 && ut\.children\.isEmpty && ut\.parent\.isNone$' SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n -U 'def bootSafeUntypedCheck[^\n]*(\n([ \t][^\n]*)?)*=> true' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U 'def bootSafeObject \(obj : KernelObject\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*  \(∀ ut, obj = \.untyped ut →\n    ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\)' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U 'theorem bootSafeObjectCheck_sound \(obj : KernelObject\)[^\n]*(\n([ \t][^\n]*)?)*    \(∀ ut, obj = \.untyped ut →\n      ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\) := by' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'theorem bootSafeObjectCheck_sound \(obj : KernelObject\)[^\n]*(\n([ \t][^\n]*)?)*    \(∀ ut, obj = \.untyped ut →\n      ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\) ∧\n    \(∀ f, obj ≠ \.frame f\) ∧ \(∀ p, obj ≠ \.pageTable p\) := by' SeLe4n/Platform/Boot.lean
+# WS-BP BP7.1: a boot configuration may not carry a frame — a frame is memory
+# authority, and no boot check places one.  The check refuses it, the Prop
+# states it, and the soundness bridge concludes it; the negative refuses the
+# arm admitting one.
+run_check "INVARIANT" rg -n '^  \| \.frame _ => false$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  \(∀ f, obj ≠ \.frame f\) ∧$' SeLe4n/Platform/Boot.lean
+run_negative_check "INVARIANT" rg -n -U 'def bootSafeObjectCheck[^\n]*(\n([ \t][^\n]*)?)*\| \.frame _ => true' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  bootUntypedMustBePristine$' tests/
+# WS-BP BP7.1 slice 1: memory is authority.  `.vspaceMap`'s MR2 is a frame
+# capability resolved with `.read` through the caller's own CSpace, and the arm
+# maps through the one named definition; the retired raw-address decode and the
+# page-lock refutation must not come back as code.
+run_check "INVARIANT" rg -n '^def resolveVSpaceMapFrame \(callerTid' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?)*        capAddr       := args\.frame\n        capDepth      := rootCn\.depth\n        requiredRight := \.read' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?)*          match st\.getFrame\? frameObjId with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  if perms\.write && !frameCap\.hasRight \.write then \.error \.illegalAuthority$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^  else if perms\.cacheable == frame\.isDevice \|\| \(frame\.isDevice && perms\.execute\) then\n    \.error \.policyDenied$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*\(determineExecutingCore st tid\) args\.asid args\.vaddr frame\.base perms st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^              vspaceMapFromFrameCap tid args st$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_requires_frame_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_maps_frame_base($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n 'decodeVSpaceMapArgsChecked' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'lockKind_ne_page' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'args\.paddr|paddr := PAddr\.ofNat r2' SeLe4n/Kernel
+# Nothing but an untyped mints memory authority: an in-place retype refuses a
+# memory-backed replacement, and the pre-retype cleanup refuses a frame.
+run_check "INVARIANT" rg -n '^    newObj\.objectType\.memoryBacked = false$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n -U 'def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*  \| \.frame _ =>(\n([ \t][^\n]*)?)*\n    \.error \.revocationRequired\n  \| _ => \.ok st' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n -U 'def memoryBacked : KernelObjectType → Bool[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true(\n([ \t][^\n]*)?)*  \| \.frame => true' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode holding a reply capability' tests/TwoPhaseArchSuite.lean
+# WS-BP BP7.1 slice 2: memory reaches a thread only by a carve.  The live
+# `.untypedRetype` arm runs `untypedRetypeFromCap`; the carve is
+# `retypeFromUntyped` at the untyped's own next page (never a register value),
+# a RAM page is zeroed before the capability exists, the new capability is a
+# CDT child of the untyped's, only `.frame` is carved, and a device untyped
+# backs exactly the memory-backed kinds.
+run_check "INVARIANT" rg -n '^    \| \.object _ => untypedRetypeFromCap tid decoded$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*      match carveRequestOf\? st args\.newType args\.sizeBits with' SeLe4n/Kernel/API.lean
+# WS-BP BP7.1 slice 4b (v0.36.10): a VSpace root is carved, one page, under an
+# ASID the arm picks (never 0) and the carve itself checks is free before
+# anything is written; its table base is the page it owns.
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot =>\n      if sizeBits = 0 then\n        match freshAsid\? st with' SeLe4n/Kernel/API.lean
+# PR #904 (v0.36.41): the free-ASID scan walks the table without materialising
+# the ASID space — a fuel-bounded recursion from 1, never a `List.range`.
+run_check "INVARIANT" rg -n -U '^def freshAsid\? \(st : SystemState\) : Option SeLe4n\.ASID :=\n  freshAsidFrom st st\.machine\.maxASID 1$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U '^def freshAsidFrom[^\n]*(\n([ \t][^\n]*)?)*        if \(st\.asidTable\[SeLe4n\.ASID\.ofNat n\]\?\)\.isNone then some \(SeLe4n\.ASID\.ofNat n\)\n        else freshAsidFrom st fuel \(n \+ 1\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_negative_check "INVARIANT" rg -n 'List\.range st\.machine\.maxASID' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def CarveRequest\.admissible[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot asid =>\n      asid\.toNat != 0 && decide \(asid\.toNat < st\.machine\.maxASID\) &&\n        \(st\.asidTable\[asid\]\?\)\.isNone' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject \(src[^\n]*(\n([ \t][^\n]*)?)*  fun st =>\n    if !req\.admissible st then \.error \.illegalState else' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedNextVSpaceRoot[^\n]*\n  \{ asid := asid, mappings := \{\}, tableBase := some \(untypedNextFrame ut\)\.base \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedNextVSpaceRoot_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem freshAsid\?_admissible($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_admissible($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'structure VSpaceRoot where(\n([ \t][^\n]*)?)*  tableBase : Option SeLe4n\.PAddr := none' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n -U 'def freezeVSpaceRoot[^\n]*(\n([ \t][^\n]*)?)*    tableBase := vs\.tableBase' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n 'the first root is registered under the least free ASID \(1\), not 0' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n '^  runCarvedRootChecks$' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n '^pub fn untyped_retype_vspace_root\($' rust/sele4n-sys/src/lifecycle.rs
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.frame => if sizeBits = 0 then \.ok \.frame else \.error \.invalidArgument\n[^\n]*\n  \| \.pageTable => if sizeBits = 0 then \.ok \.pageTable else \.error \.invalidArgument\n  \| \.untyped =>\n      if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| _ => \.error \.invalidArgument' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*          capAddr       := args\.dstCNode\n          capDepth      := rootCn\.depth\n          requiredRight := \.write' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot decoded\.capAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId ut\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match cspaceInsertSlot dst \(req\.capability childId\) \(req\.scrub st1 ut\) with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*stDst\.cdt\.addEdge srcNode dstNode \.retype' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def CarveRequest\.scrub[^\n]*\n  \| \.frame => carveZeroFrame st \(untypedNextFrame ut\)\n  \| \.untyped _ => st' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedNextChild[^\n]*(\n([ \t][^\n]*)?)*    parent := some parentId \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def requiresPageAlignment[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedNextChild_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_untyped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U '    \.error \.revocationRequired\n  \| \.untyped _ =>(\n([ \t][^\n]*)?)*    \.error \.revocationRequired\n  \| _ => \.ok st' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_negative_check "INVARIANT" rg -n '\buntypedRetypeFrame\b|\bretireFrames?\b|\bframeRetireWrite\b|\buntypedChildrenUnreferenced\b|\bcapNamesCarvedChild\b|\buntypedChildrenRetirable\b|\buntypedReset_ok_children_absent\b' SeLe4n tests
+run_check "INVARIANT" rg -n -U 'def untypedNextFrame \(ut : UntypedObject\) : FrameObject :=\n  \{ base := SeLe4n\.PAddr\.ofNat \(ut\.regionBase\.toNat \+ ut\.watermark\)\n    isDevice := ut\.isDevice \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def carveZeroFrame[^\n]*(\n([ \t][^\n]*)?)*  if frame\.isDevice then st\n  else \{ st with\n          machine := SeLe4n\.zeroMemoryRange st\.machine frame\.base SeLe4n\.pageBytes\n([ \t]*\n)*          pendingPhysicalWrites := st\.pendingPhysicalWrites \+\+\n            \[SeLe4n\.Kernel\.Architecture\.PhysicalWrite\.zeroPage frame\.base\] \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^        else if ut\.isDevice && !newObj\.objectType\.deviceBackable then$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# v0.36.9: a VSpace root is memory-backed (the in-place retype refuses to create
+# one, which is what closed the ASID-0 collision), and a device untyped still
+# backs only untypeds and frames — a table must be RAM.
+run_check "INVARIANT" rg -n -U 'def memoryBacked : KernelObjectType → Bool[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot => true' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n -U 'def deviceBackable : KernelObjectType → Bool[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot => false(\n([ \t][^\n]*)?)*  \| \.untyped => true(\n([ \t][^\n]*)?)*  \| \.frame => true' SeLe4n/Model/Object/Structures.lean
+run_negative_check "INVARIANT" rg -n 'ut\.isDevice && !newObj\.objectType\.memoryBacked' SeLe4n
+run_check "INVARIANT" rg -n 'the live .\.lifecycleRetype. into a VSpace root is refused \(illegalState\)' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n '^  runInPlaceVSpaceRootChecks$' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n '^theorem retypeReplacementAdmissible_refuses_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_negative_check "INVARIANT" rg -n 'ut\.isDevice && newObj\.objectType != \.untyped' SeLe4n
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedNextFrame_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_pageAligned($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem of_fresh_inert_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n -U 'case untypedRetype =>(\n([ \t][^\n]*)?)*      exact untypedRetypeObject_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  \| \.untypedRetype   => \.retype$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^  \| \.untypedRetype         => 36$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n '^            Self::UntypedRetype => 4,$' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
+run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childKind childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| _ => pageLock oid' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_negative_check "INVARIANT" rg -n '\bchildIsUntyped\b' SeLe4n
+run_check "INVARIANT" rg -n 'the child untyped and the grandchild frame are both retired' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'RETIRED: the frames-only reset guard refuses this state' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'the carved RAM page is zeroed before any capability to it exists' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'and .\.vspaceMap. maps the CARVED page, writable' tests/VSpaceCapabilityBindingSuite.lean
+# WS-BP BP7.1 slice 3: memory returns to its untyped.  The live
+# `.untypedReset` arm runs `untypedReset`; its refusals are decided over the
+# whole object store (a per-slot "no derivations" test would pass a sibling
+# copy of the untyped capability), every mapping of the region is removed
+# through the `.vspaceUnmap` arm's own transition and the result checked, and
+# the carved frames are ERASED (their ids and store capacity return) through
+# the one primitive that erases, which touches frames only.
+run_check "INVARIANT" rg -n -U '  \| \.untypedReset =>\n    some <\| match cap\.target with\n    \| \.object untypedId => fun st =>\n        untypedResetWithShootdown \(determineExecutingCore st tid\) untypedId st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*      match untypedCarvedSubtree st ut with\n      \| none => \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*        else if !carvedSubtreeRetirable st ids then \.error \.revocationRequired\n        else if !carvedSubtreeFramesInRegion st ut ids then \.error \.illegalState\n        else if !carvedSubtreeUnreferenced st ids then \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def carvedSubtreeWalk[^\n]*(\n([ \t][^\n]*)?)*  \| 0, _ :: _, _ => none' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def carvedSubtreeWalk[^\n]*(\n([ \t][^\n]*)?)*      \| some u => carvedSubtreeWalk st fuel \(u\.children\.map \(·\.objId\) \+\+ rest\) \(id :: acc\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedCarvedSubtree_spec($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_ok_retired_pages_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*          match unmapLivePages executingCore \(untypedResetMappings st ut ids\) st with' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedResetMappings[^\n]*(\n([ \t][^\n]*)?)*  untypedRegionMappings st ut \+\+ carvedRootMappings st ids' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*            else if !carvedRootsEmpty st1 ids then \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*            else if !asidTableNamesNoneOf \(retireCarvedObjects st1 ids\) ids then' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_ok_asids_released($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*            if !untypedRegionUnmapped st1 ut then \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*              storeObject untypedId \(\.untyped ut\.reset\) \(retireCarvedObjects st1 ids\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def unmapLivePages[^\n]*(\n([ \t][^\n]*)?)*      if mappedPageLive st p then\n        match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/Architecture/PageTeardown.lean
+run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*\n  if \(st\.getFrame\? id\)\.isSome \|\| \(st\.getUntyped\? id\)\.isSome \|\|\n      \(st\.getVSpaceRoot\? id\)\.isSome \|\| \(st\.getPageTable\? id\)\.isSome then' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*          \| some root => st\.asidTable\.erase root\.asid' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def objectNamesListed[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb t =>(\n([ \t][^\n]*)?)*      ids\.contains t\.vspaceRoot \|\|\n      match t\.pendingMessage with' SeLe4n/Kernel/Architecture/PageTeardown.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_ok_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_ok_unreferenced($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_ok_subtree_absent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_ok_untyped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem of_inertOrAbsentWrites($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n -U 'case untypedReset =>(\n([ \t][^\n]*)?)*      exact untypedResetWithShootdown_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  \| \.untypedReset    => \.retype$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  \| \.untypedReset          => 37$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^    UntypedReset = 37,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n '^pub fn untyped_reset\(untyped_cap: CPtr\)' rust/sele4n-sys/src/lifecycle.rs
+# WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it made.  The
+# map records it on the capability, and refuses a capability whose mapping is
+# still live; a copy or an IPC transfer carries no record (seL4's `deriveCap`);
+# the live delete and revocation remove every mapping a destroyed capability
+# recorded (seL4's `finaliseCap` -> `unmapPage`), through the `.vspaceUnmap`
+# arm's own transition and a decided post-check; a CNode holding a recording
+# capability is not retyped in place; the boot admits no configured record; and
+# the frozen delete, which has no unmap, refuses what it cannot finalise.
+run_check "INVARIANT" rg -n -U '        else if capabilityMappingLive st frameCap then \.error \.invalidCapability' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*            cspaceRecordFrameMapping frameSlot\n              \{ asid := args\.asid, vaddr := args\.vaddr, epoch := epoch \} st2' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,10}            cspaceDeleteSlotFinalising \(determineExecutingCore st tid\) addr st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,8}            cspaceRevokeCdtFinalising \(determineExecutingCore st tid\) addr st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceDeleteSlot addr st with\n    \| \.error e => \.error e\n    \| \.ok \(\(\), st1\) =>\n      finaliseDestroyedCapabilities executingCore st \(slotMappedPages st addr\) st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceRevokeCdt addr st with\n    \| \.error e => \.error e\n    \| \.ok \(pages, st1\) => finaliseDestroyedCapabilities executingCore st pages st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# One revocation: the materialized fold REPORTS the page each destroyed
+# capability recorded, read from the slot it deletes, and there is no second
+# state-only fold beside it (the collecting duplicate was deleted, not pinned).
+run_check "INVARIANT" rg -n -U 'def revokeCdtFoldBody\n    \(acc : Except KernelError \(List MappedPage × SystemState\)\) \(node : CdtNodeId\) :' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdt \(addr : CSpaceAddr\) : Kernel \(List MappedPage\) :=\n  revokeCdtScaffold \[\] revokeCdtMaterializedTraversal addr' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem revokeCdtFoldBody_records($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_negative_check "INVARIANT" rg -n 'cspaceRevokeCdtCollecting|revokeCdtCollectingFoldBody|revokeCdtCollectingTraversal' SeLe4n tests
+run_check "INVARIANT" rg -n -U 'def finaliseFramePages[^\n]*(\n([ \t][^\n]*)?)*    match unmapLivePages executingCore pages st with(\n([ \t][^\n]*)?)*      if !livePagesCleared st1 pages then \.error \.illegalState' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '            match cspaceInsertSlot dst capNN\.val\.withoutMapping st. with' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '            match cspaceInsertSlot dstAddr cap\.withoutMapping st with' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '    if cnodeHasDerivationParentSlot st target cn then\n      \.error \.revocationRequired(\n[ \t]*(--[^\n]*)?)*\n    else if cn\.holdsFrameMappingRecord \|\| Architecture\.cnodeHoldsInstalledPageTableCap st cn then\n      \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n -U 'def bootSafeCapCheck[^\n]*(\n([ \t][^\n]*)?)*  cap\.mapping\.isNone' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'def frozenCspaceDelete[^\n]*(\n([ \t][^\n]*)?)*      if \(cn\.slots\.lookup slot\)\.any\n          \(fun cap => cap\.mapping\.isSome \|\| frozenCapNamesInstalledPageTable st cap\) then\n        \.error \.revocationRequired' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_ok_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_ok_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_ok_records($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRecordFrameMapping_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cspaceDelete_unmappedRoot_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_vspaceMap_frameCnode_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'RETIRED: the non-finalising delete left the deleted capability.s mapping in place' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'a stale record removes nothing: the other frame.s mapping survives' tests/VSpaceCapabilityBindingSuite.lean
+run_negative_check "INVARIANT" rg -n 'untypedResetUnmap' SeLe4n tests
+run_check "INVARIANT" rg -n '^  \| \.cspaceRevoke \| \.untypedReset => false$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# WS-BP BP7.1 slice 3: the reset arm is in the cross-core inventory, writes no core,
+# and its live-arm claim is backed by a delegation proof rather than a reading.
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_untypedReset_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_untypedReset($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n -U '^theorem untypedReset_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*    observableSlotsConfinedToCores st st. \[\] :=' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem untypedReset_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^  \| \.untypedResetDispatch => \.delegationProof \.untypedReset syscallDelegates_untypedReset$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# v0.36.37: a retired ASID gets an ACKNOWLEDGED `.aside1` round, and a PE
+# servicing one leaves that address space before it acknowledges.  The ledger's
+# broadcast TLBI empties TLBs and leaves every TTBR0_EL1 alone, so the bare
+# reset must not come back as the live arm, and the HAL eviction must precede
+# the local invalidation on both servicing paths.
+run_negative_check "INVARIANT" rg -n 'untypedReset \(determineExecutingCore st tid\) untypedId st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedResetWithShootdown [^\n]*(\n([ \t][^\n]*)?)*      \.ok \(\(\), retypeAsidRoundFold executingCore \(untypedResetShootdownAsids st untypedId\) st1\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedResetRetiredRootAsids[^\n]*(\n([ \t][^\n]*)?)*  ids\.filterMap fun id => \(st\.getVSpaceRoot\? id\)\.map VSpaceRoot\.asid' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetShootdownAsids_mem($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetWithShootdown_ok_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetWithShootdown_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetWithShootdown_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^  \| \.untypedResetDispatch => niName! untypedResetWithShootdown_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^  \| \.untypedReset => "untypedResetWithShootdown"$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n -U '                    Some\(decoded\) => \{(\n([ \t][^\n]*)?)*?                        if let crate::tlb::TlbInvalidation::Aside1 \{ asid \} = decoded \{\n                            evict_retired_translation\(asid\);\n                        \}\n                        crate::tlb::tlbi_local\(decoded\)' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n -U '                if op\.op_tag == ASIDE1_OP_TAG \{\n                    evict_retired_translation\(op\.asid\);\n                \}\n            \}\n        \}\n        _ => evict_user_translation\(\),\n    \}\n    crate::tlb::tlbi_vmalle1\(\);' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n '^pub const fn translation_retired_by\(ttbr0: u64, retired: u16\) -> bool \{$' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'RETIRED: the bare reset posted no .aside1 round for a retired ASID' tests/VSpaceCapabilityBindingSuite.lean
+# WS-BP BP7.1 (v0.36.11): a thread runs in a carved address space.  The
+# space change refuses a thread the STATE runs or blocks, not only one whose
+# stored flag says so; the retired flag-only guard must not come back.
+run_check "INVARIANT" rg -n -U 'def setThreadSpace [^\n]*(\n([ \t][^\n]*)?)*    if tcb\.threadState != \.Inactive \|\| inferThreadState st vtid\.val tcb != \.Inactive then\n      \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_negative_check "INVARIANT" rg -n 'if tcb\.threadState != \.Inactive then \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n -U 'def setThreadSpace [^\n]*(\n([ \t][^\n]*)?)*    else \.ok \(st\.rewriteObject vtid\.val\.toObjId' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n '^theorem setThreadSpace_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n '^theorem setThreadSpace_ok_tcb($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n '^theorem setThreadSpace_refuses_active($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n '^theorem setThreadSpace_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem resolveSetSpace_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolveCallerCapObject_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveSetSpace [^\n]*(\n([ \t][^\n]*)?)*  match resolveCallerCapObject callerTid args\.cspaceRoot \.grant st with(\n([ \t][^\n]*)?)*    if !cnCap\.hasRight \.write then \.error \.illegalAuthority(\n([ \t][^\n]*)?)*      match resolveCallerCapObject callerTid args\.vspaceRoot \.write st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?)*            match resolveSetSpace tid args st with(\n([ \t][^\n]*)?)*                match setThreadSpace st vtid cnId vrId with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'case tcbSetSpace =>(\n([ \t][^\n]*)?)*                      exact setThreadSpace_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => 38$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => \.write$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetSpace_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_tcbSetSpace($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'runSetSpaceChecks$' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'a reset through a derivation-free SIBLING copy is still refused' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'a capability parked in a blocked sender.s message keeps the reset refused' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'and leaves the mapping of a page OUTSIDE the region alone' tests/VSpaceCapabilityBindingSuite.lean
+# WS-BP BP7.1 (v0.36.12): intermediate page tables.  A table installs at the
+# shallowest missing level, writes BOTH sides of the install, and a carved root
+# maps a frame only where its walk is complete.  The reset retires a page table
+# like any carved object and refuses an install crossing its subtree boundary.
+run_check "INVARIANT" rg -n -U 'def pageTableMap \(tableId rootId[^\n]*(\n([ \t][^\n]*)?)*        match root\.missingLevel\? vaddr with\n        \| none => \.error \.mappingConflict' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n -U 'def pageTableMap \(tableId rootId[^\n]*(\n([ \t][^\n]*)?)*          match storeObject tableId \(\.pageTable \(table\.installedAt rootId level index\)\) st with(\n([ \t][^\n]*)?)*            storeObject rootId \(\.vspaceRoot \(root\.withTableSlot level index tableId\)\)\n              \(recordPhysicalWrites st1\n                \(slotStore\? st1 \(root\.withTableSlot level index tableId\) level index\)\.toList\)' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n -U 'def pageTableUnmap \(tableId[^\n]*(\n([ \t][^\n]*)?)*          if root\.tables\.contains \(inst\.slotFor tableId\) then\n            if pageTableInUse root inst then \.error \.revocationRequired' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n '^theorem pageTableMap_ok_installed($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n '^theorem pageTableUnmap_refuses_in_use($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n '^theorem pageTableMap_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem pageTableUnmap_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap [^\n]*(\n([ \t][^\n]*)?)*        else if !Architecture\.asidTranslationReady st args\.asid args\.vaddr then\n          \.error \.translationFault' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*        else if !carvedSubtreeInstallsClosed st ids then \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^  \| \.pageTableMap          => 39$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^  \| \.pageTableUnmap        => 40$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_pageTableMap($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_pageTableUnmap_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n 'runPageTableChecks$' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'so resetting the child alone is refused \(revocationRequired\)' tests/VSpaceCapabilityBindingSuite.lean
+# WS-BP BP7.1 (v0.36.12): destroying a table's LAST capability takes it out of
+# its address space (seL4's finaliseCap -> unmapPageTable).  Both destroying
+# arms run the one finalisation; the orphan set is "named before, named by none
+# after"; the root is the truth, so every reader asks the live question and the
+# record-only reading must not come back.
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising [^\n]*(\n([ \t][^\n]*)?)*      finaliseDestroyedCapabilities executingCore st \(slotMappedPages st addr\) st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^    \| \.ok \(pages, st1\) => finaliseDestroyedCapabilities executingCore st pages st1$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.38: a table's final capability is decided on CNode slots — a copy parked
+# in a message can be dropped by a cancellation that finalises nothing.
+run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*        if Architecture\.pageTableInstallLive st id && !cnodeSlotsUnreferenced pre \[id\] &&\n            cnodeSlotsUnreferenced st \[id\] then \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cnodeSlotsUnreferenced [^\n]*(\n([ \t][^\n]*)?)*      \| \.cnode cn => objectNamesListed ids \(\.cnode cn\)\n      \| _ => false\)\)' SeLe4n/Kernel/Architecture/PageTeardown.lean
+run_check "INVARIANT" rg -n 'RETIRED: the all-references reading does not count it orphaned, the live one does' tests/VSpaceCapabilityBindingSuite.lean
+# v0.36.38: a frozen mint inserts a capability with no mapping record, and the
+# frozen phase claims no coverage of a VSpace write it has only a read for.
+run_check "INVARIANT" rg -n -U 'def frozenCspaceMint [^\n]*(\n([ \t][^\n]*)?)*            let slots. := cn\.slots\.insert slot cap\.withoutMapping' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_negative_check "INVARIANT" rg -n '^  \| \.vspace(Map|Unmap) => true' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n -U '^theorem frozenOpCoverage_count :\n    \(SyscallId\.all\.filter frozenOpCoverage\)\.length = 18 := by' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_covered($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n 'frozenCspaceMint strips the source.s mapping record' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n -U 'def finaliseDestroyedCapabilities [^\n]*(\n([ \t][^\n]*)?)*        if !pageTablesDetached st2 orphans then \.error \.illegalState' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_ok_tables($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_framed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^      if pageTableInstallLive st tableId then \.error \.invalidCapability$' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_negative_check "INVARIANT" rg -n 'installedIn\.isSome then' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n '^        \| some inst => ids\.contains inst\.root \|\| !Architecture\.pageTableInstallLive st id$' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^    else if cn\.holdsFrameMappingRecord \|\| Architecture\.cnodeHoldsInstalledPageTableCap st cn then$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '\(fun cap => cap\.mapping\.isSome \|\| frozenCapNamesInstalledPageTable st cap\) then' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'deleting a table.s last capability takes it, and the two tables beneath it, out of the root' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'a table another capability still names stays installed, with everything beneath it' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'RETIRED: the bare revocation leaves the child.s table in the surviving root' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n '^  fo013c_cspaceDeleteRefusesInstalledTableCap$' tests/FrozenOpsSuite.lean
+# WS-BP BP7.1 (v0.36.13): every configured address space owns a table page of
+# the binding's pool, and a root with no page maps nothing.
+run_check "INVARIANT" rg -n '^  root\.tableBase\.isSome && root\.walkComplete vaddr$' SeLe4n/Model/Object/Structures.lean
+run_negative_check "INVARIANT" rg -n 'root\.tableBase\.isNone \|\| root\.walkComplete' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^    untypedPlacementRespected config && bootRootTablesPlaced config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^   \(bootRootTablesPlaced config, bootRootTablesBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'def bootRootTablesPlaced [^\n]*(\n([ \t][^\n]*)?)*  decide \(\(configuredRootTableBases config\)\.filterMap id\)\.Nodup &&' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootRootTablesPlaced_withoutExtents($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    decide \(root\.mappings\.size = 0\) && root\.tables\.isEmpty$' SeLe4n/Platform/RPi5/VSpaceBoot.lean
+run_check "INVARIANT" rg -n '^    tableBase := some \(rpi5BootTablePage page\) \}$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^BOOT_TABLE_POOL_PAGES = 0x10;$' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n '^    crate::mmu::zero_boot_table_pool\(\);$' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n '^tablePool 0xfff0000 0x10$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n 'a root with no table page is refused, naming the pool' tests/SmpIdleSuite.lean
+# WS-BP BP7.2 (v0.36.14): a thread maps only inside the user window, the
+# mapping table is keyed by page-aligned addresses on both sides, and the
+# hardware tags address spaces with the 16-bit ASIDs the model allocates.
+run_check "INVARIANT" rg -n '^def userWindowBase : Nat := 2\^39$' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^  userWindowBase ≤ addr\.val && addr\.val < canonicalBound$' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n -U 'def pageTableAddressable [^\n]*\n  vaddr\.inUserWindow$' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_negative_check "INVARIANT" rg -n 'vaddr\.toNat < 2 \^ 48' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n '^        if !args\.vaddr\.inUserWindow then \.error \.addressOutOfBounds$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_ok_inUserWindow($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  else if paddr\.toNat % SeLe4n\.pageBytes != 0 \|\| vaddr\.toNat % SeLe4n\.pageBytes != 0 then none$' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem mapPage_vaddrAligned($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^        else if !pageMappingAligned vaddr paddr then \.error \.alignmentError$' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^    let asid16: u64 = 1 << 36;' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^    let _ = asid_bits_of_this_pe_or_halt\(crate::cpu::fatal_halt\);$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^asidSpace 0x10000$' tests/fixtures/boot_map.expected
+run_check "INVARIANT" rg -n 'an unaligned virtual address inside a complete walk is refused \(alignmentError\)' tests/VSpaceCapabilityBindingSuite.lean
+# WS-BP BP7.2 (v0.36.15): the physical writes a transition owes are recorded,
+# drained by the syscall seam in the atomic step, and performed before the SGIs
+# and the shootdown round; the HAL halts on an operand it refuses.  Each positive
+# is the relation (the drain adjacent to the commit and ahead of the SGIs; the
+# refusal arm's halt), and the negative refuses a seam that clears the I-cache
+# ledger and leaves the physical one.
+run_check "INVARIANT" rg -n '^       Architecture\.clearPhysicalWrites \(Architecture\.clearIcacheMaintenance st'"''"'\)\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_negative_check "INVARIANT" rg -n '^       Architecture\.clearIcacheMaintenance st'"''"'\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.ffiSyscallReturnFrame [^\n]*\n([ \t]*\n)*  Platform\.FFI\.completePhysicalWrites result\.2\.2\.2\.2\.2\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchCrossCoreStep_drains_physicalWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem completePhysicalWrites_cons($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  owed\.forM physicalWriteApply$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  ffiApplyPhysicalWrite w\.tag w\.addr w\.value$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem threadTranslationOperands_cases($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/HardwareTables.lean
+run_check "INVARIANT" rg -n '^  descriptorToUInt64 \(\.page paddr \(userPageAttributes perms\)\) \|\|\| notGlobalBit$' SeLe4n/Kernel/Architecture/HardwareTables.lean
+run_check "INVARIANT" rg -n '^    pxn        := true$' SeLe4n/Kernel/Architecture/HardwareTables.lean
+run_check "INVARIANT" rg -n -U '^    match crate::user_translation::decode_physical_write\([^\n]*(\n([ \t][^\n]*)?)*        Err\(_\) => crate::gic::halt_all\(\),$' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn mmu_install_translation[^\n]*(\n([ \t][^\n]*)?)*        Err\(_\) => crate::gic::halt_all\(\),$' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n '^    let in_ram = page >= KERNEL_RESERVED_END && covered\(page, PAGE_BYTES\);$' rust/sele4n-hal/src/user_translation.rs
+run_check "INVARIANT" rg -n '^    boot_l0_entry0 \| UXN_TABLE \| AP_TABLE_NO_EL0$' rust/sele4n-hal/src/user_translation.rs
+run_check "INVARIANT" rg -n 'destroying a table.s last capability clears the root.s entry for it' tests/VSpaceCapabilityBindingSuite.lean
+# WS-BP BP7.3 (v0.36.16): every state-committing trap entry saves the whole
+# frame the thread trapped with into the core's bank and its context.  Each
+# positive is a relation: the capture feeding the step's state, per entry, and
+# the handler publishing its frame before it routes anything.
+run_check "INVARIANT" rg -n '^  pstate : RegValue := ⟨0⟩$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^  rf\.pstate\.val % 16 == 0$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+# PR #904 (v0.36.41): the syscall entry's save rewinds a vacated core's frame to
+# its SVC, so the resident thread re-issues the syscall its deschedule interrupted.
+run_check "INVARIANT" rg -n '^        \(Architecture\.saveCapturedSyscallFrame st execCore frame\) words\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st execCore frame' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# WS-BP BP7.8: the sender's overflow words are read from RAM and synced into the
+# model before the decode, at the seam and in its structural marker.
+run_check "INVARIANT" rg -n '^  let words ← readCallerOverflowWords execCore msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^      \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      faultEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      unknownSyscallEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)\)\.state$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+# v0.36.40: a trap on a core another core vacated (a remote suspend cleared the
+# slot while its thread still ran here) dispatches a successor rather than
+# resuming nothing, which the trap layer answers by halting the PE.  The rule,
+# its use in the shared fault delivery and in the FP/SIMD step, the theorems
+# about both, and a negative refusing the retired inert arm of the delivery.
+run_check "INVARIANT" rg -n '^def dispatchVacatedCore \(st : SystemState\) \(c : CoreId\) : SystemState :=$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n -U '^  \| none =>\n([ \t]*(--[^\n]*)?\n)*      let st. := PriorityInheritance\.dispatchVacatedCore st c\n      \(PriorityInheritance\.computeCrossCoreSgis st st. c, st.\)$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^      \(res\.1, PriorityInheritance\.dispatchVacatedCore res\.2 c\)$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryDeliver_vacated($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryStep_vacated($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^  Concurrency\.recordCommittedCurrentThreadHw r\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def faultEntryDeliver [^\n]*(\n([ \t][^\n]*)?)*\| none => \(\[\], st\)" SeLe4n/Kernel/FaultEntry.lean'
+# v0.36.40: the boot-root physical-address bound is the Cortex-A76's 40 bits,
+# tied to the configuration's width, and the retired 2^44 does not return to
+# the checks; and the untyped reset asks every surviving root about the tables
+# it would retire.
+run_check "INVARIANT" rg -n '^def bootRootPaddrBound : Nat := 2 \^ 40$' SeLe4n/Platform/RPi5/VSpaceBoot.lean
+run_check "INVARIANT" rg -n '^theorem bootRootPaddrBound_eq_physicalAddressWidth($|[ ({:\[\]])' SeLe4n/Platform/RPi5/VSpaceBoot.lean
+run_negative_check "INVARIANT" rg -n '2 ?\^ ?44' SeLe4n/Platform/RPi5/VSpaceBoot.lean SeLe4n/Platform/Sim/Contract.lean
+run_check "INVARIANT" rg -n '^    \| \.vspaceRoot root => ids\.contains oid \|\| root\.tables\.all \(fun s => !ids\.contains s\.table\)$' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
+run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TrapFrameSaveInvariant$' SeLe4n.lean
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_synchronous_exception\(frame: &mut TrapFrame\) \{\n    let esr = frame\.esr_el1;\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_irq_per_core\(frame: &mut TrapFrame\) \{\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'switching away then saves every register the thread trapped with' tests/SmpSwitchToThreadSuite.lean
+# WS-BP BP7.4 (v0.36.17): the caller's result is staged where a switch saves
+# from, before the local reschedule; every entry hands the HAL the context the
+# committed state names, gated on the context-restore seam; the HAL commits it
+# into the in-flight frame with SPSR sanitised to EL0t.
+run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturn st st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessor st stR execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  let staged := PriorityInheritance\.settleResidencyOnCore\n    \(Architecture\.stageCallerReturn unwound unwound execCore outcome\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let stE := PriorityInheritance\.settleResidencyOnCore\n        \(Architecture\.stageCallerReturn st st execCore outcome\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# PR #904 (v0.36.41): the translation rides with the commit, which installs it
+# only once the frame is replaced — never before a commit that may decline.
+run_check "INVARIANT" rg -n -U '^      ffiRestoreStageWord i\.toUInt32 [^\n]*\n    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  \| \.idle => ffiRestoreCommit 1 0 0$' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'ffiInstallTranslation (tableBase asid|0 0)' SeLe4n/Platform/FFI.lean
+# WS-BP BP7.6: the restore is live — no seam flag gates it, and none of the
+# gating wrappers, the flag or its module may come back.
+run_negative_check "INVARIANT" rg -n 'contextRestoreSeamLive|restoreTrapFrameLive|scheduleLocalSuccessorLive|resumeThreadOnCoreLive|resumeThreadEnqueueOnly|priorityRescheduleOnCoreLive|priorityRescheduleEnqueueOnly|contextRestoreWired|contextSwitchSites_restore_pending' SeLe4n tests
+run_negative_check "INVARIANT" test -e SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean
+# ...and every trap arm returns through the frame the kernel installed before
+# it falls back to a return frame, the poison or a halt.
+run_check "INVARIANT" rg -n -U 'Err\(_\) => Err\(crate::svc_dispatch::DispatchError::InvalidSyscallId\),\n\s+\};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;\n\s+\}\n\s+match dispatched \{' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U 'discharge_base_io\(res, "lean_handle_fault"\) \};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U 'discharge_base_io\(res, "lean_handle_unknown_syscall"\) \};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn is_restored_frame_return\(statement: &str\) -> bool \{$' rust/sele4n-hal/build.rs
+# A caller its own syscall switched out keeps its result.
+run_check "INVARIANT" rg -n '^theorem stageCallerReturn_stages_switched_out($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/ContextRestore.lean
+# The fault entry's progress obligation, discharged on the live dispatch.
+run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_preserves_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_preserves_not_dispatchable_onCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+# ...and the queue well-formedness it needs is carried from the PRE-state
+# across the delivery, never stated of the delivered state.
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_preserves_runQueuesWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_preserves_runQueuesWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+run_check "INVARIANT" rg -n -U '^    \(hwf : runQueuesWellFormed st\.scheduler\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" rg -n 'runQueueOnCoreWellFormed \(faultDeliveredState' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame record\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw record\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n '^    if SeLe4n\.Kernel\.isIdleThreadId tid then \.idle$' SeLe4n/Kernel/Architecture/ContextRestore.lean
+run_check "INVARIANT" rg -n '^    value & 0xF000_0000$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^        frame\.spsr_el1 = sanitise_user_spsr\(word\(33\)\);$' rust/sele4n-hal/src/trap.rs
+run_negative_check "INVARIANT" rg -n 'frame\.spsr_el1 = word\(33\)' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^    if crate::trap::restore_commit\(kind, translation\)\.is_err\(\) \{\n        crate::gic::halt_all\(\);$' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n -U '^    if replaced \{\n        crate::user_translation::install_translation\(translation\);\n        crate::fp_context::set_trap_for_resume\(kind == RESTORE_KIND_USER_FP_LIVE\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^    let _ = buf;\n    set_trap_for_resume\(false\);\n\}$' rust/sele4n-hal/src/fp_context.rs
+run_check "INVARIANT" rg -n 'switching away then keeps the result: the caller resumes with x0-x5 its syscall returned' tests/SmpSwitchToThreadSuite.lean
+# WS-BP BP7.5 (v0.36.18): a switch resumes the incoming thread with the frame
+# its TCB holds, and the two unblock paths each deliver their own error frame.
+# The delivered frame is read by ONE reading, beside the restore target, and the
+# cancellation witness uses it rather than a private copy.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.Operations\.ResumeDelivery$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^def RestoreTarget\.deliveredFrame\? : RestoreTarget → Option SyscallReturnFrame$' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_delivers_readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_then_switch_delivers_cancelledIpcFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_then_switch_delivers_timeoutFrame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ResumeDelivery.lean
+run_check "INVARIANT" rg -n 'a timed-out waiter, once switched to, resumes reading .ipcTimeout' tests/SmpTimerSuite.lean
+run_check "INVARIANT" rg -n 'an endpoint-blocked victim, once switched to, resumes reading .ipcCancelled at its own pc' tests/SmpCancellationSuite.lean
+run_negative_check "INVARIANT" rg -n 'def frameOfContext' tests/SmpCancellationSuite.lean
 # WS-BP BP4.1: the hardware boot entry exists, in the library root, and is
 # exactly the halting checked boot of the deployment.  The contract refuses an
 # environment with no entry now that one exists, and the link gate has no
@@ -3940,15 +4408,22 @@ run_check "INVARIANT" rg -U -n '^@\[export lean_kernel_main\]\ndef kernelMain \(
 run_check "INVARIANT" rg -n '^theorem kernelMain_installs($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^theorem kernelMain_refuses($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^def approvedBootCall : Name := `SeLe4n\.Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^        return \(← instantiateMVars passed\) == blob$' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^ +..bootEntryWitnessEditedBlob, ..bootEntryWitnessRetiredCall\] do$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^        unless passed == blob do return none$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^ +..bootEntryWitnessEditedBlob, ..bootEntryWitnessRetiredCall,$' SeLe4n/Testing/BootEntryContract.lean
+# WS-BP BP8.1: the `virt` entry's shape is refused under the RPi5 entry, and the
+# RPi5 entry's shape under the `virt` one — the table decides which board.
+run_check "INVARIANT" rg -n '^ +..bootEntryWitnessQemuVirtCompliant, ..bootEntryWitnessEffectfulConfig\] do$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^  for witness in \[..bootEntryWitnessCompliant, ..bootEntryWitnessQemuVirtFixedBlob,\n +..bootEntryWitnessSideInstall\] do\n    if \(← bootEntryContractViolations qemuVirtBootEntry witness\)\.isEmpty then' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def bootEntries : List BootEntrySpec := \[rpi5BootEntry, qemuVirtBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^  `SeLe4n\.Platform\.QemuVirt\.bootAndInitialiseQemuVirtFromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^  \.forallE .dtb \(mkConst ..ByteArray\) \(mkApp \(mkConst ..BaseIO\) \(mkConst ..Unit\)\) \.default$' SeLe4n/Testing/BootEntryContract.lean
 # WS-BP BP4.3: the HAL copies the firmware's blob into the `ByteArray` the entry
 # takes, and an unreadable pointer is handed over empty for Lean to refuse.
 run_check "INVARIANT" rg -n '^        fn lean_kernel_main\(dtb: Obj\) -> lean_runtime::LeanBaseIoUnit;$' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n '^    lean_runtime::array::byte_array_of\(blob\.unwrap_or\(&\[\]\)\)$' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n '^pub fn byte_array_of\(bytes: &\[u8\]\) -> Obj \{$' rust/sele4n-hal/src/lean_runtime/array.rs
-run_check "INVARIANT" rg -U -n '^  \| \[\] =>\n      throwError "boot-entry contract: no declaration exports' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^  for spec in bootEntries do\n    match bootEntryDeclarations env spec\.symbol with' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^    \| \[\] =>\n        throwError "boot-entry contract: no declaration exports' SeLe4n/Testing/BootEntryContract.lean
 run_negative_check "INVARIANT" rg -n 'logInfo m!"boot-entry contract: no declaration exports' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^EXPECTED_UNRESOLVED: dict\[str, str\] = \{\}$' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Platform\.RPi5\.kernelMain,$' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
@@ -4354,8 +4829,9 @@ run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase size with' SeLe4n
 # the end of the window it started in.
 run_negative_check "INVARIANT" rg -n -U 'decide \(r\.childBase ≤ addr ∧ addr < r\.childBase \+ r\.length\)' SeLe4n/Platform/DeviceTree.lean
 # PR #892 review round 6's fallback top (`UNDESCRIBED_RAM_TOP`, 1 GiB) is the
-# boot map's ONLY RAM since WS-BP BP2.6 — `GUARANTEED_RAM_TOP`, anchored with the
-# map above; the fallback and the parsed top it fell back from are retired.
+# boot map's ONLY RAM since WS-BP BP2.6 — `GUARANTEED_RAM_TOP`, itself retired
+# at WS-BP BP7.10 for the kernel's reserved extent (anchored with the map
+# above); the fallback and the parsed top it fell back from are retired.
 # The round's Lean surface resolves.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Platform.DeviceTree
@@ -4522,7 +4998,7 @@ run_check "INVARIANT" rg -n 'Architecture\.stageWokenDelivery st. wokenReceiver\
 # (3) resuming a thread retires the fault it carries, and the arm runs the
 #     resume on the retired state;
 run_check "INVARIANT" rg -n '^def retirePendingFaultForResume($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n 'resumeThreadOnCoreLive$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'Lifecycle\.Suspend\.resumeThreadOnCore$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '\(retirePendingFaultForResume st vtid\.val\) vtid' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_pendingFault_none($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 # (4) the unknown-syscall fault has a live producer: the SVC arm routes an
@@ -4895,10 +5371,14 @@ run_check "INVARIANT" rg -n '^private def runTraceFixtureCheck($|[ ({:\[\]])' te
 run_check "INVARIANT" rg -n '^\[smp-tlb-shootdown\]' tests/fixtures/smp_tlb_shootdown.expected
 run_check "INVARIANT" rg -n 'smp_tlb_shootdown\.expected' tests/fixtures/smp_tlb_shootdown.expected.sha256
 run_check "INVARIANT" rg -n 'test_qemu_smp_shootdown_stress\.sh' scripts/test_tier4_smp_bootcheck.sh
-# The Tier-4 stress exerciser's driver-detection guard and its pass gate must
-# agree on the `tlb-shootdown-stress` banner tag (the contract the future SM10.1
-# in-image driver emits); anchoring the exact pass phrase catches silent drift.
-run_check "INVARIANT" rg -n 'tlb-shootdown-stress: all cores completed' scripts/test_qemu_smp_shootdown_stress.sh
+# The Tier-4 stress exerciser's pass gate and the in-image driver agree on the
+# `tlb-shootdown-stress` completion banner: the shared checker requires it as a
+# whole line, and the driver prints it (WS-BP BP8.4 -- the gate reads the
+# library, and the driver is `rust/sele4n-hal/src/smp_exercisers.rs`).
+run_check "INVARIANT" rg -n -F -- 'require("[smp-test] tlb-shootdown-stress: all cores completed (8 generations, 32 rounds)")' scripts/qemu_exerciser_lib.sh
+# shellcheck disable=SC1003
+run_check "INVARIANT" rg -n -F -- '"[smp-test] tlb-shootdown-stress: all cores completed ({STRESS_ROUNDS} generations, {} \' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STRESS_ROUNDS: u64 = 8;$' rust/sele4n-hal/src/smp_exercisers.rs
 # ============================================================================
 # WS-SM SM7.D — cache maintenance broadcast
 #
@@ -4971,6 +5451,25 @@ run_check "INVARIANT" rg -n '^        __image_load_end = \.;$' rust/sele4n-hal/l
 run_check "INVARIANT" rg -n '^pub fn clean_range_pou_then_invalidate_all_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'CleanRangeIallu\(u64, u64\)' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'fn test_clean_range_pou_line_coverage' rust/sele4n-hal/src/cache.rs
+# WS-BP post-landing audit (v0.36.32): the carve's RAM scrub is a third kernel
+# code-write site, and its clean-to-PoU rides ON the zeroing's physical write.
+# The model names the site and its emission, the write owes the operand, the
+# carve records exactly that write, and the HAL performs the operand as the
+# last step of `apply_physical_write` — after the store and its barrier, so
+# the clean reads the zeroes.
+run_check "INVARIANT" rg -U -n '^def kernelCodeWriteEmitted : KernelCodeWriteSite → Bool[^\n]*(\n([ \t][^\n]*)?)*?  \| \.carveScrub +=> true$' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -U -n '^def kernelCodeWriteSites : List KernelCodeWriteSite :=\n  \[\.retypeScrub, \.bootImageLoad, \.carveScrub\]$' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem zeroPage_discharges_obligation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -U -n '^def icacheMaintenance : PhysicalWrite → Option ICacheInvalidation\n  \| \.zeroPage base => some \(\.cleanRangeIallu base SeLe4n\.pageBytes\)$' SeLe4n/Kernel/Architecture/PhysicalWrite.lean
+run_check "INVARIANT" rg -n '^theorem carveZeroFrame_pendingPhysicalWrites($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem carveZeroFrame_discharges_carveScrub_obligation($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -U -n '^pub const fn icache_maintenance\(write: PhysicalWrite\) -> Option<crate::cache::ICacheInvalidation> \{\n    match write \{\n        PhysicalWrite::ZeroPage\(page\) => Some\(crate::cache::ICacheInvalidation::CleanRangeIallu\(\n            page, PAGE_BYTES,\n        \)\),' rust/sele4n-hal/src/user_translation.rs
+run_check "INVARIANT" rg -U -n '^pub fn apply_physical_write\(write: PhysicalWrite\) \{[^\n]*(\n([ \t][^\n]*)?)*?\n    if let Some\(op\) = icache_maintenance\(write\) \{\n        crate::cache::apply_icache_invalidation\(op\);\n    \}\n\}' rust/sele4n-hal/src/user_translation.rs
+# ...and a RAM frame is mapped cacheable or not at all, so no thread holds an
+# uncached alias of memory the kernel writes through its cacheable identity map.
+run_check "INVARIANT" rg -n '^  else if perms\.cacheable == frame\.isDevice \|\| \(frame\.isDevice && perms\.execute\) then$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem frameMappingAdmissible_cacheable_iff_ram($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'else if frame\.isDevice && \(perms\.execute \|\| perms\.cacheable\) then' SeLe4n/Kernel
 # WS-BP BP4.6: the verified board's RAM above the guaranteed gigabyte.  Lean
 # derives the extent from the bound variant's memory map (never a per-variant
 # list) and proves it is that RAM in both directions; the device-tree wrapper's
@@ -4978,7 +5477,12 @@ run_check "INVARIANT" rg -n 'fn test_clean_range_pou_line_coverage' rust/sele4n-
 # only invalid entries after deciding every refusal, widens the cacheable window
 # by the same record, and refuses once sealed.  The seal precedes the permit
 # (the BP4.5 anchor above holds that order).
-run_check "INVARIANT" rg -U -n '^def bootRamExtensionsOf \(map : List SeLe4n\.MemoryRegion\) : List \(Nat × Nat\) :=\n  map\.filterMap fun r =>\n    if r\.kind = \.ram ∧ max r\.base\.toNat rpi5GuaranteedRamTop < r\.endAddr then' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -U -n '^def bootRamExtensionsOf \(map : List SeLe4n\.MemoryRegion\) : List \(Nat × Nat\) :=\n  map\.filterMap bootRamExtensionOf\?$' SeLe4n/Platform/RPi5/Board.lean
+# WS-BP BP7.10: an extension is clipped at the kernel's extent, never at the
+# first gigabyte — so the part of the gigabyte the firmware reports is mapped
+# and handed to the root task, and the part it withholds is neither.
+run_check "INVARIANT" rg -U -n '^def bootRamExtensionOf\? \(r : SeLe4n\.MemoryRegion\) : Option \(Nat × Nat\) :=\n  if r\.kind = \.ram ∧ max r\.base\.toNat rpi5KernelReservedEnd < r\.endAddr then' SeLe4n/Platform/RPi5/Board.lean
+run_negative_check "INVARIANT" rg -n '\brpi5GuaranteedRamTop\b' SeLe4n/ tests/
 run_check "INVARIANT" rg -U -n '^def rpi5BootRamExtensionsFor \(board : SeLe4n\.MachineConfig\) : List \(Nat × Nat\) :=\n  bootRamExtensionsOf \(rpi5BoundMachineConfig board\)\.memoryMap$' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^theorem mem_bootRamExtensionsOf($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^theorem bootRamExtensionsOf_covers($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
@@ -4987,7 +5491,7 @@ run_check "INVARIANT" rg -n '^theorem rpi5BootRamExtensions_admissible($|[ ({:\[
 run_check "INVARIANT" rg -U -n '^@\[extern "ffi_extend_boot_ram_map"\]\nopaque ffiExtendBootRamMap \(base size : UInt64\) : BaseIO Unit$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -U -n '^  \| \.ok config => do\n      extendBootRamMap \(SeLe4n\.Platform\.RPi5\.rpi5BootRamExtensionsFor config\.machineConfig\)\n      bootAndInitialiseRPi5OrHalt config$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -U -n '^theorem kernelMain_installs[^\n]*(\n([ \t][^\n]*)?)*?        Platform\.FFI\.extendBootRamMap\n          \(rpi5BootRamExtensions \(rpi5VariantFor config\.machineConfig\)\)\n        Platform\.FFI\.initialiseKernelState' SeLe4n/Platform/RPi5/KernelMain.lean
-run_check "INVARIANT" rg -U -n '^pub fn is_boot_cacheable_range\(base: u64, size: u64\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?    ram_range_covered\(base, size, &extensions\[\.\.recorded\]\)\n\}' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -U -n '^pub fn is_boot_cacheable_range\(base: u64, size: u64\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?    boot_cacheable_range_for\(base, size, &extensions\[\.\.recorded\], &image_layout\(\)\)\n\}' rust/sele4n-hal/src/mmu.rs
 run_negative_check "INVARIANT" rg -n 'pub const fn is_boot_cacheable_range' rust/sele4n-hal/src
 run_check "INVARIANT" rg -U -n '^pub fn extend_boot_ram_map\(base: u64, size: u64\) -> Result<\(\), RamExtensionRefusal> \{\n    if BOOT_MAP_SEALED\.load\(Ordering::Acquire\) \{\n        return Err\(RamExtensionRefusal::Sealed\);' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -U -n '^    unsafe \{ BOOT_TABLES\.with_inner_mut\(\|tables\| extend_boot_tables\(tables, base, size\)\) \}\?;\n([ \t]*\n|    //[^\n]*\n)*    unsafe \{ crate::cache::clean_pagetable_range\(BOOT_TABLES\.pa\(\), PageTableCell::size\(\)\) \};\n    barriers::dsb_ish\(\);\n    barriers::isb\(\);\n    RAM_EXTENSIONS\[recorded\]' rust/sele4n-hal/src/mmu.rs
@@ -4995,18 +5499,23 @@ run_check "INVARIANT" rg -U -n '^pub extern "C" fn ffi_extend_boot_ram_map\(base
 run_check "INVARIANT" rg -n 'fn a_refused_extension_writes_nothing' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '\["extend", base, size\] => variants' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n '^extend 0x40000000 0x3c0000000$' tests/fixtures/boot_map.expected
+# WS-BP BP7.10: the table carries the real firmware's cut configuration, whose
+# first extension stops where the firmware said its RAM ends.
+run_check "INVARIANT" rg -U -n '^variant 0x200000000 lowRamTop 0x3fc00000\n(region [^\n]*\n)*extend 0x10000000 0x2fc00000$' tests/fixtures/boot_map.expected
 # WS-BP BP4.7: the RAM the boot maps above the gigabyte is handed to the root
 # task.  The deployment's objects are a function of the variant, the bridge
 # applies it to the variant its parse selected, the RAM untypeds are DERIVED
 # from the same extensions BP4.6 maps, and the coverage and installation
 # theorems exist.  The retired variant-independent object list must not return.
 run_check "INVARIANT" rg -U -n '^        \.ok \(SeLe4n\.Platform\.Boot\.PlatformConfig\.fromDeviceTree dt irqTable\n          \(initialObjectsFor \(SeLe4n\.Platform\.RPi5\.rpi5VariantFor dt\.machineConfig\)\)$' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -U -n '^def rpi5RootTaskRamUntypeds \(v : BCM2712Config\) : List \(SeLe4n\.ObjId × UntypedObject\) :=\n  \(rpi5BootRamExtensions v\)\.mapIdx fun i e =>$' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -U -n '^def rpi5InitialObjectsFor \(v : BCM2712Config\) : List ObjectEntry :=[^\n]*(\n([ \t][^\n]*)?)*?  \(rpi5RootTaskRamUntypeds v\)\.map fun u => untypedEntry u\.1 u\.2$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -U -n '^def rpi5RootTaskUntypeds \(v : BCM2712Config\) : List \(SeLe4n\.ObjId × UntypedObject\) :=\n  \(rpi5BootRamExtensions v\)\.mapIdx fun i e =>$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -U -n '^def rpi5InitialObjectsFor \(v : BCM2712Config\) : List ObjectEntry :=[^\n]*(\n([ \t][^\n]*)?)*?  \(rpi5RootTaskUntypeds v\)\.map fun u => untypedEntry u\.1 u\.2$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -U -n '^def rpi5PlatformConfigFor \(board : SeLe4n\.MachineConfig\) : PlatformConfig :=\n  \{ irqTable := rpi5IrqTable\n    initialObjects := rpi5InitialObjectsFor \(rpi5VariantFor board\)$' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -n '^theorem rpi5RootTaskRamUntypeds_regions($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5RootTaskUntypeds_regions($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5InitialObjectsFor_covers_ram($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_ramUntypedInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_untypedInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+# WS-BP BP7.10: the retired split of the root task's RAM at the first gigabyte.
+run_negative_check "INVARIANT" rg -n '\b(rpi5RootTaskRamUntypeds|rpi5RootTaskRamUntypedId|rpi5RootTaskRamUntypedSlot|rpi5DeploymentBootStateAt_ramUntypedInstalled)\b' SeLe4n tests
 run_check "INVARIANT" rg -n '^theorem rpi5RootTaskCNodeFor_slotsAddressable($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_negative_check "INVARIANT" rg -n '\brpi5InitialObjects\b|\brpi5RootTaskCNode\b' SeLe4n tests
 # WS-BP BP5.1: the kernel image is one bare-metal binary, gated behind its own
@@ -5015,7 +5524,8 @@ run_negative_check "INVARIANT" rg -n '\brpi5InitialObjects\b|\brpi5RootTaskCNode
 # bare-metal target only.
 run_check "INVARIANT" rg -U -n '^\[\[bin\]\]\nname = "sele4n-kernel"\npath = "src/bin/sele4n_kernel\.rs"\nrequired-features = \["kernel_image"\]$' rust/sele4n-hal/Cargo.toml
 run_check "INVARIANT" rg -U -n '^#\[panic_handler\]\nfn panic\(_info: &core::panic::PanicInfo<._>\) -> ! \{\n    sele4n_hal::gic::halt_all\(\)\n\}$' rust/sele4n-hal/src/bin/sele4n_kernel.rs
-run_check "INVARIANT" rg -U -n '^    if std::env::var\("CARGO_CFG_TARGET_OS"\)\.as_deref\(\) == Ok\("none"\) \{[^\n]*(\n([ \t][^\n]*)?)*?        println!\("cargo:rustc-link-arg-bin=sele4n-kernel=-T\{manifest_dir\}/link\.ld"\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -U -n '^    if std::env::var\("CARGO_CFG_TARGET_OS"\)\.as_deref\(\) == Ok\("none"\) \{[^\n]*(\n([ \t][^\n]*)?)*?        println!\("cargo:rustc-link-arg-bin=sele4n-kernel=-T\{board_script\}"\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    let board_script = board_link_script\(&manifest_dir\);$' rust/sele4n-hal/build.rs
 # WS-BP BP5.2: with `hw_target` the image links the Lean archive AND the roots
 # script, with `--gc-sections`, inside the bare-metal branch; the archive
 # builder's reachable link reads that same roots script; and the Lean archive
@@ -5060,7 +5570,7 @@ run_check "INVARIANT" rg -n '^    fn the_device_tree_window_is_the_dereference_b
 # any other level halts.  build.rs pins the routine item for item, and both
 # scanners refuse the retired prologue-first order.
 run_check "INVARIANT" rg -n '^    scan_el1_entry\(\);$' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -U -n '^_start:\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb\n    mov     x20, x9 ' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^_start:\n(\n|    //[^\n]*\n)*    b       \.L_image_body[^\n]*\n(    \.[^\n]*\n){9}\.L_image_body:\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb\n    mov     x20, x9 ' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -U -n '^secondary_entry:\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb$' rust/sele4n-hal/src/boot.S
 run_negative_check "INVARIANT" rg -U -n '^(_start|secondary_entry):\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -n '"the FP trap written before the drop to EL1",' rust/sele4n-hal/build.rs
@@ -5095,7 +5605,7 @@ run_check "INVARIANT" rg -n '^pub unsafe fn initialise_core_runtime_with\($' rus
 run_check "INVARIANT" rg -n '^    if !installed\.load\(Ordering::Acquire\) \{$' rust/sele4n-hal/src/lean_ready.rs
 run_check "INVARIANT" rg -n '^    if !heap_probe\(\) \{$' rust/sele4n-hal/src/lean_ready.rs
 run_check "INVARIANT" rg -U -n '^    crate::lean_ready::publish_kernel_installed\(\);\n    SecondaryReleasePermit \{ _private: \(\) \}$' rust/sele4n-hal/src/lean_entry.rs
-run_check "INVARIANT" rg -U -n '^    #\[cfg\(feature = "hw_target"\)\]\n    crate::lean_ready::become_ready_or_halt\(0, crate::gic::halt_all\);\n    crate::interrupts::enable_irq\(\);$' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -U -n '^    #\[cfg\(feature = "hw_target"\)\]\n    crate::lean_ready::become_ready_or_halt\(0, crate::gic::halt_all\);\n([ ]*\n)*    crate::smp::first_reschedule\(0, crate::gic::halt_all\);\n    crate::interrupts::enable_irq\(\);$' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -U -n '^    #\[cfg\(feature = "hw_target"\)\]\n    crate::lean_ready::become_ready_or_halt\(core_idx, crate::cpu::fatal_halt\);$' rust/sele4n-hal/src/smp.rs
 # WS-BP BP6.3: the boot refuses a topology in which a declared PE does not
 # serve the kernel — Lean-ready AND IRQ-ready — within the bounded window.
@@ -5124,7 +5634,7 @@ run_check "INVARIANT" bash -c "! rg -q 'objectTypeAllocSize' <(sed -n '/^def scr
 # below both layers that must agree on it.
 run_check "INVARIANT" rg -n '^def pageBytes : Nat := 4096' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^def pageBytes : Nat := SeLe4n.pageBytes' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n 'paddr.toNat % SeLe4n.pageBytes != 0 then none' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n 'paddr.toNat % SeLe4n.pageBytes != 0 \|\| vaddr.toNat % SeLe4n.pageBytes != 0 then none' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^theorem mapPage_pageAligned($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '_hAligned : paddr.toNat % SeLe4n.pageBytes = 0' SeLe4n/Model/Builder.lean
 run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes != 0 then .error .alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean
@@ -5172,7 +5682,7 @@ run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCo
 run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCoreIcache($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def completeIcacheMaintenance($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def completeIcacheMaintenance($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'completeIcacheMaintenance result' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # SM7.D FFI + Rust HAL realisation (broadcast primitives + fail-closed decode).
 run_check "INVARIANT" rg -n '^opaque ffiIcIalluIs($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -5259,8 +5769,14 @@ run_check "INVARIANT" rg -n '^def retypeInitiatorDrain($|[ ({:\[\]])' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem retypeInitiatorDrain_drained($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 # WS-SM SM7.F.4(b)(iii) residual CLOSED: whole-invariant retype preservation.
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+# `v0.36.35`: the VSpace-root-target preservation theorems are retired — a root
+# is never destroyed in place — and must not come back; the refusal replaces them.
+run_negative_check "INVARIANT" rg -n '^theorem [A-Za-z]*_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_negative_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_vspaceRoot_id($|[ ({:\[\]])' SeLe4n
+run_check "INVARIANT" rg -n -U '^  \| \.vspaceRoot _ =>\n([ \t]*\n)*    \.error \.revocationRequired\n  \| _ => \.ok st$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_vspaceRoot_refused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_refuses_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_refuses_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 
 # ============================================================================
 # WS-SM SM8.A — Per-core observable state
@@ -5617,8 +6133,8 @@ run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[
 # repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
 # the theorem without the sentence and this fails, which is the only mechanism
 # that has actually held.
-run_prose_check "INVARIANT" rg -n 'per-core boundary has 59 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 60' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_prose_check "INVARIANT" rg -n 'per-core boundary has 67 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -5740,7 +6256,7 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterferenc
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 30' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 33' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -5766,14 +6282,12 @@ run_check "INVARIANT" rg -n '^theorem vacatedCore_next_syscall_rejected($|[ ({:\
 # The citation lives in a docstring, so this one genuinely reads prose and says
 # so — it is the exception `run_prose_check` exists for, and round 43's whole
 # point is that the exception must be declared rather than indistinguishable
-# from a code anchor.
+# from a code anchor.  WS-BP BP7.6 deleted the gate whose justification cited
+# it from `PerCore.lean`; the argument now lives at the entry, beside the
+# theorem, where it explains what a vacated core's next syscall meets.
 run_prose_check "INVARIANT" rg -n 'vacatedCore_next_syscall_rejected' \
-  SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-# ... and the wrappers that replaced it must exist.
-run_check "INVARIANT" rg -n '^def resumeThreadOnCoreLive($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def resumeThreadEnqueueOnly($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def priorityRescheduleOnCoreLive($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
-run_check "INVARIANT" rg -n '^def priorityRescheduleEnqueueOnly($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
+  SeLe4n/Kernel/SyscallDispatchEntry.lean
+# WS-BP BP7.6 retired the wrappers with the seam flag (refused tree-wide above).
 # Review round 5: a LIVE inventory entry must name the function the syscall
 # dispatch calls.  Three entries named a below-API transition their wrapper does
 # strictly more than, so the wrappers get entries — and bounds — of their own.
@@ -5956,8 +6470,8 @@ run_check "INVARIANT" rg -n '^def schedContextUnbindWriteSet($|[ ({:\[\]])' SeLe
 run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^export SeLe4n\.Kernel \(runningCoreOf\?\)' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^def retypeRunningTargetRejected($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" rg -n 'if threadCurrentOnSomeCore st tcb\.tid then' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_negative_check "INVARIANT" bash -c "rg -q 'threadCurrentOnSomeCore' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean && ! rg -q 'revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean"
+run_check "INVARIANT" rg -n 'if threadHeldOnSomeCore st tcb\.tid then' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_negative_check "INVARIANT" bash -c "rg -q 'threadHeldOnSomeCore' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean && ! rg -q 'revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean"
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_vspaceMap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_vspaceUnmap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # The gate's whole point is that its exception list empties.  Pinned NEGATIVELY:
@@ -6052,7 +6566,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 30' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 33' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
 # The negative is the point — `crossCoreRemoteWriterPendingAudit` was the counted
 # gap while two were unproven, and it must not come back as an empty list, which
@@ -6080,14 +6594,10 @@ run_check "INVARIANT" rg -n '^def covertChannelEvidenceName($|[ ({:\[\]])' SeLe4
 run_check "INVARIANT" rg -n '^theorem covertChannelEntry_eq_inventory($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'niName! acceptedCovertChannel_machineTimer_excluded_from_view' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
-# PR #861 review round 18: the model's context switches have no hardware
-# restore seam yet (the SVC path returns into the original caller's frame, the
-# timer ISR discards the result, and SGI INTID 0 has no registered handler).
-# Registered as a checked partition so SM10.1 cannot wire the first restore
-# without updating it.  The `_restore_pending` theorem is the load-bearing one:
-# it says the gap is TOTAL, so any wiring breaks it.
+# PR #861 review round 18: the sites that change which thread a core runs.
+# WS-BP BP7.6 wired the restore at every one and retired the pending register;
+# the enumeration stays as the tripwire a new site trips.
 run_check "INVARIANT" rg -n '^inductive ContextSwitchSite($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n '^theorem contextSwitchSites_restore_pending($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem contextSwitchSites_complete($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 
 # PR #861 review round 17: the citation table above validates only that a name
@@ -6361,7 +6871,7 @@ run_prose_negative_check "INVARIANT" rg -n 'classification table \([0-9]+ entrie
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 45' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 52' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -6842,7 +7352,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 45' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 52' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -7021,10 +7531,10 @@ run_check "INVARIANT" rg -n '31 => some \.auditRead' SeLe4n/Model/Object/Types.l
 run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.lean
 # The count anchors pin HEAD's value, not the value the cut above produced:
 # `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36.
-run_check "INVARIANT" rg -n '^def count : Nat := 36' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def count : Nat := 41' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 36;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 41;' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditFieldTooLarge = 55' rust/sele4n-types/src/error.rs
 
 # SM9.A.8: the safe wrappers.  Without them the syscalls are hand-encode-only,
@@ -7115,7 +7625,7 @@ run_prose_negative_check "INVARIANT" rg -n 'Partial readers are unchanged where 
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 60' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -7203,7 +7713,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=36' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=41' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -7211,8 +7721,593 @@ run_check "INVARIANT" rg -n "10a: .status. returns the visible length \\(2\\), n
 run_check "INVARIANT" rg -n '10b: a field read returns the SELECTED entry' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '10c: NEGATIVE — an all-rights capability to an ordinary object is rejected' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '10e: NEGATIVE — an unconfigured deployment cannot drain' tests/SyscallReturnAbiSuite.lean
+# WS-BP BP7.7: the wait-before-signal declassified badge is DELIVERED through the
+# live restore -- the witness reads the restore target, carries a deny-all control,
+# and is on the runner's path (a section nothing calls asserts nothing).
+run_check "INVARIANT" rg -n '11: the waiter resumes reading THAT badge in x0' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n 'restoreTargetAt st3 0\)\.deliveredFrame\?' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '11 CONTROL: \.\.\.and the waiter.s core resumes no badge' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassifiedBadgeDeliveryWitnesses$' tests/SyscallReturnAbiSuite.lean
+# WS-BP BP7.8: message registers past the fourth cross the kernel in both
+# directions, through ONE resolver; the write requires a writable mapping, the
+# delivery records user-word stores and counts them in the frame's length, both
+# fault seams drain the ledger, and the HAL never stores a user word into the
+# table pool.
+run_check "INVARIANT" rg -n '^def ipcBufferSlotPAddr\? \(st : SystemState\) \(tcb : SeLe4n\.Model\.TCB\) \(idx : Nat\)$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n 'st\.machine\.addrInRange pa && \(!needWrite \|\| perms\.write\)' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^theorem ipcBufferReadMr_syncUserWord($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^theorem readUInt64_writeUInt64($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTable.lean
+run_negative_check "INVARIANT" rg -n '^def writeUInt64' SeLe4n/Kernel/Architecture/VSpaceARMv8.lean
+run_check "INVARIANT" rg -n 'match IpcBufferRead\.ipcBufferSlotPAddr\? st tcb idx true with' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_negative_check "INVARIANT" rg -n 'ipcBufferSlotPAddr\? st tcb idx false' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^  \{ length    := min \(min msg\.registers\.size \(4 \+ overflow\)\) maxMessageRegisters$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n -U '^            recordPhysicalWrites\n              \(writeReturnFrameToTcb st tid \(returnFrameOfMessage msg installedCaps\n                \(messageOverflowWrites st tcb msg\)\.length\)\)$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1\n  Concurrency\.fireCrossCoreSgis r\.1\n  Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^        Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1\n        Concurrency\.fireCrossCoreSgis r\.1\n        Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n 'addr\.is_multiple_of\(8\) && page >= KERNEL_RESERVED_END && covered\(page, PAGE_BYTES\)' rust/sele4n-hal/src/user_translation.rs
+run_check "INVARIANT" rg -n '12: the three words past the fourth are stored into the receiver.s buffer, in order' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '12 CONTROL: without the RAM read the receiver is handed the model.s zeroes' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '^  runOverflowDeliveryWitnesses$' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n 'audit status .visible length 2, monitor.' tests/fixtures/syscall_return_abi.expected
 run_check "INVARIANT" rg -n 'audit drain of one entry .new visible length 1.' tests/fixtures/syscall_return_abi.expected
+# WS-BP BP7.9: per-thread FP/SIMD state, switched lazily.  The load is the
+# trapping thread's own context, the captured values go into the recorded owner,
+# a thread owned elsewhere retries, every restoring entry releases a switched-out
+# owner before its restore, the trap follows the restore's `fpLive`, the destroy
+# path refuses a thread a core still holds, and `fp_context.S` is the only code
+# that names an FP register or writes CPACR_EL1 outside the boot prologues.
+run_check "INVARIANT" rg -n '^  fpContext : SeLe4n\.FpContext := default$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^                       fpContext := default \}$' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^  fpOwner : _root_\.Vector \(Option ThreadId\) numCores :=$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_load_eq_own_context($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_saves_owner($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
+# PR #904 (v0.36.41): a remotely vacated core's frame reaches its resident
+# thread, and every state-committing entry settles what the core resumes.  The
+# positives name the relation (the save keyed on the resident record; the settle
+# applied to the committed state in each entry), and the witness computes the
+# retired readings beside the live ones.
+run_check "INVARIANT" rg -n '^  resident : _root_\.Vector \(Option ThreadId\) numCores :=$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n -U '^def saveVacatedFrameOnCore[^\n]*(\n([ \t][^\n]*)?)*    \| none, some tid =>\n      match st\.getTcb\? tid with\n      \| some _ => st\.updateTcb tid fun t => \{ t with registerContext := saved \}$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n '^  \| some rf => saveVacatedFrameOnCore \(saveTrapFrameOnCore st c rf\) c rf \(restartAtSvc rf\)$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n '^  let st2 := deferResidentElsewhere \(dispatchVacatedCore st c\) c$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem deferResidentElsewhere_current_not_elsewhere($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/SecondaryEntry.lean
+run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n '^    let st. := PriorityInheritance\.settleResidencyAt st. coreId$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^    let res := \(res\.1, PriorityInheritance\.settleResidencyAt res\.2 coreId\)$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^    let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId frame$' SeLe4n/Kernel/FaultEntry.lean
+run_prose_check "INVARIANT" rg -n 'RETIRED: the current-slot save drops the vacated core.s frame' tests/FaultHandlingSuite.lean
+run_prose_check "INVARIANT" rg -n 'RETIRED: without the deferral core 1 resumes a thread core 0 still runs' tests/FaultHandlingSuite.lean
+# PR #904 (v0.36.41): a mapping record names a mapping epoch, so a record whose
+# ASID and address were reused by a later mapping of the same frame is stale; the
+# frame is written by the map, so it is a write member of the footprint.
+run_check "INVARIANT" rg -n -U '^      match p\.epoch with\n      \| none => true\n      \| some e => root\.mappingEpochs\[p\.vaddr\]\? == some e$' SeLe4n/Kernel/Architecture/PageTeardown.lean
+run_check "INVARIANT" rg -n '^            match tagFrameMapping args\.asid args\.vaddr \(frameCapObjId frameCap\) st1 with$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^     \(pageLock frameObjId, \.write\)\]$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_negative_check "INVARIANT" rg -n '\(pageLock frameObjId, \.read\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_vspaceMap_frame_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# PR #904 (v0.36.41): the HAL validates what a descriptor says; a table store is
+# its own tag, because the walker reads 0b11 by level.
+run_check "INVARIANT" rg -n '^    \.storeTableDescriptor \(tableEntryAddress parent index\)$' SeLe4n/Kernel/Architecture/HardwareTables.lean
+run_check "INVARIANT" rg -n '^  \| \.storeTableDescriptor _ _ => 4$' SeLe4n/Kernel/Architecture/PhysicalWrite.lean
+run_check "INVARIANT" rg -n -U '^            \} else if !page_descriptor_admissible\(value, &covered\) \{\n                Err\(PhysicalWriteRefusal::DescriptorRefused\(value\)\)\n            \} else \{\n                Ok\(PhysicalWrite::StoreDescriptor \{ entry: addr, value \}\)$' rust/sele4n-hal/src/user_translation.rs
+run_check "INVARIANT" rg -n -U '^            \} else if !table_descriptor_admissible\(value, &covered\) \{\n                Err\(PhysicalWriteRefusal::DescriptorRefused\(value\)\)\n            \} else \{\n                Ok\(PhysicalWrite::StoreTableDescriptor \{ entry: addr, value \}\)$' rust/sele4n-hal/src/user_translation.rs
+# PR #904 (v0.36.41): every kernel stack has an unmapped guard page, and an
+# EL1-origin fault runs on the PE's fault stack, which SP_EL0 holds at EL1.
+run_check "INVARIANT" rg -n -U '^\.balign 128\n    msr spsel, #0\n    b   __el1_sync_entry$' rust/sele4n-hal/src/vectors.S
+run_check "INVARIANT" rg -n -U '^\.balign 128\n    msr spsel, #0\n    b   __el1_serror_entry$' rust/sele4n-hal/src/vectors.S
+run_check "INVARIANT" rg -n -U '^__el0_sync_entry:\n    save_context\n    set_fault_stack\n    bl      handle_synchronous_exception$' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n -U '^__el0_irq_entry:\n    save_context\n    set_fault_stack\n    bl      handle_irq_per_core$' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n -U '^        if layout\.in_stack_guard\(addr\) \{\n[ \t]*\n            BootMapping::Unmapped$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^    lsl     x1, x1, #17              // x1 = index \* SECONDARY_STACK_STRIDE \(128 KiB\)$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -n '^        frame\.sp_el0 = idle\.sp_el0;$' rust/sele4n-hal/src/trap.rs
+# PR #904 (v0.36.41): the boot-entry contract refuses a configuration argument
+# whose project closure is compiled to something other than its kernel term.
+run_check "INVARIANT" rg -n '^            match compiledEffectConstant env args with$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^    if \(Lean\.Compiler\.getImplementedBy\? env n\)\.isSome \|\| isExtern env n \|\| ci\.isUnsafe then$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'bootEntryWitnessEffectfulConfig\] do$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_retry_of_owned_elsewhere($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
+run_check "INVARIANT" rg -n '^theorem fpReleaseOnCore_saves_owner($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
+run_check "INVARIANT" rg -n '^    else if fpOwnedElsewhere st c tid then \(\.retry, st\)$' SeLe4n/Kernel/Architecture/FpContext.lean
+run_check "INVARIANT" rg -n '^        \.user tcb\.registerContext ops\.1 ops\.2 \(fpLiveFor st c tid\)$' SeLe4n/Kernel/Architecture/ContextRestore.lean
+run_check "INVARIANT" rg -n '^    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^@\[export lean_handle_fp_access\]$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame record\.2\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+# v0.36.39: every state-committing entry drains both hardware ledgers — the
+# physical writes and the instruction-cache operands — in its atomic step, and
+# performs them before its restore (the writes before any SGI).
+run_check "INVARIANT" rg -n -U '      \(st.\.pendingPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^  \| none => pure \(\)\n  Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2\n  Concurrency\.releaseSwitchedFpOwner coreId$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '      \(st.\.pendingPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites record\.2\.2\.1\n  Platform\.FFI\.completeIcacheMaintenance record\.2\.2\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n -U '    \(suspendThreadCrossCoreDrainedStep tid execCore\)\n  Platform\.FFI\.completePhysicalWrites result\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.1\.2\n  Platform\.FFI\.completeIcacheMaintenance result\.2\.2$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# The FP routines keep an output section of their own in the linked image.
+run_check "INVARIANT" rg -n -U '^    \.text\.sele4n_fp_context : ALIGN\(16\) \{\n        KEEP\(\*\(\.text\.sele4n_fp_context\)\)' rust/sele4n-hal/link.ld
+# ...and the image check decides executable-in-text by address, not by name.
+run_negative_check "INVARIANT" rg -n 's\.executable and s\.name not in REQUIRED_SECTIONS' scripts/check_kernel_image.py
+run_check "INVARIANT" rg -n '^                                         and s\.addr \+ s\.size <= text_end\)\]$' scripts/check_kernel_image.py
+run_check "INVARIANT" rg -n '^  else if ec = 0x07 then \.fpAccess$' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^  \| \.fpAccess     => none$' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^        if threadHeldOnSomeCore st tcb\.tid then$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+# PR #904 review (`v0.36.41`): the destroy path refuses a thread some core still
+# holds as its resident EL0 context, beside the current and FP-owner clauses.
+run_check "INVARIANT" rg -n -U 'def threadHeldOnSomeCore \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : Bool :=\n  threadCurrentOnSomeCore st tid \|\| st\.machine\.fpOwnedOnSomeCore tid \|\|\n    st\.machine\.residentOnSomeCore tid$' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^  tcbResidencyReleased : ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^  tcbFpReleased : ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^\.section \.text\.sele4n_fp_context$' rust/sele4n-hal/src/fp_context.S
+run_check "INVARIANT" rg -n '^    mov     x9, #0x300000$' rust/sele4n-hal/src/fp_context.S
+run_check "INVARIANT" rg -n '^const FP_CONTEXT_CPACR_WRITERS: \[\(&str, &\[&str\]\); 4\] = \[$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^FP_CONTEXT_ROUTINES = frozenset\(\{"sele4n_fp_save_context", "sele4n_fp_load_context"\}\)$' scripts/check_fp_simd_free_objects.py
+run_check "INVARIANT" rg -n 'crate::fp_context::set_trap_for_resume\(kind == RESTORE_KIND_USER_FP_LIVE\);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^        sync_class::FP_ACCESS => \{$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'the next thread loads its own context' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n 'a thread some core.s registers hold is not destroyed' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^  runLazyFpChecks$' tests/FaultHandlingSuite.lean
+
+# WS-BP BP7.11: the boot starts both initial threads, one per domain.  The start
+# is the kernel model's enqueue preceded by the flag write, dispatching nothing;
+# the stage runs it after the idle enqueue and refuses a name it cannot start;
+# a binding's started threads are its labeling's two separation witnesses; the
+# bundle is one argument over a named boot shape; and the RPi5 deployment starts
+# the root task on the boot core and the untrusted thread pinned to core 1.
+run_check "INVARIANT" rg -U -n '^def startInitialThreadOnCore \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  enqueueRunnableOnCore \(st\.updateTcb tid fun t => \{ t with threadState := \.Ready \}\)\n    \(determineTargetCore st tid\) tid$' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem initialThreadStartable_spec($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_currentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_threadStateConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_runQueueBootSound($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem initialThreadStartable_of_start_ne($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^  initialThreads : List SeLe4n\.ThreadId := \[\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootStartShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -U -n '^    Architecture\.proofLayerInvariantBundle ist\.state :=\n  proofLayerInvariantBundle_of_bootStartShape ist\n    \(bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config ist h\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -U -n '^    Except String IntermediateState :=\n  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind\n    \(startInitialThreads config\.initialThreads\)$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -U -n '^      if initialThreadStartable ist\.state tid then\n        startInitialThreads rest \(startInitialThread ist tid\)\n      else\n        \.error unstartableInitialThreadBootError$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^  state := startInitialThreadOnCore ist\.state tid$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThread_preserves_bootStartShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_started($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_started($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_of_nil($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_allCores_threadInactiveFlagConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -U -n '^@\[inline\] def PlatformBinding\.initialThreads \[PlatformBinding platform\] :\n    List SeLe4n\.ThreadId :=\n  \[\(PlatformBinding\.deploymentLabeling \(platform := platform\)\)\.separatedLower,\n   \(PlatformBinding\.deploymentLabeling \(platform := platform\)\)\.separatedUpper\]$' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^    initialThreads := PlatformBinding\.initialThreads \(platform := platform\) \}$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^    match bootFromPlatformCheckedStartedFor cores config with$' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'match bootFromPlatformCheckedWithIdleThreadsFor cores config with' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^    cpuAffinity := some rpi5UntrustedCore \}$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^  , tcbEntry rpi5UntrustedTcbId rpi5UntrustedThread$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_initialThreadsStarted($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -U -n '^theorem rpi5BoundPlatformConfigAt_boot \(v : BCM2712Config\) \(hv : v\.Admissible\) :\n    bootFromPlatformCheckedStartedFor$' SeLe4n/Platform/RPi5/Deployment.lean
+run_negative_check "INVARIANT" rg -n 'maxHeartbeats' SeLe4n/Platform/RPi5/Deployment.lean SeLe4n/Platform/Boot/InitialThreads.lean SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' '^  deployment_starts_both_initial_threads$' tests
+run_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' '^  boot_refuses_unstartable_initial_threads$' tests
+run_prose_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' 'CONTROL: the idle stage queues neither thread' tests
+
+# WS-BP BP8.1 slice 1: the image runs under QEMU, on `virt`.  The board is a
+# build-time choice with one home (`board.rs`), every board's shape is decided
+# by the compiler, and the boot path reads the board off `BOARD`.
+run_check "INVARIANT" rg -n -U '^#\[cfg\(not\(feature = "board_qemu_virt"\)\)\]\npub const BOARD: BoardMap = RPI5;$' rust/sele4n-hal/src/board.rs
+run_check "INVARIANT" rg -n -U '^#\[cfg\(feature = "board_qemu_virt"\)\]\npub const BOARD: BoardMap = QEMU_VIRT;$' rust/sele4n-hal/src/board.rs
+run_check "INVARIANT" rg -n '^const _: \(\) = assert!\(well_formed\(&RPI5\)\);$' rust/sele4n-hal/src/board.rs
+run_check "INVARIANT" rg -n '^const _: \(\) = assert!\(well_formed\(&QEMU_VIRT\)\);$' rust/sele4n-hal/src/board.rs
+run_check "INVARIANT" rg -n -U '^pub const QEMU_VIRT: BoardMap = BoardMap \{[^\n]*(\n([ \t][^\n]*)?)*?\n    ram_base: 0x4000_0000,\n    kernel_reserved_end: 0x5000_0000,$' rust/sele4n-hal/src/board.rs
+run_check "INVARIANT" rg -n '^board_qemu_virt = \[\]$' rust/sele4n-hal/Cargo.toml
+# The reserved extent sits at the base of the board's RAM, and the boot tables
+# put `l2_ram` at that gigabyte, never at index 0.
+run_check "INVARIANT" rg -n '^pub const KERNEL_RESERVED_BASE: u64 = crate::board::BOARD\.ram_base;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const fn in_kernel_reserved_extent\(addr: u64\) -> bool \{\n    addr\.wrapping_sub\(KERNEL_RESERVED_BASE\) < KERNEL_RESERVED_END - KERNEL_RESERVED_BASE\n\}$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^    tables\.l1\[RAM_GIB\] = table_descriptor\(base_pa, L2_RAM_TABLE\);$' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n 'tables\.l1\[0\] = table_descriptor' rust/sele4n-hal/src/mmu.rs
+# The `virt` link script is derived from `link.ld`: three board lines rewritten
+# from `board.rs`, nothing else, and both images refused unless `link.ld`
+# states `RPI5`'s.
+run_check "INVARIANT" rg -n '^fn board_link_script\(manifest_dir: &str\) -> String \{$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U '^fn board_link_script\(manifest_dir: &str\) -> String \{[^\n]*(\n([ \t][^\n]*)?)*?\n    let \(rpi5_base, rpi5_end\) = board_ram_extent\(&board_rs, "RPI5"\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U '^fn board_link_script\(manifest_dir: &str\) -> String \{[^\n]*(\n([ \t][^\n]*)?)*?\n +Some\(i\) => virt\[i\]\.clone\(\),\n +None => l\.to_string\(\),' rust/sele4n-hal/build.rs
+# `_start` begins with the arm64 Image header, pinned word for word, and both
+# prologue scanners start `_start`'s contract after it.
+run_check "INVARIANT" rg -n '^const IMAGE_HEADER: \[&str; 10\] = \[$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^        let first = entry_body_index\(&items, entry, at\)\?;$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^        let call = entry_body_index\(&items, entry, at\)\?;$' rust/sele4n-hal/build.rs
+run_prose_check "INVARIANT" rg -n '^    \.word   0x644d5241              // magic' rust/sele4n-hal/src/boot.S
+run_prose_check "INVARIANT" rg -n '^__kernel_image_size = __lean_heap_end - _start;$' rust/sele4n-hal/link.ld
+# The FP/SIMD gate reads the header's data words as data, and admits data only
+# in `_start`'s first 64 bytes.
+run_check "INVARIANT" rg -n '^            if function != IMAGE_HEADER_FUNCTION or not 0 <= offset < IMAGE_HEADER_BYTES:$' scripts/check_fp_simd_free_objects.py
+# A uniprocessor GIC reads its targets as zero: the self-check reads TYPER.
+run_check "INVARIANT" rg -n '^    let expected = self_check_expected\(read_distributor_register\(base, gicd::TYPER\)\);$' rust/sele4n-hal/src/gic.rs
+run_negative_check "INVARIANT" rg -n 'if actual != SELF_CHECK_EXPECTED' rust/sele4n-hal/src/gic.rs
+# The QEMU lane is live: the `virt` image, booted at EL1 and at EL2, the
+# fixture's fragments in order, and the fixture's companion verified.
+# WS-BP BP8.2: the build is `scripts/qemu_boot_lib.sh`'s, into a target
+# directory of its own, and the lane sources that library.
+run_check "INVARIANT" rg -n -U '^    features="kernel_image,board_qemu_virt"\n    target_dir="\$\{HAL_TARGET_DIR\}"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^                --features "\$\{features\}" --bin sele4n-kernel \\\n                --target-dir "\$\{target_dir\}"\) ' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_boot_lib\.sh"$' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -U '^    boot_once "virt, EL2 entry" "virt,gic-version=2,virtualization=on" \\\n        "booting on QEMU virt" "Entered at EL2, running at EL1" "PSCI conduit: Smc"$' scripts/test_qemu.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F 'line=$(tail -n "+$((after + 1))" "${QEMU_LOG}" | grep -n -F -m1 -- "${fragment}" | cut -d: -f1) || line=""' scripts/test_qemu.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F 'sha256sum -c "$(basename "${FIXTURE}").sha256"' scripts/test_qemu.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- '--features "${IMAGE_FEATURES},${VIRT_FEATURE}" --bin "${IMAGE_BIN}"' scripts/test_aarch64_cross_build.sh
+# WS-BP BP8.1 slice 2 (v0.36.25): the Lean `virt` binding and its boot entry.
+# The entry is exported under its own symbol and is exactly the virt device-tree
+# wrapper on the entry's own blob; the library root reaches it, so the archive
+# carries it; the HAL declares and calls it under the board feature alone; the
+# readiness scanner records it as the one other upcall outside the gate; the HAL
+# reads the virt board's Lean table under the feature; the virt host tests and the
+# RPi5-only clippy lane both run; the fixture normaliser is self-tested in Tier 0
+# and compared against a live dump in the QEMU lane; and the Lean suite drives the
+# board check on QEMU's own device tree.
+run_check "INVARIANT" rg -n '^@\[export lean_kernel_main_qemu_virt\]$' SeLe4n/Platform/QemuVirt/KernelMain.lean
+run_check "INVARIANT" rg -n '^  bootAndInitialiseQemuVirtFromDtbOrHalt dtb qemuVirtIrqTable qemuVirtInitialObjects none$' SeLe4n/Platform/QemuVirt/KernelMain.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.KernelMain$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^instance qemuVirtPlatformBinding\b' SeLe4n/Platform/QemuVirt/Contract.lean
+run_check "INVARIANT" rg -n '^def qemuVirtBootRamExtensions[ :]' SeLe4n/Platform/QemuVirt/Board.lean
+run_check "INVARIANT" rg -n -F -- '#[cfg(feature = "board_qemu_virt")]' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_qemu_virt(dtb) };' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- '"lean_kernel_main_qemu_virt",' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -F -- 'println!("cargo:rustc-env=SELE4N_BOARD_LINK_SCRIPT={board_script}");' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -F -- 'pub(crate) const BOARD_LINK_SCRIPT: &str = include_str!(env!("SELE4N_BOARD_LINK_SCRIPT"));' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -F -- 'include_str!("../../../tests/fixtures/boot_map_qemu_virt.expected");' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -F -- 'cargo test -p sele4n-hal --lib --features board_qemu_virt' scripts/test_rust.sh
+run_check "INVARIANT" rg -n -F -- 'cargo clippy -p sele4n-hal --all-targets --features hw_target,host_tools,kernel_image,smp_exercisers -- -D warnings' scripts/test_rust.sh
+run_check "INVARIANT" rg -n -F -- 'qemu_virt_dtb_fixture.py" --self-test' scripts/test_tier0_hygiene.sh
+run_check "INVARIANT" rg -n -F -- 'qemu_virt_dtb_fixture.py" --check' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -F -- 'BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt")' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^  qemuVirt_board_check_on_qemus_own_device_tree$' tests
+run_check "INVARIANT" rg -n '^  qemuVirt_deployment_boots$' tests
+run_check "INVARIANT" rg -n '^  bootMap_the_qemu_virt_map_is_the_shared_table$' tests
+
+# WS-BP BP8.1 slice 3 (v0.36.26): the Lean-linked `virt` image boots on four PEs
+# to every core's first idle dispatch, at EL1 and at EL2.  Three defects the
+# first run found, each pinned as the relation it restores.  (1) The verified
+# device-tree parser reads a byte through `ByteArray`'s own accessor: `.data[i]?`
+# builds a boxed copy of the whole blob per byte, which made the parse quadratic
+# in the blob and never finished on QEMU's 1 MiB tree.
+run_negative_check "INVARIANT" rg -n '\.data\[' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -F -- 'let b0 ← blob[offset]?' SeLe4n/Platform/DeviceTree.lean
+# (2) A restore replaces an EL1-origin frame only once its core has handed
+# itself to the idle wait; before that the frame is the kernel's own bring-up,
+# resumed as it stands, and the live commit reads the live flags.
+run_check "INVARIANT" rg -n -U '^    if !exception_taken_from_el0\(frame\.spsr_el1\) && !handed_off\.load\(Ordering::Relaxed\) \{\n        return Ok\(false\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^        &RESTORED,\n        &IDLE_HANDOFF,\n        core,$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^pub fn enter_idle_wait\(\) -> ! \{\n[^\n]*\n    hand_off_to_idle_in\(&IDLE_HANDOFF, core\);\n    kernel_idle_loop\(\)\n\}$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^    crate::trap::enter_idle_wait\(\)\n\}$' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n -U '^    #\[cfg\(feature = "hw_target"\)\]\n    crate::trap::enter_idle_wait\(\);$' rust/sele4n-hal/src/boot.rs
+# The first-idle report prints after the IRQ dispatch has released its bracket,
+# and is noted only when an idle resume replaced the frame.
+run_check "INVARIANT" rg -n -U '^    \}\);\n[ ]*\n    report_first_idle_dispatch\(\);\n\}$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^        if kind == RESTORE_KIND_IDLE \{\n            note_idle_dispatch_in\(&FIRST_IDLE, core\);$' rust/sele4n-hal/src/trap.rs
+# (3) Every core runs a first reschedule -- the boot core's between its
+# readiness and its unmask, as every secondary's is.
+run_check "INVARIANT" rg -n -F -- '    first_reschedule(core_idx, crate::cpu::fatal_halt);' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n -U '^pub\(crate\) fn first_reschedule\(core_idx: usize, halt: fn\(\) -> !\) \{$' rust/sele4n-hal/src/smp.rs
+# The boot log says the topology check passed, and the lane requires it.
+run_check "INVARIANT" rg -n -F -- '"[boot] Phase 7: all {} declared PE(s) serve the kernel",' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -F -- 'TOPOLOGY         | [boot] Phase 7: all 4 declared PE(s) serve the kernel' tests/fixtures/qemu_lean_boot_expected.txt
+# The lane: the Lean-linked image, four PEs, the clock counted in instructions,
+# until the fourth first idle dispatch; and the archive lane runs it, requiring
+# QEMU, in a CI job that installs it.
+run_check "INVARIANT" rg -n -U '^        features="hw_target,\$\{features\}"\n        target_dir="\$\{LEAN_TARGET_DIR\}"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^    BOOT_SMP=4\n    BOOT_EXTRA=\(-icount "shift=0,sleep=off"\)\n    UNTIL_FRAGMENT="first idle dispatch"\n    UNTIL_COUNT=4$' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -F -- 'boot_once "Lean kernel, virt, EL2 entry" "virt,gic-version=2,virtualization=on"' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu\.sh" --lean-kernel$' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -n -F -- 'sudo apt-get install -y --no-install-recommends qemu-system-arm' .github/workflows/lean_action_ci.yml
+# That install omits `ipxe-qemu` (a Recommends), whose `efi-virtio.rom` backs
+# `virt`'s default NIC, and QEMU refuses to start without it (CI run
+# 36489522711).  Every boot goes through `qemu_run`, which asks for no NIC, and
+# the device-tree fixture dumps the same machine the boots run on.
+run_check "INVARIANT" rg -n -U '^        -m "\$\{QEMU_MEMORY\}"\n        -nic none\n        -kernel "\$\{QEMU_IMAGE\}"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n -U '^QEMU_ARGS = \["-M", "virt,gic-version=2", "-cpu", "cortex-a76", "-smp", "4", "-m", "1G",\n             "-nic", "none"\]$' scripts/qemu_virt_dtb_fixture.py
+# A dump QEMU refused is reported with QEMU's own reason, never as a stale fixture.
+run_check "INVARIANT" rg -n -U 'if done\.returncode != 0 or not target\.is_file\(\):\n            raise DtbError' scripts/qemu_virt_dtb_fixture.py
+# An event with no base (workflow_dispatch, schedule) takes HEAD's parent, in
+# both workflows that run the changed-file gates.
+run_check "INVARIANT" rg -n -U '^          git fetch --no-tags --deepen=1 origin "\$\{GITHUB_SHA\}" 2>/dev/null \|\| true\n          if parent="\$\(git rev-parse --verify -q "HEAD\^1\^\{commit\}"\)"; then\n            echo "SELE4N_PLAN_BASE_REF=\$\{parent\}" >> "\$\{GITHUB_ENV\}"$' .github/workflows/lean_action_ci.yml
+run_check "INVARIANT" rg -n -U '^          git fetch --no-tags --deepen=1 origin "\$\{GITHUB_SHA\}" 2>/dev/null \|\| true\n          if parent="\$\(git rev-parse --verify -q "HEAD\^1\^\{commit\}"\)"; then\n            echo "SELE4N_PLAN_BASE_REF=\$\{parent\}" >> "\$\{GITHUB_ENV\}"$' .github/workflows/platform_security_baseline.yml
+# Every tracked Python source compiles with warnings as errors, in Tier 0.
+run_check "INVARIANT" rg -n '^run_check "HYGIENE" python3 "\$\{SCRIPT_DIR\}/check_python_compile_warnings\.py"$' scripts/test_tier0_hygiene.sh
+
+# ----------------------------------------------------------------------------
+# WS-BP BP8.2 (v0.36.27): the four-PE bring-up gate executes, and a console
+# line is a line.
+# ----------------------------------------------------------------------------
+# The gate builds and boots through the shared library -- never its own copy --
+# on four PEs at both entry levels, and the archive lane runs it in both modes,
+# requiring QEMU.
+run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_boot_lib\.sh"$' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n -U '^    qemu_run "\$\{label\}" "\$\{BRINGUP_LOG\}" "\$\{machine\}" 4 "\$\{DEADLINE\}" \\\n        "\$\{UNTIL_FRAGMENT\}" "\$\{UNTIL_COUNT\}" "\$\{BOOT_EXTRA\[@\]\}"' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n -F -- 'bringup_once "four PEs, virt, EL2 entry" "virt,gic-version=2,virtualization=on"' scripts/test_qemu_smp_bringup.sh
+run_negative_check "INVARIANT" rg -n 'SELE4N_KERNEL_IMAGE' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_smp_bringup\.sh"$' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_smp_bringup\.sh" --lean-kernel$' scripts/test_lean_aarch64_archive.sh
+# A banner is matched as a whole line: a console tag anywhere but at a line's
+# start fails the run, and a row matches a line that begins with it.
+run_check "INVARIANT" rg -n -F -- 'if re.search(r".\[(smp|boot|sched|tick)\] ", line):' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n -F -- 'while at < len(stream) and not stream[at].startswith(prefix):' scripts/test_qemu_smp_bringup.sh
+run_check "INVARIANT" rg -n -F -- 'secondary | [smp] core {N}: ready, entering kernel' tests/fixtures/qemu_smp_bringup_expected.txt
+run_check "INVARIANT" rg -n -F -- 'boot | [boot] Phase 6: 3 secondary core(s) online (max requested: 4)' tests/fixtures/qemu_smp_bringup_expected.txt
+# A PE prints nothing before its own MMU is on: nothing stands between a
+# secondary's release wait and its MMU enable, and its first banner follows it.
+run_check "INVARIANT" rg -n -U '^    \}\n([ ]*\n)*    crate::mmu::init_mmu_secondary\(core_id\);\n    crate::kprintln!\("\[smp\] core \{core_id\}: entering per-core init"\);$' rust/sele4n-hal/src/smp.rs
+# A console line is one lock acquisition, and the retired two-`kprint!` body
+# must not come back.
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -U '^        \$crate::uart::with_boot_uart\(\|uart\| \{\n            let _ = uart\.write_fmt\(format_args!\(\$\(\$arg\)\*\)\);\n            let _ = uart\.write_str\("\\n"\);\n        \}\);' rust/sele4n-hal/src/uart.rs
+# shellcheck disable=SC2016
+run_negative_check "INVARIANT" rg -n -U '\$crate::kprint!\(\$\(\$arg\)\*\);\n[ ]*\$crate::kprint!\("\\n"\);' rust/sele4n-hal/src/uart.rs
+run_check "INVARIANT" rg -n '^    fn a_printed_line_takes_the_console_lock_once\(\) \{$' rust/sele4n-hal/src/uart.rs
+
+# ----------------------------------------------------------------------------
+# WS-BP BP8.4 (v0.36.28): the Tier-4 gates execute on the `virt` test image,
+# and the shootdown box is decided by a run.
+# ----------------------------------------------------------------------------
+# The drivers are a module behind a feature, and the feature never reaches a
+# release image: the exerciser image builds into a target directory of its
+# own, no image build in either lane names the feature without the board
+# selector, and the packager never sees it.  The `.sh` negatives are scoped to
+# the COMMANDS, since a shell script is read raw and each lane's header names
+# the feature in prose to say exactly this.
+run_check "INVARIANT" rg -n -U '^#\[cfg\(feature = "smp_exercisers"\)\]\npub mod smp_exercisers;$' rust/sele4n-hal/src/lib.rs
+run_check "INVARIANT" rg -n '^smp_exercisers = \[\]$' rust/sele4n-hal/Cargo.toml
+run_check "INVARIANT" rg -n -U '^        features="\$\{features\},\$\{EXERCISER_FEATURE\}"\n        target_dir="\$\{target_dir\}-exercisers"$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n '^EXERCISER_FEATURE="smp_exercisers"$' scripts/qemu_boot_lib.sh
+run_negative_check "INVARIANT" rg -n -U '^cargo build[^\n]*\\\n[^\n]*smp_exercisers' scripts/test_lean_aarch64_archive.sh
+run_negative_check "INVARIANT" rg -n '^IMAGE_FEATURES=.*smp_exercisers' scripts/test_aarch64_cross_build.sh
+run_negative_check "INVARIANT" rg -n 'smp_exercisers' scripts/build_rpi5_image.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- '--features "${IMAGE_FEATURES},${VIRT_FEATURE},${EXERCISER_FEATURE}" --bin "${IMAGE_BIN}"' scripts/test_aarch64_cross_build.sh
+run_check "INVARIANT" rg -n -F -- 'cargo test -p sele4n-hal --lib --features smp_exercisers' scripts/test_rust.sh
+# A round is the kernel's round: acquire (self-servicing a round in flight,
+# under the seam's own fuel), the in-flight witness, the generation, the
+# operands, the request to every online target, the broadcast invalidation,
+# the bounded wait, the release -- in that order, inside one body, which the
+# bounded gap cannot leave.  A timed-out round halts the system, and a round
+# runs with IRQs masked, since a kernel entry while holding the round lock is
+# the tripwire's halt.  No local invalidation anywhere in the module.
+run_check "INVARIANT" rg -n -U 'let mut fuel = protocol\.acquire_fuel;[^\n]*(\n([ \t][^\n]*)?)*round_lock_try_acquire_in\(protocol\.lock, initiator\)[^\n]*(\n([ \t][^\n]*)?)*self_service_round_in\(protocol\.mailbox, protocol\.slots, initiator\)[^\n]*(\n([ \t][^\n]*)?)*in_flight\.fetch_add\(1, Ordering::AcqRel\) != 0[^\n]*(\n([ \t][^\n]*)?)*allocate_round_generation_in\(protocol\.generations\)[^\n]*(\n([ \t][^\n]*)?)*publish_round_ops_in\(protocol\.mailbox, &\[op\], generation\)[^\n]*(\n([ \t][^\n]*)?)*\(hardware\.send_request\)\(target\)[^\n]*(\n([ \t][^\n]*)?)*\(hardware\.broadcast_invalidate\)\(op\)[^\n]*(\n([ \t][^\n]*)?)*wait_all_acked_bounded_in\([^\n]*(\n([ \t][^\n]*)?)*round_lock_release_in\(protocol\.lock\)' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'if outcome == RoundOutcome::TimedOut \{[^\n]*(\n([ \t][^\n]*)?)*crate::gic::halt_all\(\);' rust/sele4n-hal/src/smp_exercisers.rs
+# v0.36.38: the exerciser's round runs inside the kernel-entry bracket, as the
+# seam's does, so no target can sit in a Lean tick through the bounded wait.
+run_check "INVARIANT" rg -n -U 'let saved = crate::interrupts::disable_interrupts\(\);\n[ ]*let \(generation, outcome\) = crate::kernel_entry::with_kernel_entry\(initiator, \|\| \{\n[ ]*let \(generation, outcome\) = run_round_in\(' rust/sele4n-hal/src/smp_exercisers.rs
+run_negative_check "INVARIANT" rg -n 'tlbi_local|fatal_halt' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'pub fn production_protocol\(\) -> RoundProtocol<.static> \{[^\n]*(\n([ \t][^\n]*)?)*acquire_fuel: ROUND_LOCK_ACQUIRE_FUEL,' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const ROUND_LOCK_ACQUIRE_FUEL: u64 = 1_000_000;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^def shootdownRoundLockAcquireFuel : Nat := 1000000$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^pub const ROUND_WAIT_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS;$' rust/sele4n-hal/src/smp_exercisers.rs
+# The window hangs off the boot L1 table's last entry, and the install decides
+# admission -- sealed, aligned, inside the kernel's extent, at a free entry --
+# before it writes; the HAL-only image seals the map where the Lean image does,
+# before any secondary is released.
+run_check "INVARIANT" rg -n '^pub const EXERCISER_WINDOW_L1_INDEX: usize = TABLE_ENTRIES - 1;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'let verdict = exerciser_window_admissible\(l2_table_pa, sealed, current, kernel\);\n[ ]*if verdict\.is_ok\(\) \{\n[ ]*core::ptr::write_volatile\(entry, \(l2_table_pa & DESC_ADDR_MASK\) \| DESC_TABLE\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(not\(feature = "hw_target"\)\)\]\n[ ]*crate::mmu::seal_boot_map\(\);\n[ ]*#\[cfg\(not\(feature = "hw_target"\)\)\]\n[ ]*let secondary_release = crate::lean_entry::SecondaryReleasePermit::no_lean_kernel\(\);' rust/sele4n-hal/src/boot.rs
+# The drivers run on the boot core after every declared PE serves the kernel
+# and before the core hands itself to the idle wait; each PE's agent is an SGI
+# handler on INTID 15, registered in boot phase 3.
+run_check "INVARIANT" rg -n -U '#\[cfg\(feature = "smp_exercisers"\)\]\n[ ]*crate::smp_exercisers::run_on_boot_core\(cmdline_cfg\.smp_enabled\);\n\n[ ]*#\[cfg\(feature = "hw_target"\)\]\n[ ]*crate::trap::enter_idle_wait\(\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -F -- 'crate::smp_exercisers::register_agent_handler();' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^pub const AGENT_SGI_INTID: u8 = 15;$' rust/sele4n-hal/src/smp_exercisers.rs
+# The banners the drivers print and the checker requires, whole, as relations:
+# acknowledged generations at or past the round's, every core's stress lines
+# exactly the iterations 0..31, 32 rounds under 32 distinct generations, no
+# stale probe, and a torn line a failure.
+run_check "INVARIANT" rg -n -F -- 'crate::kprintln!("[smp-test] SGI round-trip complete");' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -F -- 'crate::kprintln!("[smp-test] tlb-shootdown: stale translation removed");' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -F -- 'crate::kprintln!("[smp-test] kprintln-stress: every core printed {STRESS_LINES} lines");' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STRESS_LINES: u64 = 32;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -F -- 'if re.search(r".\[(smp|boot|sched|tick|smp-test|gic|kernel-entry|core \d)\] ", line):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if acked < generation:' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if iterations != list(range(32)):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if len(set(generations)) != len(generations):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if line.startswith("[smp-test] tlb-shootdown-stress: stale translation"):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'require(f"[smp-test] exercisers: {len(every)} passed, 0 failed")' scripts/qemu_exerciser_lib.sh
+# Every executable gate boots and checks through the shared library and names
+# its driver; every user-program gate reports NOT RUN through it, exiting
+# SELE4N_SKIP_EXIT, and none reads a pre-built image any more.
+run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_exerciser_lib\.sh"$' scripts/test_qemu_smp_exercisers.sh
+run_check "INVARIANT" rg -n '^source "\$\{SCRIPT_DIR\}/qemu_exerciser_lib\.sh"$' scripts/test_qemu_smp_minimal.sh
+# (The gate id each script passes first names its workstream, which is prose
+# to the naming gate only when double-quoted, so the anchors pin the subject and
+# the driver, which is what the library dispatches on.)
+run_check "INVARIANT" rg -n -F -- '"the Tier-4 exercisers" all "$@"' scripts/test_qemu_smp_exercisers.sh
+run_check "INVARIANT" rg -n -F -- '"cross-core SGI round trip" sgi-round-trip "$@"' scripts/test_qemu_smp_sgi_roundtrip.sh
+run_check "INVARIANT" rg -n -F -- '"cross-core console stress" kprintln-stress "$@"' scripts/test_qemu_smp_kprintln_stress.sh
+run_check "INVARIANT" rg -n -F -- '"cross-core TLB shootdown round trip" tlb-shootdown "$@"' scripts/test_qemu_smp_shootdown.sh
+run_check "INVARIANT" rg -n -F -- '"concurrent TLB shootdown stress" tlb-shootdown-stress "$@"' scripts/test_qemu_smp_shootdown_stress.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"cross-core wake-via-SGI round trip"' scripts/test_qemu_smp_wake.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"per-core timer-tick boot test"' scripts/test_qemu_smp_timer.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"cross-core priority-inheritance round trip"' scripts/test_qemu_smp_pip.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"per-core domain-scheduling rotation"' scripts/test_qemu_smp_domain.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"per-core CBS replenishment and affinity migration"' scripts/test_qemu_smp_cbs.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"per-core scheduler, four threads on four cores"' scripts/test_qemu_smp_scheduler.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"cross-core IPC handshake round trip"' scripts/test_qemu_smp_ipc.sh
+run_check "INVARIANT" rg -n '^exerciser_user_program_gate .*"cross-core deadlock-freedom stress"' scripts/test_qemu_smp_deadlock_stress.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- 'exit "${SELE4N_SKIP_EXIT:-77}"' scripts/qemu_exerciser_lib.sh
+run_negative_check "INVARIANT" rg -n 'SELE4N_KERNEL_IMAGE' scripts/test_qemu_smp_exercisers.sh scripts/test_qemu_smp_minimal.sh scripts/test_qemu_smp_sgi_roundtrip.sh scripts/test_qemu_smp_kprintln_stress.sh scripts/test_qemu_smp_shootdown.sh scripts/test_qemu_smp_shootdown_stress.sh scripts/test_qemu_smp_wake.sh scripts/test_qemu_smp_timer.sh scripts/test_qemu_smp_pip.sh scripts/test_qemu_smp_domain.sh scripts/test_qemu_smp_cbs.sh scripts/test_qemu_smp_scheduler.sh scripts/test_qemu_smp_ipc.sh scripts/test_qemu_smp_deadlock_stress.sh scripts/qemu_exerciser_lib.sh
+# The PE-withheld boot: two PEs, the Lean-linked image's refusal naming the
+# count, the boot core's dispatch refused and a serving secondary's admitted.
+# shellcheck disable=SC2016,SC1003
+run_check "INVARIANT" rg -n -F -- 'qemu_run "${LABEL}" "${MINIMAL_LOG}" "${EXERCISER_MACHINE}" 2 "${DEADLINE}" \' scripts/test_qemu_smp_minimal.sh
+run_check "INVARIANT" rg -n -F -- 'require_prefix("[boot] FATAL: 2 PE(s) serving the kernel but the linked Lean kernel declares 4")' scripts/test_qemu_smp_minimal.sh
+run_check "INVARIANT" rg -n -F -- 'if line.startswith("[sched] core 0:"):' scripts/test_qemu_smp_minimal.sh
+run_negative_check "INVARIANT" rg -n 'line\.endswith\("first idle dispatch"\)' scripts/test_qemu_smp_minimal.sh
+# The lanes: the archive lane runs the all-driver gate on both images requiring
+# QEMU, and the Tier-4 runner runs every executable gate on both images.
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_smp_exercisers\.sh"$' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_smp_exercisers\.sh" --lean-kernel$' scripts/test_lean_aarch64_archive.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -U '^gate\(\) \{\n    run_gate_check "META" "\$\{SCRIPT_DIR\}/\$1"\n    if \[\[ "\$\{LEAN_MODE\}" -eq 1 \]\]; then\n        run_gate_check "META" "\$\{SCRIPT_DIR\}/\$1" --lean-kernel' scripts/test_tier4_smp_bootcheck.sh
+run_check "INVARIANT" rg -n '^gate test_qemu_smp_minimal\.sh$' scripts/test_tier4_smp_bootcheck.sh
+run_check "INVARIANT" rg -n '^gate test_qemu_smp_shootdown_stress\.sh$' scripts/test_tier4_smp_bootcheck.sh
+# The boxes the run decides are ticked on its evidence, and stay ticked.
+run_prose_check "INVARIANT" rg -n -F -- '- [x] Tier 0..4 green; QEMU shootdown test passes' docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md
+run_prose_check "INVARIANT" rg -n -F -- '- [x] Tier-4 reports a result rather than a SKIP (' docs/planning/SMP_BOOT_PATH_PLAN.md
+
+# ----------------------------------------------------------------------------
+# WS-BP BP8.5 (v0.36.29): the per-core counters are read on the booted machine
+# -- `perCoreStats` executed, `perCoreStatsPlausible` decided there.
+# ----------------------------------------------------------------------------
+# One selector-driven seam, `BaseIO UInt64` so it crosses as a `uint64_t`:
+# the four counters in the snapshot's own order, the verdict as `1`/`0`, and
+# every other selector or an unknown core refused with every bit set -- which
+# no counter reaches and neither verdict is.  The export decodes the core as
+# every per-core entry does and reads nothing at a core the model lacks.
+run_check "INVARIANT" rg -n -U '@\[export lean_per_core_stats_component\]\ndef perCoreStatsComponentExport \(coreId selector : UInt64\) : BaseIO UInt64 :=' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n -U 'match coreIdOfUInt64\? coreId with\n\s+\| some core => perCoreStatsComponent core selector\n\s+\| none => pure perCoreStatsRefused' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n -U 'match selector\.toNat with\n\s+\| 0 => s\.irqs\n\s+\| 1 => s\.timerTicks\n\s+\| 2 => s\.sgis\n\s+\| 3 => s\.syscalls\n\s+\| 4 => if perCoreStatsPlausible s then 1 else 0\n\s+\| _ => perCoreStatsRefused' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^def perCoreStatsRefused : UInt64 := 0xFFFFFFFFFFFFFFFF$' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsSelect_plausible_iff($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsSelect_refused($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsRefused_ne_zero($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsRefused_ne_one($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsComponent_def($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsComponent_plausible($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsComponentExport_of_core($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem perCoreStatsComponentExport_refused($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+# The Rust side mirrors the selectors and the refusal as named constants, and
+# the seam is a Lean upcall like every other: declared and called inside the
+# readiness guard's true branch in one function, that function a
+# `LEAN_READY_GATED_SEAMS` entry, never called at a function's top level.
+run_check "INVARIANT" rg -n '^pub const STATS_IRQS: u64 = 0;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_TIMER_TICKS: u64 = 1;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_SGIS: u64 = 2;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_SYSCALLS: u64 = 3;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_PLAUSIBLE: u64 = 4;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_REFUSED: u64 = u64::MAX;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'lean_ready\(core_id as usize\) \{\n\s+extern "C" \{\n\s+fn lean_per_core_stats_component\(core_id: u64, selector: u64\) -> u64;' rust/sele4n-hal/src/smp_exercisers.rs
+run_negative_check "INVARIANT" rg -n '^    unsafe \{ lean_per_core_stats_component\(' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U '"src/smp_exercisers\.rs",\n        "lean_stats_component",\n        "lean_per_core_stats_component",' rust/sele4n-hal/build.rs
+# v0.36.34 (Lean Action CI run 36499869963): the stats read runs with IRQs
+# masked, inside the kernel-entry bracket, restoring the mask it saved — and
+# build.rs derives that every Lean upcall is bracketed or registered.
+run_check "INVARIANT" rg -n -U '^        let saved_daif = crate::interrupts::disable_interrupts\(\);\n        let word = crate::kernel_entry::with_kernel_entry\(core_id as usize, \|\| \{' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U '^            unsafe \{ lean_per_core_stats_component\(core as u64, selector\) \}\n        \}\);\n        crate::interrupts::restore_interrupts\(saved_daif\);$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^const LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK: &\[\(&str, &str, &str, usize, &str\)\] = &\[$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U '^const LEAN_UPCALLS_IN_THREAD_CONTEXT: &\[\(&str, &str\)\] =\n    &\[\("src/smp_exercisers\.rs", "lean_stats_component"\)\];$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U 'if let Err\(why\) = reconcile_upcall_table\(\n        &unlocked_refs,\n        LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK,' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_kernel_entry_bracket_scanner\(\);$' rust/sele4n-hal/build.rs
+# The driver reads each slot in the reader's own order on both sides -- the
+# subtypes, the total, the syscalls -- with the Lean words between two Rust
+# reads of the same slot and the verdict asked last; the verdict on a core is
+# decided refused, plausible, interrupted, ticked, bracketed, in that order;
+# the slots are told apart before any snapshot by SGI counts read live and
+# chained core by core, and told apart again from the words the seam reported;
+# the driver tallies on the Lean image and only says so on the HAL-only one.
+run_check "INVARIANT" rg -n -U 'let timer_ticks = crate::per_cpu_stats::timer_tick_count_for\(core\);\n\s+let sgis = crate::per_cpu_stats::sgi_count_for\(core\);\n\s+let irqs = crate::per_cpu_stats::irq_count_for\(core\);\n\s+let syscalls = crate::per_cpu_stats::syscall_count_for\(core\);' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'let before = rust_counters\(core\);\n\s+let timer_ticks = lean_stats_component\(core, STATS_TIMER_TICKS\);\n\s+let sgis = lean_stats_component\(core, STATS_SGIS\);\n\s+let irqs = lean_stats_component\(core, STATS_IRQS\);\n\s+let syscalls = lean_stats_component\(core, STATS_SYSCALLS\);\n\s+let plausible = lean_stats_component\(core, STATS_PLAUSIBLE\);\n\s+let after = rust_counters\(core\);' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'let words = lean\.counters;[^\n]*(\n([ \t][^\n]*)?)*\.contains\(&STATS_REFUSED\)[^\n]*(\n([ \t][^\n]*)?)*if lean\.plausible != 1 \{[^\n]*(\n([ \t][^\n]*)?)*if words\.irqs == 0 \{[^\n]*(\n([ \t][^\n]*)?)*if words\.timer_ticks == 0 \{[^\n]*(\n([ \t][^\n]*)?)*if !\(before\.le\(&words\) && words\.le\(after\)\) \{[^\n]*(\n([ \t][^\n]*)?)*Ok\(\(\)\)' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'let target = floor\.saturating_add\(STATS_SGI_SPREAD\);[^\n]*(\n([ \t][^\n]*)?)*while crate::per_cpu_stats::sgi_count_for\(core\) < target \{[^\n]*(\n([ \t][^\n]*)?)*floor = crate::per_cpu_stats::sgi_count_for\(core\);' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_SGI_SPREAD: u64 = 64;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n '^pub const STATS_SPREAD_FUEL: u64 = 4096;$' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -F -- 'if sgi_counts[a] == sgi_counts[b] {' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U 'if let Some\(ok\) = per_core_stats\(\) \{\n\s+tally\("per-core-stats", ok\);' rust/sele4n-hal/src/smp_exercisers.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(not\(feature = "hw_target"\)\)\]\nfn per_core_stats\(\) -> Option<bool> \{[^\n]*(\n([ \t][^\n]*)?)*per-core-stats: not run \(no Lean kernel linked[^\n]*(\n([ \t][^\n]*)?)*None' rust/sele4n-hal/src/smp_exercisers.rs
+# The checker re-derives every relation from the words the seam reported, on
+# the Lean image alone -- where the driver is one of the five it tallies.
+run_check "INVARIANT" rg -n -U '^if lean:\n    every\.append\("per-core-stats"\)$' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if plausible != 1:' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if ticks + sgis > irqs:' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if irqs == 0 or ticks == 0:' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if not all(b <= w <= a for b, w, a in zip(before, words, after)):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n -F -- 'if len(set(sgis_by_core.values())) != len(sgis_by_core):' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n '^EXERCISER_DRIVERS=\(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats\)$' scripts/qemu_exerciser_lib.sh
+# The gate runs on the Lean-linked image alone and reports NOT RUN otherwise;
+# the Tier-4 runner runs it in that mode only, and the archive lane reaches it
+# through the all-driver gate's Lean run.
+run_check "INVARIANT" rg -n -F -- '"per-core counters on the booted machine" per-core-stats --lean-kernel' scripts/test_qemu_smp_per_core_stats.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -U 'if \[\[ "\$\{LEAN_KERNEL\}" -ne 1 \]\]; then[^\n]*(\n([ \t][^\n]*)?)*exit "\$\{SELE4N_SKIP_EXIT:-77\}"' scripts/test_qemu_smp_per_core_stats.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -U '^gate_lean_only\(\) \{\n    if \[\[ "\$\{LEAN_MODE\}" -eq 1 \]\]; then\n        run_gate_check "META" "\$\{SCRIPT_DIR\}/\$1" --lean-kernel\n    else\n        record_skip' scripts/test_tier4_smp_bootcheck.sh
+run_check "INVARIANT" rg -n '^gate_lean_only test_qemu_smp_per_core_stats\.sh$' scripts/test_tier4_smp_bootcheck.sh
+run_negative_check "INVARIANT" rg -n '^gate test_qemu_smp_per_core_stats\.sh$' scripts/test_tier4_smp_bootcheck.sh
+# The box the run decides is ticked on its evidence, and stays ticked.
+run_prose_check "INVARIANT" rg -n -F -- '- [x] Every booted core' docs/planning/SMP_BOOT_PATH_PLAN.md
+
+# ============================================================================
+# v0.36.30 — every EL0-writable register is thread context or trapped
+# ============================================================================
+#
+# `TPIDR_EL0` is written by EL0 with no trap, and nothing saved or restored it,
+# so a thread read the value the previous thread on its core wrote: a 64-bit
+# storage channel between threads that share a core, across domains.  It is
+# trap-frame word 34 now, saved at every entry and restored at every exit, and a
+# context restore installs the incoming thread's own value.  Each anchor pins a
+# relation — the save writes the frame slot the restore reads, the restore
+# installs word 34, the Lean layout reads and writes that word — rather than
+# the register's name.
+run_check "INVARIANT" rg -n -U 'mrs\s+x0, tpidr_el0\n\s+str\s+x0, \[sp, #288\]' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n -U 'ldr\s+x0, \[sp, #288\]\n\s+msr\s+tpidr_el0, x0' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n 'sub\s+sp, sp, #304$' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n 'add\s+sp, sp, #304$' rust/sele4n-hal/src/trap.S
+run_negative_check "INVARIANT" rg -n '(sub|add)\s+sp, sp, #288$' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n -F -- 'const _: () = assert!(core::mem::offset_of!(TrapFrame, tpidr_el0) == 288);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -F -- 'pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -F -- '34 => Some(frame.tpidr_el0),' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = word(34);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = 0;' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^def trapFrameWordCount : Nat := 35$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n '^def trapFrameTpidrWord : Nat := 34$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n -F -- 'tpidr := ⟨(word trapFrameTpidrWord).toNat⟩ }' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n -F -- 'else if i = trapFrameTpidrWord then rf.tpidr.val.toUInt64' SeLe4n/Kernel/Architecture/ContextRestore.lean
+run_check "INVARIANT" rg -n -F -- 'a.pstate == b.pstate && a.tpidr == b.tpidr &&' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n -F -- 'the incoming thread resumes with its own thread pointer, not the outgoing thread' tests/SmpSwitchToThreadSuite.lean
+#
+# The four controls EL0 could reach with no save and no trap — the preemption
+# timer through `CNTKCTL_EL1`, the performance counters through
+# `PMUSERENR_EL0`, the debug channel through `MDSCR_EL1`, and a firmware value
+# in `TPIDRRO_EL0` — are closed on every PE before it unmasks IRQs.
+run_check "INVARIANT" rg -n '^pub const CNTKCTL_EL1_KERNEL: u64 = 0;$' rust/sele4n-hal/src/cpu.rs
+run_check "INVARIANT" rg -n -F -- 'crate::write_sysreg!("cntkctl_el1", CNTKCTL_EL1_KERNEL);' rust/sele4n-hal/src/cpu.rs
+run_check "INVARIANT" rg -n -U 'if pmu_v3_implemented\(crate::read_sysreg!\("[^"]*"\)\) \{\n\s+crate::write_sysreg!\("pmuserenr_el0", 0u64\);' rust/sele4n-hal/src/cpu.rs
+run_check "INVARIANT" rg -n -F -- 'crate::write_sysreg!("mdscr_el1", 0u64);' rust/sele4n-hal/src/cpu.rs
+run_check "INVARIANT" rg -n -F -- 'crate::write_sysreg!("tpidrro_el0", 0u64);' rust/sele4n-hal/src/cpu.rs
+run_check "INVARIANT" rg -n -F -- 'crate::cpu::lock_el0_system_access();' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -F -- 'crate::cpu::lock_el0_system_access();' rust/sele4n-hal/src/smp.rs
+
+# ============================================================================
+# v0.36.31 — three acceptance boxes decided by runs on the target
+# ============================================================================
+#
+# WS-BP BP2.4: a refused Lean initialization halts the system.  The refusal is
+# reported and halted on in ONE function, which the production initializer and
+# the refusal probe both call, so the probe executes the code a real refusal
+# runs; the probe is a test image's feature and the gate that boots it runs in
+# the archive lane.
+run_check "INVARIANT" rg -n -U 'unsafe fn initialise_or_halt\(initializer: impl FnOnce\(\) -> Obj\) -> LeanLibraryInitialised \{[^\n]*(\n([ \t][^\n]*)?)*crate::gic::halt_all\(\)' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'unsafe { initialise_or_halt(initializer) }' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'ProbeMode::Error => unsafe { initialise_or_halt(|| io_result_mk_error(boxed(0))) },' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'ProbeMode::Malformed => unsafe { initialise_or_halt(|| boxed(0)) },' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -U 'ProbeMode::Twice => \{\n\s+let first = initialise_lean_library\(\);' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(feature = "lean_init_refusal_probe"\)\]\n\s+let initialised = crate::lean_entry::refusal_probe::initialise_refusing\(dtb_ptr\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(not\(feature = "lean_init_refusal_probe"\)\)\]\n\s+let initialised = crate::lean_entry::initialise_lean_library\(\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^lean_init_refusal_probe = \[\]$' rust/sele4n-hal/Cargo.toml
+run_check "INVARIANT" rg -n '^TEST_IMAGE_FEATURES = \(EXERCISER_FEATURE, PROBE_FEATURE\)$' scripts/check_aarch64_cross_target.py
+run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qemu_lean_init_refusal\.sh"$' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -n -F -- 'if lines[-1] != refusal:' scripts/test_qemu_lean_init_refusal.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- 'qemu_run "${label}" "${PROBE_LOG}" "${MACHINE}" 4 "${WINDOW}" "" 0' scripts/test_qemu_lean_init_refusal.sh
+#
+# WS-BP BP2.5 and BP4.2: the Lean-linked boot reports a heap census on each
+# side of the install and a line at the release, and the boot lane holds the
+# log to the relations: the install allocated (more live allocations after it
+# than before), the heap's invariants hold at both points, and the install
+# precedes the release, which precedes every secondary's first line.
+run_check "INVARIANT" rg -n -U 'crate::lean_entry::report_heap_census\("the library initializer"\);\n\s+let permit = crate::lean_entry::enter_lean_kernel\(initialised, dtb_ptr\);\n\s+crate::kprintln!\("\[boot\] Phase 5: kernel state installed"\);\n\s+crate::lean_entry::report_heap_census\("the install"\);' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n -F -- 'heap.check_invariants().map_err(|_| HeapFault::Corrupt)?;' rust/sele4n-hal/src/lean_heap.rs
+run_check "INVARIANT" rg -n -U 'let crate::lean_entry::SecondaryReleasePermit \{ \.\. \} = permit;\n\s+if !enabled\.load\(Ordering::Acquire\) \{\n\s+return 0;\n\s+\}\n(\s+//[^\n]*\n)*\s+crate::kprintln!\("\[smp\] releasing the secondaries under the install permit"\);' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n -F -- 'RELEASE          | [smp] releasing the secondaries under the install permit' tests/fixtures/qemu_lean_boot_expected.txt
+run_check "INVARIANT" rg -n -F -- 'if not release[0] < secondary[0]:' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -F -- 'if not install[0] < release[0]:' scripts/test_qemu.sh
+run_check "INVARIANT" rg -n -F -- 'if not 0 < live_init < live_boot:' scripts/test_qemu.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n -F -- 'lean_boot_relations "${label}"' scripts/test_qemu.sh
 
 # ============================================================================
 # WS-SM SM9.B — refusal auditing
@@ -7423,7 +8518,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=36 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=41 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -7531,7 +8626,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 36' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 41' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
@@ -8367,7 +9462,7 @@ EOF'
 # presence: the bare step still exists (it is what the bracket wraps and what
 # the undeclared fallback runs), so a file-wide search for its name proves
 # nothing -- what matters is which one `modifyGetKernelState` is handed.
-run_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState\n    \(syscallDispatchCrossCoreBracketedStep' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState fun st =>\n    syscallDispatchCrossCoreBracketedStep' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_negative_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState \(fun st =>' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The single-level CSpace guard: a multi-level resolution selects the target
 # through interior CNodes no declared footprint holds a lock on, and a `LockSet`
@@ -8650,7 +9745,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
-run_check "INVARIANT" rg -n 'StateField enum has 27 variants' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 28 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on
@@ -9659,7 +10754,8 @@ run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references($|[ (
 # dispatches to the per-kind helpers, whose constructor patterns pin every
 # field.
 run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId vtid.val then' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n 'modifyGetKernelState \(suspendThreadCrossCoreStep tid execCore\)' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  let result ← Platform\.FFI\.modifyGetKernelState\n    \(suspendThreadCrossCoreDrainedStep tid execCore\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  let \(out, st.\) := suspendThreadCrossCoreStep tid execCore st\n  \(\(out, \(st.\.pendingPhysicalWrites, st.\.pendingIcacheMaintenance\)\),$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '  \| .tcb tcb => tcbReferencesReservedIdleSlot tcb' SeLe4n/Platform/Boot.lean
@@ -9817,8 +10913,8 @@ run_check "INVARIANT" rg -n '^def isApprovedBootApplication($|[ ({:\[\]])' SeLe4
 # recursion limit on every `bind`-headed witness once the boot's configuration
 # binding reached the RAM-variant selection, and which would have accepted an
 # inlined copy of the wrapper's body.
-run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedBootCall with\n\s+\| none => pure false\n\s+\| some reduced =>[^\n]*(\n([ \t][^\n]*)?)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkAppN \(mkConst approvedBootCall\) args\)' SeLe4n/Testing/BootEntryContract.lean
-run_negative_check "INVARIANT" rg -nF 'Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedCall with\n\s+\| none => pure none\n\s+\| some reduced =>[^\n]*(\n([ \t][^\n]*)?)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkAppN \(mkConst approvedCall\) args\)' SeLe4n/Testing/BootEntryContract.lean
+run_negative_check "INVARIANT" rg -n 'Meta\.isDefEq body \(mkApp \(mkConst approved(Boot)?Call\) config\)' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasedBoot($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
@@ -11223,7 +12319,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_setThreadCpuAffinity
 run_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadCpuAffinityReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match \(st\.getTcb\? tid\)\.bind \(fun tcb => tcb\.schedContextBinding\.scId\?\) with(\n([ \t][^\n]*)?)*\| none => \[\]" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 # The two exact halves the empty segments rest on: the live arms write no
 # replenish queue at all.
-run_check "INVARIANT" rg -n '^theorem resumeThreadOnCoreLive_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem resumeThreadOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem setPriorityOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem setMCPriorityOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context$' SeLe4n/Kernel/SyscallSchedFootprint.lean
@@ -12900,7 +13996,7 @@ import SeLe4n.Model.Object.PerObjectLockInventory
 #check @SeLe4n.Model.KernelObject.objectLockOf_exists
 #check @SeLe4n.Model.KernelObject.objectType_and_lockOf_total
 #check @SeLe4n.Model.KernelObject.objectLockOf_consistent_with_type
-#check @SeLe4n.Model.KernelObjectType.variants_count_exactly_eight
+#check @SeLe4n.Model.KernelObjectType.variants_count_exactly_ten
 #check @SeLe4n.Model.KernelObjectType.variants_total
 -- Inventory aggregator.
 #check @SeLe4n.Model.PerObjectLockCategory
@@ -14269,9 +15365,10 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.RPi5.rpi5VariantsCoveredBy
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor
 #check @SeLe4n.Platform.RPi5.rpi5BoundMachineConfig
-#check @SeLe4n.Platform.RPi5.rpi5VariantFor_mem
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_admissible
+#check @SeLe4n.Platform.RPi5.rpi5RamVariantFor_mem
 #check @SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_mem_family
-#check @SeLe4n.Platform.RPi5.rpi5VariantFor_of_uncovered
+#check @SeLe4n.Platform.RPi5.rpi5RamVariantFor_of_uncovered
 #check @SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_covered_iff
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_maximal
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_rpi5MachineConfig
@@ -14281,6 +15378,23 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_two_gib
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_eight_gib_two_banks
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_foreign_base
+-- The first gigabyte RAM top is read off the firmware account.
+#check @SeLe4n.Platform.RPi5.rpi5LowRamTopFor
+#check @SeLe4n.Platform.RPi5.rpi5LowRamTopFor_admissible
+#check @SeLe4n.Platform.RPi5.rpi5LowRamTopFor_le_prefix
+#check @SeLe4n.Platform.RPi5.rpi5LowRamTop_covered
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_rpi5_firmware_account
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_cm5_firmware_account
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_kernel_extent_not_ram
+#check @SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant_wellFormed
+#check @ramReachFrom_sound
+#check @memoryRegionCovered_of_le_coverReach
+-- v0.36.36: declared RAM begins at the image origin (the ATF hole below it).
+#check @SeLe4n.Platform.RPi5.rpi5RamOrigin
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_rpi5_parsed_account
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_origin_not_ram
+#check @SeLe4n.MachineConfig.wellFormed_of_within
+#check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_of_withoutExtents
 #check @SeLe4n.Platform.RPi5.rpi5_bindMachineConfig
 #check @SeLe4n.Platform.PlatformBinding.bindMachineConfig
 #check @SeLe4n.Platform.PlatformBinding.bindMachineConfig_declaredCoreCount
@@ -14319,7 +15433,9 @@ run_check "INVARIANT" rg -n '^def memoryRegionCoveredByUnion($|[ ({:\[\]])' SeLe
 run_check "INVARIANT" rg -n -U 'r\.endAddr ≤ q\.endAddr\) \|\|\n  memoryRegionCoveredByUnion regions r' SeLe4n/Platform/Boot/MemoryCoverage.lean
 run_negative_check "INVARIANT" rg -n -U 'r\.endAddr ≤ q\.endAddr\) &&\n  memoryRegionCoveredByUnion regions r' SeLe4n/Platform/Boot/MemoryCoverage.lean
 run_check "INVARIANT" rg -n '^import SeLe4n.Platform.Boot.MemoryCoverage' SeLe4n/Platform/RPi5/Board.lean
-run_check "INVARIANT" rg -n -U 'def rpi5VariantsCoveredBy \(board : SeLe4n\.MachineConfig\) : List BCM2712Config :=\n  rpi5Variants\.filter fun v =>\n    SeLe4n\.Platform\.Boot\.machineConfigCovers board \(rpi5MachineConfigForVariant v\)' SeLe4n/Platform/RPi5/Board.lean
+# WS-BP BP7.10: each member is judged CUT to the account's first-gigabyte top,
+# so the firmware's withheld top of the gigabyte refuses no board.
+run_check "INVARIANT" rg -n -U 'def rpi5VariantsCoveredBy \(board : SeLe4n\.MachineConfig\) : List BCM2712Config :=\n  rpi5Variants\.filter fun v =>\n    SeLe4n\.Platform\.Boot\.machineConfigCovers board\n      \(rpi5MachineConfigForVariant \{ v with lowRamTop := rpi5LowRamTopFor board \}\)' SeLe4n/Platform/RPi5/Board.lean
 
 # WS-SM SM5.C — cross-core wake via SGI surface anchors.  Covers the SM5.C
 # production transitions (`enqueueRunnableOnCore` / `determineTargetCore` /
@@ -20913,8 +22029,10 @@ run_negative_check "INVARIANT" rg -n 'callerKeyedCallDonatedSc\?|senderKeyedDona
 # 1. THE ARM DISPATCHES THE CDT-TRAVERSING VARIANT, which is its whole security
 # content -- the local `cspaceRevoke` reaches only the CONTAINING CNode, so a
 # derived capability copied into any other CSpace would survive a revocation that
-# claimed to destroy it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*cspaceRevokeCdt addr st" SeLe4n/Kernel/API.lean'
+# claimed to destroy it.  Since WS-BP BP7.1 (`v0.36.7`) the arm runs that
+# variant's FINALISING form, which also removes every mapping a destroyed frame
+# capability recorded.
+run_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*cspaceRevokeCdtFinalising \(determineExecutingCore st tid\) addr st" SeLe4n/Kernel/API.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*cspaceRevoke addr st$" SeLe4n/Kernel/API.lean'
 # ...and it takes the DELETE's decoder, since both name one slot of the invoked
 # CNode and a second decoder for one operand is a spelling nobody needs.
@@ -21478,14 +22596,17 @@ run_check "INVARIANT" rg -n 'include_str!\("\.\./\.\./\.\./tests/fixtures/boot_m
 # The Lean map, the HAL boot map, the UART and the GIC are one set of addresses,
 # and the drivers' bases are read from the fixture the Lean suite writes.  None
 # of the BCM2711's addresses may come back as a live constant.
-run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_BASE: u64 = 0x10_7C00_0000;$' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_TOP: u64 = 0x10_8000_0000;$' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP8.1: the RPi5's numbers live in `board.rs`'s `RPI5`, and the boot
+# path's constants read the board the image is built for.
+run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_BASE: u64 = crate::board::BOARD\.device_window_base;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_TOP: u64 = crate::board::BOARD\.device_window_top;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub const RPI5: BoardMap = BoardMap \{[^\n]*(\n([ \t][^\n]*)?)*?\n    device_window_base: 0x10_7C00_0000,\n    device_window_top: 0x10_8000_0000,\n    uart_base: 0x10_7D00_1000,\n    uart_clock_hz: 9_216_000,\n    gicd_base: 0x10_7FFF_9000,\n    gicc_base: 0x10_7FFF_A000,$' rust/sele4n-hal/src/board.rs
 run_check "INVARIANT" rg -n '^const _: \(\) = assert!\(DEVICE_WINDOW_TOP\.is_multiple_of\(L2_BLOCK_SIZE\)\);$' rust/sele4n-hal/src/mmu.rs
 run_negative_check "INVARIANT" rg -n 'DEVICE_TAIL_BLOCK_BASE|l3_device_tail|L3_DEVICE_TAIL_TABLE' rust/sele4n-hal/src/
-run_check "INVARIANT" rg -n '^pub const UART0_BASE: usize = 0x10_7D00_1000;$' rust/sele4n-hal/src/uart.rs
-run_check "INVARIANT" rg -n '^const UART_CLOCK_HZ: u32 = 9_216_000;$' rust/sele4n-hal/src/uart.rs
-run_check "INVARIANT" rg -n '^pub const GICD_BASE: usize = 0x10_7FFF_9000;$' rust/sele4n-hal/src/gic.rs
-run_check "INVARIANT" rg -n '^pub const GICC_BASE: usize = 0x10_7FFF_A000;$' rust/sele4n-hal/src/gic.rs
+run_check "INVARIANT" rg -n '^pub const UART0_BASE: usize = crate::board::BOARD\.uart_base;$' rust/sele4n-hal/src/uart.rs
+run_check "INVARIANT" rg -n '^const UART_CLOCK_HZ: u32 = crate::board::BOARD\.uart_clock_hz;$' rust/sele4n-hal/src/uart.rs
+run_check "INVARIANT" rg -n '^pub const GICD_BASE: usize = crate::board::BOARD\.gicd_base;$' rust/sele4n-hal/src/gic.rs
+run_check "INVARIANT" rg -n '^pub const GICC_BASE: usize = crate::board::BOARD\.gicc_base;$' rust/sele4n-hal/src/gic.rs
 run_check "INVARIANT" rg -n '^def uart0Base : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107D001000\)$' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^def gicDistributorBase : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107FFF9000\)$' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^def gicCpuInterfaceBase : SeLe4n\.PAddr := \(SeLe4n\.PAddr\.ofNat 0x107FFFA000\)$' SeLe4n/Platform/RPi5/Board.lean
@@ -21493,7 +22614,8 @@ run_check "INVARIANT" rg -n '^def socPeripheralBase : SeLe4n\.PAddr := \(SeLe4n\
 run_check "INVARIANT" rg -n '^mmio uart 0x107d001000 0x200$' tests/fixtures/boot_map.expected
 run_check "INVARIANT" rg -n '^  \[ \{ base := uart0Base,            size := 0x200,  kind := \.device \}' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n '^  uartWindowIsTheDeviceTreesRegisterBlock$' tests/
-run_check "INVARIANT" rg -n '^  realFirmwareAccountIsRefusedUntilDerived$' tests/
+run_check "INVARIANT" rg -n '^  realFirmwareAccountBindsTheReportedRam$' tests/
+run_negative_check "INVARIANT" rg -n '\brealFirmwareAccountIsRefusedUntilDerived\b' tests/
 run_check "INVARIANT" rg -n '^mmio gicd 0x107fff9000 0x1000$' tests/fixtures/boot_map.expected
 run_check "INVARIANT" rg -n '^mmio gicc 0x107fffa000 0x2000$' tests/fixtures/boot_map.expected
 run_check "INVARIANT" rg -n '^pub\(crate\) fn lean_mmio_window\(name: &str\) -> \(u64, u64\) \{$' rust/sele4n-hal/src/mmu.rs

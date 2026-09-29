@@ -2440,25 +2440,6 @@ theorem priorityRescheduleOnCore_confinedToCores (st st' : SystemState)
          | exact observableSlotsConfinedToCores_refl _ _)
     | exact absurd h (by simp)
 
-/-- SM8.B.2 (PR #861 review round 34): the **wrapper** is confined to the
-executing core, in *both* settings of the restore seam.
-
-Proved by cases on the flag, so neither branch is dead: the live branch defers
-to the base theorem above, and the gated branch changes no state at all. -/
-theorem priorityRescheduleOnCoreLive_confinedToCores (st st' : SystemState)
-    (running? : Option CoreId) (executingCore : CoreId) (shouldPreempt : Bool)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (h : SchedContext.PriorityManagement.priorityRescheduleOnCoreLive st running?
-      executingCore shouldPreempt = .ok (st', sgi)) :
-    observableSlotsConfinedToCores st st' [executingCore] := by
-  unfold SchedContext.PriorityManagement.priorityRescheduleOnCoreLive at h
-  split at h
-  · exact priorityRescheduleOnCore_confinedToCores st st' running? executingCore
-      shouldPreempt sgi h
-  · rw [SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly_state
-      st st' running? executingCore shouldPreempt sgi h]
-    exact observableSlotsConfinedToCores_refl _ _
-
 -- WS-RR RR8.12 Cut C3b-iii (`v0.35.169`): `threadOccupiedCores` moved to the
 -- production `SeLe4n/Kernel/SyscallSchedFootprint.lean` with the retype write
 -- set that reads it.  Its lemma family stays here: those are about the destroy
@@ -2850,88 +2831,6 @@ theorem resumeThreadOnCore_crossCoreNonInterference (ctx : LabelingContext)
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
     (resumeThreadOnCore_confinedToCores st st' vtid executingCore sgi hStep)
-    hShared
-
-/-- SM8.B.2: the enqueue-only sibling's bound, which is **sharper** than the
-base transition's — it writes the home core and nothing else.
-
-`resumeThreadOnCore`'s set is `[target, executingCore]` because its local arm
-runs the reschedule inline. The gated form stops after the enqueue, so the
-executing core never moves; declaring the smaller set is what makes that
-difference a checked fact rather than a comment. -/
-theorem resumeThreadEnqueueOnly_confinedToCores (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hStep : Lifecycle.Suspend.resumeThreadEnqueueOnly st vtid executingCore
-      = .ok (st', sgi)) :
-    observableSlotsConfinedToCores st st' [determineTargetCore st vtid.val] := by
-  unfold Lifecycle.Suspend.resumeThreadEnqueueOnly at hStep
-  simp only [] at hStep
-  split at hStep
-  · next tcb hTcb =>
-    split at hStep
-    · exact absurd hStep (by simp)
-    · next hInactive =>
-      have hPre : observableSlotsConfinedToCores st
-          (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
-            (determineTargetCore st vtid.val) vtid.val)
-          [determineTargetCore st vtid.val] :=
-        observableSlotsConfinedToCores_widen_cons
-          (resumeReadyMidState_confinedToCores st vtid.val)
-          (enqueueRunnableOnCore_confinedToCores _ (determineTargetCore st vtid.val) vtid.val)
-      -- both arms commit the same state; they differ only in the returned SGI
-      split at hStep <;>
-        · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hs, -⟩ := hStep
-          subst hs
-          exact hPre
-  · exact absurd hStep (by simp)
-
-/-- SM8.B.2 (**the bound on the function the live `.tcbResume` arm calls**).
-
-PR #861 review round 37: the arm delegates to `resumeThreadOnCoreLive`, and with
-`contextRestoreSeamLive = false` that is *not* `resumeThreadOnCore` — the
-wrapper only enqueues where the base transition may also switch `current` on the
-executing core. Citing the base transition's theorem for this arm broke the
-inventory's own round-5 rule (a live entry must name the function the dispatch
-calls), and the round-34 wrapper rework is what broke it.
-
-Stated at the base transition's write set so one set covers both settings: the
-gated branch writes a strict subset, which
-`resumeThreadEnqueueOnly_confinedToCores` records separately. -/
-theorem resumeThreadOnCoreLive_confinedToCores (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hStep : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid executingCore
-      = .ok (st', sgi)) :
-    observableSlotsConfinedToCores st st'
-      (resumeThreadOnCoreWriteSet st vtid executingCore) := by
-  unfold Lifecycle.Suspend.resumeThreadOnCoreLive at hStep
-  split at hStep
-  · exact resumeThreadOnCore_confinedToCores st st' vtid executingCore sgi hStep
-  · refine observableSlotsConfinedToCores_mono ?_
-      (resumeThreadEnqueueOnly_confinedToCores st st' vtid executingCore sgi hStep)
-    intro c hc
-    simp only [List.mem_singleton] at hc
-    simp [resumeThreadOnCoreWriteSet, hc]
-
-/-- SM8.B.3 (**the live `.tcbResume` non-interference, at the function the arm
-calls**): resuming a thread onto its home core is invisible to any core outside
-the write set, in **both** settings of the context-restore seam and with no
-hypothesis on the resumed thread's clearance.
-
-Holding in both settings is the point: it is what makes the SM10.1 flip a
-one-constant change that owes no new information-flow proof. -/
-theorem resumeThreadOnCoreLive_crossCoreNonInterference (ctx : LabelingContext)
-    (observer : IfObserver) (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (executingCore : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
-    (hStep : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid executingCore
-      = .ok (st', sgi))
-    (hne : c ∉ resumeThreadOnCoreWriteSet st vtid executingCore)
-    (hShared : sharedViewUnchanged ctx observer st st') :
-    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer hne
-    (resumeThreadOnCoreLive_confinedToCores st st' vtid executingCore sgi hStep)
     hShared
 
 -- ============================================================================
@@ -3823,7 +3722,7 @@ theorem applyPriorityChangeOnCore_confinedToCores (base st' : SystemState)
     observableSlotsConfinedToCores base st' [determineTargetCore base tid, executingCore] :=
   observableSlotsConfinedToCores_trans
     (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
-    (priorityRescheduleOnCoreLive_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
+    (priorityRescheduleOnCore_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `priorityControlWriteSet` moved to the
 -- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
@@ -4017,7 +3916,8 @@ theorem vspaceUnmapPage_framed (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
   · exact absurd h (by simp)
   · split at h
     · exact absurd h (by simp)
-    · exact ⟨storeObject_scheduler_eq _ _ _ _ h, storeObject_machine_eq _ _ _ _ h⟩
+    · exact ⟨storeObject_scheduler_eq (Architecture.recordPhysicalWrites st _) _ _ _ h,
+        storeObject_machine_eq (Architecture.recordPhysicalWrites st _) _ _ _ h⟩
 
 /-- SM8.B.2: the TLB flush the unmap appends writes only `tlb`. -/
 theorem vspaceUnmapPageWithFlush_framed (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
@@ -4098,7 +3998,8 @@ theorem vspaceMapPage_framed (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
   repeat' split at h
   all_goals first
     | exact absurd h (by simp)
-    | exact ⟨storeObject_scheduler_eq _ _ _ _ h, storeObject_machine_eq _ _ _ _ h⟩
+    | exact ⟨storeObject_scheduler_eq (Architecture.recordPhysicalWrites st _) _ _ _ h,
+        storeObject_machine_eq (Architecture.recordPhysicalWrites st _) _ _ _ h⟩
 
 /-- SM8.B.2: the checked map wrapper adds only guards and a `tlb` write. -/
 theorem vspaceMapPageCheckedWithFlushFromState_framed (asid : SeLe4n.ASID)
@@ -4182,6 +4083,42 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_crossCoreNonInterferen
     (vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores executingCore asid
       vaddr paddr perms st st' hStep) hShared
 
+/-- **WS-BP BP7.1**: the live `.vspaceMap` arm past its address-space check —
+the frame-capability resolution in front of the per-core map — writes **no
+core**.  The resolution and both admission checks are reads; the arm's writes
+are the per-core map and, since `v0.36.7`, the frame capability's mapping record
+(`vspaceMapFromFrameCap_ok`) — one CNode store, which writes neither the
+scheduler nor the machine — so the bound is the per-core map's own. -/
+theorem vspaceMapFromFrameCap_confinedToCores
+    (tid : SeLe4n.ThreadId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState)
+    (hStep : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨_, _, frame, st1, -, -, -, -, -, hMap, epoch, st2, hT, hRec⟩ :=
+    vspaceMapFromFrameCap_ok tid args st st' hStep
+  -- WS-BP BP7.1 (`v0.36.7`): the mapping record is one CNode store, and
+  -- (PR #904 review, `v0.36.41`) the epoch tag a root store and a frame store —
+  -- none writes the scheduler or the machine.
+  obtain ⟨_, _, _, _, hStore⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
+  obtain ⟨hTS, hTM⟩ := tagFrameMapping_scheduler_machine _ _ _ st1 st2 epoch hT
+  exact observableSlotsConfinedToCores_trans
+    (observableSlotsConfinedToCores_trans
+      (vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores _ _ _
+        frame.base _ st st1 hMap)
+      (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq hTS hTM))
+    (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+      (storeObject_scheduler_eq _ _ _ _ hStore) (storeObject_machine_eq _ _ _ _ hStore))
+
+/-- **WS-BP BP7.1**: the live `.vspaceMap` arm, cross-core — a frame mapping is
+invisible on every core, stated at the definition the arm runs. -/
+theorem vspaceMapFromFrameCap_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver)
+    (tid : SeLe4n.ThreadId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState) (c : CoreId)
+    (hStep : vspaceMapFromFrameCap tid args st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (vspaceMapFromFrameCap_confinedToCores tid args st st' hStep) hShared
+
 /-- SM8.B.2: the I-cache broadcast seam writes only `perCoreICache` and the
 maintenance ledger, so it frames whatever its wrapped transition frames. -/
 theorem withIcacheBroadcast_framed
@@ -4234,6 +4171,163 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
   crossCoreNonInterference_ofCores ctx observer (by simp)
     (vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores executingCore asid vaddr
       st st' hStep) hShared
+
+/-- WS-BP BP7.1: the page teardown (`unmapLivePages`, shared by the untyped
+reset and a frame capability's destruction) is a sequence of the `.vspaceUnmap`
+arm's own transition, each step taken only while its page is still live, so it
+frames what one unmap frames. -/
+theorem unmapLivePages_framed (executingCore : CoreId) :
+    ∀ (ps : List MappedPage) (st st' : SystemState),
+      unmapLivePages executingCore ps st = .ok ((), st') →
+      SchedulerMachineFramed st st'
+  | [], st, st', h => by
+      simp only [unmapLivePages, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h; exact ⟨rfl, rfl⟩
+  | p :: rest, st, st', h => by
+      simp only [unmapLivePages] at h
+      split at h
+      · cases h1 : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
+            executingCore p.asid p.vaddr st with
+        | error e => rw [h1] at h; cases h
+        | ok pr =>
+          obtain ⟨u, st1⟩ := pr; cases u
+          rw [h1] at h
+          obtain ⟨hs1, hm1⟩ := withIcacheBroadcast_framed _ _ st st1
+            (fun _ _ hk => vspaceUnmapPageWithShootdownPerCore_framed executingCore p.asid
+              p.vaddr _ _ hk) h1
+          obtain ⟨hs2, hm2⟩ := unmapLivePages_framed executingCore rest st1 st' h
+          exact ⟨hs2.trans hs1, hm2.trans hm1⟩
+      · exact unmapLivePages_framed executingCore rest st st' h
+
+/-- WS-BP BP7.1 (slice 3, carved subtrees at slice 4): retiring carved objects
+writes the object table and its bookkeeping — never the scheduler, never the
+machine. -/
+theorem retireCarvedObjects_framed :
+    ∀ (ids : List SeLe4n.ObjId) (st : SystemState),
+      SchedulerMachineFramed st (retireCarvedObjects st ids)
+  | [], _ => ⟨rfl, rfl⟩
+  | id :: rest, st => by
+      have hOne : SchedulerMachineFramed st (retireCarvedObject st id) := by
+        unfold retireCarvedObject; split <;> exact ⟨rfl, rfl⟩
+      obtain ⟨hs, hm⟩ := retireCarvedObjects_framed rest (retireCarvedObject st id)
+      exact ⟨hs.trans hOne.1, hm.trans hOne.2⟩
+
+/-- WS-BP BP7.1 (slice 3) (**the live `.untypedReset` bound**): a reset writes
+**no core**.  Its unmap pass is the `.vspaceUnmap` arm's own transition, whose
+bound is already empty; retiring the carved subtree and storing the rewound
+untyped write the object table alone.  An executing core is taken only to
+initiate the shootdown rounds, exactly as the `.vspaceUnmap` arm takes it. -/
+theorem untypedReset_confinedToCores
+    (executingCore : CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (hStep : untypedReset executingCore untypedId st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  apply observableSlotsConfinedToCores_nil_of_framed
+  obtain ⟨_, ids, st1, -, -, -, -, -, -, -, hUnmap, -, -, -, -, hSt⟩ :=
+    untypedReset_ok_decompose executingCore untypedId st st' hStep
+  obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ st st1 hUnmap
+  obtain ⟨hs2, hm2⟩ := retireCarvedObjects_framed ids st1
+  exact ⟨(storeObject_scheduler_eq _ _ _ _ hSt).trans (hs2.trans hs1),
+    (storeObject_machine_eq _ _ _ _ hSt).trans (hm2.trans hm1)⟩
+
+/-- WS-BP BP7.1 (slice 3) (**the live `.untypedReset` arm, cross-core**): a
+reset is invisible on **every** core. -/
+theorem untypedReset_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (untypedId : SeLe4n.ObjId) (st st' : SystemState) (c : CoreId)
+    (hStep : untypedReset executingCore untypedId st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (untypedReset_confinedToCores executingCore untypedId st st' hStep) hShared
+
+/-- **`v0.36.37`: the live `.untypedReset` arm writes no core.**  The arm is the
+reset followed by the `.aside1` round fold, which writes neither the scheduler
+nor the machine (`untypedResetWithShootdown_ok_frame`). -/
+theorem untypedResetWithShootdown_confinedToCores
+    (executingCore : CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (hStep : untypedResetWithShootdown executingCore untypedId st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  apply observableSlotsConfinedToCores_nil_of_framed
+  obtain ⟨st1, hR, -, hs, hm, -⟩ :=
+    untypedResetWithShootdown_ok_frame executingCore untypedId st st' hStep
+  obtain ⟨_, ids, st2, -, -, -, -, -, -, -, hUnmap, -, -, -, -, hSt⟩ :=
+    untypedReset_ok_decompose executingCore untypedId st st1 hR
+  obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ st st2 hUnmap
+  obtain ⟨hs2, hm2⟩ := retireCarvedObjects_framed ids st2
+  exact ⟨hs.trans ((storeObject_scheduler_eq _ _ _ _ hSt).trans (hs2.trans hs1)),
+    hm.trans ((storeObject_machine_eq _ _ _ _ hSt).trans (hm2.trans hm1))⟩
+
+/-- **`v0.36.37`: the live `.untypedReset` arm, cross-core** — invisible on every
+core, with its acknowledged ASID rounds. -/
+theorem untypedResetWithShootdown_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (untypedId : SeLe4n.ObjId) (st st' : SystemState) (c : CoreId)
+    (hStep : untypedResetWithShootdown executingCore untypedId st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (untypedResetWithShootdown_confinedToCores executingCore untypedId st st' hStep) hShared
+
+/-- WS-BP BP7.1 (`v0.36.12`): the finalisation a destroying capability
+operation owes — the page-table detach, stores to VSpace roots, and the page
+teardown, the `.vspaceUnmap` arm's own transition — writes no scheduler and no
+machine state. -/
+theorem finaliseDestroyedCapabilities_framed (executingCore : CoreId) (pre : SystemState)
+    (pages : List MappedPage) (st st' : SystemState)
+    (h : finaliseDestroyedCapabilities executingCore pre pages st = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  obtain ⟨st1, hD, hF, -⟩ := finaliseDestroyedCapabilities_ok executingCore pre pages st st' h
+  obtain ⟨hs1, hm1⟩ := detachPageTables_ok_scheduler_machine _ st st1 hD
+  obtain ⟨hs2, hm2⟩ :=
+    unmapLivePages_framed executingCore _ st1 st' (finaliseFramePages_ok _ _ _ _ hF).1
+  exact ⟨hs2.trans hs1, hm2.trans hm1⟩
+
+/-- WS-BP BP7.1 (`v0.36.7`): **the live `.cspaceDelete` arm writes no core.**  The
+delete writes a CNode and the CDT; the teardown that removes the destroyed frame
+capability's mapping is the `.vspaceUnmap` arm's own transition, whose rounds the
+executing core only initiates. -/
+theorem cspaceDeleteSlotFinalising_confinedToCores
+    (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceDeleteSlotFinalising executingCore addr st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok executingCore addr st st' hStep
+  obtain ⟨hs1, hm1⟩ := cspaceDeleteSlot_scheduler_machine addr st st1 hD
+  obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore st _ st1 st' hF
+  exact observableSlotsConfinedToCores_nil_of_framed ⟨hs2.trans hs1, hm2.trans hm1⟩
+
+/-- WS-BP BP7.1 (`v0.36.7`) (**the live `.cspaceDelete` arm, cross-core**): a
+finalising delete is invisible on **every** core. -/
+theorem cspaceDeleteSlotFinalising_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (addr : CSpaceAddr) (st st' : SystemState) (c : CoreId)
+    (hStep : cspaceDeleteSlotFinalising executingCore addr st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (cspaceDeleteSlotFinalising_confinedToCores executingCore addr st st' hStep) hShared
+
+/-- WS-BP BP7.1 (`v0.36.7`): **the live `.cspaceRevoke` arm writes no core.**  The
+revocation writes CNodes, the CDT and parked messages in TCB records; the
+teardown is the `.vspaceUnmap` arm's own transition. -/
+theorem cspaceRevokeCdtFinalising_confinedToCores
+    (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceRevokeCdtFinalising executingCore addr st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨pages, st1, hR, hF⟩ := cspaceRevokeCdtFinalising_ok executingCore addr st st' hStep
+  obtain ⟨hs1, hm1⟩ := cspaceRevokeCdt_scheduler_machine addr st st1 pages hR
+  obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore st _ st1 st' hF
+  exact observableSlotsConfinedToCores_nil_of_framed ⟨hs2.trans hs1, hm2.trans hm1⟩
+
+/-- WS-BP BP7.1 (`v0.36.7`) (**the live `.cspaceRevoke` arm, cross-core**): a
+finalising revocation is invisible on **every** core. -/
+theorem cspaceRevokeCdtFinalising_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (addr : CSpaceAddr) (st st' : SystemState) (c : CoreId)
+    (hStep : cspaceRevokeCdtFinalising executingCore addr st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (cspaceRevokeCdtFinalising_confinedToCores executingCore addr st st' hStep) hShared
 
 -- ============================================================================
 -- §5c The live `.lifecycleRetype` arm — a sweep bounded by occupancy
@@ -4348,7 +4442,9 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     -- the cleanup is the detach, whatever the replacement's shape.
     split at hOk
     · cases hOk
-    · injection hOk with hOk; subst hOk; exact hDetach
+    · split at hOk
+      · cases hOk
+      · injection hOk with hOk; subst hOk; exact hDetach
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     injection hOk with hOk; subst hOk
@@ -4360,7 +4456,12 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
-  | notification _ | vspaceRoot _ | untyped _ =>
+  | frame _ | pageTable _ | untyped _ | vspaceRoot _ =>
+    -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
+    -- an untyped one, and since `v0.36.35` a VSpace root — so there is no
+    -- `.ok` post-state.
+    simp [lifecyclePreRetypeCleanup] at hOk
+  | notification _ =>
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
   | schedContext _ =>
@@ -5320,6 +5421,20 @@ inductive CrossCoreTransition where
   | vspaceMapDispatch
   /-- SM8.B — the **live** `.vspaceUnmap` arm. Empty write set, same reasons. -/
   | vspaceUnmapDispatch
+  /-- WS-BP BP7.1 (slice 3) — the **live** `.untypedReset` arm.  Takes an
+  executing core to initiate its unmaps' shootdown rounds, and writes no core:
+  its unmap pass is the `.vspaceUnmap` arm's own transition, the retire and the
+  rewind write the object table alone, and (`v0.36.37`) its acknowledged `.aside1`
+  rounds write the TLB state alone (`untypedResetWithShootdown`). -/
+  | untypedResetDispatch
+  /-- WS-BP BP7.1 (`v0.36.7`) — the **live** `.cspaceDelete` arm.  Takes an
+  executing core since the delete finalises a frame capability — its recorded
+  mapping is removed through the `.vspaceUnmap` arm's own transition — and writes
+  no core. -/
+  | cspaceDeleteDispatch
+  /-- WS-BP BP7.1 (`v0.36.7`) — the **live** `.cspaceRevoke` arm.  Same reason:
+  every frame capability it destroys is finalised. -/
+  | cspaceRevokeDispatch
   /-- SM8.B — the **live** `.lifecycleRetype` arm, and the one of the final three
   that genuinely writes scheduler state: destroying a TCB sweeps it out of every
   core's run queue and current slot, because a destroy has no home core to key
@@ -5361,7 +5476,8 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .endpointReplyRecv, .replyRecvBodyDispatch, .deschedule, .cancelIpcBlocking,
    .suspendThreadDispatch, .resumeThreadDispatch,
    .setPriorityDispatch, .setMCPriorityDispatch,
-   .vspaceMapDispatch, .vspaceUnmapDispatch, .lifecycleRetypeDispatch,
+   .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
+   .cspaceDeleteDispatch, .cspaceRevokeDispatch, .lifecycleRetypeDispatch,
    .declassifyDispatch, .declassifySignalDispatch,
    .auditReadDispatch, .auditDrainDispatch]
 
@@ -5415,13 +5531,16 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .deschedule => niName! descheduleThread_crossCoreNonInterference
   | .cancelIpcBlocking => niName! cancelIpcBlockingOnCore_crossCoreNonInterference
   | .suspendThreadDispatch => niName! suspendThreadOnCore_crossCoreNonInterference
-  | .resumeThreadDispatch => niName! resumeThreadOnCoreLive_crossCoreNonInterference
+  | .resumeThreadDispatch => niName! resumeThreadOnCore_crossCoreNonInterference
   | .setPriorityDispatch => niName! setPriorityOnCore_crossCoreNonInterference
   | .setMCPriorityDispatch => niName! setMCPriorityOnCore_crossCoreNonInterference
   | .vspaceMapDispatch =>
-      niName! vspaceMapPageCheckedWithShootdownFromStatePerCore_crossCoreNonInterference
+      niName! vspaceMapFromFrameCap_crossCoreNonInterference
   | .vspaceUnmapDispatch =>
       niName! vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
+  | .untypedResetDispatch => niName! untypedResetWithShootdown_crossCoreNonInterference
+  | .cspaceDeleteDispatch => niName! cspaceDeleteSlotFinalising_crossCoreNonInterference
+  | .cspaceRevokeDispatch => niName! cspaceRevokeCdtFinalising_crossCoreNonInterference
   | .lifecycleRetypeDispatch =>
       niName! lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
   | .declassifyDispatch =>
@@ -5443,7 +5562,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .auditDrainDispatch =>
       niName! auditDrainDispatch_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 30 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 33 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -5510,6 +5629,9 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .setMCPriorityDispatch => true
   | .vspaceMapDispatch => true
   | .vspaceUnmapDispatch => true
+  | .untypedResetDispatch => true
+  | .cspaceDeleteDispatch => true
+  | .cspaceRevokeDispatch => true
   | .declassifyDispatch => true
   | .declassifySignalDispatch => true
   | .auditReadDispatch => true
@@ -5517,7 +5639,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .lifecycleRetypeDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 22 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 25 := by decide
 
 -- The check is quadratic in the inventory and linear in each theorem name, and
 -- round 35's three entries (one of them 76 characters) pushed it past the
@@ -5607,6 +5729,9 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .setMCPriorityDispatch => some .tcbSetMCPriority
   | .vspaceMapDispatch => some .vspaceMap
   | .vspaceUnmapDispatch => some .vspaceUnmap
+  | .untypedResetDispatch => some .untypedReset
+  | .cspaceDeleteDispatch => some .cspaceDelete
+  | .cspaceRevokeDispatch => some .cspaceRevoke
   | .declassifyDispatch => some .declassify
   | .declassifySignalDispatch => some .declassifySignal
   | .auditReadDispatch => some .auditRead
@@ -5652,6 +5777,9 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .delegationProof .tcbSetMCPriority syscallDelegates_tcbSetMCPriority
   | .vspaceMapDispatch => .delegationProof .vspaceMap syscallDelegates_vspaceMap
   | .vspaceUnmapDispatch => .delegationProof .vspaceUnmap syscallDelegates_vspaceUnmap
+  | .untypedResetDispatch => .delegationProof .untypedReset syscallDelegates_untypedReset
+  | .cspaceDeleteDispatch => .delegationProof .cspaceDelete syscallDelegates_cspaceDelete
+  | .cspaceRevokeDispatch => .delegationProof .cspaceRevoke syscallDelegates_cspaceRevoke
   | .declassifyDispatch => .delegationProof .declassify syscallDelegates_declassify
   | .declassifySignalDispatch =>
       .delegationProof .declassifySignal syscallDelegates_declassifySignal
@@ -5672,9 +5800,11 @@ theorem crossCoreLiveArmEvidence_syscall_matches (t : CrossCoreTransition) :
 
 /-- SM8.B.2: **how many live arms are mechanically tied to the dispatch.**
 
-Ten of eighteen today — `crossCoreLiveArmDelegationBacked_count` and
+`crossCoreLiveArmDelegationBacked_count` and
 `crossCoreTransitionIsLiveArm_count` immediately below are the two halves, so
-the ratio is read off machine-checked facts rather than restated here.
+the ratio is read off machine-checked facts rather than restated here (a figure
+this paragraph carried, "ten of eighteen", had gone stale by seven arms when
+WS-BP BP7.1 `v0.36.7` deleted it).
 
 The parenthetical this paragraph used to carry warned that "prose that repeats a
 `decide` is prose that goes stale the next time the `decide` changes", and then
@@ -5693,7 +5823,7 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 14 := by decide
+    crossCoreLiveArmDelegationBacked.length = 17 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -5735,6 +5865,12 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   -- the two VSpace arms take an executing core and write **no** core with it
   | .vspaceMapDispatch => false
   | .vspaceUnmapDispatch => false
+  -- WS-BP BP7.1 (slice 3): and the reset, for the unmap's own reason
+  | .untypedResetDispatch => false
+  -- WS-BP BP7.1 (`v0.36.7`): and the two finalising destroyers, for the same
+  -- reason — their teardown is the unmap's own transition
+  | .cspaceDeleteDispatch => false
+  | .cspaceRevokeDispatch => false
   | .lifecycleRetypeDispatch => true
   -- SM8.C.9: and the declassification, for a different reason — the only field
   -- it writes is not per-core at all

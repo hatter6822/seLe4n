@@ -690,9 +690,11 @@ SM1 is complete when:
 - [ ] SGI handler table + dispatch.
 - [ ] UART lock audited; replaceable with TicketLock post-SM2.
 - [ ] `kprintln_core!` macro.
-- [ ] `test_qemu_smp_bringup.sh` boots 4 cores; verifies 4 banners.
+- [x] `test_qemu_smp_bringup.sh` boots 4 cores; verifies 4 banners
+      (decided by the WS-BP BP8.2 run; see the closure record below).
 - [ ] Wired into tier-4 nightly.
-- [ ] SGI round-trip test.
+- [x] SGI round-trip test (executed at WS-BP BP8.4, `v0.36.28`; see the
+      closure record below).
 - [ ] ~50+ new cargo tests pass.
 - [ ] CHANGELOG entries per PR; aggregate SM1 closure entry.
 
@@ -813,19 +815,28 @@ side-branch joining at SM1.H.5).
       (WS-RR RR7.16, v0.34.58 — the post-SM2 swap this box promised,
       which SM2 landing at v0.31.9 made due and nothing performed).
 - [x] `kprintln_core!` macro.
-- [ ] `test_qemu_smp_bringup.sh` boots 4 cores; verifies 4 banners.
-      **Unchecked at WS-RR RR7.16** (register §6 finding 24): the
-      script is authored and wired in, and it has never executed a
-      line of SMP HAL code — the workspace has no `[[bin]]` kernel
-      target, so every CI run takes the `SELE4N_KERNEL_IMAGE not set`
-      SKIP.  This box states a *hardware behaviour*; restating it as
-      "script authored" would convert it into an artifact-existence
-      claim, which is the forbidden direction.  Closure target
-      **SM10.1.1** (the bootable image), tracked in
-      `docs/REGISTERED_DEBT.md`.
+- [x] `test_qemu_smp_bringup.sh` boots 4 cores; verifies 4 banners.
+      **Decided by an executed run at WS-BP BP8.2 (v0.36.27)**, not
+      re-asserted: WS-RR RR7.16 unchecked this box because the script
+      SKIPped on every run for want of a kernel image.  It now builds the
+      `virt` image itself (`scripts/qemu_boot_lib.sh`) and boots it on four
+      PEs at EL1 and at EL2, HAL-only and Lean-linked, in the Lean archive
+      lane on every PR, requiring every secondary's per-core init in order
+      (`tests/fixtures/qemu_smp_bringup_expected.txt`) and every banner to be
+      a whole line.  Its first run found the console tearing lines — a
+      secondary printed before its MMU was on, where the console cannot take
+      its lock, and `kprintln!` took the lock twice per line — both fixed in
+      the same cut.
 - [x] Wired into tier-4 nightly (the script; see the box above for
       what it has actually executed).
-- [x] SGI round-trip test (SKIP-only until SM5 wires kernel handlers).
+- [x] SGI round-trip test — **executed at WS-BP BP8.4 (`v0.36.28`)**, not
+      SKIP-only: the boot core signals each secondary on INTID 15, each
+      secondary's agent answers with an ack SGI, and both cores' SGI counters
+      move (`scripts/test_qemu_smp_sgi_roundtrip.sh`, on the HAL-only and the
+      Lean-linked `virt` images).  The same cut executes SM1.G.3's per-core
+      console stress (every core prints its 32 lines, each a whole line) and
+      SM1.H.3's PE-withheld boot (`-smp 2`: the HAL-only image boots one
+      secondary and counts exactly one; the Lean-linked image refuses).
 - [x] ~50+ new cargo tests pass (583 total at v0.31.8, up from
       ~140 at SM1 start).
 - [x] CHANGELOG entries per PR; aggregate SM1 closure entry at
@@ -834,12 +845,8 @@ side-branch joining at SM1.H.5).
 **Items deferred past v1.0.0 with correctness impact**: NONE.
 
 **Items deferred to SM10.1** (WS-RR RR7.16, register §6 finding 24):
-the QEMU bring-up gate above, which cannot execute until a `[[bin]]`
-kernel target exists.  This is an *unverified hardware claim*, not a
-correctness deferral in the model: every SMP HAL behaviour it would
-observe is covered by host unit tests and by the aarch64 cross build,
-and none of them executes the assembled image.  Tracked in
-`docs/REGISTERED_DEBT.md` under SM10.1.1.
+**none since WS-BP BP8.2 (v0.36.27)**.  The QEMU bring-up gate that could
+not execute without a kernel image executes on every PR; see the box above.
 
 **Items deferred to SM5+ (per-core scheduler state)** with no
 correctness impact at SM1 — both since landed:

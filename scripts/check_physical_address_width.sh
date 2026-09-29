@@ -32,10 +32,11 @@
 # `the_boot_map_agrees_with_the_lean_map` pushes the same probes (and its own
 # boundary constants) through `boot_mapping_for` and a walk of the tables.  A
 # Lean question goes to Lean.  What stays here is the linker's half, which no
-# Lean definition states: `link.ld`'s RAM region ends at `GUARANTEED_RAM_TOP`,
-# the RAM every Raspberry Pi 5 has and the only RAM the boot map covers
-# (WS-BP BP2.6), so the linker cannot place the image where the boot does not
-# map it.
+# Lean definition states: `link.ld`'s RAM region ends at `KERNEL_RESERVED_END`,
+# the only RAM the boot map covers before the verified parse (WS-BP BP2.6;
+# BP7.10 retired `GUARANTEED_RAM_TOP`, the first gigabyte, which no board's
+# firmware reports whole), so the linker cannot place the image where the boot
+# does not map it.
 #
 # The width scans carry their own self-test, run first on every invocation
 # (`--self-test` runs it alone): each keeps the token and changes only whether
@@ -221,11 +222,25 @@ expect_mmu_const() {
 
 # WS-BP BP0.4: the boundary pins against `Board.lean`'s text are retired — the
 # driven comparison (see the header) decides every boundary against the Lean
-# map itself.  `GUARANTEED_RAM_TOP` stays pinned because the linker check below
+# map itself.  `KERNEL_RESERVED_END` stays pinned because the linker check below
 # needs its value and `link.ld` is not something Lean states.
-expect_mmu_const GUARANTEED_RAM_TOP '0x4000_0000'
+# WS-BP BP8.1: the value lives in the board map the image is built for
+# (`src/board.rs`), and `link.ld` states the Raspberry Pi 5's — so the mmu
+# constant must read the board map, and the board map's RPI5 entry must carry
+# the number the linker check below holds `link.ld` to.
+expect_mmu_const KERNEL_RESERVED_END 'crate::board::BOARD\.kernel_reserved_end'
+BOARD_SRC="rust/sele4n-hal/src/board.rs"
+if ! python3 - "${BOARD_SRC}" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+m = re.search(r"pub const RPI5: BoardMap = BoardMap \{(.*?)\n\};", text, re.S)
+sys.exit(0 if m and re.search(r"^\s*kernel_reserved_end: 0x1000_0000,$", m.group(1), re.M) else 1)
+PY
+then
+  fail "${BOARD_SRC}'s RPI5 must declare \`kernel_reserved_end: 0x1000_0000,\` (WS-RR RR7.1 boot map)."
+fi
 
-# link.ld's RAM region must end exactly at GUARANTEED_RAM_TOP: ORIGIN + LENGTH.
+# link.ld's RAM region must end exactly at KERNEL_RESERVED_END: ORIGIN + LENGTH.
 LINK_LD="rust/sele4n-hal/link.ld"
 LD_ORIGIN="$(grep -oE 'ORIGIN[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]+' "${LINK_LD}" | head -1 | grep -oE '0x[0-9A-Fa-f]+')"
 LD_LENGTH="$(grep -oE 'LENGTH[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]+' "${LINK_LD}" | head -1 | grep -oE '0x[0-9A-Fa-f]+')"
@@ -233,10 +248,10 @@ if [ -z "${LD_ORIGIN}" ] || [ -z "${LD_LENGTH}" ]; then
   fail "${LINK_LD} must declare a RAM region with hexadecimal ORIGIN and LENGTH."
 fi
 LD_END="$(printf '0x%X' "$(( LD_ORIGIN + LD_LENGTH ))")"
-if [ "${LD_END}" != "0x40000000" ]; then
-  fail "${LINK_LD}'s RAM region ends at ${LD_END}, not at mmu.rs's GUARANTEED_RAM_TOP (0x40000000): the linker would place the image where the boot map does not cover it."
+if [ "${LD_END}" != "0x10000000" ]; then
+  fail "${LINK_LD}'s RAM region ends at ${LD_END}, not at mmu.rs's KERNEL_RESERVED_END (0x10000000): the linker would place the image where the boot map does not cover it."
 fi
 
 echo "AN7-B: physicalAddressWidth audit clean (RPi5=40, Sim=52, default=52; no ':= 48' anywhere)."
-echo "WS-BP BP2.6: link.ld's RAM region ends at mmu.rs's GUARANTEED_RAM_TOP (the boot map itself is driven through the Lean map: WS-BP BP0.4)."
+echo "WS-BP BP2.6, BP7.10: link.ld's RAM region ends at mmu.rs's KERNEL_RESERVED_END (the boot map itself is driven through the Lean map: WS-BP BP0.4)."
 exit 0

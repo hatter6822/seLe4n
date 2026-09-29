@@ -159,6 +159,39 @@ theorem PagePermissions.toNat_ofNat_roundtrip (n : Nat) (h : n < 32) :
                    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
                    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
 
+/-- **WS-BP BP7.1 (`v0.36.12`): one intermediate translation table an address
+space holds** — seL4's `seL4_ARM_PageTable` mapped into a VSpace.
+
+The ARMv8 walk this kernel targets is four levels with a 4 KiB granule and a
+48-bit virtual address: the VSpace root is level 0, and the tables below it are
+levels 1, 2 and 3.  A table at `level` ℓ ∈ {1, 2, 3} covers every virtual
+address whose bits above its own index field equal `index`
+(`PageTableSlot.covers`), and `table` is the page-table object whose page holds
+it.  A carved root's slots are the levels a mapping passes through, so a frame
+is mapped into a carved address space only where all three levels are present
+(`VSpaceRoot.walkComplete`). -/
+structure PageTableSlot where
+  level : Nat
+  index : Nat
+  table : SeLe4n.ObjId
+  deriving Repr, DecidableEq
+
+namespace PageTableSlot
+
+/-- **The virtual-address shift that selects a level-ℓ table**: 39, 30 and 21 for
+levels 1, 2 and 3 — the bits above that level's 9-bit index field in a 48-bit,
+4 KiB-granule walk (`48 - 9ℓ`). -/
+def shift (level : Nat) : Nat := 48 - 9 * level
+
+/-- The index of the level-ℓ table a virtual address passes through. -/
+def indexOf (level : Nat) (vaddr : SeLe4n.VAddr) : Nat := vaddr.toNat >>> shift level
+
+/-- A slot covers the virtual addresses whose level-ℓ index is its own. -/
+def covers (slot : PageTableSlot) (vaddr : SeLe4n.VAddr) : Bool :=
+  indexOf slot.level vaddr == slot.index
+
+end PageTableSlot
+
 /-- WS-G6/F-P05: Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 
 This intentionally models only one-level deterministic lookup semantics for WS-B1.
@@ -172,6 +205,27 @@ WS-H11/H-02: Enriched with per-page permissions (read/write/execute/user/cacheab
 structure VSpaceRoot where
   asid : SeLe4n.ASID
   mappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
+  /-- **WS-BP BP7.1 slice 4b (`v0.36.10`): the physical page holding this
+      address space's top-level translation table** — what a PE is told to walk
+      (`TTBR0_EL1`, which BP7.2 installs).  `some` exactly for a root carved from
+      an untyped (`untypedRetypeObject` at `CarveRequest.vspaceRoot`), whose
+      page it is; `none` for a root the boot configured, which owns no page of
+      its own and so cannot be installed until the boot places one.  seL4's
+      VSpace object *is* this page. -/
+  tableBase : Option SeLe4n.PAddr := none
+  /-- **WS-BP BP7.1 (`v0.36.12`): the intermediate tables this address space
+      holds**, one slot per (level, index) — installed by `.pageTableMap`,
+      removed by `.pageTableUnmap`.  Always empty for a root the boot
+      configured, which has no page of its own to hang them from. -/
+  tables : List PageTableSlot := []
+  /-- **PR #904 review (`v0.36.41`): the frame mapping epoch of each address a
+      frame capability mapped** (`FrameMapping.epoch`), written by `.vspaceMap`
+      beside the translation.  What makes a capability's record identify *its*
+      mapping rather than any translation of the same frame at the same
+      address: `mappedPageLive` asks the two to agree.  An entry outliving its
+      translation is harmless — every mapping a capability records is made by
+      `.vspaceMap`, which overwrites the entry with a fresh epoch. -/
+  mappingEpochs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr Nat := {}
   /-- WS-SM SM3.A.7: per-VSpaceRoot reader-writer lock state.  Default
       `RwLockState.unheld` means a freshly-allocated VSpaceRoot starts
       with its lock available.  VSpace mutation paths (`vspaceMapPage`,
@@ -186,6 +240,44 @@ structure VSpaceRoot where
   deriving Repr
 
 namespace VSpaceRoot
+
+/-- **WS-BP BP7.1 (`v0.36.12`)**: the levels an address space's walk passes
+through below its root — 1, 2 and 3 in a 48-bit, 4 KiB-granule translation. -/
+def translationLevels : List Nat := [1, 2, 3]
+
+/-- The table this address space holds at `(level, index)`, if any. -/
+def slotAt? (root : VSpaceRoot) (level index : Nat) : Option PageTableSlot :=
+  root.tables.find? (fun s => s.level == level && s.index == index)
+
+/-- **Every level of the walk to `vaddr` is present** — the condition under which
+a frame can be mapped at `vaddr` in a carved address space. -/
+def walkComplete (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Bool :=
+  translationLevels.all fun l => (root.slotAt? l (PageTableSlot.indexOf l vaddr)).isSome
+
+/-- **The shallowest level the walk to `vaddr` is missing** — where
+`.pageTableMap` installs the next table, so a table is never installed below a
+level that is absent. -/
+def missingLevel? (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option Nat :=
+  translationLevels.find? fun l => (root.slotAt? l (PageTableSlot.indexOf l vaddr)).isNone
+
+/-- **A frame may be mapped at `vaddr`**: the root owns a top-level table page
+and its walk to `vaddr` is complete.  A root with no table page has nowhere for a
+walk to start, so nothing is mapped into it — fail-closed.  Since `v0.36.13`
+every root a thread can run in has one: a carved root's is the page it was
+carved on, and a root the boot configures takes one from the binding's
+table-page pool (`MachineConfig.bootTablePool`,
+`Platform.Boot.bootRootTablesPlaced`).  The one root without a page is the
+kernel's own boot root, which no capability maps into. -/
+def translationReady (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Bool :=
+  root.tableBase.isSome && root.walkComplete vaddr
+
+theorem missingLevel?_none_iff_walkComplete (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) :
+    root.missingLevel? vaddr = none ↔ root.walkComplete vaddr = true := by
+  unfold missingLevel? walkComplete translationLevels
+  cases h1 : root.slotAt? 1 (PageTableSlot.indexOf 1 vaddr) <;>
+    cases h2 : root.slotAt? 2 (PageTableSlot.indexOf 2 vaddr) <;>
+    cases h3 : root.slotAt? 3 (PageTableSlot.indexOf 3 vaddr) <;>
+    simp [List.find?, List.all, h1, h2, h3]
 
 /-- WS-G6/F-P05: O(1) amortized page lookup via `HashMap[vaddr]?`.
 WS-H11: Returns `(PAddr × PagePermissions)` pair. -/
@@ -206,7 +298,11 @@ executable page into the VSpace root. -/
 def mapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := PagePermissions.readOnly) : Option VSpaceRoot :=
   if !perms.wxCompliant then none
-  else if paddr.toNat % SeLe4n.pageBytes != 0 then none
+  -- WS-BP BP7.2: both addresses are page-aligned.  The mapping table is keyed by
+  -- the page base (`VAddr.pageBase`), and a hardware walk indexes by the page
+  -- the address falls in — so two unaligned keys inside one page would be two
+  -- mappings here and one translation on the machine.
+  else if paddr.toNat % SeLe4n.pageBytes != 0 || vaddr.toNat % SeLe4n.pageBytes != 0 then none
   else match root.mappings[vaddr]? with
   | some _ => none
   | none => some { root with mappings := root.mappings.insert vaddr (paddr, perms) }
@@ -226,7 +322,24 @@ theorem mapPage_pageAligned {root root' : VSpaceRoot} {vaddr : SeLe4n.VAddr}
   · split at hMap
     · exact absurd hMap (by simp)
     · rename_i hAligned
-      simpa using hAligned
+      simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, Decidable.not_not] at hAligned
+      exact hAligned.1
+
+/-- **WS-BP BP7.2**: every virtual address `mapPage` installs is page-aligned —
+the key a hardware walk reaches, so the model's mappings and the machine's
+translations are in one-to-one correspondence. -/
+theorem mapPage_vaddrAligned {root root' : VSpaceRoot} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions}
+    (hMap : root.mapPage vaddr paddr perms = some root') :
+    vaddr.toNat % SeLe4n.pageBytes = 0 := by
+  unfold mapPage at hMap
+  split at hMap
+  · exact absurd hMap (by simp)
+  · split at hMap
+    · exact absurd hMap (by simp)
+    · rename_i hAligned
+      simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, Decidable.not_not] at hAligned
+      exact hAligned.2
 
 /-- WS-G6/F-P05: O(1) amortized page unmapping via `HashMap.erase`.
 Returns `none` if no mapping exists for `vaddr`. -/
@@ -477,6 +590,87 @@ theorem lookup_unmapPage_ne
 
 end VSpaceRoot
 
+/-- **WS-BP BP7.1**: a **frame** — one page of physical memory a thread may be
+given access to.
+
+Physical memory is authority: an address space maps a page only by presenting a
+capability to the frame that owns it, and the physical address the mapping
+installs is the frame's `base`, never a value the caller supplies.  Until this
+object existed `.vspaceMap` took the physical address from a message register,
+checked against nothing but the physical-address width, alignment and the
+device-execute rule, so a holder of any writable VSpace capability could map the
+kernel image, the Lean heap holding every kernel object, another domain's RAM or
+the interrupt controller — latent only because no mapping reached hardware yet.
+
+A frame is exactly one `pageBytes` page, page-aligned (`wellFormed`), and never
+changes after creation: `base` and `isDevice` are fixed at the carve that makes
+it.  `isDevice` records that the page is MMIO rather than RAM, which the mapping
+path turns into "never executable, never cacheable".  `lock` is the per-object
+lock word every kernel object carries — the lock hierarchy's `page` kind
+(level 9), which this object makes real. -/
+structure FrameObject where
+  base : SeLe4n.PAddr
+  isDevice : Bool := false
+  /-- **PR #904 review (`v0.36.41`): how many times this frame has been mapped
+      by a capability.**  `.vspaceMap` hands the current value to the mapping it
+      makes (`FrameMapping.epoch`, `VSpaceRoot.mappingEpochs`) and advances it,
+      so no two mappings of one frame share an epoch while the frame exists. -/
+  mapEpoch : Nat := 0
+  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
+  deriving Repr, DecidableEq
+
+namespace FrameObject
+
+/-- **WS-BP BP7.1**: a frame's base is page-aligned — the only shape a page
+descriptor can name, and the one every carve that creates a frame produces. -/
+def wellFormed (f : FrameObject) : Prop :=
+  f.base.toNat % SeLe4n.pageBytes = 0
+
+instance (f : FrameObject) : Decidable f.wellFormed :=
+  inferInstanceAs (Decidable (_ = _))
+
+end FrameObject
+
+/-- **WS-BP BP7.1 (`v0.36.12`): where a page table is installed** — the address
+space, the level and the index of the slot that names it.  The other half of
+`VSpaceRoot.tables`: the two are written together, by `.pageTableMap` and
+`.pageTableUnmap`, so a table is installed in at most one slot at a time. -/
+structure PageTableInstall where
+  root : SeLe4n.ObjId
+  level : Nat
+  index : Nat
+  deriving Repr, DecidableEq
+
+/-- **WS-BP BP7.1 (`v0.36.12`): an intermediate translation table** — seL4's
+`seL4_ARM_PageTable`.
+
+A page of RAM, carved from an untyped and zeroed before any capability to it
+exists, that holds one level of an address space's translation.  It is a
+distinct kind from a frame because what it holds is **the kernel's**: a page a
+thread could map and write would let it write its own translation, so
+`.vspaceMap` maps frames only, and a table reaches an address space only through
+`.pageTableMap`.  `installedIn` records the one slot that names it, `none` while
+it is installed nowhere. -/
+structure PageTableObject where
+  base : SeLe4n.PAddr
+  installedIn : Option PageTableInstall := none
+  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
+  deriving Repr, DecidableEq
+
+namespace PageTableObject
+
+/-- A table's page is page-aligned — the only shape a table descriptor can name,
+and the one every carve produces. -/
+def wellFormed (p : PageTableObject) : Prop :=
+  p.base.toNat % SeLe4n.pageBytes = 0
+
+instance (p : PageTableObject) : Decidable p.wellFormed :=
+  inferInstanceAs (Decidable (_ = _))
+
+end PageTableObject
+
 /-- WS-G6/WS-H7: `BEq` instance for `VSpaceRoot` using entry-wise comparison on the
 HashMap-backed mappings. Two VSpaceRoots are equal iff their ASID and all
 mapping entries agree (same size + every key maps to the same value).
@@ -486,6 +680,10 @@ instance : BEq VSpaceRoot where
     a.asid == b.asid &&
     a.mappings.size == b.mappings.size &&
     a.mappings.fold (init := true) (fun acc k v => acc && b.mappings[k]? == some v) &&
+    -- WS-BP BP7.1: the table page and the intermediate tables are part of what
+    -- an address space is.
+    a.tableBase == b.tableBase &&
+    a.tables == b.tables &&
     -- WS-SM SM3.A.7: per-VSpaceRoot lock state participates in structural equality.
     -- `RwLockState` derives `DecidableEq`, so its `==` agrees with `=`.
     a.lock == b.lock
@@ -506,7 +704,7 @@ theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
   -- projection pattern `h.1.1` / `h.1.2` was structurally fragile — adding
   -- a new conjunct to the BEq definition silently shifted indices.
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨hAsid, hSize⟩, _hFold⟩, _hLock⟩ := h
+  obtain ⟨⟨⟨⟨⟨hAsid, hSize⟩, _hFold⟩, _hBase⟩, _hTables⟩, _hLock⟩ := h
   exact ⟨hAsid, hSize⟩
 
 /-- Y2-D: BEq reflexivity for VSpaceRoot under the Robin Hood invariant.
@@ -780,6 +978,14 @@ theorem findFirstEmptySlot_none_iff
         have hEq : base.toNat + 1 + j = base.toNat + (j + 1) := by omega
         rw [hEq] at this; exact this
 
+/-- **WS-BP BP7.1 (`v0.36.7`): does any slot hold a capability that records a
+frame mapping?**  Destroying such a capability owes the unmapping of what it
+mapped (`cspaceDeleteSlotFinalising`), which a CNode's destruction by retype does
+not perform, so the retype refuses a CNode for which this holds — delete those
+capabilities first. -/
+def holdsFrameMappingRecord (node : CNode) : Bool :=
+  node.slots.fold false (fun acc _ cap => acc || cap.mapping.isSome)
+
 /-- The local same-TARGET sweep: keep the source slot, delete every other slot in
 this CNode that names the same capability target.
 
@@ -1039,6 +1245,18 @@ theorem remove_slotCountBounded
     RHTable.size_erase_le cn.slots.table slot
   exact Nat.le_trans h hBounded
 
+/-- **WS-BP BP7.1 (`v0.36.7`): overwriting an occupied slot preserves the
+slot-count bound** — the rewrite replaces an entry rather than adding one
+(`RHTable.size_insert_le_of_get?`).  What an in-place capability rewrite (the
+frame-mapping record `.vspaceMap` writes) owes the CNode's capacity. -/
+theorem insert_slotCountBounded_of_lookup
+    (cn : CNode) (slot : SeLe4n.Slot) (old new : Capability)
+    (hBounded : cn.slotCountBounded) (hLk : cn.lookup slot = some old) :
+    (cn.insert slot new).slotCountBounded := by
+  show (cn.slots.insert slot new).table.size ≤ 2 ^ cn.radixWidth
+  exact Nat.le_trans
+    (RHTable.size_insert_le_of_get? cn.slots.table slot new old cn.slots.hWF.1 hLk) hBounded
+
 /-- Revoking target-local preserves the slot-count bound (filter can only decrease size). -/
 
 theorem revokeTargetLocal_slotCountBounded
@@ -1168,6 +1386,11 @@ inductive DerivationOp where
   | mint
   | copy
   | ipcTransfer
+  /-- **WS-BP BP7.1 (`v0.36.5`)**: a capability to an object carved out of an
+  untyped, recorded as a child of the untyped capability that authorised the
+  carve — seL4's `Untyped_Retype`, whose new capabilities are CDT children of
+  the untyped's.  Revoking the untyped capability therefore reaches them. -/
+  | retype
   deriving Repr, DecidableEq
 
 -- `CdtNodeId` and its instances live in `Model/Object/Types.lean`, beside
@@ -2693,6 +2916,11 @@ inductive KernelObject where
   | untyped (u : UntypedObject)
   | schedContext (sc : SeLe4n.Kernel.SchedContext)
   | reply (r : SeLe4n.Kernel.Reply)
+  /-- **WS-BP BP7.1**: a page of physical memory; see `FrameObject`. -/
+  | frame (f : FrameObject)
+  /-- **WS-BP BP7.1 (`v0.36.12`)**: an intermediate translation table; see
+      `PageTableObject`. -/
+  | pageTable (p : PageTableObject)
   deriving Repr
 
 /-- WS-G5: Manual `BEq` for `KernelObject` dispatching to constituent `BEq`
@@ -2707,6 +2935,8 @@ instance : BEq KernelObject where
     | .untyped a, .untyped b => a == b
     | .schedContext a, .schedContext b => a == b
     | .reply a, .reply b => a == b
+    | .frame a, .frame b => a == b
+    | .pageTable a, .pageTable b => a == b
     | _, _ => false
 
 inductive KernelObjectType where
@@ -2718,6 +2948,8 @@ inductive KernelObjectType where
   | untyped
   | schedContext
   | reply
+  | frame
+  | pageTable
   deriving Repr, DecidableEq
 
 namespace KernelObjectType
@@ -2733,6 +2965,8 @@ def toNat : KernelObjectType → Nat
   | .untyped => 5
   | .schedContext => 6
   | .reply => 7
+  | .frame => 8
+  | .pageTable => 9
 
 /-- R7-E/L-10: Decode a numeric type tag to `KernelObjectType`.
     Returns `none` for unrecognized tags, ensuring only valid types are accepted. -/
@@ -2745,7 +2979,9 @@ def ofNat? : Nat → Option KernelObjectType
   | 5 => some .untyped
   | 6 => some .schedContext
   | 7 => some .reply
-  | _ + 8 => none
+  | 8 => some .frame
+  | 9 => some .pageTable
+  | _ + 10 => none
 
 /-- R7-E/L-10: `ofNat?` is a left inverse of `toNat`. -/
 theorem ofNat_toNat (t : KernelObjectType) : ofNat? t.toNat = some t := by
@@ -2754,6 +2990,76 @@ theorem ofNat_toNat (t : KernelObjectType) : ofNat? t.toNat = some t := by
 /-- R7-E/L-10: `toNat` is injective. -/
 theorem toNat_injective {a b : KernelObjectType} (h : a.toNat = b.toNat) : a = b := by
   cases a <;> cases b <;> simp [toNat] at h <;> rfl
+
+/-- **WS-BP BP7.1: the kinds whose object *is* authority over physical memory.**
+
+An untyped object names a region of memory it may be carved into, and a frame
+names the page a mapping of it installs; a capability to either is authority
+over the memory itself, not over a kernel data structure.  seL4 creates both
+only from memory the kernel already accounts for — the boot hands out the
+initial untypeds, and every frame is carved out of one — so neither may be
+created from nothing.  That is exactly what an in-place retype would do: it
+replaces an object with a fresh value whose fields the caller chooses, so a
+retype to `.untyped` or `.frame` would forge a region or a page at an address no
+authority covered (`objectOfKernelType .untyped` builds an untyped at physical
+address `0` with a caller-chosen size).  `retypeReplacementAdmissible` refuses
+both kinds by this predicate.
+
+Enumerated constructor by constructor, with no wildcard: a kind added to
+`KernelObjectType` fails to elaborate here until it is classified, where a
+wildcard would classify it as not memory-backed — the fail-open direction.
+
+**A VSpace root is memory-backed** (`v0.36.9`).  A translation table is a page
+of memory the kernel owns and a PE walks, and seL4 creates one only from an
+untyped (`seL4_ARM_VSpaceObject`).  Until this version the in-place retype
+could create one, and it did so at ASID `0` — the ASID the boot VSpace root
+holds — with nothing checking the ASID was free, so `storeObject` moved the ASID
+table's entry from the kernel's own root to the caller's and two live roots
+shared one TLB tag (`tests/VSpaceCapabilityBindingSuite.lean` §5h is the
+witness).  Classifying the kind here is what makes the retype refuse it; a
+root's carve from an untyped, with a fresh ASID and a physical table base, is
+the next slice of BP7.1. -/
+def memoryBacked : KernelObjectType → Bool
+  | .tcb => false
+  | .endpoint => false
+  | .notification => false
+  | .cnode => false
+  | .vspaceRoot => true
+  | .untyped => true
+  | .schedContext => false
+  | .reply => false
+  | .frame => true
+  -- WS-BP BP7.1 (`v0.36.12`): a translation table is a page the kernel owns.
+  | .pageTable => true
+
+/-- **WS-BP BP7.1: the kinds a DEVICE untyped may back.**
+
+A device untyped names MMIO, and a store to it is a command to a device, not a
+write to memory.  So it backs exactly what hands that MMIO on — a child untyped,
+and a frame, which is how a driver is given its registers — and nothing the
+kernel itself reads or writes as data.  That is seL4's rule (`Untyped_Retype`
+on a device untyped yields frames and untypeds only).
+
+It is **not** `memoryBacked`, and the difference is a VSpace root: a translation
+table is memory the kernel owns and walks, so it may come only from an untyped
+(`memoryBacked`), and it must be RAM, since a table walk reading a device would
+read a register.  Keeping the two questions apart is what lets the first grow a
+kind without widening the second.
+
+Enumerated constructor by constructor, with no wildcard, for `memoryBacked`'s
+reason: a kind a wildcard answered would be admitted to MMIO by default. -/
+def deviceBackable : KernelObjectType → Bool
+  | .tcb => false
+  | .endpoint => false
+  | .notification => false
+  | .cnode => false
+  | .vspaceRoot => false
+  | .untyped => true
+  | .schedContext => false
+  | .reply => false
+  | .frame => true
+  -- WS-BP BP7.1 (`v0.36.12`): a table walk reading a device would read a register.
+  | .pageTable => false
 
 end KernelObjectType
 
@@ -2768,6 +3074,8 @@ def objectType : KernelObject → KernelObjectType
   | .untyped _ => .untyped
   | .schedContext _ => .schedContext
   | .reply _ => .reply
+  | .frame _ => .frame
+  | .pageTable _ => .pageTable
 
 /-- WS-SM SM3.A.10: per-object lock state projection.
 
@@ -2797,6 +3105,8 @@ def objectLockOf : KernelObject → SeLe4n.Kernel.Concurrency.RwLockState
   | .untyped u      => u.lock
   | .schedContext s => s.lock
   | .reply r        => r.lock
+  | .frame f        => f.lock
+  | .pageTable p    => p.lock
 
 /-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.tcb`.
 
@@ -2834,6 +3144,15 @@ case-analysis on `KernelObject`. -/
 @[simp] theorem objectLockOf_reply (r : SeLe4n.Kernel.Reply) :
     objectLockOf (.reply r) = r.lock := rfl
 
+/-- WS-BP BP7.1: per-variant unfold lemma for `objectLockOf` on `.frame`. -/
+@[simp] theorem objectLockOf_frame (f : FrameObject) :
+    objectLockOf (.frame f) = f.lock := rfl
+
+/-- WS-BP BP7.1 (`v0.36.12`): per-variant unfold lemma for `objectLockOf` on
+`.pageTable`. -/
+@[simp] theorem objectLockOf_pageTable (p : PageTableObject) :
+    objectLockOf (.pageTable p) = p.lock := rfl
+
 -- ============================================================================
 -- WS-SM SM8.D — the lock **setter**, and the lock-erased content
 -- ============================================================================
@@ -2863,6 +3182,8 @@ def setLock (obj : KernelObject) (l : SeLe4n.Kernel.Concurrency.RwLockState) :
   | .untyped u       => .untyped       { u with lock := l }
   | .schedContext sc => .schedContext  { sc with lock := l }
   | .reply r         => .reply         { r with lock := l }
+  | .frame f         => .frame         { f with lock := l }
+  | .pageTable p     => .pageTable     { p with lock := l }
 
 /-- WS-SM SM8.D: the **lock-erased content** of a kernel object — everything
 about it except which cores are holding or waiting for it.
@@ -2972,50 +3293,47 @@ theorem objectLockOf_consistent_with_type (obj : KernelObject) :
     | .vspaceRoot v   => objectType obj = .vspaceRoot   ∧ objectLockOf obj = v.lock
     | .untyped u      => objectType obj = .untyped      ∧ objectLockOf obj = u.lock
     | .schedContext s => objectType obj = .schedContext ∧ objectLockOf obj = s.lock
-    | .reply r        => objectType obj = .reply        ∧ objectLockOf obj = r.lock := by
+    | .reply r        => objectType obj = .reply        ∧ objectLockOf obj = r.lock
+    | .frame f        => objectType obj = .frame        ∧ objectLockOf obj = f.lock
+    | .pageTable p    => objectType obj = .pageTable    ∧ objectLockOf obj = p.lock := by
   cases obj <;> exact ⟨rfl, rfl⟩
 
 end KernelObject
 
 namespace KernelObjectType
 
-/-- WS-SM SM6.D: the seLe4n `KernelObjectType` enumeration has
-**exactly 8 variants**, now including the first-class `reply` object
-(was 7 — SM3.A.5 deferred Reply to TCB state; this workstream promotes
-it to a real kernel object).  SM3.A.8 (Page) remains N/A — pages are
-inline mapping entries in `VSpaceRoot.mappings`, not a separate object.
+/-- WS-SM SM6.D, WS-BP BP7.1: the seLe4n `KernelObjectType` enumeration has
+**exactly 10 variants** — the first-class `reply` object (SM6.D), the
+`frame` (WS-BP BP7.1), which retires SM3.A.8's "Page is N/A" decision: while
+`.vspaceMap` took a raw physical address, a page needed no object; once
+physical memory is authority it does, and the lock hierarchy's `page` kind
+(level 9) is that object's lock — and (`v0.36.12`) the `pageTable`, an
+intermediate translation table, which is a page too and takes the same lock
+kind.
 
-This is the structural enforcement that locks down the remaining N/A
-decision: a future workstream that adds a `Page` variant (or any further
-kind) would fail this exhaustivity witness, forcing the decision to be
-revisited rather than silently slipping past.
-
-The `_count` form pins the cardinality; the `variants_total` form
-enumerates each variant explicitly so a renamed-variant refactor fails
-the surface check. -/
-theorem variants_count_exactly_eight :
+This witness was written to force exactly that revisit: a kind added without
+updating it fails here.  The `_count` form pins the cardinality; the
+`variants_total` form enumerates each variant explicitly so a renamed-variant
+refactor fails the surface check. -/
+theorem variants_count_exactly_ten :
     let variants : List KernelObjectType :=
-      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext, .reply]
-    variants.length = 8 ∧ variants.Nodup := by
+      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext, .reply,
+        .frame, .pageTable]
+    variants.length = 10 ∧ variants.Nodup := by
   refine ⟨rfl, ?_⟩
   decide
 
-/-- WS-SM SM6.D: every `KernelObjectType` value is one of the 8
-enumerated variants.  Total-case witness for the kind tag — pairs with
-`variants_count_exactly_eight` to lock down the remaining N/A decision
-for Page (SM3.A.8). -/
+/- **Tombstone (WS-BP BP7.1)**: `variants_count_exactly_eight` and
+`variants_count_exactly_nine` are `variants_count_exactly_ten` above — the
+`frame` kind is the ninth and (`v0.36.12`) the `pageTable` kind the tenth. -/
+
+/-- WS-SM SM6.D, WS-BP BP7.1: every `KernelObjectType` value is one of the 10
+enumerated variants. -/
 theorem variants_total (k : KernelObjectType) :
     k = .tcb ∨ k = .endpoint ∨ k = .notification ∨ k = .cnode ∨
-    k = .vspaceRoot ∨ k = .untyped ∨ k = .schedContext ∨ k = .reply := by
-  cases k
-  · exact Or.inl rfl
-  · exact Or.inr (Or.inl rfl)
-  · exact Or.inr (Or.inr (Or.inl rfl))
-  · exact Or.inr (Or.inr (Or.inr (Or.inl rfl)))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl)))))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl))))))
+    k = .vspaceRoot ∨ k = .untyped ∨ k = .schedContext ∨ k = .reply ∨ k = .frame ∨
+    k = .pageTable := by
+  cases k <;> simp
 
 end KernelObjectType
 
@@ -3034,7 +3352,8 @@ at construction time:
   tracked by `asidTableInvariant`).
 - **Untyped**: always well-formed (size constraints are enforced by the allocator).
 - **SchedContext**: must start with **no bound thread** (`v0.35.184`, see below).
-- **Reply**: must start inert (WS-SM SM6.D, see below). -/
+- **Reply**: must start inert (WS-SM SM6.D, see below).
+- **Frame**: page-aligned (WS-BP BP7.1, `FrameObject.wellFormed`). -/
 def wellFormed (obj : KernelObject)
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) : Prop :=
   match obj with
@@ -3063,6 +3382,8 @@ def wellFormed (obj : KernelObject)
   -- `newObj.wellFormed`) could install a Reply that bypasses the
   -- `linkCallerReply` / `replyCallerLinkage` setup path and seed a stale/in-use link.
   | .reply r => r.caller = none ∧ r.prev = none ∧ r.next = none
+  | .frame f => f.wellFormed
+  | .pageTable p => p.wellFormed
 
 /-- **`v0.35.187`: an object's own embedded identity IS the key it is stored at.**
 
@@ -3082,7 +3403,7 @@ the agreement the boot enforces; the two retype wrappers refuse it now
 dispatch stamps the target's identity with `withIdentity` below.
 
 The match has **no** wildcard: a kernel object that starts carrying its own id
-must be classified here, rather than silently answering `true`.  The five that
+must be classified here, rather than silently answering `true`.  The six that
 carry none answer `true` because the question does not arise for them, which is
 a different fact from "not checked". -/
 def embeddedIdentityMatches (obj : KernelObject) (key : SeLe4n.ObjId) : Bool :=
@@ -3095,6 +3416,8 @@ def embeddedIdentityMatches (obj : KernelObject) (key : SeLe4n.ObjId) : Bool :=
   | .cnode _ => true
   | .vspaceRoot _ => true
   | .untyped _ => true
+  | .frame _ => true
+  | .pageTable _ => true
 
 /-- **`v0.35.187`: stamp an object with the identity of the slot it is stored at.**
 
@@ -3105,7 +3428,7 @@ the replacement that the retype's other guards and the dispatch payoff's
 `boundThread`, a Reply's `caller` and stack links — survives it unchanged, which
 is what `withIdentity_preserves_*` below state rather than leave to inspection.
 
-The five kinds that carry no identity are returned untouched, and `.tcb` /
+The six kinds that carry no identity are returned untouched, and `.tcb` /
 `.schedContext` / `.reply` are written out rather than matched with a wildcard,
 for the reason `embeddedIdentityMatches` gives. -/
 def withIdentity (obj : KernelObject) (key : SeLe4n.ObjId) : KernelObject :=
@@ -3118,6 +3441,8 @@ def withIdentity (obj : KernelObject) (key : SeLe4n.ObjId) : KernelObject :=
   | .cnode c => .cnode c
   | .vspaceRoot v => .vspaceRoot v
   | .untyped u => .untyped u
+  | .frame f => .frame f
+  | .pageTable p => .pageTable p
 
 /-- **`v0.35.187`**: stamping satisfies the guard — so the refusal is one a
 caller can meet, which is what keeps it a discipline rather than a wall. -/
@@ -3150,6 +3475,8 @@ instance (obj : KernelObject)
   | .cnode _ => exact inferInstance
   | .reply _ => exact inferInstance
   | .schedContext _ => exact inferInstance
+  | .frame _ => exact inferInstance
+  | .pageTable _ => exact inferInstance
   | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _ =>
     exact instDecidableTrue
 
@@ -3162,7 +3489,7 @@ before installing an object (`lifecycleRetype`) cannot tell the two apart. -/
 @[simp] theorem eraseLock_wellFormed (obj : KernelObject)
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
     obj.eraseLock.wellFormed objects ↔ obj.wellFormed objects := by
-  cases obj <;> simp [wellFormed, eraseLock, setLock, CNode.guardBounded]
+  cases obj <;> simp [wellFormed, eraseLock, setLock, CNode.guardBounded] <;> exact Iff.rfl
 
 end KernelObject
 

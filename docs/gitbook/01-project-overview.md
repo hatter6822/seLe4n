@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.2): 420,759 lines of production Lean across 343 files, 85,605 lines across 71 Lean test suites,
-13,928 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.36.41): 433,986 lines of production Lean across 361 files, 88,629 lines across 71 Lean test suites,
+14,408 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -93,11 +93,11 @@ is entered — the entry takes a token only a successful initialization
 constructs, so the order is checked by the compiler — and halt the whole
 system if it fails.  **BP2.6** builds the boot map from linker symbols and
 board constants — the image's text read-only and executable at EL1 alone, its
-read-only data and everything else never executable, the guaranteed first GiB of RAM and the
-device window — so nothing parses the device tree before the MMU is on.
+read-only data and everything else never executable, the kernel's reserved extent (the first
+GiB until BP7.10) and the device window — so nothing parses the device tree before the MMU is on.
 **BP3.1–BP3.4** give the hardware boot a deployment to install: a root task
 with its own address space, an interrupt notification and untypeds over the
-guaranteed gigabyte minus the kernel's reserved extent, and an untrusted
+board's RAM outside the kernel's reserved extent, and an untrusted
 initial thread, with no capability between them.  The boot now admits a
 thread's VSpace root (registering its ASID), refuses an untyped over memory it
 may not describe, and every gate of the checked boot on this configuration is
@@ -115,7 +115,7 @@ halts every core, and an accepted one boots the deployment on its own RAM
 variant, which is proved for all five.  **BP4.5** cleans the image's loaded
 bytes to the Point of Unification before any thread can fetch, so an initial
 task's code is fetched as the firmware loaded it.  **BP4.6** maps the RAM a
-larger board has above the guaranteed gigabyte, once the verified parse has
+board has outside the kernel's reserved extent, once the verified parse has
 chosen the variant, and seals the boot map before any secondary is released,
 and **BP4.7** hands that RAM to the root task as untypeds, so on every board no
 RAM outside the kernel's reserved extent is left unowned.  **BP5.1** makes the
@@ -135,7 +135,21 @@ level (`smc` after an EL2 entry, where nothing is left to take an `hvc`).
 **BP6** makes the dormant seams live: every PE runs a per-PE runtime handshake
 and marks itself ready before it unmasks IRQs, and the boot halts unless every
 declared PE serves the kernel (IRQ-ready and Lean-ready) within a bounded
-window.  BP7..BP8 have not started.
+window.  **BP7.10** (v0.36.3) reads the first gigabyte's RAM off the firmware's
+account — a real Raspberry Pi 5 withholds the gigabyte's top — so a real board
+boots, and the boot map's constant RAM is the kernel's reserved extent alone.
+**BP7.1–BP7.9** (v0.36.4–v0.36.22) give threads memory, address spaces, a
+saved and restored context and lazily switched FP/SIMD state, and **BP7.11**
+(v0.36.23) starts both initial threads, one per domain, so the labeling's two
+separation witnesses are threads that run.  **BP8.1**'s first slice (v0.36.24)
+boots the image on QEMU's `virt` — QEMU models no BCM2712, so the board is a
+build-time choice — at EL1 and at EL2 — and its second (v0.36.25) gives the
+Lean kernel a `virt` binding, a deployment and its own boot entry, checked on
+QEMU's own device tree.  Its third (v0.36.26) runs the Lean kernel: the
+Lean-linked image boots on four PEs to every core's first idle dispatch, at
+EL1 and at EL2, on every PR — a first execution that found and fixed a
+quadratic device-tree parse, a restore that abandoned each core's bring-up,
+and a boot core that never dispatched.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

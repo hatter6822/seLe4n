@@ -130,7 +130,7 @@ What each tier is for:
 | 1 | `test_tier1_build.sh` | Does everything compile, including staged modules? |
 | 2 | `test_tier2_trace.sh`, `_determinism.sh`, `_negative.sh` | Does the kernel produce the fixture trace, deterministically, and reject bad states? |
 | 3 | `test_tier3_invariant_surface.sh` | Do the named theorems and invariants still exist and still say what the docs claim? |
-| 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance — **needs the bootable image**, so it cannot run until SM10.1 |
+| 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance on the QEMU `virt` image — the bring-up, the PE-withheld boot and the in-image exercisers execute on both images (WS-BP BP8.4), the per-core counter check on the Lean-linked one alone (BP8.5); the eight gates that need a user program report NOT RUN until SM10's root task |
 | 5 | `test_tier5_cross_language.sh` | Do the Rust lock primitives agree with their Lean specs? |
 
 The Tier-5 oracle **drives** both real reader-writer locks — a
@@ -176,8 +176,9 @@ and every `ASSERT` are checked on an ELF and each assertion is proved live by
 mutation.
 
 **The boot map is built from constants** (WS-BP BP2.6): `mmu::init_mmu` reads
-no device tree.  It maps the guaranteed first GiB of RAM (`GUARANTEED_RAM_TOP`)
-and the device window, with the image's text read-only and executable at EL1,
+no device tree.  It maps the kernel's reserved extent (`KERNEL_RESERVED_END`;
+the first gigabyte until WS-BP BP7.10, whose top the firmware withholds) and the
+device window, with the image's text read-only and executable at EL1,
 its read-only data read-only and never executable, and everything else
 writable and never executable.  `boot_mapping_for` is the one answer to what an
 address is mapped as, and `boot_map_tests` walks every table against it and
@@ -249,7 +250,8 @@ to it that breaks any variant fails to elaborate.  Releasing a secondary consume
 images and tests that link no kernel.  A new bring-up path takes the permit too
 — it is how the install is kept ahead of every secondary without a lock.
 **The boot map grows once, before the seal** (BP4.6): the accepting arm maps the
-verified variant's RAM above the guaranteed gigabyte through
+verified configuration's RAM outside the kernel's extent (BP7.10: the first
+gigabyte's part as far as the firmware reports it, then everything above) through
 `ffiExtendBootRamMap` before the install, and `enter_lean_kernel` seals the map
 (`mmu::seal_boot_map`) before it mints the permit.  Extend the boot tables only
 through `mmu::extend_boot_ram_map` — it writes invalid entries only, decides every
@@ -276,7 +278,7 @@ does both, then runs `check_kernel_image.py --lean-kernel` and the FP/SIMD gate
 over the linked image).  A missing archive fails the link naming the path.
 **The firmware's boot files** (BP5.3): `./scripts/build_rpi5_image.sh [ELF
 [OUT]]` writes `kernel8.img` and `config.txt` to `.lake/build/rpi5-image/`
-from that image (the archive lane's step [5/5] does this).  Copy both to the
+from that image (the archive lane's step [5/6] does this).  Copy both to the
 SD card's boot partition.  `config.txt` is generated — its `kernel_address` is
 the image's entry and its `device_tree_address` / `device_tree_end` are
 `link.ld`'s `.dtb_window` — and `rpi5_boot_files.py check` refuses a key it
@@ -315,9 +317,10 @@ them for zeroing, copies and spills — it put 129 such instructions in the HAL 
 so the HAL builds for `aarch64-unknown-none-softfloat`, and the cross gate's
 step [5/7] checks the generated code rather than trusting the flag. Do not
 write `neon`/`fp-armv8` target features, FP inline assembly or a second
-`CPACR_EL1` write: `build.rs` and the disassembly gate refuse all three. User
-FP/SIMD traps and is delivered as a fault until per-thread FP state lands
-(WS-BP BP7.9).
+`CPACR_EL1` write: `build.rs` and the disassembly gate refuse all three, save
+for `fp_context.S`'s four pinned routines. A user FP/SIMD instruction traps and
+is the lazy switch: the thread's own context is loaded and the trap lifted for
+it (WS-BP BP7.9, `v0.36.22`).
 
 ### Concurrency model checking and miri
 
@@ -396,7 +399,22 @@ lake env lean --run tests/NegativeStateSuite.lean
 `scripts/test_qemu*.sh` cover SMP bring-up, IPC, scheduler, timer, SGI
 round-trip, TLB shootdown, deadlock and kprintln stress.
 `scripts/test_hw_full.sh` and `docs/HARDWARE_TESTING.md` cover the RPi5 path.
-Both need artefacts SM10.1 has not produced yet.
+`scripts/test_qemu.sh` is live: with no argument it boots the HAL-only image on
+QEMU's `virt` at EL1 and at EL2, and with `--lean-kernel` (which needs the
+archive `scripts/test_lean_aarch64_archive.sh` builds, and which that lane runs
+as its step [6/6]) it boots the Lean-linked image on four PEs to every core's
+first idle dispatch, under `-icount shift=0,sleep=off` — without it, one
+emulated Lean tick outlasts the 1 ms tick period on multi-threaded TCG and four
+PEs' ticks saturate the kernel-entry lock.  `scripts/test_qemu_smp_bringup.sh`
+(WS-BP BP8.2) is live too: it boots the HAL-only image, and with `--lean-kernel`
+the Lean-linked one, on four PEs at EL1 and EL2, and requires every secondary's
+per-core init in order and every banner as a whole line; the same lane runs both
+modes.  The image build, the raw cut and the run are `scripts/qemu_boot_lib.sh`'s,
+shared by the two scripts, and the `virt` images build under `rust/target/qemu-virt*`
+so the Raspberry Pi 5 image in `rust/target/<target>/release` is never
+overwritten.  A console line is one lock acquisition, and a PE prints nothing
+before its own MMU is on.  The other QEMU scripts and the board need artefacts
+BP8.3–BP8.5 produce.
 
 ---
 

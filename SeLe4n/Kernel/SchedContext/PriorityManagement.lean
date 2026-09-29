@@ -359,6 +359,18 @@ theorem updatePrioritySource_only_modifies_objects
   · rw [SystemState.updateTcb_eq_objects_update]
     exact ⟨_, rfl⟩
 
+/-- The priority write keeps the object store well-formed — a typed
+read-modify-write at each binding. -/
+theorem updatePrioritySource_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (newPriority : SeLe4n.Priority) (hInv : st.objects.invExt) :
+    (updatePrioritySource st tid tcb newPriority).objects.invExt := by
+  unfold updatePrioritySource
+  split
+  · exact SystemState.updateTcb_preserves_objects_invExt _ _ _
+      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
+  · exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
+
 /-- WS-OD (v0.35.3): the payoff — a priority update on a **donated** thread
 writes that thread's own TCB and nothing else, so the donor's reservation is
 untouched.  Stated as an exact equation on the resulting state rather than as

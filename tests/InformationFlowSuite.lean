@@ -867,8 +867,8 @@ def runInformationFlowChecks : IO Unit := do
   -- beside it is the single-CNode primitive that composite opens with, and
   -- naming *that* one would be a boundary entry for an inner step while the
   -- seam a capability actually reaches is the composite).
-  expect "enforcement boundary: total 45 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 45)
+  expect "enforcement boundary: total 52 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 52)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
@@ -1381,16 +1381,17 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-RR RR7 audit round (v0.34.109): 27, not 16 — `StateField` is now total
   -- over `SystemState` (pinned by `SystemState.eq_of_fieldEq_all`, an
   -- elaboration-time fact this runtime count merely mirrors).
-  expect "StateField enum has 27 variants, one per SystemState field"
+  -- WS-BP BP7.2 (v0.36.15): 28, with the physical-write ledger.
+  expect "StateField enum has 28 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
        .services, .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
        .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode,
        .scThreadIndex, .tlb,
        .objStoreLock, .schedulerLocks, .tlbShootdown,
-       .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance,
+       .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance, .pendingPhysicalWrites,
        .declassificationAuditLog, .declassificationAuditEpoch,
-       .declassificationRefusals, .declassificationTaint ].length = 27)
+       .declassificationRefusals, .declassificationTaint ].length = 28)
   expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
     (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
   -- AM4 audit remediation: field-set catalog extended from 10 to 11
@@ -1447,12 +1448,12 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-RR RR8.16 (`v0.35.190`): 27 → 28 with `cspaceRevokeCdt`, capability-only
   -- because the `.cspaceRevoke` arm's authority is the invoked CNode's write
   -- right and no information-flow policy is consulted.
-  expect "enforcement boundary has 28 capability-only"
-    (coCount = 28)
+  expect "enforcement boundary has 35 capability-only"
+    (coCount = 35)
   expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "enforcement boundary total is 45"
-    (boundary.length = 45)
+  expect "enforcement boundary total is 52"
+    (boundary.length = 52)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1552,8 +1553,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 45 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 45)
+  expect "enforcementBoundaryExtended has 52 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 52)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

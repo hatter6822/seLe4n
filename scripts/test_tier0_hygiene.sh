@@ -196,6 +196,11 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/indexed_source.py" --self-test
 # same treatment.  Self-test first: a scanner that under-reaches fails silently.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
+# WS-BP BP8.1: the QEMU `virt` device tree the Lean board check is driven
+# against is a checked-in fixture normalised from a QEMU dump (per-run seeds
+# and uninitialised padding zeroed).  The normaliser is self-tested here; the
+# comparison against a live dump runs in the QEMU lane, which has QEMU.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/qemu_virt_dtb_fixture.py" --self-test
 
 # WS-RR RR7.34 (register finding 93): every artefact the claim/evidence index
 # names must exist.  A row that names a missing artefact asserts evidence that
@@ -542,7 +547,7 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_link_script.py" --self-test
 # synthetic ELF that keeps every section and symbol and breaks that relation,
 # and that the real `link.ld` parses into the section list the cases assume.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_kernel_image.py" --self-test
-# WS-BP BP5.3: the boot-file check the archive lane runs as step [5/5].  Tier 0
+# WS-BP BP5.3: the boot-file check the archive lane runs as step [5/6].  Tier 0
 # has no image, so it pins the pure half: each relation between `kernel8.img`,
 # `config.txt` and a synthetic image, broken one at a time with both files
 # kept present and well-formed.
@@ -613,6 +618,11 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py"
 # decisive case keeps the anchor and the definition and adds only a reader.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py"
+# A tracked Python source the compiler warns about (an invalid escape sequence is
+# silent on 3.11 and a printed SyntaxWarning on CI's 3.12) fails here rather
+# than surfacing as noise above some other gate's PASS line.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_python_compile_warnings.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_python_compile_warnings.py"
 
 # "Does this declaration carry a body" had SIX answers across six artefacts
 # (`v0.35.114`, `v0.35.115`), four of them matching the definition constructor

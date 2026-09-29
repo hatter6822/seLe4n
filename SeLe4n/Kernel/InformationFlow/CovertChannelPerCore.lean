@@ -126,14 +126,17 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
   -- `endpointSendDualWithCaps`; rerouted, so its live operation is now this one.
   , .policyGated "endpointSendCrossCoreDispatchChecked"
   -- Round 10, same finding on the resume side.
-  , .capabilityOnly "resumeThreadOnCoreLive"
+  , .capabilityOnly "resumeThreadOnCore"
   -- PR #861 review round 12: the SM7.D/SM7.F architecture wrappers are live
   -- per-core arms too — each is what its `dispatchWithCap_…_delegates` theorem
   -- says the arm reaches, and each does strictly more than the canonical
   -- operation it replaced (initiator-atomic TLB drain, I-cache maintenance).
   -- Leaving them out let the per-core table report a cross-core surface of
   -- seven when the live one is twelve.
-  , .capabilityOnly "vspaceMapPageCheckedWithShootdownFromStatePerCore"
+  -- WS-BP BP7.1: the `.vspaceMap` arm now reaches `vspaceMapFromFrameCap` —
+  -- the frame-capability resolution in front of the same per-core shootdown
+  -- wrapper, which the routing walk reaches from it.
+  , .capabilityOnly "vspaceMapFromFrameCap"
   , .capabilityOnly "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
   , .capabilityOnly "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache"
   -- PR #861 review round 12: the priority-control arms were boot-pinned twice
@@ -161,16 +164,20 @@ are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 59 entries — the live canonical 44 (39
+/-- SM8.B.6: the per-core boundary has 67 entries — the live canonical 52 (39
 plus the 2PL bracket SM8.E.3 promoted into it, plus WS-SM SM9.A.11's two
 audit-trail entries, plus WS-SM SM9.C.8's data-carrying declassification, plus
 the PR #887 review round's fault-handler configuration `setThreadFaultHandlerOp`,
-plus WS-RR RR8.16's CDT-traversing revocation `cspaceRevokeCdt`)
-and the fifteen cross-core wrappers.  Re-anchored at the
+plus WS-RR RR8.16's CDT-traversing revocation `cspaceRevokeCdt`, plus WS-BP
+BP7.1's untyped carve `untypedRetypeFromCap`, its reset `untypedResetWithShootdown`, and the
+two finalising destroyers `cspaceDeleteSlotFinalising` /
+`cspaceRevokeCdtFinalising`, its space change `setThreadSpace`, and the two
+page-table operations `pageTableMap` / `pageTableUnmap`) and the fifteen cross-core
+wrappers.  Re-anchored at the
 SM8.A cut, in the fourth review round, again in rounds 10 and 12 as the `.send`,
 resume and architecture arms joined the cross-core surface, in round 37 as the
 routing gate found `.tcbSetAffinity`, at SM9.A.11, at SM9.C.8, at the
-PR #887 review round, and at WS-RR RR8.16.
+PR #887 review round, at WS-RR RR8.16, and at WS-BP BP7.1 (five times).
 `enforcementBoundaryExtended_count` is the authority for the base figure and
 this theorem for the total; the sentence above is worth what they are worth, and
 round 38 caught it stale at 53 one commit after the theorem moved.
@@ -178,7 +185,7 @@ round 38 caught it stale at 53 one commit after the theorem moved.
 The SM8.E.3 promotion left the total **unchanged**, which is the point of
 appending the bracket last in the canonical list; SM9.A.11 moves it, because the
 two audit entries are genuinely new operations rather than a reclassification. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 60 := by rfl
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 67 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the fifteen live cross-core
@@ -241,8 +248,8 @@ def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .notificationWait    => "notificationWaitCrossCoreDispatchChecked"
   | .tcbSuspend          => "suspendThreadOnCore"
   | .send                => "endpointSendCrossCoreDispatchChecked"
-  | .tcbResume           => "resumeThreadOnCoreLive"
-  | .vspaceMap           => "vspaceMapPageCheckedWithShootdownFromStatePerCore"
+  | .tcbResume           => "resumeThreadOnCore"
+  | .vspaceMap           => "vspaceMapFromFrameCap"
   | .vspaceUnmap         => "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
   | .lifecycleRetype     => "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache"
   | .tcbSetPriority      => "setPriorityOnCore"

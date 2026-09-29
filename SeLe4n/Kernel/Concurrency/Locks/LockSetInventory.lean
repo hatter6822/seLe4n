@@ -155,14 +155,14 @@ def lockSetTheorems : List LockSetTheorem :=
       SeLe4n.Model.KernelObject.lockKind_schedContext .projection,
     lkst! "lockKind agrees with objectType per variant"
       SeLe4n.Model.KernelObject.lockKind_eq_of_objectType .projection,
-    lkst! "lockKind is one of the 8 modeled kinds (excludes objStore/page)"
+    lkst! "lockKind is one of the 9 modeled kinds (excludes objStore)"
       SeLe4n.Model.KernelObject.lockKind_in_modeledKinds .projection,
     lkst! "lockKind ≠ .objStore (SystemState-level lock is separate)"
       SeLe4n.Model.KernelObject.lockKind_ne_objStore .projection,
     lkst! "lockKind on .reply reduces to .reply (WS-SM SM6.D first-class Reply)"
       SeLe4n.Model.KernelObject.lockKind_reply .projection,
-    lkst! "lockKind ≠ .page (SM3.A.8 N/A)"
-      SeLe4n.Model.KernelObject.lockKind_ne_page .projection,
+    lkst! "lockKind on .frame reduces to .page (WS-BP BP7.1 first-class frame)"
+      SeLe4n.Model.KernelObject.lockKind_frame .projection,
     lkst! "LockId.fromObject builds LockId from ObjId + KernelObject"
       SeLe4n.Model.LockId.fromObject .projection,
     lkst! "LockId.lookup resolves a LockId against a SystemState"
@@ -179,7 +179,7 @@ def lockSetTheorems : List LockSetTheorem :=
       SeLe4n.Model.LockId.lookup_objStore .projection,
     lkst! "LockId.lookup_reply: WS-SM SM6.D dispatches to the Reply per-object lock"
       SeLe4n.Model.LockId.lookup_reply .projection,
-    lkst! "LockId.lookup_page: SM3.A.8 N/A kind fails closed"
+    lkst! "LockId.lookup_page: WS-BP BP7.1 dispatches to the frame per-object lock"
       SeLe4n.Model.LockId.lookup_page .projection,
     -- §2 lockSet — per-transition declarations (25 entries — one per SyscallId variant)
     lkst! "lockSet for endpointSend"
@@ -206,6 +206,8 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_cspaceDelete .lockSet,
     lkst! "lockSet for lifecycleRetype"
       lockSet_lifecycleRetype .lockSet,
+    lkst! "lockSet for untypedRetype"
+      lockSet_untypedRetype .lockSet,
     lkst! "lockSet for vspaceMap"
       lockSet_vspaceMap .lockSet,
     lkst! "lockSet for vspaceUnmap"
@@ -246,6 +248,12 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_tcbSetAffinity .lockSet,
     lkst! "lockSet for tcbSetFaultHandler"
       lockSet_tcbSetFaultHandler .lockSet,
+    lkst! "lockSet for tcbSetSpace"
+      lockSet_tcbSetSpace .lockSet,
+    lkst! "lockSet for pageTableMap"
+      lockSet_pageTableMap .lockSet,
+    lkst! "lockSet for pageTableUnmap"
+      lockSet_pageTableUnmap .lockSet,
     lkst! "lockSet for tcbBindNotification"
       lockSet_tcbBindNotification .lockSet,
     lkst! "lockSet for tcbUnbindNotification"
@@ -277,6 +285,8 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_cspaceDelete .consistency,
     lkst! "lockSet_consistent for lifecycleRetype"
       lockSet_consistent_lifecycleRetype .consistency,
+    lkst! "lockSet_consistent for untypedRetype"
+      lockSet_consistent_untypedRetype .consistency,
     lkst! "lockSet_consistent for vspaceMap"
       lockSet_consistent_vspaceMap .consistency,
     lkst! "lockSet_consistent for vspaceUnmap"
@@ -317,6 +327,12 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_tcbSetAffinity .consistency,
     lkst! "lockSet_consistent for tcbSetFaultHandler"
       lockSet_consistent_tcbSetFaultHandler .consistency,
+    lkst! "lockSet_consistent for tcbSetSpace"
+      lockSet_consistent_tcbSetSpace .consistency,
+    lkst! "lockSet_consistent for pageTableMap"
+      lockSet_consistent_pageTableMap .consistency,
+    lkst! "lockSet_consistent for pageTableUnmap"
+      lockSet_consistent_pageTableUnmap .consistency,
     lkst! "lockSet_consistent for tcbBindNotification"
       lockSet_consistent_tcbBindNotification .consistency,
     lkst! "lockSet_consistent for tcbUnbindNotification"
@@ -371,7 +387,14 @@ def lockSetTheorems : List LockSetTheorem :=
     lkst! "pipChainStart for tcbSuspend (revert from the captured blocking server when reply-blocked)"
       pipChainStart_tcbSuspend .chainStart]
 
-/-- WS-SM SM3.B: the inventory has exactly 113 entries (WS-OD OD3.14's two
+/-- WS-SM SM3.B: the inventory has exactly 121 entries (WS-BP BP7.1's
+`pageTableMap` and `pageTableUnmap` lockSet + consistency pairs — the page-table
+syscalls, whose footprint is the caller's TCB and CNode root read and the table
+and its address space written — on top of the 117 before them, which were its
+`tcbSetSpace` lockSet + consistency pair — the thread-space configuration
+syscall, whose footprint is the caller's and target's TCBs, the caller's CNode
+root, and the new CSpace and VSpace roots in *read* mode — on top of the
+115 before it, which were WS-OD OD3.14's two
 new chain-start markers — the second walk a `.replyRecv` performs on a
 delegated reply and the walk `.receive` gained when its rendezvous-path
 priority inversion was closed — on top of the PR #887 review
@@ -398,25 +421,28 @@ PR #822 Phase H's `mintReplyCap` pair, and SM6.B's `tcbBindNotification` /
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 113 := by decide
+    lockSetTheorems.length = 121 := by decide
 
 /-- WS-SM SM3.B: 22 entries in the `projection` category
 (lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
- + lockKind_in_modeledKinds + 3 lockKind_ne_<NA-kind> + LockId.fromObject
+ + lockKind_in_modeledKinds + lockKind_ne_objStore + lockKind_reply + lockKind_frame
+ + LockId.fromObject
  + LockId.lookup + 4 lookup structural theorems + 3 fail-closed N/A
  witnesses). -/
 theorem lockSetTheorems_projection_count :
     (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
-/-- WS-SM SM3.B: 35 entries in the `lockSet` category (one per SyscallId variant). -/
+/-- WS-SM SM3.B: 37 entries in the `lockSet` category (one per statically
+declared SyscallId variant). -/
 theorem lockSetTheorems_lockSet_count :
-    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 35 := by
+    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 39 := by
   decide
 
-/-- WS-SM SM3.B: 35 entries in the `consistency` category (one per SyscallId variant). -/
+/-- WS-SM SM3.B: 37 entries in the `consistency` category (one per statically
+declared SyscallId variant). -/
 theorem lockSetTheorems_consistency_count :
-    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 35 := by
+    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 39 := by
   decide
 
 /-- WS-SM SM3.B: 6 entries in the `acquireSort` category

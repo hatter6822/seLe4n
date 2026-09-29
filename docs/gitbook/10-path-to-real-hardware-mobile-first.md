@@ -185,9 +185,10 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   kernel command line** — maintainer decision #7 puts SMP on by
   default at v1.0.0 "once SM5 lands", and SM5.I (kernel-entry
   serialisation) landed at v0.32.142.  It was `false` from v0.32.136
-  until then.  The Tier-4 QEMU SMP exercisers still pass
-  `-append "smp_enabled=true"` explicitly, which is now redundant but
-  keeps each script's intent legible without relying on the default.  82 new HAL
+  until then.  The Tier-4 QEMU gates boot with no kernel command line since
+  WS-BP BP8.4 (`scripts/qemu_boot_lib.sh`), so they run on that default; the
+  PE-withheld gate withholds PEs with `-smp 2` rather than with
+  `smp_max_cores`.  82 new HAL
   unit tests in `cmdline::tests` (parser branches, DTB-blob
   fixtures, MAX_BOOTARGS_LEN buffer handling) + 7 new tests
   for `smp::bring_up_secondaries_with_limit` saturation

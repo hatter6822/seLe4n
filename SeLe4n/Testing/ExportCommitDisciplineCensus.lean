@@ -216,6 +216,14 @@ def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
   , (`SeLe4n.Kernel.unknownSyscallEntry,
       .unbracketed "fault delivery: an unknown syscall number is delivered through the \
         same entry, with the same missing declaration")
+    -- WS-BP BP7.9: the lazy FP/SIMD switch.  It writes one TCB's saved FP
+    -- context and one core's owner slot, which is machine state, not a lock-set
+    -- member; like the fault entries it is not a syscall, so no footprint exists.
+  , (`SeLe4n.Kernel.fpAccessEntry,
+      .unbracketed "FP/SIMD access: EC 0x07 is not a syscall, so `lockSetForSyscall` \
+        declares no footprint for it; the switch writes the previous owner's saved \
+        FP context and the core's `MachineState.fpOwner` slot, the latter per-core \
+        machine state no `LockId` names")
     -- WS-BP BP4.1: the hardware boot entry.  It installs the whole kernel state
     -- once, before any core can enter the kernel, so there is no concurrent
     -- committer for a lock to exclude — which is an ordering fact the HAL
@@ -225,7 +233,14 @@ def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
       .unbracketed "boot install: `lean_kernel_main` writes the kernel state and the \
         labeling context once, on the boot core, before any secondary is released \
         (WS-BP BP4.2), so no other committer exists; it replaces the state wholesale \
-        rather than committing a transition a footprint could describe") ]
+        rather than committing a transition a footprint could describe")
+    -- WS-BP BP8.1: the QEMU `virt` image's boot entry — the same install on
+    -- another board, and the same ordering fact: the HAL calls exactly one of
+    -- the two entries, the one its `board_qemu_virt` feature selects.
+  , (`SeLe4n.Platform.QemuVirt.kernelMain,
+      .unbracketed "boot install: `lean_kernel_main_qemu_virt` is `lean_kernel_main` \
+        on the QEMU `virt` board — it installs the kernel state once, on the boot core, \
+        before any secondary is released, so no other committer exists") ]
 
 /-- The seams that commit and are recorded as bracketed. -/
 def bracketedSeams : List Name :=

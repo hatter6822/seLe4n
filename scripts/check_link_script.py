@@ -16,15 +16,18 @@ relations the Rust side depends on:
      allocation on the board);
   2. the arena lies above the image and both stack regions, so it overlaps
      nothing the boot writes;
-  3. the arena ends inside the smallest Raspberry Pi 5's RAM, `[0, 1 GiB)`;
+  3. (WS-BP BP7.10) the kernel's reserved extent is whole 2 MiB blocks inside
+     the gigabyte at the base of RAM, the level-2 table the boot map describes
+     it with, and (WS-BP BP8.1) the image loads 512 KiB above that base, the
+     offset its arm64 Image header declares;
   4. (WS-BP BP2.6) the boot map's permission boundaries `_start`, `__text_end`
      and `__rodata_end` are page aligned and ordered, and the read-only data
      begins where the text ends (`__rodata_start`) — which
      `mmu::ImageLayout::is_well_formed` requires of the layout it builds tables
      from;
   5. (WS-BP BP3.2) the arena ends inside the kernel's reserved extent
-     `[0, KERNEL_RESERVED_END)`, which is page aligned inside the smallest
-     board's RAM, and `KERNEL_RESERVED_END` is the number the Lean side states
+     `[0, KERNEL_RESERVED_END)`, and `KERNEL_RESERVED_END` is the number the
+     Lean side states
      — read from the line `tests/Ak9PlatformSuite.lean` writes into
      `tests/fixtures/boot_map.expected`, so the extent the boot refuses
      untypeds over is the extent this link actually reserved;
@@ -42,8 +45,9 @@ resolve (WS-BP BP5.1, BP5.2).
 
 Each of the script's `ASSERT`s is then proved *live* rather than present: the
 script is mutated so exactly that assertion's relation breaks — a size that is
-not a whole page, an arena that is not page-aligned, an arena too big for the
-smallest board, and (BP2.6) each permission boundary moved off its page, or a
+not a whole page, an arena that is not page-aligned, (BP7.10) a reserved extent
+off a 2 MiB block, one past the first gigabyte and a RAM region that does not
+end at it, and (BP2.6) each permission boundary moved off its page, or a
 section placed between the text and the read-only data, and (BP4.5) a loaded
 extent that runs into the NOLOAD sections, and (BP5.3) a device-tree window of
 the wrong size, one moved into the heap, and one past the reserved extent — and
@@ -77,9 +81,12 @@ from check_fp_simd_free_objects import Unreadable, rust_llvm_tool  # noqa: E402
 
 LINK_SCRIPT = REPO / "rust" / "sele4n-hal" / "link.ld"
 PAGE = 4096
-# The smallest Raspberry Pi 5 is the 1 GiB board, whose RAM is [0, 1 GiB):
-# `rpi5Variants` in SeLe4n/Platform/RPi5/Board.lean.
-SMALLEST_BOARD_RAM_TOP = 0x4000_0000
+# WS-BP BP7.10: the kernel's reserved extent is described by the boot map's
+# level-2 table for the first gigabyte, in 2 MiB blocks (`mmu::KERNEL_RESERVED_END`'s
+# compile-time assertion).  `SMALLEST_BOARD_RAM_TOP` is retired: no board's
+# firmware reports its first gigabyte whole, so it bounded nothing real.
+FIRST_GIGABYTE_TOP = 0x4000_0000
+L2_BLOCK = 0x20_0000
 BOOT_MAP_FIXTURE = REPO / "tests" / "fixtures" / "boot_map.expected"
 
 
@@ -92,6 +99,17 @@ def lean_reserved_extent(text: str) -> tuple[int, int]:
         raise GateFailure(f"{BOOT_MAP_FIXTURE} states the kernel's reserved extent "
                           f"{len(rows)} times; exactly one `kernelReserved base end` line")
     return int(rows[0][1], 16), int(rows[0][2], 16)
+
+def lean_table_pool(text: str) -> tuple[int, int]:
+    """The `tablePool <base> <pages>` line the Lean suite writes: the boot's
+    table-page pool (WS-BP BP7.1).  Exactly one."""
+    rows = [line.split() for line in text.splitlines()
+            if line.split()[:1] == ["tablePool"]]
+    if len(rows) != 1 or len(rows[0]) != 3:
+        raise GateFailure(f"{BOOT_MAP_FIXTURE} states the boot table-page pool "
+                          f"{len(rows)} times; exactly one `tablePool base pages` line")
+    return int(rows[0][1], 16), int(rows[0][2], 16)
+
 
 # The assertions, each with the one-edit mutation that must trip it and a
 # fragment of the message it must fail with.  Every edit is applied to the real
@@ -107,18 +125,30 @@ ASSERTION_WITNESSES = (
         "an arena that is not page-aligned",
         (
             ("    .lean_heap (NOLOAD) : ALIGN(4096) {", "    .lean_heap (NOLOAD) : ALIGN(16) {"),
-            ("        . += (3 * 64K);", "        . += (3 * 64K) + 16;"),
+            ("        __fault_stacks_top = .;", "        __fault_stacks_top = .;\n        . += 16;"),
         ),
         "must be 4 KiB aligned",
     ),
+    # PR #904 (`v0.36.41`): the kernel stacks' guard pages and the per-PE
+    # fault stacks the EL1 fault vectors switch to.
     (
-        "an arena too big for the smallest board",
-        (("LEAN_HEAP_SIZE = 64M;", "LEAN_HEAP_SIZE = 1024M;"),),
-        "smallest RPi5's 1 GiB",
+        "a boot stack not directly above its guard page",
+        (("        . += STACK_GUARD_SIZE;", "        . += STACK_GUARD_SIZE - 16;"),),
+        "the boot stack must sit directly above one 4 KiB guard page",
+    ),
+    (
+        "secondary stack slots of the wrong size",
+        (("        . += (3 * SECONDARY_STACK_STRIDE);", "        . += (3 * SECONDARY_STACK_STRIDE) - 4096;"),),
+        "the secondary stack slots must be three page-aligned 128 KiB slots",
+    ),
+    (
+        "fault stacks for fewer PEs than the image has",
+        (("        . += (4 * FAULT_STACK_SIZE);", "        . += (3 * FAULT_STACK_SIZE);"),),
+        "the fault stacks must be four 16 KiB stacks, one per PE",
     ),
     (
         "kernel text that starts off a page",
-        (("ORIGIN = 0x80000, LENGTH = 0x3FF80000", "ORIGIN = 0x80010, LENGTH = 0x3FF7FFF0"),),
+        (("ORIGIN = 0x80000, LENGTH = 0xFF80000", "ORIGIN = 0x80010, LENGTH = 0xFF7FFF0"),),
         "must start on a 4 KiB page",
     ),
     (
@@ -153,9 +183,9 @@ ASSERTION_WITNESSES = (
         "the image, Lean heap included, must end inside the kernel's reserved extent",
     ),
     (
-        "a reserved extent off a page",
-        (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x10000800;"),),
-        "the kernel's reserved extent must be whole pages inside the smallest RPi5's RAM",
+        "a reserved extent off a 2 MiB block",
+        (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x10001000;"),),
+        "the kernel's reserved extent must be whole 2 MiB blocks",
     ),
     (
         "a device-tree window of the wrong size",
@@ -190,9 +220,45 @@ ASSERTION_WITNESSES = (
         "the loaded image must run from the text through the initialised data",
     ),
     (
-        "a reserved extent past the smallest board",
+        "a reserved extent past the gigabyte at the base of RAM",
         (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x50000000;"),),
-        "whole pages inside the smallest RPi5's RAM",
+        "the kernel's reserved extent must lie inside the gigabyte at the base of RAM",
+    ),
+    # WS-BP BP8.1: the RAM base is a board line, and the extent sits at the base
+    # of a gigabyte-aligned RAM, with the image 512 KiB above it (the offset
+    # the arm64 Image header declares).
+    (
+        "a RAM base off a gigabyte",
+        (("RAM_BASE = 0x0;", "RAM_BASE = 0x200000;"),),
+        "the kernel's reserved extent must lie inside the gigabyte at the base of RAM",
+    ),
+    (
+        "an image loaded at another offset above the RAM base",
+        (("ORIGIN = 0x80000, LENGTH = 0xFF80000", "ORIGIN = 0x100000, LENGTH = 0xFF00000"),),
+        "the image must load 512 KiB above the base of RAM, the offset its arm64 Image header declares",
+    ),
+    (
+        "a table-page pool that stops short of the reserved extent's end",
+        (("    .boot_table_pool (KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096) (NOLOAD) : {",
+          "    .boot_table_pool (KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096 - 4096) (NOLOAD) : {"),),
+        "the boot table-page pool must end exactly at the kernel's reserved extent",
+    ),
+    (
+        "a table-page pool off its page",
+        (("    .boot_table_pool (KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096) (NOLOAD) : {",
+          "    .boot_table_pool (KERNEL_RESERVED_END - BOOT_TABLE_POOL_PAGES * 4096 + 8) (NOLOAD) : {"),
+         ("        . += BOOT_TABLE_POOL_PAGES * 4096;", "        . += BOOT_TABLE_POOL_PAGES * 4096 - 8;")),
+        "the boot table-page pool must be whole 4 KiB pages",
+    ),
+    (
+        "a table-page pool reaching into the device tree's window",
+        (("BOOT_TABLE_POOL_PAGES = 0x10;", "BOOT_TABLE_POOL_PAGES = 0xEF00;"),),
+        "the boot table-page pool must lie after the device tree's window",
+    ),
+    (
+        "a RAM region that ends short of the reserved extent",
+        (("ORIGIN = 0x80000, LENGTH = 0xFF80000", "ORIGIN = 0x80000, LENGTH = 0xFF7F000"),),
+        "link.ld's RAM region must end exactly at the kernel's reserved extent",
     ),
 )
 
@@ -230,14 +296,17 @@ def symbols(elf: Path) -> dict[str, int]:
     return table
 
 
-def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
-    """The six relations, over one link's symbol table and the reserved extent
-    the Lean side states."""
+def check_layout(table: dict[str, int], reserved: tuple[int, int],
+                 pool: tuple[int, int] | None = None) -> list[str]:
+    """The relations, over one link's symbol table, the reserved extent the Lean
+    side states and (WS-BP BP7.1) the table-page pool it states — `None` means
+    the link's own pool, for the self-test's cases whose subject is elsewhere."""
     need = ("_start", "__text_end", "__rodata_start", "__rodata_end", "__image_load_end",
             "__bss_start", "__bss_end",
             "__stack_top", "__smp_secondary_stack_top", "__lean_heap_start",
             "__lean_heap_end", "LEAN_HEAP_SIZE", "KERNEL_RESERVED_END",
-            "__dtb_window_start", "__dtb_window_end", "DTB_WINDOW_SIZE")
+            "__dtb_window_start", "__dtb_window_end", "DTB_WINDOW_SIZE",
+            "__boot_table_pool_start", "__boot_table_pool_end", "BOOT_TABLE_POOL_PAGES")
     missing = [n for n in need if n not in table]
     if missing:
         return [f"the link defines no {', '.join(missing)}"]
@@ -252,9 +321,6 @@ def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
     if start < below or start < table["_start"]:
         problems.append(f"the arena starts at {start:#x}, inside the image or its stacks "
                         f"(which end at {below:#x})")
-    if end > SMALLEST_BOARD_RAM_TOP:
-        problems.append(f"the arena ends at {end:#x}, past the smallest board's RAM "
-                        f"({SMALLEST_BOARD_RAM_TOP:#x})")
     text_start, text_end, rodata_end = (table["_start"], table["__text_end"],
                                         table["__rodata_end"])
     if text_start % PAGE or text_end % PAGE or rodata_end % PAGE:
@@ -274,6 +340,9 @@ def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
                         f"[{rodata_end:#x}, {table['__bss_start']:#x}] (the read-only data's "
                         f"end to the NOLOAD sections' start)")
     reserved_end = table["KERNEL_RESERVED_END"]
+    if reserved_end % L2_BLOCK or reserved_end > FIRST_GIGABYTE_TOP:
+        problems.append(f"the kernel's reserved extent ends at {reserved_end:#x}, not on a "
+                        f"2 MiB block inside the first gigabyte ({FIRST_GIGABYTE_TOP:#x})")
     if reserved != (0, reserved_end):
         problems.append(f"link.ld reserves [0, {reserved_end:#x}), the Lean side "
                         f"[{reserved[0]:#x}, {reserved[1]:#x})")
@@ -291,6 +360,21 @@ def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
         problems.append(f"the device tree's window [{dtb_start:#x}, {dtb_end:#x}) is not "
                         f"between the Lean heap's end ({end:#x}) and the reserved "
                         f"extent's ({reserved_end:#x})")
+    # WS-BP BP7.1: the table-page pool is the last whole pages of the reserved
+    # extent, after the device tree's window, and the pool the Lean side boots
+    # configured address spaces from.
+    pool_start, pool_end = table["__boot_table_pool_start"], table["__boot_table_pool_end"]
+    pages = table["BOOT_TABLE_POOL_PAGES"]
+    if pool_end != reserved_end or pool_start % PAGE or pool_end - pool_start != pages * PAGE:
+        problems.append(f"the table-page pool [{pool_start:#x}, {pool_end:#x}) is not "
+                        f"BOOT_TABLE_POOL_PAGES ({pages:#x}) pages ending at the reserved "
+                        f"extent's end ({reserved_end:#x})")
+    if pool_start < dtb_end:
+        problems.append(f"the table-page pool starts at {pool_start:#x}, inside the device "
+                        f"tree's window (which ends at {dtb_end:#x})")
+    if pool is not None and pool != (pool_start, pages):
+        problems.append(f"link.ld's table-page pool is ({pool_start:#x}, {pages:#x} pages), "
+                        f"the Lean side's ({pool[0]:#x}, {pool[1]:#x} pages)")
     return problems
 
 
@@ -312,6 +396,8 @@ _GOOD = {
     "KERNEL_RESERVED_END": 0x1000_0000,
     "__dtb_window_start": 0xC2000 + 0x400_0000, "__dtb_window_end": 0xC2000 + 0x420_0000,
     "DTB_WINDOW_SIZE": 0x20_0000,
+    "__boot_table_pool_start": 0x0FFF_0000, "__boot_table_pool_end": 0x1000_0000,
+    "BOOT_TABLE_POOL_PAGES": 0x10,
 }
 
 
@@ -330,12 +416,10 @@ def self_test() -> int:
         ("an arena inside the secondary stacks", {"__lean_heap_start": 0xC0000,
                                                   "__lean_heap_end": 0xC0000 + 0x400_0000},
          "inside the image or its stacks"),
-        ("an arena past the smallest board", {"__lean_heap_start": 0x3FF0_0000,
-                                               "__lean_heap_end": 0x43F0_0000,
-                                               "__dtb_window_start": 0x43F0_0000,
-                                               "__dtb_window_end": 0x4410_0000,
-                                               "KERNEL_RESERVED_END": 0x5000_0000},
-         "past the smallest"),
+        ("a reserved extent past the first gigabyte", {"KERNEL_RESERVED_END": 0x5000_0000},
+         ("not on a 2 MiB block inside the first gigabyte", "pages ending at the reserved extent's end")),
+        ("a reserved extent off a 2 MiB block", {"KERNEL_RESERVED_END": 0x1000_1000},
+         ("not on a 2 MiB block inside the first gigabyte", "pages ending at the reserved extent's end")),
         ("a missing symbol", {"__lean_heap_end": None}, "defines no __lean_heap_end"),
         ("a text end off its page", {"__text_end": 0x81008, "__rodata_start": 0x81008},
          "not all 4 KiB aligned"),
@@ -344,7 +428,7 @@ def self_test() -> int:
         ("a gap between the text and the read-only data", {"__rodata_start": 0x82000},
          "not where the text ends"),
         ("an arena past the reserved extent", {"KERNEL_RESERVED_END": 0x200_0000},
-         ("past the kernel's reserved extent", "between the Lean heap's end")),
+         ("past the kernel's reserved extent", "between the Lean heap's end", "pages ending at the reserved extent's end")),
         ("a loaded extent that stops inside the read-only data",
          {"__image_load_end": 0x81800}, "the loaded image ends"),
         ("a loaded extent that runs into .bss", {"__image_load_end": 0x83800},
@@ -361,7 +445,17 @@ def self_test() -> int:
          "between the Lean heap's end"),
         ("a device-tree window past the reserved extent",
          {"__dtb_window_start": 0x1000_0000, "__dtb_window_end": 0x1020_0000},
-         "between the Lean heap's end"),
+         ("between the Lean heap's end", "inside the device tree's window")),
+        ("a table-page pool that stops short of the extent",
+         {"__boot_table_pool_start": 0x0FFE_F000, "__boot_table_pool_end": 0x0FFF_F000},
+         "pages ending at the reserved extent's end"),
+        ("a table-page pool shorter than its constant",
+         {"__boot_table_pool_start": 0x0FFF_1000}, "pages ending at the reserved extent's end"),
+        ("a table-page pool inside the device tree's window",
+         {"__boot_table_pool_start": _GOOD["__dtb_window_end"] - PAGE,
+          "BOOT_TABLE_POOL_PAGES": (0x1000_0000 - _GOOD["__dtb_window_end"] + PAGE) // PAGE},
+         "inside the device tree's window"),
+        ("a Lean pool that differs", {}, "the Lean side's"),
     ]
     failures = 0
     for name, edits, expect in cases:
@@ -370,7 +464,10 @@ def self_test() -> int:
         # subject is that they differ.
         reserved = ((0, 0x2000_0000) if name == "a Lean extent that differs"
                     else (0, table.get("KERNEL_RESERVED_END", 0)))
-        problems = check_layout(table, reserved)
+        pool = ((0x0FFF_0000, 0x20) if name == "a Lean pool that differs"
+                else (table.get("__boot_table_pool_start", 0),
+                      table.get("BOOT_TABLE_POOL_PAGES", 0)))
+        problems = check_layout(table, reserved, pool)
         # A case names the one relation it breaks, or -- where breaking it
         # necessarily breaks a second (an arena past the reserved extent puts
         # the window after it past the extent too) -- each, in order.
@@ -406,11 +503,13 @@ def main(argv: list[str]) -> int:
             if linked.returncode != 0:
                 raise GateFailure(f"link.ld does not link:\n{linked.stderr}")
             table = symbols(work / "probe.elf")
-            problems = check_layout(table, lean_reserved_extent(BOOT_MAP_FIXTURE.read_text()))
+            fixture = BOOT_MAP_FIXTURE.read_text()
+            problems = check_layout(table, lean_reserved_extent(fixture), lean_table_pool(fixture))
             if problems:
                 raise GateFailure("; ".join(problems))
             print(f"  link.ld: arena [{table['__lean_heap_start']:#x}, "
-                  f"{table['__lean_heap_end']:#x}) above the image and stacks, inside 1 GiB")
+                  f"{table['__lean_heap_end']:#x}) above the image and stacks, inside the "
+                  f"reserved extent [0, {table['KERNEL_RESERVED_END']:#x})")
             text = LINK_SCRIPT.read_text()
             for name, edits, message in ASSERTION_WITNESSES:
                 mutated = work / "mutated.ld"

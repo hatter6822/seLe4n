@@ -972,6 +972,19 @@ def canonicalBound : Nat := 2^48
 /-- U2-A/U-H06: Propositional version of canonical address check. -/
 @[inline] def canonical (addr : VAddr) : Prop := addr.val < canonicalBound
 
+/-- **WS-BP BP7.2**: the lowest virtual address a thread's address space may
+    map.  A thread's translation root is installed in `TTBR0_EL1` beside the
+    kernel's own window: level-0 entry 0 of every user root is the kernel's
+    boot-map subtree (EL1-only), so a user mapping lives at level-0 index 1 or
+    above — at or beyond `2^39`, the reach of one level-0 entry. -/
+def userWindowBase : Nat := 2^39
+
+/-- **WS-BP BP7.2**: a virtual address a thread's address space may translate
+    — at or beyond `userWindowBase` and canonical, so its walk never enters the
+    level-0 slot the kernel window holds. -/
+@[inline] def inUserWindow (addr : VAddr) : Bool :=
+  userWindowBase ≤ addr.val && addr.val < canonicalBound
+
 instance : ToString VAddr where
   toString addr := toString addr.toNat
 
@@ -1053,7 +1066,7 @@ theorem VAddr.pageBase_of_aligned {va : VAddr}
 
     AN2-B.4 / H-13 (Theme 4.3): The `mk` constructor is `private`. External
     callers must use `PAddr.ofNat`. Validation against the platform's
-    `physicalAddressWidth` (e.g. AK3-E's `decodeVSpaceMapArgsChecked` and
+    `physicalAddressWidth` (e.g. `vspaceMapPageCheckedWithFlushFromState` and
     AJ4-C's `validateIpcBufferAddress`) remains the caller's obligation —
     production decode paths must gate against `2^physicalAddressWidth`
     before accepting a raw ABI word. -/

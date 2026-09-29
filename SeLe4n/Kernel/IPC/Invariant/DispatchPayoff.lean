@@ -1223,9 +1223,9 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
                           · exact applySyscallTaint_objects _ _ _
                           · exact applySyscallTaint_scheduler _ _ _
               | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-              | schedContext _ | reply _ => simp only [hRoot] at hStep; cases hStep
+              | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hRoot] at hStep; cases hStep
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp only [hT] at hStep; cases hStep
+      | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hT] at hStep; cases hStep
 
 
 /-! ## §6  The flow-checked dispatch tier (WS-RR RR3.22, third item)
@@ -1753,9 +1753,9 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
                               · exact applySyscallTaint_objects _ _ _
                               · exact applySyscallTaint_scheduler _ _ _
               | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-              | schedContext _ | reply _ => simp only [hRoot] at hStep; cases hStep
+              | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hRoot] at hStep; cases hStep
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp only [hT] at hStep; cases hStep
+      | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hT] at hStep; cases hStep
 
 
 /-! ## §7  The packs are inhabited (non-vacuity witnesses)
@@ -2356,7 +2356,7 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
     (hTid : (witnessTid.toObjId == target) = false) :
     retypeTargetDetached witnessSt3 target := by
   have hTargetEmpty := witnessSt3_lookup_none target hSc hTid
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro sc; rw [hTargetEmpty]; simp
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
@@ -2370,6 +2370,10 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
   -- **WS-HP HP10.5**: the target holds nothing in this witness, so the origin
   -- clause is vacuous exactly as its eight neighbours above are.
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  -- **WS-BP BP7.9**: `tcbFpReleased`, vacuous on the empty slot as well.
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  -- **PR #904 review (`v0.36.41`)**: `tcbResidencyReleased`, likewise vacuous.
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro tid tcb hLk
     obtain ⟨-, rfl⟩ := witnessSt3_tcb_lookup _ _ hLk

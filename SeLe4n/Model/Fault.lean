@@ -242,7 +242,7 @@ reinstalls exactly what the thread had.
 The window is seL4's `n_syscallMessage` register set — the registers a fault
 message reads and a fault reply writes — and no more: `x8`-`x29` are neither
 reported nor restorable through the fault IPC, so they stay in the trap frame
-the SM10.1 context restore merges the staged registers into. -/
+the context restore (WS-BP BP7.6) merges the staged registers into. -/
 structure FaultRegisterWindow where
   /-- `x0`-`x7`, in order; a shorter array reads as zero through `gprAt`. -/
   gprs : Array UInt64 := #[]

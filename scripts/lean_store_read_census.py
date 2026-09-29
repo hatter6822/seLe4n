@@ -204,7 +204,7 @@ def _table_access(kinds: tuple[str, ...], extra_method: str = "") -> str:
     parentheses, and a bounded-depth alternation is the enumeration this file
     spends its length retiring -- so the branch requires only that a qualified
     table operation be followed, on the same line, by a `.objects` projection.
-    Its predecessor spelled the receiver `(?:\([^()\n]*\)|[\w'.]*)`, a FLAT
+    Its predecessor spelled the receiver `(?:\\([^()\n]*\\)|[\\w'.]*)`, a FLAT
     paren group, so `RHTable.erase ((st)).objects k` and
     `RHTable.erase (f (g st)).objects k` matched nothing and an executable raw
     write could sit outside an enforced zero.
@@ -1544,7 +1544,7 @@ ACCESSOR_BODIES = {
     ("SeLe4n/Model/State.lean", d): "live object-store accessor"
     for d in ("getObject?", "getObjectType?", "getTcb?", "getEndpoint?",
               "getNotification?", "getCNode?", "getVSpaceRoot?", "getUntyped?",
-              "getSchedContext?", "getReply?",
+              "getSchedContext?", "getReply?", "getFrame?", "getPageTable?",
               "getTcbWitnessed?", "getSchedContextWitnessed?",
               "getEndpointWitnessed?", "getNotificationWitnessed?",
               "lookupObject", "lookupCNode", "lookupVSpaceRoot")
@@ -1566,8 +1566,12 @@ ACCESSOR_BODIES = {
 }
 
 #: The declarations that write an object table RAW by design (`v0.35.76`) —
-#: the five store primitives every other executable write goes through, and
-#: one planted witness.  Reconciled in both directions, exactly as
+#: the store primitives every other executable write goes through, and one
+#: planted witness.  WS-BP BP7.1 (`v0.36.6`) added the only primitive that
+#: *removes* a key — `retireFrame` then, `retireCarvedObject` since slice 4
+#: (`v0.36.8`), which retires a child untyped as well as a frame: an erase is
+#: not a store, and it is a no-op at any key that does not hold one of the two
+#: kinds a carve makes, so no other kind can be erased through it.  Reconciled in both directions, exactly as
 #: `ACCESSOR_BODIES` is: an entry that no longer writes raw is a stale
 #: exemption, and a raw write anywhere else is a `STORE_WRITE_CODE` violation.
 #:
@@ -1589,6 +1593,8 @@ WRITE_PRIMITIVE_BODIES = {
         "lock-domain read-modify-write; kind-agnostic, so not a rewrite",
     ("SeLe4n/Kernel/FrozenOps/Core.lean", "frozenWithObjectStored"):
         "the frozen surface's one store, over `FrozenMap.set`",
+    ("SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean", "retireCarvedObject"):
+        "the one object-store erase: a frame or an untyped, with its index and metadata rows",
     ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "censusWitnessRawTableWrite"):
         "the reply-stack write census's planted raw-table witness",
 }

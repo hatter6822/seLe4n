@@ -408,10 +408,12 @@ a fresh claim beside it. -/
 theorem cspaceWalk_conflicts_with_delete (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
     (bitsRemaining : Nat) (st : SystemState)
     (callerTid : SeLe4n.ThreadId) (deleteRoot targetCnode : SeLe4n.ObjId)
+    (unmappedRoot : Option SeLe4n.ObjId)
     (hOnPath : targetCnode ∈ cspaceWalkPath rootId addr bitsRemaining st) :
     ∃ (l : LockId) (m₁ m₂ : AccessMode),
       (l, m₁) ∈ (cspaceWalkLockSet rootId addr bitsRemaining st).pairs ∧
-      (l, m₂) ∈ (Concurrency.lockSet_cspaceDelete callerTid deleteRoot targetCnode).pairs ∧
+      (l, m₂) ∈ (Concurrency.lockSet_cspaceDelete callerTid deleteRoot targetCnode
+        unmappedRoot).pairs ∧
       AccessMode.conflicts m₁ m₂ = true := by
   -- PR #892 review round 4: on **both** arms.  A target the walk read as a
   -- CNode conflicts on that CNode's lock; a target the walk read and found no
@@ -422,13 +424,14 @@ theorem cspaceWalk_conflicts_with_delete (rootId : SeLe4n.ObjId) (addr : SeLe4n.
         hOnPath (by rw [hCn]; rfl)
       refine ⟨cnodeLock targetCnode, m, AccessMode.write, hm, ?_, ?_⟩
       · exact Concurrency.lockSet_cspaceDelete_target_write_mem callerTid deleteRoot targetCnode
+          unmappedRoot
       · cases m <;> rfl
   | none =>
       obtain ⟨m, hm⟩ := mem_cspaceWalkLockSet_missing rootId addr bitsRemaining st targetCnode
         hOnPath hCn
       refine ⟨Concurrency.stateLevelLock, m, AccessMode.write, hm, ?_, ?_⟩
       · exact Concurrency.lockSet_cspaceDelete_stateLevel_write_mem callerTid deleteRoot
-          targetCnode
+          targetCnode unmappedRoot
       · cases m <;> rfl
 
 -- ============================================================================

@@ -850,7 +850,7 @@ def backtick_substitution_view(text: str, at: int, end: int,
 def command_substitution_end(text: str, at: int) -> int:
     """Index just past the `)` closing the `$(` at `at`, or `-1`.
 
-    Quotes inside a substitution suppress paren structure -- `'\)'` and
+    Quotes inside a substitution suppress paren structure -- `'\\)'` and
     `"a)b"` are text -- and substitutions nest, so both are tracked.
     Returns `-1` when the construct does not close, which callers treat
     as "not an expansion" rather than as a span reaching the end of the

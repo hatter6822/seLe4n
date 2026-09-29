@@ -1,0 +1,48 @@
+# Expected QEMU boot sequence of the Lean-linked `virt` image (WS-BP BP8.1)
+#
+# `scripts/test_qemu.sh --lean-kernel` boots the image built with
+# `hw_target,kernel_image,board_qemu_virt` -- the HAL and the Lean kernel it
+# links (`lean_kernel_main_qemu_virt`) -- on four PEs, once at QEMU's EL1 entry
+# and once at EL2, and requires these fragments IN THIS ORDER: each on a line
+# after the previous fragment's line.  Every fragment is mandatory.
+#
+# Only the boot core's lines are ordered here, because the secondaries run
+# concurrently and interleave with it; the lane checks each secondary's
+# readiness and every core's first idle dispatch as unordered fragments of its
+# own, and stops QEMU once the fourth first idle dispatch is in the log.
+#
+# The sequence is the boot core's phases (rust/sele4n-hal/src/boot.rs's
+# rust_boot_main): the banner, the entry level and its PSCI conduit, the early
+# per-core pointer, translation on, the vectors, the interrupt controller, the
+# timer, the Lean heap's census after the library initializer, the verified
+# device-tree boot installed (Phase 5) and the census after it, the boot core's
+# first reschedule, IRQs unmasked, the release of the secondaries and their
+# count (Phase 6), the handoff summary, and the topology check passed (Phase 7).
+#
+# v0.36.31: `scripts/test_qemu.sh --lean-kernel` also holds the log to three
+# relations these fragments cannot state: the install precedes the release and
+# the release precedes every secondary's first line (WS-BP BP4.2), and the
+# census after the install counts more live allocations than the one before it,
+# both with the heap's invariants intact (WS-BP BP2.5).
+#
+# Format: CHECK_NAME | expected_fragment
+
+BOOT_BANNER      | booting on QEMU virt
+ENTRY_LEVEL      | [boot] Entered at EL
+PSCI_CONDUIT     | [boot] PSCI conduit:
+TPIDR_SET        | TPIDR_EL1 set early (Phase 1) to PER_CPU_DATA
+MMU_INIT         | [boot] MMU enabled (identity map
+VBAR_SET         | [boot] VBAR_EL1 set to exception vector table
+GIC_INIT         | [boot] GICv2 initialized
+TIMER_INIT       | [boot] Timer initialized
+PER_CPU_ID       | current_core_id_from_tpidr() = 0
+HEAP_AFTER_INIT  | [boot] Lean heap after the library initializer:
+KERNEL_INSTALLED | [boot] Phase 5: kernel state installed
+HEAP_AFTER_BOOT  | [boot] Lean heap after the install:
+FIRST_RESCHEDULE | [smp] core 0: kernel bring-up entry complete (first reschedule)
+IRQ_ENABLE       | [boot] IRQ delivery enabled
+RELEASE          | [smp] releasing the secondaries under the install permit
+SMP_PHASE        | [boot] Phase 6: 3 secondary core(s) online
+HANDOFF          | [boot] Hardware initialization complete:
+BOOT_DONE        | [boot] Boot complete
+TOPOLOGY         | [boot] Phase 7: all 4 declared PE(s) serve the kernel

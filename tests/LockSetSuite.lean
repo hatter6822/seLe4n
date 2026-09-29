@@ -61,7 +61,7 @@ open SeLe4n.Kernel.Concurrency
 #check @KernelObject.lockKind_in_modeledKinds
 #check @KernelObject.lockKind_ne_objStore
 #check @KernelObject.lockKind_reply
-#check @KernelObject.lockKind_ne_page
+#check @KernelObject.lockKind_frame
 #check @LockId.fromObject
 #check @LockId.fromObject_kind
 #check @LockId.fromObject_objId
@@ -487,7 +487,8 @@ example :
   decide
 
 /-! ### LockId.lookup on the empty SystemState for `.objStore`/`.reply`/`.page`
-returns none — fail-closed for N/A kinds. -/
+returns none — the table-level kind has no object, and the empty state holds no
+Reply and no frame (both are modeled kinds since SM6.D / WS-BP BP7.1). -/
 
 example :
     LockId.lookup (default : SystemState) ⟨.objStore, ObjId.ofNat 0⟩ = none := by
@@ -572,7 +573,9 @@ example : permittedKinds .notificationWait = [.tcb, .cnode, .notification] := by
 example : permittedKinds .cspaceMint = [.tcb, .cnode, .objStore] := by decide
 example : permittedKinds .cspaceCopy = [.tcb, .cnode, .objStore] := by decide
 example : permittedKinds .cspaceMove = [.tcb, .cnode, .objStore] := by decide
-example : permittedKinds .cspaceDelete = [.tcb, .cnode, .objStore] := by decide
+-- WS-BP BP7.1 (v0.36.7): the delete also writes the VSpace root its frame
+-- capability's mapping record names, so `.vspaceRoot` joins it.
+example : permittedKinds .cspaceDelete = [.tcb, .cnode, .objStore, .vspaceRoot] := by decide
 -- PR #873 round 7: `.lifecycleRetype` admits EVERY kind too, and for the same
 -- reason `.declassify` does below.  SM9.D.12 makes the retype the arm that
 -- *clears* taint at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
@@ -582,7 +585,8 @@ example : permittedKinds .cspaceDelete = [.tcb, .cnode, .objStore] := by decide
 example : permittedKinds .lifecycleRetype =
     [.tcb, .cnode, .untyped,
      .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page] := by decide
-example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot] := by decide
+-- WS-BP BP7.1 (v0.36.7): the map reads the frame its capability names.
+example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page] := by decide
 example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
 -- WS-RR RR7.23: `.objStore` on all three — `serviceRegistry` is a
 -- `SystemState`-level map and `stateLevelLock` is the only member that can name
@@ -861,15 +865,15 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 113 := by decide
+example : lockSetTheorems.length = 121 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 35 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 39 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 35 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 39 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -964,7 +968,7 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .send"
     (decide (permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore]))
   assertBool "permittedKinds .vspaceMap"
-    (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot]))
+    (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page]))
   -- PR #873 round 7: every kind, because the retype's taint clear keys on
   -- `args.targetObj`, whose type the state decides.  The fixed four are pinned
   -- separately by `lockSet_lifecycleRetype_nonTarget_kinds`.
@@ -1116,9 +1120,38 @@ private def runPerTransitionShapeChecks : IO Unit := do
         ∈ (lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
      decide ((stateLevelLock, AccessMode.write)
         ∈ (lockSet_mintReplyCap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs))
-  -- VSpace: 3 locks each.
-  assertBool "vspaceMap size = 3"
-    (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))
+  -- VSpace: `vspaceMap` declares the frame it maps (write — the mapping epoch
+  -- it advances, PR #904 review, v0.36.41) and the frame
+  -- capability's CNode (write, for the mapping record) beside the caller, the
+  -- caller's root and the VSpace root (WS-BP BP7.1, v0.36.7).  With the frame
+  -- capability in the caller's own root CNode — the single-level CSpace the
+  -- live seam admits — `insertOrMerge` lubs the root's read into the record's
+  -- write, so the footprint is four keys; in a second CNode it is five.
+  assertBool "vspaceMap size = 4 (frame capability in the caller's root)"
+    (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (ObjId.ofNat 10) (ObjId.ofNat 30)).size = 4))
+  assertBool "vspaceMap size = 5 (frame capability in another CNode)"
+    (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (ObjId.ofNat 40) (ObjId.ofNat 30)).size = 5))
+  assertBool "vspaceMap declares the frame for write (its mapping epoch)"
+    (decide ((pageLock (ObjId.ofNat 30), AccessMode.write)
+        ∈ (lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+            (ObjId.ofNat 10) (ObjId.ofNat 30)).pairs))
+  assertBool "vspaceMap declares the frame capability's CNode for write"
+    (decide ((cnodeLock (ObjId.ofNat 10), AccessMode.write)
+        ∈ (lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+            (ObjId.ofNat 10) (ObjId.ofNat 30)).pairs))
+  -- The delete of a capability whose mapping record resolves to a VSpace root
+  -- declares that root for write (the unmap `cspaceDeleteSlotFinalising`
+  -- performs); a capability with no live record declares the pre-BP7.1 four.
+  assertBool "cspaceDelete size = 4 without a live mapping record"
+    (decide ((lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  assertBool "cspaceDelete declares the unmapped root for write"
+    (decide ((vspaceRootLock (ObjId.ofNat 50), AccessMode.write)
+        ∈ (lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+            (some (ObjId.ofNat 50))).pairs) &&
+     decide ((lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+            (some (ObjId.ofNat 50))).size = 5))
   -- Lifecycle: 5 locks (caller TCB read + CNode root read + untyped write + dst
   -- CNode write + the state-level write WS-RR RR7.23 added for the registry
   -- sweep and the CDT detach the pre-retype cleanup performs).
@@ -1757,7 +1790,7 @@ private def runCanonicalSortRuntimeChecks : IO Unit := do
 private def runLockKindCoDomainChecks : IO Unit := do
   IO.println "--- §14 lockKind co-domain (audit-pass-2) ---"
   -- Audit-pass-2: substantive co-domain claim — lockKind returns one
-  -- of the 7 modeled kinds, never .objStore / .reply / .page.
+  -- of the modeled kinds, and neither of these two objects is a Reply or a frame.
   let ep : KernelObject := KernelObject.endpoint ({} : Endpoint)
   let u : KernelObject := KernelObject.untyped
     { regionBase := PAddr.ofNat 0, regionSize := 4096 }
@@ -1829,13 +1862,22 @@ private def runLookupFixtureChecks : IO Unit := do
     (decide (LockId.lookup s ⟨.objStore, ObjId.ofNat 0⟩ = none))
   assertBool "LockId.lookup at (.reply, 0): none (SM3.A.5 N/A)"
     (decide (LockId.lookup s ⟨.reply, ObjId.ofNat 0⟩ = none))
-  assertBool "LockId.lookup at (.page, 0): none (SM3.A.8 N/A)"
+  assertBool "LockId.lookup at (.page, 0): none (no frame at 0)"
     (decide (LockId.lookup s ⟨.page, ObjId.ofNat 0⟩ = none))
+  -- WS-BP BP7.1: `.page` is a modeled kind — a frame's lock resolves.
+  let frameObj : KernelObject := .frame { base := PAddr.ofNat 0x8000 }
+  assertBool "frame.lockKind = .page (WS-BP BP7.1)"
+    (decide (frameObj.lockKind = .page))
+  let sFrame : SystemState :=
+    { (default : SystemState) with
+        objects := (default : SystemState).objects.insert (ObjId.ofNat 77) frameObj }
+  assertBool "LockId.lookup at (.page, 77): the frame's lock"
+    ((LockId.lookup sFrame ⟨.page, ObjId.ofNat 77⟩).isSome)
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 113"
-    (decide (lockSetTheorems.length = 113))
+  assertBool "lockSetTheorems.length = 121"
+    (decide (lockSetTheorems.length = 121))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
   -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than

@@ -751,34 +751,17 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.timerTickOnCore_cannot_dispatch_vacated_core
 -- Round 17: the third per-core scheduler slot.  The gate checked `current` and
 -- the run queues; the replenish queue is the one it could not see.
--- Round 18: the model switches threads; the runtime has no restore seam yet.
--- Registered as a checked partition so SM10.1 cannot wire one silently.
+-- Round 18: the sites that switch a core's thread.  WS-BP BP7.6: every one now
+-- restores the switched-in context; the enumeration is the tripwire a new site
+-- trips.
 #check @SeLe4n.Kernel.PriorityInheritance.ContextSwitchSite
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites_complete
-#check @SeLe4n.Kernel.PriorityInheritance.contextRestoreWired
-#check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites_restore_pending
-#check @SeLe4n.Kernel.PriorityInheritance.contextRestoreWired_none
-#check @SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive
-#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive
-#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_inert
--- PR #861 review round 34: the gate moved OUT of the two transitions and into
--- wrappers, so each base transition keeps its unconditional theorems and each
--- gated path is stated in both settings of the seam.
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadEnqueueOnly
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive_inert
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive_eq_of_seam_live
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive_remote_agrees
-#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly
-#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive
-#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive_inert
-#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive_eq_of_seam_live
-#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive_remote_agrees
-#check @SeLe4n.Kernel.priorityRescheduleOnCoreLive_preserves_projection
-#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_eq_of_seam_live
-#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_guard_eq_register
-#check @SeLe4n.Kernel.PriorityInheritance.suspendReschedule_guard_eq_register
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
+-- WS-BP BP7.6: the three gating wrappers are retired with the seam flag; the
+-- live arms run the transitions themselves.
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCore
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCore
 #check @SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
 #check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentOnCore
 #check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentFromAllCores
@@ -4753,19 +4736,42 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "thirty cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 30))
-  assertBool "twenty-four of the thirty can name a core other than the executing one"
+  assertBool "thirty-three cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 33))
+  assertBool "twenty-four of the thirty-three can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
       SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 24))
-  assertBool "…and the wait, the two VSpace arms, the declassification and the two audit readers are the six that cannot"
+  assertBool "…and the wait, the two VSpace arms, the untyped reset, the two finalising destroyers, the declassification and the two audit readers are the nine that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
-      .vspaceMapDispatch, .vspaceUnmapDispatch, .declassifyDispatch,
+      .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
+      .cspaceDeleteDispatch, .cspaceRevokeDispatch, .declassifyDispatch,
       .auditReadDispatch, .auditDrainDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
-  assertBool "twenty-two of the thirty are the arms the live syscall dispatch reaches"
+  assertBool "twenty-five of the thirty-three are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 22))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 25))
+  -- WS-BP BP7.1 (v0.36.7): the delete and the CDT revocation are live arms,
+  -- delegation-backed, naming their own syscalls, and writing no core — each is
+  -- the destroying step followed by the unmap of the mappings the destroyed
+  -- frame capabilities recorded, whose shootdown writes no scheduler slot.
+  assertBool "the two finalising destroyers are live, delegation-backed arms that write no core"
+    ([SeLe4n.Kernel.CrossCoreTransition.cspaceDeleteDispatch,
+      .cspaceRevokeDispatch].all (fun t =>
+        SeLe4n.Kernel.crossCoreTransitionIsLiveArm t
+          && (SeLe4n.Kernel.crossCoreLiveArmEvidence t).isDelegationBacked
+          && !SeLe4n.Kernel.crossCoreTransitionWritesRemote t)
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .cspaceDeleteDispatch
+                   = some SeLe4n.Model.SyscallId.cspaceDelete)
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .cspaceRevokeDispatch
+                   = some SeLe4n.Model.SyscallId.cspaceRevoke))
+  -- WS-BP BP7.1 slice 3: the untyped reset is a live arm, delegation-backed,
+  -- naming its own syscall, and writing no core — the `.vspaceUnmap` arm's shape.
+  assertBool "the untyped reset is a live, delegation-backed arm that writes no core"
+    (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .untypedResetDispatch
+      && (SeLe4n.Kernel.crossCoreLiveArmEvidence .untypedResetDispatch).isDelegationBacked
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .untypedResetDispatch
+                   = some SeLe4n.Model.SyscallId.untypedReset)
+      && !SeLe4n.Kernel.crossCoreTransitionWritesRemote .untypedResetDispatch)
   -- Round 35: the three entries that emptied the per-core routing allowlist.
   -- All three are live arms, all three arrive delegation-backed, and two of them
   -- carry an EMPTY write set — the shape the inventory could not express before,
@@ -4816,8 +4822,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
              ∧ SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointSendDispatch = true
              ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
                  = some SeLe4n.Model.SyscallId.send))
-  assertBool "fourteen live arms are mechanically tied to the dispatch"
-    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 14))
+  assertBool "seventeen live arms are mechanically tied to the dispatch"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 17))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -4873,7 +4879,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
         n == "endpointReceiveDualOnCore"))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 30))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length
+        = SeLe4n.Kernel.CrossCoreTransition.all.length))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and
@@ -4981,36 +4988,17 @@ private def runVacatedCoreChecks : IO Unit := do
   assertBool "NEGATIVE: and inert on a core that was already idle before the send"
     (decide (SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded niState vacatedPost c3
       = false))
-  -- Round 20: the assertions above are about the pure transition, which is
-  -- correct and stays.  What the live entries run is the *gated* wrapper, and
-  -- it is inert until the hardware restore seam exists — because dispatching a
-  -- successor the runtime cannot install misattributes the blocked caller's
-  -- next syscall, where leaving the core idle fails closed.
-  assertBool "the LIVE successor dispatch is inert while the restore seam is not"
-    (decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive = false) &&
-     decide ((SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive
-       niState vacatedPost c0).scheduler.currentOnCore c0 = none))
-  -- The load-bearing negative: the guard is the ONLY thing holding it — the
-  -- underlying transition does dispatch, so this is a coupling and not a
-  -- transition that happens to do nothing.
-  assertBool "NEGATIVE: the ungated transition WOULD dispatch, so the guard is load-bearing"
+  -- WS-BP BP7.6: the live entries run this transition itself — the restore
+  -- installs the successor it dispatches, so the vacated core runs it.
+  assertBool "the LIVE successor dispatch runs the queued thread on the vacated core"
     (decide ((SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
        niState vacatedPost c0).scheduler.currentOnCore c0 = some lowQueued))
-  -- …and the register agrees with the guard, both reading one constant.
-  assertBool "the site's register entry matches the guard"
-    (decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreWired .vacatedCoreSuccessor = false)
-     && decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreWired .suspendReschedule = false))
-  -- Review round 18: the model dispatches a successor; hardware does not yet
-  -- know.  No context-switch site restores the incoming context before
-  -- exception return, so the register is the whole list — and stays so until
-  -- SM10.1 wires the first one, at which point this assertion fails.
-  assertBool "the context-restore obligation is registered for all four sites"
-    (decide (SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.length = 4) &&
-     SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.all
-       (fun s => !SeLe4n.Kernel.PriorityInheritance.contextRestoreWired s))
-  -- The load-bearing negative: the round-17 successor is IN the register, so
-  -- the marker covers the site this cut added rather than only pre-existing ones.
-  assertBool "NEGATIVE: the vacated-core successor is itself a registered site"
+  -- The enumeration of switch sites is the tripwire a new site trips.
+  assertBool "the context-switch sites are enumerated, all four"
+    (decide (SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.length = 4))
+  -- The round-17 successor is IN the enumeration, so the tripwire covers the
+  -- site that cut added rather than only pre-existing ones.
+  assertBool "the vacated-core successor is itself an enumerated site"
     (decide (SeLe4n.Kernel.PriorityInheritance.ContextSwitchSite.vacatedCoreSuccessor
       ∈ SeLe4n.Kernel.PriorityInheritance.contextSwitchSites))
 
@@ -5459,9 +5447,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "60 entries: 45 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-RR RR8.16's revocation) + 15 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 60) &&
-     decide (enforcementBoundaryExtended.length = 45) &&
+  assertBool "67 entries: 52 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-RR RR8.16's revocation, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, and the two page-table operations) + 15 cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 67) &&
+     decide (enforcementBoundaryExtended.length = 52) &&
      decide (crossCoreEnforcementEntries.length = 15))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -9731,7 +9719,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "both audit syscalls are in the ABI, with different required rights"
     (decide (SyscallId.auditRead.toNat = 31) &&
      decide (SyscallId.auditDrain.toNat = 32) &&
-     decide (SyscallId.count = 36) &&
+     decide (SyscallId.count = 41) &&
      decide (syscallRequiredRight .auditRead = AccessRight.read) &&
      decide (syscallRequiredRight .auditDrain = AccessRight.write))
   assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
@@ -10358,9 +10346,9 @@ private def runDeclassifiedSignalDefaultChecks : IO Unit := do
 /-- §11.6  SM9.C.8 / SM9.C.9 — the ABI, the live arm and the registries. -/
 private def runDeclassifiedSignalAbiChecks : IO Unit := do
   IO.println "--- §11.6 SM9.C.8 the syscall, end to end ---"
-  assertBool "the syscall is in the ABI at 33, count 36, requiring the notification's write right"
+  assertBool "the syscall is in the ABI at 33, count 41, requiring the notification's write right"
     (decide (SyscallId.declassifySignal.toNat = 33) &&
-     decide (SyscallId.count = 36) &&
+     decide (SyscallId.count = 41) &&
      decide (SyscallId.ofNat? 33 = some SyscallId.declassifySignal) &&
      decide (syscallRequiredRight .declassifySignal = AccessRight.write))
   -- The same right the ordinary signal needs: the declassification gates sit

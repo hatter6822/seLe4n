@@ -389,12 +389,62 @@ structure SlotRef where
 @[inline] instance : Hashable SlotRef where
   hash a := mixHash (hash a.cnode) (hash a.slot)
 
+/-- **WS-BP BP7.1 (`v0.36.7`): where a frame capability has mapped its frame** —
+the address space (by ASID) and the virtual address.
+
+seL4's frame capability carries exactly this pair (`capFMappedASID`,
+`capFMappedAddress`), and it is what makes a mapping *belong to* a capability:
+deleting the capability finalises it (`finaliseCap` → `unmapPage`), so no
+mapping outlives the authority that made it.  A `VSpaceRoot` records a physical
+address, not the capability that installed it, so without this record a
+capability deletion cannot find its own mapping — which is how a revoked frame
+capability used to leave its page mapped until the untyped was reset. -/
+structure FrameMapping where
+  asid : SeLe4n.ASID
+  vaddr : SeLe4n.VAddr
+  /-- **PR #904 review (`v0.36.41`): which mapping of the frame this is.**  The
+      frame's `mapEpoch` at the moment this capability mapped it; the address
+      space's entry at `vaddr` carries the same number
+      (`VSpaceRoot.mappingEpochs`).  A record is the capability's own mapping
+      only while the two agree, so a record gone stale — the address space
+      unmapped the address, or was destroyed and its ASID reused — cannot claim
+      a later mapping of the same frame at the same address.  The number is
+      unique for the frame's lifetime, and a frame outlives every record that
+      names it (a reset refuses while any capability to it survives). -/
+  epoch : Nat := 0
+  deriving Repr, DecidableEq
+
+/-- **WS-BP BP7.1 (`v0.36.7`): one page as an address space maps it** — the
+ASID, the virtual address and the physical page the translation names.  The
+unit a mapping teardown works in: a frame capability's `FrameMapping` together
+with the frame's `base`, or a VSpace root's entry together with the root's ASID.
+Carrying the physical page is what lets a teardown remove a translation only if
+it still names *this* page, so a record gone stale — the address space unmapped
+or reused the address — removes nothing that is not its own. -/
+structure MappedPage where
+  asid : SeLe4n.ASID
+  vaddr : SeLe4n.VAddr
+  paddr : SeLe4n.PAddr
+  /-- **PR #904 review (`v0.36.41`)**: the mapping epoch a capability's record
+      names (`FrameMapping.epoch`), or `none` for a page read off an address
+      space itself (the untyped reset's region-wide teardown), which removes
+      whatever maps the page. -/
+  epoch : Option Nat := none
+  deriving Repr, DecidableEq
+
 /-- WS-F5/D2b: Capability with order-independent rights set.
-    `rights` is an `AccessRightSet` (bitmask), replacing the prior `List AccessRight`. -/
+    `rights` is an `AccessRightSet` (bitmask), replacing the prior `List AccessRight`.
+
+    **WS-BP BP7.1 (`v0.36.7`)**: `mapping` is the frame mapping this capability
+    made (`FrameMapping`).  Only `.vspaceMap` writes it, on the invoked frame
+    capability's own slot; a **derived** capability — a copy, a mint, an IPC
+    transfer — starts with none (`withoutMapping`, seL4's `deriveCap`), a move
+    carries it, and destroying the capability unmaps what it records. -/
 structure Capability where
   target : CapTarget
   rights : AccessRightSet
   badge : Option SeLe4n.Badge := none
+  mapping : Option FrameMapping := none
   deriving Repr, DecidableEq, Inhabited
 
 namespace Capability
@@ -402,6 +452,14 @@ namespace Capability
 /-- WS-F5/D2b: Check if a capability has a specific right. O(1) bit test. -/
 def hasRight (cap : Capability) (right : AccessRight) : Bool :=
   cap.rights.mem right
+
+/-- **WS-BP BP7.1 (`v0.36.7`): the capability a derivation produces** — this one
+with its mapping record cleared, seL4's `deriveCap` for a frame capability.  A
+copy or a transfer is a *new* authority over the frame, not the authority that
+made the mapping: were the record carried, two capabilities would each claim one
+mapping and destroying either would unmap the other's. -/
+@[inline] def withoutMapping (cap : Capability) : Capability :=
+  { cap with mapping := none }
 
 /-- AK7-I (F-M07 / MEDIUM): Null capability predicate.
 
@@ -1079,6 +1137,14 @@ structure TCB where
       `seL4_Fault_NullFault`.  The default keeps every existing TCB
       construction and the boot trace byte-identical. -/
   pendingFault : Option ThreadFault := none
+  /-- **WS-BP BP7.9: the thread's saved FP/SIMD context** — `v0`–`v31`, `FPCR`,
+      `FPSR`.  Authoritative whenever no core's registers hold the thread's live
+      values (`MachineState.fpOwner`); while one does, this copy may be stale and
+      is brought up to date when that core releases the thread
+      (`Architecture.fpReleaseOnCore`).  Erased by `projectKernelObject`, like
+      `registerContext`: it is the thread's own state, and the lazy switch is
+      what keeps any other thread from reading it.  Zero for a fresh thread. -/
+  fpContext : SeLe4n.FpContext := default
   deriving Repr
 
 /-- **WS-OD OD3.9**: the link update a removal writes to the **predecessor** of
@@ -1281,7 +1347,10 @@ instance : BEq TCB where
     a.pendingReceiveReply == b.pendingReceiveReply &&
     -- WS-RR RR4: the outstanding fault participates in structural equality.
     -- `ThreadFault` derives `DecidableEq`, so its `==` agrees with `=`.
-    a.pendingFault == b.pendingFault
+    a.pendingFault == b.pendingFault &&
+    -- WS-BP BP7.9: the saved FP/SIMD context participates in structural
+    -- equality.  `FpContext` derives `DecidableEq`, so its `==` agrees with `=`.
+    a.fpContext == b.fpContext
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -1547,13 +1616,15 @@ theorem TCB.ext {a b : TCB}
     (hReply : a.replyObject = b.replyObject)
     (hPendReply : a.pendingReceiveReply = b.pendingReceiveReply)
     -- WS-RR RR4: extensionality covers the outstanding-fault field.
-    (hPendFault : a.pendingFault = b.pendingFault) :
+    (hPendFault : a.pendingFault = b.pendingFault)
+    -- WS-BP BP7.9: extensionality covers the saved FP/SIMD context.
+    (hFp : a.fpContext = b.fpContext) :
     a = b := by
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
          hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hLock, hCpuAff, hReply, hPendReply, hPendFault⟩
+         hLock, hCpuAff, hReply, hPendReply, hPendFault, hFp⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
@@ -2558,6 +2629,19 @@ inductive SyscallId where
                            -- (seL4_TCB_SetSpace's fault_ep), validated at set time
   | cspaceRevoke           -- WS-RR RR8.16 (`v0.35.190`): revoke a capability's derivations
                            -- (seL4_CNode_Revoke), dispatched through `cspaceRevokeCdt`
+  | untypedRetype          -- WS-BP BP7.1 (`v0.36.5`): carve a frame — or since slice 4
+                           -- (`v0.36.8`) a child untyped — out of an untyped the caller
+                           -- holds (seL4_Untyped_Retype), through `untypedRetypeObject`
+  | untypedReset           -- WS-BP BP7.1 (`v0.36.6`): hand an untyped's memory back once no
+                           -- object of its carved subtree is reachable (seL4's
+                           -- resetUntypedCap), through
+                           -- `untypedReset`
+  | tcbSetSpace            -- WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and
+                           -- VSpace roots (seL4_TCB_SetSpace), through `setThreadSpace`
+  | pageTableMap           -- WS-BP BP7.1 (`v0.36.12`): install an intermediate page table
+                           -- (seL4_ARM_PageTable_Map), through `pageTableMap`
+  | pageTableUnmap         -- WS-BP BP7.1 (`v0.36.12`): take one out
+                           -- (seL4_ARM_PageTable_Unmap), through `pageTableUnmap`
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -2601,9 +2685,14 @@ namespace SyscallId
   | .declassifySignal      => 33
   | .tcbSetFaultHandler    => 34
   | .cspaceRevoke          => 35
+  | .untypedRetype         => 36
+  | .untypedReset          => 37
+  | .tcbSetSpace           => 38
+  | .pageTableMap          => 39
+  | .pageTableUnmap        => 40
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 36
+def count : Nat := 41
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -2644,6 +2733,11 @@ def count : Nat := 36
   | 33 => some .declassifySignal
   | 34 => some .tcbSetFaultHandler
   | 35 => some .cspaceRevoke
+  | 36 => some .untypedRetype
+  | 37 => some .untypedReset
+  | 38 => some .tcbSetSpace
+  | 39 => some .pageTableMap
+  | 40 => some .pageTableUnmap
   | _  => none
 
 instance : ToString SyscallId where
@@ -2684,6 +2778,11 @@ instance : ToString SyscallId where
     | .declassifySignal      => "declassifySignal"
     | .tcbSetFaultHandler    => "tcbSetFaultHandler"
     | .cspaceRevoke          => "cspaceRevoke"
+    | .untypedRetype         => "untypedRetype"
+    | .untypedReset          => "untypedReset"
+    | .tcbSetSpace           => "tcbSetSpace"
+    | .pageTableMap          => "pageTableMap"
+    | .pageTableUnmap        => "pageTableUnmap"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -2701,7 +2800,8 @@ def all : List SyscallId :=
   , .tcbBindNotification, .tcbUnbindNotification
   , .mintReplyCap, .vspaceUnifyInstruction, .declassify
   , .auditRead, .auditDrain, .declassifySignal, .tcbSetFaultHandler
-  , .cspaceRevoke ]
+  , .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace
+  , .pageTableMap, .pageTableUnmap ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -2733,9 +2833,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 | 33 | 34 | 35 =>
+  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 36 => intro s h; simp [ofNat?] at h
+  | n + 41 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Capability.Operations
+import SeLe4n.Kernel.Capability.FrameFinalise
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
@@ -134,7 +135,7 @@ completed before implementation.
 | `setPriority` | `seL4_TCB_SetPriority` | **IMPLEMENTED** (D2, v0.24.1; per-core reroute WS-SM SM8.B). Wired as `SyscallId.tcbSetPriority` to `setPriorityOnCore` in `SchedContext/PriorityManagementPerCore.lean` (`setPriorityOp` remains its boot-core instance). | Complete |
 | `setMCPriority` | `seL4_TCB_SetMCPriority` | **IMPLEMENTED** (D2, v0.24.1; per-core reroute WS-SM SM8.B). Wired as `SyscallId.tcbSetMCPriority` to `setMCPriorityOnCore` in `SchedContext/PriorityManagementPerCore.lean`. | Complete |
 | `suspend` | `seL4_TCB_Suspend` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM6.E). Wired as `SyscallId.tcbSuspend` to `suspendThreadOnCore` in `Lifecycle/Suspend.lean` (`suspendThread` remains its boot-core form). | Complete |
-| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM8.B, PR #861 round 10). Wired as `SyscallId.tcbResume` to `resumeThreadOnCoreLive` in `Lifecycle/Suspend.lean` (`resumeThread` remains its boot-core form). | Complete |
+| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM8.B, PR #861 round 10). Wired as `SyscallId.tcbResume` to `resumeThreadOnCore` in `Lifecycle/Suspend.lean` (`resumeThread` remains its boot-core form). | Complete |
 | `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | **IMPLEMENTED** (D3, v0.24.2). `setIPCBufferOp` in `Architecture/IpcBufferValidation.lean`, wired as `SyscallId.tcbSetIPCBuffer`. | Complete |
 -/
 
@@ -3197,6 +3198,13 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- authority, and revocation hands out none.
   | .cspaceRevoke    => .write
   | .lifecycleRetype => .retype
+  -- **WS-BP BP7.1 (`v0.36.5`)**: a carve is a retype of the untyped's memory,
+  -- so it takes the retype right — the one `lifecycleRetypeAuthority` checks
+  -- inside `retypeFromUntyped` too, so the gate and the primitive agree.
+  | .untypedRetype   => .retype
+  -- **WS-BP BP7.1 (`v0.36.6`)**: a reset hands the untyped's memory back to it,
+  -- which is authority over that memory — the retype right, as for the carve.
+  | .untypedReset    => .retype
   | .vspaceMap       => .write
   | .vspaceUnmap     => .write
   -- WS-SM SM7.D: publishing freshly-written code requires the **write** right
@@ -3242,6 +3250,13 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .tcbSetIPCBuffer       => .write
   | .tcbSetAffinity        => .write
   | .tcbSetFaultHandler    => .write
+  -- **WS-BP BP7.1 (`v0.36.11`)**: setting a thread's roots is configuring the
+  -- thread — the write right on its TCB, like every thread-configuration arm.
+  | .tcbSetSpace           => .write
+  -- **WS-BP BP7.1 (`v0.36.12`)**: installing or removing a page table changes
+  -- the table object — the write right on the table capability.
+  | .pageTableMap          => .write
+  | .pageTableUnmap        => .write
   | .tcbBindNotification   => .write
   | .tcbUnbindNotification => .write
   -- PR #822 Phase H: deriving a reply cap from the object cap to a Reply requires
@@ -3275,6 +3290,11 @@ def syscallChecksTargetFirst : SyscallId → Bool
   -- wrong-kind refusal to sequence ahead of the rights gate.
   | .cspaceRevoke    => false
   | .lifecycleRetype => false
+  -- **WS-BP BP7.1 (`v0.36.5`)**: classic order.  An untyped capability is an
+  -- ordinary `.object` capability, so there is no wrong-kind refusal to
+  -- sequence ahead of the rights gate.
+  | .untypedRetype   => false
+  | .untypedReset    => false
   | .vspaceMap       => false
   | .vspaceUnmap     => false
   | .vspaceUnifyInstruction => false
@@ -3301,6 +3321,9 @@ def syscallChecksTargetFirst : SyscallId → Bool
   | .tcbSetIPCBuffer       => false
   | .tcbSetAffinity        => false
   | .tcbSetFaultHandler    => false
+  | .tcbSetSpace           => false
+  | .pageTableMap          => false
+  | .pageTableUnmap        => false
   | .tcbBindNotification   => false
   | .tcbUnbindNotification => false
   | .mintReplyCap          => false
@@ -3870,6 +3893,738 @@ theorem resolveSchedContextBindThread_refuses_idle_capability
   unfold syscallLookupCap syscallResolveCap
   simp only [hRef, hSlot, hIdle, if_true]
 
+/-- **WS-BP BP7.1 (`v0.36.4`): the frame a `.vspaceMap` installs is one the
+caller holds a capability to, resolved through the caller's own CSpace — never
+a raw physical address.**
+
+Until this version MR2 was a physical address, checked only for range and
+alignment: a holder of any writable VSpace capability could map any physical
+memory into that address space — the kernel image, the boot tables, another
+domain's pages.  seL4's `seL4_ARM_Page_Map` is an invocation *of a frame
+capability*; the address is the frame object's own, and holding the capability
+is the authority over the memory.  This is that resolution, spelled exactly as
+`resolveSchedContextBindThread` resolves its extra capability: `syscallLookupCap`
+on a gate at the caller's CSpace root and depth, requiring `.read` — every
+mapping grants at least read access to the page, so a capability without it
+authorises none — and the resolved capability must name a **frame** the store
+holds (any other target is `.invalidCapability`, the answer an empty slot
+gives).  The reserved-idle refusal is the chokepoint's own
+(`syscallResolveCap_ok_not_reserved`).  `resolveVSpaceMapFrame_ok_authorised`
+is the fact the arm rests on. -/
+def resolveVSpaceMapFrame (callerTid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
+    (st : SystemState) : Except KernelError (CSpaceAddr × Capability × FrameObject) :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some callerTcb =>
+    match st.getCNode? callerTcb.cspaceRoot with
+    | none => .error .invalidCapability
+    | some rootCn =>
+      let frameGate : SyscallGate := {
+        callerId      := callerTid
+        cspaceRoot    := callerTcb.cspaceRoot
+        capAddr       := args.frame
+        capDepth      := rootCn.depth
+        requiredRight := .read
+      }
+      match syscallLookupCap frameGate st with
+      | .error e => .error e
+      | .ok (frameCap, _) =>
+        match frameCap.target with
+        | .object frameObjId =>
+          match st.getFrame? frameObjId with
+          | none => .error .invalidCapability
+          | some frame =>
+            -- WS-BP BP7.1 (`v0.36.7`): the slot the capability sits in, which
+            -- is where the mapping is recorded.  The same pure resolution the
+            -- gate's lookup ran (`resolveVSpaceMapFrame_ok_slot`), so it names
+            -- the slot the capability was read from.
+            match resolveCapAddress callerTcb.cspaceRoot args.frame rootCn.depth st with
+            | .error e => .error e
+            | .ok frameSlot => .ok (frameSlot, frameCap, frame)
+        | _ => .error .invalidCapability
+
+/-- **WS-BP BP7.1 (`v0.36.11`): a capability the caller holds, resolved through
+its own CSpace at a message-register address.**  The shape
+`resolveVSpaceMapFrame` and `resolveSchedContextBindThread` each spell inline:
+`syscallLookupCap` on a gate at the caller's CSpace root and depth requiring
+`right`, and the capability must name an object.  Returned with the capability,
+so a caller may ask for a second right beside the gate's. -/
+def resolveCallerCapObject (callerTid : SeLe4n.ThreadId) (addr : SeLe4n.CPtr)
+    (right : AccessRight) (st : SystemState) :
+    Except KernelError (Capability × SeLe4n.ObjId) :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some callerTcb =>
+    match st.getCNode? callerTcb.cspaceRoot with
+    | none => .error .invalidCapability
+    | some rootCn =>
+      let gate : SyscallGate := {
+        callerId      := callerTid
+        cspaceRoot    := callerTcb.cspaceRoot
+        capAddr       := addr
+        capDepth      := rootCn.depth
+        requiredRight := right
+      }
+      match syscallLookupCap gate st with
+      | .error e => .error e
+      | .ok (cap, _) =>
+        match cap.target with
+        | .object oid => .ok (cap, oid)
+        | _ => .error .invalidCapability
+
+/-- What `resolveCallerCapObject` answers is a capability the caller holds in
+its own CSpace, carrying the right asked for, naming the object returned. -/
+theorem resolveCallerCapObject_ok (callerTid : SeLe4n.ThreadId) (addr : SeLe4n.CPtr)
+    (right : AccessRight) (st : SystemState) (cap : Capability) (oid : SeLe4n.ObjId)
+    (h : resolveCallerCapObject callerTid addr right st = .ok (cap, oid)) :
+    ∃ (callerTcb : TCB) (rootCn : CNode) (ref : CSpaceAddr),
+      st.getTcb? callerTid = some callerTcb ∧
+      st.getCNode? callerTcb.cspaceRoot = some rootCn ∧
+      resolveCapAddress callerTcb.cspaceRoot addr rootCn.depth st = .ok ref ∧
+      SystemState.lookupSlotCap st ref = some cap ∧
+      cap.hasRight right = true ∧ cap.target = .object oid := by
+  unfold resolveCallerCapObject at h
+  cases hCaller : st.getTcb? callerTid with
+  | none => rw [hCaller] at h; cases h
+  | some callerTcb =>
+    rw [hCaller] at h
+    simp only at h
+    cases hRoot : st.getCNode? callerTcb.cspaceRoot with
+    | none => rw [hRoot] at h; cases h
+    | some rootCn =>
+      rw [hRoot] at h
+      simp only at h
+      cases hLk : syscallLookupCap
+          { callerId := callerTid, cspaceRoot := callerTcb.cspaceRoot,
+            capAddr := addr, capDepth := rootCn.depth, requiredRight := right } st with
+      | error e => rw [hLk] at h; cases h
+      | ok pair =>
+        obtain ⟨cap', s'⟩ := pair
+        rw [hLk] at h
+        simp only at h
+        obtain ⟨ref, hRes, hSlot, hRight, -⟩ :=
+          syscallLookupCap_implies_capability_held _ st cap' s' hLk
+        cases hT : cap'.target with
+        | object o =>
+          rw [hT] at h
+          simp only [Except.ok.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, rfl⟩ := h
+          exact ⟨callerTcb, rootCn, ref, rfl, hRoot, hRes, hSlot, hRight, hT⟩
+        | _ => rw [hT] at h; cases h
+
+/-- **WS-BP BP7.1 (`v0.36.11`): the two roots a `.tcbSetSpace` names, resolved
+through the caller's own CSpace** — seL4's `TCB_SetSpace` operands.
+
+MR0 is a capability to the new **CSpace root**, and the caller must hold it with
+`.grant` **and** `.write`: making a CNode a thread's CSpace root hands that thread
+every capability the CNode holds and the ability to write the CNode's slots, so
+it is authority to pass capabilities on — the right `.cspaceMint` and
+`.cspaceCopy` gate on — and to change what the CNode holds.  MR1 is a capability
+to the new **VSpace root**, held with `.write`, the right `.vspaceMap` gates a
+change to an address space on.  Each must name an object of its kind; the
+operation checks the kinds again against the store, so a resolver and an
+operation that disagreed about them would refuse rather than install. -/
+def resolveSetSpace (callerTid : SeLe4n.ThreadId)
+    (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState) :
+    Except KernelError (SeLe4n.ObjId × SeLe4n.ObjId) :=
+  match resolveCallerCapObject callerTid args.cspaceRoot .grant st with
+  | .error e => .error e
+  | .ok (cnCap, cnId) =>
+    if !cnCap.hasRight .write then .error .illegalAuthority
+    else if (st.getCNode? cnId).isNone then .error .invalidCapability
+    else
+      match resolveCallerCapObject callerTid args.vspaceRoot .write st with
+      | .error e => .error e
+      | .ok (_, vrId) =>
+        if (st.getVSpaceRoot? vrId).isNone then .error .invalidCapability
+        else .ok (cnId, vrId)
+
+/-- **The authority fact the `.tcbSetSpace` arm rests on**: the CSpace root it
+installs is a CNode the caller holds a capability to with `.grant` and `.write`,
+and the VSpace root one it holds a capability to with `.write`. -/
+theorem resolveSetSpace_ok_authorised (callerTid : SeLe4n.ThreadId)
+    (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState)
+    (cnId vrId : SeLe4n.ObjId) (h : resolveSetSpace callerTid args st = .ok (cnId, vrId)) :
+    (∃ cnCap, resolveCallerCapObject callerTid args.cspaceRoot .grant st = .ok (cnCap, cnId) ∧
+        cnCap.hasRight .grant = true ∧ cnCap.hasRight .write = true) ∧
+      (st.getCNode? cnId).isSome ∧
+      (∃ vrCap, resolveCallerCapObject callerTid args.vspaceRoot .write st = .ok (vrCap, vrId) ∧
+        vrCap.hasRight .write = true) ∧
+      (st.getVSpaceRoot? vrId).isSome := by
+  unfold resolveSetSpace at h
+  cases hC : resolveCallerCapObject callerTid args.cspaceRoot .grant st with
+  | error e => rw [hC] at h; cases h
+  | ok p =>
+    obtain ⟨cnCap, cn⟩ := p
+    rw [hC] at h
+    simp only at h
+    by_cases hW : cnCap.hasRight .write = true
+    · have hB : (!cnCap.hasRight .write) = false := by simp [hW]
+      rw [hB] at h
+      cases hCn : st.getCNode? cn with
+      | none => simp [hCn] at h
+      | some _ =>
+        simp only [hCn, Option.isNone_some, Bool.false_eq_true, ↓reduceIte] at h
+        cases hV : resolveCallerCapObject callerTid args.vspaceRoot .write st with
+        | error e => rw [hV] at h; cases h
+        | ok q =>
+          obtain ⟨vrCap, vr⟩ := q
+          rw [hV] at h
+          simp only at h
+          cases hVr : st.getVSpaceRoot? vr with
+          | none => simp [hVr] at h
+          | some _ =>
+            simp only [hVr, Option.isNone_some, Bool.false_eq_true, ↓reduceIte,
+              Except.ok.injEq, Prod.mk.injEq] at h
+            obtain ⟨rfl, rfl⟩ := h
+            obtain ⟨_, _, _, _, _, _, _, hG, -⟩ :=
+              resolveCallerCapObject_ok callerTid _ _ st cnCap cn hC
+            obtain ⟨_, _, _, _, _, _, _, hVW, -⟩ :=
+              resolveCallerCapObject_ok callerTid _ _ st vrCap vr hV
+            exact ⟨⟨cnCap, rfl, hG, hW⟩, by simp [hCn], ⟨vrCap, rfl, hVW⟩, by simp [hVr]⟩
+    · have hB : (!cnCap.hasRight .write) = true := by simpa using hW
+      rw [hB] at h; cases h
+
+/-- **WS-BP BP7.1 (`v0.36.5`): the two slots a carve names, resolved through the
+caller's own CSpace.**
+
+The *source* is the slot the syscall's own capability was resolved from — the
+caller's CSpace root, the invoked address, the root's depth, which is exactly the
+resolution `syscallResolveCap` performed — so the untyped capability the carve
+checks and records its derivation from is the one the caller presented.  The
+*destination* CNode is MR2, resolved with `.write`, as `resolveVSpaceMapFrame`
+resolves its frame: a carve installs a capability, and installing into a CNode is
+writing it, so a caller can deposit the new capability only in a CNode it holds a
+writable capability to.  The destination slot is MR3 verbatim — the install
+primitive refuses an index its CNode cannot address. -/
+def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (args : UntypedRetypeArgs) (st : SystemState) :
+    Except KernelError (CSpaceAddr × CSpaceAddr) :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some callerTcb =>
+    match st.getCNode? callerTcb.cspaceRoot with
+    | none => .error .invalidCapability
+    | some rootCn =>
+      match resolveCapAddress callerTcb.cspaceRoot decoded.capAddr rootCn.depth st with
+      | .error e => .error e
+      | .ok src =>
+        let dstGate : SyscallGate := {
+          callerId      := callerTid
+          cspaceRoot    := callerTcb.cspaceRoot
+          capAddr       := args.dstCNode
+          capDepth      := rootCn.depth
+          requiredRight := .write
+        }
+        match syscallLookupCap dstGate st with
+        | .error e => .error e
+        | .ok (dstCap, _) =>
+          match dstCap.target with
+          | .object cnodeId =>
+            match st.getCNode? cnodeId with
+            | none => .error .invalidCapability
+            | some _ => .ok (src, { cnode := cnodeId, slot := args.dstSlot })
+          | _ => .error .invalidCapability
+
+/-- **WS-BP BP7.1 slice 4 (`v0.36.8`): the carve a decoded `.untypedRetype`
+requests.**  A frame, whose size is fixed, so its `sizeBits` must be `0` — the
+value a frame's MR0 carried before the field existed; or a child untyped of
+`2 ^ sizeBits` bytes with `sizeBits` in `[minUntypedSizeBits,
+maxUntypedSizeBits]`; or (slice 4b, `v0.36.10`) a VSpace root, one page, so
+its `sizeBits` must be `0`, registered under the least free ASID (`freshAsid?`;
+`.resourceExhausted` when every ASID is taken).  Anything else is
+`.invalidArgument`: every other kind is created by the in-place retype
+(`.lifecycleRetype`), and the carve exists for memory a thread is handed *as
+memory* — a translation table included. -/
+def carveRequestOf? (st : SystemState) (newType : KernelObjectType) (sizeBits : Nat) :
+    Except KernelError CarveRequest :=
+  match newType with
+  | .frame => if sizeBits = 0 then .ok .frame else .error .invalidArgument
+  -- WS-BP BP7.1 (`v0.36.12`): a page table is one page, like a frame.
+  | .pageTable => if sizeBits = 0 then .ok .pageTable else .error .invalidArgument
+  | .untyped =>
+      if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
+        .ok (.untyped sizeBits)
+      else .error .invalidArgument
+  | .vspaceRoot =>
+      if sizeBits = 0 then
+        match freshAsid? st with
+        | some asid => .ok (.vspaceRoot asid)
+        | none => .error .resourceExhausted
+      else .error .invalidArgument
+  | _ => .error .invalidArgument
+
+/-- **WS-BP BP7.1**: a request the decode accepts is a frame or an untyped whose
+size lies in the carve's bounds, (slice 4b) a VSpace root under an ASID
+`freshAsid?` answered, or (`v0.36.12`) a page table — the only requests the arm
+ever hands the carve. -/
+theorem carveRequestOf?_ok (st : SystemState) (newType : KernelObjectType) (sizeBits : Nat)
+    (req : CarveRequest) (h : carveRequestOf? st newType sizeBits = .ok req) :
+    (newType = .frame ∧ sizeBits = 0 ∧ req = .frame) ∨
+    (newType = .untyped ∧ minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits ∧
+      req = .untyped sizeBits) ∨
+    (newType = .vspaceRoot ∧ sizeBits = 0 ∧
+      ∃ asid, freshAsid? st = some asid ∧ req = .vspaceRoot asid) ∨
+    (newType = .pageTable ∧ sizeBits = 0 ∧ req = .pageTable) := by
+  cases newType <;> simp only [carveRequestOf?] at h <;> try cases h
+  · by_cases hB : sizeBits = 0
+    · simp only [hB, ↓reduceIte] at h
+      cases hF : freshAsid? st with
+      | none => rw [hF] at h; cases h
+      | some asid =>
+        rw [hF] at h; cases h
+        exact Or.inr (Or.inr (Or.inl ⟨rfl, hB, asid, rfl, rfl⟩))
+    · simp [hB] at h
+  · split at h
+    · rename_i hB; cases h; exact Or.inr (Or.inl ⟨rfl, hB.1, hB.2, rfl⟩)
+    · cases h
+  · split at h
+    · cases h; exact Or.inl ⟨rfl, by assumption, rfl⟩
+    · cases h
+  · split at h
+    · cases h; exact Or.inr (Or.inr (Or.inr ⟨rfl, by assumption, rfl⟩))
+    · cases h
+
+/-- **WS-BP BP7.1 (`v0.36.5`, child untypeds at slice 4, `v0.36.8`): the live
+`.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype` at the memory
+types: a frame, a child untyped, a VSpace root and a page table.
+
+Decode, then build the carve request (`carveRequestOf?`: a frame, a child
+untyped of a bounded size, a VSpace root under a fresh ASID, or a page table —
+anything else `.invalidArgument`).  The child id is
+a raw operand, so it passes `validateObjIdArg` — no reserved idle object and not
+the sentinel — before anything is resolved.  Then the two slots, then
+`untypedRetypeObject`, whose own guards decide everything else. -/
+def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) :
+    Kernel Unit :=
+  fun st =>
+    match decodeUntypedRetypeArgs decoded with
+    | .error e => .error e
+    | .ok args =>
+      match carveRequestOf? st args.newType args.sizeBits with
+      | .error e => .error e
+      | .ok req =>
+        match validateObjIdArg args.childId with
+        | .error e => .error e
+        | .ok vChild =>
+          match resolveUntypedRetype tid decoded args st with
+          | .error e => .error e
+          | .ok (src, dst) => untypedRetypeObject src vChild.val dst req st
+
+/-- **WS-BP BP7.1**: what a successful `.untypedRetype` consists of — the typed
+decode, the carve request, the validated child id, the resolved slots, and the
+carve.  The case analysis has one owner, so the invariant and non-interference
+proofs read these equations. -/
+theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (st st' : SystemState)
+    (h : untypedRetypeFromCap tid decoded st = .ok ((), st')) :
+    ∃ (args : UntypedRetypeArgs) (req : CarveRequest) (vChild : SeLe4n.ValidObjId)
+      (src dst : CSpaceAddr),
+      decodeUntypedRetypeArgs decoded = .ok args ∧
+      carveRequestOf? st args.newType args.sizeBits = .ok req ∧
+      validateObjIdArg args.childId = .ok vChild ∧
+      resolveUntypedRetype tid decoded args st = .ok (src, dst) ∧
+      untypedRetypeObject src vChild.val dst req st = .ok ((), st') := by
+  unfold untypedRetypeFromCap at h
+  cases hD : decodeUntypedRetypeArgs decoded with
+  | error e => rw [hD] at h; cases h
+  | ok args =>
+    rw [hD] at h
+    simp only at h
+    cases hQ : carveRequestOf? st args.newType args.sizeBits with
+    | error e => rw [hQ] at h; cases h
+    | ok req =>
+      rw [hQ] at h
+      simp only at h
+      cases hV : validateObjIdArg args.childId with
+      | error e => rw [hV] at h; cases h
+      | ok vChild =>
+        rw [hV] at h
+        simp only at h
+        cases hR : resolveUntypedRetype tid decoded args st with
+        | error e => rw [hR] at h; cases h
+        | ok pr =>
+          obtain ⟨src, dst⟩ := pr
+          rw [hR] at h
+          exact ⟨args, req, vChild, src, dst, by first | exact hD | rfl,
+            by first | exact hQ | rfl,
+            by first | exact hV | rfl, by first | exact hR | rfl, h⟩
+
+/-- **WS-BP BP7.1 (the authority fact)**: a frame the resolver answers is one the
+caller holds a **readable capability** to, found at MR2's address in the caller's
+own CSpace, and it is a frame the store holds at the capability's target.  The
+read-only lookup returns the state it was given
+(`syscallLookupCap_preserves_state`), so the capability is exhibited at `st`
+itself. -/
+theorem resolveVSpaceMapFrame_ok_authorised
+    (callerTid : SeLe4n.ThreadId) (args : VSpaceMapArgs) (st : SystemState)
+    (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
+    (h : resolveVSpaceMapFrame callerTid args st = .ok (frameSlot, frameCap, frame)) :
+    ∃ (callerTcb : TCB) (rootCn : CNode) (frameObjId : SeLe4n.ObjId),
+      st.getTcb? callerTid = some callerTcb ∧
+      st.getCNode? callerTcb.cspaceRoot = some rootCn ∧
+      syscallLookupCap
+        { callerId := callerTid, cspaceRoot := callerTcb.cspaceRoot,
+          capAddr := args.frame, capDepth := rootCn.depth,
+          requiredRight := .read } st = .ok (frameCap, st) ∧
+      frameCap.hasRight .read = true ∧
+      frameCap.target = .object frameObjId ∧
+      st.getFrame? frameObjId = some frame ∧
+      resolveCapAddress callerTcb.cspaceRoot args.frame rootCn.depth st = .ok frameSlot ∧
+      SystemState.lookupSlotCap st frameSlot = some frameCap := by
+  unfold resolveVSpaceMapFrame at h
+  cases hCaller : st.getTcb? callerTid with
+  | none => rw [hCaller] at h; cases h
+  | some callerTcb =>
+    rw [hCaller] at h
+    simp only at h
+    cases hRoot : st.getCNode? callerTcb.cspaceRoot with
+    | none => rw [hRoot] at h; cases h
+    | some rootCn =>
+      rw [hRoot] at h
+      simp only at h
+      cases hLk : syscallLookupCap
+          { callerId := callerTid, cspaceRoot := callerTcb.cspaceRoot,
+            capAddr := args.frame, capDepth := rootCn.depth,
+            requiredRight := .read } st with
+      | error e => rw [hLk] at h; cases h
+      | ok pair =>
+        obtain ⟨cap', s'⟩ := pair
+        rw [hLk] at h
+        simp only at h
+        obtain ⟨_, _, _, hRight, hSt⟩ :=
+          syscallLookupCap_implies_capability_held _ st cap' s' hLk
+        rw [hSt] at hLk
+        -- The slot the gate's lookup read the capability from.
+        obtain ⟨ref0, hRes0, hLk0, -, -⟩ :=
+          syscallLookupCap_implies_capability_held _ st cap' st hLk
+        have hSlotOf : ∀ ref, resolveCapAddress callerTcb.cspaceRoot args.frame
+            rootCn.depth st = .ok ref → SystemState.lookupSlotCap st ref = some cap' := by
+          intro ref hRef
+          have : ref0 = ref := by
+            have h2 : (Except.ok ref0 : Except KernelError CSpaceAddr) = .ok ref :=
+              hRes0.symm.trans hRef
+            cases h2; rfl
+          subst this; exact hLk0
+        cases hTgt : cap'.target
+        case object frameObjId =>
+          rw [hTgt] at h
+          simp only at h
+          cases hF : st.getFrame? frameObjId with
+          | none => rw [hF] at h; cases h
+          | some f =>
+            rw [hF] at h
+            simp only at h
+            cases hRef : resolveCapAddress callerTcb.cspaceRoot args.frame rootCn.depth st with
+            | error e => rw [hRef] at h; cases h
+            | ok ref =>
+              rw [hRef] at h
+              simp only [Except.ok.injEq, Prod.mk.injEq] at h
+              obtain ⟨hS, hCap, hFr⟩ := h
+              subst hS; subst hCap; subst hFr
+              exact ⟨callerTcb, rootCn, frameObjId,
+                by first | exact hCaller | rfl,
+                by first | exact hRoot | rfl,
+                hLk, hRight, hTgt, hF, hRef, hSlotOf _ hRef⟩
+        all_goals (rw [hTgt] at h; cases h)
+
+/-- **WS-BP BP7.1: what a frame capability authorises a mapping to do.**
+
+Two refusals, each the fact a hardware mapping of this frame would otherwise
+violate.  (W^X needs no third: the decode already refuses a writable-and-
+executable request, through `PagePermissions.ofNat?`.)  A **writable** mapping needs a frame capability carrying `.write` —
+the capability bounds the access the mapping grants, as seL4's `maskVMRights`
+bounds it; here an over-reaching request is refused rather than silently
+narrowed, so a caller learns the mapping it asked for is not the one it holds
+authority for.
+
+And a mapping carries **the frame's own memory type** (`.policyDenied`, the
+error `validateVSpaceMapPermsForMemoryKind` already returns for a device
+execute).  A **device** frame is mapped uncached and never executable
+(execution from Device memory is unpredictable on ARMv8, and a device register
+read through a cache line is not a device access).  A **RAM** frame is mapped
+cacheable, and only cacheable (the WS-BP post-landing audit, `v0.36.32`): the
+kernel's identity map aliases every page of RAM as Normal write-back, and a
+thread's uncached mapping of the same page — which `userPageAttributes` encodes
+as Device-nGnRnE — is the **mismatched-attribute** alias ARM ARM B2.8 says
+loses coherency.  It was a leak, not a curiosity: the carve zeroes a frame
+through the cacheable alias, so the zeroes can sit dirty in the data cache
+while DRAM still holds the page's previous owner's bytes, and an uncached read
+goes past the cache to DRAM — reporting to the new owner what the previous one
+wrote.  With the memory type fixed by the frame, no thread holds a second
+memory type for a page of RAM, and the only uncached mappings are of device
+memory, which the kernel never writes (`HardwareTables.lean`'s module
+docstring states the encoding this makes exact).  A thread that needs RAM
+shared with a non-coherent bus master has no such master to share it with:
+the model admits none (`CoherentAgent`'s tripwire), and adding one is where
+the buffer protocol belongs. -/
+def frameMappingAdmissible (frameCap : Capability) (frame : FrameObject)
+    (perms : PagePermissions) : Except KernelError Unit :=
+  if perms.write && !frameCap.hasRight .write then .error .illegalAuthority
+  else if perms.cacheable == frame.isDevice || (frame.isDevice && perms.execute) then
+    .error .policyDenied
+  else .ok ()
+
+/-- **WS-BP BP7.1**: an admitted writable mapping is backed by a writable frame
+capability. -/
+theorem frameMappingAdmissible_write (frameCap : Capability) (frame : FrameObject)
+    (perms : PagePermissions) (h : frameMappingAdmissible frameCap frame perms = .ok ())
+    (hW : perms.write = true) : frameCap.hasRight .write = true := by
+  unfold frameMappingAdmissible at h
+  cases hR : frameCap.hasRight .write
+  · simp [hW, hR] at h
+  · rfl
+
+/-- **WS-BP BP7.1**: an admitted mapping of a device frame is neither executable
+nor cacheable. -/
+theorem frameMappingAdmissible_device (frameCap : Capability) (frame : FrameObject)
+    (perms : PagePermissions) (h : frameMappingAdmissible frameCap frame perms = .ok ())
+    (hDev : frame.isDevice = true) : perms.execute = false ∧ perms.cacheable = false := by
+  unfold frameMappingAdmissible at h
+  split at h
+  · cases h
+  · rw [hDev] at h
+    cases hE : perms.execute <;> cases hC : perms.cacheable <;> simp_all
+
+/-- **WS-BP post-landing audit (`v0.36.32`)**: an admitted mapping of a RAM frame
+is cacheable — the memory type the kernel's own identity map gives every page
+of RAM, so no thread's mapping aliases a page of RAM with a second memory type.
+This is the fact that makes the carve's zeroing through the kernel's cacheable
+alias what every later read of the page observes. -/
+theorem frameMappingAdmissible_ram (frameCap : Capability) (frame : FrameObject)
+    (perms : PagePermissions) (h : frameMappingAdmissible frameCap frame perms = .ok ())
+    (hRam : frame.isDevice = false) : perms.cacheable = true := by
+  unfold frameMappingAdmissible at h
+  split at h
+  · cases h
+  · rw [hRam] at h
+    cases hC : perms.cacheable <;> simp_all
+
+/-- **WS-BP post-landing audit (`v0.36.32`)**: every admitted mapping's
+cacheability **is** its frame's memory type — cacheable exactly when the frame
+is RAM.  `frameMappingAdmissible_device` and `frameMappingAdmissible_ram` are
+its two halves; this is the statement a consumer reasoning about memory types
+reads. -/
+theorem frameMappingAdmissible_cacheable_iff_ram (frameCap : Capability)
+    (frame : FrameObject) (perms : PagePermissions)
+    (h : frameMappingAdmissible frameCap frame perms = .ok ()) :
+    perms.cacheable = !frame.isDevice := by
+  cases hDev : frame.isDevice
+  · exact frameMappingAdmissible_ram frameCap frame perms h hDev
+  · exact (frameMappingAdmissible_device frameCap frame perms h hDev).2
+
+/-- The object a frame capability names — `resolveVSpaceMapFrame` admits only a
+capability naming an object, so the fallback is never taken on the map path. -/
+def frameCapObjId (cap : Capability) : SeLe4n.ObjId :=
+  match cap.target with
+  | .object id => id
+  | _ => SeLe4n.ObjId.sentinel
+
+/-- **WS-BP BP7.1: the `.vspaceMap` arm past its address-space check, named.**
+
+Resolve the frame MR2's capability names (`resolveVSpaceMapFrame`), check what
+that capability authorises the mapping to be (`frameMappingAdmissible`), check
+the frame's address against the platform memory map
+(`validateVSpaceMapPermsForMemoryKind`), and install the frame's own `base`
+through the per-core shootdown wrapper.  Named so the arm and every theorem
+about it read one definition: `vspaceMapFromFrameCap_ok` is the decomposition
+each consumer takes instead of re-splitting four matches. -/
+def vspaceMapFromFrameCap (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs) : Kernel Unit :=
+  fun st =>
+    match resolveVSpaceMapFrame tid args st with
+    | .error e => .error e
+    | .ok (frameSlot, frameCap, frame) =>
+      match frameMappingAdmissible frameCap frame args.perms with
+      | .error e => .error e
+      | .ok () =>
+        -- WS-BP BP7.1 (`v0.36.7`): a frame capability maps its frame once, as
+        -- in seL4 — a capability whose recorded mapping is still in place is
+        -- refused; mapping the frame again takes a copy of the capability,
+        -- which carries no record.  A record gone stale (its address space
+        -- unmapped the address, or was destroyed) is simply overwritten.
+        -- WS-BP BP7.2: a thread maps only inside the user window — level-0
+        -- entry 0 of every user root is the kernel's own window, installed
+        -- beside the thread's tables in `TTBR0_EL1`.
+        if !args.vaddr.inUserWindow then .error .addressOutOfBounds
+        else if capabilityMappingLive st frameCap then .error .invalidCapability
+        -- WS-BP BP7.1 (`v0.36.12`): a carved address space maps a frame only
+        -- where every level of its walk is present — seL4's
+        -- `seL4_FailedLookup` from `seL4_ARM_Page_Map` when a table is missing.
+        else if !Architecture.asidTranslationReady st args.asid args.vaddr then
+          .error .translationFault
+        else
+        -- AH1-D (M-01 fix): Validate permissions against memory kind before mapping.
+        -- Device regions must not receive execute permission (undefined on ARM64).
+        match validateVSpaceMapPermsForMemoryKind frame.base args.perms
+                st.machine.memoryMap with
+        | .error e => .error e
+        | .ok perms =>
+          -- X2-E: Use state-aware PA bounds (reads physicalAddressWidth from machine state)
+          -- WS-SM SM7.B.9: a remap that replaces a live translation
+          -- leaves the old one cached on remote cores — the wrapper
+          -- adds the cross-core shootdown round to the local flush.
+          -- WS-SM SM7.F.4(a)+(b)(ii): route through the per-core wrapper,
+          -- which additionally (a) caches the freshly-established
+          -- translation on the executing core's `perCoreTlb` view — the
+          -- live *fill* that finally holds a real entry on the syscall
+          -- path — and (b) retires any stale initiator entry atomically.
+          -- Trace-safe: both are `perCoreTlb`-only, ∉ `projectState`.
+          match Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
+              (determineExecutingCore st tid) args.asid args.vaddr frame.base perms st with
+          | .error e => .error e
+          | .ok ((), st1) =>
+            -- PR #904 review (`v0.36.41`): the mapping takes the frame's next
+            -- epoch, written beside the translation, so the record below names
+            -- this mapping and no later one (`mappedPageLive`).
+            match tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 with
+            | .error e => .error e
+            | .ok (epoch, st2) =>
+            -- WS-BP BP7.1 (`v0.36.7`): the mapping now belongs to the
+            -- capability that made it — recorded on it, in its own slot, so
+            -- destroying the capability removes it (`cspaceDeleteSlotFinalising`,
+            -- `cspaceRevokeCdtFinalising`).
+            cspaceRecordFrameMapping frameSlot
+              { asid := args.asid, vaddr := args.vaddr, epoch := epoch } st2
+
+/-- **WS-BP BP7.1**: a successful frame-capability mapping resolved a frame the
+caller holds a capability to, admitted the requested permissions, and installed
+**that frame's** `base` with them — the decomposition every consumer of the arm
+reads. -/
+theorem vspaceMapFromFrameCap_ok (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
+    (st st' : SystemState)
+    (h : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
+    ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
+      (st1 : SystemState),
+      resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame) ∧
+      frameMappingAdmissible frameCap frame args.perms = .ok () ∧
+      capabilityMappingLive st frameCap = false ∧
+      Architecture.asidTranslationReady st args.asid args.vaddr = true ∧
+      validateVSpaceMapPermsForMemoryKind frame.base args.perms st.machine.memoryMap
+        = .ok args.perms ∧
+      Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
+        (determineExecutingCore st tid) args.asid args.vaddr frame.base args.perms st
+        = .ok ((), st1) ∧
+      ∃ (epoch : Nat) (st2 : SystemState),
+        tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 = .ok (epoch, st2) ∧
+        cspaceRecordFrameMapping frameSlot
+          { asid := args.asid, vaddr := args.vaddr, epoch := epoch } st2 = .ok ((), st') := by
+  unfold vspaceMapFromFrameCap at h
+  cases hR : resolveVSpaceMapFrame tid args st with
+  | error e => rw [hR] at h; cases h
+  | ok triple =>
+    obtain ⟨frameSlot, frameCap, frame⟩ := triple
+    rw [hR] at h
+    simp only at h
+    cases hA : frameMappingAdmissible frameCap frame args.perms with
+    | error e => rw [hA] at h; cases h
+    | ok u =>
+      cases u
+      rw [hA] at h
+      simp only at h
+      cases hW : args.vaddr.inUserWindow
+      · rw [hW] at h; simp at h
+      rw [hW] at h
+      simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+      cases hLive : capabilityMappingLive st frameCap
+      · rw [hLive] at h
+        simp only [Bool.false_eq_true, ↓reduceIte] at h
+        cases hReady : Architecture.asidTranslationReady st args.asid args.vaddr
+        · rw [hReady] at h; simp at h
+        rw [hReady] at h
+        simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+        cases hV : validateVSpaceMapPermsForMemoryKind frame.base args.perms
+            st.machine.memoryMap with
+        | error e => rw [hV] at h; cases h
+        | ok perms =>
+          rw [hV] at h
+          have hEq := validateVSpaceMapPermsForMemoryKind_ok_eq _ _ _ _ hV
+          subst hEq
+          simp only at h
+          cases hM : Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
+              (determineExecutingCore st tid) args.asid args.vaddr frame.base args.perms st with
+          | error e => rw [hM] at h; cases h
+          | ok pr =>
+            obtain ⟨u, st1⟩ := pr; cases u
+            rw [hM] at h
+            simp only at h
+            cases hT : tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 with
+            | error e => rw [hT] at h; cases h
+            | ok pr =>
+              obtain ⟨epoch, st2⟩ := pr
+              rw [hT] at h
+              exact ⟨frameSlot, frameCap, frame, st1, by first | exact hR | rfl,
+                by first | exact hA | rfl, hLive, rfl, hV, by first | exact hM | rfl,
+                epoch, st2, hT, h⟩
+      · rw [hLive] at h; simp at h
+
+/-- **WS-BP BP7.2: a successful mapping is inside the user window** — the arm
+refuses an address below `VAddr.userWindowBase`, whose walk would enter the
+level-0 slot every user root gives to the kernel's own window. -/
+theorem vspaceMapFromFrameCap_ok_inUserWindow (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
+    (st st' : SystemState) (h : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
+    args.vaddr.inUserWindow = true := by
+  unfold vspaceMapFromFrameCap at h
+  cases hR : resolveVSpaceMapFrame tid args st with
+  | error e => rw [hR] at h; cases h
+  | ok triple =>
+    obtain ⟨frameSlot, frameCap, frame⟩ := triple
+    rw [hR] at h
+    simp only at h
+    cases hA : frameMappingAdmissible frameCap frame args.perms with
+    | error e => rw [hA] at h; cases h
+    | ok u =>
+      rw [hA] at h
+      simp only at h
+      cases hW : args.vaddr.inUserWindow
+      · rw [hW] at h; simp at h
+      · rfl
+
+/-- **WS-BP BP7.1 (`v0.36.7`): a successful mapping records itself on the
+capability that made it** — the slot the capability was resolved from now holds
+it with `mapping := some ⟨asid, vaddr, epoch⟩`, so destroying it removes the
+mapping.  The epoch (PR #904 review, `v0.36.41`) is the one the address space's
+entry now carries, which is what makes the record this mapping's alone. -/
+theorem vspaceMapFromFrameCap_ok_records (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (h : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
+    ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (epoch : Nat),
+      SystemState.lookupSlotCap st frameSlot = some frameCap ∧
+      SystemState.lookupSlotCap st' frameSlot =
+        some { frameCap with
+          mapping := some { asid := args.asid, vaddr := args.vaddr, epoch := epoch } } := by
+  obtain ⟨frameSlot, frameCap, frame, st1, hR, -, -, -, -, hMap, epoch, st2, hT, hRec⟩ :=
+    vspaceMapFromFrameCap_ok tid args st st' h
+  obtain ⟨_, _, _, _, _, _, _, _, _, -, hSlotCap⟩ :=
+    resolveVSpaceMapFrame_ok_authorised tid args st frameSlot frameCap frame hR
+  refine ⟨frameSlot, frameCap, epoch, hSlotCap, ?_⟩
+  obtain ⟨cn, cap, hCn, hLk, hStore⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
+  obtain ⟨hInv1, hW, -⟩ :=
+    vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1 hObjInv hMap
+  obtain ⟨hInv2, -, -, hTagW⟩ := tagFrameMapping_ok_frame _ _ _ st1 st2 epoch hInv1 hT
+  have hAt := storeObject_objects_eq st2 st' frameSlot.cnode _ hInv2 hStore
+  -- The map writes VSpace roots only and the tag a root and a frame, so the slot
+  -- held the resolved capability at `st` too.
+  have hCn2 := (SystemState.getCNode?_eq_some_iff st2 frameSlot.cnode cn).mp hCn
+  have hCn1 : st1.objects[frameSlot.cnode]? = some (.cnode cn) := by
+    rcases hTagW frameSlot.cnode with e | ⟨-, ⟨r, hr⟩⟩ | ⟨-, ⟨g, hg⟩⟩
+    · rw [← e]; exact hCn2
+    · rw [hCn2] at hr; cases hr
+    · rw [hCn2] at hg; cases hg
+  have hCnPre : st.objects[frameSlot.cnode]? = some (.cnode cn) := by
+    rw [← hW.eq_of_not_root' (fun r hr => by rw [hCn1] at hr; cases hr)]
+    exact hCn1
+  have hCapEq : cap = frameCap := by
+    unfold SystemState.lookupSlotCap SystemState.lookupCNode at hSlotCap
+    rw [hCnPre] at hSlotCap
+    simp only at hSlotCap
+    rw [hLk] at hSlotCap
+    exact Option.some.inj hSlotCap
+  subst hCapEq
+  unfold SystemState.lookupSlotCap SystemState.lookupCNode
+  rw [hAt]
+  simp only
+  exact CNode.lookup_insert_eq cn frameSlot.slot _ (CNode.slotsUnique_holds cn)
+
 /-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these 14 arms
 derive authority entirely from capability possession and require no
 information-flow checks. Both `dispatchWithCap` and `dispatchWithCapChecked`
@@ -3890,7 +4645,11 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .error e => .error e
         | .ok args =>
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
-            cspaceDeleteSlot addr st
+            -- WS-BP BP7.1 (`v0.36.7`): the finalising delete — seL4's
+            -- `cteDelete` → `finaliseCap`: a frame capability's recorded
+            -- mapping is removed with it, through the `.vspaceUnmap` arm's own
+            -- transition, the invoking thread's core initiating the shootdown.
+            cspaceDeleteSlotFinalising (determineExecutingCore st tid) addr st
     | _ => fun _ => .error .invalidCapability
   -- **WS-RR RR8.16 (`v0.35.190`)**: `seL4_CNode_Revoke`.  The arm the revocation
   -- family had never had — `cspaceRevokeCdt`'s own routing guide already named
@@ -3920,7 +4679,9 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .error e => .error e
         | .ok args =>
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
-            cspaceRevokeCdt addr st
+            -- WS-BP BP7.1 (`v0.36.7`): the finalising revocation — every
+            -- mapping a destroyed frame capability recorded is removed with it.
+            cspaceRevokeCdtFinalising (determineExecutingCore st tid) addr st
     | _ => fun _ => .error .invalidCapability
   -- PR #822 Phase H: mint a reply cap from an `.object`-to-Reply cap.  Same src/dst-slot
   -- ABI as `cspaceCopy` (reuses `decodeCSpaceCopyArgs`); the cap names the CNode, and
@@ -3976,16 +4737,39 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
               (determineExecutingCore st tid) cap args.targetObj newObj st
     | _ => fun _ => .error .invalidCapability
+  -- **WS-BP BP7.1 (`v0.36.5`)**: `seL4_Untyped_Retype`, at the frame type —
+  -- the only path by which a frame comes to exist on a live state, and so the
+  -- only way memory reaches a thread: the caller presents an untyped
+  -- capability, names a fresh object id and an empty slot in a CNode it can
+  -- write, and receives a capability to the page at the untyped's watermark.
+  -- `.vspaceMap` maps that page and no other.
+  | .untypedRetype =>
+    some <| match cap.target with
+    | .object _ => untypedRetypeFromCap tid decoded
+    | _ => fun _ => .error .invalidCapability
+  -- **WS-BP BP7.1 (`v0.36.6`)**: seL4's `resetUntypedCap` — the untyped's memory
+  -- returns to it once no capability names any carved child.  Every mapping of
+  -- the region is removed through the `.vspaceUnmap` arm's own transition, with
+  -- the invoking thread's core as the initiator of each shootdown round, and the
+  -- carved frames are retired.  Since `v0.36.37` every retired root's ASID then
+  -- gets an acknowledged `.aside1` round (`untypedResetWithShootdown`), which is
+  -- what makes every PE leave that address space before the page can be recarved.
+  -- Takes no message registers: the capability is the whole operand.
+  | .untypedReset =>
+    some <| match cap.target with
+    | .object untypedId => fun st =>
+        untypedResetWithShootdown (determineExecutingCore st tid) untypedId st
+    | _ => fun _ => .error .invalidCapability
   | .vspaceMap =>
     some <| match cap.target with
     | .object _ =>
-        -- AH3-C (L-14): Pass platform-configured maxASID to decode
-        -- AK3-E (A-M01 / MEDIUM): Use `decodeVSpaceMapArgsChecked` which adds a
-        -- decode-time PA bounds check (defense-in-depth; the downstream
-        -- `vspaceMapPageCheckedWithFlushFromState` PA check still holds).
+        -- AH3-C (L-14): Pass platform-configured maxASID to decode.
+        -- WS-BP BP7.1: MR2 is a frame capability address, so there is no
+        -- decode-time physical address to bound (AK3-E's checked decode is
+        -- retired); the physical-address bound applies to the resolved frame's
+        -- `base` inside `vspaceMapPageCheckedWithFlushFromState`.
         fun st =>
-          match decodeVSpaceMapArgsChecked decoded st.machine.maxASID
-                  (2^st.machine.physicalAddressWidth) with
+          match decodeVSpaceMapArgs decoded st.machine.maxASID with
           | .error e => .error e
           | .ok args =>
             -- PR #845 review (P1): bind the capability to the operand address
@@ -3998,24 +4782,10 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             if !vspaceCapAuthorizesAsid cap args.asid st then
               .error .illegalAuthority
             else
-              -- AH1-D (M-01 fix): Validate permissions against memory kind before mapping.
-              -- Device regions must not receive execute permission (undefined on ARM64).
-              match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
-              | .error e => .error e
-              | .ok validatedArgs =>
-                  -- X2-E: Use state-aware PA bounds (reads physicalAddressWidth from machine state)
-                  -- WS-SM SM7.B.9: a remap that replaces a live translation
-                  -- leaves the old one cached on remote cores — the wrapper
-                  -- adds the cross-core shootdown round to the local flush.
-                  -- WS-SM SM7.F.4(a)+(b)(ii): route through the per-core wrapper,
-                  -- which additionally (a) caches the freshly-established
-                  -- translation on the executing core's `perCoreTlb` view — the
-                  -- live *fill* that finally holds a real entry on the syscall
-                  -- path — and (b) retires any stale initiator entry atomically.
-                  -- Trace-safe: both are `perCoreTlb`-only, ∉ `projectState`.
-                  Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
-                    (determineExecutingCore st tid) validatedArgs.asid
-                    validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st
+              -- WS-BP BP7.1: the page mapped is the frame MR2's capability names,
+              -- resolved through the caller's own CSpace; its address is the
+              -- frame's own `base`, never a register value.
+              vspaceMapFromFrameCap tid args st
     | _ => fun _ => .error .invalidCapability
   | .vspaceUnmap =>
     some <| match cap.target with
@@ -4270,7 +5040,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Lifecycle.Suspend.resumeThreadOnCoreLive
+            match Lifecycle.Suspend.resumeThreadOnCore
                 (retirePendingFaultForResume st vtid.val) vtid
                 (determineExecutingCore st tid) with
             | .ok (st', _) => .ok ((), st')
@@ -4394,6 +5164,45 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             | .ok st' => .ok ((), st')
             | .error e => .error e
     | _ => fun _ => .error .invalidCapability
+  -- **WS-BP BP7.1 (`v0.36.11`)**: `seL4_TCB_SetSpace` — the target from the
+  -- invoked TCB capability (with the write right), the two roots from MR0/MR1
+  -- resolved through the *caller's* CSpace (`resolveSetSpace`).  The target must
+  -- be suspended: the operation refuses a thread whose spaces are in use.
+  | .tcbSetSpace =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match Architecture.SyscallArgDecode.decodeSetSpaceArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | .error e => .error e
+        | .ok vtid =>
+            match resolveSetSpace tid args st with
+            | .error e => .error e
+            | .ok (cnId, vrId) =>
+                match setThreadSpace st vtid cnId vrId with
+                | .ok st' => .ok ((), st')
+                | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- **WS-BP BP7.1 (`v0.36.12`)**: `seL4_ARM_PageTable_Map` — the table from the
+  -- invoked capability (with the write right), the address space from MR0
+  -- resolved through the *caller's* CSpace with `.write`, the address from MR1.
+  | .pageTableMap =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match Architecture.SyscallArgDecode.decodePageTableMapArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          match resolveCallerCapObject tid args.vspaceRoot .write st with
+          | .error e => .error e
+          | .ok (_, rootId) => Architecture.pageTableMap objId rootId args.vaddr st
+    | _ => fun _ => .error .invalidCapability
+  -- **WS-BP BP7.1 (`v0.36.12`)**: `seL4_ARM_PageTable_Unmap` — the table from the
+  -- invoked capability; the address space is the one its own record names.
+  | .pageTableUnmap =>
+    some <| match cap.target with
+    | .object objId => fun st => Architecture.pageTableUnmap objId st
+    | _ => fun _ => .error .invalidCapability
   | _ => none
 
 /-- WS-RR RR3.23: the pre-state quiescence facts `dispatchCapabilityOnly`'s
@@ -4472,7 +5281,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          exact cspaceDeleteSlot_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep
+          exact cspaceDeleteSlotFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
     all_goals try cases hStep
   case cspaceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -4482,7 +5291,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          exact cspaceRevokeCdt_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep
+          exact cspaceRevokeCdtFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
     all_goals try cases hStep
   case mintReplyCap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -4493,6 +5302,17 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | ok args =>
           simp only [hDec] at hStep
           exact mintReplyCapWithCdt_preserves_ipcInvariantFull st st' _ _ hObjInv hInv hStep
+    all_goals try cases hStep
+  case untypedRetype =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object _ =>
+      obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid decoded st st' hStep
+      exact untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ st st' hObjInv hInv hCarve
+    all_goals try cases hStep
+  case untypedReset =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object _ =>
+      exact untypedResetWithShootdown_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
     all_goals try cases hStep
   case lifecycleRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -4512,19 +5332,21 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceMapArgsChecked decoded st.machine.maxASID
-          (2^st.machine.physicalAddressWidth) with
+      cases hDec : decodeVSpaceMapArgs decoded st.machine.maxASID with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          · cases hPerm : validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
-            | error e => simp only [hPerm] at hStep; cases hStep
-            | ok validatedArgs =>
-                simp only [hPerm] at hStep
-                exact vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
-                  st st' _ _ _ _ _ hObjInv hInv hStep
+          · obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, epoch, st2, hT, hRec⟩ :=
+              vspaceMapFromFrameCap_ok tid args st st' hStep
+            have hTag := tagFrameMapping_preserves_ipcInvariantFull _ _ _ st1 st2 epoch
+              (vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1
+                hObjInv hMap).1
+              (vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
+                st st1 _ _ _ _ _ hObjInv hInv hMap) hT
+            exact (cspaceRecordFrameMapping_preserves_ipcInvariantFull _ _ st2 st'
+              hTag.2 hTag.1 hRec).1
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -4710,7 +5532,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCoreLive
+          cases hRes : Lifecycle.Suspend.resumeThreadOnCore
               (retirePendingFaultForResume st vtid.val) vtid
               (determineExecutingCore st tid) with
           | error e => simp only [hRes] at hStep; cases hStep
@@ -4718,7 +5540,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact resumeThreadOnCoreLive_preserves_ipcInvariantFull
+              exact resumeThreadOnCore_preserves_ipcInvariantFull
                 (retirePendingFaultForResume st vtid.val) st' vtid _ sgiU
                 (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
@@ -4846,6 +5668,52 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   exact setThreadFaultHandlerOp_preserves_ipcInvariantFull st st' vtid _
                     hObjInv hInv hSet
     all_goals try cases hStep
+  case tcbSetSpace =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : Architecture.SyscallArgDecode.decodeSetSpaceArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hVal : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vtid =>
+              simp only [hVal] at hStep
+              cases hR : resolveSetSpace tid args st with
+              | error e => simp only [hR] at hStep; cases hStep
+              | ok p =>
+                  obtain ⟨cn, vr⟩ := p
+                  simp only [hR] at hStep
+                  cases hSet : setThreadSpace st vtid cn vr with
+                  | error e => simp only [hSet] at hStep; cases hStep
+                  | ok stU =>
+                      simp only [hSet] at hStep
+                      cases hStep
+                      exact setThreadSpace_preserves_ipcInvariantFull st st' vtid cn vr
+                        hObjInv hInv hSet
+    all_goals try cases hStep
+  case pageTableMap =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : Architecture.SyscallArgDecode.decodePageTableMapArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hR : resolveCallerCapObject tid args.vspaceRoot .write st with
+          | error e => simp only [hR] at hStep; cases hStep
+          | ok p =>
+              obtain ⟨_, rootId⟩ := p
+              simp only [hR] at hStep
+              exact pageTableMap_preserves_ipcInvariantFull objId rootId args.vaddr st st'
+                hObjInv hInv hStep
+    all_goals try cases hStep
+  case pageTableUnmap =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      exact pageTableUnmap_preserves_ipcInvariantFull objId st st' hObjInv hInv hStep
+    all_goals try cases hStep
 
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
 kernel operation using the resolved capability's target. Called after cap
@@ -4924,7 +5792,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                 -- WS-RA RA.B.5b: a rendezvous woke the blocked receiver with the
                 -- message in its `pendingMessage`; stage its return frame now
                 -- (its own boundary crossing ended `.blocks` — delivery is the
-                -- SM10.1 context restore).  Inert when the send parked instead.
+                -- context restore, WS-BP BP7.6).  Inert when the send parked instead.
                 -- PR #866 round-2: the frame's `extraCaps` is the transfer
                 -- summary's INSTALLED count — a grant-denied or slot-exhausted
                 -- transfer reports zero, never the requested `msg.caps.size`.
@@ -5200,7 +6068,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           -- `.blockedOnReceive` TCB delivers the badge into its
           -- `pendingMessage`; stage the woken thread's return frame (its own
           -- wait blocked with no frame — §3.5's split, now closed on the
-          -- staging side; delivery is the SM10.1 context restore).  The two
+          -- staging side; delivery is the context restore (WS-BP BP7.6)).  The two
           -- targets are mutually exclusive (the bound path requires an empty
           -- wait queue), and each stager is inert when its target was not
           -- woken.
@@ -5774,7 +6642,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- ordinary arm owes its woken threads, this arm owes them too.  Dropping the
   -- stash clear would leave a woken bound receiver holding a server-first reply
   -- stash the ordinary path clears; dropping the stagers would leave the woken
-  -- thread's badge undeliverable at the SM10.1 context restore.
+  -- thread's badge undeliverable at the context restore (WS-BP BP7.6).
   --
   -- Neither domain is an operand.  The source is the *actor's* — read off the
   -- subject the executing core is running — and the two destinations are the
@@ -6414,7 +7282,8 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
-            .cspaceRevoke] : List SyscallId) := by
+            .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
+            .pageTableMap, .pageTableUnmap] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -6436,7 +7305,8 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
-            .cspaceRevoke] : List SyscallId) := by
+            .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
+            .pageTableMap, .pageTableUnmap] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -6723,18 +7593,36 @@ theorem dispatchWithCap_cspaceMove_delegates
       cspaceMove src dst := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
-/-- WS-K-C: When cspaceDelete dispatch succeeds, the kernel-level
-`cspaceDeleteSlot` is invoked with the decoded target slot. -/
+/-- WS-K-C / WS-BP BP7.1 (`v0.36.7`): When cspaceDelete dispatch succeeds, the
+**finalising** delete runs on the decoded target slot, with the invoking thread's
+core as the initiator of the teardown's shootdown rounds: the capability is
+deleted and the mapping it recorded, if it records one, is removed. -/
 theorem dispatchWithCap_cspaceDelete_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs)
+    (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState)
     (hSyscall : decoded.syscallId = .cspaceDelete)
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
-    dispatchWithCap decoded tid gate cap =
-      let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
-      cspaceDeleteSlot addr := by
+    dispatchWithCap decoded tid gate cap st =
+      cspaceDeleteSlotFinalising (determineExecutingCore st tid)
+        { cnode := cnodeId, slot := args.targetSlot } st := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+
+/-- WS-BP BP7.1 (`v0.36.7`): When cspaceRevoke dispatch succeeds, the
+**finalising** CDT revocation runs on the decoded source slot: every derivation
+of the capability is destroyed, and every mapping a destroyed frame capability
+recorded is removed. -/
+theorem dispatchWithCap_cspaceRevoke_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (cnodeId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState)
+    (hSyscall : decoded.syscallId = .cspaceRevoke)
+    (hTarget : cap.target = .object cnodeId)
+    (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
+    dispatchWithCap decoded tid gate cap st =
+      cspaceRevokeCdtFinalising (determineExecutingCore st tid)
+        { cnode := cnodeId, slot := args.targetSlot } st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 -- ============================================================================
@@ -6768,10 +7656,13 @@ theorem dispatchWithCap_lifecycleRetype_delegates
         ((objectOfKernelType args.newType args.size).withIdentity args.targetObj) st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
-/-- WS-K-D/S6-A/T6-C/X2-E / WS-SM SM7.B.9 / WS-SM SM7.F.4(a)+(b)(ii): When
-vspaceMap dispatch succeeds, `vspaceMapPageCheckedWithShootdownFromStatePerCore`
-is invoked with the caller's executing core and the decoded ASID, vaddr, paddr,
-and validated permissions.  The state-aware variant reads `physicalAddressWidth`
+/-- WS-K-D/S6-A/T6-C/X2-E / WS-SM SM7.B.9 / WS-SM SM7.F.4(a)+(b)(ii) / WS-BP
+BP7.1: When vspaceMap dispatch passes its address-space check it is exactly
+`vspaceMapFromFrameCap` — resolve the frame MR2's capability names, admit the
+requested permissions against that capability and the frame's memory kind, and
+invoke `vspaceMapPageCheckedWithShootdownFromStatePerCore` with the caller's
+executing core, the decoded ASID and vaddr, the **frame's own `base`**, and the
+validated permissions (`vspaceMapFromFrameCap_ok`).  The state-aware variant reads `physicalAddressWidth`
 from `SystemState.machine` for platform-specific PA bounds enforcement; the
 `…PerCore` wrapper additionally caches the freshly-established translation on the
 executing core's `perCoreTlb` view (the live fill, SM7.F.4(a)) and retires any
@@ -6779,9 +7670,8 @@ stale initiator entry (SM7.F.4(b)(ii)).  This is projection-invisible —
 `perCoreTlb ∉ projectState` — so the delegation is trace-equivalent to the plain
 `vspaceMapPageCheckedWithShootdownFromState` on every observable field.
 T6-C: Permissions are now typed as `PagePermissions` (validated at decode).
-AK3-E (A-M01 / MEDIUM): dispatch now uses `decodeVSpaceMapArgsChecked` which
-additionally validates PA bounds at decode time; the hypothesis requires
-the checked decode to succeed (which implies `args.paddr.toNat < 2^physicalAddressWidth`). -/
+WS-BP BP7.1 retired AK3-E's decode-time PA bound with the physical-address
+operand it bounded. -/
 theorem dispatchWithCap_vspaceMap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -6789,21 +7679,13 @@ theorem dispatchWithCap_vspaceMap_delegates
     (st : SystemState)
     (hSyscall : decoded.syscallId = .vspaceMap)
     (hTarget : cap.target = .object objId)
-    -- AK3-E: decode now uses `decodeVSpaceMapArgsChecked`
-    (hDecode : decodeVSpaceMapArgsChecked decoded st.machine.maxASID
-                 (2^st.machine.physicalAddressWidth) = .ok args)
+    (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
     -- PR #845 review (P1): the capability must name the operand ASID's VSpace
     -- root.  Without this premise the delegation is *false*, because an
     -- unauthorized caller is now rejected with `.illegalAuthority` before the
     -- transition runs.
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true) :
-    dispatchWithCap decoded tid gate cap st =
-      (match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
-        | .error e => .error e
-        | .ok validatedArgs =>
-            Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
-              (determineExecutingCore st tid) validatedArgs.asid
-              validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st) := by
+    dispatchWithCap decoded tid gate cap st = vspaceMapFromFrameCap tid args st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
 
 /-- WS-SM SM7.D: When `.vspaceUnifyInstruction` dispatch succeeds,
@@ -6867,6 +7749,22 @@ theorem dispatchWithCap_vspaceUnmap_delegates
         (determineExecutingCore st tid) args.asid args.vaddr st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
 
+/-- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm *is* the reset — since
+`v0.36.37` `untypedResetWithShootdown`, the reset followed by one acknowledged
+`.aside1` round per retired ASID — at the invoking thread's executing core and
+the untyped the capability names — the
+same core the `.vspaceUnmap` arm initiates its shootdown rounds on, so the
+reset's unmaps and an ordinary unmap cannot disagree about who drives the round.
+The arm decodes no message register: the capability is the whole operand. -/
+theorem dispatchWithCap_untypedReset_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .untypedReset)
+    (hTarget : cap.target = .object untypedId) :
+    dispatchWithCap decoded tid gate cap st =
+      untypedResetWithShootdown (determineExecutingCore st tid) untypedId st := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+
 -- ============================================================================
 -- PR #845 review (P1) — the fail-closed duals of the three VSpace delegations
 --
@@ -6887,11 +7785,62 @@ theorem dispatchWithCap_vspaceMap_unauthorized
     (st : SystemState)
     (hSyscall : decoded.syscallId = .vspaceMap)
     (hTarget : cap.target = .object objId)
-    (hDecode : decodeVSpaceMapArgsChecked decoded st.machine.maxASID
-                 (2^st.machine.physicalAddressWidth) = .ok args)
+    (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
     (hAuth : vspaceCapAuthorizesAsid cap args.asid st = false) :
     dispatchWithCap decoded tid gate cap st = .error .illegalAuthority := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+
+/-- **WS-BP BP7.1 (fail-closed, the vulnerability's closure)**: authority over
+the address space is not authority over the memory.  A caller whose capability
+*does* name the operand ASID's VSpace root — the full address-space authority
+PR #845's binding asks for — still maps nothing unless MR2 resolves, through the
+caller's own CSpace with `.read`, to a capability naming a frame the store
+holds: the resolver's error is returned and no page table is touched.  Before
+this version the arm mapped a raw physical address from MR2, so that VSpace
+capability alone was authority over every page of physical memory. -/
+theorem dispatchWithCap_vspaceMap_requires_frame_cap
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (st : SystemState) (e : KernelError)
+    (hSyscall : decoded.syscallId = .vspaceMap)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
+    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true)
+    (hNoFrame : resolveVSpaceMapFrame tid args st = .error e) :
+    dispatchWithCap decoded tid gate cap st = .error e := by
+  rw [dispatchWithCap_vspaceMap_delegates decoded tid gate cap objId args st
+    hSyscall hTarget hDecode hAuth]
+  simp [vspaceMapFromFrameCap, hNoFrame]
+
+/-- **WS-BP BP7.1**: and a successful `.vspaceMap` installs the frame the caller
+holds a capability to — the physical address is that frame's `base`, taken from
+the object the capability names and from nothing the caller wrote. -/
+theorem dispatchWithCap_vspaceMap_maps_frame_base
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (st st' : SystemState)
+    (hSyscall : decoded.syscallId = .vspaceMap)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args)
+    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true)
+    (hOk : dispatchWithCap decoded tid gate cap st = .ok ((), st')) :
+    ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (frame : FrameObject)
+      (st1 : SystemState),
+      resolveVSpaceMapFrame tid args st = .ok (frameSlot, frameCap, frame) ∧
+      Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
+        (determineExecutingCore st tid) args.asid args.vaddr frame.base args.perms st
+        = .ok ((), st1) ∧
+      ∃ (epoch : Nat) (st2 : SystemState),
+        tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 = .ok (epoch, st2) ∧
+        cspaceRecordFrameMapping frameSlot
+          { asid := args.asid, vaddr := args.vaddr, epoch := epoch } st2 = .ok ((), st') := by
+  rw [dispatchWithCap_vspaceMap_delegates decoded tid gate cap objId args st
+    hSyscall hTarget hDecode hAuth] at hOk
+  obtain ⟨frameSlot, frameCap, frame, st1, hR, _, _, _, _, hMap, hRec⟩ :=
+    vspaceMapFromFrameCap_ok tid args st st' hOk
+  exact ⟨frameSlot, frameCap, frame, st1, hR, hMap, hRec⟩
 
 /-- **Fail-closed**: `.vspaceUnmap` dispatch rejects a capability that does not
 name the operand ASID's VSpace root, leaving the address space intact.  This is
@@ -7228,7 +8177,9 @@ theorem dispatchArm_receive_matches_returnShape
     Architecture.syscallReturnShape .receive = .message ∧
     ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg summary.installedCount := by
+        = Architecture.returnFrameOfMessage msg summary.installedCount
+            (Architecture.messageOverflowWrites (Architecture.stageWokenSendCompletion stDon
+              ((st.getEndpoint? epId).bind (·.sendQ.head))) tcb msg).length := by
   refine ⟨rfl,
     Architecture.stageDeliveredMessage
       (Architecture.stageWokenSendCompletion stDon
@@ -7263,7 +8214,8 @@ theorem dispatchArm_replyRecv_matches_returnShape
     Architecture.syscallReturnShape .replyRecv = .message ∧
     ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfMessage msg summary.installedCount := by
+        = Architecture.returnFrameOfMessage msg summary.installedCount
+            (Architecture.messageOverflowWrites stB tcb msg).length := by
   refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.installedCount, ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hResolve, hBody]
   · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg
@@ -7305,7 +8257,8 @@ theorem dispatchArm_call_frame_delivered_by_reply
     Architecture.syscallReturnShape .call = .message ∧
     ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost callerTid
-        = Architecture.returnFrameOfMessage msg 0 := by
+        = Architecture.returnFrameOfMessage msg 0
+            (Architecture.messageOverflowWrites st1 tcb msg).length := by
   refine ⟨rfl, Architecture.stageDeliveredMessage st1 callerTid 0, ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget,
       replyAnsweredCaller?, hReply, hCaller, replyTransferOnCore, hNoFault, hDispatch]
@@ -8647,7 +9600,7 @@ theorem dispatchWithCap_tcbResume_delegates
     (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
     dispatchWithCap decoded tid gate cap st =
-      (match Lifecycle.Suspend.resumeThreadOnCoreLive
+      (match Lifecycle.Suspend.resumeThreadOnCore
               (retirePendingFaultForResume st vtid.val) vtid
               (determineExecutingCore st tid) with
        | .ok (st', _) => .ok ((), st')
@@ -8957,7 +9910,7 @@ def syscallDelegates : SyscallId → Prop
         (∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a) →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
         dispatchWithCap decoded tid gate cap st =
-          (match Lifecycle.Suspend.resumeThreadOnCoreLive
+          (match Lifecycle.Suspend.resumeThreadOnCore
                   (retirePendingFaultForResume st vtid.val) vtid
                   (determineExecutingCore st tid) with
            | .ok (st', _) => .ok ((), st')
@@ -8992,16 +9945,9 @@ def syscallDelegates : SyscallId → Prop
         (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st : SystemState),
         decoded.syscallId = .vspaceMap →
         cap.target = .object objId →
-        decodeVSpaceMapArgsChecked decoded st.machine.maxASID
-          (2^st.machine.physicalAddressWidth) = .ok args →
+        decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args →
         vspaceCapAuthorizesAsid cap args.asid st = true →
-        dispatchWithCap decoded tid gate cap st =
-          (match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
-            | .error e => .error e
-            | .ok validatedArgs =>
-                Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
-                  (determineExecutingCore st tid) validatedArgs.asid
-                  validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st)
+        dispatchWithCap decoded tid gate cap st = vspaceMapFromFrameCap tid args st
   | .vspaceUnmap =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)
@@ -9087,6 +10033,39 @@ def syscallDelegates : SyscallId → Prop
            | .ok (n, st') =>
                .ok ((), Architecture.writeReturnFrameToTcb st' tid
                  (Architecture.returnFrameOfWord n.toUInt64)))
+  -- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm.  No decode and no
+  -- authority conjunct beyond the dispatcher's own `.retype` right check: the
+  -- reset's refusals are its own, and the conclusion names the whole operation.
+  | .untypedReset =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState),
+        decoded.syscallId = .untypedReset →
+        cap.target = .object untypedId →
+        dispatchWithCap decoded tid gate cap st =
+          untypedResetWithShootdown (determineExecutingCore st tid) untypedId st
+  -- WS-BP BP7.1 (`v0.36.7`): the two destroying arms.  Each names the finalising
+  -- composite — the delete or the revocation, then the removal of every mapping a
+  -- destroyed frame capability recorded — at the invoking thread's core.
+  | .cspaceDelete =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (cnodeId : SeLe4n.ObjId)
+        (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState),
+        decoded.syscallId = .cspaceDelete →
+        cap.target = .object cnodeId →
+        decodeCSpaceDeleteArgs decoded = .ok args →
+        dispatchWithCap decoded tid gate cap st =
+          cspaceDeleteSlotFinalising (determineExecutingCore st tid)
+            { cnode := cnodeId, slot := args.targetSlot } st
+  | .cspaceRevoke =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (cnodeId : SeLe4n.ObjId)
+        (args : Architecture.SyscallArgDecode.CSpaceDeleteArgs) (st : SystemState),
+        decoded.syscallId = .cspaceRevoke →
+        cap.target = .object cnodeId →
+        decodeCSpaceDeleteArgs decoded = .ok args →
+        dispatchWithCap decoded tid gate cap st =
+          cspaceRevokeCdtFinalising (determineExecutingCore st tid)
+            { cnode := cnodeId, slot := args.targetSlot } st
   | _ => False
 
 /-- The `.receive` obligation, discharged. -/
@@ -9153,6 +10132,24 @@ theorem syscallDelegates_vspaceUnmap : syscallDelegates .vspaceUnmap := by
   intro decoded tid gate cap objId args st hSyscall hTarget hDecode hAuth
   exact dispatchWithCap_vspaceUnmap_delegates decoded tid gate cap objId args st
     hSyscall hTarget hDecode hAuth
+
+/-- WS-BP BP7.1 (slice 3): the `.untypedReset` obligation, discharged. -/
+theorem syscallDelegates_untypedReset : syscallDelegates .untypedReset := by
+  intro decoded tid gate cap untypedId st hSyscall hTarget
+  exact dispatchWithCap_untypedReset_delegates decoded tid gate cap untypedId st
+    hSyscall hTarget
+
+/-- WS-BP BP7.1 (`v0.36.7`): the `.cspaceDelete` obligation, discharged. -/
+theorem syscallDelegates_cspaceDelete : syscallDelegates .cspaceDelete := by
+  intro decoded tid gate cap cnodeId args st hSyscall hTarget hDecode
+  exact dispatchWithCap_cspaceDelete_delegates decoded tid gate cap cnodeId args st
+    hSyscall hTarget hDecode
+
+/-- WS-BP BP7.1 (`v0.36.7`): the `.cspaceRevoke` obligation, discharged. -/
+theorem syscallDelegates_cspaceRevoke : syscallDelegates .cspaceRevoke := by
+  intro decoded tid gate cap cnodeId args st hSyscall hTarget hDecode
+  exact dispatchWithCap_cspaceRevoke_delegates decoded tid gate cap cnodeId args st
+    hSyscall hTarget hDecode
 
 /-- The `.send` obligation, discharged. -/
 theorem syscallDelegates_send : syscallDelegates .send := by

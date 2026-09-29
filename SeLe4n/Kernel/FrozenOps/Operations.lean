@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.FrozenOps.Core
 import SeLe4n.Kernel.SchedContext.Budget
+import SeLe4n.Kernel.Architecture.PageTableInstall
 
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
@@ -1189,7 +1190,13 @@ The CNodeRadix supports insert via its radix array.
 V5-P (L-DS-4): Checks whether the target slot is already occupied before
 insertion. If the slot contains an existing capability, returns `.targetSlotOccupied`
 instead of silently overwriting. This prevents accidental capability leaks
-where a mint operation clobbers an existing capability without revoking it. -/
+where a mint operation clobbers an existing capability without revoking it.
+
+WS-BP BP7.1 (`v0.36.38`): the inserted capability carries **no mapping
+record** (`Capability.withoutMapping`), as every live derivation's does
+(seL4's `deriveCap`).  A record says *this* capability made a mapping, and a
+new capability made none; inserting one verbatim would let the finalising
+delete of the copy remove a mapping another capability owns. -/
 def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     (cap : Capability) : FrozenKernel Unit :=
   fun st =>
@@ -1199,7 +1206,7 @@ def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
         match cn.slots.lookup slot with
         | some _ => .error .targetSlotOccupied
         | none =>
-            let slots' := cn.slots.insert slot cap
+            let slots' := cn.slots.insert slot cap.withoutMapping
             let cn' : FrozenCNode := { cn with slots := slots' }
             match frozenWithObjectStored st rootId (.cnode cn') with
             | .ok st' => .ok ((), st')
@@ -1207,12 +1214,51 @@ def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     | some _ => .error .objectNotFound
     | none => .error .objectNotFound
 
-/-- Q7-C3: Frozen CSpace delete — erase a capability from a frozen CNode. -/
+/-- WS-BP BP7.1 (`v0.36.12`): the frozen mirror of
+`Architecture.pageTableInstallLive` — the table's record names a root, and that
+root holds the slot the record names, for this table. -/
+def frozenPageTableInstallLive (st : FrozenSystemState) (id : SeLe4n.ObjId) : Bool :=
+  match st.getObject? id with
+  | some (.pageTable p) =>
+    match p.installedIn with
+    | some inst =>
+      match st.getObject? inst.root with
+      | some (.vspaceRoot root) => root.tables.contains (inst.slotFor id)
+      | _ => false
+    | none => false
+  | _ => false
+
+/-- WS-BP BP7.1 (`v0.36.12`): does the capability name an installed page table? -/
+def frozenCapNamesInstalledPageTable (st : FrozenSystemState) (cap : Capability) : Bool :=
+  match cap.target with
+  | .object id => frozenPageTableInstallLive st id
+  | _ => false
+
+/-- Q7-C3: Frozen CSpace delete — erase a capability from a frozen CNode.
+
+WS-BP BP7.1 (`v0.36.7`): a capability carrying a **mapping record** is refused
+with `.revocationRequired`.  The live delete (`cspaceDeleteSlotFinalising`)
+removes the recorded mapping before it returns — seL4's `finaliseCap` →
+`unmapPage` — and this surface has no VSpace unmap to perform it with, so
+erasing the slot here would leave a mapping whose frame capability is gone:
+the defect the live cut closes.  Refusing is the one sound mirror of a step
+the surface cannot model, and it can only refuse what the live kernel
+performs, never admit what it refuses.
+
+WS-BP BP7.1 (`v0.36.12`): a capability naming an **installed page table** is
+refused for the same reason.  The live delete takes the table out of its address
+space when the capability is the table's last (`finaliseDestroyedCapabilities`),
+which this surface cannot model either; it cannot even decide *last* cheaply, so
+it refuses every such capability — a subset of what the live kernel performs. -/
 def frozenCspaceDelete (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     : FrozenKernel Unit :=
   fun st =>
     match st.getObject? rootId with
     | some (.cnode cn) =>
+      if (cn.slots.lookup slot).any
+          (fun cap => cap.mapping.isSome || frozenCapNamesInstalledPageTable st cap) then
+        .error .revocationRequired
+      else
         let slots' := cn.slots.erase slot
         let cn' : FrozenCNode := { cn with slots := slots' }
         match frozenWithObjectStored st rootId (.cnode cn') with
@@ -1934,8 +1980,20 @@ def frozenOpCoverage : SyscallId → Bool
                              -- `FrozenMap`s with no `erase`, exactly as for
                              -- `lifecycleRetype` and the two service ops.
   | .lifecycleRetype => false -- builder-only (adds keys)
-  | .vspaceMap => true        -- frozenVspaceLookup (read-only in frozen phase)
-  | .vspaceUnmap => true      -- frozenVspaceLookup (read-only in frozen phase)
+  | .untypedRetype => false   -- WS-BP BP7.1 (`v0.36.5`): adds a key (the carved
+                             -- frame) and a CDT node, which the frozen phase's
+                             -- fixed key set cannot — as for `lifecycleRetype`.
+  | .untypedReset => false    -- WS-BP BP7.1 (`v0.36.6`): *removes* keys (the retired
+                             -- frames), and the frozen object store is a
+                             -- `FrozenMap` with no `erase`.
+  | .vspaceMap => false       -- WS-BP BP7.1 (`v0.36.38`): a map WRITES a mapping,
+                             -- a frame-capability record and a physical-write
+                             -- ledger entry; the frozen phase has only
+                             -- `frozenVspaceLookup`, a read, and a read is not a
+                             -- mirror of a write.  It was `true` on the strength
+                             -- of that lookup.
+  | .vspaceUnmap => false     -- WS-BP BP7.1 (`v0.36.38`): ditto — an unmap writes
+                             -- the mapping, the ledger and a shootdown round.
   | .serviceRegister => false -- builder-only (adds service)
   | .serviceRevoke => false   -- builder-only (removes service)
   | .serviceQuery => true     -- frozenLookupServiceByCap
@@ -1952,6 +2010,9 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbSetIPCBuffer => true         -- D3: frozenSetIPCBuffer
   | .tcbSetAffinity => false         -- WS-SM SM5.H.4: runtime scheduler op (run/replenish-queue migration)
   | .tcbSetFaultHandler => false     -- PR #887 review: production object-store op; no frozen-phase variant defined
+  | .tcbSetSpace => false            -- WS-BP BP7.1 (`v0.36.11`): production object-store op; no frozen-phase variant defined
+  | .pageTableMap => false           -- WS-BP BP7.1 (`v0.36.12`): translation-table install; the frozen phase models no page-table objects' installs
+  | .pageTableUnmap => false         -- WS-BP BP7.1 (`v0.36.12`): ditto
   | .tcbBindNotification => false    -- WS-SM SM6.B: production object-store op; no frozen-phase variant defined
   | .tcbUnbindNotification => false  -- WS-SM SM6.B: ditto
   | .mintReplyCap => false           -- PR #822 Phase H: structural cap insertion (like cspaceCopy); builder-only, no frozen-phase variant
@@ -1961,34 +2022,19 @@ def frozenOpCoverage : SyscallId → Bool
   | .auditRead => false              -- WS-SM SM9.A.13: reads the mounted audit trail through a clearance-filtered view; the frozen phase carries the trail but models no `LabelingContext`, so there is no reader's clearance to filter by
   | .auditDrain => false             -- WS-SM SM9.A.13: removes a prefix of the mounted audit trail — a *shrinking* write, and the frozen snapshot is a record rather than a running system, so nothing may remove entries from it
 
-/-- S3-L/Z8-H/D1/D2/D3: Exactly 20 SyscallId arms have frozen operation coverage.
-    The 15 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
-    cspaceRevoke, lifecycleRetype, serviceRegister, serviceRevoke, mintReplyCap) plus the
-    runtime-scheduler `tcbSetAffinity` (WS-SM SM5.H.4), the production-only
-    notification-binding ops (tcbBind/UnbindNotification, WS-SM SM6.B), the
-    cache-maintenance `vspaceUnifyInstruction` (WS-SM SM7.D — the frozen phase
-    models no VSpace or cache state), `declassify` (WS-SM SM8.C.9 — a frozen
-    snapshot carries the audit trail but never appends to it), its data-carrying
-    sibling `declassifySignal` (WS-SM SM9.C.8 — the same refusal plus a
-    notification signal and a waiter wake), and the two audit
-    accessors (WS-SM SM9.A.13 — the reader needs a `LabelingContext` the frozen
-    phase does not model, and the drain would *remove* entries from a record). -/
+/-- S3-L/Z8-H/D1/D2/D3: exactly **18** `SyscallId` arms have frozen operation
+coverage; the other 23 carry the reason beside their own `frozenOpCoverage` row.
+
+The count is taken over `SyscallId.all`, the derived constructor list, not a
+hand-written one: the enumeration this replaced named every constructor by hand
+and its docstring still said "18 uncovered" when 21 were, and "20 covered"
+included two arms (`vspaceMap`, `vspaceUnmap`) whose only frozen operation was a
+read (`v0.36.38`). -/
 theorem frozenOpCoverage_count :
-    (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
-       .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
-       .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
-       .cspaceRevoke,
-       .notificationSignal, .notificationWait, .replyRecv,
-       .schedContextConfigure, .schedContextBind, .schedContextUnbind,
-       .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
-       .tcbSetIPCBuffer, .tcbSetAffinity,
-       .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
-       .vspaceUnifyInstruction, .declassify, .declassifySignal,
-       .auditRead, .auditDrain, .tcbSetFaultHandler].filter
-         frozenOpCoverage).length = 20) := by
+    (SyscallId.all.filter frozenOpCoverage).length = 18 := by
   decide
 
-/-- S3-L/D1/D2/D3: All 35 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L/D1/D2/D3: All 38 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

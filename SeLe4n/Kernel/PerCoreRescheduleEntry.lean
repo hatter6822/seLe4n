@@ -17,6 +17,7 @@ import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Platform.FFI
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.SchedLockBracket
 
 /-!
@@ -149,11 +150,21 @@ declared footprint, so the footprint is not a false one.  See the module
 docstring. -/
 @[export lean_per_core_reschedule]
 def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit := do
+  let frame ← Platform.FFI.captureTrapFrame
   let record ← Platform.FFI.modifyGetKernelState (fun st =>
-    let st' := (rescheduleUnderDeclaredLockSet coreId st).state
-    ((Concurrency.coreIdOfUInt64? coreId).map
-      (fun c => (c, st'.scheduler.currentOnCore c)), st'))
-  Concurrency.recordCommittedCurrentThreadHw record
+    let st' := (rescheduleUnderDeclaredLockSet coreId
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+      |> (PriorityInheritance.settleResidencyAt · coreId)
+    (((Concurrency.coreIdOfUInt64? coreId).map
+      (fun c => (c, st'.scheduler.currentOnCore c)),
+      Concurrency.restoreTargetAt st' coreId,
+      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+  Platform.FFI.completePhysicalWrites record.2.2.1
+  Platform.FFI.completeIcacheMaintenance record.2.2.2
+  Concurrency.releaseSwitchedFpOwner coreId
+  Platform.FFI.restoreTrapFrame record.2.1
+  Concurrency.recordCommittedCurrentThreadHw record.1
 
 /-- **WS-SM SM5.C.5** structural marker: `perCoreRescheduleEntry` unfolds to
 the atomic commit of the bracketed reschedule step followed by the HAL
@@ -164,14 +175,28 @@ that drops the state commit, drops the record, drops the declared-footprint
 bracket (**WS-RR RR7.39**), or inserts side effects the verified step does not
 describe breaks this marker at elaboration; combined with the `@[export]`
 attribute (which the Rust `lean_per_core_reschedule` extern resolves against)
-and the `build.rs` trap-path scanner, the seam cannot regress silently. -/
+and the `build.rs` trap-path scanner, the seam cannot regress silently.
+
+**`v0.36.39`**: the step also reads and clears both hardware ledgers — the
+physical writes and then the instruction-cache operands, both before the
+restore — as every state-committing entry does. -/
 theorem perCoreRescheduleEntry_def (coreId : UInt64) :
     perCoreRescheduleEntry coreId =
       (do
+        let frame ← Platform.FFI.captureTrapFrame
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
-          let st' := (rescheduleUnderDeclaredLockSet coreId st).state
-          ((Concurrency.coreIdOfUInt64? coreId).map
-            (fun c => (c, st'.scheduler.currentOnCore c)), st'))
-        Concurrency.recordCommittedCurrentThreadHw record) := rfl
+          let st' := (rescheduleUnderDeclaredLockSet coreId
+            (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+      |> (PriorityInheritance.settleResidencyAt · coreId)
+          (((Concurrency.coreIdOfUInt64? coreId).map
+            (fun c => (c, st'.scheduler.currentOnCore c)),
+            Concurrency.restoreTargetAt st' coreId,
+            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+        Platform.FFI.completePhysicalWrites record.2.2.1
+        Platform.FFI.completeIcacheMaintenance record.2.2.2
+        Concurrency.releaseSwitchedFpOwner coreId
+        Platform.FFI.restoreTrapFrame record.2.1
+        Concurrency.recordCommittedCurrentThreadHw record.1) := rfl
 
 end SeLe4n.Kernel

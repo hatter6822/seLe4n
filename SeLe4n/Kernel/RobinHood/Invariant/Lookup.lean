@@ -675,6 +675,48 @@ theorem RHTable.insert_eq_self_of_get? [BEq α] [Hashable α] [LawfulBEq α]
   simp only [if_neg hNoResize]
   exact RHTable.insertNoResize_eq_self_of_get? t k v h
 
+/-- **An insert walk that finds its key reports "not new"** — whatever value it
+writes.  The generalisation of `insertLoop_id_of_getLoop` to a *different*
+value: the walk takes the same non-mutating steps up to the key-match branch,
+and that branch overwrites in place, so the table does not grow.  WS-BP BP7.1
+(`v0.36.7`) needs it for an in-place capability rewrite, which must not count
+against a CNode's slot bound. -/
+private theorem insertLoop_not_new_of_getLoop [BEq α] [Hashable α] [LawfulBEq α]
+    (fuel : Nat) (idx : Nat) (k : α) (v w : β) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (hGet : getLoop fuel idx k d slots capacity hLen hCapPos = some w) :
+    (insertLoop fuel idx k v d slots capacity hLen hCapPos).2 = false := by
+  induction fuel generalizing idx d with
+  | zero => simp [getLoop] at hGet
+  | succ n ih =>
+    have hIdx : idx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    cases hSlot : slots[idx % capacity]'hIdx with
+    | none => rw [getLoop] at hGet; simp only [hSlot] at hGet; exact absurd hGet (by simp)
+    | some e =>
+      rw [getLoop] at hGet
+      simp only [hSlot] at hGet
+      by_cases hKey : e.key == k
+      · unfold insertLoop
+        simp only [hSlot, hKey, ite_true]
+      · by_cases hRH : e.dist < d
+        · simp only [hKey, hRH, ite_true] at hGet
+          exact absurd hGet (by simp)
+        · simp only [hKey, ite_false, hRH, ite_false] at hGet
+          unfold insertLoop
+          simp only [hSlot, hKey, ite_false, hRH]
+          exact ih (idx % capacity + 1) (d + 1) hGet
+
+/-- **Overwriting a present key does not grow the table** (no-resize form). -/
+theorem RHTable.insertNoResize_size_of_get? [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v w : β) (h : t.get? k = some w) :
+    (RHTable.insertNoResize t k v).size = t.size := by
+  unfold RHTable.get? at h
+  unfold RHTable.insertNoResize
+  simp only [insertLoop_not_new_of_getLoop t.capacity (idealIndex k t.capacity t.hCapPos) k v w 0
+    t.slots t.capacity t.hSlotsLen t.hCapPos h]
+  rfl
+
 /-- After `insertLoop` with fuel = capacity and d = 0, the result
     contains an entry with `key == k = true` and `value = v` at some position,
     provided the table has a reachable empty slot within the probe window. -/
@@ -2348,5 +2390,36 @@ theorem RHTable.slot_entry_implies_get [BEq α] [Hashable α] [LawfulBEq α]
     hExt.2.1 hExt.2.2.2 hExt.2.2.1
     (by simp [Nat.mod_eq_of_lt (idealIndex_lt e.key _ _)])
     (by omega) (by omega)
+
+/-- **A resize keeps every present key**, at its value.  Public form of what
+`resize_preserves_entry` says slot-wise, stated as a lookup so a caller need not
+know the table's layout. -/
+theorem RHTable.get?_resize_of_get? [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (w : β) (hExt : t.invExt) (h : t.get? k = some w) :
+    t.resize.get? k = some w := by
+  have ⟨p, hp, e, hSlotP, hKeyE, hValE⟩ := getLoop_some_implies_entry
+    t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+    t.slots t.capacity t.hSlotsLen t.hCapPos w (by unfold RHTable.get? at h; exact h)
+  have ⟨q, hq, e', hSlotQ, hKeyQ, hValQ⟩ :=
+    resize_preserves_entry t k w p hp e hSlotP hKeyE hValE hExt
+  have hRExt := t.resize_preserves_invExt
+  unfold RHTable.get?
+  exact getLoop_finds_present t.resize.capacity
+    (idealIndex k t.resize.capacity t.resize.hCapPos)
+    k 0 t.resize.slots t.resize.capacity
+    t.resize.hSlotsLen t.resize.hCapPos
+    q hq e' hSlotQ hKeyQ hValQ
+    hRExt.2.1 hRExt.2.2.2 hRExt.2.2.1
+    (by simp [Nat.mod_eq_of_lt (idealIndex_lt k _ _)])
+    (by
+      have hd := hRExt.2.1 q hq e' hSlotQ
+      have hKeyEq : idealIndex e'.key t.resize.capacity t.resize.hCapPos =
+          idealIndex k t.resize.capacity t.resize.hCapPos := by
+        rw [eq_of_beq hKeyQ]
+      rw [hKeyEq] at hd
+      have := Nat.mod_lt (q + t.resize.capacity -
+        idealIndex k t.resize.capacity t.resize.hCapPos) t.resize.hCapPos
+      omega)
+    (by omega)
 
 end SeLe4n.Kernel.RobinHood

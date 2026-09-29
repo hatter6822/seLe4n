@@ -224,13 +224,25 @@ def c_eight_gib_bcm2711_relocated_bank() -> Fdt:
 # rest of the first gigabyte up to 0x3FC0_0000 -- the firmware keeps the top
 # 4 MiB for itself -- and everything above 1 GiB.  DRAM is contiguous across
 # the 4 GiB boundary on the BCM2712, so there is no relocated bank.  The RPi5
-# binding's variants declare `[0, ramSize)` whole, so no variant is covered by
-# this account and the bridge refuses it; the Lean witness
-# `realFirmwareAccountIsRefusedUntilDerived` pins that until plan row BP7.10
-# derives the deployment's first-gigabyte RAM from the account.
+# binding's variants declared `[0, ramSize)` whole, so until plan row BP7.10 no
+# variant was covered by this account and the bridge refused it; BP7.10 reads
+# the first gigabyte's RAM off the account, and the Lean witness
+# `realFirmwareAccountBindsTheReportedRam` boots it bound to the 8 GiB member
+# cut at `0x3FC00000`.
 def c_eight_gib_rpi5_firmware() -> Fdt:
-    return close(memory(root(), "memory@0", (0, 0x8_0000), (0x8_0000, 0x3FB8_0000),
-                        (0x4000_0000, 0x1_C000_0000)))
+    # v0.36.36: with `bcm2712.dtsi`'s own `reserved-memory/atf@0` -- the secure
+    # monitor's [0, 0x80000), two address cells, one size cell, `ranges`
+    # and `no-map` -- so both readers walk the tree a real board's firmware
+    # hands over.  The `regions` column is `/memory` selection, before any
+    # reservation is subtracted, so it does not move.
+    f = memory(root(), "memory@0", (0, 0x8_0000), (0x8_0000, 0x3FB8_0000),
+               (0x4000_0000, 0x1_C000_0000))
+    f.begin("reserved-memory").u32prop("#address-cells", 2).u32prop("#size-cells", 1)
+    f.prop("ranges", b"")
+    f.begin("atf@0").reg((0, 0x8_0000), ac=2, sc=1)
+    f.prop("no-map", b"")
+    f.end()
+    return close(f.end())
 
 
 def c_two_nodes_low_short() -> Fdt:

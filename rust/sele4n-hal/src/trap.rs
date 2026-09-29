@@ -14,8 +14,17 @@
 /// - SPSR_EL1 at offset 264
 /// - ESR_EL1 at offset 272 (AK5-F — read-only snapshot at exception entry)
 /// - FAR_EL1 at offset 280 (AK5-F — read-only snapshot at exception entry)
+/// - TPIDR_EL0 at offset 288 (v0.36.30 — the thread pointer)
+/// - one padding word at offset 296
 ///
-/// Total size: 36 × 8 = 288 bytes, 16-byte aligned.
+/// Total size: 38 × 8 = 304 bytes, 16-byte aligned.
+///
+/// **`TPIDR_EL0` is thread context.**  EL0 writes it with no trap, so until
+/// v0.36.30, when nothing saved or restored it, a thread could read the value
+/// the previous thread on its core had written: a 64-bit storage channel
+/// between any two threads sharing a core, across domains.  It is saved at
+/// every entry and restored at every exit, and a context restore installs the
+/// incoming thread's own value (word 34).
 ///
 /// **No FP/SIMD register is saved, and that is sound only because the
 /// kernel touches none.**  Both boot entries trap FP/SIMD at EL0 and EL1
@@ -32,6 +41,8 @@
 /// register. A nested exception (e.g., SError during data-abort handling)
 /// would otherwise mutate the live ESR/FAR before the outer handler reads
 /// them, producing incorrect classification and fault-address reports.
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, AtomicU8, Ordering};
+
 #[repr(C, align(16))]
 pub struct TrapFrame {
     /// General-purpose registers x0-x30 (31 registers).
@@ -48,14 +59,19 @@ pub struct TrapFrame {
     /// AK5-F: Fault Address Register snapshot at trap entry.
     /// Written by `trap.S:save_context`, READ-ONLY from Rust.
     pub far_el1: u64,
+    /// v0.36.30: the thread pointer `TPIDR_EL0`, saved at entry and restored
+    /// at exit by `trap.S`; word 34 of a thread's context.
+    pub tpidr_el0: u64,
+    /// Padding that keeps the frame a multiple of 16 bytes.  Never read.
+    pub reserved: u64,
 }
 
 /// Size of TrapFrame in bytes (for assembly offset calculations).
-/// AK5-F: 288 bytes (was 272 pre-AK5-F).
+/// 304 bytes: AK5-F grew it 272 -> 288, v0.36.30 to 304 for `TPIDR_EL0`.
 pub const TRAP_FRAME_SIZE: usize = core::mem::size_of::<TrapFrame>();
 
 // Compile-time layout assertions (AK5-F).
-const _: () = assert!(TRAP_FRAME_SIZE == 288);
+const _: () = assert!(TRAP_FRAME_SIZE == 304);
 const _: () = assert!(core::mem::align_of::<TrapFrame>() == 16);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, gprs) == 0);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, sp_el0) == 248);
@@ -63,6 +79,462 @@ const _: () = assert!(core::mem::offset_of!(TrapFrame, elr_el1) == 256);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, spsr_el1) == 264);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, esr_el1) == 272);
 const _: () = assert!(core::mem::offset_of!(TrapFrame, far_el1) == 280);
+const _: () = assert!(core::mem::offset_of!(TrapFrame, tpidr_el0) == 288);
+
+/// **WS-BP BP7.3: the number of words a thread's context occupies in a trap
+/// frame** — `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`.  The
+/// Lean kernel reads word `i` through [`in_flight_frame_word`]
+/// (`Architecture.registerFileOfTrapWords`, `trapFrameWordCount`).
+pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;
+
+/// **WS-BP BP7.3**: word `index` of a thread's context in `frame`, or `None`
+/// past the context (`ESR_EL1` and `FAR_EL1` are the trap's, not the thread's).
+#[must_use]
+pub fn trap_frame_word(frame: &TrapFrame, index: u32) -> Option<u64> {
+    match index {
+        0..=30 => Some(frame.gprs[index as usize]),
+        31 => Some(frame.sp_el0),
+        32 => Some(frame.elr_el1),
+        33 => Some(frame.spsr_el1),
+        34 => Some(frame.tpidr_el0),
+        _ => None,
+    }
+}
+
+/// **WS-BP BP7.3: the trap frame each PE is handling**, published for the Lean
+/// kernel to read the whole outgoing context from.  Slot `c` is written only by
+/// core `c` — on entry to a handler, and restored when it returns — and read
+/// only by core `c`'s own Lean entry inside the same handler, so the accesses
+/// to a slot are same-core program-ordered and `Relaxed` suffices.
+pub type InFlightSlots = [AtomicPtr<TrapFrame>; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// The slots every handler publishes into.
+static IN_FLIGHT_FRAMES: InFlightSlots =
+    [const { AtomicPtr::new(core::ptr::null_mut()) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP7.3**: a PE's in-flight frame, published for the duration of a
+/// handler and withdrawn when the guard drops — so a Lean entry never reads a
+/// frame whose stack slot has been popped.  A nested handler restores the frame
+/// it displaced.
+pub struct InFlightFrame<'s> {
+    slots: &'s InFlightSlots,
+    core: usize,
+    previous: *mut TrapFrame,
+}
+
+impl InFlightFrame<'static> {
+    /// Publish `frame` as the executing PE's in-flight frame.
+    pub fn publish(frame: &mut TrapFrame) -> Self {
+        let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+        // WS-BP BP7.6: a restore belongs to the handler that ran it, so the
+        // flag a previous handler on this PE may have left set is cleared
+        // before this one can read it.
+        if let Some(flag) = RESTORED.get(core) {
+            flag.store(false, Ordering::Relaxed);
+        }
+        InFlightFrame::publish_in(&IN_FLIGHT_FRAMES, core, frame)
+    }
+}
+
+impl<'s> InFlightFrame<'s> {
+    /// Publish `frame` in `slots[core]` (the testable form).
+    pub fn publish_in(slots: &'s InFlightSlots, core: usize, frame: &mut TrapFrame) -> Self {
+        assert!(
+            core < slots.len(),
+            "InFlightFrame::publish: core {core} out of range"
+        );
+        let previous = slots[core].swap(frame as *mut TrapFrame, Ordering::Relaxed);
+        InFlightFrame {
+            slots,
+            core,
+            previous,
+        }
+    }
+}
+
+impl Drop for InFlightFrame<'_> {
+    fn drop(&mut self) {
+        self.slots[self.core].store(self.previous, Ordering::Relaxed);
+    }
+}
+
+/// **WS-BP BP7.3**: word `index` of the frame published in `slots[core]`, or
+/// `None` when none is or the index is past the context (the testable form).
+#[must_use]
+pub fn in_flight_frame_word_in(slots: &InFlightSlots, core: usize, index: u32) -> Option<u64> {
+    let ptr = slots.get(core)?.load(Ordering::Relaxed);
+    if ptr.is_null() {
+        return None;
+    }
+    // SAFETY: a non-null slot holds the frame a handler on this PE published
+    // through `InFlightFrame::publish_in` and has not yet withdrawn: the guard
+    // lives in that handler's frame, below this call on the same stack, so the
+    // `TrapFrame` it names is live, and the handler is suspended in the call
+    // that reached here, so nothing writes it across this read.  Only core
+    // `core` writes slot `core`.
+    let frame = unsafe { &*ptr };
+    trap_frame_word(frame, index)
+}
+
+/// **WS-BP BP7.3**: is a frame published on the executing PE?
+#[must_use]
+pub fn in_flight_frame_present() -> bool {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    IN_FLIGHT_FRAMES
+        .get(core)
+        .is_some_and(|slot| !slot.load(Ordering::Relaxed).is_null())
+}
+
+/// **WS-BP BP7.3**: word `index` of the executing PE's in-flight frame.
+#[must_use]
+pub fn in_flight_frame_word(index: u32) -> Option<u64> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    in_flight_frame_word_in(&IN_FLIGHT_FRAMES, core, index)
+}
+
+/// **WS-BP BP7.4: the context each PE is about to resume**, staged word by
+/// word by the Lean kernel (`Platform.FFI.restoreTrapFrame`) in the trap-frame
+/// word order of [`trap_frame_word`], then committed into the in-flight frame
+/// by [`restore_commit_in`].  Slot `c` is written and read only by core `c`,
+/// inside one handler, so `Relaxed` suffices.
+pub type RestoreStaging =
+    [[AtomicU64; TRAP_FRAME_CONTEXT_WORDS as usize]; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP7.4**: per core, whether the frame the handler will `eret`
+/// through has been replaced by a restore since the handler began.
+pub type RestoredFlags = [AtomicBool; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+static RESTORE_STAGING: RestoreStaging =
+    [const { [const { AtomicU64::new(0) }; TRAP_FRAME_CONTEXT_WORDS as usize] };
+        crate::svc_dispatch::RETURN_FRAME_CORES];
+
+static RESTORED: RestoredFlags =
+    [const { AtomicBool::new(false) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP7.4**: restore kind `0` — resume a user thread from the staged
+/// context.
+pub const RESTORE_KIND_USER: u32 = 0;
+
+/// **WS-BP BP7.4**: restore kind `1` — the core has no thread to run, so it
+/// resumes [`kernel_idle_loop`] at EL1.
+pub const RESTORE_KIND_IDLE: u32 = 1;
+
+/// **WS-BP BP7.9**: restore kind `2` — kind `0` for a thread whose FP/SIMD
+/// values the core's registers hold (the Lean `RestoreTarget.user`'s
+/// `fpLive`): the commit lifts the FP/SIMD trap for it, where kinds `0` and `1`
+/// arm it.
+pub const RESTORE_KIND_USER_FP_LIVE: u32 = 2;
+
+/// **WS-BP BP7.4**: the `SPSR_EL1` a user resume may carry — the condition
+/// flags of the staged value and nothing else, so the `eret` lands at **EL0t**
+/// with every exception unmasked whatever the saved word says.  A thread's
+/// `pstate` is state the thread can influence (a register write, a hand-built
+/// frame); letting its mode bits through would let it `eret` into EL1.
+#[must_use]
+pub const fn sanitise_user_spsr(value: u64) -> u64 {
+    value & 0xF000_0000
+}
+
+/// **WS-BP BP7.4**: `SPSR_EL1` for the idle resume — EL1h (`M = 0b0101`),
+/// DAIF clear, so the idle loop takes the interrupt that ends it.
+pub const IDLE_SPSR: u64 = 0x5;
+
+/// **WS-BP BP7.4: the core's wait when no thread is runnable.**  Entered by
+/// `eret` from a restore of kind [`RESTORE_KIND_IDLE`], at EL1h with IRQs
+/// unmasked, and by a core's own bring-up through [`enter_idle_wait`]; it keeps
+/// no state, so a later restore may replace its frame outright.
+pub extern "C" fn kernel_idle_loop() -> ! {
+    loop {
+        crate::cpu::wfi();
+    }
+}
+
+/// **WS-BP BP8.1: whether each core has handed itself to the idle wait.**
+///
+/// A restore replaces the frame an interrupt was taken on, and an EL1-origin
+/// frame is not always replaceable: the bring-up of every core (the boot
+/// core's Phases 6 and 7, a secondary's steps after its first reschedule)
+/// runs with IRQs unmasked, because the boot core must acknowledge shootdowns
+/// through the Phase 7 wait and a secondary publishes `CORE_IRQ_READY` only
+/// after it unmasks.  A timer tick there commits a scheduling decision and
+/// stages a restore; replacing the bring-up frame would abandon the rest of
+/// the bring-up — the secondary's IRQ-readiness publication, the boot core's
+/// topology refusal — for good.  The first Lean-linked boot under QEMU did
+/// exactly that: every secondary's first tick resumed the idle loop over its
+/// bring-up, no secondary published IRQ-readiness, and the boot halted.
+///
+/// So an EL1-origin frame is replaced only once its core has **handed off**:
+/// [`enter_idle_wait`] sets the flag and never returns, so after it every
+/// EL1-origin frame on that core is the idle loop's, and before it no thread
+/// has run on the core (a thread runs only through a restore), so every frame
+/// is the kernel's own bring-up.  The decision is therefore exact, not a
+/// heuristic on the frame's contents.  A restore the core declines is not
+/// lost: the committed state names what the core runs, the interrupted
+/// bring-up saved nothing into any thread (`trapFromEl0` is false of an
+/// EL1-origin frame), and the core's first tick after its handoff restores the
+/// same target.  Each flag is written by its own core and read by that core's
+/// own handlers, so program order and the exception entry order it.
+pub type IdleHandoffFlags = [AtomicBool; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+static IDLE_HANDOFF: IdleHandoffFlags =
+    [const { AtomicBool::new(false) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP8.1: each core's first idle dispatch, and whether it has been
+/// reported.**  `0` none yet, `1` committed and not yet reported, `2`
+/// reported.  A restore of kind [`RESTORE_KIND_IDLE`] that replaces a frame
+/// moves a core from `0` to `1`; the IRQ handler, once its kernel-entry
+/// bracket has been released, moves it from `1` to `2` and prints one line —
+/// the boot log's evidence that the kernel, not the bring-up, now owns the
+/// core.  The print is outside the bracket for a reason: a core still printing
+/// its bring-up with IRQs unmasked may hold the console lock while it waits
+/// for the kernel-entry lock, so printing under that lock could deadlock.  At
+/// the report the interrupted frame is the idle loop or a thread (a restore
+/// replaced it, so the core had handed off), neither of which holds the
+/// console lock.
+pub type FirstIdleFlags = [AtomicU8; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+static FIRST_IDLE: FirstIdleFlags =
+    [const { AtomicU8::new(0) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP8.1**: record that `core`'s frame was replaced by an idle resume
+/// (the testable form); only the first one counts.
+pub fn note_idle_dispatch_in(flags: &FirstIdleFlags, core: usize) {
+    if let Some(flag) = flags.get(core) {
+        let _ = flag.compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed);
+    }
+}
+
+/// **WS-BP BP8.1**: take `core`'s first-idle report (the testable form):
+/// `true` exactly once, after an idle resume was noted.
+#[must_use]
+pub fn take_first_idle_report_in(flags: &FirstIdleFlags, core: usize) -> bool {
+    flags.get(core).is_some_and(|flag| {
+        flag.compare_exchange(1, 2, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    })
+}
+
+/// **WS-BP BP8.1**: print the executing core's first idle dispatch, once.
+/// Called by the IRQ handler after its kernel-entry bracket is released.
+pub fn report_first_idle_dispatch() {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    if take_first_idle_report_in(&FIRST_IDLE, core) {
+        crate::kprintln!("[sched] core {core}: first idle dispatch");
+    }
+}
+
+/// **WS-BP BP8.1: hand the executing core to the idle wait** (the testable
+/// form): set `core`'s handoff flag, after which a restore may replace an
+/// EL1-origin frame on it.
+pub fn hand_off_to_idle_in(handoff: &IdleHandoffFlags, core: usize) {
+    if let Some(flag) = handoff.get(core) {
+        flag.store(true, Ordering::Relaxed);
+    }
+}
+
+/// **WS-BP BP8.1: the last thing a core's bring-up does.**  Marks the core
+/// handed off ([`IdleHandoffFlags`]) and enters [`kernel_idle_loop`]; the
+/// caller has already unmasked IRQs, so the next tick or SGI takes the core
+/// from here to whatever the kernel committed for it.
+pub fn enter_idle_wait() -> ! {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    hand_off_to_idle_in(&IDLE_HANDOFF, core);
+    kernel_idle_loop()
+}
+
+/// Why a restore was refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RestoreRefusal {
+    /// A word index past the context.
+    IndexOutOfRange,
+    /// A kind other than [`RESTORE_KIND_USER`] or [`RESTORE_KIND_IDLE`].
+    UnknownKind,
+    /// A core id outside the slot arrays.
+    CoreOutOfRange,
+}
+
+/// **WS-BP BP7.4**: stage word `index` of `core`'s resume context (the
+/// testable form).
+pub fn restore_stage_word_in(
+    staging: &RestoreStaging,
+    core: usize,
+    index: u32,
+    value: u64,
+) -> Result<(), RestoreRefusal> {
+    let slot = staging.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
+    let word = slot
+        .get(index as usize)
+        .ok_or(RestoreRefusal::IndexOutOfRange)?;
+    word.store(value, Ordering::Relaxed);
+    Ok(())
+}
+
+/// **PR #904 (`v0.36.41`)**: where an idle restore resumes — the idle loop's
+/// address, and the SP_EL0 an EL1 frame carries (the PE's fault stack top).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IdleResume {
+    /// The idle loop's address, `ELR_EL1` of the idle frame.
+    pub pc: u64,
+    /// The PE's fault stack top, `SP_EL0` of the idle frame.
+    pub sp_el0: u64,
+}
+
+/// **WS-BP BP7.4: commit a staged resume into the frame the handler will
+/// `eret` through** (the testable form).  `Ok(false)` when no frame is
+/// published on `core` — the entry was not reached from a trap, and there is
+/// nothing to resume into — and when the frame was taken at EL1 before the
+/// core handed itself to the idle wait, which is the kernel's own bring-up
+/// (WS-BP BP8.1, [`IdleHandoffFlags`]); `Ok(true)` when the frame was replaced and
+/// `restored[core]` set.  A user resume copies the staged words with
+/// `SPSR_EL1` sanitised ([`sanitise_user_spsr`]); an idle resume clears the
+/// general-purpose registers, sets `SP_EL0` to `idle.sp_el0` and aims
+/// `ELR_EL1` at `idle.pc`.
+/// The syndrome words are the trap's and are left alone.
+pub fn restore_commit_in(
+    slots: &InFlightSlots,
+    staging: &RestoreStaging,
+    restored: &RestoredFlags,
+    handoff: &IdleHandoffFlags,
+    core: usize,
+    kind: u32,
+    idle: IdleResume,
+) -> Result<bool, RestoreRefusal> {
+    if kind != RESTORE_KIND_USER && kind != RESTORE_KIND_IDLE && kind != RESTORE_KIND_USER_FP_LIVE {
+        return Err(RestoreRefusal::UnknownKind);
+    }
+    let slot = slots.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
+    let words = staging.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
+    let flag = restored.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
+    let handed_off = handoff.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
+    let ptr = slot.load(Ordering::Relaxed);
+    if ptr.is_null() {
+        return Ok(false);
+    }
+    // SAFETY: as in `in_flight_frame_word_in` — a non-null slot names the
+    // frame a handler on this PE published and has not withdrawn; that
+    // handler is suspended in the call that reached here, so this is the only
+    // live reference to the frame for the duration of the write, and only
+    // core `core` writes slot `core`.
+    let frame = unsafe { &mut *ptr };
+    // WS-BP BP8.1: a frame taken at EL1 before the core handed itself to the
+    // idle wait is the kernel's own bring-up, resumed as it stands
+    // ([`IdleHandoffFlags`]).
+    if !exception_taken_from_el0(frame.spsr_el1) && !handed_off.load(Ordering::Relaxed) {
+        return Ok(false);
+    }
+    if kind == RESTORE_KIND_USER || kind == RESTORE_KIND_USER_FP_LIVE {
+        let word = |i: usize| words[i].load(Ordering::Relaxed);
+        for (i, gpr) in frame.gprs.iter_mut().enumerate() {
+            *gpr = word(i);
+        }
+        frame.sp_el0 = word(31);
+        frame.elr_el1 = word(32);
+        frame.spsr_el1 = sanitise_user_spsr(word(33));
+        frame.tpidr_el0 = word(34);
+    } else {
+        frame.gprs = [0; 31];
+        // PR #904 (`v0.36.41`): the idle loop runs at EL1, where every PE
+        // holds SP_EL0 at its fault stack's top (`vectors.S` 0x200 switches to
+        // it), so the idle frame carries that value rather than a thread's.
+        frame.sp_el0 = idle.sp_el0;
+        frame.elr_el1 = idle.pc;
+        frame.spsr_el1 = IDLE_SPSR;
+        // The idle loop reads no thread pointer; clearing it leaves no thread's
+        // value in the core while it waits.
+        frame.tpidr_el0 = 0;
+    }
+    flag.store(true, Ordering::Relaxed);
+    Ok(true)
+}
+
+/// **PR #904 (`v0.36.41`)**: the top of `core`'s fault stack,
+/// `__fault_stacks_bottom + (core + 1) * FAULT_STACK_SIZE` — the value SP_EL0
+/// holds while the PE runs at EL1 (`boot.S`, `trap.S`'s `set_fault_stack`),
+/// so an idle frame, which resumes at EL1, carries it.  The host has no link
+/// script and answers `0`.
+#[must_use]
+pub fn fault_stack_top(core: usize) -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" {
+            static __fault_stacks_bottom: u8;
+        }
+        (&raw const __fault_stacks_bottom as u64) + (core as u64 + 1) * crate::mmu::FAULT_STACK_SIZE
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = core;
+        0
+    }
+}
+
+/// **WS-BP BP7.4**: take (and clear) `core`'s restored flag — whether the
+/// frame the handler is about to `eret` through was replaced by a restore
+/// (the testable form).
+#[must_use]
+pub fn take_restored_in(restored: &RestoredFlags, core: usize) -> bool {
+    restored
+        .get(core)
+        .is_some_and(|flag| flag.swap(false, Ordering::Relaxed))
+}
+
+/// **WS-BP BP7.4**: stage word `index` of the executing PE's resume context.
+pub fn restore_stage_word(index: u32, value: u64) -> Result<(), RestoreRefusal> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    restore_stage_word_in(&RESTORE_STAGING, core, index, value)
+}
+
+/// **WS-BP BP7.4**: commit the executing PE's staged resume.
+///
+/// **WS-BP BP7.9**: and set the FP/SIMD trap for what it resumes — lifted for
+/// [`RESTORE_KIND_USER_FP_LIVE`], armed for every other kind — once the frame
+/// is replaced, so the trap and the frame the handler `eret`s through always
+/// describe the same thread.
+///
+/// **PR #904 (`v0.36.41`)**: the resumed thread's translation is installed
+/// here, **after** the frame is replaced and only if it was.  A commit that
+/// declines — no frame published (a secondary's first reschedule), or an EL1
+/// frame on a core that has not handed itself to the idle wait — leaves
+/// `TTBR0_EL1` and the FP/SIMD trap as the kernel had them, so a core that
+/// continues its bring-up never does so under a thread's address space or with
+/// the trap lifted.  Before this the Lean restore installed the translation
+/// first and committed second, and the order rested on two facts standing in
+/// for it (every user root carries the kernel window; the kernel is FP-free).
+pub fn restore_commit(
+    kind: u32,
+    translation: crate::user_translation::Translation,
+) -> Result<bool, RestoreRefusal> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    let replaced = restore_commit_in(
+        &IN_FLIGHT_FRAMES,
+        &RESTORE_STAGING,
+        &RESTORED,
+        &IDLE_HANDOFF,
+        core,
+        kind,
+        IdleResume {
+            pc: kernel_idle_loop as *const () as usize as u64,
+            sp_el0: fault_stack_top(core),
+        },
+    )?;
+    if replaced {
+        crate::user_translation::install_translation(translation);
+        crate::fp_context::set_trap_for_resume(kind == RESTORE_KIND_USER_FP_LIVE);
+        if kind == RESTORE_KIND_IDLE {
+            note_idle_dispatch_in(&FIRST_IDLE, core);
+        }
+    }
+    Ok(replaced)
+}
+
+/// **WS-BP BP7.4**: take the executing PE's restored flag.  The trap arms
+/// consult it once the context-restore seam is live (BP7.6): a replaced frame
+/// is resumed as it stands, never overwritten by a return frame or a poison.
+#[must_use]
+pub fn take_restored() -> bool {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    take_restored_in(&RESTORED, core)
+}
 
 impl TrapFrame {
     /// ABI register accessors matching the seLe4n syscall convention:
@@ -198,16 +670,13 @@ impl TrapFrame {
     /// of a fault handler's reach (see `Model.FaultContext.spsr`), which is
     /// strictly the fail-closed side of seL4's `sanitiseRegister`.
     ///
-    /// **Consumer**: SM10.1's context restore, which does not exist yet — this
-    /// mutator and its two siblings above are exercised by tests only today.
-    /// That is not an oversight to be tidied away: the restart frame is
-    /// installed into the *Lean* TCB by `applyFaultRestart` at reply time, and
-    /// reaches hardware when a core installs a successor.  Until then a core
-    /// that delivered a fault halts (`deliver_fault`), so there is no restore
-    /// to call this from.  RR4.24 exists because without an `ELR_EL1` mutator
-    /// the trap layer could only ever return to the faulting instruction, which
-    /// is the finding RR4 closes; the API has to be here before the restore
-    /// that uses it can be written.
+    /// **Consumer**: none on the live path.  The restart frame is installed
+    /// into the *Lean* TCB by `applyFaultRestart` at reply time, and since
+    /// WS-BP BP7.6 it reaches hardware through the context restore, which
+    /// copies the whole saved context (`restore_commit_in`) rather than
+    /// calling a per-field mutator.  This mutator and its two siblings remain
+    /// the Rust half of the verified `stageRestartFrame` layout and are held
+    /// to it by the host tests.
     #[inline(always)]
     pub fn set_fault_restart_frame(&mut self, regs: [u64; 11]) {
         self.gprs[..8].copy_from_slice(&regs[..8]);
@@ -245,6 +714,9 @@ mod ec {
     pub const DABT_CURRENT: u64 = 0x25;
     /// SP alignment fault.
     pub const SP_ALIGN: u64 = 0x26;
+    /// WS-BP BP7.9: access to SIMD or floating-point functionality trapped by
+    /// `CPACR_EL1.FPEN` — the lazy FP/SIMD switch's trap.
+    pub const FP_ACCESS: u64 = 0x07;
 }
 
 /// Kernel error discriminants matching `sele4n-types::KernelError` and
@@ -311,6 +783,9 @@ pub mod sync_class {
     /// A data or instruction abort taken from the **current** EL — the kernel
     /// itself faulted (PR #887 review).  Never delivered; the handler halts.
     pub const KERNEL_ABORT: u32 = 6;
+    /// **WS-BP BP7.9**: a trapped FP/SIMD access (EC `0x07`) — routed to the
+    /// lazy switch, never delivered as a fault.
+    pub const FP_ACCESS: u32 = 7;
 }
 
 /// **PR #887 review**: was the exception taken from EL0?
@@ -463,6 +938,7 @@ fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
         ec::DABT_CURRENT | ec::IABT_CURRENT => sync_class::KERNEL_ABORT,
         ec::PC_ALIGN => sync_class::PC_ALIGNMENT,
         ec::SP_ALIGN => sync_class::SP_ALIGNMENT,
+        ec::FP_ACCESS => sync_class::FP_ACCESS,
         _ => sync_class::UNKNOWN_REASON,
     }
 }
@@ -488,15 +964,14 @@ fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
 ///
 /// # Why the core halts afterwards
 ///
-/// The model has just descheduled the faulting thread.  The hardware cannot
-/// honour that until the SM10.1 context restore installs a *successor* —
-/// until then `trap.S` restores and `eret`s through the faulting thread's own
-/// frame, straight back onto the instruction that faulted, which is precisely
-/// the defect RR4 exists to remove.  So the interim behaviour is to stop:
-/// `fatal_halt` after a diagnostic, rather than spin.  The halt is
-/// reachable since WS-BP BP6 marks each core ready, and the context restore replaces
-/// it with the successor install — it is the seam's occupant, not its
-/// contract.
+/// The model has just descheduled the faulting thread, and since WS-BP BP7.6
+/// the entry installs what this core resumes — its successor, or the idle
+/// loop — into the frame `trap.S` returns through, so the handler returns
+/// (`take_restored`).  A delivery that installed nothing would `eret` through
+/// the faulting thread's own frame, straight back onto the instruction that
+/// faulted, which is precisely the defect RR4 exists to remove, so that
+/// fallback stops the core: `fatal_halt` after a diagnostic, rather than
+/// spin.
 ///
 /// # The not-ready path (WS-RR RR4.22; PR #887 review round 3)
 ///
@@ -585,8 +1060,14 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
             // SAFETY: `res` is the value the export just returned; if it is
             // a heap object this caller owns its one reference.
             unsafe { crate::lean_runtime::discharge_base_io(res, "lean_handle_fault") };
+            // WS-BP BP7.6: the delivery descheduled the faulting thread and the
+            // kernel installed what this core resumes — its successor, or the
+            // idle loop — so the handler returns through that.
+            if crate::trap::take_restored() {
+                return;
+            }
             crate::kprintln!(
-                "[core {}] fault delivered; halting pending the SM10.1 context restore (ESR=0x{:016x} ELR=0x{:016x})",
+                "[core {}] fault delivered and no context restored; halting (ESR=0x{:016x} ELR=0x{:016x})",
                 core_id,
                 esr,
                 elr
@@ -608,15 +1089,79 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
     frame.set_return_frame(crate::svc_dispatch::error_frame_regs(fallback_discriminant));
 }
 
+/// **WS-BP BP7.9: the lazy FP/SIMD switch** — EC `0x07` from EL0.
+///
+/// The Lean half is `lean_handle_fp_access` (`@[export]` on
+/// `SeLe4n.Kernel.fpAccessEntry`): it saves the trap frame, captures the core's
+/// registers if they hold a recorded owner's live values, commits
+/// `Architecture.fpAccessOnCore`, loads the faulting thread's own saved context
+/// (`fp_context::load_commit`) and restores the thread — whose `ELR_EL1` still
+/// names the FP/SIMD instruction — with the trap lifted, so the instruction
+/// re-executes with the thread's own state.  When the thread's live values are
+/// on another core the switch answers *retry*: nothing is loaded, the trap stays
+/// armed and the thread traps again until that core has released them.
+///
+/// Same lock, same readiness gate and same restored-frame return as
+/// [`deliver_fault`].  A core whose Lean runtime is not up cannot switch and
+/// cannot return — `ELR_EL1` is on the trapped instruction, so a returned frame
+/// would trap again forever — so it halts, as an abort does
+/// ([`halt_abort_before_lean_ready`]); and a switch that restored nothing halts
+/// too, since returning through the unchanged frame re-executes into the same
+/// trap.  The host lane has no FP/SIMD registers and no Lean kernel, so the arm
+/// is inert there.
+#[allow(unused_variables)]
+fn deliver_fp_access(frame: &mut TrapFrame) {
+    #[cfg(feature = "hw_target")]
+    {
+        let core_id = crate::per_cpu::current_core_id_from_tpidr();
+        if crate::lean_ready::lean_ready(core_id as usize) {
+            extern "C" {
+                /// # Safety
+                ///
+                /// Sound only on a core whose Lean runtime is initialised
+                /// (`lean_ready` checked on *this* PE), inside the kernel-entry
+                /// lock, and only for an FP/SIMD trap taken from EL0: the entry
+                /// loads a thread's FP/SIMD context into this PE's registers and
+                /// lifts the trap for the thread its committed state runs here.
+                fn lean_handle_fp_access(core_id: u64) -> crate::lean_runtime::LeanBaseIoUnit;
+            }
+            // SAFETY: `lean_handle_fp_access` is the C-callable wrapper the
+            // Lean compiler emits for `Kernel.fpAccessEntry`
+            // (`@[export lean_handle_fp_access]`).  It takes one `u64` and
+            // returns its `BaseIO Unit` value, `lean_box(0)`; sound from EL1
+            // exception context once this core's Lean runtime is initialized
+            // (the gate just checked) and inside the kernel-entry lock (taken
+            // here), which serialises its `IO.Ref` commits.
+            let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_handle_fp_access(core_id)
+            });
+            // SAFETY: `res` is the value the export just returned; if it is
+            // a heap object this caller owns its one reference.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_handle_fp_access") };
+            // The switch restored the thread that trapped, with the trap set
+            // for it; return through that frame.
+            if crate::trap::take_restored() {
+                return;
+            }
+            crate::kprintln!(
+                "[core {}] FP/SIMD access switched and no context restored; halting (ELR=0x{:016x})",
+                core_id,
+                frame.elr_el1
+            );
+            crate::cpu::fatal_halt();
+        }
+        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);
+    }
+}
+
 /// **PR #887 review round 3**: an EL0 abort taken on a core whose Lean
 /// runtime is not initialized.  Nothing can be delivered (there is no model
 /// to deliver into) and nothing can be returned: the abort left `ELR_EL1` on
 /// the faulting instruction, so any frame the handler published would be
 /// `eret`ed straight back into the same abort — the wedge RR4 exists to
 /// remove, reintroduced on the fallback.  The only fail-closed action is to
-/// stop the core, as `deliver_fault`'s delivered arm does pending the SM10.1
-/// successor install; both branches of that function therefore diverge on
-/// hardware.  The SVC seam is different and keeps its status frame: an `SVC`
+/// stop the core, as `deliver_fault`'s delivered arm does when no context
+/// was restored.  The SVC seam is different and keeps its status frame: an `SVC`
 /// advances `ELR_EL1` past itself, so a frame returned to a thread is a
 /// coherent outcome there (and the not-ready behaviour of the SVC seam as a
 /// whole is RR5's to decide, together with the ungated `dispatch_svc` beside
@@ -627,17 +1172,16 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
 /// **PR #887 review round 5**: a syscall-raised fault has been delivered (or
 /// the caller suspended fail-closed) by the Lean dispatch — outcome tag 2,
 /// `SyscallOutcome.faulted`.  The model has descheduled the caller and, on
-/// the handler's reply, restarts it at the `SVC` (`svcFaultIP`); the
-/// hardware cannot honour either until the SM10.1 context restore installs
-/// a successor, and returning here would `eret` the caller past the `SVC`
-/// it is to re-issue.  So the core stops, as after every other delivered
-/// fault.  Unreachable today (no core sets `lean_ready`, so no Lean
-/// dispatch runs on hardware); pinned by `delivered_syscall_fault_halts` on
-/// the host lane, where `fatal_halt` panics, and by
-/// `scan_trap_rs_faulted_outcome_halts` in `build.rs`.
+/// the handler's reply, restarts it at the `SVC` (`svcFaultIP`).  Since
+/// WS-BP BP7.6 the dispatch installs this core's successor and the SVC arm
+/// returns through it before reaching this helper; the helper is the fallback
+/// for a dispatch that installed nothing, where returning would `eret` the
+/// caller past the `SVC` it is to re-issue, so the core stops.  Pinned by
+/// `delivered_syscall_fault_halts` on the host lane, where `fatal_halt`
+/// panics, and by `scan_trap_rs_faulted_outcome_halts` in `build.rs`.
 fn halt_after_delivered_syscall_fault(frame: &TrapFrame) -> ! {
     crate::kprintln!(
-        "syscall fault delivered; halting pending the SM10.1 context restore (x7=0x{:x} ELR=0x{:016x})",
+        "syscall fault delivered and no context restored; halting (x7=0x{:x} ELR=0x{:016x})",
         frame.x7(),
         frame.elr_el1
     );
@@ -666,7 +1210,8 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
 /// thread blocks on its handler's endpoint awaiting a reply (a handler that
 /// emulates the call replies and the thread continues after the `SVC`), or —
 /// with no usable handler — is suspended fail-closed.  Same lock, same
-/// readiness gate, same SM10.1 halt as `deliver_fault`, for the same reasons.
+/// readiness gate, same restored-frame return and same fallback halt as
+/// `deliver_fault`, for the same reasons.
 ///
 /// The not-ready path differs from `deliver_fault`'s, deliberately: this seam
 /// keeps its status frame, because an `SVC` advances `ELR_EL1` past itself
@@ -738,8 +1283,13 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
             // SAFETY: `res` is the value the export just returned; if it is
             // a heap object this caller owns its one reference.
             unsafe { crate::lean_runtime::discharge_base_io(res, "lean_handle_unknown_syscall") };
+            // WS-BP BP7.6: as for an abort — return through what the kernel
+            // installed for this core.
+            if crate::trap::take_restored() {
+                return;
+            }
             crate::kprintln!(
-                "[core {}] unknown syscall delivered; halting pending the SM10.1 context restore (x7=0x{:x} ELR=0x{:016x})",
+                "[core {}] unknown syscall delivered and no context restored; halting (x7=0x{:x} ELR=0x{:016x})",
                 core_id,
                 g[7],
                 elr
@@ -769,6 +1319,9 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
 #[no_mangle]
 pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
     let esr = frame.esr_el1;
+    // WS-BP BP7.3: the frame is the Lean kernel's to read for the handler's
+    // duration, so the whole outgoing context reaches the thread's TCB.
+    let _in_flight = InFlightFrame::publish(frame);
     // PR #887 review: **an exception taken from EL1 is the kernel's own
     // fault**, whatever its syndrome — halt before routing anything.  The
     // `build.rs` scanner pins that this call precedes the classification.
@@ -846,12 +1399,20 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
                 Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
             };
+            // WS-BP BP7.6: the Lean dispatch installed what this core resumes —
+            // the caller with its result staged in its context, the thread its
+            // syscall switched to, or the idle loop — so the handler returns
+            // through that frame and publishes nothing over it.  Every arm below
+            // is the fallback for a dispatch that installed nothing.
+            if crate::trap::take_restored() {
+                return;
+            }
             // WS-RA (plan §3.1/§3.3): the writeback is a six-register
             // context restore — `x0` the value, the offset error label on
             // `x1`, `x2`-`x5` message registers.  A blocked caller has NO
             // return frame (its stale registers are not a return value;
-            // the staged frame is delivered by the SM10.1 context restore
-            // — RA.C.9's hook is the `Blocked` arm).  Prefilter rejections
+            // since WS-BP BP7.6 the context restore above installs what the
+            // core resumes instead).  Prefilter rejections
             // surface as label-encoded error frames like every kernel
             // rejection, retiring the raw-discriminant `x0` write and its
             // documented collision.
@@ -862,18 +1423,17 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 // or the fail-closed suspend).  No frame exists, and the
                 // model restarts the caller AT the `SVC` on its handler's
                 // reply — the `Blocked` sentinel would `eret` it past the
-                // `SVC` instead.  So this arm halts pending the SM10.1
-                // successor install, as the delivered unknown-syscall and
-                // abort paths do.
+                // `SVC` instead.  Reached only when the dispatch installed no
+                // context (the restore returns above), so this arm halts, as
+                // the delivered unknown-syscall and abort paths do.
                 Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {
                     halt_after_delivered_syscall_fault(frame);
                 }
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
-                    // SM10.1 context-restore hook: the successor's frame
-                    // install lands here when `contextRestoreSeamLive`
-                    // flips.  Until then `trap.S` restores and `eret`s
-                    // through the blocked caller's own saved frame, so
-                    // poison it: left untouched, the caller's request
+                    // Reached only when the dispatch installed no context
+                    // (WS-BP BP7.6's restore returns above).  `trap.S` would
+                    // then `eret` through the blocked caller's own saved
+                    // frame, so poison it: left untouched, the caller's request
                     // registers (an `x1` label of `0`) decode as a false
                     // success carrying the caller's own capability
                     // pointer as the "badge" (PR #866 review).  The
@@ -897,6 +1457,13 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
         sync_class::KERNEL_ABORT => {
             // PR #887 review: the kernel faulted — halt, never deliver.
             halt_on_kernel_abort(frame, esr);
+        }
+        sync_class::FP_ACCESS => {
+            // WS-BP BP7.9: a thread used FP/SIMD with its core's trap armed —
+            // the lazy switch loads its context and restarts the instruction.
+            // An EL1-origin one halted above (`halt_if_kernel_origin`): the
+            // kernel is FP-free, so an FP instruction at EL1 is a defect.
+            deliver_fp_access(frame);
         }
         sync_class::DATA_ABORT | sync_class::INSTR_ABORT => {
             // WS-RR RR4.21/RR4.23: an abort is **delivered** to the faulting
@@ -991,7 +1558,10 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 /// unwinding.
 #[no_mangle]
 #[deny(clippy::panic, clippy::unreachable, clippy::todo)]
-pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
+pub extern "C" fn handle_irq_per_core(frame: &mut TrapFrame) {
+    // WS-BP BP7.3: a preempted thread's whole context is the Lean kernel's to
+    // save for the handler's duration.
+    let _in_flight = InFlightFrame::publish(frame);
     // Read the calling core's id from TPIDR_EL1.  On hardware this is
     // pre-set by `boot.rs::rust_boot_main` (boot core) or
     // `boot.S::secondary_entry` (secondaries) before any kernel-mode
@@ -1060,6 +1630,8 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
             crate::kprintln_core!("IRQ: unhandled INTID {}", intid);
         }
     });
+    // WS-BP BP8.1: the dispatch's kernel-entry bracket is released here.
+    report_first_idle_dispatch();
 }
 
 /// **WS-SM SM0.H / SM5.C.5**: the `.reschedule` SGI INTID, matching
@@ -1215,6 +1787,410 @@ extern crate std;
 mod tests {
     use super::*;
 
+    /// A fault stack top for the restore tests (PR #904).
+    const FAULT_STACK_TOP: u64 = 0x7F_0000;
+
+    /// An idle resume at `pc` for the restore tests.
+    fn idle(pc: u64) -> IdleResume {
+        IdleResume {
+            pc,
+            sp_el0: FAULT_STACK_TOP,
+        }
+    }
+
+    /// WS-BP BP7.3: the context words are the frame's fields in order, and
+    /// the trap's own syndrome registers are not part of a thread's context.
+    #[test]
+    fn a_threads_context_is_the_frames_first_thirty_five_words() {
+        let mut frame = zero_frame();
+        for (i, r) in frame.gprs.iter_mut().enumerate() {
+            *r = 0x100 + i as u64;
+        }
+        frame.sp_el0 = 0xAAAA;
+        frame.elr_el1 = 0xBBBB;
+        frame.spsr_el1 = 0x2000_0000;
+        frame.esr_el1 = 0xDEAD;
+        frame.far_el1 = 0xBEEF;
+        frame.tpidr_el0 = 0x7777_0000;
+        for i in 0..31 {
+            assert_eq!(trap_frame_word(&frame, i), Some(0x100 + u64::from(i)));
+        }
+        assert_eq!(trap_frame_word(&frame, 31), Some(0xAAAA));
+        assert_eq!(trap_frame_word(&frame, 32), Some(0xBBBB));
+        assert_eq!(trap_frame_word(&frame, 33), Some(0x2000_0000));
+        assert_eq!(trap_frame_word(&frame, 34), Some(0x7777_0000));
+        assert_eq!(trap_frame_word(&frame, TRAP_FRAME_CONTEXT_WORDS), None);
+    }
+
+    /// WS-BP BP7.3: a frame is readable only while its handler's guard lives,
+    /// a nested handler restores the frame it displaced, and each core reads
+    /// its own slot.
+    #[test]
+    fn an_in_flight_frame_is_readable_only_while_published() {
+        let slots: InFlightSlots = [const { AtomicPtr::new(core::ptr::null_mut()) };
+            crate::svc_dispatch::RETURN_FRAME_CORES];
+        let mut outer = zero_frame();
+        outer.gprs[6] = 6;
+        let mut inner = zero_frame();
+        inner.gprs[6] = 66;
+        assert_eq!(in_flight_frame_word_in(&slots, 1, 6), None);
+        {
+            let _o = InFlightFrame::publish_in(&slots, 1, &mut outer);
+            assert_eq!(in_flight_frame_word_in(&slots, 1, 6), Some(6));
+            assert_eq!(
+                in_flight_frame_word_in(&slots, 0, 6),
+                None,
+                "another core's slot"
+            );
+            {
+                let _i = InFlightFrame::publish_in(&slots, 1, &mut inner);
+                assert_eq!(in_flight_frame_word_in(&slots, 1, 6), Some(66));
+            }
+            assert_eq!(
+                in_flight_frame_word_in(&slots, 1, 6),
+                Some(6),
+                "the outer frame is restored"
+            );
+        }
+        assert_eq!(
+            in_flight_frame_word_in(&slots, 1, 6),
+            None,
+            "withdrawn when the handler returns"
+        );
+        assert_eq!(
+            in_flight_frame_word_in(&slots, 99, 6),
+            None,
+            "a core past the slots"
+        );
+    }
+
+    fn fresh_restore() -> (
+        InFlightSlots,
+        RestoreStaging,
+        RestoredFlags,
+        IdleHandoffFlags,
+    ) {
+        (
+            [const { AtomicPtr::new(core::ptr::null_mut()) };
+                crate::svc_dispatch::RETURN_FRAME_CORES],
+            [const { [const { AtomicU64::new(0) }; TRAP_FRAME_CONTEXT_WORDS as usize] };
+                crate::svc_dispatch::RETURN_FRAME_CORES],
+            [const { AtomicBool::new(false) }; crate::svc_dispatch::RETURN_FRAME_CORES],
+            [const { AtomicBool::new(false) }; crate::svc_dispatch::RETURN_FRAME_CORES],
+        )
+    }
+
+    /// WS-BP BP7.4: a user resume replaces every context word of the frame
+    /// the handler will `eret` through, sanitises `SPSR_EL1` to EL0t, leaves
+    /// the trap's own syndrome words alone, and sets the restored flag once.
+    #[test]
+    fn a_user_restore_replaces_the_in_flight_context() {
+        let (slots, staging, restored, handoff) = fresh_restore();
+        for i in 0..TRAP_FRAME_CONTEXT_WORDS {
+            restore_stage_word_in(&staging, 2, i, 1000 + u64::from(i)).unwrap();
+        }
+        // A hostile pstate: EL1h with DAIF masked and NZCV set.
+        restore_stage_word_in(&staging, 2, 33, 0xF000_03C5).unwrap();
+        let mut frame = zero_frame();
+        frame.esr_el1 = 0x5600_0000;
+        frame.far_el1 = 0xDEAD;
+        // v0.36.30: the thread pointer the previous thread on this core wrote.
+        frame.tpidr_el0 = 0x5EC2_E700;
+        {
+            let _g = InFlightFrame::publish_in(&slots, 2, &mut frame);
+            assert_eq!(
+                restore_commit_in(
+                    &slots,
+                    &staging,
+                    &restored,
+                    &handoff,
+                    2,
+                    RESTORE_KIND_USER,
+                    idle(0x4242),
+                ),
+                Ok(true)
+            );
+        }
+        for i in 0..31 {
+            assert_eq!(frame.gprs[i], 1000 + i as u64);
+        }
+        assert_eq!(frame.sp_el0, 1031);
+        assert_eq!(frame.elr_el1, 1032);
+        assert_eq!(
+            frame.spsr_el1, 0xF000_0000,
+            "mode and DAIF must not survive"
+        );
+        assert_eq!(frame.esr_el1, 0x5600_0000);
+        assert_eq!(frame.far_el1, 0xDEAD);
+        assert_eq!(
+            frame.tpidr_el0, 1034,
+            "the incoming thread resumes with its own thread pointer, not the outgoing one's"
+        );
+        assert!(take_restored_in(&restored, 2));
+        assert!(!take_restored_in(&restored, 2), "the flag is taken once");
+        assert!(
+            !take_restored_in(&restored, 1),
+            "another core's flag is untouched"
+        );
+    }
+
+    /// WS-BP BP7.9: the FP-live user resume (kind 2) installs the staged
+    /// context exactly as a plain user resume does — the kinds differ only in
+    /// the FP/SIMD trap the hardware commit sets, never in the frame.
+    #[test]
+    fn an_fp_live_restore_installs_the_same_frame_as_a_user_restore() {
+        let run = |kind: u32| {
+            let (slots, staging, restored, handoff) = fresh_restore();
+            for i in 0..TRAP_FRAME_CONTEXT_WORDS {
+                restore_stage_word_in(&staging, 0, i, 500 + u64::from(i)).unwrap();
+            }
+            let mut frame = zero_frame();
+            {
+                let _g = InFlightFrame::publish_in(&slots, 0, &mut frame);
+                assert_eq!(
+                    restore_commit_in(&slots, &staging, &restored, &handoff, 0, kind, idle(0),),
+                    Ok(true)
+                );
+            }
+            (
+                frame.gprs,
+                frame.sp_el0,
+                frame.elr_el1,
+                frame.spsr_el1,
+                frame.tpidr_el0,
+            )
+        };
+        assert_eq!(run(RESTORE_KIND_USER_FP_LIVE), run(RESTORE_KIND_USER));
+    }
+
+    /// WS-BP BP7.4: an idle resume aims the frame at the idle loop at EL1h
+    /// with interrupts unmasked and carries no register of the thread it
+    /// replaced.
+    #[test]
+    fn an_idle_restore_resumes_the_idle_loop() {
+        let (slots, staging, restored, handoff) = fresh_restore();
+        let mut frame = zero_frame();
+        frame.gprs = [7; 31];
+        frame.sp_el0 = 9;
+        frame.elr_el1 = 0x40_0000;
+        frame.tpidr_el0 = 0x5EC2_E700;
+        {
+            let _g = InFlightFrame::publish_in(&slots, 0, &mut frame);
+            assert_eq!(
+                restore_commit_in(
+                    &slots,
+                    &staging,
+                    &restored,
+                    &handoff,
+                    0,
+                    RESTORE_KIND_IDLE,
+                    idle(0x8_1234),
+                ),
+                Ok(true)
+            );
+        }
+        assert_eq!(frame.gprs, [0; 31]);
+        // PR #904: the idle loop runs at EL1 with SP_EL0 at the fault stack.
+        assert_eq!(frame.sp_el0, FAULT_STACK_TOP);
+        assert_eq!(frame.elr_el1, 0x8_1234);
+        assert_eq!(frame.spsr_el1, IDLE_SPSR);
+        assert_eq!(frame.tpidr_el0, 0, "an idle core keeps no thread's pointer");
+        assert!(take_restored_in(&restored, 0));
+    }
+
+    /// WS-BP BP7.4: with no frame published there is nothing to resume into,
+    /// so the commit is a no-op that sets no flag; an unknown kind, a word
+    /// past the context and a core outside the slots are refused.
+    #[test]
+    fn a_restore_without_a_frame_is_a_no_op_and_bad_operands_are_refused() {
+        let (slots, staging, restored, handoff) = fresh_restore();
+        assert_eq!(
+            restore_commit_in(
+                &slots,
+                &staging,
+                &restored,
+                &handoff,
+                1,
+                RESTORE_KIND_USER,
+                idle(0),
+            ),
+            Ok(false)
+        );
+        assert!(!take_restored_in(&restored, 1));
+        // WS-BP BP7.9: kind 2 is the FP-live user resume, so it is a kind the
+        // commit knows; kind 3 is not.
+        assert_eq!(
+            restore_commit_in(
+                &slots,
+                &staging,
+                &restored,
+                &handoff,
+                1,
+                RESTORE_KIND_USER_FP_LIVE,
+                idle(0),
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            restore_commit_in(&slots, &staging, &restored, &handoff, 1, 3, idle(0),),
+            Err(RestoreRefusal::UnknownKind)
+        );
+        assert_eq!(
+            restore_stage_word_in(&staging, 1, TRAP_FRAME_CONTEXT_WORDS, 0),
+            Err(RestoreRefusal::IndexOutOfRange)
+        );
+        assert_eq!(
+            restore_stage_word_in(&staging, 99, 0, 0),
+            Err(RestoreRefusal::CoreOutOfRange)
+        );
+        assert_eq!(
+            restore_commit_in(
+                &slots,
+                &staging,
+                &restored,
+                &handoff,
+                99,
+                RESTORE_KIND_IDLE,
+                idle(0),
+            ),
+            Err(RestoreRefusal::CoreOutOfRange)
+        );
+    }
+
+    /// WS-BP BP8.1: a frame taken at EL1 before its core handed itself to the
+    /// idle wait is the kernel's own bring-up, so neither a user nor an idle
+    /// restore replaces it and no flag is set; once the core hands off, the
+    /// same restore replaces it.  An EL0-origin frame is replaced either way
+    /// (the tests above run with no core handed off), and handing off one core
+    /// hands off no other.
+    #[test]
+    fn a_bring_up_frame_is_replaced_only_after_its_core_hands_off() {
+        let el1h = |frame: &mut TrapFrame| {
+            frame.elr_el1 = 0x4008_0000;
+            frame.spsr_el1 = 0x3C5;
+            frame.gprs = [3; 31];
+        };
+        for kind in [
+            RESTORE_KIND_USER,
+            RESTORE_KIND_USER_FP_LIVE,
+            RESTORE_KIND_IDLE,
+        ] {
+            let (slots, staging, restored, handoff) = fresh_restore();
+            for i in 0..TRAP_FRAME_CONTEXT_WORDS {
+                restore_stage_word_in(&staging, 1, i, 700 + u64::from(i)).unwrap();
+            }
+            let mut frame = zero_frame();
+            el1h(&mut frame);
+            {
+                let _g = InFlightFrame::publish_in(&slots, 1, &mut frame);
+                assert_eq!(
+                    restore_commit_in(
+                        &slots,
+                        &staging,
+                        &restored,
+                        &handoff,
+                        1,
+                        kind,
+                        idle(0x8_1234),
+                    ),
+                    Ok(false),
+                    "a bring-up frame is resumed as it stands"
+                );
+            }
+            assert_eq!(frame.elr_el1, 0x4008_0000);
+            assert_eq!(frame.spsr_el1, 0x3C5);
+            assert_eq!(frame.gprs, [3; 31]);
+            assert!(!take_restored_in(&restored, 1));
+
+            hand_off_to_idle_in(&handoff, 2);
+            {
+                let _g = InFlightFrame::publish_in(&slots, 1, &mut frame);
+                assert_eq!(
+                    restore_commit_in(
+                        &slots,
+                        &staging,
+                        &restored,
+                        &handoff,
+                        1,
+                        kind,
+                        idle(0x8_1234),
+                    ),
+                    Ok(false),
+                    "another core's handoff is not this core's"
+                );
+            }
+            assert_eq!(frame.elr_el1, 0x4008_0000);
+
+            hand_off_to_idle_in(&handoff, 1);
+            {
+                let _g = InFlightFrame::publish_in(&slots, 1, &mut frame);
+                assert_eq!(
+                    restore_commit_in(
+                        &slots,
+                        &staging,
+                        &restored,
+                        &handoff,
+                        1,
+                        kind,
+                        idle(0x8_1234),
+                    ),
+                    Ok(true),
+                    "after the handoff an EL1 frame is the idle loop's"
+                );
+            }
+            let expected_pc = if kind == RESTORE_KIND_IDLE {
+                0x8_1234
+            } else {
+                700 + 32
+            };
+            assert_eq!(frame.elr_el1, expected_pc);
+            assert!(take_restored_in(&restored, 1));
+        }
+        // A core outside the flag array is refused, not read past.
+        let (slots, staging, restored, handoff) = fresh_restore();
+        hand_off_to_idle_in(&handoff, 99);
+        assert_eq!(
+            restore_commit_in(
+                &slots,
+                &staging,
+                &restored,
+                &handoff,
+                99,
+                RESTORE_KIND_IDLE,
+                idle(0),
+            ),
+            Err(RestoreRefusal::CoreOutOfRange)
+        );
+    }
+
+    /// WS-BP BP8.1: the first-idle report fires exactly once per core, only
+    /// after an idle resume was noted, and one core's note is not another's.
+    #[test]
+    fn the_first_idle_dispatch_is_reported_once_per_core() {
+        let flags: FirstIdleFlags =
+            [const { AtomicU8::new(0) }; crate::svc_dispatch::RETURN_FRAME_CORES];
+        assert!(!take_first_idle_report_in(&flags, 1), "nothing noted yet");
+        note_idle_dispatch_in(&flags, 1);
+        assert!(!take_first_idle_report_in(&flags, 2), "another core's note");
+        assert!(take_first_idle_report_in(&flags, 1));
+        assert!(!take_first_idle_report_in(&flags, 1), "reported once");
+        note_idle_dispatch_in(&flags, 1);
+        assert!(
+            !take_first_idle_report_in(&flags, 1),
+            "a later idle resume is not the first"
+        );
+        note_idle_dispatch_in(&flags, 99);
+        assert!(!take_first_idle_report_in(&flags, 99));
+    }
+
+    /// WS-BP BP7.4: sanitisation keeps exactly the condition flags.
+    #[test]
+    fn user_spsr_sanitisation_keeps_only_nzcv() {
+        assert_eq!(sanitise_user_spsr(0), 0);
+        assert_eq!(sanitise_user_spsr(u64::MAX), 0xF000_0000);
+        assert_eq!(sanitise_user_spsr(0x3C5), 0);
+    }
+
     /// AK5-F test helper: construct a zero-initialized TrapFrame.
     fn zero_frame() -> TrapFrame {
         TrapFrame {
@@ -1224,6 +2200,8 @@ mod tests {
             spsr_el1: 0,
             esr_el1: 0,
             far_el1: 0,
+            tpidr_el0: 0,
+            reserved: 0,
         }
     }
 
@@ -1280,10 +2258,11 @@ mod tests {
     }
 
     #[test]
-    fn trap_frame_size_is_288_bytes() {
-        // AK5-F: TrapFrame grew from 272 to 288 (added ESR_EL1 + FAR_EL1).
-        assert_eq!(TRAP_FRAME_SIZE, 288);
-        assert_eq!(core::mem::size_of::<TrapFrame>(), 288);
+    fn trap_frame_size_is_304_bytes() {
+        // AK5-F grew TrapFrame 272 -> 288 (ESR_EL1 + FAR_EL1); v0.36.30 to 304
+        // (TPIDR_EL0 + one padding word).
+        assert_eq!(TRAP_FRAME_SIZE, 304);
+        assert_eq!(core::mem::size_of::<TrapFrame>(), 304);
     }
 
     #[test]
@@ -1302,6 +2281,7 @@ mod tests {
         // AK5-F: ESR + FAR snapshot offsets.
         assert_eq!(core::mem::offset_of!(TrapFrame, esr_el1), 272);
         assert_eq!(core::mem::offset_of!(TrapFrame, far_el1), 280);
+        assert_eq!(core::mem::offset_of!(TrapFrame, tpidr_el0), 288);
     }
 
     #[test]
@@ -1442,6 +2422,8 @@ mod tests {
                 0x25 | 0x21 => sync_class::KERNEL_ABORT,
                 0x22 => sync_class::PC_ALIGNMENT,
                 0x26 => sync_class::SP_ALIGNMENT,
+                // WS-BP BP7.9: the lazy FP/SIMD switch's trap.
+                0x07 => sync_class::FP_ACCESS,
                 _ => sync_class::UNKNOWN_REASON,
             };
             assert_eq!(
@@ -1462,6 +2444,7 @@ mod tests {
         assert_eq!(sync_class::PC_ALIGNMENT, 3);
         assert_eq!(sync_class::SP_ALIGNMENT, 4);
         assert_eq!(sync_class::UNKNOWN_REASON, 5);
+        assert_eq!(sync_class::FP_ACCESS, 7);
         assert_eq!(sync_class::KERNEL_ABORT, 6);
     }
 
@@ -1511,7 +2494,7 @@ mod tests {
     }
 
     /// **PR #887 review round 5**: a delivered syscall fault (outcome tag 2)
-    /// halts the core pending SM10.1 — returning would `eret` the caller
+    /// with no context restored halts the core — returning would `eret` the caller
     /// past the `SVC` the model has it restart at.  On the host lane
     /// `fatal_halt` panics, which is the observable.
     #[test]

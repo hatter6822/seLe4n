@@ -480,6 +480,64 @@ private def fo013_cspaceDelete : IO Unit := do
       | .error e => expect "deleted → invalidCapability" (e == .invalidCapability)
   | .error _ => throw <| IO.userError "delete should succeed"
 
+/-- FO-013b (WS-BP BP7.1, `v0.36.7`): frozenCspaceDelete refuses a capability
+that records a mapping.  The live delete removes that mapping before it returns
+(`cspaceDeleteSlotFinalising`, seL4's `finaliseCap` → `unmapPage`); this surface
+has no VSpace unmap to do it with, so erasing the slot would leave a mapping
+whose capability is gone — the defect the live cut closes.  The control is the
+same capability with no record, which FO-013 already deletes. -/
+private def fo013b_cspaceDeleteRefusesMappedFrameCap : IO Unit := do
+  let cap : Capability :=
+    { target := .object ⟨42⟩, rights := .ofNat 7, badge := none,
+      mapping := some { asid := SeLe4n.ASID.ofNat 3, vaddr := SeLe4n.VAddr.ofNat 0x60000 } }
+  let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
+  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fst with
+  | .ok _ => throw <| IO.userError "deleting a mapping-recording capability should be refused"
+  | .error e => expect "mapping record → revocationRequired" (e == .revocationRequired)
+  -- CONTROL: the same capability, record stripped, deletes.
+  let radix' := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap.withoutMapping
+  let fst' := mkFrozenState [(⟨10⟩, .cnode { cn with slots := radix' })]
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fst' with
+  | .ok _ => expect "CONTROL: no record → the delete succeeds" true
+  | .error _ => throw <| IO.userError "the record-free delete should succeed"
+
+/-- FO-013c (WS-BP BP7.1, `v0.36.12`): frozenCspaceDelete refuses a capability
+naming an **installed page table**.  The live delete takes the table out of its
+address space when that capability is the table's last
+(`finaliseDestroyedCapabilities`); this surface can neither detach a table nor
+decide *last*, so it refuses.  Two controls: the same capability once the root
+no longer holds the table (a stale record, which the live kernel reads as not
+installed), and a capability naming a table installed nowhere — both delete. -/
+private def fo013c_cspaceDeleteRefusesInstalledTableCap : IO Unit := do
+  let cap : Capability := { target := .object ⟨42⟩, rights := .ofNat 3, badge := none }
+  let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
+  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let inst : PageTableInstall := { root := ⟨20⟩, level := 1, index := 0 }
+  let table : PageTableObject := { base := SeLe4n.PAddr.ofNat 0x5000, installedIn := some inst }
+  let emptyMappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions) :=
+    SeLe4n.Kernel.RobinHood.RHTable.empty 16
+  let holding : FrozenVSpaceRoot :=
+    { asid := ⟨1⟩, mappings := freezeMap emptyMappings, tables := [inst.slotFor ⟨42⟩] }
+  let fst := mkFrozenState
+    [(⟨10⟩, .cnode cn), (⟨42⟩, .pageTable table), (⟨20⟩, .vspaceRoot holding)]
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fst with
+  | .ok _ => throw <| IO.userError "deleting an installed table's capability should be refused"
+  | .error e => expect "installed page table → revocationRequired" (e == .revocationRequired)
+  -- CONTROL: the root no longer holds the table — the record is stale.
+  let fstStale := mkFrozenState
+    [(⟨10⟩, .cnode cn), (⟨42⟩, .pageTable table), (⟨20⟩, .vspaceRoot { holding with tables := [] })]
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fstStale with
+  | .ok _ => expect "CONTROL: a stale record → the delete succeeds" true
+  | .error _ => throw <| IO.userError "the stale-record delete should succeed"
+  -- CONTROL: a table installed nowhere.
+  let fstFree := mkFrozenState
+    [(⟨10⟩, .cnode cn), (⟨42⟩, .pageTable { table with installedIn := none })]
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fstFree with
+  | .ok _ => expect "CONTROL: an uninstalled table → the delete succeeds" true
+  | .error _ => throw <| IO.userError "the uninstalled-table delete should succeed"
+
 -- ============================================================================
 -- TPH-014: Notification Signal/Wait
 -- ============================================================================
@@ -620,13 +678,19 @@ private def fo020_frozenCspaceMint : IO Unit := do
   let objs := [(cnodeId, FrozenKernelObject.cnode frozenCNode), (epId, FrozenKernelObject.endpoint {})]
   let objsMap := objs.foldl (fun acc (k, v) => acc.insert k v) (RHTable.empty 16)
   let st0 : FrozenSystemState := { emptyFrozenState with objects := freezeMap objsMap }
-  let testCap : Capability := { target := .object epId, rights := .ofNat 7, badge := none }
+  -- `v0.36.38`: the source carries a mapping record, which a new capability
+  -- must not inherit — it made no mapping (seL4's `deriveCap`).
+  let testCap : Capability :=
+    { target := .object epId, rights := .ofNat 7, badge := none,
+      mapping := some { asid := SeLe4n.ASID.ofNat 1, vaddr := SeLe4n.VAddr.ofNat 0x1000 } }
   match frozenCspaceMint cnodeId (SeLe4n.Slot.ofNat 0) testCap st0 with
   | .ok ((), st1) =>
     -- Verify slot 0 now has the cap
     match frozenCspaceLookup st1 (SeLe4n.CPtr.ofNat 0) cnodeId with
     | .ok cap =>
       expect "frozenCspaceMint inserts cap" (cap.target == .object epId)
+      expect "frozenCspaceMint strips the source's mapping record" (cap.mapping.isNone)
+      expect "RETIRED: a verbatim insert would have kept the record" (testCap.mapping.isSome)
       IO.println "frozen-ops check passed [FO-020: frozenCspaceMint]"
     | .error e => throw <| IO.userError s!"lookup after mint failed: {reprStr e}"
   | .error e => throw <| IO.userError s!"frozenCspaceMint failed: {reprStr e}"
@@ -3141,6 +3205,8 @@ def main : IO Unit := do
   fo012_serviceLookupMissing
   IO.println "--- TPH-013: Delete in Frozen ---"
   fo013_cspaceDelete
+  fo013b_cspaceDeleteRefusesMappedFrameCap
+  fo013c_cspaceDeleteRefusesInstalledTableCap
   IO.println "--- TPH-014: Notification Signal/Wait ---"
   fo014_notificationSignal
   fo015_notificationWait

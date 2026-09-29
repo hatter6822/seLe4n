@@ -296,6 +296,15 @@ outside SM3.A scope. -/
 structure FrozenVSpaceRoot where
   asid     : SeLe4n.ASID
   mappings : FrozenMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
+  /-- WS-BP BP7.1 slice 4b: the runtime root's table page, forwarded verbatim
+      by `freezeVSpaceRoot`. -/
+  tableBase : Option SeLe4n.PAddr := none
+  /-- WS-BP BP7.1 (`v0.36.12`): the runtime root's intermediate tables,
+      forwarded verbatim by `freezeVSpaceRoot`. -/
+  tables : List PageTableSlot := []
+  /-- PR #904 review (`v0.36.41`): the runtime root's per-address mapping
+      epochs (`VSpaceRoot.mappingEpochs`), frozen by `freezeVSpaceRoot`. -/
+  mappingEpochs : FrozenMap SeLe4n.VAddr Nat := ⟨#[], {}⟩
   /-- WS-SM SM3.A.7: per-VSpaceRoot lock state forwarded from the runtime
       representation through `freezeVSpaceRoot`. -/
   lock     : SeLe4n.Kernel.Concurrency.RwLockState :=
@@ -321,7 +330,7 @@ instance : Repr FrozenVSpaceRoot where
 
 /-- Q5-B: Frozen kernel object — mirrors `KernelObject` but with frozen
 representations for CNode and VSpaceRoot. TCB, Endpoint, Notification,
-UntypedObject, SchedContext, and Reply are unchanged (they contain no
+UntypedObject, SchedContext, Reply and Frame are unchanged (they contain no
 embedded hash tables). -/
 inductive FrozenKernelObject where
   | tcb (t : TCB)
@@ -332,6 +341,10 @@ inductive FrozenKernelObject where
   | untyped (u : UntypedObject)
   | schedContext (sc : SeLe4n.Kernel.SchedContext)
   | reply (r : SeLe4n.Kernel.Reply)
+  | frame (f : FrameObject)
+  /-- WS-BP BP7.1 (`v0.36.12`): an intermediate translation table, passed
+      through verbatim. -/
+  | pageTable (p : PageTableObject)
 
 /-- Q5-B: Extract the object type from a frozen kernel object. -/
 def FrozenKernelObject.objectType : FrozenKernelObject → KernelObjectType
@@ -343,6 +356,8 @@ def FrozenKernelObject.objectType : FrozenKernelObject → KernelObjectType
   | .untyped _ => .untyped
   | .schedContext _ => .schedContext
   | .reply _ => .reply
+  | .frame _ => .frame
+  | .pageTable _ => .pageTable
 
 /-- Q5-B: Frozen kernel object preserves the type tag of the source object. -/
 theorem FrozenKernelObject.objectType_tcb (t : TCB) :
@@ -361,6 +376,8 @@ theorem FrozenKernelObject.objectType_schedContext (sc : SeLe4n.Kernel.SchedCont
     (FrozenKernelObject.schedContext sc).objectType = .schedContext := rfl
 theorem FrozenKernelObject.objectType_reply (r : SeLe4n.Kernel.Reply) :
     (FrozenKernelObject.reply r).objectType = .reply := rfl
+theorem FrozenKernelObject.objectType_frame (f : FrameObject) :
+    (FrozenKernelObject.frame f).objectType = .frame := rfl
 
 /-- WS-SM SM3.A.10 audit-pass-2: per-variant lock-state projection on
 `FrozenKernelObject`, mirroring `KernelObject.objectLockOf`
@@ -385,6 +402,8 @@ def FrozenKernelObject.objectLockOf :
   | .untyped u      => u.lock
   | .schedContext s => s.lock
   | .reply r        => r.lock
+  | .frame f        => f.lock
+  | .pageTable p    => p.lock
 
 /-- WS-SM SM3.A.10 audit-pass-2: per-variant unfold lemma for
 `FrozenKernelObject.objectLockOf` on `.tcb`. -/
@@ -425,6 +444,16 @@ def FrozenKernelObject.objectLockOf :
 `FrozenKernelObject.objectLockOf` on `.reply`. -/
 @[simp] theorem FrozenKernelObject.objectLockOf_reply (r : SeLe4n.Kernel.Reply) :
     (FrozenKernelObject.reply r).objectLockOf = r.lock := rfl
+
+/-- WS-BP BP7.1: per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.frame`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_frame (f : FrameObject) :
+    (FrozenKernelObject.frame f).objectLockOf = f.lock := rfl
+
+/-- WS-BP BP7.1 (`v0.36.12`): per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.pageTable`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_pageTable (p : PageTableObject) :
+    (FrozenKernelObject.pageTable p).objectLockOf = p.lock := rfl
 
 -- ============================================================================
 -- Q5-B: FrozenSchedulerState
@@ -539,6 +568,12 @@ structure FrozenSystemState where
       snapshot) owes no maintenance. -/
   pendingIcacheMaintenance :
       List SeLe4n.Kernel.Architecture.ICacheInvalidation
+  /-- WS-BP BP7.2: the physical-write ledger, transferred from
+      `SystemState.pendingPhysicalWrites` during freeze.  **Required** (no
+      default), so a silent drop is a compile error; always `[]` in practice,
+      for the reason `pendingIcacheMaintenance` is. -/
+  pendingPhysicalWrites :
+      List SeLe4n.Kernel.Architecture.PhysicalWrite
   /-- WS-SM SM8.C.8: the declassification audit trail, transferred from
       `SystemState.declassificationAuditLog` during freeze.  **Required** (no
       default), for the same reason as the three fields above and with more at
@@ -622,6 +657,12 @@ so the frozen-phase representation preserves the per-object lock state. -/
 def freezeVSpaceRoot (vs : VSpaceRoot) : FrozenVSpaceRoot :=
   { asid := vs.asid
     mappings := freezeMap vs.mappings
+    -- WS-BP BP7.1 slice 4b: forward the table page.
+    tableBase := vs.tableBase
+    -- WS-BP BP7.1 (`v0.36.12`): forward the intermediate tables.
+    tables := vs.tables
+    -- PR #904 review (`v0.36.41`): freeze the mapping epochs.
+    mappingEpochs := freezeMap vs.mappingEpochs
     -- WS-SM SM3.A.7: forward the runtime lock state into the frozen view.
     lock := vs.lock }
 
@@ -637,6 +678,8 @@ def freezeObject (obj : KernelObject) : FrozenKernelObject :=
   | .untyped u => .untyped u
   | .schedContext sc => .schedContext sc
   | .reply r => .reply r
+  | .frame f => .frame f
+  | .pageTable p => .pageTable p
 
 /-- Q5-C: `freezeObject` preserves the object type tag. -/
 theorem freezeObject_preserves_type (obj : KernelObject) :
@@ -712,6 +755,8 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     perCoreICache := st.perCoreICache
     -- WS-SM SM7.D.1: forward the instruction-cache emission ledger unchanged.
     pendingIcacheMaintenance := st.pendingIcacheMaintenance
+    -- WS-BP BP7.2: forward the physical-write ledger unchanged.
+    pendingPhysicalWrites := st.pendingPhysicalWrites
     -- WS-SM SM8.C.8: forward the declassification audit trail unchanged — a
     -- frozen snapshot records every downgrade the running system recorded.
     declassificationAuditLog := st.declassificationAuditLog
@@ -769,6 +814,10 @@ theorem freeze_preserves_perCoreICache (ist : IntermediateState) :
 /-- WS-SM SM7.D.1: `freeze` preserves the instruction-cache emission ledger. -/
 theorem freeze_preserves_pendingIcacheMaintenance (ist : IntermediateState) :
     (freeze ist).pendingIcacheMaintenance = ist.state.pendingIcacheMaintenance := rfl
+
+/-- WS-BP BP7.2: `freeze` preserves the physical-write ledger. -/
+theorem freeze_preserves_pendingPhysicalWrites (ist : IntermediateState) :
+    (freeze ist).pendingPhysicalWrites = ist.state.pendingPhysicalWrites := rfl
 
 /-- WS-SM SM8.C.8: freeze carries the declassification audit trail intact — the
 frozen `declassificationAuditLog` is identical to the pre-freeze
@@ -982,6 +1031,11 @@ theorem freezeObject_untyped_passthrough (u : UntypedObject) :
 /-- Z1-O: `freezeObject` passes through SchedContext unchanged (no internal RHTables). -/
 theorem freezeObject_schedContext_passthrough (sc : SeLe4n.Kernel.SchedContext) :
     freezeObject (.schedContext sc) = .schedContext sc := rfl
+
+/-- WS-BP BP7.1: `freezeObject` passes a frame through unchanged (it carries no
+internal table). -/
+theorem freezeObject_frame_passthrough (f : FrameObject) :
+    freezeObject (.frame f) = .frame f := rfl
 
 /-- Q5-C: `FrozenMap.set` preserves `data.size`. -/
 theorem frozenMap_set_preserves_size [BEq κ] [Hashable κ] [LawfulBEq κ]

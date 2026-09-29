@@ -50,6 +50,13 @@ CROSS_FEATURES="hw_target"
 # WS-BP BP5.1: the kernel image, the one final bare-metal binary in the tree.
 IMAGE_BIN="sele4n-kernel"
 IMAGE_FEATURES="kernel_image"
+# WS-BP BP8.1: the board feature that builds the image for QEMU's `virt`.
+VIRT_FEATURE="board_qemu_virt"
+# WS-BP BP8.4: the Tier-4 in-image exercisers, built into the `virt` TEST image
+# only.  Never a member of IMAGE_FEATURES: the Raspberry Pi 5 image the archive
+# lane uploads must not carry them, and `scripts/check_aarch64_cross_target.py`
+# refuses an image build that names the feature without the board selector.
+EXERCISER_FEATURE="smp_exercisers"
 
 echo "=== aarch64 cross-compile coverage (WS-RR RR1) ==="
 echo ""
@@ -111,7 +118,7 @@ echo "      ✓ debug and release cross builds succeeded"
 echo ""
 
 # --------------------------------------------------------------------------
-# [3/7] The three .S files really assembled.
+# [3/7] The four .S files really assembled (WS-BP BP7.9 added fp_context.S).
 #
 # `build.rs` only assembles when `CARGO_CFG_TARGET_ARCH == "aarch64"`.
 # If that gate ever regressed, the build above would still pass while
@@ -119,14 +126,15 @@ echo ""
 # the failure shape this whole workstream exists to eliminate.  So the
 # archive is inspected rather than assumed.
 # --------------------------------------------------------------------------
-echo "[3/7] Verifying boot.S / vectors.S / trap.S assembled..."
+echo "[3/7] Verifying boot.S / vectors.S / trap.S / fp_context.S assembled..."
 # Exactly one archive can exist now, since the directory was cleared above;
 # `head -1` is defensive rather than a choice between candidates.
 asm_archive="$(find "target/${CROSS_TARGET}/release/build" \
     -name 'libsele4n_hal_asm.a' -print 2> /dev/null | head -1)"
 if [ -z "${asm_archive}" ]; then
     echo "      ✗ FAILED — no libsele4n_hal_asm.a produced for ${CROSS_TARGET}."
-    echo "        build.rs assembles src/boot.S, src/vectors.S and src/trap.S"
+    echo "        build.rs assembles src/boot.S, src/vectors.S, src/trap.S and"
+    echo "        src/fp_context.S"
     echo "        only when CARGO_CFG_TARGET_ARCH == aarch64.  A missing"
     echo "        archive means the assembly step was skipped and the .S"
     echo "        files have no compile coverage."
@@ -140,7 +148,7 @@ if command -v ar > /dev/null 2>&1; then
 else
     members="$(strings "${asm_archive}" 2> /dev/null || true)"
 fi
-for obj in boot vectors trap; do
+for obj in boot vectors trap fp_context; do
     if ! printf '%s\n' "${members}" | grep -q -- "${obj}\.o"; then
         echo "      ✗ FAILED — ${obj}.o missing from ${asm_archive}"
         echo "        Members found:"
@@ -148,7 +156,7 @@ for obj in boot vectors trap; do
         exit 1
     fi
 done
-echo "      ✓ all three .S sources assembled into ${asm_archive##*/}"
+echo "      ✓ all four .S sources assembled into ${asm_archive##*/}"
 echo ""
 
 # --------------------------------------------------------------------------
@@ -247,6 +255,31 @@ python3 "${PROJECT_ROOT}/scripts/check_kernel_image.py" \
 python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
 echo "      ✓ the kernel image links under link.ld and is FP/SIMD-free"
+# WS-BP BP8.1: the same image built for QEMU's `virt` (`board_qemu_virt`) --
+# `virt`'s device map, and a link script `build.rs` derives from `link.ld` at
+# `virt`'s RAM base -- is linted, linked and read for FP/SIMD too, so the board
+# the QEMU lanes boot cannot rot behind a feature no per-PR lane enables.  It
+# comes last because it links to the same path as the image checked above.
+cargo clippy --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
+    --features "${CROSS_FEATURES},${IMAGE_FEATURES},${VIRT_FEATURE}" --lib --bins -- -D warnings
+cargo build --release --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
+    --features "${IMAGE_FEATURES},${VIRT_FEATURE}" --bin "${IMAGE_BIN}"
+python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
+    target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
+echo "      ✓ the QEMU virt image lints clean, links and is FP/SIMD-free"
+# WS-BP BP8.4: and the `virt` TEST image the Tier-4 exerciser gates boot -- the
+# same board with the in-image drivers (`smp_exercisers`) -- is linted, linked
+# and read for FP/SIMD too.  The drivers run at EL1 with FP/SIMD trapped, so a
+# driver that touched a vector register would halt the gate rather than fail
+# it; the gate reads the image, where that is decided.  It links to the same
+# path, so it comes after both images above and their checks.
+cargo clippy --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
+    --features "${CROSS_FEATURES},${IMAGE_FEATURES},${VIRT_FEATURE},${EXERCISER_FEATURE}" --lib --bins -- -D warnings
+cargo build --release --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
+    --features "${IMAGE_FEATURES},${VIRT_FEATURE},${EXERCISER_FEATURE}" --bin "${IMAGE_BIN}"
+python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
+    target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
+echo "      ✓ the QEMU virt test image (the Tier-4 exercisers) lints clean, links and is FP/SIMD-free"
 echo ""
 
 echo "=== aarch64 cross-compile coverage: PASS ==="

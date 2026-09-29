@@ -4,10 +4,16 @@
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 117–131.
 
 use crate::args::PagePerms;
-use sele4n_types::{Asid, KernelError, KernelResult, PAddr, VAddr};
+use sele4n_types::{Asid, CPtr, KernelError, KernelResult, VAddr};
 
 /// Arguments for `vspaceMap` (syscall 9).
-/// Register mapping: x2=asid, x3=vaddr, x4=paddr, x5=perms word.
+/// Register mapping: x2=asid, x3=vaddr, x4=frame capability address, x5=perms word.
+///
+/// WS-BP BP7.1: `frame` is the address, in the caller's CSpace, of a
+/// capability to the **frame** being mapped — never a physical address.  The
+/// kernel maps that frame's own base, so holding the capability is the
+/// authority over the memory (seL4's `seL4_ARM_Page_Map` is an invocation of a
+/// frame capability for the same reason).
 ///
 /// T3-C/M-NEW-10: The `perms` field is typed as `PagePerms` (validated 5-bit
 /// bitmask) instead of raw `u64`. The decode method rejects invalid permission
@@ -19,7 +25,7 @@ use sele4n_types::{Asid, KernelError, KernelResult, PAddr, VAddr};
 pub struct VSpaceMapArgs {
     pub asid: Asid,
     pub vaddr: VAddr,
-    pub paddr: PAddr,
+    pub frame: CPtr,
     pub perms: PagePerms,
 }
 
@@ -28,7 +34,7 @@ impl VSpaceMapArgs {
         [
             self.asid.raw(),
             self.vaddr.raw(),
-            self.paddr.raw(),
+            self.frame.raw(),
             self.perms.raw() as u64,
         ]
     }
@@ -46,7 +52,7 @@ impl VSpaceMapArgs {
         Ok(Self {
             asid: Asid::from(regs[0]),
             vaddr: VAddr::from(regs[1]),
-            paddr: PAddr::from(regs[2]),
+            frame: CPtr::from(regs[2]),
             perms,
         })
     }
@@ -89,6 +95,35 @@ impl VSpaceUnmapArgs {
 /// (`SyscallArgDecode.lean`).
 pub type VSpaceUnifyInstructionArgs = VSpaceUnmapArgs;
 
+/// Arguments for `pageTableMap` (syscall 39) — seL4's `seL4_ARM_PageTable_Map`.
+/// Register mapping: x2 = the address, in the **caller's** CSpace, of a
+/// capability to the address space (held with `Write`); x3 = a virtual address
+/// whose walk the table serves.
+///
+/// Lean: `PageTableMapArgs` (SyscallArgDecode.lean, WS-BP BP7.1)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageTableMapArgs {
+    pub vspace_root: u64,
+    pub vaddr: u64,
+}
+
+impl PageTableMapArgs {
+    pub const fn encode(&self) -> [u64; 2] {
+        [self.vspace_root, self.vaddr]
+    }
+
+    /// Decode from message registers. Requires 2 registers.
+    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
+        if regs.len() < 2 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            vspace_root: regs[0],
+            vaddr: regs[1],
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,7 +133,7 @@ mod tests {
         let args = VSpaceMapArgs {
             asid: Asid::from(1u64),
             vaddr: VAddr::from(0x1000u64),
-            paddr: PAddr::from(0x2000u64),
+            frame: CPtr::from(3u64),
             perms: PagePerms::try_from(0x07u64).unwrap(),
         };
         assert_eq!(VSpaceMapArgs::decode(&args.encode()).unwrap(), args);
@@ -123,6 +158,19 @@ mod tests {
         assert_eq!(
             VSpaceUnifyInstructionArgs::decode(&args.encode()).unwrap(),
             args
+        );
+    }
+
+    #[test]
+    fn page_table_map_roundtrip() {
+        let args = PageTableMapArgs {
+            vspace_root: 0x31,
+            vaddr: 0x4000_0000,
+        };
+        assert_eq!(PageTableMapArgs::decode(&args.encode()).unwrap(), args);
+        assert_eq!(
+            PageTableMapArgs::decode(&[1]),
+            Err(KernelError::InvalidMessageInfo)
         );
     }
 

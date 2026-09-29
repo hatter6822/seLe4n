@@ -142,14 +142,31 @@ two seams cannot acquire different footprints for the same step.
 **WS-RR RR7.26**: the record is what makes bring-up hand the HAL a thread at
 all.  A freshly-onlined core has `currentOnCore c = none`, so its first
 reschedule dispatches its idle thread — and until RR7.26 the HAL's per-core
-mirror still said `NO_CURRENT_THREAD` afterwards, because nothing wrote it. -/
+mirror still said `NO_CURRENT_THREAD` afterwards, because nothing wrote it.
+
+**WS-BP BP7.3**: the frame capture is the reschedule entry's own, and at
+bring-up no trap handler has published a frame, so it captures `none` and
+saves nothing.
+
+**`v0.36.39`**: like every state-committing entry it drains the physical-write
+ledger in its atomic step and performs it before the restore. -/
 theorem secondaryKernelMain_def (coreId : UInt64) :
     secondaryKernelMain coreId =
       (do
+        let frame ← Platform.FFI.captureTrapFrame
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
-          let st' := (rescheduleUnderDeclaredLockSet coreId st).state
-          ((Concurrency.coreIdOfUInt64? coreId).map
-            (fun c => (c, st'.scheduler.currentOnCore c)), st'))
-        Concurrency.recordCommittedCurrentThreadHw record) := rfl
+          let st' := (rescheduleUnderDeclaredLockSet coreId
+            (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+      |> (PriorityInheritance.settleResidencyAt · coreId)
+          (((Concurrency.coreIdOfUInt64? coreId).map
+            (fun c => (c, st'.scheduler.currentOnCore c)),
+            Concurrency.restoreTargetAt st' coreId,
+            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+        Platform.FFI.completePhysicalWrites record.2.2.1
+        Platform.FFI.completeIcacheMaintenance record.2.2.2
+        Concurrency.releaseSwitchedFpOwner coreId
+        Platform.FFI.restoreTrapFrame record.2.1
+        Concurrency.recordCommittedCurrentThreadHw record.1) := rfl
 
 end SeLe4n.Kernel

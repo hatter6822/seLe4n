@@ -1416,10 +1416,11 @@ theorem lockSet_cspaceMove_size_le (a : ThreadId) (b c : ObjId) :
   unfold lockSet_cspaceMove maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
-theorem lockSet_cspaceDelete_size_le (a : ThreadId) (b c : ObjId) :
-    (lockSet_cspaceDelete a b c).size ≤ maxLockSetSize := by
+theorem lockSet_cspaceDelete_size_le (a : ThreadId) (b c : ObjId)
+    (d : Option ObjId) :
+    (lockSet_cspaceDelete a b c d).size ≤ maxLockSetSize := by
   unfold lockSet_cspaceDelete maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 theorem lockSet_lifecycleRetype_size_le (a : ThreadId) (b c d : ObjId)
     (t : Option LockId) :
@@ -1427,8 +1428,15 @@ theorem lockSet_lifecycleRetype_size_le (a : ThreadId) (b c d : ObjId)
   unfold lockSet_lifecycleRetype maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
-theorem lockSet_vspaceMap_size_le (a : ThreadId) (b c : ObjId) :
-    (lockSet_vspaceMap a b c).size ≤ maxLockSetSize := by
+/-- **WS-BP BP7.1**: the carve's footprint is within the ceiling. -/
+theorem lockSet_untypedRetype_size_le (a : ThreadId) (b c d e : ObjId)
+    (f : KernelObjectType) :
+    (lockSet_untypedRetype a b c d e f).size ≤ maxLockSetSize := by
+  unfold lockSet_untypedRetype maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_vspaceMap_size_le (a : ThreadId) (b c d e : ObjId) :
+    (lockSet_vspaceMap a b c d e).size ≤ maxLockSetSize := by
   unfold lockSet_vspaceMap maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
@@ -1540,6 +1548,22 @@ theorem lockSet_tcbSetFaultHandler_size_le (a : ThreadId) (b : ObjId) (c : Threa
   unfold lockSet_tcbSetFaultHandler maxLockSetSize
   exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
 
+theorem lockSet_tcbSetSpace_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d e : Option ObjId) (q : Option QueueOwner) :
+    (lockSet_tcbSetSpace a b c d e q).size ≤ maxLockSetSize := by
+  unfold lockSet_tcbSetSpace maxLockSetSize
+  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
+
+theorem lockSet_pageTableMap_size_le (a : ThreadId) (b c : ObjId) (d : Option ObjId) :
+    (lockSet_pageTableMap a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_pageTableMap maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
+theorem lockSet_pageTableUnmap_size_le (a : ThreadId) (b c : ObjId) (d : Option ObjId) :
+    (lockSet_pageTableUnmap a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_pageTableUnmap maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
 -- WS-RR RR7.18 (register §6 finding 15): the four footprints the bundle did not
 -- reach.  Their absence was not a gap in the *proofs* — each follows from the
 -- same one-line helper application as its neighbours — but a gap in the
@@ -1626,9 +1650,10 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_cspaceMint a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceCopy a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMove a b c).size ≤ maxLockSetSize) ∧
-    (∀ a b c, (lockSet_cspaceDelete a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_cspaceDelete a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d t, (lockSet_lifecycleRetype a b c d t).size ≤ maxLockSetSize) ∧
-    (∀ a b c, (lockSet_vspaceMap a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f, (lockSet_untypedRetype a b c d e f).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e, (lockSet_vspaceMap a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize) ∧
     (∀ a b t, (lockSet_declassify a b t).size ≤ maxLockSetSize) ∧
@@ -1646,6 +1671,9 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d q, (lockSet_tcbSetMCPriority a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbSetIPCBuffer a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d e q, (lockSet_tcbSetFaultHandler a b c d e q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e q, (lockSet_tcbSetSpace a b c d e q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_pageTableMap a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_pageTableUnmap a b c d).size ≤ maxLockSetSize) ∧
     -- WS-RR RR7.18: the four the enumeration had missed.
     (∀ a b c, (lockSet_mintReplyCap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbBindNotification a b c d q).size ≤ maxLockSetSize) ∧
@@ -1659,6 +1687,7 @@ theorem lockSetTransitions_within_bound :
    lockSet_notificationWait_size_le, lockSet_cspaceMint_size_le,
    lockSet_cspaceCopy_size_le, lockSet_cspaceMove_size_le,
    lockSet_cspaceDelete_size_le, lockSet_lifecycleRetype_size_le,
+   lockSet_untypedRetype_size_le,
    lockSet_vspaceMap_size_le, lockSet_vspaceUnmap_size_le,
    lockSet_vspaceUnifyInstruction_size_le, lockSet_declassify_size_le,
    lockSet_declassifySignal_size_le,
@@ -1669,6 +1698,8 @@ theorem lockSetTransitions_within_bound :
    lockSet_tcbResume_size_le,
    lockSet_tcbSetPriority_size_le, lockSet_tcbSetMCPriority_size_le,
    lockSet_tcbSetIPCBuffer_size_le, lockSet_tcbSetFaultHandler_size_le,
+   lockSet_tcbSetSpace_size_le,
+   lockSet_pageTableMap_size_le, lockSet_pageTableUnmap_size_le,
    lockSet_mintReplyCap_size_le, lockSet_tcbBindNotification_size_le,
    lockSet_tcbUnbindNotification_size_le, lockSet_tcbSetAffinity_size_le⟩
 

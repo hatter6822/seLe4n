@@ -165,7 +165,7 @@ theorem dualQueueEndpointWellFormed_of_getElem_eq {s1 s2 : SystemState}
     | endpoint ep =>
       exact fun h => ⟨intrusiveQueueWellFormed_of_getElem_eq hEq h.1,
                       intrusiveQueueWellFormed_of_getElem_eq hEq h.2⟩
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       exact fun _ => trivial
 
 /-- WS-SM SM6.A.1: the dual-queue system invariant is preserved by any state
@@ -514,6 +514,9 @@ structure OffSchedulerAgrees (s1 s2 : SystemState) : Prop where
   perCoreICache : s2.perCoreICache = s1.perCoreICache
   pendingIcacheMaintenance :
     s2.pendingIcacheMaintenance = s1.pendingIcacheMaintenance
+  /-- WS-BP BP7.2: the physical-write ledger agrees. -/
+  pendingPhysicalWrites :
+    s2.pendingPhysicalWrites = s1.pendingPhysicalWrites
   /-- WS-SM SM8.C.8: the declassification audit trail agrees.  A scheduler-only
       substitution must not silently forge or drop a recorded downgrade. -/
   declassificationAuditLog :
@@ -547,7 +550,7 @@ namespace OffSchedulerAgrees
 /-- Reflexivity. -/
 theorem refl (st : SystemState) : OffSchedulerAgrees st st :=
   ⟨fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-   rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+   rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Symmetry. -/
 theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
@@ -557,7 +560,7 @@ theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
    h.asidTable.symm, h.interfaceRegistry.symm, h.serviceRegistry.symm, h.cdt.symm,
    h.cdtSlotNode.symm, h.cdtNodeSlot.symm, h.cdtNextNode.symm, h.scThreadIndex.symm,
    h.tlb.symm, h.objStoreLock.symm, h.perCoreTlb.symm, h.perCoreICache.symm,
-   h.pendingIcacheMaintenance.symm, h.declassificationAuditLog.symm,
+   h.pendingIcacheMaintenance.symm, h.pendingPhysicalWrites.symm, h.declassificationAuditLog.symm,
    h.declassificationAuditEpoch.symm, h.declassificationRefusals.symm,
    h.declassificationTaint.symm⟩
 
@@ -576,6 +579,7 @@ theorem trans {s1 s2 s3 : SystemState}
    hSecond.tlb.trans hFirst.tlb, hSecond.objStoreLock.trans hFirst.objStoreLock,
    hSecond.perCoreTlb.trans hFirst.perCoreTlb, hSecond.perCoreICache.trans hFirst.perCoreICache,
    hSecond.pendingIcacheMaintenance.trans hFirst.pendingIcacheMaintenance,
+   hSecond.pendingPhysicalWrites.trans hFirst.pendingPhysicalWrites,
    hSecond.declassificationAuditLog.trans hFirst.declassificationAuditLog,
    hSecond.declassificationAuditEpoch.trans hFirst.declassificationAuditEpoch,
    hSecond.declassificationRefusals.trans hFirst.declassificationRefusals,
@@ -592,7 +596,7 @@ off-scheduler. -/
 theorem offSchedulerAgrees_scheduler_update (st : SystemState) (σ : SchedulerState) :
     OffSchedulerAgrees st { st with scheduler := σ } :=
   ⟨fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-   rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+   rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- SM6.D: `ensureRunnable` (the single-core boot enqueue) agrees with its
 input off-scheduler. -/
@@ -639,7 +643,7 @@ theorem enqueueRunnableOnCore_offSchedulerAgrees_of_ready
     (hInv : st.objects.invExt) :
     OffSchedulerAgrees st (enqueueRunnableOnCore st c tid) := by
   refine ⟨fun oid => enqueueRunnableOnCore_objects_getElem_eq_of_ready st c tid tcb hTcb hReady hInv oid,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   all_goals simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
   all_goals split <;> rfl
 
@@ -681,7 +685,7 @@ theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
   refine ⟨hObjEq, hRel.machine, ?_, ?_, hRel.services, hRel.irqHandlers, ?_, ?_,
     hRel.interfaceRegistry, hRel.serviceRegistry, hRel.cdt, hRel.cdtSlotNode,
     hRel.cdtNodeSlot, hRel.cdtNextNode, hRel.scThreadIndex, hRel.tlb, hRel.objStoreLock,
-    hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance,
+    hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance, hRel.pendingPhysicalWrites,
     hRel.declassificationAuditLog, hRel.declassificationAuditEpoch,
     hRel.declassificationRefusals, hRel.declassificationTaint⟩
   · simp only [hRel.objectIndexSet, hRel.objectIndex]
@@ -773,7 +777,7 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
   | some obj =>
     cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-    | reply _ => simp
+    | reply _ | frame _ | pageTable _ => simp
     | endpoint ep =>
       simp only []
       cases hL : lookupTcb s1 tid with
@@ -1029,14 +1033,19 @@ theorem removeCallerReplyFrame_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
 conjuncts read.  CNode *content* is read by exactly one clause —
 `capabilityBadgesWellFormed` — which the master transport below therefore takes
 as an explicit obligation for the target state; no conjunct reads a VSpaceRoot
-or a piece of untyped memory at all.  `none` is deliberately **not** inert: a
-transition that deletes or creates an object of a read kind must not slip
-through this frame, so only a rewrite that keeps the oid on a non-read kind on
-*both* sides qualifies. -/
+or a piece of untyped memory at all — nor a **frame** (WS-BP BP7.1), which is a
+page of memory a thread maps, not a structure any conjunct walks.  `none` is
+deliberately **not** inert: a transition that deletes or creates an object of a
+read kind must not slip through this frame, so only a rewrite that keeps the oid
+on a non-read kind on *both* sides qualifies — and the one creation that is
+sound, an absent key becoming a non-read kind, has its own lemma
+(`of_fresh_inert_write`) rather than a widening of this predicate. -/
 def ipcReadInert : Option KernelObject → Prop
   | some (.cnode _) => True
   | some (.vspaceRoot _) => True
   | some (.untyped _) => True
+  | some (.frame _) => True
+  | some (.pageTable _) => True
   | _ => False
 
 /-- Pointwise agreement on every object kind the IPC bundle's conjuncts read
@@ -1116,6 +1125,68 @@ theorem of_single_inert_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
     by_cases hEq : oid = key
     · subst hEq; exact Or.inr ⟨h1, h2⟩
     · exact Or.inl (hNe oid hEq)
+
+/-- **WS-BP BP7.1**: the creation instance — a key that held **no** object and
+now holds one of a non-read kind.  Sound for the reason `ipcReadInert` excludes
+`none` on both sides: a read-kind lookup is `some` of that kind, which neither an
+absent key nor a non-read object is, so every read-kind lookup agrees.  The shape
+of the frame an untyped carve creates. -/
+theorem of_fresh_inert_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → s2.objects[oid]? = s1.objects[oid]?)
+    (h1 : s1.objects[key]? = none) (h2 : ipcReadInert s2.objects[key]?) :
+    ipcReadViewAgreement s1 s2 := by
+  have step : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), ¬ ipcReadInert (some o) →
+      (s2.objects[oid]? = some o ↔ s1.objects[oid]? = some o) := by
+    intro oid o hNotInert
+    by_cases hK : oid = key
+    · subst hK
+      rw [h1]
+      constructor
+      · intro hx; rw [hx] at h2; exact absurd h2 hNotInert
+      · intro hx; cases hx
+    · rw [hNe oid hK]
+  exact ⟨fun oid t => step oid (.tcb t) (by simp [ipcReadInert]),
+         fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert]),
+         fun oid ntfn hObj =>
+           ⟨ntfn, (step oid (.notification ntfn) (by simp [ipcReadInert])).mp hObj,
+             rfl, rfl, rfl⟩,
+         fun oid r => step oid (.reply r) (by simp [ipcReadInert]),
+         fun oid sc hSc =>
+           ⟨sc, (step oid (.schedContext sc) (by simp [ipcReadInert])).mpr hSc, rfl⟩⟩
+
+/-- **WS-BP BP7.1 slice 3**: the general form of the two instances above — every
+rewritten key holds, on **each** side independently, either nothing or a kind
+outside the read view.  Covers creation (absent → inert), rewriting (inert →
+inert) and **erasure** (inert → absent) at once, which is the shape an untyped
+reset induces: VSpace roots rewritten, frames erased, the untyped rewritten. -/
+theorem of_inertOrAbsentWrites {s1 s2 : SystemState}
+    (h : ∀ oid : SeLe4n.ObjId,
+      s2.objects[oid]? = s1.objects[oid]? ∨
+      ((s1.objects[oid]? = none ∨ ipcReadInert s1.objects[oid]?) ∧
+       (s2.objects[oid]? = none ∨ ipcReadInert s2.objects[oid]?))) :
+    ipcReadViewAgreement s1 s2 := by
+  have step : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), ¬ ipcReadInert (some o) →
+      (s2.objects[oid]? = some o ↔ s1.objects[oid]? = some o) := by
+    intro oid o hNotInert
+    rcases h oid with hEq | ⟨h1, h2⟩
+    · rw [hEq]
+    · constructor
+      · intro hx; rw [hx] at h2
+        rcases h2 with h2 | h2
+        · cases h2
+        · exact absurd h2 hNotInert
+      · intro hx; rw [hx] at h1
+        rcases h1 with h1 | h1
+        · cases h1
+        · exact absurd h1 hNotInert
+  exact ⟨fun oid t => step oid (.tcb t) (by simp [ipcReadInert]),
+         fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert]),
+         fun oid ntfn hObj =>
+           ⟨ntfn, (step oid (.notification ntfn) (by simp [ipcReadInert])).mp hObj,
+             rfl, rfl, rfl⟩,
+         fun oid r => step oid (.reply r) (by simp [ipcReadInert]),
+         fun oid sc hSc =>
+           ⟨sc, (step oid (.schedContext sc) (by simp [ipcReadInert])).mpr hSc, rfl⟩⟩
 
 /-- A single notification rewrite preserving queue content — `state`,
 `waitingThreads`, `pendingBadge`; `boundTCB` and the lock word are free —
@@ -1289,7 +1360,7 @@ theorem dualQueueEndpointWellFormed_of_readViewAgreement {s1 s2 : SystemState}
       rw [(hView.endpoint _ _).mp hObj] at h
       exact ⟨intrusiveQueueWellFormed_of_readViewAgreement hView h.1,
              intrusiveQueueWellFormed_of_readViewAgreement hView h.2⟩
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ =>
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       trivial
 
 /-- Read-view transport of the dual-queue system invariant. -/

@@ -77,6 +77,15 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
   -- WS-RR RR8.16: cspaceRevoke=35 (`seL4_CNode_Revoke`)
   let r35 := decodeSyscallId ⟨35⟩
   expect "cspaceRevoke=35" (isOkEq r35 .cspaceRevoke)
+  -- WS-BP BP7.1: untypedRetype=36 (`seL4_Untyped_Retype`, frames)
+  let r36 := decodeSyscallId ⟨36⟩
+  expect "untypedRetype=36" (isOkEq r36 .untypedRetype)
+  -- WS-BP BP7.1: untypedReset=37 (seL4's `resetUntypedCap`)
+  let r37 := decodeSyscallId ⟨37⟩
+  expect "untypedReset=37" (isOkEq r37 .untypedReset)
+  -- WS-BP BP7.1: tcbSetSpace=38 (seL4's `TCB_SetSpace`)
+  let r38 := decodeSyscallId ⟨38⟩
+  expect "tcbSetSpace=38" (isOkEq r38 .tcbSetSpace)
   -- WS-SM SM7.D: vspaceUnifyInstruction=29 (the code-publication path)
   let r29 := decodeSyscallId ⟨29⟩
   expect "vspaceUnifyInstruction=29" (isOkEq r29 .vspaceUnifyInstruction)
@@ -94,24 +103,31 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
-  -- First invalid: 36 (WS-RR RR8.16 added cspaceRevoke at 35, on top of the
+  -- First invalid: 41 (WS-BP BP7.1 added pageTableMap at 39 and pageTableUnmap
+  -- at 40, tcbSetSpace at 38, untypedReset at 37
+  -- and untypedRetype at 36, on top of
+  -- WS-RR RR8.16's cspaceRevoke at 35, the
   -- PR #887 review round's tcbSetFaultHandler at 34, WS-SM SM9.C's
   -- declassifySignal at 33, SM9.A's auditRead at 31 and auditDrain at 32,
   -- SM8.C's declassify at 30, SM7.D's vspaceUnifyInstruction at 29 and
   -- PR #822 Phase H's mintReplyCap at 28)
-  let r36 := decodeSyscallId ⟨36⟩
-  expect "invalid=36" (isErrEq r36 .invalidSyscallNumber)
+  let r41 := decodeSyscallId ⟨41⟩
+  expect "invalid=41" (isErrEq r41 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 35/36 (WS-RR RR8.16:
-cspaceRevoke=35 is the last valid). -/
+/-- RD-003: decodeSyscallId — boundary edge 40/41 (WS-BP BP7.1:
+pageTableUnmap=40 is the last valid). -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
-  let r35 := decodeSyscallId ⟨35⟩
-  let r36 := decodeSyscallId ⟨36⟩
-  expect "boundary=35 ok (cspaceRevoke)" (isOkEq r35 .cspaceRevoke)
-  expect "boundary=36 err" (!r36.isOk)
+  let r38 := decodeSyscallId ⟨38⟩
+  let r39 := decodeSyscallId ⟨39⟩
+  let r40 := decodeSyscallId ⟨40⟩
+  let r41 := decodeSyscallId ⟨41⟩
+  expect "tcbSetSpace=38" (isOkEq r38 .tcbSetSpace)
+  expect "pageTableMap=39" (isOkEq r39 .pageTableMap)
+  expect "boundary=40 ok (pageTableUnmap)" (isOkEq r40 .pageTableUnmap)
+  expect "boundary=41 err" (!r41.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do
@@ -305,11 +321,16 @@ private def sad007_lifecycleRetypeInvalidType : IO Unit := do
 
 /-- SAD-008: decodeVSpaceMapArgs — valid decode. -/
 private def sad008_vspaceMap : IO Unit := do
-  -- ASID < 65536, VAddr < 2^48, PAddr arbitrary, perms valid (< 32)
+  -- ASID < 65536, VAddr < 2^48, frame CPtr arbitrary, perms valid (< 32)
   -- AH3-C: Pass ARM64 default maxASID (65536) to parameterized decode
+  -- WS-BP BP7.1: MR2 decodes as a frame capability address, carried verbatim.
   let stub := mkStub #[⟨1⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨1⟩]
   let result := decodeVSpaceMapArgs stub 65536
   expect "SAD-008a vspace map ok" result.isOk
+  expect "SAD-008b MR2 is the frame capability address"
+    (match result with
+     | .ok args => args.frame == SeLe4n.CPtr.ofNat 0x2000
+     | .error _ => false)
 
 /-- SAD-009: decodeVSpaceMapArgs — invalid ASID (>= 65536). -/
 private def sad009_vspaceMapInvalidAsid : IO Unit := do
@@ -502,28 +523,24 @@ private def sad027_noArgDecoders : IO Unit := do
   expect "SAD-027c suspend" (decodeSuspendArgs stub).isOk
   expect "SAD-027d resume" (decodeResumeArgs stub).isOk
 
-/-- SAD-028: validateVSpaceMapPermsForMemoryKind — device+execute rejection. -/
+/-- SAD-028: validateVSpaceMapPermsForMemoryKind — device+execute rejection.
+    WS-BP BP7.1: the check reads a physical address and a permission set — the
+    address is the resolved frame's `base`, not a decoded operand. -/
 private def sad028_validateVSpaceMapPermsDeviceExec : IO Unit := do
   -- PagePermissions.ofNat: bit 0=read, 1=write, 2=execute, 3=user, 4=cacheable
-  -- Construct args with execute=true, placed in a device region
-  let args : VSpaceMapArgs :=
-    { asid := ASID.ofNat 1, vaddr := VAddr.ofNat 0x1000
-      paddr := PAddr.ofNat 0x80000, perms := { execute := true } }
+  let pa := PAddr.ofNat 0x80000
   let deviceRegion : MemoryRegion :=
     { base := PAddr.ofNat 0x80000, size := 0x1000, kind := .device }
   -- Device + execute should be rejected
-  let result := validateVSpaceMapPermsForMemoryKind args [deviceRegion]
+  let result := validateVSpaceMapPermsForMemoryKind pa { execute := true } [deviceRegion]
   expect "SAD-028a device+exec rejected" (!result.isOk)
   -- Device + no execute should be accepted
-  let argsNoExec : VSpaceMapArgs :=
-    { asid := ASID.ofNat 1, vaddr := VAddr.ofNat 0x1000
-      paddr := PAddr.ofNat 0x80000, perms := { read := true } }
-  let resultOk := validateVSpaceMapPermsForMemoryKind argsNoExec [deviceRegion]
+  let resultOk := validateVSpaceMapPermsForMemoryKind pa { read := true } [deviceRegion]
   expect "SAD-028b device+read ok" resultOk.isOk
   -- RAM + execute should be accepted
   let ramRegion : MemoryRegion :=
     { base := PAddr.ofNat 0x80000, size := 0x1000, kind := .ram }
-  let resultRam := validateVSpaceMapPermsForMemoryKind args [ramRegion]
+  let resultRam := validateVSpaceMapPermsForMemoryKind pa { execute := true } [ramRegion]
   expect "SAD-028c ram+exec ok" resultRam.isOk
 
 /-- SAD-029: decodeExtraCapAddrs — basic and truncation behavior. -/

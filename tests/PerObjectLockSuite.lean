@@ -150,7 +150,7 @@ open SeLe4n.Kernel.Concurrency
 #check @KernelObject.objectLockOf_exists
 #check @KernelObject.objectType_and_lockOf_total
 #check @KernelObject.objectLockOf_consistent_with_type
-#check @KernelObjectType.variants_count_exactly_eight
+#check @KernelObjectType.variants_count_exactly_ten
 #check @KernelObjectType.variants_total
 
 /-! ## SM3.A audit-pass-5 — Inventory aggregator -/
@@ -577,21 +577,23 @@ example : (default : SystemState).objStoreLock
     = SeLe4n.Kernel.Concurrency.RwLockState.unheld :=
   default_allObjectLocksUnheld.1
 
-/-! ## KernelObjectType variants_count_exactly_eight -/
+/-! ## KernelObjectType variants_count_exactly_ten -/
 
 example :
     let variants : List KernelObjectType :=
-      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext, .reply]
-    variants.length = 8 := by decide
+      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext, .reply,
+       .frame, .pageTable]
+    variants.length = 10 := by decide
 
-/-! ## perObjectLockTheorems inventory has 37 entries (WS-SM SM6.D: +3 for the Reply object) -/
+/-! ## perObjectLockTheorems inventory has 43 entries (WS-SM SM6.D: +3 for the Reply
+object; WS-BP BP7.1: +3 for the frame object, +3 for the page-table object) -/
 
-example : perObjectLockTheorems.length = 37 := by decide
+example : perObjectLockTheorems.length = 43 := by decide
 
 /-! ## perObjectLockTheorems per-category counts -/
 
-example : (perObjectLockTheorems.filter (·.category == .fieldDefault)).length = 8 := by decide
-example : (perObjectLockTheorems.filter (·.category == .projection)).length = 11 := by decide
+example : (perObjectLockTheorems.filter (·.category == .fieldDefault)).length = 10 := by decide
+example : (perObjectLockTheorems.filter (·.category == .projection)).length = 15 := by decide
 example : (perObjectLockTheorems.filter (·.category == .defaultState)).length = 5 := by decide
 example : (perObjectLockTheorems.filter (·.category == .preservation)).length = 8 := by decide
 example : (perObjectLockTheorems.filter (·.category == .consistency)).length = 5 := by decide
@@ -1055,13 +1057,13 @@ private def runAuditPass5InvariantChecks : IO Unit := do
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §7 SM3.A audit-pass-5 — perObjectLockTheorems inventory ---"
   -- Total count.
-  assertBool "perObjectLockTheorems.length = 37"
-    (decide (perObjectLockTheorems.length = 37))
+  assertBool "perObjectLockTheorems.length = 43"
+    (decide (perObjectLockTheorems.length = 43))
   -- Per-category counts.
-  assertBool "perObjectLockTheorems fieldDefault count = 8"
-    (decide ((perObjectLockTheorems.filter (·.category == .fieldDefault)).length = 8))
-  assertBool "perObjectLockTheorems projection count = 11"
-    (decide ((perObjectLockTheorems.filter (·.category == .projection)).length = 11))
+  assertBool "perObjectLockTheorems fieldDefault count = 10"
+    (decide ((perObjectLockTheorems.filter (·.category == .fieldDefault)).length = 10))
+  assertBool "perObjectLockTheorems projection count = 15"
+    (decide ((perObjectLockTheorems.filter (·.category == .projection)).length = 15))
   assertBool "perObjectLockTheorems defaultState count = 5"
     (decide ((perObjectLockTheorems.filter (·.category == .defaultState)).length = 5))
   assertBool "perObjectLockTheorems preservation count = 8"

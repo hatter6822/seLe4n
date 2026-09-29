@@ -315,6 +315,22 @@ theorem RHTable.size_insert_le [BEq α] [Hashable α] [LawfulBEq α]
       (Nat.add_le_add_right (resize_size_le t hwf) 1)
   · exact RHTable.insertNoResize_size_le _ _ _
 
+/-- **WS-BP BP7.1 (`v0.36.7`): overwriting a present key does not grow the
+table**, through `insert`'s resize branch as well — a resize keeps the key
+(`get?_resize_of_get?`) and never grows the table (`resize_size_le`), and the
+overwrite then reports "not new".  What lets an in-place rewrite of an occupied
+CNode slot keep the slot-count bound. -/
+theorem RHTable.size_insert_le_of_get? [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v w : β) (hExt : t.invExt) (h : t.get? k = some w) :
+    (t.insert k v).size ≤ t.size := by
+  unfold RHTable.insert
+  split
+  · rw [RHTable.insertNoResize_size_of_get? t.resize k v w
+      (RHTable.get?_resize_of_get? t k w hExt h)]
+    exact resize_size_le t hExt.1
+  · rw [RHTable.insertNoResize_size_of_get? t k v w h]
+    exact Nat.le_refl _
+
 -- ============================================================================
 -- N3-B8: mem_iff_isSome_getElem?
 -- ============================================================================

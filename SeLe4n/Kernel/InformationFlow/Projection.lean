@@ -288,7 +288,13 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        pipBoost := none, pendingMessage := none, timedOut := false,
                        cpuAffinity := none, replyObject := none,
                        pendingReceiveReply := none,
-                       lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+                       lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld,
+                       -- WS-BP BP7.9: the saved FP/SIMD context is the thread's
+                       -- own register state, erased exactly as `registerContext`
+                       -- is; the lazy switch (`Architecture.fpAccessOnCore` /
+                       -- `fpReleaseOnCore`) writes it, and an observer that saw
+                       -- it would see every value the thread computed in FP.
+                       fpContext := default }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
@@ -367,6 +373,17 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       .vspaceRoot { v with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
   | .untyped u =>
       .untyped { u with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  -- WS-BP BP7.1: a frame's `base` and `isDevice` are its observable identity —
+  -- *which* physical memory the object is — and are gated, like every other
+  -- field, by `objectObservable` on the frame's own key.  Only the lock is
+  -- plumbing, stripped for SM8.B.4's reason above.
+  | .frame f =>
+      .frame { f with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  -- WS-BP BP7.1 (`v0.36.12`): a page table's `base` and `installedIn` are its
+  -- identity — which page, and which address-space slot names it — gated by
+  -- `objectObservable` on the table's own key, as a frame's are.
+  | .pageTable p =>
+      .pageTable { p with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
 
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
 observationally equivalent results to filtering once.

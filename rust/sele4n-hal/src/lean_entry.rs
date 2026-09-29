@@ -147,6 +147,34 @@ pub unsafe fn initialise_with(
 #[cfg(feature = "hw_target")]
 static LEAN_LIBRARY_INITIALISED: AtomicBool = AtomicBool::new(false);
 
+/// Run `initializer` under the library's guard, or halt the system.
+///
+/// The one place a refused initialization is reported and halted on, shared by
+/// the production path ([`initialise_lean_library`]) and the refusal probe
+/// ([`refusal_probe`]), so the probe executes on the target exactly the code a
+/// real refusal would.  On success it returns the token; on any refusal it
+/// reports the reason on the boot UART and calls `gic::halt_all()`.
+///
+/// # Safety
+///
+/// As [`initialise_with`]: `initializer` returns a scalar or a heap object
+/// whose one reference is handed over.
+#[cfg(feature = "hw_target")]
+unsafe fn initialise_or_halt(initializer: impl FnOnce() -> Obj) -> LeanLibraryInitialised {
+    // SAFETY: forwarded from the caller.
+    let outcome = unsafe { initialise_with(&LEAN_LIBRARY_INITIALISED, initializer) };
+    match outcome {
+        Ok(token) => token,
+        Err(why) => {
+            crate::kprintln!(
+                "[boot] FATAL: Lean library initialization refused: {:?}",
+                why
+            );
+            crate::gic::halt_all()
+        }
+    }
+}
+
 /// Run the Lean library initializer on the primary, or halt the system.
 ///
 /// Returns only after the initializer has succeeded.  On any refusal it reports
@@ -170,16 +198,152 @@ pub fn initialise_lean_library() -> LeanLibraryInitialised {
         unsafe { initialize_seLe4n_SeLe4n(1) }.into_obj()
     };
     // SAFETY: the initializer returns an `IO` result whose one reference is
-    // handed over, which is `initialise_with`'s contract.
-    let outcome = unsafe { initialise_with(&LEAN_LIBRARY_INITIALISED, initializer) };
-    match outcome {
-        Ok(token) => token,
-        Err(why) => {
+    // handed over, which is `initialise_or_halt`'s contract.
+    unsafe { initialise_or_halt(initializer) }
+}
+
+/// **Report the kernel heap's census at a boot stage, or halt the system**
+/// (v0.36.31).  The boot reports one after the library initializer and one
+/// after the install; the QEMU lane holds the second to more live allocations
+/// than the first, which is a Lean `IO` action allocating on the target and
+/// completing (WS-BP BP2.5).  A census that finds a broken allocator invariant
+/// is a boot on memory nothing can trust, so it halts.
+#[cfg(feature = "hw_target")]
+pub fn report_heap_census(stage: &str) {
+    match crate::lean_heap::kernel_heap_census() {
+        Ok(census) => crate::kprintln!(
+            "[boot] Lean heap after {}: {} live allocation(s), {} of {} page(s) in use, invariants hold",
+            stage,
+            census.live_allocations,
+            census.used_pages,
+            census.pages
+        ),
+        Err(error) => {
+            crate::kprintln!("[boot] FATAL: Lean heap after {}: {:?}", stage, error);
+            crate::gic::halt_all()
+        }
+    }
+}
+
+/// **The initialization refusal probe** (v0.36.31, feature
+/// `lean_init_refusal_probe`): a `virt` TEST image, never a board image, that
+/// drives the refusal path on the target so WS-BP BP2.4's acceptance box is
+/// decided by a run rather than by host tests.  `scripts/test_qemu_lean_init_refusal.sh`
+/// boots it once per mode, named on the kernel command line
+/// (`lean_init_probe=<mode>`):
+///
+/// * `error` — the initializer returns an `IO` error;
+/// * `malformed` — it returns a bare scalar, which no `IO` result is;
+/// * `twice` — the real initializer runs and succeeds, then a second
+///   initialization is asked for, which the guard refuses before its
+///   initializer can run.
+///
+/// Every mode goes through [`initialise_or_halt`], the code a real refusal
+/// runs.  A probe image with no mode, or an unknown one, refuses to boot
+/// rather than booting the kernel: it can never stand in for a real image.
+///
+/// The mode parser is compiled in host tests too; the driver only on the probe
+/// image, which links the Lean kernel.
+#[cfg(any(test, feature = "lean_init_refusal_probe"))]
+pub mod refusal_probe {
+
+    /// The command-line key naming the mode.
+    pub const MODE_KEY: &str = "lean_init_probe";
+
+    /// A refusal the probe can drive.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ProbeMode {
+        /// The initializer returns an `IO` error.
+        Error,
+        /// The initializer returns a scalar.
+        Malformed,
+        /// A second initialization after a successful one.
+        Twice,
+    }
+
+    /// The mode a command line names, if it names exactly one known mode.
+    #[must_use]
+    pub fn mode_of(cmdline: &str) -> Option<ProbeMode> {
+        let mut found = None;
+        for word in cmdline.split_ascii_whitespace() {
+            let Some((key, value)) = word.split_once('=') else {
+                continue;
+            };
+            if key != MODE_KEY {
+                continue;
+            }
+            let mode = match value {
+                "error" => ProbeMode::Error,
+                "malformed" => ProbeMode::Malformed,
+                "twice" => ProbeMode::Twice,
+                _ => return None,
+            };
+            if found.replace(mode).is_some() {
+                return None;
+            }
+        }
+        found
+    }
+
+    /// Drive the mode the device tree's command line names.  Every mode halts
+    /// the system inside [`super::initialise_or_halt`]; this returns only if one
+    /// did not, which the probe reports as the failure it is and halts on.
+    #[cfg(all(feature = "hw_target", feature = "lean_init_refusal_probe"))]
+    pub fn initialise_refusing(dtb_ptr: u64) -> super::LeanLibraryInitialised {
+        use super::{initialise_lean_library, initialise_or_halt};
+        use crate::lean_runtime::{boxed, io_result_mk_error, io_result_mk_ok};
+        let mut buffer = [0u8; 256];
+        let cmdline = crate::cmdline::extract_bootargs_into(dtb_ptr, &mut buffer);
+        let Some(mode) = mode_of(cmdline) else {
             crate::kprintln!(
-                "[boot] FATAL: Lean library initialization refused: {:?}",
-                why
+                "[probe] FATAL: no {}=<error|malformed|twice> on the command line; \
+                 the probe image does not boot the kernel",
+                MODE_KEY
             );
             crate::gic::halt_all()
+        };
+        crate::kprintln!("[probe] Lean initialization refusal probe: mode {:?}", mode);
+        match mode {
+            // SAFETY: a fresh `IO` error constructor whose one reference is
+            // handed over.
+            ProbeMode::Error => unsafe { initialise_or_halt(|| io_result_mk_error(boxed(0))) },
+            // SAFETY: a scalar, which `initialise_with` accepts and refuses.
+            ProbeMode::Malformed => unsafe { initialise_or_halt(|| boxed(0)) },
+            ProbeMode::Twice => {
+                let first = initialise_lean_library();
+                crate::kprintln!("[probe] the real initializer succeeded; asking for a second run");
+                // SAFETY: the guard refuses before this initializer runs; were it
+                // run, it hands over a fresh `IO` result.
+                let _second = unsafe { initialise_or_halt(|| io_result_mk_ok(boxed(0))) };
+                drop(first);
+                crate::kprintln!("[probe] FATAL: a second initialization was granted");
+                crate::gic::halt_all()
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{mode_of, ProbeMode};
+
+        #[test]
+        fn a_command_line_names_one_mode_or_none() {
+            assert_eq!(mode_of("lean_init_probe=error"), Some(ProbeMode::Error));
+            assert_eq!(
+                mode_of("smp_max_cores=4 lean_init_probe=malformed"),
+                Some(ProbeMode::Malformed)
+            );
+            assert_eq!(
+                mode_of("lean_init_probe=twice smp_enabled=true"),
+                Some(ProbeMode::Twice)
+            );
+            // No mode, an unknown mode, and two modes all boot nothing.
+            assert_eq!(mode_of(""), None);
+            assert_eq!(mode_of("smp_enabled=true"), None);
+            assert_eq!(mode_of("lean_init_probe=boot"), None);
+            assert_eq!(mode_of("lean_init_probe=error lean_init_probe=twice"), None);
+            assert_eq!(mode_of("lean_init_probe=error lean_init_probe=error"), None);
+            assert_eq!(mode_of("lean_init_probe"), None);
         }
     }
 }
@@ -206,7 +370,9 @@ pub fn device_tree_blob(blob: Option<&[u8]>) -> Obj {
 /// reads, so it cannot sit behind that gate.  It returns only on success — a
 /// device tree the verified parser refuses, a board that is not a Raspberry
 /// Pi 5, and a refused boot all halt the system inside it
-/// (`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`) — so reaching the
+/// (`Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt`; on an image built with
+/// `board_qemu_virt`, `lean_kernel_main_qemu_virt` and
+/// `QemuVirt.bootAndInitialiseQemuVirtFromDtbOrHalt`, WS-BP BP8.1) — so reaching the
 /// `return` below is reaching an installed kernel state.  The image's loaded
 /// bytes are then cleaned to the Point of Unification before the permit is
 /// minted (WS-BP BP4.5), which is the other thing the permit certifies.
@@ -230,10 +396,20 @@ pub fn enter_lean_kernel(
         /// on the boot core, after the library initializer, before any other
         /// Lean upcall on any PE and before any secondary is released.  `dtb`
         /// must be a live `ByteArray` whose one reference the callee takes.
+        #[cfg(not(feature = "board_qemu_virt"))]
         fn lean_kernel_main(dtb: Obj) -> lean_runtime::LeanBaseIoUnit;
+        /// # Safety
+        ///
+        /// WS-BP BP8.1: `lean_kernel_main` on the QEMU `virt` board
+        /// (`SeLe4n.Platform.QemuVirt.kernelMain`), under the same contract:
+        /// once, on the boot core, after the library initializer, before any
+        /// other Lean upcall and before any secondary is released, handed the
+        /// one reference of a live `ByteArray`.
+        #[cfg(feature = "board_qemu_virt")]
+        fn lean_kernel_main_qemu_virt(dtb: Obj) -> lean_runtime::LeanBaseIoUnit;
     }
     // SAFETY: `init_mmu` admitted `mmu::dtb_window(dtb_ptr)` — `MAX_DTB_SIZE`
-    // bytes from the pointer, inside the guaranteed RAM the boot map covers and
+    // bytes from the pointer, inside the kernel's reserved extent the boot map covers and
     // outside the image — so every slice `dtb_blob_from_ptr` can form lies in
     // mapped, readable memory nothing writes during boot.
     #[cfg(target_arch = "aarch64")]
@@ -244,11 +420,18 @@ pub fn enter_lean_kernel(
         None
     };
     let dtb = device_tree_blob(blob);
+    // WS-BP BP7.1: the configured address spaces' table pages start empty.
+    crate::mmu::zero_boot_table_pool();
     // SAFETY: the token proves the library initializer ran and succeeded, and
     // it is consumed here, so this call happens at most once per
     // initialization.  `dtb` is the fresh `ByteArray` just built, whose one
-    // reference is handed over.
+    // reference is handed over.  WS-BP BP8.1: the entry is the board's — both
+    // are in every archive, and the image calls the one its board names.
+    #[cfg(not(feature = "board_qemu_virt"))]
     let res = unsafe { lean_kernel_main(dtb) };
+    // SAFETY: as above — the `virt` board's entry under the same contract.
+    #[cfg(feature = "board_qemu_virt")]
+    let res = unsafe { lean_kernel_main_qemu_virt(dtb) };
     // SAFETY: `res` is the `BaseIO Unit` value `lean_kernel_main` just
     // returned (`lean_box(0)`); if it is a heap object this caller owns its one
     // reference.

@@ -122,10 +122,23 @@ def parse_script(text: str) -> Script:
     if body is None:
         raise GateFailure(f"{LINK_SCRIPT} has no SECTIONS block")
     code = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), body.group(1), flags=re.DOTALL)
-    declared = tuple(
-        (m.group(1), m.group(2) is not None)
-        for m in re.finditer(r"^ {4}(\.[\w.]+)\s*(\(NOLOAD\))?\s*:", code, re.MULTILINE)
-    )
+    # An output section's header is `name [address] [(type)] :` (GNU ld
+    # "Output Section Description"); the address is an expression and may
+    # itself be parenthesised, as `.boot_table_pool`'s is.  One level of
+    # nesting inside it is admitted; a deeper one is refused below rather
+    # than dropped from the declared set.
+    header = re.compile(
+        r"^ {4}(\.[\w.]+)\s*"
+        r"(?:\((?!NOLOAD\))(?:[^()]|\([^()]*\))*\)\s*)?"
+        r"(\(NOLOAD\))?\s*:", re.MULTILINE)
+    declared = tuple((m.group(1), m.group(2) is not None) for m in header.finditer(code))
+    # Fail closed: every line that opens an output section must be one the
+    # header grammar read, or an unreadable header would leave its section
+    # out of the set every other check compares the image against.
+    opened = [m.group(1) for m in re.finditer(r"^ {4}(\.[\w.]+)\b[^\n]*\{", code, re.MULTILINE)]
+    if opened != [name for name, _ in declared]:
+        raise GateFailure(f"{LINK_SCRIPT} opens section(s) whose header this gate cannot read: "
+                          f"{sorted(set(opened) - {n for n, _ in declared})}")
     if not declared:
         raise GateFailure(f"{LINK_SCRIPT} declares no output section")
     return Script(int(origin.group(1), 16), declared)
@@ -220,8 +233,16 @@ def check_image(image: Image, script: Script, table: dict[str, int], undefined: 
         addr = table.get(name)
         if addr is None or start is None or text_end is None or not start <= addr < text_end:
             problems.append(f"`{name}` is at {addr}, not in the text [{start}, {text_end})")
+    # Executable is a question about the ADDRESS, not the name: `[_start,
+    # __text_end)` is what the boot map maps executable (`mmu::image_layout`),
+    # so an executable section inside it is text whatever it is called — the FP
+    # context routines' own section (WS-BP BP7.9) is one — and one outside it
+    # is mapped never-execute whatever it is called.  A list of the text
+    # sections' names would refuse the first and could not see the second.
     non_text = [s.name for s in image.sections
-                if s.executable and s.name not in REQUIRED_SECTIONS]
+                if s.executable and not (start is not None and text_end is not None
+                                         and start <= s.addr
+                                         and s.addr + s.size <= text_end)]
     if non_text:
         problems.append(f"executable section(s) outside the text: {', '.join(non_text)}")
     problems.extend(check_layout(table, reserved))
@@ -229,23 +250,28 @@ def check_image(image: Image, script: Script, table: dict[str, int], undefined: 
 
 
 # A well-formed image, for the self-test: the shape a real link produces.
-_SCRIPT = Script(0x80000, ((".text.boot", False), (".text.vectors", False), (".text", False),
+_SCRIPT = Script(0x80000, ((".text.boot", False), (".text.vectors", False),
+                          (".text.sele4n_fp_context", False), (".text", False),
                           (".rodata", False), (".data", False), (".bss", True),
-                          (".stack", True), (".smp_stacks", True), (".lean_heap", True),
-                          (".dtb_window", True)))
+                          (".stack", True), (".smp_stacks", True), (".fault_stacks", True),
+                          (".lean_heap", True),
+                          (".dtb_window", True), (".boot_table_pool", True)))
 _TABLE = {**_GOOD, "__exception_vectors": 0x80800, "rust_boot_main": 0x80900,
           "secondary_entry": 0x80100, "rust_secondary_main": 0x80a00}
 _IMAGE = Image(ET_EXEC, EM_AARCH64, 0x80000, (
     Section(".text.boot", 0x80000, 0x100, False, True),
     Section(".text.vectors", 0x80800, 0x780, False, True),
+    Section(".text.sele4n_fp_context", 0x80f80, 0x80, False, True),
     Section(".text", 0x81000, 0x0, False, True),
     Section(".rodata", 0x81000, 0x1000, False, False),
     Section(".data", 0x82000, 0x800, False, False),
     Section(".bss", 0x83000, 0x0, True, False),
-    Section(".stack", 0x83000, 0xE000, True, False),
-    Section(".smp_stacks", 0x91000, 0x30000, True, False),
-    Section(".lean_heap", 0xC2000, 0x400_0000, True, False),
-    Section(".dtb_window", 0x40C2000, 0x20_0000, True, False),
+    Section(".stack", 0x83000, 0x11000, True, False),
+    Section(".smp_stacks", 0x94000, 0x60000, True, False),
+    Section(".fault_stacks", 0xF4000, 0x10000, True, False),
+    Section(".lean_heap", 0x104000, 0x400_0000, True, False),
+    Section(".dtb_window", 0x4104000, 0x20_0000, True, False),
+    Section(".boot_table_pool", 0xFFF_0000, 0x1_0000, True, False),
 ))
 
 
@@ -285,6 +311,9 @@ def self_test() -> int:
         ("a branch target outside the text", _IMAGE, _SCRIPT,
          {**_TABLE, "rust_secondary_main": 0x81800}, [], "rust_secondary_main"),
         ("executable read-only data", _with_section(".rodata", executable=True),
+         _SCRIPT, _TABLE, [], "outside the text"),
+        ("a named text section placed past the text",
+         _with_section(".text.sele4n_fp_context", addr=0x81800),
          _SCRIPT, _TABLE, [], "outside the text"),
         ("an arena shorter than its constant", _IMAGE, _SCRIPT,
          {**_TABLE, "__lean_heap_end": _TABLE["__lean_heap_end"] - 4096}, [],
@@ -327,7 +356,27 @@ def self_test() -> int:
     except GateFailure as e:
         failures += 1
         print(f"  FAIL link.ld: {e}", file=sys.stderr)
-    total = len(cases) + len(lean_cases) + 1
+    # The header grammar: an address expression is read, and a header the
+    # grammar cannot read is refused rather than left out of the set.
+    script_cases = [
+        ("an address-expression header",
+         "MEMORY { RAM : ORIGIN = 0x80000 }\nSECTIONS {\n    .a : {\n    }\n"
+         "    .b (END - (N * 4096)) (NOLOAD) : {\n    }\n}\n",
+         ((".a", False), (".b", True))),
+        ("a header nested past the grammar",
+         "MEMORY { RAM : ORIGIN = 0x80000 }\nSECTIONS {\n    .a : {\n    }\n"
+         "    .b (END - ((N * 4096))) (NOLOAD) : {\n    }\n}\n",
+         None),
+    ]
+    for name, text, expect in script_cases:
+        try:
+            got = parse_script(text).sections
+        except GateFailure:
+            got = None
+        if got != expect:
+            failures += 1
+            print(f"  FAIL {name}: {got}", file=sys.stderr)
+    total = len(cases) + len(lean_cases) + len(script_cases) + 1
     print(f"check_kernel_image self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
 

@@ -68,6 +68,10 @@ def frozenVSpaceMappingsAgree (f : FrozenVSpaceRoot) (l : VSpaceRoot) : Bool :=
   l.mappings.toList.all (fun kv => f.mappings.get? kv.1 == some kv.2)
     && f.mappings.indexMap.toList.all (fun kv =>
          f.mappings.get? kv.1 == l.mappings.get? kv.1)
+    -- PR #904 review (`v0.36.41`): the mapping epochs, both directions.
+    && l.mappingEpochs.toList.all (fun kv => f.mappingEpochs.get? kv.1 == some kv.2)
+    && f.mappingEpochs.indexMap.toList.all (fun kv =>
+         f.mappingEpochs.get? kv.1 == l.mappingEpochs.get? kv.1)
 
 /-- Object-level agreement.  Equality on the six verbatim variants; lookup
 agreement on the two re-represented ones; a kind mismatch is a disagreement. -/
@@ -90,8 +94,10 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
     .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, llock⟩) =>
       fd == ld && fgw == lgw && fgv == lgv && frw == lrw && flock == llock
         && frozenCNodeSlotsAgree fc lc
-  | .vspaceRoot (fv@⟨fasid, _fm, flock⟩), .vspaceRoot (lv@⟨lasid, _lm, llock⟩) =>
-      fasid == lasid && flock == llock && frozenVSpaceMappingsAgree fv lv
+  | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, _fepochs, flock⟩),
+    .vspaceRoot (lv@⟨lasid, _lm, lbase, ltables, _lepochs, llock⟩) =>
+      fasid == lasid && fbase == lbase && ftables == ltables && flock == llock
+        && frozenVSpaceMappingsAgree fv lv
   | _, _ => false
 
 /-- State-level agreement over everything both phases model.
@@ -612,8 +618,6 @@ def frozenOpUncheckedReason : SyscallId → String
   | .call => "branch scenarios owed; see frozenBranchUncheckedReason"
   | .cspaceMint => "capability operation; scenario owed"
   | .cspaceDelete => "capability operation; scenario owed"
-  | .vspaceMap => "read-only in the frozen phase; scenario owed"
-  | .vspaceUnmap => "read-only in the frozen phase; scenario owed"
   | .serviceQuery => "service lookup; scenario owed"
   | .replyRecv => "compound reply+receive; scenario owed"
   | .schedContextConfigure => "budget operation; scenario owed"
@@ -666,6 +670,16 @@ theorem frozenOpUncheckedReason_only_when_unchecked :
     SyscallId.all.all (fun sid =>
       (frozenOpUncheckedReason sid).isEmpty
         || !frozenOpDifferentiallyChecked sid) = true := by
+  decide
+
+/-- **A reason names a frozen operation that exists** (`v0.36.38`).  An excuse
+for not comparing a syscall the frozen phase does not cover would describe a
+comparison nobody could run; the two `vspace` rows said "read-only in the frozen
+phase" of arms whose only frozen operation was a lookup, and the coverage claim
+has been withdrawn with them. -/
+theorem frozenOpUncheckedReason_only_when_covered :
+    SyscallId.all.all (fun sid =>
+      (frozenOpUncheckedReason sid).isEmpty || frozenOpCoverage sid) = true := by
   decide
 
 end SeLe4n.Kernel.FrozenOps

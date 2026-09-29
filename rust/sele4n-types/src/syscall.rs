@@ -5,7 +5,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 36 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 41 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -109,11 +109,55 @@ pub enum SyscallId {
     /// delete's argument layout (one message register naming the slot), since
     /// both name one slot of the invoked CNode.
     CspaceRevoke = 35,
+    /// WS-BP BP7.1 (`v0.36.5`): carve a frame out of an untyped the caller
+    /// holds — seL4's `seL4_Untyped_Retype` at the frame type.
+    ///
+    /// Invoked on the **untyped** capability (`Retype` right).  `x2` is the
+    /// object type (only the frame tag, 8, is carved), `x3` the object id the
+    /// frame takes, `x4` the address of a writable capability to the
+    /// destination CNode and `x5` the empty slot the new frame capability goes
+    /// to.  The frame is the page at the untyped's watermark, a device untyped
+    /// yields a device frame, and a RAM page is zeroed before the capability
+    /// exists.  The only way a frame — and so mappable memory — comes to exist.
+    UntypedRetype = 36,
+    /// WS-BP BP7.1 (`v0.36.6`): hand an untyped's memory back to it — seL4's
+    /// `resetUntypedCap`.
+    ///
+    /// Invoked on the **untyped** capability (`Retype` right), with no message
+    /// registers.  Refused unless every object carved from the untyped is a
+    /// frame and no capability anywhere — in a CNode or in a blocked sender's
+    /// message — names one: revoke the untyped capability first.  Every mapping
+    /// of a page in the untyped's region is then removed (with the TLB and
+    /// instruction-cache maintenance `VSpaceUnmap` performs), the carved frames
+    /// cease to exist, and the watermark returns to zero.
+    UntypedReset = 37,
+    /// WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and VSpace
+    /// roots — seL4's `TCB_SetSpace`.
+    ///
+    /// Invoked on the **target TCB** capability (`Write` right).  x2 = the
+    /// address, in the caller's CSpace, of a capability to the new CSpace root
+    /// (a CNode, held with `Grant` and `Write`); x3 = the address of a
+    /// capability to the new VSpace root (held with `Write`).  Refused unless
+    /// the target is suspended.
+    TcbSetSpace = 38,
+    /// WS-BP BP7.1 (`v0.36.12`): install an intermediate page table — seL4's
+    /// `seL4_ARM_PageTable_Map`.
+    ///
+    /// Invoked on the **page-table** capability (`Write` right).  x2 = the
+    /// address, in the caller's CSpace, of a capability to the address space
+    /// (held with `Write`); x3 = a virtual address whose walk the table serves.
+    /// The table is installed at the shallowest level that walk is missing.
+    PageTableMap = 39,
+    /// WS-BP BP7.1 (`v0.36.12`): take an intermediate page table out of the
+    /// address space it is installed in — seL4's `seL4_ARM_PageTable_Unmap`.
+    /// Invoked on the page-table capability (`Write` right), with no message
+    /// registers; refused while anything still translates through the table.
+    PageTableUnmap = 40,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 36;
+    pub const COUNT: usize = 41;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -155,6 +199,11 @@ impl SyscallId {
             33 => Some(Self::DeclassifySignal),
             34 => Some(Self::TcbSetFaultHandler),
             35 => Some(Self::CspaceRevoke),
+            36 => Some(Self::UntypedRetype),
+            37 => Some(Self::UntypedReset),
+            38 => Some(Self::TcbSetSpace),
+            39 => Some(Self::PageTableMap),
+            40 => Some(Self::PageTableUnmap),
             _ => None,
         }
     }
@@ -180,6 +229,14 @@ impl SyscallId {
             // (mint/copy/move), and destroying one is not that authority.
             Self::CspaceRevoke => AccessRight::Write,
             Self::LifecycleRetype => AccessRight::Retype,
+            // WS-BP BP7.1: a carve is a retype of the untyped's memory.
+            Self::UntypedRetype => AccessRight::Retype,
+            // WS-BP BP7.1: a reset is authority over the untyped's memory.
+            Self::UntypedReset => AccessRight::Retype,
+            // WS-BP BP7.1: setting a thread's roots configures the thread.
+            Self::TcbSetSpace => AccessRight::Write,
+            // WS-BP BP7.1: installing or removing a table changes the table.
+            Self::PageTableMap | Self::PageTableUnmap => AccessRight::Write,
             Self::VSpaceMap | Self::VSpaceUnmap => AccessRight::Write,
             Self::ServiceRegister | Self::ServiceRevoke => AccessRight::Write,
             Self::ServiceQuery => AccessRight::Read,
@@ -380,8 +437,36 @@ mod tests {
         // earlier discriminant is unchanged.
         assert_eq!(SyscallId::CspaceRevoke.to_u64(), 35);
         assert_eq!(SyscallId::from_u64(35), Some(SyscallId::CspaceRevoke));
-        assert_eq!(SyscallId::COUNT, 36);
         assert_eq!(SyscallId::CspaceRevoke.required_right(), AccessRight::Write);
+    }
+
+    #[test]
+    fn untyped_retype_discriminant() {
+        // WS-BP BP7.1 (`v0.36.5`): `seL4_Untyped_Retype`, appended so every
+        // earlier discriminant is unchanged.
+        assert_eq!(SyscallId::UntypedRetype.to_u64(), 36);
+        assert_eq!(SyscallId::from_u64(36), Some(SyscallId::UntypedRetype));
+        assert_eq!(
+            SyscallId::UntypedRetype.required_right(),
+            AccessRight::Retype
+        );
+    }
+
+    #[test]
+    fn untyped_reset_discriminant() {
+        // WS-BP BP7.1 (`v0.36.6`): the untyped reset, appended so every earlier
+        // discriminant is unchanged.
+        assert_eq!(SyscallId::UntypedReset.to_u64(), 37);
+        assert_eq!(SyscallId::from_u64(37), Some(SyscallId::UntypedReset));
+        assert_eq!(SyscallId::from_u64(38), Some(SyscallId::TcbSetSpace));
+        assert_eq!(SyscallId::from_u64(39), Some(SyscallId::PageTableMap));
+        assert_eq!(SyscallId::from_u64(40), Some(SyscallId::PageTableUnmap));
+        assert_eq!(SyscallId::from_u64(41), None);
+        assert_eq!(SyscallId::COUNT, 41);
+        assert_eq!(
+            SyscallId::UntypedReset.required_right(),
+            AccessRight::Retype
+        );
     }
 
     #[test]

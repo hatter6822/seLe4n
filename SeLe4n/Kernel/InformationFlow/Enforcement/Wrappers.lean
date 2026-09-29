@@ -241,6 +241,34 @@ def enforcementBoundary : List EnforcementClass :=
   -- while the seam a capability actually reaches is the composite that walks the
   -- derivation tree across arbitrary CSpaces.
   , .capabilityOnly "cspaceRevokeCdt"
+  -- **WS-BP BP7.1 (`v0.36.7`)**: the two destroying arms' live transitions —
+  -- the delete and the CDT revocation, each followed by the removal of every
+  -- mapping a destroyed frame capability recorded (seL4's `finaliseCap`).
+  -- Capability-only: the authority is the CNode capability the delete and the
+  -- revocation already demand; what the teardown removes is mappings whose
+  -- capabilities the caller is destroying, so no principal loses access it
+  -- still holds authority for.  The inner `cspaceDeleteSlot` / `cspaceRevokeCdt`
+  -- entries stay, as the internal steps other composites reach.
+  , .capabilityOnly "cspaceDeleteSlotFinalising"
+  , .capabilityOnly "cspaceRevokeCdtFinalising"
+  -- **WS-BP BP7.1 (`v0.36.5`)**: the untyped carve, named at the transition the
+  -- live `.untypedRetype` arm calls — the decode, the two slot resolutions and
+  -- `untypedRetypeObject` behind them.  Capability-only: the authority is the
+  -- untyped capability (its `.retype` right) and a writable capability to the
+  -- destination CNode, and nothing flows between labelled principals — the
+  -- carved memory is fresh and a RAM page is zeroed before any capability to it
+  -- exists.
+  , .capabilityOnly "untypedRetypeFromCap"
+  -- **WS-BP BP7.1 (`v0.36.6`)**: the untyped reset, the transition the live
+  -- `.untypedReset` arm calls.  Capability-only: the authority is the untyped
+  -- capability's `.retype` right — authority over the memory it hands back —
+  -- and the reset refuses unless no capability anywhere names a carved child,
+  -- so no principal loses a capability it holds.  What it removes is mappings
+  -- whose capabilities are already gone, and frames no capability names.
+  -- Since `v0.36.37` the arm's composite is `untypedResetWithShootdown`: the reset
+  -- then one acknowledged `.aside1` round per retired ASID, which moves no
+  -- authority either.
+  , .capabilityOnly "untypedResetWithShootdown"
   -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
@@ -271,6 +299,18 @@ def enforcementBoundary : List EnforcementClass :=
   -- boundary until the thread faults, and that delivery is policy-gated by
   -- `faultDeliverOnCoreChecked`.
   , .capabilityOnly "setThreadFaultHandlerOp"
+  -- **WS-BP BP7.1 (`v0.36.11`)**: `seL4_TCB_SetSpace`'s roots.  Capability-only:
+  -- the authority is the TCB capability's write right plus the caller's own
+  -- capabilities to the two roots (`resolveSetSpace`: `.grant`+`.write` on the
+  -- CNode, `.write` on the VSpace root), and the write touches one TCB's two
+  -- root fields of a suspended thread — no data crosses a label boundary.
+  , .capabilityOnly "setThreadSpace"
+  -- **WS-BP BP7.1 (`v0.36.12`)**: intermediate page tables.  Capability-only:
+  -- the authority is the table capability's write right plus, for the install,
+  -- the caller's own `.write` capability to the address space — and what moves
+  -- is which page an address space's walk passes through, never data.
+  , .capabilityOnly "pageTableMap"
+  , .capabilityOnly "pageTableUnmap"
   -- WS-SM SM6.B: notification-binding capability-only operations (seL4
   -- NotificationBind / UnbindNotification — mutate the boundTCB ⇄ boundNotification
   -- relation; gated by the TCB capability, not an information-flow policy)
@@ -379,9 +419,11 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceMint => "cspaceMintChecked"
   | .cspaceCopy => "cspaceCopyChecked"
   | .cspaceMove => "cspaceMoveChecked"
-  | .cspaceDelete => "cspaceDeleteSlot"
-  | .cspaceRevoke => "cspaceRevokeCdt"
+  | .cspaceDelete => "cspaceDeleteSlotFinalising"
+  | .cspaceRevoke => "cspaceRevokeCdtFinalising"
   | .lifecycleRetype => "lifecycleRetypeObject"
+  | .untypedRetype => "untypedRetypeFromCap"
+  | .untypedReset => "untypedResetWithShootdown"
   | .vspaceMap => "vspaceMapPageCheckedWithShootdownFromState"
   | .vspaceUnmap => "vspaceUnmapPageWithShootdown"
   | .serviceRegister => "registerServiceChecked"
@@ -400,6 +442,9 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbSetIPCBuffer => "setIPCBuffer"
   | .tcbSetAffinity => "setThreadCpuAffinity"
   | .tcbSetFaultHandler => "setThreadFaultHandlerOp"
+  | .tcbSetSpace => "setThreadSpace"
+  | .pageTableMap => "pageTableMap"
+  | .pageTableUnmap => "pageTableUnmap"
   | .tcbBindNotification => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap => "mintReplyCapWithCdt"

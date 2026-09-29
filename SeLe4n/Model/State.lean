@@ -19,6 +19,7 @@ import SeLe4n.Kernel.Architecture.TlbShootdown
 -- for exactly the reason `TlbInvalidation` was (SM7.A): a state-layer field
 -- must not pull the architecture layer's import closure.
 import SeLe4n.Kernel.Architecture.CacheInvalidation
+import SeLe4n.Kernel.Architecture.PhysicalWrite
 -- WS-SM SM8.C.8: the pure declassification audit record — the payload of the
 -- `declassificationAuditLog` trail mounted below.  Extracted for exactly the
 -- reason `TlbInvalidation` and `CacheInvalidation` were: a state-layer field
@@ -973,6 +974,25 @@ structure SystemState where
   pendingIcacheMaintenance :
       List SeLe4n.Kernel.Architecture.ICacheInvalidation := []
 
+  /-- **WS-BP BP7.2: the physical writes a committed transition owes** — the
+      stores that make physical memory agree with the address spaces the model
+      describes: a descriptor in a table page when a mapping or an installed
+      table changes, a page zeroed when it is carved for a thread, and an ASID
+      invalidation when a table descriptor is cleared or an ASID is retired.
+
+      The hardware walker reads memory, not `SystemState`, so a transition that
+      changes a translation records the store here and the syscall seam
+      performs it, **before** the shootdown round, so a translation the
+      transition retired is gone from memory before any core drops it from its
+      TLB.  **Lifecycle**: written only by `Architecture.recordPhysicalWrites`
+      and cleared by the syscall seam in the same atomic step that commits the
+      transition (`Architecture.clearPhysicalWrites`), so every state observed
+      at a syscall boundary carries `[]`.  **Information flow**: not part of
+      the projection surface — it names memory the kernel owns, and
+      `pendingPhysicalWrites_write_preserves_projection` is the frame. -/
+  pendingPhysicalWrites :
+      List SeLe4n.Kernel.Architecture.PhysicalWrite := []
+
   /-- WS-SM SM8.C.8: the **declassification audit trail** — the append-only
       record of every authorized cross-domain downgrade the kernel performed.
 
@@ -1234,6 +1254,8 @@ instance : Inhabited SystemState where
     -- WS-SM SM7.D.1: nothing is owed to the instruction caches at boot.
     -- Explicit listing pins `default_pendingIcacheMaintenance`.
     pendingIcacheMaintenance := []
+    -- WS-BP BP7.2: no physical write is owed at boot.
+    pendingPhysicalWrites := []
     -- WS-SM SM8.C.8: no declassification has occurred at boot, so the audit
     -- trail is empty.  Explicit listing pins `default_declassificationAuditLog`
     -- and, through it, the boot witness for the 16th bundle conjunct
@@ -1611,6 +1633,10 @@ maintenance is owed before the first transition runs.  The `none`-at-every-
 syscall-boundary property the runtime seam maintains starts here. -/
 @[simp] theorem default_pendingIcacheMaintenance :
     (default : SystemState).pendingIcacheMaintenance = [] := rfl
+
+/-- WS-BP BP7.2: the boot state owes no physical write. -/
+@[simp] theorem default_pendingPhysicalWrites :
+    (default : SystemState).pendingPhysicalWrites = [] := rfl
 
 /-- WS-SM SM8.C.8: at boot no declassification has occurred, so the audit trail
 is empty.  The `.declassify` syscall is the only writer, so this is the trail's
@@ -2418,6 +2444,17 @@ theorem storeObject_pendingIcacheMaintenance_eq
     pair.2.pendingIcacheMaintenance = st.pendingIcacheMaintenance := by
   unfold storeObject at hStore; cases hStore; rfl
 
+/-- WS-BP BP7.2: `storeObject` frames the physical-write ledger — only
+`Architecture.recordPhysicalWrites` writes it. -/
+theorem storeObject_pendingPhysicalWrites_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.pendingPhysicalWrites = st.pendingPhysicalWrites := by
+  unfold storeObject at hStore; cases hStore; rfl
+
 /-- WS-SM SM8.C.8: `storeObject` frames the declassification audit trail.
 
 Load-bearing rather than routine: `declassifyStore` *is* a `storeObject` under
@@ -2701,7 +2738,7 @@ theorem storeObject_asidTable_vspaceRoot_ne
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
     | tcb _ | cnode _ | endpoint _ | notification _ | untyped _
-    | schedContext _ | reply _ =>
+    | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
 
@@ -2725,6 +2762,8 @@ theorem storeObject_asidTable_non_vspaceRoot
   | untyped _ => rfl
   | schedContext _ => rfl
   | reply _ => rfl
+  | frame _ => rfl
+  | pageTable _ => rfl
 
 /-- WS-G2: objectIndex and objectIndexSet contain the same ids. -/
 def objectIndexSetSync (st : SystemState) : Prop :=
@@ -2921,6 +2960,24 @@ def getVSpaceRoot? (st : SystemState) (id : SeLe4n.ObjId) : Option VSpaceRoot :=
   | some (.vspaceRoot root) => some root
   | _                       => none
 
+/-- Read a frame — a page of physical memory the kernel handed out as an
+object — from the global object store.  The kind-checked member of the
+AL2-A / AN10-B typed-accessor family for `KernelObject.frame`: a mapping is
+authorised by presenting a capability to one, and its physical address is
+the frame's own `base` rather than a number a caller supplies. -/
+def getFrame? (st : SystemState) (id : SeLe4n.ObjId) : Option FrameObject :=
+  match st.objects[id]? with
+  | some (.frame f) => some f
+  | _               => none
+
+/-- **WS-BP BP7.1 (`v0.36.12`)**: read an intermediate translation table from the
+global object store — the kind-checked member of the typed-accessor family for
+`KernelObject.pageTable`. -/
+def getPageTable? (st : SystemState) (id : SeLe4n.ObjId) : Option PageTableObject :=
+  match st.objects[id]? with
+  | some (.pageTable p) => some p
+  | _                   => none
+
 /-- **WS-SM SM8.B**: read a stored object from the global object store without
 discriminating its variant — the most general member of the AL2-A / AN10-B
 typed-accessor family.
@@ -3080,6 +3137,11 @@ theorem getCNode?_frame {st st' : SystemState} (h : st'.objects = st.objects)
 theorem getVSpaceRoot?_frame {st st' : SystemState} (h : st'.objects = st.objects)
     (id : SeLe4n.ObjId) : st'.getVSpaceRoot? id = st.getVSpaceRoot? id := by
   unfold getVSpaceRoot?; rw [h]
+
+/-- A step that preserves the object table preserves every frame read. -/
+theorem getFrame?_frame {st st' : SystemState} (h : st'.objects = st.objects)
+    (id : SeLe4n.ObjId) : st'.getFrame? id = st.getFrame? id := by
+  unfold getFrame?; rw [h]
 
 /-- A step that preserves the object table preserves every kind-agnostic read. -/
 theorem getObject?_frame {st st' : SystemState} (h : st'.objects = st.objects)
@@ -4653,6 +4715,69 @@ theorem getVSpaceRoot?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
     · intro h; cases h
     · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
 
+/-- `getFrame?` returns `some f` iff the store holds exactly
+`KernelObject.frame f` at `id`. -/
+theorem getFrame?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
+    (f : FrameObject) :
+    st.getFrame? id = some f ↔ st.objects[id]? = some (.frame f) := by
+  unfold getFrame?
+  split
+  · rename_i f' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- `getPageTable?` returns `some p` iff the store holds exactly
+`KernelObject.pageTable p` at `id`. -/
+theorem getPageTable?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
+    (p : PageTableObject) :
+    st.getPageTable? id = some p ↔ st.objects[id]? = some (.pageTable p) := by
+  unfold getPageTable?
+  split
+  · rename_i p' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- **WS-BP BP7.1 (`v0.36.12`): the object at `id` if it is a page** — a frame or
+a page table, the two kinds whose per-object lock is the hierarchy's `page`
+kind.  `LockId.lookup` reads its `.page` kind through this, so a page lock
+names either. -/
+def getPageObject? (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObject :=
+  match st.getFrame? id with
+  | some f => some (.frame f)
+  | none => (st.getPageTable? id).map KernelObject.pageTable
+
+/-- `getPageObject?` answers the stored object exactly when it is a frame or a
+page table. -/
+theorem getPageObject?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
+    (o : KernelObject) :
+    st.getPageObject? id = some o ↔
+      st.objects[id]? = some o ∧ ((∃ f, o = .frame f) ∨ (∃ p, o = .pageTable p)) := by
+  unfold getPageObject?
+  cases hF : st.getFrame? id with
+  | some f =>
+    have hAt := (getFrame?_eq_some_iff st id f).mp hF
+    constructor
+    · intro h; cases h; exact ⟨hAt, Or.inl ⟨f, rfl⟩⟩
+    · rintro ⟨h, -⟩; rw [hAt] at h; cases h; rfl
+  | none =>
+    cases hP : st.getPageTable? id with
+    | some p =>
+      have hAt := (getPageTable?_eq_some_iff st id p).mp hP
+      constructor
+      · intro h; cases h; exact ⟨hAt, Or.inr ⟨p, rfl⟩⟩
+      · rintro ⟨h, -⟩; rw [hAt] at h; cases h; rfl
+    | none =>
+      simp only [Option.map_none, reduceCtorEq, false_iff, not_and]
+      rintro h (⟨f, rfl⟩ | ⟨p, rfl⟩)
+      · rw [(getFrame?_eq_some_iff st id f).mpr h] at hF; cases hF
+      · rw [(getPageTable?_eq_some_iff st id p).mpr h] at hP; cases hP
+
 /-- AL2-B (audit remediation): `getTcb?` returns `none` iff the stored
 object at `tid.toObjId` is either absent or is not of the `.tcb`
 variant. This is the complement of `getTcb?_eq_some_iff` and completes
@@ -5167,6 +5292,8 @@ def KernelObjectType.rewriteNeutral : KernelObjectType → Bool
   | .untyped => true
   | .schedContext => true
   | .reply => true
+  | .frame => true
+  | .pageTable => true
 
 /-- `storeObject` never refuses: it is `.ok` at the bookkeeping-carrying record
 by definition.  Stated so a pure spelling of the store can *eliminate* its error
@@ -5245,6 +5372,12 @@ theorem rewriteAdmissible_untyped {st : SystemState} {id : SeLe4n.ObjId} {ut : U
     (h : st.getUntyped? id = some ut) (ut' : UntypedObject) :
     st.rewriteAdmissible id (.untyped ut') :=
   ⟨.untyped ut, (getUntyped?_eq_some_iff st id ut).mp h, rfl, rfl⟩
+
+/-- The typed rewrite of a page table is admissible where the store holds one. -/
+theorem rewriteAdmissible_pageTable {st : SystemState} {id : SeLe4n.ObjId}
+    {p : PageTableObject} (h : st.getPageTable? id = some p) (p' : PageTableObject) :
+    st.rewriteAdmissible id (.pageTable p') :=
+  ⟨.pageTable p, (getPageTable?_eq_some_iff st id p).mp h, rfl, rfl⟩
 
 -- What the rewrite writes, and what it leaves alone (definitional).
 

@@ -216,6 +216,109 @@ theorem memoryRegionCovered_gap_refused :
       { base := SeLe4n.PAddr.ofNat 0, size := 0x100000000, kind := .ram } = false := by
   decide
 
+-- ============================================================================
+-- WS-BP BP7.10 — how far an account's regions reach from an address
+-- ============================================================================
+
+/-- **WS-BP BP7.10**: where the greedy walk of `coverFrom` stops — the furthest
+address the regions of kind `kind` cover **contiguously** from `cursor`.
+
+`coverFrom` asks whether the walk passes a target; this is the walk run with no
+target at all, so the question "how much memory does the account report from
+here" has an answer rather than a yes/no at each size a caller guesses.  It is
+the same walk, step for step (`coverStep`), and `coverFrom_eq_le_coverReach`
+is the theorem that the two cannot disagree: a target is covered exactly when
+it is at most the reach. -/
+def coverReach (regions : List SeLe4n.MemoryRegion) (kind : SeLe4n.MemoryKind) :
+    Nat → Nat → Nat
+  | 0, cursor => cursor
+  | fuel + 1, cursor =>
+    match coverStep kind cursor regions with
+    | none => cursor
+    | some next => coverReach regions kind fuel next
+
+/-- **WS-BP BP7.10**: the walk never moves backwards — each step jumps to the end
+of a region containing the cursor, which lies strictly past it
+(`coverStep_attained`). -/
+theorem le_coverReach (regions : List SeLe4n.MemoryRegion) (kind : SeLe4n.MemoryKind) :
+    ∀ (fuel cursor : Nat), cursor ≤ coverReach regions kind fuel cursor
+  | 0, cursor => Nat.le_refl _
+  | fuel + 1, cursor => by
+    unfold coverReach
+    split
+    · exact Nat.le_refl _
+    · rename_i next hStep
+      obtain ⟨_, _, _, _, hLt, hE⟩ := coverStep_attained kind cursor regions next hStep
+      exact Nat.le_trans (Nat.le_of_lt (hE ▸ hLt)) (le_coverReach regions kind fuel next)
+
+/-- **WS-BP BP7.10**: the reach and the covering walk are one walk — `coverFrom`
+answers `true` for a target exactly when the target is at most the reach. -/
+theorem coverFrom_eq_le_coverReach (regions : List SeLe4n.MemoryRegion)
+    (kind : SeLe4n.MemoryKind) (target : Nat) :
+    ∀ (fuel cursor : Nat),
+      coverFrom regions kind target fuel cursor =
+        decide (target ≤ coverReach regions kind fuel cursor)
+  | 0, cursor => rfl
+  | fuel + 1, cursor => by
+    unfold coverFrom coverReach
+    by_cases hLe : target ≤ cursor
+    · rw [if_pos hLe]
+      split
+      · exact (decide_eq_true hLe).symm
+      · rename_i next hStep
+        obtain ⟨_, _, _, _, hLt, hE⟩ := coverStep_attained kind cursor regions next hStep
+        exact (decide_eq_true (Nat.le_trans hLe (Nat.le_trans (Nat.le_of_lt (hE ▸ hLt))
+          (le_coverReach regions kind fuel next)))).symm
+    · rw [if_neg hLe]
+      split
+      · exact (decide_eq_false hLe).symm
+      · exact coverFrom_eq_le_coverReach regions kind target fuel _
+
+/-- **WS-BP BP7.10**: every address the account reaches from `0` is RAM it
+reports — the reach claims nothing the regions do not cover.  The direction
+the boot relies on: a first-gigabyte top read off the reach never declares RAM
+the board did not report. -/
+theorem coverReach_sound (regions : List SeLe4n.MemoryRegion) (kind : SeLe4n.MemoryKind)
+    (fuel cursor a : Nat) (hLo : cursor ≤ a) (hHi : a < coverReach regions kind fuel cursor) :
+    ∃ q ∈ regions, (q.kind == kind) = true ∧ q.base.toNat ≤ a ∧ a < q.endAddr := by
+  have h := coverFrom_eq_le_coverReach regions kind (coverReach regions kind fuel cursor) fuel cursor
+  rw [decide_eq_true (Nat.le_refl _)] at h
+  exact coverFrom_sound regions kind _ fuel cursor h a hLo hHi
+
+/-- **WS-BP BP7.10**: a region whose end is within the account's reach from
+the region's own base is covered — by the union reading, whatever pieces the
+account cut it into.  (`v0.36.36`: stated from the region's base rather than
+from `0`, since a Raspberry Pi 5's declared RAM begins at the image origin.) -/
+theorem memoryRegionCovered_of_le_coverReach (regions : List SeLe4n.MemoryRegion)
+    (r : SeLe4n.MemoryRegion)
+    (hEnd : r.endAddr ≤ coverReach regions r.kind regions.length r.base.toNat) :
+    memoryRegionCovered regions r = true := by
+  unfold memoryRegionCovered memoryRegionCoveredByUnion
+  rw [coverFrom_eq_le_coverReach, decide_eq_true hEnd, Bool.or_true]
+
+/-- **`v0.36.36`**: how much RAM a board's account reports contiguously from
+address `start` — the first byte at or past `start` it does not.  `start`
+itself when no RAM region of the account contains it.
+
+It replaced `ramPrefixTop` (the reach from `0`), which read a Raspberry Pi 5 as
+having no RAM at all: its device tree reserves `[0, 0x80000)` for the secure
+monitor (`bcm2712.dtsi`'s `atf@0`, `no-map`), the parser subtracts every
+reservation, and so no account a real board produces reaches past `0`. -/
+def ramReachFrom (board : SeLe4n.MachineConfig) (start : Nat) : Nat :=
+  coverReach board.memoryMap .ram board.memoryMap.length start
+
+/-- **`v0.36.36`**: every address in `[start, ramReachFrom board start)` is RAM
+the account reports. -/
+theorem ramReachFrom_sound (board : SeLe4n.MachineConfig) (start a : Nat)
+    (hLo : start ≤ a) (h : a < ramReachFrom board start) :
+    ∃ q ∈ board.memoryMap, q.kind = SeLe4n.MemoryKind.ram ∧ q.base.toNat ≤ a ∧ a < q.endAddr := by
+  obtain ⟨q, hq, hK, hB, hE⟩ :=
+    coverReach_sound board.memoryMap .ram board.memoryMap.length start a hLo h
+  exact ⟨q, hq, by simpa using hK, hB, hE⟩
+
+/- **Tombstone (`v0.36.36`)**: `ramPrefixTop` and `ramPrefixTop_sound` are
+`ramReachFrom board 0` and `ramReachFrom_sound` above. -/
+
 /-- **PR #892 review round 2**: does the board `board` describes have all the
 RAM `mc` declares, at least as wide a physical address space?
 

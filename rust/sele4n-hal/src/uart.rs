@@ -54,13 +54,13 @@ mod flags {
 /// together by `tests/fixtures/boot_map.expected`'s `mmio uart` line, which
 /// the Lean suite writes and `tests::the_console_is_the_lean_uart_inside_the_device_window`
 /// reads).
-pub const UART0_BASE: usize = 0x10_7D00_1000;
+pub const UART0_BASE: usize = crate::board::BOARD.uart_base;
 
 /// UART reference clock frequency on RPi5: `bcm2712.dtsi`'s `clk_uart`, a
 /// fixed 9.216 MHz clock (`clock-frequency = <9216000>`), which is exactly
 /// `16 × 115200 × 5` — so the 115200-baud divisor is `IBRD = 5, FBRD = 0` with
 /// no rounding error.
-const UART_CLOCK_HZ: u32 = 9_216_000;
+const UART_CLOCK_HZ: u32 = crate::board::BOARD.uart_clock_hz;
 
 /// Default baud rate for debug console.
 const DEFAULT_BAUD: u32 = 115_200;
@@ -616,8 +616,17 @@ macro_rules! kprint {
 macro_rules! kprintln {
     () => { $crate::kprint!("\n") };
     ($($arg:tt)*) => {{
-        $crate::kprint!($($arg)*);
-        $crate::kprint!("\n");
+        // WS-BP BP8.2: the body and its newline under ONE lock acquisition.
+        // Two `kprint!`s took the lock twice, so on four PEs another core's
+        // line landed between a body and its newline — the defect
+        // `kprintln_core!` fixed at SM1.G audit-pass-1 and nothing swept onto
+        // this macro.  The first four-core boot (`test_qemu_smp_bringup.sh`,
+        // which requires every banner to be a whole line) showed it.
+        use core::fmt::Write;
+        $crate::uart::with_boot_uart(|uart| {
+            let _ = uart.write_fmt(format_args!($($arg)*));
+            let _ = uart.write_str("\n");
+        });
     }};
 }
 
@@ -740,6 +749,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "board_qemu_virt"))]
     fn baud_rate_divisor_115200() {
         // For the 9.216 MHz clock at 115200 baud:
         //   BRD = 9216000 / (16 × 115200) = 5.0 exactly
@@ -755,8 +765,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "board_qemu_virt"))]
     fn uart_clock_is_the_bcm2712_fixed_clock() {
         assert_eq!(UART_CLOCK_HZ, 9_216_000);
+    }
+
+    /// **WS-BP BP8.1**: QEMU `virt`'s PL011 is clocked by its `apb-pclk`
+    /// fixed clock, 24 MHz (`clock-frequency = <0x16e3600>` in QEMU's device
+    /// tree), which at 115200 baud gives IBRD 13 and FBRD 1
+    /// (`(24e6 × 8 + 115200) / 230400 = 833`, and `833 = 13 × 64 + 1`).
+    #[test]
+    #[cfg(feature = "board_qemu_virt")]
+    fn qemu_virt_uart_clock_and_baud_divisor() {
+        assert_eq!(UART_CLOCK_HZ, 24_000_000);
+        let baud: u64 = 115_200;
+        let brd_times_64 = (UART_CLOCK_HZ as u64 * 4 * 2 + baud) / (baud * 2);
+        assert_eq!((brd_times_64 / 64, brd_times_64 % 64), (13, 1));
     }
 
     #[test]
@@ -1091,6 +1115,34 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         crate::kprintln_core!("SM1.G.4 per-line atomicity smoke");
         crate::uart::with_boot_uart(|_uart| { /* re-acquire proof */ });
+    }
+
+    /// WS-BP BP8.2: `kprintln!` and `kprintln_core!` each take the console
+    /// lock ONCE per line, counted on the lock's own ticket counter rather
+    /// than read off the macro's source.  Another test printing in parallel
+    /// can only raise a sample, so the minimum over several is the macro's
+    /// own count: the retired `kprintln!` — body and newline as two
+    /// `kprint!`s — takes two tickets on every call, and fails this.
+    #[test]
+    fn a_printed_line_takes_the_console_lock_once() {
+        let _guard = UART_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tickets = |print: &dyn Fn()| {
+            (0..16)
+                .map(|_| {
+                    let before = UART_LOCK.inner.peek_next_ticket();
+                    print();
+                    UART_LOCK.inner.peek_next_ticket() - before
+                })
+                .min()
+                .expect("sixteen samples")
+        };
+        assert_eq!(tickets(&|| crate::kprintln!("BP8.2 whole line {}", 1)), 1);
+        assert_eq!(
+            tickets(&|| crate::kprintln_core!("BP8.2 whole line {}", 2)),
+            1
+        );
     }
 
     #[test]

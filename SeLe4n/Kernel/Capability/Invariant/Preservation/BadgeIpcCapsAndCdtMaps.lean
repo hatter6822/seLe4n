@@ -137,7 +137,7 @@ theorem cspaceMutate_preserves_badgeWellFormed
           simp [hObj] at hStep
           cases hStore : storeObject addr.cnode
               (.cnode (cn.insert addr.slot
-                ⟨pair.1.target, rights, badge.or pair.1.badge⟩)) st with
+                ⟨pair.1.target, rights, badge.or pair.1.badge, pair.1.mapping⟩)) st with
           | error e => simp [hStore] at hStep
           | ok storeResult =>
             obtain ⟨_, stMid⟩ := storeResult
@@ -194,7 +194,7 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     (result : CapTransferResult)
     (hInv : capabilityInvariantBundle st)
     (hSlotCapacity : ∀ cn, st.objects[receiverRoot]? = some (.cnode cn) →
-      ∀ s, (cn.insert s cap).slotCountBounded)
+      ∀ s, (cn.insert s cap.withoutMapping).slotCountBounded)
     (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
     (hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st')
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
@@ -221,12 +221,12 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
         | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
         | true =>
         simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
         | error e => simp [hIns] at hStep
         | ok pair2 =>
           rcases pair2 with ⟨_, st2⟩
           have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2
-            { cnode := receiverRoot, slot := emptySlot } cap hInv
+            { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv
             (fun cn' hObj' => hSlotCapacity cn' (by rw [hObj] at hObj'; cases hObj'; exact hObj) emptySlot)
             (objects_invExt_of_capabilityInvariantBundle st hInv) hCapBacked hIns
           rcases hBundleSt2 with ⟨_, hBnd2, _, _, hDepth2, hObjInv2, hRCPV2⟩
@@ -305,7 +305,7 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
           st stNext tc.cap tc.srcNode
           receiverRoot nextBase maxExtraCaps result
           hInv
-          (hSlotCap st tc.cap hInv)
+          (hSlotCap st tc.cap.withoutMapping hInv)
           (hCapBacked st tc.cap hInv)
           (hCdtPost st stNext tc.cap tc.srcNode
             nextBase maxExtraCaps result hInv hTransfer)

@@ -203,10 +203,10 @@ structure FdtHeader where
 def readBE32 (blob : ByteArray) (offset : Nat) : Option UInt32 :=
   if offset + 4 > blob.size then none
   else do
-    let b0 ← blob.data[offset]?
-    let b1 ← blob.data[offset + 1]?
-    let b2 ← blob.data[offset + 2]?
-    let b3 ← blob.data[offset + 3]?
+    let b0 ← blob[offset]?
+    let b1 ← blob[offset + 1]?
+    let b2 ← blob[offset + 2]?
+    let b3 ← blob[offset + 3]?
     some ((b0.toUInt32 <<< 24) ||| (b1.toUInt32 <<< 16) |||
           (b2.toUInt32 <<< 8) ||| b3.toUInt32)
 
@@ -516,7 +516,7 @@ theorem classifyAddress_found (addr : PAddr) (pm : List MemoryRegion) (r : Memor
     lookup, `/chosen` and `/cpus` nodes) is deferred to WS-U. -/
 -- AJ3-B (M-18): `physicalAddressWidth` is now a required parameter (no default).
 -- Callers must explicitly specify the PA width for their platform to prevent
--- silent misconfiguration (RPi5 BCM2712 = 44-bit, not 48-bit).
+-- silent misconfiguration (RPi5: the Cortex-A76's 40 bits, not 48).
 def DeviceTree.fromDtbWithRegions (blob : ByteArray)
     (physicalAddressWidth : Nat)
     (memoryRegBytes : Option ByteArray := none) : Option DeviceTree := do
@@ -633,7 +633,7 @@ where
     match fuel with
     | 0 => none  -- Fuel exhausted without finding null terminator
     | fuel' + 1 =>
-      match blob.data[offset]? with
+      match blob[offset]? with
       | none => none  -- Out of bounds
       | some byte =>
         if byte == 0 then
@@ -666,7 +666,7 @@ where
     match fuel with
     | 0 => .error .fuelExhausted
     | fuel' + 1 =>
-      match blob.data[offset]? with
+      match blob[offset]? with
       | none => .error .malformedBlob
       | some byte =>
         if byte == 0 then
@@ -708,7 +708,7 @@ where
     | fuel' + 1 =>
       if offset ≥ limit then none -- The terminator is outside the declared block
       else
-        match bytes.data[offset]? with
+        match bytes[offset]? with
         | none => none
         | some byte =>
           if byte == 0 then

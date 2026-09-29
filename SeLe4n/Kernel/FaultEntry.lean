@@ -55,10 +55,9 @@ the global kernel-entry lock: `trap.rs` wraps the call in
 ## Readiness
 
 The entry is behind the per-core `lean_ready` gate on the Rust side, like the
-timer tick and the `.reschedule` receiver.  Until SM10.1 flips it, an abort on
-hardware takes the Rust-only half: a label-encoded error frame
-(RR4.22) rather than a delivered fault.  New code must not assume this seam
-executes on hardware merely because it is wired.
+timer tick and the `.reschedule` receiver; since WS-BP BP6 every serving PE
+marks itself ready, so an abort on hardware is delivered here, and since WS-BP
+BP7.6 the core returns through the successor the delivery installed.
 -/
 
 namespace SeLe4n.Kernel
@@ -74,7 +73,7 @@ open SeLe4n.Kernel.Concurrency
 
 /-- WS-RR RR4.25: the wire tag for each synchronous exception class.
 
-`trap.rs` mirrors these five values (`sync_class` in that module) and nothing
+`trap.rs` mirrors these eight values (`sync_class` in that module) and nothing
 else: the *mapping* from `ESR_EL1` to a class lives only here, so the Rust
 side cannot classify differently — it can only fail to recognise a tag, which
 it treats as `unknownReason` (the same fail-closed default this map has). -/
@@ -86,6 +85,7 @@ def syncExceptionClassTag : SynchronousExceptionClass → UInt32
   | .spAlignment   => 4
   | .unknownReason => 5
   | .kernelAbort   => 6
+  | .fpAccess      => 7
 
 /-- WS-RR RR4.25: the tags are pairwise distinct, so the Rust router's match
 on them is a total, unambiguous decoding of the Lean classification. -/
@@ -130,6 +130,17 @@ theorem classifySynchronousException_depends_only_on_esr (ectx : ExceptionContex
 -- the SVC seam (`Platform.FFI.syscallDispatchFromAbi`, below this module in the
 -- import graph) spills the same window when it delivers a capability fault.
 
+/-- The state the delivery commits for the faulting thread `tid` on core `c`,
+before the core's successor is chosen: the trap frame's window spilled into the
+thread, the fault context built from the spilled registers, the flow-checked
+delivery.  Named so the entry and its progress theorem read the one state. -/
+def faultDeliveredState (lctx : LabelingContext) (st : SystemState) (f : Fault)
+    (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  let stRegs := writeFaultRegistersToTcb st tid w
+  let fctx := faultContextOfThread stRegs tid ectx.elr ectx.spsr
+  (faultDeliverOnCoreChecked lctx stRegs tid f fctx c).1
+
 /-- Review round (PR #887): **the delivery the two fault entries share**, given
 the fault already chosen.  Spill the trap frame's window, build the context
 from the spilled file, run the flow-checked delivery, dispatch the executing
@@ -170,21 +181,24 @@ recovers every such change from the pre/post states, exactly as
 composes; reading only the surfaced poke would leave a re-bucketed remote core
 running the wrong thread until something else woke it.
 
-**The executing core's successor** goes through the same gate as every other
-state-committing entry (`scheduleLocalSuccessorLive`, inert until SM10.1
-flips `contextRestoreSeamLive`): the delivery vacates this core, and when the
-context restore can install a successor the entry dispatches one in the same
-atomic step, with the SGI diff taken against the *final* state. -/
+**The executing core's successor** is dispatched in the same atomic step, as
+at every other state-committing entry (`scheduleLocalSuccessor`): the delivery
+vacates this core, and since WS-BP BP7.6 the context restore installs the
+successor, so the SGI diff is taken against the *final* state. -/
 def faultEntryDeliver (lctx : LabelingContext) (st : SystemState) (f : Fault)
     (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId) :
     List (CoreId × SgiKind) × SystemState :=
   match st.scheduler.currentOnCore c with
-  | none => ([], st)
+  | none =>
+      -- `v0.36.40`: another core vacated this one (a remote `.tcbSuspend` or
+      -- holder deschedule cleared the slot while the trapping thread still ran
+      -- here).  There is no thread to deliver for, but the core must be handed
+      -- something to resume, or the trap layer halts it.
+      let st' := PriorityInheritance.dispatchVacatedCore st c
+      (PriorityInheritance.computeCrossCoreSgis st st' c, st')
   | some tid =>
-      let stRegs := writeFaultRegistersToTcb st tid w
-      let fctx := faultContextOfThread stRegs tid ectx.elr ectx.spsr
-      let st' := (faultDeliverOnCoreChecked lctx stRegs tid f fctx c).1
-      let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' c
+      let st' := faultDeliveredState lctx st f ectx w c tid
+      let st'' := PriorityInheritance.scheduleLocalSuccessor st st' c
       (PriorityInheritance.computeCrossCoreSgis st st'' c, st'')
 
 /-- WS-RR RR4.23: the verified step the fault entry commits — classify, spill
@@ -244,6 +258,22 @@ def unknownSyscallEntryStep (lctx : LabelingContext) (st : SystemState)
     else ([], st)
   else ([], st)
 
+/-- **`v0.36.40`: a trap on a core another core vacated hands the core a
+successor.**  The shared delivery body, on a core whose committed slot is
+already `none`, commits the core's reschedule — so neither fault producer leaves
+the trap layer with nothing to return through (it halts the PE when no restore
+was staged).  No fault is delivered: the model no longer runs the thread that
+trapped here, and attributing the trap to it would act on a thread another core
+has already taken off this one. -/
+theorem faultEntryDeliver_vacated (lctx : LabelingContext) (st st' : SystemState)
+    (f : Fault) (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
+    (hVac : st.scheduler.currentOnCore c = none)
+    (hR : handleRescheduleSgiOnCore st c = .ok st') :
+    (faultEntryDeliver lctx st f ectx w c).2 = st' := by
+  unfold faultEntryDeliver
+  rw [hVac]
+  exact PriorityInheritance.dispatchVacatedCore_of_vacated st st' c hVac hR
+
 /-- WS-RR RR4.23: an out-of-range core id commits nothing — the FFI bound
 check, stated so a caller cannot mistake the inert arm for a delivery. -/
 theorem faultEntryStep_invalid_core (lctx : LabelingContext) (st : SystemState)
@@ -299,20 +329,37 @@ against the live kernel state, then fires the cross-core SGIs the diff
 surfaced — the same read-context / commit / fire-SGIs shape
 `syscallDispatchCrossCoreEntry` has, and for the same reason: the context read
 is a pure read of a boot-installed value, so it need not be inside the commit
-closure, while the delivery must be. -/
+closure, while the delivery must be.
+
+**WS-BP BP7.8**: and it drains the physical-write ledger the same way, read and
+cleared in the atomic step and performed first.  A fault message carries up to
+thirteen words, and a handler already blocked in receive is delivered them at
+once, so the words past the fourth are user-word stores into its IPC buffer —
+recorded by the delivery (`Architecture.stageDeliveredMessage`) and owed to RAM
+by this seam. -/
 @[export lean_handle_fault]
 def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
     (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) : BaseIO Unit := do
   let lctx ← Platform.FFI.getKernelLabelingContext
-  let r ← Platform.FFI.modifyGetKernelState (fun st =>
+  let frame ← Platform.FFI.captureTrapFrame
+  let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+    let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
     let (sgis, st') :=
       faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
         { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+    let st' := PriorityInheritance.settleResidencyAt st' coreId
     ((sgis,
       (Concurrency.coreIdOfUInt64? coreId).map
-        (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+        (fun c => (c, st'.scheduler.currentOnCore c)),
+      Concurrency.restoreTargetAt st' coreId,
+      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+  Platform.FFI.completePhysicalWrites r.2.2.2.1
   Concurrency.fireCrossCoreSgis r.1
-  Concurrency.recordCommittedCurrentThreadHw r.2
+  Platform.FFI.completeIcacheMaintenance r.2.2.2.2
+  Concurrency.releaseSwitchedFpOwner coreId
+  Platform.FFI.restoreTrapFrame r.2.2.1
+  Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- Review round (PR #887, **the export**): the C-callable unknown-syscall
 seam.  `trap.rs`'s `SVC` arm invokes it — inside `with_kernel_entry`, behind
@@ -325,15 +372,142 @@ syscall number rides in the window's `x7`. -/
 def unknownSyscallEntry (coreId : UInt64) (esr elr spsr far : UInt64)
     (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) : BaseIO Unit := do
   let lctx ← Platform.FFI.getKernelLabelingContext
-  let r ← Platform.FFI.modifyGetKernelState (fun st =>
+  let frame ← Platform.FFI.captureTrapFrame
+  let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+    let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId frame
     let (sgis, st') :=
       unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
         { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+    let st' := PriorityInheritance.settleResidencyAt st' coreId
     ((sgis,
       (Concurrency.coreIdOfUInt64? coreId).map
-        (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+        (fun c => (c, st'.scheduler.currentOnCore c)),
+      Concurrency.restoreTargetAt st' coreId,
+      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+  Platform.FFI.completePhysicalWrites r.2.2.2.1
   Concurrency.fireCrossCoreSgis r.1
-  Concurrency.recordCommittedCurrentThreadHw r.2
+  Platform.FFI.completeIcacheMaintenance r.2.2.2.2
+  Concurrency.releaseSwitchedFpOwner coreId
+  Platform.FFI.restoreTrapFrame r.2.2.1
+  Concurrency.recordCommittedCurrentThreadHw r.2.1
+
+-- ============================================================================
+-- §2b  WS-BP BP7.9 — the lazy FP/SIMD switch's entry
+-- ============================================================================
+
+/-- **WS-BP BP7.9**: the step the FP/SIMD access entry commits — the lazy switch
+on the core the raw id names, inert for an id that names none. -/
+def fpAccessEntryStep (st : SystemState) (coreId : UInt64) (live : Option FpContext) :
+    Architecture.FpAccessOutcome × SystemState :=
+  match Concurrency.coreIdOfUInt64? coreId with
+  | none => (.inert, st)
+  | some c =>
+      -- `v0.36.40`: a core another core vacated has no thread to switch FP/SIMD
+      -- state for, and dispatches a successor instead of resuming nothing.
+      let res := Architecture.fpAccessOnCore st c live
+      (res.1, PriorityInheritance.dispatchVacatedCore res.2 c)
+
+/-- **WS-BP BP7.9**: what the HAL does with the switch's outcome — load the
+answered context and lift the trap, or nothing (the restore then leaves the trap
+armed). -/
+def applyFpAccessOutcome : Architecture.FpAccessOutcome → BaseIO Unit
+  | .load ctx => Platform.FFI.loadFpContext ctx
+  | .retry => pure ()
+  | .inert => pure ()
+
+/-- **WS-BP BP7.9 (the export)**: EC `0x07` from EL0 — a thread used FP/SIMD
+while its core's trap was armed.
+
+`trap.rs` routes the `fpAccess` class here, inside `with_kernel_entry` and
+behind the per-core readiness gate, having halted on an EL1-origin exception
+first.  It saves the trap frame like every other entry, captures the core's
+registers when they hold a recorded owner's live values, commits the lazy switch,
+loads the context it answers (`.load`) and lifts the trap, and restores what the
+core resumes — the faulting thread, whose `ELR_EL1` still names the FP/SIMD
+instruction, so it re-executes with its own FP state.  On `.retry` nothing is
+loaded and the restore leaves the trap armed, so the thread traps again until the
+core holding its live values has released them.  On a core that runs a thread
+nothing here schedules, so no SGI is fired and no successor is chosen
+(`fpAccessEntryStep_scheduler`).
+
+**`v0.36.40`**: on a core another core has vacated, the step dispatches a
+successor (`PriorityInheritance.dispatchVacatedCore`), so the restore has
+something to install; the entry then releases a switched-out FP owner and records
+the committed current thread on the HAL, as every entry that can change what a
+core runs does.  Both are inert on the ordinary path — the owner is the current
+thread or nobody, and the recorded thread is the one already recorded. -/
+@[export lean_handle_fp_access]
+def fpAccessEntry (coreId : UInt64) : BaseIO Unit := do
+  let frame ← Platform.FFI.captureTrapFrame
+  let live ← Concurrency.captureOwnedFp coreId
+  let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+    let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
+    let res := fpAccessEntryStep st coreId live
+    let res := (res.1, PriorityInheritance.settleResidencyAt res.2 coreId)
+    ((res.1, Concurrency.restoreTargetAt res.2 coreId,
+      (Concurrency.coreIdOfUInt64? coreId).map
+        (fun c => (c, res.2.scheduler.currentOnCore c))), res.2))
+  applyFpAccessOutcome r.1
+  Concurrency.releaseSwitchedFpOwner coreId
+  Platform.FFI.restoreTrapFrame r.2.1
+  Concurrency.recordCommittedCurrentThreadHw r.2.2
+
+/-- **WS-BP BP7.9** structural marker: the FP/SIMD access entry is the frame
+save, the owner capture, the lazy switch, the load it answers and the restore —
+pinned so a refactor that loads before committing, or restores without the
+switch, fails here. -/
+theorem fpAccessEntry_def (coreId : UInt64) :
+    fpAccessEntry coreId =
+      (do
+        let frame ← Platform.FFI.captureTrapFrame
+        let live ← Concurrency.captureOwnedFp coreId
+        let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+          let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
+          let res := fpAccessEntryStep st coreId live
+          let res := (res.1, PriorityInheritance.settleResidencyAt res.2 coreId)
+          ((res.1, Concurrency.restoreTargetAt res.2 coreId,
+            (Concurrency.coreIdOfUInt64? coreId).map
+              (fun c => (c, res.2.scheduler.currentOnCore c))), res.2))
+        applyFpAccessOutcome r.1
+        Concurrency.releaseSwitchedFpOwner coreId
+        Platform.FFI.restoreTrapFrame r.2.1
+        Concurrency.recordCommittedCurrentThreadHw r.2.2) := rfl
+
+/-- **WS-BP BP7.9**: on a core that runs a thread, the FP/SIMD access schedules
+nothing — the step commits no scheduler change, so the core resumes the thread
+that trapped.  (Until `v0.36.40` this was stated for every core, and held only
+because a vacated core was left resuming nothing — see the next theorem.) -/
+theorem fpAccessEntryStep_scheduler (st : SystemState) (coreId : UInt64)
+    (live : Option FpContext) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hC : Concurrency.coreIdOfUInt64? coreId = some c)
+    (hCur : st.scheduler.currentOnCore c = some tid) :
+    (fpAccessEntryStep st coreId live).2.scheduler = st.scheduler := by
+  unfold fpAccessEntryStep
+  rw [hC]
+  dsimp only
+  have hS := Architecture.fpAccessOnCore_scheduler st c live
+  rw [PriorityInheritance.dispatchVacatedCore_of_current _ c tid
+    (by rw [hS]; exact hCur)]
+  exact hS
+
+/-- **`v0.36.40`**: on a core another core vacated, the FP/SIMD access
+dispatches the core's reschedule — the committed state is the reschedule's, so
+the restore installs a successor rather than nothing, and the trap layer does not
+halt the core. -/
+theorem fpAccessEntryStep_vacated (st st' : SystemState) (coreId : UInt64)
+    (live : Option FpContext) (c : CoreId)
+    (hC : Concurrency.coreIdOfUInt64? coreId = some c)
+    (hVac : st.scheduler.currentOnCore c = none)
+    (hR : handleRescheduleSgiOnCore st c = .ok st') :
+    (fpAccessEntryStep st coreId live).2 = st' := by
+  unfold fpAccessEntryStep
+  rw [hC]
+  dsimp only
+  have hInert : Architecture.fpAccessOnCore st c live = (.inert, st) := by
+    simp [Architecture.fpAccessOnCore, hVac]
+  rw [hInert]
+  exact PriorityInheritance.dispatchVacatedCore_of_vacated st st' c hVac hR
 
 /-- WS-RR RR4.23 structural marker: `faultEntry` unfolds to the atomic commit
 of the verified step followed by the SGI firing.
@@ -348,7 +522,7 @@ scanner, the seam cannot regress silently — the discipline the timer and
 `.reschedule` entries already carry.
 
 The record matters here even though the trap layer halts after a delivered
-fault (pending SM10.1): the delivery *vacates* this core, so leaving the HAL
+fault on a core with no restore staged: the delivery *vacates* this core, so leaving the HAL
 mirror naming the faulted thread would be a stale name pointing at a
 descheduled frame — exactly what RR7.26's clear-on-vacate exists to prevent. -/
 theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
@@ -356,15 +530,25 @@ theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
     faultEntry coreId esr elr spsr far x0 x1 x2 x3 x4 x5 x6 x7 sp lr =
       (do
         let lctx ← Platform.FFI.getKernelLabelingContext
-        let r ← Platform.FFI.modifyGetKernelState (fun st =>
+        let frame ← Platform.FFI.captureTrapFrame
+        let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+          let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
           let (sgis, st') :=
             faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
               { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+          let st' := PriorityInheritance.settleResidencyAt st' coreId
           ((sgis,
             (Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+              (fun c => (c, st'.scheduler.currentOnCore c)),
+            Concurrency.restoreTargetAt st' coreId,
+            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+        Platform.FFI.completePhysicalWrites r.2.2.2.1
         Concurrency.fireCrossCoreSgis r.1
-        Concurrency.recordCommittedCurrentThreadHw r.2) := rfl
+        Platform.FFI.completeIcacheMaintenance r.2.2.2.2
+        Concurrency.releaseSwitchedFpOwner coreId
+        Platform.FFI.restoreTrapFrame r.2.2.1
+        Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 /-- The same marker for the unknown-syscall seam. -/
 theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
@@ -372,29 +556,60 @@ theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
     unknownSyscallEntry coreId esr elr spsr far x0 x1 x2 x3 x4 x5 x6 x7 sp lr =
       (do
         let lctx ← Platform.FFI.getKernelLabelingContext
-        let r ← Platform.FFI.modifyGetKernelState (fun st =>
+        let frame ← Platform.FFI.captureTrapFrame
+        let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+          let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId frame
           let (sgis, st') :=
             unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
               { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+          let st' := PriorityInheritance.settleResidencyAt st' coreId
           ((sgis,
             (Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+              (fun c => (c, st'.scheduler.currentOnCore c)),
+            Concurrency.restoreTargetAt st' coreId,
+            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+        Platform.FFI.completePhysicalWrites r.2.2.2.1
         Concurrency.fireCrossCoreSgis r.1
-        Concurrency.recordCommittedCurrentThreadHw r.2) := rfl
+        Platform.FFI.completeIcacheMaintenance r.2.2.2.2
+        Concurrency.releaseSwitchedFpOwner coreId
+        Platform.FFI.restoreTrapFrame r.2.2.1
+        Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 /-- The shared delivery inherits the progress guarantee: whatever it commits,
 the thread that was current on `c` is not dispatchable there afterwards.
-`scheduleLocalSuccessorLive` is the identity until SM10.1 flips the restore
-seam (`scheduleLocalSuccessorLive_inert`); when it does, the successor it
-installs is drawn from the run queue the faulting thread is no longer on, and
-this proof is the SM10.1 obligation that records that. -/
+
+**WS-BP BP7.6: the SM10.1 obligation, discharged.**  The core's successor is
+dispatched now, and it is drawn from the run queue the faulting thread is no
+longer on (`handleRescheduleSgiOnCore_preserves_not_dispatchable`).  That the
+chooser draws from the queue's *members* is what the queue's well-formedness
+says — its bucket scan and its membership agree — so the theorem takes it of
+the state the successor is chosen on — and that is derived, not assumed: the
+theorem takes every core's queue well-formed on the **pre**-state, which is a
+conjunct of `schedulerInvariant_perCore` every reachable state carries, and
+`faultDeliverOnCoreChecked_preserves_runQueuesWellFormed` carries it across the
+spill and the delivery. -/
 theorem faultEntryDeliver_not_dispatchable (lctx : LabelingContext) (st : SystemState)
     (f : Fault) (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
-    (tid : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore c = some tid) :
+    (tid : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore c = some tid)
+    (hwf : runQueuesWellFormed st.scheduler) :
     ¬ dispatchableOnCore (faultEntryDeliver lctx st f ectx w c).2 tid c := by
+  have hwfD : (faultDeliveredState lctx st f ectx w c tid).scheduler.runQueueOnCore c
+      |>.wellFormed := by
+    unfold faultDeliveredState
+    refine faultDeliverOnCoreChecked_preserves_runQueuesWellFormed lctx _ tid f _ c ?_ c
+    rw [writeFaultRegistersToTcb_scheduler]; exact hwf
   unfold faultEntryDeliver
-  simp only [hCur, PriorityInheritance.scheduleLocalSuccessorLive_inert]
-  exact faultDeliverOnCoreChecked_not_dispatchable lctx _ tid f _ c
+  simp only [hCur]
+  have hD : ¬ dispatchableOnCore (faultDeliveredState lctx st f ectx w c tid) tid c :=
+    faultDeliverOnCoreChecked_not_dispatchable lctx _ tid f _ c
+  unfold PriorityInheritance.scheduleLocalSuccessor
+  split
+  · split
+    · rename_i stH hH
+      exact handleRescheduleSgiOnCore_preserves_not_dispatchable _ stH c tid hwfD hH hD
+    · exact hD
+  · exact hD
 
 /-- WS-RR RR4.23/RR4.19: **the entry inherits the progress guarantee.**
 
@@ -408,13 +623,14 @@ theorem faultEntryStep_not_dispatchable (lctx : LabelingContext) (st : SystemSta
     (coreId : UInt64) (tid : SeLe4n.ThreadId) (h : coreId.toNat < numCores)
     (hEl0 : ectx.takenFromEl0 = true)
     (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid)
-    (hFault : (faultOfExceptionContext ectx).isSome) :
+    (hFault : (faultOfExceptionContext ectx).isSome)
+    (hwf : runQueuesWellFormed st.scheduler) :
     ¬ dispatchableOnCore (faultEntryStep lctx st ectx w coreId).2 tid ⟨coreId.toNat, h⟩ := by
   unfold faultEntryStep
   rw [dif_pos h, if_pos hEl0]
   cases hF : faultOfExceptionContext ectx with
   | none => rw [hF] at hFault; exact absurd hFault (by simp)
-  | some f => exact faultEntryDeliver_not_dispatchable lctx st f ectx w _ tid hCur
+  | some f => exact faultEntryDeliver_not_dispatchable lctx st f ectx w _ tid hCur hwf
 
 /-- Review round (PR #887): the unknown-syscall entry carries the same
 guarantee — a thread that issued an unknown syscall is never resumed at it
@@ -423,12 +639,13 @@ theorem unknownSyscallEntryStep_not_dispatchable (lctx : LabelingContext)
     (st : SystemState) (ectx : ExceptionContext) (w : FaultRegisterWindow)
     (coreId : UInt64) (tid : SeLe4n.ThreadId) (h : coreId.toNat < numCores)
     (hEl0 : ectx.takenFromEl0 = true)
-    (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid) :
+    (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid)
+    (hwf : runQueuesWellFormed st.scheduler) :
     ¬ dispatchableOnCore (unknownSyscallEntryStep lctx st ectx w coreId).2 tid
       ⟨coreId.toNat, h⟩ := by
   unfold unknownSyscallEntryStep
   rw [dif_pos h, if_pos hEl0]
-  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur
+  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur hwf
 
 /-- PR #887 review round 3: **the syscall seam's capability fault carries the
 same guarantee.**  `deliverSyscallCapFault` is the abort entry's delivery at

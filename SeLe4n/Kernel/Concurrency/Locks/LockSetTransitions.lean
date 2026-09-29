@@ -376,6 +376,25 @@ ObjId. -/
 @[inline] def untypedLock (oid : ObjId) : LockId :=
   ⟨.untyped, oid⟩
 
+/-- **WS-BP BP7.1 (`v0.36.5`)**: build the LockId for a page frame at the given
+ObjId — the lock hierarchy's `page` kind (level 9), which frame objects made
+real. -/
+@[inline] def pageLock (oid : ObjId) : LockId :=
+  ⟨.page, oid⟩
+
+/-- **WS-BP BP7.1 slice 4 (`v0.36.8`)**: the lock of an object a carve creates —
+a child untyped's `untyped` lock, a frame's `page` lock, and since slice 4b
+(`v0.36.10`) a VSpace root's `vspaceRoot` lock.  The carve writes the new
+object's key, so its footprint names that key under the kind the key will hold,
+which is what serialises it against every later operation on the object.  Keyed
+on the carved **kind** rather than a flag, so a kind the carve gains names its
+own lock rather than falling into another's. -/
+@[inline] def carvedObjectLock (childKind : KernelObjectType) (oid : ObjId) : LockId :=
+  match childKind with
+  | .untyped => untypedLock oid
+  | .vspaceRoot => vspaceRootLock oid
+  | _ => pageLock oid
+
 /-- WS-SM SM3.A.10 / PR #870 round 7: **the SystemState-level lock**, as a
 declarable footprint member.
 
@@ -1328,14 +1347,32 @@ def lockSet_cspaceMove (callerTid : ThreadId)
 The target CNode is the object-level mutation; the caller's CSpace root is
 read for the cap-lookup path.  WS-RR RR7.9: and the CDT, from the other
 direction — a delete **removes** the slot's node (`cdt.removeNode`), which is
-the same global structure the three creating operations allocate in. -/
+the same global structure the three creating operations allocate in.
+
+**WS-BP BP7.1 (`v0.36.7`)**: and the VSpace root a deleted frame capability's
+mapping record names.  The live arm is `cspaceDeleteSlotFinalising`, which
+removes that mapping before it returns (seL4's `finaliseCap` → `unmapPage`), so
+it writes the root the record's ASID resolves to.  A capability carries at most
+one record, so this is one optional member, resolved from the state as
+`lockSet_lifecycleRetype`'s target lock is; `none` — a capability with no live
+record — is definitionally the pre-BP7.1 footprint.
+
+**`v0.36.12`**: a page-table capability's root goes in the same member.  When the
+delete destroys a table's last capability, the finalisation takes the table out
+of the root it is installed in (`finaliseDestroyedCapabilities`), writing that
+root — its table slots, and the mappings beneath the table — and nothing else:
+the tables it takes out keep a stale record rather than being written.  A
+capability is a frame's or a table's, never both, so the member stays one. -/
 def lockSet_cspaceDelete (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (targetCnodeObjId : ObjId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (cnodeLock targetCnodeObjId, .write),
-     (stateLevelLock, .write)]
+    (cnodeRootObjId : ObjId) (targetCnodeObjId : ObjId)
+    (unmappedRootObjId : Option ObjId := none) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (cnodeLock targetCnodeObjId, .write),
+       (stateLevelLock, .write)])
+    (unmappedRootObjId.map (fun o => (vspaceRootLock o, AccessMode.write)))
 
 /-! ## Lifecycle syscalls (1 transition: lifecycleRetype) -/
 
@@ -1373,15 +1410,54 @@ def lockSet_lifecycleRetype (callerTid : ThreadId)
        (stateLevelLock, .write)])
     (targetLock.map (fun l => (l, AccessMode.write)))
 
-/-! ## VSpace syscalls (2 transitions) -/
+/-- **WS-BP BP7.1 (`v0.36.5`)**: `lockSet` for `untypedRetype` — the carve
+that carves an object.
 
-/-- WS-SM SM3.B.3: `lockSet` for `vspaceMap`. -/
-def lockSet_vspaceMap (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (vspaceRootObjId : ObjId) : LockSet :=
+Caller TCB (read) and CSpace root (read) for the two capability resolutions; the
+untyped (write — its watermark advances and its child list grows); the **new
+object's key** (write — the object store gains it, and naming the key is what
+serialises two carves racing for one child id), under the kind it will hold
+(`carvedObjectLock`: a frame's `page` lock, since slice 4 a child untyped's
+`untyped` lock, and since slice 4b a VSpace root's `vspaceRoot` lock); the destination CNode (write — the new capability goes in); and
+`stateLevelLock` (write) for the CDT edge and the object index the carve
+extends, unconditional because a successful carve always writes both.  Every
+member is named by the operands, so unlike the in-place retype there is no
+state-resolved optional member. -/
+def lockSet_untypedRetype (callerTid : ThreadId)
+    (cnodeRootObjId untypedObjId childObjId dstCnodeObjId : ObjId)
+    (childKind : KernelObjectType) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
-     (vspaceRootLock vspaceRootObjId, .write)]
+     (untypedLock untypedObjId, .write),
+     (carvedObjectLock childKind childObjId, .write),
+     (cnodeLock dstCnodeObjId, .write),
+     (stateLevelLock, .write)]
+
+/-! ## VSpace syscalls (2 transitions) -/
+
+/-- WS-SM SM3.B.3: `lockSet` for `vspaceMap`.
+
+**WS-BP BP7.1 (`v0.36.7`)**: the arm is `vspaceMapFromFrameCap`, which reads the
+**frame** the MR2 capability names (its `base` and device flag) and writes that
+capability's **mapping record** into the CNode holding it — so the frame
+capability's CNode is a write member.  On a single-level CSpace the frame
+capability's CNode *is* the caller's root, and `insertOrMerge` lubs the two
+modes to one write member.
+
+**PR #904 review (`v0.36.41`)**: the frame is a **write** member.  The mapping
+takes the frame's next epoch (`tagFrameMapping`), which advances the frame's
+`mapEpoch` — so two `.vspaceMap`s of one frame on two cores serialise on the
+frame and cannot hand two mappings the same epoch. -/
+def lockSet_vspaceMap (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (vspaceRootObjId : ObjId)
+    (frameCnodeObjId frameObjId : ObjId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .read),
+     (cnodeLock cnodeRootObjId, .read),
+     (vspaceRootLock vspaceRootObjId, .write),
+     (cnodeLock frameCnodeObjId, .write),
+     (pageLock frameObjId, .write)]
 
 /-- WS-SM SM3.B.3: `lockSet` for `vspaceUnmap`. -/
 def lockSet_vspaceUnmap (callerTid : ThreadId)
@@ -1767,10 +1843,13 @@ theorem lockSet_cspaceMove_stateLevel_write_mem (callerTid : ThreadId)
 /-- **WS-RR RR7.9**: `cspaceDelete`'s — the removal direction, on the same
 global structure the three creating operations allocate in. -/
 theorem lockSet_cspaceDelete_stateLevel_write_mem (callerTid : ThreadId)
-    (cnodeRootObjId targetCnodeObjId : ObjId) :
+    (cnodeRootObjId targetCnodeObjId : ObjId) (unmappedRoot : Option ObjId) :
     (stateLevelLock, AccessMode.write)
-      ∈ (lockSet_cspaceDelete callerTid cnodeRootObjId targetCnodeObjId).pairs := by
-  unfold lockSet_cspaceDelete lockSetOfList
+      ∈ (lockSet_cspaceDelete callerTid cnodeRootObjId targetCnodeObjId
+          unmappedRoot).pairs := by
+  unfold lockSet_cspaceDelete
+  apply mem_write_lockSetExtendOpt
+  unfold lockSetOfList
   simp only [List.foldl]
   exact LockSet.mem_insertOrMerge_write_self _ _
 
@@ -1781,13 +1860,51 @@ half of `cspaceWalk_conflicts_with_delete` that comes from the delete's side.
 Stated here, beside the footprint, rather than at the consumer: "what does this
 footprint contain" is a question about `lockSet_cspaceDelete`. -/
 theorem lockSet_cspaceDelete_target_write_mem (callerTid : ThreadId)
-    (cnodeRootObjId targetCnodeObjId : ObjId) :
+    (cnodeRootObjId targetCnodeObjId : ObjId) (unmappedRoot : Option ObjId) :
     (cnodeLock targetCnodeObjId, AccessMode.write)
-      ∈ (lockSet_cspaceDelete callerTid cnodeRootObjId targetCnodeObjId).pairs := by
-  unfold lockSet_cspaceDelete lockSetOfList
+      ∈ (lockSet_cspaceDelete callerTid cnodeRootObjId targetCnodeObjId
+          unmappedRoot).pairs := by
+  unfold lockSet_cspaceDelete
+  apply mem_write_lockSetExtendOpt
+  unfold lockSetOfList
   simp only [List.foldl]
   exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
     (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-BP BP7.1 (`v0.36.7`)**: a delete whose capability's mapping record
+resolves to a VSpace root declares that root's **write** lock — the root
+`cspaceDeleteSlotFinalising`'s unmap rewrites. -/
+theorem lockSet_cspaceDelete_unmappedRoot_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId targetCnodeObjId rootObjId : ObjId) :
+    (vspaceRootLock rootObjId, AccessMode.write)
+      ∈ (lockSet_cspaceDelete callerTid cnodeRootObjId targetCnodeObjId
+          (some rootObjId)).pairs := by
+  unfold lockSet_cspaceDelete lockSetExtendOpt
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-BP BP7.1 (`v0.36.7`)**: `vspaceMap` declares the frame capability's
+CNode in **write** mode — the CNode `cspaceRecordFrameMapping` rewrites to
+carry the mapping record. -/
+theorem lockSet_vspaceMap_frameCnode_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId vspaceRootObjId frameCnodeObjId frameObjId : ObjId) :
+    (cnodeLock frameCnodeObjId, AccessMode.write)
+      ∈ (lockSet_vspaceMap callerTid cnodeRootObjId vspaceRootObjId
+          frameCnodeObjId frameObjId).pairs := by
+  unfold lockSet_vspaceMap lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **PR #904 review (`v0.36.41`)**: `vspaceMap` declares the frame in **write**
+mode — the frame `tagFrameMapping` rewrites to advance its mapping epoch. -/
+theorem lockSet_vspaceMap_frame_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId vspaceRootObjId frameCnodeObjId frameObjId : ObjId) :
+    (pageLock frameObjId, AccessMode.write)
+      ∈ (lockSet_vspaceMap callerTid cnodeRootObjId vspaceRootObjId
+          frameCnodeObjId frameObjId).pairs := by
+  unfold lockSet_vspaceMap lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.9**: `mintReplyCap` inherits the member, by definition rather
 than by repetition. -/
@@ -1818,11 +1935,11 @@ theorem capabilityOps_footprints_share_serialization
     ((stateLevelLock, AccessMode.write)
         ∈ (lockSet_cspaceMove callerA srcA dstA).pairs ∧
       (stateLevelLock, AccessMode.write)
-        ∈ (lockSet_cspaceDelete callerB srcB dstB).pairs) :=
+        ∈ (lockSet_cspaceDelete callerB srcB dstB none).pairs) :=
   ⟨⟨lockSet_cspaceMint_stateLevel_write_mem callerA srcA dstA,
     lockSet_cspaceCopy_stateLevel_write_mem callerB srcB dstB⟩,
    ⟨lockSet_cspaceMove_stateLevel_write_mem callerA srcA dstA,
-    lockSet_cspaceDelete_stateLevel_write_mem callerB srcB dstB⟩⟩
+    lockSet_cspaceDelete_stateLevel_write_mem callerB srcB dstB none⟩⟩
 
 /-! ### WS-RR RR7.11 — the IPC rendezvous write members
 
@@ -4022,6 +4139,66 @@ def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
       (handlerEndpointObjId.map (fun ep => (endpointLock ep, .read))))
     (queueOwnerMember queueOwner)
 
+/-- **WS-BP BP7.1 (`v0.36.11`): `lockSet` for `tcbSetSpace`.**
+
+`setThreadSpace` writes the target TCB's two root fields (covered by
+`tcbLock targetTcbTid .write`) after `resolveSetSpace` has read, through the
+**caller's** CSpace root, the two capabilities MR0 and MR1 name, and after the
+operation has read the CNode and the VSpace root they name to check each is an
+object of its kind.  Those two kind checks are the fourth and fifth locks, in
+read mode: without them a concurrent retype of either object races the check,
+and a thread could be left naming a root that was never coherently validated —
+the reason `lockSet_tcbSetFaultHandler` locks its endpoint.  The caller
+pre-resolves each capability's `.object` target the way `resolveSetSpace` does;
+`none` when a lookup fails, since the operation then refuses before reading the
+object.  The capability walks name the caller's root and nothing below it, which
+WS-RR RR7.41 proved is the complete CNode footprint of every resolution the live
+seam admits. -/
+def lockSet_tcbSetSpace (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
+    (newCnodeObjId : Option ObjId) (newVSpaceRootObjId : Option ObjId)
+    (queueOwner : Option QueueOwner) : LockSet :=
+  lockSetExtendOpt
+    (lockSetExtendOpt
+      (lockSetExtendOpt
+        (lockSetOfList
+          [(tcbLock callerTid, .read),
+           (cnodeLock cnodeRootObjId, .read),
+           (tcbLock targetTcbTid, .write)])
+        (newCnodeObjId.map (fun cn => (cnodeLock cn, .read))))
+      (newVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read))))
+    (queueOwnerMember queueOwner)
+
+/-- **WS-BP BP7.1 (`v0.36.12`): `lockSet` for `pageTableMap`.**
+
+`pageTableMap` writes two objects — the table (its `installedIn` record, under
+its `page` lock) and the address space it installs in (the new slot, under its
+`vspaceRoot` lock) — after resolving, through the **caller's** CSpace root, the
+table capability it was invoked through and the root capability MR0 names.  The
+root is `none` when that lookup fails, since the operation then refuses before
+writing it. -/
+def lockSet_pageTableMap (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (tableObjId : ObjId) (rootObjId : Option ObjId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (pageLock tableObjId, .write)])
+    (rootObjId.map (fun r => (vspaceRootLock r, .write)))
+
+/-- **WS-BP BP7.1 (`v0.36.12`): `lockSet` for `pageTableUnmap`.**  The same four
+objects, with the root read off the table's own install record rather than off a
+capability: `none` for a table installed nowhere, which the operation leaves as
+it is. -/
+def lockSet_pageTableUnmap (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (tableObjId : ObjId) (rootObjId : Option ObjId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (pageLock tableObjId, .write)])
+    (rootObjId.map (fun r => (vspaceRootLock r, .write)))
+
 -- ============================================================================
 -- SM3.B.3 (audit-pass-5) — PIP-chain-walk start markers
 -- ============================================================================
@@ -4301,8 +4478,12 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- an edge, the delete removes one), and the CDT is `SystemState`-level
   -- structure whose declared subject is `stateLevelLock`.  Level 0, so it is
   -- acquired first and the by-kind ladder stays acyclic.
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap =>
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .mintReplyCap =>
       [.tcb, .cnode, .objStore]
+  -- **WS-BP BP7.1 (`v0.36.7`)**: the delete also writes the VSpace root its
+  -- frame capability's mapping record names (`cspaceDeleteSlotFinalising`).
+  | .cspaceDelete =>
+      [.tcb, .cnode, .objStore, .vspaceRoot]
   -- **WS-RR RR8.16 (`v0.35.190`)**: `.cspaceRevoke` writes the same three kinds
   -- as the delete it generalises — CNodes, the CDT through `stateLevelLock`, and
   -- the caller's TCB in read mode.  It declares **no** static footprint, and
@@ -4314,7 +4495,23 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- for the same reason — an unbounded walk's locks cannot be enumerated
   -- statically, and pretending otherwise is what makes a footprint false.
   | .cspaceRevoke =>
-      [.tcb, .cnode, .objStore]
+      [.tcb, .cnode, .objStore, .vspaceRoot]
+  -- **WS-BP BP7.1 (`v0.36.5`)**: the carve reads the caller and its CSpace
+  -- root, writes the untyped, the new object's key (a frame's `page`, a child
+  -- untyped, or since slice 4b a VSpace root), the destination CNode, and the
+  -- CDT / object index through `stateLevelLock`.
+  | .untypedRetype =>
+      [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore]
+  -- **WS-BP BP7.1 (`v0.36.6`)**: the reset reads the caller and its CSpace root,
+  -- writes the untyped, retires frames (their `page` locks), rewrites every VSpace
+  -- root that maps a page of the region, and writes the object index through
+  -- `stateLevelLock`.  It declares **no** static footprint, for `.cspaceRevoke`'s
+  -- reason: the VSpace roots it must write are the ones the state says map the
+  -- region — a set nothing bounds, while a `LockSet` is capped at
+  -- `maxLockSetSize` — so this list says which kinds a future declaration may
+  -- contain.
+  | .untypedReset =>
+      [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore]
   -- Lifecycle.  **Every kind, for the reason `.declassify` admits every kind**
   -- (PR #873 round 7): SM9.D.12 makes the retype the arm that *clears*
   -- provenance at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
@@ -4329,8 +4526,12 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- VSpace syscalls
   -- `.vspaceUnifyInstruction` (SM7.D) shares the footprint but takes the
   -- VSpaceRoot in read mode: it modifies no page table, only cache state.
-  | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction =>
+  | .vspaceUnmap | .vspaceUnifyInstruction =>
       [.tcb, .cnode, .vspaceRoot]
+  -- **WS-BP BP7.1 (`v0.36.7`)**: the map reads the frame its capability names
+  -- and writes that capability's mapping record.
+  | .vspaceMap =>
+      [.tcb, .cnode, .vspaceRoot, .page]
   -- WS-SM SM8.C.9: `.declassify` reads the caller TCB (to resolve the running
   -- subject's domain) and the caller's CNode (capability resolution), and its
   -- only state-level write is `SystemState.declassificationAuditLog` —
@@ -4446,6 +4647,14 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- and (review round 3) the endpoint the CPtr names, for the kind check.
   | .tcbSetFaultHandler =>
       [.tcb, .cnode, .endpoint, .notification]
+  -- **WS-BP BP7.1 (`v0.36.11`)**: `setThreadSpace` writes the target TCB and
+  -- reads the new CSpace root (a CNode) and the new VSpace root.
+  | .tcbSetSpace =>
+      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]
+  -- **WS-BP BP7.1 (`v0.36.12`)**: the page-table operations write the table
+  -- (a `page` lock) and the address space it installs in.
+  | .pageTableMap | .pageTableUnmap =>
+      [.tcb, .cnode, .page, .vspaceRoot]
   -- WS-SM SM6.B: bind/unbind a notification to a TCB.  Both the notification
   -- (write — `boundTCB`) and the bound TCB (write — `boundNotification`) are in
   -- the footprint, plus the CNode (read) covering the capability resolution.
@@ -4468,23 +4677,26 @@ than inheriting a default; and it is what `lockSet_consistent_aggregate_covers_e
 is stated over, so the inventory's coverage claim names the set it actually
 covers instead of an off-by-one against `SyscallId.count`. -/
 def declaresStaticLockFootprint : SyscallId → Bool
-  | .cspaceRevoke => false
+  | .cspaceRevoke | .untypedReset => false
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap
-  | .lifecycleRetype
+  | .lifecycleRetype | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal | .auditRead | .auditDrain => true
 
-/-- **The exemption is exactly one arm**, so a second undeclared syscall is a
-decision somebody has to write down rather than a number that quietly moves. -/
+/-- **The exemption is exactly two arms**, each an unbounded state-discovered
+walk — `.cspaceRevoke`'s derivation tree and `.untypedReset`'s VSpace roots — so
+a third undeclared syscall is a decision somebody has to write down rather than
+a number that quietly moves. -/
 theorem declaresStaticLockFootprint_false_iff (sid : SyscallId) :
-    declaresStaticLockFootprint sid = false ↔ sid = .cspaceRevoke := by
+    declaresStaticLockFootprint sid = false ↔
+      sid = .cspaceRevoke ∨ sid = .untypedReset := by
   cases sid <;> simp [declaresStaticLockFootprint]
 
 /-- WS-SM SM3.B.4 (PR #873 round 6): **the kind inventory admits any target.**
@@ -5832,10 +6044,10 @@ theorem lockSet_consistent_cspaceMove (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.cspaceDelete`. -/
 theorem lockSet_consistent_cspaceDelete (callerTid : ThreadId)
-    (cnRoot targetCn : ObjId) :
-    ∀ p ∈ (lockSet_cspaceDelete callerTid cnRoot targetCn).pairs,
+    (cnRoot targetCn : ObjId) (unmappedRoot : Option ObjId) :
+    ∀ p ∈ (lockSet_cspaceDelete callerTid cnRoot targetCn unmappedRoot).pairs,
       p.fst.kind ∈ permittedKinds .cspaceDelete :=
-  lockSet_consistent_of_extended_base _ _
+  lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -5847,6 +6059,12 @@ theorem lockSet_consistent_cspaceDelete (callerTid : ThreadId)
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp [stateLevelLock]; decide
         exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases unmappedRoot with
+        | none => cases hpp
+        | some o =>
+            cases hpp
+            simp [vspaceRootLock]; decide)
 
 /-- WS-SM SM3.B.4 for `.lifecycleRetype`.
 
@@ -5873,6 +6091,29 @@ theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
         exact absurd hMem (by intro h; cases h))
     (by intro pp _
         exact permittedKinds_lifecycleRetype_admits_every_kind pp.fst.kind)
+
+/-- **WS-BP BP7.1** — WS-SM SM3.B.4 for `.untypedRetype`. -/
+theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
+    (cnRoot untypedId childId dstCn : ObjId) (childKind : KernelObjectType) :
+    ∀ p ∈ (lockSet_untypedRetype callerTid cnRoot untypedId childId dstCn
+      childKind).pairs,
+      p.fst.kind ∈ permittedKinds .untypedRetype :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; cases childKind <;>
+            simp [carvedObjectLock, pageLock, untypedLock, vspaceRootLock] <;> decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
+        exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 (PR #873 round 7): **and the members the retype itself takes
 are still exactly five.**
@@ -5909,8 +6150,8 @@ theorem lockSet_lifecycleRetype_nonTarget_kinds (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.vspaceMap`. -/
 theorem lockSet_consistent_vspaceMap (callerTid : ThreadId)
-    (cnRoot vId : ObjId) :
-    ∀ p ∈ (lockSet_vspaceMap callerTid cnRoot vId).pairs,
+    (cnRoot vId frameCn frameId : ObjId) :
+    ∀ p ∈ (lockSet_vspaceMap callerTid cnRoot vId frameCn frameId).pairs,
       p.fst.kind ∈ permittedKinds .vspaceMap :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
@@ -5920,6 +6161,10 @@ theorem lockSet_consistent_vspaceMap (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [pageLock]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM7.D for `.vspaceUnifyInstruction`. -/
@@ -6356,5 +6601,72 @@ theorem lockSet_consistent_tcbSetFaultHandler (callerTid : ThreadId)
           | none => simp at hpp
           | some ep => simp at hpp; rw [← hpp]; simp; decide))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
+
+/-- WS-BP BP7.1 (`v0.36.11`), for `.tcbSetSpace`: the base three locks plus the
+optional reads of the new CSpace root and the new VSpace root. -/
+theorem lockSet_consistent_tcbSetSpace (callerTid : ThreadId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (newCnode newVSpaceRoot : Option ObjId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_tcbSetSpace callerTid cnRoot targetTcb newCnode newVSpaceRoot queueOwner).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSetSpace :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_extendOpt _ _ _
+      (lockSet_consistent_base_plus_opt _ _ _
+        (by intro p hMem
+            rcases List.mem_cons.mp hMem with h | hMem
+            · rw [h]; simp; decide
+            rcases List.mem_cons.mp hMem with h | hMem
+            · rw [h]; simp; decide
+            rcases List.mem_cons.mp hMem with h | hMem
+            · rw [h]; simp; decide
+            exact absurd hMem (by intro h; cases h))
+        (by intro pp hpp
+            cases newCnode with
+            | none => simp at hpp
+            | some cn => simp at hpp; rw [← hpp]; simp; decide))
+      (by intro pp hpp
+          cases newVSpaceRoot with
+          | none => simp at hpp
+          | some vsr => simp at hpp; rw [← hpp]; simp; decide))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
+
+/-- WS-BP BP7.1 (`v0.36.12`), for `.pageTableMap`: the base three locks plus the
+optional write of the address space. -/
+theorem lockSet_consistent_pageTableMap (callerTid : ThreadId)
+    (cnRoot table : ObjId) (root : Option ObjId) :
+    ∀ p ∈ (lockSet_pageTableMap callerTid cnRoot table root).pairs,
+      p.fst.kind ∈ permittedKinds .pageTableMap :=
+  lockSet_consistent_base_plus_opt _ _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock, permittedKinds]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [cnodeLock, permittedKinds]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [pageLock, permittedKinds]
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases root with
+        | none => simp at hpp
+        | some r => simp at hpp; rw [← hpp]; simp [vspaceRootLock, permittedKinds])
+
+/-- WS-BP BP7.1 (`v0.36.12`), for `.pageTableUnmap`: the same shape. -/
+theorem lockSet_consistent_pageTableUnmap (callerTid : ThreadId)
+    (cnRoot table : ObjId) (root : Option ObjId) :
+    ∀ p ∈ (lockSet_pageTableUnmap callerTid cnRoot table root).pairs,
+      p.fst.kind ∈ permittedKinds .pageTableUnmap :=
+  lockSet_consistent_base_plus_opt _ _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [tcbLock, permittedKinds]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [cnodeLock, permittedKinds]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [pageLock, permittedKinds]
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases root with
+        | none => simp at hpp
+        | some r => simp at hpp; rw [← hpp]; simp [vspaceRootLock, permittedKinds])
 
 end SeLe4n.Kernel.Concurrency

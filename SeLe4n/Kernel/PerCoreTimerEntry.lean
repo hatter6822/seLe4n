@@ -10,6 +10,7 @@ import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Platform.FFI
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.SchedLockBracket
 
 /-!
@@ -140,18 +141,27 @@ advances no clock and fires no SGI — fail-closed, because a tick that did not 
 must not poke a remote core.  See the module docstring. -/
 @[export lean_per_core_timer_tick]
 def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
+  let frame ← Platform.FFI.captureTrapFrame
   let r ← Platform.FFI.modifyGetKernelState (fun st =>
-    let outcome := timerTickUnderDeclaredLockSet coreId st
-    let st' := outcome.state
+    let outcome := timerTickUnderDeclaredLockSet coreId
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame)
+    let st' := PriorityInheritance.settleResidencyAt outcome.state coreId
     ((outcome.value?,
       (Concurrency.coreIdOfUInt64? coreId).map
-        (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+        (fun c => (c, st'.scheduler.currentOnCore c)),
+      Concurrency.restoreTargetAt st' coreId,
+      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+  Platform.FFI.completePhysicalWrites r.2.2.2.1
   match r.1 with
   | some sgisAndFlag =>
       if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
       Concurrency.fireCrossCoreSgis sgisAndFlag.1
   | none => pure ()
-  Concurrency.recordCommittedCurrentThreadHw r.2
+  Platform.FFI.completeIcacheMaintenance r.2.2.2.2
+  Concurrency.releaseSwitchedFpOwner coreId
+  Platform.FFI.restoreTrapFrame r.2.2.1
+  Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- **WS-SM SM5.I** structural marker: `perCoreTimerTickEntry` unfolds to the
 bracketed-step-then-shadow-advance-then-fire-SGIs driver.  Pins the entry's body
@@ -161,21 +171,36 @@ commit-coupled `ffiTimerAdvanceTickCount` on the clock-advance flag of a
 firing, the state commit, the shadow advance — or, since WS-RR RR7.39, the
 declared-footprint bracket — breaks this marker at elaboration; combined with the
 `@[export]` attribute (which the Rust `lean_per_core_timer_tick` extern resolves
-against) and the `build.rs` Check-5 scanner, the seam cannot regress silently. -/
+against) and the `build.rs` Check-5 scanner, the seam cannot regress silently.
+
+**`v0.36.39`**: the step also reads and clears both hardware ledgers — the
+physical-write ledger, performed before any SGI fires, and the
+instruction-cache ledger, emitted after the SGIs and before the restore.
+Every state-committing entry drains both, so no transition the tick reaches
+can record work that is skipped or performed late by another core's entry. -/
 theorem perCoreTimerTickEntry_def (coreId : UInt64) :
     perCoreTimerTickEntry coreId =
       (do
+        let frame ← Platform.FFI.captureTrapFrame
         let r ← Platform.FFI.modifyGetKernelState (fun st =>
-          let outcome := timerTickUnderDeclaredLockSet coreId st
-          let st' := outcome.state
+          let outcome := timerTickUnderDeclaredLockSet coreId
+            (Concurrency.saveCapturedTrapFrameAt st coreId frame)
+          let st' := PriorityInheritance.settleResidencyAt outcome.state coreId
           ((outcome.value?,
             (Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+              (fun c => (c, st'.scheduler.currentOnCore c)),
+            Concurrency.restoreTargetAt st' coreId,
+            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+        Platform.FFI.completePhysicalWrites r.2.2.2.1
         match r.1 with
         | some sgisAndFlag =>
             if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
             Concurrency.fireCrossCoreSgis sgisAndFlag.1
         | none => pure ()
-        Concurrency.recordCommittedCurrentThreadHw r.2) := rfl
+        Platform.FFI.completeIcacheMaintenance r.2.2.2.2
+        Concurrency.releaseSwitchedFpOwner coreId
+        Platform.FFI.restoreTrapFrame r.2.2.1
+        Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 end SeLe4n.Kernel

@@ -223,6 +223,17 @@ fn main() {
     // which a declared PE does not serve the kernel.
     scan_readiness_publication();
 
+    // WS-BP BP8.1: the board's link script — `link.ld` checked against
+    // `src/board.rs`'s RPI5, and on `board_qemu_virt` the `virt` script
+    // derived from it — is produced on every build, host ones included, so the
+    // host tests that hold the Lean table to the linker read the script the
+    // `virt` image actually links under (`mmu::BOARD_LINK_SCRIPT`).
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .expect("cargo sets CARGO_MANIFEST_DIR for every build script");
+    let board_script = board_link_script(&manifest_dir);
+    println!("cargo:rerun-if-changed=src/board.rs");
+    println!("cargo:rustc-env=SELE4N_BOARD_LINK_SCRIPT={board_script}");
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
@@ -236,9 +247,9 @@ fn main() {
     // The path is absolute, because the link runs in a directory cargo
     // chooses.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("none") {
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-            .expect("cargo sets CARGO_MANIFEST_DIR for every build script");
-        println!("cargo:rustc-link-arg-bin=sele4n-kernel=-T{manifest_dir}/link.ld");
+        // WS-BP BP8.1: the image for QEMU's `virt` links under a script
+        // derived from `link.ld` for `virt`'s RAM base (`board_link_script`).
+        println!("cargo:rustc-link-arg-bin=sele4n-kernel=-T{board_script}");
         // WS-BP BP5.2: with `hw_target` the HAL names the Lean kernel's
         // symbols, so the image links the kernel's Lean archive — the one
         // `scripts/build_lean_aarch64_archive.py` builds — together with the
@@ -273,14 +284,117 @@ fn main() {
     asm.file("src/boot.S")
         .file("src/vectors.S")
         .file("src/trap.S")
+        .file("src/fp_context.S")
         .compile("sele4n_hal_asm");
 
     // Re-run build script if assembly files change
     println!("cargo:rerun-if-changed=src/boot.S");
     println!("cargo:rerun-if-changed=src/vectors.S");
     println!("cargo:rerun-if-changed=src/trap.S");
+    println!("cargo:rerun-if-changed=src/fp_context.S");
     println!("cargo:rerun-if-changed=link.ld");
     println!("cargo:rerun-if-changed=build.rs");
+}
+
+/// **WS-BP BP8.1**: one board's RAM base and reserved-extent end, read off
+/// `src/board.rs`'s `BoardMap` constant named `board` — the one place the HAL
+/// states them, so the link script cannot disagree with the boot map.
+fn board_ram_extent(board_rs: &str, board: &str) -> (u64, u64) {
+    let header = format!("pub const {board}: BoardMap = BoardMap {{");
+    let start = board_rs
+        .find(&header)
+        .unwrap_or_else(|| panic!("src/board.rs defines no `{board}` BoardMap"));
+    let body = &board_rs[start + header.len()..];
+    let body = &body[..body.find("};").expect("an unterminated BoardMap")];
+    let field = |name: &str| -> u64 {
+        let key = format!("{name}:");
+        let hits: Vec<&str> = body
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with(&key))
+            .collect();
+        let [line] = hits[..] else {
+            panic!(
+                "`{board}` sets `{name}` {} times; expected once",
+                hits.len()
+            );
+        };
+        let value = line[key.len()..]
+            .trim()
+            .trim_end_matches(',')
+            .replace('_', "");
+        let hex = value
+            .strip_prefix("0x")
+            .unwrap_or_else(|| panic!("`{board}.{name}` is not a hex literal: {value}"));
+        u64::from_str_radix(hex, 16).unwrap_or_else(|e| panic!("`{board}.{name}`: {e}"))
+    };
+    (field("ram_base"), field("kernel_reserved_end"))
+}
+
+/// **WS-BP BP8.1**: the three `link.ld` lines that state a board's RAM base,
+/// in the spelling `link.ld` writes them, for a board whose RAM starts at
+/// `ram_base` and whose reserved extent ends at `end`.  The image loads
+/// 512 KiB above the RAM base and its region ends at the extent's end, as
+/// `link.ld`'s `ASSERT`s require.
+fn board_link_lines(ram_base: u64, end: u64) -> [String; 3] {
+    let origin = ram_base + 0x8_0000;
+    [
+        format!("RAM_BASE = 0x{ram_base:X};"),
+        format!("KERNEL_RESERVED_END = 0x{end:X};"),
+        format!(
+            "    RAM (rwx) : ORIGIN = 0x{origin:X}, LENGTH = 0x{:X}",
+            end - origin
+        ),
+    ]
+}
+
+/// **WS-BP BP8.1**: the linker script the kernel image links under.
+///
+/// `link.ld` is the Raspberry Pi 5's, and it must state `src/board.rs`'s
+/// `RPI5` numbers in its three board lines — the build stops otherwise, for
+/// either board.  For QEMU's `virt` (`board_qemu_virt`) the script is
+/// `link.ld` with exactly those three lines rewritten to `QEMU_VIRT`'s,
+/// written to `OUT_DIR`; every section, symbol and `ASSERT` is `link.ld`'s,
+/// so the two images cannot be laid out by two scripts that drift.  A board
+/// line that does not occur exactly once is a script this derivation cannot
+/// read, and stops the build rather than linking an image at the wrong base.
+fn board_link_script(manifest_dir: &str) -> String {
+    let link_ld = format!("{manifest_dir}/link.ld");
+    let text =
+        std::fs::read_to_string(&link_ld).unwrap_or_else(|e| panic!("cannot read {link_ld}: {e}"));
+    let board_rs = std::fs::read_to_string(format!("{manifest_dir}/src/board.rs"))
+        .unwrap_or_else(|e| panic!("cannot read src/board.rs: {e}"));
+    let (rpi5_base, rpi5_end) = board_ram_extent(&board_rs, "RPI5");
+    let rpi5 = board_link_lines(rpi5_base, rpi5_end);
+    for line in &rpi5 {
+        let count = text
+            .lines()
+            .filter(|l| l.trim_end() == line.as_str())
+            .count();
+        assert!(
+            count == 1,
+            "link.ld must state `{line}` exactly once (src/board.rs's RPI5); it does {count} times"
+        );
+    }
+    if std::env::var_os("CARGO_FEATURE_BOARD_QEMU_VIRT").is_none() {
+        return link_ld;
+    }
+    let (base, end) = board_ram_extent(&board_rs, "QEMU_VIRT");
+    let virt = board_link_lines(base, end);
+    let derived: Vec<String> = text
+        .lines()
+        .map(
+            |l| match rpi5.iter().position(|r| l.trim_end() == r.as_str()) {
+                Some(i) => virt[i].clone(),
+                None => l.to_string(),
+            },
+        )
+        .collect();
+    let out_dir = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR for every build script");
+    let path = format!("{out_dir}/link_qemu_virt.ld");
+    std::fs::write(&path, derived.join("\n") + "\n")
+        .unwrap_or_else(|e| panic!("cannot write {path}: {e}"));
+    path
 }
 
 /// AN8-B.5 (H-18): Reject the legacy `mov x2, #0xFFFF ; movk x2, #0xFF, lsl #16`
@@ -1110,7 +1224,8 @@ fn scan_reschedule_sgi_seam_intact() {
 ///
 ///   1. `timer.rs::per_core_timer_tick_isr` → `lean_per_core_timer_tick`
 ///   2. `trap.rs::reschedule_sgi_handler`   → `lean_per_core_reschedule`
-///   3. `smp.rs::rust_secondary_main`       → `lean_secondary_kernel_main`
+///   3. `smp.rs::first_reschedule`          → `lean_secondary_kernel_main`
+///      (every core's first reschedule, the boot core's too, WS-BP BP8.1)
 ///
 /// For each seam the scanner extracts the named function's body (first
 /// `fn <name>(` declaration through its brace-matched close, on the
@@ -2152,7 +2267,7 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
     ),
     (
         "src/smp.rs",
-        "rust_secondary_main",
+        "first_reschedule",
         "lean_secondary_kernel_main",
     ),
     // The fault-delivery seam: `deliver_fault` enters the Lean runtime to run
@@ -2164,6 +2279,10 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
         "deliver_unknown_syscall",
         "lean_handle_unknown_syscall",
     ),
+    // WS-BP BP7.9: the lazy FP/SIMD switch — `deliver_fp_access` enters the
+    // runtime to commit `fpAccessOnCore` (a TCB's saved FP context and the
+    // core's `fpOwner` slot) and load the faulting thread's context.
+    ("src/trap.rs", "deliver_fp_access", "lean_handle_fp_access"),
     // PR #887 review round 2: the classifier is a Lean-emitted symbol like
     // any other, so it consults the gate too; a not-ready core classifies
     // through the pinned Rust mirror instead.
@@ -2171,6 +2290,14 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
         "src/trap.rs",
         "classify_synchronous_exception",
         "lean_classify_synchronous_exception",
+    ),
+    // WS-BP BP8.5: the Tier-4 driver reads `perCoreStats` on the booted
+    // machine through the Lean seam, one word per call, from the boot core; a
+    // not-ready core is answered the refusal instead.
+    (
+        "src/smp_exercisers.rs",
+        "lean_stats_component",
+        "lean_per_core_stats_component",
     ),
     // WS-RR RR5.6: the SVC dispatch seam — the highest-traffic route into the
     // Lean runtime, and one of the two `kernel_entry.rs`'s five-entry table
@@ -2218,6 +2345,17 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
          initialization returns, and it precedes every secondary's release \
          because the bring-up consumes the permit it returns (WS-BP BP4.2)",
     ),
+    // WS-BP BP8.1: the same install on the QEMU `virt` board.  The image calls
+    // exactly one of the two, by `cfg`, so each is one occurrence.
+    (
+        "src/lean_entry.rs",
+        "enter_lean_kernel",
+        "lean_kernel_main_qemu_virt",
+        1,
+        "the QEMU `virt` board's boot install, `lean_kernel_main` on that board: \
+         it runs in its place, under the same token and before the same permit, \
+         on an image built with `board_qemu_virt`",
+    ),
     // WS-BP BP2.3: the library initializer runs before any Lean code, on the
     // primary, so it precedes every readiness decision there is.  Its caller
     // refuses a second run and halts the system on a failed one.
@@ -2235,6 +2373,69 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
     // install; WS-BP BP2.3 split the library initializer out of it, so the
     // table holds the two calls that precede the boot core being ready.
 ];
+
+/// **Lean upcalls that run outside the kernel-entry lock**, as
+/// `(source, enclosing fn, Lean symbol, occurrences, why)` — reconciled by
+/// occurrence in both directions, like `LEAN_UPCALLS_OUTSIDE_THE_GATE`.
+///
+/// The kernel's Lean runtime runs one core at a time: its reference counts
+/// are not atomic and its heap sits behind a leaf lock that does not mask
+/// IRQs.  `crate::kernel_entry::with_kernel_entry` is what makes that true, so
+/// every other upcall sits inside one (`kernel_entry_bracket_encloses`).
+/// Lean Action CI run 36499869963 is why this is checked rather than stated:
+/// the Tier-4 per-core-stats driver called Lean on the boot core in thread
+/// context, IRQs unmasked, outside the bracket, and a tick preempting it
+/// inside the heap lock wedged the kernel-entry lock on every core.
+const LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK: &[(&str, &str, &str, usize, &str)] = &[
+    (
+        "src/lean_entry.rs",
+        "enter_lean_kernel",
+        "lean_kernel_main",
+        1,
+        "the boot install: it runs on the boot core alone, before any secondary \
+         is released (WS-BP BP4.2) and before the boot core unmasks IRQs, so no \
+         other Lean code can run while it does",
+    ),
+    (
+        "src/lean_entry.rs",
+        "enter_lean_kernel",
+        "lean_kernel_main_qemu_virt",
+        1,
+        "the QEMU `virt` board's boot install, under the same ordering",
+    ),
+    (
+        "src/lean_entry.rs",
+        "initialise_lean_library",
+        "initialize_seLe4n_SeLe4n",
+        1,
+        "the library initializer: it runs before the install, on the boot core \
+         alone, with IRQs masked",
+    ),
+    (
+        "src/trap.rs",
+        "classify_synchronous_exception",
+        "lean_classify_synchronous_exception",
+        1,
+        "the exception classifier: it runs in exception context, so IRQs are \
+         masked and it cannot be preempted inside the heap lock; it reads no \
+         kernel state and touches no shared object that is not persistent (the \
+         generated closed terms are marked persistent, so their reference \
+         counts are never written); and it is taken before the entry lock so an \
+         `SVC` can be routed without entering the kernel twice",
+    ),
+];
+
+/// **Upcall seams that run in thread context**, as `(source, enclosing fn)`:
+/// the caller is not an exception handler, so IRQs are not masked by the
+/// exception entry, and the bracket must be taken with them masked — a tick
+/// taken inside the bracket re-enters the kernel on a core that already holds
+/// the non-reentrant entry lock.  Each must mask with
+/// `crate::interrupts::disable_interrupts()` before the bracket and restore
+/// after it (`irq_mask_encloses_bracket`).  A pin, not a derivation: whether a
+/// function is reached from an exception vector is not a question this
+/// scanner can answer.
+const LEAN_UPCALLS_IN_THREAD_CONTEXT: &[(&str, &str)] =
+    &[("src/smp_exercisers.rs", "lean_stats_component")];
 
 /// **WS-RR RR5.18**: the two safety tripwires that must survive a release
 /// build, as `(source, enclosing fn, a token the condition must name)`.
@@ -3465,6 +3666,13 @@ fn lean_symbol_declarations(
             }
             // The item's own header, plus — for a declaration inside an
             // `extern "C" { … }` block — that block's header.
+            //
+            // WS-BP BP8.1: the enclosing block is the innermost `{` still open
+            // at the item, found by brace depth — not the character before the
+            // item's own header, which is the *previous item's* `;` for every
+            // item but a block's first.  Read that way, a second declaration in
+            // one `extern` block had no enclosing header, classified as a plain
+            // Rust function, and the gate refused a correctly gated extern.
             let header = {
                 let mut i = before - 2;
                 while i > 0 && !matches!(bytes[i - 1], b';' | b'{' | b'}') {
@@ -3472,8 +3680,22 @@ fn lean_symbol_declarations(
                 }
                 let own = &code[i..before];
                 let mut enclosing = String::new();
-                if i > 0 && bytes[i - 1] == b'{' {
-                    let block_open = i - 1;
+                let mut depth = 0usize;
+                let mut open = None;
+                let mut k = i;
+                while k > 0 {
+                    k -= 1;
+                    match bytes[k] {
+                        b'}' => depth += 1,
+                        b'{' if depth == 0 => {
+                            open = Some(k);
+                            break;
+                        }
+                        b'{' => depth -= 1,
+                        _ => {}
+                    }
+                }
+                if let Some(block_open) = open {
                     let mut j = block_open;
                     while j > 0 && !matches!(bytes[j - 1], b';' | b'{' | b'}') {
                         j -= 1;
@@ -3844,6 +4066,31 @@ fn lean_gamma() -> u64 {
              `extern \"C\"` block classified as gated ({n} declarations checked)"
         ),
     }
+    // WS-BP BP8.1: a declaration that is not its block's first item is still
+    // inside the block — two cfg-selected entries in one gated `extern` block
+    // both classify as linker-visible under `hw_target`, and the same block
+    // ungated refuses both.
+    const MULTI: &str = "#[cfg(feature = \"hw_target\")]\n\
+                         extern \"C\" {\n    #[cfg(not(feature = \"x\"))]\n    \
+                         fn lean_alpha(x: u64) -> u64;\n    #[cfg(feature = \"x\")]\n    \
+                         fn lean_beta(x: u64) -> u64;\n}\n";
+    match check(MULTI) {
+        Ok(2) => {}
+        Ok(n) => panic!(
+            "build.rs self-check: a two-item gated extern block classified {n} \
+             declarations, expected 2"
+        ),
+        Err(why) => panic!(
+            "build.rs self-check: the second item of a gated extern block was refused: {why}"
+        ),
+    }
+    match check(&MULTI.replacen("#[cfg(feature = \"hw_target\")]\n", "", 1)) {
+        Err(_) => {}
+        Ok(n) => panic!(
+            "build.rs self-check: an ungated two-item extern block was accepted ({n} \
+             declarations checked)"
+        ),
+    }
     // ...and the same text as *code* still gates the block, so the fix did not
     // simply stop reading attributes.
     const REAL: &str = "#[cfg(feature = \"hw_target\")]\n\
@@ -3960,6 +4207,11 @@ struct LeanUpcallSite {
     /// Whether a readiness guard on the executing PE dominates the call
     /// (`readiness_guard_dominates`).
     gated: bool,
+    /// Whether the call sits inside the argument of a
+    /// `crate::kernel_entry::with_kernel_entry(` call in the same body
+    /// (`kernel_entry_bracket_encloses`) — the kernel's Lean runtime runs one
+    /// core at a time, and that bracket is what makes it so.
+    entry_locked: bool,
 }
 
 /// Every reference to a Lean-emitted symbol in `code` — a strings-blanked
@@ -4028,14 +4280,214 @@ fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>
                 ));
             };
             let gated = readiness_guard_dominates(code, open, at);
+            let entry_locked = kernel_entry_bracket_encloses(code, open, at);
             sites.push(LeanUpcallSite {
                 enclosing_fn,
                 symbol: (*symbol).to_string(),
                 gated,
+                entry_locked,
             });
         }
     }
     Ok(sites)
+}
+
+/// The canonical spelling of the kernel-entry bracket a Lean upcall runs in.
+/// A contract on code this crate writes, not a parser: an alias, a `use`, or
+/// the bare `with_kernel_entry(` spelling does not count, so a new seam writes
+/// the bracket this way or fails the build.
+const KERNEL_ENTRY_BRACKET: &str = "crate::kernel_entry::with_kernel_entry(";
+
+/// Does the argument list of a [`KERNEL_ENTRY_BRACKET`] call in the body that
+/// opens at `body_open` contain the call at `call`?  The span is the
+/// bracket's own parenthesised argument list, so a call after the bracket
+/// closes — or in a bracket closed before it — is not enclosed.
+fn kernel_entry_bracket_encloses(code: &str, body_open: usize, call: usize) -> bool {
+    let Some(body_close) = matching_close_brace(code, body_open) else {
+        return false;
+    };
+    let body = &code[body_open..body_close];
+    let mut search = 0usize;
+    while let Some(hit) = body[search..].find(KERNEL_ENTRY_BRACKET) {
+        let at = body_open + search + hit;
+        search += hit + KERNEL_ENTRY_BRACKET.len();
+        let paren = at + KERNEL_ENTRY_BRACKET.len() - 1;
+        if let Some(close) = matching_close_paren(code, paren) {
+            if paren < call && call < close {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+const IRQ_MASK_CALL: &str = "crate::interrupts::disable_interrupts()";
+const IRQ_RESTORE_CALL: &str = "crate::interrupts::restore_interrupts(";
+
+/// Every whole-identifier occurrence of `needle` in `hay`, as byte offsets.
+fn whole_word_offsets(hay: &str, needle: &str) -> Vec<usize> {
+    let bytes = hay.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut out = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = hay[search..].find(needle) {
+        let at = search + hit;
+        search = at + needle.len();
+        if at > 0 && is_ident(bytes[at - 1]) {
+            continue;
+        }
+        out.push(at);
+    }
+    out
+}
+
+/// A thread-context upcall seam's body masks IRQs, takes the kernel-entry
+/// bracket, and restores the mask it saved — in that order, as a relation:
+/// `let <saved> = crate::interrupts::disable_interrupts();` exactly once,
+/// before the one [`KERNEL_ENTRY_BRACKET`] opens, and
+/// `crate::interrupts::restore_interrupts(<saved>)` exactly once, after that
+/// bracket's argument list closes.  A restore of another value, a mask taken
+/// after the bracket opens, or a restore inside it, keeps every token and
+/// breaks the relation, and each is refused.
+fn irq_mask_encloses_bracket(code: &str, fn_name: &str) -> Result<(), String> {
+    let heads = whole_word_offsets(code, &format!("fn {fn_name}("));
+    let [head] = heads.as_slice() else {
+        return Err(format!(
+            "expected one `fn {fn_name}`, found {}",
+            heads.len()
+        ));
+    };
+    let open =
+        fn_body_open_brace(code, *head).ok_or_else(|| format!("`fn {fn_name}` has no body"))?;
+    let close = matching_close_brace(code, open)
+        .ok_or_else(|| format!("`fn {fn_name}`'s body does not close"))?;
+    let body = &code[open..close];
+    let one = |needle: &str| -> Result<usize, String> {
+        let hits = whole_word_offsets(body, needle);
+        match hits.as_slice() {
+            [at] => Ok(*at),
+            _ => Err(format!(
+                "`fn {fn_name}` must contain `{needle}` exactly once, found {}",
+                hits.len()
+            )),
+        }
+    };
+    let mask = one(IRQ_MASK_CALL)?;
+    let bracket = one(KERNEL_ENTRY_BRACKET)?;
+    let restore = one(IRQ_RESTORE_CALL)?;
+    let bracket_paren = bracket + KERNEL_ENTRY_BRACKET.len() - 1;
+    let bracket_close = matching_close_paren(body, bracket_paren)
+        .ok_or_else(|| format!("`fn {fn_name}`'s kernel-entry bracket does not close"))?;
+    if mask >= bracket {
+        return Err(format!(
+            "`fn {fn_name}` masks IRQs after the kernel-entry bracket opens; the bracket \
+             must be taken with IRQs masked"
+        ));
+    }
+    if restore <= bracket_close {
+        return Err(format!(
+            "`fn {fn_name}` restores the IRQ mask before the kernel-entry bracket closes"
+        ));
+    }
+    // The saved value: the `let` binding whose initializer is the mask call.
+    let line_start = body[..mask].rfind([';', '{', '}']).map_or(0, |i| i + 1);
+    let binding = body[line_start..mask].trim();
+    let saved = binding
+        .strip_prefix("let ")
+        .and_then(|rest| rest.strip_suffix('='))
+        .map(str::trim)
+        .filter(|name| {
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+        .ok_or_else(|| {
+            format!(
+                "`fn {fn_name}`'s IRQ mask is not bound by `let <saved> = {IRQ_MASK_CALL};`, \
+                 so the restore cannot be tied to it"
+            )
+        })?;
+    let arg_open = restore + IRQ_RESTORE_CALL.len() - 1;
+    let arg_close = matching_close_paren(body, arg_open)
+        .ok_or_else(|| format!("`fn {fn_name}`'s IRQ restore does not close"))?;
+    let arg = body[arg_open + 1..arg_close].trim();
+    if arg != saved {
+        return Err(format!(
+            "`fn {fn_name}` restores `{arg}`, not the `{saved}` its mask saved"
+        ));
+    }
+    Ok(())
+}
+
+/// The kernel-entry bracket check and the thread-context IRQ-mask check,
+/// each held to token-preserving mutations before the tree is scanned.
+fn verify_kernel_entry_bracket_scanner() {
+    let (_, good) = rust_code_views(
+        "fn seam(c: usize) -> u64 {\n    extern \"C\" {\n        fn lean_x(a: u64) -> u64;\n    }\n    \
+         let saved = crate::interrupts::disable_interrupts();\n    \
+         let w = crate::kernel_entry::with_kernel_entry(c, || unsafe { lean_x(1) });\n    \
+         crate::interrupts::restore_interrupts(saved);\n    w\n}\n",
+    );
+    assert!(
+        irq_mask_encloses_bracket(&good, "seam").is_ok(),
+        "kernel-entry bracket self-check: a masked, bracketed, restored seam was refused"
+    );
+    let open = fn_body_open_brace(&good, good.find("fn seam").unwrap()).unwrap();
+    let call = good.find("lean_x(1)").unwrap();
+    assert!(
+        kernel_entry_bracket_encloses(&good, open, call),
+        "kernel-entry bracket self-check: a call inside the bracket read as outside it"
+    );
+    let cases: &[(&str, &str)] = &[
+        (
+            "the mask taken after the bracket opens",
+            "fn seam(c: usize) -> u64 {\n    let w = crate::kernel_entry::with_kernel_entry(c, || \
+             {\n        let saved = crate::interrupts::disable_interrupts();\n        \
+             crate::interrupts::restore_interrupts(saved);\n        unsafe { lean_x(1) }\n    });\n    \
+             w\n}\n",
+        ),
+        (
+            "the restore inside the bracket",
+            "fn seam(c: usize) -> u64 {\n    let saved = crate::interrupts::disable_interrupts();\n    \
+             let w = crate::kernel_entry::with_kernel_entry(c, || {\n        \
+             crate::interrupts::restore_interrupts(saved);\n        unsafe { lean_x(1) }\n    });\n    \
+             w\n}\n",
+        ),
+        (
+            "a restore of another value",
+            "fn seam(c: usize) -> u64 {\n    let saved = crate::interrupts::disable_interrupts();\n    \
+             let w = crate::kernel_entry::with_kernel_entry(c, || unsafe { lean_x(1) });\n    \
+             crate::interrupts::restore_interrupts(0);\n    let _ = saved;\n    w\n}\n",
+        ),
+        (
+            "the mask discarded rather than bound",
+            "fn seam(c: usize) -> u64 {\n    let _ = 0;\n    crate::interrupts::disable_interrupts();\n    \
+             let w = crate::kernel_entry::with_kernel_entry(c, || unsafe { lean_x(1) });\n    \
+             crate::interrupts::restore_interrupts(saved);\n    w\n}\n",
+        ),
+    ];
+    for (what, source) in cases {
+        let (_, code) = rust_code_views(source);
+        assert!(
+            irq_mask_encloses_bracket(&code, "seam").is_err(),
+            "kernel-entry bracket self-check: {what} was accepted"
+        );
+    }
+    let (_, after) = rust_code_views(
+        "fn seam(c: usize) -> u64 {\n    crate::kernel_entry::with_kernel_entry(c, || 0);\n    \
+         unsafe { lean_x(1) }\n}\n",
+    );
+    let open = fn_body_open_brace(&after, after.find("fn seam").unwrap()).unwrap();
+    assert!(
+        !kernel_entry_bracket_encloses(&after, open, after.find("lean_x").unwrap()),
+        "kernel-entry bracket self-check: a call after the bracket closed read as inside it"
+    );
+    let (_, bare) = rust_code_views(
+        "fn seam(c: usize) -> u64 {\n    with_kernel_entry(c, || unsafe { lean_x(1) })\n}\n",
+    );
+    let open = fn_body_open_brace(&bare, bare.find("fn seam").unwrap()).unwrap();
+    assert!(
+        !kernel_entry_bracket_encloses(&bare, open, bare.find("lean_x").unwrap()),
+        "kernel-entry bracket self-check: the non-canonical bare spelling was accepted"
+    );
 }
 
 /// Does a readiness check **control** the call at `call`?  Textual precedence
@@ -5816,6 +6268,7 @@ fn is_hal_declared_lean_symbol(name: &str) -> bool {
 }
 
 fn scan_lean_upcalls_readiness_gated() {
+    verify_kernel_entry_bracket_scanner();
     verify_lean_extern_gating_scanner();
     verify_lean_export_collector();
     verify_lean_link_name_scanner();
@@ -5876,6 +6329,7 @@ fn scan_lean_upcalls_readiness_gated() {
 
     let mut gated_found: Vec<(String, String, String)> = Vec::new();
     let mut ungated_found: Vec<(String, String, String)> = Vec::new();
+    let mut unlocked_found: Vec<(String, String, String)> = Vec::new();
     for (path, code, _) in &views {
         let sites = match lean_upcall_sites(code, &export_refs) {
             Ok(s) => s,
@@ -5883,6 +6337,9 @@ fn scan_lean_upcalls_readiness_gated() {
         };
         for site in sites {
             let gated = site.gated;
+            if !site.entry_locked {
+                unlocked_found.push((path.clone(), site.enclosing_fn.clone(), site.symbol.clone()));
+            }
             let found = (path.clone(), site.enclosing_fn, site.symbol);
             if gated {
                 gated_found.push(found);
@@ -5934,6 +6391,39 @@ fn scan_lean_upcalls_readiness_gated() {
     if let Err(why) = reconcile_upcall_exemptions(&ungated_refs, LEAN_UPCALLS_OUTSIDE_THE_GATE) {
         panic!("Lean upcall scanner: {why}");
     }
+    // Lean Action CI run 36499869963: the kernel's Lean runtime runs one core at
+    // a time, and the kernel-entry bracket is what makes it so.  Every upcall is
+    // inside one, or registered with its reason, by occurrence.
+    let unlocked_refs: Vec<(&str, &str, &str)> = unlocked_found
+        .iter()
+        .map(|(p, f, s)| (p.as_str(), f.as_str(), s.as_str()))
+        .collect();
+    if let Err(why) = reconcile_upcall_table(
+        &unlocked_refs,
+        LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK,
+        "LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK",
+        "the kernel-entry lock (`crate::kernel_entry::with_kernel_entry(core, || …)` \
+         around the call).  The kernel's Lean runtime runs one core at a time, and a \
+         call outside the bracket can race another core's kernel entry — or, with \
+         IRQs unmasked, be preempted inside the heap lock by its own core's tick.  \
+         Bracket the call, or add it",
+    ) {
+        panic!("Lean upcall scanner: {why}");
+    }
+    for (tp, tf) in LEAN_UPCALLS_IN_THREAD_CONTEXT {
+        let Some((_, code, _)) = views.iter().find(|(p, _, _)| p == tp) else {
+            panic!("Lean upcall scanner: `LEAN_UPCALLS_IN_THREAD_CONTEXT` names `{tp}`, which is not a source");
+        };
+        if !gated_found.iter().any(|(p, f, _)| p == tp && f == tf) {
+            panic!(
+                "Lean upcall scanner: `LEAN_UPCALLS_IN_THREAD_CONTEXT` names `{tp}`'s `fn {tf}`, \
+                 which makes no gated Lean upcall; a stale entry reads as coverage"
+            );
+        }
+        if let Err(why) = irq_mask_encloses_bracket(code, tf) {
+            panic!("Lean upcall scanner: thread-context seam: {why}");
+        }
+    }
     for (p, f, sym) in &gated_found {
         let pinned = LEAN_READY_GATED_SEAMS
             .iter()
@@ -5973,6 +6463,28 @@ fn reconcile_upcall_exemptions(
     ungated: &[(&str, &str, &str)],
     table: &[(&str, &str, &str, usize, &str)],
 ) -> Result<(), String> {
+    reconcile_upcall_table(
+        ungated,
+        table,
+        "LEAN_UPCALLS_OUTSIDE_THE_GATE",
+        "a readiness guard on the executing PE dominating the call \
+         (`if crate::lean_ready::lean_ready(<this core's TPIDR-derived id>) { … }`).  \
+         A PE must never enter a Lean runtime it has not initialized.  Either gate \
+         the call — and add the seam to `LEAN_READY_GATED_SEAMS` — or, if it is the \
+         call that establishes readiness or a registered gap, add it",
+    )
+}
+
+/// The occurrence reconciliation both upcall exemption tables share: every
+/// call the scan found lacking the relation is covered by an entry of `table`
+/// (named `table_name`), and every entry covers exactly the calls that exist.
+/// `missing` says what relation the unregistered call lacks and what to do.
+fn reconcile_upcall_table(
+    ungated: &[(&str, &str, &str)],
+    table: &[(&str, &str, &str, usize, &str)],
+    table_name: &str,
+    missing: &str,
+) -> Result<(), String> {
     let mut groups: Vec<((&str, &str, &str), usize)> = Vec::new();
     for &(p, f, s) in ungated {
         match groups.iter_mut().find(|(key, _)| *key == (p, f, s)) {
@@ -5983,7 +6495,7 @@ fn reconcile_upcall_exemptions(
     for &(p, f, s, expected, _) in table {
         if expected == 0 {
             return Err(format!(
-                "`LEAN_UPCALLS_OUTSIDE_THE_GATE` exempts zero calls of `{s}` in `{p}`'s \
+                "`{table_name}` exempts zero calls of `{s}` in `{p}`'s \
                  `fn {f}`; an entry that covers nothing is a stale entry — remove it"
             ));
         }
@@ -5994,7 +6506,7 @@ fn reconcile_upcall_exemptions(
             .unwrap_or(0);
         if found != expected {
             return Err(format!(
-                "`LEAN_UPCALLS_OUTSIDE_THE_GATE` exempts {expected} ungated call(s) of `{s}` \
+                "`{table_name}` exempts {expected} call(s) of `{s}` \
                  in `{p}`'s `fn {f}`, but {found} exist there.  A call was added without a \
                  reviewed reason of its own, or removed without retiring its entry; the \
                  count changes in the same change as the call"
@@ -6008,12 +6520,7 @@ fn reconcile_upcall_exemptions(
         if !registered {
             return Err(format!(
                 "`{p}`'s `fn {f}` calls the Lean-emitted symbol `{s}` ({n} call(s)) without \
-                 a readiness guard on the executing PE dominating the call \
-                 (`if crate::lean_ready::lean_ready(<this core's TPIDR-derived id>) {{ … }}`).  \
-                 A PE must never enter a Lean runtime it has not initialized.  Either gate \
-                 the call — and add the seam to `LEAN_READY_GATED_SEAMS` — or, if it is the \
-                 call that establishes readiness or a registered gap, add it to \
-                 `LEAN_UPCALLS_OUTSIDE_THE_GATE` with its occurrence count and reason"
+                 {missing} to `{table_name}` with its occurrence count and reason"
             ));
         }
     }
@@ -6091,6 +6598,7 @@ fn verify_lean_upcall_scanner() {
             enclosing_fn: "seam".to_string(),
             symbol: "lean_x".to_string(),
             gated: true,
+            entry_locked: false,
         }],
         "Lean upcall scanner self-check: a gated call must be found once, gated"
     );
@@ -8543,8 +9051,22 @@ fn abort_fallback_status(raw: &str) -> Result<(), String> {
     if !(statement_diverges(ready_last) && ready_last.contains("fatal_halt(")) {
         return Err(
             "the delivered arm (the readiness guard's true branch) does not END in the \
-                    unconditional `fatal_halt()` that stands in for the SM10.1 successor \
-                    install"
+                    unconditional `fatal_halt()` that is its fallback when no context was \
+                    restored"
+                .to_string(),
+        );
+    }
+    // WS-BP BP7.6: the delivered arm returns through the restored frame
+    // before it falls back to the halt — a top-level statement, not the last.
+    let restored_returns = ready_statements.len() >= 2
+        && ready_statements[..ready_statements.len() - 1]
+            .iter()
+            .any(|&(lo, hi)| is_restored_frame_return(stripped[lo..hi].trim()));
+    if !restored_returns {
+        return Err(
+            "the delivered arm has no top-level `if crate::trap::take_restored() { return; }` \
+                    ahead of its halt: a core whose successor the kernel installed would halt \
+                    instead of running it"
                 .to_string(),
         );
     }
@@ -8610,6 +9132,16 @@ fn abort_fallback_status(raw: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// WS-BP BP7.6: is `statement` exactly the restored-frame return — the
+/// unconditional `if crate::trap::take_restored() { return; }` that sends a
+/// handler back through the context the Lean kernel installed?  Compared with
+/// whitespace removed, so a negation, a different flag or a nested body is not
+/// it.
+fn is_restored_frame_return(statement: &str) -> bool {
+    let squashed: String = statement.chars().filter(|c| !c.is_whitespace()).collect();
+    squashed == "ifcrate::trap::take_restored(){return;}"
+}
+
 /// Token-preserving self-check for `abort_fallback_status`: the fixture is
 /// no thinner than `deliver_fault` itself, and every mutation keeps the tokens
 /// a presence check would look for.
@@ -8629,6 +9161,9 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
             crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
                 lean_handle_fault(core_id, esr);
             });
+            if crate::trap::take_restored() {
+                return;
+            }
             crate::kprintln!("[core {}] fault delivered; halting (ESR=0x{:016x})", core_id, esr);
             crate::cpu::fatal_halt();
         }
@@ -8648,7 +9183,17 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
     if let Err(why) = abort_fallback_status(GOOD) {
         panic!("build.rs self-check: the good abort-fallback fixture was refused: {why}");
     }
-    let mutations: [(&str, &str, &str); 9] = [
+    let mutations: [(&str, &str, &str); 11] = [
+        (
+            "the restored-frame return negated (token kept, relation inverted)",
+            "            if crate::trap::take_restored() {\n",
+            "            if !crate::trap::take_restored() {\n",
+        ),
+        (
+            "the restored-frame return nested under a condition (token kept)",
+            "            if crate::trap::take_restored() {\n                return;\n            }\n",
+            "            if core_id == 0 {\n                if crate::trap::take_restored() {\n                    return;\n                }\n            }\n",
+        ),
         (
             "the not-ready halt moved into the ready branch (token kept, path broken)",
             "            crate::cpu::fatal_halt();\n        }\n        // A frame cannot fail-close an abort: halt.\n        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n",
@@ -9196,6 +9741,17 @@ fn handler_faulted_arm_halts(trap: &str) -> Result<(), String> {
         .ok_or_else(|| "the SVC arm is empty".to_string())?;
     let last = trap[last_lo..last_hi].trim_start();
     let last_at = last_hi - last.len();
+    let restored_first = svc_statements.len() >= 2
+        && is_restored_frame_return(text(&svc_statements[svc_statements.len() - 2]));
+    if !restored_first {
+        return Err(
+            "the statement before the SVC arm's `match dispatched` is not the unconditional \
+             `if crate::trap::take_restored() { return; }` (WS-BP BP7.6): a return frame, \
+             the blocked-caller poison or the fault halt would overwrite the context the \
+             Lean dispatch installed"
+                .to_string(),
+        );
+    }
     if !last.starts_with("match dispatched {") {
         return Err(
             "the SVC arm's terminal statement is not `match dispatched { … }` — the dispatch \
@@ -9351,6 +9907,9 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
                 Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
             };
+            if crate::trap::take_restored() {
+                return;
+            }
             match dispatched {
                 Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
                 // The caller took a fault at the seam: halt pending the successor install.
@@ -9427,6 +9986,16 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         panic!("build.rs self-check: the good faulted-outcome fixture was refused: {why}");
     }
     let trap_mutations: &[(&str, &str, &str)] = &[
+        (
+            "the restored-frame return negated before the routing (token kept)",
+            "            if crate::trap::take_restored() {\n                return;\n            }\n            match dispatched {\n",
+            "            if !crate::trap::take_restored() {\n                return;\n            }\n            match dispatched {\n",
+        ),
+        (
+            "the restored-frame return dropped from before the routing",
+            "            if crate::trap::take_restored() {\n                return;\n            }\n            match dispatched {\n",
+            "            match dispatched {\n",
+        ),
         (
             "the Faulted arm resuming behind the sentinel (helper token kept in a comment)",
             "                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    halt_after_delivered_syscall_fault(frame);\n                }\n",
@@ -9770,13 +10339,14 @@ fn fp_trap_prologue_status(
         // The v0.36.2 audit: the entry's first item is the drop to EL1, and
         // the prologue follows it (see `FP_TRAP_PROLOGUE`'s docs for why the
         // other order is unsound at EL2).
-        if items.get(at + 1) != Some(&AsmItem::Statement(EL1_ENTRY_CALL.to_string())) {
+        let first = entry_body_index(&items, entry, at)?;
+        if items.get(first) != Some(&AsmItem::Statement(EL1_ENTRY_CALL.to_string())) {
             return Err(format!(
                 "`{entry}` does not begin with `{EL1_ENTRY_CALL}`; its first item is {:?}",
-                items.get(at + 1)
+                items.get(first)
             ));
         }
-        let opening: Vec<&AsmItem> = items[at + 2..]
+        let opening: Vec<&AsmItem> = items[first + 1..]
             .iter()
             .take(FP_TRAP_PROLOGUE.len())
             .collect();
@@ -9804,9 +10374,14 @@ fn fp_trap_prologue_status(
         ));
     }
     for (path, source) in other_asm {
+        if path.ends_with(FP_CONTEXT_SOURCE) {
+            fp_context_cpacr_status(source).map_err(|e| format!("{path}: {e}"))?;
+            continue;
+        }
         if names_cpacr_el1(&asm_code_view(source)) {
             return Err(format!(
-                "{path} names CPACR_EL1; only boot.S's entry prologues may"
+                "{path} names CPACR_EL1; only boot.S's entry prologues and \
+                 {FP_CONTEXT_SOURCE}'s pinned routines may"
             ));
         }
     }
@@ -9821,15 +10396,128 @@ fn fp_trap_prologue_status(
     Ok(())
 }
 
+/// **WS-BP BP7.9**: the lazy FP switch's source, the one `.S` file outside
+/// `boot.S` that may write `CPACR_EL1`.
+const FP_CONTEXT_SOURCE: &str = "fp_context.S";
+
+/// **WS-BP BP7.9**: the section its routines live in — the one the disassembly
+/// gate's by-symbol exemption is reconciled against.
+const FP_CONTEXT_SECTION: &str = ".section .text.sele4n_fp_context";
+
+/// **WS-BP BP7.9**: the value that lifts the FP/SIMD trap — `FPEN = 0b11`
+/// (bits [21:20]) and nothing else, so SVE (`ZEN`) and SME (`SMEN`) stay
+/// trapped.  Every non-zero `CPACR_EL1` write must be the register this
+/// statement set, immediately before it.
+const FP_CONTEXT_LIFT_VALUE: &str = "mov x9, #0x300000";
+
+/// **WS-BP BP7.9**: each routine of `fp_context.S` and its `CPACR_EL1` writes,
+/// in order.  The lift writes `x9` (set by `FP_CONTEXT_LIFT_VALUE`), the arm
+/// writes `xzr`; the save routine does both, so a capture always leaves the
+/// trap armed.  A write in any other routine, or a routine with a different
+/// sequence, fails the build.
+const FP_CONTEXT_CPACR_WRITERS: [(&str, &[&str]); 4] = [
+    (
+        "sele4n_fp_save_context",
+        &["msr cpacr_el1, x9", "msr cpacr_el1, xzr"],
+    ),
+    ("sele4n_fp_load_context", &["msr cpacr_el1, x9"]),
+    ("sele4n_fp_trap_lift", &["msr cpacr_el1, x9"]),
+    ("sele4n_fp_trap_arm", &["msr cpacr_el1, xzr"]),
+];
+
+/// **WS-BP BP7.9**: `fp_context.S` writes `CPACR_EL1` exactly as
+/// `FP_CONTEXT_CPACR_WRITERS` says — per routine, in order, each lift preceded
+/// by `FP_CONTEXT_LIFT_VALUE`, each write followed by `isb` — and its routines
+/// sit in `FP_CONTEXT_SECTION`.  The routine a statement belongs to is the
+/// last global label above it.
+fn fp_context_cpacr_status(source: &str) -> Result<(), String> {
+    let view = asm_code_view(source);
+    if let Some(why) = asm_unreadable_directive(&view) {
+        return Err(why);
+    }
+    let items = asm_statement_items(&view);
+    if !items.contains(&AsmItem::Statement(FP_CONTEXT_SECTION.to_string())) {
+        return Err(format!("the routines are not in `{FP_CONTEXT_SECTION}`"));
+    }
+    let routines: Vec<&str> = FP_CONTEXT_CPACR_WRITERS.iter().map(|(r, _)| *r).collect();
+    let mut current: Option<&str> = None;
+    let mut seen: Vec<(String, Vec<String>)> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        match item {
+            AsmItem::Label(label) => {
+                if let Some(r) = routines.iter().find(|r| **r == label.as_str()) {
+                    current = Some(r);
+                    seen.push((label.clone(), Vec::new()));
+                }
+            }
+            AsmItem::Statement(stmt) if names_cpacr_el1(stmt) => {
+                let Some(routine) = current else {
+                    return Err(format!("`{stmt}` is outside every pinned routine"));
+                };
+                if stmt == "msr cpacr_el1, x9"
+                    && items.get(i.wrapping_sub(1))
+                        != Some(&AsmItem::Statement(FP_CONTEXT_LIFT_VALUE.to_string()))
+                {
+                    return Err(format!(
+                        "`{routine}` writes `x9` to CPACR_EL1 without `{FP_CONTEXT_LIFT_VALUE}` \
+                         immediately before it"
+                    ));
+                }
+                if items.get(i + 1) != Some(&AsmItem::Statement("isb".to_string())) {
+                    return Err(format!("`{routine}`'s `{stmt}` is not followed by `isb`"));
+                }
+                if let Some(entry) = seen.last_mut() {
+                    entry.1.push(stmt.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    for (routine, writes) in FP_CONTEXT_CPACR_WRITERS {
+        let found: Vec<&Vec<String>> = seen
+            .iter()
+            .filter(|(r, _)| r == routine)
+            .map(|(_, w)| w)
+            .collect();
+        let [got] = found[..] else {
+            return Err(format!(
+                "`{routine}` is defined {} times; expected once",
+                found.len()
+            ));
+        };
+        let expected: Vec<String> = writes.iter().map(|w| (*w).to_string()).collect();
+        if *got != expected {
+            return Err(format!(
+                "`{routine}` writes CPACR_EL1 as {got:?}; FP_CONTEXT_CPACR_WRITERS pins {expected:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// **WS-BP BP8.1**: `_start`'s arm64 Image header as a scanner fixture writes
+/// it — `IMAGE_HEADER` in source spelling, then the body label.
+macro_rules! image_header_fixture {
+    () => {
+        "    b .L_image_body\n    .word 0\n    .quad 0x80000\n    .quad __kernel_image_size\n\
+         \x20   .quad 0x2\n    .quad 0\n    .quad 0\n    .quad 0\n    .word 0x644d5241\n\
+         \x20   .word 0\n.L_image_body:\n"
+    };
+}
+
 /// Pin `fp_trap_prologue_status` with token-preserving mutations: each
 /// refused case keeps the prologue's tokens and breaks the relation — the
 /// order, the operand, the position, the spelling of a second write, or the
 /// enclosure (a comment, a string).
 fn verify_fp_trap_prologue_scanner() {
-    const GOOD: &str = "_start:\n    bl .L_enter_el1\n    msr     cpacr_el1, xzr\n    isb\n\
+    const GOOD: &str = concat!(
+        "_start:\n",
+        image_header_fixture!(),
+        "    bl .L_enter_el1\n    msr     cpacr_el1, xzr\n    isb\n\
                         \x20   mrs x1, mpidr_el1\n\
                         secondary_entry:\n    bl .L_enter_el1\n    MSR CPACR_EL1 ,XZR ; isb\n\
-                        \x20   msr daifset, #0xf\n";
+                        \x20   msr daifset, #0xf\n"
+    );
     let accept = |label: &str, boot: &str, asm: &[(&str, &str)], rust: &[(&str, &str)]| {
         if let Err(e) = fp_trap_prologue_status(boot, asm, rust) {
             panic!("FP-trap scanner self-test: `{label}` must be accepted: {e}");
@@ -9842,6 +10530,86 @@ fn verify_fp_trap_prologue_scanner() {
         );
     };
     accept("canonical", GOOD, &[], &[]);
+    // WS-BP BP7.9: the lazy FP switch's pinned writers, accepted as written and
+    // refused under every token-preserving mutation of the relation.
+    const FP_CTX: &str = ".section .text.sele4n_fp_context\n\
+        sele4n_fp_save_context:\n    mov x9, #0x300000\n    msr cpacr_el1, x9\n    isb\n\
+        \x20   stp q0, q1, [x0]\n    msr cpacr_el1, xzr\n    isb\n    ret\n\
+        sele4n_fp_load_context:\n    mov x9, #0x300000\n    msr cpacr_el1, x9\n    isb\n\
+        \x20   ldp q0, q1, [x0]\n    ret\n\
+        sele4n_fp_trap_lift:\n    mov x9, #0x300000\n    msr cpacr_el1, x9\n    isb\n    ret\n\
+        sele4n_fp_trap_arm:\n    msr cpacr_el1, xzr\n    isb\n    ret\n";
+    accept(
+        "the lazy FP switch's routines",
+        GOOD,
+        &[("src/fp_context.S", FP_CTX)],
+        &[],
+    );
+    refuse(
+        "the same routines in any other .S",
+        GOOD,
+        &[("src/trap.S", FP_CTX)],
+        &[],
+    );
+    refuse(
+        "a lift value that also lifts SVE",
+        GOOD,
+        &[(
+            "src/fp_context.S",
+            &FP_CTX.replacen("#0x300000", "#0x330000", 1),
+        )],
+        &[],
+    );
+    refuse(
+        "the save routine leaves the trap lifted",
+        GOOD,
+        &[(
+            "src/fp_context.S",
+            &FP_CTX.replacen(
+                "    msr cpacr_el1, xzr\n    isb\n    ret\nsele4n_fp_load_context",
+                "    isb\n    ret\nsele4n_fp_load_context",
+                1,
+            ),
+        )],
+        &[],
+    );
+    refuse(
+        "a write moved to an unpinned routine",
+        GOOD,
+        &[(
+            "src/fp_context.S",
+            &FP_CTX.replacen("sele4n_fp_trap_arm:", "sele4n_fp_trap_off:", 1),
+        )],
+        &[],
+    );
+    refuse(
+        "a write without its isb",
+        GOOD,
+        &[(
+            "src/fp_context.S",
+            &FP_CTX
+                .replacen(
+                    "    msr cpacr_el1, xzr\n    isb\n    ret\n\n",
+                    "    msr cpacr_el1, xzr\n    ret\n\n",
+                    1,
+                )
+                .replacen(
+                    "sele4n_fp_trap_arm:\n    msr cpacr_el1, xzr\n    isb",
+                    "sele4n_fp_trap_arm:\n    msr cpacr_el1, xzr\n    nop",
+                    1,
+                ),
+        )],
+        &[],
+    );
+    refuse(
+        "the routines outside their section",
+        GOOD,
+        &[(
+            "src/fp_context.S",
+            &FP_CTX.replacen(".section .text.sele4n_fp_context", ".section .text", 1),
+        )],
+        &[],
+    );
     accept(
         "a comment and a Rust comment mention it",
         &format!("// CPACR_EL1 is written below\n{GOOD}"),
@@ -9876,13 +10644,44 @@ fn verify_fp_trap_prologue_scanner() {
     );
     refuse(
         "an .inst ahead of it",
-        &GOOD.replacen("_start:\n", "_start:\n    .inst 0x1e604000\n", 1),
+        &GOOD.replacen(
+            ".L_image_body:\n",
+            ".L_image_body:\n    .inst 0x1e604000\n",
+            1,
+        ),
         &[],
         &[],
     );
     refuse(
         "a label ahead of it",
-        &GOOD.replacen("_start:\n", "_start:\nearly:\n", 1),
+        &GOOD.replacen(".L_image_body:\n", ".L_image_body:\nearly:\n", 1),
+        &[],
+        &[],
+    );
+    // WS-BP BP8.1: the Image header is pinned word for word, and an
+    // instruction ahead of the header is one more thing that runs before the
+    // drop to EL1.
+    refuse(
+        "an .inst ahead of the Image header",
+        &GOOD.replacen("_start:\n", "_start:\n    .inst 0x1e604000\n", 1),
+        &[],
+        &[],
+    );
+    refuse(
+        "the Image header's text_offset changed",
+        &GOOD.replacen(".quad 0x80000\n", ".quad 0x200000\n", 1),
+        &[],
+        &[],
+    );
+    refuse(
+        "the Image header's branch retargeted",
+        &GOOD.replacen("    b .L_image_body\n", "    b secondary_entry\n", 1),
+        &[],
+        &[],
+    );
+    refuse(
+        "the Image header ending at another label",
+        &GOOD.replacen(".L_image_body:\n", ".L_other:\n", 1),
         &[],
         &[],
     );
@@ -9957,8 +10756,8 @@ fn verify_fp_trap_prologue_scanner() {
     refuse(
         "the FP trap written before the drop to EL1",
         &GOOD.replacen(
-            "_start:\n    bl .L_enter_el1\n    msr     cpacr_el1, xzr\n    isb\n",
-            "_start:\n    msr     cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n",
+            ".L_image_body:\n    bl .L_enter_el1\n    msr     cpacr_el1, xzr\n    isb\n",
+            ".L_image_body:\n    msr     cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n",
             1,
         ),
         &[],
@@ -9987,6 +10786,65 @@ fn verify_fp_trap_prologue_scanner() {
 /// The first item of each boot entry, ahead of `FP_TRAP_PROLOGUE` (whose docs
 /// say why the drop to EL1 must precede the `CPACR_EL1` write).
 const EL1_ENTRY_CALL: &str = "bl .l_enter_el1";
+
+/// **WS-BP BP8.1**: the arm64 Image header `_start` begins with, statement by
+/// statement as `asm_statement_items` normalises it — a branch past the header
+/// (`code0`), `code1`, `text_offset` (the image loads 512 KiB above the base of
+/// RAM on every board, which `link.ld` asserts), `image_size` (the linker's
+/// `__kernel_image_size`), `flags` (little-endian, 4 KiB pages), three
+/// reserved words, the `ARM\x64` magic and a reserved word.  It is what a
+/// Linux-protocol loader reads to place the image and to pass the device tree
+/// in `x0` — QEMU's `-kernel` does so only for an image carrying it, and the
+/// Raspberry Pi firmware reads it too.  The branch is the only instruction that
+/// runs before the drop to EL1, and it writes no register.  A canonical-spelling
+/// contract like `FP_TRAP_PROLOGUE`: a header differing in any word is refused.
+const IMAGE_HEADER: [&str; 10] = [
+    "b .l_image_body",
+    ".word 0",
+    ".quad 0x80000",
+    ".quad __kernel_image_size",
+    ".quad 0x2",
+    ".quad 0",
+    ".quad 0",
+    ".quad 0",
+    ".word 0x644d5241",
+    ".word 0",
+];
+
+/// **WS-BP BP8.1**: the label that ends `_start`'s Image header — the branch
+/// target of its first word, and where `_start`'s executable prologue begins.
+const IMAGE_BODY_LABEL: &str = ".L_image_body";
+
+/// **WS-BP BP8.1**: the index of the first item `entry` executes after its
+/// header.  `_start` is the image's first byte and so carries the arm64 Image
+/// header (`IMAGE_HEADER`) then `IMAGE_BODY_LABEL`; every other boot entry
+/// begins at its label.  A `_start` whose header differs in any word, or that
+/// does not end it at the body label, is refused.
+fn entry_body_index(items: &[AsmItem], entry: &str, at: usize) -> Result<usize, String> {
+    if entry != "_start" {
+        return Ok(at + 1);
+    }
+    let body = at + 1 + IMAGE_HEADER.len();
+    let header = items.get(at + 1..body).unwrap_or(&[]);
+    let expected: Vec<AsmItem> = IMAGE_HEADER
+        .iter()
+        .map(|s| AsmItem::Statement((*s).to_string()))
+        .collect();
+    if header != expected.as_slice() {
+        return Err(format!(
+            "`_start` does not begin with the arm64 Image header {IMAGE_HEADER:?}; its first \
+             items are {header:?}"
+        ));
+    }
+    if items.get(body) != Some(&AsmItem::Label(IMAGE_BODY_LABEL.to_string())) {
+        return Err(format!(
+            "`_start`'s Image header is not followed by `{IMAGE_BODY_LABEL}:`; the item there \
+             is {:?}",
+            items.get(body)
+        ));
+    }
+    Ok(body + 1)
+}
 
 /// What `_start` does with the entry level `.L_enter_el1` reports in `x9`:
 /// keep it in a callee-saved register through BSS zeroing and hand it to
@@ -10190,7 +11048,7 @@ fn el1_entry_status(
         };
         // The v0.36.2 audit: the call is the entry's FIRST item, and the FP
         // prologue follows it — see `FP_TRAP_PROLOGUE`.
-        let call = at + 1;
+        let call = entry_body_index(&items, entry, at)?;
         if texts.get(call).map(String::as_str) != Some(EL1_ENTRY_CALL) {
             return Err(format!(
                 "`{entry}` does not call `.L_enter_el1` as its first item; the item there \
@@ -10340,10 +11198,11 @@ fn el1_entry_fixture() -> String {
         })
         .collect();
     format!(
-        "_start:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n    mov x20, x9\n\
+        "_start:\n{header}    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n    mov x20, x9\n\
          \x20   mov x19, x0\n    mov x0, x19\n    mov x1, x20\n    bl rust_boot_main\n\
          secondary_entry:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n    msr daifset, #0xf\n\
-         {routine}"
+         {routine}",
+        header = image_header_fixture!()
     )
 }
 
@@ -10392,8 +11251,8 @@ fn verify_el1_entry_scanner() {
     refuse(
         "the FP trap written before the drop to EL1",
         &mutate(
-            "_start:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n",
-            "_start:\n    msr cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n",
+            ".L_image_body:\n    bl .L_enter_el1\n    msr cpacr_el1, xzr\n    isb\n",
+            ".L_image_body:\n    msr cpacr_el1, xzr\n    isb\n    bl .L_enter_el1\n",
         ),
         &[],
         &[],

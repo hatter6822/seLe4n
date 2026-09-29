@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.2` (`lakefile.toml`) |
+| **Package version** | `0.36.41` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 420,759 across 343 Lean files |
-| **Test LoC** | 85,605 across 71 Lean test suites |
-| **Proved declarations** | 13,928 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 433,986 across 361 Lean files |
+| **Test LoC** | 88,629 across 71 Lean test suites |
+| **Proved declarations** | 14,408 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM above the guaranteed gigabyte mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16); BP7..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -294,9 +294,8 @@ places, by an allocator in the HAL (`rust/sele4n-hal/src/lean_heap.rs`).
   `.lean_heap` of `LEAN_HEAP_SIZE` (64 MiB) above the image and both stack
   regions, bounded by `__lean_heap_start` / `__lean_heap_end`, and asserts that
   it is a whole number of 4 KiB pages, page-aligned, and ends inside the
-  smallest Raspberry Pi 5's RAM `[0, 1 GiB)`.  No firmware value or device-tree
-  field sizes it.  It lies in the guaranteed RAM the boot map covers
-  (§6.2.7), so translation is never enabled over tables that leave it unmapped.
+  kernel's reserved extent (§6.2.8).  No firmware value or device-tree field
+  sizes it.  It lies in the RAM the constant boot map covers (§6.2.7), so translation is never enabled over tables that leave it unmapped.
 - **The contract.**  The HAL exports `lean.h`'s small-allocator API under
   `hw_target` — `lean_alloc_small(sz, slot_idx)`, `lean_free_small(p)`,
   `lean_small_mem_size(p)` — with the 512 size classes indexed exactly as
@@ -406,18 +405,23 @@ no size.
 
 - **The map.**  `boot_mapping_for(addr, layout)` is a function of the address
   and the image's layout alone:
-  - `[0, GUARANTEED_RAM_TOP)` (`0x4000_0000`, the RAM every Raspberry Pi 5 has)
-    is Normal;
+  - `[IMAGE_ORIGIN, KERNEL_RESERVED_END)` (`[0x8_0000, 0x1000_0000)`, the
+    kernel's reserved extent from the image origin) is Normal — until BP7.10
+    (§6.2.17) this was `[0, GUARANTEED_RAM_TOP)`, the first gigabyte, which no
+    board's firmware reports whole, and until v0.36.36 it began at `0`, whose
+    first 512 KiB the firmware reserves `no-map` for the ARM Trusted Firmware
+    (`bcm2712.dtsi`'s `atf@0`);
   - the device window `[0x10_7C00_0000, 0x10_8000_0000)` — the BCM2712's
     SoC-bus window, holding UART10 and the GIC-400 (§6.2.14) — is Device;
   - everything else is unmapped.
 
   The driven BP0.4 comparison (§6.2.2) requires every Normal address to be RAM
-  in **every** RAM variant's Lean map, and the Normal window to equal the
-  smallest variant's RAM.  RAM above the gigabyte is mapped after the verified
-  Lean parse has chosen the board (BP4.6, below): before that it is unmapped,
-  a lost resource rather than a false claim.
-- **W^X at EL1.**  Inside guaranteed RAM:
+  in **every** configuration's Lean map, and the Normal window to equal the
+  kernel's extent the table declares.  All other RAM, the rest of the first
+  gigabyte included, is mapped after the verified Lean parse has chosen the
+  board (BP4.6, §6.2.12): before that it is unmapped, a lost resource rather
+  than a false claim.
+- **W^X at EL1.**  Inside the kernel's extent:
   - the kernel text `[_start, __text_end)` is read-only and executable;
   - its read-only data `[__rodata_start, __rodata_end)` is read-only and never
     executable;
@@ -430,15 +434,16 @@ no size.
 - **The section boundaries are the linker's.**  They are assigned inside the
   sections they bound.  `link.ld` asserts that they are page aligned and that
   the read-only data begins where the text ends, so no orphan section can be
-  mapped executable.  Its RAM region ends at `GUARANTEED_RAM_TOP`.
+  mapped executable.  Its RAM region ends at `KERNEL_RESERVED_END`, which an
+  `ASSERT` holds since BP7.10.
   `scripts/check_link_script.py` proves each assertion live by mutation.
 - **The device tree is not read.**  `init_mmu` checks only the window a reader
   may dereference: `MAX_DTB_SIZE` bytes from the pointer, the bound every
   reader enforces.  The window must lie in the kernel's reserved extent
-  `[0, KERNEL_RESERVED_END)` (since BP3.2, §6.2.8; before it, anywhere in
-  guaranteed RAM) and outside `[_start, __lean_heap_end)`; otherwise the boot
-  is refused.
-- **Cache maintenance.**  `is_boot_cacheable_range` is `[0, GUARANTEED_RAM_TOP)`
+  `[IMAGE_ORIGIN, BOOT_TABLE_POOL_BASE)` (since BP3.2, §6.2.8, and from the
+  image origin since v0.36.36; before BP3.2, anywhere in the first gigabyte)
+  and outside `[_start, __lean_heap_end)`; otherwise the boot is refused.
+- **Cache maintenance.**  `is_boot_cacheable_range` is `[IMAGE_ORIGIN, KERNEL_RESERVED_END)`
   together with the RAM BP4.6 maps after the verified parse (§6.2.12).  An
   operand outside that union fails closed.
 
@@ -610,7 +615,7 @@ the boot path because its extent is the link's rather than the model's.
   as code — an initial task's code is carried there.  Everything else the boot
   writes lies in the kernel's reserved extent, which no boot untyped describes
   and no boot VSpace maps; memory a thread receives otherwise comes from an
-  untyped through a re-type, which cleans it itself.
+  untyped through a re-type or a carve, each of which cleans it itself.
 - **The operand.**  `Architecture.bootImageIcacheOp base size` is
   `cleanRangeIallu base size` — `DC CVAU` over the extent, `DSB ISH`,
   `IC IALLUIS`, `DSB ISH`, `ISB` — and
@@ -622,31 +627,49 @@ the boot path because its extent is the link's rather than the model's.
   immediately before minting the `SecondaryReleasePermit`, so no secondary is
   released and the boot core reaches no scheduling point before it.  The call
   goes through `apply_icache_invalidation`, which halts on an extent outside the
-  identity map; `link.ld` places the image in guaranteed RAM.
-- **The marker.**  `kernelCodeWriteEmitted` is `true` at both sites and
+  identity map; `link.ld` places the image in the kernel's reserved extent,
+  which the constant map covers.
+- **The carve's scrub** (`.carveScrub`, `v0.36.32`).  An `.untypedRetype` of
+  a RAM frame zeroes its page through the physical-write ledger
+  (`PhysicalWrite.zeroPage`) before any capability to it exists, and the page
+  may be mapped executable next.  Until `v0.36.32` the zeroing owed nothing,
+  so on a PE with `CTR_EL0.IDC = DIC = 0` (the Cortex-A76) the zeroes could sit
+  in the data cache while the page's previous contents — another thread's code
+  or data — stayed fetchable at the Point of Unification.  The clean now rides
+  **on** the write: `PhysicalWrite.icacheMaintenance` of a zeroing is
+  `cleanRangeIallu` over its page (`zeroPage_discharges_obligation`),
+  `carveZeroFrame_discharges_carveScrub_obligation` ties it to the carve, and
+  the HAL's `user_translation::apply_physical_write` performs it as its last
+  step, after the store and its `DSB ISH`.
+- **The marker.**  `kernelCodeWriteEmitted` is `true` at all three sites and
   `kernelCodeWriteSites_all_emitted` states it, replacing the partition marker
-  `kernelCodeWriteSites_emission_pending`.  Observing the clean on hardware is
-  BP8.1's.
+  `kernelCodeWriteSites_emission_pending`.  The clean executes on every PR since
+  BP8.1 (v0.36.26, §6.2.18), on QEMU; observing it on the board is BP8.3's.
 
-### 6.2.12 The verified board's RAM above the guaranteed gigabyte (WS-BP BP4.6, v0.36.2)
+### 6.2.12 The verified board's RAM outside the kernel's extent (WS-BP BP4.6, v0.36.2; BP7.10, v0.36.3)
 
-The boot map (§6.2.2's BP2.6 paragraph) is built from constants before anything
-is parsed, so it covers only `[0, 1 GiB)`, the RAM every Raspberry Pi 5 has.  The
-RAM a larger board has above that is mapped once the verified Lean parser has
-read the device tree and the binding has chosen the variant.
+The boot map (§6.2.7) is built from constants before anything is parsed, so it
+covers only the kernel's reserved extent `[0, 256 MiB)` (since BP7.10; the first
+gigabyte before it).  All other RAM a board has is mapped once the verified
+Lean parser has read the device tree and the binding has chosen the
+configuration.
 
 - **The extent is derived.**  `bootRamExtensionsOf map` is every RAM region of
-  `map` reaching past `rpi5GuaranteedRamTop`, clipped to it and non-empty.
-  `mem_bootRamExtensionsOf` (every extension is RAM of the map, above the
-  gigabyte, non-empty) and `bootRamExtensionsOf_covers` (every RAM address of
-  the map above the gigabyte is in one) state that it is exactly that RAM.  The
+  `map` reaching past `rpi5KernelReservedEnd`, clipped to it and non-empty
+  (`bootRamExtensionOf?`; clipped at `rpi5GuaranteedRamTop` until BP7.10).
+  `mem_bootRamExtensionsOf` (every extension is RAM of the map, outside the
+  extent, non-empty) and `bootRamExtensionsOf_covers` (every RAM address of the
+  map outside the extent is in one) state that it is exactly that RAM.  The
   boot uses the map of the variant the binding installs
   (`rpi5BootRamExtensionsFor`), so the RAM mapped and the RAM the installed
   state's machine configuration declares are one variant's.
-  `rpi5BootRamExtensions_values` evaluates the five variants — nothing on 1 GiB,
-  and on every other board one region, `[1 GiB, ramSize)`, the BCM2712's DRAM
-  being contiguous from 0 (§6.2.14).  `rpi5BootRamExtensions_admissible`
-  proves each is 2 MiB aligned and inside the tables' 512 GiB reach.
+  `rpi5BootRamExtensions_values` evaluates the five uncut variants —
+  `[256 MiB, 1 GiB)` on every board, and on every board above 1 GiB a second
+  region `[1 GiB, ramSize)`, the BCM2712's DRAM being contiguous from 0
+  (§6.2.14).  `rpi5BootRamExtensions_admissible` proves, over every admissible
+  configuration, that each is one the HAL accepts: non-empty, 2 MiB aligned, past
+  the extent, inside the tables' 512 GiB reach, and either inside the first
+  gigabyte or whole gigabytes.
 - **Where it runs.**  The device-tree wrapper's accepting arm runs
   `extendBootRamMap` and then the install; an unparseable blob or a foreign
   board halts before either (`bootAndInitialiseRPi5FromDtbOrHalt_accepted`,
@@ -654,14 +677,16 @@ read the device tree and the binding has chosen the variant.
   `ffiExtendBootRamMap base size`.
 - **What the HAL writes.**  `mmu::extend_boot_tables` decides every refusal
   (`RamExtensionRefusal`) before it writes anything, then writes a 1 GiB
-  level-1 block per whole gigabyte and a 2 MiB block per block in the device
-  window's gigabyte — the only gigabyte with a level-2 table — each Normal,
-  writable and never executable, and only into entries the tables leave
-  invalid.  A partial gigabyte elsewhere is refused.  Because no valid
+  level-1 block per whole gigabyte and a 2 MiB block per block in a gigabyte
+  with a level-2 table (`level2_table`: the first gigabyte since BP7.10, and
+  the device window's) — each Normal, writable and never executable, and only
+  into entries the tables leave invalid.  A partial gigabyte elsewhere is
+  refused, and so is a range starting inside the kernel's extent
+  (`InsideKernelReserved`).  Because no valid
   descriptor changes, no break-before-make and no TLB invalidation is needed.
   The table extent is cleaned to the Point of Coherency (a secondary enables
   translation with its data cache off), then one `DSB ISH` and one `ISB`.  The region is then recorded, and
-  `is_boot_cacheable_range` is the union of guaranteed RAM and the record
+  `is_boot_cacheable_range` is the union of the kernel's extent and the record
   (`ram_range_covered`), so cache maintenance and the tables widen together.
   Any refusal halts the system.
 - **The seal.**  `lean_entry::enter_lean_kernel` calls `mmu::seal_boot_map`
@@ -669,22 +694,25 @@ read the device tree and the binding has chosen the variant.
   it is refused.  So the boot tables have one writer, the boot core, and every
   secondary enables translation on the finished map.
 - **Driven, not mirrored.**  `tests/fixtures/boot_map.expected` carries each
-  variant's `extend` lines.  The HAL's `the_boot_map_agrees_with_the_lean_map`
-  applies them and requires the extended Normal window to be exactly that
-  variant's RAM on every variant, both by walking the tables and through
-  `ram_range_covered`.
+  configuration's `extend` lines — the five variants and three firmware-cut
+  configurations.  The HAL's `the_boot_map_agrees_with_the_lean_map` applies
+  them and requires the extended Normal window to be exactly that
+  configuration's RAM on every configuration, both by walking the tables and
+  through `ram_range_covered`.
 - **Handed to the root task** (WS-BP BP4.7).  The deployment's objects are a
   function of the variant (`rpi5InitialObjectsFor`), which the device-tree
   bridge applies to the variant its parse selected (`rpi5PlatformConfigFromDtb`'s
-  `initialObjectsFor`).  `rpi5RootTaskRamUntypeds v` is one normal-memory untyped
-  per extension, at ids `8, 9, …` and root-CNode slots `7, 8, …`, and
-  `rpi5RootTaskRamUntypeds_regions` states its regions **are**
-  `rpi5BootRamExtensions v`.  Every gate is decided per variant again, and
+  `initialObjectsFor`).  `rpi5RootTaskUntypeds v` is one normal-memory untyped
+  per extension, at ids `6, 7, …` and root-CNode slots `5, 6, …` (since BP7.10,
+  which retired the two fixed first-gigabyte untypeds), and
+  `rpi5RootTaskUntypeds_regions` states its regions **are**
+  `rpi5BootRamExtensions v`.  Every gate holds over every admissible
+  configuration (§6.2.17), and
   `rpi5RootTaskCNodeFor_slotsAddressable` adds that every root-CNode slot is
   below the CNode's sixteen.  `rpi5InitialObjectsFor_covers_ram` is the
   direction the placement conjunct cannot state: every RAM address outside the
   kernel's reserved extent lies in some root-task untyped, on every board.
-  `rpi5DeploymentBootStateAt_ramUntypedInstalled` says the boot installs each.
+  `rpi5DeploymentBootStateAt_untypedInstalled` says the boot installs each.
   `tests/Ak9PlatformSuite.lean` runs this on 1, 2, 3, 4 and 8 GiB device trees.
 
 ### 6.2.13 The kernel image (WS-BP BP5.1, BP5.2, BP5.3, BP5.4, v0.36.2)
@@ -730,7 +758,7 @@ The kernel is one bare-metal binary, `sele4n-kernel`
   script names the three paths as constants, and the builder's self-test
   holds them equal to its own output.
 - **Where each image is checked.**  The Lean archive lane
-  (`scripts/test_lean_aarch64_archive.sh`, step [4/5]) builds the release
+  (`scripts/test_lean_aarch64_archive.sh`, step [4/6]) builds the release
   image with `hw_target,kernel_image` after the archive.  It then runs
   `check_kernel_image.py --lean-kernel` with the roots script, which also
   requires the roots to begin with the initializer, to name
@@ -746,7 +774,7 @@ The kernel is one bare-metal binary, `sele4n-kernel`
 - **The firmware's boot files** (BP5.3).  `scripts/build_rpi5_image.sh`
   writes `kernel8.img` and `config.txt` from the Lean-linked release image,
   after `check_kernel_image.py --lean-kernel` has accepted it; the archive lane
-  runs it as step [5/5].  `kernel8.img` is cut by `llvm-objcopy -O binary` and
+  runs it as step [5/6].  `kernel8.img` is cut by `llvm-objcopy -O binary` and
   must be byte-identical to the loaded extent `[_start, __image_load_end)`
   rebuilt from the ELF's section headers (`scripts/rpi5_boot_files.py`).
   `config.txt` sets exactly `arm_64bit=1`, `kernel=kernel8.img`,
@@ -764,7 +792,8 @@ The kernel is one bare-metal binary, `sele4n-kernel`
   running `scripts/kernel_image_report.py`, which reads `kernel8.img`'s size
   from the file and refuses one that is not the loaded extent, then reports it
   with the loaded, text, padding and `NOLOAD` bytes, the share of
-  `[0, KERNEL_RESERVED_END)` the image uses, and every allocated section's
+  the address range `[0, KERNEL_RESERVED_END)` the image uses up to its
+  device-tree window, and every allocated section's
   extent and kind — appended to the CI step summary and written as
   `kernel-image-report.json`, which the `Lean aarch64 Archive` job uploads with
   the image and its boot files (`rpi5-kernel-image`).
@@ -788,7 +817,9 @@ The binding is now the BCM2712's, cross-checked against
 
 - **DRAM is contiguous from 0** on every variant (`axi` `ranges` map
   `[0, 0x10_0000_0000)` 1:1), so each variant's map is one RAM region
-  `[0, ramSize)` and the boot maps one extension above the guaranteed gigabyte.
+  `[0, ramSize)` (cut in the first gigabyte to the firmware's account since
+  BP7.10, §6.2.17) and the boot maps at most one extension above the first
+  gigabyte.
 - **The SoC bus** appears at `0x10_7C00_0000` (64 MiB, `soc` `ranges`), which is
   the device window (`socPeripheralBase`, `mmu::DEVICE_WINDOW_BASE`).  Both ends
   are 2 MiB aligned, so the boot map describes it with 2 MiB Device blocks and
@@ -811,7 +842,7 @@ the Lean suite writes `mmio uart|gicd|gicc <base> <size>` into
 tests read them (`mmu::lean_mmio_window`) and require the constant to equal the
 Lean base and to lie inside the device window.  What this does **not** establish
 is what a real board's firmware reports: the variant maps follow the device-tree
-source, and the first-boot readback (BP8.1) is what confirms them on hardware.
+source, and the first-boot readback on the board (BP8.3) is what confirms them on hardware.
 
 ### 6.2.15 The firmware's entry level (WS-BP BP5.5, v0.36.2)
 
@@ -856,8 +887,9 @@ the conduit from `entry_el` before anything can make a PSCI call: an EL2 entry
 leaves `smc` to the EL3 firmware as the only conduit, and an EL1 entry keeps
 `hvc`.  A call made before the selection halts.  On an EL1 entry the platform's
 authority is the device tree's `/psci` `method` property, and reading it is
-registered debt.  No current harness executes the EL2 path; BP8.1 runs QEMU both
-ways.
+registered debt.  `scripts/test_qemu.sh` executes the EL2 path under QEMU
+(`virtualization=on`) since BP8.1 (§6.2.18), with the HAL alone and with the
+Lean kernel linked.
 
 ### 6.2.16 Per-core readiness (WS-BP BP6, v0.36.2)
 
@@ -913,6 +945,194 @@ IRQ-readiness alone, which a PE with every seam dormant satisfies.
 What BP6 does not do is return anyone to EL0.  The delivered-fault and
 capability-fault halts become reachable, and stay the seam's occupant until the
 context restore (BP7) installs a successor.
+
+### 6.2.17 The firmware's memory account (WS-BP BP7.10, v0.36.3)
+
+A Raspberry Pi 5's firmware writes `/memory@0` as three ranges — `[0, 0x80000)`,
+`[0x80000, 0x3FC00000)` and `[0x40000000, top)` on a Pi 5 8 GiB Rev 1.1
+(`[0x80000, 0x3FB00000)` on a CM5 4 GiB Rev 1.0; accounts read 2026-09-25) —
+withholding the top of the first gigabyte for itself, by a board- and
+firmware-dependent amount.  Every variant declared `[0, ramSize)` whole and
+`machineConfigCovers` requires every declared RAM byte to be in the account, so
+no variant was covered and the bridge refused every real board; and the boot
+map described the withheld memory as the kernel's own writable RAM, while the
+root task's `[256 MiB, 1 GiB)` untypeds would have let it retype VideoCore
+memory had the board been accepted.
+
+- **A configuration carries its first-gigabyte top.**  `BCM2712Config.lowRamTop`
+  (default the gigabyte's top, so every member of `rpi5Variants` is the uncut
+  configuration it was) ends the first RAM region `rpi5MemoryMapForConfig`
+  declares, which begins at the image origin `rpi5RamOrigin` (`0x8_0000`)
+  since v0.36.36 (§6.2.19).  `rpi5LowRamTopFor` derives it from an account: the
+  account's RAM reach from that origin (`ramReachFrom`, the union reading's
+  cursor — `ramReachFrom_sound`; until v0.36.36 `ramPrefixTop`, the reach from
+  `0`), capped at the gigabyte and rounded **down** to the
+  2 MiB granule the HAL extends by, or the floor
+  `rpi5KernelReservedEnd + 2 MiB` when it reaches less.  `rpi5VariantFor` is
+  the covered member cut to that top; `rpi5LowRamTop_covered` says an account
+  reaching the floor always covers the top it binds.
+- **Decided on the real accounts.**  `rpi5VariantFor_rpi5_firmware_account`
+  binds `{8 GiB, 0x3FC00000}`, `rpi5VariantFor_cm5_firmware_account`
+  `{4 GiB, 0x3FA00000}` (rounded down off the granule), and
+  `rpi5VariantFor_kernel_extent_not_ram` refuses an account that does not
+  report the kernel's extent as RAM.
+- **Admissibility replaces membership.**  `BCM2712Config.Admissible` (the uncut
+  form a member, the top admissible) is what every deployment theorem is stated
+  over, and `rpi5VariantFor_admissible` replaces `rpi5VariantFor_mem`.  The
+  gates are re-proved over every admissible configuration: the extent-free ones
+  by `decide` through the extent-erasure projection
+  `PlatformConfig.withoutExtents` (`wellFormed_of_withoutExtents`), the untyped
+  placement symbolically, the machine configuration by
+  `MachineConfig.wellFormed_of_within` (shrinking regions preserves
+  well-formedness).
+- **The constant boot map is the kernel's extent.**  `GUARANTEED_RAM_TOP` is
+  retired; the constant Normal window, the linker's RAM region and the
+  cacheable window's constant part are all `[0, KERNEL_RESERVED_END)` (from
+  `IMAGE_ORIGIN` since v0.36.36, §6.2.19), and the
+  first gigabyte's reported part is an extension written into `l2_ram`.
+- **One list.**  The extensions are clipped at the kernel's extent and the root
+  task holds one untyped per extension (`rpi5RootTaskUntypeds`), so the
+  withheld top of the gigabyte is in neither the model, the boot map, the
+  cacheable window nor any untyped.  `tests/Ak9PlatformSuite.lean`'s
+  `realFirmwareAccountBindsTheReportedRam` boots the real account end to end.
+
+### 6.2.18 The kernel under QEMU (WS-BP BP8.1–BP8.2, v0.36.24–v0.36.27)
+
+QEMU models no BCM2712, so the first run is on QEMU's `virt`: the HAL takes its
+board-dependent constants from `src/board.rs` (`board_qemu_virt`, slice 1) and
+the Lean kernel has a `virt` binding with its own boot entry
+`lean_kernel_main_qemu_virt` (slice 2).  Since v0.36.26
+`scripts/test_qemu.sh --lean-kernel` links the Lean archive into that image
+and boots it on four PEs — the binding declares four and Phase 7 halts unless
+every one serves — at EL1 and at EL2, until every core's first idle dispatch.
+The archive lane runs it on every PR with `REQUIRE_QEMU=1`, so BP4.5's
+clean-to-PoU, the verified device-tree boot and the context restore all
+execute there.  The run is under `-icount shift=0,sleep=off`: under
+multi-threaded TCG the virtual clock follows host time and one emulated Lean
+tick outlasts the 1 ms tick period, so four PEs' ticks saturate the
+kernel-entry lock; counting the clock in instructions charges each tick its own
+instruction count.
+
+Three rules came out of the first run:
+
+- **A byte read on the boot path is `bytes[i]?`.**  `ByteArray.data` copies the
+  whole array boxed in compiled code, so the device-tree parser's per-byte
+  `.data[i]?` was quadratic in the blob.
+- **A restore replaces an EL1-origin frame only after its core has handed
+  itself to the idle wait** (`trap::IdleHandoffFlags`, `trap::enter_idle_wait`).
+  A core's bring-up tail runs with IRQs unmasked; before the handoff no thread
+  has run on the core, so an EL1 frame is bring-up code and is resumed as it
+  stands, and the next tick after the handoff restores the same committed
+  target.
+- **Every core runs a first reschedule** (`smp::first_reschedule`), the boot
+  core's between its readiness and its unmask as each secondary's is, because a
+  booted state has no current thread on any core and a tick on such a core
+  dispatches nothing.
+
+The boot log carries `[boot] Phase 7: all 4 declared PE(s) serve the kernel`
+and one `[sched] core N: first idle dispatch` per core; the fixture is
+`tests/fixtures/qemu_lean_boot_expected.txt`.
+
+**The four-PE bring-up gate (BP8.2, v0.36.27).**  `scripts/test_qemu_smp_bringup.sh`
+boots the HAL-only and the Lean-linked `virt` images on four PEs at EL1 and
+EL2 and holds each secondary's per-core init, in order, to
+`tests/fixtures/qemu_smp_bringup_expected.txt`.  A banner is a **line**: no
+console tag may appear anywhere but at the start of one.  The image build, the
+raw cut and the run are `scripts/qemu_boot_lib.sh`'s, shared with
+`scripts/test_qemu.sh`, and both images build into target directories of their
+own, so neither overwrites the Raspberry Pi 5 image the archive lane uploads.
+Two console rules came out of its first run:
+
+- **A PE prints nothing before its own MMU is on**, except the fatal refusal
+  of an invalid PSCI context id.  With translation off the console cannot take
+  its ticket lock and writes unlocked, which is sound only while no other PE
+  prints; a secondary's banner there tore against the others' characters.
+- **A line is one lock acquisition.**  `kprintln!` writes its body and newline
+  under a single `with_boot_uart`, as `kprintln_core!` already did;
+  `uart::tests::a_printed_line_takes_the_console_lock_once` counts the lock's
+  tickets per line.
+
+**The Tier-4 gates execute on the `virt` test image (BP8.4, v0.36.28).**  The
+four Tier-4 gates that need no user program are in-image drivers
+(`rust/sele4n-hal/src/smp_exercisers.rs`, feature `smp_exercisers`) that the
+boot core runs after every declared PE serves the kernel and before it hands
+itself to the idle wait: the cross-core SGI round trip on INTID 15, the
+per-core console stress, the TLB shootdown round trip and the shootdown
+stress.  Each PE's agent is an SGI handler servicing a per-core command slot,
+so a driver can put work on every core.  The shootdown drivers break a page
+window's translation on one core and run the HAL's own round protocol — the
+round lock, the generation, the operand mailbox, the request SGI, the
+broadcast invalidation and the bounded acknowledgment wait, in
+`completeShootdownRounds`' order — and the cores that had the stale
+translation cached read the new page; the stress runs four initiators for
+eight generations each and requires 32 rounds under 32 distinct generations.
+A timed-out round halts the system, because a round left open is a round lock
+the next kernel entry halts on.  The window is global and hangs off the boot
+L1 table's last entry (`mmu::install_exerciser_window`), so it translates
+under every thread's `TTBR0` and survives the idle restore; the exerciser
+feature builds a test image in a target directory of its own and never reaches
+a release image, which the cross-target gate refuses.  The PE-withheld gate
+(`scripts/test_qemu_smp_minimal.sh`) boots two PEs where the Lean kernel
+declares four and holds the HAL-only image to booting and the Lean-linked one
+to refusing before the boot core dispatches.  `scripts/qemu_exerciser_lib.sh`
+is the shared boot and checker, holding each driver's banners as relations
+rather than tokens, and the archive lane runs the all-driver gate on both
+images.  The eight gates that drive kernel transitions from user space report
+NOT RUN naming their reason — SM10's root task — and never PASS.
+
+**The per-core counters are read on the booted machine (BP8.5, v0.36.29).**
+`Concurrency.perCoreStats` and `perCoreStatsPlausible` (§6.2's per-core
+statistics, WS-RR RR7.33) execute on the Lean-linked `virt` image on every PR
+through one selector-driven seam, `lean_per_core_stats_component`
+(`perCoreStatsComponentExport`, `BaseIO UInt64`): one word of a core's
+snapshot per call — the four counters in the snapshot's own order, or the
+verdict as `1`/`0` — with an unknown core or selector refused with every bit
+set, which no counter reaches and neither verdict is.  The seam is a readiness-
+gated Lean upcall like every other, commits nothing, and reads nothing at a
+core the model lacks.  The fifth Tier-4 driver reads each core's words between
+two Rust reads of the same slot, in the reader's own order with the verdict
+last, after driving the four slots' SGI counts pairwise apart (each secondary
+`STATS_SGI_SPREAD` past the core before it, the count read live), so a word
+outside its slot's bracket was read off another slot; and the gate
+(`scripts/test_qemu_smp_per_core_stats.sh`, Lean-image only) re-derives every
+relation from the printed words — verdict `1`, the containment of the words it
+was decided on, a tick and an IRQ on every serving core, every word inside its
+bracket, the four SGI counts distinct — rather than trusting the driver's
+verdict.  The verdict on a core is pure and host-tested.
+
+### 6.2.19 A Raspberry Pi 5's RAM begins at the image origin (v0.36.36)
+
+The BCM2712's device tree reserves `[0, 0x8_0000)` for the ARM Trusted
+Firmware (`bcm2712.dtsi`, `reserved-memory/atf@0`, `no-map`), and the real
+firmware's `/memory@0` account reports that range separately from the RAM
+after it.  The verified parser subtracts every `/reserved-memory` carve-out, so
+the parsed account begins RAM at `0x8_0000` — and the deployment declared
+`[0, lowRamTop)`, so no variant was covered and every board carrying the
+reservation was refused.  The HAL's constant boot map also described the
+reserved 512 KiB as the kernel's own writable Normal memory, which a
+speculative walk may fetch into the cache over memory the secure world owns.
+
+- **The model's RAM begins at `rpi5RamOrigin` (`0x8_0000`)**, which is also
+  `link.ld`'s image origin: `rpi5MemoryMapForConfig`'s first region is
+  `[rpi5RamOrigin, lowRamTop)`.  `rpi5LowRamTopFor` reads the account's reach
+  from that origin (`ramReachFrom board rpi5RamOrigin`, sound by
+  `ramReachFrom_sound`); `ramPrefixTop`, the reach from `0`, is retired with a
+  Tier 3 negative.  `rpi5VariantFor_rpi5_parsed_account` binds the account as
+  the parser leaves it (from `0x8_0000`) to `{8 GiB, 0x3FC00000}`, and
+  `rpi5VariantFor_origin_not_ram` refuses an account whose RAM does not reach
+  the origin.
+- **The HAL's constant Normal window is `[IMAGE_ORIGIN, KERNEL_RESERVED_END)`**
+  (`mmu::in_kernel_memory_window`), read by `boot_mapping_for`,
+  `ram_range_covered`, `dtb_window_admissible` and `ImageLayout::is_well_formed`;
+  the reserved range is unmapped.  `IMAGE_ORIGIN` is the image table's first
+  boundary, so the 2 MiB block holding it is refined into 4 KiB pages
+  (`IMAGE_BOUNDARY_COUNT` = 4).
+- **QEMU `virt` follows the same rule** (`qemuVirtRamOrigin`, RAM base plus
+  512 KiB), so the Lean memory map equals the HAL's Normal window on both boards
+  and the shared fixtures hold each to the other.
+- **The corpus carries the reservation**: `eight_gib_rpi5_firmware` has the
+  `atf@0` node, and `tests/Ak9PlatformSuite.lean` boots it end to end, with a
+  witness that the retired reach from `0` answers `0` on it.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
@@ -2237,7 +2457,9 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    * **Substantive co-domain theorems**: `KernelObject.lockKind_exists`
      is genuinely trivial; audit-pass-2 adds 4 useful co-domain
      theorems: `lockKind_in_modeledKinds`, `lockKind_ne_objStore`,
-     `lockKind_ne_reply`, `lockKind_ne_page`.  These tell SM3.C
+     `lockKind_ne_reply`, `lockKind_ne_page` (the last retired at
+     WS-BP BP7.1, `v0.36.4`, when `.page` became the frame object's
+     modelled kind — `lockKind_frame` replaced it).  These tell SM3.C
      consumers that a `KernelObject`-derived `LockId` will never
      refer to a SystemState-level or N/A kind.
    * **Donation-path scope** (initial audit-pass-2 form was
@@ -2745,7 +2967,7 @@ abstract Lean kernel model to concrete ARM64 hardware:
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Lean Kernel Model (pure functions, machine-checked)     │
-│  - Transitions: SeLe4n/Kernel/API.lean (36 syscalls)     │
+│  - Transitions: SeLe4n/Kernel/API.lean (39 syscalls)     │
 │  - Invariants: cross-subsystem, IPC, scheduler, etc.     │
 ├──────────────────────────────────────────────────────────┤
 │  FFI Bridge (@[extern] declarations)                     │
@@ -2966,7 +3188,8 @@ handler.  RR4 replaces that path with seL4's fault IPC:
   argument window and reinstall it over the thread's live registers on a
   payload-free resume.  The entry's cross-core pokes are derived from the
   pre/post diff (`computeCrossCoreSgis`), as the syscall seam's are, and the
-  executing core's successor runs through `scheduleLocalSuccessorLive`.
+  executing core's successor runs through `scheduleLocalSuccessor` (live since
+  WS-BP BP7.6, `v0.36.19`).
 - **The return ABI is version 3**: a delivered fault message's label is its
   `seL4_Fault_tag`, so the kernel status moved to the top of the label range
   (`errorLabelBase = 0xFFF00`; `faultLabel_lt_errorLabelBase`,
@@ -3056,7 +3279,8 @@ instruction is precisely the livelock RR4 exists to remove.
   preserves `ipcInvariantFull`, `objects.invExt` and the low projection, and
   is mirrored in `sele4n-types` / `sele4n-abi` / `sele4n-sys`
   (`tcb_set_fault_handler`; 36 syscalls since WS-RR RR8.16 added
-  `.cspaceRevoke`).
+  `.cspaceRevoke`, 37 since WS-BP BP7.1 added `.untypedRetype`, 38 since
+  it added `.untypedReset`, and 39 since it added `.tcbSetSpace`).
 - A current-EL abort (EC `0x25`/`0x21`) or an EL1-origin frame was delivered
   as the current *user* thread's fault, carrying the kernel's register window
   to a handler whose reply would `eret` into the kernel frame.  The syndromes
@@ -3337,18 +3561,27 @@ UART access (including `kprint!` macro and FFI `ffi_uart_putc`) flows through
 the lock. The original `pub static mut BOOT_UART` has been replaced with
 module-private `BOOT_UART_INNER` guarded by `UART_LOCK`.
 
-#### 6.5.6 Architecture Gap: TPIDR_EL0 / TLS
-`RegisterFile` (Prelude.lean) models GPRs (x0-x30), PC, and SP only.
-The ARM64 `TPIDR_EL0` register (thread-local storage pointer) is not
-modeled. This register is required for user-space TLS support (e.g.,
-`__thread` variables, Go runtime, Rust `thread_local!`).
+#### 6.5.6 TPIDR_EL0 / TLS is thread context (v0.36.30)
+`RegisterFile` (`Machine.lean`) models GPRs (x0-x30), PC, SP, the saved
+processor state and the thread pointer `TPIDR_EL0` (`RegisterFile.tpidr`).
 
-**Integration timeline**: TPIDR_EL0 modeling is planned for a future
-AG-phase when user-space binary loading and context switching of system
-registers are implemented. The `TrapFrame` in `sele4n-hal` (288 bytes
-since AK5-F: ESR at 272, FAR at 280) already has space for system
-register state; the Lean model needs a corresponding `RegisterFile`
-extension.
+This section recorded the register as an unmodeled gap to be closed "when
+context switching of system registers is implemented".  WS-BP BP7.6 made the
+context restore live without closing it, and from then until v0.36.30 the gap
+was a **security defect**: EL0 writes `TPIDR_EL0` with no trap and nothing saved
+or restored it, so a thread read the value the previous thread on its core had
+written — a 64-bit storage channel between threads sharing a core, across
+domains, invisible to the non-interference theorems because the model lacked the
+register.  It is trap-frame word 34 now (`trapFrameTpidrWord`), saved at every
+entry and restored at every exit in the 304-byte `TrapFrame` (offset 288), and
+a context restore installs the incoming thread's own value.
+
+The other EL0-reachable controls are closed on every PE before it unmasks IRQs
+(`cpu::lock_el0_system_access`): `CNTKCTL_EL1 = 0` (no EL0 counter or timer
+access, so a thread cannot switch off the preemption tick), `PMUSERENR_EL0 = 0`
+where a PMUv3 exists, `MDSCR_EL1 = 0`, and `TPIDRRO_EL0` and `TPIDR_EL0` cleared
+of any firmware value.  Every other register EL0 can write is either in the trap
+frame or in the lazily switched FP/SIMD context (BP7.9).
 
 ### 6.6 Platform Testing Limitations
 The simulation platform contract (`Sim/Contract.lean`) uses a permissive
@@ -4502,6 +4735,395 @@ behavior on ARM64).
 `validateVSpaceMapPermsForMemoryKind` after decode and before mapping. Device
 regions with `perms.execute = true` return `.error .policyDenied`.
 
+### 8.10.2a Frames: `.vspaceMap` maps only memory the caller holds (WS-BP BP7.1, v0.36.4)
+
+Before `v0.36.4` MR2 of `.vspaceMap` was a raw physical address, so a writable
+capability to one's own VSpace root was authority over every page of physical
+memory — the kernel image, other address spaces and device windows included
+(severity High; closed in the cut that reported it).  The model now carries
+seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
+`lock`; well-formed when `base` is page-aligned) is the ninth kernel object
+(`KernelObjectType.frame`, retype tag `8`), locked at `LockKind.page`.
+
+- **ABI**: MR2 is the address of a frame capability in the caller's CSpace
+  (`VSpaceMapArgs.frame : CPtr`), resolved with `.read`
+  (`resolveVSpaceMapFrame`); the page installed is the frame's own `base`.
+- **Rights**: a writable mapping needs `.write` on the frame capability
+  (`.illegalAuthority`), a device frame maps neither executable nor
+  cacheable, and a RAM frame maps cacheable or not at all (`.policyDenied`) —
+  `frameMappingAdmissible`, with `frameMappingAdmissible_cacheable_iff_ram` the
+  statement that an admitted mapping's cacheability *is* the frame's kind.  The
+  last clause is `v0.36.32`'s: the kernel writes RAM (the carve's scrub, a
+  delivered message register) through its cacheable identity map, so an
+  uncached user alias of the same page is a mismatched-attribute alias (ARM ARM
+  B2.8) that could observe the page's previous contents after the scrub.
+- **Composition**: `vspaceMapFromFrameCap` is the arm past its address-space
+  check; `dispatchWithCap_vspaceMap_requires_frame_cap` and
+  `dispatchWithCap_vspaceMap_maps_frame_base` state the two claims.
+- **No other source of memory authority**: an in-place retype refuses a
+  memory-backed replacement (`KernelObjectType.memoryBacked`,
+  `retypeReplacementAdmissible`), the boot refuses a configured frame
+  (`bootSafeObject`), and the pre-retype cleanup refuses to destroy one in
+  place (`.revocationRequired`) — permanently: a frame's memory returns
+  through its untyped (the reset, below), as in seL4.
+- **The untyped carve** (`v0.36.5`, `.untypedRetype`, syscall 36): the one
+  source of frames.  `untypedRetypeObject` (at `.frame`) carves the next page of an untyped
+  the caller holds `.retype` on — `retypeFromUntyped` at
+  `untypedNextFrame ut` (the base is the untyped's own region base plus its
+  watermark, so the frame lies inside the untyped's memory and is
+  page-aligned: `untypedNextFrame_of_retype_ok`), zeroes a RAM frame's page
+  before any capability to it exists (`carveZeroFrame`; a device frame is not
+  scrubbed, since writing a device register is not zeroing), installs a
+  read/write/grant frame capability in an empty slot of a CNode the caller
+  holds `.write` on, and records a `.retype` derivation edge from the
+  untyped's slot, so revoking the untyped reaches the frame capability.
+  `retypeFromUntyped` admits a device untyped for memory-backed kinds only.
+  The arm preserves `ipcInvariantFull`
+  (`untypedRetypeObject_preserves_ipcInvariantFull`) and declares a six-member
+  lock footprint (`lockSet_untypedRetype`, the new object's key under the
+  kind it will hold — `carvedObjectLock`).
+- **Child untypeds** (`v0.36.8`, BP7.1 slice 4a): MR0 carries the object's
+  size as a power of two in bits `[8, 64)` beside the type tag (seL4's
+  `size_bits`); `carveRequestOf?` accepts `.frame` at size `0` and `.untyped`
+  at `[minUntypedSizeBits, maxUntypedSizeBits] = [12, 47]`, and refuses the
+  rest with `.invalidArgument`.  One carve, `untypedRetypeObject` over a
+  `CarveRequest`, makes both: a child untyped is `untypedNextChild` — the
+  region at the parent's watermark, of its kind, **parent stamped** — handed
+  back with read/write/retype (`untypedCapability`) and not written
+  (`untypedNextChild_of_retype_ok`, `untypedRetypeObject_ok_untyped`).  The
+  in-place retype refuses to destroy an untyped, as it refuses a frame.
+  Page-table objects are slice 4b (registered in `docs/REGISTERED_DEBT.md`
+  table B).
+- **The untyped reset** (`v0.36.6`, `.untypedReset`, syscall 37, `.retype`,
+  no message registers): seL4's `resetUntypedCap`.  Since `v0.36.8` it acts
+  on the untyped's **carved subtree** — every object carved from it at any
+  depth, derived by a bounded walk over the child lists
+  (`untypedCarvedSubtree`, proved to hold every child and to be closed by
+  `untypedCarvedSubtree_spec`; a walk that cannot finish is a refusal).
+  Refused (`.revocationRequired`) unless every member is a frame or an
+  untyped (`carvedSubtreeRetirable`) and no capability anywhere names one
+  (`carvedSubtreeUnreferenced` — every CNode slot and every blocked
+  sender's parked message, decided over the whole object store, because the
+  watermark is the untyped *object*'s and a derivation-free sibling copy of
+  its capability would pass seL4's per-slot `ensureNoChildren`).  Then every
+  mapping of a page meeting the region is removed through the `.vspaceUnmap`
+  arm's own transition — TLB flush, shootdown round, initiator drain,
+  instruction-cache broadcast — from a list collected on the pre-state and
+  checked afterwards (`untypedRegionUnmapped`, `.illegalState` otherwise,
+  and every frame of the subtree is decided to lie in the region,
+  `carvedSubtreeFramesInRegion`); the subtree is **erased** with its index
+  and metadata rows (`retireCarvedObject`, the one object-store erase, a
+  no-op at any key holding neither a frame nor an untyped), so its ids and
+  store capacity return; and the
+  untyped's watermark and child list are cleared.  Nothing is zeroed here:
+  the carve zeroes a RAM page before any capability to it exists.  Payoff:
+  `untypedReset_ok_unmapped`, `untypedReset_ok_unreferenced`,
+  `untypedReset_ok_subtree_absent`, `untypedReset_ok_retired_pages_unmapped`,
+  `untypedReset_ok_untyped`; bundle:
+  `untypedReset_preserves_ipcInvariantFull` (over
+  `ipcReadViewAgreement.of_inertOrAbsentWrites`).  It declares no static
+  lock footprint (the VSpace roots it writes are state-discovered and
+  unbounded, `.cspaceRevoke`'s reason) and writes no scheduler slot.
+  The reset shares its unmap pass with the destroying arms below
+  (`unmapLivePages`, `Architecture/PageTeardown.lean`), which re-checks each
+  page is still live before removing it.
+- **A frame capability owns the mapping it made** (`v0.36.7`, closing the
+  divergence slice 3 registered: a revoked frame capability's mapping used to
+  persist until the reset).  `Capability.mapping : Option FrameMapping` is
+  seL4's `capFMappedASID` / `capFMappedAddress`: `.vspaceMap` records the
+  mapping on the capability that made it (`cspaceRecordFrameMapping`) and
+  refuses a capability whose recorded mapping is still live
+  (`capabilityMappingLive`, `.invalidCapability`); a copy and an IPC transfer
+  insert `cap.withoutMapping` (seL4's `deriveCap`).  The live `.cspaceDelete`
+  and `.cspaceRevoke` arms are `cspaceDeleteSlotFinalising` /
+  `cspaceRevokeCdtFinalising`: the destroying step, then the removal of every
+  mapping a destroyed capability recorded through the `.vspaceUnmap` arm's
+  own transition, decided afterwards (`livePagesCleared`, `.illegalState`
+  otherwise).  The revocation reports exactly the pages its traversal
+  destroyed: `cspaceRevokeCdt` returns them, its fold reading each page from
+  the slot it deletes (`revokeCdtFoldBody_records`), so there is one
+  revocation traversal, not a second one beside it.
+  Payoffs: `cspaceDeleteSlotFinalising_ok_unmapped`,
+  `cspaceRevokeCdtFinalising_ok_unmapped`.  A stale record — its address
+  unmapped through a VSpace capability — removes nothing unless the address
+  maps the same frame's page again (seL4's `unmapPage` paddr comparison).  A
+  CNode holding a recording capability is refused an in-place retype
+  (`CNode.holdsFrameMappingRecord`), the boot refuses a configured record
+  (`bootSafeCapCheck`), and the frozen delete refuses what it cannot
+  finalise.  `lockSet_cspaceDelete` names the unmapped VSpace root and
+  `lockSet_vspaceMap` the frame capability's CNode and the frame.
+- `decodeVSpaceMapArgsChecked` is retired with the physical-address operand
+  it bounded; the PA-width bound on the frame's `base` is
+  `vspaceMapPageCheckedWithFlushFromState`'s.
+- **A VSpace root is never created in place** (`v0.36.9`).  A translation
+  table is memory, so `KernelObjectType.memoryBacked` holds of `.vspaceRoot`
+  and the in-place retype's admissibility guard refuses one (`.illegalState`).
+  Until then the retype built a root at ASID `0` — the boot VSpace root's — and
+  nothing checked the ASID was free, so `storeObject` moved the ASID table's
+  entry to the caller's root while the owner's was still stored:
+  `vspaceAsidRootsUnique` and `asidTableConsistent` were false on a state an
+  ordinary retype capability reached, and `resolveAsidRoot 0` named the
+  caller's root.  Which kinds a **device** untyped may back is a separate
+  question (`KernelObjectType.deviceBackable`: untypeds and frames), because a
+  table must be RAM.  A root's carve from an untyped, with a fresh ASID and a
+  physical table base, is slice 4b's (next item).  Witness:
+  `tests/VSpaceCapabilityBindingSuite.lean` §5h.
+- **...nor destroyed in place** (`v0.36.35`).  The pre-retype cleanup
+  (`lifecyclePreRetypeCleanup`) refuses a VSpace-root target with
+  `.revocationRequired`, as it refuses a frame, a page table and an untyped:
+  it was the identity there, so an in-place retype replaced a live root while
+  the threads running in it, its installed page tables and the hardware
+  translation all went on naming it.  A root's memory returns through the
+  untyped it was carved from.  The in-place retype's ASID shootdown is
+  therefore vacuous (both sources refused before it runs).  Theorems:
+  `lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_refuses_vspaceRoot`
+  and its CSpaceAddr sibling.  Witness: §5h.
+- **An address space is carved memory** (slice 4b, `v0.36.10`).
+  `.untypedRetype` at the VSpace-root tag (size `0`) carves a root from a RAM
+  untyped: one page, zeroed, which is its top-level table
+  (`VSpaceRoot.tableBase`, `untypedNextVSpaceRoot`), registered under the least
+  free non-zero ASID below the machine's bound (`freshAsid?`) — a precondition
+  the carve re-checks before writing anything (`CarveRequest.admissible`) —
+  with a read/write capability (`vspaceRootCapability`).  A boot-configured
+  root has `tableBase = none`.  The reset retires carved roots: it refuses while
+  any thread's `vspaceRoot` names one, removes every mapping a carved root holds
+  through the verified unmap and checks it empty, erases its ASID-table entry,
+  and decides no entry names a retired object.  Payoffs:
+  `untypedRetypeObject_ok_vspaceRoot`, `untypedNextVSpaceRoot_of_retype_ok`,
+  `untypedReset_ok_asids_released`.  Open: a boot-configured root has no table
+  page (intermediate page tables landed at `v0.36.12`, below).  Witness: §5i.
+- **A thread runs in a carved address space** (`v0.36.11`, `.tcbSetSpace`,
+  syscall 38, `.write` on the target TCB — seL4's `TCB_SetSpace`).
+  `setThreadSpace` rewrites a suspended thread's `cspaceRoot` and `vspaceRoot`
+  and nothing else.  MR0/MR1 are capability addresses in the **caller's**
+  CSpace, resolved by `resolveSetSpace` over the shared
+  `resolveCallerCapObject`: the CSpace root needs `.grant` and `.write` (a
+  CSpace root hands the thread every capability the CNode holds), the VSpace
+  root `.write`; each is re-checked against the store for its kind.  Suspended
+  means the stored flag is `.Inactive` **and** `inferThreadState` classifies the
+  thread so — a stale flag cannot admit a running thread
+  (`setThreadSpace_refuses_active`).  Payoffs: `setThreadSpace_ok_tcb`,
+  `resolveSetSpace_ok_authorised`, `setThreadSpace_preserves_ipcInvariantFull`;
+  footprint `lockSet_tcbSetSpace`.  Witness: §5j, which also measures the
+  reset refusing while a thread runs in a carved root.
+- **Intermediate page tables** (`v0.36.12`, `.pageTableMap` syscall 39 and
+  `.pageTableUnmap` syscall 40, `.write` on the page-table capability — seL4's
+  `seL4_ARM_PageTable_Map` / `_Unmap`; `Architecture/PageTableInstall.lean`).  A
+  page table (`KernelObject.pageTable`, retype tag 9) is carved like a frame: one
+  zeroed RAM page, never device memory, never created in place.  `pageTableMap`
+  installs it in the address space MR0 names (a `.write` capability in the
+  caller's CSpace) at the **shallowest level the walk to MR1 is missing**
+  (`VSpaceRoot.missingLevel?`), writing the table's `installedIn` and the root's
+  `tables` slot together; it refuses a table already installed, a boot-configured
+  root, an address past `2^48` and a complete walk (`.mappingConflict`).
+  `pageTableUnmap` refuses while a mapping or a deeper table passes through the
+  table (`pageTableInUse`).  A carved root maps a frame only where all three
+  levels are present (`asidTranslationReady`, `.translationFault`).  The reset
+  retires page tables with its subtree and refuses an install crossing the
+  subtree's boundary (`carvedSubtreeInstallsClosed`).  Payoffs:
+  `pageTableMap_ok_installed`, `pageTableUnmap_refuses_in_use`,
+  `pageTableMap_preserves_ipcInvariantFull`,
+  `pageTableUnmap_preserves_ipcInvariantFull`; footprints `lockSet_pageTableMap`
+  / `lockSet_pageTableUnmap`.  Destroying a table's **last** capability — the
+  live `.cspaceDelete` and `.cspaceRevoke` arms — takes it out of its address
+  space with everything beneath it (`finaliseDestroyedCapabilities`,
+  `pageTablesOrphaned`, `detachPageTables`; payoff
+  `finaliseDestroyedCapabilities_ok_tables`), seL4's `finaliseCap` →
+  `unmapPageTable`; a CNode holding such a capability is not retyped in place.
+  "Last" is decided on CNode slots (`cnodeSlotsUnreferenced`, `v0.36.38`): a
+  copy parked in a blocked sender's message can be dropped by a cancellation
+  that finalises nothing, so counting it would leave a table installed with no
+  capability anywhere; a parked copy delivered later names a table installed
+  nowhere, which `.pageTableMap` installs again.
+  The root is the truth and a table's record a pointer (`pageTableInstallLive`):
+  a stale record reads as installed nowhere.  Witness: §5k.
+- **Every configured address space owns a table page** (`v0.36.13`).  The
+  binding reserves a table-page pool (`MachineConfig.bootTablePool`; on the
+  RPi5 `link.ld`'s `.boot_table_pool`, the last sixteen pages of the kernel's
+  reserved extent, zeroed by the HAL before the Lean kernel is entered), and
+  `bootRootTablesPlaced` — `PlatformConfig.wellFormed`'s eighth conjunct —
+  requires every configured root to name a distinct pool page and every pool
+  page to lie page-aligned inside the reserved extent.  A root with no table
+  page maps nothing (`VSpaceRoot.translationReady` is fail-closed).
+- **The user window and 16-bit hardware ASIDs** (`v0.36.14`, WS-BP BP7.2).  A
+  thread's root is installed in `TTBR0_EL1` beside the kernel's own window,
+  level-0 entry 0 of every user root, so `.vspaceMap` refuses an address below
+  `VAddr.userWindowBase` (`2^39`, `.addressOutOfBounds`,
+  `vspaceMapFromFrameCap_ok_inUserWindow`) and `.pageTableMap` installs no table
+  there (`pageTableAddressable` is `VAddr.inUserWindow`).  `VSpaceRoot.mapPage`
+  refuses an unaligned virtual address as it refuses an unaligned physical one
+  (`mapPage_vaddrAligned`), answered `.alignmentError` by `vspaceMapPage`
+  (`pageMappingAligned`), since two keys in one page would be two mappings in the
+  model and one translation on the machine.  `TCR_EL1.AS` selects 16-bit ASIDs,
+  a PE implementing fewer halts before it is written
+  (`mmu::asid_bits_of_this_pe_or_halt`), and the model's ASID space is held to it
+  through `tests/fixtures/boot_map.expected`'s `asidSpace` line.  Witness: §5k.
+- **The physical-write ledger and the translation install** (`v0.36.15`, WS-BP
+  BP7.2).  Every transition that changes an address space records what it owes
+  physical memory in `SystemState.pendingPhysicalWrites`
+  (`Architecture.PhysicalWrite`): a mapping or unmap stores the level-3 entry
+  (`mappingStore?` — a page descriptor with nG, PXN, Normal or Device by
+  cacheability, EL0 access only for a user-readable mapping, or `0`); a table
+  install or unmap stores the parent entry (`slotStore?`), an unmap and a
+  finalising detach also invalidate the ASID, and the detach zeroes every table
+  page it takes out (`detachWrites`); every carve's scrub records its zeroing and
+  a reset's retired root its ASID.  The syscall seam reads and clears the ledger
+  in the atomic step (`syscallDispatchCrossCoreStep_drains_physicalWrites`) and
+  performs it before the cross-core SGIs and the shootdown round
+  (`completePhysicalWrites`); since `v0.36.39` every other state-committing
+  entry — the two fault seams, the timer tick, the `.reschedule` receiver, the
+  secondary bring-up entry and the cross-core suspend — drains it the same way
+  in its own atomic step, before its SGIs and its restore, and drains the
+  instruction-cache operand ledger beside it (`Platform.FFI.completeIcacheMaintenance`,
+  emitted after the SGIs and before the restore), so no entry leaves a recorded
+  write or maintenance operand owed to the hardware.  The HAL validates each operand against the pages
+  the kernel owns for threads and halts on a refusal.
+  `Platform.FFI.installThreadTranslation` installs a thread's root
+  (`Architecture.threadTranslationOperands`: its page and ASID, or the kernel's
+  own `(0, 0)`), writing the root's entry 0 with the kernel window (UXNTable,
+  APTable = no EL0).  Witness: §5l.
+- **A retired ASID is left by every PE, acknowledged** (`v0.36.37`).  The live
+  `.untypedReset` arm is `untypedResetWithShootdown`: the reset, then one
+  acknowledged `.aside1` shootdown round per retired root's ASID, read on the
+  pre-state (`untypedResetShootdownAsids`, `untypedResetShootdownAsids_mem`);
+  the round fold writes no object, scheduler, machine or ASID-table state
+  (`untypedResetWithShootdown_ok_frame`), so the reset's results and bundle
+  carry over.  A PE servicing an `.aside1` round, on the precise path and on the
+  self-service path, installs the kernel's boot tables in `TTBR0_EL1` when that
+  register still carries the retired ASID
+  (`shootdown::evict_retired_translation`, `translation_retired_by`) before it
+  acknowledges, and the initiator's wait completes inside the kernel-entry
+  bracket — so no later carve can hand the retired root's table page out while a
+  PE still walks it.  Witness: §5i.
+- **The whole trap frame, saved at every entry** (`v0.36.16`, WS-BP BP7.3).
+  `RegisterFile` carries `pstate` (`SPSR_EL1`).  The HAL publishes the in-flight
+  trap frame for a handler's duration (`trap::InFlightFrame`), and every
+  state-committing trap entry — the syscall seam, the fault and unknown-syscall
+  entries, the timer tick, the `.reschedule` receiver — reads it
+  (`Platform.FFI.captureTrapFrame`: `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`,
+  and since v0.36.30 `TPIDR_EL0`)
+  and saves it into the executing core's bank and the current thread's context
+  before its atomic step (`Architecture.saveTrapFrameOnCore`), a frame taken at
+  EL1 saving nothing (`trapFromEl0`).  The save preserves `ipcInvariantFull`
+  (`saveTrapFrameOnCore_preserves_ipcInvariantFull`), establishes the executing
+  core's `contextMatchesCurrentOnCore` and frames every other core's
+  (`TrapFrameSaveInvariant.lean`), so a context switch saves every register the
+  thread trapped with.  Witness: `tests/SmpSwitchToThreadSuite.lean` §3.11.
+- **The context each core resumes, staged per core** (`v0.36.17`, WS-BP BP7.4).
+  A syscall's returned frame is staged into the caller's saved context and the
+  core's bank before the local reschedule (`Architecture.stageCallerReturn`), so
+  a same-entry switch saves the result rather than the arguments; the refusal
+  path stages its `.illegalState` frame the same way.  Every state-committing
+  entry returns the committed state's restore target for its core
+  (`Architecture.restoreTargetOnCore`: a user thread's context and translation,
+  the idle loop, or nothing) and hands it to `Platform.FFI.restoreTrapFrame`
+  last; the HAL stages it per core and commits it into the in-flight frame with
+  `SPSR_EL1` sanitised to EL0t (`trap::restore_commit_in`), or aims the frame at
+  `trap::kernel_idle_loop` at EL1h.  Gated at this cut on `contextRestoreSeamLive`,
+  which BP7.6 deleted.
+  Witness: `tests/SmpSwitchToThreadSuite.lean` §3.12.
+- **The staged unblock frames, delivered** (`v0.36.18`, WS-BP BP7.5).  A switch
+  resumes the incoming thread with the frame its TCB holds
+  (`switchToThreadOnCore_delivers_readReturnFrame`, over the one reading
+  `Architecture.RestoreTarget.deliveredFrame?`), since the switch's only object
+  write is the outgoing thread's context save; composed with RR7.14's staging, a
+  cancelled thread resumes reading `.ipcCancelled` and a timed-out one
+  `.ipcTimeout` (`restoreToReadyCancelled_then_switch_delivers_cancelledIpcFrame`,
+  `abortPendingIpcOnEndpoint_then_switch_delivers_timeoutFrame`).  Witnesses:
+  `tests/SmpCancellationSuite.lean` §3.19b and `tests/SmpTimerSuite.lean` §3.15b,
+  each with a switch-before-unblock control.
+- **The context restore, live** (`v0.36.19`, WS-BP BP7.6).  The gate is deleted
+  rather than flipped: `contextRestoreSeamLive`, `scheduleLocalSuccessorLive`,
+  the `…Live` / `…EnqueueOnly` resume and priority-preemption pairs and
+  `restoreTrapFrameLive` are gone, so every state-committing entry dispatches its
+  core's successor (`scheduleLocalSuccessor`, `resumeThreadOnCore`,
+  `priorityRescheduleOnCore`) and hands `Platform.FFI.restoreTrapFrame` the target
+  BP7.4 stages.  The SVC arm, the fault delivery and the unknown-syscall delivery
+  each return through the restore (`trap::take_restored`) before any mailbox
+  write, sentinel poison or halt, which now answer only on a core where no
+  restore was staged; `build.rs` pins the order (`is_restored_frame_return`).
+  Since `v0.36.40` a core another core has vacated (a remote deschedule cleared
+  its slot while its thread still ran there) is always staged one: the fault,
+  unknown-syscall and FP/SIMD entries run `PriorityInheritance.dispatchVacatedCore`
+  (`faultEntryDeliver_vacated`, `fpAccessEntryStep_vacated`), where they had
+  committed nothing and the trap layer halted the PE.  Since `v0.36.41` every
+  state-committing entry ends its commit in
+  `PriorityInheritance.settleResidencyOnCore`: a vacated core is handed a
+  successor, a thread still resident on another core is not resumed here
+  (`deferResidentElsewhere_current_not_elsewhere`), and the thread the core
+  resumes at EL0 is recorded as its resident thread (`MachineState.resident`),
+  so the next EL0 exception on a core a remote deschedule vacated saves its frame
+  into that thread (`Architecture.saveVacatedFrameOnCore`) — rewound to the `SVC`
+  on the syscall entries — instead of dropping it.  The restore installs the
+  resumed thread's translation, and lifts the FP/SIMD trap, only once
+  `ffiRestoreCommit` has replaced the frame.  A
+  caller its own syscall switched out has its result written into its TCB rather
+  than the core bank the successor now owns
+  (`stageCallerReturn_stages_switched_out`), and the fault progress theorems take
+  every run queue well-formed on the pre-state, carried across the delivery by
+  `faultDeliverOnCoreChecked_preserves_runQueuesWellFormed`, because the
+  successor is chosen from the executing core's queue
+  (`handleRescheduleSgiOnCore_preserves_not_dispatchable`).  Witnesses:
+  `tests/SmpSwitchToThreadSuite.lean` (a switched-out caller, with the retired
+  bank-only staging as the control), `tests/SmpInformationFlowSuite.lean` and
+  `./scripts/test_rust.sh`.
+- **The declassified badge, delivered** (`v0.36.20`, WS-BP BP7.7).  In the
+  wait-before-signal ordering a data-carrying declassification's badge reaches
+  the waiter only through the return frame.  `tests/SyscallReturnAbiSuite.lean`
+  §11 drives the waiter's `.notificationWait`, a cleared signaller's
+  `.declassifySignal` from another core and the waiter's `.reschedule` through
+  the live bracketed entry step, and asserts the restore target hands the
+  hardware the badge in `x0` with the success label in `x1`, one matching trail
+  record, and one posted SGI; under the deny-all policy the signal is refused
+  and nothing is delivered.
+- **Message registers past the fourth, both directions** (`v0.36.21`, WS-BP
+  BP7.8).  A thread's IPC buffer is touched only at the address one resolver
+  answers (`IpcBufferRead.ipcBufferSlotPAddr?`: the slot's page through the
+  thread's own VSpace, eight-byte aligned, declared RAM, writable for a write).
+  The syscall seam reads a sender's overflow words from RAM and syncs them into
+  the model before the decode (`readCallerOverflowWords`, `syncUserWords`,
+  `ipcBufferReadMr_syncUserWord`); the delivery every wake shares records the
+  receiver's as `PhysicalWrite.storeUserWord` stores the seam performs — the
+  fault seams now drain the ledger too — and the frame's `MessageInfo` length
+  counts exactly the words written (`returnMessageInfo`'s `overflow`).  The HAL
+  admits a user word only in RAM past the kernel's extent and never in the
+  translation-table pool.  Witness: `tests/SyscallReturnAbiSuite.lean` §12.
+- **Per-thread FP/SIMD state, switched lazily** (`v0.36.22`, WS-BP BP7.9).
+  `TCB.fpContext` (`v0`–`v31`, `FPCR`, `FPSR`) is erased by
+  `projectKernelObject`, and `MachineState.fpOwner` records whose values each
+  core's registers hold.  EC `0x07` from EL0 is `fpAccessOnCore` (entry
+  `lean_handle_fp_access`): the registers' live values are saved into the
+  recorded owner and the trapping thread's **own** context is loaded
+  (`fpAccessOnCore_load_eq_own_context`); a thread whose live values are on
+  another core retries (`fpAccessOnCore_retry_of_owned_elsewhere`).  Every
+  restoring entry releases a switched-out owner between its commit and its
+  restore (`fpReleaseOnCore`, `Concurrency.releaseSwitchedFpOwner`), and the
+  restore lifts the trap exactly while a core resumes its owner
+  (`RestoreTarget.user`'s `fpLive`, restore kind `2`).  The release moves to the
+  switch-out, where seL4's `CONFIG_HAVE_FPU` waits for the next trap, because
+  this kernel's placement is not fixed by affinity.  The destroy path refuses a
+  thread a core's registers still hold (`threadHeldOnSomeCore`).  `FPEN` alone is
+  lifted, so SVE and SME stay trapped.  Witness: `tests/FaultHandlingSuite.lean`
+  §4c.
+- **The boot starts both initial threads, one per domain** (`v0.36.23`, WS-BP
+  BP7.11).  Every configured thread is installed `.Inactive`; the stage after
+  the idle enqueue (`bootFromPlatformCheckedStartedFor`,
+  `Platform/Boot/InitialThreads.lean`) starts each thread
+  `PlatformConfig.initialThreads` names through the kernel model's own start
+  (`startInitialThreadOnCore`: `enqueueRunnableOnCore` preceded by the flag
+  write), dispatching nothing, and refuses the boot at a name it cannot start
+  (`initialThreadStartable`, `unstartableInitialThreadBootError`).  A binding
+  names its labeling's two separation witnesses (`PlatformBinding.initialThreads`,
+  installed by `bindPlatformConfig`), so the witnesses the labeling guard is
+  decided on are threads that run: on the RPi5 the root task on the boot core
+  and the untrusted thread pinned to core 1
+  (`rpi5DeploymentBootStateAt_initialThreadsStarted`).  The proof-layer bundle
+  holds of the started state by the idle boot's own argument over a named shape
+  (`bootStartShape`, `bootToRuntime_invariantBridge_started`), and the full
+  thread-state classification survives every start
+  (`startInitialThreadOnCore_preserves_threadStateConsistent`).  Witness:
+  `tests/Ak9PlatformSuite.lean`.
+
 ### 8.10.3 seL4 Divergence: CNode Intermediate Rights
 `resolveCapAddress` (Operations.lean) does NOT check `Read` rights
 on intermediate CNode capabilities during multi-level CSpace traversal.
@@ -5030,7 +5652,7 @@ Before this cut the mirror carried one of the four refusals, neither write, and 
 differential surface.  Witnessed by `FO-047` / `FO-047b` / `FO-047c`, each refusal
 half paired with a control asserting the live side really refuses.
 `enforcementBoundary` expanded 22→25 entries (3 new `.capabilityOnly` SchedContext
-operations). `frozenOpCoverage_count` increased 12→15.
+operations). `frozenOpCoverage_count` increased 12→15 (it is **18** at `v0.36.38`, counted over `SyscallId.all`, after `.vspaceMap`/`.vspaceUnmap` stopped being claimed on the strength of a read-only lookup).
 
 #### 8.12.6 Invariant Composition & Cross-Subsystem
 3 new cross-subsystem predicates: `schedContextStoreConsistent` (every
@@ -5112,7 +5734,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **196** statements in the family (the
+bound on a post-state across all **210** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
@@ -5656,7 +6278,7 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   set.  The affinity arm's replenish segment follows the thread's **binding** —
   both cores on a reservation, none on the `.unbound` path — and every empty
   segment is a theorem
-  (`resumeThreadOnCoreLive_replenishQueueOnCore`,
+  (`resumeThreadOnCore_replenishQueueOnCore`,
   `setPriorityOnCore_replenishQueueOnCore`,
   `setMCPriorityOnCore_replenishQueueOnCore`,
   `setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context`) against
@@ -7869,7 +8491,7 @@ a decided equality can never be read as observable equality.
 > the composed `.replyRecv` — each of which wakes a thread on a remote home core.
 > All three now have a write set, a confinement lemma and a non-interference
 > instantiation, taking the cross-core inventory to twenty-one (fourteen live arms) — later rounds
-> have taken it to thirty transitions and twenty-two live arms, per the current
+> have taken it to thirty-one transitions and twenty-three live arms, per the current
 > `crossCoreNiTheorem_count` / `crossCoreTransitionIsLiveArm_count` (§2's
 > machine-checked inventory supersedes narrative figures); the live `.call` arm
 > is bounded in its own right; the accepted-covert-channel classification is tied
