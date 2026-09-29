@@ -1687,6 +1687,32 @@ theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
     (cspaceRevokeCdt_preserves_objects_invExt st st1 addr pages hObjInv hInv hR)
     (cspaceRevokeCdt_preserves_ipcInvariantFull st st1 addr pages hObjInv hInv hR) hF).1
 
+/-- **PR #904 review (`v0.36.41`): the mapping-epoch tag preserves the bundle** —
+it stores back one VSpace root and one frame, both kinds the bundle never reads. -/
+theorem tagFrameMapping_preserves_ipcInvariantFull
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (frameId : SeLe4n.ObjId)
+    (st st' : SystemState) (e : Nat)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : tagFrameMapping asid vaddr frameId st = .ok (e, st')) :
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
+  obtain ⟨f, rootId, root, st1, hF, hR, -, h1, h2⟩ :=
+    tagFrameMapping_ok asid vaddr frameId st st' e hStep
+  have hRootPre := (Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hR).2.1
+  have hFramePre := (SystemState.getFrame?_eq_some_iff st frameId f).mp hF
+  have hInv1Obj := storeObject_preserves_objects_invExt st st1 _ _ hObjInv h1
+  have hInv1 := storeObject_inertNonCNode_preserves_ipcInvariantFull st st1 rootId
+    (.vspaceRoot { root with mappingEpochs := root.mappingEpochs.insert vaddr f.mapEpoch })
+    hObjInv hInv (Or.inr (by rw [hRootPre]; trivial)) trivial
+    (fun cn h => KernelObject.noConfusion h) h1
+  have hNe : frameId ≠ rootId := by
+    intro hEq; rw [hEq, hRootPre] at hFramePre; cases hFramePre
+  have hFrame1 : st1.objects[frameId]? = some (.frame f) := by
+    rw [storeObject_objects_ne st st1 _ _ _ hNe hObjInv h1]; exact hFramePre
+  exact ⟨storeObject_inertNonCNode_preserves_ipcInvariantFull st1 st' frameId
+      (.frame { f with mapEpoch := f.mapEpoch + 1 }) hInv1Obj hInv1 (Or.inr (by rw [hFrame1]; trivial)) trivial
+      (fun cn h => KernelObject.noConfusion h) h2,
+    storeObject_preserves_objects_invExt st1 st' _ _ hInv1Obj h2⟩
+
 /-- **The mapping record `.vspaceMap` writes preserves the bundle**: one CNode is
 stored back with one capability's `mapping` field set, and the badge — the only
 thing the bundle reads of a capability — is the one it had. -/
@@ -3421,6 +3447,11 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
       `tcbDescheduled` beside it, one piece of per-core state further. -/
   tcbFpReleased : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ c : CoreId, st.machine.fpOwnerOnCore c ≠ some t.tid
+  /-- **PR #904 review (`v0.36.41`)**: and no core's registers hold the thread
+      as their resident EL0 context — the residency sibling of
+      `tcbFpReleased`, refused by the same guard for the same reason. -/
+  tcbResidencyReleased : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
+    ∀ c : CoreId, st.machine.residentOnCore c ≠ some t.tid
   blockedRefsAvoid : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
     tcb.ipcState ≠ .blockedOnSend target ∧ tcb.ipcState ≠ .blockedOnReceive target ∧
@@ -4361,7 +4392,7 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
     (hDet : retypeTargetDetached st target)
     (hStep : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean) :
     stClean.objects = st.objects ∧ stClean.scheduler = st.scheduler ∧
-      stClean.machine.fpOwner = st.machine.fpOwner := by
+      stClean.machine = st.machine := by
   unfold lifecyclePreRetypeCleanup at hStep
   cases currentObj with
   | tcb tcb =>
@@ -4373,7 +4404,10 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
           exact (hDet.tcbDescheduled tcb hObj c).2
         have hF : st.machine.fpOwnedOnSomeCore tcb.tid = false :=
           (MachineState.fpOwnedOnSomeCore_eq_false_iff _ _).mpr (hDet.tcbFpReleased tcb hObj)
-        simp [threadHeldOnSomeCore, hC, hF]
+        have hR : st.machine.residentOnSomeCore tcb.tid = false :=
+          (MachineState.residentOnSomeCore_eq_false_iff _ _).mpr
+            (hDet.tcbResidencyReleased tcb hObj)
+        simp [threadHeldOnSomeCore, hC, hF, hR]
       -- `v0.35.164`: the pack puts the target on the identity arm of the destroy
       -- path's reservation dispatcher — neither `.donated` nor `.bound`.
       have hB : tcb.schedContextBinding = .unbound := by
@@ -4438,6 +4472,7 @@ private theorem retypeTargetDetached_of_objects_scheduler_eq
     {st st2 : SystemState} {target : SeLe4n.ObjId}
     (hObjs : st2.objects = st.objects) (hSched : st2.scheduler = st.scheduler)
     (hFpOwner : st2.machine.fpOwner = st.machine.fpOwner)
+    (hResident : st2.machine.resident = st.machine.resident)
     (hDet : retypeTargetDetached st target) : retypeTargetDetached st2 target := by
   constructor
   · intro sc; rw [hObjs]; exact hDet.notSc sc
@@ -4458,6 +4493,10 @@ private theorem retypeTargetDetached_of_objects_scheduler_eq
   · intro t hT c; rw [hObjs] at hT
     show st2.machine.fpOwner.get c ≠ some t.tid
     rw [hFpOwner]; exact hDet.tcbFpReleased t hT c
+  -- PR #904 review (`v0.36.41`): and the residency clause on its own table.
+  · intro t hT c; rw [hObjs] at hT
+    show st2.machine.resident.get c ≠ some t.tid
+    rw [hResident]; exact hDet.tcbResidencyReleased t hT c
   · intro tid tcb hT; rw [hObjs] at hT; exact hDet.blockedRefsAvoid tid tcb hT
   · intro a tcbA b hA hN; rw [hObjs] at hA; exact hDet.notQueueLinked a tcbA b hA hN
   · intro b tcbB a hB hP; rw [hObjs] at hB; exact hDet.notPrevLinked b tcbB a hB hP
@@ -4530,7 +4569,9 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull
             exact lifecycleRetypeDirect_preserves_ipcInvariantFull _ st' authCap target newObj
               (hSO ▸ hObjInv)
               hFresh
-              (retypeTargetDetached_of_objects_scheduler_eq hSO hSS hCF hDet)
+              (retypeTargetDetached_of_objects_scheduler_eq hSO hSS
+                (show stClean.machine.fpOwner = st.machine.fpOwner by rw [hCF])
+                (show stClean.machine.resident = st.machine.resident by rw [hCF]) hDet)
               (ipcInvariantFull_of_objects_scheduler_eq hSO hSS hInv)
               hStep
 

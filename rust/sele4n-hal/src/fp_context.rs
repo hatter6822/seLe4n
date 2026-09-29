@@ -176,7 +176,13 @@ pub fn stage_word(index: u32, value: u64) {
 }
 
 /// **WS-BP BP7.9**: load the executing PE's staged context into its FP/SIMD
-/// registers and lift the trap (`Platform.FFI.ffiFpLoadCommit`).
+/// registers (`Platform.FFI.ffiFpLoadCommit`).
+///
+/// **PR #904 (`v0.36.41`)**: the trap is **re-armed** after the load.  The load
+/// routine lifts it to reach the registers, and leaving it lifted made the
+/// thread's FP state live before the restore commit decided whether the core
+/// resumes that thread; the commit lifts it for a resume of the owner
+/// ([`set_trap_for_resume`]), so the trap and the frame are set by one step.
 pub fn load_commit() {
     let Some(buf) = LOAD.get(core_index()) else {
         crate::gic::halt_all();
@@ -190,6 +196,7 @@ pub fn load_commit() {
     }
     #[cfg(not(all(feature = "hw_target", target_arch = "aarch64")))]
     let _ = buf;
+    set_trap_for_resume(false);
 }
 
 /// **WS-BP BP7.9**: word `index` of the executing PE's staged load — the

@@ -534,6 +534,15 @@ def saveCapturedTrapFrameAt (st : SeLe4n.Model.SystemState) (coreId : UInt64)
   | some c => Architecture.saveCapturedTrapFrame st c frame
   | none => st
 
+/-- **PR #904 review (`v0.36.41`)**: `saveCapturedTrapFrameAt` for an entry whose
+exception is an `SVC` — a vacated core's frame is rewound to the `SVC`
+(`Architecture.saveCapturedSyscallFrame`), so the resident thread re-issues it. -/
+def saveCapturedSyscallFrameAt (st : SeLe4n.Model.SystemState) (coreId : UInt64)
+    (frame : Option SeLe4n.RegisterFile) : SeLe4n.Model.SystemState :=
+  match coreIdOfUInt64? coreId with
+  | some c => Architecture.saveCapturedSyscallFrame st c frame
+  | none => st
+
 /-- **WS-BP BP7.4**: what the core a per-core entry's raw id names resumes —
 nothing when the id names no core. -/
 def restoreTargetAt (st : SeLe4n.Model.SystemState) (coreId : UInt64) :

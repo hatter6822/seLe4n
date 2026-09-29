@@ -96,16 +96,18 @@ pub fn mask_marks(mask: u8, core_id: usize) -> bool {
     core_id < 8 && mask & (1 << core_id) != 0
 }
 
-/// Bytes of one PE's kernel stack: `link.ld`'s `.stack` for the boot core and
-/// each of the three `.smp_stacks` slots `boot.S::secondary_entry` hands a
-/// secondary (`__smp_secondary_stack_top - (context_id - 1) * 64 KiB`).
-pub const CORE_STACK_BYTES: usize = 0x1_0000;
+/// The stride between the `.smp_stacks` slots `boot.S::secondary_entry`
+/// hands a secondary (`__smp_secondary_stack_top - (context_id - 1) * 128
+/// KiB`).  PR #904 (`v0.36.41`): each slot's lowest page is an unmapped guard,
+/// so a secondary's stack is the slot less that page.
+pub const CORE_STACK_BYTES: usize = crate::mmu::SECONDARY_STACK_STRIDE as usize;
 
 /// The stack `core_id` must be running on, as `(lowest, highest)` addresses.
 ///
 /// Core 0 runs on the boot stack `[boot_stack.0, boot_stack.1)`; secondary `c`
-/// on the slot `boot.S` computes, which is the `c`-th 64 KiB region *below*
-/// `secondary_stack_top`.  `None` for a core the image has no stack for.
+/// on the slot `boot.S` computes, which is the `c`-th 128 KiB region *below*
+/// `secondary_stack_top` above its guard page.  `None` for a core the image has
+/// no stack for.
 #[must_use]
 pub fn own_stack_extent(
     core_id: usize,
@@ -116,7 +118,9 @@ pub fn own_stack_extent(
         0 => Some(boot_stack),
         c if c <= crate::smp::MAX_SECONDARY_CORES => {
             let hi = secondary_stack_top.checked_sub((c - 1) * CORE_STACK_BYTES)?;
-            let lo = hi.checked_sub(CORE_STACK_BYTES)?;
+            let lo = hi
+                .checked_sub(CORE_STACK_BYTES)?
+                .checked_add(crate::mmu::STACK_GUARD_SIZE as usize)?;
             Some((lo, hi))
         }
         _ => None,
@@ -436,7 +440,7 @@ mod tests {
     // ---------------------------------------------------------------
 
     const BOOT_STACK: (usize, usize) = (0x10_0000, 0x11_0000);
-    const SECONDARY_TOP: usize = 0x14_0000;
+    const SECONDARY_TOP: usize = 0x17_0000;
 
     fn posture(core: usize) -> CorePosture {
         let own = own_stack_extent(core, BOOT_STACK, SECONDARY_TOP);
@@ -466,14 +470,17 @@ mod tests {
             own_stack_extent(0, BOOT_STACK, SECONDARY_TOP),
             Some(BOOT_STACK)
         );
+        // PR #904: a 128 KiB slot, its lowest page the guard.
+        let guard = crate::mmu::STACK_GUARD_SIZE as usize;
+        assert_eq!(CORE_STACK_BYTES, 0x2_0000);
         assert_eq!(
             own_stack_extent(1, BOOT_STACK, SECONDARY_TOP),
-            Some((SECONDARY_TOP - CORE_STACK_BYTES, SECONDARY_TOP))
+            Some((SECONDARY_TOP - CORE_STACK_BYTES + guard, SECONDARY_TOP))
         );
         assert_eq!(
             own_stack_extent(3, BOOT_STACK, SECONDARY_TOP),
             Some((
-                SECONDARY_TOP - 3 * CORE_STACK_BYTES,
+                SECONDARY_TOP - 3 * CORE_STACK_BYTES + guard,
                 SECONDARY_TOP - 2 * CORE_STACK_BYTES
             ))
         );

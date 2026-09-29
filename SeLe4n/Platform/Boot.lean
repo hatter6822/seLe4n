@@ -926,19 +926,21 @@ theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
   rfl
 
 /-- PR #889 review round 8: a **VSpace root** — an ASID, a virtual-to-physical
-    map, its table's physical base (WS-BP BP7.1 slice 4b) and a lock — holds no
+    map, its table's physical base (WS-BP BP7.1 slice 4b), its tables, its
+    mapping epochs (PR #904 review) and a lock — holds no
     object, thread or scheduling-context id.  The answer is by inspection of the
     constructor's fields, and the pattern fails when a field is added. -/
 def vspaceRootReferencesReservedIdleSlot (vsr : VSpaceRoot) : Bool :=
   match vsr with
-  | ⟨_asid, _mappings, _tableBase, _tables, _lock⟩ => false
+  | ⟨_asid, _mappings, _tableBase, _tables, _mappingEpochs, _lock⟩ => false
 
-/-- **WS-BP BP7.1**: a **frame** — a physical address, a memory kind and a lock —
+/-- **WS-BP BP7.1**: a **frame** — a physical address, a memory kind, a mapping
+    epoch counter (PR #904 review) and a lock —
     holds no object, thread or scheduling-context id.  By inspection of the
     constructor's fields, pinned by arity like the VSpace root above. -/
 def frameReferencesReservedIdleSlot (f : FrameObject) : Bool :=
   match f with
-  | ⟨_base, _isDevice, _lock⟩ => false
+  | ⟨_base, _isDevice, _mapEpoch, _lock⟩ => false
 
 /-- **WS-BP BP7.1 (`v0.36.12`)**: a **page table** holds its physical base, the
     root it is installed in (an object id — which is why it is not `false` by

@@ -1550,6 +1550,109 @@ theorem dispatchVacatedCore_of_vacated (st st' : SystemState) (c : CoreId)
     dispatchVacatedCore st c = st' := by
   simp [dispatchVacatedCore, h, hR]
 
+/-- **PR #904 review (`v0.36.41`): is `tid` still resident on a core other than
+`c`?**  Some other core's registers still hold `tid`'s EL0 context
+(`MachineState.residentOnCore`): that core was vacated remotely and has not yet
+taken the exception that saves the context. -/
+def residentElsewhere (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
+  Concurrency.allCores.any fun c' => c' != c && st.machine.residentOnCore c' == some tid
+
+/-- **PR #904 review (`v0.36.41`): a thread still resident elsewhere is not
+resumed here.**  Its saved context is stale until the core it is resident on
+saves it, and resuming it here would run it on two cores at once; switching it
+out later would also save this core's stale copy over the fresh one.  So the
+core switches to its idle thread instead, which re-enqueues the thread on this
+core's run queue (`switchToThreadOnCore` → `preemptCurrentOnCore`); the next
+scheduling point here selects it again once the other core has saved it.  The
+save that preemption performs writes back the context the switch just loaded,
+so it changes nothing.  Should the switch fail (no idle thread the core admits,
+which the boot rules out), the thread is still taken off the core: re-enqueued
+and the slot cleared, so the property never depends on the idle switch. -/
+def deferResidentElsewhere (st : SystemState) (c : CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | some tid =>
+    if residentElsewhere st c tid then
+      match switchToThreadOnCore st c (idleThreadId c) with
+      | .ok st' => st'
+      | .error _ =>
+        let st1 := preemptCurrentOnCore st c (idleThreadId c)
+        { st1 with scheduler := st1.scheduler.setCurrentOnCore c none }
+    else st
+  | none => st
+
+/-- **PR #904 review (`v0.36.41`): settle what core `c` resumes, and record it.**
+
+The last step of every state-committing entry, after its transition and before
+its restore target is read:
+
+1. a vacated core dispatches a successor (`dispatchVacatedCore`) — every entry,
+   not only the fault and FP/SIMD ones `v0.36.40` gave the rule, since a syscall
+   or a tick on a vacated core would otherwise resume nothing;
+2. a thread still resident on another core is not resumed here
+   (`deferResidentElsewhere`);
+3. the thread the core will resume at EL0 becomes its resident thread
+   (`MachineState.residentOnCore`), and a core resuming its idle loop or nothing
+   holds none — which is what the next exception's save reads when a remote
+   deschedule has emptied the slot (`Architecture.saveVacatedFrameOnCore`). -/
+def settleResidencyOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  let st2 := deferResidentElsewhere (dispatchVacatedCore st c) c
+  let resident : Option SeLe4n.ThreadId :=
+    match Architecture.restoreTargetOnCore st2 c with
+    | .user .. => st2.scheduler.currentOnCore c
+    | _ => none
+  { st2 with machine := st2.machine.setResidentOnCore c resident }
+
+/-- `settleResidencyOnCore` for a per-core entry's raw core id — nothing when the
+id names no core, as the verified steps commit nothing for such an id. -/
+def settleResidencyAt (st : SystemState) (coreId : UInt64) : SystemState :=
+  match Concurrency.coreIdOfUInt64? coreId with
+  | some c => settleResidencyOnCore st c
+  | none => st
+
+/-- **The record is what the core resumes**: after settling, core `c`'s resident
+thread is its current thread exactly when the core resumes a thread at EL0. -/
+theorem settleResidencyOnCore_resident (st : SystemState) (c : CoreId) :
+    (settleResidencyOnCore st c).machine.residentOnCore c =
+      match Architecture.restoreTargetOnCore
+          (deferResidentElsewhere (dispatchVacatedCore st c) c) c with
+      | .user .. => (deferResidentElsewhere (dispatchVacatedCore st c) c).scheduler.currentOnCore c
+      | _ => none := by
+  simp [settleResidencyOnCore]
+
+/-- **No thread runs on two cores**: a non-idle thread the core is left running
+after the deferral is resident on no other core. -/
+theorem deferResidentElsewhere_current_not_elsewhere (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId)
+    (hCur : (deferResidentElsewhere st c).scheduler.currentOnCore c = some tid)
+    (hIdle : isIdleThreadId tid = false) :
+    residentElsewhere st c tid = false := by
+  unfold deferResidentElsewhere at hCur
+  cases hC : st.scheduler.currentOnCore c with
+  | none => rw [hC] at hCur; simp only at hCur; rw [hC] at hCur; cases hCur
+  | some t =>
+    rw [hC] at hCur; simp only at hCur
+    cases hR : residentElsewhere st c t with
+    | false =>
+      rw [hR] at hCur; simp only [Bool.false_eq_true, if_false] at hCur
+      rw [hC] at hCur; cases hCur; exact hR
+    | true =>
+      rw [hR] at hCur; simp only [if_true] at hCur
+      cases hS : switchToThreadOnCore st c (idleThreadId c) with
+      | ok st' =>
+        rw [hS] at hCur; simp only at hCur
+        rw [switchToThreadOnCore_sets_current st c _ st' hS] at hCur
+        cases hCur
+        rw [isIdleThreadId_idleThreadId] at hIdle; cases hIdle
+      | error e =>
+        rw [hS] at hCur; simp at hCur
+
+/-- The settle step writes the scheduler only through the reschedule and the
+switch; the record touches the machine's residency table alone. -/
+theorem settleResidencyOnCore_machine_regs (st : SystemState) (c : CoreId) :
+    (settleResidencyOnCore st c).machine.coreRegs =
+      (deferResidentElsewhere (dispatchVacatedCore st c) c).machine.coreRegs := by
+  simp [settleResidencyOnCore]
+
 -- WS-BP BP7.6 (v0.36.19): `scheduleLocalSuccessorLive` is retired.  It gated the
 -- vacated-core dispatch on the context-restore seam, because a successor the
 -- hardware could not install would have been attributed the next syscall

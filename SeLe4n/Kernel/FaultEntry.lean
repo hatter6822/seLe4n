@@ -347,6 +347,7 @@ def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
     let (sgis, st') :=
       faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
         { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+    let st' := PriorityInheritance.settleResidencyAt st' coreId
     ((sgis,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c)),
@@ -373,10 +374,11 @@ def unknownSyscallEntry (coreId : UInt64) (esr elr spsr far : UInt64)
   let lctx ← Platform.FFI.getKernelLabelingContext
   let frame ← Platform.FFI.captureTrapFrame
   let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
-    let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
+    let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId frame
     let (sgis, st') :=
       unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
         { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+    let st' := PriorityInheritance.settleResidencyAt st' coreId
     ((sgis,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c)),
@@ -442,6 +444,7 @@ def fpAccessEntry (coreId : UInt64) : BaseIO Unit := do
   let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
     let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
     let res := fpAccessEntryStep st coreId live
+    let res := (res.1, PriorityInheritance.settleResidencyAt res.2 coreId)
     ((res.1, Concurrency.restoreTargetAt res.2 coreId,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, res.2.scheduler.currentOnCore c))), res.2))
@@ -462,6 +465,7 @@ theorem fpAccessEntry_def (coreId : UInt64) :
         let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
           let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
           let res := fpAccessEntryStep st coreId live
+          let res := (res.1, PriorityInheritance.settleResidencyAt res.2 coreId)
           ((res.1, Concurrency.restoreTargetAt res.2 coreId,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, res.2.scheduler.currentOnCore c))), res.2))
@@ -532,6 +536,7 @@ theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
           let (sgis, st') :=
             faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
               { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+          let st' := PriorityInheritance.settleResidencyAt st' coreId
           ((sgis,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
@@ -553,10 +558,11 @@ theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
         let lctx ← Platform.FFI.getKernelLabelingContext
         let frame ← Platform.FFI.captureTrapFrame
         let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
-          let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
+          let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId frame
           let (sgis, st') :=
             unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
               { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+          let st' := PriorityInheritance.settleResidencyAt st' coreId
           ((sgis,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),

@@ -7,6 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 import Lean.Elab.Command
+import Lean.Compiler.ImplementedByAttr
 -- Both roots.  `SeLe4n` is the production library — the import closure Lake
 -- compiles into `SeLe4n:static`, and therefore the set of modules whose
 -- `@[export]` can emit a symbol a kernel image links.  `Platform.Staged` pulls
@@ -194,19 +195,71 @@ further can unfold — the first of which must be the entry's own parameter.  Th
 canonical spelling and its reductions; what it refuses is everything else,
 including a re-spelling of the wrapper's body, and it decides in constant time
 on every witness rather than by exhausting a budget. -/
-def isApprovedBootApplication (approvedCall : Name) (value : Expr) : MetaM Bool :=
+def approvedBootArguments? (approvedCall : Name) (value : Expr) :
+    MetaM (Option (Array Expr)) :=
   Meta.lambdaTelescope value fun params body => do
-    let some blob := params[0]? | pure false
-    unless params.size == 1 do return false
+    let some blob := params[0]? | pure none
+    unless params.size == 1 do return none
     match ← Meta.whnfUntil body approvedCall with
-    | none => pure false
+    | none => pure none
     | some reduced =>
         let (args, _, _) ← Meta.forallMetaTelescope (← Meta.inferType (mkConst approvedCall))
         unless ← Meta.withReducible <| Meta.isDefEq reduced (mkAppN (mkConst approvedCall) args) do
-          return false
+          return none
+        let args ← args.mapM instantiateMVars
         -- The blob the wrapper parses is the one the firmware handed over.
-        let some passed := args[0]? | pure false
-        return (← instantiateMVars passed) == blob
+        let some passed := args[0]? | pure none
+        unless passed == blob do return none
+        -- The configuration arguments, closed over the entry's own parameter.
+        return some ((args.extract 1 args.size).map fun a => a.abstract #[blob])
+
+/-- `approvedBootArguments?` as a verdict on the shape alone. -/
+def isApprovedBootApplication (approvedCall : Name) (value : Expr) : MetaM Bool := do
+  return (← approvedBootArguments? approvedCall value).isSome
+
+/-- **PR #904 review (`v0.36.41`): a configuration argument is data in the
+compiled program too.**  The shape check above rests on a type-theoretic fact —
+a term of type `List IrqEntry` performs no effects — and that fact is about the
+*kernel term*.  The compiled program is another matter: an
+`@[implemented_by]` opaque whose implementation is an `unsafeBaseIO` body has
+the type of data and runs arbitrary IO when the image evaluates it, before the
+checked boot.  So every project constant a configuration argument transitively
+reaches — through definition bodies, `opaque` bodies included — must carry no
+`@[implemented_by]`, no `@[extern]` and no `unsafe` definition: those three are
+the whole of the ways a Lean constant's compiled code differs from its kernel
+term.
+
+The walk stays inside the project (`SeLe4n.*` modules and the module being
+elaborated): the toolchain's own `@[extern]` primitives — `Nat.add`,
+`Array.push` — are the runtime the kernel provides and holds to upstream by the
+conformance fixture (WS-BP BP2.2), not configuration.  It is fuel-bounded and
+fails **closed**: an exhausted walk is a violation, never a shorter closure. -/
+def projectConstant (env : Environment) (n : Name) : Bool :=
+  match env.getModuleIdxFor? n with
+  | none => true
+  | some idx => (env.header.moduleNames[idx.toNat]?.map Name.getRoot) == some `SeLe4n
+
+/-- The first project constant in `roots`' transitive closure whose compiled
+code is not its kernel term, `.inr` on an exhausted walk, `.inl none` when there
+is none. -/
+def compiledEffectConstant (env : Environment) (roots : Array Expr)
+    (fuel : Nat := 400000) : Option Name ⊕ Unit := Id.run do
+  let mut stack : Array Name := roots.foldl (fun acc e => acc ++ e.getUsedConstants) #[]
+  let mut seen : NameSet := {}
+  let mut fuel := fuel
+  while !stack.isEmpty do
+    if fuel == 0 then return .inr ()
+    fuel := fuel - 1
+    let n := stack.back!
+    stack := stack.pop
+    if seen.contains n || !projectConstant env n then continue
+    seen := seen.insert n
+    let some ci := env.find? n | continue
+    if (Lean.Compiler.getImplementedBy? env n).isSome || isExtern env n || ci.isUnsafe then
+      return .inl (some n)
+    if let some v := ci.value? (allowOpaque := true) then
+      stack := stack ++ v.getUsedConstants
+  return .inl none
 
 
 /-- The type the exported entry must have.
@@ -236,8 +289,17 @@ def bootEntryContractViolations (spec : BootEntrySpec) (entry : Name) : MetaM (L
     | none => pure [s!"`{entry}` is not a declaration of this environment"]
   let shaped ← match declarationValue env entry with
     | some value =>
-        if ← isApprovedBootApplication spec.approvedCall value then pure []
-        else pure [s!"`{entry}` is not `{spec.approvedCall}` applied to its own device-tree \
+        match ← approvedBootArguments? spec.approvedCall value with
+        | some args =>
+            match compiledEffectConstant env args with
+            | .inl none => pure []
+            | .inl (some n) => pure [s!"`{entry}`'s configuration reaches `{n}`, whose \
+                compiled code is not its kernel term (`@[implemented_by]`, `@[extern]` or \
+                `unsafe`) — a configuration argument is data only if it is data in the \
+                compiled program too, or it runs effects before the checked boot"]
+            | .inr () => pure [s!"`{entry}`'s configuration closure exhausted the walk's \
+                fuel; it is refused rather than read as clean"]
+        | none => pure [s!"`{entry}` is not `{spec.approvedCall}` applied to its own device-tree \
                       argument and a configuration.  The hardware boot entry must *be* that \
                       application — the device-tree boot with its failure handled, so a foreign \
                       board or a refused boot parks every PE instead of \
@@ -431,6 +493,29 @@ receive — refused under the `virt` entry for the reason
 private def bootEntryWitnessQemuVirtFixedBlob (_dtb : ByteArray) : BaseIO Unit :=
   Platform.QemuVirt.bootAndInitialiseQemuVirtFromDtbOrHalt ByteArray.empty [] [] none
 
+/-! PR #904 review (`v0.36.41`): the configuration arguments' compiled closure.
+`bootEntryWitnessEffectfulTable` has the type of data and the compiled code of
+an effect — an `@[implemented_by]` whose implementation parks every PE — so the
+entry that passes it is the approved shape with a program hidden in an
+argument.  `bootEntryWitnessDataTable` is the CONTROL: a project constant that
+is data in both readings, which must be accepted, or the refusal would be a
+statement about project constants rather than about compiled effects. -/
+private unsafe def bootEntryWitnessEffectfulTableImpl : List Platform.Boot.IrqEntry :=
+  unsafeBaseIO (do Platform.FFI.ffiFatalHaltAll; pure [])
+
+@[implemented_by bootEntryWitnessEffectfulTableImpl]
+private opaque bootEntryWitnessEffectfulTable : List Platform.Boot.IrqEntry
+
+private def bootEntryWitnessEffectfulConfig (dtb : ByteArray) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb bootEntryWitnessEffectfulTable
+    (fun _ => []) none
+
+private def bootEntryWitnessDataTable : List Platform.Boot.IrqEntry := []
+
+private def bootEntryWitnessDataConfig (dtb : ByteArray) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb bootEntryWitnessDataTable
+    (fun _ => []) none
+
 run_cmd Command.liftTermElabM do
   let env ← getEnv
   -- The environment is the production one.  A witness cannot pin this — the
@@ -452,7 +537,7 @@ run_cmd Command.liftTermElabM do
   -- Accepted: the required program, however it is spelled.  Without these the
   -- contract could be refusing everything and read exactly the same.
   for witness in [``bootEntryWitnessCompliant, ``bootEntryWitnessLetBoundConfig,
-                  ``bootEntryWitnessAliasedBoot] do
+                  ``bootEntryWitnessAliasedBoot, ``bootEntryWitnessDataConfig] do
     let violations ← bootEntryContractViolations rpi5BootEntry witness
     unless violations.isEmpty do
       throwError "boot-entry contract: the compliant witness `{witness}` was refused: \
@@ -465,7 +550,7 @@ run_cmd Command.liftTermElabM do
                   ``bootEntryWitnessAliasHaltedFirst, ``bootEntryWitnessSequenced,
                   ``bootEntryWitnessLetBoundHalt, ``bootEntryWitnessFixedBlob,
                   ``bootEntryWitnessEditedBlob, ``bootEntryWitnessRetiredCall,
-                  ``bootEntryWitnessQemuVirtCompliant] do
+                  ``bootEntryWitnessQemuVirtCompliant, ``bootEntryWitnessEffectfulConfig] do
     if (← bootEntryContractViolations rpi5BootEntry witness).isEmpty then
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted"
   -- WS-BP BP8.1: the `virt` entry — its own shape accepted, and the RPi5

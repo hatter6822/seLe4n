@@ -369,6 +369,16 @@ pub fn restore_stage_word_in(
     Ok(())
 }
 
+/// **PR #904 (`v0.36.41`)**: where an idle restore resumes — the idle loop's
+/// address, and the SP_EL0 an EL1 frame carries (the PE's fault stack top).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IdleResume {
+    /// The idle loop's address, `ELR_EL1` of the idle frame.
+    pub pc: u64,
+    /// The PE's fault stack top, `SP_EL0` of the idle frame.
+    pub sp_el0: u64,
+}
+
 /// **WS-BP BP7.4: commit a staged resume into the frame the handler will
 /// `eret` through** (the testable form).  `Ok(false)` when no frame is
 /// published on `core` — the entry was not reached from a trap, and there is
@@ -377,7 +387,8 @@ pub fn restore_stage_word_in(
 /// (WS-BP BP8.1, [`IdleHandoffFlags`]); `Ok(true)` when the frame was replaced and
 /// `restored[core]` set.  A user resume copies the staged words with
 /// `SPSR_EL1` sanitised ([`sanitise_user_spsr`]); an idle resume clears the
-/// general-purpose registers and `SP_EL0` and aims `ELR_EL1` at `idle_pc`.
+/// general-purpose registers, sets `SP_EL0` to `idle.sp_el0` and aims
+/// `ELR_EL1` at `idle.pc`.
 /// The syndrome words are the trap's and are left alone.
 pub fn restore_commit_in(
     slots: &InFlightSlots,
@@ -386,7 +397,7 @@ pub fn restore_commit_in(
     handoff: &IdleHandoffFlags,
     core: usize,
     kind: u32,
-    idle_pc: u64,
+    idle: IdleResume,
 ) -> Result<bool, RestoreRefusal> {
     if kind != RESTORE_KIND_USER && kind != RESTORE_KIND_IDLE && kind != RESTORE_KIND_USER_FP_LIVE {
         return Err(RestoreRefusal::UnknownKind);
@@ -422,8 +433,11 @@ pub fn restore_commit_in(
         frame.tpidr_el0 = word(34);
     } else {
         frame.gprs = [0; 31];
-        frame.sp_el0 = 0;
-        frame.elr_el1 = idle_pc;
+        // PR #904 (`v0.36.41`): the idle loop runs at EL1, where every PE
+        // holds SP_EL0 at its fault stack's top (`vectors.S` 0x200 switches to
+        // it), so the idle frame carries that value rather than a thread's.
+        frame.sp_el0 = idle.sp_el0;
+        frame.elr_el1 = idle.pc;
         frame.spsr_el1 = IDLE_SPSR;
         // The idle loop reads no thread pointer; clearing it leaves no thread's
         // value in the core while it waits.
@@ -431,6 +445,27 @@ pub fn restore_commit_in(
     }
     flag.store(true, Ordering::Relaxed);
     Ok(true)
+}
+
+/// **PR #904 (`v0.36.41`)**: the top of `core`'s fault stack,
+/// `__fault_stacks_bottom + (core + 1) * FAULT_STACK_SIZE` — the value SP_EL0
+/// holds while the PE runs at EL1 (`boot.S`, `trap.S`'s `set_fault_stack`),
+/// so an idle frame, which resumes at EL1, carries it.  The host has no link
+/// script and answers `0`.
+#[must_use]
+pub fn fault_stack_top(core: usize) -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" {
+            static __fault_stacks_bottom: u8;
+        }
+        (&raw const __fault_stacks_bottom as u64) + (core as u64 + 1) * crate::mmu::FAULT_STACK_SIZE
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = core;
+        0
+    }
 }
 
 /// **WS-BP BP7.4**: take (and clear) `core`'s restored flag — whether the
@@ -455,7 +490,20 @@ pub fn restore_stage_word(index: u32, value: u64) -> Result<(), RestoreRefusal> 
 /// [`RESTORE_KIND_USER_FP_LIVE`], armed for every other kind — once the frame
 /// is replaced, so the trap and the frame the handler `eret`s through always
 /// describe the same thread.
-pub fn restore_commit(kind: u32) -> Result<bool, RestoreRefusal> {
+///
+/// **PR #904 (`v0.36.41`)**: the resumed thread's translation is installed
+/// here, **after** the frame is replaced and only if it was.  A commit that
+/// declines — no frame published (a secondary's first reschedule), or an EL1
+/// frame on a core that has not handed itself to the idle wait — leaves
+/// `TTBR0_EL1` and the FP/SIMD trap as the kernel had them, so a core that
+/// continues its bring-up never does so under a thread's address space or with
+/// the trap lifted.  Before this the Lean restore installed the translation
+/// first and committed second, and the order rested on two facts standing in
+/// for it (every user root carries the kernel window; the kernel is FP-free).
+pub fn restore_commit(
+    kind: u32,
+    translation: crate::user_translation::Translation,
+) -> Result<bool, RestoreRefusal> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let replaced = restore_commit_in(
         &IN_FLIGHT_FRAMES,
@@ -464,9 +512,13 @@ pub fn restore_commit(kind: u32) -> Result<bool, RestoreRefusal> {
         &IDLE_HANDOFF,
         core,
         kind,
-        kernel_idle_loop as *const () as usize as u64,
+        IdleResume {
+            pc: kernel_idle_loop as *const () as usize as u64,
+            sp_el0: fault_stack_top(core),
+        },
     )?;
     if replaced {
+        crate::user_translation::install_translation(translation);
         crate::fp_context::set_trap_for_resume(kind == RESTORE_KIND_USER_FP_LIVE);
         if kind == RESTORE_KIND_IDLE {
             note_idle_dispatch_in(&FIRST_IDLE, core);
@@ -1735,6 +1787,17 @@ extern crate std;
 mod tests {
     use super::*;
 
+    /// A fault stack top for the restore tests (PR #904).
+    const FAULT_STACK_TOP: u64 = 0x7F_0000;
+
+    /// An idle resume at `pc` for the restore tests.
+    fn idle(pc: u64) -> IdleResume {
+        IdleResume {
+            pc,
+            sp_el0: FAULT_STACK_TOP,
+        }
+    }
+
     /// WS-BP BP7.3: the context words are the frame's fields in order, and
     /// the trap's own syndrome registers are not part of a thread's context.
     #[test]
@@ -1843,7 +1906,7 @@ mod tests {
                     &handoff,
                     2,
                     RESTORE_KIND_USER,
-                    0x4242
+                    idle(0x4242),
                 ),
                 Ok(true)
             );
@@ -1885,7 +1948,7 @@ mod tests {
             {
                 let _g = InFlightFrame::publish_in(&slots, 0, &mut frame);
                 assert_eq!(
-                    restore_commit_in(&slots, &staging, &restored, &handoff, 0, kind, 0),
+                    restore_commit_in(&slots, &staging, &restored, &handoff, 0, kind, idle(0),),
                     Ok(true)
                 );
             }
@@ -1921,13 +1984,14 @@ mod tests {
                     &handoff,
                     0,
                     RESTORE_KIND_IDLE,
-                    0x8_1234
+                    idle(0x8_1234),
                 ),
                 Ok(true)
             );
         }
         assert_eq!(frame.gprs, [0; 31]);
-        assert_eq!(frame.sp_el0, 0);
+        // PR #904: the idle loop runs at EL1 with SP_EL0 at the fault stack.
+        assert_eq!(frame.sp_el0, FAULT_STACK_TOP);
         assert_eq!(frame.elr_el1, 0x8_1234);
         assert_eq!(frame.spsr_el1, IDLE_SPSR);
         assert_eq!(frame.tpidr_el0, 0, "an idle core keeps no thread's pointer");
@@ -1948,7 +2012,7 @@ mod tests {
                 &handoff,
                 1,
                 RESTORE_KIND_USER,
-                0
+                idle(0),
             ),
             Ok(false)
         );
@@ -1963,12 +2027,12 @@ mod tests {
                 &handoff,
                 1,
                 RESTORE_KIND_USER_FP_LIVE,
-                0
+                idle(0),
             ),
             Ok(false)
         );
         assert_eq!(
-            restore_commit_in(&slots, &staging, &restored, &handoff, 1, 3, 0),
+            restore_commit_in(&slots, &staging, &restored, &handoff, 1, 3, idle(0),),
             Err(RestoreRefusal::UnknownKind)
         );
         assert_eq!(
@@ -1987,7 +2051,7 @@ mod tests {
                 &handoff,
                 99,
                 RESTORE_KIND_IDLE,
-                0
+                idle(0),
             ),
             Err(RestoreRefusal::CoreOutOfRange)
         );
@@ -2020,7 +2084,15 @@ mod tests {
             {
                 let _g = InFlightFrame::publish_in(&slots, 1, &mut frame);
                 assert_eq!(
-                    restore_commit_in(&slots, &staging, &restored, &handoff, 1, kind, 0x8_1234),
+                    restore_commit_in(
+                        &slots,
+                        &staging,
+                        &restored,
+                        &handoff,
+                        1,
+                        kind,
+                        idle(0x8_1234),
+                    ),
                     Ok(false),
                     "a bring-up frame is resumed as it stands"
                 );
@@ -2034,7 +2106,15 @@ mod tests {
             {
                 let _g = InFlightFrame::publish_in(&slots, 1, &mut frame);
                 assert_eq!(
-                    restore_commit_in(&slots, &staging, &restored, &handoff, 1, kind, 0x8_1234),
+                    restore_commit_in(
+                        &slots,
+                        &staging,
+                        &restored,
+                        &handoff,
+                        1,
+                        kind,
+                        idle(0x8_1234),
+                    ),
                     Ok(false),
                     "another core's handoff is not this core's"
                 );
@@ -2045,7 +2125,15 @@ mod tests {
             {
                 let _g = InFlightFrame::publish_in(&slots, 1, &mut frame);
                 assert_eq!(
-                    restore_commit_in(&slots, &staging, &restored, &handoff, 1, kind, 0x8_1234),
+                    restore_commit_in(
+                        &slots,
+                        &staging,
+                        &restored,
+                        &handoff,
+                        1,
+                        kind,
+                        idle(0x8_1234),
+                    ),
                     Ok(true),
                     "after the handoff an EL1 frame is the idle loop's"
                 );
@@ -2069,7 +2157,7 @@ mod tests {
                 &handoff,
                 99,
                 RESTORE_KIND_IDLE,
-                0
+                idle(0),
             ),
             Err(RestoreRefusal::CoreOutOfRange)
         );

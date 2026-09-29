@@ -21,7 +21,8 @@ none of that — it reads **descriptors** out of **table pages**.  This module i
 the function between the two: for an address space and a virtual address, which
 entry of which page the walker reads at each level, and what that entry must
 hold.  A transition that changes a mapping or a slot records the one store that
-makes memory agree (`PhysicalWrite.storeDescriptor`), computed here from the
+makes memory agree (`PhysicalWrite.storeDescriptor` for a page,
+`PhysicalWrite.storeTableDescriptor` for a table), computed here from the
 committed state, and the syscall seam performs it.
 
 ## The kernel window
@@ -111,7 +112,7 @@ is not.  `none` when the parent has no page. -/
 def slotStore? (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
     Option PhysicalWrite :=
   (tablePageAt? st root (level - 1) (index >>> 9)).map fun parent =>
-    .storeDescriptor (tableEntryAddress parent index)
+    .storeTableDescriptor (tableEntryAddress parent index)
       (match tablePageAt? st root level index with
        | some base => tableDescriptorValue base
        | none => 0)

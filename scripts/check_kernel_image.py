@@ -253,7 +253,8 @@ def check_image(image: Image, script: Script, table: dict[str, int], undefined: 
 _SCRIPT = Script(0x80000, ((".text.boot", False), (".text.vectors", False),
                           (".text.sele4n_fp_context", False), (".text", False),
                           (".rodata", False), (".data", False), (".bss", True),
-                          (".stack", True), (".smp_stacks", True), (".lean_heap", True),
+                          (".stack", True), (".smp_stacks", True), (".fault_stacks", True),
+                          (".lean_heap", True),
                           (".dtb_window", True), (".boot_table_pool", True)))
 _TABLE = {**_GOOD, "__exception_vectors": 0x80800, "rust_boot_main": 0x80900,
           "secondary_entry": 0x80100, "rust_secondary_main": 0x80a00}
@@ -265,10 +266,11 @@ _IMAGE = Image(ET_EXEC, EM_AARCH64, 0x80000, (
     Section(".rodata", 0x81000, 0x1000, False, False),
     Section(".data", 0x82000, 0x800, False, False),
     Section(".bss", 0x83000, 0x0, True, False),
-    Section(".stack", 0x83000, 0xE000, True, False),
-    Section(".smp_stacks", 0x91000, 0x30000, True, False),
-    Section(".lean_heap", 0xC2000, 0x400_0000, True, False),
-    Section(".dtb_window", 0x40C2000, 0x20_0000, True, False),
+    Section(".stack", 0x83000, 0x11000, True, False),
+    Section(".smp_stacks", 0x94000, 0x60000, True, False),
+    Section(".fault_stacks", 0xF4000, 0x10000, True, False),
+    Section(".lean_heap", 0x104000, 0x400_0000, True, False),
+    Section(".dtb_window", 0x4104000, 0x20_0000, True, False),
     Section(".boot_table_pool", 0xFFF_0000, 0x1_0000, True, False),
 ))
 

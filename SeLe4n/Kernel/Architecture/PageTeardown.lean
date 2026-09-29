@@ -51,12 +51,135 @@ open SeLe4n.Model
 -- ============================================================================
 
 /-- **Is this page still mapped where it says?**  The address space the ASID
-resolves to maps the virtual address, and the translation names this physical
-page. -/
+resolves to maps the virtual address, the translation names this physical page,
+and — for a page a capability's record names — the address space's entry
+carries the record's mapping epoch (`VSpaceRoot.mappingEpochs`).
+
+The epoch clause is what makes a record identify *its own* mapping (PR #904
+review, `v0.36.41`).  Without it, a record gone stale matched any later
+translation of the same frame at the same address: an address space destroyed
+by an untyped reset releases its ASID, a later carve may be handed that ASID,
+and another capability to the frame may map it there — deleting the stale
+capability then removed a mapping it never made.  The same held inside one
+address space after an unmap through the address-space capability.  A page read
+off an address space itself (`epoch = none`) is removed whatever made it. -/
 def mappedPageLive (st : SystemState) (p : MappedPage) : Bool :=
   match Architecture.resolveAsidRoot st p.asid with
-  | some (_, root) => ((root.lookup p.vaddr).map Prod.fst) == some p.paddr
+  | some (_, root) =>
+    ((root.lookup p.vaddr).map Prod.fst) == some p.paddr &&
+      match p.epoch with
+      | none => true
+      | some e => root.mappingEpochs[p.vaddr]? == some e
   | none => false
+
+/-- **PR #904 review (`v0.36.41`): give a capability's new mapping its epoch.**
+The frame's current `mapEpoch` is written beside the translation in the address
+space the ASID resolves to (`VSpaceRoot.mappingEpochs`), the frame's counter
+advances, and the epoch is returned for the capability's record.  Run by
+`.vspaceMap` right after the translation is installed, so the address space
+resolves (a failure is `.illegalState`, never a partial tag). -/
+def tagFrameMapping (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (frameId : SeLe4n.ObjId) : Kernel Nat :=
+  fun st =>
+    match st.getFrame? frameId, Architecture.resolveAsidRoot st asid with
+    | some f, some (rootId, root) =>
+      match storeObject rootId
+          (.vspaceRoot { root with mappingEpochs := root.mappingEpochs.insert vaddr f.mapEpoch })
+          st with
+      | .error e => .error e
+      | .ok ((), st1) =>
+        match storeObject frameId (.frame { f with mapEpoch := f.mapEpoch + 1 }) st1 with
+        | .error e => .error e
+        | .ok ((), st2) => .ok (f.mapEpoch, st2)
+    | _, _ => .error .illegalState
+
+/-- **The tag, decomposed**: the frame and the address space resolved, the epoch
+handed back is the frame's counter before the step, and the step is those two
+stores in that order. -/
+theorem tagFrameMapping_ok (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (frameId : SeLe4n.ObjId) (st st' : SystemState) (e : Nat)
+    (h : tagFrameMapping asid vaddr frameId st = .ok (e, st')) :
+    ∃ (f : FrameObject) (rootId : SeLe4n.ObjId) (root : VSpaceRoot) (st1 : SystemState),
+      st.getFrame? frameId = some f ∧
+      Architecture.resolveAsidRoot st asid = some (rootId, root) ∧
+      e = f.mapEpoch ∧
+      storeObject rootId
+        (.vspaceRoot { root with mappingEpochs := root.mappingEpochs.insert vaddr f.mapEpoch })
+        st = .ok ((), st1) ∧
+      storeObject frameId (.frame { f with mapEpoch := f.mapEpoch + 1 }) st1
+        = .ok ((), st') := by
+  unfold tagFrameMapping at h
+  cases hF : st.getFrame? frameId with
+  | none => rw [hF] at h; cases h
+  | some f =>
+    cases hR : Architecture.resolveAsidRoot st asid with
+    | none => rw [hF, hR] at h; cases h
+    | some pr =>
+      obtain ⟨rootId, root⟩ := pr
+      rw [hF, hR] at h
+      simp only at h
+      cases h1 : storeObject rootId
+          (.vspaceRoot { root with mappingEpochs := root.mappingEpochs.insert vaddr f.mapEpoch })
+          st with
+      | error err => rw [h1] at h; cases h
+      | ok p1 =>
+        obtain ⟨u, st1⟩ := p1; cases u
+        rw [h1] at h
+        simp only at h
+        cases h2 : storeObject frameId (.frame { f with mapEpoch := f.mapEpoch + 1 }) st1 with
+        | error err => rw [h2] at h; cases h
+        | ok p2 =>
+          obtain ⟨u, st2⟩ := p2; cases u
+          rw [h2] at h
+          simp only [Except.ok.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, rfl⟩ := h
+          exact ⟨f, rootId, root, st1, rfl, rfl, rfl, h1, h2⟩
+
+/-- The tag writes neither the scheduler nor the machine — two object stores. -/
+theorem tagFrameMapping_scheduler_machine (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (frameId : SeLe4n.ObjId) (st st' : SystemState) (e : Nat)
+    (h : tagFrameMapping asid vaddr frameId st = .ok (e, st')) :
+    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
+  obtain ⟨_, _, _, st1, -, -, -, h1, h2⟩ := tagFrameMapping_ok asid vaddr frameId st st' e h
+  exact ⟨by rw [storeObject_scheduler_eq st1 st' _ _ h2, storeObject_scheduler_eq st st1 _ _ h1],
+    by rw [storeObject_machine_eq st1 st' _ _ h2, storeObject_machine_eq st st1 _ _ h1]⟩
+
+/-- **What the tag can change**: the scheduler and the machine are untouched, the
+object store stays well-formed, and at every key the object is unchanged, or a
+VSpace root on both sides, or a frame on both sides — so a CNode, a TCB and every
+other kind survive it exactly. -/
+theorem tagFrameMapping_ok_frame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (frameId : SeLe4n.ObjId) (st st' : SystemState) (e : Nat)
+    (hObjInv : st.objects.invExt)
+    (h : tagFrameMapping asid vaddr frameId st = .ok (e, st')) :
+    st'.objects.invExt ∧ st'.scheduler = st.scheduler ∧ st'.machine = st.machine ∧
+    ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+      ((∃ r, st.objects[oid]? = some (.vspaceRoot r)) ∧
+        (∃ r', st'.objects[oid]? = some (.vspaceRoot r'))) ∨
+      ((∃ g, st.objects[oid]? = some (.frame g)) ∧
+        (∃ g', st'.objects[oid]? = some (.frame g'))) := by
+  obtain ⟨f, rootId, root, st1, hF, hR, -, h1, h2⟩ :=
+    tagFrameMapping_ok asid vaddr frameId st st' e h
+  have hInv1 := storeObject_preserves_objects_invExt st st1 _ _ hObjInv h1
+  have hInv2 := storeObject_preserves_objects_invExt st1 st' _ _ hInv1 h2
+  have hRootPre := (Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hR).2.1
+  have hFramePre := (SystemState.getFrame?_eq_some_iff st frameId f).mp hF
+  have hNe : frameId ≠ rootId := by
+    intro hEq; rw [hEq, hRootPre] at hFramePre; cases hFramePre
+  refine ⟨hInv2, ?_, ?_, ?_⟩
+  · rw [storeObject_scheduler_eq st1 st' _ _ h2, storeObject_scheduler_eq st st1 _ _ h1]
+  · rw [storeObject_machine_eq st1 st' _ _ h2, storeObject_machine_eq st st1 _ _ h1]
+  · intro oid
+    by_cases hF' : oid = frameId
+    · subst hF'
+      refine Or.inr (Or.inr ⟨⟨f, hFramePre⟩, ⟨_, storeObject_objects_eq st1 st' _ _ hInv1 h2⟩⟩)
+    · by_cases hR' : oid = rootId
+      · subst hR'
+        rw [storeObject_objects_ne st1 st' _ _ _ hF' hInv1 h2]
+        exact Or.inr (Or.inl ⟨⟨root, hRootPre⟩, ⟨_, storeObject_objects_eq st st1 _ _ hObjInv h1⟩⟩)
+      · left
+        rw [storeObject_objects_ne st1 st' _ _ _ hF' hInv1 h2,
+          storeObject_objects_ne st st1 _ _ _ hR' hObjInv h1]
 
 /-- **Remove each listed page that is still live**, in order, through the
 verified unmap, stopping at the first failure.  A page no longer live is

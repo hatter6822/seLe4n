@@ -17,6 +17,7 @@ import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Platform.FFI
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.SchedLockBracket
 
 /-!
@@ -153,6 +154,7 @@ def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit := do
   let record ← Platform.FFI.modifyGetKernelState (fun st =>
     let st' := (rescheduleUnderDeclaredLockSet coreId
       (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+      |> (PriorityInheritance.settleResidencyAt · coreId)
     (((Concurrency.coreIdOfUInt64? coreId).map
       (fun c => (c, st'.scheduler.currentOnCore c)),
       Concurrency.restoreTargetAt st' coreId,
@@ -185,6 +187,7 @@ theorem perCoreRescheduleEntry_def (coreId : UInt64) :
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
           let st' := (rescheduleUnderDeclaredLockSet coreId
             (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+      |> (PriorityInheritance.settleResidencyAt · coreId)
           (((Concurrency.coreIdOfUInt64? coreId).map
             (fun c => (c, st'.scheduler.currentOnCore c)),
             Concurrency.restoreTargetAt st' coreId,

@@ -2356,7 +2356,7 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
     (hTid : (witnessTid.toObjId == target) = false) :
     retypeTargetDetached witnessSt3 target := by
   have hTargetEmpty := witnessSt3_lookup_none target hSc hTid
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro sc; rw [hTargetEmpty]; simp
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
@@ -2372,6 +2372,8 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   -- **WS-BP BP7.9**: `tcbFpReleased`, vacuous on the empty slot as well.
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  -- **PR #904 review (`v0.36.41`)**: `tcbResidencyReleased`, likewise vacuous.
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro tid tcb hLk
     obtain ⟨-, rfl⟩ := witnessSt3_tcb_lookup _ _ hLk

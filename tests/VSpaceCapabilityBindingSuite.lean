@@ -860,7 +860,9 @@ private def runResetChecks : IO Unit := do
           ((stReset.objects[SeLe4n.ObjId.ofNat 950]?).isNone &&
            (stReset.objects[SeLe4n.ObjId.ofNat 951]?).isNone)
         assertBool "the device frame, carved from ANOTHER untyped, is untouched"
-          (frameAt stReset 952 == some { base := SeLe4n.PAddr.ofNat carveDevBase, isDevice := true })
+          -- mapped once, at 0x70000, so its mapping epoch has advanced to 1
+          (frameAt stReset 952 == some { base := SeLe4n.PAddr.ofNat carveDevBase, isDevice := true,
+                                         mapEpoch := 1 })
         assertBool "the untyped's watermark and child list are cleared"
           ((stReset.getUntyped? carveUt).map (fun u => (u.watermark, u.children.length))
             == some (0, 0))
@@ -957,8 +959,8 @@ private def runChildUntypedChecks : IO Unit := do
          decodeOwnMap 0x60000 13 permsRWUC] with
     | .error e => assertBool s!"carving a frame from the child and mapping it succeeds (got {repr e})" false
     | .ok st2 => do
-      assertBool "the grandchild frame is the child's first page"
-        (frameAt st2 971 == some { base := SeLe4n.PAddr.ofNat carveUtBase })
+      assertBool "the grandchild frame is the child's first page (mapped once: epoch 1)"
+        (frameAt st2 971 == some { base := SeLe4n.PAddr.ofNat carveUtBase, mapEpoch := 1 })
       assertBool "and the frame carve zeroed it"
         (SeLe4n.readMem st2.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0)
       assertBool "and it maps"
@@ -1043,6 +1045,23 @@ private def decodeOwnUnmap (vaddr : Nat) : SyscallDecodeResult :=
 private def recordAt (st : SystemState) (slot : Nat) : Option FrameMapping :=
   (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot }).bind
     (·.mapping)
+
+/-- Is the mapping a slot's capability records still its own?  The live reading. -/
+private def recordLive (st : SystemState) (slot : Nat) : Bool :=
+  match SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot } with
+  | some cap => capabilityMappingLive st cap
+  | none => false
+
+/-- The retired reading (before PR #904's review, `v0.36.41`): a record is live
+whenever its ASID still maps its address to its frame's page — the mapping epoch
+ignored.  Spelled here and nowhere else, so the witness can show the difference. -/
+private def retiredRecordLive (st : SystemState) (slot : Nat) : Bool :=
+  match SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot } with
+  | some cap =>
+    match capabilityMappedPage st cap with
+    | some p => mappedPageLive st { p with epoch := none }
+    | none => false
+  | none => false
 
 -- ============================================================================
 -- §5h  `v0.36.9` — a VSpace root is never created in place
@@ -1329,9 +1348,46 @@ private def runFrameFinaliseChecks : IO Unit := do
     match dispatchSyscall (decodeOwnMap 0x62000 slotCarved permsRWUC) carveOwner st4 with
     | .error e => assertBool s!"a capability with a stale record maps again (got {repr e})" false
     | .ok ((), st6) =>
-      assertBool "and the new mapping replaces the stale record"
+      assertBool "and the new mapping replaces the stale record (the frame's second: epoch 1)"
         (recordAt st6 slotCarved
-          == some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x62000 })
+          == some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x62000,
+                    epoch := 1 })
+  -- PR #904 review (`v0.36.41`): the SAME frame remapped at the SAME address,
+  -- through another capability to it, after the address space unmapped the
+  -- first mapping.  A record naming only the ASID, the address and the page
+  -- cannot tell the second mapping from its own; the mapping epoch can.  The
+  -- copy is taken before either mapping (so it carries no record) and is the one
+  -- whose record goes stale — a leaf, so it can be deleted without a revocation.
+  -- The retired reading is computed beside the live one.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
+       decodeCopy slotCarved 15,
+       decodeOwnMap 0x60000 15 permsRWUC,
+       decodeOwnUnmap 0x60000,
+       decodeOwnMap 0x60000 slotCarved permsRWUC] with
+  | .error e => assertBool s!"the same-frame remap setup succeeds (got {repr e})" false
+  | .ok st7 => do
+    let va := SeLe4n.Testing.fixtureUserVAddr 0x60000
+    assertBool "setup: the copy records epoch 0, slot 8 epoch 1, and one translation"
+      (recordAt st7 15 == some { asid := carveAsid, vaddr := va, epoch := 0 } &&
+       recordAt st7 slotCarved == some { asid := carveAsid, vaddr := va, epoch := 1 } &&
+       mappedPaddr st7 carveAsid va == some carveUtBase)
+    assertBool "RETIRED: an ASID/address/page record takes the copy's stale record for live"
+      (retiredRecordLive st7 15)
+    assertBool "LIVE: the epoch says the copy's record is stale and slot 8's is live"
+      (!recordLive st7 15 && recordLive st7 slotCarved)
+    match dispatchSyscall (decodeDelete 15) carveOwner st7 with
+    | .error e => assertBool s!"deleting the stale capability succeeds (got {repr e})" false
+    | .ok ((), st8) => do
+      assertBool "deleting the stale capability leaves the other capability's mapping in place"
+        (mappedPaddr st8 carveAsid va == some carveUtBase)
+      -- (A deleted copy's CDT node keeps slot 8 a derivation parent until a
+      -- revocation, so slot 8 is revoked, then deleted.)
+      match runAll st8 [decodeRevoke slotCarved, decodeDelete slotCarved] with
+      | .error e => assertBool s!"deleting the mapping's own capability succeeds (got {repr e})" false
+      | .ok st9 =>
+        assertBool "and deleting the capability that made the mapping removes it"
+          (mappedPaddr st9 carveAsid va == none)
   -- A CNode whose ONLY obstacle to an in-place retype is a mapping record: a
   -- fresh CNode holding one frame capability with no CDT node at all, so no
   -- derivation-parent guard can be what refuses it.  The control is the same
@@ -1850,6 +1906,10 @@ private def recordedBy (before after : SystemState) : List Architecture.Physical
 private def store (entry : Nat) (value : UInt64) : Architecture.PhysicalWrite :=
   .storeDescriptor (SeLe4n.PAddr.ofNat entry) value
 
+/-- A table-descriptor store (tag 4): an entry of a level 0–2 table page. -/
+private def tstore (entry : Nat) (value : UInt64) : Architecture.PhysicalWrite :=
+  .storeTableDescriptor (SeLe4n.PAddr.ofNat entry) value
+
 private def zero (page : Nat) : Architecture.PhysicalWrite :=
   .zeroPage (SeLe4n.PAddr.ofNat page)
 
@@ -1895,18 +1955,18 @@ private def runPhysicalWriteChecks : IO Unit := do
             == some (Architecture.ICacheInvalidation.cleanRangeIallu base SeLe4n.pageBytes)
         | _ => false)
     assertBool "and a descriptor store owes none (only a zeroing can precede a fetch)"
-      ((store (root + 8) (tableDesc l1)).icacheMaintenance == none)
+      ((tstore (root + 8) (tableDesc l1)).icacheMaintenance == none)
     match dispatchSyscall (decodeTableMap 15 12 va) carveOwner st1 with
     | .error e => assertBool s!"installing the level-1 table succeeds (got {repr e})" false
     | .ok ((), st2) => do
       -- 2^39 + 0x70000: level-0 index 1 (entry 0 is the kernel window).
       assertBool "a level-1 install stores its table descriptor at entry 1 of the root's page"
-        (recordedBy st1 st2 == [store (root + 8) (tableDesc l1)])
+        (recordedBy st1 st2 == [tstore (root + 8) (tableDesc l1)])
       match runAll st2 [decodeTableMap 16 12 va, decodeTableMap 17 12 va] with
       | .error e => assertBool s!"installing levels 2 and 3 succeeds (got {repr e})" false
       | .ok st3 => do
         assertBool "levels 2 and 3 store at entry 0 of the table above each"
-          (recordedBy st2 st3 == [store l1 (tableDesc l2), store l2 (tableDesc l3)])
+          (recordedBy st2 st3 == [tstore l1 (tableDesc l2), tstore l2 (tableDesc l3)])
         match dispatchSyscall (decodeMapVia 12 1 va 14 permsRWUC) carveOwner st3 with
         | .error e => assertBool s!"mapping the frame succeeds (got {repr e})" false
         | .ok ((), st4) => do
@@ -1928,13 +1988,13 @@ private def runPhysicalWriteChecks : IO Unit := do
             | .error e => assertBool s!"unmapping the level-3 table succeeds (got {repr e})" false
             | .ok ((), st6) =>
               assertBool "a table unmap clears its entry in the table above, then drops the ASID's cached walks"
-                (recordedBy st5 st6 == [store l2 0, .invalidateAsid (SeLe4n.ASID.ofNat 1)])
+                (recordedBy st5 st6 == [tstore l2 0, .invalidateAsid (SeLe4n.ASID.ofNat 1)])
           match dispatchSyscall (decodeDelete 15) carveOwner st4 with
           | .error e => assertBool s!"deleting the level-1 table's last capability succeeds (got {repr e})" false
           | .ok ((), sDel) => do
             let ws := recordedBy st4 sDel
             assertBool "destroying a table's last capability clears the root's entry for it"
-              (ws.contains (store (root + 8) 0))
+              (ws.contains (tstore (root + 8) 0))
             assertBool "...zeroes the three table pages it takes out, so a stale one re-installs empty"
               ([l1, l2, l3].all (fun p => ws.contains (zero p)))
             assertBool "...and ends by dropping the ASID's cached walks"

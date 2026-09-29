@@ -601,6 +601,22 @@ structure MachineState where
       core resumes its owner (`RestoreTarget.user`'s `fpLive`). -/
   fpOwner : _root_.Vector (Option ThreadId) numCores :=
     _root_.Vector.replicate numCores none
+  /-- **PR #904 review (`v0.36.41`): the thread whose EL0 context each core's
+      registers hold** — the thread the core's last context restore resumed, or
+      `none` for a core resuming its idle loop or nothing.  Written by
+      `Concurrency.settleResidencyOnCore` at the end of every state-committing
+      entry, and read by the trap-frame save.
+
+      It is **not** the scheduler's `current` slot, and the difference is the
+      point.  A remote deschedule clears core `c`'s `current` slot while `c`'s
+      hardware still runs the thread at EL0; until `c` takes an exception, the
+      thread's live registers are on `c` and nowhere in the model.  So the save
+      reads this record where the slot is empty (the frame belongs to the
+      resident thread, not to nobody), and a thread resident on one core is not
+      resumed on another until the first has saved it
+      (`Architecture.residentElsewhere`). -/
+  resident : _root_.Vector (Option ThreadId) numCores :=
+    _root_.Vector.replicate numCores none
 
 instance : Inhabited MachineState where
   default := { coreRegs := _root_.Vector.replicate numCores default, memory := (fun _ => 0), timer := 0 }
@@ -638,6 +654,38 @@ instance : Inhabited MachineState where
   simp only [MachineState.fpOwnerOnCore, MachineState.setFpOwnerOnCore]
   exact SeLe4n.PerCoreVector.get_set_ne ms.fpOwner c c' t? h
 
+/-- **PR #904 review (`v0.36.41`)**: the thread whose EL0 context core `c`'s
+registers hold. -/
+@[inline] def MachineState.residentOnCore (ms : MachineState) (c : CoreId) : Option ThreadId :=
+  ms.resident.get c
+
+/-- **PR #904 review (`v0.36.41`)**: record `t?` as core `c`'s resident thread. -/
+@[inline] def MachineState.setResidentOnCore (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : MachineState :=
+  { ms with resident := ms.resident.set c.val t? c.isLt }
+
+@[simp] theorem MachineState.residentOnCore_setResidentOnCore_self (ms : MachineState)
+    (c : CoreId) (t? : Option ThreadId) :
+    (ms.setResidentOnCore c t?).residentOnCore c = t? := by
+  simp only [MachineState.residentOnCore, MachineState.setResidentOnCore]
+  exact SeLe4n.PerCoreVector.get_set_eq ms.resident c t?
+
+@[simp] theorem MachineState.residentOnCore_setResidentOnCore_ne (ms : MachineState)
+    (c c' : CoreId) (t? : Option ThreadId) (h : c ≠ c') :
+    (ms.setResidentOnCore c t?).residentOnCore c' = ms.residentOnCore c' := by
+  simp only [MachineState.residentOnCore, MachineState.setResidentOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne ms.resident c c' t? h
+
+/-- A residency write touches nothing but the residency table. -/
+@[simp] theorem MachineState.setResidentOnCore_coreRegs (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : (ms.setResidentOnCore c t?).coreRegs = ms.coreRegs := rfl
+
+@[simp] theorem MachineState.setResidentOnCore_memory (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : (ms.setResidentOnCore c t?).memory = ms.memory := rfl
+
+@[simp] theorem MachineState.setResidentOnCore_fpOwner (ms : MachineState) (c : CoreId)
+    (t? : Option ThreadId) : (ms.setResidentOnCore c t?).fpOwner = ms.fpOwner := rfl
+
 /-- **WS-BP BP7.9**: some core's registers hold `tid`'s live FP/SIMD values. -/
 def MachineState.fpOwnedOnSomeCore (ms : MachineState) (tid : ThreadId) : Bool :=
   SeLe4n.Kernel.Concurrency.allCores.any fun c => ms.fpOwnerOnCore c == some tid
@@ -646,6 +694,26 @@ def MachineState.fpOwnedOnSomeCore (ms : MachineState) (tid : ThreadId) : Bool :
 theorem MachineState.fpOwnedOnSomeCore_eq_false_iff (ms : MachineState) (tid : ThreadId) :
     ms.fpOwnedOnSomeCore tid = false ↔ ∀ c, ms.fpOwnerOnCore c ≠ some tid := by
   unfold MachineState.fpOwnedOnSomeCore
+  constructor
+  · intro h c hc
+    have := List.any_eq_false.mp h c (SeLe4n.Kernel.Concurrency.mem_allCores c)
+    simp [hc] at this
+  · intro h
+    exact List.any_eq_false.mpr fun c _ => by simp [h c]
+
+/-- **PR #904 review (`v0.36.41`)**: some core's registers still hold `tid`'s EL0
+context — the core resumed it and has not yet saved it back.  The residency
+sibling of `fpOwnedOnSomeCore`, and refused by the destroy path for the same
+reason: that core's next entry saves those registers into the TCB stored under
+`tid`, so a thread retyped under the id would receive them. -/
+def MachineState.residentOnSomeCore (ms : MachineState) (tid : ThreadId) : Bool :=
+  SeLe4n.Kernel.Concurrency.allCores.any fun c => ms.residentOnCore c == some tid
+
+/-- **PR #904 review (`v0.36.41`)**: the residency test is exactly "some core
+records `tid` as resident". -/
+theorem MachineState.residentOnSomeCore_eq_false_iff (ms : MachineState) (tid : ThreadId) :
+    ms.residentOnSomeCore tid = false ↔ ∀ c, ms.residentOnCore c ≠ some tid := by
+  unfold MachineState.residentOnSomeCore
   constructor
   · intro h c hc
     have := List.any_eq_false.mp h c (SeLe4n.Kernel.Concurrency.mem_allCores c)

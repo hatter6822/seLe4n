@@ -218,6 +218,14 @@ structure VSpaceRoot where
       removed by `.pageTableUnmap`.  Always empty for a root the boot
       configured, which has no page of its own to hang them from. -/
   tables : List PageTableSlot := []
+  /-- **PR #904 review (`v0.36.41`): the frame mapping epoch of each address a
+      frame capability mapped** (`FrameMapping.epoch`), written by `.vspaceMap`
+      beside the translation.  What makes a capability's record identify *its*
+      mapping rather than any translation of the same frame at the same
+      address: `mappedPageLive` asks the two to agree.  An entry outliving its
+      translation is harmless — every mapping a capability records is made by
+      `.vspaceMap`, which overwrites the entry with a fresh epoch. -/
+  mappingEpochs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr Nat := {}
   /-- WS-SM SM3.A.7: per-VSpaceRoot reader-writer lock state.  Default
       `RwLockState.unheld` means a freshly-allocated VSpaceRoot starts
       with its lock available.  VSpace mutation paths (`vspaceMapPage`,
@@ -603,6 +611,11 @@ lock word every kernel object carries — the lock hierarchy's `page` kind
 structure FrameObject where
   base : SeLe4n.PAddr
   isDevice : Bool := false
+  /-- **PR #904 review (`v0.36.41`): how many times this frame has been mapped
+      by a capability.**  `.vspaceMap` hands the current value to the mapping it
+      makes (`FrameMapping.epoch`, `VSpaceRoot.mappingEpochs`) and advances it,
+      so no two mappings of one frame share an epoch while the frame exists. -/
+  mapEpoch : Nat := 0
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq

@@ -190,6 +190,16 @@ _start:
     and     x0, x0, #~0xF
     mov     sp, x0                  // SP = top of kernel stack
 
+    // PR #904 (`v0.36.41`): SP_EL0 = this PE's fault stack top (core 0's is
+    // the first slot's top), held there for as long as the PE runs at EL1, so
+    // an EL1-origin synchronous exception or SError — the kernel's own fault,
+    // a stack overflow into the guard page below included — has a stack to
+    // halt on (`vectors.S` switches to it with `msr spsel, #0`).
+    adrp    x10, __fault_stacks_bottom
+    add     x10, x10, :lo12:__fault_stacks_bottom
+    add     x10, x10, #0x4000       // + (core 0 + 1) * FAULT_STACK_SIZE
+    msr     sp_el0, x10
+
     // =====================================================================
     // Step 5: Branch to Rust boot entry point
     //
@@ -240,7 +250,8 @@ _start:
 //      that opting into SMP at deployment time does not require an
 //      assembly rebuild.  Per-core stack regions are allocated in the
 //      `.bss.smp_stacks` section by `smp.rs` and selected by
-//      `(context_id - 1) * 0x10000` (64 KiB per secondary).
+//      `(context_id - 1) * SECONDARY_STACK_STRIDE` (128 KiB per
+//      secondary, its lowest page an unmapped guard — PR #904).
 //   3. Branch to `rust_secondary_main(context_id)` which performs the
 //      remaining per-core initialisation (MMU, GIC, ready-flag spin).
 //
@@ -281,7 +292,7 @@ secondary_entry:
     // PSCI context_id BEFORE the per-core stack and TPIDR_EL1 setup.
     //
     // The Step 2 SP arithmetic uses `context_id` directly:
-    //   SP = __smp_secondary_stack_top - (context_id - 1) * 64 KiB
+    //   SP = __smp_secondary_stack_top - (context_id - 1) * 128 KiB
     // For `context_id == 0` the offset wraps around (effectively
     // +64 KiB above stack_top, into adjacent kernel memory); for
     // `context_id >= 4` (= MAX_SECONDARY_CORES + 1 on RPi5) the SP
@@ -311,13 +322,13 @@ secondary_entry:
     b.hs    .L_secondary_invalid      // reject context_id >= total core count
 
     // Step 2: per-core stack.  Use `__smp_secondary_stack_top` defined
-    // by the linker script + offset by (context_id - 1) * 64 KiB.
-    // Since context_id is in x0, offset = (x0 - 1) * 0x10000.
+    // by the linker script + offset by (context_id - 1) * 128 KiB.
+    // Since context_id is in x0, offset = (x0 - 1) * 0x20000.
     // Step 1.5 has rejected `context_id == 0` and `context_id >= 4`,
     // so `context_id` is in `[1, 3]` here and the SP arithmetic is
     // structurally safe.
     sub     x1, x0, #1               // x1 = secondary index (0..=2)
-    lsl     x1, x1, #16              // x1 = index * 0x10000 (64 KiB)
+    lsl     x1, x1, #17              // x1 = index * SECONDARY_STACK_STRIDE (128 KiB)
     adrp    x2, __smp_secondary_stack_top
     add     x2, x2, :lo12:__smp_secondary_stack_top
     sub     x2, x2, x1               // x2 = stack_top - offset
@@ -327,6 +338,16 @@ secondary_entry:
     // access.  See the primary path above.
     and     x2, x2, #~0xF            // ensure 16-byte alignment
     mov     sp, x2                   // sp = aligned per-core stack top
+
+    // PR #904 (`v0.36.41`): SP_EL0 = this PE's fault stack top,
+    // `__fault_stacks_bottom + (context_id + 1) * FAULT_STACK_SIZE` — see the
+    // primary path.  context_id is in [1, 3] here (Step 1.5).
+    add     x1, x0, #1
+    lsl     x1, x1, #14              // x1 = (context_id + 1) * FAULT_STACK_SIZE (16 KiB)
+    adrp    x2, __fault_stacks_bottom
+    add     x2, x2, :lo12:__fault_stacks_bottom
+    add     x2, x2, x1
+    msr     sp_el0, x2
 
     // =====================================================================
     // WS-SM SM0.N / SM1.B (closes SMP-M4): set TPIDR_EL1 to per-CPU data base.

@@ -4413,6 +4413,13 @@ theorem frameMappingAdmissible_cacheable_iff_ram (frameCap : Capability)
   · exact frameMappingAdmissible_ram frameCap frame perms h hDev
   · exact (frameMappingAdmissible_device frameCap frame perms h hDev).2
 
+/-- The object a frame capability names — `resolveVSpaceMapFrame` admits only a
+capability naming an object, so the fallback is never taken on the map path. -/
+def frameCapObjId (cap : Capability) : SeLe4n.ObjId :=
+  match cap.target with
+  | .object id => id
+  | _ => SeLe4n.ObjId.sentinel
+
 /-- **WS-BP BP7.1: the `.vspaceMap` arm past its address-space check, named.**
 
 Resolve the frame MR2's capability names (`resolveVSpaceMapFrame`), check what
@@ -4466,11 +4473,18 @@ def vspaceMapFromFrameCap (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs) : Kerne
               (determineExecutingCore st tid) args.asid args.vaddr frame.base perms st with
           | .error e => .error e
           | .ok ((), st1) =>
+            -- PR #904 review (`v0.36.41`): the mapping takes the frame's next
+            -- epoch, written beside the translation, so the record below names
+            -- this mapping and no later one (`mappedPageLive`).
+            match tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 with
+            | .error e => .error e
+            | .ok (epoch, st2) =>
             -- WS-BP BP7.1 (`v0.36.7`): the mapping now belongs to the
             -- capability that made it — recorded on it, in its own slot, so
             -- destroying the capability removes it (`cspaceDeleteSlotFinalising`,
             -- `cspaceRevokeCdtFinalising`).
-            cspaceRecordFrameMapping frameSlot { asid := args.asid, vaddr := args.vaddr } st1
+            cspaceRecordFrameMapping frameSlot
+              { asid := args.asid, vaddr := args.vaddr, epoch := epoch } st2
 
 /-- **WS-BP BP7.1**: a successful frame-capability mapping resolved a frame the
 caller holds a capability to, admitted the requested permissions, and installed
@@ -4490,8 +4504,10 @@ theorem vspaceMapFromFrameCap_ok (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
       Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
         (determineExecutingCore st tid) args.asid args.vaddr frame.base args.perms st
         = .ok ((), st1) ∧
-      cspaceRecordFrameMapping frameSlot { asid := args.asid, vaddr := args.vaddr } st1
-        = .ok ((), st') := by
+      ∃ (epoch : Nat) (st2 : SystemState),
+        tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 = .ok (epoch, st2) ∧
+        cspaceRecordFrameMapping frameSlot
+          { asid := args.asid, vaddr := args.vaddr, epoch := epoch } st2 = .ok ((), st') := by
   unfold vspaceMapFromFrameCap at h
   cases hR : resolveVSpaceMapFrame tid args st with
   | error e => rw [hR] at h; cases h
@@ -4530,8 +4546,15 @@ theorem vspaceMapFromFrameCap_ok (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
           | ok pr =>
             obtain ⟨u, st1⟩ := pr; cases u
             rw [hM] at h
-            exact ⟨frameSlot, frameCap, frame, st1, by first | exact hR | rfl,
-              by first | exact hA | rfl, hLive, rfl, hV, by first | exact hM | rfl, h⟩
+            simp only at h
+            cases hT : tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 with
+            | error e => rw [hT] at h; cases h
+            | ok pr =>
+              obtain ⟨epoch, st2⟩ := pr
+              rw [hT] at h
+              exact ⟨frameSlot, frameCap, frame, st1, by first | exact hR | rfl,
+                by first | exact hA | rfl, hLive, rfl, hV, by first | exact hM | rfl,
+                epoch, st2, hT, h⟩
       · rw [hLive] at h; simp at h
 
 /-- **WS-BP BP7.2: a successful mapping is inside the user window** — the arm
@@ -4558,29 +4581,38 @@ theorem vspaceMapFromFrameCap_ok_inUserWindow (tid : SeLe4n.ThreadId) (args : VS
 
 /-- **WS-BP BP7.1 (`v0.36.7`): a successful mapping records itself on the
 capability that made it** — the slot the capability was resolved from now holds
-it with `mapping := some ⟨asid, vaddr⟩`, so destroying it removes the mapping. -/
+it with `mapping := some ⟨asid, vaddr, epoch⟩`, so destroying it removes the
+mapping.  The epoch (PR #904 review, `v0.36.41`) is the one the address space's
+entry now carries, which is what makes the record this mapping's alone. -/
 theorem vspaceMapFromFrameCap_ok_records (tid : SeLe4n.ThreadId) (args : VSpaceMapArgs)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
     (h : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
-    ∃ (frameSlot : CSpaceAddr) (frameCap : Capability),
+    ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (epoch : Nat),
       SystemState.lookupSlotCap st frameSlot = some frameCap ∧
       SystemState.lookupSlotCap st' frameSlot =
-        some { frameCap with mapping := some { asid := args.asid, vaddr := args.vaddr } } := by
-  obtain ⟨frameSlot, frameCap, frame, st1, hR, -, -, -, -, hMap, hRec⟩ :=
+        some { frameCap with
+          mapping := some { asid := args.asid, vaddr := args.vaddr, epoch := epoch } } := by
+  obtain ⟨frameSlot, frameCap, frame, st1, hR, -, -, -, -, hMap, epoch, st2, hT, hRec⟩ :=
     vspaceMapFromFrameCap_ok tid args st st' h
   obtain ⟨_, _, _, _, _, _, _, _, _, -, hSlotCap⟩ :=
     resolveVSpaceMapFrame_ok_authorised tid args st frameSlot frameCap frame hR
-  refine ⟨frameSlot, frameCap, hSlotCap, ?_⟩
-  obtain ⟨cn, cap, hCn, hLk, hStore⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st1 st' hRec
+  refine ⟨frameSlot, frameCap, epoch, hSlotCap, ?_⟩
+  obtain ⟨cn, cap, hCn, hLk, hStore⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
   obtain ⟨hInv1, hW, -⟩ :=
     vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1 hObjInv hMap
-  have hAt := storeObject_objects_eq st1 st' frameSlot.cnode _ hInv1 hStore
-  -- The map writes VSpace roots only, so the slot held the resolved capability at
-  -- `st1` too.
+  obtain ⟨hInv2, -, -, hTagW⟩ := tagFrameMapping_ok_frame _ _ _ st1 st2 epoch hInv1 hT
+  have hAt := storeObject_objects_eq st2 st' frameSlot.cnode _ hInv2 hStore
+  -- The map writes VSpace roots only and the tag a root and a frame, so the slot
+  -- held the resolved capability at `st` too.
+  have hCn2 := (SystemState.getCNode?_eq_some_iff st2 frameSlot.cnode cn).mp hCn
+  have hCn1 : st1.objects[frameSlot.cnode]? = some (.cnode cn) := by
+    rcases hTagW frameSlot.cnode with e | ⟨-, ⟨r, hr⟩⟩ | ⟨-, ⟨g, hg⟩⟩
+    · rw [← e]; exact hCn2
+    · rw [hCn2] at hr; cases hr
+    · rw [hCn2] at hg; cases hg
   have hCnPre : st.objects[frameSlot.cnode]? = some (.cnode cn) := by
-    have hPre1 := (SystemState.getCNode?_eq_some_iff st1 frameSlot.cnode cn).mp hCn
-    rw [← hW.eq_of_not_root' (fun r hr => by rw [hPre1] at hr; cases hr)]
-    exact hPre1
+    rw [← hW.eq_of_not_root' (fun r hr => by rw [hCn1] at hr; cases hr)]
+    exact hCn1
   have hCapEq : cap = frameCap := by
     unfold SystemState.lookupSlotCap SystemState.lookupCNode at hSlotCap
     rw [hCnPre] at hSlotCap
@@ -5306,13 +5338,15 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          · obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, hRec⟩ :=
+          · obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, epoch, st2, hT, hRec⟩ :=
               vspaceMapFromFrameCap_ok tid args st st' hStep
-            exact (cspaceRecordFrameMapping_preserves_ipcInvariantFull _ _ st1 st'
+            have hTag := tagFrameMapping_preserves_ipcInvariantFull _ _ _ st1 st2 epoch
               (vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1
                 hObjInv hMap).1
               (vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
-                st st1 _ _ _ _ _ hObjInv hInv hMap) hRec).1
+                st st1 _ _ _ _ _ hObjInv hInv hMap) hT
+            exact (cspaceRecordFrameMapping_preserves_ipcInvariantFull _ _ st2 st'
+              hTag.2 hTag.1 hRec).1
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -7798,8 +7832,10 @@ theorem dispatchWithCap_vspaceMap_maps_frame_base
       Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
         (determineExecutingCore st tid) args.asid args.vaddr frame.base args.perms st
         = .ok ((), st1) ∧
-      cspaceRecordFrameMapping frameSlot { asid := args.asid, vaddr := args.vaddr } st1
-        = .ok ((), st') := by
+      ∃ (epoch : Nat) (st2 : SystemState),
+        tagFrameMapping args.asid args.vaddr (frameCapObjId frameCap) st1 = .ok (epoch, st2) ∧
+        cspaceRecordFrameMapping frameSlot
+          { asid := args.asid, vaddr := args.vaddr, epoch := epoch } st2 = .ok ((), st') := by
   rw [dispatchWithCap_vspaceMap_delegates decoded tid gate cap objId args st
     hSyscall hTarget hDecode hAuth] at hOk
   obtain ⟨frameSlot, frameCap, frame, st1, hR, _, _, _, _, hMap, hRec⟩ :=

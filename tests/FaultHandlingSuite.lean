@@ -1945,6 +1945,76 @@ private def runVacatedCoreChecks : IO Unit := do
   assertBool "CONTROL: on a running core the FP/SIMD step leaves the slot alone"
     ((fpAccessEntryStep stRunning 0 none).2.scheduler.currentOnCore c0 == some faulter)
 
+/-- **PR #904 review (`v0.36.41`): a remotely vacated core's frame reaches the
+thread it belongs to, and a thread resident elsewhere is not resumed here.**
+
+`stResident` is `runVacatedCoreChecks`'s state with core 0's residency record
+naming the faulter — the thread core 0's last restore resumed, still running
+there at EL0 when the remote deschedule emptied the slot.  The **retired**
+reading saved through the current slot alone (`saveTrapFrameOnCore`), which
+names nobody, so the frame was dropped and the faulter later resumed from its
+stale context; each assertion computes that reading beside the live one. -/
+private def runResidentFrameChecks : IO Unit := do
+  IO.println "  residency: a vacated core's frame is saved into its resident thread"
+  let vacatedSched := (stRunning.scheduler.setCurrentOnCore c0 none).setRunQueueOnCore c0
+    (RunQueue.ofList [(grantReplyFaulter, ⟨30⟩)])
+  let stResident : SystemState :=
+    { stRunning with scheduler := vacatedSched,
+                     machine := stRunning.machine.setResidentOnCore c0 (some faulter) }
+  let live : SeLe4n.RegisterFile := { pc := ⟨0x9004⟩, sp := ⟨0x7000⟩, gpr := fun _ => ⟨0xAB⟩ }
+  let stalePc := savedPcOf stResident faulter
+  assertBool "the faulter's saved context is stale before the trap"
+    (stalePc != some 0x9004)
+  assertBool "RETIRED: the current-slot save drops the vacated core's frame"
+    (savedPcOf (Architecture.saveTrapFrameOnCore stResident c0 live) faulter == stalePc)
+  assertBool "LIVE: the frame is saved into the resident thread"
+    (savedPcOf (Architecture.saveCapturedTrapFrame stResident c0 (some live)) faulter
+      == some 0x9004)
+  assertBool "LIVE: a syscall's frame is rewound to its SVC, so it is re-issued"
+    (savedPcOf (Architecture.saveCapturedSyscallFrame stResident c0 (some live)) faulter
+      == some 0x9000)
+  assertBool "CONTROL: with no resident thread the frame has no owner and nothing is saved"
+    (savedPcOf (Architecture.saveCapturedTrapFrame
+      { stResident with machine := stResident.machine.setResidentOnCore c0 none } c0
+      (some live)) faulter == stalePc)
+  assertBool "CONTROL: a frame taken at EL1 is never a thread's"
+    (savedPcOf (Architecture.saveCapturedTrapFrame stResident c0
+      (some { live with pstate := ⟨5⟩ })) faulter == stalePc)
+  -- PR #904 review (`v0.36.41`): the destroy path refuses a thread some core
+  -- still holds as its resident, because that core's next entry saves its frame
+  -- into the TCB stored under the id — a retype would hand it to a new thread.
+  assertBool "the resident thread is current on no core"
+    (!threadCurrentOnSomeCore stResident faulter)
+  assertBool "LIVE: a thread resident on a vacated core is refused by the destroy path"
+    (threadHeldOnSomeCore stResident faulter)
+  assertBool "RETIRED: the current-or-FP-owner guard admitted it"
+    (!(threadCurrentOnSomeCore stResident faulter ||
+        stResident.machine.fpOwnedOnSomeCore faulter))
+  assertBool "CONTROL: once the core's residency settles the thread is admitted"
+    (!threadHeldOnSomeCore
+      { stResident with machine := stResident.machine.setResidentOnCore c0 none } faulter)
+  -- The settle step: the core resumes a successor and records it as resident.
+  let stS := PriorityInheritance.settleResidencyOnCore stResident c0
+  assertBool "the settled core runs its successor"
+    (stS.scheduler.currentOnCore c0 == some grantReplyFaulter)
+  assertBool "and records it as the core's resident thread"
+    (stS.machine.residentOnCore c0 == some grantReplyFaulter)
+  -- A thread still resident on core 0 is not resumed on core 1.
+  let stTwice : SystemState :=
+    { stRunning with machine := stRunning.machine.setResidentOnCore c0 (some handler) }
+  assertBool "RETIRED: without the deferral core 1 resumes a thread core 0 still runs"
+    ((PriorityInheritance.dispatchVacatedCore stTwice c1).scheduler.currentOnCore c1
+      == some handler)
+  let stD := PriorityInheritance.settleResidencyOnCore stTwice c1
+  assertBool "LIVE: core 1 does not resume a thread resident on core 0"
+    (stD.scheduler.currentOnCore c1 != some handler)
+  assertBool "and records no user thread as its resident"
+    (stD.machine.residentOnCore c1 != some handler)
+  let stC := PriorityInheritance.settleResidencyOnCore stRunning c1
+  assertBool "CONTROL: resident nowhere else, the thread is resumed and recorded"
+    (stC.scheduler.currentOnCore c1 == some handler &&
+      stC.machine.residentOnCore c1 == some handler)
+
 def runFaultHandlingChecks : IO Unit := do
   IO.println "WS-RR RR4.26 — Fault handling suite (fault IPC, resume, restart, progress)"
   IO.println "===================================="
@@ -1959,6 +2029,7 @@ def runFaultHandlingChecks : IO Unit := do
   runEntryWindowChecks
   runUnknownSyscallChecks
   runVacatedCoreChecks
+  runResidentFrameChecks
   runConfigureAndResumeChecks
   runSyscallCapFaultChecks
   runResumeChecks

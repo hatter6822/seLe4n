@@ -103,12 +103,84 @@ def saveTrapFrameOnCore (st : SystemState) (c : CoreId) (rf : SeLe4n.RegisterFil
     | none => st
   else st
 
+/-- **PR #904 review (`v0.36.41`): save a vacated core's frame into the thread
+that was running there.**  A remote deschedule clears core `c`'s `current` slot
+while `c`'s hardware still runs the thread at EL0, so the next exception `c`
+takes from EL0 carries that thread's live registers and the slot names nobody.
+`saveTrapFrameOnCore` saves nothing then (it is keyed on the slot), and the
+frame used to be dropped — the thread later resumed from its stale saved
+context, rewinding or corrupting it.  This step writes the frame into the core's
+**resident** thread (`MachineState.residentOnCore`), the thread the core's last
+restore resumed; the bank is left alone, since no thread is current on `c`.
+
+`saved` is the context to record, which is the trapped frame except for a
+syscall — the syscall entry passes the frame rewound to the `SVC`
+(`restartAtSvc`), so the thread re-issues the syscall its remote deschedule
+interrupted rather than resuming past it with its arguments as a result. -/
+def saveVacatedFrameOnCore (st : SystemState) (c : CoreId) (rf saved : SeLe4n.RegisterFile) :
+    SystemState :=
+  if trapFromEl0 rf then
+    match st.scheduler.currentOnCore c, st.machine.residentOnCore c with
+    | none, some tid =>
+      match st.getTcb? tid with
+      | some _ => st.updateTcb tid fun t => { t with registerContext := saved }
+      | none => st
+    | _, _ => st
+  else st
+
+/-- **The frame of a syscall, rewound to its `SVC`** — the program counter four
+bytes back, so a resume re-issues the syscall (`Platform.FFI.svcFaultIP`'s
+arithmetic, on the saved context). -/
+def restartAtSvc (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
+  { rf with pc := ⟨rf.pc.val - 4⟩ }
+
 /-- **The save an entry performs**: the captured frame, if the HAL published
-one (`Platform.FFI.captureTrapFrame`); a handler with no frame saves nothing. -/
+one (`Platform.FFI.captureTrapFrame`); a handler with no frame saves nothing.
+The current thread's frame is `saveTrapFrameOnCore`'s; a vacated core's is the
+resident thread's (`saveVacatedFrameOnCore`). -/
 def saveCapturedTrapFrame (st : SystemState) (c : CoreId) :
     Option SeLe4n.RegisterFile → SystemState
   | none => st
-  | some rf => saveTrapFrameOnCore st c rf
+  | some rf => saveVacatedFrameOnCore (saveTrapFrameOnCore st c rf) c rf rf
+
+/-- **The syscall entry's save**: `saveCapturedTrapFrame`, with a vacated core's
+frame rewound to the `SVC` (`restartAtSvc`). -/
+def saveCapturedSyscallFrame (st : SystemState) (c : CoreId) :
+    Option SeLe4n.RegisterFile → SystemState
+  | none => st
+  | some rf => saveVacatedFrameOnCore (saveTrapFrameOnCore st c rf) c rf (restartAtSvc rf)
+
+/-- A core with a current thread saves nothing through the vacated path. -/
+theorem saveVacatedFrameOnCore_of_current (st : SystemState) (c : CoreId)
+    (rf saved : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId)
+    (hCur : st.scheduler.currentOnCore c = some tid) :
+    saveVacatedFrameOnCore st c rf saved = st := by
+  unfold saveVacatedFrameOnCore; split <;> simp [hCur]
+
+/-- **The payoff**: on a vacated core, a frame from EL0 is saved into the
+resident thread's context — nothing is dropped. -/
+theorem saveVacatedFrameOnCore_saves (st : SystemState) (c : CoreId)
+    (rf saved : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hEl0 : trapFromEl0 rf = true) (hCur : st.scheduler.currentOnCore c = none)
+    (hRes : st.machine.residentOnCore c = some tid) (hTcb : st.getTcb? tid = some tcb)
+    (hInv : st.objects.invExt) :
+    (saveVacatedFrameOnCore st c rf saved).getTcb? tid =
+      some { tcb with registerContext := saved } := by
+  simp only [saveVacatedFrameOnCore, hEl0, hCur, hRes, hTcb, if_true]
+  rw [SystemState.updateTcb_getTcb?_self st tid _ hInv, hTcb]; rfl
+
+/-- The vacated save writes no scheduler state. -/
+theorem saveVacatedFrameOnCore_scheduler (st : SystemState) (c : CoreId)
+    (rf saved : SeLe4n.RegisterFile) :
+    (saveVacatedFrameOnCore st c rf saved).scheduler = st.scheduler := by
+  unfold saveVacatedFrameOnCore
+  split
+  · split
+    · split
+      · simp [SystemState.updateTcb_scheduler]
+      · rfl
+    · rfl
+  · rfl
 
 /-- A frame taken at EL1 saves nothing. -/
 theorem saveTrapFrameOnCore_of_not_el0 (st : SystemState) (c : CoreId)

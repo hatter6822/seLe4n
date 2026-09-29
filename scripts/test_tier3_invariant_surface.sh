@@ -3861,7 +3861,7 @@ run_check "INVARIANT" rg -n -U 'Some\(end\) if in_kernel_memory_window\(base\) &
 run_check "INVARIANT" rg -n '^pub const IMAGE_ORIGIN: u64 = KERNEL_RESERVED_BASE \+ 0x8_0000;' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n -U '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{\n    if in_kernel_memory_window\(addr\) \{' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n -U 'if in_kernel_memory_window\(cursor\) \{\n            next = Some\(KERNEL_RESERVED_END\);' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n -U 'const fn boundaries\(&self\) -> \[u64; IMAGE_BOUNDARY_COUNT\] \{\n        \[\n            IMAGE_ORIGIN,\n            self\.text_start,' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'const fn boundaries\(&self\) -> \[u64; IMAGE_BOUNDARY_COUNT\] \{\n        let g = &self\.stack_guards;\n        \[\n            IMAGE_ORIGIN,\n            self\.text_start,' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n -U '^def rpi5MemoryMapForConfig \(config : BCM2712Config\) : List SeLe4n\.MemoryRegion :=\n  \[ \{ base := SeLe4n\.PAddr\.ofNat rpi5RamOrigin$' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n 'let reach := min \(SeLe4n\.Platform\.Boot\.ramReachFrom board rpi5RamOrigin\) rpi5FirstGigabyteTop' SeLe4n/Platform/RPi5/Board.lean
 run_negative_check "INVARIANT" rg -n '^def ramPrefixTop\b' SeLe4n
@@ -4008,7 +4008,11 @@ run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)
 # ASID the arm picks (never 0) and the carve itself checks is free before
 # anything is written; its table base is the page it owns.
 run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot =>\n      if sizeBits = 0 then\n        match freshAsid\? st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def freshAsid\?[^\n]*(\n([ \t][^\n]*)?)*      n != 0 && \(st\.asidTable\[SeLe4n\.ASID\.ofNat n\]\?\)\.isNone\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# PR #904 (v0.36.41): the free-ASID scan walks the table without materialising
+# the ASID space — a fuel-bounded recursion from 1, never a `List.range`.
+run_check "INVARIANT" rg -n -U '^def freshAsid\? \(st : SystemState\) : Option SeLe4n\.ASID :=\n  freshAsidFrom st st\.machine\.maxASID 1$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U '^def freshAsidFrom[^\n]*(\n([ \t][^\n]*)?)*        if \(st\.asidTable\[SeLe4n\.ASID\.ofNat n\]\?\)\.isNone then some \(SeLe4n\.ASID\.ofNat n\)\n        else freshAsidFrom st fuel \(n \+ 1\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_negative_check "INVARIANT" rg -n 'List\.range st\.machine\.maxASID' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.admissible[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot asid =>\n      asid\.toNat != 0 && decide \(asid\.toNat < st\.machine\.maxASID\) &&\n        \(st\.asidTable\[asid\]\?\)\.isNone' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject \(src[^\n]*(\n([ \t][^\n]*)?)*  fun st =>\n    if !req\.admissible st then \.error \.illegalState else' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextVSpaceRoot[^\n]*\n  \{ asid := asid, mappings := \{\}, tableBase := some \(untypedNextFrame ut\)\.base \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4114,7 +4118,7 @@ run_check "INVARIANT" rg -n '^pub fn untyped_reset\(untyped_cap: CPtr\)' rust/se
 # capability is not retyped in place; the boot admits no configured record; and
 # the frozen delete, which has no unmap, refuses what it cannot finalise.
 run_check "INVARIANT" rg -n -U '        else if capabilityMappingLive st frameCap then \.error \.invalidCapability' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*            cspaceRecordFrameMapping frameSlot \{ asid := args\.asid, vaddr := args\.vaddr \} st1' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*            cspaceRecordFrameMapping frameSlot\n              \{ asid := args\.asid, vaddr := args\.vaddr, epoch := epoch \} st2' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,10}            cspaceDeleteSlotFinalising \(determineExecutingCore st tid\) addr st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,8}            cspaceRevokeCdtFinalising \(determineExecutingCore st tid\) addr st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceDeleteSlot addr st with\n    \| \.error e => \.error e\n    \| \.ok \(\(\), st1\) =>\n      finaliseDestroyedCapabilities executingCore st \(slotMappedPages st addr\) st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
@@ -4299,13 +4303,16 @@ run_check "INVARIANT" rg -n 'destroying a table.s last capability clears the roo
 # the handler publishing its frame before it routes anything.
 run_check "INVARIANT" rg -n '^  pstate : RegValue := ⟨0⟩$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^  rf\.pstate\.val % 16 == 0$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
-run_check "INVARIANT" rg -n '^        \(Architecture\.saveCapturedTrapFrame st execCore frame\) words\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# PR #904 (v0.36.41): the syscall entry's save rewinds a vacated core's frame to
+# its SVC, so the resident thread re-issues the syscall its deschedule interrupted.
+run_check "INVARIANT" rg -n '^        \(Architecture\.saveCapturedSyscallFrame st execCore frame\) words\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st execCore frame' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # WS-BP BP7.8: the sender's overflow words are read from RAM and synced into the
 # model before the decode, at the seam and in its structural marker.
 run_check "INVARIANT" rg -n '^  let words ← readCallerOverflowWords execCore msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^      \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      faultEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      unknownSyscallEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      unknownSyscallEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)\)\.state$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 # v0.36.40: a trap on a core another core vacated (a remote suspend cleared the
 # slot while its thread still ran here) dispatches a successor rather than
@@ -4338,10 +4345,15 @@ run_check "INVARIANT" rg -n 'switching away then saves every register the thread
 # from, before the local reschedule; every entry hands the HAL the context the
 # committed state names, gated on the context-restore seam; the HAL commits it
 # into the in-flight frame with SPSR sanitised to EL0t.
-run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturn st st'"'"' execCore outcome\n      let st'"''"' := PriorityInheritance\.scheduleLocalSuccessor st stR execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^  let staged := Architecture\.stageCallerReturn unwound unwound execCore outcome\n' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturn st st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessor st stR execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  let staged := PriorityInheritance\.settleResidencyOnCore\n    \(Architecture\.stageCallerReturn unwound unwound execCore outcome\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let stE := PriorityInheritance\.settleResidencyOnCore\n        \(Architecture\.stageCallerReturn st st execCore outcome\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^      ffiRestoreStageWord i\.toUInt32 [^\n]*\n    ffiInstallTranslation tableBase asid\n    ffiRestoreCommit \(if fpLive then 2 else 0\)$' SeLe4n/Platform/FFI.lean
+# PR #904 (v0.36.41): the translation rides with the commit, which installs it
+# only once the frame is replaced — never before a commit that may decline.
+run_check "INVARIANT" rg -n -U '^      ffiRestoreStageWord i\.toUInt32 [^\n]*\n    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  \| \.idle => ffiRestoreCommit 1 0 0$' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'ffiInstallTranslation (tableBase asid|0 0)' SeLe4n/Platform/FFI.lean
 # WS-BP BP7.6: the restore is live — no seam flag gates it, and none of the
 # gating wrappers, the flag or its module may come back.
 run_negative_check "INVARIANT" rg -n 'contextRestoreSeamLive|restoreTrapFrameLive|scheduleLocalSuccessorLive|resumeThreadOnCoreLive|resumeThreadEnqueueOnly|priorityRescheduleOnCoreLive|priorityRescheduleEnqueueOnly|contextRestoreWired|contextSwitchSites_restore_pending' SeLe4n tests
@@ -4369,7 +4381,9 @@ run_check "INVARIANT" rg -n '^    if SeLe4n\.Kernel\.isIdleThreadId tid then \.i
 run_check "INVARIANT" rg -n '^    value & 0xF000_0000$' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^        frame\.spsr_el1 = sanitise_user_spsr\(word\(33\)\);$' rust/sele4n-hal/src/trap.rs
 run_negative_check "INVARIANT" rg -n 'frame\.spsr_el1 = word\(33\)' rust/sele4n-hal/src/trap.rs
-run_check "INVARIANT" rg -n -U '^pub extern "C" fn ffi_restore_commit\(kind: u32\)[^\n]*\n    if crate::trap::restore_commit\(kind\)\.is_err\(\) \{\n        crate::gic::halt_all\(\);$' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n -U '^    if crate::trap::restore_commit\(kind, translation\)\.is_err\(\) \{\n        crate::gic::halt_all\(\);$' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n -U '^    if replaced \{\n        crate::user_translation::install_translation\(translation\);\n        crate::fp_context::set_trap_for_resume\(kind == RESTORE_KIND_USER_FP_LIVE\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^    let _ = buf;\n    set_trap_for_resume\(false\);\n\}$' rust/sele4n-hal/src/fp_context.rs
 run_check "INVARIANT" rg -n 'switching away then keeps the result: the caller resumes with x0-x5 its syscall returned' tests/SmpSwitchToThreadSuite.lean
 # WS-BP BP7.5 (v0.36.18): a switch resumes the incoming thread with the frame
 # its TCB holds, and the two unblock paths each deliver their own error frame.
@@ -4394,11 +4408,11 @@ run_check "INVARIANT" rg -U -n '^@\[export lean_kernel_main\]\ndef kernelMain \(
 run_check "INVARIANT" rg -n '^theorem kernelMain_installs($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^theorem kernelMain_refuses($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^def approvedBootCall : Name := `SeLe4n\.Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^        return \(← instantiateMVars passed\) == blob$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^        unless passed == blob do return none$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^ +..bootEntryWitnessEditedBlob, ..bootEntryWitnessRetiredCall,$' SeLe4n/Testing/BootEntryContract.lean
 # WS-BP BP8.1: the `virt` entry's shape is refused under the RPi5 entry, and the
 # RPi5 entry's shape under the `virt` one — the table decides which board.
-run_check "INVARIANT" rg -n '^ +..bootEntryWitnessQemuVirtCompliant\] do$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^ +..bootEntryWitnessQemuVirtCompliant, ..bootEntryWitnessEffectfulConfig\] do$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -U -n '^  for witness in \[..bootEntryWitnessCompliant, ..bootEntryWitnessQemuVirtFixedBlob,\n +..bootEntryWitnessSideInstall\] do\n    if \(← bootEntryContractViolations qemuVirtBootEntry witness\)\.isEmpty then' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^def bootEntries : List BootEntrySpec := \[rpi5BootEntry, qemuVirtBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^  `SeLe4n\.Platform\.QemuVirt\.bootAndInitialiseQemuVirtFromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
@@ -5477,7 +5491,7 @@ run_check "INVARIANT" rg -n '^theorem rpi5BootRamExtensions_admissible($|[ ({:\[
 run_check "INVARIANT" rg -U -n '^@\[extern "ffi_extend_boot_ram_map"\]\nopaque ffiExtendBootRamMap \(base size : UInt64\) : BaseIO Unit$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -U -n '^  \| \.ok config => do\n      extendBootRamMap \(SeLe4n\.Platform\.RPi5\.rpi5BootRamExtensionsFor config\.machineConfig\)\n      bootAndInitialiseRPi5OrHalt config$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -U -n '^theorem kernelMain_installs[^\n]*(\n([ \t][^\n]*)?)*?        Platform\.FFI\.extendBootRamMap\n          \(rpi5BootRamExtensions \(rpi5VariantFor config\.machineConfig\)\)\n        Platform\.FFI\.initialiseKernelState' SeLe4n/Platform/RPi5/KernelMain.lean
-run_check "INVARIANT" rg -U -n '^pub fn is_boot_cacheable_range\(base: u64, size: u64\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?    ram_range_covered\(base, size, &extensions\[\.\.recorded\]\)\n\}' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -U -n '^pub fn is_boot_cacheable_range\(base: u64, size: u64\) -> bool \{[^\n]*(\n([ \t][^\n]*)?)*?    boot_cacheable_range_for\(base, size, &extensions\[\.\.recorded\], &image_layout\(\)\)\n\}' rust/sele4n-hal/src/mmu.rs
 run_negative_check "INVARIANT" rg -n 'pub const fn is_boot_cacheable_range' rust/sele4n-hal/src
 run_check "INVARIANT" rg -U -n '^pub fn extend_boot_ram_map\(base: u64, size: u64\) -> Result<\(\), RamExtensionRefusal> \{\n    if BOOT_MAP_SEALED\.load\(Ordering::Acquire\) \{\n        return Err\(RamExtensionRefusal::Sealed\);' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -U -n '^    unsafe \{ BOOT_TABLES\.with_inner_mut\(\|tables\| extend_boot_tables\(tables, base, size\)\) \}\?;\n([ \t]*\n|    //[^\n]*\n)*    unsafe \{ crate::cache::clean_pagetable_range\(BOOT_TABLES\.pa\(\), PageTableCell::size\(\)\) \};\n    barriers::dsb_ish\(\);\n    barriers::isb\(\);\n    RAM_EXTENSIONS\[recorded\]' rust/sele4n-hal/src/mmu.rs
@@ -7747,11 +7761,57 @@ run_check "INVARIANT" rg -n '^                       fpContext := default \}$' S
 run_check "INVARIANT" rg -n '^  fpOwner : _root_\.Vector \(Option ThreadId\) numCores :=$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_load_eq_own_context($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_saves_owner($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
+# PR #904 (v0.36.41): a remotely vacated core's frame reaches its resident
+# thread, and every state-committing entry settles what the core resumes.  The
+# positives name the relation (the save keyed on the resident record; the settle
+# applied to the committed state in each entry), and the witness computes the
+# retired readings beside the live ones.
+run_check "INVARIANT" rg -n '^  resident : _root_\.Vector \(Option ThreadId\) numCores :=$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n -U '^def saveVacatedFrameOnCore[^\n]*(\n([ \t][^\n]*)?)*    \| none, some tid =>\n      match st\.getTcb\? tid with\n      \| some _ => st\.updateTcb tid fun t => \{ t with registerContext := saved \}$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n '^  \| some rf => saveVacatedFrameOnCore \(saveTrapFrameOnCore st c rf\) c rf \(restartAtSvc rf\)$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n '^  let st2 := deferResidentElsewhere \(dispatchVacatedCore st c\) c$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem deferResidentElsewhere_current_not_elsewhere($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/SecondaryEntry.lean
+run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n '^    let st. := PriorityInheritance\.settleResidencyAt st. coreId$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^    let res := \(res\.1, PriorityInheritance\.settleResidencyAt res\.2 coreId\)$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^    let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId frame$' SeLe4n/Kernel/FaultEntry.lean
+run_prose_check "INVARIANT" rg -n 'RETIRED: the current-slot save drops the vacated core.s frame' tests/FaultHandlingSuite.lean
+run_prose_check "INVARIANT" rg -n 'RETIRED: without the deferral core 1 resumes a thread core 0 still runs' tests/FaultHandlingSuite.lean
+# PR #904 (v0.36.41): a mapping record names a mapping epoch, so a record whose
+# ASID and address were reused by a later mapping of the same frame is stale; the
+# frame is written by the map, so it is a write member of the footprint.
+run_check "INVARIANT" rg -n -U '^      match p\.epoch with\n      \| none => true\n      \| some e => root\.mappingEpochs\[p\.vaddr\]\? == some e$' SeLe4n/Kernel/Architecture/PageTeardown.lean
+run_check "INVARIANT" rg -n '^            match tagFrameMapping args\.asid args\.vaddr \(frameCapObjId frameCap\) st1 with$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^     \(pageLock frameObjId, \.write\)\]$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_negative_check "INVARIANT" rg -n '\(pageLock frameObjId, \.read\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_vspaceMap_frame_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# PR #904 (v0.36.41): the HAL validates what a descriptor says; a table store is
+# its own tag, because the walker reads 0b11 by level.
+run_check "INVARIANT" rg -n '^    \.storeTableDescriptor \(tableEntryAddress parent index\)$' SeLe4n/Kernel/Architecture/HardwareTables.lean
+run_check "INVARIANT" rg -n '^  \| \.storeTableDescriptor _ _ => 4$' SeLe4n/Kernel/Architecture/PhysicalWrite.lean
+run_check "INVARIANT" rg -n -U '^            \} else if !page_descriptor_admissible\(value, &covered\) \{\n                Err\(PhysicalWriteRefusal::DescriptorRefused\(value\)\)\n            \} else \{\n                Ok\(PhysicalWrite::StoreDescriptor \{ entry: addr, value \}\)$' rust/sele4n-hal/src/user_translation.rs
+run_check "INVARIANT" rg -n -U '^            \} else if !table_descriptor_admissible\(value, &covered\) \{\n                Err\(PhysicalWriteRefusal::DescriptorRefused\(value\)\)\n            \} else \{\n                Ok\(PhysicalWrite::StoreTableDescriptor \{ entry: addr, value \}\)$' rust/sele4n-hal/src/user_translation.rs
+# PR #904 (v0.36.41): every kernel stack has an unmapped guard page, and an
+# EL1-origin fault runs on the PE's fault stack, which SP_EL0 holds at EL1.
+run_check "INVARIANT" rg -n -U '^\.balign 128\n    msr spsel, #0\n    b   __el1_sync_entry$' rust/sele4n-hal/src/vectors.S
+run_check "INVARIANT" rg -n -U '^\.balign 128\n    msr spsel, #0\n    b   __el1_serror_entry$' rust/sele4n-hal/src/vectors.S
+run_check "INVARIANT" rg -n -U '^__el0_sync_entry:\n    save_context\n    set_fault_stack\n    bl      handle_synchronous_exception$' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n -U '^__el0_irq_entry:\n    save_context\n    set_fault_stack\n    bl      handle_irq_per_core$' rust/sele4n-hal/src/trap.S
+run_check "INVARIANT" rg -n -U '^        if layout\.in_stack_guard\(addr\) \{\n[ \t]*\n            BootMapping::Unmapped$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^    lsl     x1, x1, #17              // x1 = index \* SECONDARY_STACK_STRIDE \(128 KiB\)$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -n '^        frame\.sp_el0 = idle\.sp_el0;$' rust/sele4n-hal/src/trap.rs
+# PR #904 (v0.36.41): the boot-entry contract refuses a configuration argument
+# whose project closure is compiled to something other than its kernel term.
+run_check "INVARIANT" rg -n '^            match compiledEffectConstant env args with$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^    if \(Lean\.Compiler\.getImplementedBy\? env n\)\.isSome \|\| isExtern env n \|\| ci\.isUnsafe then$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'bootEntryWitnessEffectfulConfig\] do$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_retry_of_owned_elsewhere($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^theorem fpReleaseOnCore_saves_owner($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^    else if fpOwnedElsewhere st c tid then \(\.retry, st\)$' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^        \.user tcb\.registerContext ops\.1 ops\.2 \(fpLiveFor st c tid\)$' SeLe4n/Kernel/Architecture/ContextRestore.lean
-run_check "INVARIANT" rg -n '^    ffiRestoreCommit \(if fpLive then 2 else 0\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export lean_handle_fp_access\]$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame record\.2\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
@@ -7772,8 +7832,11 @@ run_negative_check "INVARIANT" rg -n 's\.executable and s\.name not in REQUIRED_
 run_check "INVARIANT" rg -n '^                                         and s\.addr \+ s\.size <= text_end\)\]$' scripts/check_kernel_image.py
 run_check "INVARIANT" rg -n '^  else if ec = 0x07 then \.fpAccess$' SeLe4n/Kernel/Architecture/Fault.lean
 run_check "INVARIANT" rg -n '^  \| \.fpAccess     => none$' SeLe4n/Kernel/Architecture/Fault.lean
-run_check "INVARIANT" rg -n '^  threadCurrentOnSomeCore st tid \|\| st\.machine\.fpOwnedOnSomeCore tid$' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 run_check "INVARIANT" rg -n '^        if threadHeldOnSomeCore st tcb\.tid then$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+# PR #904 review (`v0.36.41`): the destroy path refuses a thread some core still
+# holds as its resident EL0 context, beside the current and FP-owner clauses.
+run_check "INVARIANT" rg -n -U 'def threadHeldOnSomeCore \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : Bool :=\n  threadCurrentOnSomeCore st tid \|\| st\.machine\.fpOwnedOnSomeCore tid \|\|\n    st\.machine\.residentOnSomeCore tid$' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^  tcbResidencyReleased : ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^  tcbFpReleased : ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^\.section \.text\.sele4n_fp_context$' rust/sele4n-hal/src/fp_context.S
 run_check "INVARIANT" rg -n '^    mov     x9, #0x300000$' rust/sele4n-hal/src/fp_context.S
@@ -10850,7 +10913,7 @@ run_check "INVARIANT" rg -n '^def isApprovedBootApplication($|[ ({:\[\]])' SeLe4
 # recursion limit on every `bind`-headed witness once the boot's configuration
 # binding reached the RAM-variant selection, and which would have accepted an
 # inlined copy of the wrapper's body.
-run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedCall with\n\s+\| none => pure false\n\s+\| some reduced =>[^\n]*(\n([ \t][^\n]*)?)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkAppN \(mkConst approvedCall\) args\)' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedCall with\n\s+\| none => pure none\n\s+\| some reduced =>[^\n]*(\n([ \t][^\n]*)?)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkAppN \(mkConst approvedCall\) args\)' SeLe4n/Testing/BootEntryContract.lean
 run_negative_check "INVARIANT" rg -n 'Meta\.isDefEq body \(mkApp \(mkConst approved(Boot)?Call\) config\)' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean

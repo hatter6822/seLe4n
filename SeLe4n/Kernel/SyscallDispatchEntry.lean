@@ -489,7 +489,11 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
       -- WS-BP BP7.4: the returning caller's result is in its saved context and
       -- the core's bank before any local reschedule, so a switch saves it.
       let stR := Architecture.stageCallerReturn st st' execCore outcome
-      let st'' := PriorityInheritance.scheduleLocalSuccessor st stR execCore
+      -- PR #904 review (`v0.36.41`): settle what this core resumes — a thread
+      -- still resident on another core is deferred, and the one resumed here
+      -- becomes this core's resident thread (`settleResidencyOnCore`).
+      let st'' := PriorityInheritance.settleResidencyOnCore
+        (PriorityInheritance.scheduleLocalSuccessor st stR execCore) execCore
       ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
         Architecture.shootdownChangedTargets st st'',
         Architecture.shootdownPostedOps st st'',
@@ -502,7 +506,11 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
   | Except.error e =>
       -- WS-BP BP7.4: the error is the caller's result, staged as any is.
       let outcome := Architecture.SyscallOutcome.returns (Architecture.errorFrame e)
-      let stE := Architecture.stageCallerReturn st st execCore outcome
+      -- PR #904 review (`v0.36.41`): a syscall refused on a vacated core — the
+      -- remote deschedule emptied the slot while the thread still ran here —
+      -- still hands the core a successor, so it does not resume the stale frame.
+      let stE := PriorityInheritance.settleResidencyOnCore
+        (Architecture.stageCallerReturn st st execCore outcome) execCore
       ((outcome,
         ([] : List (CoreId × SgiKind)),
         ([] : List CoreId),
@@ -527,8 +535,10 @@ theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContex
           ipcBufferAddr elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
       (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1 =
-        (PriorityInheritance.scheduleLocalSuccessor st
-          (Architecture.stageCallerReturn st st' execCore outcome) execCore).pendingPhysicalWrites := by
+        (PriorityInheritance.settleResidencyOnCore
+          (PriorityInheritance.scheduleLocalSuccessor st
+            (Architecture.stageCallerReturn st st' execCore outcome) execCore)
+          execCore).pendingPhysicalWrites := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
     msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
   refine ⟨outcome, st', h, ?_, ?_⟩ <;> simp [syscallDispatchCrossCoreStep, h]
@@ -562,7 +572,8 @@ def syscallBracketRefusalResult (execCore : CoreId) (unwound : SystemState) :
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   let outcome := Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState)
-  let staged := Architecture.stageCallerReturn unwound unwound execCore outcome
+  let staged := PriorityInheritance.settleResidencyOnCore
+    (Architecture.stageCallerReturn unwound unwound execCore outcome) execCore
   ((outcome,
     ([] : List (CoreId × SgiKind)),
     ([] : List CoreId),
@@ -747,6 +758,9 @@ def syscallDispatchCrossCoreEntry
   -- **WS-BP BP7.3**: the whole context the caller trapped with is saved into
   -- this core's register bank and the caller's TCB before the step runs, so a
   -- context switch the syscall causes saves every register, not the window.
+  -- PR #904 review (`v0.36.41`): on a core a remote deschedule vacated, the
+  -- frame goes to the core's resident thread rewound to the `SVC`
+  -- (`saveCapturedSyscallFrame`), so the interrupted syscall is re-issued.
   let frame ← Platform.FFI.captureTrapFrame
   -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
   -- and synced into the model in the atomic step, so the decode reads what the
@@ -756,7 +770,7 @@ def syscallDispatchCrossCoreEntry
     syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30
       (Architecture.IpcBufferRead.syncUserWords
-        (Architecture.saveCapturedTrapFrame st execCore frame) words)
+        (Architecture.saveCapturedSyscallFrame st execCore frame) words)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
   -- immediately after the commit — `dispatch_svc` reads it back inside the
   -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
@@ -827,7 +841,7 @@ theorem syscallDispatchCrossCoreEntry_def
           syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
             ipcBufferAddr elr spsr spEl0 x30
             (Architecture.IpcBufferRead.syncUserWords
-              (Architecture.saveCapturedTrapFrame st execCore frame) words)
+              (Architecture.saveCapturedSyscallFrame st execCore frame) words)
         let frame := result.1.mailboxFrame
         Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
         Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1

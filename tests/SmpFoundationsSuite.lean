@@ -373,6 +373,9 @@ example (coreId : UInt64) :
           let record ← SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>
             let st' := (SeLe4n.Kernel.rescheduleUnderDeclaredLockSet coreId
               (SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+            -- PR #904 review (`v0.36.41`): the core's residency settles on the
+            -- successor the reschedule staged.
+            let st' := SeLe4n.Kernel.PriorityInheritance.settleResidencyAt st' coreId
             (((SeLe4n.Kernel.Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
               SeLe4n.Kernel.Concurrency.restoreTargetAt st' coreId,

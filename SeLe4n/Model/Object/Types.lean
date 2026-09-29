@@ -402,6 +402,16 @@ capability used to leave its page mapped until the untyped was reset. -/
 structure FrameMapping where
   asid : SeLe4n.ASID
   vaddr : SeLe4n.VAddr
+  /-- **PR #904 review (`v0.36.41`): which mapping of the frame this is.**  The
+      frame's `mapEpoch` at the moment this capability mapped it; the address
+      space's entry at `vaddr` carries the same number
+      (`VSpaceRoot.mappingEpochs`).  A record is the capability's own mapping
+      only while the two agree, so a record gone stale — the address space
+      unmapped the address, or was destroyed and its ASID reused — cannot claim
+      a later mapping of the same frame at the same address.  The number is
+      unique for the frame's lifetime, and a frame outlives every record that
+      names it (a reset refuses while any capability to it survives). -/
+  epoch : Nat := 0
   deriving Repr, DecidableEq
 
 /-- **WS-BP BP7.1 (`v0.36.7`): one page as an address space maps it** — the
@@ -415,6 +425,11 @@ structure MappedPage where
   asid : SeLe4n.ASID
   vaddr : SeLe4n.VAddr
   paddr : SeLe4n.PAddr
+  /-- **PR #904 review (`v0.36.41`)**: the mapping epoch a capability's record
+      names (`FrameMapping.epoch`), or `none` for a page read off an address
+      space itself (the untyped reset's region-wide teardown), which removes
+      whatever maps the page. -/
+  epoch : Option Nat := none
   deriving Repr, DecidableEq
 
 /-- WS-F5/D2b: Capability with order-independent rights set.

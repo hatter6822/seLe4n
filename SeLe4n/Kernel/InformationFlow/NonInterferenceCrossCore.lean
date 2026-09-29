@@ -4093,13 +4093,18 @@ theorem vspaceMapFromFrameCap_confinedToCores
     (tid : SeLe4n.ThreadId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState)
     (hStep : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] := by
-  obtain ⟨_, _, frame, st1, -, -, -, -, -, hMap, hRec⟩ := vspaceMapFromFrameCap_ok tid args st st' hStep
-  -- WS-BP BP7.1 (`v0.36.7`): the mapping record is one CNode store, which
-  -- writes neither the scheduler nor the machine.
-  obtain ⟨_, _, _, _, hStore⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st1 st' hRec
+  obtain ⟨_, _, frame, st1, -, -, -, -, -, hMap, epoch, st2, hT, hRec⟩ :=
+    vspaceMapFromFrameCap_ok tid args st st' hStep
+  -- WS-BP BP7.1 (`v0.36.7`): the mapping record is one CNode store, and
+  -- (PR #904 review, `v0.36.41`) the epoch tag a root store and a frame store —
+  -- none writes the scheduler or the machine.
+  obtain ⟨_, _, _, _, hStore⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
+  obtain ⟨hTS, hTM⟩ := tagFrameMapping_scheduler_machine _ _ _ st1 st2 epoch hT
   exact observableSlotsConfinedToCores_trans
-    (vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores _ _ _
-      frame.base _ st st1 hMap)
+    (observableSlotsConfinedToCores_trans
+      (vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores _ _ _
+        frame.base _ st st1 hMap)
+      (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq hTS hTM))
     (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
       (storeObject_scheduler_eq _ _ _ _ hStore) (storeObject_machine_eq _ _ _ _ hStore))
 

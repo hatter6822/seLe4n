@@ -49,6 +49,15 @@ KERNEL_RESERVED_END = 0x10000000;
  * three do not state `RPI5`'s numbers.  Hex on one line, as above. */
 RAM_BASE = 0x0;
 
+/* PR #904 (`v0.36.41`): the kernel stacks' guard pages and slots, and the
+ * per-PE fault stacks.  `mmu::STACK_GUARD_SIZE`, `mmu::SECONDARY_STACK_STRIDE`
+ * and `mmu::FAULT_STACK_SIZE` state the same numbers and the HAL's test holds
+ * them equal; `boot.S`'s `lsl #17` and the `trap.S` fault-stack arithmetic's
+ * `lsl #14` are their logarithms.  Hex on one line, as above. */
+STACK_GUARD_SIZE = 0x1000;
+SECONDARY_STACK_STRIDE = 0x20000;
+FAULT_STACK_SIZE = 0x4000;
+
 /* WS-BP BP5.3: the size of the window the image build places the device tree
  * in (`.dtb_window` below).  It is `cmdline::MAX_DTB_SIZE`, the bound every
  * reader of the blob enforces before it forms a slice and the extent
@@ -157,8 +166,17 @@ SECTIONS
      * a 4 KiB boundary, matching the TTBR0_EL1 BAADDR contract.
      */
 
-    /* Kernel stack — 64 KiB, 16-byte aligned (AArch64 SP requirement) */
-    .stack (NOLOAD) : ALIGN(16) {
+    /* Kernel stack — 64 KiB, 16-byte aligned (AArch64 SP requirement).
+     *
+     * PR #904 (`v0.36.41`): below it, one **guard page** the boot map leaves
+     * unmapped (`mmu::ImageLayout::stack_guards`), so an overflow takes a
+     * translation fault instead of writing the end of `.bss` — the boot
+     * tables and the per-core flag arrays.  The fault is taken on the
+     * executing PE's fault stack (`.fault_stacks`, below), because the stack
+     * that overflowed cannot hold the exception's own frame. */
+    .stack (NOLOAD) : ALIGN(4096) {
+        __stack_guard = .;
+        . += STACK_GUARD_SIZE;
         __stack_bottom = .;
         . += 64K;
         __stack_top = .;
@@ -166,21 +184,40 @@ SECTIONS
 
     /* AN9-J (DEF-R-HAL-L20): per-core stacks for SMP secondaries.
      *
-     * Three 64 KiB regions, one per secondary core (BCM2712 has 3
-     * secondaries — 4 cores total, primary uses `.stack` above).
-     * Each secondary's `secondary_entry` (boot.S) computes its own
-     * stack top via `__smp_secondary_stack_top - (context_id - 1) *
-     * 0x10000`.
+     * Three SECONDARY_STACK_STRIDE (128 KiB) slots, one per secondary
+     * core (BCM2712 has 3 secondaries — 4 cores total, primary uses
+     * `.stack` above).  Each secondary's `secondary_entry` (boot.S)
+     * computes its own stack top via `__smp_secondary_stack_top -
+     * (context_id - 1) * SECONDARY_STACK_STRIDE`.  PR #904 (`v0.36.41`):
+     * the lowest page of every slot is a guard page the boot map leaves
+     * unmapped, so each secondary has 124 KiB of stack and an overflow
+     * faults rather than running into the slot below (or, for core 3,
+     * the top of the boot core's live stack).
      *
      * Reachable only when `SMP_ENABLED=true`, which is the default
      * since SM5.I serialised kernel entry (v0.32.142); the linker keeps
      * the section present so the symbol resolves in either
      * configuration.
      */
-    .smp_stacks (NOLOAD) : ALIGN(16) {
+    .smp_stacks (NOLOAD) : ALIGN(4096) {
         __smp_secondary_stacks_bottom = .;
-        . += (3 * 64K);
+        . += (3 * SECONDARY_STACK_STRIDE);
         __smp_secondary_stack_top = .;
+    } > RAM
+
+    /* PR #904 (`v0.36.41`): one fault stack per PE.  A synchronous exception
+     * or SError taken **from EL1** is the kernel's own fault and halts the
+     * PE; its vector switches to `SP_EL0` (`msr spsel, #0`), which every PE
+     * holds at its fault stack's top while it runs at EL1 (`boot.S`, and the
+     * EL0 entries in `trap.S`), so the halt path has a stack even when the
+     * fault is the kernel stack overflowing into its guard.  Core `c`'s top is
+     * `__fault_stacks_bottom + (c + 1) * FAULT_STACK_SIZE`.  The halt path is
+     * bounded, non-recursive Rust (a diagnostic line and the halt), which is
+     * what makes a fixed size sufficient. */
+    .fault_stacks (NOLOAD) : ALIGN(4096) {
+        __fault_stacks_bottom = .;
+        . += (4 * FAULT_STACK_SIZE);
+        __fault_stacks_top = .;
     } > RAM
 
     /* WS-BP BP2.1: the Lean heap arena.  `NOLOAD`, so it costs the image
@@ -275,6 +312,9 @@ ASSERT(__boot_table_pool_start >= __dtb_window_end, "the boot table-page pool mu
 /* WS-BP BP2.6: the permission boundaries `mmu::ImageLayout::is_well_formed`
  * requires — each on a page, the text non-empty and ahead of the read-only
  * data, which starts where the text ends. */
+ASSERT(__stack_guard % 4096 == 0 && __stack_bottom == __stack_guard + STACK_GUARD_SIZE && STACK_GUARD_SIZE == 4096, "the boot stack must sit directly above one 4 KiB guard page")
+ASSERT(__smp_secondary_stacks_bottom % 4096 == 0 && __smp_secondary_stack_top - __smp_secondary_stacks_bottom == 3 * SECONDARY_STACK_STRIDE && SECONDARY_STACK_STRIDE == 0x20000, "the secondary stack slots must be three page-aligned 128 KiB slots, each with its guard at its base")
+ASSERT(__fault_stacks_top - __fault_stacks_bottom == 4 * FAULT_STACK_SIZE && FAULT_STACK_SIZE == 0x4000 && __fault_stacks_top % 16 == 0, "the fault stacks must be four 16 KiB stacks, one per PE")
 ASSERT(_start % 4096 == 0, "the kernel text must start on a 4 KiB page")
 ASSERT(__text_end % 4096 == 0 && __text_end > _start, "the kernel text must end on a 4 KiB page after it starts")
 ASSERT(__rodata_start == __text_end, "the read-only data must begin where the kernel text ends")

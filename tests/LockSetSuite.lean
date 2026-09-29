@@ -1120,7 +1120,8 @@ private def runPerTransitionShapeChecks : IO Unit := do
         ∈ (lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
      decide ((stateLevelLock, AccessMode.write)
         ∈ (lockSet_mintReplyCap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs))
-  -- VSpace: `vspaceMap` declares the frame it maps (read) and the frame
+  -- VSpace: `vspaceMap` declares the frame it maps (write — the mapping epoch
+  -- it advances, PR #904 review, v0.36.41) and the frame
   -- capability's CNode (write, for the mapping record) beside the caller, the
   -- caller's root and the VSpace root (WS-BP BP7.1, v0.36.7).  With the frame
   -- capability in the caller's own root CNode — the single-level CSpace the
@@ -1132,6 +1133,10 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "vspaceMap size = 5 (frame capability in another CNode)"
     (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
               (ObjId.ofNat 40) (ObjId.ofNat 30)).size = 5))
+  assertBool "vspaceMap declares the frame for write (its mapping epoch)"
+    (decide ((pageLock (ObjId.ofNat 30), AccessMode.write)
+        ∈ (lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+            (ObjId.ofNat 10) (ObjId.ofNat 30)).pairs))
   assertBool "vspaceMap declares the frame capability's CNode for write"
     (decide ((cnodeLock (ObjId.ofNat 10), AccessMode.write)
         ∈ (lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)

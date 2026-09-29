@@ -699,6 +699,12 @@ impl BootMapping {
 /// `.text.vectors`, `.text`) and `[text_end, rodata_end)` its read-only data.
 /// On hardware the three are `link.ld`'s `_start`, `__text_end` and
 /// `__rodata_end` ([`image_layout`]); the host tests pass their own.
+///
+/// **PR #904 (`v0.36.41`)**: and where the kernel stacks' guard pages sit —
+/// the page below the boot stack and the lowest page of each secondary slot
+/// (`link.ld`'s `__stack_guard` and `__smp_secondary_stacks_bottom + k *
+/// SECONDARY_STACK_STRIDE`), which the map leaves unmapped so a stack overflow
+/// takes a translation fault instead of writing the memory below it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImageLayout {
     /// First byte of the kernel's text: the load address.
@@ -707,6 +713,34 @@ pub struct ImageLayout {
     pub text_end: u64,
     /// One past the read-only data.
     pub rodata_end: u64,
+    /// The base of each kernel stack's guard page, in address order.
+    pub stack_guards: [u64; STACK_GUARD_COUNT],
+}
+
+/// **PR #904 (`v0.36.41`)**: bytes of one kernel-stack guard page
+/// (`link.ld`'s `STACK_GUARD_SIZE`).
+pub const STACK_GUARD_SIZE: u64 = 0x1000;
+/// **PR #904**: the stride between secondary stack slots (`link.ld`'s
+/// `SECONDARY_STACK_STRIDE`; `boot.S`'s `lsl #17`).
+pub const SECONDARY_STACK_STRIDE: u64 = 0x2_0000;
+/// **PR #904**: bytes of one PE's fault stack (`link.ld`'s `FAULT_STACK_SIZE`;
+/// `boot.S`'s and `trap.S`'s `lsl #14`).
+pub const FAULT_STACK_SIZE: u64 = 0x4000;
+/// **PR #904**: one guard page per kernel stack — the boot core's and the
+/// three secondaries'.
+pub const STACK_GUARD_COUNT: usize = 4;
+
+/// **PR #904**: the four guard pages for a boot stack guard at `boot_guard`
+/// and secondary slots from `secondary_bottom` — the arithmetic `link.ld`
+/// lays out and `boot.S` indexes.
+#[must_use]
+pub const fn stack_guards_for(boot_guard: u64, secondary_bottom: u64) -> [u64; STACK_GUARD_COUNT] {
+    [
+        boot_guard,
+        secondary_bottom,
+        secondary_bottom + SECONDARY_STACK_STRIDE,
+        secondary_bottom + 2 * SECONDARY_STACK_STRIDE,
+    ]
 }
 
 impl ImageLayout {
@@ -727,19 +761,62 @@ impl ImageLayout {
             && self.text_end <= self.rodata_end
             && in_kernel_memory_window(self.text_start)
             && self.rodata_end <= KERNEL_RESERVED_END
+            && self.guards_well_formed()
+    }
+
+    /// PR #904: every guard page is page aligned, lies above the read-only
+    /// data, inside the reserved extent, and after the one before it.
+    const fn guards_well_formed(&self) -> bool {
+        let mut floor = self.rodata_end;
+        let mut i = 0;
+        while i < STACK_GUARD_COUNT {
+            let g = self.stack_guards[i];
+            if !g.is_multiple_of(L3_PAGE_SIZE) || g < floor {
+                return false;
+            }
+            match g.checked_add(STACK_GUARD_SIZE) {
+                Some(end) if end <= KERNEL_RESERVED_END => floor = end,
+                _ => return false,
+            }
+            i += 1;
+        }
+        true
+    }
+
+    /// PR #904: is `addr` inside one of the stack guard pages?
+    #[must_use]
+    pub const fn in_stack_guard(&self, addr: u64) -> bool {
+        let mut i = 0;
+        while i < STACK_GUARD_COUNT {
+            let g = self.stack_guards[i];
+            if g <= addr && addr - g < STACK_GUARD_SIZE {
+                return true;
+            }
+            i += 1;
+        }
+        false
     }
 
     /// The map's boundaries inside the kernel's extent, in address order: the
-    /// image origin (`v0.36.36` — the unmapped hole below it ends there) and
-    /// the layout's three.  A boundary that falls strictly inside a 2 MiB block
+    /// image origin (`v0.36.36` — the unmapped hole below it ends there), the
+    /// layout's three, and both edges of each stack guard page (PR #904).  A boundary that falls strictly inside a 2 MiB block
     /// is what forces that block to page granularity.  In order because a
     /// well-formed layout's text starts at or above [`IMAGE_ORIGIN`].
     const fn boundaries(&self) -> [u64; IMAGE_BOUNDARY_COUNT] {
+        let g = &self.stack_guards;
         [
             IMAGE_ORIGIN,
             self.text_start,
             self.text_end,
             self.rodata_end,
+            g[0],
+            g[0] + STACK_GUARD_SIZE,
+            g[1],
+            g[1] + STACK_GUARD_SIZE,
+            g[2],
+            g[2] + STACK_GUARD_SIZE,
+            g[3],
+            g[3] + STACK_GUARD_SIZE,
         ]
     }
 }
@@ -756,7 +833,10 @@ impl ImageLayout {
 #[must_use]
 pub const fn boot_mapping_for(addr: u64, layout: &ImageLayout) -> BootMapping {
     if in_kernel_memory_window(addr) {
-        if layout.text_start <= addr && addr < layout.text_end {
+        if layout.in_stack_guard(addr) {
+            // PR #904: a kernel stack's guard page — an overflow faults.
+            BootMapping::Unmapped
+        } else if layout.text_start <= addr && addr < layout.text_end {
             BootMapping::KernelText
         } else if layout.text_end <= addr && addr < layout.rodata_end {
             BootMapping::KernelReadOnly
@@ -793,6 +873,10 @@ pub const fn boot_mapping_for(addr: u64, layout: &ImageLayout) -> BootMapping {
 /// [`ram_range_covered`] is the pure form, pinned against a walk of extended
 /// tables by `boot_map_tests`.  An empty range is vacuously contained; a range
 /// whose end overflows `u64` is refused.
+///
+/// **PR #904 (`v0.36.41`)**: and none of it is a kernel stack's guard page,
+/// which the map leaves unmapped inside the extent
+/// ([`boot_cacheable_range_for`] is the pure form over a given layout).
 #[must_use]
 pub fn is_boot_cacheable_range(base: u64, size: u64) -> bool {
     let recorded = RAM_EXTENSION_COUNT
@@ -805,7 +889,36 @@ pub fn is_boot_cacheable_range(base: u64, size: u64) -> bool {
             RAM_EXTENSIONS[i].1.load(Ordering::Relaxed),
         );
     }
-    ram_range_covered(base, size, &extensions[..recorded])
+    boot_cacheable_range_for(base, size, &extensions[..recorded], &image_layout())
+}
+
+/// **PR #904 (`v0.36.41`)**: [`is_boot_cacheable_range`] over a given layout —
+/// covered by the reserved extent or an extension ([`ram_range_covered`]) and
+/// meeting no stack guard page of `layout`.  A layout the tables cannot
+/// describe (the host's empty one) has no guards to avoid.
+#[must_use]
+pub const fn boot_cacheable_range_for(
+    base: u64,
+    size: u64,
+    extensions: &[(u64, u64)],
+    layout: &ImageLayout,
+) -> bool {
+    if !ram_range_covered(base, size, extensions) {
+        return false;
+    }
+    if size == 0 || !layout.is_well_formed() {
+        return true;
+    }
+    let end = base + size; // no overflow: `ram_range_covered` refused one
+    let mut i = 0;
+    while i < STACK_GUARD_COUNT {
+        let g = layout.stack_guards[i];
+        if base < g + STACK_GUARD_SIZE && g < end {
+            return false;
+        }
+        i += 1;
+    }
+    true
 }
 
 /// **WS-BP BP4.6**: is every byte of `[base, base + size)` inside the kernel's
@@ -866,11 +979,12 @@ const L1_BLOCK_SIZE: u64 = 1 << 30;
 const L2_BLOCK_SIZE: u64 = 1 << 21;
 
 /// How many boundaries the map has inside the kernel's extent — the image
-/// origin and [`ImageLayout`]'s three — and so the most 2 MiB blocks of the
-/// reserved extent that need page granularity: a block is uniform unless a
-/// boundary falls strictly inside it.  (Four since `v0.36.36`, which made the
-/// origin a boundary: the block holding it is half unmapped.)
-const IMAGE_BOUNDARY_COUNT: usize = 4;
+/// origin, [`ImageLayout`]'s three and both edges of each stack guard page —
+/// and so the most 2 MiB blocks of the reserved extent that need page
+/// granularity: a block is uniform unless a boundary falls strictly inside it.
+/// (Four since `v0.36.36`, which made the origin a boundary: the block holding
+/// it is half unmapped; twelve since PR #904 added the guard pages.)
+const IMAGE_BOUNDARY_COUNT: usize = 4 + 2 * STACK_GUARD_COUNT;
 
 /// The L1 index of the gigabyte holding the device window.
 const DEVICE_GIB: usize = (DEVICE_WINDOW_BASE / L1_BLOCK_SIZE) as usize;
@@ -891,7 +1005,7 @@ const DESC_ADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
 
 /// Boot translation tables.
 ///
-/// Laid out as one `#[repr(C, align(4096))]` struct so all eight tables are
+/// Laid out as one `#[repr(C, align(4096))]` struct so all its tables are
 /// contiguous and 4 KiB aligned (each array is exactly one 4 KiB page), which
 /// lets [`enable_mmu`] clean the whole extent to the Point of Coherency in one
 /// range operation.
@@ -1746,11 +1860,17 @@ fn image_layout() -> ImageLayout {
             static _start: u8;
             static __text_end: u8;
             static __rodata_end: u8;
+            static __stack_guard: u8;
+            static __smp_secondary_stacks_bottom: u8;
         }
         ImageLayout {
             text_start: &raw const _start as u64,
             text_end: &raw const __text_end as u64,
             rodata_end: &raw const __rodata_end as u64,
+            stack_guards: stack_guards_for(
+                &raw const __stack_guard as u64,
+                &raw const __smp_secondary_stacks_bottom as u64,
+            ),
         }
     }
     #[cfg(not(target_arch = "aarch64"))]
@@ -1759,6 +1879,7 @@ fn image_layout() -> ImageLayout {
             text_start: 0,
             text_end: 0,
             rodata_end: 0,
+            stack_guards: [0; STACK_GUARD_COUNT],
         }
     }
 }
@@ -2394,7 +2515,10 @@ mod tests {
         // extent that under-reports the tables would leave a table dirty in
         // the D-cache while the walker reads memory.
         assert_eq!(PageTableCell::size(), BOOT_TABLE_COUNT * 4096);
-        assert_eq!(PageTableCell::size(), 32768);
+        // PR #904: four fixed tables and twelve page-granular image tables
+        // (the origin, the layout's three boundaries, both edges of four
+        // stack guard pages).
+        assert_eq!(PageTableCell::size(), 65536);
     }
 
     #[test]
@@ -2607,6 +2731,10 @@ mod boot_table_walk {
         text_start: KERNEL_RESERVED_BASE + 0x8_0000,
         text_end: KERNEL_RESERVED_BASE + 0x2A_3000,
         rodata_end: KERNEL_RESERVED_BASE + 0x3C_5000,
+        stack_guards: stack_guards_for(
+            KERNEL_RESERVED_BASE + 0x40_0000,
+            KERNEL_RESERVED_BASE + 0x41_1000,
+        ),
     };
 
     /// Every layout boundary in a block of its own: all four L3 tables used
@@ -2615,6 +2743,10 @@ mod boot_table_walk {
         text_start: KERNEL_RESERVED_BASE + 0x8_0000,
         text_end: KERNEL_RESERVED_BASE + 0x61_F000,
         rodata_end: KERNEL_RESERVED_BASE + 0xA0_5000,
+        stack_guards: stack_guards_for(
+            KERNEL_RESERVED_BASE + 0xC0_0000,
+            KERNEL_RESERVED_BASE + 0xC1_1000,
+        ),
     };
 
     /// Every layout boundary on a block boundary: only the origin's block —
@@ -2623,6 +2755,10 @@ mod boot_table_walk {
         text_start: KERNEL_RESERVED_BASE + 0x20_0000,
         text_end: KERNEL_RESERVED_BASE + 0x40_0000,
         rodata_end: KERNEL_RESERVED_BASE + 0x60_0000,
+        stack_guards: stack_guards_for(
+            KERNEL_RESERVED_BASE + 0x60_0000,
+            KERNEL_RESERVED_BASE + 0x61_1000,
+        ),
     };
 
     pub(super) const LAYOUTS: [ImageLayout; 3] = [LAYOUT, SPREAD_LAYOUT, BLOCK_ALIGNED_LAYOUT];
@@ -2809,18 +2945,29 @@ mod qemu_virt_boot_map_tests {
                     lean == "device",
                     "{a:#x} is {lean}"
                 );
+                // PR #904: less the stack guard pages, which are unmapped.
+                let guard = layout.in_stack_guard(a);
                 assert_eq!(
                     kind.is_normal(),
-                    in_kernel_memory_window(a),
+                    in_kernel_memory_window(a) && !guard,
                     "{a:#x}: the constant Normal window is the kernel's extent from the origin"
                 );
                 let extended_normal = walk(&extended, base_pa, a)
                     .is_some_and(|(_, attrs)| attrs & ATTR_IDX_DEVICE == 0);
-                assert_eq!(extended_normal, lean == "ram", "extended: {a:#x} is {lean}");
+                assert_eq!(
+                    extended_normal,
+                    lean == "ram" && !guard,
+                    "extended: {a:#x} is {lean}"
+                );
                 assert_eq!(
                     ram_range_covered(a, 1, &ranges),
                     lean == "ram",
-                    "the cacheable window at {a:#x} is not the virt RAM"
+                    "the covered window at {a:#x} is not the virt RAM"
+                );
+                assert_eq!(
+                    boot_cacheable_range_for(a, 1, &ranges, layout),
+                    lean == "ram" && !guard,
+                    "the cacheable window at {a:#x} is not the virt's mapped RAM"
                 );
                 if let Some((pa, attrs)) = walk(&extended, base_pa, a) {
                     assert_eq!(pa, a, "the extended map is an identity map");
@@ -3054,9 +3201,11 @@ mod boot_map_tests {
                     // WS-BP BP7.10: the constant Normal window is exactly the
                     // kernel's reserved extent from the image origin
                     // (`v0.36.36`), on every configuration.
+                    // PR #904: less the stack guard pages, which are unmapped.
                     assert_eq!(
                         kind.is_normal(),
-                        (IMAGE_ORIGIN..KERNEL_RESERVED_END).contains(&a),
+                        (IMAGE_ORIGIN..KERNEL_RESERVED_END).contains(&a)
+                            && !layout.in_stack_guard(a),
                         "{a:#x}: the constant Normal window is the kernel's extent"
                     );
                     // WS-BP BP4.6, BP7.10: with the configuration's extensions
@@ -3066,15 +3215,23 @@ mod boot_map_tests {
                     // gigabyte stays unmapped and uncacheable.
                     let extended_normal = walk(&extended, base_pa, a)
                         .is_some_and(|(_, attrs)| attrs & ATTR_IDX_DEVICE == 0);
+                    // PR #904: a stack guard page is RAM the kernel owns and
+                    // leaves unmapped, so it is neither mapped nor cacheable.
+                    let guard = layout.in_stack_guard(a);
                     assert_eq!(
                         extended_normal,
-                        lean == "ram",
+                        lean == "ram" && !guard,
                         "configuration {cfg:x?} extended: {a:#x} is {lean} in the Lean map"
                     );
                     assert_eq!(
                         ram_range_covered(a, 1, &ranges),
                         lean == "ram",
-                        "configuration {cfg:x?}: the cacheable window at {a:#x} is not its RAM"
+                        "configuration {cfg:x?}: the covered window at {a:#x} is not its RAM"
+                    );
+                    assert_eq!(
+                        boot_cacheable_range_for(a, 1, &ranges, layout),
+                        lean == "ram" && !guard,
+                        "configuration {cfg:x?}: the cacheable window at {a:#x} is not its mapped RAM"
                     );
                     if let Some((pa, attrs)) = walk(&extended, base_pa, a) {
                         assert_eq!(pa, a, "the extended map is an identity map");
@@ -3341,8 +3498,18 @@ mod boot_map_tests {
                     "{page:#x} is below the image origin and mapped"
                 );
             }
+            // PR #904: every stack guard page is unmapped, so an overflow faults.
+            for g in layout.stack_guards {
+                assert!(
+                    walk(&tables, base_pa, g).is_none(),
+                    "guard {g:#x} is mapped"
+                );
+            }
             for (lo, hi) in spans {
                 for page in (lo..hi).step_by(L3_PAGE_SIZE as usize) {
+                    if layout.in_stack_guard(page) {
+                        continue;
+                    }
                     let (_, attrs) = walk(&tables, base_pa, page).expect("mapped");
                     assert!(
                         !(writable(attrs) && executable(attrs)),
@@ -3489,13 +3656,15 @@ mod boot_map_tests {
                 .filter_map(|b| image_l3_slot(layout, b).map(|s| (b, s)))
                 .collect()
         };
-        assert_eq!(slots(&LAYOUT), [(0, 0), (0x20_0000, 1)]);
+        // PR #904: the four stack guard pages share one block in each layout,
+        // which needs a table of its own.
+        assert_eq!(slots(&LAYOUT), [(0, 0), (0x20_0000, 1), (0x40_0000, 2)]);
         assert_eq!(
             slots(&SPREAD_LAYOUT),
-            [(0, 0), (0x60_0000, 1), (0xA0_0000, 2)]
+            [(0, 0), (0x60_0000, 1), (0xA0_0000, 2), (0xC0_0000, 3)]
         );
         // `v0.36.36`: the origin's block is half unmapped, so it always has one.
-        assert_eq!(slots(&BLOCK_ALIGNED_LAYOUT), [(0, 0)]);
+        assert_eq!(slots(&BLOCK_ALIGNED_LAYOUT), [(0, 0), (0x60_0000, 1)]);
     }
 
     #[test]
@@ -3533,6 +3702,21 @@ mod boot_map_tests {
         for layout in broken {
             assert!(!layout.is_well_formed(), "{layout:#x?}");
         }
+        // PR #904: a guard off a page boundary, below the read-only data, out
+        // of order, or past the reserved extent is refused too.
+        let g = LAYOUT.stack_guards;
+        for guards in [
+            [g[0] + 8, g[1], g[2], g[3]],
+            [LAYOUT.rodata_end - page, g[1], g[2], g[3]],
+            [g[1], g[0], g[2], g[3]],
+            [g[0], g[1], g[2], KERNEL_RESERVED_END],
+        ] {
+            let layout = ImageLayout {
+                stack_guards: guards,
+                ..LAYOUT
+            };
+            assert!(!layout.is_well_formed(), "{layout:#x?}");
+        }
         // Read-only data may be empty; the text may reach the top exactly.
         assert!(ImageLayout {
             rodata_end: LAYOUT.text_end,
@@ -3552,6 +3736,9 @@ mod boot_map_tests {
             0u64,
             0x8_0000,
             LAYOUT.text_end,
+            // PR #904: a guard page, and the page just below one.
+            LAYOUT.stack_guards[0],
+            LAYOUT.stack_guards[1] - 0x1000,
             KERNEL_RESERVED_END - L2_BLOCK_SIZE,
             KERNEL_RESERVED_END - 1,
             KERNEL_RESERVED_END,
@@ -3568,7 +3755,7 @@ mod boot_map_tests {
                             .is_some_and(|a| boot_mapping_for(a, &LAYOUT).is_normal())
                     });
                 assert_eq!(
-                    is_boot_cacheable_range(base, size),
+                    boot_cacheable_range_for(base, size, &[], &LAYOUT),
                     expected,
                     "range {base:#x}+{size:#x}"
                 );

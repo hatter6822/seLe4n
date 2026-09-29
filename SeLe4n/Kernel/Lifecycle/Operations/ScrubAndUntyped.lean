@@ -972,10 +972,46 @@ def vspaceRootCapability (rootId : SeLe4n.ObjId) : Capability :=
 it is the boot VSpace root's, and ARM64 reserves it — and the bound is the
 machine's, the one `.vspaceMap`'s decode reads.  `none` when every ASID is
 taken.  A linear scan bounded by the ASID width, as seL4's `ASIDPool_Assign`
-scans its pool. -/
+scans its pool.
+
+The scan is `freshAsidFrom`, a tail call per candidate, so it allocates
+nothing and stops at the first free ASID (PR #904 review): the retired
+spelling `(List.range st.machine.maxASID).find? …` built the whole range —
+65,536 list cells on the production configurations — before the search could
+stop, on every VSpace-root carve, inside the kernel-entry lock.  Its
+worst case, every ASID but the last taken, is still `maxASID` table lookups
+and no allocation. -/
+def freshAsidFrom (st : SystemState) : Nat → Nat → Option SeLe4n.ASID
+  | 0, _ => none
+  | fuel + 1, n =>
+      if n < st.machine.maxASID then
+        if (st.asidTable[SeLe4n.ASID.ofNat n]?).isNone then some (SeLe4n.ASID.ofNat n)
+        else freshAsidFrom st fuel (n + 1)
+      else none
+
+/-- See `freshAsidFrom`: the scan starts at `1` with one step of fuel per ASID. -/
 def freshAsid? (st : SystemState) : Option SeLe4n.ASID :=
-  ((List.range st.machine.maxASID).find? fun n =>
-      n != 0 && (st.asidTable[SeLe4n.ASID.ofNat n]?).isNone).map SeLe4n.ASID.ofNat
+  freshAsidFrom st st.machine.maxASID 1
+
+/-- Every ASID the scan answers is at least its start, below the machine's
+bound, and free in the ASID table. -/
+theorem freshAsidFrom_spec (st : SystemState) :
+    ∀ (fuel n : Nat) (asid : SeLe4n.ASID), freshAsidFrom st fuel n = some asid →
+      n ≤ asid.toNat ∧ asid.toNat < st.machine.maxASID ∧
+        (st.asidTable[asid]?).isNone = true
+  | 0, _, _, h => by simp [freshAsidFrom] at h
+  | fuel + 1, n, asid, h => by
+    unfold freshAsidFrom at h
+    by_cases hLt : n < st.machine.maxASID
+    · rw [if_pos hLt] at h
+      by_cases hFree : (st.asidTable[SeLe4n.ASID.ofNat n]?).isNone = true
+      · rw [if_pos hFree] at h
+        cases h
+        exact ⟨Nat.le_refl _, hLt, hFree⟩
+      · rw [if_neg hFree] at h
+        have ⟨h1, h2, h3⟩ := freshAsidFrom_spec st fuel (n + 1) asid h
+        exact ⟨by omega, h2, h3⟩
+    · rw [if_neg hLt] at h; cases h
 
 /-- **WS-BP BP7.1 slice 4b: is a request's own precondition met?**  A frame or a
 child untyped has none beyond the primitive's.  A VSpace root's ASID must be
@@ -1191,21 +1227,10 @@ admits** — non-zero, below the machine's bound, and free in the ASID table. -/
 theorem freshAsid?_admissible (st : SystemState) (asid : SeLe4n.ASID)
     (h : freshAsid? st = some asid) :
     (CarveRequest.vspaceRoot asid).admissible st = true := by
-  unfold freshAsid? at h
-  cases hF : (List.range st.machine.maxASID).find?
-      (fun n => n != 0 && (st.asidTable[SeLe4n.ASID.ofNat n]?).isNone) with
-  | none => rw [hF] at h; cases h
-  | some n =>
-    rw [hF] at h
-    simp only [Option.map_some, Option.some.injEq] at h
-    subst h
-    have hP := List.find?_some hF
-    have hMem := List.mem_of_find?_eq_some hF
-    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hP
-    have hLt : n < st.machine.maxASID := List.mem_range.mp hMem
-    simp only [CarveRequest.admissible, Bool.and_eq_true, bne_iff_ne, ne_eq,
-      decide_eq_true_eq]
-    exact ⟨⟨hP.1, hLt⟩, hP.2⟩
+  have ⟨h1, h2, h3⟩ := freshAsidFrom_spec st _ 1 asid h
+  simp only [CarveRequest.admissible, Bool.and_eq_true, bne_iff_ne, ne_eq,
+    decide_eq_true_eq]
+  exact ⟨⟨by omega, h2⟩, h3⟩
 
 /-- **WS-BP BP7.1: the carved frame's page is inside its untyped, on a page
 boundary, and of its untyped's memory kind.**  The whole of what "memory is

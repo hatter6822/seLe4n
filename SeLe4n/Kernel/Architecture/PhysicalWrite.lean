@@ -36,9 +36,18 @@ The tag/operand encoding **must** stay in lockstep with
   tag 0 = zero one 4 KiB page at `addr`, then clean it to the Point of
           Unification and invalidate every instruction cache in the domain
           (`PhysicalWrite.icacheMaintenance`)  (`value` ignored)
-  tag 1 = store the descriptor `value` at `addr`
+  tag 1 = store the **level-3 page** descriptor `value` at `addr`
   tag 2 = invalidate every translation tagged `addr` as an ASID (`value` ignored)
   tag 3 = store the user word `value` at `addr`, in a thread's RAM page (WS-BP BP7.8)
+  tag 4 = store the **table** descriptor `value` at `addr`, an entry of a level
+          0–2 table page (PR #904, `v0.36.41`)
+
+The two descriptor tags are distinct because the walker reads a descriptor by
+the **level** of the table it sits in, and bits `[1:0] = 0b11` mean a page at
+level 3 and a table at levels 0–2.  The HAL validates what a descriptor
+*says* — a page's output address is a thread's frame or the device window, a
+table's is a thread table page — and it can do that only if it knows which
+reading the walker will apply.
 -/
 
 namespace SeLe4n.Kernel.Architecture
@@ -50,8 +59,9 @@ inductive PhysicalWrite where
       capability to it exists.  The model performs the same write on
       `MachineState.memory` (`zeroMemoryRange`). -/
   | zeroPage (base : SeLe4n.PAddr)
-  /-- Store the 64-bit translation descriptor `value` at `entry`, the address
-      of one entry of a table page. -/
+  /-- Store the 64-bit **level-3 page** descriptor `value` at `entry`, the
+      address of one entry of a level-3 table page — a thread's mapping, or its
+      clear (`0`). -/
   | storeDescriptor (entry : SeLe4n.PAddr) (value : UInt64)
   /-- Invalidate every translation cached under `asid`, on every PE — owed
       when a table descriptor is cleared (the walk caches intermediate levels,
@@ -71,6 +81,13 @@ inductive PhysicalWrite where
       only frames, and carves are disjoint, so no mapped page is a table
       page. -/
   | storeUserWord (addr : SeLe4n.PAddr) (value : UInt64)
+  /-- **PR #904 (`v0.36.41`)**: store the 64-bit **table** descriptor `value`
+      at `entry`, the address of one entry of a level 0–2 table page — an
+      installed table, or its clear (`0`).  Distinct from `storeDescriptor`
+      because the walker reads a `0b11` descriptor as a table at these levels
+      and as a page at level 3, and the HAL validates the output address
+      against the reading the walker will apply. -/
+  | storeTableDescriptor (entry : SeLe4n.PAddr) (value : UInt64)
   deriving Repr, DecidableEq
 
 namespace PhysicalWrite
@@ -81,6 +98,7 @@ def tag : PhysicalWrite → UInt64
   | .storeDescriptor _ _ => 1
   | .invalidateAsid _ => 2
   | .storeUserWord _ _ => 3
+  | .storeTableDescriptor _ _ => 4
 
 /-- The FFI address operand. -/
 def addr : PhysicalWrite → UInt64
@@ -88,6 +106,7 @@ def addr : PhysicalWrite → UInt64
   | .storeDescriptor entry _ => entry.toNat.toUInt64
   | .invalidateAsid asid => asid.toNat.toUInt64
   | .storeUserWord a _ => a.toNat.toUInt64
+  | .storeTableDescriptor entry _ => entry.toNat.toUInt64
 
 /-- The FFI value operand. -/
 def value : PhysicalWrite → UInt64
@@ -95,9 +114,10 @@ def value : PhysicalWrite → UInt64
   | .storeDescriptor _ v => v
   | .invalidateAsid _ => 0
   | .storeUserWord _ v => v
+  | .storeTableDescriptor _ v => v
 
-/-- Every tag is one of the four the HAL decodes. -/
-theorem tag_le_three (w : PhysicalWrite) : w.tag ≤ 3 := by
+/-- Every tag is one of the five the HAL decodes. -/
+theorem tag_le_four (w : PhysicalWrite) : w.tag ≤ 4 := by
   cases w <;> simp [tag]
 
 /-- **WS-BP post-landing audit (`v0.36.32`): the instruction-cache maintenance a
@@ -129,6 +149,7 @@ def icacheMaintenance : PhysicalWrite → Option ICacheInvalidation
   | .storeDescriptor _ _ => none
   | .invalidateAsid _ => none
   | .storeUserWord _ _ => none
+  | .storeTableDescriptor _ _ => none
 
 /-- **WS-BP post-landing audit (`v0.36.32`)**: a zeroing owes the clean of exactly
 the page it zeroes, then the domain-wide invalidate. -/

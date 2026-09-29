@@ -152,11 +152,34 @@
 .endm
 
 // =========================================================================
+// set_fault_stack macro — PR #904 (`v0.36.41`)
+//
+// After an EL0 entry has saved the thread's SP_EL0 into the frame, point SP_EL0
+// at this PE's fault stack top, `__fault_stacks_bottom + (core + 1) *
+// FAULT_STACK_SIZE`, with the core read from `PerCpuData.core_id` at offset 0
+// of the slot TPIDR_EL1 names.  Every PE holds SP_EL0 there while it runs at
+// EL1, so an EL1-origin fault (`vectors.S` 0x200 / 0x380) has a stack; the
+// thread's own value comes back from the frame in `restore_context`.
+// Clobbers x1 and x2 only — both already saved — and preserves x0 (the frame).
+// =========================================================================
+.macro set_fault_stack
+    mrs     x1, tpidr_el1
+    ldr     x1, [x1]                 // PerCpuData.core_id
+    add     x1, x1, #1
+    lsl     x1, x1, #14              // (core + 1) * FAULT_STACK_SIZE (16 KiB)
+    adrp    x2, __fault_stacks_bottom
+    add     x2, x2, :lo12:__fault_stacks_bottom
+    add     x1, x1, x2
+    msr     sp_el0, x1
+.endm
+
+// =========================================================================
 // EL0 Synchronous — SVC syscall entry (primary user-to-kernel path)
 // =========================================================================
 .global __el0_sync_entry
 __el0_sync_entry:
     save_context
+    set_fault_stack
     bl      handle_synchronous_exception
     restore_context
 
@@ -173,6 +196,7 @@ __el0_sync_entry:
 .global __el0_irq_entry
 __el0_irq_entry:
     save_context
+    set_fault_stack
     bl      handle_irq_per_core
     restore_context
 
@@ -182,6 +206,7 @@ __el0_irq_entry:
 .global __el0_serror_entry
 __el0_serror_entry:
     save_context
+    set_fault_stack
     bl      handle_serror
     // handle_serror is declared `-> !` (never returns; body is `loop { wfe() }`).
     // If the compiler ever dropped the divergence contract, `b .` halts the
@@ -198,7 +223,12 @@ __el0_serror_entry:
 __el1_sync_entry:
     save_context
     bl      handle_synchronous_exception
-    restore_context
+    // PR #904 (`v0.36.41`): an EL1-origin synchronous exception is the
+    // kernel's own fault and `handle_synchronous_exception` halts the PE on it
+    // (`halt_if_kernel_origin`) before anything else.  It runs on the fault
+    // stack (`vectors.S` 0x200), so there is no frame to return through: park
+    // rather than `eret` if the halt were ever relaxed.
+    b       .
 
 // =========================================================================
 // EL1 IRQ — interrupt while in kernel

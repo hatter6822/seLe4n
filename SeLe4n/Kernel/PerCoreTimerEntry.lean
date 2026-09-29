@@ -10,6 +10,7 @@ import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Platform.FFI
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.SchedLockBracket
 
 /-!
@@ -144,7 +145,7 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
   let r ← Platform.FFI.modifyGetKernelState (fun st =>
     let outcome := timerTickUnderDeclaredLockSet coreId
       (Concurrency.saveCapturedTrapFrameAt st coreId frame)
-    let st' := outcome.state
+    let st' := PriorityInheritance.settleResidencyAt outcome.state coreId
     ((outcome.value?,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c)),
@@ -184,7 +185,7 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
         let r ← Platform.FFI.modifyGetKernelState (fun st =>
           let outcome := timerTickUnderDeclaredLockSet coreId
             (Concurrency.saveCapturedTrapFrameAt st coreId frame)
-          let st' := outcome.state
+          let st' := PriorityInheritance.settleResidencyAt outcome.state coreId
           ((outcome.value?,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),

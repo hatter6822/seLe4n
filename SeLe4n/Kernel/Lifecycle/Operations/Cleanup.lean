@@ -92,9 +92,17 @@ and a retype in that window would let the release write a destroyed thread's FP
 state into whatever TCB is created under its id, which the new thread would then
 load: one thread reading another's registers.  Refusing it
 (`.revocationRequired`, "switch away first") closes the window without a second
-writer of the owner table. -/
+writer of the owner table.
+
+**PR #904 review (`v0.36.41`)**: and a thread some core's registers still hold
+as its resident EL0 context (`MachineState.residentOnSomeCore`).  The window is
+the same one — a remote deschedule clears the slot while the thread still runs
+there — and the write-back is the vacated core's saving of its trap frame into
+the resident's TCB at its next entry, so a retype there would hand one thread's
+general-purpose registers to the thread created under the id. -/
 def threadHeldOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
-  threadCurrentOnSomeCore st tid || st.machine.fpOwnedOnSomeCore tid
+  threadCurrentOnSomeCore st tid || st.machine.fpOwnedOnSomeCore tid ||
+    st.machine.residentOnSomeCore tid
 
 /-- **WS-SM SM8.B (PR #861 review round 39): the retype's running-target
 rejection**, as a named predicate on the object being destroyed.

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.40.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.41.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8432,7 +8432,8 @@ and
 invalidation (thread translations are nG, the kernel's are global).  (5) **What
 a thread installs is `Architecture.threadTranslationOperands`**: its root's page
 and ASID, or `(0, 0)` for the kernel's translation when the root owns no page;
-BP7.6's context restore calls `Platform.FFI.installThreadTranslation`.
+BP7.6's context restore hands them to `Platform.FFI.ffiRestoreCommit`, which
+installs them only once the frame is replaced (`v0.36.41`, below).
 
 **Every trap entry saves the whole frame the thread trapped with** (`v0.36.16`,
 BP7.3).  Four things new code must respect.  (1) **`RegisterFile` carries
@@ -8849,6 +8850,49 @@ each side of the install and a line at the release**, and `scripts/test_qemu.sh
 invariants intact; install, then release, then any secondary).  The release
 line is printed before the first `CPU_ON`, so moving it after one breaks the
 BP4.2 evidence.
+
+**PR #904's review, and the rows this PR had registered, are fixed rather than
+registered** (`v0.36.41`).  Seven things new code must respect.  (1) **A core
+records the thread its registers hold at EL0** (`MachineState.resident`,
+written by `PriorityInheritance.settleResidencyOnCore`, the last step of every
+state-committing entry's atomic commit): a remote deschedule empties a core's
+`current` slot while the thread still runs there, and the next EL0 exception on
+that core now saves its frame into the resident thread
+(`Architecture.saveVacatedFrameOnCore`) — rewound to the `SVC` on the syscall
+and unknown-syscall entries (`saveCapturedSyscallFrame`), so the interrupted
+syscall is re-issued — where it used to be dropped — and a thread some core still holds as its
+resident is not destroyed (`threadHeldOnSomeCore` reads
+`MachineState.residentOnSomeCore`; `retypeTargetDetached.tcbResidencyReleased`),
+since that save would otherwise land in the TCB retyped under its id.  (2) **No thread is resumed
+on two cores**: the settle step switches a core to its idle thread rather than
+resume a thread another core is still resident in
+(`deferResidentElsewhere_current_not_elsewhere`); the thread stays queued and is
+selected once that core has saved it.  (3) **A frame capability's mapping record
+names a mapping epoch** (`FrameMapping.epoch`, drawn from the frame's own
+`FrameObject.mapEpoch` and stored in the root's `mappingEpochs`,
+`tagFrameMapping`), so a record whose ASID and address were reused by a later
+mapping of the same frame is stale (`mappedPageLive`), and the frame is a
+**write** member of `lockSet_vspaceMap`.  (4) **`freshAsid?` scans without
+materialising the ASID space** (`freshAsidFrom`, fuel-bounded).  (5) **The HAL
+validates what a descriptor says, not only where it lands**: `PhysicalWrite`
+separates a level-3 page (`storeDescriptor`, tag 1) from a table
+(`storeTableDescriptor`, tag 4), because the walker reads `0b11` by level, and
+`user_translation::page_descriptor_admissible` / `table_descriptor_admissible`
+refuse a page naming the kernel, a table page or uncached RAM, and a table naming
+anything but a thread table page.  (6) **A restore installs the translation and
+lifts the FP trap only once the frame is replaced**: the translation rides with
+`ffiRestoreCommit`, and `fp_context::load_commit` re-arms the trap for the
+commit to lift.  (7) **Every kernel stack has an unmapped guard page below it**
+(`link.ld`, `ImageLayout::stack_guards`; secondary slots are 128 KiB with the
+guard at their base), and an EL1-origin synchronous exception or SError runs on a
+per-PE fault stack (`vectors.S` `msr spsel, #0`; SP_EL0 holds the fault stack's
+top whenever a PE runs at EL1 — `boot.S`, `trap.S`'s `set_fault_stack`, the idle
+restore's `IdleResume`), so an overflow faults and halts rather than corrupting
+`.bss` or re-faulting on the stack that overflowed.  And the boot-entry contract
+refuses a configuration argument whose project closure reaches an
+`@[implemented_by]`, `@[extern]` or `unsafe` constant
+(`compiledEffectConstant`), since a term with the type of data can still run
+effects in the compiled image.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
@@ -13373,8 +13417,10 @@ code may assume:
   entries can find no current thread; they run
   `PriorityInheritance.dispatchVacatedCore` rather than committing nothing, since
   an entry that stages no restore halts the PE — an unprivileged denial of
-  service of every partition on that core.  A new trap entry that can meet an
-  empty slot hands the core a successor the same way.  A kernel-origin exception halts the core too,
+  service of every partition on that core.  Since `v0.36.41` every
+  state-committing entry ends in `PriorityInheritance.settleResidencyOnCore`,
+  which subsumes that rule and records the core's resident thread (the WS-BP
+  section's `v0.36.41` paragraph); a new trap entry calls it too.  A kernel-origin exception halts the core too,
   and that one *is* the contract: `halt_if_kernel_origin` (an EL1-origin
   frame) and the `KERNEL_ABORT` arm (a current-EL abort syndrome) are
   fail-closed by design, not SM10.1 placeholders.

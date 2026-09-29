@@ -1833,7 +1833,8 @@ and virtual address, and the physical page of the frame the capability targets.
 def capabilityMappedPage (st : SystemState) (cap : Capability) : Option MappedPage :=
   match cap.mapping, cap.target with
   | some m, .object frameId =>
-    (st.getFrame? frameId).map fun f => { asid := m.asid, vaddr := m.vaddr, paddr := f.base }
+    (st.getFrame? frameId).map fun f =>
+      { asid := m.asid, vaddr := m.vaddr, paddr := f.base, epoch := some m.epoch }
   | _, _ => none
 
 /-- **The pages a slot's capability records** — at most one — read off the state

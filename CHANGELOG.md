@@ -1,3 +1,68 @@
+## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
+
+- **Security (Codex P1, High): a remote deschedule dropped the running thread's
+  registers.**  A `.tcbSuspend` or holder deschedule on another core empties a
+  core's `current` slot while the thread still runs there at EL0; the next
+  exception that core took saved nothing (the save is keyed on the slot), so the
+  thread later resumed from its stale saved context, rewound or corrupted.  A core
+  now records the thread its registers hold (`MachineState.resident`, written by
+  `PriorityInheritance.settleResidencyOnCore`, the last step of every
+  state-committing entry's atomic commit), and the next EL0 exception saves its
+  frame into that thread (`Architecture.saveVacatedFrameOnCore`) — rewound to the
+  `SVC` on the syscall and unknown-syscall entries, so an interrupted syscall is
+  re-issued.  The settle step also defers a thread still resident on another core
+  (it is switched to idle rather than run on two cores;
+  `deferResidentElsewhere_current_not_elsewhere`) and hands every vacated core a
+  successor, which the syscall and tick entries did not do before.  And the
+  destroy path refuses a thread some core still holds as its resident
+  (`threadHeldOnSomeCore` now reads `MachineState.residentOnSomeCore`, with
+  `retypeTargetDetached.tcbResidencyReleased` its payoff clause): the vacated
+  core's save would otherwise write one thread's registers into the TCB retyped
+  under its id.  Witness:
+  `tests/FaultHandlingSuite.lean` "residency", with the retired current-slot save
+  and the retired non-deferring settle computed beside the live ones.
+- **Codex P2: a frame capability's mapping record could name a later mapping.**
+  A record was `(asid, vaddr)`, and both are reused — an ASID after a reset, an
+  address after an unmap — so a stale copy's record could unmap another holder's
+  live mapping of the same frame.  Every `.vspaceMap` now draws a mapping epoch
+  from the frame (`FrameObject.mapEpoch`) and stores it in the root
+  (`VSpaceRoot.mappingEpochs`, `tagFrameMapping`); the record carries it and
+  `mappedPageLive` requires it, so a stale record matches nothing.  The frame is
+  a **write** member of `lockSet_vspaceMap` (`lockSet_vspaceMap_frame_write_mem`).
+  Witness: `tests/VSpaceCapabilityBindingSuite.lean`, the reused-ASID-and-address
+  case, with the epoch-free reading computed beside the live one.
+- **Codex P2: `freshAsid?` built the whole ASID space.**  It is a fuel-bounded
+  scan from ASID 1 (`freshAsidFrom`, `freshAsidFrom_spec`) that stops at the
+  first free entry.
+- **The rows this PR had registered in `docs/REGISTERED_DEBT.md` table B are
+  fixed and deleted, not deferred:**
+  - **Kernel stack guard pages.**  Every kernel stack has an unmapped guard page
+    below it (`link.ld`, `mmu::ImageLayout::stack_guards`; secondary slots are
+    128 KiB with the guard at their base, `boot.S` `lsl #17`), and an
+    EL1-origin synchronous exception or SError runs on a per-PE fault stack
+    (`vectors.S` `msr spsel, #0`; SP_EL0 holds the fault stack's top whenever a
+    PE runs at EL1 — `boot.S`, `trap.S` `set_fault_stack`, the idle restore's
+    `IdleResume`), so an overflow faults and halts instead of corrupting `.bss`
+    or re-faulting on the stack that overflowed.  `check_link_script.py` proves
+    the three new `ASSERT`s live by mutation.
+  - **Physical-write value validation.**  `PhysicalWrite` separates a level-3
+    page descriptor (tag 1) from a table descriptor (`storeTableDescriptor`, tag
+    4), because the walker reads `0b11` by level, and the HAL refuses a page
+    naming the kernel, a table page or RAM mapped uncached, and a table naming
+    anything but a thread table page
+    (`user_translation::page_descriptor_admissible`,
+    `table_descriptor_admissible`).
+  - **Restore ordering.**  The resumed thread's translation rides with
+    `ffiRestoreCommit` and is installed only once the frame is replaced; the FP
+    load re-arms the trap and the commit lifts it.
+  - **Boot-entry closure.**  The contract refuses a configuration argument whose
+    project closure reaches an `@[implemented_by]`, `@[extern]` or `unsafe`
+    constant (`compiledEffectConstant`), with an effectful witness refused and a
+    data witness accepted.
+  - The mapping-record ASID reuse, the `freshAsid?` scan and the register loss
+    above are the other three.
+- Version 0.36.40 → 0.36.41.
+
 ## v0.36.40 — A remotely vacated core dispatches a successor; audit hardening
 
 - **Security (reported as High, latent): a trap on a core another core had

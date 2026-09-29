@@ -68,6 +68,10 @@ def frozenVSpaceMappingsAgree (f : FrozenVSpaceRoot) (l : VSpaceRoot) : Bool :=
   l.mappings.toList.all (fun kv => f.mappings.get? kv.1 == some kv.2)
     && f.mappings.indexMap.toList.all (fun kv =>
          f.mappings.get? kv.1 == l.mappings.get? kv.1)
+    -- PR #904 review (`v0.36.41`): the mapping epochs, both directions.
+    && l.mappingEpochs.toList.all (fun kv => f.mappingEpochs.get? kv.1 == some kv.2)
+    && f.mappingEpochs.indexMap.toList.all (fun kv =>
+         f.mappingEpochs.get? kv.1 == l.mappingEpochs.get? kv.1)
 
 /-- Object-level agreement.  Equality on the six verbatim variants; lookup
 agreement on the two re-represented ones; a kind mismatch is a disagreement. -/
@@ -90,8 +94,8 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
     .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, llock⟩) =>
       fd == ld && fgw == lgw && fgv == lgv && frw == lrw && flock == llock
         && frozenCNodeSlotsAgree fc lc
-  | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, flock⟩),
-    .vspaceRoot (lv@⟨lasid, _lm, lbase, ltables, llock⟩) =>
+  | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, _fepochs, flock⟩),
+    .vspaceRoot (lv@⟨lasid, _lm, lbase, ltables, _lepochs, llock⟩) =>
       fasid == lasid && fbase == lbase && ftables == ltables && flock == llock
         && frozenVSpaceMappingsAgree fv lv
   | _, _ => false

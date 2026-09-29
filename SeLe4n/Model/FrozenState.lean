@@ -302,6 +302,9 @@ structure FrozenVSpaceRoot where
   /-- WS-BP BP7.1 (`v0.36.12`): the runtime root's intermediate tables,
       forwarded verbatim by `freezeVSpaceRoot`. -/
   tables : List PageTableSlot := []
+  /-- PR #904 review (`v0.36.41`): the runtime root's per-address mapping
+      epochs (`VSpaceRoot.mappingEpochs`), frozen by `freezeVSpaceRoot`. -/
+  mappingEpochs : FrozenMap SeLe4n.VAddr Nat := ⟨#[], {}⟩
   /-- WS-SM SM3.A.7: per-VSpaceRoot lock state forwarded from the runtime
       representation through `freezeVSpaceRoot`. -/
   lock     : SeLe4n.Kernel.Concurrency.RwLockState :=
@@ -658,6 +661,8 @@ def freezeVSpaceRoot (vs : VSpaceRoot) : FrozenVSpaceRoot :=
     tableBase := vs.tableBase
     -- WS-BP BP7.1 (`v0.36.12`): forward the intermediate tables.
     tables := vs.tables
+    -- PR #904 review (`v0.36.41`): freeze the mapping epochs.
+    mappingEpochs := freezeMap vs.mappingEpochs
     -- WS-SM SM3.A.7: forward the runtime lock state into the frozen view.
     lock := vs.lock }
 

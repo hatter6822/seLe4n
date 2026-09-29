@@ -125,9 +125,26 @@ ASSERTION_WITNESSES = (
         "an arena that is not page-aligned",
         (
             ("    .lean_heap (NOLOAD) : ALIGN(4096) {", "    .lean_heap (NOLOAD) : ALIGN(16) {"),
-            ("        . += (3 * 64K);", "        . += (3 * 64K) + 16;"),
+            ("        __fault_stacks_top = .;", "        __fault_stacks_top = .;\n        . += 16;"),
         ),
         "must be 4 KiB aligned",
+    ),
+    # PR #904 (`v0.36.41`): the kernel stacks' guard pages and the per-PE
+    # fault stacks the EL1 fault vectors switch to.
+    (
+        "a boot stack not directly above its guard page",
+        (("        . += STACK_GUARD_SIZE;", "        . += STACK_GUARD_SIZE - 16;"),),
+        "the boot stack must sit directly above one 4 KiB guard page",
+    ),
+    (
+        "secondary stack slots of the wrong size",
+        (("        . += (3 * SECONDARY_STACK_STRIDE);", "        . += (3 * SECONDARY_STACK_STRIDE) - 4096;"),),
+        "the secondary stack slots must be three page-aligned 128 KiB slots",
+    ),
+    (
+        "fault stacks for fewer PEs than the image has",
+        (("        . += (4 * FAULT_STACK_SIZE);", "        . += (3 * FAULT_STACK_SIZE);"),),
+        "the fault stacks must be four 16 KiB stacks, one per PE",
     ),
     (
         "kernel text that starts off a page",

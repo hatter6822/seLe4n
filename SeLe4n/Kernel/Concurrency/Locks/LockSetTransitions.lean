@@ -1441,9 +1441,14 @@ def lockSet_untypedRetype (callerTid : ThreadId)
 **WS-BP BP7.1 (`v0.36.7`)**: the arm is `vspaceMapFromFrameCap`, which reads the
 **frame** the MR2 capability names (its `base` and device flag) and writes that
 capability's **mapping record** into the CNode holding it — so the frame
-capability's CNode is a write member and the frame a read member.  On a
-single-level CSpace the frame capability's CNode *is* the caller's root, and
-`insertOrMerge` lubs the two modes to one write member. -/
+capability's CNode is a write member.  On a single-level CSpace the frame
+capability's CNode *is* the caller's root, and `insertOrMerge` lubs the two
+modes to one write member.
+
+**PR #904 review (`v0.36.41`)**: the frame is a **write** member.  The mapping
+takes the frame's next epoch (`tagFrameMapping`), which advances the frame's
+`mapEpoch` — so two `.vspaceMap`s of one frame on two cores serialise on the
+frame and cannot hand two mappings the same epoch. -/
 def lockSet_vspaceMap (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (vspaceRootObjId : ObjId)
     (frameCnodeObjId frameObjId : ObjId) : LockSet :=
@@ -1452,7 +1457,7 @@ def lockSet_vspaceMap (callerTid : ThreadId)
      (cnodeLock cnodeRootObjId, .read),
      (vspaceRootLock vspaceRootObjId, .write),
      (cnodeLock frameCnodeObjId, .write),
-     (pageLock frameObjId, .read)]
+     (pageLock frameObjId, .write)]
 
 /-- WS-SM SM3.B.3: `lockSet` for `vspaceUnmap`. -/
 def lockSet_vspaceUnmap (callerTid : ThreadId)
@@ -1889,6 +1894,17 @@ theorem lockSet_vspaceMap_frameCnode_write_mem (callerTid : ThreadId)
   simp only [List.foldl]
   exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
     (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **PR #904 review (`v0.36.41`)**: `vspaceMap` declares the frame in **write**
+mode — the frame `tagFrameMapping` rewrites to advance its mapping epoch. -/
+theorem lockSet_vspaceMap_frame_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId vspaceRootObjId frameCnodeObjId frameObjId : ObjId) :
+    (pageLock frameObjId, AccessMode.write)
+      ∈ (lockSet_vspaceMap callerTid cnodeRootObjId vspaceRootObjId
+          frameCnodeObjId frameObjId).pairs := by
+  unfold lockSet_vspaceMap lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.9**: `mintReplyCap` inherits the member, by definition rather
 than by repetition. -/

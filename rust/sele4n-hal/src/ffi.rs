@@ -1641,7 +1641,8 @@ pub extern "C" fn ffi_fp_stage_word(index: u32, value: u64) -> crate::lean_runti
 }
 
 /// **WS-BP BP7.9**: load the staged FP/SIMD context into the executing PE's
-/// registers and lift the trap (`fp_context::load_commit`).
+/// registers, re-arming the trap for the restore commit to lift
+/// (`fp_context::load_commit`).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiFpLoadCommit`.
 #[no_mangle]
@@ -1656,10 +1657,34 @@ pub extern "C" fn ffi_fp_load_commit() -> crate::lean_runtime::Obj {
 /// whose FP/SIMD values the registers hold, for which the trap is lifted.  An
 /// unknown kind **halts the system**.
 ///
+/// **PR #904 (`v0.36.41`)**: the translation the resumed thread runs under
+/// rides with the commit — `(0, 0)` for the kernel's own — and is validated
+/// (`user_translation::decode_install`) before anything is written, then
+/// installed by `trap::restore_commit` only once the frame is replaced.  The
+/// idle loop runs under the kernel's translation, so an idle commit naming any
+/// other is a kernel defect and halts, as a refused install does.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRestoreCommit`.
 #[no_mangle]
-pub extern "C" fn ffi_restore_commit(kind: u32) -> crate::lean_runtime::Obj {
-    if crate::trap::restore_commit(kind).is_err() {
+pub extern "C" fn ffi_restore_commit(
+    kind: u32,
+    table_base: u64,
+    asid: u64,
+) -> crate::lean_runtime::Obj {
+    let translation = match crate::user_translation::decode_install(
+        table_base,
+        asid,
+        crate::mmu::is_boot_cacheable_range,
+    ) {
+        Ok(t) => t,
+        Err(_) => crate::gic::halt_all(),
+    };
+    if kind == crate::trap::RESTORE_KIND_IDLE
+        && translation != crate::user_translation::Translation::Kernel
+    {
+        crate::gic::halt_all();
+    }
+    if crate::trap::restore_commit(kind, translation).is_err() {
         crate::gic::halt_all();
     }
     crate::lean_runtime::base_io_unit()
