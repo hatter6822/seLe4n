@@ -3865,6 +3865,7 @@ run_check "INVARIANT" rg -n -U 'const fn boundaries\(&self\) -> \[u64; IMAGE_BOU
 run_check "INVARIANT" rg -n -U '^def rpi5MemoryMapForConfig \(config : BCM2712Config\) : List SeLe4n\.MemoryRegion :=\n  \[ \{ base := SeLe4n\.PAddr\.ofNat rpi5RamOrigin$' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n 'let reach := min \(SeLe4n\.Platform\.Boot\.ramReachFrom board rpi5RamOrigin\) rpi5FirstGigabyteTop' SeLe4n/Platform/RPi5/Board.lean
 run_negative_check "INVARIANT" rg -n '^def ramPrefixTop\b' SeLe4n
+run_check "INVARIANT" rg -n '^def qemuVirtRamOrigin : Nat := qemuVirtRamBase \+ 0x8_0000$' SeLe4n/Platform/QemuVirt/Board.lean
 # NEGATIVE: the BP2.6 bound, under which a blob could lie in RAM a boot untyped
 # describes and a user retype would then overwrite.
 run_negative_check "INVARIANT" rg -n 'Some\(end\) if end <= GUARANTEED_RAM_TOP => dtb_disjoint_from_image' rust/sele4n-hal/src/mmu.rs
@@ -15269,7 +15270,6 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.RPi5.rpi5RamOrigin
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_rpi5_parsed_account
 #check @SeLe4n.Platform.RPi5.rpi5VariantFor_origin_not_ram
-#check @SeLe4n.Platform.QemuVirt.qemuVirtRamOrigin
 #check @SeLe4n.MachineConfig.wellFormed_of_within
 #check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_of_withoutExtents
 #check @SeLe4n.Platform.RPi5.rpi5_bindMachineConfig
