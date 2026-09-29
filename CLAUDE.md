@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.37.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.38.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8347,8 +8347,10 @@ reads `getPageObject?` (a frame or a table); a new page-backed kind joins it the
 (`finaliseDestroyedCapabilities`, seL4's `finaliseCap` → `unmapPageTable`), with
 every mapping and every table beneath it, so revoking memory authority revokes the
 translations built on it: the finalising delete and revocation find the tables
-some capability named before and none names after (`pageTablesOrphaned`), and the
-retype of a CNode holding such a capability is refused.  **The root is the truth
+some CNode slot named before and none names after (`pageTablesOrphaned` over
+`cnodeSlotsUnreferenced`, `v0.36.38` — a copy parked in a blocked sender's message
+is dropped by a cancellation that finalises nothing, so it must not keep a table
+installed), and the retype of a CNode holding such a capability is refused.  **The root is the truth
 and a table's `installedIn` a pointer** (`pageTableInstallLive`): the detach
 writes only roots, so the tables it takes out keep a stale record, which reads as
 installed nowhere — `.pageTableMap` installs it again, `.pageTableUnmap` clears it,

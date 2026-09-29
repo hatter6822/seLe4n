@@ -51,8 +51,11 @@ delete those capabilities first, which unmaps.
 
 **Page tables (`v0.36.12`).**  A page table's install is recorded on the table
 and in its root rather than on a capability, so what a destroying step owes it is
-decided over the store: a table some capability named before the step and none
-names after it (`pageTablesOrphaned`) has lost its **final** capability, and
+decided over the store: a table some CNode slot named before the step and none
+names after it (`pageTablesOrphaned`, over `cnodeSlotsUnreferenced` since
+`v0.36.38` — a copy parked in a message can be dropped by a cancellation that
+finalises nothing, so it does not keep a table installed) has lost its **final**
+capability, and
 seL4's `finaliseCap` → `unmapPageTable` takes it out of its address space.
 `finaliseDestroyedCapabilities` is the composite both destroying arms run: it
 detaches each orphaned table and every table beneath it from its root
@@ -141,8 +144,8 @@ def pageTablesOrphaned (pre st : SystemState) : List (SeLe4n.ObjId × PageTableI
     | .pageTable p =>
       match p.installedIn with
       | some inst =>
-        if Architecture.pageTableInstallLive st id && !carvedSubtreeUnreferenced pre [id] &&
-            carvedSubtreeUnreferenced st [id] then (id, inst) :: acc
+        if Architecture.pageTableInstallLive st id && !cnodeSlotsUnreferenced pre [id] &&
+            cnodeSlotsUnreferenced st [id] then (id, inst) :: acc
         else acc
       | none => acc
     | _ => acc)

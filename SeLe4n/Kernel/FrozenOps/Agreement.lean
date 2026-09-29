@@ -614,8 +614,6 @@ def frozenOpUncheckedReason : SyscallId → String
   | .call => "branch scenarios owed; see frozenBranchUncheckedReason"
   | .cspaceMint => "capability operation; scenario owed"
   | .cspaceDelete => "capability operation; scenario owed"
-  | .vspaceMap => "read-only in the frozen phase; scenario owed"
-  | .vspaceUnmap => "read-only in the frozen phase; scenario owed"
   | .serviceQuery => "service lookup; scenario owed"
   | .replyRecv => "compound reply+receive; scenario owed"
   | .schedContextConfigure => "budget operation; scenario owed"
@@ -668,6 +666,16 @@ theorem frozenOpUncheckedReason_only_when_unchecked :
     SyscallId.all.all (fun sid =>
       (frozenOpUncheckedReason sid).isEmpty
         || !frozenOpDifferentiallyChecked sid) = true := by
+  decide
+
+/-- **A reason names a frozen operation that exists** (`v0.36.38`).  An excuse
+for not comparing a syscall the frozen phase does not cover would describe a
+comparison nobody could run; the two `vspace` rows said "read-only in the frozen
+phase" of arms whose only frozen operation was a lookup, and the coverage claim
+has been withdrawn with them. -/
+theorem frozenOpUncheckedReason_only_when_covered :
+    SyscallId.all.all (fun sid =>
+      (frozenOpUncheckedReason sid).isEmpty || frozenOpCoverage sid) = true := by
   decide
 
 end SeLe4n.Kernel.FrozenOps

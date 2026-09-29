@@ -370,4 +370,19 @@ resolves rather than about the keys an index happens to list. -/
 def carvedSubtreeUnreferenced (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
   st.objects.fold true (fun acc _ o => acc && !objectNamesListed ids o)
 
+/-- **No CNode slot names a listed object** (`v0.36.38`) — the question a
+capability's *finalisation* asks: seL4's `finaliseCap` runs when the last
+capability in a CNode dies, since a capability exists nowhere else there.  A copy
+parked in a blocked sender's message is authority in flight, and it can be
+dropped without passing through any finalising operation (a cancelled send), so
+counting it would let the last CNode capability's deletion skip the detach and
+leave the table installed with no capability anywhere.  Where a parked copy is
+later delivered it names a table that is installed nowhere, which `pageTableMap`
+installs again. -/
+def cnodeSlotsUnreferenced (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
+  st.objects.fold true (fun acc _ o =>
+    acc && !(match o with
+      | .cnode cn => objectNamesListed ids (.cnode cn)
+      | _ => false))
+
 end SeLe4n.Kernel

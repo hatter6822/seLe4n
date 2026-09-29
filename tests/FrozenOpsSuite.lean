@@ -678,13 +678,19 @@ private def fo020_frozenCspaceMint : IO Unit := do
   let objs := [(cnodeId, FrozenKernelObject.cnode frozenCNode), (epId, FrozenKernelObject.endpoint {})]
   let objsMap := objs.foldl (fun acc (k, v) => acc.insert k v) (RHTable.empty 16)
   let st0 : FrozenSystemState := { emptyFrozenState with objects := freezeMap objsMap }
-  let testCap : Capability := { target := .object epId, rights := .ofNat 7, badge := none }
+  -- `v0.36.38`: the source carries a mapping record, which a new capability
+  -- must not inherit — it made no mapping (seL4's `deriveCap`).
+  let testCap : Capability :=
+    { target := .object epId, rights := .ofNat 7, badge := none,
+      mapping := some { asid := SeLe4n.ASID.ofNat 1, vaddr := SeLe4n.VAddr.ofNat 0x1000 } }
   match frozenCspaceMint cnodeId (SeLe4n.Slot.ofNat 0) testCap st0 with
   | .ok ((), st1) =>
     -- Verify slot 0 now has the cap
     match frozenCspaceLookup st1 (SeLe4n.CPtr.ofNat 0) cnodeId with
     | .ok cap =>
       expect "frozenCspaceMint inserts cap" (cap.target == .object epId)
+      expect "frozenCspaceMint strips the source's mapping record" (cap.mapping.isNone)
+      expect "RETIRED: a verbatim insert would have kept the record" (testCap.mapping.isSome)
       IO.println "frozen-ops check passed [FO-020: frozenCspaceMint]"
     | .error e => throw <| IO.userError s!"lookup after mint failed: {reprStr e}"
   | .error e => throw <| IO.userError s!"frozenCspaceMint failed: {reprStr e}"

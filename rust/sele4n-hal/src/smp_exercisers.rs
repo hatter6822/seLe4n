@@ -40,7 +40,11 @@
 //!   idle restore's `TTBR0_EL1` writes.
 //! * **The round** ([`run_round_in`]): the initiator side of the shootdown
 //!   protocol in exactly the order the Lean seam
-//!   `SyscallDispatchEntry.completeShootdownRounds` runs it — acquire the
+//!   `SyscallDispatchEntry.completeShootdownRounds` runs it, and under the same
+//!   bracket: [`run_round`] takes the kernel-entry lock first (`v0.36.38`), so
+//!   a concurrent initiator waits on that lock — self-servicing the round in
+//!   flight, as a core entering the kernel does — and no target sits in a
+//!   kernel entry of its own through the wait.  Inside it: acquire the
 //!   round lock, self-servicing the round in flight while spinning, under
 //!   [`ROUND_LOCK_ACQUIRE_FUEL`]; allocate the generation under the lock;
 //!   publish the operands; SGI the online targets; broadcast the
@@ -66,8 +70,10 @@
 //! trap handler halts on rather than delivering, so a defect here fails the
 //! gate rather than passing it.
 //!
-//! **What this module never does.**  It calls no Lean upcall (the SGI handler
-//! runs outside the kernel-entry lock and touches no kernel state), it never
+//! **What this module never does.**  It calls one Lean upcall only
+//! (`lean_stats_component`, BP8.5, with IRQs masked and inside the kernel-entry
+//! bracket), and its SGI handler touches no kernel state — it takes the
+//! kernel-entry lock only to run a round under it, as the seam does; it never
 //! enters the kernel while holding the round lock (the initiator runs its
 //! round with IRQs masked, and a secondary runs one only inside its SGI
 //! handler, where they already are), and it emits no local TLB invalidation
@@ -564,6 +570,16 @@ pub fn production_protocol() -> RoundProtocol<'static> {
 /// lock would enter the kernel holding it, which the kernel-entry tripwire
 /// halts on.  A timeout halts the system here, with the lock still held and
 /// IRQs still masked — the seam's own posture — after naming the round.
+///
+/// **Inside the kernel-entry bracket, as the seam runs it** (`v0.36.38`).  The
+/// production seam runs every round inside `with_kernel_entry`, so no target
+/// can be inside a kernel entry of its own while the initiator waits: a target
+/// that wants one spins on the entry lock, and that spin self-services the
+/// round.  Running the round outside the bracket let a target sit in a Lean
+/// timer tick — IRQs masked, the entry lock held, over a million instructions
+/// under `-icount` — through the whole bounded wait, which timed round 14 out
+/// in CI run 36512379153 with the target's tick finishing just after.  That
+/// was a posture only the exerciser had; the bracket makes it the seam's.
 fn run_round(initiator: usize, op: ShootdownOp) -> (u64, RoundOutcome) {
     let online = crate::shootdown::online_from_mask(crate::shootdown::online_mask());
     let mut hardware = RoundHardware {
@@ -580,23 +596,26 @@ fn run_round(initiator: usize, op: ShootdownOp) -> (u64, RoundOutcome) {
         now: crate::timer::read_counter,
     };
     let saved = crate::interrupts::disable_interrupts();
-    let (generation, outcome) = run_round_in(
-        &production_protocol(),
-        &online,
-        initiator,
-        op,
-        ROUND_WAIT_TIMEOUT_TICKS,
-        &mut hardware,
-    );
-    if outcome == RoundOutcome::TimedOut {
-        let acknowledged: [u64; CORE_COUNT] = core::array::from_fn(crate::shootdown::acked_gen);
-        crate::kprintln!(
-            "[smp-test] FATAL: shootdown round {generation} from core {initiator} timed out \
-             after {ROUND_WAIT_TIMEOUT_TICKS} ticks; acknowledged generations {acknowledged:?}, \
-             online {online:?}; halting fail-closed system-wide"
+    let (generation, outcome) = crate::kernel_entry::with_kernel_entry(initiator, || {
+        let (generation, outcome) = run_round_in(
+            &production_protocol(),
+            &online,
+            initiator,
+            op,
+            ROUND_WAIT_TIMEOUT_TICKS,
+            &mut hardware,
         );
-        crate::gic::halt_all();
-    }
+        if outcome == RoundOutcome::TimedOut {
+            let acknowledged: [u64; CORE_COUNT] = core::array::from_fn(crate::shootdown::acked_gen);
+            crate::kprintln!(
+                "[smp-test] FATAL: shootdown round {generation} from core {initiator} timed out \
+                 after {ROUND_WAIT_TIMEOUT_TICKS} ticks; acknowledged generations \
+                 {acknowledged:?}, online {online:?}; halting fail-closed system-wide"
+            );
+            crate::gic::halt_all();
+        }
+        (generation, outcome)
+    });
     crate::interrupts::restore_interrupts(saved);
     (generation, outcome)
 }

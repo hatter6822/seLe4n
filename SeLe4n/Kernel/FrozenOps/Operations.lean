@@ -1190,7 +1190,13 @@ The CNodeRadix supports insert via its radix array.
 V5-P (L-DS-4): Checks whether the target slot is already occupied before
 insertion. If the slot contains an existing capability, returns `.targetSlotOccupied`
 instead of silently overwriting. This prevents accidental capability leaks
-where a mint operation clobbers an existing capability without revoking it. -/
+where a mint operation clobbers an existing capability without revoking it.
+
+WS-BP BP7.1 (`v0.36.38`): the inserted capability carries **no mapping
+record** (`Capability.withoutMapping`), as every live derivation's does
+(seL4's `deriveCap`).  A record says *this* capability made a mapping, and a
+new capability made none; inserting one verbatim would let the finalising
+delete of the copy remove a mapping another capability owns. -/
 def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     (cap : Capability) : FrozenKernel Unit :=
   fun st =>
@@ -1200,7 +1206,7 @@ def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
         match cn.slots.lookup slot with
         | some _ => .error .targetSlotOccupied
         | none =>
-            let slots' := cn.slots.insert slot cap
+            let slots' := cn.slots.insert slot cap.withoutMapping
             let cn' : FrozenCNode := { cn with slots := slots' }
             match frozenWithObjectStored st rootId (.cnode cn') with
             | .ok st' => .ok ((), st')
@@ -1980,8 +1986,14 @@ def frozenOpCoverage : SyscallId → Bool
   | .untypedReset => false    -- WS-BP BP7.1 (`v0.36.6`): *removes* keys (the retired
                              -- frames), and the frozen object store is a
                              -- `FrozenMap` with no `erase`.
-  | .vspaceMap => true        -- frozenVspaceLookup (read-only in frozen phase)
-  | .vspaceUnmap => true      -- frozenVspaceLookup (read-only in frozen phase)
+  | .vspaceMap => false       -- WS-BP BP7.1 (`v0.36.38`): a map WRITES a mapping,
+                             -- a frame-capability record and a physical-write
+                             -- ledger entry; the frozen phase has only
+                             -- `frozenVspaceLookup`, a read, and a read is not a
+                             -- mirror of a write.  It was `true` on the strength
+                             -- of that lookup.
+  | .vspaceUnmap => false     -- WS-BP BP7.1 (`v0.36.38`): ditto — an unmap writes
+                             -- the mapping, the ledger and a shootdown round.
   | .serviceRegister => false -- builder-only (adds service)
   | .serviceRevoke => false   -- builder-only (removes service)
   | .serviceQuery => true     -- frozenLookupServiceByCap
@@ -2010,33 +2022,16 @@ def frozenOpCoverage : SyscallId → Bool
   | .auditRead => false              -- WS-SM SM9.A.13: reads the mounted audit trail through a clearance-filtered view; the frozen phase carries the trail but models no `LabelingContext`, so there is no reader's clearance to filter by
   | .auditDrain => false             -- WS-SM SM9.A.13: removes a prefix of the mounted audit trail — a *shrinking* write, and the frozen snapshot is a record rather than a running system, so nothing may remove entries from it
 
-/-- S3-L/Z8-H/D1/D2/D3: Exactly 20 SyscallId arms have frozen operation coverage.
-    The 18 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
-    cspaceRevoke, lifecycleRetype, untypedRetype, untypedReset, serviceRegister, serviceRevoke,
-    mintReplyCap) plus the
-    runtime-scheduler `tcbSetAffinity` (WS-SM SM5.H.4), the production-only
-    notification-binding ops (tcbBind/UnbindNotification, WS-SM SM6.B), the
-    cache-maintenance `vspaceUnifyInstruction` (WS-SM SM7.D — the frozen phase
-    models no VSpace or cache state), `declassify` (WS-SM SM8.C.9 — a frozen
-    snapshot carries the audit trail but never appends to it), its data-carrying
-    sibling `declassifySignal` (WS-SM SM9.C.8 — the same refusal plus a
-    notification signal and a waiter wake), and the two audit
-    accessors (WS-SM SM9.A.13 — the reader needs a `LabelingContext` the frozen
-    phase does not model, and the drain would *remove* entries from a record). -/
+/-- S3-L/Z8-H/D1/D2/D3: exactly **18** `SyscallId` arms have frozen operation
+coverage; the other 23 carry the reason beside their own `frozenOpCoverage` row.
+
+The count is taken over `SyscallId.all`, the derived constructor list, not a
+hand-written one: the enumeration this replaced named every constructor by hand
+and its docstring still said "18 uncovered" when 21 were, and "20 covered"
+included two arms (`vspaceMap`, `vspaceUnmap`) whose only frozen operation was a
+read (`v0.36.38`). -/
 theorem frozenOpCoverage_count :
-    (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
-       .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
-       .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
-       .cspaceRevoke, .untypedRetype, .untypedReset,
-       .notificationSignal, .notificationWait, .replyRecv,
-       .schedContextConfigure, .schedContextBind, .schedContextUnbind,
-       .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
-       .tcbSetIPCBuffer, .tcbSetAffinity,
-       .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
-       .vspaceUnifyInstruction, .declassify, .declassifySignal,
-       .auditRead, .auditDrain, .tcbSetFaultHandler, .tcbSetSpace,
-       .pageTableMap, .pageTableUnmap].filter
-         frozenOpCoverage).length = 20) := by
+    (SyscallId.all.filter frozenOpCoverage).length = 18 := by
   decide
 
 /-- S3-L/D1/D2/D3: All 38 SyscallId arms are accounted for (either covered or documented as builder-only). -/

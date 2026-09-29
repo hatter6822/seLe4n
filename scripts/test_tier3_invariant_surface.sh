@@ -4217,7 +4217,18 @@ run_check "INVARIANT" rg -n 'so resetting the child alone is refused \(revocatio
 # record-only reading must not come back.
 run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising [^\n]*(\n([ \t][^\n]*)?)*      finaliseDestroyedCapabilities executingCore st \(slotMappedPages st addr\) st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^    \| \.ok \(pages, st1\) => finaliseDestroyedCapabilities executingCore st pages st1$' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*        if Architecture\.pageTableInstallLive st id && !carvedSubtreeUnreferenced pre \[id\] &&\n            carvedSubtreeUnreferenced st \[id\] then \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.38: a table's final capability is decided on CNode slots — a copy parked
+# in a message can be dropped by a cancellation that finalises nothing.
+run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*        if Architecture\.pageTableInstallLive st id && !cnodeSlotsUnreferenced pre \[id\] &&\n            cnodeSlotsUnreferenced st \[id\] then \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cnodeSlotsUnreferenced [^\n]*(\n([ \t][^\n]*)?)*      \| \.cnode cn => objectNamesListed ids \(\.cnode cn\)\n      \| _ => false\)\)' SeLe4n/Kernel/Architecture/PageTeardown.lean
+run_check "INVARIANT" rg -n 'RETIRED: the all-references reading does not count it orphaned, the live one does' tests/VSpaceCapabilityBindingSuite.lean
+# v0.36.38: a frozen mint inserts a capability with no mapping record, and the
+# frozen phase claims no coverage of a VSpace write it has only a read for.
+run_check "INVARIANT" rg -n -U 'def frozenCspaceMint [^\n]*(\n([ \t][^\n]*)?)*            let slots. := cn\.slots\.insert slot cap\.withoutMapping' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_negative_check "INVARIANT" rg -n '^  \| \.vspace(Map|Unmap) => true' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n -U '^theorem frozenOpCoverage_count :\n    \(SyscallId\.all\.filter frozenOpCoverage\)\.length = 18 := by' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_covered($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n 'frozenCspaceMint strips the source.s mapping record' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n -U 'def finaliseDestroyedCapabilities [^\n]*(\n([ \t][^\n]*)?)*        if !pageTablesDetached st2 orphans then \.error \.illegalState' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_ok_tables($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
@@ -7969,7 +7980,9 @@ run_check "INVARIANT" rg -n -F -- 'cargo test -p sele4n-hal --lib --features smp
 # the tripwire's halt.  No local invalidation anywhere in the module.
 run_check "INVARIANT" rg -n -U 'let mut fuel = protocol\.acquire_fuel;[^\n]*(\n([ \t][^\n]*)?)*round_lock_try_acquire_in\(protocol\.lock, initiator\)[^\n]*(\n([ \t][^\n]*)?)*self_service_round_in\(protocol\.mailbox, protocol\.slots, initiator\)[^\n]*(\n([ \t][^\n]*)?)*in_flight\.fetch_add\(1, Ordering::AcqRel\) != 0[^\n]*(\n([ \t][^\n]*)?)*allocate_round_generation_in\(protocol\.generations\)[^\n]*(\n([ \t][^\n]*)?)*publish_round_ops_in\(protocol\.mailbox, &\[op\], generation\)[^\n]*(\n([ \t][^\n]*)?)*\(hardware\.send_request\)\(target\)[^\n]*(\n([ \t][^\n]*)?)*\(hardware\.broadcast_invalidate\)\(op\)[^\n]*(\n([ \t][^\n]*)?)*wait_all_acked_bounded_in\([^\n]*(\n([ \t][^\n]*)?)*round_lock_release_in\(protocol\.lock\)' rust/sele4n-hal/src/smp_exercisers.rs
 run_check "INVARIANT" rg -n -U 'if outcome == RoundOutcome::TimedOut \{[^\n]*(\n([ \t][^\n]*)?)*crate::gic::halt_all\(\);' rust/sele4n-hal/src/smp_exercisers.rs
-run_check "INVARIANT" rg -n -U 'let saved = crate::interrupts::disable_interrupts\(\);\n[ ]*let \(generation, outcome\) = run_round_in\(' rust/sele4n-hal/src/smp_exercisers.rs
+# v0.36.38: the exerciser's round runs inside the kernel-entry bracket, as the
+# seam's does, so no target can sit in a Lean tick through the bounded wait.
+run_check "INVARIANT" rg -n -U 'let saved = crate::interrupts::disable_interrupts\(\);\n[ ]*let \(generation, outcome\) = crate::kernel_entry::with_kernel_entry\(initiator, \|\| \{\n[ ]*let \(generation, outcome\) = run_round_in\(' rust/sele4n-hal/src/smp_exercisers.rs
 run_negative_check "INVARIANT" rg -n 'tlbi_local|fatal_halt' rust/sele4n-hal/src/smp_exercisers.rs
 run_check "INVARIANT" rg -n -U 'pub fn production_protocol\(\) -> RoundProtocol<.static> \{[^\n]*(\n([ \t][^\n]*)?)*acquire_fuel: ROUND_LOCK_ACQUIRE_FUEL,' rust/sele4n-hal/src/smp_exercisers.rs
 run_check "INVARIANT" rg -n '^pub const ROUND_LOCK_ACQUIRE_FUEL: u64 = 1_000_000;$' rust/sele4n-hal/src/smp_exercisers.rs

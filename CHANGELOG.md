@@ -1,3 +1,45 @@
+## v0.36.38 — Three memory-authority corrections from the deeper audit
+
+- **A page table's final capability is decided on CNode slots.**
+  `pageTablesOrphaned` asked `carvedSubtreeUnreferenced`, which also counts a
+  copy parked in a blocked sender's message.  A cancelled or timed-out send
+  drops that copy without finalising anything, so deleting the table's last
+  CNode capability while a copy was in flight left the table installed with no
+  capability anywhere — a leak rather than an authority gain, since every frame
+  beneath it still needs its own capability.  The detach now reads
+  `cnodeSlotsUnreferenced` (`Architecture/PageTeardown.lean`), which is seL4's
+  question: its capabilities exist nowhere but CNodes.  A parked copy delivered
+  later names a table installed nowhere, which `.pageTableMap` installs again.
+  Witness: `VSpaceCapabilityBindingSuite` §5k, with the retired all-references
+  reading computed beside the live one.
+- **The frozen mint strips the mapping record.**  `frozenCspaceMint` inserted
+  its capability verbatim, so a source carrying a record produced a copy that
+  claimed a mapping it never made — the live derivations strip it
+  (`withoutMapping`, seL4's `deriveCap`), and so does this one now.  Witness:
+  FO-020.
+- **The frozen phase no longer claims `.vspaceMap`/`.vspaceUnmap`.**  Both rows
+  of `frozenOpCoverage` read `true` on the strength of `frozenVspaceLookup`, a
+  read; a map and an unmap write a mapping, a record, the physical-write ledger
+  and a shootdown round.  Both are `false` with the reason at the row, their
+  unchecked-reason rows are gone, and `frozenOpUncheckedReason_only_when_covered`
+  refuses a reason for an arm the frozen phase does not cover.
+  `frozenOpCoverage_count` is 18 and is counted over `SyscallId.all` rather than
+  a hand list whose docstring had drifted to "18 uncovered" when 21 were.
+- **The Tier-4 exerciser runs each shootdown round inside the kernel-entry
+  bracket, as the seam does.**  CI run 36512379153 timed round 14 out on the
+  Lean-linked image: acknowledged generations `[13, 13, 14, 14]`, with core 1's
+  first idle dispatch printed just after the wait expired.  The exerciser ran
+  its rounds outside the bracket, so a target could sit in a Lean timer tick —
+  IRQs masked, the entry lock held, over a million instructions under `-icount`
+  — through the whole bounded wait.  The production seam runs every round inside
+  `with_kernel_entry`, where a target that wants the kernel spins on the entry
+  lock and self-services the round; `run_round` now takes the bracket too, so the
+  gate measures the seam's posture rather than a weaker one.  The previous
+  diagnosis of this class (`v0.36.32`: host load, answered with `-icount`) was
+  incomplete: `-icount` made the wait count instructions, and a tick's
+  instructions still count.  The module's claim that it "calls no Lean upcall"
+  — false since BP8.5 — is corrected in the same edit.
+
 ## v0.36.37 — Every PE leaves a retired address space before the reset returns
 
 A deeper audit of the memory-authority path found that retiring a VSpace root
