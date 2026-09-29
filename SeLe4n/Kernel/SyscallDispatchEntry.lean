@@ -440,67 +440,10 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- v0.32.136 — and no bootable image before SM10.1).
     Concurrency.shootdownRoundLockRelease
 
-/-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the
-instruction-cache maintenance the just-committed transition recorded.
-
-**How the work is recovered.**  Kernel transitions are pure state functions, so
-every hardware effect is emitted here, after the commit.  The TLB round is
-recoverable from the `(pre, post)` diff because it *posts descriptors* into
-`tlbShootdown`; the instruction-cache maintenance has no such queue, so the
-model records the operand it applied in `SystemState.pendingIcacheMaintenance`
-(`Architecture.recordIcacheMaintenance`) and this seam emits exactly that.  The
-ledger is cleared in the same atomic step that reads it, so no operand can be
-emitted twice and none can be stranded into the next syscall.
-
-**Why not key on the shootdown diff.**  That was the SM7.D landing's
-approximation, and it was doubly imprecise: it fired the *strongest* operand
-(`IC IALLUIS`) for every unmap — including the common non-executable one, which
-owes nothing at all — and it missed a retype that posted no round.  Recovering
-the precise operand from the round's encoded `.vae1` instead would need an
-`ASID`/`VAddr` round-trip whose failure mode is **under**-invalidation, the one
-direction that is unsafe.  The ledger avoids both: the runtime emits the
-model's operand, no reconstruction and no over-approximation.
-
-**Why a list.**  The ledger holds the operands *in record order* rather than a
-single joined operand, because the operands do not form a join-semilattice:
-`iallu` (`IC IALLUIS`) invalidates instruction caches but issues no `DC CVAU`,
-so it does not discharge a `unifyPage`'s clean to the Point of Unification, and
-collapsing into it would silently drop that clean.  The seam therefore emits
-every entry.  On the live path the list holds at most one operand (one
-maintenance-bearing transition per syscall, drained here), so this is a `forM`
-over a singleton or the empty list.
-
-**Ordering.**  Called *after* `completeShootdownRounds`, so the translations a
-transition retired are gone from every core's TLB before the instruction lines
-fetched through them are dropped.  Inert when the transition owed nothing
-(`completeIcacheMaintenance_nil`), which is every syscall that touched no
-executable mapping and re-purposed no memory. -/
-def completeIcacheMaintenance
-    (owed : List Architecture.ICacheInvalidation) : BaseIO Unit :=
-  owed.forM Platform.FFI.icMaintenanceBroadcast
-
-/-- **WS-SM SM7.D.1** (structural marker): a commit that owed no
-instruction-cache maintenance emits none — no maintenance instruction, no
-barriers.  The definition-level inertness of the SM7.D runtime bracket,
-mirroring `completeShootdownRounds_nil`. -/
-theorem completeIcacheMaintenance_nil :
-    completeIcacheMaintenance [] = pure () := rfl
-
-/-- **WS-SM SM7.D.1**: when maintenance *was* owed the seam emits exactly the
-recorded operand — pinned so a refactor that widened it back to the domain-wide
-invalidate, or dropped the emission, breaks here. -/
-theorem completeIcacheMaintenance_singleton (op : Architecture.ICacheInvalidation) :
-    completeIcacheMaintenance [op] =
-      Platform.FFI.icMaintenanceBroadcast op := rfl
-
-/-- **WS-SM SM7.D**: the seam emits **every** recorded operand, in record order.
-Pinned so a refactor that collapses the ledger to one operand — the unsound
-direction, since `iallu` does not discharge a `unifyPage`'s clean-to-PoU — fails
-here rather than silently under-maintaining. -/
-theorem completeIcacheMaintenance_cons (op : Architecture.ICacheInvalidation)
-    (rest : List Architecture.ICacheInvalidation) :
-    completeIcacheMaintenance (op :: rest) =
-      (do Platform.FFI.icMaintenanceBroadcast op; completeIcacheMaintenance rest) := rfl
+-- **v0.36.39**: `completeIcacheMaintenance` and its three equations moved to
+-- `Platform.FFI`, beside `completePhysicalWrites`, because every state-committing
+-- entry drains the instruction-cache ledger now, and the timer, reschedule and
+-- fault entries cannot reach this module.
 
 -- **WS-BP BP7.8**: `completePhysicalWrites` and its two equations moved to
 -- `Platform.FFI`, beside `physicalWriteApply`, because the fault entries drain the
@@ -838,7 +781,7 @@ def syscallDispatchCrossCoreEntry
   -- are dropped.  The operand is the model's own — the ledger was read and
   -- cleared in the atomic step above, so it is emitted exactly once and never
   -- stranded into the next syscall.  Inert when nothing was owed.
-  completeIcacheMaintenance result.2.2.2.2.2.1
+  Platform.FFI.completeIcacheMaintenance result.2.2.2.2.2.1
   -- **WS-BP BP7.9**: a thread whose FP/SIMD values this core holds and which
   -- the committed state no longer runs here has them saved into its TCB first.
   Concurrency.releaseSwitchedFpOwnerOnCore execCore
@@ -890,7 +833,7 @@ theorem syscallDispatchCrossCoreEntry_def
         Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
-        completeIcacheMaintenance result.2.2.2.2.2.1
+        Platform.FFI.completeIcacheMaintenance result.2.2.2.2.2.1
         Concurrency.releaseSwitchedFpOwnerOnCore execCore
         Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1
         Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
@@ -1084,12 +1027,48 @@ theorem suspendThreadCrossCoreStep_sentinel_refused (execCore : CoreId) (st : Sy
         ([] : List (CoreId × SgiKind))), st) := by
   rfl
 
+/-- The cross-core suspend step with both hardware ledgers drained
+(`v0.36.39`): `suspendThreadCrossCoreStep`, then the recorded physical writes
+and instruction-cache operands read out and cleared in the same atomic step.
+Named rather than written as a lambda at the seam, so the seam still hands
+`modifyGetKernelState` a named pure step and a refused suspend is refused here
+exactly as there (`suspendThreadCrossCoreDrainedStep_idle_refused`). -/
+def suspendThreadCrossCoreDrainedStep (tid : UInt64) (execCore : CoreId)
+    (st : SystemState) :
+    ((UInt32 × List (CoreId × SgiKind)) ×
+      (List Architecture.PhysicalWrite × List Architecture.ICacheInvalidation))
+      × SystemState :=
+  let (out, st') := suspendThreadCrossCoreStep tid execCore st
+  ((out, (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+    Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st'))
+
+/-- The drained step refuses an idle thread as the bare step does, and the
+state it commits is the bare step's with both ledgers cleared — the refusal
+recorded nothing, so the drain performs nothing. -/
+theorem suspendThreadCrossCoreDrainedStep_idle_refused (tid : UInt64)
+    (execCore : CoreId) (st : SystemState)
+    (hIdle : SeLe4n.Kernel.isIdleThreadId (SeLe4n.ThreadId.ofNat tid.toNat) = true) :
+    (suspendThreadCrossCoreDrainedStep tid execCore st).1.1 =
+      (Platform.FFI.KernelError.toUInt32 .invalidArgument,
+        ([] : List (CoreId × SgiKind))) := by
+  unfold suspendThreadCrossCoreDrainedStep
+  rw [suspendThreadCrossCoreStep_idle_refused tid execCore st hIdle]
+
+/-- The raw cross-core suspend seam.  **Every state-committing entry drains
+both hardware ledgers** (`v0.36.39`), this one included: the drained step
+reads and clears them atomically, the physical writes are performed before any
+core is poked and the instruction-cache operands after the SGIs, as the syscall
+and fault seams do, so a write a later transition records on this path can
+neither be skipped nor be performed late by some other core's entry. -/
 @[export suspend_thread_cross_core]
 def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
   let execCore ← Concurrency.currentCoreId
-  let result ← Platform.FFI.modifyGetKernelState (suspendThreadCrossCoreStep tid execCore)
-  Concurrency.fireCrossCoreSgis result.2
-  pure result.1
+  let result ← Platform.FFI.modifyGetKernelState
+    (suspendThreadCrossCoreDrainedStep tid execCore)
+  Platform.FFI.completePhysicalWrites result.2.1
+  Concurrency.fireCrossCoreSgis result.1.2
+  Platform.FFI.completeIcacheMaintenance result.2.2
+  pure result.1.1
 
 -- ============================================================================
 -- WS-SM SM9.B.9 — the refusal write does not disturb the runtime seam

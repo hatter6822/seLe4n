@@ -4320,7 +4320,7 @@ run_check "INVARIANT" rg -n 'switching away then saves every register the thread
 # into the in-flight frame with SPSR sanitised to EL0t.
 run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturn st st'"'"' execCore outcome\n      let st'"''"' := PriorityInheritance\.scheduleLocalSuccessor st stR execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  let staged := Architecture\.stageCallerReturn unwound unwound execCore outcome\n' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^  completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^      ffiRestoreStageWord i\.toUInt32 [^\n]*\n    ffiInstallTranslation tableBase asid\n    ffiRestoreCommit \(if fpLive then 2 else 0\)$' SeLe4n/Platform/FFI.lean
 # WS-BP BP7.6: the restore is live — no seam flag gates it, and none of the
 # gating wrappers, the flag or its module may come back.
@@ -4343,8 +4343,8 @@ run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_preserves_runQue
 run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_preserves_runQueuesWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
 run_check "INVARIANT" rg -n -U '^    \(hwf : runQueuesWellFormed st\.scheduler\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'runQueueOnCoreWellFormed \(faultDeliveredState' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame r\.2\.2\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame record\.2\n  Concurrency\.recordCommittedCurrentThreadHw record\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame record\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw record\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 run_check "INVARIANT" rg -n '^    if SeLe4n\.Kernel\.isIdleThreadId tid then \.idle$' SeLe4n/Kernel/Architecture/ContextRestore.lean
 run_check "INVARIANT" rg -n '^    value & 0xF000_0000$' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^        frame\.spsr_el1 = sanitise_user_spsr\(word\(33\)\);$' rust/sele4n-hal/src/trap.rs
@@ -5648,7 +5648,7 @@ run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCo
 run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCoreIcache($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def completeIcacheMaintenance($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def completeIcacheMaintenance($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'completeIcacheMaintenance result' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # SM7.D FFI + Rust HAL realisation (broadcast primitives + fail-closed decode).
 run_check "INVARIANT" rg -n '^opaque ffiIcIalluIs($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
@@ -7708,8 +7708,8 @@ run_check "INVARIANT" rg -n 'match IpcBufferRead\.ipcBufferSlotPAddr\? st tcb id
 run_negative_check "INVARIANT" rg -n 'ipcBufferSlotPAddr\? st tcb idx false' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^  \{ length    := min \(min msg\.registers\.size \(4 \+ overflow\)\) maxMessageRegisters$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n -U '^            recordPhysicalWrites\n              \(writeReturnFrameToTcb st tid \(returnFrameOfMessage msg installedCaps\n                \(messageOverflowWrites st tcb msg\)\.length\)\)$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\n  Concurrency\.fireCrossCoreSgis r\.1$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n -U '^        Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\n        Concurrency\.fireCrossCoreSgis r\.1$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1\n  Concurrency\.fireCrossCoreSgis r\.1\n  Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^        Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1\n        Concurrency\.fireCrossCoreSgis r\.1\n        Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n 'addr\.is_multiple_of\(8\) && page >= KERNEL_RESERVED_END && covered\(page, PAGE_BYTES\)' rust/sele4n-hal/src/user_translation.rs
 run_check "INVARIANT" rg -n '12: the three words past the fourth are stored into the receiver.s buffer, in order' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '12 CONTROL: without the RAM read the receiver is handed the model.s zeroes' tests/SyscallReturnAbiSuite.lean
@@ -7734,8 +7734,16 @@ run_check "INVARIANT" rg -n '^        \.user tcb\.registerContext ops\.1 ops\.2 
 run_check "INVARIANT" rg -n '^    ffiRestoreCommit \(if fpLive then 2 else 0\)$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export lean_handle_fp_access\]$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame record\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
-run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame record\.2\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+# v0.36.39: every state-committing entry drains both hardware ledgers — the
+# physical writes and the instruction-cache operands — in its atomic step, and
+# performs them before its restore (the writes before any SGI).
+run_check "INVARIANT" rg -n -U '      \(st.\.pendingPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^  \| none => pure \(\)\n  Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2\n  Concurrency\.releaseSwitchedFpOwner coreId$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '      \(st.\.pendingPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites record\.2\.2\.1\n  Platform\.FFI\.completeIcacheMaintenance record\.2\.2\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n -U '    \(suspendThreadCrossCoreDrainedStep tid execCore\)\n  Platform\.FFI\.completePhysicalWrites result\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.1\.2\n  Platform\.FFI\.completeIcacheMaintenance result\.2\.2$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The FP routines keep an output section of their own in the linked image.
 run_check "INVARIANT" rg -n -U '^    \.text\.sele4n_fp_context : ALIGN\(16\) \{\n        KEEP\(\*\(\.text\.sele4n_fp_context\)\)' rust/sele4n-hal/link.ld
@@ -10663,7 +10671,8 @@ run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references($|[ (
 # dispatches to the per-kind helpers, whose constructor patterns pin every
 # field.
 run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId vtid.val then' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n 'modifyGetKernelState \(suspendThreadCrossCoreStep tid execCore\)' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  let result ← Platform\.FFI\.modifyGetKernelState\n    \(suspendThreadCrossCoreDrainedStep tid execCore\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  let \(out, st.\) := suspendThreadCrossCoreStep tid execCore st\n  \(\(out, \(st.\.pendingPhysicalWrites, st.\.pendingIcacheMaintenance\)\),$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '  \| .tcb tcb => tcbReferencesReservedIdleSlot tcb' SeLe4n/Platform/Boot.lean

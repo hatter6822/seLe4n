@@ -26,9 +26,9 @@ arm (`.tcbSetSpace`) establishes by capability before calling it:
   itself classifies it so (`inferThreadState`: placed on no core, blocked on
   nothing).  Asking both means a stale flag cannot admit a thread the scheduler
   is running, whatever `threadInactiveFlagConsistent` says of the state.  A running or blocked thread's
-  spaces are in use: its register frame, its in-flight IPC and — once BP7.2
-  installs roots — the translation table a PE is walking are all read through
-  them.  seL4 accepts `TCB_SetSpace` on a running thread and lets the change
+  spaces are in use: its register frame, its in-flight IPC and — since WS-BP
+  BP7.2 installs a thread's root in `TTBR0_EL1` — the translation table a PE is
+  walking are all read through them.  seL4 accepts `TCB_SetSpace` on a running thread and lets the change
   take effect at its next entry; this kernel asks the caller to suspend first,
   which is the order a manager configures a new thread in anyway (configure,
   then resume), and which keeps every invariant stated over a thread's roots

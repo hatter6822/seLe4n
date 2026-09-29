@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.38.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.39.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8403,12 +8403,22 @@ level-3 entry (`mappingStore?`), a table install or unmap the parent entry
 page it takes out and an ASID invalidation (`detachWrites`), every carve's scrub
 its zeroing, a reset's retired root its ASID.  A new writer of `mappings` or
 `tables`, or a new scrub, records too; the model's `machine.memory` is not the
-machine's.  (2) **The ledger is drained by the syscall seam alone**, read and
-cleared in the atomic step (`syscallDispatchCrossCoreStep_drains_physicalWrites`)
-and performed **first** — before the SGIs and the shootdown round
-(`completePhysicalWrites`) — so no core refills a TLB entry from a descriptor
-already cleared.  No other entry reaches a recording transition; one that does
-must drain it the same way.  (3) **The HAL validates, then writes, and halts on
+machine's.  (2) **The ledger is drained by every state-committing entry**, read and
+cleared in the atomic step (`syscallDispatchCrossCoreStep_drains_physicalWrites`
+at the syscall seam) and performed **first** — before the SGIs, the shootdown
+round and the restore (`completePhysicalWrites`) — so no core refills a TLB
+entry from a descriptor already cleared.  The fault seams, the timer tick, the
+`.reschedule` receiver (and so the secondary bring-up entry) and the cross-core
+suspend all drain it the same way since `v0.36.39`, each pinned by a Tier 3
+anchor: until then only the syscall and fault seams did, under a sentence saying
+no other entry reached a recording transition — a claim nothing checked, and one
+a new recording step inside a tick or a suspend would have falsified silently,
+leaving its writes owed to RAM until an unrelated syscall drained them.  The
+instruction-cache operand ledger (`pendingIcacheMaintenance`) is drained at the
+same entries in the same step, emitted after the SGIs and before the restore,
+through `Platform.FFI.completeIcacheMaintenance` (moved there from
+`SyscallDispatchEntry` so the other entries can reach it).  A new
+state-committing entry drains both ledgers in its atomic step.  (3) **The HAL validates, then writes, and halts on
 a refusal**: a page is a pool page or covered RAM past `KERNEL_RESERVED_END`,
 never the kernel's own (`user_translation::decode_physical_write`), because the
 Lean kernel names only pages it owns and a refused operand is a defect.  (4)

@@ -148,14 +148,18 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
     ((outcome.value?,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c)),
-      Concurrency.restoreTargetAt st' coreId), st'))
+      Concurrency.restoreTargetAt st' coreId,
+      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+  Platform.FFI.completePhysicalWrites r.2.2.2.1
   match r.1 with
   | some sgisAndFlag =>
       if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
       Concurrency.fireCrossCoreSgis sgisAndFlag.1
   | none => pure ()
+  Platform.FFI.completeIcacheMaintenance r.2.2.2.2
   Concurrency.releaseSwitchedFpOwner coreId
-  Platform.FFI.restoreTrapFrame r.2.2
+  Platform.FFI.restoreTrapFrame r.2.2.1
   Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- **WS-SM SM5.I** structural marker: `perCoreTimerTickEntry` unfolds to the
@@ -166,7 +170,13 @@ commit-coupled `ffiTimerAdvanceTickCount` on the clock-advance flag of a
 firing, the state commit, the shadow advance — or, since WS-RR RR7.39, the
 declared-footprint bracket — breaks this marker at elaboration; combined with the
 `@[export]` attribute (which the Rust `lean_per_core_timer_tick` extern resolves
-against) and the `build.rs` Check-5 scanner, the seam cannot regress silently. -/
+against) and the `build.rs` Check-5 scanner, the seam cannot regress silently.
+
+**`v0.36.39`**: the step also reads and clears both hardware ledgers — the
+physical-write ledger, performed before any SGI fires, and the
+instruction-cache ledger, emitted after the SGIs and before the restore.
+Every state-committing entry drains both, so no transition the tick reaches
+can record work that is skipped or performed late by another core's entry. -/
 theorem perCoreTimerTickEntry_def (coreId : UInt64) :
     perCoreTimerTickEntry coreId =
       (do
@@ -178,14 +188,18 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
           ((outcome.value?,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
-            Concurrency.restoreTargetAt st' coreId), st'))
+            Concurrency.restoreTargetAt st' coreId,
+            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+        Platform.FFI.completePhysicalWrites r.2.2.2.1
         match r.1 with
         | some sgisAndFlag =>
             if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
             Concurrency.fireCrossCoreSgis sgisAndFlag.1
         | none => pure ()
+        Platform.FFI.completeIcacheMaintenance r.2.2.2.2
         Concurrency.releaseSwitchedFpOwner coreId
-        Platform.FFI.restoreTrapFrame r.2.2
+        Platform.FFI.restoreTrapFrame r.2.2.1
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 end SeLe4n.Kernel

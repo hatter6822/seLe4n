@@ -305,10 +305,10 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Platform.FFI.icMaintenanceBroadcast_iallu_encoding
 #check @SeLe4n.Platform.FFI.icMaintenanceBroadcast_ivauPage_encoding
 #check @SeLe4n.Platform.FFI.icMaintenanceBroadcast_cleanRangeIallu_encoding
-#check @SeLe4n.Kernel.completeIcacheMaintenance
-#check @SeLe4n.Kernel.completeIcacheMaintenance_nil
-#check @SeLe4n.Kernel.completeIcacheMaintenance_singleton
-#check @SeLe4n.Kernel.completeIcacheMaintenance_cons
+#check @SeLe4n.Platform.FFI.completeIcacheMaintenance
+#check @SeLe4n.Platform.FFI.completeIcacheMaintenance_nil
+#check @SeLe4n.Platform.FFI.completeIcacheMaintenance_singleton
+#check @SeLe4n.Platform.FFI.completeIcacheMaintenance_cons
 
 -- The 14th `proofLayerInvariantBundle` conjunct is live (the bundle's
 -- boot witness elaborates only if the conjunct is present and provable).

@@ -1,3 +1,53 @@
+## v0.36.39 — Every state-committing entry drains both hardware ledgers
+
+- **The ledger drain was the syscall and fault seams' alone.**  The timer
+  tick, the `.reschedule` receiver (and so the secondary bring-up entry, which
+  runs the same step) and the cross-core suspend committed their atomic step
+  and never read `SystemState.pendingPhysicalWrites`.  The standing claim that
+  "no other entry reaches a recording transition" was a sentence nothing
+  checked: a recording step added inside a tick's reschedule or the suspend's
+  pipeline would have left its descriptor stores, zeroings and ASID
+  invalidations owed to RAM until an unrelated syscall happened to drain them.
+  Meanwhile the kernel's own model would have said the translation was gone.
+  Each of the four entries now returns the ledger from its `modifyGetKernelState`
+  step, commits `Architecture.clearPhysicalWrites`, and runs
+  `Platform.FFI.completePhysicalWrites` before its SGIs and its restore — the
+  syscall seam's order.  The drain is structural, so it costs nothing on the
+  empty ledger every one of these entries leaves today
+  (`completePhysicalWrites_nil`).
+- **The instruction-cache ledger had the same gap, and the same remedy.**
+  `pendingIcacheMaintenance` was emitted by the syscall seam alone, through a
+  `completeIcacheMaintenance` declared in `SyscallDispatchEntry`, which the
+  timer, reschedule and fault entries cannot import.  It moved to
+  `Platform.FFI` beside `completePhysicalWrites` (a tombstone marks the old
+  home), and every state-committing entry — the syscall seam, both fault seams,
+  the timer tick, the `.reschedule` receiver, the secondary bring-up entry and
+  the cross-core suspend — now reads and clears both ledgers in its atomic step
+  and emits the icache operands after its SGIs and before its restore.  Only
+  syscall arms record into it today, so this too is structural.
+- **Anchors.**  Three Tier 3 positives pin the drain at the timer, the
+  reschedule and the suspend entry, and the two restore anchors moved to the
+  widened tuples (`r.2.2.1`, `record.2.1`).  `secondaryKernelMain_def` is
+  restated to match the reschedule step it inlines.
+- **Documentation.**  `CLAUDE.md` / `AGENTS.md`'s BP7.2 ledger paragraph and
+  the spec's physical-write ledger bullet now say every state-committing entry
+  drains both ledgers, and that a new one must.  The fault and syscall-seam
+  anchors are widened to require the icache drain, and the
+  `completeIcacheMaintenance` checks in `SmpCacheMaintenanceSuite` name its new
+  home.
+- **The suspend entry's step is named.**  Its atomic step was an inline lambda,
+  which a lazy Tier 3 negative scoped to the syscall seam's lambda matched
+  across the declaration boundary.  `suspendThreadCrossCoreDrainedStep` is the
+  step, with `suspendThreadCrossCoreDrainedStep_idle_refused` restating the
+  idle refusal through the drain (the refusal commits nothing, and clearing an
+  empty ledger is the identity on what it touches); the anchors pin the named
+  step.
+- **A test restatement followed the body.**  `tests/SmpFoundationsSuite.lean`
+  restates `secondaryKernelMain`'s body verbatim; it failed to elaborate against
+  the widened tuple and is updated, which is the restatement doing its job.
+- **Prose.**  `setThreadSpace`'s docstring said a root reaches the hardware
+  "once BP7.2 installs roots"; BP7.2 landed at `v0.36.15`, and it now says so.
+
 ## v0.36.38 — Three memory-authority corrections from the deeper audit
 
 - **A page table's final capability is decided on CNode slots.**

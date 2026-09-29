@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/loving-babbage-2z8r8z",
-      "commit_sha": "e360ae489b39a99710d1b5050320b56a885eb41e",
-      "tree_sha": "3d7aabfedc7bd02cc5f8686b38b3739f92f42387",
-      "committed_at_utc": "2026-09-29T02:59:57+00:00"
+      "commit_sha": "b05b18def831443ecfa25125e3a9ebd198dc7ceb",
+      "tree_sha": "b8408210ab78b817aebedaffc87c5115ea6cc7a1",
+      "committed_at_utc": "2026-09-29T03:27:54+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "69ac528cb3978c64f1a9f1a3d36c2facec6d3ca920a3bf0da65b36a8c21d2567"
+    "source_digest": "3ebcabc9dd2e15f9502de29e518972f52f503ad105b177abd3125abadc625187"
   },
   "summary": {
     "module_count": 432,
-    "declaration_count": 24222
+    "declaration_count": 24224
   },
   "readme_sync": {
-    "version": "0.36.38",
+    "version": "0.36.39",
     "lean_toolchain": "v4.28.0",
     "production_files": 361,
-    "production_loc": 433070,
+    "production_loc": 433156,
     "test_files": 71,
-    "test_loc": 88388,
-    "proved_theorem_lemma_decls": 14384,
+    "test_loc": 88393,
+    "proved_theorem_lemma_decls": 14385,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -70321,7 +70321,9 @@
           "line": 319,
           "called": [
             "captureTrapFrame",
+            "clearIcacheMaintenance",
             "clearPhysicalWrites",
+            "completeIcacheMaintenance",
             "completePhysicalWrites",
             "coreIdOfUInt64",
             "currentOnCore",
@@ -70341,10 +70343,12 @@
         {
           "kind": "def",
           "name": "unknownSyscallEntry",
-          "line": 347,
+          "line": 349,
           "called": [
             "captureTrapFrame",
+            "clearIcacheMaintenance",
             "clearPhysicalWrites",
+            "completeIcacheMaintenance",
             "completePhysicalWrites",
             "coreIdOfUInt64",
             "currentOnCore",
@@ -70364,7 +70368,7 @@
         {
           "kind": "def",
           "name": "fpAccessEntryStep",
-          "line": 373,
+          "line": 377,
           "called": [
             "FpAccessOutcome",
             "FpContext",
@@ -70379,7 +70383,7 @@
         {
           "kind": "def",
           "name": "applyFpAccessOutcome",
-          "line": 382,
+          "line": 386,
           "called": [
             "FpAccessOutcome",
             "inert",
@@ -70390,7 +70394,7 @@
         {
           "kind": "def",
           "name": "fpAccessEntry",
-          "line": 401,
+          "line": 405,
           "called": [
             "applyFpAccessOutcome",
             "captureOwnedFp",
@@ -70407,7 +70411,7 @@
         {
           "kind": "theorem",
           "name": "fpAccessEntry_def",
-          "line": 415,
+          "line": 419,
           "called": [
             "applyFpAccessOutcome",
             "captureOwnedFp",
@@ -70425,7 +70429,7 @@
         {
           "kind": "theorem",
           "name": "fpAccessEntryStep_scheduler",
-          "line": 429,
+          "line": 433,
           "called": [
             "FpContext",
             "SystemState",
@@ -70437,10 +70441,12 @@
         {
           "kind": "theorem",
           "name": "faultEntry_def",
-          "line": 453,
+          "line": 457,
           "called": [
             "captureTrapFrame",
+            "clearIcacheMaintenance",
             "clearPhysicalWrites",
+            "completeIcacheMaintenance",
             "completePhysicalWrites",
             "coreIdOfUInt64",
             "currentOnCore",
@@ -70461,10 +70467,12 @@
         {
           "kind": "theorem",
           "name": "unknownSyscallEntry_def",
-          "line": 476,
+          "line": 482,
           "called": [
             "captureTrapFrame",
+            "clearIcacheMaintenance",
             "clearPhysicalWrites",
+            "completeIcacheMaintenance",
             "completePhysicalWrites",
             "coreIdOfUInt64",
             "currentOnCore",
@@ -70485,7 +70493,7 @@
         {
           "kind": "theorem",
           "name": "faultEntryDeliver_not_dispatchable",
-          "line": 511,
+          "line": 519,
           "called": [
             "CoreId",
             "ExceptionContext",
@@ -70512,7 +70520,7 @@
         {
           "kind": "theorem",
           "name": "faultEntryStep_not_dispatchable",
-          "line": 540,
+          "line": 548,
           "called": [
             "ExceptionContext",
             "FaultRegisterWindow",
@@ -70535,7 +70543,7 @@
         {
           "kind": "theorem",
           "name": "unknownSyscallEntryStep_not_dispatchable",
-          "line": 557,
+          "line": 565,
           "called": [
             "ExceptionContext",
             "FaultRegisterWindow",
@@ -70556,7 +70564,7 @@
         {
           "kind": "theorem",
           "name": "syscallCapFault_not_dispatchable",
-          "line": 575,
+          "line": 583,
           "called": [
             "CoreId",
             "Fault",
@@ -70573,7 +70581,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_capFault_not_dispatchable",
-          "line": 589,
+          "line": 597,
           "called": [
             "CoreId",
             "Fault",
@@ -205683,6 +205691,10 @@
           "line": 151,
           "called": [
             "captureTrapFrame",
+            "clearIcacheMaintenance",
+            "clearPhysicalWrites",
+            "completeIcacheMaintenance",
+            "completePhysicalWrites",
             "coreIdOfUInt64",
             "currentOnCore",
             "frame",
@@ -205700,10 +205712,14 @@
         {
           "kind": "theorem",
           "name": "perCoreRescheduleEntry_def",
-          "line": 173,
+          "line": 180,
           "called": [
             "Kernel",
             "captureTrapFrame",
+            "clearIcacheMaintenance",
+            "clearPhysicalWrites",
+            "completeIcacheMaintenance",
+            "completePhysicalWrites",
             "coreIdOfUInt64",
             "currentOnCore",
             "frame",
@@ -205738,6 +205754,10 @@
           "line": 142,
           "called": [
             "captureTrapFrame",
+            "clearIcacheMaintenance",
+            "clearPhysicalWrites",
+            "completeIcacheMaintenance",
+            "completePhysicalWrites",
             "coreIdOfUInt64",
             "currentOnCore",
             "ffiTimerAdvanceTickCount",
@@ -205760,10 +205780,14 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickEntry_def",
-          "line": 170,
+          "line": 179,
           "called": [
             "Kernel",
             "captureTrapFrame",
+            "clearIcacheMaintenance",
+            "clearPhysicalWrites",
+            "completeIcacheMaintenance",
+            "completePhysicalWrites",
             "coreIdOfUInt64",
             "currentOnCore",
             "ffiTimerAdvanceTickCount",
@@ -255329,10 +255353,14 @@
         {
           "kind": "theorem",
           "name": "secondaryKernelMain_def",
-          "line": 150,
+          "line": 153,
           "called": [
             "Kernel",
             "captureTrapFrame",
+            "clearIcacheMaintenance",
+            "clearPhysicalWrites",
+            "completeIcacheMaintenance",
+            "completePhysicalWrites",
             "coreIdOfUInt64",
             "currentOnCore",
             "frame",
@@ -257569,7 +257597,7 @@
     {
       "module": "SeLe4n.Kernel.SyscallDispatchEntry",
       "path": "SeLe4n/Kernel/SyscallDispatchEntry.lean",
-      "declaration_count": 30,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
@@ -257673,47 +257701,9 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "completeIcacheMaintenance",
-          "line": 478,
-          "called": [
-            "ICacheInvalidation",
-            "icMaintenanceBroadcast"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "completeIcacheMaintenance_nil",
-          "line": 486,
-          "called": [
-            "completeIcacheMaintenance",
-            "pure"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "completeIcacheMaintenance_singleton",
-          "line": 492,
-          "called": [
-            "ICacheInvalidation",
-            "completeIcacheMaintenance",
-            "icMaintenanceBroadcast"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "completeIcacheMaintenance_cons",
-          "line": 500,
-          "called": [
-            "ICacheInvalidation",
-            "completeIcacheMaintenance",
-            "icMaintenanceBroadcast"
-          ]
-        },
-        {
           "kind": "theorem",
           "name": "completeShootdownRounds_nil",
-          "line": 516,
+          "line": 459,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -257724,7 +257714,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchCrossCoreStep",
-          "line": 536,
+          "line": 479,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -257754,7 +257744,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreStep_drains_physicalWrites",
-          "line": 577,
+          "line": 520,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -257770,7 +257760,7 @@
         {
           "kind": "def",
           "name": "syscallBracketRefusalResult",
-          "line": 616,
+          "line": 559,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -257790,7 +257780,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchCrossCoreBracketedStep",
-          "line": 656,
+          "line": 599,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -257813,7 +257803,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreBracketedStep_undeclared",
-          "line": 680,
+          "line": 623,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -257829,7 +257819,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreBracketedStep_refused",
-          "line": 699,
+          "line": 642,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -257849,7 +257839,7 @@
         {
           "kind": "def",
           "name": "readCallerOverflowWords",
-          "line": 734,
+          "line": 677,
           "called": [
             "CoreId",
             "PAddr",
@@ -257865,7 +257855,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchCrossCoreEntry",
-          "line": 793,
+          "line": 736,
           "called": [
             "captureTrapFrame",
             "completeIcacheMaintenance",
@@ -257893,7 +257883,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_def",
-          "line": 873,
+          "line": 816,
           "called": [
             "captureTrapFrame",
             "completeIcacheMaintenance",
@@ -257922,7 +257912,7 @@
         {
           "kind": "theorem",
           "name": "vacatedCore_next_syscall_rejected",
-          "line": 916,
+          "line": 859,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -257938,7 +257928,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_sgis_nil_single_core",
-          "line": 940,
+          "line": 883,
           "called": [
             "CoreId",
             "SystemState",
@@ -257954,7 +257944,7 @@
         {
           "kind": "def",
           "name": "suspendThreadCrossCoreStep",
-          "line": 995,
+          "line": 938,
           "called": [
             "CoreId",
             "KernelError.toUInt32",
@@ -257979,7 +257969,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadCrossCoreStep_idle_refused",
-          "line": 1066,
+          "line": 1009,
           "called": [
             "CoreId",
             "KernelError.toUInt32",
@@ -257996,7 +257986,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadCrossCoreStep_sentinel_refused",
-          "line": 1081,
+          "line": 1024,
           "called": [
             "CoreId",
             "KernelError.toUInt32",
@@ -258008,20 +257998,55 @@
         },
         {
           "kind": "def",
-          "name": "suspendThreadCrossCoreEntry",
-          "line": 1088,
+          "name": "suspendThreadCrossCoreDrainedStep",
+          "line": 1036,
           "called": [
-            "currentCoreId",
-            "fireCrossCoreSgis",
-            "modifyGetKernelState",
-            "pure",
+            "CoreId",
+            "ICacheInvalidation",
+            "PhysicalWrite",
+            "SgiKind",
+            "SystemState",
+            "clearIcacheMaintenance",
+            "clearPhysicalWrites",
+            "st",
             "suspendThreadCrossCoreStep"
           ]
         },
         {
           "kind": "theorem",
+          "name": "suspendThreadCrossCoreDrainedStep_idle_refused",
+          "line": 1048,
+          "called": [
+            "CoreId",
+            "KernelError.toUInt32",
+            "SgiKind",
+            "SystemState",
+            "isIdleThreadId",
+            "ofNat",
+            "st",
+            "suspendThreadCrossCoreDrainedStep",
+            "suspendThreadCrossCoreStep_idle_refused",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "suspendThreadCrossCoreEntry",
+          "line": 1064,
+          "called": [
+            "completeIcacheMaintenance",
+            "completePhysicalWrites",
+            "currentCoreId",
+            "fireCrossCoreSgis",
+            "modifyGetKernelState",
+            "pure",
+            "suspendThreadCrossCoreDrainedStep"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "computeCrossCoreSgis_recordSyscallRefusal_eq",
-          "line": 1114,
+          "line": 1093,
           "called": [
             "CoreId",
             "Kernel",
@@ -287210,7 +287235,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 207,
+      "declaration_count": 211,
       "declarations": [
         {
           "kind": "namespace",
@@ -289127,15 +289152,53 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "completeIcacheMaintenance",
+          "line": 3263,
+          "called": [
+            "ICacheInvalidation",
+            "icMaintenanceBroadcast"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "completeIcacheMaintenance_nil",
+          "line": 3271,
+          "called": [
+            "completeIcacheMaintenance",
+            "pure"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "completeIcacheMaintenance_singleton",
+          "line": 3277,
+          "called": [
+            "ICacheInvalidation",
+            "completeIcacheMaintenance",
+            "icMaintenanceBroadcast"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "completeIcacheMaintenance_cons",
+          "line": 3285,
+          "called": [
+            "ICacheInvalidation",
+            "completeIcacheMaintenance",
+            "icMaintenanceBroadcast"
+          ]
+        },
+        {
           "kind": "opaque",
           "name": "ffiInstallTranslation",
-          "line": 3229,
+          "line": 3297,
           "called": []
         },
         {
           "kind": "def",
           "name": "installThreadTranslation",
-          "line": 3234,
+          "line": 3302,
           "called": [
             "SystemState",
             "ThreadId",
@@ -289147,19 +289210,19 @@
         {
           "kind": "opaque",
           "name": "ffiRestoreStageWord",
-          "line": 3244,
+          "line": 3312,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRestoreCommit",
-          "line": 3258,
+          "line": 3326,
           "called": []
         },
         {
           "kind": "def",
           "name": "restoreTrapFrame",
-          "line": 3263,
+          "line": 3331,
           "called": [
             "RestoreTarget",
             "ffiInstallTranslation",
@@ -289175,31 +289238,31 @@
         {
           "kind": "opaque",
           "name": "ffiFpCapture",
-          "line": 3285,
+          "line": 3353,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiFpCapturedWord",
-          "line": 3292,
+          "line": 3360,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiFpStageWord",
-          "line": 3298,
+          "line": 3366,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiFpLoadCommit",
-          "line": 3306,
+          "line": 3374,
           "called": []
         },
         {
           "kind": "def",
           "name": "captureLiveFp",
-          "line": 3309,
+          "line": 3377,
           "called": [
             "FpContext",
             "FpContext.ofWords",
@@ -289212,7 +289275,7 @@
         {
           "kind": "def",
           "name": "loadFpContext",
-          "line": 3318,
+          "line": 3386,
           "called": [
             "FpContext",
             "ffiFpLoadCommit",
@@ -289225,7 +289288,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_iallu_encoding",
-          "line": 3324,
+          "line": 3392,
           "called": [
             "toOpTag",
             "toPaddr"
@@ -289234,7 +289297,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_ivauPage_encoding",
-          "line": 3331,
+          "line": 3399,
           "called": [
             "PAddr",
             "ofNat",
@@ -289246,7 +289309,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_cleanRangeIallu_encoding",
-          "line": 3340,
+          "line": 3408,
           "called": [
             "PAddr",
             "ofNat",
@@ -289259,19 +289322,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 3375,
+          "line": 3443,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 3388,
+          "line": 3456,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 3404,
+          "line": 3472,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -289295,7 +289358,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 3457,
+          "line": 3525,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -289313,7 +289376,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_blocks_of_ipcBlocked",
-          "line": 3484,
+          "line": 3552,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -289335,7 +289398,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_blocked_returns_no_frame",
-          "line": 3507,
+          "line": 3575,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -289358,7 +289421,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_scheduler",
-          "line": 3536,
+          "line": 3604,
           "called": [
             "SystemState",
             "ThreadId",
@@ -289370,7 +289433,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_implies_capability_held",
-          "line": 3567,
+          "line": 3635,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -289401,7 +289464,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 3630,
+          "line": 3698,
           "called": [
             "CoreId",
             "KernelError",
@@ -289423,7 +289486,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_capFault_faulted",
-          "line": 3659,
+          "line": 3727,
           "called": [
             "CoreId",
             "Fault",
@@ -289445,7 +289508,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_stages_no_frame",
-          "line": 3695,
+          "line": 3763,
           "called": [
             "CoreId",
             "KernelError",
@@ -289469,7 +289532,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_write_is_caller_invisible",
-          "line": 3736,
+          "line": 3804,
           "called": [
             "CoreId",
             "KernelError",
@@ -289491,7 +289554,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_records_refusal",
-          "line": 3764,
+          "line": 3832,
           "called": [
             "CoreId",
             "KernelError",
@@ -289523,7 +289586,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_exempt_refusal_frames_ledger",
-          "line": 3811,
+          "line": 3879,
           "called": [
             "CoreId",
             "KernelError",
@@ -289549,7 +289612,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 3841,
+          "line": 3909,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -289564,7 +289627,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 3864,
+          "line": 3932,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -289577,7 +289640,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 3886,
+          "line": 3954,
           "called": [
             "SystemState",
             "TCB",
@@ -289594,7 +289657,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 3914,
+          "line": 3982,
           "called": [
             "SystemState",
             "TCB",
@@ -342004,6 +342067,10 @@
           "line": 369,
           "called": [
             "captureTrapFrame",
+            "clearIcacheMaintenance",
+            "clearPhysicalWrites",
+            "completeIcacheMaintenance",
+            "completePhysicalWrites",
             "coreIdOfUInt64",
             "currentOnCore",
             "frame",
@@ -342022,8 +342089,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:385>",
-          "line": 385,
+          "name": "<anonymous:example:390>",
+          "line": 390,
           "called": [
             "perCoreRescheduleEntry",
             "secondaryKernelMain",
@@ -342032,8 +342099,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:388>",
-          "line": 388,
+          "name": "<anonymous:example:393>",
+          "line": 393,
           "called": [
             "perCoreRescheduleEntry",
             "secondaryKernelMain",
@@ -342042,8 +342109,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:391>",
-          "line": 391,
+          "name": "<anonymous:example:396>",
+          "line": 396,
           "called": [
             "perCoreRescheduleEntry",
             "secondaryKernelMain",
@@ -342052,8 +342119,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:394>",
-          "line": 394,
+          "name": "<anonymous:example:399>",
+          "line": 399,
           "called": [
             "perCoreRescheduleEntry",
             "secondaryKernelMain",
@@ -342062,8 +342129,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:400>",
-          "line": 400,
+          "name": "<anonymous:example:405>",
+          "line": 405,
           "called": [
             "SystemState",
             "numCores",
@@ -342075,48 +342142,24 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:410>",
-          "line": 410,
-          "called": [
-            "toTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:411>",
-          "line": 411,
-          "called": [
-            "toTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:412>",
-          "line": 412,
-          "called": [
-            "toOpTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:413>",
-          "line": 413,
-          "called": [
-            "toOpTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:414>",
-          "line": 414,
-          "called": [
-            "toOpTag"
-          ]
-        },
-        {
-          "kind": "example",
           "name": "<anonymous:example:415>",
           "line": 415,
+          "called": [
+            "toTag"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:416>",
+          "line": 416,
+          "called": [
+            "toTag"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:417>",
+          "line": 417,
           "called": [
             "toOpTag"
           ]
@@ -342126,7 +342169,7 @@
           "name": "<anonymous:example:418>",
           "line": 418,
           "called": [
-            "toAsid"
+            "toOpTag"
           ]
         },
         {
@@ -342134,7 +342177,7 @@
           "name": "<anonymous:example:419>",
           "line": 419,
           "called": [
-            "toVaddr"
+            "toOpTag"
           ]
         },
         {
@@ -342142,51 +342185,75 @@
           "name": "<anonymous:example:420>",
           "line": 420,
           "called": [
+            "toOpTag"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:423>",
+          "line": 423,
+          "called": [
             "toAsid"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:421>",
-          "line": 421,
+          "name": "<anonymous:example:424>",
+          "line": 424,
           "called": [
             "toVaddr"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:428>",
-          "line": 428,
+          "name": "<anonymous:example:425>",
+          "line": 425,
+          "called": [
+            "toAsid"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:426>",
+          "line": 426,
+          "called": [
+            "toVaddr"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:433>",
+          "line": 433,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:429>",
-          "line": 429,
+          "name": "<anonymous:example:434>",
+          "line": 434,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:430>",
-          "line": 430,
+          "name": "<anonymous:example:435>",
+          "line": 435,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:431>",
-          "line": 431,
+          "name": "<anonymous:example:436>",
+          "line": 436,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:432>",
-          "line": 432,
+          "name": "<anonymous:example:437>",
+          "line": 437,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 438,
+          "line": 443,
           "called": [
             "throw"
           ]
@@ -342194,7 +342261,7 @@
         {
           "kind": "def",
           "name": "runCoreIdChecks",
-          "line": 445,
+          "line": 450,
           "called": [
             "assertBool",
             "length",
@@ -342204,7 +342271,7 @@
         {
           "kind": "def",
           "name": "runSharingDomainChecks",
-          "line": 455,
+          "line": 460,
           "called": [
             "assertBool",
             "dsbForSharing",
@@ -342214,7 +342281,7 @@
         {
           "kind": "def",
           "name": "runLockKindChecks",
-          "line": 470,
+          "line": 475,
           "called": [
             "all",
             "assertBool",
@@ -342224,7 +342291,7 @@
         {
           "kind": "def",
           "name": "runLockIdChecks",
-          "line": 497,
+          "line": 502,
           "called": [
             "LockId.mk'",
             "assertBool",
@@ -342234,7 +342301,7 @@
         {
           "kind": "def",
           "name": "runSgiKindChecks",
-          "line": 509,
+          "line": 514,
           "called": [
             "assertBool",
             "length"
@@ -342243,7 +342310,7 @@
         {
           "kind": "def",
           "name": "runBklStateChecks",
-          "line": 524,
+          "line": 529,
           "called": [
             "assertBool",
             "bklHeldBy",
@@ -342254,7 +342321,7 @@
         {
           "kind": "def",
           "name": "runArchAssumptionChecks",
-          "line": 536,
+          "line": 541,
           "called": [
             "assertBool",
             "assumptionInventory",
@@ -342264,7 +342331,7 @@
         {
           "kind": "def",
           "name": "runSmpInventoryChecks",
-          "line": 544,
+          "line": 549,
           "called": [
             "assertBool",
             "filter",
@@ -342275,7 +342342,7 @@
         {
           "kind": "def",
           "name": "runPlatformBindingChecks",
-          "line": 564,
+          "line": 569,
           "called": [
             "PlatformBinding.bootCoreModelId",
             "PlatformBinding.declaredCores",
@@ -342291,7 +342358,7 @@
         {
           "kind": "def",
           "name": "runLockKindUniquenessChecks",
-          "line": 629,
+          "line": 634,
           "called": [
             "assertBool",
             "level"
@@ -342300,7 +342367,7 @@
         {
           "kind": "def",
           "name": "runLockIdAdditionalChecks",
-          "line": 662,
+          "line": 667,
           "called": [
             "LockId.mk'",
             "assertBool",
@@ -342310,7 +342377,7 @@
         {
           "kind": "def",
           "name": "runSgiKindAdditionalChecks",
-          "line": 681,
+          "line": 686,
           "called": [
             "all",
             "assertBool"
@@ -342319,7 +342386,7 @@
         {
           "kind": "def",
           "name": "runArchAssumptionAdditionalChecks",
-          "line": 700,
+          "line": 705,
           "called": [
             "all",
             "archAssumptionConsumer",
@@ -342330,7 +342397,7 @@
         {
           "kind": "def",
           "name": "runBklStateAdditionalChecks",
-          "line": 720,
+          "line": 725,
           "called": [
             "CoreId",
             "assertBool",
@@ -342346,7 +342413,7 @@
         {
           "kind": "def",
           "name": "runCurrentCoreIdChecks",
-          "line": 743,
+          "line": 748,
           "called": [
             "CoreId",
             "all",
@@ -342359,7 +342426,7 @@
         {
           "kind": "def",
           "name": "runPipChainFootprintChecks",
-          "line": 779,
+          "line": 784,
           "called": [
             "CoreId",
             "RwLockState.unheld",
@@ -342394,7 +342461,7 @@
         {
           "kind": "def",
           "name": "runCSpaceWalkFootprintChecks",
-          "line": 890,
+          "line": 895,
           "called": [
             "AccessMode.conflicts",
             "CNode",
@@ -342435,7 +342502,7 @@
         {
           "kind": "def",
           "name": "runSchedLockDomainChecks",
-          "line": 1020,
+          "line": 1025,
           "called": [
             "CoreId",
             "RwLockState.unheld",
@@ -342469,7 +342536,7 @@
         {
           "kind": "def",
           "name": "runSecondaryKernelMainChecks",
-          "line": 1121,
+          "line": 1126,
           "called": [
             "SystemState",
             "all",
@@ -342487,7 +342554,7 @@
         {
           "kind": "def",
           "name": "runTlbiForSharingChecks",
-          "line": 1209,
+          "line": 1214,
           "called": [
             "assertBool",
             "toAsid",
@@ -342500,7 +342567,7 @@
         {
           "kind": "def",
           "name": "runIdleWaitChecks",
-          "line": 1258,
+          "line": 1263,
           "called": [
             "assertBool",
             "ffiIdleWait",
@@ -342512,7 +342579,7 @@
         {
           "kind": "def",
           "name": "runPerCoreStatsChecks",
-          "line": 1281,
+          "line": 1286,
           "called": [
             "PerCoreStatsSnapshot",
             "all",
@@ -342532,7 +342599,7 @@
         {
           "kind": "def",
           "name": "runSgiFfiBindingChecks",
-          "line": 1363,
+          "line": 1368,
           "called": [
             "all",
             "assertBool"
@@ -342541,7 +342608,7 @@
         {
           "kind": "def",
           "name": "runFoundationsChecks",
-          "line": 1392,
+          "line": 1397,
           "called": [
             "runArchAssumptionAdditionalChecks",
             "runArchAssumptionChecks",
@@ -342571,7 +342638,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1423,
+          "line": 1428,
           "called": [
             "runFoundationsChecks"
           ]

@@ -329,9 +329,11 @@ def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c)),
       Concurrency.restoreTargetAt st' coreId,
-      st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
-  Platform.FFI.completePhysicalWrites r.2.2.2
+      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+  Platform.FFI.completePhysicalWrites r.2.2.2.1
   Concurrency.fireCrossCoreSgis r.1
+  Platform.FFI.completeIcacheMaintenance r.2.2.2.2
   Concurrency.releaseSwitchedFpOwner coreId
   Platform.FFI.restoreTrapFrame r.2.2.1
   Concurrency.recordCommittedCurrentThreadHw r.2.1
@@ -357,9 +359,11 @@ def unknownSyscallEntry (coreId : UInt64) (esr elr spsr far : UInt64)
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c)),
       Concurrency.restoreTargetAt st' coreId,
-      st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
-  Platform.FFI.completePhysicalWrites r.2.2.2
+      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+  Platform.FFI.completePhysicalWrites r.2.2.2.1
   Concurrency.fireCrossCoreSgis r.1
+  Platform.FFI.completeIcacheMaintenance r.2.2.2.2
   Concurrency.releaseSwitchedFpOwner coreId
   Platform.FFI.restoreTrapFrame r.2.2.1
   Concurrency.recordCommittedCurrentThreadHw r.2.1
@@ -465,9 +469,11 @@ theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
             Concurrency.restoreTargetAt st' coreId,
-            st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
-        Platform.FFI.completePhysicalWrites r.2.2.2
+            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+        Platform.FFI.completePhysicalWrites r.2.2.2.1
         Concurrency.fireCrossCoreSgis r.1
+        Platform.FFI.completeIcacheMaintenance r.2.2.2.2
         Concurrency.releaseSwitchedFpOwner coreId
         Platform.FFI.restoreTrapFrame r.2.2.1
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
@@ -488,9 +494,11 @@ theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
             Concurrency.restoreTargetAt st' coreId,
-            st'.pendingPhysicalWrites), Architecture.clearPhysicalWrites st'))
-        Platform.FFI.completePhysicalWrites r.2.2.2
+            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+        Platform.FFI.completePhysicalWrites r.2.2.2.1
         Concurrency.fireCrossCoreSgis r.1
+        Platform.FFI.completeIcacheMaintenance r.2.2.2.2
         Concurrency.releaseSwitchedFpOwner coreId
         Platform.FFI.restoreTrapFrame r.2.2.1
         Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl

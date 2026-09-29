@@ -146,7 +146,10 @@ mirror still said `NO_CURRENT_THREAD` afterwards, because nothing wrote it.
 
 **WS-BP BP7.3**: the frame capture is the reschedule entry's own, and at
 bring-up no trap handler has published a frame, so it captures `none` and
-saves nothing. -/
+saves nothing.
+
+**`v0.36.39`**: like every state-committing entry it drains the physical-write
+ledger in its atomic step and performs it before the restore. -/
 theorem secondaryKernelMain_def (coreId : UInt64) :
     secondaryKernelMain coreId =
       (do
@@ -156,9 +159,13 @@ theorem secondaryKernelMain_def (coreId : UInt64) :
             (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
           (((Concurrency.coreIdOfUInt64? coreId).map
             (fun c => (c, st'.scheduler.currentOnCore c)),
-            Concurrency.restoreTargetAt st' coreId), st'))
+            Concurrency.restoreTargetAt st' coreId,
+            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+        Platform.FFI.completePhysicalWrites record.2.2.1
+        Platform.FFI.completeIcacheMaintenance record.2.2.2
         Concurrency.releaseSwitchedFpOwner coreId
-        Platform.FFI.restoreTrapFrame record.2
+        Platform.FFI.restoreTrapFrame record.2.1
         Concurrency.recordCommittedCurrentThreadHw record.1) := rfl
 
 end SeLe4n.Kernel
