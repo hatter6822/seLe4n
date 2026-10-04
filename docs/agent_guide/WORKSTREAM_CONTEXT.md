@@ -142,9 +142,10 @@ phase table above and `docs/REGISTERED_DEBT.md`.
 | WS-RA | [`SYSCALL_RETURN_ABI_PLAN.md`](../dev_history/planning/SYSCALL_RETURN_ABI_PLAN.md) | v0.33.38 |
 | WS-RR | [`SMP_RELEASE_READINESS_PLAN.md`](../dev_history/planning/SMP_RELEASE_READINESS_PLAN.md) | v0.35.203 |
 
-The SM7 and WS-RA plans' still-open deferrals are rows in
-`docs/REGISTERED_DEBT.md` (SM7.D items 2 and 5; the application IPC label,
-owner WS-CB), not obligations of the archived files.
+What these plans still held open is a row in `docs/REGISTERED_DEBT.md`, not
+an obligation of the archived file: SM6's `withLockSet` bundle carriage
+(fine-lock Track D), SM7.D items 2 and 5, and WS-RA's application IPC label
+(owner WS-CB, with both candidate designs stated in the row).
 
 ### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24; slice 2, the Lean `virt` binding and its boot entry, v0.36.25; slice 3, the Lean-linked image booted on four PEs to every core's first idle dispatch in CI, v0.36.26, completing BP8.1; BP8.2, the four-PE bring-up gate executed in CI, v0.36.27; BP8.4, the Tier-4 gates executed on the `virt` test image, v0.36.28; BP8.5, the per-core counters read on the booted machine, v0.36.29; the BP2.4, BP2.5 and BP4.2 acceptance boxes decided by QEMU runs, v0.36.31)
 
