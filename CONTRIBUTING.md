@@ -79,7 +79,7 @@ For ABI / decode-layer changes, also run:
 
 Production `.lean` modules SHOULD stay under **2000 LOC**. This is
 guidance, not a gate — a number of proof-heavy modules exceed it (the
-curated list lives in CLAUDE.md under "Known large files") — and the
+curated list lives in `docs/agent_guide/LARGE_FILES.md` under "Known large files") — and the
 remedy when a split is warranted is a re-export hub plus child modules
 (see `SeLe4n/Kernel/IPC/Invariant/Structural.lean`,
 `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`, and

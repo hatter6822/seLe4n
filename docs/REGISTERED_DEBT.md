@@ -17,7 +17,7 @@ canonical one is how the first divergence happened.
 
 This file is **not** a record of what was done. What each version changed is in
 [`CHANGELOG.md`](../CHANGELOG.md), one entry per merged PR; what is in flight
-is in `CLAUDE.md`'s *Active workstream context* and the phase plans under
+is in `docs/agent_guide/WORKSTREAM_CONTEXT.md` and the phase plans under
 [`planning/`](planning/); how to work on any of it is
 [`DEVELOPMENT.md`](DEVELOPMENT.md).
 

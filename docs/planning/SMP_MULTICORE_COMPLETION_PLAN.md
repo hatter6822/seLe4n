@@ -131,7 +131,7 @@ elaborates the subset relevant to it.
 > scheduler domain), **RR7.40** (the dynamic PIP chain) and **RR7.41**
 > (CSpace-walk interior CNodes) in `SMP_RELEASE_READINESS_PLAN.md`, plus
 > Track D's partitioned commit in `SMP_FINE_LOCK_MIGRATION_PLAN.md`.
-> `CLAUDE.md`'s standing constraints carry the same statement, and
+> `docs/agent_guide/WORKSTREAM_CONTEXT.md`'s standing constraints carry the same statement, and
 > `Scheduler/Operations/PerCoreWcrt.lean`'s header says it at the proofs.
 
 The kernel runs under **per-object reader-writer fine locking**

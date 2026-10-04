@@ -599,7 +599,7 @@ checklist before tagging:
 - [ ] **Documentation:**
   - [ ] `CHANGELOG.md` AN9 entry committed
   - [ ] `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` rows marked RESOLVED
-  - [ ] `CLAUDE.md` Active workstream context refreshed
+  - [ ] `docs/agent_guide/WORKSTREAM_CONTEXT.md` refreshed
 
 The static gate is necessary and not sufficient. It compiles the kernel
 and checks the proofs; it executes nothing on a core. A v1.0.0 that

@@ -11,7 +11,7 @@ own post-state* proves "**if** the post-state already satisfies the conjunct,
 the transition is fine" -- not that the transition establishes it.  Threading
 one conjunct that way makes the whole bundle conditional, and a bundle read as
 an unconditional post-state guarantee is exactly the false-assurance shape
-`CLAUDE.md`'s standing constraint warns about.
+`docs/agent_guide/WORKSTREAM_CONTEXT.md`'s standing constraint warns about.
 
 Ten conjuncts were de-threaded by earlier slices of WS-DT, each with a
 canonical primed binder (`hQNBC'`, `hPRR'`, ...), so "de-threaded" could be

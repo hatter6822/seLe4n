@@ -7,7 +7,7 @@ you need before you write code.
 **What this file is not.** It is not a status report. What is in flight is in
 [`REGISTERED_DEBT.md`](REGISTERED_DEBT.md); what changed in a given
 version is in [`CHANGELOG.md`](../CHANGELOG.md); what new code must assume
-about the kernel today is in `CLAUDE.md`'s *Standing constraints and registered
+about the kernel today is in `docs/agent_guide/WORKSTREAM_CONTEXT.md`'s *Standing constraints and registered
 debt*.
 
 ---
@@ -855,7 +855,7 @@ reference it unless explicitly instructed.
    the phase plan for the sub-task you are taking. Sub-task numbers are
    execution order: a plan that says `RR5.10` before `RR5.11` means exactly
    that, and a sub-task may only consume a lower-numbered one.
-2. **Read the standing constraints.** `CLAUDE.md`'s *Standing constraints and
+2. **Read the standing constraints.** `docs/agent_guide/WORKSTREAM_CONTEXT.md`'s *Standing constraints and
    registered debt* is current facts about the tree — what a live seam does,
    what is dormant, what new code must not assume. It changes what you may
    write.
@@ -910,7 +910,7 @@ Copy into the PR body:
 | Tier 0 naming gate passes locally, fails in CI | gate reads the git index | `git add` first, then re-run |
 | `check_version_sync.sh` fails | a version site missed | `./scripts/bump_version.sh <version>` |
 | `docs/codebase_map.json is stale` | Lean sources changed after the last sync | `python3 scripts/generate_codebase_map.py --pretty` |
-| `CLAUDE.md 'Known large files' differs` | a file crossed the 10% tolerance | `./scripts/find_large_lean_files.sh --format bullets`, replace the block in **both** CLAUDE.md and AGENTS.md |
+| `LARGE_FILES.md 'Known large files' differs` | a file crossed the 10% tolerance | `./scripts/find_large_lean_files.sh --format bullets`, replace the block in `docs/agent_guide/LARGE_FILES.md` |
 | Cross build fails but `cargo check` was clean | `check` never reaches codegen | that is the point — fix the `asm!` or the encoding |
 | A `TLBI *OS` wrapper halts the core | FEAT_TLBIOS is ARMv8.4-A; Cortex-A76 is ARMv8.2-A | use the `*IS` variant; the `*OS` path is fail-closed by design |
 | Production module cannot import what it needs | it is on the staged allowlist | promote it deliberately, or restructure — production must not import staged |

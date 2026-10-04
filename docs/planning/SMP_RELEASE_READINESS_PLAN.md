@@ -323,7 +323,7 @@ closing a clause it did not close.
 > `_preserves_ipcInvariantFull` / `_establishes_ipcInvariantFull` family, the
 > pending register is empty, and all three payoff tiers exist.  What the
 > theorems say, what their quiescence packs confine and what new code may
-> assume is in `CLAUDE.md`'s *Standing constraints* section; what each cut
+> assume is in `docs/agent_guide/WORKSTREAM_CONTEXT.md`'s *Standing constraints* section; what each cut
 > changed is in [`CHANGELOG.md`](../../CHANGELOG.md).
 Closes [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md).
 At authoring time its D1, D6 and D8 slices were open, two of the twenty

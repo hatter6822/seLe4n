@@ -63,7 +63,7 @@ For documentation/planning PRs:
 
 - **Active workstream**: WS-SM (SMP multi-core completion) — SM0–SM9
   landed, SM10 pending (→ v1.0.0); WS-RA complete. See
-  `docs/REGISTERED_DEBT.md`'s *Current status* and CLAUDE.md's phase table.
+  `docs/REGISTERED_DEBT.md`'s *Current status* and the phase tables in `docs/agent_guide/WORKSTREAM_CONTEXT.md`.
 - **Completed portfolios**: WS-B through WS-AN, WS-RC R0–R5, WS-RA — the
   full traceability table is in `docs/REGISTERED_DEBT.md`.
 - **Historical baselines**: prior audits and workstream plans archived in
