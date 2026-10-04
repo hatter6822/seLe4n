@@ -100,7 +100,7 @@ provas do Lean 4:
 | **LoC Lean de produção** | 433.986 em 361 arquivos |
 | **LoC Lean de testes** | 88.629 em 71 suítes de testes |
 | **Declarações provadas** | 14.408 declarações de teorema/lema (zero sorry/axiom) |
-| **Crates Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) em 48 arquivos-fonte |
+| **Crates Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) em 80 arquivos-fonte |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Integração com o hardware** | **H3 CONCLUÍDO** (WS-AG AG1–AG10): HAL, GIC-400, temporizador, tabelas de páginas ARMv8, ponte FFI, boot no QEMU |
 | **Auditoria canônica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoria abrangente pré-1.0 (202 achados; remediados por WS-AK AK1–AK10; arquivada) |
@@ -155,7 +155,7 @@ Após qualquer alteração em `rust/`, execute **as duas** trilhas de Rust. Elas
 cobrem metades disjuntas do mesmo crate: no host, todo bloco
 `#[cfg(target_arch = "aarch64")]` é removido antes que o rustc ou o clippy o
 vejam, então a trilha do host não enxerga os 67 blocos condicionados por cfg,
-os 57 pontos de `asm!` nem as três fontes `.S` que compõem a maior parte do
+os 57 pontos de `asm!` nem as quatro fontes `.S` que compõem a maior parte do
 HAL. A trilha cruzada compila `sele4n-hal` para
 `aarch64-unknown-none-softfloat` nos dois perfis, verifica se as fontes em
 assembly foram de fato montadas, executa o lint no alvo cruzado e desmonta os

@@ -96,7 +96,7 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 | **生产代码行数** | 433,986 行，分布于 361 个文件 |
 | **测试代码行数** | 88,629 行，分布于 71 个测试套件 |
 | **已证明的声明** | 14,408 个定理/引理声明（零 sorry/axiom） |
-| **Rust crate** | 4 个（`sele4n-types`、`sele4n-abi`、`sele4n-sys`、`sele4n-hal`），共 48 个源文件 |
+| **Rust crate** | 4 个（`sele4n-types`、`sele4n-abi`、`sele4n-sys`、`sele4n-hal`），共 80 个源文件 |
 | **目标硬件** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **硬件绑定** | **H3 已完成**（WS-AG AG1–AG10）：HAL、GIC-400、定时器、ARMv8 页表、FFI 桥接、QEMU 启动 |
 | **规范审计** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) —— 1.0 前综合审计（202 项发现；已由 WS-AK AK1–AK10 修复；已归档） |
@@ -143,7 +143,7 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4：夜间确�
 
 提交 PR 前至少运行 `test_smoke.sh`。如果修改了定理、不变量或文档锚点，则需运行 `test_full.sh`。
 
-修改 `rust/` 下的任何内容后，请运行**两条** Rust 通道。它们覆盖同一 crate 中互不重叠的两半：在主机上，每个 `#[cfg(target_arch = "aarch64")]` 代码块都会在 rustc 或 clippy 看到之前被移除，因此主机通道看不到构成 HAL 大部分内容的 67 个 cfg 门控代码块、57 处 `asm!` 以及三个 `.S` 源文件。交叉通道以两种配置（profile）为 `aarch64-unknown-none-softfloat` 构建 `sele4n-hal`，验证汇编源文件确实已被汇编，对交叉目标执行 lint，并反汇编 release 目标文件以证明它们不使用任何 FP/SIMD 寄存器——内核不使用浮点，并从第一条指令起就在 EL1 捕获 FP/SIMD。此外，它执行的是真正的构建而非 `cargo check`，因为 `check` 在代码生成之前就会停止，永远不会到达汇编器。
+修改 `rust/` 下的任何内容后，请运行**两条** Rust 通道。它们覆盖同一 crate 中互不重叠的两半：在主机上，每个 `#[cfg(target_arch = "aarch64")]` 代码块都会在 rustc 或 clippy 看到之前被移除，因此主机通道看不到构成 HAL 大部分内容的 67 个 cfg 门控代码块、57 处 `asm!` 以及四个 `.S` 源文件。交叉通道以两种配置（profile）为 `aarch64-unknown-none-softfloat` 构建 `sele4n-hal`，验证汇编源文件确实已被汇编，对交叉目标执行 lint，并反汇编 release 目标文件以证明它们不使用任何 FP/SIMD 寄存器——内核不使用浮点，并从第一条指令起就在 EL1 捕获 FP/SIMD。此外，它执行的是真正的构建而非 `cargo check`，因为 `check` 在代码生成之前就会停止，永远不会到达汇编器。
 
 ## 架构
 

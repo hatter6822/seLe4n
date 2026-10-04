@@ -101,7 +101,7 @@ de preuve de Lean 4 :
 | **LoC Lean de production** | 433 986 réparties sur 361 fichiers |
 | **LoC Lean de test** | 88 629 réparties sur 71 suites de tests |
 | **Déclarations prouvées** | 14 408 déclarations theorem/lemma (zéro sorry/axiom) |
-| **Crates Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) sur 48 fichiers source |
+| **Crates Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) sur 80 fichiers source |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Liaison matérielle** | **H3 TERMINÉ** (WS-AG AG1–AG10) : HAL, GIC-400, minuterie, tables de pages ARMv8, pont FFI, démarrage QEMU |
 | **Audit canonique** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — audit complet pré-1.0 (202 résultats ; corrigés par WS-AK AK1–AK10 ; archivé) |
@@ -156,7 +156,7 @@ Après toute modification sous `rust/`, exécutez **les deux** voies Rust. Elles
 couvrent des moitiés disjointes du même crate : sur l'hôte, chaque bloc
 `#[cfg(target_arch = "aarch64")]` est supprimé avant que rustc ou clippy ne le
 voie, si bien que la voie hôte ne peut pas voir les 67 blocs conditionnés par
-cfg, les 57 sites `asm!` ni les trois sources `.S` qui constituent l'essentiel
+cfg, les 57 sites `asm!` ni les quatre sources `.S` qui constituent l'essentiel
 du HAL. La voie croisée compile `sele4n-hal` pour
 `aarch64-unknown-none-softfloat` dans les deux profils, vérifie que les sources
 assembleur ont réellement été assemblées, passe le linter sur la cible croisée

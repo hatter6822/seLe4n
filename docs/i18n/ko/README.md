@@ -99,7 +99,7 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 | **프로덕션 Lean LoC** | 361개 파일, 433,986줄 |
 | **테스트 Lean LoC** | 71개 테스트 스위트, 88,629줄 |
 | **증명된 선언** | 14,408개 theorem/lemma 선언 (sorry/axiom 제로) |
-| **Rust 크레이트** | 4개(`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`), 소스 파일 48개 |
+| **Rust 크레이트** | 4개(`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`), 소스 파일 80개 |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **하드웨어 바인딩** | **H3 완료** (WS-AG AG1–AG10): HAL, GIC-400, 타이머, ARMv8 페이지 테이블, FFI 브리지, QEMU 부팅 |
 | **정식 감사** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — 1.0 이전 종합 감사 (202건 발견; WS-AK AK1–AK10 으로 해결됨; 보관됨) |
@@ -153,7 +153,7 @@ PR 제출 전 최소 `test_smoke.sh`를 실행하십시오. 정리, 불변량, �
 같은 크레이트의 서로 겹치지 않는 절반씩을 담당합니다. 호스트에서는 모든
 `#[cfg(target_arch = "aarch64")]` 블록이 rustc나 clippy가 보기 전에 제거되므로,
 호스트 레인은 HAL의 대부분을 이루는 67개의 cfg 게이트 블록, 57개의 `asm!` 사이트,
-세 개의 `.S` 소스를 볼 수 없습니다. 크로스 레인은 `aarch64-unknown-none-softfloat`용
+네 개의 `.S` 소스를 볼 수 없습니다. 크로스 레인은 `aarch64-unknown-none-softfloat`용
 `sele4n-hal`을 두 프로필 모두로 빌드하고, 어셈블리 소스가 실제로 어셈블되었는지
 검증하고, 크로스 타깃을 린트하며, 릴리스 오브젝트를 디스어셈블하여 FP/SIMD
 레지스터를 전혀 사용하지 않음을 증명합니다. 커널은 FP를 사용하지 않으며 첫

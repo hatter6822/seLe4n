@@ -100,7 +100,7 @@ Lean-4-Beweissystem ermöglicht werden:
 | **Produktions-LoC (Lean)** | 433.986 über 361 Dateien |
 | **Test-LoC (Lean)** | 88.629 über 71 Testsuiten |
 | **Bewiesene Deklarationen** | 14.408 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
-| **Rust-Crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) über 48 Quelldateien |
+| **Rust-Crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) über 80 Quelldateien |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware-Anbindung** | **H3 ABGESCHLOSSEN** (WS-AG AG1–AG10): HAL, GIC-400, Timer, ARMv8-Seitentabellen, FFI-Brücke, QEMU-Boot |
 | **Kanonisches Audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — umfassendes Pre-1.0-Audit (202 Befunde; behoben durch WS-AK AK1–AK10; archiviert) |
@@ -156,7 +156,7 @@ Führen Sie nach jeder Änderung unter `rust/` **beide** Rust-Lanes aus. Sie
 decken disjunkte Hälften desselben Crates ab: Auf dem Host wird jeder
 `#[cfg(target_arch = "aarch64")]`-Block entfernt, bevor rustc oder clippy ihn
 sieht, sodass die Host-Lane die 67 cfg-geschützten Blöcke, 57 `asm!`-Stellen
-und drei `.S`-Quellen nicht sehen kann, die den Großteil des HAL ausmachen. Die
+und vier `.S`-Quellen nicht sehen kann, die den Großteil des HAL ausmachen. Die
 Cross-Lane baut `sele4n-hal` für `aarch64-unknown-none-softfloat` in beiden
 Profilen, prüft, dass die Assembly-Quellen tatsächlich assembliert wurden,
 lintet das Cross-Target und disassembliert die Release-Objekte, um zu beweisen,

@@ -101,7 +101,7 @@ demostración de Lean 4:
 | **LoC de producción en Lean** | 433.986 en 361 archivos |
 | **LoC de pruebas en Lean** | 88.629 en 71 suites de pruebas |
 | **Declaraciones demostradas** | 14.408 declaraciones theorem/lemma (cero sorry/axiom) |
-| **Crates de Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) en 48 archivos fuente |
+| **Crates de Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) en 80 archivos fuente |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Integración con el hardware** | **H3 COMPLETADO** (WS-AG AG1–AG10): HAL, GIC-400, temporizador, tablas de páginas ARMv8, puente FFI, arranque en QEMU |
 | **Auditoría canónica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoría integral previa a 1.0 (202 hallazgos; remediados por WS-AK AK1–AK10; archivada) |
@@ -156,7 +156,7 @@ Tras cualquier cambio en `rust/`, ejecute **ambos** carriles de Rust. Cubren
 mitades disjuntas del mismo crate: en el host, cada bloque
 `#[cfg(target_arch = "aarch64")]` se elimina antes de que rustc o clippy lo
 vean, por lo que el carril del host no puede ver los 67 bloques condicionados
-por cfg, los 57 sitios `asm!` ni las tres fuentes `.S` que constituyen la mayor
+por cfg, los 57 sitios `asm!` ni las cuatro fuentes `.S` que constituyen la mayor
 parte del HAL. El carril cruzado compila `sele4n-hal` para
 `aarch64-unknown-none-softfloat` en ambos perfiles, verifica que las fuentes en
 ensamblador realmente se ensamblaron, ejecuta el linter sobre el objetivo

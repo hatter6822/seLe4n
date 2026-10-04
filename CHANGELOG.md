@@ -118,6 +118,12 @@
     status at archiving, and names `docs/REGISTERED_DEBT.md` as authoritative.
   - `UNFINISHED_SMP_WORK.md` finds the WS-SL residual in
     `WORKSTREAM_CONTEXT.md`, not `CLAUDE.md`.
+  - Two stale README figures, found while syncing the translations: the four
+    Rust crates have **80** `.rs` source files under `src/` (the 48 quoted
+    was `sele4n-hal`'s count alone), and the HAL has **four** `.S` sources
+    (`fp_context.S` arrived with WS-BP BP7.9).  Fixed in `README.md`, all 11
+    translated READMEs, `docs/CI_POLICY.md`, the claim index and GitBook
+    chapter 07.
 
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 

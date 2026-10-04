@@ -97,7 +97,7 @@ cover disjoint halves of the same crate:
 `#[cfg(target_arch = "aarch64")]` block is removed before rustc or clippy
 sees it — cfg-false arms are parsed but never type-checked, borrow-checked or
 linted — so the host lane cannot see 67 cfg-gated blocks, 57 `asm!`
-invocations or any of the three `.S` sources, which is most of the HAL.  The
+invocations or any of the four `.S` sources, which is most of the HAL.  The
 cross lane, conversely, does not compile the 26 `not(aarch64)` host stubs and
 runs no tests: `no_std` bare metal has no test harness.
 

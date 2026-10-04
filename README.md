@@ -91,7 +91,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 | **Production Lean LoC** | 433,986 across 361 files |
 | **Test Lean LoC** | 88,629 across 71 test suites |
 | **Proved declarations** | 14,408 theorem/lemma declarations (zero sorry/axiom) |
-| **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
+| **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 80 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
 | **Canonical audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — pre-1.0 comprehensive audit (202 findings; remediated by WS-AK AK1–AK10; archived) |
@@ -145,7 +145,7 @@ theorems, invariants, or documentation anchors.
 After any change under `rust/`, run **both** Rust lanes. They cover disjoint
 halves of the same crate: on the host every `#[cfg(target_arch = "aarch64")]`
 block is removed before rustc or clippy sees it, so the host lane cannot see
-the 67 cfg-gated blocks, 57 `asm!` sites or three `.S` sources that make up
+the 67 cfg-gated blocks, 57 `asm!` sites or four `.S` sources that make up
 most of the HAL. The cross lane builds `sele4n-hal` for
 `aarch64-unknown-none-softfloat` in both profiles, verifies the assembly
 sources really assembled, lints the cross target, and disassembles the release
