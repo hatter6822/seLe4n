@@ -91,6 +91,11 @@ python3 "${SCRIPT_DIR}/test_source_line_citations_gate.py"
 # check that read only the heading bullets let any other text through).  The
 # generator also requires a regular file in the git index (mode 100644) and in
 # the working tree.  Regenerate with `python3 scripts/generate_agents_md.py`.
+# Its heading reader goes through the shared fence reader
+# (`markdown_prose_view.py`); the self-test runs first, keeping each
+# `## Example` token in place and moving it inside a tilde, an indented or a
+# longer-closed fence.
+python3 "${SCRIPT_DIR}/generate_agents_md.py" --self-test
 python3 "${SCRIPT_DIR}/generate_agents_md.py" --check
 
 # AC5-B / X-08 (retired): a GitBook content-hash drift check compared the

@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM3.D deadlock-freedom inventory)
+-- STATUS: staged for WS-SM SM3.D (deadlock-freedom inventory)
 
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
 -- **WS-OD (`v0.35.4`)**: the `.tcbSuspend` operation is built over the

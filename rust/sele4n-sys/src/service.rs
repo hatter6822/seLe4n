@@ -74,7 +74,7 @@ pub fn service_revoke(
 /// No additional message registers — the endpoint object ID comes from
 /// the capability target.
 ///
-/// WS-RA (RA.D.3): returns the resolved registration's **typed**
+/// WS-RA RA.D.3: returns the resolved registration's **typed**
 /// [`ServiceId`], constructed from the `x0` word — the answer the kernel
 /// computed and, before the flip, discarded (`lookupServiceByCap`'s
 /// result was thrown away and this wrapper handed back an opaque

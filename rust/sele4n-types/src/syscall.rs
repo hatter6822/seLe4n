@@ -35,38 +35,38 @@ pub enum SyscallId {
     NotificationWait = 15,
     // Compound IPC (V2-C)
     ReplyRecv = 16,
-    // SchedContext (WS-Z, Z5-J)
+    // SchedContext (WS-Z Z5-J)
     SchedContextConfigure = 17,
     SchedContextBind = 18,
     SchedContextUnbind = 19,
-    // Thread lifecycle (WS-AB, D1)
+    // Thread lifecycle (WS-AB D1)
     TcbSuspend = 20,
     TcbResume = 21,
-    // Priority management (WS-AB, D2)
+    // Priority management (WS-AB D2)
     TcbSetPriority = 22,
     TcbSetMCPriority = 23,
-    // IPC buffer configuration (WS-AB, D3)
+    // IPC buffer configuration (WS-AB D3)
     TcbSetIPCBuffer = 24,
-    // CPU-affinity configuration (WS-SM, SM5.H.4)
+    // CPU-affinity configuration (WS-SM SM5.H.4)
     TcbSetAffinity = 25,
-    // Notification binding (WS-SM, SM6.B)
+    // Notification binding (WS-SM SM6.B)
     TcbBindNotification = 26,
     TcbUnbindNotification = 27,
-    // Reply-cap mint (WS-SM, SM6.D / PR #822 Phase H): derive a `.replyCap` from an
+    // Reply-cap mint (WS-SM SM6.D / PR #822 Phase H): derive a `.replyCap` from an
     // `.object` cap to a retyped Reply object.
     MintReplyCap = 28,
-    // Instruction/data unification of one mapped page (WS-SM, SM7.D): seLe4n's
+    // Instruction/data unification of one mapped page (WS-SM SM7.D): seLe4n's
     // equivalent of seL4's `Page_Unify_Instruction`.  Publishes freshly written
     // code — an instruction fetch reads at the Point of Unification, so stores
     // that are still only in the data cache must be cleaned there first.
     VSpaceUnifyInstruction = 29,
-    // Declassification (WS-SM, SM8.C.9): authorize and audit a cross-domain
+    // Declassification (WS-SM SM8.C.9): authorize and audit a cross-domain
     // downgrade.  The one syscall whose authority is a *policy* rather than a
     // capability alone — the base lattice must deny the flow and the configured
     // declassification policy must permit it — and whose entire state effect is
     // one entry appended to the kernel's declassification audit trail.
     Declassify = 30,
-    // Audit-trail access (WS-SM, SM9.A.6).  Two syscalls rather than one with a
+    // Audit-trail access (WS-SM SM9.A.6).  Two syscalls rather than one with a
     // mode operand, so authority stays per-operation: `required_right` is keyed
     // on the `SyscallId`, and a monitoring deployment can therefore hand out a
     // read-only audit capability that provably cannot drain.
@@ -78,7 +78,7 @@ pub enum SyscallId {
     // capability.
     AuditRead = 31,
     AuditDrain = 32,
-    // Data-carrying declassification (WS-SM, SM9.C.8): signal a notification
+    // Data-carrying declassification (WS-SM SM9.C.8): signal a notification
     // whose badge may cross a boundary the base lattice denies.
     //
     // Unlike `Declassify`, which authorizes a downgrade and records it without

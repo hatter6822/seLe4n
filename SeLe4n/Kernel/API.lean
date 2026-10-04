@@ -3529,7 +3529,7 @@ theorem resolveExtraCapsGated_empty
   unfold resolveExtraCapsGated
   simp [resolveExtraCapsDetailed_empty]
 
-/-- AL7-A (WS-AL / AK7-E.cascade): lift a raw `ThreadId` to `ValidThreadId`
+/-- WS-AL AL7-A (cascades AK7-E): lift a raw `ThreadId` to `ValidThreadId`
 at the dispatch boundary. Returns `.error .invalidArgument` if the id
 is the reserved sentinel, otherwise `.ok` with the validated subtype.
 
@@ -3606,7 +3606,7 @@ theorem validateThreadIdArg_idle_refused (tid : SeLe4n.ThreadId)
   simp [h]
 
 
-/-- AL7-A (WS-AL / AK7-E.cascade): lift a raw `SchedContextId` to
+/-- WS-AL AL7-A (cascades AK7-E): lift a raw `SchedContextId` to
 `ValidSchedContextId` at the dispatch boundary. Mirrors
 `validateThreadIdArg`; rejects `SchedContextId.sentinel`. -/
 @[inline] private def validateSchedContextIdArg (scId : SeLe4n.SchedContextId) :
@@ -3615,7 +3615,7 @@ theorem validateThreadIdArg_idle_refused (tid : SeLe4n.ThreadId)
   | none => .error .invalidArgument
   | some v => .ok v
 
-/-- AL8 (WS-AL / AK7-E.cascade): lift a raw `ObjId` to `ValidObjId`.
+/-- WS-AL AL8 (cascades AK7-E): lift a raw `ObjId` to `ValidObjId`.
 Used by dispatch arms whose handlers operate on `ObjId` directly (e.g.,
 `schedContextConfigure` which does `st.objects[scId]?` rather than
 going through `SchedContextId.toObjId`). Rejects `ObjId.sentinel`. -/
@@ -4881,7 +4881,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSchedContextConfigureArgsChecked decoded with
       | .error e => .error e
       | .ok args =>
-          -- AL7-G / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+          -- AL7-G / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
           -- via ValidObjId signature on schedContextConfigure.
           match validateObjIdArg scId with
           | .error e => .error e
@@ -4899,7 +4899,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match resolveSchedContextBindThread tid decoded st with
       | .error e => .error e
       | .ok vThreadId =>
-          -- AL7-H / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+          -- AL7-H / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
           -- via the ValidObjId signature on schedContextBind; the thread's
           -- promotion is the resolver's.
           match validateObjIdArg scId with
@@ -4914,7 +4914,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSchedContextUnbindArgs decoded with
       | .error e => .error e
       | .ok _ =>
-          -- AL7-I / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+          -- AL7-I / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
           -- via ValidObjId signature on schedContextUnbind.
           match validateObjIdArg scId with
           | .error e => .error e
@@ -4997,7 +4997,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSuspendArgs decoded with
       | .error e => .error e
       | .ok _ =>
-        -- AL7-B / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection.
+        -- AL7-B / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection.
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
@@ -5013,7 +5013,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeResumeArgs decoded with
       | .error e => .error e
       | .ok _ =>
-        -- AL7-C / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection.
+        -- AL7-C / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection.
         -- `validateThreadIdArg` returns `ValidThreadId`; the handler ACCEPTS
         -- `ValidThreadId` — the type system forbids sentinel IDs from reaching
         -- it. No runtime double-check needed.
@@ -5054,7 +5054,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSetPriorityArgs decoded with
       | .error e => .error e
       | .ok args =>
-        -- AL7-D / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+        -- AL7-D / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
         -- via ValidThreadId signature on setPriorityOp.
         match validateThreadIdArg tid with
         | .error e => .error e
@@ -5083,7 +5083,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSetMCPriorityArgs decoded with
       | .error e => .error e
       | .ok args =>
-        -- AL7-E / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+        -- AL7-E / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
         -- via ValidThreadId signature on setMCPriorityOp.
         match validateThreadIdArg tid with
         | .error e => .error e
@@ -5109,7 +5109,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSetIPCBufferArgs decoded with
       | .error e => .error e
       | .ok args =>
-        -- AL7-F / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+        -- AL7-F / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
         -- via ValidThreadId signature on setIPCBufferOp.
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e

@@ -1500,7 +1500,7 @@ fn ipc_timeout_result() {
     assert_eq!(result, Err(KernelError::IpcTimeout));
 }
 
-/// AA1-H-4/AG3 + AL1b/WS-AL + AN7-E + R5.E + WS-SM SM5.B + SM8.C.9: Boundary —
+/// AA1-H-4/AG3 + WS-AL AL1b + AN7-E + R5.E + WS-SM SM5.B + SM8.C.9: Boundary —
 /// discriminant 55 is out of range (InvalidIrq at 48, InvalidObjectType at 49,
 /// NullCapability at 50, PartialResolution at 51, MissingSchedContext at 52,
 /// ThreadOnDifferentCore at 53, AuditLogCapacityExceeded at 54).

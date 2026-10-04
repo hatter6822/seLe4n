@@ -576,7 +576,7 @@ theorem requireNotNull_some_not_null {cap cap' : Capability}
 end Capability
 
 -- ============================================================================
--- AL1b (WS-AL / AK7-I.cascade): `NonNullCap` subtype for type-level null-cap
+-- WS-AL AL1b (cascades AK7-I): `NonNullCap` subtype for type-level null-cap
 -- rejection. Replaces the earlier runtime-guard approach (reverted because
 -- it overloaded `.invalidCapability`).
 -- ============================================================================
@@ -898,7 +898,7 @@ def installedCount (s : CapTransferSummary) : Nat :=
 
 end CapTransferSummary
 
-/-- WS-Z/Z6-H: Result of a timeout-aware IPC operation.
+/-- WS-Z Z6-H: Result of a timeout-aware IPC operation.
 Distinguishes successful message delivery from budget-driven timeout.
 Used by `timeoutAwareReceive` and related timeout-aware IPC wrappers. -/
 inductive IpcTimeoutResult where
@@ -1011,11 +1011,11 @@ structure TCB where
       notification can wake the thread when it is waiting on an endpoint.
       `none` = no bound notification. -/
   boundNotification : Option SeLe4n.ObjId := none
-  /-- WS-Z/Z1-J: Scheduling context binding. Determines whether this thread
+  /-- WS-Z Z1-J: Scheduling context binding. Determines whether this thread
       uses legacy TCB scheduling fields or a first-class SchedContext object.
       Default `.unbound` preserves backward compatibility. -/
   schedContextBinding : SeLe4n.Kernel.SchedContextBinding := .unbound
-  /-- WS-Z/Z6-A: Timeout budget reference for IPC blocking operations.
+  /-- WS-Z Z6-A: Timeout budget reference for IPC blocking operations.
       When a thread blocks on IPC (send/receive/call/reply), this records which
       SchedContext's budget bounds the blocking duration. When the SchedContext's
       budget expires, the thread is unblocked with a timeout error.

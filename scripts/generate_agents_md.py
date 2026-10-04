@@ -11,8 +11,16 @@ of `CLAUDE.md`'s top-level (`## `) headings, so the whole file is a function of
 `CLAUDE.md` and is checked byte for byte: any added prose, a dropped line or a
 stale heading list fails, not only a stale list.
 
-    python3 scripts/generate_agents_md.py           # rewrite AGENTS.md
-    python3 scripts/generate_agents_md.py --check   # exit 1 if it differs
+    python3 scripts/generate_agents_md.py              # rewrite AGENTS.md
+    python3 scripts/generate_agents_md.py --check      # exit 1 if it differs
+    python3 scripts/generate_agents_md.py --self-test  # the heading reader
+
+A heading is read as CommonMark reads an ATX heading, from
+`markdown_prose_view.prose_view`, the fence reader the plan gates share, so an
+example `## ` line inside any fence (backtick or tilde, indented or not) is not
+a section, and a prose line opening with inline code hides nothing.  A setext
+heading (a line underlined with `=` or `-`) is refused rather than silently
+left out of the list.
 
 `--check` is what `scripts/test_docs_sync.sh` runs.  It also requires that
 `AGENTS.md` is a regular file, both in the git index (mode 100644) and in the
@@ -21,9 +29,13 @@ by a `core.symlinks=false` checkout.
 """
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from markdown_prose_view import prose_view  # noqa: E402  (needs the path insert above)
 
 REPO = Path(__file__).resolve().parent.parent
 CLAUDE = REPO / "CLAUDE.md"
@@ -50,15 +62,28 @@ contributor, human or agent. Edit `CLAUDE.md` only, then run
 """
 
 
+# An ATX heading: up to three columns of indent, the opening `#` run, and an
+# optional closing `#` run (CommonMark 4.2).
+ATX_HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$")
+# A setext underline: up to three columns of indent and a run of `=` or `-`.
+SETEXT_UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
+
+
 def headings(text: str) -> list[str]:
-    """`CLAUDE.md`'s `## ` headings, in order, outside fenced code blocks."""
+    """`CLAUDE.md`'s level-2 headings, in order, outside fenced code blocks."""
     out: list[str] = []
-    fenced = False
-    for line in text.splitlines():
-        if line.startswith("```"):
-            fenced = not fenced
-        elif not fenced and line.startswith("## "):
-            out.append(line[3:].strip())
+    previous = ""
+    for line in prose_view(text).splitlines():
+        atx = ATX_HEADING.match(line)
+        if atx and len(atx.group(1)) == 2:
+            out.append((atx.group(2) or "").strip())
+        elif (SETEXT_UNDERLINE.match(line) and previous.strip()
+              and not ATX_HEADING.match(previous)):
+            # `Title` over `---` is a level-2 heading in CommonMark; over a list
+            # item or a table it may not be.  Refuse rather than guess.
+            raise SystemExit(f"FAIL: CLAUDE.md underlines {previous.strip()!r} "
+                             "(a setext heading); write it as an ATX `## ` heading")
+        previous = line
     return out
 
 
@@ -85,7 +110,44 @@ def regular_file_errors() -> list[str]:
     return errors
 
 
+def _self_test() -> int:
+    """Keep each `## Example` token in place and move it inside or outside a fence."""
+    cases = [
+        ("a tilde fence hides its `## Example`",
+         "## Real\n~~~\n## Example\n~~~\n## After\n", ["Real", "After"]),
+        ("an indented fence hides its `## Example`",
+         "## Real\n   ```\n## Example\n   ```\n## After\n", ["Real", "After"]),
+        ("a longer closer, not a shorter run, ends the fence",
+         "## Real\n````\n```\n## Example\n`````\n## After\n", ["Real", "After"]),
+        ("a prose line opening with inline code hides no later heading",
+         "## Real\n``` `x` ``` opens a sentence.\n## After\n", ["Real", "After"]),
+        ("an ATX heading indented three columns, or closed with `#`, is read",
+         "   ## Indented\n## Closed ##\n### Deeper\n", ["Indented", "Closed"]),
+    ]
+    failed = 0
+    for name, text, want in cases:
+        got = headings(text)
+        ok = got == want
+        failed += not ok
+        print(f"  {'PASS' if ok else 'FAIL'}: {name}" + ("" if ok else f" -- got {got}"))
+    try:
+        headings("## Real\nA setext title\n---\n")
+        print("  FAIL: a setext heading is refused -- it was accepted")
+        failed += 1
+    except SystemExit as refused:
+        ok = "setext heading" in str(refused)
+        failed += not ok
+        print(f"  {'PASS' if ok else 'FAIL'}: a setext heading is refused")
+    if failed:
+        print(f"SELF-TEST FAILED: {failed} case(s)")
+        return 1
+    print(f"generate_agents_md self-test: {len(cases) + 1} cases, all correct.")
+    return 0
+
+
 def main(argv: list[str]) -> int:
+    if argv == ["--self-test"]:
+        return _self_test()
     check = "--check" in argv
     want = render(CLAUDE.read_text(encoding="utf-8"))
     if not check:

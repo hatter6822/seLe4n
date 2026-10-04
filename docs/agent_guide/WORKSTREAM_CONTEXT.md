@@ -130,9 +130,16 @@ those trees at the level it is written:
 - A bare `WS-RA` needs a row here, a live plan title or a register section.
 - A phase (`WS-SM SM6.C`) picks the row with the longest matching ID. That
   row's plan must define the phase key (`SM6`) in a heading, a table row's first
-  cell or a sub-task row. If the plan numbers that phase's sub-tasks flat
-  (`| HP1.2 |`), a flat citation must be one of those rows.
+  cell or a sub-task row. Below the key, the citation is read as a path
+  (`SM5.H.4` is `SM5`, `SM5.H`, `SM5.H.4`). At each level the plan numbers,
+  in sub-task rows or in headings that open on the ID, the next ID must be one
+  the plan defines. A level a landed plan folded into prose is not read
+  below; the citation is held to it, and only a level pinned in the gate's
+  `UNNUMBERED_LEVELS` may hold one (a stale pin fails too).
 - A suffix (`WS-H12b`, `WS-K-F5`) must be defined whole.
+- The one citation form is `WS-SM SM5.H.4`. A phase parted from its workstream
+  by punctuation or the word "phase" (`(WS-SM, SM5.H.4)`, `WS-Z/Z6`,
+  `WS-SM (SM0.C …)`) fails, since it would read as the bare workstream.
 - A row's own ID is held to the same rule against the plans it links, so a
   row cannot vouch for an ID its plan lacks. A family-only row claims no
   phase.
@@ -146,9 +153,11 @@ those trees at the level it is written:
 | WS-SM SM2.E | [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.5 defines the phase; its queued-lock panic and hang remediation is [`SMP_PANIC_HANG_REMEDIATION_PLAN.md`](../dev_history/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md) | v0.32.148 |
 | WS-SM SM3 | [`SMP_PER_OBJECT_LOCKS_PLAN.md`](../dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md) | v0.31.9 |
 | WS-SM SM4 | [`SMP_PER_CORE_STATE_PLAN.md`](../dev_history/planning/SMP_PER_CORE_STATE_PLAN.md) | v0.31.37 |
+| WS-SM SM4.G | [`SMP_PER_CORE_STATE_PLAN.md`](../dev_history/planning/SMP_PER_CORE_STATE_PLAN.md) names the idle-thread cut only in its status notes; the [`CHANGELOG.md`](../../CHANGELOG.md) v0.31.36 entry defines it | v0.31.36 |
 | WS-SM SM5 | [`SMP_PER_CORE_SCHEDULER_PLAN.md`](../dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md) | v0.31.64 |
 | WS-SM SM6 | [`SMP_CROSS_CORE_IPC_PLAN.md`](../dev_history/planning/SMP_CROSS_CORE_IPC_PLAN.md) | v0.32.68 |
 | WS-SM SM7 | [`SMP_TLB_SHOOTDOWN_PLAN.md`](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md) | v0.32.151 |
+| WS-SM SM7.F.5 | [`SMP_TLB_SHOOTDOWN_PLAN.md`](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md) names the access-time TLB fill only in its status line; the [`CHANGELOG.md`](../../CHANGELOG.md) v0.32.150 entry defines it | v0.32.151 |
 | WS-SM SM8 | [`SMP_INFORMATION_FLOW_PLAN.md`](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md) | v0.33.23 |
 | WS-SM SM9 | [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](../dev_history/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md) | v0.33.100 |
 | WS-RA | [`SYSCALL_RETURN_ABI_PLAN.md`](../dev_history/planning/SYSCALL_RETURN_ABI_PLAN.md) | v0.33.38 |
@@ -183,7 +192,7 @@ workstreams with rows of their own.
 
 | ID | Archived plan |
 |----|---------------|
-| WS-A (A1–A8) | [`20-repository-audit-remediation-workstreams.md`](../dev_history/gitbook/20-repository-audit-remediation-workstreams.md), closed by [`M7_CLOSEOUT_PACKET.md`](../dev_history/M7_CLOSEOUT_PACKET.md) |
+| WS-A | phases A1–A8: [`20-repository-audit-remediation-workstreams.md`](../dev_history/gitbook/20-repository-audit-remediation-workstreams.md), closed by [`M7_CLOSEOUT_PACKET.md`](../dev_history/M7_CLOSEOUT_PACKET.md) |
 | WS-B | [`AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md) |
 | WS-C | [`AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md) |
 | WS-D | [`AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md) |

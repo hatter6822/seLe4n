@@ -341,7 +341,7 @@ consumer, closing the gap identified in finding M-08. -/
 
 /-! ## AG10-C: ARM64 Architecture Model Summary
 
-The following architecture modules were added during WS-AG phases AG3–AG8 to
+The following architecture modules were added during WS-AG AG3..AG8 to
 bridge the abstract Lean kernel model to concrete ARM64 hardware semantics on
 Raspberry Pi 5 (BCM2712, Cortex-A76). Each module uses no unproved
 declarations and maintains the zero-tracked-obligation invariant.

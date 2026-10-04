@@ -57,6 +57,7 @@ from indexed_source import (  # noqa: E402  (needs the path insert above)
     DerivationFailed,
     listed_at,
 )
+from markdown_prose_view import prose_view  # noqa: E402  (same path insert)
 
 # Documents that cite plan sub-task IDs and must not cite a stale one.
 COMPANIONS = [
@@ -321,98 +322,6 @@ def read_at(ref: str, rel: str) -> str | None:
                               cwd=REPO, capture_output=True, text=True, check=True).stdout
     except subprocess.CalledProcessError:
         return None
-
-
-# Fenced code as CommonMark reads it (spec 4.5).  An opener is a run of three
-# or more backticks or tildes, indented at most three columns past its
-# container; a backtick opener's info string may not hold a backtick, so a prose
-# line that merely opens with inline code (``` `toList = []` ```) opens nothing.
-# (Read as an opener, that line paired every later fence one off and blanked
-# 14,055 lines of `CHANGELOG.md`.)  A closer is a run of the opener's character
-# at least as long, indented at most three columns past the container, with
-# nothing after it but spaces or tabs; any other run inside the block is
-# content.  A fence nobody closes runs to the end of its container: the
-# document, or the list item it opened in, which ends at the first non-blank
-# line indented less than the item's content (fenced code takes no lazy
-# continuation).  A lazy paragraph line is read as ending its item too early,
-# which only reads a later fence at the document's column and so blanks more,
-# never less.  Block quotes are not tracked: their lines open with `>`, so
-# nothing in one reads as a heading or a row either way.
-FENCE_RUN = re.compile(r"^( *)(`{3,}|~{3,})(.*)$")
-LIST_MARKER = re.compile(r"^( *)([-+*]|\d{1,9}[.)])( *)(.?)")
-THEMATIC_BREAK = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
-
-
-def _opens_fence(line: str, column: int) -> tuple[str, int] | None:
-    """`(char, length)` when `line` opens a fence in a container at `column`."""
-    run = FENCE_RUN.match(line)
-    if not run or len(run.group(1)) - column > 3:
-        return None
-    char = run.group(2)[0]
-    if char == "`" and "`" in run.group(3):
-        return None
-    return char, len(run.group(2))
-
-
-def _item_content_column(line: str) -> int | None:
-    """Where a list item's content starts, when `line` opens one."""
-    marker = LIST_MARKER.match(line)
-    if not marker or THEMATIC_BREAK.match(line):
-        return None
-    indent, mark, gap, first = (len(marker.group(1)), marker.group(2),
-                                len(marker.group(3)), marker.group(4))
-    if first and not gap:
-        return None                      # `-x`, `1.5`: not a marker
-    if not first or gap > 4:
-        gap = 1                          # an empty item, or indented code after it
-    return indent + len(mark) + gap
-
-
-def prose_view(text: str) -> str:
-    """The document with fenced blocks blanked out, line count preserved.
-
-    A plan illustrating a row shape or citing an example ID inside a fence is
-    showing the reader what one looks like, not declaring one.  Parsing those
-    as data made the gate fail legitimate documents — a phantom phase from a
-    fenced table, a dangling citation from an example ID — which is the mirror
-    of a bypass: it pushes authors to contort prose to satisfy the scanner,
-    which this project forbids in as many words.  Lines are replaced rather
-    than removed so any position the caller reports still lines up.
-    """
-    lines = text.split("\n")
-    out = list(lines)
-    items: list[int] = []            # content columns of the open list items
-    fence: tuple[str, int, int] | None = None   # (char, length, container column)
-    for i, raw in enumerate(lines):
-        line = raw.rstrip("\r").expandtabs(4)
-        indent = len(line) - len(line.lstrip(" "))
-        blank = not line.strip()
-        if fence is not None:
-            char, length, column = fence
-            if blank or indent >= column:
-                out[i] = ""
-                run = FENCE_RUN.match(line)
-                if (run and indent - column <= 3 and run.group(2)[0] == char
-                        and len(run.group(2)) >= length and not run.group(3).strip()):
-                    fence = None
-                continue
-            fence = None                 # its list item ended, and the fence with it
-        if blank:
-            continue
-        while items and indent < items[-1]:
-            items.pop()
-        column = items[-1] if items else 0
-        opened = _opens_fence(line, column)
-        if opened:
-            fence, out[i] = (*opened, column), ""
-            continue
-        content = _item_content_column(line)
-        if content is not None and indent - column <= 3:
-            items.append(content)
-            opened = _opens_fence(" " * content + line[content:], content)
-            if opened:
-                fence, out[i] = (*opened, content), ""
-    return "\n".join(out)
 
 
 def global_definitions(clashes: list | None = None) -> dict[str, tuple[str, set[str]]]:
@@ -970,11 +879,11 @@ def _cli_cases():
         (root / "docs" / "planning").mkdir(parents=True)
         (root / "scripts").mkdir()
         shutil.copy(src, root / "scripts" / src.name)
-        # The gate imports `indexed_source` from its own directory, so the
-        # fixture tree carries it too: a copy that cannot import what the real
-        # script imports is a different program.
-        shutil.copy(src.parent / "indexed_source.py",
-                    root / "scripts" / "indexed_source.py")
+        # The gate imports `indexed_source` and `markdown_prose_view` from its
+        # own directory, so the fixture tree carries them too: a copy that
+        # cannot import what the real script imports is a different program.
+        for helper in ("indexed_source.py", "markdown_prose_view.py"):
+            shutil.copy(src.parent / helper, root / "scripts" / helper)
         (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
         # Names the plan as well as citing a sub-task: WS-RR RR7.32 requires a
         # canonical index to name every plan, and a fixture repository whose
@@ -1492,30 +1401,6 @@ def self_test() -> int:
     ierrs = check_plan("plan.md", inline, {})
     cases.append(("inline code at a line's start does not open a fence",
                   any("phase map says XX0 has 42" in e for e in ierrs), ierrs))
-    # The rest of CommonMark's fence rules, each read straight off the view:
-    # the lines left standing, and the line count kept.
-    fence_reads = [
-        ("an opener indented three columns hides column-0 lines to its closer",
-         "   ```\n## XX9\n| XX9.1 | a |\n   ```\nafter\n", ["after"]),
-        ("a tilde run opens a fence", "~~~\n## XX9\n| XX9.1 | a |\n~~~\nafter\n", ["after"]),
-        ("a backtick run does not close a tilde fence",
-         "~~~\n```\n## XX9\n| XX9.1 | a |\n~~~\nafter\n", ["after"]),
-        ("a shorter run does not close a fence and a longer one does",
-         "````\n```\n## XX9\n| XX9.1 | a |\n`````\nafter\n", ["after"]),
-        ("a run carrying an info string does not close a fence",
-         "```\n```lean\n## XX9\n```\nafter\n", ["after"]),
-        ("a closer indented three columns closes", "```\n## XX9\n   ```\n## XX8\n", ["## XX8"]),
-        ("a run indented four columns opens nothing", "    ```\n## XX9\n", ["    ```", "## XX9"]),
-        ("an unclosed fence runs to the end of the document",
-         "```\n## XX9\n| XX9.1 | a |\n", []),
-        ("a fence opened in a list item ends with the item",
-         "1. step\n\n   ```\n   code\n## XX9\n", ["1. step", "## XX9"]),
-    ]
-    for name, doc, standing in fence_reads:
-        view = prose_view(doc)
-        got = [line for line in view.split("\n") if line.strip()]
-        cases.append((f"fence: {name}",
-                      got == standing and view.count("\n") == doc.count("\n"), got))
 
     # A phase listed twice must be reported, not collapsed by the assignment.
     dup = CLEAN.replace("| XX1 | second | 2 |", "| XX1 | second | 2 |\n| XX1 | second again | 9 |")

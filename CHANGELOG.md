@@ -157,11 +157,42 @@
   - A phase picks the lookup row with the longest matching ID, so WS-SM's
     per-phase rows each resolve to their own plan. That plan must define the
     phase key (`SM6`) in a heading, a table row's first cell or a sub-task row.
-    Where it numbers that phase's sub-tasks flat, a flat citation, or each end
-    of a flat range, must be one of those rows. Letter-group plans
-    (`SM9.A.1`) are held to the phase key: they define sub-tasks through
-    ranges and prose.
+  - Below the key the citation is read as a path (`SM5.H.4` is `SM5`,
+    `SM5.H`, `SM5.H.4`; `Z6-A` is `Z6`, `Z6-A`; `SM3.D.5b` ends a level below
+    `SM3.D.5`). At each level the plan numbers, in sub-task rows or in
+    headings that open on the ID, the next ID must be one it defines, so
+    `WS-SM SM6.Z`, `SM5.H.99` and `SM4.Z` fail. Each end of a range
+    (`RR6.12-RR6.14`, `SM9.A.6-.A.13`, `SM0..SM10`) is read the same way. A
+    heading that opens on a range or a qualified name (`AL6-C.hygiene`) only
+    points at rows elsewhere, so it numbers nothing. A level that no plan
+    numbers is not read below, because a landed plan that folded its
+    sub-tasks into prose says nothing structural about them. That holds for
+    SM0's letter groups, SM1.F and SM1.G, SM9.A and SM9.B, SM3.D's letter
+    parts, R5's letter groups and the AL/AM dash sub-tasks, whose only record
+    is `CHANGELOG.md` prose. Every other cited level is checked.
+  - Those 13 levels are pinned in the gate's `UNNUMBERED_LEVELS`, and the
+    gate derives the levels it holds citations to and fails on any
+    difference. A citation held short at a level not pinned fails, so a plan
+    that drops its sub-task rows, or a new citation below a prose-only level,
+    is caught rather than checked less. A pin that no citation or lookup row
+    is held to fails as stale.
   - A suffix (`WS-H12b`, `WS-K-F5`) must be defined whole.
+  - The one citation form is `WS-SM SM5.H.4`. A phase separated from its
+    workstream by punctuation or the word "phase" used to read as the bare
+    workstream, so `(WS-SM, SM99)` passed. It now fails as written, including
+    when the token wraps onto the next line. A closing bracket, a sentence's
+    full stop or the end of a comment still ends the citation. The tree had
+    80 such sites across eight separators, and every one now uses the
+    canonical form:
+    - `, ` in `(WS-SM, SM5.H.4)`, `(WS-Z, Z5-J)` and `(WS-AB, D1)`;
+    - `/` in `WS-Z/Z6`, and ` / ` in 39 `AL8 (WS-AL / AK7-E.cascade)`-style
+      docstrings, which are now `WS-AL AL8 (cascades AK7-E)`;
+    - ` (` in nine `STATUS: staged for WS-SM (SM0.C …)` markers and in
+      `WS-RA (RA.A.5)`;
+    - `.` in `WS-AB.D2`, `` ` `` in `` WS-BP `BP2.6` ``, `**` in
+      `WS-SM **SM4.E.1**` and ` + ` in `AL1b/WS-AL + AN7-E`;
+    - "phase" or "phases" in `WS-SM phase SM0..SM10`, `WS-AG phases AG3–AG8`,
+      `WS-AN phase AN3-A` and `WS-SM phases (SM5 …)`.
   - A lookup row's own phase or suffix is held to the same rule against the
     plans it links, so a row cannot vouch for an ID its plan lacks: a
     `WS-QA QA99` row linking a plan that defines only `QA1` fails, and so
@@ -169,30 +200,51 @@
     panic and hang remediation plan, which never names SM2; it now also links
     SM2's plan, whose §5.5 defines the phase.
   - A phase token wrapped onto the next comment line is read with its
-    citation. 973 distinct citations across 40 workstreams resolve, and the
-    17 lookup row IDs that carry a phase or suffix are defined by their plans.
-  - The 27-case self-test checks each verdict and its message, and keeps the
-    tokens while breaking the relation (`WS-SM SM99`, `WS-J999`, `WS-QH12z`,
-    a flat sub-task the plan does not number, rows with swapped plans, a
-    `WS-QA QA99` row linking `QA1`'s plan, and `QA99` defined only inside an
-    indented, a tilde or a longer-closed fence, each beside a control that
-    passes).
-  - The gate reads plans through `check_workstream_plan.py`'s `prose_view`
-    and `SUBTASK_ROW`. That reader took a line opening with inline code
-    (``` `toList = []` ```) for a fence, paired every later fence one off and
-    blanked 14,055 lines of `CHANGELOG.md`, headings included. It also saw
-    only backtick fences at column 0, so an example indented one to three
-    columns, or fenced with tildes, was read as definitions. `prose_view` now
-    follows CommonMark's fence rules: a backtick or tilde run of three or
-    more, indented at most three columns past its container; a backtick
-    opener with no backtick in its info string; a closer of the same
-    character, at least as long, with no info string; and an unclosed fence
-    running to the end of its container (the document, or the list item it
-    opened in). Nine self-test cases cover the rules, and six of them fail
-    under the old reader. Across every indexed Markdown file, no heading or
-    row changes visibility except in one archived milestone note, whose stray
-    indented fence opener (also broken on GitHub) is removed. Both gates'
-    verdicts on the tree are unchanged.
+    citation. 997 distinct citations across 40 workstreams resolve, and the
+    19 lookup row IDs that carry a phase or suffix are defined by their plans.
+  - The 54-case self-test checks each verdict and its message. Each case
+    keeps the tokens and breaks the relation:
+    - `WS-SM SM99`, `WS-J999` and `WS-QH12z`;
+    - a sub-task the plan does not number, a made-up letter group
+      (`QA2.Z`) and a made-up sub-task in a numbered group (`QA2.C.99`);
+    - a phase range whose far end is no phase;
+    - `(WS-QA, QA99)` and each of the separators above around a phase the
+      plan has;
+    - rows with swapped plans, a `WS-QA QA99` row linking `QA1`'s plan, and
+      a row written as `(WS-QA, QA1)`;
+    - `QA99` defined only inside an indented, a tilde or a longer-closed
+      fence;
+    - a citation held short at a level not pinned, or pinned under another
+      workstream, a plan that folds its rows into prose, and a stale pin.
+    Controls pass beside them: a pinned level the plan does not number, a
+    heading that opens on a range or a qualified name, and a closing bracket
+    or full stop after the workstream.
+  - **One fence reader.** The new `scripts/markdown_prose_view.py` holds
+    `prose_view`, and `check_workstream_plan.py`,
+    `check_workstream_id_resolution.py` and `generate_agents_md.py` all read
+    Markdown through it. The old `check_workstream_plan` regex took a line
+    opening with inline code (``` `toList = []` ```) for a fence, paired every
+    later fence one off, and blanked 14,055 lines of `CHANGELOG.md`, headings
+    included. It also saw only backtick fences at column 0. `generate_agents_md`
+    toggled on any line starting with three backticks.
+  - `prose_view` follows CommonMark's fence rules:
+    - an opener is a backtick or tilde run of three or more, indented at most
+      three columns past its container;
+    - a backtick opener has no backtick in its info string;
+    - the closer is the same character, at least as long, with no info
+      string;
+    - an unclosed fence runs to the end of its container, which is the
+      document or the list item it opened in.
+    Its own 12-case self-test runs in Tier 0. `generate_agents_md.py
+    --self-test` runs in `test_docs_sync.sh`: tilde and indented fences
+    hiding `## Example`, a longer closer, a prose line opening with inline
+    code, indented and closed ATX headings, and a refused setext heading. All
+    six fail under the old reader, and `AGENTS.md` is unchanged.
+  - Across every indexed Markdown file, the new reader changes which headings
+    and rows are visible in only one file. It is an archived milestone note
+    with a stray indented fence opener, which is also broken on GitHub, and
+    the opener is removed. Both plan gates give the same verdicts on the tree
+    as before.
   - Fixed the stale citations the gate found:
     - `WS-HP HP1.4` is `HP1`; the plan has two HP1 rows and keeps
       `replyFrameBelow?` in HP1.
@@ -201,9 +253,20 @@
       queue removal.
     - The `WS-OD-PRIO-01`…`WS-RR-PRIO-10` test labels named no plan row, so
       the suite and its citations name the tests (`pm_od_01`…`pm_od_10`).
-  - New lookup rows: `WS-M5-C` and `WS-M6`, the milestone-era workstreams
-    that reused the `WS-M` prefix; and `CHANGELOG.md` for WS-AL and WS-AM,
-    whose phases (`AM1`, `AM4`) are only its headings.
+    - `WS-SM SM5.F.14` is `SM5.F.1`, the `computeMaxWaiterPriorityOnCore` row
+      its docstring describes (the plan has ten SM5.F rows).
+    - `WS-RC R2.B.0` is `R2.B`; the plan numbers R2.B.1 to R2.B.6, and the
+      error-discriminant map is the module's own subsection label.
+  - New lookup rows:
+    - `WS-M5-C` and `WS-M6`, the milestone-era workstreams that reused the
+      `WS-M` prefix;
+    - `CHANGELOG.md` for WS-AL and WS-AM, whose phases (`AM1`, `AM4`) exist
+      only as its headings;
+    - `WS-SM SM4.G` and `WS-SM SM7.F.5`, which their plans name only in
+      status notes. Each row also links the `CHANGELOG.md` entry that
+      defines the ID.
+    - The audit-era `WS-A (A1–A8)` row is now written `WS-A`, with the phase
+      range moved into its plan column.
 
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 

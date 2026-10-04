@@ -723,9 +723,11 @@ SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh   # gate honesty
 ./scripts/test_tier0_hygiene.sh
 ./scripts/check_version_sync.sh
 ./scripts/check_website_links.sh
+python3 scripts/markdown_prose_view.py --self-test
 python3 scripts/check_workstream_plan.py [--self-test]
 python3 scripts/check_deferral_registration.py
 python3 scripts/check_workstream_id_resolution.py [--self-test]
+python3 scripts/generate_agents_md.py [--check | --self-test]
 python3 scripts/check_identifier_naming.py
 python3 scripts/check_module_axioms.py
 python3 scripts/check_proof_depth.py

@@ -188,6 +188,11 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 # managed to read.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/indexed_source.py" --self-test
 
+# The fence reader the Markdown gates share (`check_workstream_plan.py`,
+# `check_workstream_id_resolution.py`, `generate_agents_md.py`): CommonMark's
+# fence rules, each checked straight off the view.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/markdown_prose_view.py" --self-test
+
 # prose.  They drifted in five consecutive cuts -- declared totals of
 # 126/143/145/146/149 against the real row count, references to rows that a
 # renumber had moved, and a phase whose acceptance arithmetic (46 + 4 = 49)

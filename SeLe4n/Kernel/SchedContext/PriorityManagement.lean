@@ -488,7 +488,7 @@ Sequence:
 Returns `invalidArgument` if caller or target is not a TCB.
 Returns `illegalAuthority` if `newPriority > caller.maxControlledPriority`.
 
-**AL8 (WS-AL / AK7-E.cascade) — Type-level validity discipline**: both
+**WS-AL AL8 (cascades AK7-E) — Type-level validity discipline**: both
 `callerTid` and `targetTid` have type `ValidThreadId`. The Lean type
 system forbids any caller from feeding `ThreadId.sentinel` for either
 argument. Uses `vCallerTid.val` / `vTargetTid.val` directly in the body
@@ -544,7 +544,7 @@ Sequence:
 Returns `invalidArgument` if caller or target is not a TCB.
 Returns `illegalAuthority` if `newMCP > caller.maxControlledPriority`.
 
-**AL8 (WS-AL / AK7-E.cascade)**: `callerTid` / `targetTid` are
+**WS-AL AL8 (cascades AK7-E)**: `callerTid` / `targetTid` are
 `ValidThreadId` for compile-time sentinel rejection. -/
 def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newMCP : SeLe4n.Priority) : Except KernelError SystemState :=

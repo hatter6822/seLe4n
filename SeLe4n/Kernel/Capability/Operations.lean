@@ -757,7 +757,7 @@ authenticate the badge itself — authentication relies on the capability
 derivation tree (CDT) tracking which entity minted the badge. Callers must
 not treat badge values as cryptographic authenticators.
 
-**AL1b (WS-AL / AK7-I.cascade) — Type-level non-null discipline**: the
+**WS-AL AL1b (cascades AK7-I) — Type-level non-null discipline**: the
 `parent` parameter has type `NonNullCap`, not `Capability`. The Lean
 type system forbids any caller from feeding a null cap into this
 function — construction of a `NonNullCap` requires the caller to

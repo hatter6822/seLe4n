@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM0.C inventory build-anchor; closes SMP-H3)
+-- STATUS: staged for WS-SM SM0.C (inventory build-anchor; closes SMP-H3)
 -- WS-SM SM0.C: SMP-latent inventory build-anchor.  Imports cover every
 -- module that owns one of the 8 `smpLatentInventory` entry references
 -- (both the `identifier` and `sourceTheorem` projections).

@@ -2187,7 +2187,7 @@ theorem storeObjectChecked_headroom_eq_storeObject
   · rfl
 
 -- ============================================================================
--- AL6 (WS-AL / AK7-F.cascade): storeObject kind-guard wrapper.
+-- WS-AL AL6 (cascades AK7-F): storeObject kind-guard wrapper.
 --
 -- The existing `storeObjectChecked` above is a capacity-only variant;
 -- it does not prevent a caller from overwriting a TCB stored at ObjId X
@@ -2204,7 +2204,7 @@ theorem storeObjectChecked_headroom_eq_storeObject
 -- without any invariant registering the change.
 -- ============================================================================
 
-/-- AL6-A (WS-AL / AK7-F.cascade): kind-checked variant of `storeObject`.
+/-- WS-AL AL6-A (cascades AK7-F): kind-checked variant of `storeObject`.
 Succeeds on a fresh id (pre-state has no object) OR when the pre-state
 object has the same `objectType` as the incoming one. Otherwise returns
 `.error .invalidObjectType`. Used by consumers that update an existing
@@ -2827,7 +2827,7 @@ def lookupCNode (st : SystemState) (id : SeLe4n.ObjId) : Option CNode :=
   | _ => none
 
 -- ============================================================================
--- AL2-A (WS-AL / AK7-F.cascade): kind-verified lookup helpers
+-- WS-AL AL2-A (cascades AK7-F): kind-verified lookup helpers
 --
 -- The AK7-F exploration showed 304 production call sites repeating the
 -- pattern `match st.objects[id]? with | some (.variant x) => ... | _ =>
@@ -3154,7 +3154,7 @@ theorem getObjectType?_frame {st st' : SystemState} (h : st'.objects = st.object
   unfold getObjectType?; rw [h]
 
 -- ============================================================================
--- AL2-B (WS-AL / AK7-F.cascade): kind-discrimination sanity lemmas.
+-- WS-AL AL2-B (cascades AK7-F): kind-discrimination sanity lemmas.
 --
 -- Each lemma witnesses the property that if the stored object at `id`
 -- is a specific variant, every *other* typed helper returns `none` on

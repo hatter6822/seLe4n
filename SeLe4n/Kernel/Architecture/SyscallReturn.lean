@@ -1309,7 +1309,7 @@ because they are different facts:
 * a **timeout** is the SchedContext budget expiring under a live operation.  The
   endpoint queue entry was removed but the operation was well-formed, and the
   caller may reasonably reissue it — `.ipcTimeout`, which the enum has carried
-  since WS-Z/Z6 for exactly this;
+  since WS-Z Z6 for exactly this;
 * a **cancellation** is the operation being destroyed out from under the thread
   — by `.tcbSuspend` on a blocked victim, by lifecycle cleanup, or by a retype
   of an object it was blocked on.  Reissuing may be meaningless (the endpoint

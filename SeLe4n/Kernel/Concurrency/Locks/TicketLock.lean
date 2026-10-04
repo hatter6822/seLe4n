@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM2.B abstract TicketLock spec; refined by
+-- STATUS: staged for WS-SM SM2.B (abstract TicketLock spec; refined by
 -- `rust/sele4n-hal/src/ticket_lock.rs` per SM2.B.16 and the future SM2.D
 -- refinement bridge).
 

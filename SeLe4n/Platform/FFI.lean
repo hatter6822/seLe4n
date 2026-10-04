@@ -973,7 +973,7 @@ opaque ffiRwLockReleaseWriteCount : (handle : UInt64) → BaseIO UInt64
 --   R2.B.1  — `writeFfiRegistersToTcb`, `readReturnValue` (helpers)
 --   R2.B.1  — `syscallDispatchFromAbi` (typed-ABI entry point)
 
-/-- WS-RC R2.B.0: Map a `KernelError` to its `u32` FFI discriminant.
+/-- WS-RC R2.B: Map a `KernelError` to its `u32` FFI discriminant.
 
 The discriminants 0..54 mirror `rust/sele4n-types/src/error.rs` exactly.
 A regression that adds a Lean variant without updating the Rust enum (or
@@ -985,7 +985,7 @@ Discriminant 17 (`notImplemented`) is the historical "stub" return; per
 WS-RC R2 the FFI no longer emits it from the dispatch path — every error
 now corresponds to a substantive kernel rejection.
 
-WS-RA (RA.A.5): the 55-arm table moved to the canonical
+WS-RA RA.A.5: the 55-arm table moved to the canonical
 `SeLe4n.Model.KernelError.toDiscriminant`
 (`Kernel/Architecture/SyscallReturn.lean`), which also carries the inverse
 `ofDiscriminant?` and the round-trip proofs; this function is its `UInt32`
@@ -993,7 +993,7 @@ instance so the discriminant table exists exactly once. -/
 def KernelError.toUInt32 (e : KernelError) : UInt32 :=
   (SeLe4n.Model.KernelError.toDiscriminant e).toUInt32
 
-/-- WS-RA (RA.A.5): the instance relationship, pinned — this `UInt32` map
+/-- WS-RA RA.A.5: the instance relationship, pinned — this `UInt32` map
 and the canonical `Nat` table agree on every variant. -/
 theorem KernelError.toUInt32_eq_toDiscriminant (e : KernelError) :
     (KernelError.toUInt32 e).toNat = SeLe4n.Model.KernelError.toDiscriminant e := by

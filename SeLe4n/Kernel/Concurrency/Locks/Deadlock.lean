@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM3.D deadlock-freedom)
+-- STATUS: staged for WS-SM SM3.D (deadlock-freedom)
 
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Locks.Kind

@@ -24,7 +24,7 @@ location rather than restating it.
 
 **Import-cycle banner.** `Preservation.lean` (Z5 per-operation preservation)
 and `PriorityPreservation.lean` (D2 transport lemmas, authority bounds)
-MUST NOT be imported from this hub. See WS-AB.D2 for the original
+MUST NOT be imported from this hub. See WS-AB D2 for the original
 import-cycle analysis. Breaking this rule introduces a cycle because:
 
 * This hub (`SchedContext.Invariant`) is transitively imported by

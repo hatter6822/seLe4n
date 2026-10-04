@@ -135,7 +135,7 @@ import SeLe4n.Kernel.Concurrency.LockBridge
 -- `scripts/check_lock_ffi_symmetry.sh`.
 import SeLe4n.Kernel.Concurrency.LockPrimitives
 -- WS-RR RR0.6: the SMP completion-phase theorem manifest.  One entry per
--- WS-SM phase SM0..SM10, each naming the theorem inventories that phase
+-- WS-SM SM0..SM10, each phase naming the theorem inventories that phase
 -- owns; `smpInventoriedTheoremCount` is the sum over those entries, and
 -- each entry's declared count is proved equal to the real inventory
 -- lengths.  This is the SM10 theorem marker the release-closure plan
