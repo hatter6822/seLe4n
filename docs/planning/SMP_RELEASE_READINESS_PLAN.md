@@ -401,7 +401,7 @@ action (`faultDeliverOnCore_not_dispatchable`); `TCB.faultHandler` has a
 consumer; `trap.rs` has one classification path; Tier 0–3 green.  The
 standing constraints this phase established — a fault is delivered and never
 returned, the flow-checked arm is the live one, `pendingFault` is the only
-channel from a delivery to its reply — are in `CLAUDE.md`'s *Standing
+channel from a delivery to its reply — are in `docs/agent_guide/WORKSTREAM_CONTEXT.md`'s *Standing
 constraints* section, which is where new code must read them.
 
 *Met. What the cut changed, the defects it found and its review rounds are in
@@ -1476,7 +1476,7 @@ that citation meant.
 - **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10)
 - **Overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 - **Absorbed by RR3**: [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md)
-- **Absorbed by RR6** (both COMPLETE at v0.34.50): [`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md), [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+- **Absorbed by RR6** (both COMPLETE at v0.34.50): [`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md), [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 - **Canonical status**: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
 - **Out of scope**: [`HARDWARE_PARTITION_ISOLATION_PLAN.md`](HARDWARE_PARTITION_ISOLATION_PLAN.md)
 

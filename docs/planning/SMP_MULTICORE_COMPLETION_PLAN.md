@@ -188,7 +188,7 @@ of ARMv8.1-A LSE atomic operations. seL4 historically assumed
 these primitives; we elevate them to proofs.
 
 Key theorems (full statements in
-[`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)):
+[`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)):
 
 - TicketLock: `mutex` (2.2.2.1), `fifo` (2.2.2.2),
   `boundedWait` (2.2.2.3), `releaseAcquirePairing` (2.2.2.4).
@@ -259,7 +259,7 @@ timing is a documented accepted covert channel. Details in
 Each finding cites file:line directly verifiable in the audit's
 source tree. The full per-finding writeup with reproduction
 steps and closure tracking lives in
-[`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md) §1. Here we
+[`SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md) §1. Here we
 summarize.
 
 ### 3.1..3.4 CRITICAL findings
@@ -284,7 +284,7 @@ summarize.
 
 `SMP-M1`..`SMP-M7`, `SMP-L1`..`SMP-L5` — documentation, hygiene,
 scope items. All closed in SM0 honesty patches per
-[`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md).
+[`SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md).
 
 **`SMP-M1` is held by a gate rather than by that claim** (WS-RR RR7.35,
 `v0.34.85`).  "Closed in SM0" was made on three different surfaces — this
@@ -312,7 +312,7 @@ The 13 binding maintainer decisions:
 | 4 | **Path-a Vector replacement** | Cleaner final state. Cost: ~5000-7000 LoC of theorem rewrites. |
 | 5 | **numCores via PlatformBinding** | Multi-platform future-proof. |
 | 6 | **sharingDomain via PlatformBinding** | Cross-cluster support pre-positioned. |
-| 7 | **SMP enabled by default** | v1.0.0 headline capability; rigor enforced by QEMU `-smp 4` test mandate. **At v1.0.0, and CLAUDE.md records the condition: "once SM5 lands".** That condition was briefly violated: the default shipped `true` while kernel entry was unserialised, was set to `false` at v0.32.136 to restore it, and returned to `true` at v0.32.142 when SM5.I landed the kernel-entry lock — which is the change the condition was waiting for. `CmdlineConfig::default` is `smp_enabled: true` again and the QEMU exercisers no longer opt in explicitly. |
+| 7 | **SMP enabled by default** | v1.0.0 headline capability; rigor enforced by QEMU `-smp 4` test mandate. **At v1.0.0, and the workstream context (`docs/agent_guide/WORKSTREAM_CONTEXT.md`, formerly `CLAUDE.md`) records the condition: "once SM5 lands".** That condition was briefly violated: the default shipped `true` while kernel entry was unserialised, was set to `false` at v0.32.136 to restore it, and returned to `true` at v0.32.142 when SM5.I landed the kernel-entry lock — which is the change the condition was waiting for. `CmdlineConfig::default` is `smp_enabled: true` again and the QEMU exercisers no longer opt in explicitly. |
 | 8 | **Per-core idle TCBs** | One per core; clean invariants. |
 | 9 | **SM0 spread across PRs** | Review-friendly small PRs. |
 | 10 | **Verified lock primitives** | TicketLock + RwLock proven in Lean; refinement to Rust impl proven. seL4 historically left these as assumptions. |
@@ -322,7 +322,7 @@ The 13 binding maintainer decisions:
 
 Rejected alternatives are recorded per-phase. The decision-by-
 decision detail with rejected alternatives lives in
-[`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md) §3.
+[`SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md) §3.
 
 ## 5. Phase plan index
 
@@ -330,7 +330,7 @@ Each phase has its own dedicated planning document. The index:
 
 ### SM0 — Foundations & honesty patches
 
-Document: [`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md).
+Document: [`SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md).
 
 21 sub-tasks landed in a single coherent cut at v0.31.3 (compressed from the originally-planned ~18-PR v0.32.x spread per maintainer redirection).
 Foundational types (`CoreId`, `LockKind`, `BklState`, `SgiKind`,
@@ -351,7 +351,7 @@ SMP-H1, SMP-M3, SMP-M4, SMP-M5, SMP-M6.
 
 ### SM2 — Verified lock primitives
 
-Document: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md).
+Document: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md).
 
 70-95 sub-tasks across ~28-40 PRs. The most novel and
 verification-heavy phase. Abstract memory model
@@ -650,9 +650,9 @@ WS-SM is complete and v1.0.0 ships when:
 
 | Phase | Document | Sub-tasks | LoC est. |
 |-------|----------|----------:|---------:|
-| SM0 | [`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md) | 40-50 | ~3,000 |
+| SM0 | [`SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md) | 40-50 | ~3,000 |
 | SM1 | [`SMP_RUST_HAL_PLAN.md`](SMP_RUST_HAL_PLAN.md) | 60-80 | ~2,500 |
-| SM2 | [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) | 70-95 | ~3,500 |
+| SM2 | [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) | 70-95 | ~3,500 |
 | SM3 | [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md) | 50-65 | ~1,500 |
 | SM4 | [`SMP_PER_CORE_STATE_PLAN.md`](SMP_PER_CORE_STATE_PLAN.md) | 90-115 | ~7,000 |
 | SM5 | [`SMP_PER_CORE_SCHEDULER_PLAN.md`](SMP_PER_CORE_SCHEDULER_PLAN.md) | 75-95 | ~2,500 |
@@ -666,7 +666,7 @@ WS-SM is complete and v1.0.0 ships when:
 Two remediation workstreams run against this schedule rather than inside it:
 WS-RR ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md), 187
 sub-tasks) is the pre-SM10 remediation SM10 is blocked on, and WS-LC
-([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](SMP_LOCK_DATATYPE_COMPLETION_PLAN.md),
+([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](../dev_history/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md),
 51 sub-tasks) closes the two SM2 lock **datatype** residuals ahead of WS-RR's
 fine-lock migration tracks.
 
@@ -720,9 +720,9 @@ breakdown:
 
 | Phase | Theorems | Document section |
 |-------|---------:|------------------|
-| SM0 Foundations | ~12 | [SMP_FOUNDATIONS_PLAN §10](SMP_FOUNDATIONS_PLAN.md) |
+| SM0 Foundations | ~12 | [SMP_FOUNDATIONS_PLAN §10](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md) |
 | SM1 Rust HAL | ~6 | [SMP_RUST_HAL_PLAN §10](SMP_RUST_HAL_PLAN.md) |
-| SM2 Verified locks | ~22 | [SMP_VERIFIED_LOCK_PRIMITIVES_PLAN §10](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) |
+| SM2 Verified locks | ~22 | [SMP_VERIFIED_LOCK_PRIMITIVES_PLAN §10](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) |
 | SM3 Per-object locks | ~28 | [SMP_PER_OBJECT_LOCKS_PLAN §10](SMP_PER_OBJECT_LOCKS_PLAN.md) |
 | SM4 Per-core state | ~50 | [SMP_PER_CORE_STATE_PLAN §10](SMP_PER_CORE_STATE_PLAN.md) |
 | SM5 Per-core scheduler | ~30 | [SMP_PER_CORE_SCHEDULER_PLAN §10](SMP_PER_CORE_SCHEDULER_PLAN.md) |

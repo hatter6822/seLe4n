@@ -7,11 +7,11 @@
 > crosses the syscall gate (register §6, owner **RR7.29**), and deferred
 > follow-up item 4 named a tracking home that carries no entry for it
 > (now in the *Registered debt index* of
-> [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md), RR0.9).
+> [`../REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md), RR0.9).
 > **Archived by**: SM10.6.3.
 
 > Companion to the SM6.C/SM6.D reply-object slices in
-> [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md) and the
+> [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md) and the
 > PR #822 hardening pass. This plan tracked the three remaining **completeness**
 > items — the ABI / Prop-invariant / transition-fold tail. **✅ COMPLETE as of
 > v0.31.155: all three items (#2, #1, #7) plus every residual-debt item are LANDED.**

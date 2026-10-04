@@ -7,6 +7,30 @@ This document is the synchronization index for:
 3. test/verification coverage for active planning.
 
 Use this file during planning and PR review to keep documentation status aligned with code reality.
+It is also the documentation **ownership map**: it absorbed the former
+`docs/DOCS_DEDUPLICATION_MAP.md`, and the GitBook chapters that only restated a
+root document (former chapters 25–31) were retired in favour of navigation links
+to the root document itself.
+
+## 0) Ownership rules
+
+- Every topic has exactly **one** canonical home. Canonical policy/spec/planning
+  text lives under `docs/` (root docs, `docs/spec/`, `docs/planning/`,
+  `docs/audits/`).
+- GitBook chapters under `docs/gitbook/` are a reading path: they introduce a
+  topic and **link** to its canonical document rather than restating it. A
+  chapter that would only mirror a root document is not written; the GitBook
+  navigation (`docs/gitbook/navigation_manifest.json`) links the root document
+  directly.
+- If a topic changes, update the canonical document first, then any chapter that
+  summarises it, in the same PR.
+- `CHANGELOG.md` owns the per-version narrative and `docs/REGISTERED_DEBT.md`
+  owns workstream status; a plan under `docs/planning/` owns a phase's
+  *schedule* (its sub-task table), not an account of what each cut changed —
+  duplicating that account produces two records that drift.
+- When a workstream closes, its plan moves to `docs/dev_history/planning/`,
+  unless kernel source still cites it (source must not reference
+  `docs/dev_history/`, a Tier 0 gate).
 
 ## 1) Canonical source-of-truth map
 
@@ -19,20 +43,23 @@ Use this file during planning and PR review to keep documentation status aligned
 | Completed performance portfolio (WS-G) | `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` | `08-kernel-performance-optimization.md` | All findings closed; chapter documents optimizations. Archived to `docs/dev_history/`. |
 | Prior audit findings (WS-E, completed) | `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` | — | Archived to `docs/dev_history/`; WS-E1..E6 all completed. |
 | Prior audit findings (WS-D, completed) | `docs/dev_history/audits/AUDIT_v0.11.0.md` | — | Archived to `docs/dev_history/`; WS-D1..D4 completed. |
-| Claim vs evidence index (active semantics/proofs/docs) | `docs/CLAIM_EVIDENCE_INDEX.md` | `31-claim-vs-evidence-index.md` | Keep auditable claim→command mapping canonical in root; GitBook chapter points to index. |
+| Claim vs evidence index (active semantics/proofs/docs) | `docs/CLAIM_EVIDENCE_INDEX.md` | — (linked from the GitBook navigation) | Keep auditable claim→command mapping canonical in root. |
 | Historical execution portfolios | `docs/dev_history/audits/` | Archived to `docs/dev_history/gitbook/` | Historical-only; see `docs/dev_history/README.md`. |
-| Documentation dedup ownership | `docs/DOCS_DEDUPLICATION_MAP.md` | `27-documentation-deduplication-map.md` | Canonical dedup map stays in root docs. |
-| Finite object-store ADR (WS-C7) | `docs/FINITE_OBJECT_STORE_ADR.md` | `30-ws-c7-model-structure-and-maintainability.md` | ADR is canonical; GitBook chapter stays concise and links back. |
-| VSpace memory-model ADR (WS-B1) | `docs/VSPACE_MEMORY_MODEL_ADR.md` | `26-ws-b1-vspace-memory-adr.md` | ADR is canonical; GitBook chapter stays concise and links back. |
+| Documentation ownership and sync | this file | — (linked from the GitBook navigation) | One canonical home per topic (§0). |
+| Finite object-store ADR (WS-C7) | `docs/FINITE_OBJECT_STORE_ADR.md` | — (linked from the GitBook navigation) | ADR is canonical. |
+| VSpace memory-model ADR (WS-B1) | `docs/VSPACE_MEMORY_MODEL_ADR.md` | — (linked from the GitBook navigation) | ADR is canonical. |
+| O(n) list-based data-structure ADR (F-17) | `docs/ON_DESIGN_DECISION_ADR.md` | — | ADR is canonical. |
 | Platform-binding ADR | `docs/PLATFORM_BINDING_ADR.md` | `10-path-to-real-hardware-mobile-first.md` | ADR is canonical; chapter links. |
-| Security advisories + deployment guidance | `docs/SECURITY_ADVISORY.md`, `docs/DEPLOYMENT_GUIDE.md` | `28-threat-model-and-security-hardening.md` | Root docs own advisory statuses and deployment obligations; chapter summarizes. |
+| Security advisories + deployment guidance | `docs/SECURITY_ADVISORY.md`, `docs/DEPLOYMENT_GUIDE.md` | — (linked from `docs/THREAT_MODEL.md` §8) | Root docs own advisory statuses and deployment obligations. |
 | Hardware testing + validation reports | `docs/HARDWARE_TESTING.md`, `docs/hardware_validation/` | `10-path-to-real-hardware-mobile-first.md` | Root docs own procedures and report data. |
 | Rust ABI audit notes | `docs/AUDIT_NOTES.md` | `15-rust-syscall-wrappers.md` | Root file owns per-finding notes. |
 | Translations | `docs/i18n/` (11 locales + `LANGUAGES.md`) | — | Mirror the root README/CONTRIBUTING/QUICKSTART; badges + Version rows are version-sites. The three metric rows are written by `scripts/sync_translated_metrics.py` — edit its `TARGETS` table, not the row, when a translation's wording or inflected noun changes. |
 | Development workflow | `docs/DEVELOPMENT.md` | — (archived to dev_history) | Canonical workflow in root doc. |
 | Test tiers and CI contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Script/workflow changes require synchronized updates. |
 | Hardware-boundary contract policy | `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md` | `10-path-to-real-hardware-mobile-first.md` | Normative constraints in policy doc; chapter links policy implications. |
-| Security trajectory | `docs/INFORMATION_FLOW_ROADMAP.md`, `docs/THREAT_MODEL.md` | `12-proof-and-invariant-map.md`, `28-threat-model-and-security-hardening.md` | Milestone shifts must update roadmap and at least one active planning chapter. |
+| Security trajectory | `docs/INFORMATION_FLOW_ROADMAP.md`, `docs/THREAT_MODEL.md` | `12-proof-and-invariant-map.md` | Milestone shifts must update roadmap and at least one active planning chapter. |
+| CI telemetry baseline | `docs/CI_TELEMETRY_BASELINE.md` | — (linked from the GitBook navigation) | Root doc owns the telemetry schema and policy. |
+| Agent guidance | `CLAUDE.md` (durable rules; `AGENTS.md` is a symlink to it), `docs/agent_guide/` (long-form rationale, live workstream context, large-file list) | — | `CLAUDE.md` carries no workstream content; see its first section. |
 
 ## 2) Test and verification coverage map
 
@@ -49,17 +76,31 @@ Use this file during planning and PR review to keep documentation status aligned
 | Smoke lane | `./scripts/test_smoke.sh` | Tier 0 + Tier 1 + scenario-catalog validation + Tier 2 trace + determinism + negative-state + Sim-contract build + Rust gate (`test_rust.sh`) + docs sync. |
 | Full lane | `./scripts/test_full.sh` | Tier 0 + Tier 1 + Tier 2 + Tier 3 validation. |
 
-## 3) PR synchronization checklist (required)
+## 3) Automation hooks
+
+1. `scripts/generate_doc_navigation.py` generates `docs/gitbook/README.md` and
+   `docs/gitbook/SUMMARY.md` from `docs/gitbook/navigation_manifest.json`.
+2. `scripts/check_markdown_links.py` validates local markdown links across
+   tracked `*.md` files (`docs/dev_history/` excluded).
+3. `scripts/test_docs_sync.sh` runs navigation generation, verifies the
+   generated files are stable, runs markdown-link validation, checks metric
+   propagation and the large-files list, and opportunistically invokes
+   `doc-gen4` when available. It runs in CI on every PR.
+
+## 4) PR synchronization checklist (required)
 
 For documentation/planning PRs:
 
 1. Update canonical source docs first.
-2. Update GitBook mirror/navigation references.
+2. Update any GitBook chapter that summarises the topic, and the navigation manifest if a document is added, moved or retired.
 3. Run at least `test_smoke.sh`; run `test_full.sh` when theorem/invariant anchors or policy text changes.
 4. If planning baseline or test policy changes, run `test_nightly.sh` (or explain why not run).
 5. Verify references with targeted `rg -n` checks for newly introduced docs/chapters.
+6. Regenerate the navigation outputs (`python3 scripts/generate_doc_navigation.py`) when the manifest changes.
+7. Keep active-slice status consistent across `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/DEVELOPMENT.md`, the workstream plan and GitBook chapter 05.
+8. Update `docs/CLAIM_EVIDENCE_INDEX.md` rows when a baseline claim or its validation command changes.
 
-## 4) Current-stage status summary
+## 5) Current-stage status summary
 
 - **Active workstream**: WS-SM (SMP multi-core completion) — SM0–SM9
   landed, SM10 pending (→ v1.0.0); WS-RA complete. See

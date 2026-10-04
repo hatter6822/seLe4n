@@ -17853,18 +17853,18 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "the reclaim declines below th
 # retraction removed rather than on the fabricated line itself -- the retraction
 # quotes that line in order to say it is a fabrication, and a check that refused
 # it would force this tree to stop explaining its own mistake.
-run_prose_negative_check "INVARIANT" rg -n "whose .reply_remove. splices" CLAUDE.md AGENTS.md docs/agent_guide/WORKSTREAM_CONTEXT.md
+run_prose_negative_check "INVARIANT" rg -n "whose .reply_remove. splices" CLAUDE.md AGENTS.md docs/agent_guide/WORKSTREAM_CONTEXT.md docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md
 run_prose_negative_check "INVARIANT" rg -n "non-head branch splices" \
-  CLAUDE.md AGENTS.md docs/agent_guide/WORKSTREAM_CONTEXT.md docs/REGISTERED_DEBT.md docs/spec/SELE4N_SPEC.md \
-  docs/planning/DONATION_POP_TRIGGER_PLAN.md docs/planning/REPLY_FRAME_REMOVAL_PLAN.md
-run_prose_negative_check "INVARIANT" rg -n "non-head branch \*\*splices\*\*" CLAUDE.md AGENTS.md docs/agent_guide/WORKSTREAM_CONTEXT.md
+  CLAUDE.md AGENTS.md docs/agent_guide/WORKSTREAM_CONTEXT.md docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md docs/REGISTERED_DEBT.md docs/spec/SELE4N_SPEC.md \
+  docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md docs/dev_history/planning/REPLY_FRAME_REMOVAL_PLAN.md
+run_prose_negative_check "INVARIANT" rg -n "non-head branch \*\*splices\*\*" CLAUDE.md AGENTS.md docs/agent_guide/WORKSTREAM_CONTEXT.md docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md
 run_prose_negative_check "INVARIANT" rg -n "by implementing seL4.s behaviour" docs/REGISTERED_DEBT.md
 # ...the plan's own two spellings, which differed from the others and so needed
 # their own rows -- the negatives were derived by running each pattern against the
 # genuine pre-retraction text (`git show HEAD:<file>` at `v0.35.40`) rather than
 # against an invented mutation, which is what found these two.
-run_prose_negative_check "INVARIANT" rg -n "\*\*seL4-MCS splices\*\*" docs/planning/DONATION_POP_TRIGGER_PLAN.md
-run_prose_negative_check "INVARIANT" rg -n "and seL4.s splice\$" docs/planning/DONATION_POP_TRIGGER_PLAN.md docs/REGISTERED_DEBT.md
+run_prose_negative_check "INVARIANT" rg -n "\*\*seL4-MCS splices\*\*" docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md
+run_prose_negative_check "INVARIANT" rg -n "and seL4.s splice\$" docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md docs/REGISTERED_DEBT.md
 run_prose_negative_check "INVARIANT" rg -n "the head-driven donation pop and seL4.s splice" docs/REGISTERED_DEBT.md
 # ...and the cancellation half, which is a NAMING error rather than an inverted
 # claim: `cancelIPC` runs `reply_remove_tcb` and donates nothing, while revoking the
@@ -17882,31 +17882,31 @@ run_prose_negative_check "INVARIANT" rg -n "cancelIPC. on a reply-blocked thread
 # retraction is not a way to satisfy the negatives above.  Each names the function
 # and the value it writes, because "upstream severs" without the write is the same
 # unsourced assertion in the other direction.
-run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/agent_guide/WORKSTREAM_CONTEXT.md
+run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md
 run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/REGISTERED_DEBT.md
 run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/spec/SELE4N_SPEC.md
-run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/planning/DONATION_POP_TRIGGER_PLAN.md
+run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md
 run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # ...and each cites the REVISIONS it was read at, which is what makes the claim
 # re-runnable rather than re-trustable -- the rule the fabrication earned.
-run_prose_check "INVARIANT" bash -lc 'rg -n "master, 13\.0\.0, 12\.1\.0, 12\.0\.0 and 11\.0\.0" docs/agent_guide/WORKSTREAM_CONTEXT.md'
+run_prose_check "INVARIANT" bash -lc 'rg -n "master, 13\.0\.0, 12\.1\.0, 12\.0\.0 and 11\.0\.0" docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md'
 run_prose_check "INVARIANT" bash -lc 'rg -n "master, 13\.0\.0, 12\.1\.0, 12\.0\.0 and 11\.0\.0" docs/REGISTERED_DEBT.md'
 # The two upstream facts the same reading CONFIRMED, so HP4 and HP4.6 are recorded
 # as inherited rather than invented: the head-driven trigger and the recipient guard.
-run_prose_check "INVARIANT" bash -lc 'rg -n "call_stack_get_isHead\(reply->replyNext\)" docs/agent_guide/WORKSTREAM_CONTEXT.md'
-run_prose_check "INVARIANT" bash -lc 'rg -n "tcb->tcbSchedContext == NULL" docs/agent_guide/WORKSTREAM_CONTEXT.md'
-run_prose_check "INVARIANT" bash -lc 'rg -n "tcb->tcbSchedContext == NULL" docs/planning/DONATION_POP_TRIGGER_PLAN.md'
+run_prose_check "INVARIANT" bash -lc 'rg -n "call_stack_get_isHead\(reply->replyNext\)" docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md'
+run_prose_check "INVARIANT" bash -lc 'rg -n "tcb->tcbSchedContext == NULL" docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md'
+run_prose_check "INVARIANT" bash -lc 'rg -n "tcb->tcbSchedContext == NULL" docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md'
 # ...and the cancellation picture is pinned by the operation that DOES return the
 # context, so a future reader cannot re-derive "upstream strands it" from the
 # `cancelIPC` path alone -- the over-generalisation this cut made and the maintainer
 # caught.  `reply_remove_tcb` names the non-donating operation; `finaliseCap` names
 # the donating one.
 run_prose_check "INVARIANT" rg -n 'reply_remove_tcb' \
-  docs/agent_guide/WORKSTREAM_CONTEXT.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
-  docs/REGISTERED_DEBT.md docs/planning/DONATION_POP_TRIGGER_PLAN.md
+  docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
+  docs/REGISTERED_DEBT.md docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md
 run_prose_check "INVARIANT" rg -n 'finaliseCap' \
-  docs/agent_guide/WORKSTREAM_CONTEXT.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
-  docs/REGISTERED_DEBT.md docs/planning/DONATION_POP_TRIGGER_PLAN.md
+  docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
+  docs/REGISTERED_DEBT.md docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md
 # The phrase this cut's own first draft used, refused as an ASSERTION.  The
 # retraction text quotes it -- `upstream "permanently strands a cancelled caller's
 # reservation"` -- and the quote mark is what keeps this silent, which is ordinary
@@ -17915,8 +17915,8 @@ run_prose_check "INVARIANT" rg -n 'finaliseCap' \
 # the pair of positives above: re-generalising the `cancelIPC` path to the kernel
 # means deleting one of the two operation names, which they refuse.
 run_prose_negative_check "INVARIANT" rg -n 'upstream permanently strands' \
-  CLAUDE.md AGENTS.md docs/agent_guide/WORKSTREAM_CONTEXT.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
-  docs/REGISTERED_DEBT.md docs/planning/DONATION_POP_TRIGGER_PLAN.md
+  CLAUDE.md AGENTS.md docs/agent_guide/WORKSTREAM_CONTEXT.md docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
+  docs/REGISTERED_DEBT.md docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md
 
 # ---------------------------------------------------------------------------
 # v0.35.79 -- WS-RR RR8.6: the deschedule reads PLACEMENT, not the home
@@ -20662,9 +20662,9 @@ run_prose_negative_check "INVARIANT" rg -F -n '**And it can become false again b
 # The claim is lifted at every live site: v1.0.0 may claim that a completed call
 # chain returns a client's reservation at every reply-stack depth, and the
 # `v0.35.141` retraction must not come back beside it.
-run_prose_check "INVARIANT" rg -F -n '**The claim is lifted**: v1.0.0 **may** claim' docs/agent_guide/WORKSTREAM_CONTEXT.md
+run_prose_check "INVARIANT" rg -F -n '**The claim is lifted**: v1.0.0 **may** claim' docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md
 run_prose_check "INVARIANT" rg -F -n 'v1.0.0 **may** claim that completing a call chain returns a' docs/spec/SELE4N_SPEC.md
-run_prose_negative_check "INVARIANT" rg -F -n 'must not** claim that a completed call chain' CLAUDE.md docs/agent_guide/WORKSTREAM_CONTEXT.md
+run_prose_negative_check "INVARIANT" rg -F -n 'must not** claim that a completed call chain' CLAUDE.md docs/agent_guide/WORKSTREAM_CONTEXT.md docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md
 run_prose_negative_check "INVARIANT" rg -F -n 'must not** claim that a completed call chain' AGENTS.md
 # ...and the register row is STRUCK THROUGH, with the proxy named in the struck
 # heading so a reader arriving from an older citation still lands.

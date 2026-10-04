@@ -224,4 +224,4 @@ Toolchain-update cadence is automated through:
 ## 11. WS-B10 timing + flake telemetry baseline
 
 Canonical telemetry baseline documentation is published in `docs/CI_TELEMETRY_BASELINE.md`
-with GitBook mirror `docs/gitbook/29-ci-maturity-and-telemetry-baseline.md`.
+(linked directly from the GitBook navigation).

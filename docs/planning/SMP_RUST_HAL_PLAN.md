@@ -702,9 +702,9 @@ SM1 is complete when:
 
 - **Master overview**:
   [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-- **Previous phase**: [`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md)
+- **Previous phase**: [`SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md)
 - **Parallel phase**:
-  [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+  [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
   — SM2 develops the verified lock primitives that SM1.G.1 may
   consume (UartLock replacement).
 - **Next phase**:

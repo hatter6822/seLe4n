@@ -21,16 +21,15 @@
 
 ## Audit and quality
 
-- [Claim vs Evidence Index](31-claim-vs-evidence-index.md)
+- [Claim vs Evidence Index](../CLAIM_EVIDENCE_INDEX.md)
 
 ## Security and architecture
 
-- [Threat Model and Security Hardening](28-threat-model-and-security-hardening.md)
-- [VSpace + Bounded Memory Model (ADR)](26-ws-b1-vspace-memory-adr.md)
-- [Model Structure and Maintainability (ADR)](30-ws-c7-model-structure-and-maintainability.md)
-- [CI Maturity and Telemetry Baseline](29-ci-maturity-and-telemetry-baseline.md)
-- [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md)
-- [Documentation Deduplication Map](27-documentation-deduplication-map.md)
+- [Threat Model and Security Hardening](../THREAT_MODEL.md)
+- [VSpace + Bounded Memory Model (ADR)](../VSPACE_MEMORY_MODEL_ADR.md)
+- [Model Structure and Maintainability (ADR)](../FINITE_OBJECT_STORE_ADR.md)
+- [CI Maturity and Telemetry Baseline](../CI_TELEMETRY_BASELINE.md)
+- [Documentation Sync and Coverage Matrix](../DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md)
 
 ## Production path
 

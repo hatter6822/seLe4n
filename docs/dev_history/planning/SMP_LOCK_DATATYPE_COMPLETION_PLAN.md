@@ -4,8 +4,8 @@
 > v0.34.52 (eight), LC3 at v0.34.53 (seven), LC4 at v0.34.54 (seven), LC5 at
 > v0.34.55 (eleven).  Both SM2.C debt rows are retired from
 > `docs/REGISTERED_DEBT.md` table C.
-> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-> **Predecessor**: [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) RR6 (v0.34.50), which closed SM2.C-defer's refinement work and deliberately did not absorb these two
+> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
+> **Predecessor**: [`SMP_RELEASE_READINESS_PLAN.md`](../../planning/SMP_RELEASE_READINESS_PLAN.md) RR6 (v0.34.50), which closed SM2.C-defer's refinement work and deliberately did not absorb these two
 > **Debt rows closed**: `docs/REGISTERED_DEBT.md` table C — **SM2.C-T** and **SM2.C-C**
 > **Target releases**: v0.34.51 → v0.34.55
 > **Sub-task count**: 51 across 5 phases (LC1..LC5), each phase numbered in

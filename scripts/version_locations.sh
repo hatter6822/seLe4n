@@ -100,7 +100,7 @@ _reg 'CLAUDE.md' \
 _reg 'AGENTS.md' \
      's/(Lake build system, version )[0-9]+[.][0-9]+[.][0-9]+/\1@NEW@/' \
      'Lake build system, version @VER@' \
-     'AGENTS.md canonical version line (CLAUDE.md mirror)'
+     'AGENTS.md canonical version line (symlink to CLAUDE.md; read through the link)'
 
 # --- Root README ------------------------------------------------------------
 _reg 'README.md' \

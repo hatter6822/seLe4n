@@ -20,7 +20,7 @@
 > rule (*a transition goes live only after the proofs that cover it*) requires
 > the merge rather than an ordering.
 > **Predecessor findings**: the two Medium-severity model/specification gaps
-> recorded in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §A, reported while
+> recorded in [`../REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md) §A, reported while
 > proving the WS-RR RR7.22 residual at `v0.34.97` and `v0.34.98`.
 > **Sub-task count**: 53 across 6 phases (OD1..OD6), each phase numbered in the
 > order it is to be implemented
@@ -660,7 +660,7 @@ The workstream closes when **all nine** hold and each is checkable:
   index every plan must appear in.  It is not website-linked, so
   `scripts/website_link_manifest.txt` is unchanged.
 * **WS-OD** has a row in the workstream registry of
-  [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md); that table is machine-read by
+  [`../REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md); that table is machine-read by
   `scripts/check_identifier_naming.py`, so the family is covered by the naming
   gate from the moment it is registered.
 * Every cut bumps the patch version through `./scripts/bump_version.sh` with a
@@ -753,7 +753,7 @@ figures above.
 
 ## 9. Two things this plan deliberately does not fix
 
-**Both were entered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §C at
+**Both were entered in [`../REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md) §C at
 `v0.35.2`**, so they outlive this plan rather than dying with it — "registered
 rather than absorbed" is a claim about that table, and until the closure cut it
 was a claim about this paragraph.  **The first is closed at `v0.35.3`** and is

@@ -1,9 +1,10 @@
 # CLAUDE.md — seLe4n project guidance
 
-> A mirror of this file lives at `AGENTS.md` so that non-Claude coding
-> agents (and any tool that follows the AGENTS.md convention) get the
-> same project rules. If you edit one, edit the other in the same PR —
-> the two files must stay byte-identical apart from this header.
+> `AGENTS.md` is a symlink to this file, so non-Claude coding agents (and
+> any tool that follows the AGENTS.md convention) read the same project
+> rules from one source. Edit `CLAUDE.md` only. These rules bind every
+> contributor, human or agent; `docs/DEVELOPMENT.md` is the how-to guide
+> that links back here.
 
 ## What this project is
 
@@ -34,8 +35,10 @@ workstreams.  Workstream content goes in its canonical home instead:
 - [`CHANGELOG.md`](CHANGELOG.md) — the per-version narrative, one entry per PR.
 - `docs/planning/*.md` — per-workstream and per-phase plans.
 - [`docs/agent_guide/WORKSTREAM_CONTEXT.md`](docs/agent_guide/WORKSTREAM_CONTEXT.md)
-  — the former "Active workstream context" section of this file, moved
-  verbatim; update it (not this file) when a workstream's status changes.
+  — live workstream status and the standing constraints new code must assume
+  (formerly this file's "Active workstream context"); update it, not this
+  file, when a workstream's status changes. When a workstream closes, move its
+  section to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`.
 
 Long-form rationale for the rules below lives under `docs/agent_guide/`
 (each section names its detail file).  Read those on demand, not up front.
@@ -139,47 +142,11 @@ gate, which reads the **git index** — so stage first, then run
 
 ## Source layout
 
-Top-level subsystems (the filesystem is the authoritative file list — it
-changes more often than this map can track):
-
-```
-SeLe4n/PackedString.lean         Packed strings: one Nat per inventory string, kernel-cheap distinctness
-SeLe4n/Prelude.lean              Typed identifiers, monad foundations
-SeLe4n/Machine.lean              Machine state primitives
-SeLe4n/Model/                    Object types, kernel/system state, builder, freeze
-SeLe4n/Kernel/Scheduler/         Scheduler transitions, run queues, EDF, PIP, liveness
-SeLe4n/Kernel/Capability/        CSpace/capability ops + invariants
-SeLe4n/Kernel/IPC/               Endpoint/notification IPC, dual-queue, capability transfer
-SeLe4n/Kernel/Lifecycle/         Thread suspend/resume, retype, cleanup
-SeLe4n/Kernel/Service/           Service orchestration + policy
-SeLe4n/Kernel/Architecture/      ARM64 page tables, exceptions, interrupts, TLB/cache,
-                                 register/syscall decode, IPC buffer validation
-SeLe4n/Kernel/InformationFlow/   Security labels, projection, non-interference
-SeLe4n/Kernel/RobinHood/         Verified Robin Hood hash table
-SeLe4n/Kernel/RadixTree/         Verified flat-array CNode radix tree
-SeLe4n/Kernel/SchedContext/      CBS budgets, replenishment queue, MCP authority
-SeLe4n/Kernel/FrozenOps/         Frozen-state kernel operations, refined against the live API
-SeLe4n/Kernel/Concurrency/       SMP-latent assumption inventory
-SeLe4n/Kernel/CrossSubsystem.lean  Cross-subsystem invariants, discharge index marker
-SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
-SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
-SeLe4n/Platform/DeviceTree.lean  FDT parsing
-SeLe4n/Platform/FFI.lean         Lean ↔ Rust HAL bridge (`@[extern]` / `@[export]`)
-SeLe4n/Platform/Boot.lean        Boot sequence (PlatformConfig → IntermediateState)
-SeLe4n/Platform/Sim/             Simulation platform contracts
-SeLe4n/Platform/RPi5/            Raspberry Pi 5 (BCM2712) bindings, boot VSpace
-SeLe4n/Platform/Staged.lean      Build anchor pulling staged platform modules into CI
-SeLe4n/Testing/                  Test harness, state builder, fixtures
-Main.lean                        Executable entry point
-tests/                           Executable test suites + fixtures
-rust/                            ARM64 boot assembly + HAL crates
-```
-
-Each subsystem follows the **Operations / Invariant split**: `Operations.lean`
-holds the transitions, `Invariant.lean` holds the proofs. Both may be
-re-export hubs over per-concern submodules in a sibling directory of the
-same name. Re-export hubs are import-only files that preserve backward
-compatibility — existing `import` statements keep working unchanged.
+The subsystem map lives in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) §5
+(the filesystem is the authoritative file list). Each subsystem follows the
+**Operations / Invariant split** (see *Key conventions*); either file may be an
+import-only re-export hub over per-concern submodules in a sibling directory of
+the same name, so existing `import` statements keep working.
 
 ## Reading large files
 
@@ -249,6 +216,11 @@ Full text and examples for these three sections:
   Historical names stay until a cut can rename them; new code complies from
   day one. Enforced by `scripts/check_identifier_naming.py` (Tier 0, reads
   the git index, baseline in `scripts/identifier_naming_baseline.json`).
+- **Deferrals are registered, never silent.** No in-source TODO that ages out
+  with its workstream: every deferred item is a row in the *Registered debt
+  index* of `docs/REGISTERED_DEBT.md` with an owner and a closure target, and
+  the source comment cites the row. Enforced by
+  `scripts/check_deferral_registration.py` (Tier 0).
 - **Retired code is removed, not left to pollute the tree.** A superseded
   definition, theorem, resolver or policy is deleted in the same cut, not
   kept beside its replacement. "Unused" is measured over the code view and
@@ -318,17 +290,23 @@ same PR:
 1. `README.md` — metrics sync from `docs/codebase_map.json`
    (`readme_sync` key)
 2. `docs/spec/SELE4N_SPEC.md`
-3. `docs/DEVELOPMENT.md`
+3. `docs/DEVELOPMENT.md` if a command or procedure changed (this file if a
+   rule changed)
 4. Affected GitBook chapter(s) — canonical root docs take priority
    over GitBook
 5. `docs/CLAIM_EVIDENCE_INDEX.md` if claims change
-6. `docs/REGISTERED_DEBT.md` if workstream status changes
+6. `docs/REGISTERED_DEBT.md` (and `docs/agent_guide/WORKSTREAM_CONTEXT.md`)
+   if workstream status changes
 7. Regenerate `docs/codebase_map.json` if Lean sources changed
 
-Canonical ownership: root `docs/` files own policy/spec text. GitBook
-chapters under `docs/gitbook/` are mirrors that summarize and link to
-canonical sources. `docs/REGISTERED_DEBT.md` is the single canonical
-source for workstream planning, status, and history.
+**One canonical home per topic.** Root `docs/` files own policy/spec text;
+this file owns the contributor rules; `docs/DEVELOPMENT.md` owns the how-to.
+GitBook chapters introduce a topic and link to its canonical document — never
+restate it. `docs/REGISTERED_DEBT.md` is the single canonical source for
+workstream planning, status, and history. When a workstream closes, its plan
+moves to `docs/dev_history/planning/` (unless source still cites it, since
+source must not reference `docs/dev_history/`). The ownership map is
+[`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md).
 
 ## Third-party attribution
 
@@ -416,7 +394,7 @@ Full text: [`docs/agent_guide/RULES_DETAIL.md`](docs/agent_guide/RULES_DETAIL.md
 - [ ] Module build verified (pre-commit hook installed and not
       bypassed)
 - [ ] `test_smoke.sh` passes (minimum); `test_full.sh` for theorem
-      changes
+      changes; `test_aarch64_cross_build.sh` if `rust/` changed
 - [ ] Documentation synchronized (see "Documentation rules")
 - [ ] Patch version bumped and all version locations synced
       (`./scripts/bump_version.sh <version>`; verified by

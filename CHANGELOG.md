@@ -1,4 +1,4 @@
-## v0.36.42 — CLAUDE.md shrunk to durable rules; workstream context and long-form rationale moved to `docs/agent_guide/`
+## v0.36.42 — CLAUDE.md shrunk to durable rules; documentation de-duplicated and completed plans archived
 
 - **`CLAUDE.md` (and its `AGENTS.md` mirror) go from 14,311 lines to under
   500.**  The file is auto-loaded into every agent session and had grown past
@@ -28,7 +28,42 @@
   the Tier 3 prose anchors that pinned workstream text in `CLAUDE.md` now pin
   it in `WORKSTREAM_CONTEXT.md` (negatives still cover `CLAUDE.md` and
   `AGENTS.md` too).  The `CLAUDE.md` ↔ `AGENTS.md` byte-mirror gate is
-  unchanged and still holds.
+  unchanged and still holds (superseded below: `AGENTS.md` is now a symlink).
+- **Documentation clean-up (same PR).**
+  - *One home per topic.* Seven GitBook chapters that only restated a root
+    document (25–31: sync matrix, VSpace ADR, dedup map, threat model, CI
+    telemetry, finite-object-store ADR, claim/evidence index) are deleted; the
+    few facts only they carried were merged into the root documents first, and
+    the GitBook navigation now links the root documents directly.
+    `docs/DOCS_DEDUPLICATION_MAP.md` is merged into
+    `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md` (new §0 *Ownership rules*
+    and §3 *Automation hooks*) and deleted.  The GitBook heading-drift check
+    in `test_docs_sync.sh`, which compared those mirrors, is retired with them.
+  - *Rules stated once.* `docs/DEVELOPMENT.md` §6–§9 and its PR checklist
+    restated `CLAUDE.md`'s rules; they now link to `CLAUDE.md` (the rules file
+    for every contributor) and keep only procedures.  `CLAUDE.md`'s source
+    layout now links `DEVELOPMENT.md` §5, and it gains the one rule only
+    `DEVELOPMENT.md` stated (*deferrals are registered, never silent*).  The
+    SA-2 description duplicated in `DEPLOYMENT_GUIDE.md` links the advisory.
+  - *`AGENTS.md` is a symlink to `CLAUDE.md`.*  `test_docs_sync.sh` now checks
+    the link in the git index (mode `120000`, target `CLAUDE.md`) instead of
+    byte-comparing two copies.
+  - *Completed plans archived.* Nine completed plans moved to
+    `docs/dev_history/planning/` (`DONATION_POP_TRIGGER`, `REPLY_FRAME_REMOVAL`,
+    `REPLY_OBJECTS_COMPLETION`, `SCHEDCONTEXT_DONATION_CHAIN`,
+    `SMP_FOUNDATIONS`, `SMP_LOCK_DATATYPE_COMPLETION`,
+    `SMP_PANIC_HANG_REMEDIATION`, `SMP_VERIFIED_LOCK_PRIMITIVES`,
+    `WS_RC_R4_TYPE_LEVEL_PROMOTION`), and the closed workstreams' sections of
+    the workstream context (WS-RA, WS-OD, WS-RM, WS-HP, WS-LC) moved verbatim
+    to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`.  Completed
+    plans that kernel source still cites stay in `docs/planning/`, because a
+    Tier 0 gate forbids source from referencing `docs/dev_history/`.  Every
+    link, Tier 3 anchor and CHANGELOG link *target* (labels untouched) was
+    repointed; `docs/dev_history/README.md` indexes the archive.
+  - *Active plans no longer write workstream content into `CLAUDE.md`.*
+    WS-CB's CB1.7, CB8.4 and CB8.8, SM10's closure row, and the pointer rows in
+    four other live plans now target `docs/agent_guide/WORKSTREAM_CONTEXT.md`
+    (and `LARGE_FILES.md` for the large-file snapshot).
 
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 
@@ -20814,7 +20849,7 @@ than passed, and both spellings (`cleanupPreReceiveDonation` and its `…Checked
 twin, held pointwise equal on `.ok`) are pinned now, since a flip reaching one and
 not the other would break that equality instead of the reading.
 
-Plan: [`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md)
+Plan: [`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md)
 §3.8, whose §3.8.7 records the five things implementing it corrected and §3.8.8
 why the frozen mirror's trigger belongs in this cut rather than in HP8.
 
@@ -22680,7 +22715,7 @@ implementation is out of scope for a cut, the audit "must split the work into
 the proper sequence of PRs … rather than treating documentation surgery as a
 substitute for the code change."  This cut is the sequence.
 
-[`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md)
+[`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md)
 — **38 sub-tasks across 9 phases, HP1..HP9**, in execution order.  The
 correction is two changes in a **forced** order rather than one: the splice
 alone is unsound under this kernel's binding-driven trigger, because it re-heads
@@ -32925,7 +32960,7 @@ The phase-theorem manifest measures **909 theorems** across **1119** registered
 entries.
 
 WS-LC is registered in the workstream registry with its own plan,
-[`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
+[`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/dev_history/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
 — 51 sub-tasks across LC1..LC4, scoped ahead of WS-RR RR7 because the fine-lock
 migration tracks widen `withLockSet` footprints onto more syscall arms and the
 withdrawal is what makes those footprints unwindable.  What is still open, and
@@ -67882,7 +67917,7 @@ deadlock-freedom and serializability theorems.  See
 ## Unreleased — WS-SM SM2.E Panic-Hang Remediation (queued MCS-RW lock)
 
 Implements the
-[`docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md`](docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md)
+[`docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md`](docs/dev_history/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md)
 remediation: eliminate every panic and hang in the multi-core
 work, closing the documented `queued_rw_lock::cross_thread_tests`
 flakiness (~50 % hang rate under heavy host-side load) AND the
@@ -68016,7 +68051,7 @@ Refs: PR #790 (cherry-picked the Group A/B/C protocol fixes)
 ## Unreleased — WS-SM SM2.D (FFI bridge + integration for verified lock primitives)
 
 Implements all 8 sub-tasks of
-[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 §5.4: the FFI bridge connecting the verified Lean TicketLock and
 RwLock specifications to the Rust HAL implementations, plus the
 SM2.D.7 22-theorem lockPrimitives aggregator.
@@ -68168,7 +68203,7 @@ Axiom budget for SM2.D: 0 Lean axioms, 0 sorries.
 Items deferred past v1.0.0 with correctness impact: NONE.
 
 Follow-on: SM2.E (documentation) per
-[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 §5.5.
 
 ---
@@ -68708,7 +68743,7 @@ Plus audit-pass-3 defensive improvements:
 0 Lean axioms, 0 sorries.  All ARMv8.1-A LSE atomic semantics enter
 operationally via the SM2.A abstract memory model.
 
-See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3
+See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3
 for the full plan and
 [`docs/WORKSTREAM_HISTORY.md`](docs/REGISTERED_DEBT.md) for the
 combined SM2.A+B+C landing entry.
@@ -69170,7 +69205,7 @@ suite` still pass.  Full Tier 0+1+2+3 smoke test green.
 Follow-on: SM2.B (TicketLock spec + Rust impl), SM2.C (RwLock
 spec + Rust impl), SM2.D (FFI bridge + integration), SM2.E
 (documentation).  See
-[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 §§5.2..5.5.
 
 ## v0.31.8 — WS-SM Phase SM1.I landing (miscellaneous HAL improvements; closes SM1)
@@ -71212,7 +71247,7 @@ a single coherent cut.  21 sub-tasks across six categories deliver the
 type-level scaffolding and honesty patches WS-SM phases SM1..SM9
 build on top of — no runtime behavioural change at this cut, single-
 core boot path unchanged.  See
-[`docs/planning/SMP_FOUNDATIONS_PLAN.md`](docs/planning/SMP_FOUNDATIONS_PLAN.md)
+[`docs/planning/SMP_FOUNDATIONS_PLAN.md`](docs/dev_history/planning/SMP_FOUNDATIONS_PLAN.md)
 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
 context" carries the live tracking.
 

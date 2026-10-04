@@ -105,7 +105,7 @@ The earlier R4 sub-tasks have already landed: R4.B added an opaque-token-backed 
 | R4.A.7 | Witness theorem, discharge index, marker theorem (workstream close) |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ## Track C — `NoDupList ThreadId` (8 sub-PRs, ~970 LoC total)
 
@@ -121,7 +121,7 @@ The earlier R4 sub-tasks have already landed: R4.B added an opaque-token-backed 
 | R4.C.8 | Witness theorem, discharge index, marker theorem (workstream close) |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ## Commit ordering and dependencies
 

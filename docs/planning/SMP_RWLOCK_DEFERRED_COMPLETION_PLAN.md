@@ -21,7 +21,7 @@
 > table C, since each changes a datatype the whole SM2.C liveness surface
 > quantifies over and neither can ride along with a lock-implementation cut.
 > **Both are now owned by WS-LC**
-> ([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)),
+> ([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](../dev_history/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)),
 > scoped ahead of WS-RR RR7; its LC1 (v0.34.51) landed the abstract withdrawal
 > and its LC4 retires both rows.
 
@@ -32,7 +32,7 @@
 > known-deferred completeness story understates what "verified" means on the
 > one component every other subsystem's serialisability argument rests on.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-> **Origin plan**: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3 (closed at audit-pass-3, HEAD `1109bda`)
+> **Origin plan**: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3 (closed at audit-pass-3, HEAD `1109bda`)
 > **Audited closure cut**: PR #784 (SM2.C closure with three audit passes)
 > **Target releases**: originally v1.x.x post-v1.0.0; substantively
 > delivered early in the pre-v0.31.10 SM2.C-defer cut (see the landing
@@ -1278,7 +1278,7 @@ operationally.)
 ### Plans
 
 - **Master overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-- **Origin plan (closed)**: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+- **Origin plan (closed)**: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 - **Next consumer**: [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md) — SM3 consumes the post-deferred RwLock surface
 
 ### Source files (post-closure)

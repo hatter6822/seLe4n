@@ -71,6 +71,8 @@ Security goals:
 4. **CI/security policy synchronization**
    - `docs/CI_POLICY.md` records baseline scanner controls and the CodeQL blocking-gate policy.
    - Tier 3 anchors enforce presence of threat-model and installer-checksum hardening symbols.
+5. **SHA-pinning**
+   - Every GitHub Actions workflow reference uses a pinned commit SHA (WS-E1 F-14).
 
 ## 6) Residual risk and follow-on work
 
@@ -100,3 +102,18 @@ Tier 3 invariant surface anchors additionally check for:
   anchors the four original workflows; the all-workflows guarantee — every
   `uses:` in `.github/workflows/` SHA-pinned, `codebase_map_sync.yml`
   included — is Tier 0's directory-wide negative scan).
+
+## 8) Related security documents
+
+- [`docs/SECURITY_ADVISORY.md`](SECURITY_ADVISORY.md) — the documented security
+  advisories (SA-1 … SA-4).
+- [`docs/DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) — the production deployment
+  guide: security model, the mandatory labeling-context override, and the
+  pre-deployment checklist.
+- [`docs/hardware_validation/speculation_barriers.md`](hardware_validation/speculation_barriers.md)
+  — the HAL's Spectre v1/v2 mitigations (CSDB, SB, FEAT_CSV2) on Cortex-A76.
+- [`docs/INFORMATION_FLOW_ROADMAP.md`](INFORMATION_FLOW_ROADMAP.md) — the
+  information-flow trajectory.
+- [`docs/CI_POLICY.md`](CI_POLICY.md) and
+  [`docs/CI_TELEMETRY_BASELINE.md`](CI_TELEMETRY_BASELINE.md) — scanner controls
+  and CI observability.

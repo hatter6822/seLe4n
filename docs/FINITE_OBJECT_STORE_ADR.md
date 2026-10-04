@@ -4,7 +4,7 @@
 Accepted (WS-C7)
 
 ## Context
-`SystemState` historically stored objects as a total function `ObjId → Option KernelObject` and VSpace ASID resolution scanned a fixed synthetic range (`0..4095`). This hurt maintainability and made architecture behavior depend on a hard-coded discovery window. In parallel, `ServiceId` was an `abbrev` to `Nat`, violating the typed-identifier discipline used across the rest of the model.
+`SystemState` historically stored objects as a total function `ObjId → Option KernelObject` and VSpace ASID resolution scanned a fixed synthetic range (`0..4095`), and `ServiceId` was an `abbrev` to `Nat` rather than a typed wrapper like `ThreadId`, `ObjId` and `CPtr`. This hurt maintainability and made architecture behavior depend on a hard-coded discovery window. In parallel, `ServiceId` was an `abbrev` to `Nat`, violating the typed-identifier discipline used across the rest of the model.
 
 ## Decision
 1. Introduce a typed `ServiceId` wrapper in `SeLe4n/Prelude.lean` with `ofNat`, `toNat`, and `OfNat` support.
@@ -28,6 +28,11 @@ Accepted (WS-C7)
 
 This ADR's staged endpoint was reached and passed:
 
+- **WS-G1**: `Hashable` instances for every typed identifier, enabling
+  hash-map-backed stores.
+- **WS-G2**: the object store migrated to `Std.HashMap ObjId KernelObject`.
+- **WS-H7**: the closure-backed fields (`services`, `irqHandlers`,
+  `cdtSlotNode`, `cdtNodeSlot`) migrated to `Std.HashMap`.
 - **WS-G3**: `resolveAsidRoot` moved from `objectIndex` traversal to the
   O(1) `asidTable` lookup (`Kernel/Architecture/VSpace.lean`); Tier 3 now
   *forbids* objectIndex scanning in `VSpace.lean` — the inverse of the

@@ -136,7 +136,7 @@ impression:
 | 5 | Bare-metal Lean runtime hosting: heap/allocator, `lean_initialize_runtime_module`, `lean_io_mark_end_initialization`, the libc shims the runtime needs | Zero hits for either symbol anywhere in the tree (register finding 40). **The largest single unknown in the phase** | 2–4 w |
 | 6 | `@[export] lean_kernel_main` wrapping `bootAndInitialiseFromPlatform`, plus the RPi5 `PlatformConfig` and root task it consumes | `bootAndInitialiseFromPlatform` exists with no `@[export]` and no callers (register finding 41) | 1–2 w |
 | 7 | Install-ordering resolution for that entry | Already specified below, with two named options; the work is choosing and proving one | 2–4 d |
-| 8 | Per-core `lean_ready` marking, so the five dormant seams go live | Every seam is wired; **no core is marked ready anywhere in the tree** (CLAUDE.md standing constraint) | 3–5 d |
+| 8 | Per-core `lean_ready` marking, so the five dormant seams go live | Every seam is wired; **no core is marked ready anywhere in the tree** (standing constraint, `docs/agent_guide/WORKSTREAM_CONTEXT.md`) | 3–5 d |
 | 9 | Context-restore seam delivering the staged return frame | WS-RA obligation (1) in §2. Staging landed at `v0.33.38`; delivery is SM10.1's | 1–2 w |
 | 10 | Cancellation/timeout error-frame staging before `contextRestoreSeamLive` flips | WS-RA obligation (2), §9 registered debt. Without it a cancelled waiter resumes reading stale arguments as a return value | 3–5 d |
 | 11 | TTBR0 binding and a real context switch | `ffi_switch_to_thread` stores a `u64` into an atomic (register §9 `bootpath`) | 1–2 w |
@@ -254,7 +254,7 @@ lives in the plan that owns the work.
   **The measured WCRT claim**: while the entry lock stands, every kernel entry
   is serialised system-wide, so the live worst-case response time is the
   global-lock bound and `PerCoreWcrt.lean`'s fine-lock bound remains a
-  statement about the *intended* discipline (CLAUDE.md standing constraint).
+  statement about the *intended* discipline (standing constraint, `docs/agent_guide/WORKSTREAM_CONTEXT.md`).
   SM10.4's performance rows and any v1.0.0 latency claim must quote the bound
   the shipped image actually realises — and no bound in that surface converts to
   a *time* until `tCs` is measured on the board, which BP8 is the first point
@@ -283,7 +283,7 @@ a phase that claimed it.
 
 | §2 dependency | Verdict | What decided it |
 |---------------|---------|-----------------|
-| All of SM0..SM9 complete | **Met** | Every phase row in `CLAUDE.md`'s status index is LANDED or CLOSED, SM9 at `v0.33.100`; SM10 is the only open phase and its content is WS-BP |
+| All of SM0..SM9 complete | **Met** | Every phase row in the workstream status index (`docs/agent_guide/WORKSTREAM_CONTEXT.md`, formerly `CLAUDE.md`'s) is LANDED or CLOSED, SM9 at `v0.33.100`; SM10 is the only open phase and its content is WS-BP |
 | Acceptance gates for SM0..SM9 green | **Met** | The RR8.1 walk (`v0.35.55`, [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) §8), plus the tier stack re-run below |
 | WS-RA complete | **Met, with SM10.1's inherited half named** | `Architecture.timeoutFrame` and `Architecture.cancelledIpcFrame` resolve in the elaborated environment and `KernelError.ipcCancelled` is present, so §9's staging closed at `v0.34.67` as this section records.  What SM10.1 still owes is **delivery** at the context restore (BP7) |
 | WS-DT complete | **Met** | `dispatchCapabilityOnly_preserves_ipcInvariantFull` (production) and the two staged payoffs all resolve; the RR3.1 de-threading gate reports zero post-state bindings over all 178 bundle statements |
@@ -571,7 +571,7 @@ every step that does now sits in `SM10.5`, ahead of the validation.
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM10.6.1 | CHANGELOG v1.0.0 closure entry | `CHANGELOG.md` | M |
-| SM10.6.2 | Move WS-RC artefacts to dev_history/audits/, plus `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (a WS-RC artefact that sits under `docs/planning/`) | (file moves) | S |
+| SM10.6.2 | Move WS-RC artefacts to dev_history/audits/, plus `docs/dev_history/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (a WS-RC artefact that sits under `docs/planning/`) | (file moves) | S |
 | SM10.6.3 | Move WS-SM plan + per-phase docs to dev_history/planning/ — **19 file moves**, enumerated below | (19 file moves) | T |
 | SM10.6.4 | Tag v1.0.0 (maintainer-cut) | git tag | T |
 
@@ -657,7 +657,7 @@ and the only part that belongs in a plan:
 | Manual step | Why the bumper cannot do it |
 |-------------|------------------------------|
 | `CHANGELOG.md` — the `## v1.0.0 — <summary>` entry | Prose. Deliberately not a version site (see CLAUDE.md, *Not version sites*); the bumper only reminds you |
-| `CLAUDE.md` + `AGENTS.md` — active workstream WS-SM → **CLOSED** | A status transition, not a version string. The two files must stay byte-identical |
+| `docs/agent_guide/WORKSTREAM_CONTEXT.md` — active workstream WS-SM → **CLOSED** (its section then moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`); `CLAUDE.md` carries no workstream status | A status transition, not a version string |
 | `docs/CLAIM_EVIDENCE_INDEX.md` — v1.0.0 closure entries | New claims with new evidence cites |
 | `docs/codebase_map.json` — metrics beyond the version field | Regenerated by `./scripts/sync_documentation_metrics.sh`, not by the bumper |
 

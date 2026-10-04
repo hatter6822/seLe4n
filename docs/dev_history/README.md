@@ -62,6 +62,26 @@ Nothing here drives active development, planning, or execution.
 | `22-next-slice-development-path.md` | Next development path (v0.14.10 baseline, superseded) |
 | `24-comprehensive-audit-2026-workstream-planning.md` | WS-F audit remediation planning (completed) |
 
+### Retired workstream plans (`planning/`)
+
+Plans move here when their workstream closes — unless kernel source still
+cites them (source must not reference `docs/dev_history/`), in which case they
+stay in `docs/planning/` with a COMPLETE status line.
+
+| File | Description |
+|---|---|
+| `CLOSED_WORKSTREAM_CONTEXT.md` | Status sections of closed workstreams (WS-RA, WS-OD, WS-RM, WS-HP, WS-LC), formerly in `CLAUDE.md`'s "Active workstream context" |
+| `DONATION_POP_TRIGGER_PLAN.md` | WS-HP head-driven donation pop (complete) |
+| `REPLY_FRAME_REMOVAL_PLAN.md` | WS-RM `reply_remove` on the reply path (complete, v0.35.6) |
+| `REPLY_OBJECTS_COMPLETION_PLAN.md` | Reply-object completeness items (complete, v0.31.155) |
+| `SCHEDCONTEXT_DONATION_CHAIN_PLAN.md` | WS-OD SchedContext donation chains (complete, v0.35.2) |
+| `SMP_FOUNDATIONS_PLAN.md` | WS-SM SM0 foundations (closed, v0.31.3) |
+| `SMP_LOCK_DATATYPE_COMPLETION_PLAN.md` | WS-LC lock datatype completion (complete, v0.34.55) |
+| `SMP_PANIC_HANG_REMEDIATION_PLAN.md` | WS-SM SM2.E panic/hang remediation (landed) |
+| `SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` | WS-SM SM2 verified lock primitives (landed, v0.31.9) |
+| `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` | WS-RC R4 type-level promotion (complete) |
+| `IPC_INVARIANT_DETHREADING_PLAN.md`, `V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md`, `V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md`, `V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md`, `WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`, `WS_V_KERNEL_STARVATION_PREVENTION_PLAN.md`, `WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md`, `WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` | Plans archived before this index existed; each file's own status line is authoritative |
+
 ### Licensing research (`licensing_research/`)
 
 | File | Description |
@@ -71,8 +91,8 @@ Nothing here drives active development, planning, or execution.
 
 ## Audit lineage
 
-For the **active** audit and workstream plan, see
-`docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (WS-R).
-For the latest audit, see `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`.
-For workstream history, see `docs/WORKSTREAM_HISTORY.md`.
-The files here provide the predecessor audit chain for traceability only.
+The **active** audit baseline is `docs/audits/AUDIT_v0.30.11_*`, and the
+pre-SM10 completeness audit is `docs/planning/UNFINISHED_SMP_WORK.md`.
+Workstream status and history are in `docs/REGISTERED_DEBT.md` and
+`CHANGELOG.md`. The files here provide the predecessor audit chain for
+traceability only.

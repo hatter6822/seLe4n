@@ -470,7 +470,7 @@ All 11 sub-tasks LANDED on branch `claude/quirky-mayer-lSoD2`
 within the v0.31.9 release cut (mirroring the SM3.A / SM3.B
 landing pattern — no version bump; SM3.A..SM3.E close out together
 en route to v1.0.0).  See the CHANGELOG entry "WS-SM SM3.C
-LANDED" and CLAUDE.md / AGENTS.md "Active workstream context" for
+LANDED" and `docs/agent_guide/WORKSTREAM_CONTEXT.md` (formerly CLAUDE.md's "Active workstream context") for
 the full per-sub-task description.
 
 | Sub | Description | Files | Status |
@@ -508,7 +508,7 @@ All 7 sub-tasks LANDED on branch `claude/friendly-rubin-5wOsy`
 within the v0.31.9 release cut (mirroring the SM3.A / SM3.B / SM3.C
 landing pattern — no version bump; SM3.A..SM3.E close out together
 en route to v1.0.0).  See the CHANGELOG entry "WS-SM SM3.D LANDED"
-and CLAUDE.md / AGENTS.md "Active workstream context" for the full
+and `docs/agent_guide/WORKSTREAM_CONTEXT.md` (formerly CLAUDE.md's "Active workstream context") for the full
 per-sub-task description.
 
 | Sub | Description | Files | Status |
@@ -632,7 +632,7 @@ No new Lean axioms.
 ## 9. Cross-references
 
 - **Master overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-- **Prerequisites**: [`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md), [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+- **Prerequisites**: [`SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md), [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 - **Next phase**: [`SMP_PER_CORE_STATE_PLAN.md`](SMP_PER_CORE_STATE_PLAN.md) — SM4 builds atop SM3's lock discipline.
 
 ## 10. Theorem catalogue for SM3

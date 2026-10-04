@@ -1191,7 +1191,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      SM0.H) and TLB shootdown →
      [`SMP_TLB_SHOOTDOWN_PLAN.md`](../planning/SMP_TLB_SHOOTDOWN_PLAN.md)
    - Verified ticket lock + RW lock primitives for shared kernel state →
-     [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+     [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
    - Per-object lock acquisition discipline (LockId total order from SM0.I) →
      [`SMP_PER_OBJECT_LOCKS_PLAN.md`](../planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
    - Cache coherency model (MOESI on Cortex-A76, managed by hardware; software
@@ -1425,7 +1425,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 2.5. **WS-SM Phase SM2.B (post-v0.31.9) completes SM2.B** — the
    verified TicketLock primitive.  Closes the second sub-phase
    of SM2 ("Verified Lock Primitives") with all 16 sub-tasks
-   landed.  See `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`
+   landed.  See `docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`
    §5.2 for the full plan.
 
    **Abstract spec** (`SeLe4n.Kernel.Concurrency.Locks.TicketLock`):
@@ -1512,7 +1512,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    verified RwLock primitive (reader-writer lock with bit-packed
    atomic state).  Closes the third sub-phase of SM2 with all 22
    sub-tasks landed.  See
-   `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` §5.3 for
+   `docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` §5.3 for
    the full plan.
 
    **Abstract spec** (`SeLe4n.Kernel.Concurrency.Locks.RwLock`):
@@ -1759,7 +1759,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 2.7. **WS-SM Phase SM2.D (post-v0.31.9) completes SM2.D** — the
    FFI bridge and integration layer.  Closes the fourth sub-phase
    of SM2 with all 8 sub-tasks landed.  See
-   `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` §5.4 for
+   `docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` §5.4 for
    the full plan.
 
    **Lean FFI layer** (`SeLe4n/Platform/FFI.lean` + new

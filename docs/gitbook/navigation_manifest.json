@@ -93,7 +93,7 @@
       "pages": [
         {
           "title": "Claim vs Evidence Index",
-          "path": "31-claim-vs-evidence-index.md"
+          "path": "../CLAIM_EVIDENCE_INDEX.md"
         }
       ]
     },
@@ -102,27 +102,23 @@
       "pages": [
         {
           "title": "Threat Model and Security Hardening",
-          "path": "28-threat-model-and-security-hardening.md"
+          "path": "../THREAT_MODEL.md"
         },
         {
           "title": "VSpace + Bounded Memory Model (ADR)",
-          "path": "26-ws-b1-vspace-memory-adr.md"
+          "path": "../VSPACE_MEMORY_MODEL_ADR.md"
         },
         {
           "title": "Model Structure and Maintainability (ADR)",
-          "path": "30-ws-c7-model-structure-and-maintainability.md"
+          "path": "../FINITE_OBJECT_STORE_ADR.md"
         },
         {
           "title": "CI Maturity and Telemetry Baseline",
-          "path": "29-ci-maturity-and-telemetry-baseline.md"
+          "path": "../CI_TELEMETRY_BASELINE.md"
         },
         {
           "title": "Documentation Sync and Coverage Matrix",
-          "path": "25-documentation-sync-and-coverage-matrix.md"
-        },
-        {
-          "title": "Documentation Deduplication Map",
-          "path": "27-documentation-deduplication-map.md"
+          "path": "../DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md"
         }
       ]
     },

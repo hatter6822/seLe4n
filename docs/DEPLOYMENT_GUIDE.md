@@ -146,17 +146,11 @@ isolation beyond the kernel model's scope.
 
 ### 2.1 Security Labeling Override (F-07) -- MANDATORY
 
-The `defaultLabelingContext` (`Policy.lean`) assigns `publicLabel` (low
-confidentiality, untrusted integrity) to **ALL** entities. Under this labeling,
-`securityFlowsTo` is trivially `true` for all entity pairs, meaning **no
-information flow is restricted**.
-
-**Formal proof of insecurity** (`SeLe4n/Kernel/InformationFlow/Policy.lean`):
-
-| Theorem | Proves |
-|---------|--------|
-| `defaultLabelingContext_insecure` | All object pairs allow flow |
-| `defaultLabelingContext_all_threads_observable` | All threads mutually observable |
+The `defaultLabelingContext` labels every entity `publicLabel`, so **no
+information flow is restricted** — proved by `defaultLabelingContext_insecure`
+and `defaultLabelingContext_all_threads_observable`
+(`SeLe4n/Kernel/InformationFlow/Policy.lean`). The advisory is
+[SA-2 in `SECURITY_ADVISORY.md`](SECURITY_ADVISORY.md#sa-2-default-labeling-context-defeats-information-flow-enforcement-m-2).
 
 **Production deployments MUST override `defaultLabelingContext`** with a
 domain-specific labeling policy. Failure to do so negates all information-flow
