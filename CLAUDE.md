@@ -2,10 +2,11 @@
 
 > `AGENTS.md` is a short pointer file that sends non-Claude coding agents
 > (and any tool that follows the AGENTS.md convention) here and lists this
-> file's sections; the rules are stated only here. Edit `CLAUDE.md` only, and
-> mirror any section heading change in `AGENTS.md`'s list (docs-sync checks
-> it). These rules bind every contributor, human or agent;
-> `docs/DEVELOPMENT.md` is the how-to guide that links back here.
+> file's sections; the rules are stated only here. Edit `CLAUDE.md` only; after
+> a section heading change run `python3 scripts/generate_agents_md.py`
+> (docs-sync checks `AGENTS.md` byte for byte). These rules bind every
+> contributor, human or agent; `docs/DEVELOPMENT.md` is the how-to guide that
+> links back here.
 
 ## What this project is
 

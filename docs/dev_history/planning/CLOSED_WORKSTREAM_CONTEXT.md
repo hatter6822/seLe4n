@@ -66,7 +66,7 @@ the conclusion needs and refuses this write.  The information-flow half needs no
 new argument because the frame goes into the victim's *own* TCB, which holds
 only because `writeReturnFrameToTcb` deliberately does not touch `machine`.
 
-Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](../../planning/SYSCALL_RETURN_ABI_PLAN.md).
+Plan: [`docs/dev_history/planning/SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md).
 
 ### WS-OD SchedContext donation chains — COMPLETE (registered v0.34.98; OD1 v0.34.108, OD2 v0.34.125, OD3 v0.35.1, OD4–OD6 v0.35.2)
 

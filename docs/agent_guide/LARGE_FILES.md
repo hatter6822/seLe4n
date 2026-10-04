@@ -1,6 +1,6 @@
 # Reading large files (agent reference)
 
-> How to read large files, and the curated Known large files list checked by `scripts/find_large_lean_files.sh --check`.  Moved verbatim from `CLAUDE.md` (and its `AGENTS.md`
+> How to read large files, and the curated Known large files list checked by `scripts/find_large_lean_files.sh --check`.  Moved verbatim from `CLAUDE.md` (and its former `AGENTS.md`
 > mirror) so the auto-loaded agent guidance stays small; only relative
 > link targets were rewritten to resolve from this directory.  See
 > [`CLAUDE.md`](../../CLAUDE.md) for the condensed, binding statement

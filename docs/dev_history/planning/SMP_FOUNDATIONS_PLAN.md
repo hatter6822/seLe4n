@@ -531,13 +531,13 @@ No new Lean axioms.
 - **Master overview**:
   [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 - **Next phase (Rust HAL)**:
-  [`SMP_RUST_HAL_PLAN.md`](../../planning/SMP_RUST_HAL_PLAN.md) — depends on
+  [`SMP_RUST_HAL_PLAN.md`](SMP_RUST_HAL_PLAN.md) — depends on
   SM0.G (PlatformBinding extension), SM0.N (TPIDR_EL1 setup).
 - **Verified lock primitives**:
   [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
   — depends on SM0.E (CoreId), SM0.I (LockKind, LockId).
 - **Per-core state**:
-  [`SMP_PER_CORE_STATE_PLAN.md`](../../planning/SMP_PER_CORE_STATE_PLAN.md) —
+  [`SMP_PER_CORE_STATE_PLAN.md`](SMP_PER_CORE_STATE_PLAN.md) —
   depends on SM0.E, SM0.G.
 
 ## 9. Acceptance gate for SM0

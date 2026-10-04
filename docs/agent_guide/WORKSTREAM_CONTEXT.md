@@ -1,7 +1,7 @@
 # Workstream context (agent reference)
 
 > Status of the active workstreams and the standing constraints new code must
-> assume.  Moved verbatim from `CLAUDE.md` (and its `AGENTS.md` mirror) so the
+> assume.  Moved verbatim from `CLAUDE.md` (and its former `AGENTS.md` mirror) so the
 > auto-loaded agent guidance stays small; only relative link targets were
 > rewritten.  The sections for **closed** workstreams (WS-RA, WS-OD, WS-RM,
 > WS-HP, WS-LC) are archived verbatim in

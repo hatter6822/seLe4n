@@ -555,10 +555,10 @@ python3 scripts/generate_doc_navigation.py       # GitBook README + SUMMARY
 python3 scripts/report_current_state.py          # current metrics, one per line
 ```
 
-`AGENTS.md` is a pointer file to `CLAUDE.md` — edit `CLAUDE.md` only, and
-mirror any change to its `## ` section headings in `AGENTS.md`'s section list;
-`test_docs_sync.sh` checks that the list matches and that `AGENTS.md` is a
-regular file.
+`AGENTS.md` is a pointer file generated from `CLAUDE.md`'s `## ` headings —
+edit `CLAUDE.md` only, and after a heading change run
+`python3 scripts/generate_agents_md.py`; `test_docs_sync.sh` runs it with
+`--check` (a byte-for-byte match, and a regular file rather than a symlink).
 
 ### Fixture updates
 

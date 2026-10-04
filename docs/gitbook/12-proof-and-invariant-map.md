@@ -7,8 +7,9 @@ This chapter is a **map**, not a history. What each version added is in
 [`CHANGELOG.md`](https://github.com/hatter6822/seLe4n/blob/main/CHANGELOG.md);
 what a claim rests on is in
 [`CLAIM_EVIDENCE_INDEX.md`](https://github.com/hatter6822/seLe4n/blob/main/docs/CLAIM_EVIDENCE_INDEX.md);
-what new code must assume about the tree today is in `CLAUDE.md`'s *Standing
-constraints and registered debt*.
+what new code must assume about the tree today is in the *Standing
+constraints and registered debt* of
+[`docs/agent_guide/WORKSTREAM_CONTEXT.md`](../agent_guide/WORKSTREAM_CONTEXT.md).
 
 ## 1. How invariants are layered
 
@@ -788,7 +789,7 @@ platform rather than with the lock.
 > thread carried an inherited boost. The live field clear is now
 > `TCB.restoredToReady`, called by both surfaces: it had been spelled inline
 > inside `updateTcb`'s lambda, so the mirror could only copy its field list.
-> Canonical: [`CLAUDE.md`](../../CLAUDE.md) and
+> Canonical: [`WORKSTREAM_CONTEXT.md`](../agent_guide/WORKSTREAM_CONTEXT.md) and
 > [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §R5.D.
 
 ## 4. Per-core (SMP) lifts

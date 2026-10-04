@@ -1,6 +1,6 @@
 # Key conventions — full text (agent reference)
 
-> The full text of the project's key conventions and gate-writing rules, with the review history that earned each one.  Moved verbatim from `CLAUDE.md` (and its `AGENTS.md`
+> The full text of the project's key conventions and gate-writing rules, with the review history that earned each one.  Moved verbatim from `CLAUDE.md` (and its former `AGENTS.md`
 > mirror) so the auto-loaded agent guidance stays small; only relative
 > link targets were rewritten to resolve from this directory.  See
 > [`CLAUDE.md`](../../CLAUDE.md) for the condensed, binding statement

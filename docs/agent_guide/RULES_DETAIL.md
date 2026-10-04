@@ -1,6 +1,6 @@
 # Agent rules — full text (agent reference)
 
-> The full text of the agent rules that `CLAUDE.md` states in condensed form.  Moved verbatim from `CLAUDE.md` (and its `AGENTS.md`
+> The full text of the agent rules that `CLAUDE.md` states in condensed form.  Moved verbatim from `CLAUDE.md` (and its former `AGENTS.md`
 > mirror) so the auto-loaded agent guidance stays small; only relative
 > link targets were rewritten to resolve from this directory.  See
 > [`CLAUDE.md`](../../CLAUDE.md) for the condensed, binding statement
@@ -336,7 +336,7 @@ Concretely:
   and CHANGELOG entries they are effectively frozen.
 
 This applies to every plan under `docs/planning/`, and to the per-phase
-tables in `CLAUDE.md`'s status index.
+tables in the status index of `docs/agent_guide/WORKSTREAM_CONTEXT.md`.
 
 **The structural half is machine-checked.**
 `scripts/check_workstream_plan.py` (Tier 0) holds every plan that declares an
@@ -344,8 +344,8 @@ exact `Sub-task count` to its own arithmetic: sub-task numbers run 1..N per
 phase, the phase map matches the rows, the declared total matches the phase
 map, a findings column sums to its acceptance total, no row consumes itself or
 a later one, and every `<PREFIX><phase>.<sub>` citation — in the plan and in
-`UNFINISHED_SMP_WORK.md`, `REGISTERED_DEBT.md`, `CLAUDE.md` and `AGENTS.md`
-— resolves to a real row.  It reads the git index, so it checks what is being
+`UNFINISHED_SMP_WORK.md`, `REGISTERED_DEBT.md`, `CLAUDE.md`, `AGENTS.md` and
+`docs/agent_guide/WORKSTREAM_CONTEXT.md` — resolves to a real row.  It reads the git index, so it checks what is being
 committed rather than what happens to be in the tree.  Legacy letter-group
 plans (`SM6.A.1`) and plans declaring an estimate range are reported but not
 held to flat numbering; closed workstreams are not renumbered.
