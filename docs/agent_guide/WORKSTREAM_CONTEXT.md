@@ -123,9 +123,16 @@ by path, because Tier 0 forbids `docs/dev_history/` in `SeLe4n/`, `Main.lean`,
 after the workstream (`WS-SM SM3.A.10`, `WS-RA RA.B.5b`, `WS-RR RR8.12`) is a row
 in that plan; a `§` after a phase ID (`WS-SM SM6 §3.1`) is a section of it.
 Each plan's status line is its status when archived; current status is the
-phase table above and `docs/REGISTERED_DEBT.md`.  Tier 0
-(`scripts/check_workstream_id_resolution.py`) fails when a workstream those
-trees cite resolves to no row here, no live plan title and no register section.
+phase table above and `docs/REGISTERED_DEBT.md`.
+
+Tier 0 (`scripts/check_workstream_id_resolution.py`) resolves every citation in
+those trees at the level it is written:
+- A bare `WS-RA` needs a row here, a live plan title or a register section.
+- A phase (`WS-SM SM6.C`) picks the row with the longest matching ID. That
+  row's plan must define the phase key (`SM6`) in a heading, a table row's first
+  cell or a sub-task row. If the plan numbers that phase's sub-tasks flat
+  (`| HP1.2 |`), a flat citation must be one of those rows.
+- A suffix (`WS-H12b`, `WS-K-F5`) must be defined whole.
 
 | ID | Archived plan | Closed |
 |----|---------------|--------|
@@ -167,7 +174,9 @@ Each workstream before WS-RC was planned in one audit workstream plan, archived
 under `docs/dev_history/`.  Its sub-IDs (`WS-H12b`, `WS-K-F5`, `WS-J1-D`,
 `WS-Q1-D`) are sections of that plan, and its version range is its row in the
 workstream registry of `docs/REGISTERED_DEBT.md`.  Only workstreams that code
-still cites are listed.
+still cites are listed.  The milestone era reused the `WS-M` prefix: `WS-M5`
+alone is WS-M's phase 5, while `WS-M5-C` and `WS-M6-A`–`C` are milestone
+workstreams with rows of their own.
 
 | ID | Archived plan |
 |----|---------------|
@@ -184,6 +193,8 @@ still cites are listed.
 | WS-K | [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md) |
 | WS-L | [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) |
 | WS-M | [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) |
+| WS-M5-C | Milestone M5's policy-surface workstream: [`15-m5-development-blueprint.md`](../dev_history/gitbook/15-m5-development-blueprint.md) |
+| WS-M6 | Milestone M6's workstreams A–C: [`18-m6-execution-plan-and-workstreams.md`](../dev_history/gitbook/18-m6-execution-plan-and-workstreams.md) |
 | WS-N | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) |
 | WS-Q | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) |
 | WS-R | [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) |
@@ -197,7 +208,7 @@ still cites are listed.
 | WS-AD | [`AUDIT_v0.25.10_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md) |
 | WS-AG | [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md) |
 | WS-AK | [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) |
-| WS-AL, WS-AM | No plan of their own.  Both continue WS-AK's AK7 cascade, which [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) proposes as WS-AL; their record is `CHANGELOG.md` v0.29.13–v0.30.0. |
+| WS-AL, WS-AM | No plan of their own.  Both continue WS-AK's AK7 cascade, which [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) proposes as WS-AL.  Their phases (`AM1`, `AM4`, …) are the `###` headings of the v0.29.13–v0.30.0 entries in [`CHANGELOG.md`](../../CHANGELOG.md). |
 | WS-AN | [`AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md) |
 
 ### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24; slice 2, the Lean `virt` binding and its boot entry, v0.36.25; slice 3, the Lean-linked image booted on four PEs to every core's first idle dispatch in CI, v0.36.26, completing BP8.1; BP8.2, the four-PE bring-up gate executed in CI, v0.36.27; BP8.4, the Tier-4 gates executed on the `virt` test image, v0.36.28; BP8.5, the per-core counters read on the booted machine, v0.36.29; the BP2.4, BP2.5 and BP4.2 acceptance boxes decided by QEMU runs, v0.36.31)
@@ -5633,8 +5644,8 @@ code may assume:
   premise the kernel refutes.
 
   (5) **The refutation is executed, and it has a control.**
-  `tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09 drives the configure and
-  the pop as **live operations** and asserts both pairs disagree; WS-RR-PRIO-10 is
+  `tests/PriorityManagementSuite.lean`'s `pm_od_09` drives the configure and
+  the pop as **live operations** and asserts both pairs disagree; `pm_od_10` is
   the same fixture and the same pop with the reconfiguration omitted, where both
   pairs agree — which is what makes the witness a statement about the
   reconfiguration rather than about the pop, and what shows the pop is not what

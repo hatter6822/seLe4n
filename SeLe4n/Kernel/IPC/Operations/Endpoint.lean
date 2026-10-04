@@ -2117,7 +2117,7 @@ band read is `tcb.priority` (`resolveEffectivePrioDeadline_fst_eq_boostedPriorit
 and every domain read is `tcb.domain` (`effectiveSchedParams_domain_eq`), so the
 recipient resumes at its own band in its own partition.  The class fix is to stop
 storing either parameter twice, which is a scheduling-model change WS-CB owns;
-`tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09/10 is the executed
+`tests/PriorityManagementSuite.lean`'s `pm_od_09`/`pm_od_10` is the executed
 refutation and its control. -/
 @[inline] def donationReturnSchedContext (sc : SchedContext)
     (originalOwner : SeLe4n.ThreadId) (nextHead? : Option SeLe4n.ReplyId)
@@ -4810,7 +4810,7 @@ theorem replyFrameBelow?_of_head (st : SystemState) (rid : SeLe4n.ReplyId) (r : 
     (hHead : r.next = some (.head sc)) : replyFrameBelow? st rid = none := by
   unfold replyFrameBelow?; rw [replyFrameAbove?_of_head st rid r sc hR hHead]
 
-/-- **WS-HP HP1.4: the resolver is characterised** -- a `some` answer is a
+/-- **WS-HP HP1: the resolver is characterised** -- a `some` answer is a
 resolving frame that has a frame above it and whose own `prev` names the answer.
 The direction the splice's write-membership proof reads. -/
 theorem replyFrameBelow?_eq_some {st : SystemState} {rid below : SeLe4n.ReplyId}

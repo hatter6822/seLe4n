@@ -1023,8 +1023,8 @@ while nothing moves either home during it, and `schedContextConfigure` on a
 **donated** reservation moves one: its propagation is gated on the donee's
 `ownScId?`, which is `none`, so `sc.domain` changes alone and the pop then
 rebinds the origin under it.  `tests/PriorityManagementSuite.lean`'s
-WS-RR-PRIO-09 drives exactly that, through two live operations, with
-WS-RR-PRIO-10 as the unreconfigured control.
+`pm_od_09` drives exactly that, through two live operations, with
+`pm_od_10` as the unreconfigured control.
 
 Neither reconciliation is available to the pop: writing `tcb.domain :=
 sc.domain` would **migrate a thread's partition** on an IPC reply, at the

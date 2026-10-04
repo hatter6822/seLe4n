@@ -1,31 +1,45 @@
 #!/usr/bin/env python3
-"""Every workstream that kernel code cites resolves to a plan a reader can open.
+"""Every workstream ID that kernel code cites resolves to the plan defining it.
 
 `SeLe4n/`, `Main.lean`, `tests/` and `rust/` may not name `docs/dev_history/`
 (Tier 0), so they cite a closed plan by its workstream ID (`WS-OD`,
 `WS-SM SM6.C`, `WS-H12b`).  That holds only while something live maps the ID
 back to a file.  The *Archived plans by ID* section of
 `docs/agent_guide/WORKSTREAM_CONTEXT.md` is that map, and a plan archived
-without a row there turns every citation of it into a dead end.  This gate
-derives the cited workstreams from those trees and fails when one resolves to
-none of:
+without a row there turns every citation of it into a dead end.
 
-* a row of the *Archived plans by ID* section whose linked plan exists;
-* the `# ` title of a live plan in `docs/planning/` or `docs/audits/`;
-* a `## WS-` section of `docs/REGISTERED_DEBT.md` (WS-SL, WS-IN, WS-AP and
-  WS-XV keep their plan there).
+**A citation resolves at the level it is written.**
 
-**The unit is the workstream family, not the phase.**  A family is the capital
-run after `WS-`: `WS-H12b` is H, `WS-J1-D` is J, `WS-K-F5` is K, and
-`WS-SM SM6.C` is SM.  A phase-level answer is not well defined: WS-SM and
-WS-RC each have a live plan that covers every phase, beside archived plans for
-single phases, so whether `WS-RC R4` "resolves" would depend on which of the
-two counts.  The family-level question has one answer.
+* `WS-RA`, with no phase, resolves when a lookup row, the `# ` title of a live
+  plan in `docs/planning/` or `docs/audits/`, or a `## WS-` section of
+  `docs/REGISTERED_DEBT.md` names the workstream.
+* `WS-SM SM6.C`, with a phase token, first picks its plan.  The lookup row
+  whose ID is the longest prefix of the token wins (`WS-SM SM6`; never
+  `WS-SM SM1` for `SM10`), so where a workstream's rows split by phase the
+  phase picks the row.  With no such row, the candidates are the workstream's
+  phase-free rows and the live plans titled with it.  The token's **phase key**
+  (`SM6`, `R4`, `RA.B`) must be defined by a candidate.  Where that plan
+  numbers the phase's sub-tasks in the flat form `check_workstream_plan.py`
+  reads (`| HP1.2 |`), a flat token (`HP1.4`), or each end of a flat range
+  (`RR6.12-RR6.14`), must be one of them as well.
+* `WS-H12b`, `WS-J1-D`, `WS-K-F5`, with a suffix on the code, must be defined
+  whole by a plan its row picks, by the same longest-prefix rule.
 
-The trees are the ones Tier 0 forbids `docs/dev_history/` in, for the reason
-that gate gives: they must cite by ID.  `scripts/` and `docs/` may cite a path,
-and `scripts/` also holds gate fixtures and placeholders (`WS-XX`) that name no
-workstream.
+"Defined" is structural: a token of a heading, a token of a table row's first
+cell, a flat sub-task row, or an ancestor of one (`SM9.A` of `SM9.A.1`).  It is
+read with fenced blocks blanked by `check_workstream_plan.prose_view`, and it
+uses that gate's `SUBTASK_ROW`, so the two gates read a row the same way.  A
+mention in prose does not define.
+
+Letter-group plans (`SM9.A.1`) are held to the phase key, not the whole token.
+They define sub-tasks through ranges (`SM9.A.6-.A.13`), `(a–f)` suffixes and
+prose, which no structural reading enumerates.
+
+A citation the gate cannot place fails; nothing defaults to a pass.  A phase
+token wrapped onto the next comment line is read with its citation.  The trees
+are the ones Tier 0 forbids `docs/dev_history/` in: they must cite by ID.
+`scripts/` and `docs/` may cite a path, and `scripts/` also holds gate fixtures
+and placeholders (`WS-XX`) that name no workstream.
 
 Everything is read from the git index, as every Tier 0 scanner reads it.  A
 derivation that finds no citation, no lookup section or no lookup row fails
@@ -41,6 +55,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from check_workstream_plan import SUBTASK_ROW, prose_view  # noqa: E402
 from indexed_source import (  # noqa: E402  (needs the path insert above)
     DerivationFailed,
     indexed_contents,
@@ -54,8 +69,22 @@ LOOKUP_HEADING = "Archived plans by ID"
 REGISTER = "docs/REGISTERED_DEBT.md"
 LIVE_PLAN_DIRS = ("docs/planning", "docs/audits")
 
+_PHASE_TOKEN = (r"[A-Z]+(?:\d+|\.[A-Z])(?:[.\-][A-Za-z0-9]+)*"
+                r"(?:\.\.[A-Z]+\d+(?:\.\d+)*)?")
+CITE_RE = re.compile(
+    r"\bWS-(?P<fam>[A-Z]+)"
+    r"(?P<att>(?:\d+[a-z]?)?(?:-[A-Z]+\d*[a-z]?|-\d+)*)"
+    r"(?:[ \t]+(?P<tok>" + _PHASE_TOKEN + r"))?")
+# The line a wrapped phase token continues on, after its comment leader.
+CONTINUATION_RE = re.compile(
+    r"^\s*(?:--|//[/!]?|#|\*|/--?|/-!)?\s*(?P<tok>" + _PHASE_TOKEN + r")")
 FAMILY_RE = re.compile(r"\bWS-([A-Z]+)")
+PHASE_KEY_RE = re.compile(r"[A-Z]+(?:\d+|\.[A-Z]+)")
+FLAT_ID_RE = re.compile(r"[A-Z]+\d+(?:\.\d+)+")
+RANGE_RE = re.compile(r"([A-Z]+\d+(?:\.\d+)+)(?:-|\.\.)([A-Z]+\d+(?:\.\d+)+)")
+TOKEN_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.\-]*[A-Za-z0-9])?")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
+FIRST_CELL_RE = re.compile(r"^\|([^|]*)\|")
 LINK_RE = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)")
 SEPARATOR_RE = re.compile(r"^\|[\s:|-]+\|$")
 REGISTER_SECTION_RE = re.compile(r"^##\s+WS-([A-Z]+)\b", re.M)
@@ -65,13 +94,37 @@ class GateError(Exception):
     """The derivation produced no answer, so the gate fails instead of passing."""
 
 
-def cited_families(texts: dict[str, str]) -> dict[str, list[str]]:
-    """Each cited family, with its citation sites as `path:line`."""
-    sites: dict[str, list[str]] = {}
+def citations_in(line: str, next_line: str = "") -> list[tuple[str, str, str]]:
+    """`(family, key, kind)` for each citation on `line`.
+
+    `kind` is `family` (`WS-RA`, key empty), `phase` (`WS-SM SM6.C`, key the
+    token) or `suffix` (`WS-H12b`, key `H12b`).  A citation ending the line
+    takes its phase token from the start of `next_line`, after a comment leader.
+    """
+    out = []
+    for m in CITE_RE.finditer(line):
+        fam, att, tok = m.group("fam"), m.group("att"), m.group("tok")
+        if not att and not tok and not line[m.end():].strip():
+            cont = CONTINUATION_RE.match(next_line)
+            tok = cont.group("tok") if cont else None
+        if att:
+            out.append((fam, fam + att, "suffix"))
+        elif tok:
+            out.append((fam, tok.rstrip(".-"), "phase"))
+        else:
+            out.append((fam, "", "family"))
+    return out
+
+
+def cited(texts: dict[str, str]) -> dict[tuple[str, str, str], list[str]]:
+    """Each distinct citation, with its sites as `path:line`."""
+    sites: dict[tuple[str, str, str], list[str]] = {}
     for path in sorted(texts):
-        for lineno, line in enumerate(texts[path].splitlines(), 1):
-            for family in sorted(set(FAMILY_RE.findall(line))):
-                sites.setdefault(family, []).append(f"{path}:{lineno}")
+        lines = texts[path].splitlines()
+        for i, line in enumerate(lines):
+            following = lines[i + 1] if i + 1 < len(lines) else ""
+            for cite in dict.fromkeys(citations_in(line, following)):
+                sites.setdefault(cite, []).append(f"{path}:{i + 1}")
     return sites
 
 
@@ -93,11 +146,14 @@ def lookup_section(text: str) -> list[str]:
     return lines[start:]
 
 
-def lookup_families(text: str, indexed: set[str]) -> tuple[set[str], list[str]]:
-    """Families named by a lookup row whose plan exists, and the broken rows."""
-    families: set[str] = set()
+def lookup_rows(text: str, indexed: set[str]):
+    """`(ids, plans)` per lookup row whose plan exists, and the broken rows.
+
+    `ids` are the row's first-cell citations, parsed as source is parsed, so a
+    row and a citation compare on the same key.
+    """
+    rows: list[tuple[list[tuple[str, str, str]], list[str]]] = []
     problems: list[str] = []
-    rows = 0
     for line in lookup_section(text):
         row = line.strip()
         if not row.startswith("|") or SEPARATOR_RE.match(row):
@@ -105,105 +161,204 @@ def lookup_families(text: str, indexed: set[str]) -> tuple[set[str], list[str]]:
         first = row.strip("|").split("|", 1)[0].strip()
         if first == "ID":
             continue
-        rows += 1
-        ids = FAMILY_RE.findall(first)
-        targets = {
+        ids = citations_in(first)
+        plans = [
             posixpath.normpath(posixpath.join(posixpath.dirname(LOOKUP_DOC), t))
             for t in LINK_RE.findall(row)
-        }
+        ]
+        plans = [p for p in plans if p in indexed]
         if not ids:
             problems.append(f"lookup row names no workstream: {row[:90]}")
-        elif not targets & indexed:
+        elif not plans:
             problems.append(f"lookup row for {first} links no plan the index holds")
         else:
-            families.update(ids)
-    if rows == 0:
+            rows.append((ids, plans))
+    if not rows and not problems:
         raise GateError(f"{LOOKUP_DOC}: '{LOOKUP_HEADING}' has no table rows")
-    return families, problems
+    return rows, problems
 
 
-def live_families(texts: dict[str, str], plan_paths: list[str]) -> set[str]:
-    """Families named by a live plan's title or by a register section."""
-    families: set[str] = set()
+def live_titles(texts: dict[str, str], plan_paths: list[str]) -> dict[str, list[str]]:
+    """Each workstream named by a live plan's `# ` title, with those plans."""
+    titled: dict[str, list[str]] = {}
     for path in plan_paths:
         for line in texts.get(path, "").splitlines():
             if line.startswith("# "):
-                families.update(FAMILY_RE.findall(line))
+                for fam in dict.fromkeys(FAMILY_RE.findall(line)):
+                    titled.setdefault(fam, []).append(path)
                 break
-    if REGISTER not in texts:
-        raise GateError(f"{REGISTER}: not in the index")
-    families.update(REGISTER_SECTION_RE.findall(texts[REGISTER]))
-    return families
+    return titled
+
+
+def defined_ids(text: str) -> tuple[set[str], set[str]]:
+    """The IDs a plan defines structurally, and its flat sub-task rows."""
+    view = prose_view(text)
+    found: set[str] = set()
+    for line in view.splitlines():
+        heading = HEADING_RE.match(line)
+        cell = FIRST_CELL_RE.match(line) if not heading else None
+        source = heading.group(2) if heading else cell.group(1) if cell else None
+        if source is None:
+            continue
+        for token in TOKEN_RE.findall(source):
+            found.add(token)
+            if token.startswith("WS-"):
+                found.add(token[3:])
+    rows = {f"{m.group(1)}.{m.group(2)}" for m in SUBTASK_ROW.finditer(view)}
+    found |= rows
+    for token in list(found):
+        parts = token.split(".")
+        found.update(".".join(parts[:k]) for k in range(1, len(parts)))
+    return found, rows
+
+
+def _within(prefix: str, key: str) -> bool:
+    """`key` is `prefix` or extends it past a non-alphanumeric boundary."""
+    return key == prefix or (key.startswith(prefix) and not key[len(prefix)].isalnum())
+
+
+class Resolver:
+    """Answers one citation against the lookup rows, live titles and register."""
+
+    def __init__(self, rows, titled, sections, texts):
+        self.rows, self.titled, self.sections, self.texts = rows, titled, sections, texts
+        self._defined: dict[str, tuple[set[str], set[str]]] = {}
+
+    def defined(self, path: str) -> tuple[set[str], set[str]]:
+        if path not in self._defined:
+            self._defined[path] = defined_ids(self.texts[path])
+        return self._defined[path]
+
+    def candidates(self, fam: str, key: str) -> list[str]:
+        """The plans a citation reads: its longest-prefix row, else the rest."""
+        best, best_len = None, -1
+        for ids, plans in self.rows:
+            for row_fam, row_key, _ in ids:
+                if row_fam == fam and row_key and key and _within(row_key, key):
+                    if len(row_key) > best_len:
+                        best, best_len = plans, len(row_key)
+        if best is not None:
+            return best
+        free = [p for ids, plans in self.rows
+                for row_fam, row_key, _ in ids if row_fam == fam and not row_key
+                for p in plans]
+        return list(dict.fromkeys(free + self.titled.get(fam, [])))
+
+    def error(self, fam: str, key: str, kind: str) -> str | None:
+        """Why the citation does not resolve, or None when it does."""
+        named = any(row_fam == fam for ids, _ in self.rows for row_fam, _, _ in ids)
+        if kind == "family":
+            if named or fam in self.titled or fam in self.sections:
+                return None
+            return "names no lookup row, live plan title or register section"
+        if any((fam, key) == (f, k) for ids, _ in self.rows for f, k, _ in ids):
+            return None
+        plans = self.candidates(fam, key)
+        if not plans:
+            return "resolves to no plan: no lookup row and no live plan title"
+        names = ", ".join(posixpath.basename(p) for p in plans)
+        if kind == "suffix":
+            if any(key in self.defined(p)[0] for p in plans):
+                return None
+            return f"{key} is defined by none of {names}"
+        phase = PHASE_KEY_RE.match(key)
+        holders = [p for p in plans if phase and phase.group(0) in self.defined(p)[0]]
+        if not holders:
+            return f"phase {phase.group(0) if phase else key} is defined by none of {names}"
+        ends = RANGE_RE.fullmatch(key)
+        flat = [e for e in (ends.groups() if ends else (key,)) if FLAT_ID_RE.fullmatch(e)]
+        for end in flat:
+            enumerating = [p for p in holders
+                           if any(r.startswith(phase.group(0) + ".")
+                                  for r in self.defined(p)[1])]
+            if enumerating and not any(end in self.defined(p)[0] for p in enumerating):
+                return (f"{end} is not a sub-task row of "
+                        f"{', '.join(posixpath.basename(p) for p in enumerating)}")
+        return None
 
 
 def check(repo: str) -> int:
-    """0 when every cited family resolves, 1 otherwise."""
-    code_paths = listed_at(repo, ":", *CODE_TREES)
-    code = indexed_contents(repo, code_paths)
-    cited = cited_families(code)
-    if not cited:
+    """0 when every citation resolves at its own level, 1 otherwise."""
+    code = indexed_contents(repo, listed_at(repo, ":", *CODE_TREES))
+    sites = cited(code)
+    if not sites:
         raise GateError(f"no WS- citation in {', '.join(CODE_TREES)}")
 
-    indexed = set(listed_at(repo, ":", "docs"))
-    plan_paths = sorted(
-        p for p in indexed
-        if posixpath.dirname(p) in LIVE_PLAN_DIRS and p.endswith(".md")
-    )
-    docs = indexed_contents(repo, [LOOKUP_DOC, REGISTER, *plan_paths])
-    if LOOKUP_DOC not in docs:
+    indexed = set(listed_at(repo, ":"))
+    lookup = indexed_contents(repo, [LOOKUP_DOC, REGISTER])
+    if LOOKUP_DOC not in lookup:
         raise GateError(f"{LOOKUP_DOC}: not in the index")
-    archived, problems = lookup_families(docs[LOOKUP_DOC], indexed)
-    live = live_families(docs, plan_paths)
+    if REGISTER not in lookup:
+        raise GateError(f"{REGISTER}: not in the index")
+    rows, problems = lookup_rows(lookup[LOOKUP_DOC], indexed)
+    plan_paths = sorted(p for p in indexed
+                        if posixpath.dirname(p) in LIVE_PLAN_DIRS and p.endswith(".md"))
+    linked = sorted({p for _, plans in rows for p in plans})
+    texts = indexed_contents(repo, sorted(set(plan_paths) | set(linked)))
+    missing = [p for p in linked if p not in texts]
+    if missing:
+        raise GateError(f"linked plan(s) not readable from the index: {', '.join(missing)}")
+    resolver = Resolver(rows, live_titles(texts, plan_paths),
+                        set(REGISTER_SECTION_RE.findall(lookup[REGISTER])), texts)
 
-    unresolved = sorted(set(cited) - archived - live)
+    failures = []
+    for (fam, key, kind), where in sorted(sites.items()):
+        why = resolver.error(fam, key, kind)
+        if why:
+            more = f" (+{len(where) - 3} more)" if len(where) > 3 else ""
+            shown = f"WS-{fam} {key}" if kind == "phase" else f"WS-{key or fam}"
+            failures.append(f"FAIL: {shown}, cited at {', '.join(where[:3])}{more}: {why}")
     for problem in problems:
         print(f"FAIL: {LOOKUP_DOC}: {problem}")
-    for family in unresolved:
-        sites = cited[family]
-        more = f" (+{len(sites) - 3} more)" if len(sites) > 3 else ""
-        print(f"FAIL: WS-{family}, cited at {', '.join(sites[:3])}{more}, "
-              "resolves to no lookup row, live plan title or register section")
-    if problems or unresolved:
-        print(f"Add the plan to '{LOOKUP_HEADING}' in {LOOKUP_DOC}.")
+    for failure in failures:
+        print(failure)
+    if problems or failures:
+        print(f"Fix the citation, or give its plan a row in '{LOOKUP_HEADING}' "
+              f"({LOOKUP_DOC}).")
         return 1
-    print(f"PASS: {len(cited)} workstream families cited in "
-          f"{', '.join(CODE_TREES)}; each resolves "
-          f"({len(set(cited) & archived)} through the archived-plan lookup)")
+    with_id = sum(1 for _, key, _ in sites if key)
+    families = len({fam for fam, _, _ in sites})
+    print(f"PASS: {len(sites)} distinct workstream citations ({families} workstreams) "
+          f"in {', '.join(CODE_TREES)} resolve; {with_id} carry a phase or suffix "
+          "and resolve at that level")
     return 0
 
 
-_FIXTURE_CONTEXT = """# Context
-
-#### Archived plans by ID
-
-| ID | Archived plan |
-|----|---------------|
-| WS-QA | [`QA.md`](../dev_history/planning/QA.md) |
-
-##### Audit-era workstreams
-
-| ID | Archived plan |
-|----|---------------|
-| WS-QE | [`QE.md`](../dev_history/audits/QE.md) |
-
-### WS-QF, the next section
-
-| WS-QG | [`QG.md`](../dev_history/planning/QG.md) |
-"""
-
+_ROW_QA1 = "| WS-QA QA1 | [`QA1.md`](../dev_history/planning/QA1.md) |\n"
+_ROW_QA2 = "| WS-QA QA2 | [`QA2.md`](../dev_history/planning/QA2.md) |\n"
+_FIXTURE_CONTEXT = (
+    "# Context\n\n#### Archived plans by ID\n\n| ID | Archived plan |\n"
+    "|----|---------------|\n" + _ROW_QA1 + _ROW_QA2 +
+    "| WS-QH | [`QH.md`](../dev_history/audits/QH.md) |\n"
+    "| WS-QJ1 | [`QJ.md`](../dev_history/audits/QJ.md) |\n\n"
+    "##### Audit-era workstreams\n\n| ID | Archived plan |\n|----|----|\n"
+    "| WS-QE | [`QE.md`](../dev_history/audits/QE.md) |\n\n"
+    "### WS-QF, the next section\n\n"
+    "| WS-QG | [`QG.md`](../dev_history/planning/QG.md) |\n")
+_CITES = ("-- WS-QA QA1.2, WS-QA QA2.C, WS-QB QB1.2, WS-QC, WS-QE, WS-QH12b\n"
+          "-- WS-QJ1-D, and RR-style ranges: WS-QA QA1.1-QA1.2; wrapped: WS-QA\n"
+          "-- QA2.C.4 continues here\n")
 _FIXTURE = {
     LOOKUP_DOC: _FIXTURE_CONTEXT,
-    "docs/dev_history/planning/QA.md": "# QA\n",
+    "docs/dev_history/planning/QA1.md": "# QA one\n\n## QA1\n\n| QA1.1 | a |\n| QA1.2 | b |\n",
+    "docs/dev_history/planning/QA2.md": "# QA two\n\n## QA2\n\n| QA2.C.4 | legacy |\n",
+    "docs/dev_history/audits/QH.md": "# QH\n\n### WS-QH12b — a sub-workstream\n",
+    "docs/dev_history/audits/QJ.md": "# QJ\n\n### WS-QJ1-D — a sub-workstream\n",
     "docs/dev_history/audits/QE.md": "# QE\n",
     "docs/dev_history/planning/QG.md": "# QG\n",
-    "docs/planning/LIVE.md": "# WS-QB — a live plan\n",
+    "docs/planning/LIVE.md": ("# WS-QB — a live plan\n\nQB7 is named in prose.\n\n"
+                              "```\n## QB5\n```\n\n| QB1.1 | x |\n| QB1.2 | y |\n"),
     REGISTER: "# Register\n\n## WS-QC — a register section\n",
-    "SeLe4n/A.lean": "-- WS-QA, WS-QB QB2.C, WS-QC, WS-QE12b-x\n",
-    "scripts/x.sh": "# WS-ZZ: scripts/ is outside the scope\n",
+    "SeLe4n/A.lean": _CITES,
+    "scripts/x.sh": "# WS-ZZ, WS-QA QA99: scripts/ is outside the scope\n",
 }
 
 
-def _run_fixture(files: dict[str, str | None]) -> int:
+def _with_cite(extra: str) -> dict[str, str]:
+    return {"SeLe4n/A.lean": _CITES + extra}
+
+
+def _run_fixture(files: dict[str, str | None]) -> tuple[int, str]:
     import contextlib
     import io
     import tempfile
@@ -218,39 +373,72 @@ def _run_fixture(files: dict[str, str | None]) -> int:
                 handle.write(text)
         subprocess.run(["git", "init", "-q", td], check=True)
         subprocess.run(["git", "-C", td, "add", "-A"], check=True)
-        with contextlib.redirect_stdout(io.StringIO()):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
             try:
-                return check(td)
-            except GateError:
-                return 2
+                return check(td), out.getvalue()
+            except GateError as err:
+                return 2, str(err)
 
 
 def _self_test() -> int:
-    """Break each relation the gate stands for, keeping the tokens in place."""
-    in_section_row = "| WS-QA | [`QA.md`](../dev_history/planning/QA.md) |\n"
+    """Break each relation the gate stands for, keeping the tokens in place.
+
+    Each case asserts the verdict and the message: a case that fails for an
+    unrelated reason would otherwise pass as a witness.
+    """
+    swapped = (_FIXTURE_CONTEXT.replace(_ROW_QA1, "@1").replace(_ROW_QA2, "@2")
+               .replace("@1", _ROW_QA1.replace("QA1.md", "QA2.md"))
+               .replace("@2", _ROW_QA2.replace("QA2.md", "QA1.md")))
     cases = [
-        ("baseline: lookup row, live title, register section", {}, 0),
-        ("an unlisted family", {"SeLe4n/A.lean": "-- WS-QA, WS-QD\n"}, 1),
-        ("a row below the section's end", {"SeLe4n/A.lean": "-- WS-QG\n"}, 1),
+        ("baseline: rows, phases, suffixes, ranges, a wrap, a live plan", {}, 0,
+         "PASS: 9 distinct"),
+        ("a phase the workstream does not have (WS-QA QA99)",
+         _with_cite("-- WS-QA QA99\n"), 1, "WS-QA QA99, cited at SeLe4n/A.lean:4: resolves to no plan"),
+        ("a numeric suffix no row covers (WS-QJ999)", _with_cite("-- WS-QJ999\n"), 1,
+         "WS-QJ999, cited at SeLe4n/A.lean:4: resolves to no plan"),
+        ("a letter suffix the plan does not define (WS-QH12z)",
+         _with_cite("-- WS-QH12z\n"), 1, "QH12z is defined by none of QH.md"),
+        ("a flat sub-task the archived plan does not number (QA1.9)",
+         _with_cite("-- WS-QA QA1.9\n"), 1, "QA1.9 is not a sub-task row of QA1.md"),
+        ("a flat sub-task the live plan does not number (QB1.9)",
+         _with_cite("-- WS-QB QB1.9\n"), 1, "QB1.9 is not a sub-task row of LIVE.md"),
+        ("a range whose far end is not a row", _with_cite("-- WS-QA QA1.1-QA1.9\n"), 1,
+         "QA1.9 is not a sub-task row of QA1.md"),
+        ("each phase resolved in the other row's plan", {LOOKUP_DOC: swapped}, 1,
+         "WS-QA QA1.2, cited at SeLe4n/A.lean:1: phase QA1 is defined by none of QA2.md"),
+        ("a phase named only in prose", _with_cite("-- WS-QB QB7\n"), 1, "phase QB7 is defined by none"),
+        ("a phase named only inside a fence", _with_cite("-- WS-QB QB5\n"), 1, "phase QB5 is defined by none"),
+        ("a bad phase wrapped onto the next line",
+         _with_cite("-- see WS-QA\n-- QA99 here\n"), 1, "WS-QA QA99, cited at SeLe4n/A.lean:4"),
+        ("an unlisted workstream", _with_cite("-- WS-QD\n"), 1, "WS-QD, cited at"),
+        ("a row below the section's end", _with_cite("-- WS-QG\n"), 1, "WS-QG, cited at"),
         ("a row whose plan the index lacks",
-         {"docs/dev_history/planning/QA.md": None}, 1),
+         {"docs/dev_history/planning/QA1.md": None}, 1,
+         "lookup row for WS-QA QA1 links no plan the index holds"),
         ("a row naming no workstream",
          {LOOKUP_DOC: _FIXTURE_CONTEXT.replace(
-             in_section_row, in_section_row + in_section_row.replace("WS-QA", "QA"))}, 1),
-        ("a family named in a live plan's body, not its title",
-         {"docs/planning/LIVE.md": "# A live plan\n\nWS-QB\n"}, 1),
+             _ROW_QA1, _ROW_QA1 + _ROW_QA1.replace("WS-QA QA1", "QA1"))}, 1,
+         "lookup row names no workstream"),
+        ("a live plan naming the workstream in its body, not its title",
+         {"docs/planning/LIVE.md": "# A live plan\n\nWS-QB\n\n| QB1.2 | y |\n"}, 1,
+         "WS-QB QB1.2, cited at SeLe4n/A.lean:1: resolves to no plan"),
         ("a register mention that is not a section",
-         {REGISTER: "# Register\n\n| **WS-QC** | v1 |\n"}, 1),
-        ("no citation at all", {"SeLe4n/A.lean": "-- none\n"}, 2),
+         {REGISTER: "# Register\n\n| **WS-QC** | v1 |\n"}, 1,
+         "WS-QC, cited at SeLe4n/A.lean:1: names no lookup row"),
+        ("no citation at all", {"SeLe4n/A.lean": "-- none\n"}, 2, "no WS- citation"),
         ("no lookup heading",
-         {LOOKUP_DOC: _FIXTURE_CONTEXT.replace("Archived plans by ID", "Plans")}, 2),
+         {LOOKUP_DOC: _FIXTURE_CONTEXT.replace("Archived plans by ID", "Plans")}, 2,
+         "no 'Archived plans by ID' heading"),
     ]
     failed = 0
-    for name, edits, want in cases:
-        got = _run_fixture({**_FIXTURE, **edits})
-        ok = got == want
+    for name, edits, want, message in cases:
+        got, out = _run_fixture({**_FIXTURE, **edits})
+        ok = got == want and message in out
         failed += not ok
         print(f"{'ok  ' if ok else 'FAIL'} {name}: exit {got}, want {want}")
+        if not ok:
+            print(f"     wanted message {message!r}; got:\n{out}")
     return 1 if failed else 0
 
 

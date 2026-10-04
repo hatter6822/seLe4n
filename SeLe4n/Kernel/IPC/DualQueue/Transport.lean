@@ -1080,7 +1080,7 @@ theorem endpointQueueEnqueue_preserves_reply
                     have hReply2 := storeTcbQueueLinks_reply_forward _ _ tailTid _ _ _ oid r hInv1 hLink1 hReply1
                     exact storeTcbQueueLinks_reply_forward _ _ enqueueTid _ _ none oid r hInv2 hLink2 hReply2
 
-/-- WS-E8/M-02: Remove an arbitrary waiter from an intrusive endpoint queue in O(1).
+/-- Remove an arbitrary waiter from an intrusive endpoint queue in O(1) (`v0.12.1`).
 
 Uses per-node `queuePPrev` metadata (pointer-to-previous-link) so unlinking
 requires no queue traversal. -/

@@ -986,7 +986,7 @@ structure TCB where
   /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
       `none`/`none` means detached from intrusive endpoint wait queues. -/
   queuePrev : Option SeLe4n.ThreadId := none
-  /-- WS-E8: pointer-to-previous-link metadata.
+  /-- Pointer-to-previous-link metadata (`v0.12.1`, O(1) arbitrary removal).
       `endpointHead` means this node is currently referenced by queue head;
       `tcbNext prevTid` means it is referenced by `prevTid.queueNext`.
       Cleared when detached from intrusive endpoint wait queues. -/

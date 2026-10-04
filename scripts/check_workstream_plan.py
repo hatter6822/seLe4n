@@ -323,7 +323,13 @@ def read_at(ref: str, rel: str) -> str | None:
         return None
 
 
-FENCE = re.compile(r"^```.*?^```", re.M | re.S)
+# A fence as CommonMark reads one: a backtick run at the start of a line whose
+# info string holds no backtick, closed by a run at least as long standing alone
+# on its line.  The looser `^```.*?^```` took a prose line that merely opens with
+# inline code (``` `toList = []` ```) for an opener, so it paired every later
+# fence one off and blanked the prose between them -- 14,055 lines of
+# `CHANGELOG.md`, headings included, read as a code block.
+FENCE = re.compile(r"^(`{3,})(?![^\n]*`)[^\n]*\n.*?^\1`*[ \t]*$", re.M | re.S)
 
 
 def prose_view(text: str) -> str:
@@ -1409,6 +1415,14 @@ def self_test() -> int:
                        fenced.replace("| XX0 | first | 3 |", "| XX0 | first | 42 |"), {})
     cases.append(("a real defect outside a fence is still caught",
                   any("phase map says XX0 has 42" in e for e in still), still))
+    # A line opening with inline code is prose, not a fence; read as one, it
+    # paired the fences after it one off and blanked a real defect between them.
+    inline = ("``` `x` ``` opens this sentence.\n```\nfenced\n```\n"
+              + CLEAN.replace("| XX0 | first | 3 |", "| XX0 | first | 42 |")
+              + "\n```\ntail\n```\n")
+    ierrs = check_plan("plan.md", inline, {})
+    cases.append(("inline code at a line's start does not open a fence",
+                  any("phase map says XX0 has 42" in e for e in ierrs), ierrs))
 
     # A phase listed twice must be reported, not collapsed by the assignment.
     dup = CLEAN.replace("| XX1 | second | 2 |", "| XX1 | second | 2 |\n| XX1 | second again | 9 |")

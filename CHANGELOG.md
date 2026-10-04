@@ -144,17 +144,46 @@
     that kernel code cites.  It adds WS-RC R4 and R5, WS-DT, WS-LC, WS-OD,
     WS-RM and WS-HP, plus an *Audit-era workstreams* table mapping WS-A
     through WS-AN to their audit workstream plans.  WS-AL and WS-AM had no
-    plan of their own, and the row says so.  The new Tier 0 gate
-    `scripts/check_workstream_id_resolution.py` derives every workstream
-    family cited in `SeLe4n/`, `Main.lean`, `tests/` and `rust/` and fails
-    when one resolves to no lookup row with an indexed plan, no live plan
-    title and no register section (40 families at this version).  It works
-    per family, not per phase, because WS-SM and WS-RC each have a live plan
-    covering every phase beside archived single-phase plans.  Its 9-case
-    self-test keeps the tokens and breaks the relation.
+    plan of their own, and the row says so.
   - SM10.6.2 no longer schedules moving `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`,
     and SM10.6.3's archive list marks the 15 plans this version archived.
     SM10.6.3 now moves only the 4 still under `docs/planning/`.
+- **New Tier 0 gate `scripts/check_workstream_id_resolution.py`.** It resolves
+  every workstream ID cited in `SeLe4n/`, `Main.lean`, `tests/` and `rust/` at
+  the level it is written; reducing a citation to its workstream let
+  `WS-SM SM99` and `WS-J999` pass.
+  - A bare workstream needs a lookup row, a live plan title or a register
+    section.
+  - A phase picks the lookup row with the longest matching ID, so WS-SM's
+    per-phase rows each resolve to their own plan. That plan must define the
+    phase key (`SM6`) in a heading, a table row's first cell or a sub-task row.
+    Where it numbers that phase's sub-tasks flat, a flat citation, or each end
+    of a flat range, must be one of those rows. Letter-group plans
+    (`SM9.A.1`) are held to the phase key: they define sub-tasks through
+    ranges and prose.
+  - A suffix (`WS-H12b`, `WS-K-F5`) must be defined whole.
+  - A phase token wrapped onto the next comment line is read with its
+    citation. 973 distinct citations across 40 workstreams resolve.
+  - The 19-case self-test checks each verdict and its message, and keeps the
+    tokens while breaking the relation (`WS-SM SM99`, `WS-J999`, `WS-QH12z`,
+    a flat sub-task the plan does not number, rows with swapped plans).
+  - The gate reads plans through `check_workstream_plan.py`'s `prose_view`
+    and `SUBTASK_ROW`. That reader took a line opening with inline code
+    (``` `toList = []` ```) for a fence, paired every later fence one off and
+    blanked 14,055 lines of `CHANGELOG.md`, headings included. A fence now
+    needs a backtick-free info string and a closing run alone on its line,
+    and a new self-test case fails under the old reader.
+  - Fixed the stale citations the gate found:
+    - `WS-HP HP1.4` is `HP1`; the plan has two HP1 rows and keeps
+      `replyFrameBelow?` in HP1.
+    - `WS-E8` named no plan, and its `M-02` was another finding, so the two
+      docstrings now cite `v0.12.1`, the version that added O(1) arbitrary
+      queue removal.
+    - The `WS-OD-PRIO-01`…`WS-RR-PRIO-10` test labels named no plan row, so
+      the suite and its citations name the tests (`pm_od_01`…`pm_od_10`).
+  - New lookup rows: `WS-M5-C` and `WS-M6`, the milestone-era workstreams
+    that reused the `WS-M` prefix; and `CHANGELOG.md` for WS-AL and WS-AM,
+    whose phases (`AM1`, `AM4`) are only its headings.
 
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/shrink-claude-md",
-      "commit_sha": "9a5ebbd2610e215142fae74e51c6e75d1f444d1a",
-      "tree_sha": "84b3f367404f916e2bb2e3754bad1eaccd3688a7",
-      "committed_at_utc": "2026-10-04T20:52:28+00:00"
+      "commit_sha": "506b177895b13f480b200d7e50027173e5c59efb",
+      "tree_sha": "1e8a9b4712d470ae7e56ee1bab4da96dffa622b3",
+      "committed_at_utc": "2026-10-04T21:42:09+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ab2b8c6f4d6fd06622f286d6f926c9d08a02c115ee336691bc1d053b55cb8e4b"
+    "source_digest": "86e208afd441ba27b6cb00185c70fddc334f350b35ceb5281e8c31fb8401d2dc"
   },
   "summary": {
     "module_count": 432,

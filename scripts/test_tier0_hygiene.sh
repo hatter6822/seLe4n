@@ -244,12 +244,14 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py"
 run_prose_negative_check "HYGIENE" rg -n "docs/dev_history" SeLe4n Main.lean tests rust
 
 # The same trees therefore cite a closed plan by workstream ID, and an ID is a
-# citation only while something live maps it back to a file.  This gate derives
-# every workstream family those trees cite and fails when one resolves to no row
-# of the archived-plan lookup in docs/agent_guide/WORKSTREAM_CONTEXT.md (with a
-# plan the index holds), no live plan title and no register section.  Self-test
-# first: each case keeps the tokens and breaks the relation.  `run_prose_check`
-# for the reason the gate above gives: citations live in comments.
+# citation only while something live maps it back to a file.  This gate resolves
+# every workstream ID those trees cite at the level it is written: a bare
+# workstream against the archived-plan lookup in
+# docs/agent_guide/WORKSTREAM_CONTEXT.md, live plan titles and register sections;
+# a phase (`WS-SM SM6.C`) or suffix (`WS-H12b`) against the plan its lookup row
+# or live title picks.  Self-test first: each case keeps the tokens and breaks
+# the relation (`WS-SM SM99`, `WS-J999`).  `run_prose_check` for the reason the
+# gate above gives: citations live in comments.
 run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_id_resolution.py" --self-test
 run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_id_resolution.py"
 

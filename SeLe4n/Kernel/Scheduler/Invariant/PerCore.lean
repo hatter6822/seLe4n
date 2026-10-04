@@ -2175,8 +2175,8 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
 -- `schedContextConfigure` of the **donated** reservation writes `sc.priority`
 -- alone (correctly — its propagation is gated on the donee's `ownScId?`, which
 -- is `none`).  Either way the pop then rebinds the origin `.bound` under the
--- disagreement.  `tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09 drives the
--- second route through two live operations, with WS-RR-PRIO-10 as the
+-- disagreement.  `tests/PriorityManagementSuite.lean`'s `pm_od_09` drives the
+-- second route through two live operations, with `pm_od_10` as the
 -- unreconfigured control.
 --
 -- **Neither reconciliation is available to the pop**, which is what makes this a
@@ -2239,7 +2239,7 @@ to those writers.**  `returnDonatedSchedContext`'s bottom arm installs a `.bound
 binding without writing either home, so a reservation whose band moved while it
 was on loan comes back disagreeing.  See §9's writer enumeration above for the
 two routes, for why neither reconciliation is available to the pop, and for the
-register row; and `tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09/10 for the
+register row; and `tests/PriorityManagementSuite.lean`'s `pm_od_09`/`pm_od_10` for the
 executed refutation and its control.  A proof that takes this predicate of a
 state reached through a donation pop is asking for a premise the kernel
 refutes. -/

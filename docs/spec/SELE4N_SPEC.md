@@ -7787,7 +7787,7 @@ TCB alone, and a `schedContextConfigure` of the **donated** reservation writes
 and is projection-visible besides — so the closure is to stop storing either
 parameter twice, which is WS-CB's (`docs/REGISTERED_DEBT.md` table C).  Nothing
 is mis-scheduled by the residue, and the refutation is executed rather than
-asserted: `tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09/10.
+asserted: `tests/PriorityManagementSuite.lean`'s `pm_od_09`/`pm_od_10`.
 
 A donation
 therefore moves budget, period and deadline and **not** priority or domain: a
