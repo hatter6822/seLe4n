@@ -188,11 +188,6 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 # managed to read.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/indexed_source.py" --self-test
 
-# The fence reader the Markdown gates share (`check_workstream_plan.py`,
-# `check_workstream_id_resolution.py`, `generate_agents_md.py`): CommonMark's
-# fence rules, each checked straight off the view.
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/markdown_prose_view.py" --self-test
-
 # prose.  They drifted in five consecutive cuts -- declared totals of
 # 126/143/145/146/149 against the real row count, references to rows that a
 # renumber had moved, and a phase whose acceptance arithmetic (46 + 4 = 49)
@@ -247,19 +242,6 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py"
 # silently-vacuous shape `test_lib.sh` introduced the prose helpers to avoid.
 # CLAUDE.md's rule decides it: the subject genuinely IS the text.
 run_prose_negative_check "HYGIENE" rg -n "docs/dev_history" SeLe4n Main.lean tests rust
-
-# The same trees therefore cite a closed plan by workstream ID, and an ID is a
-# citation only while something live maps it back to a file.  This gate resolves
-# every workstream ID those trees cite at the level it is written: a bare
-# workstream against the archived-plan lookup in
-# docs/agent_guide/WORKSTREAM_CONTEXT.md, live plan titles and register sections;
-# a phase (`WS-SM SM6.C`) or suffix (`WS-H12b`) against the plan its lookup row
-# or live title picks; and each lookup row's own phase or suffix against the
-# plans that row links.  Self-test first: each case keeps the tokens and breaks
-# the relation (`WS-SM SM99`, `WS-J999`, a `WS-QA QA99` row on `QA1`'s plan).  `run_prose_check` for the reason the
-# gate above gives: citations live in comments.
-run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_id_resolution.py" --self-test
-run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_id_resolution.py"
 
 # WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
 # plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10

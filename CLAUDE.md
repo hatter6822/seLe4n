@@ -1,10 +1,8 @@
 # CLAUDE.md — seLe4n project guidance
 
-> `AGENTS.md` is a short pointer file that sends non-Claude coding agents
-> (and any tool that follows the AGENTS.md convention) here and lists this
-> file's sections; the rules are stated only here. Edit `CLAUDE.md` only; after
-> a section heading change run `python3 scripts/generate_agents_md.py`
-> (docs-sync checks `AGENTS.md` byte for byte). These rules bind every
+> `AGENTS.md` is a short static pointer file that sends non-Claude coding
+> agents (and any tool that follows the AGENTS.md convention) here; the rules
+> are stated only here, so edit `CLAUDE.md` only. These rules bind every
 > contributor, human or agent; `docs/DEVELOPMENT.md` is the how-to guide that
 > links back here.
 

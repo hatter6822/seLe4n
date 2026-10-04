@@ -125,24 +125,12 @@ in that plan; a `§` after a phase ID (`WS-SM SM6 §3.1`) is a section of it.
 Each plan's status line is its status when archived; current status is the
 phase table above and `docs/REGISTERED_DEBT.md`.
 
-Tier 0 (`scripts/check_workstream_id_resolution.py`) resolves every citation in
-those trees at the level it is written:
-- A bare `WS-RA` needs a row here, a live plan title or a register section.
-- A phase (`WS-SM SM6.C`) picks the row with the longest matching ID. That
-  row's plan must define the phase key (`SM6`) in a heading, a table row's first
-  cell or a sub-task row. Below the key, the citation is read as a path
-  (`SM5.H.4` is `SM5`, `SM5.H`, `SM5.H.4`). At each level the plan numbers,
-  in sub-task rows or in headings that open on the ID, the next ID must be one
-  the plan defines. A level a landed plan folded into prose is not read
-  below; the citation is held to it, and only a level pinned in the gate's
-  `UNNUMBERED_LEVELS` may hold one (a stale pin fails too).
-- A suffix (`WS-H12b`, `WS-K-F5`) must be defined whole.
-- The one citation form is `WS-SM SM5.H.4`. A phase parted from its workstream
-  by punctuation or the word "phase" (`(WS-SM, SM5.H.4)`, `WS-Z/Z6`,
-  `WS-SM (SM0.C …)`) fails, since it would read as the bare workstream.
-- A row's own ID is held to the same rule against the plans it links, so a
-  row cannot vouch for an ID its plan lacks. A family-only row claims no
-  phase.
+Write a citation in one form, `WS-<FAMILY> <PHASE>[.<SUB>…]`
+(`WS-SM SM5.H.4`): the phase follows the workstream after a single space, on
+the same line.  A phase parted from its workstream by punctuation or the word
+"phase" (`(WS-SM, SM5.H.4)`, `WS-Z/Z6`, `WS-SM (SM0.C …)`) reads as the bare
+workstream.  When you archive a plan that source still cites, add its row here
+in the same change.
 
 | ID | Archived plan | Closed |
 |----|---------------|--------|

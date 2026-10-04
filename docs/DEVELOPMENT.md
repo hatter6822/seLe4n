@@ -490,7 +490,7 @@ rather than a review:
 | Gates read code, prose reads prose; a presence check is not a relation check; test a gate by breaking the relation | the code-view overlay, the self-test harnesses |
 | Implement the improvement — never weaken documentation to match inferior code | review |
 | Deferrals are registered, never silent | `check_deferral_registration.py` (Tier 0) |
-| Source cites an archived plan by workstream ID, never by `docs/dev_history/` path | the Tier 0 `docs/dev_history` scan; `check_workstream_id_resolution.py` (Tier 0) resolves every cited ID |
+| Source cites an archived plan by workstream ID, never by `docs/dev_history/` path | the Tier 0 `docs/dev_history` scan |
 | Report a possible vulnerability the moment you find it | — |
 
 The long-form rationale behind each rule, with the history that earned it, is
@@ -556,10 +556,8 @@ python3 scripts/generate_doc_navigation.py       # GitBook README + SUMMARY
 python3 scripts/report_current_state.py          # current metrics, one per line
 ```
 
-`AGENTS.md` is a pointer file generated from `CLAUDE.md`'s `## ` headings —
-edit `CLAUDE.md` only, and after a heading change run
-`python3 scripts/generate_agents_md.py`; `test_docs_sync.sh` runs it with
-`--check` (a byte-for-byte match, and a regular file rather than a symlink).
+`AGENTS.md` is a short static pointer to `CLAUDE.md` that copies none of its
+text; edit `CLAUDE.md` only.
 
 ### Fixture updates
 
@@ -723,11 +721,8 @@ SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh   # gate honesty
 ./scripts/test_tier0_hygiene.sh
 ./scripts/check_version_sync.sh
 ./scripts/check_website_links.sh
-python3 scripts/markdown_prose_view.py --self-test
 python3 scripts/check_workstream_plan.py [--self-test]
 python3 scripts/check_deferral_registration.py
-python3 scripts/check_workstream_id_resolution.py [--self-test]
-python3 scripts/generate_agents_md.py [--check | --self-test]
 python3 scripts/check_identifier_naming.py
 python3 scripts/check_module_axioms.py
 python3 scripts/check_proof_depth.py

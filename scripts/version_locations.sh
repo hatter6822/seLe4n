@@ -98,7 +98,7 @@ _reg 'CLAUDE.md' \
      'CLAUDE.md canonical version line'
 
 # AGENTS.md is deliberately not registered: it is a pointer to CLAUDE.md that
-# carries no version line (test_docs_sync.sh checks its section list instead).
+# carries no version line.
 
 # --- Root README ------------------------------------------------------------
 _reg 'README.md' \

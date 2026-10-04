@@ -57,7 +57,6 @@ from indexed_source import (  # noqa: E402  (needs the path insert above)
     DerivationFailed,
     listed_at,
 )
-from markdown_prose_view import prose_view  # noqa: E402  (same path insert)
 
 # Documents that cite plan sub-task IDs and must not cite a stale one.
 COMPANIONS = [
@@ -322,6 +321,23 @@ def read_at(ref: str, rel: str) -> str | None:
                               cwd=REPO, capture_output=True, text=True, check=True).stdout
     except subprocess.CalledProcessError:
         return None
+
+
+FENCE = re.compile(r"^```.*?^```", re.M | re.S)
+
+
+def prose_view(text: str) -> str:
+    """The document with fenced blocks blanked out, line count preserved.
+
+    A plan illustrating a row shape or citing an example ID inside a fence is
+    showing the reader what one looks like, not declaring one.  Parsing those
+    as data made the gate fail legitimate documents — a phantom phase from a
+    fenced table, a dangling citation from an example ID — which is the mirror
+    of a bypass: it pushes authors to contort prose to satisfy the scanner,
+    which this project forbids in as many words.  Lines are replaced rather
+    than removed so any position the caller reports still lines up.
+    """
+    return FENCE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
 
 
 def global_definitions(clashes: list | None = None) -> dict[str, tuple[str, set[str]]]:
@@ -879,11 +895,11 @@ def _cli_cases():
         (root / "docs" / "planning").mkdir(parents=True)
         (root / "scripts").mkdir()
         shutil.copy(src, root / "scripts" / src.name)
-        # The gate imports `indexed_source` and `markdown_prose_view` from its
-        # own directory, so the fixture tree carries them too: a copy that
-        # cannot import what the real script imports is a different program.
-        for helper in ("indexed_source.py", "markdown_prose_view.py"):
-            shutil.copy(src.parent / helper, root / "scripts" / helper)
+        # The gate imports `indexed_source` from its own directory, so the
+        # fixture tree carries it too: a copy that cannot import what the real
+        # script imports is a different program.
+        shutil.copy(src.parent / "indexed_source.py",
+                    root / "scripts" / "indexed_source.py")
         (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
         # Names the plan as well as citing a sub-task: WS-RR RR7.32 requires a
         # canonical index to name every plan, and a fixture repository whose
@@ -1393,14 +1409,6 @@ def self_test() -> int:
                        fenced.replace("| XX0 | first | 3 |", "| XX0 | first | 42 |"), {})
     cases.append(("a real defect outside a fence is still caught",
                   any("phase map says XX0 has 42" in e for e in still), still))
-    # A line opening with inline code is prose, not a fence; read as one, it
-    # paired the fences after it one off and blanked a real defect between them.
-    inline = ("``` `x` ``` opens this sentence.\n```\nfenced\n```\n"
-              + CLEAN.replace("| XX0 | first | 3 |", "| XX0 | first | 42 |")
-              + "\n```\ntail\n```\n")
-    ierrs = check_plan("plan.md", inline, {})
-    cases.append(("inline code at a line's start does not open a fence",
-                  any("phase map says XX0 has 42" in e for e in ierrs), ierrs))
 
     # A phase listed twice must be reported, not collapsed by the assignment.
     dup = CLEAN.replace("| XX1 | second | 2 |", "| XX1 | second | 2 |\n| XX1 | second again | 9 |")

@@ -52,11 +52,6 @@ python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
 #      in a language no reader of this file need speak.
 #   4. Source citations carrying line numbers (`Boot.lean:551`), which are
 #      stale on the next edit above them.
-#   5. AGENTS.md is a generated pointer file to CLAUDE.md.  It was once a
-#      byte-identical mirror (only the *version line* was checked) and then
-#      a symlink (which a `core.symlinks=false` checkout flattens to one
-#      line); the check below regenerates it from CLAUDE.md's headings and
-#      requires a byte-for-byte match.
 # ──────────────────────────────────────────────────────────────────────
 
 "${SCRIPT_DIR}/sync_readme_from_codebase_map.sh" --check
@@ -80,23 +75,9 @@ python3 "${SCRIPT_DIR}/check_source_line_citations.py"
 # must catch, and each one it must leave alone.
 python3 "${SCRIPT_DIR}/test_source_line_citations_gate.py"
 
-# AGENTS.md is a small REGULAR file that points at CLAUDE.md, the one place
-# the rules are stated.  It used to be a symlink, and a checkout with
-# `core.symlinks=false` (Windows, or a filesystem without symlinks) turns a
-# symlink into a one-line text file reading `CLAUDE.md` -- an agent loading
-# AGENTS.md then received no rules and no instruction to look further, while
-# this gate still printed PASS.  The file is GENERATED: a fixed template plus
-# CLAUDE.md's `## ` headings, rendered by `generate_agents_md.py` and compared
-# byte for byte, so added prose, a dropped line and heading drift all fail (a
-# check that read only the heading bullets let any other text through).  The
-# generator also requires a regular file in the git index (mode 100644) and in
-# the working tree.  Regenerate with `python3 scripts/generate_agents_md.py`.
-# Its heading reader goes through the shared fence reader
-# (`markdown_prose_view.py`); the self-test runs first, keeping each
-# `## Example` token in place and moving it inside a tilde, an indented or a
-# longer-closed fence.
-python3 "${SCRIPT_DIR}/generate_agents_md.py" --self-test
-python3 "${SCRIPT_DIR}/generate_agents_md.py" --check
+# The CLAUDE.md <-> AGENTS.md byte-mirror check is retired: AGENTS.md is now
+# a short static file that points at CLAUDE.md and copies none of its text, so
+# there is no second copy left to drift.
 
 # AC5-B / X-08 (retired): a GitBook content-hash drift check compared the
 # H1/H2 headings of six canonical root documents against GitBook chapters that
