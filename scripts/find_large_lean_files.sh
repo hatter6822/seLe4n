@@ -8,15 +8,15 @@
 # find_large_lean_files.sh — rank large Lean modules and docs by line count.
 #
 # Used by maintainers (and the AK10-E-style "Known large files refresh"
-# step) to keep CLAUDE.md's "Known large files" section current. Output is
-# formatted to match the bullet style already in CLAUDE.md, so the result
+# step) to keep docs/agent_guide/LARGE_FILES.md's "Known large files" section current. Output is
+# formatted to match the bullet style already in docs/agent_guide/LARGE_FILES.md, so the result
 # can be diffed against that file or pasted directly.
 #
-# Scan scope (matches CLAUDE.md §"Reading large files"):
+# Scan scope (matches docs/agent_guide/LARGE_FILES.md §"Reading large files"):
 #   - SeLe4n/**/*.lean and Main.lean
 #   - tests/**/*.lean
 #   - CHANGELOG.md, docs/**/*.md (including docs/dev_history for archived
-#     plans already referenced in CLAUDE.md)
+#     plans already referenced in docs/agent_guide/LARGE_FILES.md)
 #
 # Usage:
 #   scripts/find_large_lean_files.sh                 # list files ≥ threshold, sorted
@@ -24,11 +24,11 @@
 #   scripts/find_large_lean_files.sh --top 30
 #   scripts/find_large_lean_files.sh --format bullets   # default
 #   scripts/find_large_lean_files.sh --format table     # file<TAB>lines
-#   scripts/find_large_lean_files.sh --check            # diff vs CLAUDE.md
+#   scripts/find_large_lean_files.sh --check            # diff vs docs/agent_guide/LARGE_FILES.md
 #   scripts/find_large_lean_files.sh --check --tolerance 0   # exact counts
 #
 # `--check` compares the live tree against the "Known large files" block in
-# CLAUDE.md.  The block is a *curated* snapshot whose counts are explicitly
+# docs/agent_guide/LARGE_FILES.md.  The block is a *curated* snapshot whose counts are explicitly
 # approximate (`~N lines`), so an exact string comparison can only ever be a
 # warning — and a warning nobody gates on is invisible, which is how the list
 # drifted in the first place.  `--check` is therefore **tolerant** by design:
@@ -43,8 +43,8 @@
 # `--tolerance 0` restores exact-count comparison.
 #
 # Exit codes:
-#   0  listing produced (or --check: no material drift from CLAUDE.md)
-#   1  --check: drift detected between actual sizes and CLAUDE.md table
+#   0  listing produced (or --check: no material drift from docs/agent_guide/LARGE_FILES.md)
+#   1  --check: drift detected between actual sizes and docs/agent_guide/LARGE_FILES.md table
 #   2  usage / setup error
 
 set -euo pipefail
@@ -156,27 +156,27 @@ if (( CHECK_MODE == 0 )); then
   exit 0
 fi
 
-# --check: compare the bullets against the block in CLAUDE.md. The block
+# --check: compare the bullets against the block in docs/agent_guide/LARGE_FILES.md. The block
 # starts at the "Known large files" header and ends at the first line
 # after the header that is not a bullet.
-[[ -f CLAUDE.md ]] || { echo "ERROR: CLAUDE.md not found; cannot --check" >&2; exit 2; }
+[[ -f docs/agent_guide/LARGE_FILES.md ]] || { echo "ERROR: docs/agent_guide/LARGE_FILES.md not found; cannot --check" >&2; exit 2; }
 expected="$(awk '/^\*\*Known large files\*\*/ {want=1; next}
                 want && /^- `/ {print; next}
-                want && !/^- `/ {exit}' CLAUDE.md)"
+                want && !/^- `/ {exit}' docs/agent_guide/LARGE_FILES.md)"
 if [[ -z "${expected}" ]]; then
-  echo "ERROR: could not locate '**Known large files**' bullet block in CLAUDE.md" >&2
+  echo "ERROR: could not locate '**Known large files**' bullet block in docs/agent_guide/LARGE_FILES.md" >&2
   exit 2
 fi
 actual="$(render)"
 
 if [[ "${expected}" == "${actual}" ]]; then
-  echo "PASS: CLAUDE.md 'Known large files' matches live tree exactly (threshold ${THRESHOLD})."
+  echo "PASS: docs/agent_guide/LARGE_FILES.md 'Known large files' matches live tree exactly (threshold ${THRESHOLD})."
   exit 0
 fi
 
 if (( TOLERANCE_PCT == 0 )); then
-  echo "FAIL: CLAUDE.md 'Known large files' is out of sync with live tree." >&2
-  echo "--- expected (from CLAUDE.md) ---" >&2
+  echo "FAIL: docs/agent_guide/LARGE_FILES.md 'Known large files' is out of sync with live tree." >&2
+  echo "--- expected (from docs/agent_guide/LARGE_FILES.md) ---" >&2
   printf '%s\n' "${expected}" >&2
   echo "--- actual (threshold ${THRESHOLD}) ---" >&2
   printf '%s\n' "${actual}" >&2
@@ -223,12 +223,12 @@ indent_lines() {
 }
 
 if [[ -n "${only_expected}" ]]; then
-  echo "FAIL: listed in CLAUDE.md but no longer at/above the ${THRESHOLD}-line threshold:" >&2
+  echo "FAIL: listed in docs/agent_guide/LARGE_FILES.md but no longer at/above the ${THRESHOLD}-line threshold:" >&2
   indent_lines <<<"${only_expected}" >&2
   drift=1
 fi
 if [[ -n "${only_actual}" ]]; then
-  echo "FAIL: at/above the ${THRESHOLD}-line threshold but missing from CLAUDE.md:" >&2
+  echo "FAIL: at/above the ${THRESHOLD}-line threshold but missing from docs/agent_guide/LARGE_FILES.md:" >&2
   indent_lines <<<"${only_actual}" >&2
   drift=1
 fi
@@ -242,7 +242,7 @@ while IFS=$'\t' read -r path want; do
   delta=$(( want > have ? want - have : have - want ))
   # Percentage of the ACTUAL size, so the tolerance scales with the file.
   if (( delta * 100 > have * TOLERANCE_PCT )); then
-    echo "FAIL: ${path}: CLAUDE.md records ~${want} lines, actual ${have} \
+    echo "FAIL: ${path}: docs/agent_guide/LARGE_FILES.md records ~${want} lines, actual ${have} \
 (differs by ${delta}, over the ${TOLERANCE_PCT}% tolerance)." >&2
     drift=1
   fi
@@ -251,10 +251,10 @@ done <<<"${exp_pairs}"
 if (( drift == 1 )); then
   echo "" >&2
   echo "Refresh with: ./scripts/find_large_lean_files.sh --format bullets" >&2
-  echo "and replace the bullet block in BOTH CLAUDE.md and AGENTS.md." >&2
+  echo "and replace the bullet block in docs/agent_guide/LARGE_FILES.md." >&2
   exit 1
 fi
 
-echo "PASS: CLAUDE.md 'Known large files' is within the ${TOLERANCE_PCT}% tolerance \
+echo "PASS: docs/agent_guide/LARGE_FILES.md 'Known large files' is within the ${TOLERANCE_PCT}% tolerance \
 (threshold ${THRESHOLD}); counts are approximate by design."
 exit 0

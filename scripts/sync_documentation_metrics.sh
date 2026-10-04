@@ -21,7 +21,7 @@
 #      behind; see that script's header for how it handles the languages
 #      whose counted nouns inflect.
 #   4. `find_large_lean_files.sh --check` — warn (not fail) when the
-#      CLAUDE.md "Known large files" list has drifted. Warning is right
+#      docs/agent_guide/LARGE_FILES.md "Known large files" list has drifted. Warning is right
 #      *here* because this script is the write-through helper, not a
 #      gate; the hard enforcement lives in `test_docs_sync.sh`, which
 #      runs the same check and is wired into Tier 1 and above.
@@ -119,19 +119,19 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────────────
-# Step 4 — Advisory check on CLAUDE.md "Known large files" list.
-# Warnings only: the CLAUDE.md list is a curated snapshot with
+# Step 4 — Advisory check on docs/agent_guide/LARGE_FILES.md "Known large files" list.
+# Warnings only: the LARGE_FILES.md list is a curated snapshot with
 # approximate "(~N lines)" entries; expecting exact equality on every
 # commit would be noise. A full refresh (as AK10-E did) is a
 # maintainer-curated step.
 # ──────────────────────────────────────────────────────────────────
-section "4/5  CLAUDE.md large-files advisory"
+section "4/5  LARGE_FILES.md large-files advisory"
 if "${SCRIPT_DIR}/find_large_lean_files.sh" --check >/dev/null 2>&1; then
-  echo "  PASS — CLAUDE.md list matches live tree exactly"
+  echo "  PASS — LARGE_FILES.md list matches live tree exactly"
 else
-  echo "  WARN — CLAUDE.md 'Known large files' differs from live tree."
+  echo "  WARN — docs/agent_guide/LARGE_FILES.md 'Known large files' differs from live tree."
   echo "         Run: scripts/find_large_lean_files.sh --top 45"
-  echo "         and review against CLAUDE.md §'Reading large files' before release."
+  echo "         and review against docs/agent_guide/LARGE_FILES.md before release."
 fi
 
 # ──────────────────────────────────────────────────────────────────

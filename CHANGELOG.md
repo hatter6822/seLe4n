@@ -1,3 +1,35 @@
+## v0.36.42 — CLAUDE.md shrunk to durable rules; workstream context and long-form rationale moved to `docs/agent_guide/`
+
+- **`CLAUDE.md` (and its `AGENTS.md` mirror) go from 14,311 lines to under
+  500.**  The file is auto-loaded into every agent session and had grown past
+  the context it was meant to guide.  It now carries only durable rules,
+  conventions and commands, and opens with a prominent rule that no workstream
+  status, history or narrative may be added to it.
+- **Nothing was deleted; every moved line is preserved verbatim** (only
+  relative link targets rewritten to resolve from the new directory):
+  - `docs/agent_guide/WORKSTREAM_CONTEXT.md` — the former "Active workstream
+    context" section (status index, standing constraints, closed workstreams).
+  - `docs/agent_guide/CONVENTIONS_DETAIL.md` — the full "Key conventions"
+    section, including the gate-writing rules and the review history behind
+    each; `CLAUDE.md` keeps a condensed statement of every rule.
+  - `docs/agent_guide/LARGE_FILES.md` — "Reading large files" with the curated
+    **Known large files** list (now also listing the two new large docs).
+  - `docs/agent_guide/RULES_DETAIL.md` — the full text of the sections
+    `CLAUDE.md` now states in condensed form (validation tiers, module build
+    verification, editing large files, search output, background agents,
+    implement-the-improvement, workstream planning documents, session URL
+    hygiene, vulnerability reporting).
+- **Gates follow the content.**  `find_large_lean_files.sh --check` (and the
+  `sync_documentation_metrics.sh` advisory) read the large-files list from
+  `LARGE_FILES.md`; `check_lock_ceiling_figures.py` requires the canonical
+  lock-ceiling statement in `WORKSTREAM_CONTEXT.md` instead of
+  `CLAUDE.md`/`AGENTS.md`; `check_workstream_plan.py` treats
+  `WORKSTREAM_CONTEXT.md` and `LARGE_FILES.md` as companion/canonical indices;
+  the Tier 3 prose anchors that pinned workstream text in `CLAUDE.md` now pin
+  it in `WORKSTREAM_CONTEXT.md` (negatives still cover `CLAUDE.md` and
+  `AGENTS.md` too).  The `CLAUDE.md` ↔ `AGENTS.md` byte-mirror gate is
+  unchanged and still holds.
+
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 
 - **Security (Codex P1, High): a remote deschedule dropped the running thread's

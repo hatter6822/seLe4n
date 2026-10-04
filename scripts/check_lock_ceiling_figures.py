@@ -131,8 +131,7 @@ HISTORICAL_PROSE = ("docs/dev_history/", "CHANGELOG.md")
 # The pin: documents whose readers act on these figures, so a missing canonical
 # statement is itself a failure.
 REQUIRED_SITES = (
-    "CLAUDE.md",
-    "AGENTS.md",
+    "docs/agent_guide/WORKSTREAM_CONTEXT.md",
     "docs/spec/SELE4N_SPEC.md",
     "docs/gitbook/12-proof-and-invariant-map.md",
     "SeLe4n/Kernel/Concurrency/Locks/LockSet.lean",
@@ -389,8 +388,7 @@ def _build_tree(root: str, overrides: dict[str, str]) -> None:
         CEILING_SOURCE: CLEAN_CEILING + "-- " + CLEAN_CLAIMS,
         CORES_SOURCE: CLEAN_CORES,
         BUDGET_SOURCE: CLEAN_BUDGET,
-        "CLAUDE.md": CLEAN_CLAIMS,
-        "AGENTS.md": CLEAN_CLAIMS,
+        "docs/agent_guide/WORKSTREAM_CONTEXT.md": CLEAN_CLAIMS,
         "docs/spec/SELE4N_SPEC.md": CLEAN_CLAIMS,
         "docs/gitbook/12-proof-and-invariant-map.md": CLEAN_CLAIMS,
         "CHANGELOG.md": "the declared lock-set ceiling is **9**\n",
@@ -412,28 +410,28 @@ SELF_TESTS: tuple[tuple[str, str, str, dict[str, str], bool], ...] = (
     (
         "a ceiling claim that does not match the constant is caught",
         "ceiling_figure", "preserving",
-        {"CLAUDE.md": "the declared lock-set ceiling is **13**, the RPi5 tick admits "
+        {"docs/agent_guide/WORKSTREAM_CONTEXT.md": "the declared lock-set ceiling is **13**, the RPi5 tick admits "
                       "**23 µs** per lock, and the uniform 60 µs envelope is **2520 µs**.\n"},
         True,
     ),
     (
         "an admissible claim that does not match the derivation is caught",
         "admissible_figure", "preserving",
-        {"CLAUDE.md": "the declared lock-set ceiling is **14**, the RPi5 tick admits "
+        {"docs/agent_guide/WORKSTREAM_CONTEXT.md": "the declared lock-set ceiling is **14**, the RPi5 tick admits "
                       "**25 µs** per lock, and the uniform 60 µs envelope is **2520 µs**.\n"},
         True,
     ),
     (
         "an envelope claim that does not match the derivation is caught",
         "envelope_figure", "preserving",
-        {"CLAUDE.md": "the declared lock-set ceiling is **14**, the RPi5 tick admits "
+        {"docs/agent_guide/WORKSTREAM_CONTEXT.md": "the declared lock-set ceiling is **14**, the RPi5 tick admits "
                       "**23 µs** per lock, and the uniform 60 µs envelope is **2340 µs**.\n"},
         True,
     ),
     (
         "an envelope claim at another cost is checked at THAT cost",
         "-", "preserving",
-        {"CLAUDE.md": "the declared lock-set ceiling is **14**, the RPi5 tick admits "
+        {"docs/agent_guide/WORKSTREAM_CONTEXT.md": "the declared lock-set ceiling is **14**, the RPi5 tick admits "
                       "**23 µs** per lock, and the uniform 60 µs envelope is **2520 µs**; "
                       "the uniform 10 µs envelope is **420 µs**.\n"},
         False,
@@ -441,7 +439,7 @@ SELF_TESTS: tuple[tuple[str, str, str, dict[str, str], bool], ...] = (
     (
         "an envelope claim at another cost with the WRONG product is caught",
         "envelope_figure", "preserving",
-        {"CLAUDE.md": "the declared lock-set ceiling is **14**, the RPi5 tick admits "
+        {"docs/agent_guide/WORKSTREAM_CONTEXT.md": "the declared lock-set ceiling is **14**, the RPi5 tick admits "
                       "**23 µs** per lock, and the uniform 60 µs envelope is **2520 µs**; "
                       "the uniform 10 µs envelope is **2520 µs**.\n"},
         True,
@@ -449,7 +447,7 @@ SELF_TESTS: tuple[tuple[str, str, str, dict[str, str], bool], ...] = (
     (
         "a locator without a readable claim is a gate defect, not a skip",
         "ceiling_figure", "preserving",
-        {"CLAUDE.md": CLEAN_CLAIMS + "the declared lock-set ceiling is fourteen.\n"},
+        {"docs/agent_guide/WORKSTREAM_CONTEXT.md": CLEAN_CLAIMS + "the declared lock-set ceiling is fourteen.\n"},
         True,
     ),
     (
