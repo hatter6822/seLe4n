@@ -18,7 +18,7 @@ import SeLe4n.Testing.StateBuilder
 # WS-SM SM6.F.2 — Aggregate SMP cross-core notification suite
 
 The acceptance-gate aggregate notification suite for WS-SM Phase SM6
-(`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §SM6.F): end-to-end cross-core
+(WS-SM SM6.F): end-to-end cross-core
 signal/wait flows on a **4-core** deterministic fixture, composing the SM6.B
 transitions with the SM5 per-core scheduler (SGI handler dispatch) into full
 signal round trips.

@@ -13,7 +13,7 @@ import SeLe4n.Kernel.Architecture.Invariant
 # WS-SM SM4.D — Per-core architecture↔scheduler coherence invariant
 
 This module is the Architecture slice of the SM4.D cross-subsystem
-migration (plan `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.4,
+migration (WS-SM SM4 §5.4,
 sub-task SM4.D.9).  The single scheduler-reading architecture predicate
 is `registerDecodeConsistent` (`Architecture/Invariant.lean`): whenever a
 core has a current thread, that thread resolves to a TCB in the object

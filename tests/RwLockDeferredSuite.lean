@@ -16,7 +16,7 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 Surface anchors + decidable examples + runtime assertions for the
 D-1..D-4 deferred-completion theorems landed at SM2.C-defer.
 
-See `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`.
+See WS-SM SM2.C-defer.
 -/
 
 namespace SeLe4n.Tests.RwLockDeferred

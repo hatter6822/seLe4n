@@ -14,7 +14,7 @@ import SeLe4n.Kernel.Architecture.TlbInvalidation
 # WS-SM SM7.A — TLB shootdown descriptor + per-core pending/ack state
 
 This module lands the SM7.A slice of the TLB/cache shootdown phase
-(`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §5): the typed shootdown
+(WS-SM SM7 §5): the typed shootdown
 descriptor, the per-core pending-shootdown queues, the per-core
 acknowledged-generation slots, the `enqueueShootdown` / `drainShootdowns`
 state operations, and the pending-queue capacity bound — together
@@ -350,7 +350,7 @@ instance : Inhabited TlbShootdownState := ⟨initial⟩
 
 /-! ### Per-core accessors (path-a)
 
-Per the SM4.B path-a discipline (`docs/planning/SMP_PER_CORE_STATE_PLAN.md`
+Per the SM4.B path-a discipline (WS-SM SM4
 §3.1), every per-core field is read through an explicit
 `…OnCore (c : CoreId)` accessor and written through a matching
 `set…OnCore` setter, so every callsite names the core it reasons
@@ -613,7 +613,7 @@ acknowledging generation `g` has necessarily serviced every round it was
 sent up to `g`.  Representing the model's discharged generations as a
 **set** rather than a high-water mark — which would make the model
 independently sound rather than sound-relative-to-quiescence — is
-registered as tracked debt in `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
+registered as tracked debt in WS-SM SM7
 §SM7.F.3. -/
 def allAcked (st : TlbShootdownState) : Prop :=
   ∀ c : CoreId, st.ackOnCore c = true

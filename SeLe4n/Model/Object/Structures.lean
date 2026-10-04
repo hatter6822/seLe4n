@@ -234,7 +234,7 @@ structure VSpaceRoot where
       §4.3 of the SM3 plan, page-level (per-PTE) locking is rejected as
       a v1.0.0 design — VSpace mutations operate at the table level and
       a single VSpaceRoot lock suffices for serializability.  See
-      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.7). -/
+      WS-SM SM3.A.7. -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr

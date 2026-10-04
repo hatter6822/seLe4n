@@ -8,7 +8,7 @@
 -/
 
 -- STATUS: staged for WS-SM SM8.C — the per-core declassification audit
--- (docs/planning/SMP_INFORMATION_FLOW_PLAN.md §4.3 / §5 SM8.C.1 … SM8.C.7).
+-- (WS-SM SM8.C.1 … SM8.C.7, §4.3).
 
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 import SeLe4n.Kernel.InformationFlow.Declassification
@@ -28,7 +28,7 @@ import SeLe4n.Platform.FFI
 /-!
 # WS-SM SM8.C — the per-core declassification audit
 
-Plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §4.3 and §5 sub-tasks
+WS-SM SM8 §4.3 and §5 sub-tasks
 SM8.C.1 … SM8.C.7.  `NonInterferencePerCore` proves what an SMP kernel does not
 leak and `CovertChannelPerCore` records what it does; this module covers the one
 path that is *allowed* to move information down the lattice — a declassification
@@ -1628,7 +1628,7 @@ theorem declassifyStoreOnCore_state_core_independent
   -- the trail erased the committed states are literally equal
   subst hSt₁; subst hSt₂; rw [hGateEq]
 
-/-- **WS-RR RR7.34** (`SMP_INFORMATION_FLOW_PLAN` §11's SM8.C catalogue entry,
+/-- **WS-RR RR7.34** (WS-SM SM8 §11's SM8.C catalogue entry,
 authored): **the audit trail does not steer the state a declassification
 commits.**
 

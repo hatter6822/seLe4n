@@ -14,7 +14,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 /-!
 # WS-SM SM5.G — Per-core domain scheduling
 
-Per-core domain scheduling (plan `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`
+Per-core domain scheduling (WS-SM SM5
 §3.7, §5): each core independently rotates its **own** domain schedule, so
 different cores can be in different scheduling domains simultaneously — maximising
 parallelism while still bounding per-domain CPU share (plan §4.2).

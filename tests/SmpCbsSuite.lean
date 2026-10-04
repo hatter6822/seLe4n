@@ -24,7 +24,7 @@ import SeLe4n.Platform.Sim.Contract
 # WS-SM SM5.H — Per-core CBS test suite
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM5.H
-"Per-core CBS" deliverable (`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.8, §5).
+"Per-core CBS" deliverable (WS-SM SM5 §3.8, §5).
 
 * **§1 Surface anchors** — every public SM5.H symbol resolves at elaboration time
   (rename/removal fails the build).

@@ -9,7 +9,7 @@
 
 -- STATUS: staged for WS-SM SM6.E cross-core IPC (per-core / ∀-core
 -- non-interference for the cancellation path; see
--- docs/planning/SMP_CROSS_CORE_IPC_PLAN.md).
+-- WS-SM SM6).
 
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore

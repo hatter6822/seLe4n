@@ -265,7 +265,7 @@ theorem endpointReplyRecvWithDonation_unfold
 -- another core leaves the budget-refill schedule stranded on the donor's core,
 -- where nothing will ever act on it for a SchedContext that is now the donee's.
 --
--- `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §4.3 already said the migration
+-- WS-SM SM6 §4.3 already said the migration
 -- happens ("if the receiver inherits the SC and is on a different core, the
 -- SC's CBS replenish queue migrates per SM5.H.4"); until WS-RR RR2 no donation
 -- path did it.  `applyCallDonationOnCore` is that path, built exactly like the

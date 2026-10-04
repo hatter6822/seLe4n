@@ -477,7 +477,7 @@ kernel image does not carry them.
 
 The project rules are stated once, canonically, in [`CLAUDE.md`](../CLAUDE.md)
 — the rules file for every contributor, human or agent (it is named for the
-tool that auto-loads it; `AGENTS.md` is a symlink to it). Read it before your
+tool that auto-loads it; `AGENTS.md` is a pointer file to it). Read it before your
 first PR. Most rules are enforced by gates, so violating one fails the build
 rather than a review:
 
@@ -555,8 +555,10 @@ python3 scripts/generate_doc_navigation.py       # GitBook README + SUMMARY
 python3 scripts/report_current_state.py          # current metrics, one per line
 ```
 
-`AGENTS.md` is a symlink to `CLAUDE.md` — edit `CLAUDE.md` only;
-`test_docs_sync.sh` checks the link.
+`AGENTS.md` is a pointer file to `CLAUDE.md` — edit `CLAUDE.md` only, and
+mirror any change to its `## ` section headings in `AGENTS.md`'s section list;
+`test_docs_sync.sh` checks that the list matches and that `AGENTS.md` is a
+regular file.
 
 ### Fixture updates
 

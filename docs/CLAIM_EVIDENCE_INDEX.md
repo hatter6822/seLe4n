@@ -249,7 +249,9 @@ must say which of these it means, because "N theorems" hides the difference.
 When a claim changes:
 
 1. update the canonical root source first;
-2. update the GitBook mirror(s) in the same PR;
+2. in the same PR, update any GitBook chapter that summarizes the claim, and
+   `docs/gitbook/navigation_manifest.json` if a chapter or link changed (the
+   claim index itself has no GitBook copy; the navigation links it directly);
 3. refresh the row here;
 4. run at least `./scripts/test_smoke.sh` (`./scripts/test_full.sh` when Tier-3
    anchors or policies changed).

@@ -1060,7 +1060,7 @@ structure TCB where
       `RwLockState.unheld` means a freshly-allocated TCB starts with its lock
       available.  Kernel transitions that mutate this TCB acquire the lock in
       write mode; lookups (e.g., scheduler reads, `getTcb?`) acquire in read
-      mode.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.1)
+      mode.  See WS-SM SM3.A.1
       for the per-object lock-field rollout, and SM2.C
       (`Locks/RwLock.lean`) for the abstract operational spec the field
       refines.  Refines bit 63 (writer) + bits 0..62 (readers) of the Rust
@@ -1070,7 +1070,7 @@ structure TCB where
       (WS-RR RR6.10). -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
-  /-- WS-SM SM5.B.4 (plan `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`
+  /-- WS-SM SM5.B.4 (WS-SM SM5
       §3.2 / §5 SM5.B.4): CPU affinity — the core this thread is bound to.
       `none` means *unbound* (the thread may run on any core); `some c` pins
       the thread to core `c`.
@@ -2043,8 +2043,8 @@ structure Endpoint where
   receiveQ : IntrusiveQueue := {}
   /-- WS-SM SM3.A.2: per-Endpoint reader-writer lock state.  Default
       `RwLockState.unheld` means a freshly-allocated Endpoint starts with
-      its lock available.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`
-      §5.1 (SM3.A.2). -/
+      its lock available.  See
+      WS-SM SM3.A.2. -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
@@ -2129,8 +2129,8 @@ structure Notification where
       `RwLockState.unheld` means a freshly-allocated Notification starts
       with its lock available.  `notificationSignal` / `notificationWait`
       acquire in write mode; observation paths (e.g., `getNotification?`)
-      acquire in read mode.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`
-      §5.1 (SM3.A.4). -/
+      acquire in read mode.  See
+      WS-SM SM3.A.4. -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
@@ -2164,7 +2164,7 @@ structure CNode where
       `cspaceMove`, `cspaceDelete`, `cspaceRevoke`) acquire in write mode;
       lookup paths (`cspaceLookupSlot`, `cspaceLookupPath`,
       `resolveCapAddress`) acquire in read mode.  See
-      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.3). -/
+      WS-SM SM3.A.3. -/
   lock       : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr
@@ -2226,7 +2226,7 @@ structure UntypedObject where
       with its lock available.  `retypeFromUntyped` and `untypedAllocate`
       acquire in write mode; observation paths (watermark / freeSpace
       reads) acquire in read mode.  See
-      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.9). -/
+      WS-SM SM3.A.9. -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq

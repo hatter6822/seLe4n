@@ -153,7 +153,7 @@ run_check_with_timeout "TRACE" lake exe rw_lock_suite
 # Runtime assertions for the Execution / Reachable infrastructure,
 # writerWaitDepth, append/drop theorems, head-promotion claims, and
 # the concrete event model.  See
-# docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md.
+# docs/dev_history/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md.
 run_check_with_timeout "TRACE" lake exe rw_lock_deferred_suite
 
 # WS-SM SM2.D.6 — Verified-lock-primitive surface anchor suite.

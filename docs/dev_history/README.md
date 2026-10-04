@@ -64,9 +64,20 @@ Nothing here drives active development, planning, or execution.
 
 ### Retired workstream plans (`planning/`)
 
-Plans move here when their workstream closes — unless kernel source still
-cites them (source must not reference `docs/dev_history/`), in which case they
-stay in `docs/planning/` with a COMPLETE status line.
+Plans move here when their workstream closes.  Kernel source, tests and Rust
+must not reference `docs/dev_history/` (Tier 0 enforces it), so they cite an
+archived plan by its stable workstream or phase ID (`WS-SM SM6.C`, `WS-RA`,
+`WS-RR RR8.12`), and the ID-to-plan table in
+[`docs/agent_guide/WORKSTREAM_CONTEXT.md`](../agent_guide/WORKSTREAM_CONTEXT.md)
+resolves each ID to its file here.  Before a plan moves, every obligation it
+still holds open is lifted into an active row of
+[`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) or a live plan.
+
+**Status lines in these files are the status at the time of archiving, not the
+current status.**  Some were stale even then (a `PLANNED` or `IN FLIGHT` header
+on a closed workstream).  The authoritative status of every workstream is
+[`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)'s workstream registry, with
+the phase table in `docs/agent_guide/WORKSTREAM_CONTEXT.md`.
 
 | File | Description |
 |---|---|
@@ -76,11 +87,22 @@ stay in `docs/planning/` with a COMPLETE status line.
 | `REPLY_OBJECTS_COMPLETION_PLAN.md` | Reply-object completeness items (complete, v0.31.155) |
 | `SCHEDCONTEXT_DONATION_CHAIN_PLAN.md` | WS-OD SchedContext donation chains (complete, v0.35.2) |
 | `SMP_FOUNDATIONS_PLAN.md` | WS-SM SM0 foundations (closed, v0.31.3) |
+| `SMP_RUST_HAL_PLAN.md` | WS-SM SM1 Rust HAL (landed, v0.31.3 → v0.31.8) |
+| `SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | WS-SM SM2.C-defer, the deferred verified-RwLock completion (complete, v0.34.50, closed by WS-RR RR6) |
+| `SMP_PER_OBJECT_LOCKS_PLAN.md` | WS-SM SM3 per-object locks (closed, v0.31.9) |
+| `SMP_PER_CORE_STATE_PLAN.md` | WS-SM SM4 per-core state (landed, v0.31.37) |
+| `SMP_PER_CORE_SCHEDULER_PLAN.md` | WS-SM SM5 per-core scheduler (landed, v0.31.38 → v0.31.64) |
+| `SMP_CROSS_CORE_IPC_PLAN.md` | WS-SM SM6 cross-core IPC (landed, v0.31.65 → v0.32.68) |
+| `SMP_TLB_SHOOTDOWN_PLAN.md` | WS-SM SM7 TLB shootdown and cache maintenance (landed, v0.32.72 → v0.32.151) |
+| `SMP_INFORMATION_FLOW_PLAN.md` | WS-SM SM8 information flow under SMP (closed, v0.33.23) |
+| `SMP_DECLASSIFICATION_COMPLETION_PLAN.md` | WS-SM SM9 declassification completion (closed, v0.33.100) |
+| `SYSCALL_RETURN_ABI_PLAN.md` | WS-RA syscall return ABI (complete, v0.33.38) |
+| `SMP_RELEASE_READINESS_PLAN.md` | WS-RR pre-SM10 release readiness (complete, v0.35.203) |
 | `SMP_LOCK_DATATYPE_COMPLETION_PLAN.md` | WS-LC lock datatype completion (complete, v0.34.55) |
 | `SMP_PANIC_HANG_REMEDIATION_PLAN.md` | WS-SM SM2.E panic/hang remediation (landed) |
 | `SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` | WS-SM SM2 verified lock primitives (landed, v0.31.9) |
 | `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` | WS-RC R4 type-level promotion (complete) |
-| `IPC_INVARIANT_DETHREADING_PLAN.md`, `V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md`, `V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md`, `V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md`, `WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`, `WS_V_KERNEL_STARVATION_PREVENTION_PLAN.md`, `WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md`, `WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` | Plans archived before this index existed; each file's own status line is authoritative |
+| `IPC_INVARIANT_DETHREADING_PLAN.md`, `V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md`, `V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md`, `V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md`, `WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`, `WS_V_KERNEL_STARVATION_PREVENTION_PLAN.md`, `WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md`, `WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` | Plans archived before this index existed; each file's status line is its status when archived, and `docs/REGISTERED_DEBT.md` is authoritative |
 
 ### Licensing research (`licensing_research/`)
 

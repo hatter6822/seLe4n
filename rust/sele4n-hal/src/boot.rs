@@ -460,7 +460,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // `smp_max_cores = 4`.  Maintainer decision #7 enables SMP by
     // default at v1.0.0 *once SM5 lands*; SM5.I serialised kernel entry
     // at v0.32.142, so the default is opt-out again — see `cmdline.rs`
-    // and `SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry serialisation".
+    // and WS-SM SM7 §"Kernel-entry serialisation".
     //
     // SM1.D.2: when `smp_enabled` is true, issue PSCI CPU_ON for each
     // secondary up to `smp_max_cores`, then signal them via SEV.

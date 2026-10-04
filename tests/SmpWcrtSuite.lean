@@ -16,7 +16,7 @@ import SeLe4n.Testing.StateBuilder
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM5.J
 "WCRT under fine locks" deliverable
-(`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.9, §5 SM5.J).
+(WS-SM SM5.J, §3.9).
 
 * **§1 Surface anchors** — every public SM5.J symbol resolves at elaboration time
   (rename/removal fails the build).

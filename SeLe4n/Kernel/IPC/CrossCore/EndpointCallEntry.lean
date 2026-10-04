@@ -9,7 +9,7 @@
 
 -- STATUS: staged for WS-SM SM6.A cross-core IPC (the live BaseIO seam +
 -- @[export]; the pure dispatch ops live in EndpointCallDispatch, below the API
--- layer; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md).
+-- layer; see WS-SM SM6).
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.Concurrency.Runtime

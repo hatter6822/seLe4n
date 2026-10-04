@@ -17,7 +17,7 @@ import SeLe4n.Kernel.Scheduler.Invariant.PerCore
 # WS-SM SM4.D — Cross-subsystem per-core invariant capstone
 
 This module is the capstone of the SM4.D cross-subsystem migration (plan
-`docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.4, sub-task SM4.D.19).  It
+WS-SM SM4.D.19).  It
 imports the per-subsystem per-core invariant slices landed by SM4.D
 (IPC, Capability, Architecture, InformationFlow) plus the SM4.C scheduler
 per-core layer, and assembles:

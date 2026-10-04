@@ -109,10 +109,42 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 
 **Plans**: master overview at
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
-per-phase plans at `docs/planning/SMP_*.md`, beginning with
+per-phase plans at `docs/planning/SMP_*.md` while a phase is open.  A closed
+phase's plan is archived in `docs/dev_history/planning/` and is named in the
+lookup table below, beginning with
 [`SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md) (SM0), which
-the glob covers but no canonical index named until WS-RR RR7.32 made that
-checkable.
+no canonical index named until WS-RR RR7.32 made that checkable.
+
+#### Archived plans by ID
+
+Source, tests and Rust cite a closed plan by its **workstream or phase ID**, not
+by path, because Tier 0 forbids `docs/dev_history/` in `SeLe4n/`, `Main.lean`,
+`tests/` and `rust/`.  This table resolves an ID to its plan.  A sub-task ID
+after the workstream (`WS-SM SM3.A.10`, `WS-RA RA.B.5b`, `WS-RR RR8.12`) is a row
+in that plan; a `§` after a phase ID (`WS-SM SM6 §3.1`) is a section of it.
+Each plan's status line is its status when archived; current status is the
+phase table above and `docs/REGISTERED_DEBT.md`.
+
+| ID | Archived plan | Closed |
+|----|---------------|--------|
+| WS-SM SM0 | [`SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md) | v0.31.3 |
+| WS-SM SM1 | [`SMP_RUST_HAL_PLAN.md`](../dev_history/planning/SMP_RUST_HAL_PLAN.md) | v0.31.8 |
+| WS-SM SM2 | [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) | v0.31.9 |
+| WS-SM SM2.C-defer | [`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](../dev_history/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md) | v0.34.50 (by WS-RR RR6) |
+| WS-SM SM2.E | [`SMP_PANIC_HANG_REMEDIATION_PLAN.md`](../dev_history/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md) | v0.32.148 |
+| WS-SM SM3 | [`SMP_PER_OBJECT_LOCKS_PLAN.md`](../dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md) | v0.31.9 |
+| WS-SM SM4 | [`SMP_PER_CORE_STATE_PLAN.md`](../dev_history/planning/SMP_PER_CORE_STATE_PLAN.md) | v0.31.37 |
+| WS-SM SM5 | [`SMP_PER_CORE_SCHEDULER_PLAN.md`](../dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md) | v0.31.64 |
+| WS-SM SM6 | [`SMP_CROSS_CORE_IPC_PLAN.md`](../dev_history/planning/SMP_CROSS_CORE_IPC_PLAN.md) | v0.32.68 |
+| WS-SM SM7 | [`SMP_TLB_SHOOTDOWN_PLAN.md`](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md) | v0.32.151 |
+| WS-SM SM8 | [`SMP_INFORMATION_FLOW_PLAN.md`](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md) | v0.33.23 |
+| WS-SM SM9 | [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](../dev_history/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md) | v0.33.100 |
+| WS-RA | [`SYSCALL_RETURN_ABI_PLAN.md`](../dev_history/planning/SYSCALL_RETURN_ABI_PLAN.md) | v0.33.38 |
+| WS-RR | [`SMP_RELEASE_READINESS_PLAN.md`](../dev_history/planning/SMP_RELEASE_READINESS_PLAN.md) | v0.35.203 |
+
+The SM7 and WS-RA plans' still-open deferrals are rows in
+`docs/REGISTERED_DEBT.md` (SM7.D items 2 and 5; the application IPC label,
+owner WS-CB), not obligations of the archived files.
 
 ### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24; slice 2, the Lean `virt` binding and its boot entry, v0.36.25; slice 3, the Lean-linked image booted on four PEs to every core's first idle dispatch in CI, v0.36.26, completing BP8.1; BP8.2, the four-PE bring-up gate executed in CI, v0.36.27; BP8.4, the Tier-4 gates executed on the `virt` test image, v0.36.28; BP8.5, the per-core counters read on the booted machine, v0.36.29; the BP2.4, BP2.5 and BP4.2 acceptance boxes decided by QEMU runs, v0.36.31)
 

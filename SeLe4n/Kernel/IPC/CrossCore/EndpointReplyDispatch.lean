@@ -14,7 +14,7 @@
 -- through the reply-object-aware `replyRecvBody` (in `API`), which resolves the
 -- *reply capability* (authority flows from holding the reply cap, exactly like
 -- `.reply`) and consumes / re-links the first-class Reply object — it does NOT use a
--- raw-thread dispatch here.  See docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §4.3,
+-- raw-thread dispatch here.  See WS-SM SM6 §3.1, §4.3,
 -- §5 (SM6.C).
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply

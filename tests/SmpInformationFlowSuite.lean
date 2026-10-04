@@ -22,7 +22,7 @@ import SeLe4n.Platform.FFI
 # WS-SM SM8.A / SM8.B / SM8.C / SM8.D — per-core observable state, non-interference, declassification audit and fine-lock information flow
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for WS-SM Phases SM8.A
-(plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §5, sub-task SM8.A.6),
+(WS-SM SM8.A.6),
 SM8.B (sub-task SM8.B.14), SM8.C (sub-task SM8.C.7) and SM8.D (sub-task
 SM8.D.6).
 

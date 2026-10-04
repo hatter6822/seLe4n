@@ -53,7 +53,7 @@
 //!   as the seam's `haltFailClosed` does.  [`ROUNDS_IN_FLIGHT`] is the
 //!   mutual-exclusion witness: a second initiator inside the critical section
 //!   is reported as [`RoundOutcome::SerialisationBroken`], which is the
-//!   "shootdown-round-serialisation break" `SMP_TLB_SHOOTDOWN_PLAN.md` §8 names
+//!   "shootdown-round-serialisation break" WS-SM SM7 §8 names
 //!   as a failure of SM7.
 //!
 //! **What QEMU can and cannot show.**  QEMU implements a broadcast `TLBI` as

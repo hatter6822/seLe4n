@@ -51,7 +51,7 @@ that it fixed something observable.  What the same scenarios now assert:
 simulate-the-Rust-side idiom, in the return direction), so these round
 trips exercise the same layout rules the real userspace decoder applies.
 
-Plan: `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` §1.2, RA.E.1, RA.E.2.
+Plan: WS-RA §1.2, RA.E.1, RA.E.2.
 -/
 
 namespace SeLe4n.Testing.SyscallReturnAbi

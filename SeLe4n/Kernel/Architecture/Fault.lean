@@ -13,7 +13,7 @@ import SeLe4n.Kernel.Architecture.SyscallReturn
 # WS-RR RR4 — The `Fault` type and the fault-message wire format
 
 This module is the RR4.1–RR4.6 deliverable of the pre-SM10 remediation
-workstream (plan `docs/planning/SMP_RELEASE_READINESS_PLAN.md` §RR4).  It
+workstream (WS-RR RR4).  It
 supplies the four things the fault-IPC path needs before any transition can
 exist:
 

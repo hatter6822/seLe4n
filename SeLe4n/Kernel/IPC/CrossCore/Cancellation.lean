@@ -15,7 +15,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 # WS-SM SM6.E — Cancellation across cores
 
 This module is the SM6.E deliverable of the WS-SM Phase 6 cross-core IPC
-workstream (plan `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.1, §5).  It
+workstream (WS-SM SM6 §3.1, §5).  It
 lifts the two cancellation sub-operations of the suspend pipeline
 (`Lifecycle.Suspend`) to *cross-core* transitions under the SM3.B per-object
 lock-set discipline:

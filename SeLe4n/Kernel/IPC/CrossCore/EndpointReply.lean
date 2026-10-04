@@ -11,7 +11,7 @@
 -- import closure when the live `.reply` / `.replyRecv` dispatch
 -- (`API.dispatchWithCap{,Checked}`) routes through the cross-core reply
 -- (`endpointReplyCrossCoreDispatch`, which builds on this transition).  See
--- docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §5 (SM6.C).
+-- WS-SM SM6.C.
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 -- **WS-RR RR8.12 (PR #897 Codex review)**: the `.receive` arm's replenish
@@ -28,7 +28,7 @@ import SeLe4n.Kernel.IPC.Operations.Donation
 # WS-SM SM6.C — Reply path across cores
 
 This module is the SM6.C deliverable of the WS-SM Phase 6 cross-core IPC
-workstream (plan `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.1, §5).  It lifts
+workstream (WS-SM SM6 §3.1, §5).  It lifts
 the single-core reply syscalls to *cross-core* transitions under the SM3.B
 per-object lock-set discipline:
 

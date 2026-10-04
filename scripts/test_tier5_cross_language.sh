@@ -3,7 +3,7 @@
 #
 # WS-SM SM2.C-defer D-6: Tier-5 cross-language correspondence harness driver.
 #
-# See docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md §5.6.
+# See docs/dev_history/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md §5.6.
 #
 # For each generated op-sequence, feeds the same input to:
 #   1. `lake exe rw_lock_oracle` (Lean oracle — folds applyOp over the

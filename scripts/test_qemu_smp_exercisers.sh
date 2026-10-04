@@ -16,7 +16,7 @@
 # shootdown,shootdown_stress}.sh` read the same drivers one at a time; this is
 # the one the Lean archive lane runs on every PR, with `--lean-kernel` and
 # `REQUIRE_QEMU=1`, so the two shootdown exercisers execute on the kernel the
-# image ships (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §8).
+# image ships (`docs/dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §8).
 #
 # Usage:
 #   ./scripts/test_qemu_smp_exercisers.sh                 # the HAL-only exerciser image

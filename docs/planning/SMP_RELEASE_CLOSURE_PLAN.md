@@ -11,7 +11,7 @@
 > **Audited cut**: `v0.31.2`; **re-baselined against** the pre-SM10
 > completeness audit at `v0.34.3`
 > ([`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §2.2)
-> **Was blocked on**: **WS-RR** ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)) —
+> **Was blocked on**: **WS-RR** ([`SMP_RELEASE_READINESS_PLAN.md`](../dev_history/planning/SMP_RELEASE_READINESS_PLAN.md)) —
 > RR8 closed at `v0.35.203`
 > **Target releases**: v0.98.0 → **v1.0.0**
 > **Calendar estimate**: **14–24 weeks**, superseding the original 4–6 weeks,
@@ -175,7 +175,7 @@ lives in the plan that owns the work.
 
 - All of SM0..SM9 complete.
 - Acceptance gates for SM0..SM9 green.
-- **WS-RA complete** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)).
+- **WS-RA complete** ([`SYSCALL_RETURN_ABI_PLAN.md`](../dev_history/planning/SYSCALL_RETURN_ABI_PLAN.md)).
   SM10.1 ships a bootable image, and a kernel whose every successful syscall
   returns the caller's own capability pointer — which userspace decodes as a
   `KernelError` — is not bootable in any useful sense.  WS-RA was sequenced
@@ -284,7 +284,7 @@ a phase that claimed it.
 | §2 dependency | Verdict | What decided it |
 |---------------|---------|-----------------|
 | All of SM0..SM9 complete | **Met** | Every phase row in the workstream status index (`docs/agent_guide/WORKSTREAM_CONTEXT.md`, formerly `CLAUDE.md`'s) is LANDED or CLOSED, SM9 at `v0.33.100`; SM10 is the only open phase and its content is WS-BP |
-| Acceptance gates for SM0..SM9 green | **Met** | The RR8.1 walk (`v0.35.55`, [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) §8), plus the tier stack re-run below |
+| Acceptance gates for SM0..SM9 green | **Met** | The RR8.1 walk (`v0.35.55`, [`SMP_RELEASE_READINESS_PLAN.md`](../dev_history/planning/SMP_RELEASE_READINESS_PLAN.md) §8), plus the tier stack re-run below |
 | WS-RA complete | **Met, with SM10.1's inherited half named** | `Architecture.timeoutFrame` and `Architecture.cancelledIpcFrame` resolve in the elaborated environment and `KernelError.ipcCancelled` is present, so §9's staging closed at `v0.34.67` as this section records.  What SM10.1 still owes is **delivery** at the context restore (BP7) |
 | WS-DT complete | **Met** | `dispatchCapabilityOnly_preserves_ipcInvariantFull` (production) and the two staged payoffs all resolve; the RR3.1 de-threading gate reports zero post-state bindings over all 178 bundle statements |
 | Fine-lock Tracks B and C landed | **Met** | `declaredFootprintSyscall` answers `true` on exactly **8 of 35** arms and `lockSetForSyscall_undeclared_none` pins the rest; the seam acquires through `runUnderDeclaredLockSet` |
@@ -858,7 +858,7 @@ sub-task with three of the five markers still absent.  All three now sit in
 
 ## 9. Cross-references
 
-- **Previous**: [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md), [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md)
+- **Previous**: [`SMP_TLB_SHOOTDOWN_PLAN.md`](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md), [`SMP_INFORMATION_FLOW_PLAN.md`](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md)
 - **None next** — SM10 is the closure phase; v1.0.0 ships.
 
 ## 10. Theorem catalogue for SM10

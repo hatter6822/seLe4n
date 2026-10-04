@@ -203,7 +203,7 @@ root = "tests.RwLockSuite"
 # Pure Lean; no FFI; the Rust oracle (`cargo run --bin rw_lock_oracle`)
 # is a separate binary that drives both deployed locks in process memory
 # and prints the same lines, read back out of the ticket lock's words.
-# See SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md §5.6.
+# See WS-SM SM2.C-defer §5.6.
 [[lean_exe]]
 name = "rw_lock_oracle"
 root = "tests.Tier5.RwLockOracle"

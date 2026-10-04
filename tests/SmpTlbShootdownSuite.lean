@@ -33,7 +33,7 @@ import SeLe4n.Testing.StateBuilder
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase
 SM7.A "Shootdown descriptor + state", SM7.B "Shootdown protocol", and
 SM7.C "Per-core TLB model" deliverables
-(`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §5, sub-tasks SM7.A.1–A.6,
+(WS-SM SM7 §5, sub-tasks SM7.A.1–A.6,
 SM7.B.1–B.12, and SM7.C.1–C.8).  The SM7.C per-core-TLB-model scenario
 groups are §5.1–§5.2 (SM7.E.1): the accessors / local ops
 (`tlbInsertOnCore` / `tlbInvalidateOnCore`) exposing the SMP staleness

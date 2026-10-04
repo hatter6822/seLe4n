@@ -129,6 +129,9 @@ def phase_map_rows(text: str, prefix: str, depth: int) -> dict[str, int]:
 # `UNFINISHED_SMP_WORK.md` is deliberately NOT canonical here: it is the audit
 # *finding* register, not the workstream index, and a plan visible only to an
 # auditor is precisely the state finding 39 describes.
+# `docs/agent_guide/LARGE_FILES.md` is NOT canonical either: a size inventory
+# names a plan because it is long, so letting it count would make a plan
+# discoverable by accident and undiscoverable the day it shrinks.
 # `docs/dev_history/planning/` is out of scope for the opposite reason --
 # CLAUDE.md tells readers not to reference it, so a retired plan being
 # unreachable is the intended state.
@@ -136,9 +139,6 @@ CANONICAL_INDICES = [
     "CLAUDE.md",
     "AGENTS.md",
     "docs/agent_guide/WORKSTREAM_CONTEXT.md",
-    # The large-files list moved out of CLAUDE.md with the workstream index;
-    # it is the only place some plans are named, so it stays an index.
-    "docs/agent_guide/LARGE_FILES.md",
     "docs/REGISTERED_DEBT.md",
     "docs/spec/SELE4N_SPEC.md",
 ]

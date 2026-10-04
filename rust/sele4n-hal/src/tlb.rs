@@ -93,7 +93,7 @@
 //! still be correct, just wasteful).
 //!
 //! **That reservation is enforced, not merely stated** (WS-RR RR1.9).
-//! `SMP_RUST_HAL_PLAN.md` §4.4 described the four local variants as
+//! WS-SM SM1 §4.4 described the four local variants as
 //! "private helpers"; they were `pub`, and the discipline held only by
 //! convention.  They are now `pub(crate)`, so the crate's public local
 //! surface is [`tlbi_local`] and the three `ffi_tlbi_*` exports — and

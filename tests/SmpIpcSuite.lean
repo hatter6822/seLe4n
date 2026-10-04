@@ -21,7 +21,7 @@ import SeLe4n.Testing.StateBuilder
 # WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite
 
 The acceptance-gate aggregate suite for WS-SM Phase SM6
-(`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §8): end-to-end cross-core IPC
+(WS-SM SM6 §8): end-to-end cross-core IPC
 round trips on a **4-thread / 4-core** deterministic fixture, composing the
 SM6.A/SM6.C transitions with the SM5 per-core scheduler (SGI handler
 dispatch) into full client/server message flows.

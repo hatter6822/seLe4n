@@ -8,20 +8,20 @@
 > it at the source: the deployed lock is now `QueuedRwLock`, whose refinement
 > to the FIFO spec was proved **before** the pool was repointed
 > (`queuedRwLock_refines_rwLockSpec`,
-> [`QueuedRwLockRefinement.lean`](../../SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean)),
+> [`QueuedRwLockRefinement.lean`](../../../SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean)),
 > the CAS-retry lock's own D-4 bridge was *completed* rather than deleted
 > (`rust_rwLock_refines_lean_honest`, no `ListBlockBisim` premise), the ticket
 > lock's counter arithmetic became a trace correspondence, and the Tier-5
 > oracle drives both real implementations instead of modelling one.
 > **Registered**: RR6.26 closed SM2.C-defer's row in
-> [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) table A, which the item had
+> [`../REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md) table A, which the item had
 > never reached before, and re-registered the two SM2.C **datatype** debts RR6
 > deliberately did not absorb — **SM2.C-T** (timestamps on `RwLockExecution`)
 > and **SM2.C-C** (a cancel constructor on `RwLockOp`) — as individual rows in
 > table C, since each changes a datatype the whole SM2.C liveness surface
 > quantifies over and neither can ride along with a lock-implementation cut.
 > **Both are now owned by WS-LC**
-> ([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](../dev_history/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)),
+> ([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)),
 > scoped ahead of WS-RR RR7; its LC1 (v0.34.51) landed the abstract withdrawal
 > and its LC4 retires both rows.
 
@@ -31,8 +31,8 @@
 > Shipping a verified microkernel whose core concurrency primitive carries a
 > known-deferred completeness story understates what "verified" means on the
 > one component every other subsystem's serialisability argument rests on.
-> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-> **Origin plan**: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3 (closed at audit-pass-3, HEAD `1109bda`)
+> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
+> **Origin plan**: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3 (closed at audit-pass-3, HEAD `1109bda`)
 > **Audited closure cut**: PR #784 (SM2.C closure with three audit passes)
 > **Target releases**: originally v1.x.x post-v1.0.0; substantively
 > delivered early in the pre-v0.31.10 SM2.C-defer cut (see the landing
@@ -722,7 +722,7 @@ def RwLockState.promoteDropCount (s : RwLockState) : Nat :=
     | (_, .read)  :: _ => s.waiters.takeWhile (fun w => w.2 = .read) |>.length
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.2 D-2: Writer-specific bounded wait (6 sub-tasks)
 
@@ -783,7 +783,7 @@ def RwLockState.isEffectiveRelease (s : RwLockState) (op : RwLockOp) : Prop :=
   | _               => False
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.3 D-3: Full liveness theorem (8 sub-tasks)
 
@@ -819,7 +819,7 @@ admitted within a bounded number of steps.
 | D-3.8 | Tests + surface anchors | tests | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.4 D-4: Full bisimulation refinement (10 sub-tasks)
 
@@ -862,7 +862,7 @@ the Rust impl's step semantics.
 | D-4.10 | Tests + surface anchors | tests | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.5 D-5: Queued RwLock variant (8 sub-tasks)
 
@@ -974,7 +974,7 @@ before, eliminating the bypass race.
 | D-5.8 | Cross-thread stress tests + Miri runs + loom-style coverage | Rust | L |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.6 D-6: Tier 5 cross-language correspondence tests (6 sub-tasks)
 
@@ -1075,7 +1075,7 @@ def main : IO Unit := do
   | some ops =>
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 # scripts/test_tier5_cross_language.sh
 
@@ -1277,8 +1277,8 @@ operationally.)
 
 ### Plans
 
-- **Master overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-- **Origin plan (closed)**: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+- **Master overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
+- **Origin plan (closed)**: [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 - **Next consumer**: [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md) — SM3 consumes the post-deferred RwLock surface
 
 ### Source files (post-closure)

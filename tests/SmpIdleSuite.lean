@@ -18,7 +18,7 @@ import SeLe4n.Testing.InvariantChecks
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM5.E
 "Per-core idle threads" deliverable
-(`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.5, §4.3, §5).
+(WS-SM SM5 §3.5, §4.3, §5).
 
 * **§1 Surface anchors** — every public SM5.E symbol resolves at elaboration
   time (rename/removal fails the build).

@@ -14,7 +14,7 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLock
 
 This file implements the Lean half of the Tier-5 cross-language
 correspondence harness.  See:
-`docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` §5.6
+WS-SM SM2.C-defer §5.6
 
 ## Operation
 

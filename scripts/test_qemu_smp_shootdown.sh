@@ -19,7 +19,7 @@
 # A missing acknowledgment times the round out, which halts the system
 # fail-closed as the seam does, and the FATAL line fails this gate: that, and a
 # serialisation break, are failures of SM7, not of the harness
-# (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §8).
+# (`docs/dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §8).
 #
 # Driver: `smp_exercisers::shootdown_round_trip` (`rust/sele4n-hal/src/smp_exercisers.rs`,
 # compiled into the test image alone).  The boot, the image and what the log

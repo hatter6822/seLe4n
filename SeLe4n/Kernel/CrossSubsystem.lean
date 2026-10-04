@@ -4308,7 +4308,7 @@ theorem collectQueueMembers_head_is_start
 
 The boot-core current-thread witness `bootFromPlatform_singleCore_witness`
 **has been retired** by WS-SM **SM4.E.1** (plan
-`docs/planning/SMP_PER_CORE_STATE_PLAN.md` §4.3 / §5.5).
+WS-SM SM4 §4.3 / §5.5).
 
 History: before SM4.B, `SchedulerState.current` was a single
 `Option ThreadId`, and the witness's *type* recorded the structural fact

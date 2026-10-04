@@ -29,8 +29,11 @@ to the root document itself.
   *schedule* (its sub-task table), not an account of what each cut changed —
   duplicating that account produces two records that drift.
 - When a workstream closes, its plan moves to `docs/dev_history/planning/`,
-  unless kernel source still cites it (source must not reference
-  `docs/dev_history/`, a Tier 0 gate).
+  after any obligation it still holds is lifted into an active row of
+  `docs/REGISTERED_DEBT.md`.  Source must not reference `docs/dev_history/`
+  (a Tier 0 gate), so it cites an archived plan by workstream or phase ID,
+  and the "Archived plans by ID" table in
+  `docs/agent_guide/WORKSTREAM_CONTEXT.md` resolves the ID.
 
 ## 1) Canonical source-of-truth map
 
@@ -59,7 +62,7 @@ to the root document itself.
 | Hardware-boundary contract policy | `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md` | `10-path-to-real-hardware-mobile-first.md` | Normative constraints in policy doc; chapter links policy implications. |
 | Security trajectory | `docs/INFORMATION_FLOW_ROADMAP.md`, `docs/THREAT_MODEL.md` | `12-proof-and-invariant-map.md` | Milestone shifts must update roadmap and at least one active planning chapter. |
 | CI telemetry baseline | `docs/CI_TELEMETRY_BASELINE.md` | — (linked from the GitBook navigation) | Root doc owns the telemetry schema and policy. |
-| Agent guidance | `CLAUDE.md` (durable rules; `AGENTS.md` is a symlink to it), `docs/agent_guide/` (long-form rationale, live workstream context, large-file list) | — | `CLAUDE.md` carries no workstream content; see its first section. |
+| Agent guidance | `CLAUDE.md` (durable rules; `AGENTS.md` is a pointer file to it, holding only its section list), `docs/agent_guide/` (long-form rationale, live workstream context, large-file list) | — | `CLAUDE.md` carries no workstream content; see its first section. |
 
 ## 2) Test and verification coverage map
 

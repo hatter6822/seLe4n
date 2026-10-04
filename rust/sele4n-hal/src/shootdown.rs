@@ -18,7 +18,7 @@
 //! window between opening a round and publishing its operands.  The
 //! Boolean flag vector this replaced had both hazards.
 //!
-//! ## Protocol role (SMP_TLB_SHOOTDOWN_PLAN.md §3.2, §4.2)
+//! ## Protocol role (WS-SM SM7 §3.2, §4.2)
 //!
 //! A shootdown round for `(asid, vaddr)` initiated by core `c₀`:
 //!

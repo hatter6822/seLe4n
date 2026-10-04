@@ -12,7 +12,7 @@
 -- `endpointCallCrossCoreDispatch{,Checked}` here, deriving the executing core
 -- from the live state (`determineExecutingCore`). (Former "STATUS: staged"
 -- marker replaced with this landing note per the implement-the-improvement rule;
--- see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md.)
+-- see WS-SM SM6.)
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.DualQueue.WithCaps

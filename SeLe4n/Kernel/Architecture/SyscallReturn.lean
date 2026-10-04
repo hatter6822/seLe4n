@@ -35,7 +35,7 @@ Nothing in this module is live until the WS-RA flip: the FFI boundary keeps
 the bit-63 `encodeOk` / `encodeError` protocol until `Platform/FFI.lean` and
 the Rust mirror move together (plan §5, the migration window).
 
-Plan: `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` §3 (RA.A.1-RA.A.8).
+Plan: WS-RA RA.A.1-RA.A.8.
 -/
 
 namespace SeLe4n.Model.KernelError

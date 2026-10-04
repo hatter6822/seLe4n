@@ -18,7 +18,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph
 # WS-SM SM4.C — Per-core scheduler invariant migration
 
 This module is the SM4.C deliverable of the WS-SM path-a per-core state
-replacement (plan `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.3, §5.6).
+replacement (WS-SM SM4 §5.3, §5.6).
 
 The SM4.B foundation flipped every per-core `SchedulerState` field to
 `Vector α numCores` and routed the existing single-core invariant surface

@@ -12,7 +12,7 @@ import SeLe4n.Kernel.InformationFlow.ProjectionPerCore
 /-!
 # WS-SM SM8.A — Per-core observable state
 
-Plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §3.1–§3.2 / §5 sub-tasks
+WS-SM SM8 §3.1–§3.2 / §5 sub-tasks
 SM8.A.1 … SM8.A.6.  This module mounts the SMP *observer* — the pair
 `(c, L)` of a core and a security label (plan Definition 3.1.1) — and the
 observable state that observer sees (plan Definition 3.2.1), on top of the

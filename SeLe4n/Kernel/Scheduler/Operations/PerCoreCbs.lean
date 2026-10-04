@@ -16,7 +16,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 # WS-SM SM5.H — Per-core CBS (Constant Bandwidth Server)
 
 Per-core CBS replenishment-queue management (plan
-`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.8, §5): each core owns its
+WS-SM SM5 §3.8, §5): each core owns its
 **own** replenishment queue (`replenishQueueOnCore c`, the SM4.B per-core field),
 holding the budget-refill schedule for the SchedContexts whose bound thread is
 homed on core `c`.  When a thread's `cpuAffinity` changes, its bound

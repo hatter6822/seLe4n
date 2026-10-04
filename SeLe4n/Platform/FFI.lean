@@ -1129,7 +1129,7 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     across Lean and Rust described three mutually exclusive mechanisms, none of
     them live.  With the lock in place, SMP returns to the default decision #7
     states (`CmdlineConfig::default` has `smp_enabled: true`), which was gated on
-    exactly this phase.  See `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
+    exactly this phase.  See WS-SM SM7
     §"Kernel-entry serialisation". -/
 def modifyGetKernelState {α : Type} (f : SystemState → α × SystemState) : BaseIO α :=
   kernelStateRef.modifyGet f

@@ -1,7 +1,7 @@
 # SM8 — Information Flow Under SMP (WS-SM Phase 8)
 
 > **Phase**: SM8 of WS-SM
-> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases**: v0.91.0 .. v0.97.x (parallel with SM7)
 > **Calendar estimate**: 5-8 weeks
@@ -228,7 +228,7 @@ core. The field's added; the audit invariant preserved.
 | SM8.A.6 | Start `tests/SmpInformationFlowSuite.lean` | M | LANDED |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM8.B — Per-core NI proofs (14 sub-tasks)
 
@@ -264,7 +264,7 @@ core. The field's added; the audit invariant preserved.
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM8.C — Per-core declassification audit (7 sub-tasks, + 2 added) — **LANDED v0.33.7; COMPLETE v0.33.8**
 
@@ -281,7 +281,7 @@ core. The field's added; the audit invariant preserved.
 | SM8.C.9 | The live `.declassify` syscall | ABI + Theorem | L | LANDED v0.33.8 |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM8.D — Information flow under fine locks (6 sub-tasks) — **LANDED v0.33.9, review cut v0.33.10**
 
@@ -295,7 +295,7 @@ core. The field's added; the audit invariant preserved.
 | SM8.D.6 | Lock-contention IF scenarios (5 tests) | M | LANDED (7 groups) |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM8.E — Tests + closure (3 sub-tasks) — **LANDED v0.33.23**
 
@@ -306,7 +306,7 @@ core. The field's added; the audit invariant preserved.
 | SM8.E.3 | Update `enforcementBoundaryExtended` count 39 → 40 for the `withLockSet` bracket (SM8.C's completion cut already took 38 → 39 for `declassifyObjectFromCore`, so this row is now the lock-bracket entry alone) | Theorem | T |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ## 6. Verification strategy
 
@@ -417,7 +417,7 @@ unanchored.
 
 - **Previous**: [`SMP_PER_CORE_SCHEDULER_PLAN.md`](SMP_PER_CORE_SCHEDULER_PLAN.md), [`SMP_CROSS_CORE_IPC_PLAN.md`](SMP_CROSS_CORE_IPC_PLAN.md)
 - **Parallel**: [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md)
-- **Next**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md)
+- **Next**: [`SMP_RELEASE_CLOSURE_PLAN.md`](../../planning/SMP_RELEASE_CLOSURE_PLAN.md)
 
 ## 10. Theorem catalogue for SM8
 

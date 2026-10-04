@@ -105,7 +105,7 @@ structure SchedulerState where
 
 /-! ### WS-SM SM4.B.8: per-core scheduler-state accessors (path-a)
 
-Per `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §3.1, every per-core
+Per WS-SM SM4 §3.1, every per-core
 `SchedulerState` field is read through an explicit `…OnCore (c : CoreId)`
 accessor rather than the bare field projection.  This is the decision-#4
 "path-a" discipline: there is no scalar-field shim in the final state, so
@@ -761,7 +761,7 @@ structure SystemState where
       starts with the ObjStore lock available.  This is the lowest-level
       lock in the SM3 hierarchy, acquired first (before any per-object
       lock) per the 2PL discipline in SM3.C.  See
-      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.10). -/
+      WS-SM SM3.A.10. -/
   objStoreLock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   /-- **WS-RR RR7.39**: the per-core scheduler lock words — the state

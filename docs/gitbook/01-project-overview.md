@@ -21,7 +21,7 @@ specification and implementation.
 
 Current state (as of v0.36.42): 433,986 lines of production Lean across 361 files, 88,629 lines across 71 Lean test suites,
 14,408 theorem/lemma declarations, zero unsound constructs.
-Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
+Metrics source: [`docs/codebase_map.json`](../codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
 
@@ -51,7 +51,7 @@ shootdown and cache maintenance, SMP information flow, and declassification.
 The syscall return ABI is complete.
 
 **WS-RR — the pre-1.0 remediation phase — is complete at v0.35.203**
-([`SMP_RELEASE_READINESS_PLAN.md`](../planning/SMP_RELEASE_READINESS_PLAN.md)):
+([`SMP_RELEASE_READINESS_PLAN.md`](../dev_history/planning/SMP_RELEASE_READINESS_PLAN.md)):
 198 sub-tasks across nine phases, all landed — the boot-path fail-open closure
 (v0.34.48), the verified lock primitives (v0.34.50), which made the deployed
 reader-writer lock the ticket-FIFO one the Lean spec describes and refined it
@@ -172,7 +172,7 @@ what is *not* claimed and who owns each gap.
 |-----|------|
 | What changed in a version | [`CHANGELOG.md`](../../CHANGELOG.md) |
 | What is deferred, and who owns it | [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
-| What a phase is scheduled to do | [`docs/planning/`](../planning/) |
+| What a phase is scheduled to do | [`docs/planning/`](../planning) |
 | How to build, test and contribute | [`DEVELOPMENT.md`](../DEVELOPMENT.md) |
 
 ## 5. Architecture mental model

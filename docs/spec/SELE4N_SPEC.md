@@ -5,7 +5,7 @@ portfolio, and acceptance criteria for **seLe4n** — a production-oriented micr
 written in Lean 4 with machine-checked proofs, improving on seL4 architecture.
 
 For the reference specification of the original seL4 microkernel that seLe4n builds on,
-see [`docs/spec/SEL4_SPEC.md`](./SEL4_SPEC.md).
+see [`docs/spec/SEL4_SPEC.md`](SEL4_SPEC.md).
 
 ---
 
@@ -55,10 +55,10 @@ enforcement, and scheduling.
 | **Test LoC** | 88,629 across 71 Lean test suites |
 | **Proved declarations** | 14,408 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
+| **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
-| **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
+| **Metrics source of truth** | [`docs/codebase_map.json`](../codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
 
 ---
@@ -1186,27 +1186,27 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md).
    The phased plan delivers each capability in its own sub-plan:
    - Per-core run queues with work-stealing or affinity-based scheduling →
-     [`SMP_PER_CORE_SCHEDULER_PLAN.md`](../planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
+     [`SMP_PER_CORE_SCHEDULER_PLAN.md`](../dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
    - IPI for cross-core preemption notification (SGI INTID 0–4 reserved at
      SM0.H) and TLB shootdown →
-     [`SMP_TLB_SHOOTDOWN_PLAN.md`](../planning/SMP_TLB_SHOOTDOWN_PLAN.md)
+     [`SMP_TLB_SHOOTDOWN_PLAN.md`](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md)
    - Verified ticket lock + RW lock primitives for shared kernel state →
      [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
    - Per-object lock acquisition discipline (LockId total order from SM0.I) →
-     [`SMP_PER_OBJECT_LOCKS_PLAN.md`](../planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+     [`SMP_PER_OBJECT_LOCKS_PLAN.md`](../dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
    - Cache coherency model (MOESI on Cortex-A76, managed by hardware; software
      ensures proper barrier usage via `BarrierKind` selection from SM0.F) — no
      dedicated sub-plan; lives inside per-object lock primitives
    - Per-core TLB flush coordination (currently single-core TLBI suffices) →
-     [`SMP_TLB_SHOOTDOWN_PLAN.md`](../planning/SMP_TLB_SHOOTDOWN_PLAN.md)
+     [`SMP_TLB_SHOOTDOWN_PLAN.md`](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md)
    - Per-core exception vector tables and interrupt routing →
-     [`SMP_RUST_HAL_PLAN.md`](../planning/SMP_RUST_HAL_PLAN.md)
+     [`SMP_RUST_HAL_PLAN.md`](../dev_history/planning/SMP_RUST_HAL_PLAN.md)
    - Per-core kernel state (run queue head, current thread, idle TCB) →
-     [`SMP_PER_CORE_STATE_PLAN.md`](../planning/SMP_PER_CORE_STATE_PLAN.md)
+     [`SMP_PER_CORE_STATE_PLAN.md`](../dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
    - Cross-core IPC fast-path →
-     [`SMP_CROSS_CORE_IPC_PLAN.md`](../planning/SMP_CROSS_CORE_IPC_PLAN.md)
+     [`SMP_CROSS_CORE_IPC_PLAN.md`](../dev_history/planning/SMP_CROSS_CORE_IPC_PLAN.md)
    - Information-flow projection under SMP →
-     [`SMP_INFORMATION_FLOW_PLAN.md`](../planning/SMP_INFORMATION_FLOW_PLAN.md)
+     [`SMP_INFORMATION_FLOW_PLAN.md`](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md)
    WS-SM Phase SM0 (foundations & honesty patches) closes the type-level
    scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
    BklState) at v0.31.3; SM1..SM10 wire those types into runtime state.
@@ -1341,7 +1341,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    scanner `scan_trap_rs_handle_irq_per_core_intact` pins the
    SM1.I.1 contract.  593 HAL tests at v0.31.8 (510 at SM1.E/F/G/H close + 83 SM1.I including audit-pass refinements at
    v0.31.7).  WS-SM SM1 acceptance gate (per
-   `docs/planning/SMP_RUST_HAL_PLAN.md` §8) all items checked.
+   `docs/dev_history/planning/SMP_RUST_HAL_PLAN.md` §8) all items checked.
 
    **WS-SM Phase SM2.A (v0.31.9) opens SM2** — the **verification-
    quality elevation** that distinguishes seLe4n from seL4: the
@@ -2145,7 +2145,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    SystemState's object store, plus the per-variant `objectLockOf`
    projection function and the SM3.A.11 default-state theorems.
    Closes §5.1 of
-   `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (11 sub-tasks; 9
+   `docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (11 sub-tasks; 9
    LANDED + 2 documented as N/A for seLe4n's object model).
 
    **Per-object lock fields**:
@@ -2246,7 +2246,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    builds the abstract lock-set type and the per-syscall lock-set
    declarations on top of SM3.A's per-object lock fields and SM0.I's
    `LockKind`/`LockId` total order.  Closes §5.2 of
-   `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (9 sub-tasks; all
+   `docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (9 sub-tasks; all
    LANDED).
 
    **SM3.B.1 — `KernelObject.lockKind` + `LockId.fromObject`**:
@@ -2535,7 +2535,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      obligation explicitly at the type level — SM3.C cannot
      forget to handle the chain.
    * **New SM3.C.11 sub-task** in
-     `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.3
+     `docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.3
      covering the dynamic chain-walk locking design:
      `withDynamicChainExtension` combinator (optimistic walk +
      verify, `ObjId.val` ascending discipline, bounded
@@ -3864,7 +3864,7 @@ preserves on a per-core basis.
 
 #### WS-SM SM4.E — single-core witness retirement + retirement ledger
 
-WS-SM **SM4.E** (plan `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.5)
+WS-SM **SM4.E** (plan `docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md` §5.5)
 begins discharging the inventory as the SM4 path-a per-core migration
 lands. SM4.B replaced the singular `SchedulerState` fields with per-core
 `Vector α numCores`, so the boot-core-only single-core witness
@@ -3926,7 +3926,7 @@ alongside the latent inventory (closing SMP-H3).
 
 2.11. **WS-SM Phase SM3.D (post-SM3.C) deadlock-freedom, wait-graph
    acyclicity, bounded-wait, and lock-discipline grounding** — closes
-   §5.4 of `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (3 PRs, 7
+   §5.4 of `docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (3 PRs, 7
    sub-tasks, all LANDED) within the v0.31.9 release cut.  Proves the
    architectural keystone of SM3: **no execution of the verified
    microkernel can deadlock** when every kernel transition acquires
@@ -8228,7 +8228,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ### 10.3 Historical Baselines
 
-Prior audits and workstream plans are archived in [`docs/dev_history/audits/`](../dev_history/audits/).
+Prior audits and workstream plans are archived in [`docs/dev_history/audits/`](../dev_history/audits).
 
 ---
 
@@ -8455,7 +8455,7 @@ it gets the same treatment: the exclusion is a statement about the
 residency by timing its own accesses, which a kernel-level projection
 cannot deny it. Both are therefore **accepted** channels — one instance
 per core, like CC-1 — registered in
-[`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](../planning/SMP_INFORMATION_FLOW_PLAN.md)
+[`docs/dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md`](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md)
 §3.5, with the formal `CovertChannel` treatment scoped to WS-SM SM8.B.8
 alongside the lock-contention channel CC-5, and mitigation in the same
 class as CC-2's (hardware partitioning; WS-W).

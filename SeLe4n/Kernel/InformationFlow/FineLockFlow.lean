@@ -8,7 +8,7 @@
 -/
 
 -- STATUS: staged for WS-SM SM8.D — information flow under fine locks
--- (docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 SM8.D.1 … SM8.D.6).
+-- (WS-SM SM8.D.1 … SM8.D.6).
 
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
@@ -16,7 +16,7 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 /-!
 # WS-SM SM8.D — information flow under fine locks
 
-Plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §5 sub-tasks SM8.D.1 …
+WS-SM SM8 §5 sub-tasks SM8.D.1 …
 SM8.D.5 (SM8.D.6 is the scenario suite in `tests/SmpInformationFlowSuite.lean`).
 
 SM8.A built the per-core observer, SM8.B proved what the SMP kernel does not

@@ -52,10 +52,10 @@ python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
 #      in a language no reader of this file need speak.
 #   4. Source citations carrying line numbers (`Boot.lean:551`), which are
 #      stale on the next edit above them.
-#   5. AGENTS.md is a symlink to CLAUDE.md.  It used to be a byte-identical
-#      mirror (only the *version line* was once checked, so any other
-#      divergence was invisible to CI); a symlink makes divergence
-#      impossible, and the check below pins the link in the git index.
+#   5. AGENTS.md is a regular pointer file to CLAUDE.md.  It was once a
+#      byte-identical mirror (only the *version line* was checked) and then
+#      a symlink (which a `core.symlinks=false` checkout flattens to one
+#      line); the check below holds the pointer to CLAUDE.md's section list.
 # ──────────────────────────────────────────────────────────────────────
 
 "${SCRIPT_DIR}/sync_readme_from_codebase_map.sh" --check
@@ -79,29 +79,70 @@ python3 "${SCRIPT_DIR}/check_source_line_citations.py"
 # must catch, and each one it must leave alone.
 python3 "${SCRIPT_DIR}/test_source_line_citations_gate.py"
 
-# AGENTS.md is a symlink to CLAUDE.md, so the two cannot diverge (it replaced a
-# byte-identical mirror whose sync this check used to enforce).  What is checked
-# is the RELATION, in the git index rather than the working tree: the entry is
-# a symlink (mode 120000) and its target is exactly `CLAUDE.md`.  A regular file
-# that merely contains the same text, or a symlink to anything else, fails --
-# and so does a checkout with `core.symlinks=false`, where the working-tree file
-# would be a one-line text file that only the index can tell apart.
+# AGENTS.md is a small REGULAR file that points at CLAUDE.md, the one place
+# the rules are stated.  It used to be a symlink, and a checkout with
+# `core.symlinks=false` (Windows, or a filesystem without symlinks) turns a
+# symlink into a one-line text file reading `CLAUDE.md` -- an agent loading
+# AGENTS.md then received no rules and no instruction to look further, while
+# this gate still printed PASS.  A regular pointer file reads the same on every
+# checkout.  Three properties are enforced:
+#   (a) it is a regular file, in the git index (mode 100644) and in the working
+#       tree (not a symlink), so the link cannot come back unnoticed;
+#   (b) it names and links CLAUDE.md;
+#   (c) its "Sections of CLAUDE.md" list equals CLAUDE.md's top-level (`## `)
+#       headings, in order, outside fenced code -- so a section added, renamed
+#       or removed in CLAUDE.md fails here until the pointer is updated.
 agents_entry="$(git ls-files -s -- AGENTS.md)"
 agents_mode="${agents_entry%% *}"
-if [[ "${agents_mode}" != "120000" ]]; then
-  echo "FAIL: AGENTS.md must be a symlink to CLAUDE.md in the git index (mode '${agents_mode:-absent}', want 120000)." >&2
+if [[ "${agents_mode}" != "100644" ]]; then
+  echo "FAIL: AGENTS.md must be a regular file in the git index (mode '${agents_mode:-absent}', want 100644); it is a pointer to CLAUDE.md, not a symlink." >&2
   exit 1
 fi
-agents_target="$(git cat-file -p ":AGENTS.md")"
-if [[ "${agents_target}" != "CLAUDE.md" ]]; then
-  echo "FAIL: AGENTS.md is a symlink to '${agents_target}', not to CLAUDE.md." >&2
+if [[ -L AGENTS.md || ! -f AGENTS.md ]]; then
+  echo "FAIL: the working-tree AGENTS.md must be a regular file, not a symlink or missing." >&2
   exit 1
 fi
-if [[ -L AGENTS.md && "$(readlink AGENTS.md)" != "CLAUDE.md" ]]; then
-  echo "FAIL: the working-tree AGENTS.md symlink points at '$(readlink AGENTS.md)', not CLAUDE.md." >&2
+if ! python3 - <<'PY'
+import re, sys
+from pathlib import Path
+
+def h2_outside_fences(text):
+    out, fenced = [], False
+    for line in text.splitlines():
+        if line.startswith("```"):
+            fenced = not fenced
+        elif not fenced and line.startswith("## "):
+            out.append(line[3:].strip())
+    return out
+
+claude = h2_outside_fences(Path("CLAUDE.md").read_text(encoding="utf-8"))
+agents = Path("AGENTS.md").read_text(encoding="utf-8")
+errors = []
+if "](CLAUDE.md)" not in agents:
+    errors.append("AGENTS.md does not link CLAUDE.md (`](CLAUDE.md)`)")
+m = re.search(r"^## Sections of CLAUDE\.md\n(.*)\Z", agents, re.M | re.S)
+if not m:
+    errors.append("AGENTS.md has no '## Sections of CLAUDE.md' list")
+    listed = []
+else:
+    listed = [l[2:].strip() for l in m.group(1).splitlines() if l.startswith("- ")]
+if not claude:
+    errors.append("CLAUDE.md has no top-level (## ) headings; the comparison would pass vacuously")
+if m and listed != claude:
+    missing = [h for h in claude if h not in listed]
+    extra = [h for h in listed if h not in claude]
+    errors.append("AGENTS.md's section list does not match CLAUDE.md's headings"
+                  + (f"; missing: {missing}" if missing else "")
+                  + (f"; not in CLAUDE.md: {extra}" if extra else "")
+                  + ("; same set, different order" if not missing and not extra else ""))
+for e in errors:
+    print(f"FAIL: {e}", file=sys.stderr)
+sys.exit(1 if errors else 0)
+PY
+then
   exit 1
 fi
-echo "PASS: AGENTS.md is a symlink to CLAUDE.md."
+echo "PASS: AGENTS.md is a regular pointer file to CLAUDE.md and lists its sections."
 
 # AC5-B / X-08 (retired): a GitBook content-hash drift check compared the
 # H1/H2 headings of six canonical root documents against GitBook chapters that

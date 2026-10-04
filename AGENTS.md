@@ -1,1 +1,35 @@
-CLAUDE.md
+# AGENTS.md — the project rules are in CLAUDE.md
+
+**All project rules for this repository live in [`CLAUDE.md`](CLAUDE.md).
+Read that file in full before doing any work here** — building, editing,
+reviewing, or answering questions about the code. This file states no rules of
+its own: an agent that reads only this file has read none of them.
+
+`CLAUDE.md` is named for the tool that auto-loads it; it binds every
+contributor, human or agent. Edit `CLAUDE.md` only. The list below is its
+top-level sections, and `scripts/test_docs_sync.sh` fails when the two
+disagree, so a section added, renamed or removed there must be mirrored here.
+
+## Sections of CLAUDE.md
+
+- What this project is
+- This file holds durable rules only — no workstream content
+- Versioning policy (every PR bumps the patch version)
+- Build and run
+- Validation commands (tiered)
+- Module build verification (mandatory)
+- Source layout
+- Reading large files
+- Writing and editing large files
+- Handling large search and command output
+- Background agent file-change protection
+- Key conventions
+- Implement-the-improvement rule
+- Documentation rules
+- Third-party attribution
+- Website link protection
+- Ignoring dev_history
+- Workstream planning documents
+- PR checklist
+- Session URL hygiene
+- Vulnerability reporting

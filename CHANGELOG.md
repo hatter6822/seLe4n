@@ -24,11 +24,13 @@
   `LARGE_FILES.md`; `check_lock_ceiling_figures.py` requires the canonical
   lock-ceiling statement in `WORKSTREAM_CONTEXT.md` instead of
   `CLAUDE.md`/`AGENTS.md`; `check_workstream_plan.py` treats
-  `WORKSTREAM_CONTEXT.md` and `LARGE_FILES.md` as companion/canonical indices;
+  `WORKSTREAM_CONTEXT.md` as a companion/canonical index (`LARGE_FILES.md`
+  was briefly one too; withdrawn below);
   the Tier 3 prose anchors that pinned workstream text in `CLAUDE.md` now pin
   it in `WORKSTREAM_CONTEXT.md` (negatives still cover `CLAUDE.md` and
   `AGENTS.md` too).  The `CLAUDE.md` ↔ `AGENTS.md` byte-mirror gate is
-  unchanged and still holds (superseded below: `AGENTS.md` is now a symlink).
+  unchanged and still holds (superseded below: `AGENTS.md` is now a pointer
+  file).
 - **Documentation clean-up (same PR).**
   - *One home per topic.* Seven GitBook chapters that only restated a root
     document (25–31: sync matrix, VSpace ADR, dedup map, threat model, CI
@@ -45,9 +47,10 @@
     layout now links `DEVELOPMENT.md` §5, and it gains the one rule only
     `DEVELOPMENT.md` stated (*deferrals are registered, never silent*).  The
     SA-2 description duplicated in `DEPLOYMENT_GUIDE.md` links the advisory.
-  - *`AGENTS.md` is a symlink to `CLAUDE.md`.*  `test_docs_sync.sh` now checks
-    the link in the git index (mode `120000`, target `CLAUDE.md`) instead of
-    byte-comparing two copies.
+  - *`AGENTS.md` stops duplicating `CLAUDE.md`.*  It was first made a
+    symlink; review found that a `core.symlinks=false` checkout flattens a
+    symlink to a one-line file the gate still passed, so it is now a regular
+    pointer file (see *Review fixes* below).
   - *Completed plans archived.* Nine completed plans moved to
     `docs/dev_history/planning/` (`DONATION_POP_TRIGGER`, `REPLY_FRAME_REMOVAL`,
     `REPLY_OBJECTS_COMPLETION`, `SCHEDCONTEXT_DONATION_CHAIN`,
@@ -55,15 +58,66 @@
     `SMP_PANIC_HANG_REMEDIATION`, `SMP_VERIFIED_LOCK_PRIMITIVES`,
     `WS_RC_R4_TYPE_LEVEL_PROMOTION`), and the closed workstreams' sections of
     the workstream context (WS-RA, WS-OD, WS-RM, WS-HP, WS-LC) moved verbatim
-    to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`.  Completed
-    plans that kernel source still cites stay in `docs/planning/`, because a
-    Tier 0 gate forbids source from referencing `docs/dev_history/`.  Every
-    link, Tier 3 anchor and CHANGELOG link *target* (labels untouched) was
-    repointed; `docs/dev_history/README.md` indexes the archive.
+    to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`.  Every link
+    and CHANGELOG link *target* (labels untouched) was repointed;
+    `docs/dev_history/README.md` indexes the archive.  The eleven completed
+    plans kernel source still cited followed once the citations named IDs
+    instead of paths (next item).
   - *Active plans no longer write workstream content into `CLAUDE.md`.*
     WS-CB's CB1.7, CB8.4 and CB8.8, SM10's closure row, and the pointer rows in
     four other live plans now target `docs/agent_guide/WORKSTREAM_CONTEXT.md`
     (and `LARGE_FILES.md` for the large-file snapshot).
+- **The completed plans source still cited are archived too (same PR).**
+  SM1 (`SMP_RUST_HAL`), SM2.C-defer (`SMP_RWLOCK_DEFERRED_COMPLETION`), SM3
+  (`SMP_PER_OBJECT_LOCKS`), SM4 (`SMP_PER_CORE_STATE`), SM5
+  (`SMP_PER_CORE_SCHEDULER`), SM6 (`SMP_CROSS_CORE_IPC`), SM7
+  (`SMP_TLB_SHOOTDOWN`), SM8 (`SMP_INFORMATION_FLOW`), SM9
+  (`SMP_DECLASSIFICATION_COMPLETION`), WS-RA (`SYSCALL_RETURN_ABI`) and WS-RR
+  (`SMP_RELEASE_READINESS`) moved to `docs/dev_history/planning/`, each
+  checked closed first.  The WS-RR plan's header still read IN FLIGHT, though
+  WS-RR closed at `v0.35.203`; it now says so.
+  - *Source cites IDs, not paths.*  Every citation of these plans in
+    `SeLe4n/` (85 lines in 59 files), `tests/` (22), `rust/` (9, including the
+    `build.rs` panic text) and `lakefile.toml` (1) names the workstream or
+    phase ID instead, keeping any sub-task ID
+    (`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.10) becomes
+    `WS-SM SM3.A.10`) and, where there was none, the § reference.  Comments
+    and strings only, with no line added or removed, so the LoC metrics do
+    not move.  The Tier 0 ban on `docs/dev_history` in source is unchanged.
+  - *The IDs resolve in a live document.*
+    `docs/agent_guide/WORKSTREAM_CONTEXT.md` gains an "Archived plans by ID"
+    table (WS-SM SM0–SM9 with SM2.C-defer and SM2.E, WS-RA, WS-RR).
+  - *Open obligations were lifted before anything moved.*  WS-RC R4's two
+    follow-on promotions, registered only inside its archived plan, are now
+    two `docs/REGISTERED_DEBT.md` rows with owner and closure target (endpoint
+    queues behind a `NoDupQueue` wrapper; the remaining `RHTable`-shaped
+    fields behind unique-slot wrappers).  SM6's `withLockSet` bundle-carriage
+    item gets its own row (owner fine-lock Track D, post-v1.0.0), and the
+    application-IPC-label row now states WS-RA's two candidate designs itself.
+  - *Tier 3 reads no archived prose.*  Every anchor that read
+    `docs/dev_history/` was re-anchored on the live register, spec or source
+    where the fact is still live, or deleted where it only pinned historical
+    text.  That covers the anchors on `CLOSED_WORKSTREAM_CONTEXT.md`,
+    `DONATION_POP_TRIGGER_PLAN.md` and `REPLY_FRAME_REMOVAL_PLAN.md`, and the
+    eight that read the plans archived here.  Links, script comments,
+    `LARGE_FILES.md`, `docs/codebase_map.json` and the archive index follow
+    the move.
+- **Review fixes (same PR).**
+  - `AGENTS.md` is a regular file that says all rules live in `CLAUDE.md`,
+    must be read first, and lists `CLAUDE.md`'s sections.  `test_docs_sync.sh`
+    requires a regular file (index mode `100644`, not a symlink in the working
+    tree) that links `CLAUDE.md`, and a section list equal to `CLAUDE.md`'s
+    `## ` headings, so heading drift fails.  `version_locations.sh` drops
+    `AGENTS.md`, which carries no version (35 sites).
+  - `check_workstream_plan.py` no longer counts `LARGE_FILES.md` as a
+    canonical index; a size list would make a plan visible by accident.
+  - The claim index's update policy and the PR template no longer ask for the
+    deleted GitBook mirrors.  They ask for any summarizing chapter and the
+    navigation manifest instead.
+  - `docs/dev_history/README.md` calls archived status lines what they are,
+    status at archiving, and names `docs/REGISTERED_DEBT.md` as authoritative.
+  - `UNFINISHED_SMP_WORK.md` finds the WS-SL residual in
+    `WORKSTREAM_CONTEXT.md`, not `CLAUDE.md`.
 
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 
@@ -775,7 +829,7 @@ PE-withheld boot, the cross-core SGI round trip, the per-core console stress,
 the TLB shootdown round trip and the shootdown stress — execute on the HAL-only
 and the Lean-linked `virt` images and pass, twelve runs, and the eight that
 drive kernel transitions from user space report NOT RUN naming why.
-[`SMP_TLB_SHOOTDOWN_PLAN.md`](docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md) §8's
+[`SMP_TLB_SHOOTDOWN_PLAN.md`](docs/dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md) §8's
 one open box, which WS-RR RR7.20 kept unchecked because a SKIP is not a pass, is
 ticked on the run.  So is BP6.3's PE-withheld box, and BP8.4's own.
 
@@ -45554,7 +45608,7 @@ registered as SM9.C.0 — **and the fix recommended for it in round 4 would not
 have worked**, because `tcb.pendingMessage`, where the signal path stores the
 badge, has no register path either.  SM9.C.0 is re-pointed at WS-RA accordingly.
 
-New plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md)
+New plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/dev_history/planning/SYSCALL_RETURN_ABI_PLAN.md)
 — 38 sub-tasks across ~12-15 PRs in five sub-phases.  The target is seL4's ARM64
 convention exactly: `x0` = badge or primary result, `x1` = `MessageInfo` whose
 **label** carries the error, `x2`-`x5` = message registers.  Errors move to the
@@ -47786,7 +47840,7 @@ Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 SM8.C
 ## v0.33.7 — WS-SM SM8.C: the per-core declassification audit, and the endpoint flow policy wired
 
 **SM8.C LANDED** (plan
-[`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](docs/planning/SMP_INFORMATION_FLOW_PLAN.md)
+[`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](docs/dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md)
 §4.3 / §5 SM8.C.1 … SM8.C.7), all seven sub-tasks, plus SM8.B's registered debt
 (a) — whose closure target the plan assigns to this phase.
 
@@ -63529,7 +63583,7 @@ v0.31.38 — no re-bump; the initial landing was sound + axiom-clean):
 
 Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.B
 (per-core `switchToThread`), SM5.C (cross-core wake via SGI), SM5.D..SM5.K per
-[`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md).
+[`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md).
 
 Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.1 (Per-core chooseThread)
 
@@ -63978,7 +64032,7 @@ Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.4 (SM4.D)
 
 Lands the **SM4.D "Cross-subsystem migrations"** sub-phase of the WS-SM
 path-a per-core state replacement
-([`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+([`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §5.4).  Following the exact SM4.C pattern, every cross-subsystem invariant
 that reads scheduler state is lifted from its single-core form (pinned to
 `bootCoreId` after SM4.B) to an **additive, soundness-preserving** per-core
@@ -65203,7 +65257,7 @@ plan §3.4 Pattern 1 rewrite of existing scheduler theorems to take
 ## v0.31.13 — WS-SM SM4.C: per-core scheduler invariant migration
 
 Lands **WS-SM Phase SM4.C "Scheduler invariants migration"** (plan
-[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §5.3 / §5.6), lifting the scheduler invariant *predicates* from the
 single-core forms (pinned to `bootCoreId` after SM4.B) to per-core forms
 parameterised by an explicit `(c : CoreId)`.  The migration follows
@@ -65350,13 +65404,13 @@ Lifecycle / Architecture / InformationFlow / CrossSubsystem theorems
 that read `SchedulerState`); **SM4.E** — retire
 `bootFromPlatform_singleCore_witness` and add the SMP-shape
 witness `bootFromPlatform_smp_witness` per plan §3.8.  See
-[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §§5.4..5.5.
 
 ## v0.31.12 — WS-SM SM4.B: `SchedulerState` path-a `Vector` replacement
 
 Lands **WS-SM Phase SM4.B "SchedulerState path-a replacement"** (plan
-[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §5.2), replacing the seven singular per-core `SchedulerState` fields
 with `Vector α Concurrency.numCores` indexed by `CoreId`, on top of the
 SM4.A `PerCoreVector` bootstrap. All fifteen sub-tasks landed in one
@@ -65435,7 +65489,7 @@ shim). The migration is observably transparent — the executable trace
 ## v0.31.11 — WS-SM SM4.A: per-core `Vector` bootstrap + PlatformBinding
 
 Lands **WS-SM Phase SM4.A "Vector + PlatformBinding"** (plan
-[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §5.1), the foundation for the SM4 path-a replacement of the singular
 `SchedulerState` fields with `Vector α coreCount` indexed by `CoreId`.
 All eight sub-tasks landed in one cut; SM4.A.1 + SM4.A.2 are the new
@@ -65590,7 +65644,7 @@ Follow-on: SM4.B (the `SchedulerState` path-a field replacement),
 SM4.C/SM4.D (scheduler + cross-subsystem theorem migrations), SM4.E
 (`bootFromPlatform_singleCore_witness` retirement +
 `bootFromPlatform_smp_witness`) per
-[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §§5.2–5.5.
 
 Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.1 (SM4.A)
@@ -65637,7 +65691,7 @@ Refs: CLAUDE.md "Versioning policy (every PR bumps the patch version)"
 ### Also released in v0.31.10 — WS-SM SM3.E audit-pass-4: concrete non-vacuity witness for the atomicity bridge (§9b)
 
 Further deep audit of §5.5
-([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
+([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
 A comprehensive axiom sweep over all 106 inventory theorems confirmed they
 are axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only; zero
 `sorryAx` / `native_decide` / `unsafe`), and a full code read found the §1–§10
@@ -65683,7 +65737,7 @@ NONE.
 ## Unreleased — WS-SM SM3.E audit-pass-3: atomicity bridge, observational serializability (write/write coverage), second real Corollary 2.1.11 instantiation
 
 Deepest deep audit of §5.5
-([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
+([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
 Closes the three SM3.E gaps the initial landing *documented as
 deferred* but did not implement.  Per CLAUDE.md's
 `implement-the-improvement` rule, acknowledged-but-unbuilt scope is the
@@ -65776,7 +65830,7 @@ impact: NONE.
 ## Unreleased — WS-SM SM3.E LANDED: serializability (Theorem 2.1.10), conflict-graph acyclicity, commutativity, single-core proof preservation (Corollary 2.1.11) — SM3 CLOSED
 
 Closes §5.5 of
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 (3 PRs, 8 sub-tasks; all LANDED) within the v0.31.9 release cut
 (mirroring the SM3.A / SM3.B / SM3.C / SM3.D landing pattern — no
 version bump; SM3.A..SM3.E close out together en route to v1.0.0).
@@ -65886,7 +65940,7 @@ observational 18).  Full Tier 0+1+2+3 green.  Items deferred past
 v1.0.0 with correctness impact: NONE.
 
 **SM3 acceptance gate** (per
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §8): all formal items checked.  WS-SM SM3 CLOSED with all five
 sub-phases LANDED (SM3.A per-object lock fields, SM3.B lock-set
 extraction, SM3.C 2PL discipline, SM3.D deadlock-freedom, SM3.E
@@ -65951,7 +66005,7 @@ names/docstrings claimed — closed per CLAUDE.md's
 ## Unreleased — WS-SM SM3.D LANDED: deadlock-freedom (Theorem 2.1.9), wait-graph acyclicity, bounded-wait, lock-discipline grounding
 
 Closes §5.4 of
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 (3 PRs, 7 sub-tasks; all LANDED) within the v0.31.9 release cut
 (mirroring the SM3.A / SM3.B / SM3.C landing pattern — no version
 bump; SM3.A..SM3.E close out together en route to v1.0.0).  Builds
@@ -66094,13 +66148,13 @@ No production symbols changed; deadlock suite now ~56 assertions.
 Follow-on: SM3.E (serializability Theorem 2.1.10 + commutativity
 lemmas + `singleCore_proof_preservation` Corollary 2.1.11) closes the
 SM3 phase per
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §5.5.
 
 ## Unreleased — WS-SM SM3.C LANDED: withLockSet 2PL combinator, lockSetHeld predicate, 2PL discipline theorems, dynamic PIP chain-walk locking
 
 Closes §5.3 of
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 (11 sub-tasks; 10 LANDED, 1 deferred to SM5+).  Builds on SM3.A's
 per-object lock fields and SM3.B's `LockSet` / `LockId.lookup` to
 provide the two-phase-locking (2PL) discipline: the `withLockSet`
@@ -67264,7 +67318,7 @@ NONE.  All audit findings have been addressed in the same cut.
 ## Unreleased — WS-SM SM3.B LANDED: LockSet, LockIdProjection, per-transition lockSet declarations, canonical sort theorems
 
 Closes §5.2 of
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 (9 sub-tasks; all LANDED).  Builds on SM3.A's per-object lock
 fields and SM0.I's `LockKind` / `LockId` total order to provide
 the abstract lock-set type, per-syscall lock-set declarations,
@@ -67376,7 +67430,7 @@ NONE.
 SM3.C (`withLockSet` 2PL combinator, `acquireLockOnObject` /
 `releaseLockOnObject`, `lockSetHeld` predicate, RAII discipline)
 per
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §5.3.
 
 ## Unreleased — WS-SM SM3.A audit-pass-7: BEq SchedContext lock + compile-time-checked inventory identifiers
@@ -67779,7 +67833,7 @@ Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1, §4.3 (amended)
 ## Unreleased — WS-SM SM3.A Per-Object Lock Fields
 
 Implements §5.1 of
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 — "Add `lock : RwLock` fields" (5 PRs, 11 sub-tasks).  Wires SM2.C's
 abstract `RwLockState` into every kernel-object struct, plus a
 table-level lock on the SystemState's object store, plus the per-variant
@@ -67911,7 +67965,7 @@ Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`, per-transition
 SM3.A.10 `objectLockOf` projection; SM3.C (`withLockSet` 2PL
 discipline) consumes both SM3.A and SM3.B; SM3.D/SM3.E close with
 deadlock-freedom and serializability theorems.  See
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §§5.2..5.5.
 
 ## Unreleased — WS-SM SM2.E Panic-Hang Remediation (queued MCS-RW lock)
@@ -68211,7 +68265,7 @@ Follow-on: SM2.E (documentation) per
 ## Unreleased — WS-SM SM2.C-defer (RwLock deferred-completion D-1..D-6)
 
 Implements major portions of
-[`docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md)
+[`docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](docs/dev_history/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md)
 post-v1.0.0 closure work for the verified RwLock primitive.  Six
 deferred items (D-1..D-6) covered substantively:
 
@@ -69559,7 +69613,7 @@ NONE.
 
 ### SM1 acceptance gate
 
-Per [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+Per [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §8: all items checked.  WS-SM SM1 CLOSED at v0.31.8.  SM2
 (verified lock primitives) and SM3+ (per-object locks →
 per-core scheduler → cross-core IPC → TLB shootdown →
@@ -69766,7 +69820,7 @@ slower).  Post-SM1.E/F the HAL surfaces both, gated behind the
 typed Lean-side `Architecture.tlbiForSharing` and Rust-side
 `gic::send_sgi*` entries.
 
-See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §§5.5–5.8 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active
 workstream context" carries the live tracking.
 
@@ -70021,7 +70075,7 @@ parses the cmdline, defaults to SMP-on (`CmdlineConfig::default()`
 has `smp_enabled = true` per maintainer decision #7), and brings
 up all 4 RPi5 cores by default.
 
-See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §5.4 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
 context" carries the live tracking.
 
@@ -70392,7 +70446,7 @@ NONE.
 
 SM1.E (IS-variant TLBI), SM1.F (SGI primitive), SM1.G (Per-core
 UART), SM1.H (QEMU SMP integration test) — see
-[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §§5.5..5.8.
 
 ## v0.31.5 — WS-SM Phase SM1.C landing (Secondary-core full init)
@@ -70416,7 +70470,7 @@ full per-core boot, then jumps into the Lean kernel via
 `lean_secondary_kernel_main(context_id)` (a placeholder pass-through
 at SM1.C that SM5 will replace with the per-core scheduler entry).
 
-See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §5.3 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
 context" carries the live tracking.
 
@@ -70751,7 +70805,7 @@ hardware paths via `current_per_cpu()` / `current_core_id_from_tpidr()`
 that read `TPIDR_EL1` directly, and is exposed to the Lean kernel
 via the new `ffi_current_core_id` FFI export and
 `Concurrency.currentCoreId : BaseIO CoreId` typed wrapper.  See
-[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §5.2 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
 context" carries the live tracking.
 
@@ -70940,7 +70994,7 @@ NONE.
 SM1.C (Secondary core full init), SM1.D (DTB cmdline parsing),
 SM1.E (IS-variant TLBI), SM1.F (SGI primitive), SM1.G (Per-core
 UART), SM1.H (QEMU SMP integration test) — see
-[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §§5.3..5.8.
 
 ## Unreleased — WS-SM Phase SM1.A landing (PSCI completion)
@@ -70955,7 +71009,7 @@ power down individual cores (`cpu_off`), query firmware version
 Trusted-OS migration requirements (`migrate_info_type`), power off
 the entire system (`system_off`), and cold-reset the system
 (`system_reset`).  See
-[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §5.1 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
 context" carries the live tracking.
 

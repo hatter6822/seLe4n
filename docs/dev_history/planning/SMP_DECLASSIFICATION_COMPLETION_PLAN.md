@@ -1,9 +1,9 @@
 # SM9 — Declassification Completion (WS-SM Phase 9)
 
 > **Phase**: SM9 of WS-SM
-> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Predecessor**: [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md) (SM8, CLOSED v0.33.23)
-> **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10)
+> **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](../../planning/SMP_RELEASE_CLOSURE_PLAN.md) (SM10)
 > **Audited cut**: `v0.33.23`
 > **Target releases**: v0.33.24 → v0.34.x
 > **Calendar estimate**: 12-16 weeks
@@ -900,7 +900,7 @@ their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 | SM9.C.9 | `syscallDelegates_declassifySignal`; per-core routing gate; cross-core NI inventory entry | `Kernel/API.lean`, `NonInterferenceCrossCore.lean` | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM9.D — Causal declassification provenance (19 sub-tasks)
 
@@ -933,7 +933,7 @@ and its consequences (D.14–D.18).
 | SM9.D.18 | NI carriage: propagation is projection-invisible, but every touched transition's write set moves, so `observableSlotsConfinedToCores` proofs and the cross-core inventory need the new frames | `InformationFlow/NonInterference{PerCore,CrossCore}.lean` | L |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM9.E — Tests + closure (7 sub-tasks) — **LANDED**
 
@@ -965,7 +965,7 @@ the shipped spec and proof map.
 | SM9.E.6 | Documentation sync + phase closure record | spec, GitBook 12, `CLAIM_EVIDENCE_INDEX`, `REGISTERED_DEBT`, `CLAUDE.md`/`AGENTS.md` | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ## 5. The ABI slice (SM9.A.6-.A.8, SM9.C.8)
 
@@ -1252,7 +1252,7 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 ## 10. Cross-references
 
 - **Previous**: [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md) (SM8)
-- **Next**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10)
+- **Next**: [`SMP_RELEASE_CLOSURE_PLAN.md`](../../planning/SMP_RELEASE_CLOSURE_PLAN.md) (SM10)
 - **Registered source**: SM8's four follow-ons — see
   [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md) §5 SM8.C
   "Registered follow-on".

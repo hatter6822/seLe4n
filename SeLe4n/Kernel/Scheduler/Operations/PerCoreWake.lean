@@ -14,7 +14,7 @@ import SeLe4n.Kernel.IPC.Invariant.PerCore
 # WS-SM SM5.C — Cross-core wake via SGI (lock-sets, wake / SGI / handler theorems)
 
 This module is the SM5.C deliverable of the WS-SM Phase 5 per-core scheduler
-(plan `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.3, §4.4, §5).  The
+(WS-SM SM5 §3.3, §4.4, §5).  The
 cross-core wake transitions themselves (`enqueueRunnableOnCore`,
 `determineTargetCore`, `wakeThread`, `handleRescheduleSgiOnCore`,
 `setThreadCpuAffinity`) live in the production module

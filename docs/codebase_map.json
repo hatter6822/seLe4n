@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/loving-babbage-2z8r8z",
-      "commit_sha": "bdc11b49296a6f5c11e92f5113e7b06b8703ee68",
-      "tree_sha": "203983fa703a04e03d58ddfb38d0478ab4737b07",
-      "committed_at_utc": "2026-09-29T04:56:44+00:00"
+      "branch": "claude/shrink-claude-md",
+      "commit_sha": "68eff03487a0efc1543afdca1348c9364c322155",
+      "tree_sha": "5832d230d41e0fe7503c4b1c12e3a2a33fe45412",
+      "committed_at_utc": "2026-10-04T20:05:29+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1c9a786408c8c3b5ff2000951687a0bcbb38cafda220571d4aace09783f7c285"
+    "source_digest": "400f07127a96b7b4c877031682103dc0fce2d82bcb9ca818cdd2a9f6c1faebcc"
   },
   "summary": {
     "module_count": 432,

@@ -13,7 +13,7 @@ import SeLe4n.Kernel.InformationFlow.Projection
 # WS-SM SM4.D — Per-core information-flow projections
 
 This module is the InformationFlow slice of the SM4.D cross-subsystem
-migration (plan `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.4,
+migration (WS-SM SM4 §5.4,
 sub-tasks SM4.D.12 / SM4.D.13 / SM4.D.14).  It lifts the six
 scheduler-reading IF-M1 projection functions defined in
 `InformationFlow/Projection.lean` from the single-core forms (pinned to

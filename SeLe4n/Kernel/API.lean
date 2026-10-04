@@ -1379,7 +1379,7 @@ theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_
 
 /-- **WS-RR RR7.34**: the live SchedContext hand-offs, as one relation.
 
-`SMP_CROSS_CORE_IPC_PLAN` §4.3 and §10 and `SMP_PER_CORE_SCHEDULER_PLAN` §PIP
+WS-SM SM6 §4.3 and §10 and WS-SM SM5 §PIP
 all name an SM5 theorem `donation_perCore_consistent` — "if the receiver
 inherits the SC and is on a different core, the SC's CBS replenish queue
 migrates per SM5.H.4" — that existed nowhere.  The *content* did, once per
@@ -1470,7 +1470,7 @@ inductive PerCoreDonationStep (st st' : SystemState) : Prop
   | preReceiveReturn (receiver : SeLe4n.ThreadId)
       (hStep : cleanupPreReceiveDonationMigrated st receiver = .ok st')
 
-/-- **WS-RR RR7.34** (`SMP_CROSS_CORE_IPC_PLAN` §10's SM5 catalogue entry,
+/-- **WS-RR RR7.34** (WS-SM SM6 §10's SM5 catalogue entry,
 authored): **every SchedContext hand-off leaves the replenish queues where the
 bound threads are.**
 

@@ -1,10 +1,11 @@
 # CLAUDE.md — seLe4n project guidance
 
-> `AGENTS.md` is a symlink to this file, so non-Claude coding agents (and
-> any tool that follows the AGENTS.md convention) read the same project
-> rules from one source. Edit `CLAUDE.md` only. These rules bind every
-> contributor, human or agent; `docs/DEVELOPMENT.md` is the how-to guide
-> that links back here.
+> `AGENTS.md` is a short pointer file that sends non-Claude coding agents
+> (and any tool that follows the AGENTS.md convention) here and lists this
+> file's sections; the rules are stated only here. Edit `CLAUDE.md` only, and
+> mirror any section heading change in `AGENTS.md`'s list (docs-sync checks
+> it). These rules bind every contributor, human or agent;
+> `docs/DEVELOPMENT.md` is the how-to guide that links back here.
 
 ## What this project is
 
@@ -70,7 +71,8 @@ live version.
   `scripts/version_locations.sh`): `lakefile.toml`; the four `sele4n-*`
   crates in `rust/Cargo.toml` / `rust/Cargo.lock`; `KERNEL_VERSION` in
   `rust/sele4n-hal/src/boot.rs`; `docs/spec/SELE4N_SPEC.md`; `CLAUDE.md`
-  + `AGENTS.md`; the root `README.md` badge + `Version` row; the eleven
+  (not `AGENTS.md`, which carries no version); the root `README.md` badge +
+  `Version` row; the eleven
   `docs/i18n/*/README.md` badges and `Version` rows (all 11 locales); the
   GitBook `README.md`, `navigation_manifest.json`, and
   `05-specification-and-roadmap.md`; and `docs/codebase_map.json`.
@@ -304,8 +306,11 @@ this file owns the contributor rules; `docs/DEVELOPMENT.md` owns the how-to.
 GitBook chapters introduce a topic and link to its canonical document — never
 restate it. `docs/REGISTERED_DEBT.md` is the single canonical source for
 workstream planning, status, and history. When a workstream closes, its plan
-moves to `docs/dev_history/planning/` (unless source still cites it, since
-source must not reference `docs/dev_history/`). The ownership map is
+moves to `docs/dev_history/planning/` once any obligation it still holds is
+a row in `docs/REGISTERED_DEBT.md`. Source must not reference
+`docs/dev_history/`, so it cites an archived plan by workstream or phase ID
+(`WS-SM SM6.C`), resolved by the table in
+`docs/agent_guide/WORKSTREAM_CONTEXT.md`. The ownership map is
 [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md).
 
 ## Third-party attribution

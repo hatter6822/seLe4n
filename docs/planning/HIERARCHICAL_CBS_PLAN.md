@@ -2202,9 +2202,9 @@ rows named.
 
 * Debt register: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) — the
   WS-CB rows in the registry and in table C.
-* Neighbours: [`SMP_PER_CORE_SCHEDULER_PLAN.md`](SMP_PER_CORE_SCHEDULER_PLAN.md)
-  (SM5, the surface changed and generalised), [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md)
-  (SM8, the observer and the reschedule seam), [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)
+* Neighbours: [`SMP_PER_CORE_SCHEDULER_PLAN.md`](../dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
+  (SM5, the surface changed and generalised), [`SMP_INFORMATION_FLOW_PLAN.md`](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md)
+  (SM8, the observer and the reschedule seam), [`SMP_RELEASE_READINESS_PLAN.md`](../dev_history/planning/SMP_RELEASE_READINESS_PLAN.md)
   (WS-RR, the partition in §2.3), [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md)
   (SM10, CB8.8's hand-off).
 * **Inherited from WS-RR RR7.17 (`v0.34.68`) — the application IPC label.**
@@ -2216,8 +2216,8 @@ rows named.
   label *is* a `seL4_Fault_tag`, indistinguishable from a kernel-delivered
   fault.  WS-CB owns it because CB6's admission protocol reopens the message
   path; the gap, the constraint and the two candidate designs are stated in
-  [`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md) §9, and the row is
-  in the debt register.  Nothing in CB1..CB8 depends on it — it is scheduled
+  the debt register's row, which lifted them from WS-RA's archived plan (§9)
+  when that plan moved to `docs/dev_history/`.  Nothing in CB1..CB8 depends on it — it is scheduled
   *with* WS-CB, not *into* it, and CB8.5 records whether it closed.
 * Specification: `docs/spec/SELE4N_SPEC.md` §8.12 (the flat model this
   extends, rewritten by CB1.6 and CB1.7 and completed by CB3.7, CB4.7 and

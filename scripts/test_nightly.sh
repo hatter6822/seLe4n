@@ -23,7 +23,7 @@ if [[ "${NIGHTLY_ENABLE_EXPERIMENTAL:-0}" == "1" ]]; then
   log_section "INVARIANT" "Tier 4 staged candidates executed (NIGHTLY_ENABLE_EXPERIMENTAL=1)."
   # WS-SM SM2.C-defer D-6: Tier 5 cross-language correspondence harness.
   # Compares Lean oracle vs. Rust oracle output on ≥NUM_SEQUENCES op-sequences.
-  # See docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md §5.6.
+  # See docs/dev_history/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md §5.6.
   # Through `run_gate_check`: the harness reports NOT RUN (`SELE4N_SKIP_EXIT`)
   # when lake or cargo is absent, and that must reach the report as
   # incomplete coverage rather than as a pass (PR #890 review).  The gate's

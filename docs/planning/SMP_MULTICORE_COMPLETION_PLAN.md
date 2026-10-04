@@ -164,14 +164,14 @@ reverse (strict-2PL).
 hierarchical acquire-in-ascending-order, no execution can
 deadlock. *Proof sketch*: induction over `LockId` total order
 plus pigeonhole on the wait graph; details in
-[`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`SMP_PER_OBJECT_LOCKS_PLAN.md`](../dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §4.
 
 **Theorem 2.1.10** (Serializability). Strict-2PL is
 conflict-serializable: every interleaved execution has a serial
 equivalent producing the same final state. *Proof*: classical
 Bernstein result reused. Details in
-[`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`SMP_PER_OBJECT_LOCKS_PLAN.md`](../dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §5.
 
 **Corollary 2.1.11** (Single-core proof preservation). Every
@@ -211,7 +211,7 @@ replacement**: singular `current : Option ThreadId` becomes
 with `CoreId := Fin PlatformBinding.coreCount`. Every
 single-core theorem rewrites to take a `c : CoreId` parameter.
 Details in
-[`SMP_PER_CORE_STATE_PLAN.md`](SMP_PER_CORE_STATE_PLAN.md).
+[`SMP_PER_CORE_STATE_PLAN.md`](../dev_history/planning/SMP_PER_CORE_STATE_PLAN.md).
 
 ### 2.4 Sharing domain parameterization
 
@@ -234,8 +234,8 @@ emission routes through `dsbForSharing` / `tlbiForSharing`.
 Pending-SGI queue is per-core (`pendingSgis : Vector (List
 PendingSgi) coreCount`). Drained at SGI handler entry under
 appropriate lock-set. Details in
-[`SMP_RUST_HAL_PLAN.md`](SMP_RUST_HAL_PLAN.md) §SM1.F and
-[`SMP_PER_CORE_SCHEDULER_PLAN.md`](SMP_PER_CORE_SCHEDULER_PLAN.md)
+[`SMP_RUST_HAL_PLAN.md`](../dev_history/planning/SMP_RUST_HAL_PLAN.md) §SM1.F and
+[`SMP_PER_CORE_SCHEDULER_PLAN.md`](../dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
 §SM5.C.
 
 ### 2.6 TLB shootdown protocol
@@ -244,7 +244,7 @@ Explicit-ack protocol with per-core acknowledgement flags. Local
 core issues `tlbi vaae1is`; remote cores receive
 `tlbShootdownReq` SGI, execute local TLBI, set ack flag, return.
 Initiator waits until all flags set. Details in
-[`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md).
+[`SMP_TLB_SHOOTDOWN_PLAN.md`](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md).
 
 ### 2.7 Information flow under SMP
 
@@ -252,7 +252,7 @@ Per-core observer `(c, L)` projection. `crossCoreNonInterference`
 theorem proves transitions on c' ≠ c don't change c's L-view
 unless they mutate L-observable shared state. Lock-contention
 timing is a documented accepted covert channel. Details in
-[`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md).
+[`SMP_INFORMATION_FLOW_PLAN.md`](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md).
 
 ## 3. Detailed finding catalogue
 
@@ -340,7 +340,7 @@ v0.31.2).
 
 ### SM1 — Rust HAL completion
 
-Document: [`SMP_RUST_HAL_PLAN.md`](SMP_RUST_HAL_PLAN.md).
+Document: [`SMP_RUST_HAL_PLAN.md`](../dev_history/planning/SMP_RUST_HAL_PLAN.md).
 
 60-80 sub-tasks across ~22-32 PRs. PSCI completion; per-CPU
 data + TPIDR_EL1; full secondary-core init (MMU/VBAR/GIC/timer);
@@ -361,7 +361,7 @@ bridge; documentation. **Closes**: SMP-H4 (foundationally).
 
 ### SM3 — Per-object lock fields + hierarchical order
 
-Document: [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md).
+Document: [`SMP_PER_OBJECT_LOCKS_PLAN.md`](../dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md).
 
 50-65 sub-tasks across ~18-26 PRs. Add `lock : RwLock` field to
 every kernel-object struct; define `LockKind` 10-level
@@ -373,7 +373,7 @@ SMP-C3 (formal foundation).
 
 ### SM4 — Path-a per-core state replacement
 
-Document: [`SMP_PER_CORE_STATE_PLAN.md`](SMP_PER_CORE_STATE_PLAN.md).
+Document: [`SMP_PER_CORE_STATE_PLAN.md`](../dev_history/planning/SMP_PER_CORE_STATE_PLAN.md).
 
 90-115 sub-tasks across ~35-50 PRs. The largest phase. Replace
 singular `SchedulerState` fields with `Vector α coreCount`;
@@ -383,7 +383,7 @@ rewrites). Retire `bootFromPlatform_singleCore_witness`.
 
 ### SM5 — Per-core scheduler
 
-Document: [`SMP_PER_CORE_SCHEDULER_PLAN.md`](SMP_PER_CORE_SCHEDULER_PLAN.md).
+Document: [`SMP_PER_CORE_SCHEDULER_PLAN.md`](../dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md).
 
 75-95 sub-tasks across ~28-38 PRs. Per-core `chooseThread`,
 `switchToThread`; cross-core wake via SGI; per-core timer tick;
@@ -392,7 +392,7 @@ scheduling; per-core CBS; WCRT under fine locks.
 
 ### SM6 — Cross-core IPC
 
-Document: [`SMP_CROSS_CORE_IPC_PLAN.md`](SMP_CROSS_CORE_IPC_PLAN.md).
+Document: [`SMP_CROSS_CORE_IPC_PLAN.md`](../dev_history/planning/SMP_CROSS_CORE_IPC_PLAN.md).
 
 60-80 sub-tasks across ~22-32 PRs. Endpoint call/send/recv,
 notifications, reply all under per-object fine locks with
@@ -400,7 +400,7 @@ cross-core wake. IPC invariant bundle per-core.
 
 ### SM7 — TLB / cache shootdown
 
-Document: [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md).
+Document: [`SMP_TLB_SHOOTDOWN_PLAN.md`](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md).
 
 40-55 sub-tasks across ~15-22 PRs. Shootdown descriptor; explicit-
 ack protocol; per-core TLB model; cache maintenance broadcast.
@@ -408,7 +408,7 @@ ack protocol; per-core TLB model; cache maintenance broadcast.
 
 ### SM8 — Information flow under SMP
 
-Document: [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md).
+Document: [`SMP_INFORMATION_FLOW_PLAN.md`](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md).
 
 40-55 sub-tasks across ~15-22 PRs. Per-core observable state;
 per-core NI proofs; lock-contention covert channel
@@ -416,9 +416,9 @@ documentation; per-core declassification audit.
 
 ### SM9 — Declassification completion — CLOSED (v0.33.42 → v0.33.100)
 
-Document: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md).
+Document: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](../dev_history/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md).
 
-**Was blocked on WS-RA** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)),
+**Was blocked on WS-RA** ([`SYSCALL_RETURN_ABI_PLAN.md`](../dev_history/planning/SYSCALL_RETURN_ABI_PLAN.md)),
 which was implemented first — core landed at v0.33.37, unblocking SM9,
 whose phases A–E then landed through the v0.33.100 closure.  SM9.A's audit reader and SM9.C's data-carrying declassification
 are both *value-returning* syscalls, and before WS-RA the kernel had no
@@ -651,20 +651,20 @@ WS-SM is complete and v1.0.0 ships when:
 | Phase | Document | Sub-tasks | LoC est. |
 |-------|----------|----------:|---------:|
 | SM0 | [`SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md) | 40-50 | ~3,000 |
-| SM1 | [`SMP_RUST_HAL_PLAN.md`](SMP_RUST_HAL_PLAN.md) | 60-80 | ~2,500 |
+| SM1 | [`SMP_RUST_HAL_PLAN.md`](../dev_history/planning/SMP_RUST_HAL_PLAN.md) | 60-80 | ~2,500 |
 | SM2 | [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) | 70-95 | ~3,500 |
-| SM3 | [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md) | 50-65 | ~1,500 |
-| SM4 | [`SMP_PER_CORE_STATE_PLAN.md`](SMP_PER_CORE_STATE_PLAN.md) | 90-115 | ~7,000 |
-| SM5 | [`SMP_PER_CORE_SCHEDULER_PLAN.md`](SMP_PER_CORE_SCHEDULER_PLAN.md) | 75-95 | ~2,500 |
-| SM6 | [`SMP_CROSS_CORE_IPC_PLAN.md`](SMP_CROSS_CORE_IPC_PLAN.md) | 60-80 | ~1,800 |
-| SM7 | [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md) | 40-55 | ~1,200 |
-| SM8 | [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md) | 40-55 | ~1,500 |
-| SM9 | [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) | 61 | ~4,900 |
+| SM3 | [`SMP_PER_OBJECT_LOCKS_PLAN.md`](../dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md) | 50-65 | ~1,500 |
+| SM4 | [`SMP_PER_CORE_STATE_PLAN.md`](../dev_history/planning/SMP_PER_CORE_STATE_PLAN.md) | 90-115 | ~7,000 |
+| SM5 | [`SMP_PER_CORE_SCHEDULER_PLAN.md`](../dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md) | 75-95 | ~2,500 |
+| SM6 | [`SMP_CROSS_CORE_IPC_PLAN.md`](../dev_history/planning/SMP_CROSS_CORE_IPC_PLAN.md) | 60-80 | ~1,800 |
+| SM7 | [`SMP_TLB_SHOOTDOWN_PLAN.md`](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md) | 40-55 | ~1,200 |
+| SM8 | [`SMP_INFORMATION_FLOW_PLAN.md`](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md) | 40-55 | ~1,500 |
+| SM9 | [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](../dev_history/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md) | 61 | ~4,900 |
 | SM10 | [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) | 25-35 | ~500 |
 | **Total** | | **611-786** | **~29,500 LoC of new code** |
 
 Two remediation workstreams run against this schedule rather than inside it:
-WS-RR ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md), 187
+WS-RR ([`SMP_RELEASE_READINESS_PLAN.md`](../dev_history/planning/SMP_RELEASE_READINESS_PLAN.md), 187
 sub-tasks) is the pre-SM10 remediation SM10 is blocked on, and WS-LC
 ([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](../dev_history/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md),
 51 sub-tasks) closes the two SM2 lock **datatype** residuals ahead of WS-RR's
@@ -721,15 +721,15 @@ breakdown:
 | Phase | Theorems | Document section |
 |-------|---------:|------------------|
 | SM0 Foundations | ~12 | [SMP_FOUNDATIONS_PLAN §10](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md) |
-| SM1 Rust HAL | ~6 | [SMP_RUST_HAL_PLAN §10](SMP_RUST_HAL_PLAN.md) |
+| SM1 Rust HAL | ~6 | [SMP_RUST_HAL_PLAN §10](../dev_history/planning/SMP_RUST_HAL_PLAN.md) |
 | SM2 Verified locks | ~22 | [SMP_VERIFIED_LOCK_PRIMITIVES_PLAN §10](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) |
-| SM3 Per-object locks | ~28 | [SMP_PER_OBJECT_LOCKS_PLAN §10](SMP_PER_OBJECT_LOCKS_PLAN.md) |
-| SM4 Per-core state | ~50 | [SMP_PER_CORE_STATE_PLAN §10](SMP_PER_CORE_STATE_PLAN.md) |
-| SM5 Per-core scheduler | ~30 | [SMP_PER_CORE_SCHEDULER_PLAN §10](SMP_PER_CORE_SCHEDULER_PLAN.md) |
-| SM6 Cross-core IPC | ~25 | [SMP_CROSS_CORE_IPC_PLAN §10](SMP_CROSS_CORE_IPC_PLAN.md) |
-| SM7 TLB shootdown | ~14 | [SMP_TLB_SHOOTDOWN_PLAN §10](SMP_TLB_SHOOTDOWN_PLAN.md) |
-| SM8 Information flow | ~18 | [SMP_INFORMATION_FLOW_PLAN §10](SMP_INFORMATION_FLOW_PLAN.md) |
-| SM9 Declassification | ~82 | [SMP_DECLASSIFICATION_COMPLETION_PLAN §11](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) |
+| SM3 Per-object locks | ~28 | [SMP_PER_OBJECT_LOCKS_PLAN §10](../dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md) |
+| SM4 Per-core state | ~50 | [SMP_PER_CORE_STATE_PLAN §10](../dev_history/planning/SMP_PER_CORE_STATE_PLAN.md) |
+| SM5 Per-core scheduler | ~30 | [SMP_PER_CORE_SCHEDULER_PLAN §10](../dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md) |
+| SM6 Cross-core IPC | ~25 | [SMP_CROSS_CORE_IPC_PLAN §10](../dev_history/planning/SMP_CROSS_CORE_IPC_PLAN.md) |
+| SM7 TLB shootdown | ~14 | [SMP_TLB_SHOOTDOWN_PLAN §10](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md) |
+| SM8 Information flow | ~18 | [SMP_INFORMATION_FLOW_PLAN §10](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md) |
+| SM9 Declassification | ~82 | [SMP_DECLASSIFICATION_COMPLETION_PLAN §11](../dev_history/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md) |
 | SM10 Closure | ~5 | [SMP_RELEASE_CLOSURE_PLAN §10](SMP_RELEASE_CLOSURE_PLAN.md) |
 | **Total** | **~292** | |
 

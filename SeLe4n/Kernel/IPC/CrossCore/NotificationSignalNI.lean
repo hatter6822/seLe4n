@@ -9,7 +9,7 @@
 
 -- STATUS: staged for WS-SM SM6.B.7 cross-core IPC (per-core / ∀-core
 -- non-interference for the notification signal; see
--- docs/planning/SMP_CROSS_CORE_IPC_PLAN.md).
+-- WS-SM SM6).
 
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
