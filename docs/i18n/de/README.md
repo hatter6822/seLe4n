@@ -73,10 +73,10 @@ Lean-4-Beweissystem ermöglicht werden:
 
 ### Sicherheit und Verifikation
 
-- **N-Domänen-Informationsfluss** — parametrisierte Flussrichtlinien, die seL4s binäre Partitionierung verallgemeinern. 43-Einträge-Durchsetzungsgrenze mit Nichteinmischungsbeweisen pro Operation (35-Konstruktor-Induktive `NonInterferenceStep`) sowie ein beschränkter, fail-closed Deklassifizierungs-Audit-Trail mit Capability-gesichertem Leser
+- **N-Domänen-Informationsfluss** — parametrisierte Flussrichtlinien, die seL4s binäre Partitionierung verallgemeinern. 44-Einträge-Durchsetzungsgrenze mit Nichteinmischungsbeweisen pro Operation (35-Konstruktor-Induktive `NonInterferenceStep`) sowie ein beschränkter, fail-closed Deklassifizierungs-Audit-Trail mit Capability-gesichertem Leser
 - **Komponierte Beweisschicht** — `proofLayerInvariantBundle` komponiert 16 Subsystem-Invariantenbündel (Scheduler-Kern + CBS-Erweiterungen, Capability, IPC + IPC-Scheduler-Kopplung, Lifecycle, Service, VSpace, Cross-Subsystem, TLB-Konsistenz, Notification-Waiter-Konsistenz, Pending/Ack-Schranken des TLB-Shootdowns, TLB-Invalidierung pro Kern und I-Cache-Kohärenz sowie die Schranke des Deklassifizierungs-Audit-Logs) zu einer einzigen übergeordneten Beweisverpflichtung, verifiziert vom Boot durch alle Operationen
 - **Dreiphasen-Zustandsarchitektur** — Builder-Phase mit Invariantenzeugen fließt in eine eingefrorene unveränderliche Darstellung mit bewiesener Lookup-Äquivalenz. 24 eingefrorene Operationen spiegeln die Live-API wider
-- **Vollständiger Operationssatz** — alle seL4-Operationen implementiert mit Invariantenerhaltung, einschließlich der 5 zurückgestellten Operationen (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
+- **Vollständiger Operationssatz** — alle seL4-Operationen implementiert mit Invariantenerhaltung, bis hin zu Thread-Suspend/-Resume, Prioritätsverwaltung (setPriority/setMCPriority) und Konfiguration des IPC-Puffers
 - **Service-Orchestrierung** — Kernel-seitige Komponentenlebenszyklusverwaltung mit Abhängigkeitsgraphen und bewiesener Azyklizität (seLe4n-Erweiterung, nicht in seL4)
 
 ## Aktueller Stand
@@ -100,7 +100,9 @@ Lean-4-Beweissystem ermöglicht werden:
 | **Produktions-LoC (Lean)** | 433.986 über 361 Dateien |
 | **Test-LoC (Lean)** | 88.629 über 71 Testsuiten |
 | **Bewiesene Deklarationen** | 14.408 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Rust-Crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) über 48 Quelldateien |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
+| **Hardware-Anbindung** | **H3 ABGESCHLOSSEN** (WS-AG AG1–AG10): HAL, GIC-400, Timer, ARMv8-Seitentabellen, FFI-Brücke, QEMU-Boot |
 | **Kanonisches Audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — umfassendes Pre-1.0-Audit (202 Befunde; behoben durch WS-AK AK1–AK10; archiviert) |
 | **Letztes Audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — Pre-1.0-Bereitschaftsaudit nach dem WS-AN-Abschluss (Nachfolger des inzwischen archivierten [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), behoben durch WS-AN AN0–AN12). WS-RC R0..R5 LANDED bei v0.31.2; WS-RC R6..R14 gemäß der SM0.Q.1-Absorptionszuordnung in WS-SM aufgegangen (siehe [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Aktiver Workstream-Plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
 | **Codebase-Karte** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Deklarationsinventur |
@@ -108,8 +110,9 @@ Lean-4-Beweissystem ermöglicht werden:
 Die Metriken werden durch `./scripts/generate_codebase_map.py` aus der Codebasis
 abgeleitet und unter dem `readme_sync`-Schlüssel in
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) gespeichert.
-Alle Dokumentation gemeinsam aktualisieren mit
-`./scripts/report_current_state.py` als Gegenprüfung.
+Aktualisieren Sie die gesamte Dokumentation gemeinsam mit
+`./scripts/sync_documentation_metrics.sh` (nur Prüfung: `--check`);
+`./scripts/report_current_state.py` bleibt eine manuelle Gegenprüfung.
 
 ## Schnellstart
 
@@ -126,7 +129,7 @@ lake exe sele4n                # Trace-Harness ausführen
 |----------|------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — Arbeitsablauf, Validierung, PR-Checkliste | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — Spezifikation und Meilensteine |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — vollständiges Handbuch | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — seL4-Referenzsemantik |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Inventur | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — Workstream-Geschichte und Roadmap |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Inventur | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — jeder zurückgestellte Punkt, mit einem Verantwortlichen |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — Beitragsmechanismen | [`CHANGELOG.md`](../../../CHANGELOG.md) — Versionshistorie |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) ist die Primärquelle
@@ -141,10 +144,26 @@ und wird bei Merge automatisch via CI aktualisiert. Regenerieren mit
 ./scripts/test_smoke.sh     # + Tier 2: Trace + Negative-State + Docs-Sync
 ./scripts/test_full.sh      # + Tier 3: Invariantenoberflächenanker + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: nächtlicher Determinismus
+
+./scripts/test_rust.sh                 # Host-Rust: Build, Tests, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # das eigentliche Ziel des Kernel-HAL
 ```
 
 Führen Sie mindestens `test_smoke.sh` vor jedem PR aus. Führen Sie `test_full.sh`
 aus, wenn Sie Theoreme, Invarianten oder Dokumentationsanker ändern.
+
+Führen Sie nach jeder Änderung unter `rust/` **beide** Rust-Lanes aus. Sie
+decken disjunkte Hälften desselben Crates ab: Auf dem Host wird jeder
+`#[cfg(target_arch = "aarch64")]`-Block entfernt, bevor rustc oder clippy ihn
+sieht, sodass die Host-Lane die 67 cfg-geschützten Blöcke, 57 `asm!`-Stellen
+und drei `.S`-Quellen nicht sehen kann, die den Großteil des HAL ausmachen. Die
+Cross-Lane baut `sele4n-hal` für `aarch64-unknown-none-softfloat` in beiden
+Profilen, prüft, dass die Assembly-Quellen tatsächlich assembliert wurden,
+lintet das Cross-Target und disassembliert die Release-Objekte, um zu beweisen,
+dass sie kein FP/SIMD-Register verwenden — der Kernel ist FP-frei und fängt
+FP/SIMD ab seiner ersten Instruktion auf EL1 ab —, und sie ist ein Build statt
+eines `cargo check`, weil `check` vor der Codegenerierung anhält und nie einen
+Assembler erreicht.
 
 ## Architektur
 
@@ -155,9 +174,9 @@ seLe4n ist als geschichtete Verträge organisiert, jeweils mit ausführbaren
 ┌──────────────────────────────────────────────────────────────────────┐
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│  SchedContext│             │  Donation  │           │                │
+│  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│ SchedContext │             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -189,14 +208,18 @@ SeLe4n/
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
 │   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
+│   │                            installBootVSpaceRoot threads canonical boot VSpace
+│   │                            through bootFromPlatformChecked (WS-RC R3).
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
+│                                VSpaceBoot.lean holds the canonical W^X-compliant
+│                                boot VSpaceRoot (production-wired since WS-RC R3).
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
 tests/                           Ausführbare Testsuiten + Fixtures
@@ -215,7 +238,7 @@ Beweisverpflichtung. Für die vollständige Dateiinventur siehe
 | **Scheduling** | In C implementierter Sporadic Server (MCS) | CBS mit maschinengeprüftem Theorem `cbs_bandwidth_bounded`; `SchedContext` als Capability-gesteuertes Kernel-Objekt |
 | **Passive Server** | SchedContext-Donation via C | Verifizierte Donation mit Invariante `donationChainAcyclic` |
 | **IPC** | Einfach verkettete Endpoint-Queue | Intrusive Dual-Queue mit O(1)-Entfernung aus der Warteschlangenmitte; budgetgesteuerte Timeouts |
-| **Informationsfluss** | Binäre High/Low-Partitionierung | N-Domänen-konfigurierbare Richtlinie mit 43-Einträge-Durchsetzungsgrenze (Anzahl fixiert durch `enforcementBoundaryExtended_count`), Nichteinmischungsbeweisen pro Operation und einem Capability-gesicherten Audit-Trail für jede autorisierte Deklassifizierung |
+| **Informationsfluss** | Binäre High/Low-Partitionierung | N-Domänen-konfigurierbare Richtlinie mit 44-Einträge-Durchsetzungsgrenze (Anzahl fixiert durch `enforcementBoundaryExtended_count`), Nichteinmischungsbeweisen pro Operation und einem Capability-gesicherten Audit-Trail für jede autorisierte Deklassifizierung |
 | **Priority Inheritance** | In C implementiertes PIP (MCS-Branch) | Maschinengeprüftes transitives PIP mit Deadlock-Freiheit und parametrischer WCRT-Schranke |
 | **Beschränkte Latenz** | Keine formale WCRT-Schranke | `WCRT = D × L_max + N × (B + P)` bewiesen über 8 Liveness-Module |
 | **Object Stores** | Verkettete Listen und Arrays | Verifizierte Robin-Hood-Hashtabellen (`RHTable`/`RHSet`) mit O(1)-Hotpaths |
@@ -223,29 +246,16 @@ Beweisverpflichtung. Für die vollständige Dateiinventur siehe
 | **Beweise** | Isabelle/HOL, nachträglich | Lean-4-Typprüfer, direkt bei Übergängen platziert — null sorry/axiom (Anzahl bewiesener Deklarationen in der Tabelle [Aktueller Stand](#aktueller-stand)) |
 | **Plattform** | HAL auf C-Ebene | `PlatformBinding`-Typklasse mit typisierten Schnittstellenverträgen |
 
-## Nächste Schritte
+## Lizenz und Drittanbieter-Attributionen
 
-Der aktive Workstream ist **WS-SM** (SMP-Mehrkern-Vervollständigung), der die
-verbleibenden WS-RC-Behebungsphasen in den SMP-spezifischen Phasenplan
-SM0–SM10 überführt hat und bei **v1.0.0** mit einem bootfähigen verifizierten
-SMP-Mikrokernel auf dem Raspberry Pi 5 abschließt. Die Phasen SM0–SM9 sind
-gelandet — grundlegende SMP-Typen und die Lock-Hierarchie, das SMP-Bring-up
-des Rust-HAL, verifizierte Lock-Primitive, Locks pro Objekt,
-Scheduler-Zustand und Scheduling pro Kern, kernübergreifendes IPC,
-TLB-Shootdown und Cache-Wartung, SMP-Informationsfluss sowie die
-Vervollständigung der Deklassifizierung (SM9, abgeschlossen bei v0.33.100).
-Die verbleibende Phase ist **SM10** (Release-Abschluss → v1.0.0). Der
-Workstream zum Syscall-Rückgabe-ABI (**WS-RA**) ist abgeschlossen.
-
-**WS-RR** (SMP-Release-Reife), die Remediationsphase vor 1.0, ist **abgeschlossen mit v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) und **RR4 — Fehlerbehandlung: vollständige Fault-IPC mit antwortbasiertem Neustart (v0.34.44)**, die verhindert, dass ein fehlerhafter Thread an der auslösenden Instruktion fortgesetzt wird: der Fault wird im TCB vermerkt, über die aktive kernübergreifende Call-Kette an den `faultHandler`-Endpunkt des Threads zugestellt und mit einer Antwort beantwortet, die den Thread an einem gewählten PC neu startet oder ihn aufgibt. RR5–RR8 sind ebenfalls abgeschlossen (RR8 mit v0.35.203). **SM10 ist jetzt durch WS-BP blockiert** (der Bare-Metal-Bootpfad, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), den Inhalt von SM10.1, dessen erste sieben Phasen BP0 bis BP6 mit v0.36.2 abgeschlossen sind (BP7 und BP8 stehen aus); danach **SM10** (Release-Abschluss → v1.0.0).
-
-Masterplan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
-mit Plänen pro Phase in `docs/planning/SMP_*.md`. Die kanonische Aufzeichnung
-pro Phase — einschließlich aller abgeschlossenen Workstream-Portfolios (WS-B
-bis WS-AB, WS-AE bis WS-AN, WS-RC R0–R5, WS-RA) — ist
-[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md); frühere
-Audits und Meilensteinabschlüsse sind in
-[`docs/dev_history/`](../../../docs/dev_history/README.md) archiviert.
+seLe4n selbst steht unter der GNU General Public License v3.0 oder später
+(GPLv3+); den vollständigen Text enthält [`LICENSE`](../../../LICENSE).
+Build-Abhängigkeiten von Drittanbietern (`cc`, `find-msvc-tools`, `shlex`, alle
+doppelt lizenziert unter `MIT OR Apache-2.0`) werden unter der MIT-Option
+verwendet; ihre ursprünglichen Copyright- und Erlaubnisvermerke sind wörtlich in
+[`THIRD_PARTY_LICENSES.md`](../../../THIRD_PARTY_LICENSES.md) wiedergegeben. Das
+Kernel-Binary enthält keinen zur Laufzeit gelinkten Drittanbietercode — der HAL
+ist `#![no_std]` und verwendet nur `core::*`.
 
 ---
 

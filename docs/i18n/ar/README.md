@@ -18,6 +18,17 @@
   مستوحاة من معمارية <a href="https://sel4.systems">seL4</a>.
   المنصة المستهدفة الأولى: <strong>Raspberry Pi 5</strong>.
 </p>
+<p align="center">
+  <div align="center">
+    صُنع بعناية بمساعدة:
+  </div>
+  <div align="center">
+    claude :robot: :heart: :robot: codex
+  </div>
+  <div align="center">
+    <strong>تعامل مع هذه النواة على هذا الأساس</strong>
+  </div>
+</p>
 
 ---
 
@@ -38,7 +49,7 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 ### الجدولة وضمانات الوقت الحقيقي
 
 - **كائنات أداء قابلة للتركيب (Composable performance objects)** — وقت المعالج هو كائن نواة من الدرجة الأولى. يغلّف `SchedContext` الميزانية والفترة والأولوية والموعد النهائي والنطاق في سياق جدولة قابل لإعادة الاستخدام ترتبط به الخيوط عبر الصلاحيات. جدولة CBS (Constant Bandwidth Server) توفر عزل نطاق ترددي مُبرهَن (نظرية `cbs_bandwidth_bounded`)
-- **الخوادم الخاملة (Passive servers)** — تستعير الخوادم الخاملة `SchedContext` العميل أثناء IPC، مستهلكةً صفر وحدة معالجة عند عدم الخدمة. ثابت `donationChainAcyclic` يمنع سلاسل التبرع الدائرية
+- **الخوادم السلبية (Passive servers)** — تستعير الخوادم الخاملة `SchedContext` العميل أثناء IPC، مستهلكةً صفر وحدة معالجة عند عدم الخدمة. ثابت `donationChainAcyclic` يمنع سلاسل التبرع الدائرية
 - **مُهَل IPC مدفوعة بالميزانية** — العمليات المحجوبة محدودة بميزانية المُستدعي. عند الانتهاء تُنتزع الخيوط من طابور نقطة النهاية وتُعاد إدراجها
 - **بروتوكول وراثة الأولوية (Priority Inheritance Protocol)** — نشر أولوية متعدٍّ مع حرية تامة من الجمود مُحققة آليًا (`blockingAcyclic`) وعمق سلسلة محدود. يمنع انعكاس الأولوية غير المحدود
 - **نظرية الكمون المحدود (Bounded latency theorem)** — حد WCRT محقق آليًا: `WCRT = D × L_max + N × (B + P)`، مُبرهَن عبر 8 وحدات حيوية تغطي رتابة الميزانية وتوقيت التجديد ودلالات التنازل واستنفاد النطاق ودوران النطاق
@@ -51,10 +62,10 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 
 ### الأمان والتحقق
 
-- **تدفق معلومات بعدد N من النطاقات** — سياسات تدفق ذات معاملات (parameterized) تعمّم التقسيم الثنائي لـ seL4. حدود تنفيذ من 43 مُدخلاً مع براهين عدم تداخل لكل عملية (استقرائي `NonInterferenceStep` بـ 35 مُنشئًا)، وسجل تدقيق لإلغاء التصنيف محدود ومُغلق عند الفشل (fail-closed) مع قارئ مُقيَّد بالصلاحيات
+- **تدفق معلومات بعدد N من النطاقات** — سياسات تدفق ذات معاملات (parameterized) تعمّم التقسيم الثنائي لـ seL4. حدود تنفيذ من 44 مُدخلاً مع براهين عدم تداخل لكل عملية (استقرائي `NonInterferenceStep` بـ 35 مُنشئًا)، وسجل تدقيق لإلغاء التصنيف محدود ومُغلق عند الفشل (fail-closed) مع قارئ مُقيَّد بالصلاحيات
 - **طبقة برهان مركّبة** — يجمع `proofLayerInvariantBundle` 16 حزمة ثوابت أنظمة فرعية (نواة المجدول + امتدادات CBS، الصلاحيات، IPC + اقتران IPC بالمجدول، دورة الحياة، الخدمة، VSpace، العبور بين الأنظمة الفرعية، اتساق TLB، اتساق منتظري الإشعارات، حدود التعليق/الإقرار لإسقاط TLB، إبطال TLB لكل نواة وتماسك I-cache، وحد سجل تدقيق إلغاء التصنيف) في التزام واحد على المستوى الأعلى محقق من الإقلاع عبر جميع العمليات
 - **معمارية حالة ثلاثية الأطوار** — مرحلة بناء مع شواهد ثوابت تتدفق إلى تمثيل مجمّد غير قابل للتغيير مع تكافؤ بحث مُبرهَن. 24 عملية مجمّدة تعكس واجهة API الحية
-- **مجموعة عمليات كاملة** — جميع عمليات seL4 مُنفَّذة مع الحفاظ على الثوابت، بما في ذلك العمليات الخمس المؤجلة (suspend/resume، setPriority/setMCPriority، setIPCBuffer)
+- **مجموعة عمليات كاملة** — جميع عمليات seL4 مُنفَّذة مع الحفاظ على الثوابت، وصولًا إلى تعليق الخيوط واستئنافها (suspend/resume)، وإدارة الأولويات (setPriority/setMCPriority)، وتهيئة مخزن IPC المؤقت
 - **تنسيق الخدمات** — دورة حياة مكونات على مستوى النواة مع رسوم بيانية للتبعيات ولاحلقية مُبرهَنة (امتداد seLe4n، غير موجود في seL4)
 
 ## الحالة الراهنة
@@ -74,14 +85,17 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 | **أسطر Lean الإنتاجية** | 433,986 عبر 361 ملفًا |
 | **أسطر Lean للاختبارات** | 88,629 عبر 71 مجموعة اختبار |
 | **الإعلانات المُبرهَنة** | 14,408 إعلانات theorem/lemma (صفر sorry/axiom) |
+| **حزم Rust (crates)** | 4 (`sele4n-types`، `sele4n-abi`، `sele4n-sys`، `sele4n-hal`) عبر 48 ملفًا مصدريًا |
 | **العتاد المستهدف** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
+| **الربط بالعتاد** | **H3 مكتمل** (WS-AG AG1–AG10): HAL، GIC-400، المؤقِّت، جداول صفحات ARMv8، جسر FFI، الإقلاع على QEMU |
 | **التدقيق القياسي** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — تدقيق شامل ما قبل الإصدار 1.0 (202 نتيجة؛ تمت المعالجة بواسطة WS-AK AK1–AK10؛ مؤرشف) |
 | **آخر تدقيق** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — تدقيق جاهزية ما قبل الإصدار 1.0 أُجري بعد إغلاق WS-AN (يخلف [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) المؤرشف الآن والذي عولج بواسطة WS-AN AN0–AN12). WS-RC R0..R5 أُنجز في v0.31.2؛ WS-RC R6..R14 استُوعب في WS-SM وفق خريطة الاستيعاب SM0.Q.1 (انظر [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). خطة تيار العمل النشطة: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
 | **خريطة قاعدة الشفرة** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — جرد إعلانات قابل للقراءة آليًا |
 
 تُشتق المقاييس من قاعدة الشفرة بواسطة `./scripts/generate_codebase_map.py` وتُخزَّن
 في [`docs/codebase_map.json`](../../../docs/codebase_map.json) تحت مفتاح `readme_sync`.
-استخدم `./scripts/report_current_state.py` كتحقق متبادل.
+حدِّث التوثيق كله معًا باستخدام `./scripts/sync_documentation_metrics.sh`
+(للتحقق فقط: `--check`)؛ ويبقى `./scripts/report_current_state.py` أداةً يدوية للتحقق المتبادل.
 
 ## البداية السريعة
 
@@ -98,7 +112,7 @@ lake exe sele4n                # تشغيل أداة التتبع (trace harness
 |----------|-----|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — سير العمل، التحقق، قائمة مراجعة PR | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — المواصفات والمعالم |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — الدليل الكامل | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — دلالات مرجعية لـ seL4 |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — جرد قابل للقراءة آليًا | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — تاريخ تيارات العمل وخارطة الطريق |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — جرد قابل للقراءة آليًا | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — كل بند مؤجَّل، مع الجهة المسؤولة عنه |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — آليات المساهمة | [`CHANGELOG.md`](../../../CHANGELOG.md) — سجل الإصدارات |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) هو المصدر الوحيد للحقيقة
@@ -113,10 +127,25 @@ lake exe sele4n                # تشغيل أداة التتبع (trace harness
 ./scripts/test_smoke.sh     # + المستوى 2: تتبع + حالة سلبية + مزامنة الوثائق
 ./scripts/test_full.sh      # + المستوى 3: مراسي سطح الثوابت + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + المستوى 4: حتمية ليلية
+
+./scripts/test_rust.sh                 # Rust على المضيف: البناء، الاختبارات، fmt، clippy
+./scripts/test_aarch64_cross_build.sh  # الهدف الفعلي لطبقة HAL في النواة
 ```
 
 شغّل `test_smoke.sh` على الأقل قبل أي PR. شغّل `test_full.sh` عند تغيير
 النظريات أو الثوابت أو مراسي التوثيق.
+
+بعد أي تغيير تحت `rust/`، شغِّل مساري Rust **كليهما**. فهما يغطيان نصفين
+منفصلين من الحزمة نفسها: على المضيف تُزال كل كتلة
+`#[cfg(target_arch = "aarch64")]` قبل أن يراها rustc أو clippy، لذا لا يستطيع
+مسار المضيف رؤية الكتل الـ 67 المشروطة بـ cfg، ولا مواضع `asm!` الـ 57، ولا
+مصادر `.S` الثلاثة التي تشكّل معظم HAL. أما المسار المتقاطع فيبني `sele4n-hal`
+للهدف `aarch64-unknown-none-softfloat` في كلا ملفَّي التعريف (profiles)، ويتحقق
+من أن مصادر التجميع قد جُمِّعت فعلًا، ويُجري الفحص (lint) على الهدف المتقاطع،
+ويفكّك كائنات الإصدار (release) ليثبت أنها لا تستخدم أي سجل FP/SIMD — فالنواة
+خالية من الفاصلة العائمة وتعترض FP/SIMD عند EL1 منذ أول تعليمة لها — وهو بناء
+فعلي لا `cargo check`، لأن `check` يتوقف قبل توليد الشفرة ولا يصل أبدًا إلى
+المُجمِّع.
 
 ## المعمارية
 
@@ -127,9 +156,9 @@ seLe4n منظم كعقود متعددة الطبقات، كل منها يحتو�
 ┌──────────────────────────────────────────────────────────────────────┐
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│  SchedContext│             │  Donation  │           │                │
+│  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│ SchedContext │             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -161,14 +190,18 @@ SeLe4n/
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
 │   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
+│   │                            installBootVSpaceRoot threads canonical boot VSpace
+│   │                            through bootFromPlatformChecked (WS-RC R3).
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
+│                                VSpaceBoot.lean holds the canonical W^X-compliant
+│                                boot VSpaceRoot (production-wired since WS-RC R3).
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
 tests/                           مجموعات اختبار قابلة للتنفيذ + تجهيزات (fixtures)
@@ -184,9 +217,9 @@ tests/                           مجموعات اختبار قابلة للتن
 | الميزة | seL4 | seLe4n |
 |--------|------|--------|
 | **الجدولة** | خادم متقطع مُنفَّذ بـ C (MCS) | CBS مع نظرية `cbs_bandwidth_bounded` محققة آليًا؛ `SchedContext` ككائن نواة خاضع للصلاحيات |
-| **الخوادم الخاملة** | تبرع SchedContext عبر C | تبرع محقق مع ثابت `donationChainAcyclic` |
+| **الخوادم السلبية** | تبرع SchedContext عبر C | تبرع محقق مع ثابت `donationChainAcyclic` |
 | **IPC** | طابور نقطة نهاية بقائمة مرتبطة مفردة | طابور مزدوج مضمّن مع إزالة من المنتصف بتعقيد O(1)؛ مُهَل مدفوعة بالميزانية |
-| **تدفق المعلومات** | تقسيم ثنائي عالي/منخفض | سياسة N-نطاق قابلة للتهيئة مع حدود تنفيذ من 43 مُدخلاً (العدد مثبَّت بواسطة `enforcementBoundaryExtended_count`) وبراهين NI لكل عملية وسجل تدقيق مُقيَّد بالصلاحيات لكل إلغاء تصنيف مُصرَّح به |
+| **تدفق المعلومات** | تقسيم ثنائي عالي/منخفض | سياسة N-نطاق قابلة للتهيئة مع حدود تنفيذ من 44 مُدخلاً (العدد مثبَّت بواسطة `enforcementBoundaryExtended_count`) وبراهين NI لكل عملية وسجل تدقيق مُقيَّد بالصلاحيات لكل إلغاء تصنيف مُصرَّح به |
 | **وراثة الأولوية** | PIP مُنفَّذ بـ C (فرع MCS) | PIP متعدٍّ محقق آليًا مع حرية من الجمود وحد WCRT بارامتري |
 | **الكمون المحدود** | لا يوجد حد WCRT رسمي | `WCRT = D × L_max + N × (B + P)` مُبرهَن عبر 8 وحدات حيوية |
 | **مخازن الكائنات** | قوائم مرتبطة ومصفوفات | جداول تجزئة Robin Hood محققة (`RHTable`/`RHSet`) مع مسارات ساخنة بتعقيد O(1) |
@@ -194,28 +227,16 @@ tests/                           مجموعات اختبار قابلة للتن
 | **البراهين** | Isabelle/HOL، بأثر رجعي | مدقق أنماط Lean 4، مشتركة الموقع مع الانتقالات — صفر sorry/axiom (عدد الإعلانات المُبرهَنة في جدول [الحالة الراهنة](#الحالة-الراهنة)) |
 | **المنصة** | HAL على مستوى C | فئة نمطية `PlatformBinding` مع عقود حدود مُنمَّطة |
 
-## الخطوات القادمة
+## الترخيص وإسناد الأطراف الثالثة
 
-تيار العمل النشط هو **WS-SM** (إكمال تعدد النوى SMP)، وقد دمج مراحل
-المعالجة المتبقية من WS-RC في خطة المراحل الخاصة بـ SMP (SM0–SM10)،
-ويُغلَق عند **v1.0.0** بنواة مصغرة SMP محقَّقة وقابلة للإقلاع على
-Raspberry Pi 5. أُنجزت المراحل SM0–SM9 — الأنماط التأسيسية لـ SMP
-وتسلسل الأقفال الهرمي، وتهيئة SMP في طبقة HAL المكتوبة بـ Rust،
-وبدائيات الأقفال المحقَّقة، والأقفال لكل كائن، وحالة المجدول والجدولة
-لكل نواة، و IPC عبر النوى، وإسقاط TLB وصيانة الذاكرة المخبئية، وتدفق
-المعلومات في SMP، وإكمال إلغاء التصنيف (SM9، أُغلق عند v0.33.100).
-المرحلة المتبقية هي **SM10** (إغلاق الإصدار ← v1.0.0). أما تيار عمل
-ABI الخاص بإرجاع استدعاءات النظام (**WS-RA**) فمكتمل.
-
-**WS-RR** (جاهزية إصدار SMP)، وهي مرحلة المعالجة السابقة للإصدار 1.0، **مكتملة في v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26)، RR1 (v0.34.41)، RR2 (v0.34.42)، RR3 (v0.34.43)، و**RR4 — معالجة الأعطال: IPC كامل للأعطال مع إعادة تشغيل قائمة على الرد (v0.34.44)**، التي تمنع استئناف الخيط المعطوب عند التعليمة التي سبّبت العطل: يُسجَّل العطل في TCB، ويُسلَّم إلى نقطة نهاية `faultHandler` الخاصة بالخيط عبر سلسلة الاستدعاء الحيّة عبر الأنوية، ويُعالَج برد يعيد تشغيل الخيط عند PC مختار أو يتخلّى عنه. واكتملت RR5–RR8 كذلك (RR8 في v0.35.203). أصبحت **SM10 محجوبة الآن بـ WS-BP** (مسار الإقلاع على المعدن العاري، [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md))، وهو محتوى SM10.1 واكتملت مراحله السبع الأولى BP0 إلى BP6 في v0.36.2، وتبقّت BP7 وBP8، ثم **SM10** (إغلاق الإصدار ← v1.0.0).
-
-الخطة الرئيسية: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)،
-مع خطط لكل مرحلة في `docs/planning/SMP_*.md`. السجل القياسي لكل مرحلة —
-بما في ذلك جميع محافظ تيارات العمل المكتملة (WS-B حتى WS-AB، و WS-AE
-حتى WS-AN، و WS-RC R0–R5، و WS-RA) — هو
-[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)؛
-والتدقيقات السابقة وإغلاقات المعالم مؤرشفة في
-[`docs/dev_history/`](../../../docs/dev_history/README.md).
+seLe4n نفسه مرخَّص بموجب GNU General Public License v3.0 أو أي إصدار لاحق
+(GPLv3+)؛ راجع [`LICENSE`](../../../LICENSE) للاطلاع على النص الكامل.
+تُستخدم تبعيات البناء الخارجية (`cc`، `find-msvc-tools`، `shlex`، وجميعها
+مرخَّصة ترخيصًا مزدوجًا `MIT OR Apache-2.0`) بموجب خيار MIT؛ وتُستنسخ إشعارات
+حقوق النشر والأذونات الأصلية الخاصة بها حرفيًا في
+[`THIRD_PARTY_LICENSES.md`](../../../THIRD_PARTY_LICENSES.md). لا توجد في
+الملف الثنائي للنواة أي شفرة خارجية مربوطة وقت التشغيل — فطبقة HAL هي
+`#![no_std]` ولا تستخدم إلا `core::*`.
 
 ---
 

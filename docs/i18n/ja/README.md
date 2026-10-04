@@ -49,7 +49,7 @@
 
 ## seLe4n とは
 
-seLe4n は Lean 4 で一から構築されたマイクロカーネルです。すべてのカーネル遷移は実行可能な純粋関数として定義されています。すべての不変条件は Lean の型検査器によって機械検証されています――`sorry` ゼロ、`axiom` ゼロ。証明面全体が未承認の証明なしにネイティブコードへコンパイルされます。
+seLe4n は Lean 4 で一から構築されたマイクロカーネルです。すべてのカーネル遷移は実行可能な純粋関数として定義されています。すべての不変条件は Lean の型検査器によって機械検証されています――`sorry` ゼロ、`axiom` ゼロ。証明面全体が、admit された証明を一切含まずにネイティブコードへコンパイルされます。
 
 本プロジェクトは seL4 のケイパビリティベースのセキュリティモデルを継承しつつ、Lean 4 の証明フレームワークによって可能になったアーキテクチャ改善を導入しています：
 
@@ -69,10 +69,10 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 
 ### セキュリティと検証
 
-- **N ドメイン情報フロー** ―― パラメータ化されたフローポリシーにより seL4 の二値パーティションを一般化。43 エントリのエンフォースメント境界と、操作ごとの非干渉証明（35 コンストラクタの `NonInterferenceStep` 帰納型）、および有界かつフェイルクローズドな機密解除監査証跡（ケイパビリティでゲートされたリーダー付き）
+- **N ドメイン情報フロー** ―― パラメータ化されたフローポリシーにより seL4 の二値パーティションを一般化。44 エントリのエンフォースメント境界と、操作ごとの非干渉証明（35 コンストラクタの `NonInterferenceStep` 帰納型）、および有界かつフェイルクローズドな機密解除監査証跡（ケイパビリティでゲートされたリーダー付き）
 - **合成証明レイヤー** ―― `proofLayerInvariantBundle` が 16 のサブシステム不変条件バンドル（スケジューラコア + CBS 拡張、ケイパビリティ、IPC + IPC–スケジューラ結合、ライフサイクル、サービス、VSpace、クロスサブシステム、TLB 一貫性、通知ウェイター一貫性、TLB シュートダウンの pending/ack 上界、コアごとの TLB 無効化と I キャッシュコヒーレンス、および機密解除監査ログ上界）を単一のトップレベル義務に合成し、ブートからすべての操作まで検証
-- **二段階状態アーキテクチャ** ―― 不変条件ウィットネス付きビルダーフェーズからフリーズされた不変表現へ遷移し、証明済みのルックアップ等価性を保証。24 のフリーズ操作がライブ API をミラー
-- **完全な操作セット** ―― すべての seL4 操作が不変条件保存付きで実装済み。5 つの遅延操作（suspend/resume、setPriority/setMCPriority、setIPCBuffer）を含む
+- **三段階状態アーキテクチャ** ―― 不変条件ウィットネス付きビルダーフェーズからフリーズされた不変表現へ遷移し、証明済みのルックアップ等価性を保証。24 のフリーズ操作がライブ API をミラー
+- **完全な操作セット** ―― すべての seL4 操作が不変条件保存付きで実装済み。スレッドの suspend/resume、優先度管理（setPriority/setMCPriority）、IPC バッファ設定まで網羅
 - **サービスオーケストレーション** ―― カーネルレベルのコンポーネントライフサイクル管理。依存グラフと証明済み非循環性を備える（seLe4n 独自の拡張、seL4 には存在しない）
 
 ## 現在の状態
@@ -96,14 +96,16 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 | **本番 Lean コード行数** | 361 ファイルにわたる 433,986 行 |
 | **テスト Lean コード行数** | 71 テストスイートにわたる 88,629 行 |
 | **証明済み宣言数** | 14,408 件の定理/補題宣言（sorry/axiom ゼロ） |
+| **Rust クレート** | 4 個（`sele4n-types`、`sele4n-abi`、`sele4n-sys`、`sele4n-hal`）、ソースファイル 48 個 |
 | **ターゲットハードウェア** | Raspberry Pi 5（BCM2712 / ARM Cortex-A76 / ARMv8-A） |
+| **ハードウェアバインディング** | **H3 完了**（WS-AG AG1–AG10）：HAL、GIC-400、タイマー、ARMv8 ページテーブル、FFI ブリッジ、QEMU ブート |
 | **標準監査** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) ―― 1.0 前の包括的監査（202 件の指摘事項；WS-AK AK1–AK10 で修正済み；アーカイブ済み） |
 | **最新監査** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) ―― WS-AN 完了後に実施された 1.0 前レディネス監査（WS-AN AN0–AN12 で修正され現在アーカイブ済みの [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) を引き継ぐ）。WS-RC R0..R5 は v0.31.2 で完了；WS-RC R6..R14 は SM0.Q.1 吸収マッピングに従って WS-SM に吸収（[`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) を参照）。アクティブなワークストリーム計画：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)。 |
 | **コードベースマップ** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) ―― 機械可読な宣言インベントリ |
 
 メトリクスは `./scripts/generate_codebase_map.py` によってコードベースから導出され、
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) の `readme_sync` キーに格納されています。
-`./scripts/report_current_state.py` をクロスチェックとして使用し、すべてのドキュメントを同時に更新してください。
+すべてのドキュメントは `./scripts/sync_documentation_metrics.sh`（検証のみ：`--check`）でまとめて更新してください。`./scripts/report_current_state.py` は引き続き手動のクロスチェックとして使用します。
 
 ## クイックスタート
 
@@ -120,7 +122,7 @@ lake exe sele4n                # トレースハーネスの実行
 |-------------|---------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) ―― ワークフロー、検証、PR チェックリスト | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) ―― 仕様とマイルストーン |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) ―― 完全なハンドブック | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) ―― seL4 リファレンスセマンティクス |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) ―― 機械可読インベントリ | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) ―― ワークストリーム履歴とロードマップ |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) ―― 機械可読インベントリ | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) ―― 繰り延べられたすべての項目とその担当者 |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) ―― コントリビューション手順 | [`CHANGELOG.md`](../../../CHANGELOG.md) ―― バージョン履歴 |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) はプロジェクトメトリクスの信頼できるソースであり、
@@ -132,11 +134,16 @@ lake exe sele4n                # トレースハーネスの実行
 ```bash
 ./scripts/test_fast.sh      # Tier 0+1：衛生チェック + ビルド
 ./scripts/test_smoke.sh     # + Tier 2：トレース + ネガティブステート + ドキュメント同期
-./scripts/test_full.sh      # + Tier 3：不変条件サーフェスアンカー + Lean #check 正確性
+./scripts/test_full.sh      # + Tier 3：不変条件サーフェスアンカー + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4：ナイトリー決定性検証
+
+./scripts/test_rust.sh                 # ホスト Rust：ビルド、テスト、fmt、clippy
+./scripts/test_aarch64_cross_build.sh  # カーネル HAL の実際のターゲット
 ```
 
 PR を提出する前に最低限 `test_smoke.sh` を実行してください。定理、不変条件、またはドキュメントアンカーを変更した場合は `test_full.sh` を実行してください。
+
+`rust/` 配下を変更した後は、Rust の**両方の**レーンを実行してください。2 つのレーンは同じクレートの互いに重ならない半分ずつをカバーします。ホストでは、すべての `#[cfg(target_arch = "aarch64")]` ブロックが rustc や clippy に渡る前に除去されるため、ホストレーンからは HAL の大部分を占める 67 個の cfg ゲート付きブロック、57 箇所の `asm!`、3 つの `.S` ソースが見えません。クロスレーンは `sele4n-hal` を `aarch64-unknown-none-softfloat` 向けに両方のプロファイルでビルドし、アセンブリソースが実際にアセンブルされたことを検証し、クロスターゲットに対して lint を実行し、リリースオブジェクトを逆アセンブルして FP/SIMD レジスタを一切使用していないことを証明します（カーネルは FP を使用せず、最初の命令から EL1 で FP/SIMD をトラップします）。また、これは `cargo check` ではなく実際のビルドです。`check` はコード生成の前に停止し、アセンブラに到達しないためです。
 
 ## アーキテクチャ
 
@@ -146,9 +153,9 @@ seLe4n は階層化されたコントラクトとして構成されており、�
 ┌──────────────────────────────────────────────────────────────────────┐
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│  SchedContext│             │  Donation  │           │                │
+│  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│ SchedContext │             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -180,14 +187,18 @@ SeLe4n/
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
 │   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
+│   │                            installBootVSpaceRoot threads canonical boot VSpace
+│   │                            through bootFromPlatformChecked (WS-RC R3).
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
+│                                VSpaceBoot.lean holds the canonical W^X-compliant
+│                                boot VSpaceRoot (production-wired since WS-RC R3).
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
@@ -202,7 +213,7 @@ tests/                           Executable test suites + fixtures
 | **スケジューリング** | C 実装の散発サーバー（MCS） | CBS スケジューリング、機械検証済み `cbs_bandwidth_bounded` 定理付き。`SchedContext` をケイパビリティ制御のカーネルオブジェクトとして提供 |
 | **パッシブサーバー** | C による SchedContext ドネーション | `donationChainAcyclic` 不変条件付きの検証済みドネーション |
 | **IPC** | 単一リンクリストのエンドポイントキュー | 侵入型デュアルキューによる O(1) キュー途中削除、バジェット駆動型タイムアウト |
-| **情報フロー** | 二値 high/low パーティション | N ドメイン設定可能ポリシー、43 エントリのエンフォースメント境界（エントリ数は `enforcementBoundaryExtended_count` で固定）、操作ごとの NI 証明、およびすべての承認済み機密解除に対するケイパビリティゲート付き監査証跡 |
+| **情報フロー** | 二値 high/low パーティション | N ドメイン設定可能ポリシー、44 エントリのエンフォースメント境界（エントリ数は `enforcementBoundaryExtended_count` で固定）、操作ごとの NI 証明、およびすべての承認済み機密解除に対するケイパビリティゲート付き監査証跡 |
 | **優先度継承** | C 実装の PIP（MCS ブランチ） | 機械検証済みの推移的 PIP、デッドロックフリー保証とパラメトリック WCRT 上界付き |
 | **有界レイテンシ** | 形式的な WCRT 上界なし | `WCRT = D × L_max + N × (B + P)` を 8 つの活性モジュールで証明 |
 | **オブジェクトストア** | リンクリストと配列 | 検証済み Robin Hood ハッシュテーブル（`RHTable`/`RHSet`）による O(1) ホットパス |
@@ -210,13 +221,9 @@ tests/                           Executable test suites + fixtures
 | **証明手法** | Isabelle/HOL、事後検証 | Lean 4 型検査器、遷移と共存配置――sorry/axiom ゼロ（証明済み宣言数は[現在の状態](#現在の状態)の表を参照） |
 | **プラットフォーム抽象化** | C レベル HAL | `PlatformBinding` 型クラスと型付き境界コントラクト |
 
-## 次のステップ
+## ライセンスとサードパーティの帰属表示
 
-アクティブなワークストリームは **WS-SM**（SMP マルチコア完成）です。WS-RC の残りの修正フェーズを SMP 専用の SM0–SM10 フェーズ計画に統合したもので、Raspberry Pi 5 上でブート可能な検証済み SMP マイクロカーネルとして **v1.0.0** で完結します。フェーズ SM0–SM9 は完了済みです――基盤となる SMP 型とロック階層、Rust HAL の SMP ブートアップ、検証済みロックプリミティブ、オブジェクトごとのロック、コアごとのスケジューラ状態とスケジューリング、クロスコア IPC、TLB シュートダウンとキャッシュメンテナンス、SMP 情報フロー、そして機密解除の完成（SM9、v0.33.100 でクローズ）。残るフェーズは **SM10**（リリースクロージャ → v1.0.0）です。システムコール戻り値 ABI ワークストリーム（**WS-RA**）は完了しています。
-
-**WS-RR（SMP リリースレディネス）** ―― 1.0 前の是正フェーズは **v0.35.203 で完了しました**（[`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)）：RR0（v0.34.26）、RR1（v0.34.41）、RR2（v0.34.42）、RR3（v0.34.43）、そして **RR4 ―― フォルト処理：リプライベースの再開を伴う完全なフォルト IPC（v0.34.44）**。RR4 はフォルトを起こしたスレッドがフォルト命令から再開されることを止めます：フォルトは TCB に記録され、ライブのクロスコア call チェーンを通じてスレッドの `faultHandler` エンドポイントへ配送され、指定した PC でスレッドを再開するか放棄するリプライで処理されます。RR5–RR8 も完了しています（RR8 は v0.35.203）。**SM10 は現在 WS-BP**（ベアメタル起動パス、[`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)）**でブロックされています** ―― これは SM10.1 の内容で、最初の 7 フェーズ BP0〜BP6 は v0.36.2 で完了しました（BP7 と BP8 が残っています）。その後が **SM10**（リリースクロージャ → v1.0.0）です。
-
-マスタープラン：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)、フェーズごとの計画は `docs/planning/SMP_*.md` にあります。フェーズごとの正準記録――完了したすべてのワークストリームポートフォリオ（WS-B から WS-AB、WS-AE から WS-AN、WS-RC R0–R5、WS-RA）を含む――は [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) です。過去の監査とマイルストーンクローズアウトは [`docs/dev_history/`](../../../docs/dev_history/README.md) にアーカイブされています。
+seLe4n 本体は GNU General Public License v3.0 以降（GPLv3+）の下でライセンスされています。全文は [`LICENSE`](../../../LICENSE) を参照してください。サードパーティのビルド依存関係（`cc`、`find-msvc-tools`、`shlex`。いずれも `MIT OR Apache-2.0` のデュアルライセンス）は MIT の選択肢の下で使用しており、それらの上流の著作権表示および許諾表示は [`THIRD_PARTY_LICENSES.md`](../../../THIRD_PARTY_LICENSES.md) に原文のまま転載しています。カーネルバイナリには実行時にリンクされるサードパーティのコードは一切含まれていません ―― HAL は `#![no_std]` であり、`core::*` のみを使用します。
 
 ---
 

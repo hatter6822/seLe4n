@@ -74,10 +74,10 @@ de preuve de Lean 4 :
 
 ### Sécurité et vérification
 
-- **Flux d'information à N domaines** — politiques de flux paramétrées généralisant la partition binaire de seL4. Frontière d'application de 43 entrées avec preuves de non-interférence par opération (inductif `NonInterferenceStep` à 35 constructeurs), et une piste d'audit de déclassification bornée et fail-closed, dotée d'un lecteur contrôlé par capacité
+- **Flux d'information à N domaines** — politiques de flux paramétrées généralisant la partition binaire de seL4. Frontière d'application de 44 entrées avec preuves de non-interférence par opération (inductif `NonInterferenceStep` à 35 constructeurs), et une piste d'audit de déclassification bornée et fail-closed, dotée d'un lecteur contrôlé par capacité
 - **Couche de preuve composée** — `proofLayerInvariantBundle` compose 16 ensembles d'invariants de sous-systèmes (cœur de l'ordonnanceur + extensions CBS, capacité, IPC + couplage IPC–ordonnanceur, cycle de vie, service, VSpace, inter-sous-systèmes, cohérence TLB, cohérence des waiters de notification, bornes pending/ack du TLB shootdown, invalidation TLB par cœur et cohérence de l'I-cache, et la borne du journal d'audit de déclassification) en une unique obligation de niveau supérieur vérifiée du démarrage à travers toutes les opérations
-- **Architecture d'état en trois phases** — la phase de construction avec témoins d'invariants alimente une représentation immuable gelée avec équivalence de consultation prouvée. 24 opérations gelées reproduisent l'API en temps réel
-- **Ensemble complet d'opérations** — toutes les opérations seL4 implémentées avec préservation d'invariants, y compris les 5 opérations différées (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
+- **Architecture d'état en trois phases** — la phase de construction avec témoins d'invariants alimente une représentation immuable gelée avec équivalence de consultation prouvée. 24 opérations gelées reflètent l'API vivante
+- **Ensemble complet d'opérations** — toutes les opérations seL4 implémentées avec préservation d'invariants, jusqu'à la suspension/reprise de threads, la gestion des priorités (setPriority/setMCPriority) et la configuration du tampon IPC
 - **Orchestration de services** — cycle de vie des composants au niveau noyau avec graphes de dépendances et preuves d'acyclicité (extension seLe4n, absente de seL4)
 
 ## État actuel
@@ -101,15 +101,18 @@ de preuve de Lean 4 :
 | **LoC Lean de production** | 433 986 réparties sur 361 fichiers |
 | **LoC Lean de test** | 88 629 réparties sur 71 suites de tests |
 | **Déclarations prouvées** | 14 408 déclarations theorem/lemma (zéro sorry/axiom) |
+| **Crates Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) sur 48 fichiers source |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
+| **Liaison matérielle** | **H3 TERMINÉ** (WS-AG AG1–AG10) : HAL, GIC-400, minuterie, tables de pages ARMv8, pont FFI, démarrage QEMU |
 | **Audit canonique** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — audit complet pré-1.0 (202 résultats ; corrigés par WS-AK AK1–AK10 ; archivé) |
 | **Dernier audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — audit de préparation pré-1.0 réalisé après la clôture de WS-AN (succède au désormais archivé [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), corrigé par WS-AN AN0–AN12). WS-RC R0..R5 LANDED en v0.31.2 ; WS-RC R6..R14 absorbés dans WS-SM selon la cartographie d'absorption SM0.Q.1 (voir [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Plan du flux de travail actif : [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
 | **Carte de la base de code** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine des déclarations |
 
 Les métriques sont extraites de la base de code par `./scripts/generate_codebase_map.py`
 et stockées dans [`docs/codebase_map.json`](../../../docs/codebase_map.json) sous la
-clé `readme_sync`. Mettez à jour l'ensemble de la documentation à l'aide de
-`./scripts/report_current_state.py` comme vérification croisée.
+clé `readme_sync`. Mettez à jour l'ensemble de la documentation en une seule fois avec
+`./scripts/sync_documentation_metrics.sh` (vérification seule : `--check`) ;
+`./scripts/report_current_state.py` reste une vérification croisée manuelle.
 
 ## Démarrage rapide
 
@@ -126,7 +129,7 @@ lake exe sele4n                # exécuter le harnais de trace
 |---------------|---------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — flux de travail, validation, liste de contrôle des PR | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — spécification et jalons |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — manuel complet | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — sémantique de référence seL4 |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — historique des flux de travail et feuille de route |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — chaque élément différé, avec un responsable |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — modalités de contribution | [`CHANGELOG.md`](../../../CHANGELOG.md) — historique des versions |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) est la source de vérité pour
@@ -141,10 +144,27 @@ et est actualisé automatiquement à chaque merge via CI. Regénérez avec
 ./scripts/test_smoke.sh     # + Niveau 2 : trace + état négatif + synchro docs
 ./scripts/test_full.sh      # + Niveau 3 : ancres de surface d'invariants + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Niveau 4 : déterminisme nocturne
+
+./scripts/test_rust.sh                 # Rust hôte : build, tests, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # la cible réelle du HAL du noyau
 ```
 
 Exécutez au minimum `test_smoke.sh` avant toute PR. Exécutez `test_full.sh`
 lors de modifications des théorèmes, invariants ou ancres de documentation.
+
+Après toute modification sous `rust/`, exécutez **les deux** voies Rust. Elles
+couvrent des moitiés disjointes du même crate : sur l'hôte, chaque bloc
+`#[cfg(target_arch = "aarch64")]` est supprimé avant que rustc ou clippy ne le
+voie, si bien que la voie hôte ne peut pas voir les 67 blocs conditionnés par
+cfg, les 57 sites `asm!` ni les trois sources `.S` qui constituent l'essentiel
+du HAL. La voie croisée compile `sele4n-hal` pour
+`aarch64-unknown-none-softfloat` dans les deux profils, vérifie que les sources
+assembleur ont réellement été assemblées, passe le linter sur la cible croisée
+et désassemble les objets de release pour prouver qu'ils n'utilisent aucun
+registre FP/SIMD — le noyau n'utilise pas la virgule flottante et intercepte
+FP/SIMD à EL1 dès sa première instruction — et il s'agit d'une compilation
+plutôt que d'un `cargo check`, car `check` s'arrête avant la génération de
+code et n'atteint jamais d'assembleur.
 
 ## Architecture
 
@@ -155,9 +175,9 @@ exécutables et de preuves de préservation d'invariants vérifiées par machine
 ┌──────────────────────────────────────────────────────────────────────┐
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│  SchedContext│             │  Donation  │           │                │
+│  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│ SchedContext │             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -189,14 +209,18 @@ SeLe4n/
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
 │   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
+│   │                            installBootVSpaceRoot threads canonical boot VSpace
+│   │                            through bootFromPlatformChecked (WS-RC R3).
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
+│                                VSpaceBoot.lean holds the canonical W^X-compliant
+│                                boot VSpaceRoot (production-wired since WS-RC R3).
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
 tests/                           Suites de tests exécutables + fixtures
@@ -215,7 +239,7 @@ seule obligation de preuve. Pour l'inventaire complet par fichier, consultez
 | **Ordonnancement** | Serveur sporadique implémenté en C (MCS) | CBS avec théorème `cbs_bandwidth_bounded` vérifié par machine ; `SchedContext` comme objet noyau contrôlé par capacités |
 | **Serveurs passifs** | Donation de SchedContext via C | Donation vérifiée avec invariant `donationChainAcyclic` |
 | **IPC** | File d'attente endpoint à liste chaînée simple | Double file intrusive avec suppression en milieu de file en O(1) ; délais pilotés par le budget |
-| **Flux d'information** | Partition binaire haut/bas | Politique configurable à N domaines avec frontière d'application de 43 entrées (nombre épinglé par `enforcementBoundaryExtended_count`), preuves de non-interférence par opération et piste d'audit contrôlée par capacité pour chaque déclassification autorisée |
+| **Flux d'information** | Partition binaire haut/bas | Politique configurable à N domaines avec frontière d'application de 44 entrées (nombre épinglé par `enforcementBoundaryExtended_count`), preuves de non-interférence par opération et piste d'audit contrôlée par capacité pour chaque déclassification autorisée |
 | **Héritage de priorité** | PIP implémenté en C (branche MCS) | PIP transitif vérifié par machine avec absence d'interblocage et borne WCRT paramétrique |
 | **Latence bornée** | Aucune borne WCRT formelle | `WCRT = D × L_max + N × (B + P)` prouvée à travers 8 modules de vivacité |
 | **Magasins d'objets** | Listes chaînées et tableaux | Tables de hachage Robin Hood vérifiées (`RHTable`/`RHSet`) avec chemins chauds en O(1) |
@@ -223,29 +247,16 @@ seule obligation de preuve. Pour l'inventaire complet par fichier, consultez
 | **Preuves** | Isabelle/HOL, a posteriori | Vérificateur de types Lean 4, co-localisées avec les transitions — zéro sorry/axiom (nombre de déclarations prouvées dans le tableau [État actuel](#état-actuel)) |
 | **Plateforme** | HAL au niveau C | Classe de types `PlatformBinding` avec contrats de frontière typés |
 
-## Prochaines étapes
+## Licence et attributions tierces
 
-Le flux de travail actif est **WS-SM** (achèvement SMP multi-cœur), qui a
-fusionné les phases de remédiation restantes de WS-RC dans le plan de phases
-SM0–SM10 propre au SMP et se clôt à la **v1.0.0** avec un micro-noyau SMP
-vérifié et amorçable sur Raspberry Pi 5. Les phases SM0–SM9 sont livrées —
-types SMP fondamentaux et hiérarchie des verrous, mise en route SMP du HAL
-Rust, primitives de verrouillage vérifiées, verrous par objet, état
-d'ordonnanceur et ordonnancement par cœur, IPC inter-cœurs, invalidation TLB
-(shootdown) et maintenance des caches, flux d'information SMP, et achèvement
-de la déclassification (SM9, clôturée à la v0.33.100). La phase restante est
-**SM10** (clôture de la version → v1.0.0). Le flux de travail sur l'ABI de
-retour des appels système (**WS-RA**) est terminé.
-
-**WS-RR** (préparation de la version SMP), la phase de remédiation pré-1.0, est **terminée en v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)) : RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) et **RR4 — gestion des fautes : IPC de faute complet avec redémarrage par réponse (v0.34.44)**, qui empêche la reprise d'un thread fautif sur l'instruction fautive : la faute est enregistrée dans le TCB, délivrée au point d'entrée `faultHandler` du thread via la chaîne d'appel inter-cœurs active, puis traitée par une réponse qui redémarre le thread à un PC choisi ou l'abandonne. RR5–RR8 ont également abouti (RR8 en v0.35.203). **SM10 est désormais bloquée par WS-BP** (le chemin d'amorçage bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), qui est le contenu de SM10.1 et dont les sept premières phases, BP0 à BP6, sont terminées en v0.36.2 (BP7 et BP8 restent) ; puis **SM10** (clôture de la version → v1.0.0).
-
-Plan directeur : [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
-avec les plans par phase dans `docs/planning/SMP_*.md`. Le registre canonique
-par phase — y compris chaque portefeuille de flux de travail terminé (WS-B à
-WS-AB, WS-AE à WS-AN, WS-RC R0–R5, WS-RA) — est
-[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) ; les
-audits antérieurs et les clôtures de jalons sont archivés dans
-[`docs/dev_history/`](../../../docs/dev_history/README.md).
+seLe4n lui-même est distribué sous la GNU General Public License v3.0 ou
+ultérieure (GPLv3+) ; voir [`LICENSE`](../../../LICENSE) pour le texte intégral.
+Les dépendances de compilation tierces (`cc`, `find-msvc-tools`, `shlex`, toutes
+sous double licence `MIT OR Apache-2.0`) sont utilisées sous l'option MIT ;
+leurs avis de copyright et de permission d'origine sont reproduits à
+l'identique dans [`THIRD_PARTY_LICENSES.md`](../../../THIRD_PARTY_LICENSES.md).
+Aucun code tiers lié à l'exécution n'est présent dans le binaire du noyau — le
+HAL est `#![no_std]` et n'utilise que `core::*`.
 
 ---
 
