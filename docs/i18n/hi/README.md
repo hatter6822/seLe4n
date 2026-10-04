@@ -19,6 +19,17 @@
   वास्तुकला से प्रेरित है। प्रथम हार्डवेयर लक्ष्य:
   <strong>Raspberry Pi 5</strong>।
 </p>
+<p align="center">
+  <div align="center">
+    सोच-समझकर इनकी सहायता से बनाया गया:
+  </div>
+  <div align="center">
+    claude :robot: :heart: :robot: codex
+  </div>
+  <div align="center">
+    <strong>इस कर्नेल के साथ उसी के अनुरूप व्यवहार करें</strong>
+  </div>
+</p>
 
 ---
 
@@ -31,7 +42,7 @@
 seLe4n एक सूक्ष्म नाभिक है जो Lean 4 में शून्य से निर्मित किया गया है। प्रत्येक
 कर्नेल संक्रमण एक निष्पादन योग्य शुद्ध फ़ंक्शन है। प्रत्येक अपरिवर्तनीय (invariant)
 Lean प्रकार-परीक्षक द्वारा मशीन-जाँचित है — शून्य `sorry`, शून्य `axiom`। सम्पूर्ण
-प्रमाण सतह बिना किसी स्वीकृत प्रमाण के मूल कोड में संकलित होती है।
+प्रमाण सतह बिना किसी स्वीकृत (admitted) प्रमाण के मूल कोड में संकलित होती है।
 
 यह परियोजना seL4 के क्षमता-आधारित सुरक्षा मॉडल को बनाए रखते हुए Lean 4 प्रमाण
 ढाँचे द्वारा सक्षम वास्तुशिल्प सुधार प्रस्तुत करती है:
@@ -52,10 +63,10 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 
 ### सुरक्षा और सत्यापन
 
-- **N-डोमेन सूचना प्रवाह** — seL4 के द्विआधारी विभाजन को सामान्यीकृत करने वाली पैरामीटरयुक्त प्रवाह नीतियाँ। प्रति-संचालन अ-हस्तक्षेप प्रमाणों सहित 43-प्रविष्टि प्रवर्तन सीमा (35-निर्माता `NonInterferenceStep` आगमनात्मक), और क्षमता-नियंत्रित रीडर सहित एक परिबद्ध, विफलता-पर-बंद (fail-closed) अवर्गीकरण लेखापरीक्षा ट्रेल
+- **N-डोमेन सूचना प्रवाह** — seL4 के द्विआधारी विभाजन को सामान्यीकृत करने वाली पैरामीटरयुक्त प्रवाह नीतियाँ। प्रति-संचालन अ-हस्तक्षेप प्रमाणों सहित 44-प्रविष्टि प्रवर्तन सीमा (35-निर्माता `NonInterferenceStep` आगमनात्मक), और क्षमता-नियंत्रित रीडर सहित एक परिबद्ध, विफलता-पर-बंद (fail-closed) अवर्गीकरण लेखापरीक्षा ट्रेल
 - **संयुक्त प्रमाण परत** — `proofLayerInvariantBundle` 16 उपप्रणाली अपरिवर्तनीय बंडलों (शेड्यूलर कोर + CBS विस्तार, क्षमता, IPC + IPC–शेड्यूलर युग्मन, जीवनचक्र, सेवा, VSpace, अंतर-उपप्रणाली, TLB संगति, अधिसूचना-प्रतीक्षक संगति, TLB-शूटडाउन लंबित/पावती सीमाएँ, प्रति-कोर TLB अमान्यकरण और I-कैश सुसंगति, और अवर्गीकरण लेखापरीक्षा-लॉग सीमा) को बूट से सभी संचालनों तक सत्यापित एकल शीर्ष-स्तर दायित्व में संयोजित करता है
 - **त्रि-चरण स्थिति वास्तुकला** — अपरिवर्तनीय साक्षियों सहित बिल्डर चरण प्रमाणित लुकअप तुल्यता सहित जमे हुए अपरिवर्तनीय प्रतिनिधित्व में प्रवाहित होता है। 24 जमे हुए संचालन लाइव API को दर्पणित करते हैं
-- **पूर्ण संचालन समूह** — 5 स्थगित संचालनों (suspend/resume, setPriority/setMCPriority, setIPCBuffer) सहित, अपरिवर्तनीय संरक्षण के साथ सभी seL4 संचालन कार्यान्वित
+- **पूर्ण संचालन समूह** — थ्रेड suspend/resume, प्राथमिकता प्रबंधन (setPriority/setMCPriority) और IPC-बफ़र कॉन्फ़िगरेशन तक, अपरिवर्तनीय संरक्षण के साथ सभी seL4 संचालन कार्यान्वित
 - **सेवा समन्वय** — निर्भरता ग्राफ़ और प्रमाणित अचक्रीयता सहित कर्नेल-स्तर घटक जीवनचक्र (seLe4n विस्तार, seL4 में नहीं)
 
 ## वर्तमान स्थिति
@@ -75,15 +86,18 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 | **उत्पादन Lean LoC** | 361 फ़ाइलों में 433,986 |
 | **परीक्षण Lean LoC** | 71 परीक्षण सुइट्स में 88,629 |
 | **प्रमाणित घोषणाएँ** | 14,408 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
+| **Rust क्रेट्स** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`), 48 स्रोत फ़ाइलों में |
 | **लक्ष्य हार्डवेयर** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
+| **हार्डवेयर बाइंडिंग** | **H3 पूर्ण** (WS-AG AG1–AG10): HAL, GIC-400, टाइमर, ARMv8 पेज टेबल, FFI ब्रिज, QEMU बूट |
 | **विहित लेखापरीक्षा** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — पूर्व-1.0 व्यापक लेखापरीक्षा (202 निष्कर्ष; WS-AK AK1–AK10 द्वारा ठीक किए गए; संग्रहीत) |
 | **नवीनतम लेखापरीक्षा** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — WS-AN समापन के बाद की गई पूर्व-1.0 तत्परता लेखापरीक्षा (अब-संग्रहीत [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) की उत्तराधिकारी, जिसे WS-AN AN0–AN12 द्वारा ठीक किया गया)। WS-RC R0..R5 v0.31.2 में सम्पन्न; WS-RC R6..R14 SM0.Q.1 अवशोषण मानचित्रण के अनुसार WS-SM में समाहित (देखें [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md))। सक्रिय कार्यधारा योजना: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)। |
 | **कोडबेस मानचित्र** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय घोषणा सूची |
 
 मेट्रिक्स `./scripts/generate_codebase_map.py` द्वारा कोडबेस से प्राप्त किए जाते हैं
 और [`docs/codebase_map.json`](../../../docs/codebase_map.json) में `readme_sync`
-कुंजी के अंतर्गत संग्रहीत होते हैं। `./scripts/report_current_state.py` को
-पारस्परिक जाँच के रूप में उपयोग करें।
+कुंजी के अंतर्गत संग्रहीत होते हैं। सभी दस्तावेज़ों को एक साथ
+`./scripts/sync_documentation_metrics.sh` (केवल सत्यापन: `--check`) से अद्यतन करें;
+`./scripts/report_current_state.py` एक मैनुअल पारस्परिक जाँच बना रहता है।
 
 ## त्वरित प्रारंभ
 
@@ -100,7 +114,7 @@ lake exe sele4n                # ट्रेस हार्नेस चला
 |-------------------|------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — कार्यप्रवाह, सत्यापन, PR चेकलिस्ट | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — विशिष्टता और मील के पत्थर |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — पूर्ण पुस्तिका | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — seL4 संदर्भ शब्दार्थ |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय सूची | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — कार्यधारा इतिहास और रोडमैप |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय सूची | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — हर स्थगित मद, उसके स्वामी सहित |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — योगदान तंत्र | [`CHANGELOG.md`](../../../CHANGELOG.md) — संस्करण इतिहास |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) परियोजना मेट्रिक्स का
@@ -115,10 +129,26 @@ lake exe sele4n                # ट्रेस हार्नेस चला
 ./scripts/test_smoke.sh     # + टियर 2: ट्रेस + नकारात्मक-स्थिति + दस्तावेज़ समन्वय
 ./scripts/test_full.sh      # + टियर 3: अपरिवर्तनीय सतह एंकर + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + टियर 4: रात्रिकालीन नियतिवाद
+
+./scripts/test_rust.sh                 # होस्ट Rust: बिल्ड, परीक्षण, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # कर्नेल HAL का वास्तविक लक्ष्य
 ```
 
 किसी भी PR से पहले कम से कम `test_smoke.sh` चलाएँ। प्रमेयों, अपरिवर्तनीयों, या
 दस्तावेज़ एंकरों में परिवर्तन करते समय `test_full.sh` चलाएँ।
+
+`rust/` के अंतर्गत किसी भी परिवर्तन के बाद Rust की **दोनों** लेन चलाएँ। वे एक
+ही क्रेट के परस्पर-अलग आधे हिस्सों को कवर करती हैं: होस्ट पर हर
+`#[cfg(target_arch = "aarch64")]` ब्लॉक rustc या clippy के देखने से पहले ही हटा
+दिया जाता है, इसलिए होस्ट लेन उन 67 cfg-नियंत्रित ब्लॉकों, 57 `asm!` स्थलों या
+तीन `.S` स्रोतों को नहीं देख सकती जिनसे HAL का अधिकांश भाग बनता है। क्रॉस लेन
+`sele4n-hal` को `aarch64-unknown-none-softfloat` के लिए दोनों प्रोफ़ाइलों में
+बिल्ड करती है, सत्यापित करती है कि असेंबली स्रोत वास्तव में असेंबल हुए, क्रॉस
+लक्ष्य को lint करती है, और रिलीज़ ऑब्जेक्ट्स को डिसअसेंबल करके सिद्ध करती है कि
+वे कोई FP/SIMD रजिस्टर उपयोग नहीं करते — कर्नेल FP-मुक्त है और अपने पहले
+निर्देश से ही EL1 पर FP/SIMD को ट्रैप करता है — और यह `cargo check` नहीं बल्कि
+एक वास्तविक बिल्ड है, क्योंकि `check` कोड जनरेशन से पहले रुक जाता है और कभी
+असेंबलर तक नहीं पहुँचता।
 
 ## वास्तुकला
 
@@ -129,9 +159,9 @@ seLe4n स्तरित अनुबंधों के रूप में �
 ┌──────────────────────────────────────────────────────────────────────┐
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│  SchedContext│             │  Donation  │           │                │
+│  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│ SchedContext │             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -163,14 +193,18 @@ SeLe4n/
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
 │   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
+│   │                            installBootVSpaceRoot threads canonical boot VSpace
+│   │                            through bootFromPlatformChecked (WS-RC R3).
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
+│                                VSpaceBoot.lean holds the canonical W^X-compliant
+│                                boot VSpaceRoot (production-wired since WS-RC R3).
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
 tests/                           निष्पादन योग्य परीक्षण सुइट्स + फ़िक्स्चर
@@ -188,36 +222,25 @@ tests/                           निष्पादन योग्य पर
 | **शेड्यूलिंग** | C-कार्यान्वित छिटपुट सर्वर (MCS) | मशीन-जाँचित `cbs_bandwidth_bounded` प्रमेय सहित CBS; `SchedContext` क्षमता-नियंत्रित कर्नेल वस्तु के रूप में |
 | **निष्क्रिय सर्वर** | C के माध्यम से SchedContext दान | `donationChainAcyclic` अपरिवर्तनीय सहित सत्यापित दान |
 | **IPC** | एकल लिंक्ड-लिस्ट एंडपॉइंट क्यू | O(1) मध्य-क्यू निष्कासन सहित इंट्रूसिव ड्यूअल-क्यू; बजट-चालित टाइमआउट |
-| **सूचना प्रवाह** | द्विआधारी उच्च/निम्न विभाजन | 43-प्रविष्टि प्रवर्तन सीमा (गणना `enforcementBoundaryExtended_count` द्वारा स्थिर), प्रति-संचालन NI प्रमाणों, और प्रत्येक प्राधिकृत अवर्गीकरण के लिए क्षमता-नियंत्रित लेखापरीक्षा ट्रेल सहित N-डोमेन विन्यासयोग्य नीति |
+| **सूचना प्रवाह** | द्विआधारी उच्च/निम्न विभाजन | 44-प्रविष्टि प्रवर्तन सीमा (गणना `enforcementBoundaryExtended_count` द्वारा स्थिर), प्रति-संचालन NI प्रमाणों, और प्रत्येक प्राधिकृत अवर्गीकरण के लिए क्षमता-नियंत्रित लेखापरीक्षा ट्रेल सहित N-डोमेन विन्यासयोग्य नीति |
 | **प्राथमिकता वंशानुक्रम** | C-कार्यान्वित PIP (MCS शाखा) | गतिरोध स्वतंत्रता और पैरामीट्रिक WCRT सीमा सहित मशीन-जाँचित सकर्मक PIP |
 | **परिबद्ध विलंबता** | कोई औपचारिक WCRT सीमा नहीं | 8 सजीवता मॉड्यूल में प्रमाणित `WCRT = D × L_max + N × (B + P)` |
 | **ऑब्जेक्ट स्टोर** | लिंक्ड लिस्ट और एरे | O(1) हॉट पाथ सहित सत्यापित Robin Hood हैश टेबल (`RHTable`/`RHSet`) |
 | **सेवा प्रबंधन** | कर्नेल में नहीं | निर्भरता ग्राफ़ और अचक्रीयता प्रमाणों सहित प्रथम-श्रेणी समन्वय |
-| **प्रमाण** | Isabelle/HOL, उत्तर-प्रभावी | Lean 4 प्रकार-परीक्षक, संक्रमणों के साथ सह-स्थित — शून्य sorry/axiom (प्रमाणित-घोषणा गणना [वर्तमान स्थिति](#वर्तमान-स्थिति) तालिका में) |
+| **प्रमाण** | Isabelle/HOL, पश्चवर्ती (post-hoc) | Lean 4 प्रकार-परीक्षक, संक्रमणों के साथ सह-स्थित — शून्य sorry/axiom (प्रमाणित-घोषणा गणना [वर्तमान स्थिति](#वर्तमान-स्थिति) तालिका में) |
 | **प्लेटफ़ॉर्म** | C-स्तरीय HAL | टाइप्ड सीमा अनुबंधों सहित `PlatformBinding` typeclass |
 
-## अगले कदम
+## लाइसेंस और तृतीय-पक्ष श्रेय
 
-सक्रिय कार्यधारा **WS-SM** (SMP बहु-कोर पूर्णता) है, जिसने शेष WS-RC
-सुधार चरणों को SMP-विशिष्ट SM0–SM10 चरण योजना में विलीन कर दिया और जो
-Raspberry Pi 5 पर बूट-योग्य सत्यापित SMP सूक्ष्म नाभिक के साथ
-**v1.0.0** पर समाप्त होती है। चरण SM0–SM9 सम्पन्न हो चुके हैं —
-आधारभूत SMP प्रकार और लॉक पदानुक्रम, Rust HAL SMP आरंभीकरण, सत्यापित
-लॉक प्रिमिटिव, प्रति-वस्तु लॉक, प्रति-कोर शेड्यूलर स्थिति और
-शेड्यूलिंग, क्रॉस-कोर IPC, TLB शूटडाउन और कैश रखरखाव, SMP सूचना
-प्रवाह, और अवर्गीकरण पूर्णता (SM9, v0.33.100 में समाप्त)। शेष चरण
-**SM10** (रिलीज़ समापन → v1.0.0) है। सिस्टम-कॉल रिटर्न ABI कार्यधारा
-(**WS-RA**) पूर्ण है।
-
-**WS-RR** (SMP रिलीज़ तत्परता) — 1.0 से पूर्व का सुधार चरण — **v0.35.203 पर पूर्ण** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) और **RR4 — फ़ॉल्ट हैंडलिंग: उत्तर-आधारित पुनरारंभ के साथ पूर्ण फ़ॉल्ट IPC (v0.34.44)**, जो फ़ॉल्ट वाले थ्रेड को उसी निर्देश पर फिर से चलने से रोकता है: फ़ॉल्ट TCB में दर्ज होता है, थ्रेड के `faultHandler` एंडपॉइंट तक सक्रिय क्रॉस-कोर कॉल श्रृंखला के माध्यम से पहुँचाया जाता है, और एक उत्तर द्वारा निपटाया जाता है जो थ्रेड को चुने हुए PC पर पुनः आरंभ करता है या उसे त्याग देता है। RR5–RR8 भी पूर्ण हो चुके हैं (RR8, v0.35.203 पर)। अब **SM10, WS-BP पर अवरुद्ध है** (बेयर-मेटल बूट पथ, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), जो SM10.1 की सामग्री है और जिसके पहले सात चरण BP0 से BP6 v0.36.2 पर पूर्ण हुए हैं (BP7 और BP8 शेष हैं); उसके बाद **SM10** (रिलीज़ समापन → v1.0.0)।
-
-मास्टर योजना: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
-प्रति-चरण योजनाओं सहित `docs/planning/SMP_*.md` में। विहित प्रति-चरण
-अभिलेख — प्रत्येक पूर्ण कार्यधारा पोर्टफोलियो (WS-B से WS-AB, WS-AE से
-WS-AN, WS-RC R0–R5, WS-RA) सहित —
-[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) है;
-पूर्व लेखापरीक्षाएँ और मील के पत्थर समापन
-[`docs/dev_history/`](../../../docs/dev_history/README.md) में संग्रहीत हैं।
+seLe4n स्वयं GNU General Public License v3.0 या उसके बाद के संस्करण (GPLv3+)
+के अंतर्गत लाइसेंस प्राप्त है; पूर्ण पाठ के लिए [`LICENSE`](../../../LICENSE) देखें।
+तृतीय-पक्ष बिल्ड निर्भरताएँ (`cc`, `find-msvc-tools`, `shlex`, सभी
+`MIT OR Apache-2.0` के अंतर्गत द्वि-लाइसेंस प्राप्त) MIT विकल्प के अंतर्गत उपयोग
+की जाती हैं; उनके मूल कॉपीराइट और अनुमति नोटिस
+[`THIRD_PARTY_LICENSES.md`](../../../THIRD_PARTY_LICENSES.md) में शब्दशः
+पुनः प्रस्तुत किए गए हैं। कर्नेल बाइनरी में रनटाइम पर लिंक किया गया कोई
+तृतीय-पक्ष कोड मौजूद नहीं है — HAL `#![no_std]` है और केवल `core::*` का उपयोग
+करता है।
 
 ---
 

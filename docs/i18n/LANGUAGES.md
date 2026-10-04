@@ -56,4 +56,7 @@
 All translations are community-maintained. If you find errors or sections that
 need updating, please open a PR or issue.
 
-Last synchronized with English sources: v0.34.0 (figures, current-state tables, and roadmap sections re-aligned by the documentation audit; badges and Version rows are gate-synced by scripts/check_version_sync.sh)
+Last synchronized with English sources: the README translations at v0.36.42 (each re-aligned section by
+section with the English README); the CONTRIBUTING and QUICKSTART translations at v0.34.0. Badges and
+Version rows are gate-synced by scripts/check_version_sync.sh, and the README metric rows by
+scripts/sync_translated_metrics.py.

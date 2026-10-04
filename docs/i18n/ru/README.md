@@ -74,10 +74,10 @@ security model) от seL4, вводя при этом архитектурные
 
 ### Безопасность и верификация
 
-- **N-доменный информационный поток** — параметризованные политики потоков, обобщающие бинарное разделение seL4. Граница принудительного применения (enforcement) с 43 точками входа и доказательствами невмешательства по каждой операции (индуктивный тип `NonInterferenceStep` с 35 конструкторами), а также ограниченный fail-closed журнал аудита деклассификации с читателем, защищённым мандатом
+- **N-доменный информационный поток** — параметризованные политики потоков, обобщающие бинарное разделение seL4. Граница принудительного применения (enforcement) с 44 точками входа и доказательствами невмешательства по каждой операции (индуктивный тип `NonInterferenceStep` с 35 конструкторами), а также ограниченный fail-closed журнал аудита деклассификации с читателем, защищённым мандатом
 - **Составной слой доказательств** — `proofLayerInvariantBundle` объединяет 16 пакетов инвариантов подсистем (ядро планировщика + расширения CBS, мандаты, IPC + связка IPC–планировщик, жизненный цикл, сервисы, VSpace, межсистемные инварианты, согласованность TLB, согласованность ожидающих уведомлений, границы pending/ack для TLB shootdown, инвалидация TLB на каждом ядре и когерентность I-cache, а также граница журнала аудита деклассификации) в единое обязательство верхнего уровня, проверяемое от загрузки до всех операций
 - **Трёхфазная архитектура состояния** — фаза построения с свидетелями инвариантов переходит в замороженное неизменяемое представление с доказанной эквивалентностью поиска. 24 замороженные операции зеркалируют активный API
-- **Полный набор операций** — все операции seL4 реализованы с сохранением инвариантов, включая 5 отложенных операций (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
+- **Полный набор операций** — все операции seL4 реализованы с сохранением инвариантов, вплоть до приостановки/возобновления потоков, управления приоритетами (setPriority/setMCPriority) и настройки IPC-буфера
 - **Оркестрация сервисов** — управление жизненным циклом компонентов на уровне ядра с графами зависимостей и доказанной ацикличностью (расширение seLe4n, отсутствует в seL4)
 
 ## Текущее состояние
@@ -101,15 +101,18 @@ security model) от seL4, вводя при этом архитектурные
 | **Продуктовый код (Lean LoC)** | 433 986 строк в 361 файле |
 | **Тестовый код (Lean LoC)** | 88 629 строк в 71 тест-сьюте |
 | **Доказанные декларации** | 14 408 деклараций theorem/lemma (ноль sorry/axiom) |
+| **Крейты Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) в 48 файлах исходного кода |
 | **Целевое оборудование** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
+| **Привязка к оборудованию** | **H3 ЗАВЕРШЕНА** (WS-AG AG1–AG10): HAL, GIC-400, таймер, таблицы страниц ARMv8, FFI-мост, загрузка в QEMU |
 | **Канонический аудит** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — комплексный предрелизный аудит 1.0 (202 результата; устранены WS-AK AK1–AK10; в архиве) |
 | **Последний аудит** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — аудит готовности перед 1.0, выполненный после закрытия WS-AN (сменяет ныне архивированный [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), замечания которого устранены WS-AN AN0–AN12). WS-RC R0..R5 LANDED в v0.31.2; WS-RC R6..R14 поглощены WS-SM согласно карте поглощения SM0.Q.1 (см. [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Активный план рабочего потока: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
 | **Карта кодовой базы** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — машиночитаемая опись деклараций |
 
-Метрики формируются скриптом `./scripts/generate_codebase_map.py` и хранятся
-в [`docs/codebase_map.json`](../../../docs/codebase_map.json) в секции
-`readme_sync`. Обновление всей документации выполняется через
-`./scripts/report_current_state.py` в качестве перекрёстной проверки.
+Метрики извлекаются из кодовой базы скриптом `./scripts/generate_codebase_map.py`
+и хранятся в [`docs/codebase_map.json`](../../../docs/codebase_map.json) в секции
+`readme_sync`. Вся документация обновляется разом с помощью
+`./scripts/sync_documentation_metrics.sh` (только проверка: `--check`);
+`./scripts/report_current_state.py` остаётся ручной перекрёстной проверкой.
 
 ## Быстрый старт
 
@@ -126,7 +129,7 @@ lake exe sele4n                # запуск трассировочного с�
 |---------------|-------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — рабочий процесс, валидация, чек-лист для PR | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — спецификация и этапы |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — полное руководство | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — справочная семантика seL4 |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — машиночитаемая опись | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — история рабочих потоков и дорожная карта |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — машиночитаемая опись | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — каждый отложенный пункт с указанием ответственного |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — механика внесения вклада | [`CHANGELOG.md`](../../../CHANGELOG.md) — история версий |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) является источником
@@ -141,10 +144,26 @@ lake exe sele4n                # запуск трассировочного с�
 ./scripts/test_smoke.sh     # + Уровень 2: трассировка + негативные состояния + синхронизация документации
 ./scripts/test_full.sh      # + Уровень 3: якоря поверхности инвариантов + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Уровень 4: ночной тест детерминизма
+
+./scripts/test_rust.sh                 # Rust на хосте: сборка, тесты, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # реальная целевая платформа HAL ядра
 ```
 
 Перед любым PR выполните как минимум `test_smoke.sh`. Запускайте `test_full.sh`
 при изменении теорем, инвариантов или якорей документации.
+
+После любого изменения в `rust/` запускайте **оба** Rust-контура. Они
+покрывают непересекающиеся половины одного и того же крейта: на хосте каждый
+блок `#[cfg(target_arch = "aarch64")]` удаляется до того, как его увидят rustc
+или clippy, поэтому хостовый контур не видит 67 блоков под cfg, 57 мест с
+`asm!` и трёх исходников `.S`, из которых состоит большая часть HAL.
+Кросс-контур собирает `sele4n-hal` для `aarch64-unknown-none-softfloat` в
+обоих профилях, проверяет, что ассемблерные исходники действительно
+ассемблированы, прогоняет линтер для кросс-цели и дизассемблирует
+release-объекты, чтобы доказать, что они не используют ни одного регистра
+FP/SIMD (ядро не использует плавающую точку и перехватывает FP/SIMD на EL1 с
+первой же инструкции); и это именно сборка, а не `cargo check`, потому что
+`check` останавливается до генерации кода и никогда не доходит до ассемблера.
 
 ## Архитектура
 
@@ -155,9 +174,9 @@ seLe4n организован как набор послойных контра�
 ┌──────────────────────────────────────────────────────────────────────┐
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│  SchedContext│             │  Donation  │           │                │
+│  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│ SchedContext │             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -189,14 +208,18 @@ SeLe4n/
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
 │   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
+│   │                            installBootVSpaceRoot threads canonical boot VSpace
+│   │                            through bootFromPlatformChecked (WS-RC R3).
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
+│                                VSpaceBoot.lean holds the canonical W^X-compliant
+│                                boot VSpaceRoot (production-wired since WS-RC R3).
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
 tests/                           Исполняемые тест-сьюты + фикстуры
@@ -214,7 +237,7 @@ tests/                           Исполняемые тест-сьюты + ф
 | **Планирование** | Спорадический сервер на C (MCS) | CBS с машинно-проверяемой теоремой `cbs_bandwidth_bounded`; `SchedContext` как объект ядра, управляемый мандатами |
 | **Пассивные серверы** | Донация SchedContext через C | Верифицированная донация с инвариантом `donationChainAcyclic` |
 | **IPC** | Очередь endpoint на односвязном списке | Интрузивная двойная очередь с O(1) удалением из середины; таймауты на основе бюджета |
-| **Информационный поток** | Бинарное разделение high/low | N-доменная настраиваемая политика с границей enforcement из 43 точек (число зафиксировано теоремой `enforcementBoundaryExtended_count`), доказательствами невмешательства по операциям и защищённым мандатом журналом аудита каждой авторизованной деклассификации |
+| **Информационный поток** | Бинарное разделение high/low | N-доменная настраиваемая политика с границей enforcement из 44 точек (число зафиксировано теоремой `enforcementBoundaryExtended_count`), доказательствами невмешательства по операциям и защищённым мандатом журналом аудита каждой авторизованной деклассификации |
 | **Наследование приоритетов** | PIP на C (ветка MCS) | Машинно-проверяемый транзитивный PIP с отсутствием взаимоблокировок и параметрической границей WCRT |
 | **Ограниченная латентность** | Нет формальной границы WCRT | `WCRT = D × L_max + N × (B + P)`, доказано в 8 модулях liveness |
 | **Хранилища объектов** | Связные списки и массивы | Верифицированные хеш-таблицы Robin Hood (`RHTable`/`RHSet`) с O(1) критическими путями |
@@ -222,28 +245,16 @@ tests/                           Исполняемые тест-сьюты + ф
 | **Доказательства** | Isabelle/HOL, post-hoc | Type-checker Lean 4, совмещены с переходами — ноль sorry/axiom (число доказанных деклараций — в таблице [Текущее состояние](#текущее-состояние)) |
 | **Платформа** | HAL уровня C | Typeclass `PlatformBinding` с типизированными контрактами границ |
 
-## Дальнейшие шаги
+## Лицензия и атрибуция сторонних компонентов
 
-Активный рабочий поток — **WS-SM** (завершение многоядерного SMP), который
-объединил оставшиеся фазы устранения замечаний WS-RC со специфичным для SMP
-планом фаз SM0–SM10 и закрывается на **v1.0.0** загружаемым верифицированным
-SMP-микроядром на Raspberry Pi 5. Фазы SM0–SM9 завершены — базовые типы SMP
-и иерархия блокировок, SMP-запуск Rust HAL, верифицированные примитивы
-блокировок, блокировки на уровне объектов, состояние планировщика и
-планирование на каждое ядро, межъядерный IPC, TLB shootdown и обслуживание
-кэшей, информационный поток SMP и завершение деклассификации (SM9, закрыта
-на v0.33.100). Оставшаяся фаза — **SM10** (закрытие релиза → v1.0.0).
-Рабочий поток по ABI возврата системных вызовов (**WS-RA**) завершён.
-
-**WS-RR** (готовность SMP-релиза) — фаза устранения замечаний перед 1.0 — **завершена в v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) и **RR4 — обработка отказов: полный fault-IPC с перезапуском по ответу (v0.34.44)**, который не даёт потоку с отказом возобновиться на вызвавшей отказ инструкции: отказ записывается в TCB, доставляется на конечную точку `faultHandler` потока по живой межъядерной цепочке call и обрабатывается ответом, который перезапускает поток с выбранного PC либо отбрасывает его. RR5–RR8 также завершены (RR8 — в v0.35.203). Теперь **SM10 заблокирована WS-BP** (путь загрузки на «голом железе», [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)) — это содержимое SM10.1, первые семь фаз, BP0–BP6, завершены в v0.36.2 (остаются BP7 и BP8); затем **SM10** (закрытие релиза → v1.0.0).
-
-Мастер-план: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
-пофазные планы — в `docs/planning/SMP_*.md`. Канонической пофазной записью —
-включая все завершённые портфели рабочих потоков (WS-B по WS-AB, WS-AE по
-WS-AN, WS-RC R0–R5, WS-RA) — является
-[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md);
-предыдущие аудиты и закрытия этапов архивированы в
-[`docs/dev_history/`](../../../docs/dev_history/README.md).
+Сам seLe4n распространяется по лицензии GNU General Public License v3.0 или
+более поздней версии (GPLv3+); полный текст — в [`LICENSE`](../../../LICENSE).
+Сторонние зависимости сборки (`cc`, `find-msvc-tools`, `shlex`, все под
+двойной лицензией `MIT OR Apache-2.0`) используются на условиях MIT; их
+исходные уведомления об авторских правах и разрешениях воспроизведены
+дословно в [`THIRD_PARTY_LICENSES.md`](../../../THIRD_PARTY_LICENSES.md). В
+двоичном файле ядра нет стороннего кода, связываемого во время выполнения, —
+HAL является `#![no_std]` и использует только `core::*`.
 
 ---
 
