@@ -133,6 +133,9 @@ those trees at the level it is written:
   cell or a sub-task row. If the plan numbers that phase's sub-tasks flat
   (`| HP1.2 |`), a flat citation must be one of those rows.
 - A suffix (`WS-H12b`, `WS-K-F5`) must be defined whole.
+- A row's own ID is held to the same rule against the plans it links, so a
+  row cannot vouch for an ID its plan lacks. A family-only row claims no
+  phase.
 
 | ID | Archived plan | Closed |
 |----|---------------|--------|
@@ -140,7 +143,7 @@ those trees at the level it is written:
 | WS-SM SM1 | [`SMP_RUST_HAL_PLAN.md`](../dev_history/planning/SMP_RUST_HAL_PLAN.md) | v0.31.8 |
 | WS-SM SM2 | [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) | v0.31.9 |
 | WS-SM SM2.C-defer | [`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](../dev_history/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md) | v0.34.50 (by WS-RR RR6) |
-| WS-SM SM2.E | [`SMP_PANIC_HANG_REMEDIATION_PLAN.md`](../dev_history/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md) | v0.32.148 |
+| WS-SM SM2.E | [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.5 defines the phase; its queued-lock panic and hang remediation is [`SMP_PANIC_HANG_REMEDIATION_PLAN.md`](../dev_history/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md) | v0.32.148 |
 | WS-SM SM3 | [`SMP_PER_OBJECT_LOCKS_PLAN.md`](../dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md) | v0.31.9 |
 | WS-SM SM4 | [`SMP_PER_CORE_STATE_PLAN.md`](../dev_history/planning/SMP_PER_CORE_STATE_PLAN.md) | v0.31.37 |
 | WS-SM SM5 | [`SMP_PER_CORE_SCHEDULER_PLAN.md`](../dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md) | v0.31.64 |

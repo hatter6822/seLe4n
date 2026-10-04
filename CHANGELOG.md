@@ -162,17 +162,37 @@
     (`SM9.A.1`) are held to the phase key: they define sub-tasks through
     ranges and prose.
   - A suffix (`WS-H12b`, `WS-K-F5`) must be defined whole.
+  - A lookup row's own phase or suffix is held to the same rule against the
+    plans it links, so a row cannot vouch for an ID its plan lacks: a
+    `WS-QA QA99` row linking a plan that defines only `QA1` fails, and so
+    does every citation through it. The `WS-SM SM2.E` row linked only the
+    panic and hang remediation plan, which never names SM2; it now also links
+    SM2's plan, whose §5.5 defines the phase.
   - A phase token wrapped onto the next comment line is read with its
-    citation. 973 distinct citations across 40 workstreams resolve.
-  - The 19-case self-test checks each verdict and its message, and keeps the
+    citation. 973 distinct citations across 40 workstreams resolve, and the
+    17 lookup row IDs that carry a phase or suffix are defined by their plans.
+  - The 27-case self-test checks each verdict and its message, and keeps the
     tokens while breaking the relation (`WS-SM SM99`, `WS-J999`, `WS-QH12z`,
-    a flat sub-task the plan does not number, rows with swapped plans).
+    a flat sub-task the plan does not number, rows with swapped plans, a
+    `WS-QA QA99` row linking `QA1`'s plan, and `QA99` defined only inside an
+    indented, a tilde or a longer-closed fence, each beside a control that
+    passes).
   - The gate reads plans through `check_workstream_plan.py`'s `prose_view`
     and `SUBTASK_ROW`. That reader took a line opening with inline code
     (``` `toList = []` ```) for a fence, paired every later fence one off and
-    blanked 14,055 lines of `CHANGELOG.md`, headings included. A fence now
-    needs a backtick-free info string and a closing run alone on its line,
-    and a new self-test case fails under the old reader.
+    blanked 14,055 lines of `CHANGELOG.md`, headings included. It also saw
+    only backtick fences at column 0, so an example indented one to three
+    columns, or fenced with tildes, was read as definitions. `prose_view` now
+    follows CommonMark's fence rules: a backtick or tilde run of three or
+    more, indented at most three columns past its container; a backtick
+    opener with no backtick in its info string; a closer of the same
+    character, at least as long, with no info string; and an unclosed fence
+    running to the end of its container (the document, or the list item it
+    opened in). Nine self-test cases cover the rules, and six of them fail
+    under the old reader. Across every indexed Markdown file, no heading or
+    row changes visibility except in one archived milestone note, whose stray
+    indented fence opener (also broken on GitHub) is removed. Both gates'
+    verdicts on the tree are unchanged.
   - Fixed the stale citations the gate found:
     - `WS-HP HP1.4` is `HP1`; the plan has two HP1 rows and keeps
       `replyFrameBelow?` in HP1.

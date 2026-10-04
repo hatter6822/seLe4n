@@ -24,12 +24,17 @@ without a row there turns every citation of it into a dead end.
   (`RR6.12-RR6.14`), must be one of them as well.
 * `WS-H12b`, `WS-J1-D`, `WS-K-F5`, with a suffix on the code, must be defined
   whole by a plan its row picks, by the same longest-prefix rule.
+* A lookup row's own phase or suffix is held to the same rule against the
+  plans that row links.  A row is a claim about its plan, not a definition, so
+  `WS-QA QA99` linking a plan that defines only `QA1` fails, and so does every
+  citation it would have vouched for.  A family-only row claims no phase.
 
 "Defined" is structural: a token of a heading, a token of a table row's first
 cell, a flat sub-task row, or an ancestor of one (`SM9.A` of `SM9.A.1`).  It is
-read with fenced blocks blanked by `check_workstream_plan.prose_view`, and it
-uses that gate's `SUBTASK_ROW`, so the two gates read a row the same way.  A
-mention in prose does not define.
+read with fenced blocks blanked by `check_workstream_plan.prose_view`, which
+follows CommonMark's fence rules (indented, tilde and longer-closer fences
+included), and it uses that gate's `SUBTASK_ROW`, so the two gates read a row
+the same way.  A mention in prose or an example in a fence does not define.
 
 Letter-group plans (`SM9.A.1`) are held to the phase key, not the whole token.
 They define sub-tasks through ranges (`SM9.A.6-.A.13`), `(a–f)` suffixes and
@@ -251,11 +256,29 @@ class Resolver:
             if named or fam in self.titled or fam in self.sections:
                 return None
             return "names no lookup row, live plan title or register section"
-        if any((fam, key) == (f, k) for ids, _ in self.rows for f, k, _ in ids):
-            return None
         plans = self.candidates(fam, key)
         if not plans:
             return "resolves to no plan: no lookup row and no live plan title"
+        return self.undefined(key, kind, plans)
+
+    def row_errors(self) -> list[str]:
+        """Each lookup row ID that the plans its row links do not define.
+
+        A row is a claim about its plan, not a definition: `WS-QA QA99` linking
+        a plan that numbers only `QA1` is as dead as the citation it would
+        otherwise vouch for.  A family-only row (`WS-OD`) claims no phase.
+        """
+        out = []
+        for ids, plans in self.rows:
+            for fam, key, kind in ids:
+                why = self.undefined(key, kind, plans) if key else None
+                if why:
+                    shown = f"WS-{fam} {key}" if kind == "phase" else f"WS-{key}"
+                    out.append(f"lookup row {shown}: {why}")
+        return out
+
+    def undefined(self, key: str, kind: str, plans: list[str]) -> str | None:
+        """Why none of `plans` defines `key` at its level, or None when one does."""
         names = ", ".join(posixpath.basename(p) for p in plans)
         if kind == "suffix":
             if any(key in self.defined(p)[0] for p in plans):
@@ -300,6 +323,7 @@ def check(repo: str) -> int:
         raise GateError(f"linked plan(s) not readable from the index: {', '.join(missing)}")
     resolver = Resolver(rows, live_titles(texts, plan_paths),
                         set(REGISTER_SECTION_RE.findall(lookup[REGISTER])), texts)
+    problems += resolver.row_errors()
 
     failures = []
     for (fam, key, kind), where in sorted(sites.items()):
@@ -318,9 +342,11 @@ def check(repo: str) -> int:
         return 1
     with_id = sum(1 for _, key, _ in sites if key)
     families = len({fam for fam, _, _ in sites})
+    keyed = sum(1 for ids, _ in rows for _, key, _ in ids if key)
     print(f"PASS: {len(sites)} distinct workstream citations ({families} workstreams) "
           f"in {', '.join(CODE_TREES)} resolve; {with_id} carry a phase or suffix "
-          "and resolve at that level")
+          f"and resolve at that level; the {keyed} lookup row IDs with one are "
+          "defined by the plans their rows link")
     return 0
 
 
@@ -343,7 +369,8 @@ _FIXTURE = {
     "docs/dev_history/planning/QA1.md": "# QA one\n\n## QA1\n\n| QA1.1 | a |\n| QA1.2 | b |\n",
     "docs/dev_history/planning/QA2.md": "# QA two\n\n## QA2\n\n| QA2.C.4 | legacy |\n",
     "docs/dev_history/audits/QH.md": "# QH\n\n### WS-QH12b — a sub-workstream\n",
-    "docs/dev_history/audits/QJ.md": "# QJ\n\n### WS-QJ1-D — a sub-workstream\n",
+    "docs/dev_history/audits/QJ.md": ("# QJ\n\n## WS-QJ1 — a workstream\n\n"
+                                      "### WS-QJ1-D — a sub-workstream\n"),
     "docs/dev_history/audits/QE.md": "# QE\n",
     "docs/dev_history/planning/QG.md": "# QG\n",
     "docs/planning/LIVE.md": ("# WS-QB — a live plan\n\nQB7 is named in prose.\n\n"
@@ -356,6 +383,22 @@ _FIXTURE = {
 
 def _with_cite(extra: str) -> dict[str, str]:
     return {"SeLe4n/A.lean": _CITES + extra}
+
+
+def _with_row(row: str, extra: str = "") -> dict[str, str]:
+    """The fixture with one more lookup row, and `extra` cited."""
+    return {LOOKUP_DOC: _FIXTURE_CONTEXT.replace(_ROW_QA2, _ROW_QA2 + row),
+            **(_with_cite(extra) if extra else {})}
+
+
+_ROW_QA99 = "| WS-QA QA99 | [`QA99.md`](../dev_history/planning/QA99.md) |\n"
+_FAKE_QA99 = "## QA99\n\n| QA99.1 | a |\n"
+
+
+def _qa99_plan(body: str) -> dict[str, str]:
+    """A `WS-QA QA99` row whose plan is `body`, cited as a phase and a sub-task."""
+    return {**_with_row(_ROW_QA99, "-- WS-QA QA99, WS-QA QA99.1\n"),
+            "docs/dev_history/planning/QA99.md": "# QA ninety-nine\n\n" + body}
 
 
 def _run_fixture(files: dict[str, str | None]) -> tuple[int, str]:
@@ -411,6 +454,28 @@ def _self_test() -> int:
         ("a phase named only inside a fence", _with_cite("-- WS-QB QB5\n"), 1, "phase QB5 is defined by none"),
         ("a bad phase wrapped onto the next line",
          _with_cite("-- see WS-QA\n-- QA99 here\n"), 1, "WS-QA QA99, cited at SeLe4n/A.lean:4"),
+        ("a row naming a phase its plan lacks (WS-QA QA99 linking QA1.md)",
+         _with_row(_ROW_QA1.replace("WS-QA QA1", "WS-QA QA99"), "-- WS-QA QA99\n"), 1,
+         "WS-QA QA99, cited at SeLe4n/A.lean:4: phase QA99 is defined by none of QA1.md"),
+        ("that row fails with nothing cited through it",
+         _with_row(_ROW_QA1.replace("WS-QA QA1", "WS-QA QA99")), 1,
+         "lookup row WS-QA QA99: phase QA99 is defined by none of QA1.md"),
+        ("a row naming a suffix its plan lacks (WS-QJ999 linking QJ.md)",
+         _with_row("| WS-QJ999 | [`QJ.md`](../dev_history/audits/QJ.md) |\n", "-- WS-QJ999\n"),
+         1, "WS-QJ999, cited at SeLe4n/A.lean:4: QJ999 is defined by none of QJ.md"),
+        ("control: the QA99 plan defining QA99 and QA99.1 in the open",
+         _qa99_plan(_FAKE_QA99), 0, "PASS: 11 distinct"),
+        ("QA99 defined only inside an indented fence",
+         _qa99_plan("  ```\n" + _FAKE_QA99 + "  ```\n"), 1,
+         "WS-QA QA99, cited at SeLe4n/A.lean:4: phase QA99 is defined by none of QA99.md"),
+        ("QA99 defined only inside a tilde fence",
+         _qa99_plan("~~~\n" + _FAKE_QA99 + "~~~\n"), 1,
+         "WS-QA QA99, cited at SeLe4n/A.lean:4: phase QA99 is defined by none of QA99.md"),
+        ("QA99 defined only past a shorter run, inside a fence a longer run closes",
+         _qa99_plan("````\n```\n" + _FAKE_QA99 + "`````\n"), 1,
+         "WS-QA QA99, cited at SeLe4n/A.lean:4: phase QA99 is defined by none of QA99.md"),
+        ("control: QA99 defined after that longer closer",
+         _qa99_plan("````\n```\n`````\n" + _FAKE_QA99), 0, "PASS: 11 distinct"),
         ("an unlisted workstream", _with_cite("-- WS-QD\n"), 1, "WS-QD, cited at"),
         ("a row below the section's end", _with_cite("-- WS-QG\n"), 1, "WS-QG, cited at"),
         ("a row whose plan the index lacks",

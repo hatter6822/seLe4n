@@ -249,8 +249,9 @@ run_prose_negative_check "HYGIENE" rg -n "docs/dev_history" SeLe4n Main.lean tes
 # workstream against the archived-plan lookup in
 # docs/agent_guide/WORKSTREAM_CONTEXT.md, live plan titles and register sections;
 # a phase (`WS-SM SM6.C`) or suffix (`WS-H12b`) against the plan its lookup row
-# or live title picks.  Self-test first: each case keeps the tokens and breaks
-# the relation (`WS-SM SM99`, `WS-J999`).  `run_prose_check` for the reason the
+# or live title picks; and each lookup row's own phase or suffix against the
+# plans that row links.  Self-test first: each case keeps the tokens and breaks
+# the relation (`WS-SM SM99`, `WS-J999`, a `WS-QA QA99` row on `QA1`'s plan).  `run_prose_check` for the reason the
 # gate above gives: citations live in comments.
 run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_id_resolution.py" --self-test
 run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_id_resolution.py"
