@@ -133,6 +133,28 @@
     (`fp_context.S` arrived with WS-BP BP7.9).  Fixed in `README.md`, all 11
     translated READMEs, `docs/CI_POLICY.md`, the claim index and GitBook
     chapter 07.
+  - Scripts cite the archived plans by ID (`WS-SM SM9 §3.7`,
+    `WS-SM SM2.C-defer §8`, `WS-SM SM7 §8`), not by `docs/dev_history/` path:
+    the content-flow gate and the Loom, Miri, nightly, Tier 2, Tier 4,
+    Tier 5 and QEMU shootdown scripts.  The Tier 0 path scan stays scoped to
+    `SeLe4n/`, `Main.lean`, `tests/` and `rust/`, because `scripts/` holds
+    archive paths as machinery: link-check and deferral scopes, historical
+    prose exclusions, gate fixtures and the website manifest.
+  - The *Archived plans by ID* table now resolves every archived workstream
+    that kernel code cites.  It adds WS-RC R4 and R5, WS-DT, WS-LC, WS-OD,
+    WS-RM and WS-HP, plus an *Audit-era workstreams* table mapping WS-A
+    through WS-AN to their audit workstream plans.  WS-AL and WS-AM had no
+    plan of their own, and the row says so.  The new Tier 0 gate
+    `scripts/check_workstream_id_resolution.py` derives every workstream
+    family cited in `SeLe4n/`, `Main.lean`, `tests/` and `rust/` and fails
+    when one resolves to no lookup row with an indexed plan, no live plan
+    title and no register section (40 families at this version).  It works
+    per family, not per phase, because WS-SM and WS-RC each have a live plan
+    covering every phase beside archived single-phase plans.  Its 9-case
+    self-test keeps the tokens and breaks the relation.
+  - SM10.6.2 no longer schedules moving `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`,
+    and SM10.6.3's archive list marks the 15 plans this version archived.
+    SM10.6.3 now moves only the 4 still under `docs/planning/`.
 
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 

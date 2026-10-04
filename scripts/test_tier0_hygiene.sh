@@ -243,6 +243,16 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py"
 # CLAUDE.md's rule decides it: the subject genuinely IS the text.
 run_prose_negative_check "HYGIENE" rg -n "docs/dev_history" SeLe4n Main.lean tests rust
 
+# The same trees therefore cite a closed plan by workstream ID, and an ID is a
+# citation only while something live maps it back to a file.  This gate derives
+# every workstream family those trees cite and fails when one resolves to no row
+# of the archived-plan lookup in docs/agent_guide/WORKSTREAM_CONTEXT.md (with a
+# plan the index holds), no live plan title and no register section.  Self-test
+# first: each case keeps the tokens and breaks the relation.  `run_prose_check`
+# for the reason the gate above gives: citations live in comments.
+run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_id_resolution.py" --self-test
+run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_id_resolution.py"
+
 # WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
 # plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10
 # with no SM9 term, so the marker theorem and the "verify all 210 SM theorems

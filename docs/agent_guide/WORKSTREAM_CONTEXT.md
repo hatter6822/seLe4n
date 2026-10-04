@@ -123,7 +123,9 @@ by path, because Tier 0 forbids `docs/dev_history/` in `SeLe4n/`, `Main.lean`,
 after the workstream (`WS-SM SM3.A.10`, `WS-RA RA.B.5b`, `WS-RR RR8.12`) is a row
 in that plan; a `§` after a phase ID (`WS-SM SM6 §3.1`) is a section of it.
 Each plan's status line is its status when archived; current status is the
-phase table above and `docs/REGISTERED_DEBT.md`.
+phase table above and `docs/REGISTERED_DEBT.md`.  Tier 0
+(`scripts/check_workstream_id_resolution.py`) fails when a workstream those
+trees cite resolves to no row here, no live plan title and no register section.
 
 | ID | Archived plan | Closed |
 |----|---------------|--------|
@@ -141,11 +143,62 @@ phase table above and `docs/REGISTERED_DEBT.md`.
 | WS-SM SM9 | [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](../dev_history/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md) | v0.33.100 |
 | WS-RA | [`SYSCALL_RETURN_ABI_PLAN.md`](../dev_history/planning/SYSCALL_RETURN_ABI_PLAN.md) | v0.33.38 |
 | WS-RR | [`SMP_RELEASE_READINESS_PLAN.md`](../dev_history/planning/SMP_RELEASE_READINESS_PLAN.md) | v0.35.203 |
+| WS-RC R4 | [`WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`](../dev_history/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md) (R4.A, R4.C) and [`WS_RC_R4_CLOSEOUT_PLAN.md`](../dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md) | v0.31.0 |
+| WS-RC R5 | [`WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](../dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md) | v0.31.2 |
+| WS-DT | [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md) | v0.34.43 |
+| WS-LC | [`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](../dev_history/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md) | v0.34.56 |
+| WS-OD | [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](../dev_history/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md) | v0.35.2 |
+| WS-RM | [`REPLY_FRAME_REMOVAL_PLAN.md`](../dev_history/planning/REPLY_FRAME_REMOVAL_PLAN.md) | v0.35.6 |
+| WS-HP | [`DONATION_POP_TRIGGER_PLAN.md`](../dev_history/planning/DONATION_POP_TRIGGER_PLAN.md) | v0.35.54 |
+
+WS-SM's open phase, SM10, keeps its plan under `docs/planning/` (see
+**Plans** above).  WS-RC's other phases are in the live
+[`AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md).
 
 What these plans still held open is a row in `docs/REGISTERED_DEBT.md`, not
 an obligation of the archived file: SM6's `withLockSet` bundle carriage
-(fine-lock Track D), SM7.D items 2 and 5, and WS-RA's application IPC label
-(owner WS-CB, with both candidate designs stated in the row).
+(fine-lock Track D), SM7.D items 2 and 5, WS-RA's application IPC label
+(owner WS-CB, with both candidate designs stated in the row), and WS-RC R4's
+two follow-on promotions.
+
+##### Audit-era workstreams
+
+Each workstream before WS-RC was planned in one audit workstream plan, archived
+under `docs/dev_history/`.  Its sub-IDs (`WS-H12b`, `WS-K-F5`, `WS-J1-D`,
+`WS-Q1-D`) are sections of that plan, and its version range is its row in the
+workstream registry of `docs/REGISTERED_DEBT.md`.  Only workstreams that code
+still cites are listed.
+
+| ID | Archived plan |
+|----|---------------|
+| WS-A (A1–A8) | [`20-repository-audit-remediation-workstreams.md`](../dev_history/gitbook/20-repository-audit-remediation-workstreams.md), closed by [`M7_CLOSEOUT_PACKET.md`](../dev_history/M7_CLOSEOUT_PACKET.md) |
+| WS-B | [`AUDIT_v0.9.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.9.0_WORKSTREAM_PLAN.md) |
+| WS-C | [`AUDIT_v0.9.32_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.9.32_WORKSTREAM_PLAN.md) |
+| WS-D | [`AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md) |
+| WS-E | [`AUDIT_v0.11.6_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.6_WORKSTREAM_PLAN.md) |
+| WS-F | [`AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) |
+| WS-G | [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md) |
+| WS-H | [`AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md) |
+| WS-I | [`AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) |
+| WS-J1 | [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) |
+| WS-K | [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md) |
+| WS-L | [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) |
+| WS-M | [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) |
+| WS-N | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) |
+| WS-Q | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) |
+| WS-R | [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) |
+| WS-T | [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md) |
+| WS-U | [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
+| WS-V | [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md); phase V3's detail plans are [`V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md`](../dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md), [`V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md`](../dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md) and [`V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md`](../dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md).  [`WS_V_KERNEL_STARVATION_PREVENTION_PLAN.md`](../dev_history/planning/WS_V_KERNEL_STARVATION_PREVENTION_PLAN.md) is a separate plan under the same name. |
+| WS-W | [`AUDIT_v0.22.10_WORKSTREAM_PLAN.md`](../dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md) |
+| WS-Z | [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md) |
+| WS-AB | [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) |
+| WS-AC | [`AUDIT_v0.25.3_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md) |
+| WS-AD | [`AUDIT_v0.25.10_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md) |
+| WS-AG | [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md) |
+| WS-AK | [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) |
+| WS-AL, WS-AM | No plan of their own.  Both continue WS-AK's AK7 cascade, which [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) proposes as WS-AL; their record is `CHANGELOG.md` v0.29.13–v0.30.0. |
+| WS-AN | [`AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md) |
 
 ### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2, BP3, BP4, BP5 and BP6 v0.36.2; the v0.36.2 audit added BP7.10 and BP7.11; BP7.10 v0.36.3; BP7.1 slice 1 v0.36.4, slice 2 v0.36.5, slice 3 v0.36.6; frame capabilities own their mappings v0.36.7; slice 4a (child untypeds, subtree resets) v0.36.8; in-place VSpace-root creation refused v0.36.9; slice 4b (VSpace roots carved from untypeds) v0.36.10; a thread runs in a carved address space v0.36.11; intermediate page tables v0.36.12; every configured root owns a table page v0.36.13, completing BP7.1; BP7.2's user window and 16-bit ASIDs v0.36.14; its physical-write ledger and translation install v0.36.15, completing BP7.2; the whole trap frame saved at every entry v0.36.16, BP7.3; each core's resume staged per core v0.36.17, BP7.4; the staged unblock frames delivered v0.36.18, BP7.5; the context restore live v0.36.19, BP7.6; the declassified badge delivered v0.36.20, BP7.7; message registers past the fourth, both directions, v0.36.21, BP7.8; per-thread FP/SIMD state switched lazily v0.36.22, BP7.9; both initial threads started, one per domain, v0.36.23, BP7.11, completing BP7; BP8.1 slice 1, the image built for QEMU's `virt` and booted there at EL1 and EL2, v0.36.24; slice 2, the Lean `virt` binding and its boot entry, v0.36.25; slice 3, the Lean-linked image booted on four PEs to every core's first idle dispatch in CI, v0.36.26, completing BP8.1; BP8.2, the four-PE bring-up gate executed in CI, v0.36.27; BP8.4, the Tier-4 gates executed on the `virt` test image, v0.36.28; BP8.5, the per-core counters read on the booted machine, v0.36.29; the BP2.4, BP2.5 and BP4.2 acceptance boxes decided by QEMU runs, v0.36.31)
 

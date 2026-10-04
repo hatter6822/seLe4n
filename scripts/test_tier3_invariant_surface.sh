@@ -13262,7 +13262,6 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rwLock_refinement_preservation_noop
 
 -- WS-SM SM2.C-defer D-1..D-4 deferred-completion surface anchors.
--- See docs/dev_history/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md.
 #check @SeLe4n.Kernel.Concurrency.RwLockKernelStep
 #check @SeLe4n.Kernel.Concurrency.RwLockReachable
 #check @SeLe4n.Kernel.Concurrency.RwLockReachable_implies_wf

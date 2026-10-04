@@ -490,6 +490,7 @@ rather than a review:
 | Gates read code, prose reads prose; a presence check is not a relation check; test a gate by breaking the relation | the code-view overlay, the self-test harnesses |
 | Implement the improvement — never weaken documentation to match inferior code | review |
 | Deferrals are registered, never silent | `check_deferral_registration.py` (Tier 0) |
+| Source cites an archived plan by workstream ID, never by `docs/dev_history/` path | the Tier 0 `docs/dev_history` scan; `check_workstream_id_resolution.py` (Tier 0) resolves every cited ID |
 | Report a possible vulnerability the moment you find it | — |
 
 The long-form rationale behind each rule, with the history that earned it, is
@@ -724,6 +725,7 @@ SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh   # gate honesty
 ./scripts/check_website_links.sh
 python3 scripts/check_workstream_plan.py [--self-test]
 python3 scripts/check_deferral_registration.py
+python3 scripts/check_workstream_id_resolution.py [--self-test]
 python3 scripts/check_identifier_naming.py
 python3 scripts/check_module_axioms.py
 python3 scripts/check_proof_depth.py

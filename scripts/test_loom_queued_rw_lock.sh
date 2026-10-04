@@ -4,7 +4,7 @@
 # WS-RR RR6.20: exhaustive-interleaving gate for the deployed
 # reader-writer lock.
 #
-# `docs/dev_history/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` §8 lists an
+# WS-SM SM2.C-defer §8 lists an
 # exhaustive-interleaving gate under `cfg(loom)` as a D-5 acceptance gate.
 # Before WS-RR RR6.20 nothing ran: `queued_rw_lock.rs` imported
 # `core::sync::atomic` directly, and loom only instruments its own atomic

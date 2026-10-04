@@ -213,6 +213,7 @@ which holds the standing constraints `CLAUDE.md` used to carry.
 |-------|------------------|---------------|----------|
 | Every version-bearing site agrees with `lakefile.toml` | `CLAUDE.md` (Versioning policy) | `./scripts/check_version_sync.sh` | 35 sites, `scripts/version_locations.sh` |
 | Every deferred item has an owner and a closure target | `CLAUDE.md` (Key conventions) | `python3 scripts/check_deferral_registration.py` | *Registered debt index*, `REGISTERED_DEBT.md` |
+| Every workstream ID that `SeLe4n/`, `Main.lean`, `tests/` or `rust/` cites resolves to a plan | `CLAUDE.md` (Documentation rules) | `python3 scripts/check_workstream_id_resolution.py` | *Archived plans by ID*, `WORKSTREAM_CONTEXT.md` |
 | Every plan's numbering, counts and cross-references are consistent | `DEVELOPMENT.md` §11 | `python3 scripts/check_workstream_plan.py` | `docs/planning/` |
 | No identifier or path encodes a workstream code | `CLAUDE.md` (Key conventions) | `python3 scripts/check_identifier_naming.py` | `scripts/identifier_naming_baseline.json` |
 | A gate that cannot run is reported NOT RUN, never PASS | `CI_POLICY.md` | `SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh` | `scripts/test_gate_skip_accounting.sh` |

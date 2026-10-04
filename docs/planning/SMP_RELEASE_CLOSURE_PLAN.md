@@ -571,37 +571,40 @@ every step that does now sits in `SM10.5`, ahead of the validation.
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM10.6.1 | CHANGELOG v1.0.0 closure entry | `CHANGELOG.md` | M |
-| SM10.6.2 | Move WS-RC artefacts to dev_history/audits/, plus `docs/dev_history/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (a WS-RC artefact that sits under `docs/planning/`) | (file moves) | S |
-| SM10.6.3 | Move WS-SM plan + per-phase docs to dev_history/planning/ — **19 file moves**, enumerated below | (19 file moves) | T |
+| SM10.6.2 | Move WS-RC artefacts to dev_history/audits/.  The one WS-RC plan that sat under `docs/planning/`, `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`, was archived at `v0.36.42` and is not moved again | (file moves) | S |
+| SM10.6.3 | Move the WS-SM plans still under `docs/planning/` to dev_history/planning/ — **4 file moves**, enumerated below; the list's other 15 entries were archived at `v0.36.42` | (4 file moves) | T |
 | SM10.6.4 | Tag v1.0.0 (maintainer-cut) | git tag | T |
 
 **SM10.6.3 archive list.**  The plan carried "11 file moves" against a list
 that omitted SM9's own phase plan and every other WS-SM-adjacent planning
 document — so the sub-task that retires the workstream's paper trail would
 have left a third of it in `docs/planning/`, where a later reader would take
-it for live work.  The list is enumerated here rather than left to the mover:
+it for live work.  The list is enumerated here rather than left to the mover.
+Fifteen of its nineteen entries were archived at `v0.36.42`, each once its
+phase had closed and its open obligations were registered; they are marked
+below, and SM10.6.3 moves only the four that remain:
 
 | # | File | Why it archives with WS-SM |
 |---|------|-----------------------------|
 | 1 | `SMP_MULTICORE_COMPLETION_PLAN.md` | the overview |
-| 2 | `SMP_FOUNDATIONS_PLAN.md` | SM0 |
-| 3 | `SMP_RUST_HAL_PLAN.md` | SM1 |
-| 4 | `SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` | SM2 |
-| 5 | `SMP_PER_OBJECT_LOCKS_PLAN.md` | SM3 |
-| 6 | `SMP_PER_CORE_STATE_PLAN.md` | SM4 |
-| 7 | `SMP_PER_CORE_SCHEDULER_PLAN.md` | SM5 |
-| 8 | `SMP_CROSS_CORE_IPC_PLAN.md` | SM6 |
-| 9 | `SMP_TLB_SHOOTDOWN_PLAN.md` | SM7 |
-| 10 | `SMP_INFORMATION_FLOW_PLAN.md` | SM8 |
-| 11 | `SMP_DECLASSIFICATION_COMPLETION_PLAN.md` | **SM9 — the omission that produced this correction** |
+| 2 | `SMP_FOUNDATIONS_PLAN.md` | SM0 — **archived `v0.36.42`** |
+| 3 | `SMP_RUST_HAL_PLAN.md` | SM1 — **archived `v0.36.42`** |
+| 4 | `SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` | SM2 — **archived `v0.36.42`** |
+| 5 | `SMP_PER_OBJECT_LOCKS_PLAN.md` | SM3 — **archived `v0.36.42`** |
+| 6 | `SMP_PER_CORE_STATE_PLAN.md` | SM4 — **archived `v0.36.42`** |
+| 7 | `SMP_PER_CORE_SCHEDULER_PLAN.md` | SM5 — **archived `v0.36.42`** |
+| 8 | `SMP_CROSS_CORE_IPC_PLAN.md` | SM6 — **archived `v0.36.42`** |
+| 9 | `SMP_TLB_SHOOTDOWN_PLAN.md` | SM7 — **archived `v0.36.42`** |
+| 10 | `SMP_INFORMATION_FLOW_PLAN.md` | SM8 — **archived `v0.36.42`** |
+| 11 | `SMP_DECLASSIFICATION_COMPLETION_PLAN.md` | **SM9 — the omission that produced this correction** — **archived `v0.36.42`** |
 | 12 | `SMP_RELEASE_CLOSURE_PLAN.md` | SM10 (this file) |
-| 13 | `SMP_RELEASE_READINESS_PLAN.md` | WS-RR, the phase that gates this one |
+| 13 | `SMP_RELEASE_READINESS_PLAN.md` | WS-RR, the phase that gates this one — **archived `v0.36.42`** |
 | 14 | `UNFINISHED_SMP_WORK.md` | the register WS-RR closes; its own footer says it moves with them |
 | 15 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` | SM3.C.9's migration, closed by RR7.7–RR7.13, the three uncovered-domain closures RR7.39–RR7.41, and SM10.1 |
-| 16 | `SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | SM2.C-defer, absorbed by RR6 |
-| 17 | `SMP_PANIC_HANG_REMEDIATION_PLAN.md` | the SM2.E remediation |
-| 18 | `SYSCALL_RETURN_ABI_PLAN.md` | WS-RA, whose remaining obligations SM10.1 discharges |
-| 19 | `REPLY_OBJECTS_COMPLETION_PLAN.md` | the SM6.C/SM6.D reply-object companion |
+| 16 | `SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | SM2.C-defer, absorbed by RR6 — **archived `v0.36.42`** |
+| 17 | `SMP_PANIC_HANG_REMEDIATION_PLAN.md` | the SM2.E remediation — **archived `v0.36.42`** |
+| 18 | `SYSCALL_RETURN_ABI_PLAN.md` | WS-RA, whose remaining obligations SM10.1 discharges — **archived `v0.36.42`** |
+| 19 | `REPLY_OBJECTS_COMPLETION_PLAN.md` | the SM6.C/SM6.D reply-object companion — **archived `v0.36.42`** |
 
 **Not moved by this sub-task**, and each for a stated reason — an archive list
 is only correct if the exclusions are as deliberate as the inclusions:
@@ -611,8 +614,8 @@ is only correct if the exclusions are as deliberate as the inclusions:
   still in `docs/planning/` when SM10 opens means RR3 did not close.
 - `HARDWARE_PARTITION_ISOLATION_PLAN.md` — post-v1.0.0 and explicitly out of
   scope for the WS-SM audit.  It stays live.
-- `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` — a WS-RC artefact; **SM10.6.2**
-  moves it with the rest of WS-RC.
+- `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` — a WS-RC artefact, archived at
+  `v0.36.42`; SM10.6.2 no longer carries it.
 
 No path in this list appears in `scripts/website_link_manifest.txt`, so the
 moves cannot 404 the website; `scripts/check_markdown_links.py` still has to

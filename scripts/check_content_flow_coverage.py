@@ -3,8 +3,8 @@
 
 WS-SM SM9.D.7.  `contentFlowClass` (`InformationFlow/TaintPropagation.lean`) is
 a **total** `SyscallId -> ContentFlowClass`, so a new syscall is a missing case
-at elaboration.  That is necessary and not sufficient, and §3.7 of
-`docs/dev_history/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` says why in the sharpest
+at elaboration.  That is necessary and not sufficient, and WS-SM SM9 §3.7
+says why in the sharpest
 form the plan reaches: *totality over the wrong domain proves nothing about the
 right one*.  `SyscallId` is exhaustive of dispatch **arms**; the taint
 propagation is about **sub-transitions**, and no type in the tree enumerates

@@ -18,8 +18,8 @@
 # lock serialising them means — no stale translation, and the completion
 # banner.  A second initiator inside the critical section is reported by the
 # in-flight witness (`RoundOutcome::SerialisationBroken`) and fails this gate:
-# the shootdown-round-serialisation break `docs/dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
-# §8 names as a failure of SM7.
+# the shootdown-round-serialisation break WS-SM SM7 §8 names as a failure of
+# SM7.
 #
 # Driver: `smp_exercisers::shootdown_stress` (`rust/sele4n-hal/src/smp_exercisers.rs`,
 # compiled into the test image alone).  The boot, the image and what the log
