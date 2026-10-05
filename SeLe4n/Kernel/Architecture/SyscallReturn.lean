@@ -567,6 +567,15 @@ def _root_.SeLe4n.RegisterFile.stageReturnFrame
     (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) :
     (rf.stageReturnFrame f).sp = rf.sp := rfl
 
+/-- Staging a frame keeps a word-bounded file word-bounded: the six registers
+written are `UInt64`s read as `Nat`s. -/
+theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_wordBounded
+    (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) (hB : rf.wordBounded) :
+    (rf.stageReturnFrame f).wordBounded := by
+  unfold SeLe4n.RegisterFile.stageReturnFrame
+  have w := SeLe4n.writeReg_uint64_wordBounded
+  exact w _ _ _ (w _ _ _ (w _ _ _ (w _ _ _ (w _ _ _ (w _ _ _ hB)))))
+
 /-- Registers outside the frame window are untouched — in particular `x7`
 (the staged syscall number) and the callee-saved range. -/
 theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_gpr_high
@@ -1609,6 +1618,17 @@ a restart (`faultRestart_moves_pc` lifts this to the state). -/
 @[simp] theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_sp
     (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) :
     (rf.stageRestartFrame f).sp = ⟨f.sp.toNat⟩ := rfl
+
+/-- Staging a restart frame keeps a word-bounded file word-bounded: every
+register it writes, `pc` and `sp` included, is a `UInt64` read as a `Nat`. -/
+theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_wordBounded
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) (hB : rf.wordBounded) :
+    (rf.stageRestartFrame f).wordBounded := by
+  unfold SeLe4n.RegisterFile.stageRestartFrame
+  have w := SeLe4n.writeReg_uint64_wordBounded
+  obtain ⟨_, _, hPs, hTp, hGpr⟩ :=
+    w _ _ _ (w _ _ _ (w _ _ _ (rf.stageReturnFrame_wordBounded f.returnWindow hB)))
+  exact ⟨SeLe4n.RegValue.valid_of_uint64 _, SeLe4n.RegValue.valid_of_uint64 _, hPs, hTp, hGpr⟩
 
 /-- WS-RR RR4.16: the eight-register argument window and the link register
 read back as the frame — the property a handler emulating a trapped syscall

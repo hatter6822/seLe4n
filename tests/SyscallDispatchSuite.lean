@@ -389,12 +389,12 @@ which host binaries must not link.  The `.error` arm is refuted by
 `syscallDispatchFromAbi_total`; it throws rather than fabricating an
 outcome. -/
 private def dispatchViaRef (syscallId : UInt32)
-    (msgInfo x0 x1 x2 x3 x4 x5 ipcBuf : UInt64) :
+    (x0 x1 x2 x3 x4 x5 ipcBuf : UInt64) :
     IO Kernel.Architecture.SyscallOutcome := do
   let st ← getKernelState
   let ctx ← getKernelLabelingContext
   match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId
-      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBuf 0 0 0 0 st with
+      syscallId x0 x1 x2 x3 x4 x5 ipcBuf 0 0 0 0 st with
   | Except.ok (outcome, st') =>
       initialiseKernelState st'
       pure outcome
@@ -423,7 +423,7 @@ private def sd030_dispatch_noCurrent : IO Unit := do
   let st := mkState [] none
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
-  let outcome ← dispatchViaRef 0 0 0 0 0 0 0 0 0
+  let outcome ← dispatchViaRef 0 0 0 0 0 0 0 0
   expect "sd030_illegalState_error_frame"
     (isErrorFrameFor outcome .illegalState)
     "no-current dispatch must return the illegalState error frame"
@@ -439,7 +439,7 @@ private def sd031_dispatch_spillsRegs : IO Unit := do
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- Invoke with a syscallId that's out of the modeled range; the call
   -- must return an error frame and preserve the spilled registers.
-  let _ ← dispatchViaRef 0xFFFFFFFF 0 0xDEADBEEF 0 0 0 0 0 0
+  let _ ← dispatchViaRef 0xFFFFFFFF 0xDEADBEEF 0 0 0 0 0 0
   let st' ← getKernelState
   match st'.objects[tid.toObjId]? with
   | some (.tcb tcb) =>
@@ -459,7 +459,7 @@ private def sd032_dispatch_invalidSyscall : IO Unit := do
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- syscallId 99 is outside the modeled set.
-  let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0 0
+  let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0
   expect "sd032_invalid_syscall_error_frame"
     (isSomeErrorFrame outcome)
     "unmodeled syscall ID must surface as an error frame"
@@ -471,45 +471,13 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨9⟩
   let st := mkState [(⟨9⟩, .tcb (mkTcb 9 .Ready))] (some tid)
   let ctx := SeLe4n.Kernel.testLabelingContext
-  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0 0
+  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0
       0 0 0 0 st with
   | Except.ok _ =>
       passLine "sd033_dispatchFromAbi_returns_ok"
   | Except.error _ =>
       failLine "sd033_dispatchFromAbi_returns_ok"
         "syscallDispatchFromAbi must never return Except.error"
-
-/-- SD-034: ABI consistency check — when `msgInfo ≠ x1`, the dispatch
-    rejects with the `.invalidSyscallArgument` error frame without
-    invoking `syscallEntryChecked`.  Test-only defence: the live entry
-    reads both from the one trapped `x1`, so this suite is the only caller
-    that can make them differ.
-
-The syscall entry (`syscallDispatchCrossCoreEntry`) passes the trapped
-`x1` word as both `msgInfo` and `x1`, so they should always be equal at
-the ABI boundary.  A divergence indicates either a malformed
-caller or memory corruption — the FFI rejects rather than proceeding. -/
-private def sd034_dispatch_abiMismatch : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨10⟩
-  let st := mkState [(⟨10⟩, .tcb (mkTcb 10 .Ready))] (some tid)
-  initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
-  -- Pass msgInfo=0xAAAA and x1=0xBBBB (≠ msgInfo).  Per the FFI ABI
-  -- contract these must agree; the dispatcher rejects.
-  let outcome ← dispatchViaRef 0 0xAAAA 0 0xBBBB 0 0 0 0 0
-  expect "sd034a_invalidSyscallArgument_frame"
-    (isErrorFrameFor outcome .invalidSyscallArgument)
-    "ABI-mismatch must yield the invalidSyscallArgument error frame"
-  -- Verify the kernel state is NOT mutated on the ABI-mismatch path.
-  let st' ← getKernelState
-  match st'.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
-      -- TCB.registerContext.gpr ⟨0⟩ should still be the default value (0)
-      -- because the dispatch rejected before writeFfiRegistersToTcb was called.
-      expect "sd034b_no_register_spill_on_abi_mismatch"
-        (tcb.registerContext.gpr ⟨0⟩ == ⟨0⟩)
-        "ABI-mismatch must reject before spilling registers"
-  | _ => failLine "sd034_tcb_missing" "TCB missing after ABI-mismatch dispatch"
 
 /-- SD-036 (`v0.36.47` audit): the arm the hardware never reaches — the entry
 handed no context.  `syscallEntryContextOrFaulted` is the pure owner of that
@@ -543,6 +511,70 @@ private def sd036_entryWithoutContext_faults : IO Unit := do
         "the frame-less arm must leave the installed state untouched"
   | _ => failLine "sd036_tcb_missing" "TCB missing after the frame-less arm"
 
+open Kernel.Architecture.IpcBufferRead in
+/-- SD-037 (`v0.36.47` audit): the sender's overflow words cross in runs.
+`wordRuns` groups consecutive same-page words and nothing else; `wordsOfBytes`
+decodes a run's `8 · n` little-endian bytes and refuses any other size; and
+`overflowWordsOrFaulted` zips the decoded batches back onto the addresses, or
+answers the `.faulted` tag — the arm the hardware never reaches, since the HAL
+halts on a refused run rather than answering a short one. -/
+private def sd037_overflowWordsCrossInRuns : IO Unit := do
+  let pa (n : Nat) : SeLe4n.PAddr := SeLe4n.PAddr.ofNat n
+  -- Three consecutive words of one page are one run; a gap, or a page
+  -- boundary, starts another; the runs expand back to the list.
+  expect "sd037a_consecutive_words_are_one_run"
+    (wordRuns [pa 0x1000, pa 0x1008, pa 0x1010] == [(pa 0x1000, 3)])
+    "three consecutive same-page words must form one run"
+  expect "sd037b_a_gap_splits_the_run"
+    (wordRuns [pa 0x1000, pa 0x1010] == [(pa 0x1000, 1), (pa 0x1010, 1)])
+    "non-consecutive words must not share a run"
+  expect "sd037c_a_page_boundary_splits_the_run"
+    (wordRuns [pa 0x1FF0, pa 0x1FF8, pa 0x2000, pa 0x2008]
+      == [(pa 0x1FF0, 2), (pa 0x2000, 2)])
+    "a run must never cross a page boundary"
+  let straddling := (List.range 116).map (fun i => pa (0x1E00 + 8 * i))
+  expect "sd037d_a_116_word_buffer_straddling_a_page_is_two_runs"
+    (wordRuns straddling == [(pa 0x1E00, 64), (pa 0x2000, 52)] &&
+      expandRuns (wordRuns straddling) == straddling)
+    "a 512-aligned buffer across a page boundary must be exactly two runs"
+  let inPage := (List.range 116).map (fun i => pa (0x3000 + 8 * i))
+  expect "sd037e_a_116_word_buffer_inside_a_page_is_one_run"
+    (wordRuns inPage == [(pa 0x3000, 116)])
+    "a buffer inside one page must be one run (one extern call)"
+  -- The decode: little-endian words, exact size only.
+  let bytes := ByteArray.mk #[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                              0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80]
+  expect "sd037f_little_endian_decode"
+    (wordsOfBytes 2 bytes == some [0x0807060504030201, 0x80000000000000FF])
+    "a run's bytes must decode little-endian, word by word"
+  expect "sd037g_wrong_size_is_refused"
+    ((wordsOfBytes 3 bytes).isNone && (wordsOfBytes 1 bytes).isNone &&
+      wordsOfBytes 0 (ByteArray.mk #[]) == some [])
+    "a batch of any size but 8·n must decode to nothing; an empty run to no words"
+  -- The seam's decode: the pairs carry the addresses in order, or fail closed.
+  let addrs := [pa 0x1000, pa 0x1008]
+  let faulted := Kernel.Architecture.SyscallOutcome.faulted.tagWord
+  expect "sd037h_batches_zip_onto_the_addresses"
+    (match overflowWordsOrFaulted addrs (wordRuns addrs) [bytes] with
+      | .ok pairs => pairs == [(pa 0x1000, 0x0807060504030201), (pa 0x1008, 0x80000000000000FF)]
+      | .error _ => false)
+    "a decoded batch must pair each address with its word, in order"
+  expect "sd037i_a_short_batch_is_the_faulted_tag"
+    (match overflowWordsOrFaulted addrs (wordRuns addrs) [bytes.extract 0 8] with
+      | .error tag => tag == faulted && tag == 2
+      | .ok _ => false)
+    "a batch not of its run's size must answer the .faulted tag (2)"
+  expect "sd037j_a_missing_batch_is_the_faulted_tag"
+    (match overflowWordsOrFaulted addrs (wordRuns addrs) [] with
+      | .error tag => tag == faulted
+      | .ok _ => false)
+    "fewer batches than runs must answer the .faulted tag"
+  expect "sd037k_no_overflow_reads_nothing"
+    (match overflowWordsOrFaulted [] (wordRuns []) [] with
+      | .ok pairs => pairs.isEmpty
+      | .error _ => false)
+    "a syscall with no overflow must sync no words and not fault"
+
 /-- SD-035: Sequential dispatches — the IO.Ref state evolves
     correctly across multiple syscall invocations.
 
@@ -554,7 +586,7 @@ private def sd035_sequentialDispatches : IO Unit := do
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- First dispatch: spills x0=0x111 into the TCB.
-  let _ ← dispatchViaRef 99 0 0x111 0 0 0 0 0 0
+  let _ ← dispatchViaRef 99 0x111 0 0 0 0 0 0
   let st1 ← getKernelState
   match st1.objects[tid.toObjId]? with
   | some (.tcb tcb1) =>
@@ -563,7 +595,7 @@ private def sd035_sequentialDispatches : IO Unit := do
         "first dispatch must spill x0=0x111"
   | _ => failLine "sd035_tcb_missing_1" "TCB missing after first dispatch"
   -- Second dispatch: spills x0=0x222 into the (now-updated) TCB.
-  let _ ← dispatchViaRef 99 0 0x222 0 0 0 0 0 0
+  let _ ← dispatchViaRef 99 0x222 0 0 0 0 0 0
   let st2 ← getKernelState
   match st2.objects[tid.toObjId]? with
   | some (.tcb tcb2) =>
@@ -2244,9 +2276,9 @@ def main : IO Unit := do
   sd031_dispatch_spillsRegs
   sd032_dispatch_invalidSyscall
   sd033_dispatchFromAbi_total
-  sd034_dispatch_abiMismatch
   sd035_sequentialDispatches
   sd036_entryWithoutContext_faults
+  sd037_overflowWordsCrossInRuns
   IO.println "--- R2.A: bootAndInitialiseFromPlatform integration ---"
   sd040_bootInitialise_emptyConfig_succeeds
   sd041_bootInitialise_withLabelingContext

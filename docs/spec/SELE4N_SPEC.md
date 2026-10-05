@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.47` (`lakefile.toml`) |
+| **Package version** | `0.36.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 434,553 across 362 Lean files |
-| **Test LoC** | 88,802 across 71 Lean test suites |
-| **Proved declarations** | 14,333 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 435,695 across 364 Lean files |
+| **Test LoC** | 88,938 across 71 Lean test suites |
+| **Proved declarations** | 14,389 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3186,10 +3186,14 @@ handler.  RR4 replaces that path with seL4's fault IPC:
   have refused the idiomatic `seL4_CapRights_new(0, 1, 0, 1)` handler
   capability and suspended its clients.
 - **The register window** the message reports and a resume reinstalls is the
-  trap frame's, not the register mirror's: `lean_handle_fault` carries
-  `x0`-`x7`, `SP_EL0` and `x30` alongside the syndrome, and the entry spills
-  them into the faulting thread's `registerContext` before building the
-  context (`writeFaultRegistersToTcb`;
+  trap frame's, not the register mirror's: `lean_handle_fault` takes the
+  core and the trap's two syndrome words (`ESR_EL1`, `FAR_EL1`) and reads
+  everything else — `ELR_EL1`, `SPSR_EL1`, `x0`-`x7`, `SP_EL0` and `x30` —
+  once from the published in-flight frame (`faultEntryFrame?` over
+  `ffi_trap_context`, `v0.36.47` audit; before it the HAL passed the window
+  as fifteen scalars and the entry re-captured the same frame), and the entry
+  spills the window into the faulting thread's `registerContext` before
+  building the context (`writeFaultRegistersToTcb`;
   `faultContextOfThread_writeFaultRegistersToTcb` says the context *is* the
   window).  The mirror is partial and between syscalls holds the last
   syscall's arguments, so a context built from it alone would report a stale
@@ -5030,16 +5034,35 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   trip proved (`TrapContext.word_ofWords`, `TrapContext.ofWords_word`,
   `trapContextOfRegisterFile_registerFileOfTrapContext` with no hypothesis,
   and `registerFileOfTrapContext_trapContextOfRegisterFile` on a
-  `RegisterFile.wordBounded` file, agreeing on the thirty-five registers the
-  layout carries; the HAL masks `SPSR_EL1` to the condition flags at the
-  commit, so the cross-language trip is not the identity on `pstate`), the
+  `RegisterFile.wordBounded` file — a bound
+  `Kernel.Architecture.registerContextsWordBounded` carries for every saved
+  context and every core's bank, preserved by every register-context writer
+  (`SeLe4n/Kernel/Architecture/RegisterContextBounded.lean`); on the restore
+  path `restoreTargetOnCore_user_roundTrip` discharges the file's bound from
+  that predicate, which is a **hypothesis on the state**: it is not yet a
+  conjunct of the IPC or scheduler bundles nor established of the boot state
+  (the register-file row of `docs/REGISTERED_DEBT.md`), so no live-path
+  guarantee is claimed beyond preservation by every writer — agreeing
+  on the thirty-five registers the layout carries; the HAL masks `SPSR_EL1`
+  to the condition flags at the commit, so the cross-language trip is not the
+  identity on `pstate`), the by-index read `TrapContext.word` a bound test
+  and a byte-indexed `match` (`wordOfByte`) the C compiler lowers to a jump
+  table rather than a walk of boxed-`Nat` compares, the bracketed syscall
+  step handed the whole `TrapContext` rather than eleven boxed scalars, the
   layout pinned on the Lean side by the positional `ofWords` against the
   by-name `word` and on the Rust side by `const` assertions and the HAL
   reading the staged object only after the kernel heap reports a live
   allocation of exactly the constructor's 288 bytes and its header names tag
   `0` with no object fields, halting every PE on anything else — a size drift
-  is refused, a same-size permutation is not, which an executed
-  cross-language test owes (`docs/REGISTERED_DEBT.md`); the syscall seam
+  is refused; a same-size permutation applied consistently on one side, which
+  every proof survives, is what the executed cross-language layout test
+  catches (`rust/sele4n-lean-boundary`, run by Tier 1 through
+  `scripts/test_lean_boundary_layout.sh`: an object built at the HAL's offsets
+  with a distinct value in every word is read by the compiled Lean's
+  `TrapContext.word`, and one the compiled Lean built is read back at those
+  offsets, in a process linking the compiled host archive and the toolchain's
+  runtime; swapping two fields together with `word` and `ofWords` fails it);
+  the syscall seam
   reads its arguments from that context, once, the HAL passes it only the
   validated syscall id, and an entry handed no context answers `.faulted`
   with nothing committed (`syscallEntryContextOrFaulted`), on which the trap
@@ -5124,7 +5147,14 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   thread's own VSpace, eight-byte aligned, declared RAM, writable for a write).
   The syscall seam reads a sender's overflow words from RAM and syncs them into
   the model before the decode (`readCallerOverflowWords`, `syncUserWords`,
-  `ipcBufferReadMr_syncUserWord`); the delivery every wake shares records the
+  `ipcBufferReadMr_syncUserWord`) — since the `v0.36.47` audit in contiguous
+  same-page runs, one `ffi_read_user_words` call per run answering a
+  `ByteArray` of `8 · n` bytes (`IpcBufferRead.wordRuns`; the runs are the
+  address list, `expandRuns_wordRuns`, and never leave a page,
+  `wordRuns_within_page`; a 116-word message is one call, two on a buffer
+  straddling a page boundary, where it was 116), the pure decode failing the
+  entry closed on an answer of any other size (`overflowWordsOrFaulted`);
+  the delivery every wake shares records the
   receiver's as `PhysicalWrite.storeUserWord` stores the seam performs — the
   fault seams now drain the ledger too — and the frame's `MessageInfo` length
   counts exactly the words written (`returnMessageInfo`'s `overflow`).  The HAL
@@ -5133,7 +5163,20 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
 - **Per-thread FP/SIMD state, switched lazily** (`v0.36.22`, WS-BP BP7.9).
   `TCB.fpContext` (`v0`–`v31`, `FPCR`, `FPSR`) is erased by
   `projectKernelObject`, and `MachineState.fpOwner` records whose values each
-  core's registers hold.  EC `0x07` from EL0 is `fpAccessOnCore` (entry
+  core's registers hold.  The context crosses the Lean boundary **whole, in
+  one FFI call each way** (the FFI slice after PR #912): `FpContext` is a
+  structure of 66 `UInt64` fields — the 64 vector doublewords, `FPCR`,
+  `FPSR` — handed over by `ffiFpCapture` and staged by `ffiFpStageContext`
+  before `ffiFpLoadCommit`, so a capture is one extern call where it was 67
+  and a load two where it was 67; the encode/decode round trip is proved
+  (`FpContext.ofWords_word`, `FpContext.word_ofWords`,
+  `FpContext.ofWords_congr`; `FpContext.default_word` for the fresh thread's
+  all-zero context), the layout is pinned as `TrapContext`'s is (the
+  positional `ofWords` against the by-name `word`; `const` assertions on the
+  HAL's `FP_CONTEXT_SCALAR_BYTES` of 528 and the exact-size refusal of
+  `fp_context_of_lean` at the constructor's 536 bytes, halting every PE on
+  anything else — one owner for both contexts' shape, `scalar_words_of_lean`),
+  and the same cross-language layout test executes it for all 66 words.  EC `0x07` from EL0 is `fpAccessOnCore` (entry
   `lean_handle_fp_access`): the registers' live values are saved into the
   recorded owner and the trapping thread's **own** context is loaded
   (`fpAccessOnCore_load_eq_own_context`); a thread whose live values are on

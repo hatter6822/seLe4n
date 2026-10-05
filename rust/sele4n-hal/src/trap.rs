@@ -960,10 +960,11 @@ fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
 /// — publish a fail-closed error frame.
 ///
 /// The delivery half is `lean_handle_fault`
-/// (`@[export]` on `SeLe4n.Kernel.faultEntry`), which spills the trap frame's
-/// fault window (`x0`-`x7`, `SP_EL0`, `x30`) into the faulting thread's saved
-/// register context, classifies, builds the fault message from those
-/// registers, and runs the verified, flow-checked `faultDeliverOnCoreChecked`:
+/// (`@[export]` on `SeLe4n.Kernel.faultEntry`), which reads the published
+/// in-flight frame once (`ffi_trap_context`), spills its fault window
+/// (`x0`-`x7`, `SP_EL0`, `x30`) into the faulting thread's saved register
+/// context, classifies, builds the fault message from those registers, and
+/// runs the verified, flow-checked `faultDeliverOnCoreChecked`:
 /// the thread blocks on its handler's endpoint
 /// awaiting a reply, or — with no usable handler — is descheduled and marked
 /// `.Inactive`.  Either way it comes out **not runnable on this core**
@@ -1008,62 +1009,50 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
         let core_id = crate::per_cpu::current_core_id_from_tpidr();
         if crate::lean_ready::lean_ready(core_id as usize) {
             extern "C" {
-                // The fifteen words the Lean seam consumes: the syndrome, and
-                // the fault window the trap frame saved (`x0`-`x7`, `SP_EL0`,
-                // `x30`) — the registers seL4's `setMRs_fault` reads and
-                // `handleFaultReply` writes.  The window is spilled into the
-                // thread's saved register context on the Lean side before the
-                // fault context is built (`writeFaultRegistersToTcb`): the
-                // Lean mirror of the register file is partial and, between
-                // syscalls, holds the *last syscall's* arguments, so building
-                // the context from the mirror alone would report a stale
-                // argument window and, on resume, reinstall it over the
-                // thread's live registers.
+                // The three words the Lean seam consumes: the core, and the
+                // two syndrome words that are the trap's and not the
+                // context's (`ESR_EL1`, `FAR_EL1`).  Everything else the
+                // delivery needs — the exception context's `ELR_EL1` and
+                // `SPSR_EL1`, and the fault window (`x0`-`x7`, `SP_EL0`,
+                // `x30`, the registers seL4's `setMRs_fault` reads and
+                // `handleFaultReply` writes) — the entry reads from the
+                // in-flight frame `handle_synchronous_exception` published
+                // (`ffi_trap_context`), once (`faultEntryFrame?`).  The window
+                // is spilled into the thread's saved register context on the
+                // Lean side before the fault context is built
+                // (`writeFaultRegistersToTcb`): the Lean mirror of the
+                // register file is partial and, between syscalls, holds the
+                // *last syscall's* arguments, so building the context from the
+                // mirror alone would report a stale argument window and, on
+                // resume, reinstall it over the thread's live registers.
                 /// # Safety
                 ///
                 /// Sound only on a core whose Lean runtime is initialised
-                /// (`lean_ready` checked on *this* PE) and only for an
-                /// exception taken from EL0: a kernel-origin frame must halt
-                /// before reaching here, or a user-level handler would receive
-                /// the kernel's own register window.  The fifteen words must be
-                /// the live trap frame's fault window, not the partial Lean
-                /// register mirror, which between syscalls holds the previous
-                /// syscall's arguments.
-                #[allow(clippy::too_many_arguments)]
+                /// (`lean_ready` checked on *this* PE), only for an exception
+                /// taken from EL0 — a kernel-origin frame must halt before
+                /// reaching here, or a user-level handler would receive the
+                /// kernel's own register window — and only while the live
+                /// trap frame is published (`InFlightFrame::publish`), which
+                /// is where the entry reads its window; an entry handed no
+                /// frame commits nothing and stages no restore, so this core
+                /// halts below.
                 fn lean_handle_fault(
                     core_id: u64,
                     esr: u64,
-                    elr: u64,
-                    spsr: u64,
                     far: u64,
-                    x0: u64,
-                    x1: u64,
-                    x2: u64,
-                    x3: u64,
-                    x4: u64,
-                    x5: u64,
-                    x6: u64,
-                    x7: u64,
-                    sp_el0: u64,
-                    lr: u64,
                 ) -> crate::lean_runtime::LeanBaseIoUnit;
             }
-            let (esr, elr, spsr, far) =
-                (frame.esr_el1, frame.elr_el1, frame.spsr_el1, frame.far_el1);
-            let g = frame.gprs;
-            let sp_el0 = frame.sp_el0;
+            let (esr, far) = (frame.esr_el1, frame.far_el1);
             // SAFETY: `lean_handle_fault` is the C-callable wrapper the Lean
             // compiler emits for `Kernel.faultEntry`
-            // (`@[export lean_handle_fault]`).  It takes fifteen `u64`s and
+            // (`@[export lean_handle_fault]`).  It takes three `u64`s and
             // returns its `BaseIO Unit` value, `lean_box(0)`; calling it is sound from EL1 exception context
             // once this core's Lean runtime is initialized (the gate just
-            // checked) and inside the kernel-entry lock (taken below), which is
-            // what serialises its `IO.Ref` commit.
+            // checked), with the frame published (`_in_flight` above) and
+            // inside the kernel-entry lock (taken below), which is what
+            // serialises its `IO.Ref` commit.
             let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
-                lean_handle_fault(
-                    core_id, esr, elr, spsr, far, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
-                    sp_el0, g[30],
-                )
+                lean_handle_fault(core_id, esr, far)
             });
             // The export returns its `BaseIO Unit` value, `lean_box(0)`,
             // checked outside the bracket so a malformed one halts this PE
@@ -1082,7 +1071,7 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
                 "[core {}] fault delivered and no context restored; halting (ESR=0x{:016x} ELR=0x{:016x})",
                 core_id,
                 esr,
-                elr
+                frame.elr_el1
             );
             crate::cpu::fatal_halt();
         }
@@ -1217,8 +1206,9 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
 ///
 /// The delivery half is `lean_handle_unknown_syscall` (`@[export]` on
 /// `SeLe4n.Kernel.unknownSyscallEntry`), which builds seL4's `UnknownSyscall`
-/// fault from the syscall-number register (`x7`) and the trap frame's fault
-/// window and runs the same flow-checked delivery as `deliver_fault`: the
+/// fault from the syscall-number register (`x7`) and the fault window of the
+/// published in-flight frame, read once, and runs the same flow-checked
+/// delivery as `deliver_fault`: the
 /// thread blocks on its handler's endpoint awaiting a reply (a handler that
 /// emulates the call replies and the thread continues after the `SVC`), or —
 /// with no usable handler — is suspended fail-closed.  Same lock, same
@@ -1248,45 +1238,30 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
                 /// # Safety
                 ///
                 /// Sound only on a core whose Lean runtime is initialised
-                /// (`lean_ready` checked on *this* PE) and only for an `SVC`
-                /// taken from EL0.  The caller must pass the live trap frame's
-                /// window; the model restarts the faulting thread at the `SVC`,
-                /// so a stale window would be reinstalled over its registers.
-                #[allow(clippy::too_many_arguments)]
+                /// (`lean_ready` checked on *this* PE), only for an `SVC`
+                /// taken from EL0, and only while the live trap frame is
+                /// published (`InFlightFrame::publish`): the entry reads its
+                /// window from that frame, and the model restarts the faulting
+                /// thread at the `SVC`, so a stale window would be reinstalled
+                /// over its registers.  The same three scalars as
+                /// `lean_handle_fault`.
                 fn lean_handle_unknown_syscall(
                     core_id: u64,
                     esr: u64,
-                    elr: u64,
-                    spsr: u64,
                     far: u64,
-                    x0: u64,
-                    x1: u64,
-                    x2: u64,
-                    x3: u64,
-                    x4: u64,
-                    x5: u64,
-                    x6: u64,
-                    x7: u64,
-                    sp_el0: u64,
-                    lr: u64,
                 ) -> crate::lean_runtime::LeanBaseIoUnit;
             }
-            let (esr, elr, spsr, far) =
-                (frame.esr_el1, frame.elr_el1, frame.spsr_el1, frame.far_el1);
-            let g = frame.gprs;
-            let sp_el0 = frame.sp_el0;
+            let (esr, far) = (frame.esr_el1, frame.far_el1);
             // SAFETY: `lean_handle_unknown_syscall` is the C-callable wrapper
             // the Lean compiler emits for `Kernel.unknownSyscallEntry`
-            // (`@[export lean_handle_unknown_syscall]`).  Fifteen `u64`s and
+            // (`@[export lean_handle_unknown_syscall]`).  Three `u64`s and
             // its `BaseIO Unit` value, `lean_box(0)`; sound from EL1 exception context once this core's
-            // Lean runtime is initialized (the gate just checked) and inside
-            // the kernel-entry lock (taken below), which serialises its
-            // `IO.Ref` commit.
+            // Lean runtime is initialized (the gate just checked), with the
+            // frame published (`_in_flight` in the handler) and inside the
+            // kernel-entry lock (taken below), which serialises its `IO.Ref`
+            // commit.
             let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
-                lean_handle_unknown_syscall(
-                    core_id, esr, elr, spsr, far, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
-                    sp_el0, g[30],
-                )
+                lean_handle_unknown_syscall(core_id, esr, far)
             });
             // The export returns its `BaseIO Unit` value, `lean_box(0)`,
             // checked outside the bracket so a malformed one halts this PE
@@ -1303,8 +1278,8 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
             crate::kprintln!(
                 "[core {}] unknown syscall delivered and no context restored; halting (x7=0x{:x} ELR=0x{:016x})",
                 core_id,
-                g[7],
-                elr
+                frame.gprs[7],
+                frame.elr_el1
             );
             crate::cpu::fatal_halt();
         }

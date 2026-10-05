@@ -273,6 +273,20 @@ syndrome's `ELR_EL1`, threaded separately, never a register-file read. -/
 @[simp] theorem spill_pc (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile) :
     (w.spill rf).pc = rf.pc := rfl
 
+/-- The spill keeps a word-bounded file word-bounded: every register it writes
+is a `UInt64` read as a `Nat`, and the rest read through. -/
+theorem spill_wordBounded (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile)
+    (hB : rf.wordBounded) : (w.spill rf).wordBounded := by
+  obtain ⟨hPc, _, hPs, hTp, hGpr⟩ := hB
+  refine ⟨hPc, SeLe4n.RegValue.valid_of_uint64 _, hPs, hTp, fun r hr => ?_⟩
+  show SeLe4n.RegValue.valid (if r.val < FaultContext.gprWindow then ⟨(w.gprAt r.val).toNat⟩
+    else if r.val = 30 then ⟨w.lr.toNat⟩ else rf.gpr r)
+  split
+  · exact SeLe4n.RegValue.valid_of_uint64 _
+  · split
+    · exact SeLe4n.RegValue.valid_of_uint64 _
+    · exact hGpr r hr
+
 /-- A register outside the window and the link register reads through to the
 file underneath — the spill overwrites exactly what the trap frame carries. -/
 theorem spill_gpr_outside (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile)

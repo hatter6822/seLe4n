@@ -127,7 +127,7 @@ What each tier is for:
 | Tier | Script | Question it answers |
 |------|--------|---------------------|
 | 0 | `test_tier0_hygiene.sh` | Is the tree well-formed? (code gates: naming, versions, website links, staging partition, axioms, TLBI discipline, cross-target config, de-threading) |
-| 1 | `test_tier1_build.sh` | Does everything compile, including staged modules? |
+| 1 | `test_tier1_build.sh` | Does everything compile, including staged modules? — and, through `test_lean_boundary_layout.sh`, does the compiled Lean place every word of the boundary contexts where the HAL reads it? |
 | 2 | `test_tier2_trace.sh`, `_determinism.sh`, `_negative.sh` | Does the kernel produce the fixture trace, deterministically, and reject bad states? |
 | 3 | `test_tier3_invariant_surface.sh` | Do the named theorems, invariants and code shapes still exist? |
 | 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance on the QEMU `virt` image — the bring-up, the PE-withheld boot and the in-image exercisers execute on both images (WS-BP BP8.4), the per-core counter check on the Lean-linked one alone (BP8.5); the eight gates that need a user program report NOT RUN until SM10's root task |
@@ -159,7 +159,19 @@ mismatch too.
 ./scripts/test_rust.sh                 # host: build, tests, fmt, clippy
 ./scripts/test_aarch64_cross_build.sh  # the kernel's real target
 ./scripts/test_lean_aarch64_archive.sh # the kernel's Lean for that target
+./scripts/test_lean_boundary_layout.sh # the compiled Lean's context layout against the HAL's offsets (host; also run by Tier 1)
 ```
+
+**The boundary layout test needs both toolchains.** `rust/sele4n-lean-boundary`
+links the host Lean archives Lake builds (`SeLe4n:static` and the test-only
+probes' `SeLe4nBoundaryProbes:static`) with the toolchain's `libleanshared`,
+and executes that the compiled `Architecture.TrapContext` and `FpContext` place
+field `i` at scalar offset `8 · i` — where `ffi.rs` reads and writes it — in
+both directions, with a distinct value in every word.  `test_rust.sh` excludes
+the crate from its `cargo test --all` (a Lean-less lane) and the Tier 1 lane
+runs it right after the host archive it reads is built; built without the
+archives, the crate's one test fails naming the script to run, so it is never
+skipped silently.
 
 **Run the cross build after any change under `rust/`.** The tier scripts and
 `test_rust.sh` compile the *host* target, where every

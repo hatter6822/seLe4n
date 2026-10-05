@@ -102,10 +102,16 @@ exactly the 35-word constructor's (`TRAP_CONTEXT_OBJECT_BYTES`), and
 `const` assertions hold `TRAP_FRAME_CONTEXT_WORDS` to 35 and
 `TRAP_CONTEXT_SCALAR_BYTES` to eight times it, so a field added on either side
 alone is refused at run time rather than read past.  Neither pin reaches a
-same-size permutation that is applied consistently on one side — that the
-compiler places the fields in declaration order at `8 · i` is checked today by
-reading the generated C, and an executed cross-language test of it is
-registered debt (`docs/REGISTERED_DEBT.md`, the `TrapContext` layout row). -/
+same-size permutation that is applied consistently on one side — the
+structure, `word` and `ofWords` reordered together, which every proof
+survives — or a compiler that lays scalar fields out other than in declaration
+order; that the compiled Lean places field `i` at `8 · i` is **executed** by
+`rust/sele4n-lean-boundary` (`scripts/test_lean_boundary_layout.sh`, run by
+Tier 1): an object built at the HAL's offsets with a distinct value in every
+word is read by this module's `word` through the test-only exports of
+`SeLe4n/Testing/BoundaryProbes.lean`, and one `ofWords` built is read back at
+the HAL's offsets, in a process that links the compiled host archive and the
+toolchain's runtime. -/
 structure TrapContext where
   /-- `x0`. -/
   x0 : UInt64
@@ -181,8 +187,15 @@ structure TrapContext where
 
 namespace TrapContext
 
-/-- Word `i` of the layout; `0` past it. -/
-def word (c : TrapContext) : Nat → UInt64
+/-- Word `b` of the layout, indexed by a byte — the form the compiler lowers to
+one unboxed compare per arm.  A `match` on `Nat` literals compiles to a chain
+of `lean_nat_dec_eq` on a boxed `Nat` (a scalar test and a pointer compare
+each); `UInt8` literals compile to `lean_uint8_dec_eq`, a plain `==` on a
+`uint8_t` that the C compiler folds into a jump table.  Lean's own IR has no
+literal `switch` (only a constructor `case`), so this is the cheapest form a
+by-name field read can take without an enumeration between the index and the
+field.  `0` past the layout. -/
+def wordOfByte (c : TrapContext) : UInt8 → UInt64
   | 0 => c.x0
   | 1 => c.x1
   | 2 => c.x2
@@ -219,6 +232,17 @@ def word (c : TrapContext) : Nat → UInt64
   | 33 => c.pstate
   | 34 => c.tpidr
   | _ => 0
+
+/-- Word `i` of the layout; `0` past it.  One bound test on the `Nat`, then
+`wordOfByte` on the index narrowed to a byte (`Nat.toUInt8`, exact below the
+bound), so the by-index read is a jump rather than a walk down the layout. -/
+def word (c : TrapContext) (i : Nat) : UInt64 :=
+  if i < trapFrameWordCount then c.wordOfByte i.toUInt8 else 0
+
+/-- A word past the layout reads as `0`. -/
+theorem word_of_ge (c : TrapContext) (i : Nat) (h : ¬ i < trapFrameWordCount) :
+    c.word i = 0 := by
+  simp [word, h]
 
 /-- The context whose word `i` is `w i`.  Inlined, so a caller's `w` is applied
 at each index directly rather than through a closure.
@@ -373,6 +397,16 @@ bytes back, so a resume re-issues the syscall (`Platform.FFI.svcFaultIP`'s
 arithmetic, on the saved context). -/
 def restartAtSvc (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
   { rf with pc := ⟨rf.pc.val - 4⟩ }
+
+/-- Rewinding to the `SVC` keeps a word-bounded file word-bounded: the new `pc`
+is at most the old. -/
+theorem restartAtSvc_wordBounded (rf : SeLe4n.RegisterFile) (hB : rf.wordBounded) :
+    (restartAtSvc rf).wordBounded := by
+  obtain ⟨hPc, hSp, hPs, hTp, hGpr⟩ := hB
+  refine ⟨?_, hSp, hPs, hTp, hGpr⟩
+  have h : rf.pc.val < 2 ^ 64 := hPc
+  show rf.pc.val - 4 < 2 ^ 64
+  omega
 
 /-- **The save an entry performs**: the captured frame, if the HAL published
 one (`Platform.FFI.captureTrapFrame`); a handler with no frame saves nothing.

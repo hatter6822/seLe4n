@@ -1,3 +1,151 @@
+## v0.36.48 — the six rows the #912 audit deferred: the FP/SIMD context, the fault entries and the overflow registers cross the boundary whole, the layout is executed, the word bound is carried
+
+Works the six debt rows registered at `v0.36.47` by the audit of PR #912:
+five close, and the `Nat`-backed register-file row stays, shortened to what
+remains (the bundle conjunct, the boot-state census and the model change).  Extern calls
+per operation after this cut: a fault or unknown-syscall entry 3 scalars where
+it took 15; an FP owner switch 3 calls where it was 134; a 116-word IPC's
+overflow registers 1 call where it was 112.
+
+
+- **The syscall seam decodes the message info from the one trapped `x1`**
+  (closes the `msgInfo`-twice row).  `Platform.FFI.syscallDispatchFromAbi`,
+  `abiEntryPlan`, `declaredSchedLockSetForAbiEntry`,
+  `declaredUnifiedLockSetForAbiEntry`, `syscallDispatchCrossCoreStep` and the
+  bracketed step lost their `msgInfo` parameter; the dispatcher decodes it from
+  `x1` inside.  The `msgInfo ≠ x1` guard — reachable only from a host test,
+  since the entry read both words from the one `TrapContext` — is deleted with
+  its theorem (`syscallDispatchFromAbi_abiMismatch_rejected`), its host test
+  (`sd034_dispatch_abiMismatch`) and its fixture line
+  (`tests/fixtures/syscall_return_abi.expected`).  33 sites in 17 files.
+- **`lean_handle_fault` and `lean_handle_unknown_syscall` take
+  `(core_id, esr, far)`** — three scalars where they took fifteen (closes the
+  fault-window-twice row).  `elr`, `spsr`, `x0`–`x7`, `sp` and `lr` are read
+  from the published frame through the pure `Kernel.faultEntryFrame?`, which
+  fails closed on a missing context exactly as `syscallEntryContextOrFaulted`
+  does (`faultEntryFrame?_none`, host test §6g of
+  `tests/FaultHandlingSuite.lean`); `trap.rs`, the extern declarations and the
+  export-signature gate's expectations follow.
+- **A sender's overflow message registers are read in runs**
+  (`ffi_read_user_words base count`, answered as a `ByteArray` of `8·count`
+  bytes; closes the per-word overflow row).  `readCallerOverflowWords` groups
+  the slot addresses into same-page contiguous runs
+  (`IpcBufferRead.wordRuns`, `wordRuns_within_page`), so a 116-word IPC costs
+  one extern call (two when the 512-byte-aligned buffer's slots 64–115 straddle
+  a page) where it cost 112; the HAL refuses a run that leaves its page
+  (`user_word_run_admissible`, unit-tested: exact run, crossing refused,
+  zero-length) and Lean fails closed with the `.faulted` tag on a batch of the
+  wrong size (`overflowWordsOrFaulted`, `sd037_overflowWordsCrossInRuns`).
+  `ffiReadUserWord` / `ffi_read_user_word` are retired; `syncUserWords` is
+  unchanged.
+- **The `Nat`-backed register file's cheap wins** (the row stays, shortened to
+  the bundle conjunct, the boot-state census and the model change).
+  `TrapContext.word` is one bound test and a byte-indexed `match`
+  (`TrapContext.wordOfByte`): the generated C went from a chain of 35
+  `lean_nat_dec_eq` on a boxed `Nat` to one `lean_nat_dec_lt` and 35
+  `lean_uint8_dec_eq` on an unboxed byte, which clang lowers to a jump table
+  (`cmp w8, #34; b.hi; adrp .LJTI; br` on aarch64).  The bracketed syscall
+  step takes `trapped : Architecture.TrapContext`, so the closure
+  `modifyGetKernelState` is handed captures 6 slots where it captured 16
+  (`syscallDispatchCrossCoreEntry_def` still `rfl`).
+  `Kernel.Architecture.registerContextsWordBounded`
+  (`SeLe4n/Kernel/Architecture/RegisterContextBounded.lean`) carries
+  `RegisterFile.wordBounded` for every TCB's saved context and every core's
+  bank, with a preservation theorem for every register-context writer —
+  `saveTrapFrameOnCore`, `saveVacatedFrameOnCore`, `saveCapturedTrapFrame(At)`,
+  `saveCapturedSyscallFrame(At)`, `writeReturnFrameToTcb`,
+  `writeRestartFrameToTcb`, `writeFaultRegistersToTcb`,
+  `writeFfiRegistersToTcb`, `saveOutgoingContext(OnCore)`,
+  `restoreIncomingContext(OnCore)(UnlessCurrent)`, `dispatchIdleOnCore`,
+  `preemptCurrentOnCore`, `switchToThreadOnCore`, `Adapter.writeRegisterState`
+  — on the pure writers' lemmas (`writeReg_wordBounded`,
+  `stageReturnFrame_wordBounded`, `stageRestartFrame_wordBounded`,
+  `FaultRegisterWindow.spill_wordBounded`, `restartAtSvc_wordBounded`,
+  `RegisterFile.default_wordBounded`, `timeoutStagedTcb_registerContext_wordBounded`),
+  and `restoreTargetOnCore_user_roundTrip` discharges
+  `registerFileOfTrapContext_trapContextOfRegisterFile`'s hypothesis on the
+  restore path **from `registerContextsWordBounded st` as a hypothesis**: the
+  predicate is preserved by every writer but is not yet a bundle conjunct nor
+  established of the boot state (the shortened debt row owns both), so the
+  round trip is a live guarantee only once the row closes.
+- **The FP/SIMD context crosses the Lean boundary whole, in one call each
+  way** (closes the `v0.36.47` row "The FP/SIMD context still crosses the
+  Lean boundary one word per call").  `FpContext` is now a structure of 66
+  `UInt64` fields (`v0Lo`, `v0Hi` … `v31Hi`, `fpcr`, `fpsr`: 528 scalar
+  bytes, one constructor object, field `i` at offset `8 · i`) in place of the
+  `Vector UInt64 64` plus two fields it was, with the same shape of proof as
+  `TrapContext`: `FpContext.ofWords_word`, `FpContext.word_ofWords`,
+  `FpContext.ofWords_congr`, `FpContext.word_of_count_le`, and
+  `FpContext.default_word` (the fresh thread's context is every word `0`;
+  `FpContext` is `UInt64`-backed, so no `wordBounded` statement arises).
+  `Platform.FFI.ffiFpCapture : BaseIO FpContext` saves the registers and hands
+  the whole context over, and `ffiFpStageContext : (@& FpContext) → BaseIO
+  Unit` stages it before `ffiFpLoadCommit`; `ffiFpCapturedWord` and
+  `ffiFpStageWord` are retired with `ffi_fp_captured_word`,
+  `ffi_fp_stage_word`, `fp_context::captured_word`, `stage_word(_in)`,
+  `staged_word` and `FpBuffer::{word,set_word}`.  **Extern calls on the FP
+  owner-switch path**: a capture is 1 call where it was 67
+  (`ffiFpCapture` + 66 `ffiFpCapturedWord`), a load 2 where it was 67 (66
+  `ffiFpStageWord` + `ffiFpLoadCommit`); an owner switch that captures and
+  loads is 3 where it was 134.  On the Rust side the question "is this object
+  a constructor of exactly `N` `UInt64` fields" has one owner for both
+  contexts, `ffi::scalar_words_of_lean` / `scalar_words_to_lean`
+  (`trap_context_of_lean` and the new `fp_context_of_lean` are its
+  35- and 66-word instances), refusing any allocated size but the
+  constructor's — `FP_CONTEXT_OBJECT_BYTES`, 536, `const`-asserted to be a
+  small-object size class — and `ffi_fp_stage_context` halts every PE on a
+  refused object or core, as `ffi_restore_stage_context` does.  Rust tests:
+  the 66-word round trip at offsets `8 · i`, refusal of another tag, of
+  object fields, of a `TrapContext` (and of an `FpContext` by
+  `trap_context_of_lean`), of shorter and longer same-header objects, of a
+  pointer outside the heap and a freed object, the host capture's encoding,
+  and the stage entry's staging and both halts.  Lean: `tests/
+  FaultHandlingSuite.lean` §4c step 8 drives a context with a distinct value
+  in every one of the 66 words through `word`, `ofWords`, the default and a
+  release into the TCB.
+- **An executed cross-language layout test** (closes the `v0.36.47` row
+  "Nothing executed checks that the compiled Lean `Architecture.TrapContext`
+  places its 35 `UInt64` fields in declaration order at scalar offset
+  `8 · i`").  `rust/sele4n-lean-boundary` is a host test crate that links the
+  compiled host Lean archive (`lake build SeLe4n:static`), a test-only
+  library of `@[export]` probes (`SeLe4n/Testing/BoundaryProbes.lean`,
+  `lake build SeLe4nBoundaryProbes:static`; outside `SeLe4n.lean`'s closure,
+  so nothing of it reaches the kernel's archive) and the toolchain's
+  `libleanshared`, initialises the runtime and the module, and — with the
+  toolchain's own `lean.h` operations (`shim.c`), not the HAL's runtime —
+  builds objects at the HAL's offsets with a distinct value in every word and
+  asks the compiled Lean's `TrapContext.word` / `FpContext.word` for each;
+  runs `trapContextOfRegisterFile ∘ registerFileOfTrapContext` and
+  `FpContext.ofWords ∘ FpContext.word` and reads every word back at `8 · i`;
+  reads objects the compiled Lean built (`ofWords` of a seed) back at the
+  HAL's offsets and holds them to the HAL's sizes (288 and 536 bytes); and
+  decodes the `Option TrapContext` encoding `ffi_trap_context` answers.
+  **Permutation detection, verified**: with `x5` and `x6` swapped in the
+  `TrapContext` structure and in `ofWords` consistently, every proof still
+  compiles and the four `TrapContext` tests fail on word 5 (the compiled
+  `word 5` reads the HAL's word 6, and the Lean-built object holds word 6 at
+  offset 40), with the fields restored all eight pass.  Wired into Tier 1
+  (`scripts/test_lean_boundary_layout.sh`, right after the host static
+  archive `test_tier1_build.sh` already builds): it needs `lake` and
+  `cargo` and fails rather than skips without either or without the
+  archives; `test_rust.sh`'s Lean-less `cargo test --all` excludes the crate
+  (built without the archives its one test fails naming what to run, so the
+  exclusion is visible, not a skip) and still builds, formats and lints it.
+  `libgcc_s` is linked ahead of `libleanshared`, whose bundled libunwind
+  would otherwise interpose on Rust's unwinder and turn a failed assertion
+  into an abort.
+- **Housekeeping found along the way.**  `scripts/install_git_hooks.sh`
+  installed into `rev-parse --git-dir`'s `hooks/`, which in a linked worktree
+  is `.git/worktrees/<name>/hooks` — a directory git never consults — so a
+  hook installed from a worktree ran nowhere and `--check` reported one that
+  did run as missing; it now targets `rev-parse --git-path hooks`, the
+  directory git reads (common `.git/hooks`, or `core.hooksPath`).  The fast CI
+  lane installs the pinned Rust toolchain, since Tier 1 now runs the boundary
+  layout crate.  `scripts/check_identifier_naming.py` classifies `.c` with
+  its C stripper (the shim the layout crate compiles), and
+  `scripts/version_locations.sh` counts the five `sele4n-*` crates in
+  `Cargo.lock`.
+
 ## v0.36.47 — the user context crosses the Lean boundary in one call each way; syscall arguments are read once
 
 - **Bulk trap-frame transfer.**  Every kernel entry that saves or restores a

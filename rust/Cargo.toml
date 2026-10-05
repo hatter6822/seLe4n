@@ -5,11 +5,16 @@ members = [
     "sele4n-abi",
     "sele4n-sys",
     "sele4n-hal",
+    # The host boundary-layout test: links the compiled host Lean archives and
+    # the toolchain's runtime, which `scripts/test_lean_boundary_layout.sh`
+    # supplies; without them the crate still builds and its one test fails
+    # naming what is missing.
+    "sele4n-lean-boundary",
 ]
 
 [workspace.package]
-# Version tracks the Lean lakefile.toml version (currently 0.36.47)
-version = "0.36.47"
+# Version tracks the Lean lakefile.toml version (currently 0.36.48)
+version = "0.36.48"
 edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/hatter6822/seLe4n"

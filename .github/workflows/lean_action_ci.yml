@@ -113,6 +113,27 @@ jobs:
             sleep "${backoff}"
           done
 
+      # Tier 1 runs `scripts/test_lean_boundary_layout.sh`, which builds and
+      # tests the `sele4n-lean-boundary` crate against the host Lean archive,
+      # so the fast lane needs the same pinned toolchain as the Rust job (the
+      # lane fails rather than skips without `cargo`).  Same SHA pin as below.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-cargo-fast-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-fast-
+
       - name: Run fast gate
         run: ./scripts/ci_capture_timing.sh fast ./scripts/test_fast.sh
 

@@ -113,10 +113,9 @@ The point of naming it is `abiEntryPlan_dispatches` below: a footprint resolved
 from a decode the dispatch does not use is a footprint for a different
 operation. -/
 def abiEntryPlan (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
     Option (SeLe4n.ThreadId × SyscallDecodeResult × SystemState) :=
-  if msgInfo != x1 then none
-  else if isInsecureDefaultContext ctx then none
+  if isInsecureDefaultContext ctx then none
   else
     match st.scheduler.currentOnCore executingCore with
     | none => none
@@ -142,12 +141,12 @@ operation the kernel executes.  A new validation step in the prefix, or a
 normalisation applied to the decode, stops this elaborating rather than silently
 leaving the bracket around a different syscall. -/
 theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
     (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stFilled : SystemState)
-    (h : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
           = some (tid, decoded, stFilled)) :
-    Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId msgInfo
+    Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
       = (match dispatchSyscallChecked ctx decoded tid executingCore stFilled with
          | .error ke =>
@@ -169,42 +168,37 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
              .ok (Platform.FFI.syscallReturnOutcome syscallId st' tid, st')) := by
   unfold abiEntryPlan at h
   unfold Platform.FFI.syscallDispatchFromAbi
-  by_cases hAbi : msgInfo != x1
-  · rw [if_pos hAbi] at h; exact absurd h (by simp)
-  · rw [if_neg hAbi] at h
-    simp only [Bool.not_eq_true, bne_eq_false_iff_eq] at hAbi
-    rw [if_neg (by simpa using hAbi)]
-    by_cases hCtx : isInsecureDefaultContext ctx
-    · rw [if_pos hCtx] at h; exact absurd h (by simp)
-    · rw [if_neg hCtx] at h
-      cases hCur : st.scheduler.currentOnCore executingCore with
-      | none => rw [hCur] at h; exact absurd h (by simp)
-      | some tid' =>
-        rw [hCur] at h
+  by_cases hCtx : isInsecureDefaultContext ctx
+  · rw [if_pos hCtx] at h; exact absurd h (by simp)
+  · rw [if_neg hCtx] at h
+    cases hCur : st.scheduler.currentOnCore executingCore with
+    | none => rw [hCur] at h; exact absurd h (by simp)
+    | some tid' =>
+      rw [hCur] at h
+      simp only at h
+      cases hRegs : lookupThreadRegisterContext tid'
+          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
+      | error e => rw [hRegs] at h; exact absurd h (by simp)
+      | ok regsPair =>
+        obtain ⟨regs, _⟩ := regsPair
+        rw [hRegs] at h
         simp only at h
-        cases hRegs : lookupThreadRegisterContext tid'
-            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
-        | error e => rw [hRegs] at h; exact absurd h (by simp)
-        | ok regsPair =>
-          obtain ⟨regs, _⟩ := regsPair
-          rw [hRegs] at h
-          simp only at h
-          cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-              (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
-              tid' SeLe4n.arm64DefaultLayout regs 32 with
-          | error e => rw [hDec] at h; exact absurd h (by simp)
-          | ok decoded' =>
-            rw [hDec] at h
-            simp only [Option.some.injEq, Prod.mk.injEq] at h
-            obtain ⟨hTid, hDecoded, hFilled⟩ := h
-            subst hTid; subst hDecoded; subst hFilled
-            -- `syscallEntryChecked` reads the caller off the **spilled** state;
-            -- the spill frames the scheduler, so it reads the same caller.
-            have hSched := Platform.FFI.writeFfiRegistersToTcb_scheduler st tid'
-              syscallId x0 x1 x2 x3 x4 x5
-            simp only [syscallEntryChecked, hCtx, hSched, hCur, hRegs, hDec,
-              Bool.false_eq_true, if_false]
-            rfl
+        cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+            tid' SeLe4n.arm64DefaultLayout regs 32 with
+        | error e => rw [hDec] at h; exact absurd h (by simp)
+        | ok decoded' =>
+          rw [hDec] at h
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨hTid, hDecoded, hFilled⟩ := h
+          subst hTid; subst hDecoded; subst hFilled
+          -- `syscallEntryChecked` reads the caller off the **spilled** state;
+          -- the spill frames the scheduler, so it reads the same caller.
+          have hSched := Platform.FFI.writeFfiRegistersToTcb_scheduler st tid'
+            syscallId x0 x1 x2 x3 x4 x5
+          simp only [syscallEntryChecked, hCtx, hSched, hCur, hRegs, hDec,
+            Bool.false_eq_true, if_false]
+          rfl
 
 -- ============================================================================
 -- §2  The operands, from the capability the decode addresses
@@ -458,9 +452,9 @@ is running, and the operands that caller's capability names — every input
 derived from the entry's own resolution rather than supplied alongside it.  A
 caller cannot bracket one syscall's footprint around another's. -/
 def declaredLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
     Option LockSet :=
-  match abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with
+  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => none
   | some (tid, decoded, stFilled) =>
     (abiEntryLockOperands decoded tid stFilled).bind
@@ -474,17 +468,17 @@ dispatch runs on.
 Stated rather than left to a reader of the definition, so a future cut that
 reintroduces an independent argument has to break a proof to do it. -/
 theorem declaredLockSetForAbiEntry_binds_decode (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState) (S : LockSet)
-    (h : declaredLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (h : declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
           = some S) :
     ∃ tid decoded stFilled ops,
-      abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
         = some (tid, decoded, stFilled) ∧
       abiEntryLockOperands decoded tid stFilled = some ops ∧
       lockSetForSyscall decoded.syscallId ops stFilled = some S := by
   unfold declaredLockSetForAbiEntry at h
-  cases hPlan : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with
+  cases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => rw [hPlan] at h; exact absurd h (by simp)
   | some triple =>
     obtain ⟨tid, decoded, stFilled⟩ := triple

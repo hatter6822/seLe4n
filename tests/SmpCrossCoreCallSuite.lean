@@ -1200,20 +1200,20 @@ private def bracketState : SystemState :=
   base
 
 /-- The ABI words of a `.tcbSuspend` on the capability at slot 1:
-`syscallId = 20`, `msgInfo = 0`, `x0 = 1` (the CPtr), `x1..x5 = 0`. -/
+`syscallId = 20`, `x0 = 1` (the CPtr), `x1..x5 = 0`. -/
 private def bracketDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 private def bracketPlan (st : SystemState) :
     Option (SeLe4n.ThreadId × SyscallDecodeResult × SystemState) :=
   abiEntryPlan harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The step the bracket wraps, at those same words. -/
 private def bracketStepFn (st : SystemState) :=
   syscallDispatchCrossCoreStep harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
     (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
 
 /-- Which arm of the bracket this entry takes, as the bracket itself computes
@@ -1223,23 +1223,21 @@ private def bracketOutcome (st : SystemState) :=
 
 private def bracketRun (st : SystemState) :=
   syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
-    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+    (syscallId := 20) (trapped := { (default : Architecture.TrapContext) with x0 := 1 }) st
 
 /-- `.cspaceMint` (id 4) — an arm this cut leaves undeclared, for the fallback. -/
 private def undeclaredRun (st : SystemState) :=
   syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
-    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
-    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+    (syscallId := 4) (trapped := { (default : Architecture.TrapContext) with x0 := 1 }) st
 
 private def undeclaredBare (st : SystemState) :=
   syscallDispatchCrossCoreStep harnessLabelingContext bootCoreId
-    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
     (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
 
 private def undeclaredDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- **WS-OD OD3.5**: `.replyRecv`'s footprint declares for a delegated reply,
 and names the recorded server's TCB.
@@ -1415,12 +1413,12 @@ footprints are functions of are one decode, so neither domain can bracket one
 syscall's locks around another's transition. -/
 private def bracketSchedDecl (st : SystemState) : Option SchedLockSet :=
   declaredSchedLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The same entry's scheduler-domain footprint at an **undeclared** arm. -/
 private def undeclaredSchedDecl (st : SystemState) : Option SchedLockSet :=
   declaredSchedLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The same state with the victim **active**, so the suspend arm's footprint is
 its full one rather than the `.Inactive` refusal's.  One field apart from
@@ -1515,12 +1513,12 @@ lock *words* — `schedAcquireLock`'s `.object` arm calls SM3.C's own
 brackets that would take the object-store table lock twice. -/
 private def bracketUnifiedDecl (st : SystemState) : Option SchedLockSet :=
   declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The same entry at an **undeclared** arm. -/
 private def undeclaredUnifiedDecl (st : SystemState) : Option SchedLockSet :=
   declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- **Cut C6h**: every mutation of the production side here fails to ELABORATE
 rather than failing this suite — the membership theorems and the bracket's own

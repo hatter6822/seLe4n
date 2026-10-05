@@ -1501,7 +1501,13 @@ HAL publishes the in-flight frame** for a handler's duration
 displaced), and the Lean entry reads it whole, in one call, before its atomic step
 (`Platform.FFI.captureTrapFrame` over `ffiTrapContext`, `trap::TRAP_FRAME_CONTEXT_WORDS`: `x0`–`x30`,
 `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, and since v0.36.30 `TPIDR_EL0`, which EL0
-writes with no trap — until then a thread read the previous thread's value).  (3) **Every state-committing trap entry saves
+writes with no trap — until then a thread read the previous thread's value;
+since v0.36.47 as the 35-field `Architecture.TrapContext` in one call each way,
+and the compiled layout — field `i` at scalar offset `8 · i`, where the HAL
+reads it — is **executed** by `rust/sele4n-lean-boundary` through
+`scripts/test_lean_boundary_layout.sh` in Tier 1, linking the compiled host
+archive and the toolchain's runtime; a same-size permutation of the structure
+that every proof survives fails it).  (3) **Every state-committing trap entry saves
 it** — the syscall seam, the fault and unknown-syscall entries, the timer tick
 and the `.reschedule` receiver — into **both** the executing core's bank and the
 current thread's `registerContext` (`Architecture.saveTrapFrameOnCore`), so
@@ -1609,7 +1615,10 @@ VSpace, eight-byte aligned, declared RAM, and writable when `needWrite`) is what
 the seam reads and what a delivery writes; a new path touching a thread's buffer
 asks it, never `root.lookup` directly.  (2) **The model holds no thread's memory,
 so a read of it is synced first**: the syscall seam reads the caller's words from
-RAM (`readCallerOverflowWords`, `ffi_read_user_word`) and writes them in with
+RAM (`readCallerOverflowWords` — in contiguous same-page runs since the
+`v0.36.47` audit, one `ffi_read_user_words` call per run answering a
+`ByteArray`; `IpcBufferRead.wordRuns`, `expandRuns_wordRuns`,
+`wordRuns_within_page`) and writes them in with
 `syncUserWords` in the atomic step before the decode — `ipcBufferReadMr_syncUserWord`
 is the relation, over `writeUInt64` and `readUInt64_writeUInt64`.  A new kernel
 read of user memory is synced the same way.  (3) **A write to a thread's memory is
@@ -1657,8 +1666,20 @@ the disassembly gate exempts the two FP routines **by symbol**, reconciled both
 ways.  (6) **A thread a core's registers still hold is not destroyed**
 (`threadHeldOnSomeCore`, `.revocationRequired`): the release would otherwise
 write a destroyed thread's values into whatever TCB the retype creates under its
-id.  `retypeTargetDetached` carries `tcbFpReleased` for the payoff.  Executing
-the switch on the image is BP8's.
+id.  `retypeTargetDetached` carries `tcbFpReleased` for the payoff.  (7) **The
+context crosses the boundary whole, in one call each way** (the FFI slice after
+PR #912): `FpContext` is a structure of 66 `UInt64` fields (528 scalar bytes,
+field `i` at offset `8 · i`), handed over by `ffiFpCapture` and staged by
+`ffiFpStageContext` before `ffiFpLoadCommit` — 1 and 2 extern calls where each
+direction was 67 — with the encode/decode trip proved
+(`FpContext.ofWords_word`, `word_ofWords`, `ofWords_congr`, `default_word`),
+the HAL refusing any allocated size but the constructor's 536 bytes
+(`ffi::scalar_words_of_lean`, the one owner of both contexts' shape), and
+the compiled layout executed against the HAL's offsets by the cross-language
+test below.  A new boundary context takes the same shape: all-`UInt64` fields,
+positional `ofWords` against by-name `word`, the exact-size refusal, and a
+probe in `SeLe4n/Testing/BoundaryProbes.lean`.  Executing the switch on the
+image is BP8's.
 
 **The boot starts both initial threads, one per domain** (`v0.36.23`, BP7.11).
 Until then every configured thread was installed `.Inactive` and nothing ever
@@ -6336,8 +6357,10 @@ code may assume:
   between syscalls holds the *last syscall's* arguments, so a context built
   from it alone would report a stale argument window and, on a payload-free
   resume, reinstall it over the thread's live registers.  `lean_handle_fault`
-  therefore takes fifteen words, and new code must not build a fault context
-  off the mirror without spilling first.  (7) The entry derives its cross-core
+  therefore spills the trap frame's window first — since the `v0.36.47` audit
+  it takes three words (the core, `ESR_EL1`, `FAR_EL1`) and decodes the window
+  once from the published in-flight frame (`faultEntryFrame?`) — and new code
+  must not build a fault context off the mirror without spilling first.  (7) The entry derives its cross-core
   pokes from the pre/post **diff** (`computeCrossCoreSgis`), as the syscall
   seam does, never from the single SGI the Call chain surfaces; and it runs
   the executing core's successor through `scheduleLocalSuccessor`, live since

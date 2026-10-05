@@ -425,4 +425,200 @@ theorem ipcBufferReadMr_syncUserWord (st : SystemState) (tid : ThreadId)
   rw [ipcBufferReadMr_of_slotPAddr? _ tid tcb idx false pa hTcb' hPa', syncUserWord_memory,
     SeLe4n.Kernel.Architecture.readUInt64_writeUInt64]
 
+-- ============================================================================
+-- `v0.36.47` audit — the overflow words cross the boundary in runs
+-- ============================================================================
+
+/-- The page the HAL bounds a run against: its `PAGE_BYTES`
+(`rust/sele4n-hal/src/user_translation.rs`), the 4 KiB page `pageOffset` and
+`ipcBufferSlotPage` already assume. -/
+def wordRunPageBytes : Nat := 4096
+
+/-- **The contiguous runs of a list of word addresses** (`v0.36.47` audit):
+`(base, n)` names the `n` eight-byte words `base, base + 8, …`, and a run is
+extended only by the next address of the same page, so every run lies in one
+page and the HAL translates it once.  The sender's overflow slots are such a
+list (`callerOverflowAddrs`) — consecutive words of a 512-byte-aligned buffer —
+so on a buffer that does not straddle a page boundary the whole message is one
+run, and on one that does it is two.  Nothing is dropped and nothing is
+reordered: `expandRuns_wordRuns` says the runs are the list. -/
+def wordRuns : List PAddr → List (PAddr × Nat)
+  | [] => []
+  | pa :: rest =>
+    match wordRuns rest with
+    | (base, n) :: runs =>
+        if base.toNat = pa.toNat + 8 ∧
+            pa.toNat / wordRunPageBytes = base.toNat / wordRunPageBytes then
+          (pa, n + 1) :: runs
+        else (pa, 1) :: (base, n) :: runs
+    | [] => [(pa, 1)]
+
+/-- The addresses a run names, in order. -/
+def expandRun (run : PAddr × Nat) : List PAddr :=
+  (List.range run.2).map (fun i => PAddr.ofNat (run.1.toNat + 8 * i))
+
+/-- The addresses a list of runs names, in order. -/
+def expandRuns (runs : List (PAddr × Nat)) : List PAddr := runs.flatMap expandRun
+
+theorem PAddr.ofNat_toNat (a : PAddr) : PAddr.ofNat a.toNat = a := rfl
+
+/-- A run grown by its predecessor word names that word and then the run. -/
+theorem expandRun_succ (pa base : PAddr) (n : Nat) (h : base.toNat = pa.toNat + 8) :
+    expandRun (pa, n + 1) = pa :: expandRun (base, n) := by
+  simp only [expandRun, List.range_succ_eq_map, List.map_cons, List.map_map, Nat.mul_zero,
+    Nat.add_zero, PAddr.ofNat_toNat, List.cons.injEq, true_and]
+  apply List.map_congr_left
+  intro i _
+  simp only [Function.comp, h]
+  congr 1
+  omega
+
+/-- **The runs are the list**: expanding the runs of `addrs` gives back `addrs`,
+so the batch reads exactly the words the per-word loop read, in the same
+order, and `syncUserWords` receives the same `(address, word)` pairs. -/
+theorem expandRuns_wordRuns : ∀ addrs : List PAddr, expandRuns (wordRuns addrs) = addrs
+  | [] => rfl
+  | pa :: rest => by
+    have ih := expandRuns_wordRuns rest
+    simp only [wordRuns]
+    split
+    · rename_i base n runs hRuns
+      rw [hRuns] at ih
+      split
+      · rename_i hNext
+        simp only [expandRuns, List.flatMap_cons] at ih ⊢
+        rw [expandRun_succ pa base n hNext.1, List.cons_append, ih]
+      · simp only [expandRuns, List.flatMap_cons] at ih ⊢
+        rw [ih]
+        rfl
+    · rename_i hRuns
+      rw [hRuns] at ih
+      simp only [expandRuns, List.flatMap_nil] at ih
+      subst ih
+      rfl
+
+/-- Every run names at least one word. -/
+theorem wordRuns_pos : ∀ (addrs : List PAddr) (run : PAddr × Nat),
+    run ∈ wordRuns addrs → 0 < run.2
+  | [], _, h => by simp [wordRuns] at h
+  | pa :: rest, run, h => by
+    simp only [wordRuns] at h
+    split at h
+    · rename_i base n runs hRuns
+      split at h
+      · rcases List.mem_cons.mp h with rfl | hMem
+        · exact Nat.succ_pos _
+        · exact wordRuns_pos rest run (hRuns ▸ List.mem_cons_of_mem _ hMem)
+      · rcases List.mem_cons.mp h with rfl | hMem
+        · exact Nat.one_pos
+        · exact wordRuns_pos rest run (hRuns ▸ hMem)
+    · rcases List.mem_singleton.mp h with rfl
+      exact Nat.one_pos
+
+/-- **Every word of a run is in the run's page**: a run is only ever extended
+by the next word of the same page. -/
+theorem wordRuns_same_page : ∀ (addrs : List PAddr) (run : PAddr × Nat),
+    run ∈ wordRuns addrs → ∀ a ∈ expandRun run,
+      a.toNat / wordRunPageBytes = run.1.toNat / wordRunPageBytes
+  | [], _, h => by simp [wordRuns] at h
+  | pa :: rest, run, h => by
+    simp only [wordRuns] at h
+    split at h
+    · rename_i base n runs hRuns
+      split at h
+      · rename_i hNext
+        rcases List.mem_cons.mp h with rfl | hMem
+        · intro a ha
+          rw [expandRun_succ pa base n hNext.1] at ha
+          rcases List.mem_cons.mp ha with rfl | ha'
+          · rfl
+          · have := wordRuns_same_page rest (base, n) (hRuns ▸ List.mem_cons_self) a ha'
+            simp only at this ⊢
+            rw [this, hNext.2]
+        · exact wordRuns_same_page rest run (hRuns ▸ List.mem_cons_of_mem _ hMem)
+      · rcases List.mem_cons.mp h with rfl | hMem
+        · intro a ha
+          simp only [expandRun, List.range_one, List.map_cons, List.map_nil, Nat.mul_zero,
+            Nat.add_zero, PAddr.ofNat_toNat, List.mem_singleton] at ha
+          rw [ha]
+        · exact wordRuns_same_page rest run (hRuns ▸ hMem)
+    · rcases List.mem_singleton.mp h with rfl
+      intro a ha
+      simp only [expandRun, List.range_one, List.map_cons, List.map_nil, Nat.mul_zero,
+        Nat.add_zero, PAddr.ofNat_toNat, List.mem_singleton] at ha
+      rw [ha]
+
+/-- The words a run names are words of the list. -/
+theorem mem_of_mem_expandRun_wordRuns (addrs : List PAddr) (run : PAddr × Nat)
+    (hRun : run ∈ wordRuns addrs) (a : PAddr) (ha : a ∈ expandRun run) : a ∈ addrs := by
+  rw [← expandRuns_wordRuns addrs]
+  simp only [expandRuns, List.mem_flatMap]
+  exact ⟨run, hRun, ha⟩
+
+/-- **The kernel never asks the HAL for a run it refuses**: over eight-byte
+aligned words, every run of `wordRuns` lies within its page —
+`base % 4096 + 8 · n ≤ 4096`, the bound `user_word_run_admissible` checks. -/
+theorem wordRuns_within_page (addrs : List PAddr)
+    (hAligned : ∀ a ∈ addrs, a.toNat % 8 = 0) (run : PAddr × Nat)
+    (hRun : run ∈ wordRuns addrs) :
+    run.1.toNat % wordRunPageBytes + 8 * run.2 ≤ wordRunPageBytes := by
+  obtain ⟨base, n⟩ := run
+  have hPos : 0 < n := wordRuns_pos addrs (base, n) hRun
+  -- The run's last word is a word of the list: aligned, and in `base`'s page.
+  have hLast : PAddr.ofNat (base.toNat + 8 * (n - 1)) ∈ expandRun (base, n) := by
+    simp only [expandRun, List.mem_map, List.mem_range]
+    exact ⟨n - 1, by omega, rfl⟩
+  have hAl := hAligned _ (mem_of_mem_expandRun_wordRuns addrs (base, n) hRun _ hLast)
+  have hPage := wordRuns_same_page addrs (base, n) hRun _ hLast
+  simp only [PAddr.toNat, PAddr.ofNat, wordRunPageBytes] at hAl hPage ⊢
+  omega
+
+/-- **The `count` little-endian words a batch read answered** (`v0.36.47`
+audit), or nothing when the HAL answered any other number of bytes.  A
+`ByteArray` is one scalar allocation of `8 · count` bytes — no word is boxed on
+the way over, and the decode reads unboxed bytes — which is why the HAL answers
+in this form rather than an `Array UInt64` of heap cells. -/
+def wordsOfBytes (count : Nat) (bytes : ByteArray) : Option (List UInt64) :=
+  if bytes.size = 8 * count then
+    some ((List.range count).map fun i =>
+      (List.range 8).foldl
+        (fun acc j => acc ||| ((bytes[8 * i + j]!).toUInt64 <<< (8 * j).toUInt64)) 0)
+  else none
+
+/-- A decoded batch has exactly the run's count of words. -/
+theorem wordsOfBytes_length (count : Nat) (bytes : ByteArray) (ws : List UInt64)
+    (h : wordsOfBytes count bytes = some ws) : ws.length = count := by
+  unfold wordsOfBytes at h
+  split at h
+  · cases h; simp
+  · cases h
+
+/-- The batches of a list of runs, decoded run by run and concatenated — or
+nothing when any batch is not its run's `8 · n` bytes, or the HAL answered a
+different number of batches than there are runs. -/
+def wordsOfBatches : List (PAddr × Nat) → List ByteArray → Option (List UInt64)
+  | [], [] => some []
+  | (_, n) :: runs, bytes :: rest => do
+      let ws ← wordsOfBytes n bytes
+      let more ← wordsOfBatches runs rest
+      pure (ws ++ more)
+  | _, _ => none
+
+/-- A decoded batch list has one word per run word. -/
+theorem wordsOfBatches_length : ∀ (runs : List (PAddr × Nat)) (batches : List ByteArray)
+    (ws : List UInt64), wordsOfBatches runs batches = some ws →
+      ws.length = (expandRuns runs).length
+  | [], [], ws, h => by
+      simp only [wordsOfBatches, Option.some.injEq] at h; subst h; rfl
+  | (_, n) :: runs, bytes :: rest, ws, h => by
+      simp only [wordsOfBatches, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+        Option.some.injEq] at h
+      obtain ⟨w, hw, more, hmore, rfl⟩ := h
+      simp only [expandRuns, List.flatMap_cons, List.length_append, List.length_append,
+        wordsOfBytes_length n bytes w hw,
+        wordsOfBatches_length runs rest more hmore, expandRun, List.length_map,
+        List.length_range]
+  | [], _ :: _, _, h => by simp [wordsOfBatches] at h
+  | _ :: _, [], _, h => by simp [wordsOfBatches] at h
+
 end SeLe4n.Kernel.Architecture.IpcBufferRead
