@@ -5742,7 +5742,13 @@ requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
 2. Enables the wildcard unreachability proof (`dispatchWithCap_wildcard_unreachable`)
    showing all 25 `SyscallId` variants are handled by one of the two tiers
 3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
-The wildcard `| _ =>` arm is provably dead code (W2-C). -/
+The wildcard `| _ =>` arm is provably dead code (W2-C).
+
+**The caller/core pair.**  This tier takes `tid` and `executingCore` as given.
+Every entry reaches it through `dispatchSyscall`/`dispatchSyscallChecked`, whose
+first step refuses a `tid` that is not current on `executingCore`
+(`dispatchSyscall_ok_caller_current`, `dispatchSyscallChecked_ok_caller_current`),
+so it only ever runs on a consistent pair. -/
 def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
   match dispatchCapabilityOnly decoded cap tid executingCore with
@@ -6224,7 +6230,13 @@ in the `SyscallId` enum and wired into both dispatch paths. The checked variants
 `notificationSignalChecked`, `notificationWaitChecked`, and
 `endpointReplyRecvChecked` gate cross-domain flows.
 
-V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`. -/
+V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`.
+
+**The caller/core pair.**  This tier takes `tid` and `executingCore` as given.
+Every entry reaches it through `dispatchSyscall`/`dispatchSyscallChecked`, whose
+first step refuses a `tid` that is not current on `executingCore`
+(`dispatchSyscall_ok_caller_current`, `dispatchSyscallChecked_ok_caller_current`),
+so it only ever runs on a consistent pair. -/
 def dispatchWithCapChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
@@ -6786,6 +6798,15 @@ def dispatchSyscallChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : Kernel Unit :=
   fun st =>
+    -- The caller and the executing core are one fact: `tid` must be the
+    -- thread current on `executingCore`.  Capability resolution and the flow
+    -- checks act as `tid`, while the `.declassify`, `.declassifySignal` and
+    -- audit arms take their acting subject from `currentOnCore executingCore`;
+    -- a mismatched pair would let one core's subject authorize or attribute a
+    -- downgrade for another core's caller.  Refused before any lookup, with
+    -- the state untouched (`dispatchSyscallChecked_ok_caller_current`).
+    if st.scheduler.currentOnCore executingCore ≠ some tid then .error .illegalState
+    else
     match st.getObject? tid.toObjId with
     | some (.tcb tcb) =>
       match st.getObject? tcb.cspaceRoot with
@@ -7328,6 +7349,11 @@ that each have to remember. -/
 def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : Kernel Unit :=
   fun st =>
+    -- Symmetric with `dispatchSyscallChecked`: the caller must be the thread
+    -- current on the executing core, or the pair is refused before any lookup
+    -- (`dispatchSyscall_ok_caller_current`).
+    if st.scheduler.currentOnCore executingCore ≠ some tid then .error .illegalState
+    else
     match st.getObject? tid.toObjId with
     | some (.tcb tcb) =>
       match st.getObject? tcb.cspaceRoot with
@@ -7453,6 +7479,9 @@ theorem dispatchSyscall_requires_right
   -- which is opaque to `split` (the same distinction `syscallEntryChecked`
   -- records above), and the seam's `match` sits inside it.
   simp only [dispatchSyscall, SystemState.getObject?] at hOk
+  -- The caller/core guard: a mismatched pair is refused before any lookup.
+  split at hOk
+  · exact absurd hOk (by simp)
   split at hOk
   next tcb hTcb =>
     refine ⟨tcb, hTcb, ?_⟩
@@ -8671,6 +8700,9 @@ theorem dispatchSyscallChecked_applies_taint_plan
     (h : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
     ∃ stPost, st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
   simp only [dispatchSyscallChecked, SystemState.getObject?] at h
+  -- The caller/core guard: a mismatched pair is refused before any lookup.
+  split at h
+  · exact absurd h (by simp)
   split at h
   · split at h
     · split at h
@@ -8692,6 +8724,9 @@ theorem dispatchSyscall_applies_taint_plan
     (h : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
     ∃ stPost, st' = applySyscallTaint (syscallTaintPlan st tid decoded) st stPost := by
   simp only [dispatchSyscall, SystemState.getObject?] at h
+  -- The caller/core guard: a mismatched pair is refused before any lookup.
+  split at h
+  · exact absurd h (by simp)
   split at h
   · split at h
     · split at h
@@ -8701,6 +8736,70 @@ theorem dispatchSyscall_applies_taint_plan
     · exact absurd h (by simp)
   · exact absurd h (by simp)
   · exact absurd h (by simp)
+
+/-- **The caller and the executing core are one fact.**  A mismatched pair —
+`tid` not the thread current on `executingCore` — is refused `.illegalState`
+by the checked dispatcher before any lookup.
+
+Capability resolution and the flow checks act as `tid`, while the
+`.declassify`, `.declassifySignal` and audit arms take their acting subject from
+`currentOnCore executingCore`.  An integrator calling the dispatcher directly
+with a core on which `tid` is not current would otherwise have had one core's
+subject authorize or attribute a downgrade for another core's caller. -/
+theorem dispatchSyscallChecked_refuses_mismatched_core
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hMismatch : st.scheduler.currentOnCore executingCore ≠ some tid) :
+    dispatchSyscallChecked ctx decoded tid executingCore st = .error .illegalState := by
+  simp only [dispatchSyscallChecked, hMismatch, ne_eq, not_false_eq_true, ↓reduceIte]
+
+/-- The unchecked twin of `dispatchSyscallChecked_refuses_mismatched_core`: the
+two dispatchers carry the same caller/core guard. -/
+theorem dispatchSyscall_refuses_mismatched_core
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hMismatch : st.scheduler.currentOnCore executingCore ≠ some tid) :
+    dispatchSyscall decoded tid executingCore st = .error .illegalState := by
+  simp only [dispatchSyscall, hMismatch, ne_eq, not_false_eq_true, ↓reduceIte]
+
+/-- **A successful checked dispatch acted as the executing core's current
+thread.**  Every arm's subject — `tid` for resolution and flow checks,
+`currentOnCore executingCore` for the declassification and audit arms — is
+therefore the same thread. -/
+theorem dispatchSyscallChecked_ok_caller_current
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (st st' : SystemState)
+    (h : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
+    st.scheduler.currentOnCore executingCore = some tid := by
+  by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
+  · exact hCur
+  · rw [dispatchSyscallChecked_refuses_mismatched_core ctx decoded tid executingCore st
+      hCur] at h
+    exact absurd h (by simp)
+
+/-- The unchecked twin of `dispatchSyscallChecked_ok_caller_current`. -/
+theorem dispatchSyscall_ok_caller_current
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (st st' : SystemState)
+    (h : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
+    st.scheduler.currentOnCore executingCore = some tid := by
+  by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
+  · exact hCur
+  · rw [dispatchSyscall_refuses_mismatched_core decoded tid executingCore st hCur] at h
+    exact absurd h (by simp)
+
+/-- The entry never trips the guard: `syscallEntryChecked` resolves `tid` as
+`currentOnCore executingCore` and dispatches on the IPC-buffer-filled state,
+whose scheduler is the pre-state's (`tlbFillIpcBufferOnCore_scheduler`), so the
+guard reads back the very thread the entry resolved. -/
+theorem syscallEntryChecked_dispatch_caller_current
+    (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (overflowCount : Nat)
+    (st : SystemState) (hCur : st.scheduler.currentOnCore executingCore = some tid) :
+    (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
+        overflowCount).scheduler.currentOnCore executingCore = some tid := by
+  rw [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_scheduler]
+  exact hCur
+
 
 -- ============================================================================
 -- AE1-G3: Master dispatch NI theorem
@@ -8740,6 +8839,9 @@ theorem dispatchSyscallChecked_preserves_projection
     (hStep : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   simp only [dispatchSyscallChecked, SystemState.getObject?] at hStep
+  -- The caller/core guard: a mismatched pair is refused before any lookup.
+  split at hStep
+  · exact absurd hStep (by simp)
   -- Layer 1: TCB lookup (read-only)
   split at hStep
   · -- some (.tcb tcb)
@@ -9098,6 +9200,7 @@ theorem dispatchSyscallChecked_audit_target_first
     (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability)
     (oid : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
+    (hCur : st.scheduler.currentOnCore executingCore = some tid)
     (hTcb : st.getTcb? tid = some tcb)
     (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
     (hResolve : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref)
@@ -9114,10 +9217,11 @@ theorem dispatchSyscallChecked_audit_target_first
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
       cap oid st (Or.inl h) hTarget
     rw [h] at hArm
-    simp only [dispatchSyscallChecked, SystemState.getObject?,
+    simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte,
+      SystemState.getObject?,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
-      h, syscallChecksTargetFirst, if_true,
+      h, syscallChecksTargetFirst,
       syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
     -- PR #889 review round 2: the resolution now refuses a capability naming a
     -- reserved idle object before the arm runs; either way the answer is
@@ -9128,10 +9232,11 @@ theorem dispatchSyscallChecked_audit_target_first
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
       cap oid st (Or.inr h) hTarget
     rw [h] at hArm
-    simp only [dispatchSyscallChecked, SystemState.getObject?,
+    simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte,
+      SystemState.getObject?,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
-      h, syscallChecksTargetFirst, if_true,
+      h, syscallChecksTargetFirst,
       syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
     -- PR #889 review round 2: the resolution now refuses a capability naming a
     -- reserved idle object before the arm runs; either way the answer is
@@ -9149,6 +9254,7 @@ theorem dispatchSyscallChecked_audit_right_checked_second
     (tcb : TCB) (rootCn : CNode) (ref : SlotRef) (cap : Capability)
     (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
+    (hCur : st.scheduler.currentOnCore executingCore = some tid)
     (hTcb : st.getTcb? tid = some tcb)
     (hRoot : st.getCNode? tcb.cspaceRoot = some rootCn)
     (hResolve : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref)
@@ -9164,10 +9270,11 @@ theorem dispatchSyscallChecked_audit_right_checked_second
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
       cap st (Or.inl h) hTarget hRight
     rw [h] at hArm
-    simp only [dispatchSyscallChecked, SystemState.getObject?,
+    simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte,
+      SystemState.getObject?,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
-      h, syscallChecksTargetFirst, if_true,
+      h, syscallChecksTargetFirst,
       syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
     -- PR #889 review round 2: an audit-trail capability names no reserved idle
     -- object, so the resolution's reservation refusal does not fire and the
@@ -9180,10 +9287,11 @@ theorem dispatchSyscallChecked_audit_right_checked_second
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
       cap st (Or.inr h) hTarget hRight
     rw [h] at hArm
-    simp only [dispatchSyscallChecked, SystemState.getObject?,
+    simp only [dispatchSyscallChecked, hCur, ne_eq, not_true_eq_false, ↓reduceIte,
+      SystemState.getObject?,
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
-      h, syscallChecksTargetFirst, if_true,
+      h, syscallChecksTargetFirst,
       syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
     -- PR #889 review round 2: an audit-trail capability names no reserved idle
     -- object, so the resolution's reservation refusal does not fire and the
@@ -9257,6 +9365,9 @@ theorem dispatchSyscallChecked_requires_right
           SystemState.lookupSlotCap st ref = some cap ∧
           cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
   simp only [dispatchSyscallChecked, SystemState.getObject?] at hOk
+  -- The caller/core guard: a mismatched pair is refused before any lookup.
+  split at hOk
+  · exact absurd hOk (by simp)
   split at hOk
   next tcb hTcb =>
     refine ⟨tcb, (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb, ?_⟩

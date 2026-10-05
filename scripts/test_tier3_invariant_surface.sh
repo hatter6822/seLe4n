@@ -245,6 +245,25 @@ run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right($|[ ({:\[\]])
 # presence of production syscall dispatch path.
 run_check "INVARIANT" rg -n '^def dispatchSyscall($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallEntry($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# The caller and the executing core are one fact (PR #911 review): both
+# dispatchers refuse, before any lookup, a `tid` that is not the thread current
+# on `executingCore` -- the declassification and audit arms read their subject
+# off `currentOnCore executingCore`, so a mismatched pair would have let one
+# core's subject authorize a downgrade for another core's caller.  The guard is
+# pinned as the FIRST step of each dispatcher's body (the relation, not the
+# token), the refusal and success-implies-current theorems state it, and the
+# suite drives a mismatched pair through both dispatchers.
+run_check "INVARIANT" rg -n -U 'def dispatchSyscall \(decoded[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def dispatchSyscallChecked \(ctx[^\n]*\n[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_refuses_mismatched_core($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscall_refuses_mismatched_core($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_ok_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscall_ok_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_dispatch_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_scheduler($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
+run_check "INVARIANT" rg -n '^private def dispatcherRefusesCallerNotCurrentOnCore($|[ ({:\[\]])' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n '^  dispatcherRefusesCallerNotCurrentOnCore$' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n 'isIllegalState \(dispatchSyscallChecked defaultLabelingContext decoded caller bootCoreId stOther\)' tests/SyscallDispatchSuite.lean
 # WS-RR RR3.24 + the RR3 closing audit de-privatized dispatchWithCap and
 # dispatchWithCapChecked: the dispatch payoff theorems
 # (IPC/Invariant/DispatchPayoff.lean) must name both tiers from outside the

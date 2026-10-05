@@ -41,6 +41,26 @@
   (the caller is current on the trapping core / the server is current on no
   core).  Tier 3 anchors that pinned `(determineExecutingCore st tid)` in the
   arms now pin `executingCore`.
+- **The caller and the executing core are one fact (PR #911 review).**  With the
+  core a parameter, a direct caller of `dispatchSyscallChecked` could pass a
+  `tid` current on one core and a different `executingCore`: resolution and the
+  flow checks acted as `tid`, while the `.declassify`, `.declassifySignal` and
+  audit arms take their subject from `currentOnCore executingCore`, so one core's
+  subject could authorize or attribute a downgrade for another core's caller.
+  Both dispatchers now refuse, as their first step and before any lookup, a
+  `tid` that is not current on `executingCore` (`.illegalState`).  New theorems:
+  `dispatchSyscall{,Checked}_refuses_mismatched_core`,
+  `dispatchSyscall{,Checked}_ok_caller_current`,
+  `syscallEntryChecked_dispatch_caller_current` and
+  `tlbFillIpcBufferOnCore_scheduler` (the entry dispatches on the IPC-buffer
+  filled state, whose scheduler is the pre-state's, so the entry never trips the
+  guard).  `dispatchWithCap{,Checked}` and the helpers below them are reached
+  only through the two guarded dispatchers.  Fixtures that drive a dispatcher
+  directly make their caller current first (`SeLe4n.Testing.withCurrentOnCore`,
+  `dispatchSyscall{,Checked}AsCurrent`); `SyscallDispatchSuite` drives a
+  mismatched pair through both dispatchers and checks the refusal, with the
+  consistent pair as the positive control; Tier 3 pins the guard as each
+  dispatcher's first step.
 - **KSC-1 / HAL-3 (the per-syscall `computeCrossCoreSgis` diff over the whole
   object index, and the retained pre-state) is not in this slice**; it is
   registered in `docs/REGISTERED_DEBT.md` with what it needs, ahead of

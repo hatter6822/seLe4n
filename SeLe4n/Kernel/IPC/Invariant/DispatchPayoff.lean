@@ -1182,7 +1182,10 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
       syscallDispatchQuiescence decoded tid executingCore gate cap st)
     (hStep : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
     ipcInvariantFull st' := by
+  -- The caller/core guard passed (a success implies it), so discharge it.
+  have hCur := dispatchSyscall_ok_caller_current decoded tid executingCore st st' hStep
   unfold dispatchSyscall SystemState.getObject? at hStep
+  simp only [hCur, ne_eq, not_true_eq_false, ↓reduceIte] at hStep
   cases hT : st.objects[tid.toObjId]? with
   | none => simp only [hT] at hStep; cases hStep
   | some obj =>
@@ -1687,7 +1690,10 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
       checkedSyscallDispatchQuiescence decoded tid executingCore gate cap st)
     (hStep : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
     ipcInvariantFull st' := by
+  -- The caller/core guard passed (a success implies it), so discharge it.
+  have hCur := dispatchSyscallChecked_ok_caller_current ctx decoded tid executingCore st st' hStep
   unfold dispatchSyscallChecked SystemState.getObject? at hStep
+  simp only [hCur, ne_eq, not_true_eq_false, ↓reduceIte] at hStep
   cases hT : st.objects[tid.toObjId]? with
   | none => simp only [hT] at hStep; cases hStep
   | some obj =>

@@ -1461,7 +1461,7 @@ private def apiDispatch (slots : List (SeLe4n.Slot × Capability)) (capSlot : Na
     Except KernelError (Unit × SystemState) :=
   match endpointReceiveDual apiEp apiServer (some apiReply) (stApi slots) with
   | .error e => .error e
-  | .ok (_, stRecv) => dispatchSyscall (apiCallDecoded capSlot) apiCaller bootCoreId stRecv
+  | .ok (_, stRecv) => dispatchSyscallAsCurrent (apiCallDecoded capSlot) apiCaller bootCoreId stRecv
 
 private def runLiveApiChecks : IO Unit := do
   IO.println "--- §3.12 live API dispatch (dispatchSyscall .call: CSpace lookup + authority + cross-core) ---"
@@ -1496,10 +1496,10 @@ private def runLiveApiChecks : IO Unit := do
         endpointLabelOf := fun _ => lowLabel
         serviceLabelOf := fun _ => lowLabel }
     assertBool "live checked .call under a high→low policy fails with flowDenied"
-      (match dispatchSyscallChecked apiDeniedCtx (apiCallDecoded 0) apiCaller bootCoreId stRecv with
+      (match dispatchSyscallCheckedAsCurrent apiDeniedCtx (apiCallDecoded 0) apiCaller bootCoreId stRecv with
        | .error .flowDenied => true | _ => false)
     assertBool "live checked .call under an all-public policy succeeds"
-      (match dispatchSyscallChecked allPublicCtx (apiCallDecoded 0) apiCaller bootCoreId stRecv with
+      (match dispatchSyscallCheckedAsCurrent allPublicCtx (apiCallDecoded 0) apiCaller bootCoreId stRecv with
        | .ok _ => true | _ => false)
 
 -- ============================================================================
