@@ -1,3 +1,36 @@
+## v0.36.42 — CLAUDE.md / AGENTS.md slimmed from ~1 MB to ~41 KB; the long-form sections moved verbatim to `docs/agent_guide/`
+
+- **Why.**  `CLAUDE.md` (and its mirror `AGENTS.md`) load into every agent
+  session.  At 1,013,250 bytes the file alone filled a session's context before
+  any work began.  Most of it was the per-workstream detail and the standing
+  constraints and registered debt (~713 KB) and the long-form *Key conventions*
+  (~250 KB); the section's own header already said it was "a status index, not
+  a history".
+- **What moved, verbatim** (relative links rewritten for the new location; no
+  other text changed):
+  - *Key conventions* → `docs/agent_guide/CONVENTIONS.md`.  `CLAUDE.md` keeps a
+    digest of each rule and points at the long form as authoritative.
+  - The per-workstream sections (WS-RA … WS-LC) and *Standing constraints and
+    registered debt* → `docs/agent_guide/WORKSTREAM_CONTEXT.md`, in their
+    original order so "above" / "below" keep their meaning.  `CLAUDE.md` keeps
+    the section's intro, a one-line index of each workstream and *Closed
+    workstreams*.  The WS-SM table's SM9 row now links its plan
+    (`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`): until now the plan was "indexed"
+    only by its entry in the large-files list, which `check_workstream_plan.py`
+    counted as a canonical index.
+  - The *Known large files* list → `docs/agent_guide/KNOWN_LARGE_FILES.md`, with
+    the two new files added.
+- **Gates repointed** at the new homes, each re-run green:
+  `find_large_lean_files.sh --check` reads the list from its new file;
+  `check_lock_ceiling_figures.py` requires the ceiling figures in
+  `WORKSTREAM_CONTEXT.md` (where the sentence now lives) instead of
+  `CLAUDE.md` / `AGENTS.md`; `check_workstream_plan.py` adds
+  `WORKSTREAM_CONTEXT.md` to its companions and canonical indices; the Tier 3
+  prose anchors that pinned the `reply_remove` retraction and the lifted
+  reply-stack claim point at `WORKSTREAM_CONTEXT.md` (positives) or include it
+  (negatives).  The `CLAUDE.md` ↔ `AGENTS.md` byte-identity gate is unchanged
+  and passes.
+
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 
 - **Security (Codex P1, High): a remote deschedule dropped the running thread's

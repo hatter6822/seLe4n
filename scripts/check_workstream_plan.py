@@ -64,6 +64,7 @@ COMPANIONS = [
     "docs/REGISTERED_DEBT.md",
     "CLAUDE.md",
     "AGENTS.md",
+    "docs/agent_guide/WORKSTREAM_CONTEXT.md",
 ]
 
 HEADER_TOTAL = re.compile(r"^>\s*\*\*Sub-task count\*\*:\s*(\d+)(?![\d\s]*[-\u2013])", re.M)
@@ -134,6 +135,7 @@ def phase_map_rows(text: str, prefix: str, depth: int) -> dict[str, int]:
 CANONICAL_INDICES = [
     "CLAUDE.md",
     "AGENTS.md",
+    "docs/agent_guide/WORKSTREAM_CONTEXT.md",
     "docs/REGISTERED_DEBT.md",
     "docs/spec/SELE4N_SPEC.md",
 ]

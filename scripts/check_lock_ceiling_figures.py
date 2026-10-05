@@ -131,8 +131,9 @@ HISTORICAL_PROSE = ("docs/dev_history/", "CHANGELOG.md")
 # The pin: documents whose readers act on these figures, so a missing canonical
 # statement is itself a failure.
 REQUIRED_SITES = (
-    "CLAUDE.md",
-    "AGENTS.md",
+    # The workstream detail that used to live in CLAUDE.md / AGENTS.md, which
+    # now keep only an index of it (both files load into every agent session).
+    "docs/agent_guide/WORKSTREAM_CONTEXT.md",
     "docs/spec/SELE4N_SPEC.md",
     "docs/gitbook/12-proof-and-invariant-map.md",
     "SeLe4n/Kernel/Concurrency/Locks/LockSet.lean",
@@ -391,6 +392,7 @@ def _build_tree(root: str, overrides: dict[str, str]) -> None:
         BUDGET_SOURCE: CLEAN_BUDGET,
         "CLAUDE.md": CLEAN_CLAIMS,
         "AGENTS.md": CLEAN_CLAIMS,
+        "docs/agent_guide/WORKSTREAM_CONTEXT.md": CLEAN_CLAIMS,
         "docs/spec/SELE4N_SPEC.md": CLEAN_CLAIMS,
         "docs/gitbook/12-proof-and-invariant-map.md": CLEAN_CLAIMS,
         "CHANGELOG.md": "the declared lock-set ceiling is **9**\n",

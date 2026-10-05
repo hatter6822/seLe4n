@@ -37,7 +37,8 @@ python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
 #      proved-declaration count).  A stale map is caught; a fresh map that
 #      nobody propagated was not — so regenerating the map and forgetting
 #      the propagation silently published wrong numbers.
-#   2. The CLAUDE.md "Known large files" list.  Its detector existed but
+#   2. The "Known large files" list (docs/agent_guide/KNOWN_LARGE_FILES.md,
+#      moved out of CLAUDE.md).  Its detector existed but
 #      lived only in `sync_documentation_metrics.sh`, which is in no tier
 #      and no workflow, so the "warning" it emits had never been seen.
 #      Tolerant by design (see that script's header) so it is quiet about

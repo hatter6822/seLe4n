@@ -119,19 +119,20 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────────────
-# Step 4 — Advisory check on CLAUDE.md "Known large files" list.
-# Warnings only: the CLAUDE.md list is a curated snapshot with
+# Step 4 — Advisory check on the "Known large files" list
+# (docs/agent_guide/KNOWN_LARGE_FILES.md).
+# Warnings only: the list is a curated snapshot with
 # approximate "(~N lines)" entries; expecting exact equality on every
 # commit would be noise. A full refresh (as AK10-E did) is a
 # maintainer-curated step.
 # ──────────────────────────────────────────────────────────────────
-section "4/5  CLAUDE.md large-files advisory"
+section "4/5  Known large files advisory"
 if "${SCRIPT_DIR}/find_large_lean_files.sh" --check >/dev/null 2>&1; then
-  echo "  PASS — CLAUDE.md list matches live tree exactly"
+  echo "  PASS — Known large files list matches live tree exactly"
 else
-  echo "  WARN — CLAUDE.md 'Known large files' differs from live tree."
+  echo "  WARN — docs/agent_guide/KNOWN_LARGE_FILES.md differs from live tree."
   echo "         Run: scripts/find_large_lean_files.sh --top 45"
-  echo "         and review against CLAUDE.md §'Reading large files' before release."
+  echo "         and review against docs/agent_guide/KNOWN_LARGE_FILES.md before release."
 fi
 
 # ──────────────────────────────────────────────────────────────────
