@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "local/ffi-2-merged",
-      "commit_sha": "46d2743f62b821d3687fbe1056df1c8a2104f011",
-      "tree_sha": "4300ac9c05c136bc70a08695a8f8f460f633a42e",
-      "committed_at_utc": "2026-10-05T20:21:49+00:00"
+      "branch": "main",
+      "commit_sha": "2b234e109b8ca1a8ebd450da0ef76b3a6c43b85e",
+      "tree_sha": "0f7adcad4c8d5f3831fbda9265489a873b58a783",
+      "committed_at_utc": "2026-10-05T17:59:50-04:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1c3dbdc96ddb074f376802c6202cc6a896e7e420a9185b1b6292f4823a44bf4e"
+    "source_digest": "3a176dfd790e416ab0f6c77e8c575f68868f2018c4ffb05b0eed6ebba0b1cd80"
   },
   "summary": {
     "module_count": 435,
@@ -27,7 +27,7 @@
     "version": "0.36.48",
     "lean_toolchain": "v4.28.0",
     "production_files": 364,
-    "production_loc": 435695,
+    "production_loc": 435701,
     "test_files": 71,
     "test_loc": 88938,
     "proved_theorem_lemma_decls": 14389,
@@ -7098,7 +7098,7 @@
           "kind": "theorem",
           "name": "registerFileOfTrapContext_trapContextOfRegisterFile",
           "full_name": "SeLe4n.Kernel.Architecture.registerFileOfTrapContext_trapContextOfRegisterFile",
-          "line": 271,
+          "line": 273,
           "called": [
             "SeLe4n.Kernel.Architecture.registerFileOfTrapContext",
             "SeLe4n.Kernel.Architecture.registerFileOfTrapContext_ofWords",
@@ -17651,7 +17651,7 @@
           "kind": "def",
           "name": "registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
-          "line": 51,
+          "line": 55,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -17662,7 +17662,7 @@
           "kind": "theorem",
           "name": "registerContextsWordBounded.tcb",
           "full_name": "SeLe4n.Kernel.Architecture.registerContextsWordBounded.tcb",
-          "line": 56,
+          "line": 60,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Model.SystemState",
@@ -17676,7 +17676,7 @@
           "kind": "theorem",
           "name": "registerContextsWordBounded.bank",
           "full_name": "SeLe4n.Kernel.Architecture.registerContextsWordBounded.bank",
-          "line": 61,
+          "line": 65,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -17688,7 +17688,7 @@
           "kind": "theorem",
           "name": "getTcb?_of_objects_eq",
           "full_name": "SeLe4n.Kernel.Architecture.getTcb?_of_objects_eq",
-          "line": 65,
+          "line": 69,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -17699,7 +17699,7 @@
           "kind": "theorem",
           "name": "registerContextsWordBounded_of_eq",
           "full_name": "SeLe4n.Kernel.Architecture.registerContextsWordBounded_of_eq",
-          "line": 71,
+          "line": 75,
           "called": [
             "SeLe4n.Kernel.Architecture.getTcb?_of_objects_eq",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
@@ -17710,7 +17710,7 @@
           "kind": "theorem",
           "name": "registerContextsWordBounded_updateTcb",
           "full_name": "SeLe4n.Kernel.Architecture.registerContextsWordBounded_updateTcb",
-          "line": 80,
+          "line": 84,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -17730,7 +17730,7 @@
           "kind": "theorem",
           "name": "registerContextsWordBounded_updateTcb_registerContext",
           "full_name": "SeLe4n.Kernel.Architecture.registerContextsWordBounded_updateTcb_registerContext",
-          "line": 103,
+          "line": 107,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_updateTcb",
@@ -17746,7 +17746,7 @@
           "kind": "theorem",
           "name": "registerContextsWordBounded_setRegsOnCore",
           "full_name": "SeLe4n.Kernel.Architecture.registerContextsWordBounded_setRegsOnCore",
-          "line": 111,
+          "line": 115,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -17763,7 +17763,7 @@
           "kind": "theorem",
           "name": "saveTrapFrameOnCore_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.saveTrapFrameOnCore_preserves_registerContextsWordBounded",
-          "line": 127,
+          "line": 131,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_setRegsOnCore",
@@ -17781,7 +17781,7 @@
           "kind": "theorem",
           "name": "saveVacatedFrameOnCore_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.saveVacatedFrameOnCore_preserves_registerContextsWordBounded",
-          "line": 139,
+          "line": 143,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_updateTcb_registerContext",
@@ -17797,7 +17797,7 @@
           "kind": "theorem",
           "name": "saveCapturedTrapFrame_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame_preserves_registerContextsWordBounded",
-          "line": 153,
+          "line": 157,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame",
@@ -17815,7 +17815,7 @@
           "kind": "theorem",
           "name": "saveCapturedSyscallFrame_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame_preserves_registerContextsWordBounded",
-          "line": 167,
+          "line": 171,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.restartAtSvc_wordBounded",
@@ -17834,7 +17834,7 @@
           "kind": "theorem",
           "name": "ofTrapContext_frame_wordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.ofTrapContext_frame_wordBounded",
-          "line": 182,
+          "line": 186,
           "called": [
             "SeLe4n.Kernel.Architecture.TrapContext",
             "SeLe4n.Kernel.Architecture.registerFileOfTrapContext",
@@ -17845,7 +17845,7 @@
           "kind": "theorem",
           "name": "saveCapturedTrapFrameAt_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.saveCapturedTrapFrameAt_preserves_registerContextsWordBounded",
-          "line": 187,
+          "line": 191,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame_preserves_registerContextsWordBounded",
@@ -17860,7 +17860,7 @@
           "kind": "theorem",
           "name": "saveCapturedSyscallFrameAt_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrameAt_preserves_registerContextsWordBounded",
-          "line": 197,
+          "line": 201,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame_preserves_registerContextsWordBounded",
@@ -17875,7 +17875,7 @@
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_preserves_registerContextsWordBounded",
-          "line": 211,
+          "line": 215,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
@@ -17890,7 +17890,7 @@
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.writeRestartFrameToTcb_preserves_registerContextsWordBounded",
-          "line": 219,
+          "line": 223,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultRestartFrame",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
@@ -17905,7 +17905,7 @@
           "kind": "theorem",
           "name": "writeFaultRegistersToTcb_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.writeFaultRegistersToTcb_preserves_registerContextsWordBounded",
-          "line": 227,
+          "line": 231,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_updateTcb",
@@ -17921,7 +17921,7 @@
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.writeFfiRegistersToTcb_preserves_registerContextsWordBounded",
-          "line": 236,
+          "line": 240,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_updateTcb",
@@ -17938,7 +17938,7 @@
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.saveOutgoingContextOnCore_preserves_registerContextsWordBounded",
-          "line": 252,
+          "line": 256,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_updateTcb_registerContext",
@@ -17952,7 +17952,7 @@
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.saveOutgoingContext_preserves_registerContextsWordBounded",
-          "line": 261,
+          "line": 265,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_updateTcb_registerContext",
@@ -17966,7 +17966,7 @@
           "kind": "theorem",
           "name": "restoreIncomingContextOnCore_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.restoreIncomingContextOnCore_preserves_registerContextsWordBounded",
-          "line": 270,
+          "line": 274,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_setRegsOnCore",
@@ -17980,7 +17980,7 @@
           "kind": "theorem",
           "name": "restoreIncomingContext_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.restoreIncomingContext_preserves_registerContextsWordBounded",
-          "line": 280,
+          "line": 284,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_setRegsOnCore",
@@ -17994,7 +17994,7 @@
           "kind": "theorem",
           "name": "restoreIncomingContextOnCoreUnlessCurrent_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.restoreIncomingContextOnCoreUnlessCurrent_preserves_registerContextsWordBounded",
-          "line": 290,
+          "line": 294,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.restoreIncomingContextOnCore_preserves_registerContextsWordBounded",
@@ -18008,7 +18008,7 @@
           "kind": "theorem",
           "name": "dispatchIdleOnCore_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.dispatchIdleOnCore_preserves_registerContextsWordBounded",
-          "line": 300,
+          "line": 304,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_of_eq",
@@ -18025,7 +18025,7 @@
           "kind": "theorem",
           "name": "preemptCurrentOnCore_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.preemptCurrentOnCore_preserves_registerContextsWordBounded",
-          "line": 313,
+          "line": 317,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_of_eq",
@@ -18043,7 +18043,7 @@
           "kind": "theorem",
           "name": "switchToThreadOnCore_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.switchToThreadOnCore_preserves_registerContextsWordBounded",
-          "line": 332,
+          "line": 336,
           "called": [
             "SeLe4n.Kernel.Architecture.preemptCurrentOnCore_preserves_registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
@@ -18063,7 +18063,7 @@
           "kind": "theorem",
           "name": "writeRegisterState_preserves_registerContextsWordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.writeRegisterState_preserves_registerContextsWordBounded",
-          "line": 355,
+          "line": 359,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded_setRegsOnCore",
@@ -18080,7 +18080,7 @@
           "kind": "theorem",
           "name": "restoreTargetOnCore_user_wordBounded",
           "full_name": "SeLe4n.Kernel.Architecture.restoreTargetOnCore_user_wordBounded",
-          "line": 367,
+          "line": 371,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.restoreTargetOnCore",
@@ -18094,7 +18094,7 @@
           "kind": "theorem",
           "name": "restoreTargetOnCore_user_roundTrip",
           "full_name": "SeLe4n.Kernel.Architecture.restoreTargetOnCore_user_roundTrip",
-          "line": 388,
+          "line": 392,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.Architecture.registerFileOfTrapContext",
@@ -18112,7 +18112,7 @@
           "kind": "theorem",
           "name": "registerContextsWordBounded_default",
           "full_name": "SeLe4n.Kernel.Architecture.registerContextsWordBounded_default",
-          "line": 402,
+          "line": 406,
           "called": [
             "SeLe4n.Kernel.Architecture.registerContextsWordBounded",
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
