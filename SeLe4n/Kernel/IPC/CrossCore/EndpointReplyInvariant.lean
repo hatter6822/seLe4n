@@ -30,20 +30,23 @@ object-invisible on the already-`.ready` caller — the SM6.A/SM6.B object-
 invisibility keystone) cannot disturb it.  The reply store step reuses the
 single-core per-step preservation lemmas verbatim.
 
-**WS-SM SM6.D closure** (§4–§10): the three cross-core reply-path transitions
-preserve the **whole twenty-conjunct bundle** and every core's per-core view of
-it — `endpointReplyOnCore` / `endpointReceiveDualOnCore` via the off-scheduler
-agreement dichotomy against their single-core counterparts (both spines run the
-same object-store sequence and diverge only in scheduler placement;
-`endpointReply`'s `replier == expected` gate is discharged by instantiating the
-single-core replier at the recorded server, since a delegated reply cap carries
-the same object-level effect).  The receive leg's pre-state facts are
-transported across the reply leg by the §9 effect characterisations (TCB
-backward transport, endpoint-slot invisibility, reply-free/one-object-reuse
-freshness), which the live ReplyRecv's own preservation theorem
+**WS-SM SM6.D closure** (§4–§10): the two cross-core reply-path legs,
+`endpointReplyOnCore` and `endpointReceiveDualOnCore`, preserve the **whole
+twenty-conjunct bundle** and every core's per-core view of it, via the
+off-scheduler agreement dichotomy against their single-core counterparts (both
+spines run the same object-store sequence and diverge only in scheduler
+placement; `endpointReply`'s `replier == expected` gate is discharged by
+instantiating the single-core replier at the recorded server, since a delegated
+reply cap carries the same object-level effect).  The receive leg's pre-state
+facts are transported across the reply leg by the §9 effect characterisations
+(TCB backward transport, endpoint-slot invisibility, reply-free/one-object-reuse
+freshness), which the live ReplyRecv's preservation theorem
 (`endpointReplyRecvOnCore_preserves_ipcInvariantFull`,
-`IPC/Invariant/DispatchPayoff.lean`) consumes.  The scheduler-reading
-`passiveServerIdle` rides the per-core frames throughout.
+`IPC/Invariant/DispatchPayoff.lean`) consumes — for the **global** bundle only:
+the live transition has no `ipcInvariantFull_perCore` statement yet (the one
+deleted at `v0.36.49` covered a composite no arm ran; `docs/REGISTERED_DEBT.md`
+carries the row).  The scheduler-reading `passiveServerIdle` rides the per-core
+frames through the two legs.
 -/
 
 namespace SeLe4n.Kernel

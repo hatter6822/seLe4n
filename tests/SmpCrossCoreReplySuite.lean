@@ -135,9 +135,9 @@ open SeLe4n.Testing
 #check @endpointReplyCrossCoreDispatchChecked_flow_denied
 #check @endpointReplyCrossCoreDispatchChecked_flow_allowed
 -- PR #822 review: the raw-thread `endpointReplyRecvCrossCoreDispatch{,Checked}`
--- wrappers were removed (they bypassed the reply cap); the live `.replyRecv` routes
--- through the reply-object-aware `API.endpointReplyRecvOnCore`.  The below-API combined
--- transition `endpointReplyRecvOnCore` (anchored above) remains the building block.
+-- wrappers were removed (they bypassed the reply cap).  The live `.replyRecv` is the
+-- one reply-object-aware transition `endpointReplyRecvOnCore` (anchored above, in
+-- `IPC/CrossCore/EndpointReplyRecv.lean`), which both dispatch tables call.
 
 -- SM6.C.9 reply donation-chain length bound:
 #check @endpointReply_donation_chain_length_bounded
