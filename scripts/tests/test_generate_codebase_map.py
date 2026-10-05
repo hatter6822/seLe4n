@@ -130,6 +130,19 @@ class GenerateCodebaseMapTests(unittest.TestCase):
         # `leaf` inside `Y` is `Y.leaf`; a short-name reader linked both.
         self.assertEqual(got["Y.root"].called, ["X.helper", "Y.leaf"])
 
+    def test_admitted_proofs_record_sorry_ax(self) -> None:
+        got = decls_of({"A": """
+            theorem admitted : 1 = 2 := by sorry
+            theorem proved : 1 = 1 := rfl
+            -- sorry in a comment admits nothing
+            theorem commented : True := trivial
+            """})["A"]
+        # Lean elaborates `sorry` to `sorryAx`; it is the one core constant
+        # `called` records, so a consumer can count admitted proofs.
+        self.assertEqual(got["admitted"].called, ["sorryAx"])
+        self.assertEqual(got["proved"].called, [])
+        self.assertEqual(got["commented"].called, [])
+
     def test_references_skip_bound_variables_and_suffixes(self) -> None:
         got = decls_of({"A": """
             def get : Nat := 0
@@ -152,7 +165,7 @@ class GenerateCodebaseMapTests(unittest.TestCase):
               objects : Table
             inductive Op
               | send
-            theorem keeps (st : State) : st.objects.invExt := sorry
+            theorem keeps (st : State) : st.objects.invExt := trivial
             def pick : Op := .send
             """})["A"]
         self.assertEqual(got["keeps"].called, ["State", "Table.invExt"])

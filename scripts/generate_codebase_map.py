@@ -9,7 +9,8 @@ Outputs JSON with:
   structure/inductive/class, and `where` helpers), each under the name it is
   declared with and its namespace-qualified `full_name`
 - `called`: the declarations each one's text refers to, by full name, resolved
-  the way Lean resolves names (see `scripts/lean_declarations.py`)
+  the way Lean resolves names (see `scripts/lean_declarations.py`); `sorry` is
+  recorded as `sorryAx`, the core constant Lean elaborates it to
 
 This lets consumers invalidate stale local caches whenever Lean declaration
 surface changes, while avoiding branch/merge-only churn.

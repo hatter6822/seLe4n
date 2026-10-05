@@ -874,6 +874,13 @@ def references(toks: list[Tok], d: Decl, corpus: Corpus) -> list[str]:
             name_seen = True       # the declaration's own name in its header
             k += 1
             continue
+        if text == "sorry":
+            # Not a project declaration, but the one core constant recorded:
+            # Lean elaborates `sorry` to `sorryAx`, and consumers count
+            # admitted proofs off it.
+            refs.add("sorryAx")
+            k += 1
+            continue
         if text == "open":         # `open X in` inside a body
             m = k + 1
             extra = []
