@@ -27,7 +27,34 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49)
+### WS-CV The register context by value — PLANNED (registered v0.36.50; opens before WS-CB)
+
+The TCB's `registerContext`, the per-core register banks and the Lean boundary
+become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
+35-field `UInt64` layout and `TrapContext` is retired, so a kernel entry copies
+280 bytes into the model once (or not at all when the thread merely continues)
+and a restore borrows the TCB's own object with no conversion.  The HAL hands
+each core's in-flight context over as a **persistent per-core object**
+(`m_rc = 0`, never freed) under its own Lean type, `InFlightContext`, whose only
+way into the model is `snapshot` — so the model cannot retain the per-core
+buffer, by type rather than by convention.  Plan:
+[`docs/planning/CONTEXT_BY_VALUE_PLAN.md`](../planning/CONTEXT_BY_VALUE_PLAN.md)
+(20 sub-tasks, CV0–CV5).  Why first: at `v0.36.47` a saved context was a
+closure capturing the trap-context object, so a reused per-core buffer would
+have rewritten other threads' saved registers, and the entry/exit path made
+about forty heap allocations per syscall; a representation change is cheapest
+before WS-CB adds consumers of the saved context.
+
+**What new code must assume until WS-CV lands**: `RegisterFile.gpr` is a
+function and `RegisterFile`'s `BEq` is not lawful (`RegisterFile.not_lawfulBEq`);
+a theorem needing equality of register files states it field-wise or through
+`RegisterFile.ext`.  **What new code must not do**: add a consumer of
+`registerFileOfTrapContext` / `trapContextOfRegisterFile` or a new
+`RegisterFile` literal with a `gpr := fun …` lambda outside tests — both are
+deleted or rewritten by CV1/CV2; build a saved context from `TrapContext`
+through `ofWords` and the existing writers instead.
+
+### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
 A `SchedContext` will be able to contain other scheduling contexts: a *server*
 holds members instead of a thread, is charged whenever a thread in its subtree

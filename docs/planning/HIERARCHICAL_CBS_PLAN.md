@@ -1,7 +1,11 @@
 # WS-CB — Hierarchical Constant Bandwidth Servers (HCBS)
 
 > **Workstream**: WS-CB (constant-bandwidth server hierarchy)
-> **Status**: **PLANNED** — registered at v0.34.49; no sub-task started.  The
+> **Status**: **PLANNED** — registered at v0.34.49; no sub-task started.
+> **Opens after WS-CV** (`docs/planning/CONTEXT_BY_VALUE_PLAN.md`, the
+> maintainer's decision of 2026-10-05): WS-CV changes the saved register
+> context this plan's preemption rows save and restore, and CV5.3 re-verifies
+> this plan against the tree WS-CV leaves before CB0 starts.  The
 > WS-RR dependency is discharged: RR8 closed at `v0.35.203`, so the file
 > partition in §2.3 is no longer the reason to wait and this workstream may
 > open whenever the maintainer schedules it; its one hard prerequisite is the

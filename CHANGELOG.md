@@ -34,6 +34,22 @@ Documentation only: no Lean, Rust or fixture change.
   the no-budget-bind row is closed by CB1.7's rule (e); the `bound*Consistent`
   row becomes the plan's Q16; `docs/agent_guide/WORKSTREAM_CONTEXT.md` and
   `docs/agent_guide/LARGE_FILES.md` updated.
+- **WS-CV registered: the register context by value**
+  (`docs/planning/CONTEXT_BY_VALUE_PLAN.md`, 20 sub-tasks, CV0–CV5), and
+  scheduled **before WS-CB** by the maintainer's decision of 2026-10-05.
+  The TCB's `registerContext`, the per-core banks and the boundary become one
+  35-`UInt64` `RegisterFile` (`Architecture.TrapContext` retired), the HAL
+  hands each core's in-flight context over as a persistent per-core object
+  under its own Lean type with `snapshot` as the only way into the model, and
+  the restore borrows the TCB's own object.  Why: at `v0.36.47` a saved
+  context was a closure capturing the trap-context object
+  (`registerFileOfTrapContext`), so the per-core reuse the maintainer asked
+  about would have rewritten other threads' saved registers, and the
+  entry/exit path made about forty heap allocations per syscall, thirty-one
+  of them boxed `UInt64`s on the restore.  The plan's acceptance is measured
+  (a heap allocation counter, a two-trap hazard test through the boundary
+  crate), not stated.  `HIERARCHICAL_CBS_PLAN.md`'s status and the
+  `WS-CB` registry row say it opens after WS-CV, re-verified by CV5.3.
 
 ## v0.36.46 — The executing core is threaded from the trap entry; `determineExecutingCore` deleted (IPC-8)
 
