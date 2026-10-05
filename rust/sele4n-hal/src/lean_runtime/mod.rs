@@ -478,6 +478,22 @@ pub unsafe fn ctor_get_u64(o: Obj, offset: usize) -> u64 {
     }
 }
 
+/// `lean_ctor_set_uint64(o, offset, v)`: write the scalar field `offset` bytes
+/// past the object fields' start.
+///
+/// # Safety
+///
+/// `o` must be a live constructor object with eight scalar bytes at `offset`.
+pub unsafe fn ctor_set_u64(o: Obj, offset: usize, v: u64) {
+    // SAFETY: forwarded from the caller, as for `ctor_get_u64`.
+    unsafe {
+        o.cast::<u8>()
+            .add(HEADER_BYTES + offset)
+            .cast::<u64>()
+            .write_unaligned(v);
+    }
+}
+
 /// `lean_alloc_ctor(tag, num_objs, scalar_sz)`.  Halts when the heap is
 /// exhausted, as `lean.h`'s own allocation paths do.
 #[must_use]

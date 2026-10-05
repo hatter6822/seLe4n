@@ -83,22 +83,27 @@ const _: () = assert!(core::mem::offset_of!(TrapFrame, tpidr_el0) == 288);
 
 /// **WS-BP BP7.3: the number of words a thread's context occupies in a trap
 /// frame** — `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`.  The
-/// Lean kernel reads word `i` through [`in_flight_frame_word`]
-/// (`Architecture.registerFileOfTrapWords`, `trapFrameWordCount`).
+/// Lean kernel receives all of them in one call ([`in_flight_context`],
+/// `Architecture.TrapContext`, `trapFrameWordCount`).
 pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;
 
-/// **WS-BP BP7.3**: word `index` of a thread's context in `frame`, or `None`
-/// past the context (`ESR_EL1` and `FAR_EL1` are the trap's, not the thread's).
+/// A thread's context as it crosses the Lean boundary: the
+/// [`TRAP_FRAME_CONTEXT_WORDS`] words in layout order.
+pub type TrapContextWords = [u64; TRAP_FRAME_CONTEXT_WORDS as usize];
+
+/// **WS-BP BP7.3**: a thread's context in `frame`, in layout order — word `i`
+/// is `x<i>` for `i < 31`, then `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`.
+/// `ESR_EL1` and `FAR_EL1` are the trap's, not the thread's, and are not part
+/// of it.
 #[must_use]
-pub fn trap_frame_word(frame: &TrapFrame, index: u32) -> Option<u64> {
-    match index {
-        0..=30 => Some(frame.gprs[index as usize]),
-        31 => Some(frame.sp_el0),
-        32 => Some(frame.elr_el1),
-        33 => Some(frame.spsr_el1),
-        34 => Some(frame.tpidr_el0),
-        _ => None,
-    }
+pub fn trap_frame_context(frame: &TrapFrame) -> TrapContextWords {
+    let mut words = [0; TRAP_FRAME_CONTEXT_WORDS as usize];
+    words[..31].copy_from_slice(&frame.gprs);
+    words[31] = frame.sp_el0;
+    words[32] = frame.elr_el1;
+    words[33] = frame.spsr_el1;
+    words[34] = frame.tpidr_el0;
+    words
 }
 
 /// **WS-BP BP7.3: the trap frame each PE is handling**, published for the Lean
@@ -158,10 +163,10 @@ impl Drop for InFlightFrame<'_> {
     }
 }
 
-/// **WS-BP BP7.3**: word `index` of the frame published in `slots[core]`, or
-/// `None` when none is or the index is past the context (the testable form).
+/// **WS-BP BP7.3**: the context of the frame published in `slots[core]`, or
+/// `None` when none is (the testable form).
 #[must_use]
-pub fn in_flight_frame_word_in(slots: &InFlightSlots, core: usize, index: u32) -> Option<u64> {
+pub fn in_flight_context_in(slots: &InFlightSlots, core: usize) -> Option<TrapContextWords> {
     let ptr = slots.get(core)?.load(Ordering::Relaxed);
     if ptr.is_null() {
         return None;
@@ -173,28 +178,20 @@ pub fn in_flight_frame_word_in(slots: &InFlightSlots, core: usize, index: u32) -
     // that reached here, so nothing writes it across this read.  Only core
     // `core` writes slot `core`.
     let frame = unsafe { &*ptr };
-    trap_frame_word(frame, index)
+    Some(trap_frame_context(frame))
 }
 
-/// **WS-BP BP7.3**: is a frame published on the executing PE?
+/// **WS-BP BP7.3**: the context of the executing PE's in-flight frame, or
+/// `None` when no frame is published.
 #[must_use]
-pub fn in_flight_frame_present() -> bool {
+pub fn in_flight_context() -> Option<TrapContextWords> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    IN_FLIGHT_FRAMES
-        .get(core)
-        .is_some_and(|slot| !slot.load(Ordering::Relaxed).is_null())
+    in_flight_context_in(&IN_FLIGHT_FRAMES, core)
 }
 
-/// **WS-BP BP7.3**: word `index` of the executing PE's in-flight frame.
-#[must_use]
-pub fn in_flight_frame_word(index: u32) -> Option<u64> {
-    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    in_flight_frame_word_in(&IN_FLIGHT_FRAMES, core, index)
-}
-
-/// **WS-BP BP7.4: the context each PE is about to resume**, staged word by
-/// word by the Lean kernel (`Platform.FFI.restoreTrapFrame`) in the trap-frame
-/// word order of [`trap_frame_word`], then committed into the in-flight frame
+/// **WS-BP BP7.4: the context each PE is about to resume**, staged whole by
+/// the Lean kernel (`Platform.FFI.restoreTrapFrame`) in the layout of
+/// [`trap_frame_context`], then committed into the in-flight frame
 /// by [`restore_commit_in`].  Slot `c` is written and read only by core `c`,
 /// inside one handler, so `Relaxed` suffices.
 pub type RestoreStaging =
@@ -345,27 +342,22 @@ pub fn enter_idle_wait() -> ! {
 /// Why a restore was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RestoreRefusal {
-    /// A word index past the context.
-    IndexOutOfRange,
     /// A kind other than [`RESTORE_KIND_USER`] or [`RESTORE_KIND_IDLE`].
     UnknownKind,
     /// A core id outside the slot arrays.
     CoreOutOfRange,
 }
 
-/// **WS-BP BP7.4**: stage word `index` of `core`'s resume context (the
-/// testable form).
-pub fn restore_stage_word_in(
+/// **WS-BP BP7.4**: stage `core`'s whole resume context (the testable form).
+pub fn restore_stage_context_in(
     staging: &RestoreStaging,
     core: usize,
-    index: u32,
-    value: u64,
+    context: &TrapContextWords,
 ) -> Result<(), RestoreRefusal> {
     let slot = staging.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
-    let word = slot
-        .get(index as usize)
-        .ok_or(RestoreRefusal::IndexOutOfRange)?;
-    word.store(value, Ordering::Relaxed);
+    for (word, value) in slot.iter().zip(context) {
+        word.store(*value, Ordering::Relaxed);
+    }
     Ok(())
 }
 
@@ -410,7 +402,7 @@ pub fn restore_commit_in(
     if ptr.is_null() {
         return Ok(false);
     }
-    // SAFETY: as in `in_flight_frame_word_in` — a non-null slot names the
+    // SAFETY: as in `in_flight_context_in` — a non-null slot names the
     // frame a handler on this PE published and has not withdrawn; that
     // handler is suspended in the call that reached here, so this is the only
     // live reference to the frame for the duration of the write, and only
@@ -478,10 +470,10 @@ pub fn take_restored_in(restored: &RestoredFlags, core: usize) -> bool {
         .is_some_and(|flag| flag.swap(false, Ordering::Relaxed))
 }
 
-/// **WS-BP BP7.4**: stage word `index` of the executing PE's resume context.
-pub fn restore_stage_word(index: u32, value: u64) -> Result<(), RestoreRefusal> {
+/// **WS-BP BP7.4**: stage the executing PE's whole resume context.
+pub fn restore_stage_context(context: &TrapContextWords) -> Result<(), RestoreRefusal> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    restore_stage_word_in(&RESTORE_STAGING, core, index, value)
+    restore_stage_context_in(&RESTORE_STAGING, core, context)
 }
 
 /// **WS-BP BP7.4**: commit the executing PE's staged resume.
@@ -1812,14 +1804,18 @@ mod tests {
         frame.esr_el1 = 0xDEAD;
         frame.far_el1 = 0xBEEF;
         frame.tpidr_el0 = 0x7777_0000;
-        for i in 0..31 {
-            assert_eq!(trap_frame_word(&frame, i), Some(0x100 + u64::from(i)));
+        let words = trap_frame_context(&frame);
+        for (i, word) in words.iter().take(31).enumerate() {
+            assert_eq!(*word, 0x100 + i as u64);
         }
-        assert_eq!(trap_frame_word(&frame, 31), Some(0xAAAA));
-        assert_eq!(trap_frame_word(&frame, 32), Some(0xBBBB));
-        assert_eq!(trap_frame_word(&frame, 33), Some(0x2000_0000));
-        assert_eq!(trap_frame_word(&frame, 34), Some(0x7777_0000));
-        assert_eq!(trap_frame_word(&frame, TRAP_FRAME_CONTEXT_WORDS), None);
+        assert_eq!(words[31], 0xAAAA);
+        assert_eq!(words[32], 0xBBBB);
+        assert_eq!(words[33], 0x2000_0000);
+        assert_eq!(words[34], 0x7777_0000);
+        assert!(
+            !words.contains(&0xDEAD) && !words.contains(&0xBEEF),
+            "the syndrome words are the trap's, not the thread's"
+        );
     }
 
     /// WS-BP BP7.3: a frame is readable only while its handler's guard lives,
@@ -1833,35 +1829,40 @@ mod tests {
         outer.gprs[6] = 6;
         let mut inner = zero_frame();
         inner.gprs[6] = 66;
-        assert_eq!(in_flight_frame_word_in(&slots, 1, 6), None);
+        assert_eq!(in_flight_context_in(&slots, 1).map(|c| c[6]), None);
         {
             let _o = InFlightFrame::publish_in(&slots, 1, &mut outer);
-            assert_eq!(in_flight_frame_word_in(&slots, 1, 6), Some(6));
+            assert_eq!(in_flight_context_in(&slots, 1).map(|c| c[6]), Some(6));
             assert_eq!(
-                in_flight_frame_word_in(&slots, 0, 6),
+                in_flight_context_in(&slots, 0).map(|c| c[6]),
                 None,
                 "another core's slot"
             );
             {
                 let _i = InFlightFrame::publish_in(&slots, 1, &mut inner);
-                assert_eq!(in_flight_frame_word_in(&slots, 1, 6), Some(66));
+                assert_eq!(in_flight_context_in(&slots, 1).map(|c| c[6]), Some(66));
             }
             assert_eq!(
-                in_flight_frame_word_in(&slots, 1, 6),
+                in_flight_context_in(&slots, 1).map(|c| c[6]),
                 Some(6),
                 "the outer frame is restored"
             );
         }
         assert_eq!(
-            in_flight_frame_word_in(&slots, 1, 6),
+            in_flight_context_in(&slots, 1).map(|c| c[6]),
             None,
             "withdrawn when the handler returns"
         );
         assert_eq!(
-            in_flight_frame_word_in(&slots, 99, 6),
+            in_flight_context_in(&slots, 99).map(|c| c[6]),
             None,
             "a core past the slots"
         );
+    }
+
+    /// A context whose word `i` is `base + i`.
+    fn staged_context(base: u64) -> TrapContextWords {
+        core::array::from_fn(|i| base + i as u64)
     }
 
     fn fresh_restore() -> (
@@ -1886,11 +1887,10 @@ mod tests {
     #[test]
     fn a_user_restore_replaces_the_in_flight_context() {
         let (slots, staging, restored, handoff) = fresh_restore();
-        for i in 0..TRAP_FRAME_CONTEXT_WORDS {
-            restore_stage_word_in(&staging, 2, i, 1000 + u64::from(i)).unwrap();
-        }
+        let mut context = staged_context(1000);
         // A hostile pstate: EL1h with DAIF masked and NZCV set.
-        restore_stage_word_in(&staging, 2, 33, 0xF000_03C5).unwrap();
+        context[33] = 0xF000_03C5;
+        restore_stage_context_in(&staging, 2, &context).unwrap();
         let mut frame = zero_frame();
         frame.esr_el1 = 0x5600_0000;
         frame.far_el1 = 0xDEAD;
@@ -1941,9 +1941,7 @@ mod tests {
     fn an_fp_live_restore_installs_the_same_frame_as_a_user_restore() {
         let run = |kind: u32| {
             let (slots, staging, restored, handoff) = fresh_restore();
-            for i in 0..TRAP_FRAME_CONTEXT_WORDS {
-                restore_stage_word_in(&staging, 0, i, 500 + u64::from(i)).unwrap();
-            }
+            restore_stage_context_in(&staging, 0, &staged_context(500)).unwrap();
             let mut frame = zero_frame();
             {
                 let _g = InFlightFrame::publish_in(&slots, 0, &mut frame);
@@ -1999,8 +1997,8 @@ mod tests {
     }
 
     /// WS-BP BP7.4: with no frame published there is nothing to resume into,
-    /// so the commit is a no-op that sets no flag; an unknown kind, a word
-    /// past the context and a core outside the slots are refused.
+    /// so the commit is a no-op that sets no flag; an unknown kind and a core
+    /// outside the slots are refused.
     #[test]
     fn a_restore_without_a_frame_is_a_no_op_and_bad_operands_are_refused() {
         let (slots, staging, restored, handoff) = fresh_restore();
@@ -2036,11 +2034,7 @@ mod tests {
             Err(RestoreRefusal::UnknownKind)
         );
         assert_eq!(
-            restore_stage_word_in(&staging, 1, TRAP_FRAME_CONTEXT_WORDS, 0),
-            Err(RestoreRefusal::IndexOutOfRange)
-        );
-        assert_eq!(
-            restore_stage_word_in(&staging, 99, 0, 0),
+            restore_stage_context_in(&staging, 99, &staged_context(0)),
             Err(RestoreRefusal::CoreOutOfRange)
         );
         assert_eq!(
@@ -2076,9 +2070,7 @@ mod tests {
             RESTORE_KIND_IDLE,
         ] {
             let (slots, staging, restored, handoff) = fresh_restore();
-            for i in 0..TRAP_FRAME_CONTEXT_WORDS {
-                restore_stage_word_in(&staging, 1, i, 700 + u64::from(i)).unwrap();
-            }
+            restore_stage_context_in(&staging, 1, &staged_context(700)).unwrap();
             let mut frame = zero_frame();
             el1h(&mut frame);
             {

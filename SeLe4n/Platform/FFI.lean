@@ -602,32 +602,22 @@ opaque ffiCurrentCoreId : BaseIO UInt64
 -- WS-BP BP7.3 — the in-flight trap frame
 -- ============================================================================
 
-/-- **WS-BP BP7.3**: `1` when the executing PE is inside a trap handler that
-    published its frame (`trap::InFlightFrame`), `0` otherwise.
+/-- **WS-BP BP7.3: the whole context the executing PE trapped with**, handed
+over in one call — `some` the in-flight trap frame's thirty-five context words
+(`Architecture.TrapContext`, the `TrapFrame` layout: `x0`–`x30`, `SP_EL0`,
+`ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`) when a trap handler published its frame
+(`trap::InFlightFrame`), `none` otherwise.
 
-    Rust: `ffi_trap_frame_present` in `sele4n-hal/src/ffi.rs`. -/
-@[extern "ffi_trap_frame_present"]
-opaque ffiTrapFramePresent : BaseIO UInt8
+Rust: `ffi_trap_context` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_trap_context"]
+opaque ffiTrapContext : BaseIO (Option SeLe4n.Kernel.Architecture.TrapContext)
 
-/-- **WS-BP BP7.3**: word `index` of the executing PE's in-flight trap frame
-    (`Architecture.trapFrameWordCount` words: `x0`–`x30`, `SP_EL0`, `ELR_EL1`,
-    `SPSR_EL1`); `0` past the context.
-
-    Rust: `ffi_trap_frame_word` in `sele4n-hal/src/ffi.rs`. -/
-@[extern "ffi_trap_frame_word"]
-opaque ffiTrapFrameWord : UInt32 → BaseIO UInt64
-
-/-- **WS-BP BP7.3: the whole context the executing PE trapped with**, or `none`
-    when no frame is published (an entry called outside a trap handler).  Read
-    word by word, before the atomic step, so the save and the transition see one
-    frame. -/
+/-- **WS-BP BP7.3: the whole context the executing PE trapped with**, as the
+model's register file, or `none` when no frame is published (an entry called
+outside a trap handler).  Read once, before the atomic step, so the save and
+the transition see one frame. -/
 def captureTrapFrame : BaseIO (Option SeLe4n.RegisterFile) := do
-  if (← ffiTrapFramePresent) == 0 then
-    return none
-  let mut words : Array UInt64 := Array.mkEmpty SeLe4n.Kernel.Architecture.trapFrameWordCount
-  for i in [0:SeLe4n.Kernel.Architecture.trapFrameWordCount] do
-    words := words.push (← ffiTrapFrameWord i.toUInt32)
-  return some (SeLe4n.Kernel.Architecture.registerFileOfTrapWords fun i => words.getD i 0)
+  return (← ffiTrapContext).map SeLe4n.Kernel.Architecture.registerFileOfTrapContext
 
 -- ============================================================================
 -- WS-SM SM1.I.3 — Per-core IDLE thread FFI declarations
@@ -1904,9 +1894,9 @@ thread's saved register context.  The `decodeSyscallArgsFromState`
 function (called downstream by `syscallEntryChecked`) reads from this
 register file via `readReg layout.capPtrReg`, etc.
 
-The FFI also passes a separate `msgInfo` parameter for ABI parity with
-the Rust side, where `args.msg_info == args.msg_regs[1] == frame.x1()`
-(see `rust/sele4n-hal/src/svc_dispatch.rs::SyscallArgs::from_trap_frame`).
+The FFI also takes a separate `msgInfo` parameter, which the syscall
+entry (`syscallDispatchCrossCoreEntry`) reads from the same trapped `x1`
+word it passes as `x1`.
 We do **not** write `msgInfo` to the register file separately because
 `x1` already populates the `layout.msgInfoReg = ⟨1⟩` slot that
 `decodeMsgInfo` reads — writing both would be a redundant overwrite,
@@ -2900,9 +2890,9 @@ def syscallDispatchFromAbi
     (ipcBufferAddr : UInt64)
     (elr spsr spEl0 x30 : UInt64) : Kernel Architecture.SyscallOutcome :=
   fun st =>
-    -- ABI consistency check: the Rust caller guarantees
-    -- `msg_info == msg_regs[1] == frame.x1()` when constructing the
-    -- `SyscallArgs` struct.  If the Lean side observes a mismatch,
+    -- ABI consistency check: the syscall entry passes the trapped `x1` as
+    -- both `msgInfo` and `x1` (`syscallDispatchCrossCoreEntry`).  If the
+    -- Lean side observes a mismatch,
     -- the FFI boundary has been violated and we reject before
     -- touching kernel state.  Errors ride the x1 label as frames computed
     -- HERE, never staged into any TCB (WS-RA RA.B.4,
@@ -3303,13 +3293,13 @@ def installThreadTranslation (st : SystemState) (tid : SeLe4n.ThreadId) : BaseIO
   let ops := SeLe4n.Kernel.Architecture.threadTranslationOperands st tid
   ffiInstallTranslation ops.1 ops.2
 
-/-- **WS-BP BP7.4**: stage word `index` of the context the executing PE resumes
-    (the `captureTrapFrame` layout) in its per-core staging buffer.  Nothing
-    reaches the trap frame until `ffiRestoreCommit`.
+/-- **WS-BP BP7.4**: stage the context the executing PE resumes (the
+`captureTrapFrame` layout) in its per-core staging buffer, all thirty-five
+words in one call.  Nothing reaches the trap frame until `ffiRestoreCommit`.
 
-    Rust: `ffi_restore_stage_word` in `sele4n-hal/src/ffi.rs`. -/
-@[extern "ffi_restore_stage_word"]
-opaque ffiRestoreStageWord : UInt32 → UInt64 → BaseIO Unit
+Rust: `ffi_restore_stage_context` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_restore_stage_context"]
+opaque ffiRestoreStageContext : (@& SeLe4n.Kernel.Architecture.TrapContext) → BaseIO Unit
 
 /-- **WS-BP BP7.4**: commit the staged context into the executing PE's in-flight
     trap frame — kind `0` a thread at EL0 (its processor state sanitised to
@@ -3331,12 +3321,11 @@ opaque ffiRestoreStageWord : UInt32 → UInt64 → BaseIO Unit
 opaque ffiRestoreCommit : UInt32 → UInt64 → UInt64 → BaseIO Unit
 
 /-- **WS-BP BP7.4: install what a core resumes** — a thread's context, staged
-    word by word and then its translation and the commit; the idle loop under
-    the kernel's translation; or nothing. -/
+    in one call (`Architecture.trapContextOfRegisterFile`), then its translation
+    and the commit; the idle loop under the kernel's translation; or nothing. -/
 def restoreTrapFrame : SeLe4n.Kernel.Architecture.RestoreTarget → BaseIO Unit
   | .user ctx tableBase asid fpLive => do
-    for i in [0:SeLe4n.Kernel.Architecture.trapFrameWordCount] do
-      ffiRestoreStageWord i.toUInt32 (SeLe4n.Kernel.Architecture.trapWordsOfRegisterFile ctx i)
+    ffiRestoreStageContext (SeLe4n.Kernel.Architecture.trapContextOfRegisterFile ctx)
     ffiRestoreCommit (if fpLive then 2 else 0) tableBase asid
   | .idle => ffiRestoreCommit 1 0 0
   | .none => pure ()

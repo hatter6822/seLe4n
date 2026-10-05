@@ -744,10 +744,7 @@ describes the state that was actually committed;
 its scheduler slots.  Inert (`st'' = st'`) for every syscall that left a thread
 running on this core — including every arm of a single-core build. -/
 @[export lean_syscall_dispatch_cross_core]
-def syscallDispatchCrossCoreEntry
-    (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64) (elr spsr spEl0 x30 : UInt64) : BaseIO UInt64 := do
+def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   let ctx ← Platform.FFI.getKernelLabelingContext
   let execCore ← Concurrency.currentCoreId
   -- **WS-RR RR7.12**: the atomic step now runs inside its declared per-object
@@ -761,14 +758,24 @@ def syscallDispatchCrossCoreEntry
   -- PR #904 review (`v0.36.41`): on a core a remote deschedule vacated, the
   -- frame goes to the core's resident thread rewound to the `SVC`
   -- (`saveCapturedSyscallFrame`), so the interrupted syscall is re-issued.
-  let frame ← Platform.FFI.captureTrapFrame
+  -- The frame is also where the syscall's arguments are read, once: the
+  -- message info (`x1`), the six message registers, the IPC buffer (`x6`) and
+  -- the fault window (`ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30`).  An `SVC`
+  -- handler always publishes its frame before it dispatches, so an entry with
+  -- none is a kernel defect and fails closed: `.faulted` with no restore
+  -- staged, on which the trap layer halts.
+  let some trapped ← Platform.FFI.ffiTrapContext
+    | pure Architecture.SyscallOutcome.faulted.tagWord
+  let frame := some (Architecture.registerFileOfTrapContext trapped)
+  let msgInfo := trapped.x1
   -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
   -- and synced into the model in the atomic step, so the decode reads what the
   -- thread wrote.
   let words ← readCallerOverflowWords execCore msgInfo
   let result ← Platform.FFI.modifyGetKernelState fun st =>
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo
+      trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+      trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
       (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st execCore frame) words)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
@@ -827,19 +834,20 @@ atomic step read off the committed post-state) so a refactor that drops the SGI
 firing, the state commit or the record breaks this marker at elaboration;
 combined with `@[export]` (which the Rust extern resolves against) the seam
 cannot regress silently. -/
-theorem syscallDispatchCrossCoreEntry_def
-    (syscallId : UInt32) (msgInfo : UInt64) (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64) (elr spsr spEl0 x30 : UInt64) :
-    syscallDispatchCrossCoreEntry syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr
-        elr spsr spEl0 x30 =
+theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
+    syscallDispatchCrossCoreEntry syscallId =
       (do
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
-        let frame ← Platform.FFI.captureTrapFrame
+        let some trapped ← Platform.FFI.ffiTrapContext
+          | pure Architecture.SyscallOutcome.faulted.tagWord
+        let frame := some (Architecture.registerFileOfTrapContext trapped)
+        let msgInfo := trapped.x1
         let words ← readCallerOverflowWords execCore msgInfo
         let result ← Platform.FFI.modifyGetKernelState fun st =>
-          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-            ipcBufferAddr elr spsr spEl0 x30
+          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo
+            trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+            trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
             (Architecture.IpcBufferRead.syncUserWords
               (Architecture.saveCapturedSyscallFrame st execCore frame) words)
         let frame := result.1.mailboxFrame

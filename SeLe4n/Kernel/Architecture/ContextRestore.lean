@@ -212,4 +212,36 @@ theorem registerFileOfTrapWords_trapWordsOfRegisterFile (rf : SeLe4n.RegisterFil
     rw [h] at hLt
     simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
 
+/-- **The context the HAL installs**, as the boundary carries it: the register
+file's thirty-five layout words in one `TrapContext` (`Platform.FFI.restoreTrapFrame`
+hands it to the HAL in one call). -/
+def trapContextOfRegisterFile (rf : SeLe4n.RegisterFile) : TrapContext :=
+  TrapContext.ofWords (trapWordsOfRegisterFile rf)
+
+/-- **The bulk restore stages exactly the words the layout names** — word `i` of
+the context handed over is `trapWordsOfRegisterFile rf i`, for every word of the
+layout. -/
+theorem trapContextOfRegisterFile_word (rf : SeLe4n.RegisterFile) (i : Nat)
+    (h : i < trapFrameWordCount) :
+    (trapContextOfRegisterFile rf).word i = trapWordsOfRegisterFile rf i :=
+  TrapContext.word_ofWords _ i h
+
+/-- **Restore then save is the identity through the bulk boundary**: the
+context handed to the HAL, read back as the trap frame it becomes, is the
+register file that was restored — on a context whose registers fit in 64 bits.
+`registerFileOfTrapWords_trapWordsOfRegisterFile` stated over the boundary
+representation. -/
+theorem registerFileOfTrapContext_trapContextOfRegisterFile (rf : SeLe4n.RegisterFile)
+    (hGpr : ∀ r : SeLe4n.RegName, r.val < 31 → (rf.gpr r).val < 2 ^ 64)
+    (hSp : rf.sp.val < 2 ^ 64) (hPc : rf.pc.val < 2 ^ 64) (hPs : rf.pstate.val < 2 ^ 64)
+    (hTp : rf.tpidr.val < 2 ^ 64) :
+    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).pc = rf.pc ∧
+    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).sp = rf.sp ∧
+    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).pstate = rf.pstate ∧
+    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).tpidr = rf.tpidr ∧
+    (∀ r : SeLe4n.RegName, r.val < 31 →
+      (registerFileOfTrapContext (trapContextOfRegisterFile rf)).gpr r = rf.gpr r) := by
+  rw [trapContextOfRegisterFile, registerFileOfTrapContext_ofWords]
+  exact registerFileOfTrapWords_trapWordsOfRegisterFile rf hGpr hSp hPc hPs hTp
+
 end SeLe4n.Kernel.Architecture

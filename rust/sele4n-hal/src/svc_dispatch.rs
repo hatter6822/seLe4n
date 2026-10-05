@@ -27,14 +27,16 @@
 //! `SeLe4n/Kernel/Architecture/RegisterDecode.lean`):
 //!
 //! ```text
-//! x0..x5 : msg_regs[0..6]      (inline message registers)
+//! x0..x5 : inline message registers
 //! x6     : ipc_buffer_addr     (caller's TPIDRRO_EL0; optional)
 //! x7     : syscall_id          (SyscallId enum discriminant)
 //! ```
 //!
 //! `MessageInfo` is packed into `x1` per AK4 ABI conventions (length,
-//! extraCaps, label fields); the dispatcher passes it through opaquely
-//! to the Lean side, which decodes via `SeLe4n.Model.MessageInfo.mk`.
+//! extraCaps, label fields); the dispatcher reads only its length, for the
+//! argument-count prefilter.  The Lean side reads every argument register
+//! from the in-flight frame it takes whole (`Platform.FFI.ffiTrapContext`)
+//! and decodes `MessageInfo` via `SeLe4n.Model.MessageInfo.mk`.
 
 use crate::trap::TrapFrame;
 
@@ -348,67 +350,29 @@ impl SyscallId {
     }
 }
 
-/// AN9-F.1.a: typed view of an SVC trap frame's argument registers.
+/// AN9-F.1.a: the SVC trap frame's argument registers as the dispatcher's
+/// **prefilter** reads them — the packed `MessageInfo` in `x1`, whose length
+/// [`dispatch_svc`] checks against [`SyscallId::min_inline_args`].
 ///
-/// Constructed from a `TrapFrame` via [`SyscallArgs::from_trap_frame`].
-/// The Lean side decodes this struct via the pre-existing
-/// `decodeSyscallArgsFromState` helper (`SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`).
+/// This is the HAL's view only.  The Lean kernel reads the syscall's
+/// arguments — `x0`–`x6`, `MessageInfo`, and the fault window (`ELR_EL1`,
+/// `SPSR_EL1`, `SP_EL0`, `x30`) — once, from the whole in-flight context it
+/// takes in one call (`Platform.FFI.ffiTrapContext`), so nothing here crosses
+/// the boundary but the syscall id.
 #[derive(Debug, Clone, Copy)]
 pub struct SyscallArgs {
     /// Packed `MessageInfo` field (length | extraCaps | label).
     pub msg_info: u64,
-    /// Inline message registers `x0..x5` (`msg_regs[0..6]`).
-    pub msg_regs: [u64; 6],
-    /// Caller's IPC buffer address from `x6` (`TPIDRRO_EL0`).  Set to
-    /// `None` when the field is zero (no IPC buffer registered).
-    pub ipc_buffer_addr: Option<u64>,
-    /// PR #887 review round 3: the `SVC`'s return address (`ELR_EL1`).  A
-    /// blocking IPC syscall whose capability lookup fails is not answered
-    /// with an error frame — seL4's `handleInvocation` / `handleRecv`
-    /// deliver a `CapFault` to the thread's fault handler — and that fault's
-    /// message reports the faulting `SVC` (`ELR_EL1 - 4`) as the restart PC.
-    pub elr: u64,
-    /// The saved PSTATE (`SPSR_EL1`), carried outbound in the fault context
-    /// and never written back (the fail-closed half of `sanitiseRegister`).
-    pub spsr: u64,
-    /// `SP_EL0` — the fault window's stack pointer.
-    pub sp_el0: u64,
-    /// `x30` — the fault window's link register.
-    pub x30: u64,
 }
 
 impl SyscallArgs {
-    /// AN9-F.1.a: extract the typed argument view from a trap frame.
-    ///
-    /// Layout per `arm64DefaultLayout`:
-    ///   `x1` = `msg_info`
-    ///   `x0..x5` = `msg_regs[0..6]`
-    ///   `x6` = `ipc_buffer_addr` (zero ⇒ `None`)
-    ///
-    /// Note that `x7` is the `syscall_id` and is read separately by
-    /// the dispatcher; it is NOT part of [`SyscallArgs`].
-    ///
-    /// PR #887 review round 3: `ELR_EL1`, `SPSR_EL1`, `SP_EL0` and `x30`
-    /// cross too, so a capability fault raised by the Lean dispatcher can
-    /// build its context from the trap frame's window rather than from the
-    /// register mirror's stale last-syscall contents.
+    /// AN9-F.1.a: extract the prefilter's view from a trap frame:
+    /// `msg_info` is `x1` (`arm64DefaultLayout`).  `x7`, the `syscall_id`,
+    /// is read separately by the dispatcher; it is NOT part of
+    /// [`SyscallArgs`].
     pub fn from_trap_frame(frame: &TrapFrame) -> Self {
-        let raw_buf = frame.gprs[6];
         Self {
             msg_info: frame.x1(),
-            msg_regs: [
-                frame.x0(),
-                frame.x1(),
-                frame.x2(),
-                frame.x3(),
-                frame.x4(),
-                frame.x5(),
-            ],
-            ipc_buffer_addr: if raw_buf == 0 { None } else { Some(raw_buf) },
-            elr: frame.elr_el1,
-            spsr: frame.spsr_el1,
-            sp_el0: frame.sp_el0,
-            x30: frame.gprs[30],
         }
     }
 
@@ -723,29 +687,13 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
         // frame this call returns is the frame this call's commit published.
         crate::kernel_entry::with_kernel_entry(core, || {
             // SAFETY: `lean_syscall_dispatch_cross_core` is a Lean-emitted
-            // extern "C" symbol resolved at link time.  The arguments cross
-            // the FFI boundary as `u32 + 12 × u64` which the Lean side reads
-            // via the @[extern] declaration in
-            // `SeLe4n/Kernel/SyscallDispatchEntry.lean`.  Calling it is sound
-            // from EL1 kernel context once this core's Lean runtime is
-            // initialized — which the gate above just established.
-            let tag = unsafe {
-                lean_syscall_dispatch_cross_core(
-                    sid.to_u32(),
-                    args.msg_info,
-                    args.msg_regs[0],
-                    args.msg_regs[1],
-                    args.msg_regs[2],
-                    args.msg_regs[3],
-                    args.msg_regs[4],
-                    args.msg_regs[5],
-                    args.ipc_buffer_addr.unwrap_or(0),
-                    args.elr,
-                    args.spsr,
-                    args.sp_el0,
-                    args.x30,
-                )
-            };
+            // extern "C" symbol resolved at link time.  The validated syscall
+            // id is its one argument (`u32`, the @[extern] declaration in
+            // `SeLe4n/Kernel/SyscallDispatchEntry.lean`); the Lean side reads
+            // every other argument from the in-flight frame, in one call.
+            // Calling it is sound from EL1 kernel context once this core's Lean
+            // runtime is initialized — which the gate above just established.
+            let tag = unsafe { lean_syscall_dispatch_cross_core(sid.to_u32()) };
             (tag, return_frame_read_in(&RETURN_FRAMES, core))
         })
     } else {
@@ -810,24 +758,11 @@ extern "C" {
     ///
     /// Sound only on a core whose Lean runtime is initialised — the SVC seam
     /// checks `lean_ready` on the executing PE before every outcome, including
-    /// its prefilters — and only for an `SVC` taken from EL0.  The fifteen
-    /// words must be the live trap frame's window; the outcome tag the call
-    /// returns decides whether the frame may be `eret`ed.
-    fn lean_syscall_dispatch_cross_core(
-        syscall_id: u32,
-        msg_info: u64,
-        x0: u64,
-        x1: u64,
-        x2: u64,
-        x3: u64,
-        x4: u64,
-        x5: u64,
-        ipc_buffer_addr: u64,
-        elr: u64,
-        spsr: u64,
-        sp_el0: u64,
-        x30: u64,
-    ) -> u64;
+    /// its prefilters — and only for an `SVC` taken from EL0, inside the
+    /// handler that published the frame (`trap::InFlightFrame`) the Lean side
+    /// reads the arguments from.  `syscall_id` must be that frame's `x7`; the
+    /// outcome tag the call returns decides whether the frame may be `eret`ed.
+    fn lean_syscall_dispatch_cross_core(syscall_id: u32) -> u64;
 }
 
 /// AN9-F.4 host-lane stand-in (WS-RA shape): publishes the label-encoded
@@ -855,22 +790,7 @@ extern "C" {
 ///
 /// None beyond the call: this stand-in touches only the return-frame mailbox.
 #[cfg(not(feature = "hw_target"))]
-#[allow(clippy::too_many_arguments)]
-unsafe fn lean_syscall_dispatch_cross_core(
-    _syscall_id: u32,
-    _msg_info: u64,
-    _x0: u64,
-    _x1: u64,
-    _x2: u64,
-    _x3: u64,
-    _x4: u64,
-    _x5: u64,
-    _ipc_buffer_addr: u64,
-    _elr: u64,
-    _spsr: u64,
-    _sp_el0: u64,
-    _x30: u64,
-) -> u64 {
+unsafe fn lean_syscall_dispatch_cross_core(_syscall_id: u32) -> u64 {
     return_frame_publish_in(&RETURN_FRAMES, 0, error_frame_regs(17));
     0
 }
@@ -999,31 +919,13 @@ mod tests {
     }
 
     #[test]
-    fn syscall_args_from_trap_frame_extracts_x0_to_x5() {
+    fn syscall_args_from_trap_frame_reads_msg_info_from_x1() {
         let mut frame = zero_frame();
         frame.gprs[0] = 0x1111;
         frame.gprs[1] = 0x2222;
-        frame.gprs[2] = 0x3333;
-        frame.gprs[3] = 0x4444;
-        frame.gprs[4] = 0x5555;
-        frame.gprs[5] = 0x6666;
-        frame.gprs[6] = 0x7777;
+        frame.gprs[7] = 0x3333;
         let args = SyscallArgs::from_trap_frame(&frame);
-        assert_eq!(
-            args.msg_regs,
-            [0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666]
-        );
-        assert_eq!(args.ipc_buffer_addr, Some(0x7777));
-        // msg_info comes from x1
         assert_eq!(args.msg_info, 0x2222);
-    }
-
-    #[test]
-    fn syscall_args_zero_ipc_buffer_decodes_to_none() {
-        let mut frame = zero_frame();
-        frame.gprs[6] = 0;
-        let args = SyscallArgs::from_trap_frame(&frame);
-        assert_eq!(args.ipc_buffer_addr, None);
     }
 
     #[test]

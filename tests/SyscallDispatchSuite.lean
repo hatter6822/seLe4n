@@ -483,9 +483,9 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
     rejects with the `.invalidSyscallArgument` error frame without
     invoking `syscallEntryChecked`.
 
-The Rust caller's `SyscallArgs::from_trap_frame` constructs `msg_info`
-and `msg_regs[1]` from the same `frame.x1()` slot, so they should always
-be equal at the ABI boundary.  A divergence indicates either a malformed
+The syscall entry (`syscallDispatchCrossCoreEntry`) passes the trapped
+`x1` word as both `msgInfo` and `x1`, so they should always be equal at
+the ABI boundary.  A divergence indicates either a malformed
 caller or memory corruption — the FFI rejects rather than proceeding. -/
 private def sd034_dispatch_abiMismatch : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨10⟩

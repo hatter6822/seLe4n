@@ -1,3 +1,54 @@
+## v0.36.47 — the user context crosses the Lean boundary in one call each way; syscall arguments are read once
+
+- **Bulk trap-frame transfer.**  Every kernel entry that saves or restores a
+  thread's context (the syscall seam, the timer tick, the `.reschedule`
+  receiver, the fault and unknown-syscall entries, the secondary bring-up)
+  moved it across the FFI one word per call: `ffi_trap_frame_present` plus 35
+  `ffi_trap_frame_word` calls in, 35 `ffi_restore_stage_word` calls plus
+  `ffi_restore_commit` out — 72 extern calls per entry, each captured word
+  boxed into an `Array UInt64`.  The boundary representation is now
+  `Architecture.TrapContext`, a structure of 35 `UInt64` fields that compiles
+  to one constructor object of 280 scalar bytes: `ffi_trap_context` hands the
+  whole in-flight context over as `Option TrapContext` in one call, and
+  `ffi_restore_stage_context` stages a borrowed one in one call before the
+  unchanged `ffi_restore_commit`.  The trap-frame marshalling drops from 72
+  extern calls per entry to 3.  The model's `RegisterFile` stays the proofs'
+  view (`registerFileOfTrapContext`), and the round trip is proved:
+  `TrapContext.ofWords_word`, `TrapContext.word_ofWords` (every word below
+  `trapFrameWordCount`), `registerFileOfTrapContext_ofWords` and
+  `registerFileOfTrapContext_trapContextOfRegisterFile` (restore then save is
+  the identity on a 64-bit context).  On the Rust side
+  `trap::trap_frame_context` is the one owner of the layout,
+  `ffi::trap_context_to_lean` / `trap_context_of_lean` marshal it (the latter
+  refusing, and the stage halting on, any object not of the constructor's
+  shape), and `lean_runtime::ctor_set_u64` is `lean_ctor_set_uint64`.  The
+  per-word FFI symbols, `trap_frame_word`, `in_flight_frame_word(_in)`,
+  `in_flight_frame_present`, `restore_stage_word(_in)` and
+  `RestoreRefusal::IndexOutOfRange` are retired.
+- **The syscall arguments are read once.**  `dispatch_svc` passed 13 scalars
+  (`msg_info`, `x0`–`x5`, the IPC buffer, `ELR_EL1`, `SPSR_EL1`, `SP_EL0`,
+  `x30`) and the Lean entry then re-read the same frame.  The export
+  `lean_syscall_dispatch_cross_core` now takes only the validated syscall id;
+  `syscallDispatchCrossCoreEntry` reads every other argument from the
+  context it captured, and an entry with no published frame fails closed
+  (`.faulted`, nothing staged, so the trap layer halts).  `SyscallArgs` keeps
+  only the prefilter's `msg_info`.  Common-path extern calls per syscall
+  (no overflow words, SGIs, physical writes, shootdown, I-cache or FP
+  release): 75 before, 6 after.
+- **The Lean heap's lock is not redundant, and stays.**  The audit claim that
+  the kernel-entry lock already serialises every Lean allocation does not
+  hold: the exception classifier (`lean_classify_synchronous_exception`) runs
+  before the entry lock on every core and its compiled body allocates its
+  `ExceptionContext` (`lean_alloc_ctor(0, 0, 32)`), and a secondary core's
+  bring-up handshake (`lean_ready::initialise_core_runtime`) allocates and
+  frees a heap probe outside the entry lock while other cores may be serving
+  entries.  `lean_heap.rs`'s concurrency note now states those two callers in
+  place of the old, inaccurate reason.
+- Tier 3: the restore and syscall-argument anchors follow the new relation
+  (the stage call before the commit; the step fed from `trapped`; the
+  one-argument extern; the trap-frame context layout in `trap.rs`), and a
+  negative anchor refuses a per-word loop in `Platform/FFI.lean`.
+
 ## v0.36.46 — The executing core is threaded from the trap entry; `determineExecutingCore` deleted (IPC-8)
 
 - **Every dispatch arm now uses the core the syscall was entered on.**
