@@ -191,7 +191,7 @@ theorem storeTcbIpcState_ipcState_eq
     (hStep : storeTcbIpcState st tid ipc = .ok st')
     (tcb : TCB) (hTcb : st'.objects[tid.toObjId]? = some (.tcb tcb)) :
     tcb.ipcState = ipc := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none =>
     simp [hLookup] at hStep
@@ -261,7 +261,7 @@ theorem storeTcbIpcState_tcb_exists_at_target
     (hStep : storeTcbIpcState st tid ipc = .ok st')
     (_hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none =>
     simp [hLookup] at hStep
@@ -296,37 +296,16 @@ theorem storeTcbReceiveComplete_preserves_objects_ne
     (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
-    st'.objects[oid]? = st.objects[oid]? := by
-  unfold storeTcbReceiveComplete at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      obtain ⟨⟨⟩, stMid⟩ := pair
-      simp only [hStore] at hStep
-      have hEq : stMid = st' := Except.ok.inj hStep; subst hEq
-      exact storeObject_objects_ne st stMid tid.toObjId oid _ hNe hObjInv hStore
+    st'.objects[oid]? = st.objects[oid]? :=
+  modifyTcb_preserves_objects_ne oid hNe hObjInv hStep
 
 /-- WS-F1: `storeTcbIpcStateAndMessage` does not modify the scheduler. -/
 theorem storeTcbIpcStateAndMessage_scheduler_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    st'.scheduler = st.scheduler := by
-  unfold storeTcbIpcStateAndMessage at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore
+    st'.scheduler = st.scheduler :=
+  modifyTcb_scheduler_eq hStep
 
 /-- Finding F-1: `storeTcbReceiveComplete` does not modify the scheduler.
 Mirror of `storeTcbIpcStateAndMessage_scheduler_eq`. -/
@@ -334,18 +313,8 @@ theorem storeTcbReceiveComplete_scheduler_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (msg : Option IpcMessage)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
-    st'.scheduler = st.scheduler := by
-  unfold storeTcbReceiveComplete at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore
+    st'.scheduler = st.scheduler :=
+  modifyTcb_scheduler_eq hStep
 
 /-- WS-SM SM8.B.2: `storeTcbReceiveComplete` does not modify the machine, so no
 core's banked `RegisterFile` moves.  Paired with the scheduler frame above, this
@@ -354,18 +323,8 @@ theorem storeTcbReceiveComplete_machine_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (msg : Option IpcMessage)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
-    st'.machine = st.machine := by
-  unfold storeTcbReceiveComplete at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_machine_eq st pair.2 tid.toObjId _ hStore
+    st'.machine = st.machine :=
+  modifyTcb_machine_eq hStep
 
 /-- WS-F1: `storeTcbIpcStateAndMessage` preserves endpoint objects. -/
 theorem storeTcbIpcStateAndMessage_preserves_endpoint
@@ -378,7 +337,7 @@ theorem storeTcbIpcStateAndMessage_preserves_endpoint
     st'.objects[epId]? = some (.endpoint ep) := by
   by_cases hEq : epId = tid.toObjId
   · subst hEq
-    unfold storeTcbIpcStateAndMessage at hStep
+    unfold storeTcbIpcStateAndMessage modifyTcb at hStep
     have hLookup : lookupTcb st tid = none := by unfold lookupTcb SystemState.getTcb?; simp [hEp]
     simp [hLookup] at hStep
   · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg epId hEq hObjInv hStep]; exact hEp
@@ -395,7 +354,7 @@ theorem storeTcbReceiveComplete_preserves_endpoint
     st'.objects[epId]? = some (.endpoint ep) := by
   by_cases hEq : epId = tid.toObjId
   · subst hEq
-    unfold storeTcbReceiveComplete at hStep
+    unfold storeTcbReceiveComplete modifyTcb at hStep
     have hLookup : lookupTcb st tid = none := by unfold lookupTcb SystemState.getTcb?; simp [hEp]
     simp [hLookup] at hStep
   · rw [storeTcbReceiveComplete_preserves_objects_ne st st' tid msg epId hEq hObjInv hStep]; exact hEp
@@ -411,7 +370,7 @@ theorem storeTcbIpcStateAndMessage_endpoint_backward
     st.objects[oid]? = some (.endpoint ep) := by
   by_cases hEq : oid = tid.toObjId
   · subst hEq
-    unfold storeTcbIpcStateAndMessage at hStep
+    unfold storeTcbIpcStateAndMessage modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some tcb =>
@@ -432,21 +391,8 @@ theorem storeTcbIpcStateAndMessage_notification_backward
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
-    st.objects[oid]? = some (.notification ntfn) := by
-  by_cases hEq : oid = tid.toObjId
-  · subst hEq
-    unfold storeTcbIpcStateAndMessage at hStep
-    cases hLookup : lookupTcb st tid with
-    | none => simp [hLookup] at hStep
-    | some tcb =>
-      simp only [hLookup] at hStep
-      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
-      | error e => simp [hStore] at hStep
-      | ok pair =>
-        simp only [hStore] at hStep
-        have := Except.ok.inj hStep; subst this
-        rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hNtfn; cases hNtfn
-  · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg oid hEq hObjInv hStep] at hNtfn; exact hNtfn
+    st.objects[oid]? = some (.notification ntfn) :=
+  modifyTcb_notification_backward oid ntfn hObjInv hStep hNtfn
 
 /-- Finding F-1: Backward notification preservation for `storeTcbReceiveComplete`.
 Mirror of `storeTcbIpcStateAndMessage_notification_backward`. -/
@@ -457,21 +403,8 @@ theorem storeTcbReceiveComplete_notification_backward
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st')
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
-    st.objects[oid]? = some (.notification ntfn) := by
-  by_cases hEq : oid = tid.toObjId
-  · subst hEq
-    unfold storeTcbReceiveComplete at hStep
-    cases hLookup : lookupTcb st tid with
-    | none => simp [hLookup] at hStep
-    | some tcb =>
-      simp only [hLookup] at hStep
-      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
-      | error e => simp [hStore] at hStep
-      | ok pair =>
-        simp only [hStore] at hStep
-        have := Except.ok.inj hStep; subst this
-        rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hNtfn; cases hNtfn
-  · rw [storeTcbReceiveComplete_preserves_objects_ne st st' tid msg oid hEq hObjInv hStep] at hNtfn; exact hNtfn
+    st.objects[oid]? = some (.notification ntfn) :=
+  modifyTcb_notification_backward oid ntfn hObjInv hStep hNtfn
 
 /-- WS-F1: IPC state read-back for `storeTcbIpcStateAndMessage`. -/
 theorem storeTcbIpcStateAndMessage_ipcState_eq
@@ -481,7 +414,7 @@ theorem storeTcbIpcStateAndMessage_ipcState_eq
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
     (tcb : TCB) (hTcb : st'.objects[tid.toObjId]? = some (.tcb tcb)) :
     tcb.ipcState = ipc := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb' =>
@@ -504,7 +437,7 @@ theorem storeTcbReceiveComplete_ipcState_eq
     (hStep : storeTcbReceiveComplete st tid msg = .ok st')
     (tcb : TCB) (hTcb : st'.objects[tid.toObjId]? = some (.tcb tcb)) :
     tcb.ipcState = .ready := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb' =>
@@ -525,7 +458,7 @@ theorem storeTcbIpcStateAndMessage_tcb_exists_at_target
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
     (_hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -546,7 +479,7 @@ theorem storeTcbReceiveComplete_tcb_exists_at_target
     (hStep : storeTcbReceiveComplete st tid msg = .ok st')
     (_hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -564,37 +497,16 @@ theorem storeTcbPendingMessage_preserves_objects_ne
     (msg : Option IpcMessage) (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
-    st'.objects[oid]? = st.objects[oid]? := by
-  unfold storeTcbPendingMessage at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      obtain ⟨⟨⟩, stMid⟩ := pair
-      simp only [hStore] at hStep
-      have hEq : stMid = st' := Except.ok.inj hStep; subst hEq
-      exact storeObject_objects_ne st stMid tid.toObjId oid _ hNe hObjInv hStore
+    st'.objects[oid]? = st.objects[oid]? :=
+  modifyTcb_preserves_objects_ne oid hNe hObjInv hStep
 
 /-- WS-F1: `storeTcbPendingMessage` does not modify the scheduler. -/
 theorem storeTcbPendingMessage_scheduler_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (msg : Option IpcMessage)
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
-    st'.scheduler = st.scheduler := by
-  unfold storeTcbPendingMessage at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore
+    st'.scheduler = st.scheduler :=
+  modifyTcb_scheduler_eq hStep
 
 /-- WS-F1: `storeTcbPendingMessage` preserves endpoint objects. -/
 theorem storeTcbPendingMessage_preserves_endpoint
@@ -605,7 +517,7 @@ theorem storeTcbPendingMessage_preserves_endpoint
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
     st'.objects[epId]? = some (.endpoint ep) := by
   by_cases hEq : epId = tid.toObjId
-  · subst hEq; unfold storeTcbPendingMessage at hStep
+  · subst hEq; unfold storeTcbPendingMessage modifyTcb at hStep
     have hLookup : lookupTcb st tid = none := by unfold lookupTcb SystemState.getTcb?; simp [hEp]
     simp [hLookup] at hStep
   · rw [storeTcbPendingMessage_preserves_objects_ne st st' tid msg epId hEq hObjInv hStep]; exact hEp
@@ -619,7 +531,7 @@ theorem storeTcbPendingMessage_endpoint_backward
     (hEp : st'.objects[oid]? = some (.endpoint ep)) :
     st.objects[oid]? = some (.endpoint ep) := by
   by_cases hEq : oid = tid.toObjId
-  · subst hEq; unfold storeTcbPendingMessage at hStep
+  · subst hEq; unfold storeTcbPendingMessage modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some tcb =>
@@ -639,20 +551,8 @@ theorem storeTcbPendingMessage_notification_backward
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbPendingMessage st tid msg = .ok st')
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
-    st.objects[oid]? = some (.notification ntfn) := by
-  by_cases hEq : oid = tid.toObjId
-  · subst hEq; unfold storeTcbPendingMessage at hStep
-    cases hLookup : lookupTcb st tid with
-    | none => simp [hLookup] at hStep
-    | some tcb =>
-      simp only [hLookup] at hStep
-      cases hStore : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
-      | error e => simp [hStore] at hStep
-      | ok pair =>
-        simp only [hStore] at hStep
-        have := Except.ok.inj hStep; subst this
-        rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hNtfn; cases hNtfn
-  · rw [storeTcbPendingMessage_preserves_objects_ne st st' tid msg oid hEq hObjInv hStep] at hNtfn; exact hNtfn
+    st.objects[oid]? = some (.notification ntfn) :=
+  modifyTcb_notification_backward oid ntfn hObjInv hStep hNtfn
 
 /-- AK1-D: storeTcbIpcStateAndMessage forward-preserves TCB existence.
     Mirrors `storeTcbPendingMessage_tcb_forward`: a TCB at any `oid` in the
@@ -684,7 +584,7 @@ theorem storeTcbPendingMessage_tcb_forward
     (hTcb : st.objects[oid]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
   by_cases hEq : oid = tid.toObjId
-  · subst hEq; unfold storeTcbPendingMessage at hStep
+  · subst hEq; unfold storeTcbPendingMessage modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some origTcb =>
@@ -705,7 +605,7 @@ theorem storeTcbPendingMessage_tcb_ipcState_backward
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
   by_cases hEq : anyTid.toObjId = tid.toObjId
-  · unfold storeTcbPendingMessage at hStep
+  · unfold storeTcbPendingMessage modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some origTcb =>
@@ -730,18 +630,8 @@ theorem storeTcbIpcStateAndMessage_preserves_objects_invExt
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    st'.objects.invExt := by
-  unfold storeTcbIpcStateAndMessage at hStep
-  cases hLookup : lookupTcb st tid with
-  | none => simp [hLookup] at hStep
-  | some tcb =>
-    simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have := Except.ok.inj hStep; subst this
-      exact storeObject_preserves_objects_invExt st pair.2 tid.toObjId _ hObjInv hStore
+    st'.objects.invExt :=
+  modifyTcb_preserves_objects_invExt hObjInv hStep
 
 /-- Finding F-1: `storeTcbReceiveComplete` preserves `objects.invExt`.
 Mirror of `storeTcbIpcStateAndMessage_preserves_objects_invExt`. -/
@@ -750,18 +640,8 @@ theorem storeTcbReceiveComplete_preserves_objects_invExt
     (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
-    st'.objects.invExt := by
-  unfold storeTcbReceiveComplete at hStep
-  cases hLookup : lookupTcb st tid with
-  | none => simp [hLookup] at hStep
-  | some tcb =>
-    simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have := Except.ok.inj hStep; subst this
-      exact storeObject_preserves_objects_invExt st pair.2 tid.toObjId _ hObjInv hStore
+    st'.objects.invExt :=
+  modifyTcb_preserves_objects_invExt hObjInv hStep
 
 /-- TPI-D1: storeTcbIpcStateAndMessage preserves objectIndexSetComplete. -/
 theorem storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
@@ -772,7 +652,7 @@ theorem storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
     (hComplete : objectIndexSetComplete st)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     objectIndexSetComplete st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -791,7 +671,7 @@ theorem storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     st'.objectIndexSet.table.invExt := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -809,18 +689,8 @@ theorem storeTcbIpcState_preserves_objects_invExt
     (ipc : ThreadIpcState)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    st'.objects.invExt := by
-  unfold storeTcbIpcState at hStep
-  cases hLookup : lookupTcb st tid with
-  | none => simp [hLookup] at hStep
-  | some tcb =>
-    simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have := Except.ok.inj hStep; subst this
-      exact storeObject_preserves_objects_invExt st pair.2 tid.toObjId _ hObjInv hStore
+    st'.objects.invExt :=
+  modifyTcb_preserves_objects_invExt hObjInv hStep
 
 /-- `storeTcbPendingMessage` preserves `objects.invExt`. -/
 theorem storeTcbPendingMessage_preserves_objects_invExt
@@ -828,18 +698,8 @@ theorem storeTcbPendingMessage_preserves_objects_invExt
     (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
-    st'.objects.invExt := by
-  unfold storeTcbPendingMessage at hStep
-  cases hLookup : lookupTcb st tid with
-  | none => simp [hLookup] at hStep
-  | some tcb =>
-    simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have := Except.ok.inj hStep; subst this
-      exact storeObject_preserves_objects_invExt st pair.2 tid.toObjId _ hObjInv hStore
+    st'.objects.invExt :=
+  modifyTcb_preserves_objects_invExt hObjInv hStep
 
 -- ============================================================================
 -- AC3-B / I-02: donateSchedContext atomicity lemmas
@@ -940,7 +800,7 @@ theorem notificationSignal_respects_pipBoost
       apply ensureRunnable_mem_self
       -- storeTcbIpcStateAndMessage .ok ⇒ waiter had a TCB pre-store AND
       -- post-store has a TCB at waiter.toObjId (via _tcb_exists_at_target).
-      unfold storeTcbIpcStateAndMessage at hMsg
+      unfold storeTcbIpcStateAndMessage modifyTcb at hMsg
       cases hLk : lookupTcb pair.2 waiter with
       | none => simp [hLk] at hMsg
       | some tcb =>

@@ -114,13 +114,13 @@ The 5 affected syscalls and their donation extensions:
   arguments, because the arm performs two hand-offs.
   `donatedScId` is the reply leg's return, exactly as
   `lockSet_endpointReply`.  `redonatedScId` (WS-OD OD3.5) is the
-  receive leg's re-donation: `replyRecvBody` runs
+  receive leg's re-donation: `endpointReplyRecvOnCore` runs
   `applyCallDonationOnCore nextThread tid` whenever its receive
   leg dequeues a queued `Call`, writing the **new** caller's
   SchedContext — provably not the returned one.  This bullet
   used to say the receive phase does not initiate donation; that
   was true of the single-core transition it was written for and
-  false of `replyRecvBody`, and the same sentence at the
+  false of `endpointReplyRecvOnCore`, and the same sentence at the
   declaration site was corrected at OD3.17.  See
   `lockSet_replyRecv`'s own docstring for the full contract.
 
@@ -984,7 +984,7 @@ here at OD3.17).  This docstring used to say the opposite — "the
 receive phase does NOT initiate donation (donation is
 caller-initiated from `endpointCall`, not receiver-initiated)" —
 which was true of the single-core transition it was written for and
-false of `replyRecvBody`: its receive leg runs
+false of `endpointReplyRecvOnCore`: its receive leg runs
 `applyCallDonationOnCore nextThread tid` whenever it dequeues a
 queued `Call`, writing the **new** caller's SchedContext, provably
 not the returned one.  That is the passive-server steady state, not
@@ -4216,9 +4216,9 @@ completes, and `.replyRecv` invokes **two** (WS-OD OD3.14):
   arm has dispatched the cross-core form since WS-SM SM6.A.5.
 * `endpointReplyWithDonation`: calls `revertPriorityInheritance
   callerTid` after the base reply.
-* `endpointReplyRecvWithDonation`: calls `revertPriorityInheritance
-  callerTid` after the base replyRecv.  The live `replyRecvPostReceiveDonation`
-  walks from the **recorded server** instead, and **WS-OD OD3.14** adds a
+* `endpointReplyRecvOnCore` (`replyRecvPostReceiveDonation`): walks from the
+  **recorded server** (the deleted single-core `endpointReplyRecvWithDonation`
+  walked from the caller), and **WS-OD OD3.14** adds a
   second walk from the receiver on a *delegated* reply, where the first
   does not reach it.
 * `applyReceiveRendezvousHandoff` (**WS-OD OD3.14**): calls
@@ -4336,8 +4336,8 @@ The reply leg's walk reverts the boost at the thread whose waiter set it just
 shrank, which is the **recorded server** — the thread the answered caller
 donated to.  On a non-delegated reply that is the receiver itself (and so is
 `recordedReplyServer?`'s `.getD` default when the reply records no server at
-all), which is the case the single-core `endpointReplyRecvWithDonation` this
-marker was first written for could only reach; **WS-OD OD3.14** made the
+all), which is the case the single-core ReplyRecv composite this marker was first
+written for (deleted at `v0.36.48`) could only reach; **WS-OD OD3.14** made the
 distinction load-bearing, since the live `replyRecvPostReceiveDonation` walks from
 `recordedServerTid` and a hint naming the receiver would send the SM3.C walker
 up a different chain on a delegated reply.

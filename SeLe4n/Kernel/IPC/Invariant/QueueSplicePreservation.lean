@@ -469,7 +469,7 @@ theorem storeTcbQueueLinks_as_storeObject
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st
       = .ok ((), st') := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   simp only [hTcb] at hStep
   cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
   | error e => simp [hStore] at hStep
@@ -2944,7 +2944,7 @@ theorem storeTcbQueueLinks_agrees_insert {st st' : SystemState}
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') (x : SeLe4n.ObjId) :
     st'.objects[x]? =
       (st.objects.insert tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)))[x]? := by
-  unfold storeTcbQueueLinks storeObject at hStep
+  unfold storeTcbQueueLinks modifyTcb storeObject at hStep
   simp only [hTcb, Except.ok.injEq] at hStep
   subst hStep
   rfl

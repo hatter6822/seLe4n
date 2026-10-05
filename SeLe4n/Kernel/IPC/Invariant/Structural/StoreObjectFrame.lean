@@ -877,7 +877,7 @@ theorem storeTcbIpcState_preserves_contextMatchesCurrent
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     contextMatchesCurrent st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -899,7 +899,7 @@ theorem storeTcbIpcStateAndMessage_preserves_contextMatchesCurrent
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     contextMatchesCurrent st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -921,7 +921,7 @@ theorem storeTcbPendingMessage_preserves_contextMatchesCurrent
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
     contextMatchesCurrent st' := by
-  unfold storeTcbPendingMessage at hStep
+  unfold storeTcbPendingMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -945,7 +945,7 @@ theorem storeTcbQueueLinks_preserves_contextMatchesCurrent
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     contextMatchesCurrent st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1038,7 +1038,7 @@ theorem storeTcbIpcState_preserves_allPendingMessagesBounded
     (hStep : storeTcbIpcState st tid ipc = .ok st')
     (hInv : allPendingMessagesBounded st) :
     allPendingMessagesBounded st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1069,7 +1069,7 @@ theorem storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
     (hInv : pendingMessagesSatisfy P st) :
     pendingMessagesSatisfy P st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1113,7 +1113,7 @@ theorem storeTcbReceiveComplete_preserves_allPendingMessagesBounded
     (hStep : storeTcbReceiveComplete st tid msg = .ok st')
     (hInv : allPendingMessagesBounded st) :
     allPendingMessagesBounded st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1141,7 +1141,7 @@ theorem storeTcbPendingMessage_preserves_allPendingMessagesBounded
     (hStep : storeTcbPendingMessage st tid msg = .ok st')
     (hInv : allPendingMessagesBounded st) :
     allPendingMessagesBounded st' := by
-  unfold storeTcbPendingMessage at hStep
+  unfold storeTcbPendingMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1197,7 +1197,7 @@ theorem storeTcbQueueLinks_preserves_pendingMessagesSatisfy
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
     (hInv : pendingMessagesSatisfy P st) :
     pendingMessagesSatisfy P st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>

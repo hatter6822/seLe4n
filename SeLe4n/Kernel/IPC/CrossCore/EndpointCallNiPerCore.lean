@@ -52,18 +52,8 @@ theorem storeTcbIpcStateAndMessage_machine_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    st'.machine = st.machine := by
-  unfold storeTcbIpcStateAndMessage at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_machine_eq st pair.2 tid.toObjId _ hStore
+    st'.machine = st.machine :=
+  modifyTcb_machine_eq hStep
 
 /-- `endpointQueuePopHead` leaves the machine registers untouched. -/
 theorem endpointQueuePopHead_machine_eq

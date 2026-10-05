@@ -2547,13 +2547,13 @@ theorem endpointCallOnCore_preserves_pendingReceiveReplyWellFormed
                 rw [hIpc0 hyP, hIpcW hyC]
               -- The deliver/block stores' target slots each held a TCB pre-store.
               have hDelivTarget : ∃ t, pair.2.2.objects[pair.1.toObjId]? = some (.tcb t) := by
-                unfold storeTcbIpcStateAndMessage at hMsg
+                unfold storeTcbIpcStateAndMessage modifyTcb at hMsg
                 cases hL : lookupTcb pair.2.2 pair.1 with
                 | none => simp [hL] at hMsg
                 | some t => exact ⟨t, lookupTcb_some_objects pair.2.2 pair.1 t hL⟩
               have hBlockTarget : ∃ t, (wakeThread st2 pair.1 executingCore).1.objects[caller.toObjId]? = some (.tcb t) := by
                 cases hL : lookupTcb (wakeThread st2 pair.1 executingCore).1 caller with
-                | none => rw [storeTcbIpcStateAndMessage, hL] at hCS; simp at hCS
+                | none => rw [storeTcbIpcStateAndMessage, modifyTcb, hL] at hCS; simp at hCS
                 | some t => exact ⟨t, lookupTcb_some_objects (wakeThread st2 pair.1 executingCore).1 caller t hL⟩
               -- `getReply?` frames from `pair.2.2` through the deliver/wake/block stores.
               have hReplyFrame : ∀ (r' : SeLe4n.ReplyId) (rr : Reply),

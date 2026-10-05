@@ -828,7 +828,7 @@ private theorem storeTcbIpcState_cdt_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot ∧ st'.cdtSlotNode = st.cdtSlotNode := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hTcb : lookupTcb st tid with
   | none => simp [hTcb] at hStep
   | some tcb =>
@@ -1120,7 +1120,7 @@ private theorem cdtPredicates_through_blocking_path
     -- All three only replace object entries (never delete), so objects[ref.cnode]? ≠ none is preserved
     have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hObjInv hStore hNS1
     have hComp2 : cdtCompleteness st2 := by
-      unfold storeTcbIpcState at hTcb
+      unfold storeTcbIpcState modifyTcb at hTcb
       cases hLookup : lookupTcb st1 target with
       | none => simp [hLookup] at hTcb
       | some tcb =>
@@ -1160,7 +1160,7 @@ private theorem cdtPredicates_through_handshake_path
   have hBnd2 := cspaceSlotCountBounded_of_storeTcbIpcState st1 st2 target .ready hBnd1 hObjInv1 hTcb
   have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hObjInv hStore hNS1
   have hComp2 : cdtCompleteness st2 := by
-    unfold storeTcbIpcState at hTcb
+    unfold storeTcbIpcState modifyTcb at hTcb
     cases hLookup : lookupTcb st1 target with
     | none => simp [hLookup] at hTcb
     | some tcb =>
@@ -1202,7 +1202,7 @@ theorem cdtPredicates_through_reply_path
     cdtAcyclicity (ensureRunnable st1 target) := by
   have ⟨hCdt1, hNS1⟩ := storeTcbIpcStateAndMessage_cdt_eq hTcb
   have hBnd1 : cspaceSlotCountBounded st1 := by
-    unfold storeTcbIpcStateAndMessage at hTcb
+    unfold storeTcbIpcStateAndMessage modifyTcb at hTcb
     cases hL : lookupTcb st target with
     | none => simp [hL] at hTcb
     | some tcb =>
@@ -1214,7 +1214,7 @@ theorem cdtPredicates_through_reply_path
         exact cspaceSlotCountBounded_of_storeObject_nonCNode st pair.2 target.toObjId _ hBounded hObjInv hS
           (fun cn h => by cases h)
   have hComp1 : cdtCompleteness st1 := by
-    unfold storeTcbIpcStateAndMessage at hTcb
+    unfold storeTcbIpcStateAndMessage modifyTcb at hTcb
     cases hL : lookupTcb st target with
     | none => simp [hL] at hTcb
     | some tcb =>

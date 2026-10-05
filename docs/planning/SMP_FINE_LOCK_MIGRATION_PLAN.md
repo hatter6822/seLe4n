@@ -765,7 +765,7 @@ were invisible while the receive installed nothing at all.
 
 `.receive` installed what a parked sender was carrying from v0.33.77.
 `.replyRecv` is reply-then-receive, and its receive leg ran inside
-`replyRecvBody`, which called the **bare** `endpointReceiveDualOnCore` — so the
+`endpointReplyRecvOnCore`, which called the **bare** `endpointReceiveDualOnCore` — so the
 identical defect survived on that arm: a caps-carrying send that parked and was
 later collected by a `.replyRecv` rather than a `.receive` transferred nothing,
 and the arm's staged `extraCaps` reported zero.  That arm is how an seL4-MCS
@@ -773,10 +773,10 @@ server loop actually runs (`Recv` once, then `ReplyRecv` forever), so a server
 received capabilities on its first request and silently none afterwards.
 
 Closed by threading the receiver's CSpace root and receive slot through
-`replyRecvBody` and returning the `CapTransferSummary`, so both dispatch arms
+`endpointReplyRecvOnCore` and returning the `CapTransferSummary`, so both dispatch arms
 stage the honest installed count.  The 59 figure recorded here counted prose;
 the real surgery was **nine** applications plus the cross-core non-interference
-carriage (`replyRecvBodyWriteSet` and the two theorems gained the two
+carriage (`endpointReplyRecvWriteSet` and the two theorems gained the two
 parameters, and `endpointReceiveDualWithCapsOnCore` gained its own
 scheduler/machine frame lemmas, confinement bound and NI instantiation — the
 capability install writes no core, so the declared per-core footprint is
@@ -785,7 +785,7 @@ unchanged).
 The cut also corrected an inventory claim that had gone stale one round earlier:
 `crossCoreTransitionIsLiveArm` still marked the *bare* per-core receive a live
 arm on the strength of two facts — that `.receive` invoked it directly and that
-it was `replyRecvBody`'s receive leg — neither of which survives.  The live-arm
+it was `endpointReplyRecvOnCore`'s receive leg — neither of which survives.  The live-arm
 claim moved to a new `.endpointReceiveDualWithCaps` entry (which is also what
 `syscallDelegates_receive` already names), and the bare transition joined
 `.notificationSignal` and `.endpointReply` as a below-API entry.

@@ -1,3 +1,56 @@
+## v0.36.48 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
+
+- **The `.replyRecv` arm now calls the transition its theorems are about.**  The
+  live body, `replyRecvBody` in `API.lean`, moved to
+  `IPC/CrossCore/EndpointReplyRecv.lean` under the name `endpointReplyRecvOnCore`,
+  with its donation halves (`replyRecvPopDonation`, `replyRecvPostReceiveDonation`),
+  its per-core write sets and its scheduler footprint.  Their proofs moved to
+  `IPC/CrossCore/EndpointReplyRecvInvariant.lean`.  Both dispatch tables call it.
+  Behaviour is unchanged.
+- **The two-leg composite that held the name is deleted.**  The old
+  `endpointReplyRecvOnCore` (reply leg, then the bare receive leg) had no caller:
+  no donation pop, no capability installation, no re-donation and no PIP
+  hand-off.  The census pinned it as not executed.  Deleted with it, because
+  they were stated only about it: `…_passiveServerIdleFrameOnCore`,
+  `…_preserves_ipcInvariantFull`, `…_preserves_ipcInvariantFull_perCore`,
+  `…_preserves_objects_invExt`, `…_observer_atomic`, `…_atomic_under_lockSet`,
+  the old `endpointReplyRecvWriteSet`, `…_confinedToCores`,
+  `…_crossCoreNonInterference`, and the `.endpointReplyRecv` cross-core
+  inventory entry, which named a theorem about code no arm ran.
+- **The names now cover the live path.**
+  - `endpointReplyRecvOnCore_preserves_ipcInvariantFull` (`DispatchPayoff.lean`)
+    is the global bundle.
+  - `endpointReplyRecvOnCore_confinedToCores` and
+    `endpointReplyRecvOnCore_crossCoreNonInterference` are the per-core
+    confinement and non-interference results; the inventory entry is
+    `.endpointReplyRecvDispatch`.
+  - `schedLockSet_endpointReplyRecvOnCore_coversWrites` is the scheduler
+    footprint coverage.
+  - New for the live transition: `endpointReplyRecvOnCore_preserves_objects_invExt`
+    (unconditional) and `endpointReplyRecvOnCore_observer_atomic` (at the full
+    `lockSet_replyRecv` arity).
+  - The inventory is now 32 transitions with 23 remote writers.
+    `tests/fixtures/smp_information_flow.expected` changes for that reason only.
+- **Registered:** the live transition has no `ipcInvariantFull_perCore`
+  flagship yet (`docs/REGISTERED_DEBT.md`, Table C).  The deleted per-core
+  theorem covered the composite, never the arm.
+- **`endpointReplyRecvWithDonation` is deleted** with its `_unfold` lemma.  This
+  single-core donation-aware ReplyRecv was an orphan under `Donation.lean`'s own
+  rule: no caller, and no equivalence theorem tying it to the live form.
+- **`modifyTcb` is the one TCB field writer (IPC-5).**
+  - `storeTcbIpcState`, `storeTcbPendingMessage`, `storeTcbIpcStateAndMessage`,
+    `storeTcbReceiveComplete` and `storeTcbQueueLinks` are now
+    `modifyTcb st tid f` with a field update for `f`.  Behaviour is unchanged.
+  - Frame lemmas proved once, for every `f`: `modifyTcb_ok_decompose`, `_scheduler_eq`,
+    `_machine_eq`, `_preserves_objects_ne`, `_preserves_objects_invExt`,
+    `_notification_backward`, `_kindPreservingWrite`, `_cdt_eq`, and
+    `_preserves_badgeWellFormed`.
+  - 33 per-writer copies of those lemmas are now one-line instances.
+  - Proofs that unfold a writer now unfold `modifyTcb` too.
+- Tests retargeted to the live transition: `SmpIpcSuite` §3.5 and §3.6,
+  `SmpCrossCoreReplySuite` §3.5, and the `SmpInformationFlowSuite` write-set
+  checks.  Tier 3 anchors moved to the new files.
+
 ## v0.36.45 — The executing core is threaded from the trap entry; `determineExecutingCore` deleted (IPC-8)
 
 - **Every dispatch arm now uses the core the syscall was entered on.**

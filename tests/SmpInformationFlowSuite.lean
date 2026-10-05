@@ -506,9 +506,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @replyRecvPopDonation_confinedToCores
 #check @replyRecvPostReceiveDonationWriteSet
 #check @replyRecvPostReceiveDonation_confinedToCores
-#check @replyRecvBodyWriteSet
-#check @replyRecvBody_confinedToCores
-#check @replyRecvBody_crossCoreNonInterference
+#check @endpointReplyRecvWriteSet
+#check @endpointReplyRecvOnCore_confinedToCores
+#check @endpointReplyRecvOnCore_crossCoreNonInterference
 #check @preemptCurrentOnCore_activeDomainOnCore
 #check @preemptCurrentOnCore_domainTimeRemainingOnCore
 #check @preemptCurrentOnCore_domainScheduleIndexOnCore
@@ -4613,6 +4613,15 @@ private def replyRecvState : SystemState :=
 private def replyRecvMsg : IpcMessage :=
   { registers := #[], caps := #[], badge := none }
 
+/-- The Reply object the `.replyRecv` write-set checks answer through.  It is
+absent from the fixture, so it heads no donation frame and the pop between the
+legs is the identity. -/
+private def replyRecvReplyId : SeLe4n.ReplyId := ⟨1100⟩
+
+/-- The receiver's CSpace root for the receive leg's capability installation
+(the received message carries none). -/
+private def replyRecvCnRoot : SeLe4n.ObjId := ⟨1101⟩
+
 /-- §5.2c  The three live cross-core arms (fourth review round). -/
 private def runLiveCrossCoreArmChecks : IO Unit := do
   IO.println "--- §5.2c the live cross-core arms: bound signal, receive dual, replyRecv ---"
@@ -4666,23 +4675,29 @@ private def runLiveCrossCoreArmChecks : IO Unit := do
   -- Both legs contribute, and they name *different* cores: the reply target's
   -- home core 3, then the receive leg's set computed at the *intermediate*
   -- state, which is the rendezvousing sender's core 2.
+  -- Audit IPC-2 (`v0.36.48`): the set is the LIVE transition's, which also runs
+  -- the donation pop between the legs (the identity here: the Reply object
+  -- below names no frame), the post-receive donation and the priority hand-off.
   assertBool "the composed set is the reply core followed by the receive leg's set"
-    (decide (SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
-        replyBlockedCaller replyRecvMsg c0 replyRecvState
-      = SeLe4n.Kernel.determineTargetCore replyRecvState replyBlockedCaller
-          :: SeLe4n.Kernel.endpointReceiveDualWriteSet
-              (SeLe4n.Kernel.endpointReplyOnCore remoteHomedThread replyBlockedCaller
-                replyRecvMsg c0 replyRecvState).1
-              crossCoreEndpoint c0))
+    (let rs := SeLe4n.Kernel.endpointReceiveDualWriteSet
+          (SeLe4n.Kernel.endpointReplyOnCore remoteHomedThread replyBlockedCaller
+            replyRecvMsg c0 replyRecvState).1
+          crossCoreEndpoint c0
+     decide ((SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
+        replyRecvReplyId replyBlockedCaller replyRecvMsg replyRecvCnRoot (SeLe4n.Slot.ofNat 0)
+        c0 replyRecvState).take (1 + rs.length)
+      = SeLe4n.Kernel.determineTargetCore replyRecvState replyBlockedCaller :: rs))
   assertBool "…and it names two DIFFERENT cores — a real union, not a coincidence"
-    (decide (SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
-      replyBlockedCaller replyRecvMsg c0 replyRecvState = [c3, c2]))
+    (decide ((SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
+      replyRecvReplyId replyBlockedCaller replyRecvMsg replyRecvCnRoot (SeLe4n.Slot.ofNat 0)
+      c0 replyRecvState).take 2 = [c3, c2]))
   -- The load-bearing negative: when the reply leg fails closed the tail is
   -- empty, so the composition is genuinely conditional on the leg's outcome
   -- rather than always appending the receive set.
   assertBool "NEGATIVE: a failed reply leg contributes no receive-leg cores"
     (decide (SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
-      crossCoreSender replyRecvMsg c0 blockedSenderState = [c2]))
+      replyRecvReplyId crossCoreSender replyRecvMsg replyRecvCnRoot (SeLe4n.Slot.ofNat 0)
+      c0 blockedSenderState = [c2]))
 
 -- §5.3b fixtures — a re-bucketing write, the case `RunQueue.toList` misses.
 
@@ -4736,11 +4751,11 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "thirty-three cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 33))
-  assertBool "twenty-four of the thirty-three can name a core other than the executing one"
+  assertBool "thirty-two cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 32))
+  assertBool "twenty-three of the thirty-two can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 24))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 23))
   assertBool "…and the wait, the two VSpace arms, the untyped reset, the two finalising destroyers, the declassification and the two audit readers are the nine that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
       .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
@@ -4828,7 +4843,7 @@ private def runCoreSetAlgebraChecks : IO Unit := do
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationSignalBound,
-      .endpointReceiveDual, .endpointReplyRecv].all (fun t =>
+      .endpointReceiveDual, .endpointReplyRecvDispatch].all (fun t =>
         decide (t ∈ SeLe4n.Kernel.CrossCoreTransition.all)))
   -- The FIFTH review round's finding, as a checked fact: a live entry must name
   -- the function the dispatch calls.  The three wrappers that do strictly more
@@ -4836,17 +4851,16 @@ private def runCoreSetAlgebraChecks : IO Unit := do
   -- — not the narrower legs — that are classified live.
   assertBool "the three live wrappers are in the inventory"
     ([SeLe4n.Kernel.CrossCoreTransition.endpointReplyDispatch,
-      .replyRecvBodyDispatch, .suspendThreadDispatch].all (fun t =>
+      .endpointReplyRecvDispatch, .suspendThreadDispatch].all (fun t =>
         decide (t ∈ SeLe4n.Kernel.CrossCoreTransition.all)))
   assertBool "the wrappers are the live arms; their legs are legs"
     (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyDispatch = true) &&
-     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .replyRecvBodyDispatch = true) &&
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyRecvDispatch = true) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .suspendThreadDispatch = true) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReply = false) &&
-     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyRecv = false) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .cancelIpcBlocking = false))
   -- Round 8, restated at PR #873 round 7: the receive dual was a leg of
-  -- `replyRecvBody` AND the transition the live `.receive` arm reached, which
+  -- `endpointReplyRecvOnCore` AND the transition the live `.receive` arm reached, which
   -- made it a live arm.  Neither half holds now — both receive-shaped arms reach
   -- the WithCaps form — so the live-arm claim moved to that entry and the bare
   -- transition became a below-API one, like `.endpointReply` beside it.

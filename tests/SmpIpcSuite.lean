@@ -42,8 +42,8 @@ pipelines** threaded through the evolving state:
 * **§3.4** client-first ordering: a call with no receiver blocks the caller
   (`blockedOnCall`); the server's later receive completes the same rendezvous;
 * **§3.5** the server steady-state loop: `endpointReplyRecvOnCore` replies to
-  the previous client and atomically receives the next, surfacing the union
-  of both legs' SGIs;
+  the previous client and atomically receives the next, re-linking the same
+  Reply object to the new caller;
 * **§3.6** fail-closed error paths (absent/wrong-kind objects, oversized
   payloads, replay, no-stash rendezvous) — every error returns the pre-state;
 * **§3.7** 2PL lock-set discipline on the live pipeline states (state-resolved
@@ -81,8 +81,7 @@ decidable check or diverges the golden trace.
 **Coverage note.** There is deliberately no cross-core `.replyRecv` dispatch
 wrapper to exercise: the raw-thread `endpointReplyRecvCrossCoreDispatch{,Checked}`
 were removed (they exposed a reply-without-reply-cap surface); the live
-`.replyRecv` routes through `API.replyRecvBody`, and the below-API building block
-`endpointReplyRecvOnCore` is exercised in §3.5.
+`.replyRecv` routes straight to `endpointReplyRecvOnCore`, which §3.5 exercises.
 -/
 
 namespace SeLe4n.Testing.SmpIpc
@@ -129,7 +128,6 @@ open SeLe4n.Testing
 #check @endpointReplyOnCore_perCore_delivery
 #check @endpointReplyOnCore_replay_rejected
 #check @endpointReplyOnCore_atomic_under_lockSet
-#check @endpointReplyRecvOnCore_atomic_under_lockSet
 #check @endpointReplyRecv_lockSet_correct
 #check @endpointReply_donation_chain_length_bounded
 -- SM6.D.2: the six IPC operations preserve every core's bundle view (production):
@@ -589,36 +587,42 @@ private def runClientFirstChecks : IO Unit := do
 
 private def runReplyRecvLoopChecks : IO Unit := do
   IO.println "--- §3.5 server steady-state replyRecv (reply A, atomically receive C) ---"
-  let pipeline : Option (SystemState × Option (CoreId × SgiKind) × SystemState × List (CoreId × SgiKind)) := do
+  let pipeline : Option (SystemState × Option (CoreId × SgiKind) × SystemState) := do
     let (st1, _) ← okPair (endpointReceiveDualOnCore epAB serverB (some replyB) c1 stFourCore)
     let (st2, _) ← okPair (endpointCallOnCore epAB clientA callMsgA c0 st1)
     -- C's call finds no receiver (B was popped by A's rendezvous) → C blocks.
     let (st3, sgiC) ← okPair (endpointCallOnCore epAB clientC callMsgC c2 st2)
-    let (st4, sgis) ← okPair (endpointReplyRecvOnCore epAB serverB clientA replyMsgB (some replyB2) c1 st3)
-    pure (st3, sgiC, st4, sgis)
+    pure (st3, sgiC, st3)
   match pipeline with
-  | none => assertBool "replyRecv pipeline succeeded" false
-  | some (st3, sgiC, st4, sgis) =>
+  | none => assertBool "replyRecv pipeline setup succeeded" false
+  | some (st3, sgiC, _) =>
     assertBool "C's call after B was popped blocks C (no receiver ⇒ no SGI)"
       (sgiC == none && ipcStateIs st3 clientC (.blockedOnCall epAB))
-    assertBool "replyRecv surfaces exactly the reply-leg SGI (A's wake to core 0)"
-      (match sgis with
-       | [(tgt, kind)] => decide (tgt = c0 ∧ kind = SgiKind.reschedule)
-       | _ => false)
-    assertBool "replyRecv's reply leg resumes client A with the reply payload"
-      (ipcStateIs st4 clientA .ready && pendingMessageIs st4 clientA (some replyMsgB))
-    assertBool "replyRecv's receive leg pops C into blockedOnReply (recorded receiver B)"
-      (ipcStateIs st4 clientC (.blockedOnReply epAB (some serverB)))
-    assertBool "replyRecv's receive leg links C to the fresh reply object"
-      (match st4.getReply? replyB2, st4.getTcb? clientC with
-       | some r, some t => decide (r.caller = some clientC ∧ t.replyObject = some replyB2)
-       | _, _ => false)
-    assertBool "the server holds C's request payload after the combined op"
-      (pendingMessageIs st4 serverB (some callMsgC))
-    assertBool "the consumed first reply object is free again (caller cleared)"
-      (match st4.getReply? replyB with
-       | some r => decide (r.caller = none)
-       | none => false)
+    -- Audit IPC-2 (`v0.36.48`): the live transition answers through the reply
+    -- capability's object (`replyB`, linked to A) and re-links that SAME object
+    -- to the next caller — seL4-MCS one-object reuse.
+    match endpointReplyRecvOnCore epAB serverB replyB clientA replyMsgB cnRoot
+        (SeLe4n.Slot.ofNat 0) c1 st3 with
+    | .error _ => assertBool "replyRecv succeeded" false
+    | .ok (summary, st4) =>
+      assertBool "replyRecv installs no capabilities from a capability-free Call"
+        (summary.installedCount == 0)
+      assertBool "replyRecv's reply leg resumes client A with the reply payload"
+        (ipcStateIs st4 clientA .ready && pendingMessageIs st4 clientA (some replyMsgB))
+      assertBool "replyRecv's reply leg queues A on its home core 0"
+        ((st4.scheduler.runQueueOnCore c0).contains clientA)
+      assertBool "replyRecv's receive leg pops C into blockedOnReply (recorded receiver B)"
+        (ipcStateIs st4 clientC (.blockedOnReply epAB (some serverB)))
+      assertBool "replyRecv's receive leg re-links the SAME reply object to C"
+        (match st4.getReply? replyB, st4.getTcb? clientC with
+         | some r, some t => decide (r.caller = some clientC ∧ t.replyObject = some replyB)
+         | _, _ => false)
+      assertBool "the server holds C's request payload after the combined op"
+        (pendingMessageIs st4 serverB (some callMsgC))
+      assertBool "A no longer holds the reused reply object"
+        (match st4.getTcb? clientA with
+         | some t => decide (t.replyObject = none)
+         | none => false)
 
 -- ============================================================================
 -- §3.6 Fail-closed error paths (pre-state returned on every error)
@@ -659,12 +663,12 @@ private def runErrorPathChecks : IO Unit := do
   assertBool "reply to an absent target fails with objectNotFound"
     (match (endpointReplyOnCore serverB ⟨899⟩ replyMsgB c1 stFourCore).2 with
      | .error .objectNotFound => true | _ => false)
-  -- replyRecv is all-or-nothing: a failed reply leg returns the pre-state.
-  let (stRR, resRR) := endpointReplyRecvOnCore epAB serverB clientA replyMsgB (some replyB) c1 stFourCore
+  -- replyRecv is all-or-nothing: a failed reply leg commits nothing (the error
+  -- carries no state, so the caller keeps its pre-state).
   assertBool "replyRecv with a failed reply leg fails closed"
-    (match resRR with | .error .replyCapInvalid => true | _ => false)
-  assertBool "the failed replyRecv returns the pre-state (endpoint untouched)"
-    (stRR.objects[epAB]? == stFourCore.objects[epAB]?)
+    (match endpointReplyRecvOnCore epAB serverB replyB clientA replyMsgB cnRoot
+        (SeLe4n.Slot.ofNat 0) c1 stFourCore with
+     | .error .replyCapInvalid => true | _ => false)
   -- No-stash rendezvous: a server that supplied NO reply object cannot answer a Call.
   match okPair (endpointReceiveDualOnCore epAB serverB none c1 stFourCore) with
   | none => assertBool "no-stash receive setup succeeded" false
@@ -961,10 +965,10 @@ private def donCaller2Tcb : TCB :=
       replyObject := some donCaller2Reply
       threadState := ThreadState.Ready }
 
-/-- **WS-RM (`v0.35.6`)**: the two donation steps `replyRecvBody` performs, run
+/-- **WS-RM (`v0.35.6`)**: the two donation steps `endpointReplyRecvOnCore` performs, run
 back to back with the receive leg elided.
 
-`replyRecvBody` sequences `replyRecvPopDonation` (between the two legs, which is
+`endpointReplyRecvOnCore` sequences `replyRecvPopDonation` (between the two legs, which is
 seL4-MCS's own `doReplyTransfer` -> `reply_remove` -> `receiveIPC` order) and
 `replyRecvPostReceiveDonation` (after the receive leg), passing the popped
 context from the first to the second.  The migration facts below are about that
@@ -974,7 +978,7 @@ it, which is the same elision the pre-WS-RM fused step allowed.
 
 **WS-HP HP4.5**: the pop is keyed on the reply capability's frame (`rid`) and the
 caller it answers (`prevCaller`), as the arm keys it, rather than on the recorded
-server's `.donated` binding.  The parameters mirror `replyRecvBody`'s own, because
+server's `.donated` binding.  The parameters mirror `endpointReplyRecvOnCore`'s own, because
 a driver that re-derives what the arm is handed is testing its own derivation. -/
 private def runReplyRecvDonationSteps (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller recordedServer nextThread : SeLe4n.ThreadId)
@@ -3016,7 +3020,7 @@ private def runReplyRecvLoopCompletionChecks : IO Unit := do
            | .ok _ => true
            | .error _ => false)
       -- **PAYOFF**: the whole arm, in the live order, end to end.
-      match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+      match endpointReplyRecvOnCore donEp donServer donReply donClient IpcMessage.empty cnRoot
           (SeLe4n.Slot.ofNat 0) c1 stQueued with
       | .error e =>
         assertBool s!"PAYOFF: the `ReplyRecv` loop must complete (got {reprStr e})" false
@@ -4104,7 +4108,7 @@ private def runReplyRecvHolderDescheduleChecks : IO Unit := do
       && decide ((st.getTcb? orphanS1).map (·.schedContextBinding)
           = some (SchedContextBinding.bound orphanS1Sc)))
   -- (ii) The live arm, end to end.
-  match replyRecvBody orphanEp orphanDelegate orphanReply orphanClient IpcMessage.empty
+  match endpointReplyRecvOnCore orphanEp orphanDelegate orphanReply orphanClient IpcMessage.empty
       cnRoot (SeLe4n.Slot.ofNat 0) c0 st with
   | .error e => assertBool s!"the live `.replyRecv` must succeed (got {reprStr e})" false
   | .ok (_, stOut) =>
@@ -4132,7 +4136,7 @@ private def runReplyRecvHolderDescheduleChecks : IO Unit := do
   let stAgree := stAgreeingHeadReplyRecv
   assertBool "CONTROL setup: here the recorded server IS the holder"
     (decide (recordedServerDescheduleTarget stAgree orphanClient orphanDelegate = orphanHolder))
-  match replyRecvBody orphanEp orphanDelegate orphanReply orphanClient IpcMessage.empty
+  match endpointReplyRecvOnCore orphanEp orphanDelegate orphanReply orphanClient IpcMessage.empty
       cnRoot (SeLe4n.Slot.ofNat 0) c0 stAgree with
   | .error e => assertBool s!"the control `.replyRecv` must succeed (got {reprStr e})" false
   | .ok (_, stOut) =>
@@ -4483,7 +4487,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
     assertBool "(a) ...and the run-queue write lock of the answered client's home core"
       (hasRunQueueWrite fp c0)
     -- The live arm, end to end: both migrations happen, between exactly those cores.
-    match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+    match endpointReplyRecvOnCore donEp donServer donReply donClient IpcMessage.empty cnRoot
         (SeLe4n.Slot.ofNat 0) c1 stQ with
     | .error e => assertBool s!"(a) the live `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
@@ -4502,7 +4506,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
          | _, _, _ => false)
       -- WS-RR RR8.12 Cut C6e: the OTHER direction, which the segment assertions
       -- above cannot see -- the arm writes no replenish queue on a core the segment
-      -- does not name.  `replyRecvBody_replenishQueueOnCore_ne` is the theorem; this
+      -- does not name.  `endpointReplyRecvOnCore_replenishQueueOnCore_ne` is the theorem; this
       -- is it measured on the shape where the segment is at its widest, so the one
       -- core outside it is the only place a stray write could hide.
       assertBool "(a) C6e: core 3 is outside the segment, and the arm leaves its replenish queue alone"
@@ -4546,7 +4550,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
     -- WS-RR RR8.12 Cut C6e: an empty segment is a claim about EVERY core, so this
     -- is the exactness frame at its strongest -- and the shape that makes the
     -- measurement decisive, since (a) leaves only one core outside.
-    match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+    match endpointReplyRecvOnCore donEp donServer donReply donClient IpcMessage.empty cnRoot
         (SeLe4n.Slot.ofNat 0) c1 stQ with
     | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
@@ -4579,7 +4583,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
          | .error _ => false)
     -- The live arm: no replenishment moves on any core (the exactness licence,
     -- measured), and no context is handed over (the divergence, measured).
-    match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+    match endpointReplyRecvOnCore donEp donServer donReply donClient IpcMessage.empty cnRoot
         (SeLe4n.Slot.ofNat 0) c1 stQ with
     | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
@@ -4624,7 +4628,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
     assertBool "(c) the footprint names replenish-queue write locks on all four cores"
       (hasReplenishWrite fp c0 && hasReplenishWrite fp c1 && hasReplenishWrite fp c2
         && hasReplenishWrite fp c3 && replenishMemberCount fp == 4)
-    match replyRecvBody donEp fpDelegate donReply donClient IpcMessage.empty cnRoot
+    match endpointReplyRecvOnCore donEp fpDelegate donReply donClient IpcMessage.empty cnRoot
         (SeLe4n.Slot.ofNat 0) c3 stD with
     | .error e => assertBool s!"(c) the delegated `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>

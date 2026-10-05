@@ -1516,7 +1516,7 @@ theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne (st st' : SystemState)
 -- intermediate states** — the reclaim's, at the teardown's post-state, and G3's
 -- donation arm's, at the post-revert state whose binding the reclaim may have
 -- rewritten.  Neither is a proxy for a pre-state reading, so both are resolved
--- the way `replyRecvBodyWriteSet` resolves its own: by re-running the spine.
+-- the way `endpointReplyRecvWriteSet` resolves its own: by re-running the spine.
 
 /-- **WS-RR RR8.12 Cut C6g (the exactness frame)**: the base retype-with-cleanup
 writes no replenish queue outside `lifecycleRetypeReplenishCores` — the
@@ -1756,7 +1756,7 @@ destination is the outer caller's home, a core the pre-state cannot name because
 at the pre-state the victim holds no binding at all.
 
 So the segment re-runs the spine to each step's own state, exactly as
-`replyRecvBodyWriteSet` does — and the one core that *is* read from the pre-state
+`endpointReplyRecvWriteSet` does — and the one core that *is* read from the pre-state
 is G3's purge core, because the pipeline itself reads it there (`home`, captured
 before G2 for the reason `suspendThreadOnCore` records: the teardown never moves
 it). -/
@@ -2438,7 +2438,7 @@ theorem declaredSchedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
 /-- **Cut C4b**: the receiver CSpace root the `.replyRecv` footprint resolves IS
 the root the live arm installs through.
 
-The live arm hands `replyRecvBody` the **gate's** `cspaceRoot`; the scheduler
+The live arm hands `endpointReplyRecvOnCore` the **gate's** `cspaceRoot`; the scheduler
 resolver has no gate to read, so it takes the caller's TCB at the same state.
 `abiEntryLockOperands_caller` says that caller is the entry's own `tid`, and
 `abiEntryGate_cspaceRoot` says the gate's root is that thread's — so the two are

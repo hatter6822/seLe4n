@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.45` (`lakefile.toml`) |
+| **Package version** | `0.36.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 434,056 across 362 Lean files |
-| **Test LoC** | 88,687 across 71 Lean test suites |
-| **Proved declarations** | 14,410 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 433,402 across 364 Lean files |
+| **Test LoC** | 88,678 across 71 Lean test suites |
+| **Proved declarations** | 14,412 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3155,7 +3155,7 @@ handler.  RR4 replaces that path with seL4's fault IPC:
   unfaulted caller it is the pre-RR4 body verbatim — cross-core reply plus the
   WS-RA delivered-message staging — so every existing `.reply` theorem
   transfers under one pre-state hypothesis.  **`.replyRecv` does not route
-  through the seam yet** (`replyRecvBody` fuses a reply leg, a receive leg and
+  through the seam yet** (`endpointReplyRecvOnCore` fuses a reply leg, a receive leg and
   a donation return, and a fault reply changes what the latter two are handed),
   so a handler answers a fault with `.reply` and takes its next request
   separately; registered debt, closure target RR7.
@@ -4006,7 +4006,7 @@ alongside the latent inventory (closing SMP-H3).
    `ipcTransferSingleCap`.
 
    **WS-OD OD3.5 (v0.34.128) moved it from 9 to 11**, on the same
-   footprint and for the same class of reason.  `replyRecvBody`
+   footprint and for the same class of reason.  `endpointReplyRecvOnCore`
    performs *two* SchedContext hand-offs — the recorded server's
    return, then `applyCallDonationOnCore nextThread tid` when the
    receive leg dequeues a queued `Call` — and declared one, so the
@@ -5277,6 +5277,22 @@ regression extended for send/receive/call symmetry;
 provides three runtime-observable checks (healthy state, faulty
 state must error, `lookupCspaceRoot` returns `none`).
 
+### 8.10.6a One TCB Field Writer (`modifyTcb`, audit IPC-5)
+
+Since `v0.36.48` every IPC writer of a single TCB field group —
+`storeTcbIpcState`, `storeTcbPendingMessage`, `storeTcbIpcStateAndMessage`,
+`storeTcbReceiveComplete` (`IPC/Operations/Endpoint.lean`) and
+`storeTcbQueueLinks` (`IPC/DualQueue/Core.lean`) — is `modifyTcb st tid f` with
+a field update for `f`: look the thread up (`.objectNotFound` if it is absent or
+reserved), store `f tcb` at the same key.  Behaviour is unchanged.  The frame
+facts are proved once for every `f` (`modifyTcb_ok_decompose`,
+`modifyTcb_scheduler_eq`, `modifyTcb_machine_eq`, `modifyTcb_preserves_objects_ne`,
+`modifyTcb_preserves_objects_invExt`, `modifyTcb_notification_backward`,
+`modifyTcb_kindPreservingWrite`, `modifyTcb_cdt_eq`,
+`modifyTcb_preserves_badgeWellFormed`), and the per-writer lemmas of those names
+are one-line instances.  The `_fromTcb` variants, which skip the lookup, are
+unchanged.
+
 ### 8.10.7 Structural-Fix Discharge Index
 WS-RC R4 (Structural-invariant promotions —
 [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
@@ -5732,8 +5748,24 @@ SM3.C walker consumes rather than through `lockSet_<τ>`, which is what keeps th
 static footprint honest; the marker family grows with the *walks* rather than
 the syscalls, and `.replyRecv` declares two.
 
-**Architecture**: Donation is implemented as post-processing in the API dispatch
-layer (`API.lean`), preserving all existing IPC invariant proofs unchanged. Core
+**One ReplyRecv transition** (audit IPC-2, `v0.36.48`). The `.replyRecv` arm of
+both dispatch tables calls `endpointReplyRecvOnCore`
+(`SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean`): reply leg, donation pop,
+capability-installing receive leg that re-links the same Reply object, post-receive
+donation, receive-leg priority hand-off, then the two return-frame stagers. Before
+`v0.36.48` that name belonged to a two-leg composite (reply then bare receive) that
+no arm called, while the live body was `endpointReplyRecvOnCore` in `API.lean`; the composite
+and its theorems were deleted and the live body took the name, so the theorems that
+name it — `endpointReplyRecvOnCore_preserves_ipcInvariantFull`
+(`IPC/Invariant/DispatchPayoff.lean`), `endpointReplyRecvOnCore_confinedToCores`,
+`endpointReplyRecvOnCore_crossCoreNonInterference` (the `.endpointReplyRecvDispatch`
+inventory entry) and `schedLockSet_endpointReplyRecvOnCore_coversWrites` — are about
+the code the syscall runs. The proofs of its two donation halves and footprint are
+in `IPC/CrossCore/EndpointReplyRecvInvariant.lean`.
+
+**Architecture**: Donation is implemented as post-processing around the IPC
+transport legs (the cross-core dispatch wrappers and `endpointReplyRecvOnCore`),
+preserving all existing IPC invariant proofs unchanged. Core
 IPC functions (`endpointCall`, `endpointReply`, `endpointReplyRecv`) are not
 modified. Key helpers: `donateSchedContext`, `returnDonatedSchedContext`,
 `applyCallDonation`, `applyReplyDonation`, `cleanupPreReceiveDonation`.
@@ -6080,8 +6112,8 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
 
   **And the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
   RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
-  `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's SM8.B write set,
-  which `replyRecvBody_confinedToCores` is stated at — and of
+  `schedFootprintOfCores` of `endpointReplyRecvWriteSet` — the arm's SM8.B write set,
+  which `endpointReplyRecvOnCore_confinedToCores` is stated at — and of
   `replyRecvHandoffReplenishCores`, the cores its **three** SchedContext hand-offs
   migrate between: the pop between the legs, the receive leg's block-path return
   (`v0.35.161`) and the re-donation on a dequeued `Call`.  Each is read **at the
@@ -6097,7 +6129,7 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   (`schedLockSet_endpointReplyRecvOnCore_covers_pop`, `…_covers_preReturnMigration`,
   `…_covers_postReceiveDonation`), and the empty segment is exact in both
   directions (`…_no_replenishQueue_of_no_donation`,
-  `replyRecvBody_replenishQueueOnCore_of_no_donation`, over the reply leg's new
+  `endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation`, over the reply leg's new
   frame `endpointReplyOnCore_replenishQueueOnCore`).  That last licence pins a
   divergence deliberately: a `.replyRecv` whose pop returned nothing does **not**
   donate a dequeued `Call` caller's context to an `.unbound` receiver, where
@@ -6397,7 +6429,7 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   module.  Neither half of the arm's own replenish segment is pre-state
   computable — G3's resolver is read at the post-revert state, the reclaim having
   rebound the victim (WS-OD OD5.3) — so the segment re-runs the spine as
-  `replyRecvBodyWriteSet` does.  Exactness is over the whole arm
+  `endpointReplyRecvWriteSet` does.  Exactness is over the whole arm
   (`suspendThreadOnCore_replenishQueueOnCore_ne`, seven stages, two of which move
   a reservation), the donation-arm frame gained one owner at an explicit purge
   core (`donationArmAt_replenishQueueOnCore_ne`, of which the destroy path's is
@@ -6552,7 +6584,7 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
 
   **And the live `.replyRecv` arm is covered whole** (WS-RR RR8.12 Cut C6e,
   `v0.35.178`).  It is the one declared arm whose footprint bounds its **entire**
-  body: `replyRecvBodyWriteSet` carries both chain walks in its run segment, so
+  body: `endpointReplyRecvWriteSet` carries both chain walks in its run segment, so
   `schedLockSet_endpointReplyRecvOnCore_coversWrites` is a complete claim rather
   than one about a prefix (`.receive` is the arm whose walk sits outside).  The
   replenish half is five exactness frames, one per stage of the four-stage
@@ -7754,7 +7786,10 @@ bounded by `objectIndex.length`.
   the single-core `endpointCallWithDonation` held this integration point until
   `v0.35.192` deleted it as superseded)
 - `endpointReplyWithDonation`: reverts PIP after Reply unblocks client (D4-M)
-- `endpointReplyRecvWithDonation`: reverts PIP for ReplyRecv (D4-M)
+- `endpointReplyRecvOnCore`: reverts PIP from the recorded server for ReplyRecv,
+  and hands the receive leg's priority off on a delegated reply (D4-M, WS-OD
+  OD3.14; the single-core `endpointReplyRecvWithDonation` held this integration
+  point until `v0.36.48` deleted it as an orphan)
 - `suspendThread`: reverts PIP before cleanup pipeline (D4-N)
 - `timeoutThread`: reverts PIP when timed-out client was in `blockedOnReply` (D4-N)
 - API dispatch (Call/Reply/ReplyRecv): PIP propagation/reversion applied inline

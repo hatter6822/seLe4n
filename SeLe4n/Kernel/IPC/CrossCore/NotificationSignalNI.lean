@@ -168,18 +168,8 @@ theorem notificationSignalOnCore_signal_path_NI_smp
 target TCB's `ipcState`). -/
 theorem storeTcbIpcState_machine_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    st'.machine = st.machine := by
-  unfold storeTcbIpcState at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_machine_eq st pair.2 tid.toObjId _ hStore
+    st'.machine = st.machine :=
+  modifyTcb_machine_eq hStep
 
 /-- SM6.B.7: the per-core form of `storeTcbIpcState_preserves_projection` — a
 `storeTcbIpcState` at a **high** thread preserves every core's per-core observer
