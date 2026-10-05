@@ -28,7 +28,7 @@ unchecked dispatch (audit IPC-2, `v0.36.49`).  It composes, in seL4-MCS's
 
 Until `v0.36.49` the name `endpointReplyRecvOnCore` belonged to a two-leg
 composite (reply leg then the bare receive leg) that no syscall arm called, and
-the live body was `endpointReplyRecvOnCore` in `API.lean`.  The live body moved here under
+the live body was `replyRecvBody` in `API.lean`.  The live body moved here under
 the proved name, and the two-leg composite was deleted with the theorems that
 were stated only about it, so every theorem that names `endpointReplyRecvOnCore`
 is a theorem about the code the syscall executes.
