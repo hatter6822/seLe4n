@@ -42,11 +42,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CANONICAL_HOOK="${SCRIPT_DIR}/pre-commit-lean-build.sh"
-# The symlink target is the canonical script's absolute path: the hooks
-# directory is wherever git says it is (`--git-path hooks`, which honours
-# `core.hooksPath`, a path outside `.git/` or outside the repository), so no
-# fixed relative path from it reaches `scripts/`.
-HOOK_TARGET="${CANONICAL_HOOK}"
+# The symlink target is decided after the hooks directory is known (below):
+# the hooks directory is wherever git says it is (`--git-path hooks`, which
+# honours `core.hooksPath`, a path outside `.git/` or outside the repository),
+# so no fixed relative path from it reaches `scripts/`; and a hooks directory
+# shared by every worktree of the repository must not point into the worktree
+# that happened to run the installer, which can be removed.
+HOOK_TARGET=""
 
 MODE="install"
 for arg in "$@"; do
@@ -105,6 +107,21 @@ HOOK_PATH="${HOOKS_DIR}/pre-commit"
 
 mkdir -p "${HOOKS_DIR}"
 
+# The symlink target is the canonical script in the repository's MAIN working
+# tree — the one the common git directory lives under — so the hook outlives
+# any linked worktree, including the one running this installer.  A bare
+# common directory has no main working tree; there the hook is a copy.
+COMMON_DIR_REL="$(git -C "${REPO_ROOT}" rev-parse --git-common-dir)"
+if [[ "${COMMON_DIR_REL}" = /* ]]; then
+  COMMON_DIR="${COMMON_DIR_REL}"
+else
+  COMMON_DIR="${REPO_ROOT}/${COMMON_DIR_REL}"
+fi
+MAIN_TREE_HOOK="$(cd "${COMMON_DIR}/.." 2>/dev/null && pwd)/scripts/pre-commit-lean-build.sh"
+if [[ -f "${MAIN_TREE_HOOK}" ]] && cmp -s "${MAIN_TREE_HOOK}" "${CANONICAL_HOOK}"; then
+  HOOK_TARGET="${MAIN_TREE_HOOK}"
+fi
+
 # Determine canonical hook content hash for comparison with whatever is installed.
 canonical_sha() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -131,14 +148,20 @@ installed_matches_canonical() {
 }
 
 install_hook() {
-  # Prefer a symlink so future edits to pre-commit-lean-build.sh propagate
-  # without a reinstall. Fall back to a copy for symlink-hostile filesystems
-  # (Windows WSL w/ certain mounts, some NFS configurations).
-  if ln -s "${HOOK_TARGET}" "${HOOK_PATH}" 2>/dev/null; then
+  # Prefer a symlink to the main working tree's script so future edits to
+  # pre-commit-lean-build.sh propagate without a reinstall. Fall back to a copy
+  # when there is no main working tree to point at (a bare common directory,
+  # or a main tree whose script differs from this one) and for symlink-hostile
+  # filesystems (Windows WSL w/ certain mounts, some NFS configurations).
+  if [[ -n "${HOOK_TARGET}" ]] && ln -s "${HOOK_TARGET}" "${HOOK_PATH}" 2>/dev/null; then
     log "installed pre-commit hook as symlink → ${HOOK_TARGET}"
     return 0
   fi
-  log "symlink failed; falling back to copy"
+  if [[ -n "${HOOK_TARGET}" ]]; then
+    log "symlink failed; falling back to copy"
+  else
+    log "no main working tree to link to; installing a copy"
+  fi
   cp "${CANONICAL_HOOK}" "${HOOK_PATH}"
   chmod +x "${HOOK_PATH}"
   log "installed pre-commit hook as copy of pre-commit-lean-build.sh"
