@@ -13,6 +13,7 @@ import SeLe4n.Kernel.IPC.Invariant.FaultProgress
 import SeLe4n.Kernel.InformationFlow.FaultFlow
 import SeLe4n.Kernel.Architecture.ExceptionModel
 import SeLe4n.Kernel.FaultEntry
+import SeLe4n.Kernel.Architecture.RegisterContextBounded
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -129,6 +130,19 @@ open SeLe4n.Testing
 #check @faultEntry
 #check @faultEntryFrame?
 #check @faultEntryFrame?_none
+-- `v0.36.47` audit (the `Nat`-backed register file row): the by-byte word read,
+-- the carried word bound, its preservation by the entries' saves and the SVC
+-- seam's spill, and the live restore path's discharge of it.
+#check @Kernel.Architecture.TrapContext.wordOfByte
+#check @Kernel.Architecture.TrapContext.word_of_ge
+#check @Kernel.Architecture.registerContextsWordBounded
+#check @Kernel.Architecture.saveCapturedTrapFrameAt_preserves_registerContextsWordBounded
+#check @Kernel.Architecture.saveCapturedSyscallFrameAt_preserves_registerContextsWordBounded
+#check @Kernel.Architecture.writeFfiRegistersToTcb_preserves_registerContextsWordBounded
+#check @Kernel.Architecture.writeFaultRegistersToTcb_preserves_registerContextsWordBounded
+#check @Kernel.Architecture.switchToThreadOnCore_preserves_registerContextsWordBounded
+#check @Kernel.Architecture.restoreTargetOnCore_user_roundTrip
+#check @Kernel.Architecture.registerContextsWordBounded_default
 #check @faultEntryStep_not_dispatchable
 -- Audit round: the trap-frame window the entry spills, and the ABI v3 label range.
 #check @SeLe4n.Model.FaultRegisterWindow
@@ -1011,6 +1025,18 @@ private def runEntryFrameDecodeChecks : IO Unit := do
   -- nothing, so it commits nothing and stages no restore (the trap layer halts).
   assertBool "no published context: the entry decodes nothing (fails closed)"
     ((faultEntryFrame? esr far none).isNone)
+  -- `v0.36.47` audit: the by-index word read is the by-name field, and `0` past
+  -- the layout — including indices whose low byte names a register (256, 290),
+  -- which the bound test in `TrapContext.word` must refuse before the byte match.
+  assertBool "TrapContext.word reads x0..x29 by index"
+    ((List.range 30).all fun i => sampleTrapContext.word i == UInt64.ofNat (0x100 + i))
+  assertBool "TrapContext.word reads x30, sp, pc, pstate and tpidr at words 30..34"
+    (sampleTrapContext.word 30 == 0xBEEF && sampleTrapContext.word 31 == 0x7770 &&
+      sampleTrapContext.word 32 == 0x4_0004 && sampleTrapContext.word 33 == 0x3C0 &&
+      sampleTrapContext.word 34 == 0x5555)
+  assertBool "TrapContext.word is 0 past the layout, byte-aliased indices included"
+    (sampleTrapContext.word 35 == 0 && sampleTrapContext.word 256 == 0 &&
+      sampleTrapContext.word 290 == 0)
   match faultEntryFrame? esr far (some sampleTrapContext) with
   | none => assertBool "a published context decodes" false
   | some (frame, ectx, w) =>

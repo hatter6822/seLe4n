@@ -4667,7 +4667,7 @@ run_check "INVARIANT" rg -n '^          match syscallResolveCap gate st with' Se
 run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId\n      trapped\.x0 trapped\.x1 trapped\.x2 trapped\.x3 trapped\.x4 trapped\.x5\n      trapped\.x6 trapped\.pc trapped\.pstate trapped\.sp trapped\.x30$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped\n      \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The syscall's arguments cross the boundary once: the HAL passes the validated
 # id alone, and the Lean side reads every other argument from the context it
 # takes whole.  Capture and restore are one call each, not one per word.

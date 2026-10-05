@@ -1223,14 +1223,12 @@ private def bracketOutcome (st : SystemState) :=
 
 private def bracketRun (st : SystemState) :=
   syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
-    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
-    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+    (syscallId := 20) (trapped := { (default : Architecture.TrapContext) with x0 := 1 }) st
 
 /-- `.cspaceMint` (id 4) — an arm this cut leaves undeclared, for the fallback. -/
 private def undeclaredRun (st : SystemState) :=
   syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
-    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
-    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+    (syscallId := 4) (trapped := { (default : Architecture.TrapContext) with x0 := 1 }) st
 
 private def undeclaredBare (st : SystemState) :=
   syscallDispatchCrossCoreStep harnessLabelingContext bootCoreId

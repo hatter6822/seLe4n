@@ -606,19 +606,26 @@ the entry's own pre-state:
   is committed but the unwinding, and the caller gets `.illegalState`.
 
 `execCore` is the lock-holding core, which is the core the syscall executes on: a
-footprint acquired in another core's name would exclude nobody. -/
+footprint acquired in another core's name would exclude nobody.
+
+`trapped` is the context the caller trapped with, whole (`v0.36.47` audit): the
+step reads the six message registers, the IPC buffer (`x6`) and the fault window
+(`pc`, `pstate`, `sp`, `x30`) off it here, so the closure the entry hands
+`Platform.FFI.modifyGetKernelState` captures one object rather than eleven boxed
+`UInt64`s. -/
 def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext) (execCore : CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (trapped : Architecture.TrapContext) (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   match Concurrency.runBracketed schedulerLockBracketDomain
-      (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId x0 x1 x2 x3 x4 x5)
+      (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
+        trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5)
       execCore
-      (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30) st with
+      (syscallDispatchCrossCoreStep ctx execCore syscallId
+        trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+        trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30) st with
   | .undeclared r => r
   | .committed r => r
   | .refused unwound => syscallBracketRefusalResult execCore unwound
@@ -632,14 +639,14 @@ declarations safe: the arms that are not declared yet are bit-identical, on the
 pre-state, with no lock written.  Definitional, so a refactor that starts
 acquiring something on the undeclared path stops this elaborating. -/
 theorem syscallDispatchCrossCoreBracketedStep_undeclared (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
-    (h : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId x0 x1 x2 x3 x4 x5 st
-      = none) :
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st
-      = syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-          ipcBufferAddr elr spsr spEl0 x30 st := by
+    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.TrapContext)
+    (st : SystemState)
+    (h : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
+      trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 st = none) :
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
+      = syscallDispatchCrossCoreStep ctx execCore syscallId
+          trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+          trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30 st := by
   unfold syscallDispatchCrossCoreBracketedStep
   rw [Concurrency.runBracketed_undeclared _ _ _ _ st h]
 
@@ -651,17 +658,16 @@ The load-bearing negative.  A guard that refused *after* running the dispatch
 would be worse than no guard: the syscall would have committed against a
 resolution the guard judged stale. -/
 theorem syscallDispatchCrossCoreBracketedStep_refused (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
-    (S : SchedLockSet)
-    (hDecl : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId x0 x1 x2 x3 x4 x5 st
-          = some S)
-    (hGuard : ¬ (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId x0 x1 x2 x3 x4 x5
+    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.TrapContext)
+    (st : SystemState) (S : SchedLockSet)
+    (hDecl : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
+          trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 st = some S)
+    (hGuard : ¬ (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
+          trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
           (schedAcquireAll execCore S.lockAcquireSequence st) = some S ∧
         schedLockSetHeld execCore S
           (schedAcquireAll execCore S.lockAcquireSequence st))) :
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
       = syscallBracketRefusalResult execCore
           (schedUnwindAll execCore S.lockAcquireSequence.reverse
             (schedAcquireAll execCore S.lockAcquireSequence st)) := by
@@ -835,9 +841,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
     | .ok words => pure words
     | .error tag => return tag
   let result ← Platform.FFI.modifyGetKernelState fun st =>
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId
-      trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
-      trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped
       (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st execCore frame) words)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
@@ -911,9 +915,7 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
           | .ok words => pure words
           | .error tag => return tag
         let result ← Platform.FFI.modifyGetKernelState fun st =>
-          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId
-            trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
-            trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
+          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped
             (Architecture.IpcBufferRead.syncUserWords
               (Architecture.saveCapturedSyscallFrame st execCore frame) words)
         let frame := result.1.mailboxFrame
