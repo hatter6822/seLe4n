@@ -353,7 +353,8 @@ pub fn allocated_bytes(o: Obj) -> Option<usize> {
 // this runtime dereferences an object pointer directly; the operations are
 // written against them.
 
-/// The header of `o`.
+/// The header of `o`, for writing — `inc`, `dec` and `set_st_header` need
+/// it; a read-only inspection takes [`header_ref`].
 ///
 /// # Safety
 ///
@@ -363,6 +364,20 @@ pub unsafe fn header<'a>(o: Obj) -> &'a mut LeanObject {
     // SAFETY: the caller guarantees `o` is a live heap object, whose first
     // eight bytes are its header.
     unsafe { &mut *o }
+}
+
+/// The header of `o`, read-only: the form for inspecting an object the Lean
+/// program still owns (a borrowed `@&` argument), where handing out `&mut`
+/// would claim an exclusive access the inspection does not need.
+///
+/// # Safety
+///
+/// `o` must point to a live heap object.
+#[must_use]
+pub unsafe fn header_ref<'a>(o: Obj) -> &'a LeanObject {
+    // SAFETY: the caller guarantees `o` is a live heap object, whose first
+    // eight bytes are its header.
+    unsafe { &*o }
 }
 
 /// `lean_ptr_tag`.

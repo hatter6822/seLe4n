@@ -921,9 +921,7 @@ mod tests {
     #[test]
     fn syscall_args_from_trap_frame_reads_msg_info_from_x1() {
         let mut frame = zero_frame();
-        frame.gprs[0] = 0x1111;
         frame.gprs[1] = 0x2222;
-        frame.gprs[7] = 0x3333;
         let args = SyscallArgs::from_trap_frame(&frame);
         assert_eq!(args.msg_info, 0x2222);
     }

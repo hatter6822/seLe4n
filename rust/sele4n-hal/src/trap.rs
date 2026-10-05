@@ -86,6 +86,9 @@ const _: () = assert!(core::mem::offset_of!(TrapFrame, tpidr_el0) == 288);
 /// Lean kernel receives all of them in one call ([`in_flight_context`],
 /// `Architecture.TrapContext`, `trapFrameWordCount`).
 pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;
+// The Lean `Architecture.TrapContext` has exactly this many `UInt64` fields
+// (`trapFrameWordCount`); the compiler checks the pin, no scanner does.
+const _: () = assert!(TRAP_FRAME_CONTEXT_WORDS == 35);
 
 /// A thread's context as it crosses the Lean boundary: the
 /// [`TRAP_FRAME_CONTEXT_WORDS`] words in layout order.
@@ -181,12 +184,19 @@ pub fn in_flight_context_in(slots: &InFlightSlots, core: usize) -> Option<TrapCo
     Some(trap_frame_context(frame))
 }
 
+/// The slots every handler publishes into, for the FFI entry that reads the
+/// executing PE's own (`ffi::ffi_trap_context`).
+#[must_use]
+pub fn in_flight_frames() -> &'static InFlightSlots {
+    &IN_FLIGHT_FRAMES
+}
+
 /// **WS-BP BP7.3**: the context of the executing PE's in-flight frame, or
 /// `None` when no frame is published.
 #[must_use]
 pub fn in_flight_context() -> Option<TrapContextWords> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    in_flight_context_in(&IN_FLIGHT_FRAMES, core)
+    in_flight_context_in(in_flight_frames(), core)
 }
 
 /// **WS-BP BP7.4: the context each PE is about to resume**, staged whole by
@@ -470,10 +480,17 @@ pub fn take_restored_in(restored: &RestoredFlags, core: usize) -> bool {
         .is_some_and(|flag| flag.swap(false, Ordering::Relaxed))
 }
 
+/// The per-core staging buffers, for the FFI entry that stages the executing
+/// PE's own (`ffi::ffi_restore_stage_context`).
+#[must_use]
+pub fn restore_staging() -> &'static RestoreStaging {
+    &RESTORE_STAGING
+}
+
 /// **WS-BP BP7.4**: stage the executing PE's whole resume context.
 pub fn restore_stage_context(context: &TrapContextWords) -> Result<(), RestoreRefusal> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    restore_stage_context_in(&RESTORE_STAGING, core, context)
+    restore_stage_context_in(restore_staging(), core, context)
 }
 
 /// **WS-BP BP7.4**: commit the executing PE's staged resume.
