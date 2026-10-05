@@ -506,27 +506,53 @@ private def runFrameSpliceChecks : IO Unit := do
          && (st2.getReply? replyId707 == postDetached.getReply? replyId707)
      | .error _ => false)
 
-/-- The `.replyRecv` fixture: `stBase` plus the free Reply object the server
-answers through and then re-stashes for its next caller (audit IPC-2: the live
-transition takes the reply capability's object, not an optional fresh one). -/
+/-- The `.replyRecv` fixture: `stBase` plus the Reply object the server answers
+through, **mutually linked** to the local client exactly as `Call` leaves it
+(`reply.caller = clientLocal`, `clientLocal.replyObject = reply`).  That link is
+the state the syscall arm's `resolveReplyRecvReply` accepts: it answers
+`replyAnsweredCaller?`, which is `.replyCapInvalid` on an unlinked Reply, so a
+fixture without the link would exercise a state the arm never reaches (audit
+IPC-2: the live transition takes the reply capability's object and re-stashes
+it for the next caller, not an optional fresh one). -/
 private def stReplyRecv : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject epId (.endpoint {})
     |>.withObject serverTid.toObjId (.tcb (mkTcb 601 50 none .ready))
     |>.withObject clientLocalTid.toObjId
-        (.tcb (mkTcb 602 30 none (.blockedOnReply epId (some serverTid))))
-    |>.withObject replyId709.toObjId (.reply { replyId := replyId709 })
+        (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                  replyObject := some replyId709 })
+    |>.withObject replyId709.toObjId
+        (.reply { replyId := replyId709, caller := some clientLocalTid })
     |>.withRunnable [serverTid]
     |>.build)
 
 private def runReplyRecvChecks : IO Unit := do
   IO.println "--- §3.5 SM6.C.5 replyRecv combined op (reply leg wakes caller) ---"
+  -- The caller handed to the transition is the one the arm's resolver computes
+  -- from the reply capability's object, so this call is the arm's call.
+  assertBool "replyRecv fixture: the Reply's answered caller is the one the arm resolves"
+    (decide (replyAnsweredCaller? stReplyRecv replyId709 = some clientLocalTid))
   -- The reply leg of the live replyRecv wakes the recorded caller; the receive
   -- leg then blocks the server on the (empty) endpoint, stashing the same Reply.
   match endpointReplyRecvOnCore epId serverTid replyId709 clientLocalTid replyMsg cnRoot
       (SeLe4n.Slot.ofNat 0) bootCoreId stReplyRecv with
   | .error _ => assertBool "replyRecv succeeds (reply leg + receive leg)" false
   | .ok (summary, st') =>
+    -- One Reply object, consumed by the reply leg and re-stashed by the receive
+    -- leg: the caller↔Reply link is torn down on both halves, and the freed
+    -- object is the server's `pendingReceiveReply` for its next caller.
+    assertBool "replyRecv consumes the answered Reply (no caller, off every stack)"
+      (match st'.getReply? replyId709 with
+       | some r => decide (r.isFree = true)
+       | none => false)
+    assertBool "replyRecv clears the answered caller's `replyObject` half of the link"
+      (match st'.getTcb? clientLocalTid with
+       | some t => decide (t.replyObject = none)
+       | none => false)
+    assertBool "replyRecv re-stashes the SAME Reply on the blocked server for its next caller"
+      (match st'.getTcb? serverTid with
+       | some t => decide (t.pendingReceiveReply = some replyId709)
+       | none => false)
     assertBool "replyRecv installs no capabilities when nothing was received"
       (summary.installedCount == 0)
     assertBool "replyRecv reply leg delivers the payload to the caller (.ready + registers)"

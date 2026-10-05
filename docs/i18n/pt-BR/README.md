@@ -97,9 +97,9 @@ provas do Lean 4:
 |----------|-------|
 | **Versão** | `0.36.50` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 434.075 em 362 arquivos |
-| **LoC Lean de testes** | 88.690 em 71 suítes de testes |
-| **Declarações provadas** | 14.317 declarações de teorema/lema (zero sorry/axiom) |
+| **LoC Lean de produção** | 435.048 em 366 arquivos |
+| **LoC Lean de testes** | 88.955 em 71 suítes de testes |
+| **Declarações provadas** | 14.391 declarações de teorema/lema (zero sorry/axiom) |
 | **Crates Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) em 80 arquivos-fonte |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Integração com o hardware** | **H3 CONCLUÍDO** (WS-AG AG1–AG10): HAL, GIC-400, temporizador, tabelas de páginas ARMv8, ponte FFI, boot no QEMU |

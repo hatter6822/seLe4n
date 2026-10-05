@@ -258,7 +258,8 @@ pub enum IpcTruncationError {
 /// message on the endpoint identified by `recv_cap` — re-linking the same reply
 /// object to the next caller. This is the standard server-loop primitive.
 ///
-/// Lean: `replyRecvBody` (API.lean) — `decodeReplyRecvArgs` reads MR\[0\] as the
+/// Lean: `endpointReplyRecvOnCore` (`SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean`,
+/// reached from the `.replyRecv` arm in `API.lean`) — `decodeReplyRecvArgs` reads MR\[0\] as the
 /// server-supplied reply *capability* pointer (faithful seL4-MCS authority flows
 /// from holding the reply cap, `reply.caller`). The kernel extracts the reply
 /// body via `extractMessageRegisters` over all MRs, so MR\[0\] = reply cap pointer

@@ -10,9 +10,9 @@ every invariant is machine-checked.
 
 ### Concrete artifacts
 
-- **434,075 lines** of production Lean code across 362 files (as of
-  v0.36.45; live metrics in `docs/codebase_map.json` → `readme_sync`).
-- **14,317 theorem/lemma declarations** with zero sorry/axiom.
+- **435,048 lines** of production Lean code across 366 files (as of
+  v0.36.50; live metrics in `docs/codebase_map.json` → `readme_sync`).
+- **14,391 theorem/lemma declarations** with zero sorry/axiom.
 - **Tiered validation (Tier 0–5)** with hygiene, build, trace,
   invariant-surface, nightly-determinism, and cross-language gates.
 - **Negative-state test suite** with corruption testing and per-mutation invariant checks.
