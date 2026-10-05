@@ -127,6 +127,8 @@ open SeLe4n.Testing
 #check @classifySynchronousExceptionExport
 #check @faultEntryStep
 #check @faultEntry
+#check @faultEntryFrame?
+#check @faultEntryFrame?_none
 #check @faultEntryStep_not_dispatchable
 -- Audit round: the trap-frame window the entry spills, and the ABI v3 label range.
 #check @SeLe4n.Model.FaultRegisterWindow
@@ -986,6 +988,58 @@ private def runEntryWindowChecks : IO Unit := do
       assertBool "a current-EL abort syndrome is inert even with an EL0 PSTATE"
         (sgisA.isEmpty && (pendingFaultOf stA faulter).isNone &&
           ipcStateOf stA faulter == ipcStateOf stRecv faulter)
+
+-- ============================================================================
+-- §6g  The exports read the frame once (`v0.36.47` audit)
+-- ============================================================================
+
+/-- A whole trap context whose every word is distinguishable: `xN = 0x100 + N`,
+`sp = 0x7770`, `pc = 0x4_0004`, `pstate = 0x3C0`, `x30 = 0xBEEF`. -/
+private def sampleTrapContext : Kernel.Architecture.TrapContext :=
+  { x0 := 0x100, x1 := 0x101, x2 := 0x102, x3 := 0x103, x4 := 0x104, x5 := 0x105,
+    x6 := 0x106, x7 := 0x107, x8 := 0x108, x9 := 0x109, x10 := 0x10A, x11 := 0x10B,
+    x12 := 0x10C, x13 := 0x10D, x14 := 0x10E, x15 := 0x10F, x16 := 0x110, x17 := 0x111,
+    x18 := 0x112, x19 := 0x113, x20 := 0x114, x21 := 0x115, x22 := 0x116, x23 := 0x117,
+    x24 := 0x118, x25 := 0x119, x26 := 0x11A, x27 := 0x11B, x28 := 0x11C, x29 := 0x11D,
+    x30 := 0xBEEF, sp := 0x7770, pc := 0x4_0004, pstate := 0x3C0, tpidr := 0x5555 }
+
+private def runEntryFrameDecodeChecks : IO Unit := do
+  IO.println "--- §6g the fault exports decode their window from the one captured context ---"
+  let esr : UInt64 := UInt64.ofNat (0x22 <<< 26)
+  let far : UInt64 := 0xDEAD_0000
+  -- The arm no hardware path reaches: an entry handed no context decodes
+  -- nothing, so it commits nothing and stages no restore (the trap layer halts).
+  assertBool "no published context: the entry decodes nothing (fails closed)"
+    ((faultEntryFrame? esr far none).isNone)
+  match faultEntryFrame? esr far (some sampleTrapContext) with
+  | none => assertBool "a published context decodes" false
+  | some (frame, ectx, w) =>
+      assertBool "the exception context carries the trap's syndrome words"
+        (ectx.esr == esr && ectx.far == far)
+      assertBool "…and the context's ELR_EL1 and SPSR_EL1"
+        (ectx.elr == sampleTrapContext.pc && ectx.spsr == sampleTrapContext.pstate)
+      assertBool "the window is x0..x7, in order"
+        (w.gprs == #[0x100, 0x101, 0x102, 0x103, 0x104, 0x105, 0x106, 0x107])
+      assertBool "the window's sp is SP_EL0 and its lr is x30"
+        (w.sp == sampleTrapContext.sp && w.lr == sampleTrapContext.x30)
+      assertBool "the frame saved into the core and the TCB is the context's register file"
+        (frame == Kernel.Architecture.registerFileOfTrapContext sampleTrapContext)
+      assertBool "the window agrees with the saved frame word for word"
+        ((List.range 8).all (fun i => (w.gprAt i).toNat == (frame.gpr ⟨i⟩).val) &&
+          w.sp.toNat == frame.sp.val && w.lr.toNat == (frame.gpr ⟨30⟩).val &&
+          ectx.elr.toNat == frame.pc.val)
+      -- The decoded window drives the same delivery the fifteen-scalar entry
+      -- drove: the step on it delivers, and the recorded context is the window.
+      match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+      | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
+      | (stRecv, .ok _) =>
+          let (_, stE) := faultEntryStep permissiveCtx stRecv ectx w 0
+          assertBool "the step on the decoded window delivers the alignment fault"
+            (ipcStateOf stE faulter == some (.blockedOnReply epHandler (some handler)))
+          assertBool "…and records the decoded window as the fault context"
+            ((pendingFaultOf stE faulter).map (·.context) ==
+              some { faultIP := ectx.elr, sp := w.sp, lr := w.lr, spsr := ectx.spsr,
+                     gprs := w.gprs })
 
 -- ============================================================================
 -- §6f  The unknown-syscall producer (PR #887 review)
@@ -2027,6 +2081,7 @@ def runFaultHandlingChecks : IO Unit := do
   runFlowGateChecks
   runQueuedDeliveryChecks
   runEntryWindowChecks
+  runEntryFrameDecodeChecks
   runUnknownSyscallChecks
   runVacatedCoreChecks
   runResidentFrameChecks

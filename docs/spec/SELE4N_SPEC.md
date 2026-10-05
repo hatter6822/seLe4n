@@ -3186,10 +3186,14 @@ handler.  RR4 replaces that path with seL4's fault IPC:
   have refused the idiomatic `seL4_CapRights_new(0, 1, 0, 1)` handler
   capability and suspended its clients.
 - **The register window** the message reports and a resume reinstalls is the
-  trap frame's, not the register mirror's: `lean_handle_fault` carries
-  `x0`-`x7`, `SP_EL0` and `x30` alongside the syndrome, and the entry spills
-  them into the faulting thread's `registerContext` before building the
-  context (`writeFaultRegistersToTcb`;
+  trap frame's, not the register mirror's: `lean_handle_fault` takes the
+  core and the trap's two syndrome words (`ESR_EL1`, `FAR_EL1`) and reads
+  everything else — `ELR_EL1`, `SPSR_EL1`, `x0`-`x7`, `SP_EL0` and `x30` —
+  once from the published in-flight frame (`faultEntryFrame?` over
+  `ffi_trap_context`, `v0.36.47` audit; before it the HAL passed the window
+  as fifteen scalars and the entry re-captured the same frame), and the entry
+  spills the window into the faulting thread's `registerContext` before
+  building the context (`writeFaultRegistersToTcb`;
   `faultContextOfThread_writeFaultRegistersToTcb` says the context *is* the
   window).  The mirror is partial and between syscalls holds the last
   syscall's arguments, so a context built from it alone would report a stale

@@ -70,9 +70,10 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   alignment arms no longer write an error frame back into the
   faulting thread's registers and `eret` onto the instruction that
   faulted.  `deliver_fault` calls `@[export lean_handle_fault]`
-  (`Kernel/FaultEntry.lean`) inside `with_kernel_entry` with fifteen
-  words — the syndrome and the trap frame's fault window (`x0`-`x7`,
-  `SP_EL0`, `x30`), which the entry spills into the thread's register
+  (`Kernel/FaultEntry.lean`) inside `with_kernel_entry` with three
+  words — the core and the trap's syndrome (`ESR_EL1`, `FAR_EL1`); the
+  entry reads the trap frame's fault window (`x0`-`x7`, `SP_EL0`, `x30`)
+  once from the published in-flight frame and spills it into the thread's register
   mirror before building the fault context, since the mirror holds only
   the last syscall's arguments between syscalls — and the entry records
   the fault on the TCB and delivers it to the thread's `faultHandler`

@@ -6336,8 +6336,10 @@ code may assume:
   between syscalls holds the *last syscall's* arguments, so a context built
   from it alone would report a stale argument window and, on a payload-free
   resume, reinstall it over the thread's live registers.  `lean_handle_fault`
-  therefore takes fifteen words, and new code must not build a fault context
-  off the mirror without spilling first.  (7) The entry derives its cross-core
+  therefore spills the trap frame's window first — since the `v0.36.47` audit
+  it takes three words (the core, `ESR_EL1`, `FAR_EL1`) and decodes the window
+  once from the published in-flight frame (`faultEntryFrame?`) — and new code
+  must not build a fault context off the mirror without spilling first.  (7) The entry derives its cross-core
   pokes from the pre/post **diff** (`computeCrossCoreSgis`), as the syscall
   seam does, never from the single SGI the Call chain surfaces; and it runs
   the executing core's successor through `scheduleLocalSuccessor`, live since
