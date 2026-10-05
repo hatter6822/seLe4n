@@ -1575,69 +1575,337 @@ pub extern "C" fn cache_ic_maintenance(
     crate::lean_runtime::base_io_unit()
 }
 
-/// **WS-BP BP7.3**: is a trap frame published on the executing PE?  `1` inside
-/// a trap handler (`trap::InFlightFrame`), `0` otherwise — the Lean entry saves
-/// the outgoing context only from a published frame.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiTrapFramePresent`.
-#[no_mangle]
-pub extern "C" fn ffi_trap_frame_present() -> u8 {
-    u8::from(crate::trap::in_flight_frame_present())
+// ==========================================================================
+// The scalar-words boundary shape: a Lean structure of `N` `UInt64` fields
+// ==========================================================================
+//
+// A Lean structure whose fields are all `UInt64` compiles to one constructor
+// object (tag `0`) with no object fields and `8 · N` scalar bytes, field `i` at
+// scalar offset `8 · i` — the layout the compiled Lean reads with
+// `lean_ctor_get_uint64` and writes with `lean_ctor_set_uint64`.  Two contexts
+// cross the boundary in that shape, the general-purpose
+// `Architecture.TrapContext` (35 words) and the FP/SIMD `FpContext` (66
+// words), and the question "is this object a constructor of exactly that
+// shape" has the one owner below, `scalar_words_of_lean`.
+
+/// The bytes a Lean constructor of `words` `UInt64` fields and no object
+/// fields occupies: its header and `8 · words` scalar bytes.
+#[must_use]
+pub const fn scalar_words_object_bytes(words: usize) -> usize {
+    crate::lean_runtime::HEADER_BYTES + 8 * words
 }
 
-/// **WS-BP BP7.3**: word `index` of the executing PE's in-flight trap frame
-/// (`trap::TRAP_FRAME_CONTEXT_WORDS` words: `x0`–`x30`, `SP_EL0`, `ELR_EL1`,
-/// `SPSR_EL1`).  `0` when no frame is published or the index is past the
-/// context; the Lean entry asks [`ffi_trap_frame_present`] first.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiTrapFrameWord`.
-#[no_mangle]
-pub extern "C" fn ffi_trap_frame_word(index: u32) -> u64 {
-    crate::trap::in_flight_frame_word(index).unwrap_or(0)
+/// A Lean constructor of `N` `UInt64` fields holding `words`, field `i` at
+/// scalar offset `8 · i`.
+#[must_use]
+pub fn scalar_words_to_lean<const N: usize>(words: &[u64; N]) -> crate::lean_runtime::Obj {
+    let o = crate::lean_runtime::alloc_ctor(0, 0, 8 * N);
+    for (i, word) in words.iter().enumerate() {
+        // SAFETY: `o` is a fresh constructor with `8 · N` scalar bytes and no
+        // object fields, and `8 · i` is below that.
+        unsafe { crate::lean_runtime::ctor_set_u64(o, 8 * i, *word) };
+    }
+    o
 }
 
-/// **WS-BP BP7.4**: stage word `index` of the executing PE's resume context
-/// (`trap::restore_stage_word`).  A word past the context is a kernel defect —
-/// the Lean restore stages exactly `trap::TRAP_FRAME_CONTEXT_WORDS` — so it
-/// **halts the system** rather than resuming a partly staged context.
+/// The `N` words of the Lean constructor `o`, or `None` when `o` is not a
+/// constructor of `N` `UInt64` fields — a boundary defect the caller halts on.
 ///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiRestoreStageWord`.
+/// The shape is three facts, each checked before anything past it is read:
+/// `o` is a live kernel-heap allocation of exactly
+/// [`scalar_words_object_bytes`]`(N)` bytes (the allocator's record, the only
+/// one there is: the header's `m_cs_sz` is `0` under `LEAN_SMALL_ALLOCATOR`),
+/// and its header names constructor tag `0` with no object fields.  The size
+/// check is what keeps the read in bounds and what catches a size drift: the
+/// header cannot tell the context from another tag-0 constructor with no
+/// object fields, so a shorter object is refused rather than read past its
+/// end, and a longer one — a field added to the Lean structure without the
+/// same change here — is refused rather than read as a permuted context.  The
+/// exact-size refusal is sound only where `scalar_words_object_bytes(N)` is
+/// itself a small-object size class — a multiple of
+/// [`OBJECT_SIZE_DELTA`](crate::lean_heap::OBJECT_SIZE_DELTA) no larger than
+/// [`MAX_SMALL_OBJECT_SIZE`](crate::lean_heap::MAX_SMALL_OBJECT_SIZE) — which
+/// each caller's `const` assertions hold for its `N`.  What the check does
+/// **not** see is a same-size permutation applied consistently on one side;
+/// that the compiled Lean places field `i` at `8 · i` is executed against
+/// these offsets by `rust/sele4n-lean-boundary` on the host.
+///
+/// # Safety
+///
+/// `o` may be any pointer.  If it is a live kernel-heap object it must stay
+/// live for the duration of the call — that is the one obligation, and the
+/// caller's (the stage entries have it from the Lean binding's `@&`).  Any
+/// other value — a scalar, a freed object, an address outside the heap, a
+/// pointer into the middle of an object — is refused on the allocator's
+/// out-of-band metadata (`allocated_bytes`) and never dereferenced, which is
+/// what the refusal tests below exercise.
+#[must_use]
+pub unsafe fn scalar_words_of_lean<const N: usize>(
+    o: crate::lean_runtime::Obj,
+) -> Option<[u64; N]> {
+    if crate::lean_runtime::is_scalar(o) {
+        return None;
+    }
+    if crate::lean_runtime::allocated_bytes(o)? != scalar_words_object_bytes(N) {
+        return None;
+    }
+    // SAFETY: `o` is a live heap allocation of exactly
+    // `scalar_words_object_bytes(N) ≥ HEADER_BYTES` bytes, checked above, and
+    // the object is read, never written.
+    let header = unsafe { crate::lean_runtime::header_ref(o) };
+    if header.tag != 0 || header.other != 0 {
+        return None;
+    }
+    // SAFETY: with no object fields the scalar area starts at `HEADER_BYTES`,
+    // and every offset `8 · i + 8 ≤ 8 · N`, so each read lies inside the
+    // `scalar_words_object_bytes(N)` the allocation was checked to hold.
+    Some(core::array::from_fn(|i| unsafe {
+        crate::lean_runtime::ctor_get_u64(o, 8 * i)
+    }))
+}
+
+/// **The scalar bytes of the Lean `Architecture.TrapContext` constructor**: a
+/// structure of [`TRAP_FRAME_CONTEXT_WORDS`](crate::trap::TRAP_FRAME_CONTEXT_WORDS)
+/// `UInt64` fields, in the scalar-words shape above.
+pub const TRAP_CONTEXT_SCALAR_BYTES: usize = 8 * crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize;
+// The layout pin on this side, checked by the compiler: eight bytes per word of
+// the 35-word context (`trap.rs` holds `TRAP_FRAME_CONTEXT_WORDS` to 35).
+const _: () =
+    assert!(TRAP_CONTEXT_SCALAR_BYTES == 8 * crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize);
+const _: () = assert!(TRAP_CONTEXT_SCALAR_BYTES == 280);
+
+/// A Lean `Architecture.TrapContext` holding `words`.
+#[must_use]
+pub fn trap_context_to_lean(words: &crate::trap::TrapContextWords) -> crate::lean_runtime::Obj {
+    scalar_words_to_lean(words)
+}
+
+/// The bytes a Lean `Architecture.TrapContext` object occupies: its header and
+/// [`TRAP_CONTEXT_SCALAR_BYTES`] scalar bytes, no object fields.
+///
+/// The exact-size refusal in [`trap_context_of_lean`] is sound because this is
+/// itself a small-object size class: the heap's classes are the multiples of
+/// [`OBJECT_SIZE_DELTA`](crate::lean_heap::OBJECT_SIZE_DELTA) (8) up to
+/// [`MAX_SMALL_OBJECT_SIZE`](crate::lean_heap::MAX_SMALL_OBJECT_SIZE) (4096),
+/// and `lean_alloc_ctor(0, 0, 280)` asks for exactly 288 bytes, so the
+/// allocator records 288 for a `TrapContext` and a different class for any
+/// object of another size.  The compiler checks the two facts.
+pub const TRAP_CONTEXT_OBJECT_BYTES: usize =
+    scalar_words_object_bytes(crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize);
+const _: () = assert!(TRAP_CONTEXT_OBJECT_BYTES == 288);
+const _: () =
+    assert!(TRAP_CONTEXT_OBJECT_BYTES.is_multiple_of(crate::lean_heap::OBJECT_SIZE_DELTA));
+const _: () = assert!(TRAP_CONTEXT_OBJECT_BYTES <= crate::lean_heap::MAX_SMALL_OBJECT_SIZE);
+
+/// The words of the Lean `Architecture.TrapContext` `o`, or `None` when `o` is
+/// not a constructor of that shape — [`scalar_words_of_lean`] at the
+/// context's 35 words, so a `TrapContext` is refused at any allocated size but
+/// [`TRAP_CONTEXT_OBJECT_BYTES`].
+///
+/// # Safety
+///
+/// [`scalar_words_of_lean`]'s: `o` may be any pointer, which must stay live
+/// for the call if it is a live heap object (`ffi_restore_stage_context` has
+/// that from the Lean binding's `@&`).
+#[must_use]
+pub unsafe fn trap_context_of_lean(
+    o: crate::lean_runtime::Obj,
+) -> Option<crate::trap::TrapContextWords> {
+    // SAFETY: forwarded from the caller.
+    unsafe { scalar_words_of_lean(o) }
+}
+
+/// A Lean `Option Architecture.TrapContext`: `none` is `lean_box(0)`, `some c`
+/// is constructor tag `1` with one object field holding `c`
+/// (`trap_context_to_lean`) — the encoding the compiled Lean switches on with
+/// `lean_obj_tag`.  Owned by the caller.
+#[must_use]
+pub fn trap_context_option_to_lean(
+    words: Option<&crate::trap::TrapContextWords>,
+) -> crate::lean_runtime::Obj {
+    match words {
+        Some(words) => {
+            let some = crate::lean_runtime::alloc_ctor(1, 1, 0);
+            // SAFETY: `some` is a fresh constructor with one object field.
+            unsafe { crate::lean_runtime::ctor_set(some, 0, trap_context_to_lean(words)) };
+            some
+        }
+        None => crate::lean_runtime::boxed(0),
+    }
+}
+
+/// `ffi_trap_context` over the given slots (the testable form): the context of
+/// the frame published in `slots[core]`, as a Lean `Option TrapContext`.
+#[must_use]
+pub fn ffi_trap_context_in(
+    slots: &crate::trap::InFlightSlots,
+    core: usize,
+) -> crate::lean_runtime::Obj {
+    trap_context_option_to_lean(crate::trap::in_flight_context_in(slots, core).as_ref())
+}
+
+/// **WS-BP BP7.3**: the executing PE's in-flight context, in one call — Lean
+/// `some` an `Architecture.TrapContext` inside a trap handler
+/// (`trap::InFlightFrame`), `none` otherwise.  The Lean entry saves the
+/// outgoing context only from a published frame.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTrapContext`.
 #[no_mangle]
-pub extern "C" fn ffi_restore_stage_word(index: u32, value: u64) -> crate::lean_runtime::Obj {
-    if crate::trap::restore_stage_word(index, value).is_err() {
+pub extern "C" fn ffi_trap_context() -> crate::lean_runtime::Obj {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    ffi_trap_context_in(crate::trap::in_flight_frames(), core)
+}
+
+/// `ffi_restore_stage_context` over the given staging buffers (the testable
+/// form): stage the Lean `TrapContext` `context` into `staging[core]`, or
+/// **halt every PE** (`gic::halt_all`) on an object of any other shape or a
+/// refused stage.
+///
+/// # Safety
+///
+/// `context` is handed to [`trap_context_of_lean`] and carries its contract:
+/// any pointer, which must stay live for the call if it is a live heap object.
+pub unsafe fn ffi_restore_stage_context_in(
+    staging: &crate::trap::RestoreStaging,
+    core: usize,
+    context: crate::lean_runtime::Obj,
+) -> crate::lean_runtime::Obj {
+    // SAFETY: forwarded from the caller.
+    let Some(words) = (unsafe { trap_context_of_lean(context) }) else {
+        crate::gic::halt_all();
+    };
+    if crate::trap::restore_stage_context_in(staging, core, &words).is_err() {
         crate::gic::halt_all();
     }
     crate::lean_runtime::base_io_unit()
 }
 
+/// **WS-BP BP7.4**: stage the executing PE's whole resume context
+/// (`trap::restore_stage_context_in`), from the borrowed Lean
+/// `Architecture.TrapContext` `context`.  A context of any other shape, or a
+/// refused stage, is a kernel defect, so it **halts every PE** rather than
+/// resuming a context that was not staged.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRestoreStageContext`.  This and
+/// `ffi_fp_stage_context` are the two Lean-called entries in this file that
+/// take an object pointer.  It is not an `unsafe fn` because the C ABI cannot
+/// express one and compiled Lean is its only caller; the contract is the
+/// binding's `@&` type — a live `TrapContext`, borrowed for the call — and the
+/// dereference is gated by the heap's liveness record in
+/// `trap_context_of_lean`, so no value of the parameter type is read before
+/// the heap vouches for it.
+#[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn ffi_restore_stage_context(
+    context: crate::lean_runtime::Obj,
+) -> crate::lean_runtime::Obj {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    // SAFETY: the Lean binding's argument is a borrowed `TrapContext`, live
+    // for the duration of this call.
+    unsafe { ffi_restore_stage_context_in(crate::trap::restore_staging(), core, context) }
+}
+
+/// **The scalar bytes of the Lean `FpContext` constructor**: a structure of
+/// [`FP_CONTEXT_WORDS`](crate::fp_context::FP_CONTEXT_WORDS) `UInt64` fields,
+/// in the scalar-words shape above (`v0`–`v31` as two doublewords each, then
+/// `FPCR`, then `FPSR`, the `FpContext.word` layout).
+pub const FP_CONTEXT_SCALAR_BYTES: usize = 8 * crate::fp_context::FP_CONTEXT_WORDS;
+// The layout pin on this side, checked by the compiler: eight bytes per word of
+// the 66-word context (`fp_context.rs` holds `FP_CONTEXT_WORDS` to 66).
+const _: () = assert!(FP_CONTEXT_SCALAR_BYTES == 8 * crate::fp_context::FP_CONTEXT_WORDS);
+const _: () = assert!(FP_CONTEXT_SCALAR_BYTES == 528);
+
+/// The bytes a Lean `FpContext` object occupies: its header and
+/// [`FP_CONTEXT_SCALAR_BYTES`] scalar bytes, no object fields — 536, itself a
+/// small-object size class (a multiple of
+/// [`OBJECT_SIZE_DELTA`](crate::lean_heap::OBJECT_SIZE_DELTA) below
+/// [`MAX_SMALL_OBJECT_SIZE`](crate::lean_heap::MAX_SMALL_OBJECT_SIZE)), which
+/// is what makes the exact-size refusal in [`fp_context_of_lean`] sound.  The
+/// compiler checks the three facts.
+pub const FP_CONTEXT_OBJECT_BYTES: usize =
+    scalar_words_object_bytes(crate::fp_context::FP_CONTEXT_WORDS);
+const _: () = assert!(FP_CONTEXT_OBJECT_BYTES == 536);
+const _: () = assert!(FP_CONTEXT_OBJECT_BYTES.is_multiple_of(crate::lean_heap::OBJECT_SIZE_DELTA));
+const _: () = assert!(FP_CONTEXT_OBJECT_BYTES <= crate::lean_heap::MAX_SMALL_OBJECT_SIZE);
+
+/// A Lean `FpContext` holding `words`.
+#[must_use]
+pub fn fp_context_to_lean(words: &crate::fp_context::FpContextWords) -> crate::lean_runtime::Obj {
+    scalar_words_to_lean(words)
+}
+
+/// The words of the Lean `FpContext` `o`, or `None` when `o` is not a
+/// constructor of that shape — [`scalar_words_of_lean`] at the context's 66
+/// words, so an `FpContext` is refused at any allocated size but
+/// [`FP_CONTEXT_OBJECT_BYTES`].
+///
+/// # Safety
+///
+/// [`scalar_words_of_lean`]'s: `o` may be any pointer, which must stay live
+/// for the call if it is a live heap object (`ffi_fp_stage_context` has that
+/// from the Lean binding's `@&`).
+#[must_use]
+pub unsafe fn fp_context_of_lean(
+    o: crate::lean_runtime::Obj,
+) -> Option<crate::fp_context::FpContextWords> {
+    // SAFETY: forwarded from the caller.
+    unsafe { scalar_words_of_lean(o) }
+}
+
 /// **WS-BP BP7.9**: save the executing PE's live FP/SIMD registers into its
-/// capture buffer, arming the trap (`fp_context::capture`).
+/// capture buffer, arming the trap, and hand the whole context over as a Lean
+/// `FpContext` in one call (`fp_context::capture`); the seam used to read it
+/// back one word per call.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiFpCapture`.
 #[no_mangle]
 pub extern "C" fn ffi_fp_capture() -> crate::lean_runtime::Obj {
-    crate::fp_context::capture();
+    fp_context_to_lean(&crate::fp_context::capture())
+}
+
+/// `ffi_fp_stage_context` over the given load buffers (the testable form):
+/// stage the Lean `FpContext` `context` into `buffers[core]`, or **halt every
+/// PE** (`gic::halt_all`) on an object of any other shape or a core past the
+/// buffers.
+///
+/// # Safety
+///
+/// `context` is handed to [`fp_context_of_lean`] and carries its contract:
+/// any pointer, which must stay live for the call if it is a live heap object.
+pub unsafe fn ffi_fp_stage_context_in(
+    buffers: &crate::fp_context::FpBuffers,
+    core: usize,
+    context: crate::lean_runtime::Obj,
+) -> crate::lean_runtime::Obj {
+    // SAFETY: forwarded from the caller.
+    let Some(words) = (unsafe { fp_context_of_lean(context) }) else {
+        crate::gic::halt_all();
+    };
+    if !crate::fp_context::stage_context_in(buffers, core, &words) {
+        crate::gic::halt_all();
+    }
     crate::lean_runtime::base_io_unit()
 }
 
-/// **WS-BP BP7.9**: word `index` of the executing PE's FP/SIMD capture buffer
-/// (`fp_context::captured_word`); `0` past the context.
+/// **WS-BP BP7.9**: stage the FP/SIMD context the executing PE loads, whole,
+/// from the borrowed Lean `FpContext` `context` (`fp_context::stage_context`);
+/// the seam used to take one word per call.  A context of any other shape is a
+/// kernel defect, so it **halts every PE** rather than loading a context that
+/// was not staged — the same refusal as `ffi_restore_stage_context`'s.
 ///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiFpCapturedWord`.
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFpStageContext`.  As for
+/// `ffi_restore_stage_context`, not an `unsafe fn` because the C ABI cannot
+/// express one; the contract is the binding's `@&` type and the dereference is
+/// gated by the heap's liveness record in `fp_context_of_lean`.
 #[no_mangle]
-pub extern "C" fn ffi_fp_captured_word(index: u32) -> u64 {
-    crate::fp_context::captured_word(index)
-}
-
-/// **WS-BP BP7.9**: stage word `index` of the FP/SIMD context the executing PE
-/// loads (`fp_context::stage_word`); a word past the context **halts the
-/// system**.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiFpStageWord`.
-#[no_mangle]
-pub extern "C" fn ffi_fp_stage_word(index: u32, value: u64) -> crate::lean_runtime::Obj {
-    crate::fp_context::stage_word(index, value);
-    crate::lean_runtime::base_io_unit()
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn ffi_fp_stage_context(
+    context: crate::lean_runtime::Obj,
+) -> crate::lean_runtime::Obj {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    // SAFETY: the Lean binding's argument is a borrowed `FpContext`, live for
+    // the duration of this call.
+    unsafe { ffi_fp_stage_context_in(crate::fp_context::load_buffers(), core, context) }
 }
 
 /// **WS-BP BP7.9**: load the staged FP/SIMD context into the executing PE's
@@ -1716,16 +1984,45 @@ pub extern "C" fn mmu_apply_physical_write(
     crate::lean_runtime::base_io_unit()
 }
 
-/// **WS-BP BP7.8**: read the user word at `addr` — a sender's message register
-/// past the four its trap frame carries — `Platform.FFI.ffiReadUserWord`.  The
-/// Lean kernel names only a word of its caller's own RAM frame
-/// (`IpcBufferRead.ipcBufferSlotPAddr?`), so an address
-/// [`crate::user_translation::user_word_admissible`] refuses is a kernel defect
-/// and **halts the system**, for the reason [`mmu_apply_physical_write`] gives.
+/// `ffi_read_user_words` over a coverage predicate (the testable form): the
+/// run `[base, base + 8 · count)` as a fresh Lean `ByteArray` of `8 · count`
+/// little-endian bytes, its one reference the caller's, or `None` when
+/// [`crate::user_translation::user_word_run_admissible`] refuses the run.
+/// Nothing is allocated for a refused run.
+#[must_use]
+pub fn read_user_words_lean(
+    base: u64,
+    count: u64,
+    covered: impl Fn(u64, u64) -> bool,
+) -> Option<crate::lean_runtime::Obj> {
+    if !crate::user_translation::user_word_run_admissible(base, count, &covered) {
+        return None;
+    }
+    let len = usize::try_from(count).ok()?.checked_mul(8)?;
+    let bytes = crate::lean_runtime::array::alloc_sarray(1, len, len);
+    // SAFETY: `bytes` is the fresh scalar array just allocated with `len`
+    // one-byte elements, referenced nowhere else; the slice does not outlive
+    // this call.
+    let out = unsafe { crate::lean_runtime::array::sarray_bytes_mut(bytes) };
+    // The run was admitted above and `out` is exactly its size, so the read
+    // cannot refuse; a refusal here would be a defect in this function.
+    crate::user_translation::read_user_words(base, count, covered, out)?;
+    Some(bytes)
+}
+
+/// **WS-BP BP7.8, batched at the `v0.36.47` audit**: read the `count` user
+/// words at `base` — a contiguous run of a sender's message registers past the
+/// four its trap frame carries — `Platform.FFI.ffiReadUserWords`.  The Lean
+/// kernel names only runs of its caller's own RAM frame that stay in one page
+/// (`IpcBufferRead.wordRuns`, `wordRuns_within_page`), so a run
+/// [`crate::user_translation::user_word_run_admissible`] refuses is a kernel
+/// defect and **halts the system**, for the reason [`mmu_apply_physical_write`]
+/// gives.  The answer is a `ByteArray` of exactly `8 · count` bytes, which the
+/// Lean side checks (`IpcBufferRead.wordsOfBytes`).
 #[no_mangle]
-pub extern "C" fn ffi_read_user_word(addr: u64) -> u64 {
-    match crate::user_translation::read_user_word(addr, crate::mmu::is_boot_cacheable_range) {
-        Some(word) => word,
+pub extern "C" fn ffi_read_user_words(base: u64, count: u64) -> crate::lean_runtime::Obj {
+    match read_user_words_lean(base, count, crate::mmu::is_boot_cacheable_range) {
+        Some(bytes) => bytes,
         None => crate::gic::halt_all(),
     }
 }
@@ -1807,6 +2104,441 @@ extern crate std;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The bulk context boundary loses nothing: words marshalled into a Lean
+    /// `TrapContext` read back as the same words, at offsets `8 · i`, and the
+    /// object has the constructor shape the compiled Lean allocates
+    /// (`lean_alloc_ctor(0, 0, 280)`).
+    #[test]
+    fn a_trap_context_round_trips_through_its_lean_object() {
+        let words: crate::trap::TrapContextWords =
+            core::array::from_fn(|i| 0x0123_4567_89AB_CDEF ^ ((i as u64) << 56) ^ i as u64);
+        let o = trap_context_to_lean(&words);
+        // SAFETY: `o` is the live `TrapContext` just built.
+        unsafe {
+            let header = crate::lean_runtime::header_ref(o);
+            assert_eq!((header.tag, header.other), (0, 0));
+            assert_eq!(
+                crate::lean_runtime::allocated_bytes(o),
+                Some(TRAP_CONTEXT_OBJECT_BYTES)
+            );
+            for (i, word) in words.iter().enumerate() {
+                assert_eq!(crate::lean_runtime::ctor_get_u64(o, 8 * i), *word);
+            }
+            assert_eq!(trap_context_of_lean(o), Some(words));
+            crate::lean_runtime::dec(o);
+        }
+    }
+
+    /// A boundary object that is not a `TrapContext`'s shape is refused, not
+    /// read: a scalar, another constructor tag, a constructor with object
+    /// fields.
+    #[test]
+    fn a_trap_context_of_another_shape_is_refused() {
+        // SAFETY: each argument is a scalar or a live object built here.
+        unsafe {
+            assert_eq!(trap_context_of_lean(crate::lean_runtime::boxed(0)), None);
+            let tagged = crate::lean_runtime::alloc_ctor(1, 0, TRAP_CONTEXT_SCALAR_BYTES);
+            assert_eq!(trap_context_of_lean(tagged), None);
+            crate::lean_runtime::dec(tagged);
+            let with_fields = crate::lean_runtime::alloc_ctor(0, 1, TRAP_CONTEXT_SCALAR_BYTES);
+            crate::lean_runtime::ctor_set(with_fields, 0, crate::lean_runtime::boxed(0));
+            assert_eq!(trap_context_of_lean(with_fields), None);
+            crate::lean_runtime::dec(with_fields);
+        }
+    }
+
+    /// A tag-0 constructor with no object fields — the header a `TrapContext`
+    /// carries — but fewer scalar bytes is refused on its allocated size, not
+    /// read past its end: the header alone cannot tell the two apart.  The
+    /// one-word-short case is the boundary: a 280-byte object (header plus 272
+    /// scalar bytes) sits in the 280-byte class, one word below
+    /// `TRAP_CONTEXT_OBJECT_BYTES`.
+    #[test]
+    fn a_shorter_tag_zero_constructor_is_refused_on_its_size() {
+        for scalar_bytes in [0, 8, TRAP_CONTEXT_SCALAR_BYTES - 8] {
+            let short = crate::lean_runtime::alloc_ctor(0, 0, scalar_bytes);
+            // SAFETY: `short` is a live object built here.
+            unsafe {
+                let header = crate::lean_runtime::header_ref(short);
+                assert_eq!((header.tag, header.other), (0, 0));
+                assert!(
+                    crate::lean_runtime::allocated_bytes(short).unwrap()
+                        < TRAP_CONTEXT_OBJECT_BYTES
+                );
+                assert_eq!(trap_context_of_lean(short), None);
+                crate::lean_runtime::dec(short);
+            }
+        }
+    }
+
+    /// A pointer the heap does not hold as a live allocation is refused before
+    /// it is dereferenced: an address no heap serves, and an object already
+    /// freed.
+    #[test]
+    fn a_trap_context_pointer_outside_the_heap_is_refused() {
+        let words = [0u64; crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize];
+        let outside = core::ptr::addr_of!(words)
+            .cast_mut()
+            .cast::<crate::lean_runtime::LeanObject>();
+        // SAFETY: `outside` is refused on the heap's metadata, never read.
+        assert_eq!(unsafe { trap_context_of_lean(outside) }, None);
+        let freed = trap_context_to_lean(&words);
+        // SAFETY: `freed` is the live object just built; the release frees it,
+        // and the refusal below reads only the heap's metadata.
+        unsafe {
+            crate::lean_runtime::dec(freed);
+            assert_eq!(crate::lean_runtime::allocated_bytes(freed), None);
+            assert_eq!(trap_context_of_lean(freed), None);
+        }
+    }
+
+    /// A tag-0 constructor with no object fields and **more** scalar bytes is
+    /// refused on its size as a shorter one is: a 36th or 44th `UInt64` field
+    /// added to the Lean structure alone would reach here as a 296- or
+    /// 360-byte object, and reading 35 words from it would be a permuted
+    /// context when the field was not appended last.  Break-the-relation:
+    /// with `!=` weakened to `<` the objects below are accepted.
+    #[test]
+    fn a_longer_tag_zero_constructor_is_refused_on_its_size() {
+        for scalar_bytes in [
+            TRAP_CONTEXT_SCALAR_BYTES + 8,
+            TRAP_CONTEXT_SCALAR_BYTES + 72,
+        ] {
+            let long = crate::lean_runtime::alloc_ctor(0, 0, scalar_bytes);
+            // SAFETY: `long` is a live object built here.
+            unsafe {
+                let header = crate::lean_runtime::header_ref(long);
+                assert_eq!((header.tag, header.other), (0, 0));
+                assert!(
+                    crate::lean_runtime::allocated_bytes(long).unwrap() > TRAP_CONTEXT_OBJECT_BYTES
+                );
+                assert_eq!(trap_context_of_lean(long), None);
+                crate::lean_runtime::dec(long);
+            }
+        }
+    }
+
+    /// The frame published in a slot with distinct values in every register.
+    fn distinct_frame() -> crate::trap::TrapFrame {
+        crate::trap::TrapFrame {
+            gprs: core::array::from_fn(|i| 0x1000 + i as u64),
+            sp_el0: 0x101F,
+            elr_el1: 0x1020,
+            spsr_el1: 0x2000_0000,
+            esr_el1: 0x5600_0000,
+            far_el1: 0xDEAD,
+            tpidr_el0: 0x1022,
+            reserved: 0,
+        }
+    }
+
+    fn fresh_slots() -> crate::trap::InFlightSlots {
+        [const { core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()) };
+            crate::svc_dispatch::RETURN_FRAME_CORES]
+    }
+
+    fn fresh_staging() -> crate::trap::RestoreStaging {
+        [const {
+            [const { core::sync::atomic::AtomicU64::new(0) };
+                crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize]
+        }; crate::svc_dispatch::RETURN_FRAME_CORES]
+    }
+
+    /// `ffi_trap_context`'s `Option` encoding, which the compiled Lean
+    /// switches on with `lean_obj_tag`: no published frame is `none`
+    /// (`lean_box(0)`); a published frame is `some` — tag `1`, one object
+    /// field — holding the frame's 35 words in layout order, each at its
+    /// own offset (every register of the frame is distinct, so a word read
+    /// from the wrong position fails).
+    /// `v0.36.47` audit: a run of user words crosses as one `ByteArray` of
+    /// `8 · count` bytes — a scalar array, no word boxed — and a run the HAL
+    /// refuses allocates nothing.
+    #[test]
+    fn ffi_read_user_words_answers_a_byte_array_of_the_run() {
+        const PAGE: u64 = 4096;
+        let ram_page = crate::mmu::KERNEL_RESERVED_END + 0x5000;
+        let covered =
+            |base: u64, size: u64| base >= crate::mmu::KERNEL_RESERVED_END && size <= PAGE;
+        let bytes = read_user_words_lean(ram_page + 16, 3, covered).expect("an admissible run");
+        assert!(!crate::lean_runtime::is_scalar(bytes));
+        // SAFETY: `bytes` is the live scalar array just built.
+        unsafe {
+            let header = crate::lean_runtime::header_ref(bytes);
+            assert_eq!(header.tag, crate::lean_runtime::TAG_SCALAR_ARRAY);
+            let data = crate::lean_runtime::array::sarray_bytes(bytes);
+            assert_eq!(data.len(), 24);
+            assert!(data.iter().all(|b| *b == 0));
+        }
+        let empty = read_user_words_lean(ram_page, 0, covered).expect("a zero-length run");
+        // SAFETY: `empty` is the live scalar array just built.
+        unsafe {
+            assert_eq!(crate::lean_runtime::array::sarray_bytes(empty).len(), 0);
+        }
+        assert!(read_user_words_lean(ram_page + PAGE - 8, 2, covered).is_none());
+        assert!(read_user_words_lean(ram_page + 4, 1, covered).is_none());
+    }
+
+    #[test]
+    fn ffi_trap_context_encodes_the_published_frame_as_a_lean_option() {
+        let slots = fresh_slots();
+        let none = ffi_trap_context_in(&slots, 1);
+        assert!(crate::lean_runtime::is_scalar(none));
+        assert_eq!(none, crate::lean_runtime::boxed(0));
+
+        let mut frame = distinct_frame();
+        let expected = crate::trap::trap_frame_context(&frame);
+        let some = {
+            let _g = crate::trap::InFlightFrame::publish_in(&slots, 1, &mut frame);
+            ffi_trap_context_in(&slots, 1)
+        };
+        assert!(!crate::lean_runtime::is_scalar(some));
+        // SAFETY: `some` is the live `Option` cell just built.
+        unsafe {
+            let header = crate::lean_runtime::header_ref(some);
+            assert_eq!((header.tag, header.other), (1, 1));
+            let context = crate::lean_runtime::ctor_get(some, 0);
+            assert_eq!(trap_context_of_lean(context), Some(expected));
+            assert_eq!(crate::lean_runtime::ctor_get_u64(context, 8 * 7), 0x1007);
+            assert_eq!(crate::lean_runtime::ctor_get_u64(context, 8 * 31), 0x101F);
+            assert_eq!(crate::lean_runtime::ctor_get_u64(context, 8 * 32), 0x1020);
+            assert_eq!(
+                crate::lean_runtime::ctor_get_u64(context, 8 * 33),
+                0x2000_0000
+            );
+            assert_eq!(crate::lean_runtime::ctor_get_u64(context, 8 * 34), 0x1022);
+            crate::lean_runtime::dec(some);
+        }
+        // Another core's slot is not this core's.
+        assert_eq!(
+            ffi_trap_context_in(&slots, 0),
+            crate::lean_runtime::boxed(0)
+        );
+    }
+
+    /// `ffi_restore_stage_context` stages the words of the object it is
+    /// handed, in layout order, into the core's staging buffer, and answers
+    /// the `BaseIO Unit` value.
+    #[test]
+    fn ffi_restore_stage_context_stages_the_objects_words() {
+        let staging = fresh_staging();
+        let words: crate::trap::TrapContextWords =
+            core::array::from_fn(|i| 0x8000_0000_0000_0100 + (i as u64) * 0x11);
+        let context = trap_context_to_lean(&words);
+        // SAFETY: `context` is the live object just built.
+        let unit = unsafe { ffi_restore_stage_context_in(&staging, 2, context) };
+        assert_eq!(unit, crate::lean_runtime::base_io_unit());
+        for (i, word) in words.iter().enumerate() {
+            assert_eq!(
+                staging[2][i].load(core::sync::atomic::Ordering::Relaxed),
+                *word
+            );
+        }
+        assert_eq!(staging[1][0].load(core::sync::atomic::Ordering::Relaxed), 0);
+        // SAFETY: the object is borrowed by the stage; the owner releases it.
+        unsafe { crate::lean_runtime::dec(context) };
+    }
+
+    /// A refused object halts (`gic::halt_all`, which on the host lane panics
+    /// in `cpu::fatal_halt`) rather than staging anything: here `none`, the
+    /// scalar the Lean caller could only hand over by a defect.
+    #[test]
+    #[should_panic(expected = "fail-closed halt reached")]
+    fn ffi_restore_stage_context_halts_on_a_refused_object() {
+        let staging = fresh_staging();
+        // SAFETY: a scalar is refused before any dereference.
+        let _ = unsafe { ffi_restore_stage_context_in(&staging, 0, crate::lean_runtime::boxed(0)) };
+    }
+
+    /// A refused stage — a core outside the staging buffers — halts too.
+    #[test]
+    #[should_panic(expected = "fail-closed halt reached")]
+    fn ffi_restore_stage_context_halts_on_a_refused_stage() {
+        let staging = fresh_staging();
+        let context = trap_context_to_lean(&[0; crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize]);
+        // SAFETY: `context` is the live object just built.
+        let _ = unsafe {
+            ffi_restore_stage_context_in(&staging, crate::svc_dispatch::RETURN_FRAME_CORES, context)
+        };
+    }
+
+    /// An FP/SIMD context with a distinct value in every one of its 66 words.
+    fn distinct_fp_words() -> crate::fp_context::FpContextWords {
+        core::array::from_fn(|i| 0x4000_0000_0000_0000 + (i as u64) * 0x0101)
+    }
+
+    fn fresh_fp_buffers() -> crate::fp_context::FpBuffers {
+        [const { crate::fp_context::FpBuffer::new() }; crate::svc_dispatch::RETURN_FRAME_CORES]
+    }
+
+    /// The FP/SIMD context boundary loses nothing: 66 words marshalled into a
+    /// Lean `FpContext` read back as the same words, at offsets `8 · i`, and
+    /// the object has the constructor shape the compiled Lean allocates
+    /// (`lean_alloc_ctor(0, 0, 528)`, 536 bytes).
+    #[test]
+    fn an_fp_context_round_trips_through_its_lean_object() {
+        let words = distinct_fp_words();
+        let o = fp_context_to_lean(&words);
+        // SAFETY: `o` is the live `FpContext` just built.
+        unsafe {
+            let header = crate::lean_runtime::header_ref(o);
+            assert_eq!((header.tag, header.other), (0, 0));
+            assert_eq!(
+                crate::lean_runtime::allocated_bytes(o),
+                Some(FP_CONTEXT_OBJECT_BYTES)
+            );
+            for (i, word) in words.iter().enumerate() {
+                assert_eq!(crate::lean_runtime::ctor_get_u64(o, 8 * i), *word);
+            }
+            assert_eq!(fp_context_of_lean(o), Some(words));
+            crate::lean_runtime::dec(o);
+        }
+    }
+
+    /// An object that is not an `FpContext`'s shape is refused, not read: a
+    /// scalar, another constructor tag, a constructor with object fields —
+    /// and a `TrapContext`, the other scalar-words context, on its size.
+    #[test]
+    fn an_fp_context_of_another_shape_is_refused() {
+        // SAFETY: each argument is a scalar or a live object built here.
+        unsafe {
+            assert_eq!(fp_context_of_lean(crate::lean_runtime::boxed(0)), None);
+            let tagged = crate::lean_runtime::alloc_ctor(1, 0, FP_CONTEXT_SCALAR_BYTES);
+            assert_eq!(fp_context_of_lean(tagged), None);
+            crate::lean_runtime::dec(tagged);
+            let with_fields = crate::lean_runtime::alloc_ctor(0, 1, FP_CONTEXT_SCALAR_BYTES);
+            crate::lean_runtime::ctor_set(with_fields, 0, crate::lean_runtime::boxed(0));
+            assert_eq!(fp_context_of_lean(with_fields), None);
+            crate::lean_runtime::dec(with_fields);
+            let trap = trap_context_to_lean(&[0; crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize]);
+            assert_eq!(fp_context_of_lean(trap), None);
+            let fp = fp_context_to_lean(&[0; crate::fp_context::FP_CONTEXT_WORDS]);
+            assert_eq!(trap_context_of_lean(fp), None);
+            crate::lean_runtime::dec(trap);
+            crate::lean_runtime::dec(fp);
+        }
+    }
+
+    /// A tag-0 constructor with no object fields — the header an `FpContext`
+    /// carries — but fewer scalar bytes is refused on its allocated size, not
+    /// read past its end; the one-word-short case (528 bytes, one class below
+    /// `FP_CONTEXT_OBJECT_BYTES`) is the boundary.
+    #[test]
+    fn a_shorter_fp_context_is_refused_on_its_size() {
+        for scalar_bytes in [0, 8, FP_CONTEXT_SCALAR_BYTES - 8] {
+            let short = crate::lean_runtime::alloc_ctor(0, 0, scalar_bytes);
+            // SAFETY: `short` is a live object built here.
+            unsafe {
+                let header = crate::lean_runtime::header_ref(short);
+                assert_eq!((header.tag, header.other), (0, 0));
+                assert!(
+                    crate::lean_runtime::allocated_bytes(short).unwrap() < FP_CONTEXT_OBJECT_BYTES
+                );
+                assert_eq!(fp_context_of_lean(short), None);
+                crate::lean_runtime::dec(short);
+            }
+        }
+    }
+
+    /// A tag-0 constructor with no object fields and **more** scalar bytes is
+    /// refused on its size as a shorter one is: a 67th `UInt64` field added to
+    /// the Lean structure alone would reach here as a 544-byte object.
+    /// Break-the-relation: with `!=` weakened to `<` the objects below are
+    /// accepted.
+    #[test]
+    fn a_longer_fp_context_is_refused_on_its_size() {
+        for scalar_bytes in [FP_CONTEXT_SCALAR_BYTES + 8, FP_CONTEXT_SCALAR_BYTES + 72] {
+            let long = crate::lean_runtime::alloc_ctor(0, 0, scalar_bytes);
+            // SAFETY: `long` is a live object built here.
+            unsafe {
+                let header = crate::lean_runtime::header_ref(long);
+                assert_eq!((header.tag, header.other), (0, 0));
+                assert!(
+                    crate::lean_runtime::allocated_bytes(long).unwrap() > FP_CONTEXT_OBJECT_BYTES
+                );
+                assert_eq!(fp_context_of_lean(long), None);
+                crate::lean_runtime::dec(long);
+            }
+        }
+    }
+
+    /// A pointer the heap does not hold as a live allocation is refused
+    /// before it is dereferenced: an address no heap serves, and an object
+    /// already freed.
+    #[test]
+    fn an_fp_context_pointer_outside_the_heap_is_refused() {
+        let words = [0u64; crate::fp_context::FP_CONTEXT_WORDS];
+        let outside = core::ptr::addr_of!(words)
+            .cast_mut()
+            .cast::<crate::lean_runtime::LeanObject>();
+        // SAFETY: `outside` is refused on the heap's metadata, never read.
+        assert_eq!(unsafe { fp_context_of_lean(outside) }, None);
+        let freed = fp_context_to_lean(&words);
+        // SAFETY: `freed` is the live object just built; the release frees it,
+        // and the refusal below reads only the heap's metadata.
+        unsafe {
+            crate::lean_runtime::dec(freed);
+            assert_eq!(crate::lean_runtime::allocated_bytes(freed), None);
+            assert_eq!(fp_context_of_lean(freed), None);
+        }
+    }
+
+    /// `ffi_fp_capture` answers the capture buffer as a Lean `FpContext` — on
+    /// the host, where no register is saved, the zero buffer, 66 words of the
+    /// constructor's shape — and the object is the caller's to release.
+    #[test]
+    fn ffi_fp_capture_answers_the_buffer_as_a_lean_fp_context() {
+        let o = ffi_fp_capture();
+        assert!(!crate::lean_runtime::is_scalar(o));
+        // SAFETY: `o` is the live object the capture just built.
+        unsafe {
+            assert_eq!(
+                fp_context_of_lean(o),
+                Some([0; crate::fp_context::FP_CONTEXT_WORDS])
+            );
+            crate::lean_runtime::dec(o);
+        }
+    }
+
+    /// `ffi_fp_stage_context` stages the 66 words of the object it is handed,
+    /// each at its own position, into the core's load buffer and no other
+    /// core's, and answers the `BaseIO Unit` value.
+    #[test]
+    fn ffi_fp_stage_context_stages_the_objects_words() {
+        let buffers = fresh_fp_buffers();
+        let words = distinct_fp_words();
+        let context = fp_context_to_lean(&words);
+        // SAFETY: `context` is the live object just built.
+        let unit = unsafe { ffi_fp_stage_context_in(&buffers, 2, context) };
+        assert_eq!(unit, crate::lean_runtime::base_io_unit());
+        assert_eq!(buffers[2].words(), words);
+        assert_eq!(buffers[1].words(), [0; crate::fp_context::FP_CONTEXT_WORDS]);
+        // SAFETY: the object is borrowed by the stage; the owner releases it.
+        unsafe { crate::lean_runtime::dec(context) };
+    }
+
+    /// A refused object halts rather than staging anything: here a
+    /// `TrapContext`, the other scalar-words context, refused on its size.
+    #[test]
+    #[should_panic(expected = "fail-closed halt reached")]
+    fn ffi_fp_stage_context_halts_on_a_refused_object() {
+        let buffers = fresh_fp_buffers();
+        let trap = trap_context_to_lean(&[0; crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize]);
+        // SAFETY: `trap` is the live object just built, refused on its size.
+        let _ = unsafe { ffi_fp_stage_context_in(&buffers, 0, trap) };
+    }
+
+    /// A core outside the load buffers halts too.
+    #[test]
+    #[should_panic(expected = "fail-closed halt reached")]
+    fn ffi_fp_stage_context_halts_on_a_refused_core() {
+        let buffers = fresh_fp_buffers();
+        let context = fp_context_to_lean(&[0; crate::fp_context::FP_CONTEXT_WORDS]);
+        // SAFETY: `context` is the live object just built.
+        let _ = unsafe {
+            ffi_fp_stage_context_in(&buffers, crate::svc_dispatch::RETURN_FRAME_CORES, context)
+        };
+    }
 
     #[test]
     fn ffi_timer_read_counter_no_panic() {

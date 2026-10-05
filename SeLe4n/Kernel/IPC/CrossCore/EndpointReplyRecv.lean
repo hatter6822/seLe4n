@@ -15,7 +15,7 @@ import SeLe4n.Kernel.Scheduler.Operations
 # The ReplyRecv transition, `endpointReplyRecvOnCore`
 
 The one transition the `.replyRecv` syscall arm runs, in both the checked and the
-unchecked dispatch (audit IPC-2, `v0.36.48`).  It composes, in seL4-MCS's
+unchecked dispatch (audit IPC-2, `v0.36.49`).  It composes, in seL4-MCS's
 `doReplyTransfer` → `reply_remove` → `receiveIPC` order:
 
 1. the reply leg, `endpointReplyOnCore`;
@@ -26,7 +26,7 @@ unchecked dispatch (audit IPC-2, `v0.36.48`).  It composes, in seL4-MCS's
 5. the receive leg's priority hand-off, `applyReceiveLegPipHandoff`, then the two
    return-frame stagers.
 
-Until `v0.36.48` the name `endpointReplyRecvOnCore` belonged to a two-leg
+Until `v0.36.49` the name `endpointReplyRecvOnCore` belonged to a two-leg
 composite (reply leg then the bare receive leg) that no syscall arm called, and
 the live body was `endpointReplyRecvOnCore` in `API.lean`.  The live body moved here under
 the proved name, and the two-leg composite was deleted with the theorems that

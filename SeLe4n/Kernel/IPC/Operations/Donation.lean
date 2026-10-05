@@ -39,7 +39,7 @@ The donation logic is split across two sibling modules:
   hub).
 * This file - donation-aware wrappers around the core transport-layer IPC
   entry point `endpointReplyWithDonation` (`endpointCallWithDonation` was
-  deleted at `v0.35.192` and `endpointReplyRecvWithDonation` at `v0.36.48` — see
+  deleted at `v0.35.192` and `endpointReplyRecvWithDonation` at `v0.36.49` — see
   the tombstones below). These unavoidably depend on
   `SeLe4n.Kernel.IPC.DualQueue.Transport`, so re-exporting this file from
   the operations hub would reintroduce the `Operations -> Donation ->
@@ -124,7 +124,7 @@ def endpointReplyWithDonation
             .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
       | none => .error .invalidArgument
 
--- **Audit IPC-2 (`v0.36.48`): `endpointReplyRecvWithDonation` is DELETED.**
+-- **Audit IPC-2 (`v0.36.49`): `endpointReplyRecvWithDonation` is DELETED.**
 --
 -- The single-core donation-aware ReplyRecv (`endpointReplyRecv`, then
 -- `applyReplyDonation`, then `revertPriorityInheritance`) had no caller: the live

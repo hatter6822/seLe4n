@@ -245,6 +245,25 @@ run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right($|[ ({:\[\]])
 # presence of production syscall dispatch path.
 run_check "INVARIANT" rg -n '^def dispatchSyscall($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallEntry($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# The caller and the executing core are one fact (PR #911 review): both
+# dispatchers refuse, before any lookup, a `tid` that is not the thread current
+# on `executingCore` -- the declassification and audit arms read their subject
+# off `currentOnCore executingCore`, so a mismatched pair would have let one
+# core's subject authorize a downgrade for another core's caller.  The guard is
+# pinned as the FIRST step of each dispatcher's body (the relation, not the
+# token), the refusal and success-implies-current theorems state it, and the
+# suite drives a mismatched pair through both dispatchers.
+run_check "INVARIANT" rg -n -U 'def dispatchSyscall \(decoded[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def dispatchSyscallChecked \(ctx[^\n]*\n[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_refuses_mismatched_core($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscall_refuses_mismatched_core($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_ok_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscall_ok_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_dispatch_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_scheduler($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
+run_check "INVARIANT" rg -n '^private def dispatcherRefusesCallerNotCurrentOnCore($|[ ({:\[\]])' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n '^  dispatcherRefusesCallerNotCurrentOnCore$' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n 'isIllegalState \(dispatchSyscallChecked defaultLabelingContext decoded caller bootCoreId stOther\)' tests/SyscallDispatchSuite.lean
 # WS-RR RR3.24 + the RR3 closing audit de-privatized dispatchWithCap and
 # dispatchWithCapChecked: the dispatch payoff theorems
 # (IPC/Invariant/DispatchPayoff.lean) must name both tiers from outside the
@@ -4294,10 +4313,10 @@ run_check "INVARIANT" rg -n '^        \(Architecture\.saveCapturedSyscallFrame s
 run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st execCore frame' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # WS-BP BP7.8: the sender's overflow words are read from RAM and synced into the
 # model before the decode, at the seam and in its structural marker.
-run_check "INVARIANT" rg -n '^  let words ← readCallerOverflowWords execCore msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^  let words ← match ← readCallerOverflowWords execCore msgInfo with$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^      \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      faultEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n -U '^    let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId frame\n    let \(sgis, st.\) :=\n      unknownSyscallEntryStep lctx st ' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := faultEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := unknownSyscallEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)\)\.state$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 # v0.36.40: a trap on a core another core vacated (a remote suspend cleared the
 # slot while its thread still ran here) dispatches a successor rather than
@@ -4336,7 +4355,7 @@ run_check "INVARIANT" rg -n -U '^      let stE := PriorityInheritance\.settleRes
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # PR #904 (v0.36.41): the translation rides with the commit, which installs it
 # only once the frame is replaced — never before a commit that may decline.
-run_check "INVARIANT" rg -n -U '^      ffiRestoreStageWord i\.toUInt32 [^\n]*\n    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^    ffiRestoreStageContext \(SeLe4n\.Kernel\.Architecture\.trapContextOfRegisterFile ctx\)\n    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  \| \.idle => ffiRestoreCommit 1 0 0$' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'ffiInstallTranslation (tableBase asid|0 0)' SeLe4n/Platform/FFI.lean
 # WS-BP BP7.6: the restore is live — no seam flag gates it, and none of the
@@ -4614,7 +4633,7 @@ run_check "INVARIANT" rg -n '^fn readiness_guard_dominates\(' rust/sele4n-hal/bu
 run_check "INVARIANT" rg -n '^fn handler_routing_status\(' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn verify_handler_routing_scanner\(\)' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^    verify_handler_routing_scanner\(\);' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -n -U 'elr: frame\.elr_el1,\n\s+spsr: frame\.spsr_el1,\n\s+sp_el0: frame\.sp_el0,\n\s+x30: frame\.gprs\[30\],' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n -U 'words\[\.\.31\]\.copy_from_slice\(&frame\.gprs\);\n\s+words\[31\] = frame\.sp_el0;\n\s+words\[32\] = frame\.elr_el1;\n\s+words\[33\] = frame\.spsr_el1;' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^def syscallCapFaultOf($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def capFaultReceivePhase\?' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem capFaultReceivePhase\?_none_iff_records' SeLe4n/Platform/FFI.lean
@@ -4627,8 +4646,8 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|
 run_check "INVARIANT" rg -n '^  \| faulted$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^  \| \.faulted   => 2$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem tagWord_faulted_ne_blocks($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^                \.ok \(\.faulted,$' SeLe4n/Platform/FFI.lean
-run_negative_check "INVARIANT" rg -n '^                \.ok \(\.blocks,$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^              \.ok \(\.faulted,$' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n '^              \.ok \(\.blocks,$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^        2 => Ok\(SvcOutcome::Faulted\),' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n -U 'Ok\(crate::svc_dispatch::SvcOutcome::Faulted\) => \{\n\s+halt_after_delivered_syscall_fault\(frame\);\n\s+\}' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^fn halt_after_delivered_syscall_fault\(frame: &TrapFrame\) -> !' rust/sele4n-hal/src/trap.rs
@@ -4647,7 +4666,13 @@ run_check "INVARIANT" rg -n '^          match syscallResolveCap gate st with' Se
 run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '\(elr spsr spEl0 x30 : UInt64\) : BaseIO UInt64' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped\n      \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# The syscall's arguments cross the boundary once: the HAL passes the validated
+# id alone, and the Lean side reads every other argument from the context it
+# takes whole.  Capture and restore are one call each, not one per word.
+run_check "INVARIANT" rg -n '^    fn lean_syscall_dispatch_cross_core\(syscall_id: u32\) -> u64;$' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n '^  let trapped ← Platform\.FFI\.ffiTrapContext$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_negative_check "INVARIANT" rg -n 'for i in \[0:SeLe4n\.Kernel\.Architecture\.trapFrameWordCount\]' SeLe4n/Platform/FFI.lean
 # PR #887 review round 3, the review of the round-2 head.  (5) A not-ready
 # core that takes an EL0 abort halts — a frame would be `eret`ed back into the
 # abort — and the fallback frame is host-only; the relation is pinned in
@@ -4958,11 +4983,12 @@ run_check "INVARIANT" rg -n '^theorem ofRegisterFile_spill($|[ ({:\[\]])' SeLe4n
 # seam derives them, not read off the single SGI the Call chain surfaces.
 run_check "INVARIANT" rg -n 'PriorityInheritance\.computeCrossCoreSgis st st.. c' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n '\.sgi\.toList' SeLe4n/Kernel/FaultEntry.lean
-# The Rust seam passes the fifteen words (syndrome + the fault window), and the
-# window is read from the saved trap frame — `frame.gprs` / `frame.sp_el0` —
-# so the extern's arity and its argument source are both pinned.
-run_check "INVARIANT" rg -n 'sp_el0, g\[30\],' rust/sele4n-hal/src/trap.rs
-run_check "INVARIANT" rg -n 'let g = frame\.gprs;' rust/sele4n-hal/src/trap.rs
+# v0.36.47 audit: the Rust seam passes three words (the core and the trap's
+# syndrome), and the window is read once from the published in-flight frame on
+# the Lean side (`faultEntryFrame?`), so the externs' arity is pinned at the
+# call and the entries' decode is pinned on the frame.
+run_check "INVARIANT" rg -n 'lean_handle_fault\(core_id, esr, far\)' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'lean_handle_unknown_syscall\(core_id, esr, far\)' rust/sele4n-hal/src/trap.rs
 # PR #887 review round — five findings, each pinned as the relation it closed:
 # (1) a kernel-origin exception is never a user fault: the classifier has the
 #     current-EL abort class, the entry gates on the saved PSTATE's EL, and the
@@ -6524,7 +6550,7 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_crossCoreNon
 run_check "INVARIANT" rg -n '^def endpointReceiveDualWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-# Audit IPC-2 (`v0.36.48`): the two-leg ReplyRecv composite these three named is
+# Audit IPC-2 (`v0.36.49`): the two-leg ReplyRecv composite these three named is
 # deleted; the live transition took its name and its entries are anchored above.
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 32' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -7683,8 +7709,8 @@ run_check "INVARIANT" rg -n 'match IpcBufferRead\.ipcBufferSlotPAddr\? st tcb id
 run_negative_check "INVARIANT" rg -n 'ipcBufferSlotPAddr\? st tcb idx false' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^  \{ length    := min \(min msg\.registers\.size \(4 \+ overflow\)\) maxMessageRegisters$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n -U '^            recordPhysicalWrites\n              \(writeReturnFrameToTcb st tid \(returnFrameOfMessage msg installedCaps\n                \(messageOverflowWrites st tcb msg\)\.length\)\)$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1\n  Concurrency\.fireCrossCoreSgis r\.1\n  Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n -U '^        Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1\n        Concurrency\.fireCrossCoreSgis r\.1\n        Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^    Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1\n    Concurrency\.fireCrossCoreSgis r\.1\n    Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^          Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1\n          Concurrency\.fireCrossCoreSgis r\.1\n          Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n 'addr\.is_multiple_of\(8\) && page >= KERNEL_RESERVED_END && covered\(page, PAGE_BYTES\)' rust/sele4n-hal/src/user_translation.rs
 run_check "INVARIANT" rg -n '12: the three words past the fourth are stored into the receiver.s buffer, in order' tests/SyscallReturnAbiSuite.lean
 run_check "INVARIANT" rg -n '12 CONTROL: without the RAM read the receiver is handed the model.s zeroes' tests/SyscallReturnAbiSuite.lean
@@ -7715,9 +7741,9 @@ run_check "INVARIANT" rg -n '^theorem deferResidentElsewhere_current_not_elsewhe
 run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/SecondaryEntry.lean
 run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/PerCoreTimerEntry.lean
-run_check "INVARIANT" rg -n '^    let st. := PriorityInheritance\.settleResidencyAt st. coreId$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^      let st. := PriorityInheritance\.settleResidencyAt st. coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^    let res := \(res\.1, PriorityInheritance\.settleResidencyAt res\.2 coreId\)$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n '^    let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId frame$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^      let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId \(some frame\)$' SeLe4n/Kernel/FaultEntry.lean
 run_prose_check "INVARIANT" rg -n 'RETIRED: the current-slot save drops the vacated core.s frame' tests/FaultHandlingSuite.lean
 run_prose_check "INVARIANT" rg -n 'RETIRED: without the deferral core 1 resumes a thread core 0 still runs' tests/FaultHandlingSuite.lean
 # PR #904 (v0.36.41): a mapping record names a mapping epoch, so a record whose
@@ -7754,7 +7780,7 @@ run_check "INVARIANT" rg -n '^    else if fpOwnedElsewhere st c tid then \(\.ret
 run_check "INVARIANT" rg -n '^        \.user tcb\.registerContext ops\.1 ops\.2 \(fpLiveFor st c tid\)$' SeLe4n/Kernel/Architecture/ContextRestore.lean
 run_check "INVARIANT" rg -n '^    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export lean_handle_fp_access\]$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^    Concurrency\.releaseSwitchedFpOwner coreId\n    Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame record\.2\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 # v0.36.39: every state-committing entry drains both hardware ledgers — the
@@ -8184,7 +8210,7 @@ run_check "INVARIANT" rg -n 'add\s+sp, sp, #304$' rust/sele4n-hal/src/trap.S
 run_negative_check "INVARIANT" rg -n '(sub|add)\s+sp, sp, #288$' rust/sele4n-hal/src/trap.S
 run_check "INVARIANT" rg -n -F -- 'const _: () = assert!(core::mem::offset_of!(TrapFrame, tpidr_el0) == 288);' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -F -- 'pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;' rust/sele4n-hal/src/trap.rs
-run_check "INVARIANT" rg -n -F -- '34 => Some(frame.tpidr_el0),' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -F -- 'words[34] = frame.tpidr_el0;' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = word(34);' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = 0;' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^def trapFrameWordCount : Nat := 35$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
@@ -11015,7 +11041,6 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_total($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_illegalState_when_no_current($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_abiMismatch_rejected($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_id_when_not_tcb($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # WS-RC R2.B.4 / WS-SM SM6.A: Rust ↔ Lean symbol alignment — the FFI inner
@@ -20907,7 +20932,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem declaredSchedLockSetForAbiEntry_
 # re-derives neither the gate nor the capability lookup.  The negative is scoped
 # to this declaration because the file legitimately names both elsewhere (the
 # `.replyRecv` CSpace-root agreement is stated over them).
-run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stFilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stFilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def declaredSchedLockSetForAbiEntry[^\n]*(\n([ \t][^\n]*)?)*(abiEntryGate|syscallLookupCap)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 # One record, two domains: the object resolver must be blind to the five fields
 # the scheduler footprints read, or a field added for one domain silently moves
@@ -22028,7 +22053,7 @@ run_negative_check "INVARIANT" rg -n '^def peripheralBaseLow' SeLe4n/
 run_negative_check "INVARIANT" rg -n 'the_boot_map_boundaries_mirror_the_lean_memory_map|LEAN_DEVICE_EXTENT_TOP' rust/sele4n-hal/src/
 run_negative_check "INVARIANT" rg -n 'lean_device_region|device_window_relation_verdict' scripts/check_physical_address_width.sh
 
-# Audit IPC-2 (`v0.36.48`): ONE ReplyRecv.  The transition the `.replyRecv` arm
+# Audit IPC-2 (`v0.36.49`): ONE ReplyRecv.  The transition the `.replyRecv` arm
 # calls lives in IPC/CrossCore under the proved name, API.lean declares no
 # second body, and the live transition carries the object-store and
 # observer-atomicity facts the deleted two-leg composite did.
@@ -22041,7 +22066,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_observer_atomic$' 
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull$' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
 run_check "INVARIANT" rg -n '\| \.endpointReplyRecvDispatch => niName! endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
-# Audit IPC-5 (`v0.36.48`): ONE TCB field writer.  Each `storeTcb*` writer is
+# Audit IPC-5 (`v0.36.49`): ONE TCB field writer.  Each `storeTcb*` writer is
 # `modifyTcb` with a field update, and its frames are instances of the generic
 # ones rather than re-proofs.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def modifyTcb \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) \(f : TCB → TCB\) :[^\n]*\n[^\n]*\n  match lookupTcb st tid with" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'

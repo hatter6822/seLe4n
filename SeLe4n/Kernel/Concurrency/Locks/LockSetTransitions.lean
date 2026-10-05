@@ -4337,7 +4337,7 @@ shrank, which is the **recorded server** — the thread the answered caller
 donated to.  On a non-delegated reply that is the receiver itself (and so is
 `recordedReplyServer?`'s `.getD` default when the reply records no server at
 all), which is the case the single-core ReplyRecv composite this marker was first
-written for (deleted at `v0.36.48`) could only reach; **WS-OD OD3.14** made the
+written for (deleted at `v0.36.49`) could only reach; **WS-OD OD3.14** made the
 distinction load-bearing, since the live `replyRecvPostReceiveDonation` walks from
 `recordedServerTid` and a hint naming the receiver would send the SM3.C walker
 up a different chain on a delegated reply.

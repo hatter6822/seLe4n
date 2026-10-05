@@ -24,7 +24,7 @@ outgoing thread from that bank (`saveOutgoingContextOnCore`), so a thread
 switched out and back in would have resumed with another state.
 
 `saveTrapFrameOnCore` is the fix: at every kernel entry that can switch threads,
-the whole frame — read from the HAL word by word (`trapFrameWord`, the
+the whole frame — handed over by the HAL in one call (`TrapContext`, the
 `TrapFrame` layout) — is written into **both** the executing core's bank and the
 current thread's `registerContext`, so `contextMatchesCurrentOnCore` holds on
 the state the transition runs on and a switch saves exactly the registers the
@@ -42,7 +42,7 @@ pointer and return address to user mode.  Such a frame saves nothing.
 
 Words `0`–`30` are `x0`–`x30`, `31` is `SP_EL0`, `32` is `ELR_EL1`, `33` is
 `SPSR_EL1` and `34` is `TPIDR_EL0` — the order of `TrapFrame`'s fields, which
-the HAL's `trap_frame_word` reads by the same index.
+the HAL's `trap_frame_context` copies in the same order.
 
 `TPIDR_EL0` is in the layout because EL0 writes it with no trap, so it is part
 of a thread's context whether the model names it or not: a switch that leaves it
@@ -80,6 +80,270 @@ def registerFileOfTrapWords (word : Nat → UInt64) : SeLe4n.RegisterFile :=
     gpr := fun r => if r.val < 31 then ⟨(word r.val).toNat⟩ else ⟨0⟩
     pstate := ⟨(word trapFramePstateWord).toNat⟩
     tpidr := ⟨(word trapFrameTpidrWord).toNat⟩ }
+
+/-- **The context a trap frame carries, as the HAL hands it over** — the
+thirty-five words of the layout above as fixed-width scalars, in layout order.
+
+This is the boundary representation of a thread's context: the HAL moves the
+whole of it across the FFI in **one** call each way (`Platform.FFI.ffiTrapContext`
+in, `Platform.FFI.ffiRestoreStageContext` out), where the seam used to issue one
+call per word.  A structure whose fields are all `UInt64` compiles to a single
+constructor object with no object fields and `8 · 35` scalar bytes, field `i` at
+byte offset `8 · i` — the layout `rust/sele4n-hal/src/ffi.rs` reads and writes
+(`TRAP_CONTEXT_SCALAR_BYTES`).  The model's register file stays the proofs'
+view of a context; `registerFileOfTrapContext` is the conversion.
+
+**What pins the layout.**  On the Lean side, `ofWords` is a *positional*
+anonymous constructor while `word` reads by field *name*, so `word_ofWords`
+is a proof that declared position `i` holds layout word `i`: a field reordered
+or inserted without the same change to `word` fails elaboration.  On the Rust
+side, `trap_context_of_lean` refuses an object whose allocated size is not
+exactly the 35-word constructor's (`TRAP_CONTEXT_OBJECT_BYTES`), and
+`const` assertions hold `TRAP_FRAME_CONTEXT_WORDS` to 35 and
+`TRAP_CONTEXT_SCALAR_BYTES` to eight times it, so a field added on either side
+alone is refused at run time rather than read past.  Neither pin reaches a
+same-size permutation that is applied consistently on one side — the
+structure, `word` and `ofWords` reordered together, which every proof
+survives — or a compiler that lays scalar fields out other than in declaration
+order; that the compiled Lean places field `i` at `8 · i` is **executed** by
+`rust/sele4n-lean-boundary` (`scripts/test_lean_boundary_layout.sh`, run by
+Tier 1): an object built at the HAL's offsets with a distinct value in every
+word is read by this module's `word` through the test-only exports of
+`SeLe4n/Testing/BoundaryProbes.lean`, and one `ofWords` built is read back at
+the HAL's offsets, in a process that links the compiled host archive and the
+toolchain's runtime. -/
+structure TrapContext where
+  /-- `x0`. -/
+  x0 : UInt64
+  /-- `x1`. -/
+  x1 : UInt64
+  /-- `x2`. -/
+  x2 : UInt64
+  /-- `x3`. -/
+  x3 : UInt64
+  /-- `x4`. -/
+  x4 : UInt64
+  /-- `x5`. -/
+  x5 : UInt64
+  /-- `x6`. -/
+  x6 : UInt64
+  /-- `x7`. -/
+  x7 : UInt64
+  /-- `x8`. -/
+  x8 : UInt64
+  /-- `x9`. -/
+  x9 : UInt64
+  /-- `x10`. -/
+  x10 : UInt64
+  /-- `x11`. -/
+  x11 : UInt64
+  /-- `x12`. -/
+  x12 : UInt64
+  /-- `x13`. -/
+  x13 : UInt64
+  /-- `x14`. -/
+  x14 : UInt64
+  /-- `x15`. -/
+  x15 : UInt64
+  /-- `x16`. -/
+  x16 : UInt64
+  /-- `x17`. -/
+  x17 : UInt64
+  /-- `x18`. -/
+  x18 : UInt64
+  /-- `x19`. -/
+  x19 : UInt64
+  /-- `x20`. -/
+  x20 : UInt64
+  /-- `x21`. -/
+  x21 : UInt64
+  /-- `x22`. -/
+  x22 : UInt64
+  /-- `x23`. -/
+  x23 : UInt64
+  /-- `x24`. -/
+  x24 : UInt64
+  /-- `x25`. -/
+  x25 : UInt64
+  /-- `x26`. -/
+  x26 : UInt64
+  /-- `x27`. -/
+  x27 : UInt64
+  /-- `x28`. -/
+  x28 : UInt64
+  /-- `x29`. -/
+  x29 : UInt64
+  /-- `x30`. -/
+  x30 : UInt64
+  /-- `SP_EL0` (word 31). -/
+  sp : UInt64
+  /-- `ELR_EL1`, the program counter (word 32). -/
+  pc : UInt64
+  /-- `SPSR_EL1`, the processor state (word 33). -/
+  pstate : UInt64
+  /-- `TPIDR_EL0`, the thread pointer (word 34). -/
+  tpidr : UInt64
+  deriving Repr, DecidableEq, Inhabited
+
+namespace TrapContext
+
+/-- Word `b` of the layout, indexed by a byte — the form the compiler lowers to
+one unboxed compare per arm.  A `match` on `Nat` literals compiles to a chain
+of `lean_nat_dec_eq` on a boxed `Nat` (a scalar test and a pointer compare
+each); `UInt8` literals compile to `lean_uint8_dec_eq`, a plain `==` on a
+`uint8_t` that the C compiler folds into a jump table.  Lean's own IR has no
+literal `switch` (only a constructor `case`), so this is the cheapest form a
+by-name field read can take without an enumeration between the index and the
+field.  `0` past the layout. -/
+def wordOfByte (c : TrapContext) : UInt8 → UInt64
+  | 0 => c.x0
+  | 1 => c.x1
+  | 2 => c.x2
+  | 3 => c.x3
+  | 4 => c.x4
+  | 5 => c.x5
+  | 6 => c.x6
+  | 7 => c.x7
+  | 8 => c.x8
+  | 9 => c.x9
+  | 10 => c.x10
+  | 11 => c.x11
+  | 12 => c.x12
+  | 13 => c.x13
+  | 14 => c.x14
+  | 15 => c.x15
+  | 16 => c.x16
+  | 17 => c.x17
+  | 18 => c.x18
+  | 19 => c.x19
+  | 20 => c.x20
+  | 21 => c.x21
+  | 22 => c.x22
+  | 23 => c.x23
+  | 24 => c.x24
+  | 25 => c.x25
+  | 26 => c.x26
+  | 27 => c.x27
+  | 28 => c.x28
+  | 29 => c.x29
+  | 30 => c.x30
+  | 31 => c.sp
+  | 32 => c.pc
+  | 33 => c.pstate
+  | 34 => c.tpidr
+  | _ => 0
+
+/-- Word `i` of the layout; `0` past it.  One bound test on the `Nat`, then
+`wordOfByte` on the index narrowed to a byte (`Nat.toUInt8`, exact below the
+bound), so the by-index read is a jump rather than a walk down the layout. -/
+def word (c : TrapContext) (i : Nat) : UInt64 :=
+  if i < trapFrameWordCount then c.wordOfByte i.toUInt8 else 0
+
+/-- A word past the layout reads as `0`. -/
+theorem word_of_ge (c : TrapContext) (i : Nat) (h : ¬ i < trapFrameWordCount) :
+    c.word i = 0 := by
+  simp [word, h]
+
+/-- The context whose word `i` is `w i`.  Inlined, so a caller's `w` is applied
+at each index directly rather than through a closure.
+
+This is the Lean-side layout pin: the constructor is applied *positionally*,
+so field `i` of the structure is `w i` by construction, and `word_ofWords`
+(which reads each field by *name*) proves that declared position `i` is layout
+word `i`.  A field reordered or inserted in `TrapContext` without the same
+change here and in `word` fails to elaborate. -/
+@[inline] def ofWords (w : Nat → UInt64) : TrapContext :=
+  ⟨w 0, w 1, w 2, w 3, w 4, w 5, w 6, w 7, w 8, w 9, w 10, w 11, w 12, w 13, w 14, w 15, w 16, w 17, w 18, w 19, w 20, w 21, w 22, w 23, w 24, w 25, w 26, w 27, w 28, w 29, w 30, w 31, w 32, w 33, w 34⟩
+
+/-- **Encoding a context's words and decoding them is the identity.** -/
+@[simp] theorem ofWords_word (c : TrapContext) : ofWords c.word = c := by
+  cases c; rfl
+
+/-- Two word functions that agree on the layout's words build the same context. -/
+theorem ofWords_congr (w w' : Nat → UInt64)
+    (h : ∀ i, i < trapFrameWordCount → w i = w' i) : ofWords w = ofWords w' := by
+  simp only [ofWords]
+  congr 1 <;> exact h _ (by decide)
+
+/-- **Decoding then encoding is the identity on the layout's words** — every
+word below `trapFrameWordCount` crosses the boundary unchanged. -/
+@[simp] theorem word_ofWords (w : Nat → UInt64) :
+    ∀ i, i < trapFrameWordCount → (ofWords w).word i = w i
+  | 0, _ => rfl
+  | 1, _ => rfl
+  | 2, _ => rfl
+  | 3, _ => rfl
+  | 4, _ => rfl
+  | 5, _ => rfl
+  | 6, _ => rfl
+  | 7, _ => rfl
+  | 8, _ => rfl
+  | 9, _ => rfl
+  | 10, _ => rfl
+  | 11, _ => rfl
+  | 12, _ => rfl
+  | 13, _ => rfl
+  | 14, _ => rfl
+  | 15, _ => rfl
+  | 16, _ => rfl
+  | 17, _ => rfl
+  | 18, _ => rfl
+  | 19, _ => rfl
+  | 20, _ => rfl
+  | 21, _ => rfl
+  | 22, _ => rfl
+  | 23, _ => rfl
+  | 24, _ => rfl
+  | 25, _ => rfl
+  | 26, _ => rfl
+  | 27, _ => rfl
+  | 28, _ => rfl
+  | 29, _ => rfl
+  | 30, _ => rfl
+  | 31, _ => rfl
+  | 32, _ => rfl
+  | 33, _ => rfl
+  | 34, _ => rfl
+  | n + 35, h => absurd h (by unfold trapFrameWordCount; omega)
+
+end TrapContext
+
+/-- **The register file a trap context holds** — the model's view of the words
+the HAL handed over: `registerFileOfTrapWords` on `TrapContext.word`, so the
+question "which register is which word" has the one owner above. -/
+def registerFileOfTrapContext (c : TrapContext) : SeLe4n.RegisterFile :=
+  registerFileOfTrapWords c.word
+
+/-- The register file a trap frame's words describe is word-bounded: every
+register is a `UInt64` read as a `Nat`, or the zero register's `0`. -/
+theorem registerFileOfTrapWords_wordBounded (word : Nat → UInt64) :
+    (registerFileOfTrapWords word).wordBounded := by
+  refine ⟨UInt64.toNat_lt_size _, UInt64.toNat_lt_size _, UInt64.toNat_lt_size _,
+    UInt64.toNat_lt_size _, fun r _ => ?_⟩
+  simp only [registerFileOfTrapWords]
+  split
+  · exact UInt64.toNat_lt_size _
+  · show (0 : Nat) < 2 ^ 64; omega
+
+/-- A context the HAL handed over reads back as a word-bounded register file. -/
+theorem registerFileOfTrapContext_wordBounded (c : TrapContext) :
+    (registerFileOfTrapContext c).wordBounded :=
+  registerFileOfTrapWords_wordBounded c.word
+
+/-- The bulk boundary loses nothing: a context built from words reads back as
+the register file those words describe. -/
+@[simp] theorem registerFileOfTrapContext_ofWords (w : Nat → UInt64) :
+    registerFileOfTrapContext (TrapContext.ofWords w) = registerFileOfTrapWords w := by
+  have h := TrapContext.word_ofWords w
+  simp only [registerFileOfTrapContext, registerFileOfTrapWords, trapFramePcWord, trapFrameSpWord,
+    trapFramePstateWord, trapFrameTpidrWord]
+  rw [h 32 (by decide), h 31 (by decide), h 33 (by decide), h 34 (by decide)]
+  congr 1
+  funext r
+  split
+  · rename_i hr
+    rw [h r.val (by unfold trapFrameWordCount; omega)]
+  · rfl
 
 /-- **Was the trap taken from EL0?**  `SPSR_EL1.M[3:0] = 0b0000` (`EL0t`): the
 frame is a thread's.  Any other mode is the kernel's own. -/
@@ -133,6 +397,16 @@ bytes back, so a resume re-issues the syscall (`Platform.FFI.svcFaultIP`'s
 arithmetic, on the saved context). -/
 def restartAtSvc (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
   { rf with pc := ⟨rf.pc.val - 4⟩ }
+
+/-- Rewinding to the `SVC` keeps a word-bounded file word-bounded: the new `pc`
+is at most the old. -/
+theorem restartAtSvc_wordBounded (rf : SeLe4n.RegisterFile) (hB : rf.wordBounded) :
+    (restartAtSvc rf).wordBounded := by
+  obtain ⟨hPc, hSp, hPs, hTp, hGpr⟩ := hB
+  refine ⟨?_, hSp, hPs, hTp, hGpr⟩
+  have h : rf.pc.val < 2 ^ 64 := hPc
+  show rf.pc.val - 4 < 2 ^ 64
+  omega
 
 /-- **The save an entry performs**: the captured frame, if the HAL published
 one (`Platform.FFI.captureTrapFrame`); a handler with no frame saves nothing.

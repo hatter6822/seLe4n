@@ -1449,7 +1449,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
 -- The reply half of the five instantiations register §4 finding 7 names as
 -- missing.  `endpointReplyOnCore_atomic_under_lockSet` is an `rfl` instance of
 -- the body-agnostic `lockSet_atomic_under_2pl`; this carries the substantive
--- form.  (Audit IPC-2, `v0.36.48`: the `replyRecv` companion was stated about a
+-- form.  (Audit IPC-2, `v0.36.49`: the `replyRecv` companion was stated about a
 -- two-leg composite the live arm never ran and is deleted with it; the live
 -- `.replyRecv` runs under the syscall-wide bracket,
 -- `runUnderDeclaredLockSet_committed_eq_withLockSet`.)

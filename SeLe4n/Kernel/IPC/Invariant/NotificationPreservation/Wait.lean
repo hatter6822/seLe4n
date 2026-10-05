@@ -96,7 +96,7 @@ theorem removeRunnable_preserves_badgeWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : badgeWellFormed st) :
     badgeWellFormed (removeRunnable st tid) := hInv
 
-/-- **Audit IPC-5 (`v0.36.48`)**: any TCB field write preserves
+/-- **Audit IPC-5 (`v0.36.49`)**: any TCB field write preserves
 `badgeWellFormed` — it stores a `.tcb`, which is neither a notification nor a
 CNode.  The five writer lemmas below are instances. -/
 theorem modifyTcb_preserves_badgeWellFormed

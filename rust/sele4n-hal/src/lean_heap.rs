@@ -69,11 +69,24 @@
 //! # Concurrency
 //!
 //! One heap serves every core, behind a leaf [`TicketLock`](crate::ticket_lock::TicketLock).
-//! Kernel entry is already serialised by the global entry lock, so the lock is
-//! uncontended on every path this tree has today; it is here so the allocator's
-//! soundness does not depend on that — the boot install runs outside the entry
-//! lock — and it is a leaf: nothing is acquired while it is held, and the
-//! wrappers release it before they halt.
+//! Most allocations happen inside the kernel-entry lock, which already admits
+//! one core at a time, but **not all of them**, so this lock is load-bearing
+//! rather than redundant.  Two callers allocate outside the entry lock while
+//! another core may be inside it, allocating:
+//!
+//! * **the exception classifier** (`trap.rs`'s
+//!   `lean_classify_synchronous_exception`, listed in `build.rs`'s
+//!   `LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK`) runs on every core's synchronous
+//!   exception before any entry lock is taken, and its compiled body allocates
+//!   the `ExceptionContext` it classifies (`lean_alloc_ctor(0, 0, 32)` in the
+//!   generated C);
+//! * **a secondary core's bring-up handshake** (`lean_ready.rs`'s
+//!   `initialise_core_runtime`) allocates and frees a probe on this heap after
+//!   the boot install, when other cores may already be serving kernel entries.
+//!
+//! Dropping the lock in favour of the entry lock would race both against the
+//! allocator's metadata.  It is a leaf: nothing is acquired while it is held,
+//! and the wrappers release it before they halt.
 
 use core::cell::UnsafeCell;
 

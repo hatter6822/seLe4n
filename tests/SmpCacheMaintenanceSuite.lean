@@ -934,7 +934,7 @@ private def runUnifyInstructionChecks : IO Unit := do
     | .error _ => assertBool "the live scenario maps the page" false
     | .ok ((), stLive) =>
       assertBool "the live `.vspaceUnifyInstruction` dispatch succeeds with a write cap"
-        (match SeLe4n.Kernel.dispatchSyscall unifyDecoded udCaller bootCoreId stLive with
+        (match dispatchSyscallAsCurrent unifyDecoded udCaller bootCoreId stLive with
           | .ok _ => true | .error _ => false)
     match vspaceMapPageWithFlush asid5 vaddrPage paddrPage
         { read := true, write := true, execute := false, user := true,
@@ -942,7 +942,7 @@ private def runUnifyInstructionChecks : IO Unit := do
     | .error _ => assertBool "the read-only scenario maps the page" false
     | .ok ((), stRO) =>
       assertBool "a read-only capability is refused (illegalAuthority)"
-        (match SeLe4n.Kernel.dispatchSyscall unifyDecoded udCaller bootCoreId stRO with
+        (match dispatchSyscallAsCurrent unifyDecoded udCaller bootCoreId stRO with
           | .error .illegalAuthority => true | _ => false)
     match vspaceMapPageWithFlush asid5 vaddrPage paddrPage
         { read := true, write := true, execute := false, user := true,
@@ -950,7 +950,7 @@ private def runUnifyInstructionChecks : IO Unit := do
     | .error _ => assertBool "the no-cap scenario maps the page" false
     | .ok ((), stNoCap) =>
       assertBool "no capability at the slot is refused (invalidCapability)"
-        (match SeLe4n.Kernel.dispatchSyscall unifyDecoded udCaller bootCoreId stNoCap with
+        (match dispatchSyscallAsCurrent unifyDecoded udCaller bootCoreId stNoCap with
           | .error .invalidCapability => true | _ => false)
 
 -- ----------------------------------------------------------------------------

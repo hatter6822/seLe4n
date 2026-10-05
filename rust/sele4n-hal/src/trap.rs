@@ -83,22 +83,30 @@ const _: () = assert!(core::mem::offset_of!(TrapFrame, tpidr_el0) == 288);
 
 /// **WS-BP BP7.3: the number of words a thread's context occupies in a trap
 /// frame** — `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`.  The
-/// Lean kernel reads word `i` through [`in_flight_frame_word`]
-/// (`Architecture.registerFileOfTrapWords`, `trapFrameWordCount`).
+/// Lean kernel receives all of them in one call ([`in_flight_context`],
+/// `Architecture.TrapContext`, `trapFrameWordCount`).
 pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;
+// The Lean `Architecture.TrapContext` has exactly this many `UInt64` fields
+// (`trapFrameWordCount`); the compiler checks the pin, no scanner does.
+const _: () = assert!(TRAP_FRAME_CONTEXT_WORDS == 35);
 
-/// **WS-BP BP7.3**: word `index` of a thread's context in `frame`, or `None`
-/// past the context (`ESR_EL1` and `FAR_EL1` are the trap's, not the thread's).
+/// A thread's context as it crosses the Lean boundary: the
+/// [`TRAP_FRAME_CONTEXT_WORDS`] words in layout order.
+pub type TrapContextWords = [u64; TRAP_FRAME_CONTEXT_WORDS as usize];
+
+/// **WS-BP BP7.3**: a thread's context in `frame`, in layout order — word `i`
+/// is `x<i>` for `i < 31`, then `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`.
+/// `ESR_EL1` and `FAR_EL1` are the trap's, not the thread's, and are not part
+/// of it.
 #[must_use]
-pub fn trap_frame_word(frame: &TrapFrame, index: u32) -> Option<u64> {
-    match index {
-        0..=30 => Some(frame.gprs[index as usize]),
-        31 => Some(frame.sp_el0),
-        32 => Some(frame.elr_el1),
-        33 => Some(frame.spsr_el1),
-        34 => Some(frame.tpidr_el0),
-        _ => None,
-    }
+pub fn trap_frame_context(frame: &TrapFrame) -> TrapContextWords {
+    let mut words = [0; TRAP_FRAME_CONTEXT_WORDS as usize];
+    words[..31].copy_from_slice(&frame.gprs);
+    words[31] = frame.sp_el0;
+    words[32] = frame.elr_el1;
+    words[33] = frame.spsr_el1;
+    words[34] = frame.tpidr_el0;
+    words
 }
 
 /// **WS-BP BP7.3: the trap frame each PE is handling**, published for the Lean
@@ -158,10 +166,10 @@ impl Drop for InFlightFrame<'_> {
     }
 }
 
-/// **WS-BP BP7.3**: word `index` of the frame published in `slots[core]`, or
-/// `None` when none is or the index is past the context (the testable form).
+/// **WS-BP BP7.3**: the context of the frame published in `slots[core]`, or
+/// `None` when none is (the testable form).
 #[must_use]
-pub fn in_flight_frame_word_in(slots: &InFlightSlots, core: usize, index: u32) -> Option<u64> {
+pub fn in_flight_context_in(slots: &InFlightSlots, core: usize) -> Option<TrapContextWords> {
     let ptr = slots.get(core)?.load(Ordering::Relaxed);
     if ptr.is_null() {
         return None;
@@ -173,28 +181,27 @@ pub fn in_flight_frame_word_in(slots: &InFlightSlots, core: usize, index: u32) -
     // that reached here, so nothing writes it across this read.  Only core
     // `core` writes slot `core`.
     let frame = unsafe { &*ptr };
-    trap_frame_word(frame, index)
+    Some(trap_frame_context(frame))
 }
 
-/// **WS-BP BP7.3**: is a frame published on the executing PE?
+/// The slots every handler publishes into, for the FFI entry that reads the
+/// executing PE's own (`ffi::ffi_trap_context`).
 #[must_use]
-pub fn in_flight_frame_present() -> bool {
-    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    IN_FLIGHT_FRAMES
-        .get(core)
-        .is_some_and(|slot| !slot.load(Ordering::Relaxed).is_null())
+pub fn in_flight_frames() -> &'static InFlightSlots {
+    &IN_FLIGHT_FRAMES
 }
 
-/// **WS-BP BP7.3**: word `index` of the executing PE's in-flight frame.
+/// **WS-BP BP7.3**: the context of the executing PE's in-flight frame, or
+/// `None` when no frame is published.
 #[must_use]
-pub fn in_flight_frame_word(index: u32) -> Option<u64> {
+pub fn in_flight_context() -> Option<TrapContextWords> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    in_flight_frame_word_in(&IN_FLIGHT_FRAMES, core, index)
+    in_flight_context_in(in_flight_frames(), core)
 }
 
-/// **WS-BP BP7.4: the context each PE is about to resume**, staged word by
-/// word by the Lean kernel (`Platform.FFI.restoreTrapFrame`) in the trap-frame
-/// word order of [`trap_frame_word`], then committed into the in-flight frame
+/// **WS-BP BP7.4: the context each PE is about to resume**, staged whole by
+/// the Lean kernel (`Platform.FFI.restoreTrapFrame`) in the layout of
+/// [`trap_frame_context`], then committed into the in-flight frame
 /// by [`restore_commit_in`].  Slot `c` is written and read only by core `c`,
 /// inside one handler, so `Relaxed` suffices.
 pub type RestoreStaging =
@@ -345,27 +352,22 @@ pub fn enter_idle_wait() -> ! {
 /// Why a restore was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RestoreRefusal {
-    /// A word index past the context.
-    IndexOutOfRange,
     /// A kind other than [`RESTORE_KIND_USER`] or [`RESTORE_KIND_IDLE`].
     UnknownKind,
     /// A core id outside the slot arrays.
     CoreOutOfRange,
 }
 
-/// **WS-BP BP7.4**: stage word `index` of `core`'s resume context (the
-/// testable form).
-pub fn restore_stage_word_in(
+/// **WS-BP BP7.4**: stage `core`'s whole resume context (the testable form).
+pub fn restore_stage_context_in(
     staging: &RestoreStaging,
     core: usize,
-    index: u32,
-    value: u64,
+    context: &TrapContextWords,
 ) -> Result<(), RestoreRefusal> {
     let slot = staging.get(core).ok_or(RestoreRefusal::CoreOutOfRange)?;
-    let word = slot
-        .get(index as usize)
-        .ok_or(RestoreRefusal::IndexOutOfRange)?;
-    word.store(value, Ordering::Relaxed);
+    for (word, value) in slot.iter().zip(context) {
+        word.store(*value, Ordering::Relaxed);
+    }
     Ok(())
 }
 
@@ -410,7 +412,7 @@ pub fn restore_commit_in(
     if ptr.is_null() {
         return Ok(false);
     }
-    // SAFETY: as in `in_flight_frame_word_in` — a non-null slot names the
+    // SAFETY: as in `in_flight_context_in` — a non-null slot names the
     // frame a handler on this PE published and has not withdrawn; that
     // handler is suspended in the call that reached here, so this is the only
     // live reference to the frame for the duration of the write, and only
@@ -478,10 +480,17 @@ pub fn take_restored_in(restored: &RestoredFlags, core: usize) -> bool {
         .is_some_and(|flag| flag.swap(false, Ordering::Relaxed))
 }
 
-/// **WS-BP BP7.4**: stage word `index` of the executing PE's resume context.
-pub fn restore_stage_word(index: u32, value: u64) -> Result<(), RestoreRefusal> {
+/// The per-core staging buffers, for the FFI entry that stages the executing
+/// PE's own (`ffi::ffi_restore_stage_context`).
+#[must_use]
+pub fn restore_staging() -> &'static RestoreStaging {
+    &RESTORE_STAGING
+}
+
+/// **WS-BP BP7.4**: stage the executing PE's whole resume context.
+pub fn restore_stage_context(context: &TrapContextWords) -> Result<(), RestoreRefusal> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    restore_stage_word_in(&RESTORE_STAGING, core, index, value)
+    restore_stage_context_in(restore_staging(), core, context)
 }
 
 /// **WS-BP BP7.4**: commit the executing PE's staged resume.
@@ -897,9 +906,12 @@ fn classify_synchronous_exception(esr: u64) -> u32 {
         // SAFETY: `lean_classify_synchronous_exception` is the C-callable
         // wrapper the Lean compiler emits for
         // `Kernel.classifySynchronousExceptionExport`.  It takes a `u64` and
-        // returns a `u32`, reads no kernel state and allocates nothing, and
-        // this core's Lean runtime is initialized — the `lean_ready` gate just
-        // checked — so entering the symbol is within the runtime's contract.
+        // returns a `u32` and reads no kernel state.  It does allocate: the
+        // generated C builds an `ExceptionContext` on the Lean heap, outside
+        // the kernel-entry lock, which is why the heap keeps its own lock
+        // (`lean_heap.rs`, the concurrency note).  This core's Lean runtime is
+        // initialized — the `lean_ready` gate just checked — so entering the
+        // symbol is within the runtime's contract.
         unsafe { lean_classify_synchronous_exception(esr) }
     } else {
         classify_synchronous_exception_mirror(esr)
@@ -948,10 +960,11 @@ fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
 /// — publish a fail-closed error frame.
 ///
 /// The delivery half is `lean_handle_fault`
-/// (`@[export]` on `SeLe4n.Kernel.faultEntry`), which spills the trap frame's
-/// fault window (`x0`-`x7`, `SP_EL0`, `x30`) into the faulting thread's saved
-/// register context, classifies, builds the fault message from those
-/// registers, and runs the verified, flow-checked `faultDeliverOnCoreChecked`:
+/// (`@[export]` on `SeLe4n.Kernel.faultEntry`), which reads the published
+/// in-flight frame once (`ffi_trap_context`), spills its fault window
+/// (`x0`-`x7`, `SP_EL0`, `x30`) into the faulting thread's saved register
+/// context, classifies, builds the fault message from those registers, and
+/// runs the verified, flow-checked `faultDeliverOnCoreChecked`:
 /// the thread blocks on its handler's endpoint
 /// awaiting a reply, or — with no usable handler — is descheduled and marked
 /// `.Inactive`.  Either way it comes out **not runnable on this core**
@@ -996,62 +1009,50 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
         let core_id = crate::per_cpu::current_core_id_from_tpidr();
         if crate::lean_ready::lean_ready(core_id as usize) {
             extern "C" {
-                // The fifteen words the Lean seam consumes: the syndrome, and
-                // the fault window the trap frame saved (`x0`-`x7`, `SP_EL0`,
-                // `x30`) — the registers seL4's `setMRs_fault` reads and
-                // `handleFaultReply` writes.  The window is spilled into the
-                // thread's saved register context on the Lean side before the
-                // fault context is built (`writeFaultRegistersToTcb`): the
-                // Lean mirror of the register file is partial and, between
-                // syscalls, holds the *last syscall's* arguments, so building
-                // the context from the mirror alone would report a stale
-                // argument window and, on resume, reinstall it over the
-                // thread's live registers.
+                // The three words the Lean seam consumes: the core, and the
+                // two syndrome words that are the trap's and not the
+                // context's (`ESR_EL1`, `FAR_EL1`).  Everything else the
+                // delivery needs — the exception context's `ELR_EL1` and
+                // `SPSR_EL1`, and the fault window (`x0`-`x7`, `SP_EL0`,
+                // `x30`, the registers seL4's `setMRs_fault` reads and
+                // `handleFaultReply` writes) — the entry reads from the
+                // in-flight frame `handle_synchronous_exception` published
+                // (`ffi_trap_context`), once (`faultEntryFrame?`).  The window
+                // is spilled into the thread's saved register context on the
+                // Lean side before the fault context is built
+                // (`writeFaultRegistersToTcb`): the Lean mirror of the
+                // register file is partial and, between syscalls, holds the
+                // *last syscall's* arguments, so building the context from the
+                // mirror alone would report a stale argument window and, on
+                // resume, reinstall it over the thread's live registers.
                 /// # Safety
                 ///
                 /// Sound only on a core whose Lean runtime is initialised
-                /// (`lean_ready` checked on *this* PE) and only for an
-                /// exception taken from EL0: a kernel-origin frame must halt
-                /// before reaching here, or a user-level handler would receive
-                /// the kernel's own register window.  The fifteen words must be
-                /// the live trap frame's fault window, not the partial Lean
-                /// register mirror, which between syscalls holds the previous
-                /// syscall's arguments.
-                #[allow(clippy::too_many_arguments)]
+                /// (`lean_ready` checked on *this* PE), only for an exception
+                /// taken from EL0 — a kernel-origin frame must halt before
+                /// reaching here, or a user-level handler would receive the
+                /// kernel's own register window — and only while the live
+                /// trap frame is published (`InFlightFrame::publish`), which
+                /// is where the entry reads its window; an entry handed no
+                /// frame commits nothing and stages no restore, so this core
+                /// halts below.
                 fn lean_handle_fault(
                     core_id: u64,
                     esr: u64,
-                    elr: u64,
-                    spsr: u64,
                     far: u64,
-                    x0: u64,
-                    x1: u64,
-                    x2: u64,
-                    x3: u64,
-                    x4: u64,
-                    x5: u64,
-                    x6: u64,
-                    x7: u64,
-                    sp_el0: u64,
-                    lr: u64,
                 ) -> crate::lean_runtime::LeanBaseIoUnit;
             }
-            let (esr, elr, spsr, far) =
-                (frame.esr_el1, frame.elr_el1, frame.spsr_el1, frame.far_el1);
-            let g = frame.gprs;
-            let sp_el0 = frame.sp_el0;
+            let (esr, far) = (frame.esr_el1, frame.far_el1);
             // SAFETY: `lean_handle_fault` is the C-callable wrapper the Lean
             // compiler emits for `Kernel.faultEntry`
-            // (`@[export lean_handle_fault]`).  It takes fifteen `u64`s and
+            // (`@[export lean_handle_fault]`).  It takes three `u64`s and
             // returns its `BaseIO Unit` value, `lean_box(0)`; calling it is sound from EL1 exception context
             // once this core's Lean runtime is initialized (the gate just
-            // checked) and inside the kernel-entry lock (taken below), which is
-            // what serialises its `IO.Ref` commit.
+            // checked), with the frame published (`_in_flight` above) and
+            // inside the kernel-entry lock (taken below), which is what
+            // serialises its `IO.Ref` commit.
             let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
-                lean_handle_fault(
-                    core_id, esr, elr, spsr, far, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
-                    sp_el0, g[30],
-                )
+                lean_handle_fault(core_id, esr, far)
             });
             // The export returns its `BaseIO Unit` value, `lean_box(0)`,
             // checked outside the bracket so a malformed one halts this PE
@@ -1070,7 +1071,7 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
                 "[core {}] fault delivered and no context restored; halting (ESR=0x{:016x} ELR=0x{:016x})",
                 core_id,
                 esr,
-                elr
+                frame.elr_el1
             );
             crate::cpu::fatal_halt();
         }
@@ -1205,8 +1206,9 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
 ///
 /// The delivery half is `lean_handle_unknown_syscall` (`@[export]` on
 /// `SeLe4n.Kernel.unknownSyscallEntry`), which builds seL4's `UnknownSyscall`
-/// fault from the syscall-number register (`x7`) and the trap frame's fault
-/// window and runs the same flow-checked delivery as `deliver_fault`: the
+/// fault from the syscall-number register (`x7`) and the fault window of the
+/// published in-flight frame, read once, and runs the same flow-checked
+/// delivery as `deliver_fault`: the
 /// thread blocks on its handler's endpoint awaiting a reply (a handler that
 /// emulates the call replies and the thread continues after the `SVC`), or —
 /// with no usable handler — is suspended fail-closed.  Same lock, same
@@ -1236,45 +1238,30 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
                 /// # Safety
                 ///
                 /// Sound only on a core whose Lean runtime is initialised
-                /// (`lean_ready` checked on *this* PE) and only for an `SVC`
-                /// taken from EL0.  The caller must pass the live trap frame's
-                /// window; the model restarts the faulting thread at the `SVC`,
-                /// so a stale window would be reinstalled over its registers.
-                #[allow(clippy::too_many_arguments)]
+                /// (`lean_ready` checked on *this* PE), only for an `SVC`
+                /// taken from EL0, and only while the live trap frame is
+                /// published (`InFlightFrame::publish`): the entry reads its
+                /// window from that frame, and the model restarts the faulting
+                /// thread at the `SVC`, so a stale window would be reinstalled
+                /// over its registers.  The same three scalars as
+                /// `lean_handle_fault`.
                 fn lean_handle_unknown_syscall(
                     core_id: u64,
                     esr: u64,
-                    elr: u64,
-                    spsr: u64,
                     far: u64,
-                    x0: u64,
-                    x1: u64,
-                    x2: u64,
-                    x3: u64,
-                    x4: u64,
-                    x5: u64,
-                    x6: u64,
-                    x7: u64,
-                    sp_el0: u64,
-                    lr: u64,
                 ) -> crate::lean_runtime::LeanBaseIoUnit;
             }
-            let (esr, elr, spsr, far) =
-                (frame.esr_el1, frame.elr_el1, frame.spsr_el1, frame.far_el1);
-            let g = frame.gprs;
-            let sp_el0 = frame.sp_el0;
+            let (esr, far) = (frame.esr_el1, frame.far_el1);
             // SAFETY: `lean_handle_unknown_syscall` is the C-callable wrapper
             // the Lean compiler emits for `Kernel.unknownSyscallEntry`
-            // (`@[export lean_handle_unknown_syscall]`).  Fifteen `u64`s and
+            // (`@[export lean_handle_unknown_syscall]`).  Three `u64`s and
             // its `BaseIO Unit` value, `lean_box(0)`; sound from EL1 exception context once this core's
-            // Lean runtime is initialized (the gate just checked) and inside
-            // the kernel-entry lock (taken below), which serialises its
-            // `IO.Ref` commit.
+            // Lean runtime is initialized (the gate just checked), with the
+            // frame published (`_in_flight` in the handler) and inside the
+            // kernel-entry lock (taken below), which serialises its `IO.Ref`
+            // commit.
             let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
-                lean_handle_unknown_syscall(
-                    core_id, esr, elr, spsr, far, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
-                    sp_el0, g[30],
-                )
+                lean_handle_unknown_syscall(core_id, esr, far)
             });
             // The export returns its `BaseIO Unit` value, `lean_box(0)`,
             // checked outside the bracket so a malformed one halts this PE
@@ -1291,8 +1278,8 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
             crate::kprintln!(
                 "[core {}] unknown syscall delivered and no context restored; halting (x7=0x{:x} ELR=0x{:016x})",
                 core_id,
-                g[7],
-                elr
+                frame.gprs[7],
+                frame.elr_el1
             );
             crate::cpu::fatal_halt();
         }
@@ -1812,14 +1799,18 @@ mod tests {
         frame.esr_el1 = 0xDEAD;
         frame.far_el1 = 0xBEEF;
         frame.tpidr_el0 = 0x7777_0000;
-        for i in 0..31 {
-            assert_eq!(trap_frame_word(&frame, i), Some(0x100 + u64::from(i)));
+        let words = trap_frame_context(&frame);
+        for (i, word) in words.iter().take(31).enumerate() {
+            assert_eq!(*word, 0x100 + i as u64);
         }
-        assert_eq!(trap_frame_word(&frame, 31), Some(0xAAAA));
-        assert_eq!(trap_frame_word(&frame, 32), Some(0xBBBB));
-        assert_eq!(trap_frame_word(&frame, 33), Some(0x2000_0000));
-        assert_eq!(trap_frame_word(&frame, 34), Some(0x7777_0000));
-        assert_eq!(trap_frame_word(&frame, TRAP_FRAME_CONTEXT_WORDS), None);
+        assert_eq!(words[31], 0xAAAA);
+        assert_eq!(words[32], 0xBBBB);
+        assert_eq!(words[33], 0x2000_0000);
+        assert_eq!(words[34], 0x7777_0000);
+        assert!(
+            !words.contains(&0xDEAD) && !words.contains(&0xBEEF),
+            "the syndrome words are the trap's, not the thread's"
+        );
     }
 
     /// WS-BP BP7.3: a frame is readable only while its handler's guard lives,
@@ -1833,35 +1824,40 @@ mod tests {
         outer.gprs[6] = 6;
         let mut inner = zero_frame();
         inner.gprs[6] = 66;
-        assert_eq!(in_flight_frame_word_in(&slots, 1, 6), None);
+        assert_eq!(in_flight_context_in(&slots, 1).map(|c| c[6]), None);
         {
             let _o = InFlightFrame::publish_in(&slots, 1, &mut outer);
-            assert_eq!(in_flight_frame_word_in(&slots, 1, 6), Some(6));
+            assert_eq!(in_flight_context_in(&slots, 1).map(|c| c[6]), Some(6));
             assert_eq!(
-                in_flight_frame_word_in(&slots, 0, 6),
+                in_flight_context_in(&slots, 0).map(|c| c[6]),
                 None,
                 "another core's slot"
             );
             {
                 let _i = InFlightFrame::publish_in(&slots, 1, &mut inner);
-                assert_eq!(in_flight_frame_word_in(&slots, 1, 6), Some(66));
+                assert_eq!(in_flight_context_in(&slots, 1).map(|c| c[6]), Some(66));
             }
             assert_eq!(
-                in_flight_frame_word_in(&slots, 1, 6),
+                in_flight_context_in(&slots, 1).map(|c| c[6]),
                 Some(6),
                 "the outer frame is restored"
             );
         }
         assert_eq!(
-            in_flight_frame_word_in(&slots, 1, 6),
+            in_flight_context_in(&slots, 1).map(|c| c[6]),
             None,
             "withdrawn when the handler returns"
         );
         assert_eq!(
-            in_flight_frame_word_in(&slots, 99, 6),
+            in_flight_context_in(&slots, 99).map(|c| c[6]),
             None,
             "a core past the slots"
         );
+    }
+
+    /// A context whose word `i` is `base + i`.
+    fn staged_context(base: u64) -> TrapContextWords {
+        core::array::from_fn(|i| base + i as u64)
     }
 
     fn fresh_restore() -> (
@@ -1886,11 +1882,10 @@ mod tests {
     #[test]
     fn a_user_restore_replaces_the_in_flight_context() {
         let (slots, staging, restored, handoff) = fresh_restore();
-        for i in 0..TRAP_FRAME_CONTEXT_WORDS {
-            restore_stage_word_in(&staging, 2, i, 1000 + u64::from(i)).unwrap();
-        }
+        let mut context = staged_context(1000);
         // A hostile pstate: EL1h with DAIF masked and NZCV set.
-        restore_stage_word_in(&staging, 2, 33, 0xF000_03C5).unwrap();
+        context[33] = 0xF000_03C5;
+        restore_stage_context_in(&staging, 2, &context).unwrap();
         let mut frame = zero_frame();
         frame.esr_el1 = 0x5600_0000;
         frame.far_el1 = 0xDEAD;
@@ -1941,9 +1936,7 @@ mod tests {
     fn an_fp_live_restore_installs_the_same_frame_as_a_user_restore() {
         let run = |kind: u32| {
             let (slots, staging, restored, handoff) = fresh_restore();
-            for i in 0..TRAP_FRAME_CONTEXT_WORDS {
-                restore_stage_word_in(&staging, 0, i, 500 + u64::from(i)).unwrap();
-            }
+            restore_stage_context_in(&staging, 0, &staged_context(500)).unwrap();
             let mut frame = zero_frame();
             {
                 let _g = InFlightFrame::publish_in(&slots, 0, &mut frame);
@@ -1999,8 +1992,8 @@ mod tests {
     }
 
     /// WS-BP BP7.4: with no frame published there is nothing to resume into,
-    /// so the commit is a no-op that sets no flag; an unknown kind, a word
-    /// past the context and a core outside the slots are refused.
+    /// so the commit is a no-op that sets no flag; an unknown kind and a core
+    /// outside the slots are refused.
     #[test]
     fn a_restore_without_a_frame_is_a_no_op_and_bad_operands_are_refused() {
         let (slots, staging, restored, handoff) = fresh_restore();
@@ -2036,11 +2029,7 @@ mod tests {
             Err(RestoreRefusal::UnknownKind)
         );
         assert_eq!(
-            restore_stage_word_in(&staging, 1, TRAP_FRAME_CONTEXT_WORDS, 0),
-            Err(RestoreRefusal::IndexOutOfRange)
-        );
-        assert_eq!(
-            restore_stage_word_in(&staging, 99, 0, 0),
+            restore_stage_context_in(&staging, 99, &staged_context(0)),
             Err(RestoreRefusal::CoreOutOfRange)
         );
         assert_eq!(
@@ -2076,9 +2065,7 @@ mod tests {
             RESTORE_KIND_IDLE,
         ] {
             let (slots, staging, restored, handoff) = fresh_restore();
-            for i in 0..TRAP_FRAME_CONTEXT_WORDS {
-                restore_stage_word_in(&staging, 1, i, 700 + u64::from(i)).unwrap();
-            }
+            restore_stage_context_in(&staging, 1, &staged_context(700)).unwrap();
             let mut frame = zero_frame();
             el1h(&mut frame);
             {

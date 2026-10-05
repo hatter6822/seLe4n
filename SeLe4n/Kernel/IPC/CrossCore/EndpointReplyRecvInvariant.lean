@@ -1630,7 +1630,7 @@ theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne (endpointId : SeLe
 
 
 -- ============================================================================
--- Audit IPC-2 (`v0.36.48`): object-store integrity and observer atomicity of the
+-- Audit IPC-2 (`v0.36.49`): object-store integrity and observer atomicity of the
 -- live ReplyRecv
 -- ============================================================================
 --

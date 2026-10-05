@@ -1384,10 +1384,12 @@ def strip_asm(t: str) -> str:
 
 
 def strip_c_header(t: str) -> str:
-    """C headers (`rust/sele4n-hal/lean_include/lean/config.h`, WS-BP BP1):
-    `//` and `/* */`, and `"`-quoted strings -- the grammar the `.S` sources
-    already have, since both reach the compiler through cpp.  `#` directives
-    are code: a `#define`'s macro name is an identifier and stays in scope."""
+    """C headers (`rust/sele4n-hal/lean_include/lean/config.h`, WS-BP BP1) and
+    C sources (`rust/sele4n-lean-boundary/shim.c`, the boundary layout test's
+    `lean.h` shim): `//` and `/* */`, and `"`-quoted strings -- the grammar the
+    `.S` sources already have, since all three reach the compiler through cpp.
+    `#` directives are code: a `#define`'s macro name is an identifier and
+    stays in scope."""
     return strip_pairs(t, "//", ("/*", "*/"))
 
 
@@ -1438,6 +1440,7 @@ CONTENT_STRIPPERS = {
     ".bash": strip_shell,
     ".S": strip_asm,
     ".h": strip_c_header,
+    ".c": strip_c_header,
     ".ld": strip_block_only,
     ".toml": strip_config,
     ".yml": strip_config,

@@ -389,12 +389,12 @@ which host binaries must not link.  The `.error` arm is refuted by
 `syscallDispatchFromAbi_total`; it throws rather than fabricating an
 outcome. -/
 private def dispatchViaRef (syscallId : UInt32)
-    (msgInfo x0 x1 x2 x3 x4 x5 ipcBuf : UInt64) :
+    (x0 x1 x2 x3 x4 x5 ipcBuf : UInt64) :
     IO Kernel.Architecture.SyscallOutcome := do
   let st ← getKernelState
   let ctx ← getKernelLabelingContext
   match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId
-      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBuf 0 0 0 0 st with
+      syscallId x0 x1 x2 x3 x4 x5 ipcBuf 0 0 0 0 st with
   | Except.ok (outcome, st') =>
       initialiseKernelState st'
       pure outcome
@@ -423,7 +423,7 @@ private def sd030_dispatch_noCurrent : IO Unit := do
   let st := mkState [] none
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
-  let outcome ← dispatchViaRef 0 0 0 0 0 0 0 0 0
+  let outcome ← dispatchViaRef 0 0 0 0 0 0 0 0
   expect "sd030_illegalState_error_frame"
     (isErrorFrameFor outcome .illegalState)
     "no-current dispatch must return the illegalState error frame"
@@ -439,7 +439,7 @@ private def sd031_dispatch_spillsRegs : IO Unit := do
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- Invoke with a syscallId that's out of the modeled range; the call
   -- must return an error frame and preserve the spilled registers.
-  let _ ← dispatchViaRef 0xFFFFFFFF 0 0xDEADBEEF 0 0 0 0 0 0
+  let _ ← dispatchViaRef 0xFFFFFFFF 0xDEADBEEF 0 0 0 0 0 0
   let st' ← getKernelState
   match st'.objects[tid.toObjId]? with
   | some (.tcb tcb) =>
@@ -459,7 +459,7 @@ private def sd032_dispatch_invalidSyscall : IO Unit := do
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- syscallId 99 is outside the modeled set.
-  let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0 0
+  let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0
   expect "sd032_invalid_syscall_error_frame"
     (isSomeErrorFrame outcome)
     "unmodeled syscall ID must surface as an error frame"
@@ -471,7 +471,7 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨9⟩
   let st := mkState [(⟨9⟩, .tcb (mkTcb 9 .Ready))] (some tid)
   let ctx := SeLe4n.Kernel.testLabelingContext
-  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0 0
+  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0
       0 0 0 0 st with
   | Except.ok _ =>
       passLine "sd033_dispatchFromAbi_returns_ok"
@@ -479,35 +479,101 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
       failLine "sd033_dispatchFromAbi_returns_ok"
         "syscallDispatchFromAbi must never return Except.error"
 
-/-- SD-034: ABI consistency check — when `msgInfo ≠ x1`, the dispatch
-    rejects with the `.invalidSyscallArgument` error frame without
-    invoking `syscallEntryChecked`.
-
-The Rust caller's `SyscallArgs::from_trap_frame` constructs `msg_info`
-and `msg_regs[1]` from the same `frame.x1()` slot, so they should always
-be equal at the ABI boundary.  A divergence indicates either a malformed
-caller or memory corruption — the FFI rejects rather than proceeding. -/
-private def sd034_dispatch_abiMismatch : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨10⟩
-  let st := mkState [(⟨10⟩, .tcb (mkTcb 10 .Ready))] (some tid)
+/-- SD-036 (`v0.36.47` audit): the arm the hardware never reaches — the entry
+handed no context.  `syscallEntryContextOrFaulted` is the pure owner of that
+arm: `none` is the `.faulted` outcome tag and nothing else (no state is read,
+so none can be committed), and `some c` is `c` itself, so the entry dispatches
+on exactly the context the HAL handed over.  The host lane cannot link the
+entry's externs, which is why the arm is a pure function. -/
+private def sd036_entryWithoutContext_faults : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨12⟩
+  let st := mkState [(⟨12⟩, .tcb (mkTcb 12 .Ready))] (some tid)
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
-  -- Pass msgInfo=0xAAAA and x1=0xBBBB (≠ msgInfo).  Per the FFI ABI
-  -- contract these must agree; the dispatcher rejects.
-  let outcome ← dispatchViaRef 0 0xAAAA 0 0xBBBB 0 0 0 0 0
-  expect "sd034a_invalidSyscallArgument_frame"
-    (isErrorFrameFor outcome .invalidSyscallArgument)
-    "ABI-mismatch must yield the invalidSyscallArgument error frame"
-  -- Verify the kernel state is NOT mutated on the ABI-mismatch path.
+  let faulted := Kernel.Architecture.SyscallOutcome.faulted.tagWord
+  expect "sd036a_none_is_the_faulted_tag"
+    (match syscallEntryContextOrFaulted none with
+      | .error tag => tag == faulted && tag == 2
+      | .ok _ => false)
+    "an entry with no published context must answer the .faulted tag (2)"
+  let c : Kernel.Architecture.TrapContext :=
+    Kernel.Architecture.TrapContext.ofWords fun i => 0x2000 + i.toUInt64
+  expect "sd036b_some_is_the_context_itself"
+    (match syscallEntryContextOrFaulted (some c) with
+      | .ok c' => c' == c && c'.x7 == 0x2007 && c'.tpidr == 0x2022
+      | .error _ => false)
+    "an entry with a context must dispatch on exactly that context"
+  -- The frame-less answer commits nothing: the state is what was installed.
   let st' ← getKernelState
   match st'.objects[tid.toObjId]? with
   | some (.tcb tcb) =>
-      -- TCB.registerContext.gpr ⟨0⟩ should still be the default value (0)
-      -- because the dispatch rejected before writeFfiRegistersToTcb was called.
-      expect "sd034b_no_register_spill_on_abi_mismatch"
-        (tcb.registerContext.gpr ⟨0⟩ == ⟨0⟩)
-        "ABI-mismatch must reject before spilling registers"
-  | _ => failLine "sd034_tcb_missing" "TCB missing after ABI-mismatch dispatch"
+      expect "sd036c_no_state_committed_without_context"
+        (tcb.registerContext.gpr ⟨0⟩ == ⟨0⟩ && tcb.threadState == .Ready)
+        "the frame-less arm must leave the installed state untouched"
+  | _ => failLine "sd036_tcb_missing" "TCB missing after the frame-less arm"
+
+open Kernel.Architecture.IpcBufferRead in
+/-- SD-037 (`v0.36.47` audit): the sender's overflow words cross in runs.
+`wordRuns` groups consecutive same-page words and nothing else; `wordsOfBytes`
+decodes a run's `8 · n` little-endian bytes and refuses any other size; and
+`overflowWordsOrFaulted` zips the decoded batches back onto the addresses, or
+answers the `.faulted` tag — the arm the hardware never reaches, since the HAL
+halts on a refused run rather than answering a short one. -/
+private def sd037_overflowWordsCrossInRuns : IO Unit := do
+  let pa (n : Nat) : SeLe4n.PAddr := SeLe4n.PAddr.ofNat n
+  -- Three consecutive words of one page are one run; a gap, or a page
+  -- boundary, starts another; the runs expand back to the list.
+  expect "sd037a_consecutive_words_are_one_run"
+    (wordRuns [pa 0x1000, pa 0x1008, pa 0x1010] == [(pa 0x1000, 3)])
+    "three consecutive same-page words must form one run"
+  expect "sd037b_a_gap_splits_the_run"
+    (wordRuns [pa 0x1000, pa 0x1010] == [(pa 0x1000, 1), (pa 0x1010, 1)])
+    "non-consecutive words must not share a run"
+  expect "sd037c_a_page_boundary_splits_the_run"
+    (wordRuns [pa 0x1FF0, pa 0x1FF8, pa 0x2000, pa 0x2008]
+      == [(pa 0x1FF0, 2), (pa 0x2000, 2)])
+    "a run must never cross a page boundary"
+  let straddling := (List.range 116).map (fun i => pa (0x1E00 + 8 * i))
+  expect "sd037d_a_116_word_buffer_straddling_a_page_is_two_runs"
+    (wordRuns straddling == [(pa 0x1E00, 64), (pa 0x2000, 52)] &&
+      expandRuns (wordRuns straddling) == straddling)
+    "a 512-aligned buffer across a page boundary must be exactly two runs"
+  let inPage := (List.range 116).map (fun i => pa (0x3000 + 8 * i))
+  expect "sd037e_a_116_word_buffer_inside_a_page_is_one_run"
+    (wordRuns inPage == [(pa 0x3000, 116)])
+    "a buffer inside one page must be one run (one extern call)"
+  -- The decode: little-endian words, exact size only.
+  let bytes := ByteArray.mk #[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                              0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80]
+  expect "sd037f_little_endian_decode"
+    (wordsOfBytes 2 bytes == some [0x0807060504030201, 0x80000000000000FF])
+    "a run's bytes must decode little-endian, word by word"
+  expect "sd037g_wrong_size_is_refused"
+    ((wordsOfBytes 3 bytes).isNone && (wordsOfBytes 1 bytes).isNone &&
+      wordsOfBytes 0 (ByteArray.mk #[]) == some [])
+    "a batch of any size but 8·n must decode to nothing; an empty run to no words"
+  -- The seam's decode: the pairs carry the addresses in order, or fail closed.
+  let addrs := [pa 0x1000, pa 0x1008]
+  let faulted := Kernel.Architecture.SyscallOutcome.faulted.tagWord
+  expect "sd037h_batches_zip_onto_the_addresses"
+    (match overflowWordsOrFaulted addrs (wordRuns addrs) [bytes] with
+      | .ok pairs => pairs == [(pa 0x1000, 0x0807060504030201), (pa 0x1008, 0x80000000000000FF)]
+      | .error _ => false)
+    "a decoded batch must pair each address with its word, in order"
+  expect "sd037i_a_short_batch_is_the_faulted_tag"
+    (match overflowWordsOrFaulted addrs (wordRuns addrs) [bytes.extract 0 8] with
+      | .error tag => tag == faulted && tag == 2
+      | .ok _ => false)
+    "a batch not of its run's size must answer the .faulted tag (2)"
+  expect "sd037j_a_missing_batch_is_the_faulted_tag"
+    (match overflowWordsOrFaulted addrs (wordRuns addrs) [] with
+      | .error tag => tag == faulted
+      | .ok _ => false)
+    "fewer batches than runs must answer the .faulted tag"
+  expect "sd037k_no_overflow_reads_nothing"
+    (match overflowWordsOrFaulted [] (wordRuns []) [] with
+      | .ok pairs => pairs.isEmpty
+      | .error _ => false)
+    "a syscall with no overflow must sync no words and not fault"
 
 /-- SD-035: Sequential dispatches — the IO.Ref state evolves
     correctly across multiple syscall invocations.
@@ -520,7 +586,7 @@ private def sd035_sequentialDispatches : IO Unit := do
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- First dispatch: spills x0=0x111 into the TCB.
-  let _ ← dispatchViaRef 99 0 0x111 0 0 0 0 0 0
+  let _ ← dispatchViaRef 99 0x111 0 0 0 0 0 0
   let st1 ← getKernelState
   match st1.objects[tid.toObjId]? with
   | some (.tcb tcb1) =>
@@ -529,7 +595,7 @@ private def sd035_sequentialDispatches : IO Unit := do
         "first dispatch must spill x0=0x111"
   | _ => failLine "sd035_tcb_missing_1" "TCB missing after first dispatch"
   -- Second dispatch: spills x0=0x222 into the (now-updated) TCB.
-  let _ ← dispatchViaRef 99 0 0x222 0 0 0 0 0 0
+  let _ ← dispatchViaRef 99 0x222 0 0 0 0 0 0
   let st2 ← getKernelState
   match st2.objects[tid.toObjId]? with
   | some (.tcb tcb2) =>
@@ -827,22 +893,79 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
       msgRegs := #[SeLe4n.RegValue.ofNat 1],          -- notification CPtr → slot 1
       inlineCount := 1, overflowCount := 0 }
   -- Positive: TCB cap (slot 0) + notification cap (slot 1) → bind succeeds, target bound.
-  let rOk := dispatchSyscall decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])
+  let rOk := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])
   expect "sd050_bindNtfn_authorized_binds_target"
     (match rOk with
      | .ok ((), st') => (st'.getTcb? (SeLe4n.ThreadId.ofNat 70)).any (fun t => decide (t.boundNotification = some ntfnId))
      | .error _ => false)
     "authorized bind did not bind the target TCB"
   -- Negative 1: notification cap ABSENT (slot 1 empty) → fail-closed (invalidCapability).
-  let rNoCap := dispatchSyscall decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap)])
+  let rNoCap := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap)])
   expect "sd050_bindNtfn_no_cap_rejected"
     (match rNoCap with | .error .invalidCapability => true | _ => false)
     "bind without a held notification cap should fail with invalidCapability"
   -- Negative 2: notification cap present but READ-only (no `.write`) → illegalAuthority.
-  let rRO := dispatchSyscall decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCapRO)])
+  let rRO := dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCapRO)])
   expect "sd050_bindNtfn_readonly_cap_rejected"
     (match rRO with | .error .illegalAuthority => true | _ => false)
     "bind with a read-only notification cap should fail with illegalAuthority"
+
+/-- **The caller and the executing core are one fact.**  Both dispatchers refuse a
+pair whose `tid` is not the thread current on `executingCore` with `.illegalState`,
+before any lookup — so the declassification and audit arms, which read their
+subject off `currentOnCore executingCore`, can never act for a different thread
+than the one capability resolution and the flow checks acted as.  The positive
+control is the same authorised bind with the caller made current on the core. -/
+private def dispatcherRefusesCallerNotCurrentOnCore : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let other  : SeLe4n.ThreadId := ⟨70⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let ntfnId : SeLe4n.ObjId := ⟨60⟩
+  let tcbCap  : Capability := { target := .object other.toObjId, rights := AccessRightSet.ofList [.write] }
+  let ntfnCap : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.write] }
+  let base : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (other.toObjId, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
+      (ntfnId, .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }),
+      (cnId, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)] })
+    ]
+  let decoded : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      syscallId := .tcbBindNotification,
+      msgRegs := #[SeLe4n.RegValue.ofNat 1],
+      inlineCount := 1, overflowCount := 0 }
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let isIllegalState (r : Except KernelError (Unit × SystemState)) : Bool :=
+    match r with | .error .illegalState => true | _ => false
+  -- Another thread is current on the boot core: the pair (caller, boot core) is refused.
+  let stOther := SeLe4n.Testing.withCurrentOnCore base bootCoreId other
+  expect "dispatch_mismatched_core_refused_unchecked"
+    (isIllegalState (dispatchSyscall decoded caller bootCoreId stOther))
+    "dispatchSyscall must refuse a caller that is not current on the executing core"
+  expect "dispatch_mismatched_core_refused_checked"
+    (isIllegalState (dispatchSyscallChecked defaultLabelingContext decoded caller bootCoreId stOther))
+    "dispatchSyscallChecked must refuse a caller that is not current on the executing core"
+  -- The caller IS current, but on core 1: naming the boot core is still a mismatch.
+  let stElsewhere := SeLe4n.Testing.withCurrentOnCore base core1 caller
+  expect "dispatch_caller_current_on_other_core_refused"
+    (isIllegalState (dispatchSyscall decoded caller bootCoreId stElsewhere) &&
+     isIllegalState (dispatchSyscallChecked defaultLabelingContext decoded caller bootCoreId stElsewhere))
+    "a caller current on another core must be refused on the named core"
+  -- No thread current at all on the named core: refused, not defaulted.
+  expect "dispatch_no_current_on_core_refused"
+    (isIllegalState (dispatchSyscall decoded caller bootCoreId base))
+    "a core with no current thread must refuse every caller"
+  -- Positive control: the same bind with the caller current on the named core succeeds.
+  expect "dispatch_consistent_pair_admitted"
+    (match dispatchSyscall decoded caller core1 stElsewhere with
+     | .ok ((), st') => (st'.getTcb? other).any (fun t => decide (t.boundNotification = some ntfnId))
+     | .error _ => false)
+    "the consistent (caller, core) pair must dispatch the authorised bind"
 
 
 /-- SD-054 (PR #889 review round 2): **a capability naming a kernel-reserved
@@ -893,7 +1016,7 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
       syscallId := .tcbSuspend,
       msgRegs := #[], inlineCount := 0, overflowCount := 0 }
   expect "sd054_tcbSuspend_on_idle_target_refused"
-    (match dispatchSyscall decoded caller bootCoreId st with
+    (match dispatchSyscallAsCurrent decoded caller bootCoreId st with
      | .error .invalidCapability => true
      | _ => false)
     "a suspend aimed at an idle TCB must be refused at resolution"
@@ -1342,7 +1465,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
     (decide (SeLe4n.Kernel.syscallRequiredRight .mintReplyCap = AccessRight.grant))
     "the mint arm must require grant authority on the primary capability"
   -- 1. Authorized: the mint commits and the destination holds the reply ABI's cap.
-  match dispatchSyscall (decoded 1 2) caller bootCoreId (mkSt cnodeCapGrant) with
+  match dispatchSyscallAsCurrent (decoded 1 2) caller bootCoreId (mkSt cnodeCapGrant) with
   | .error e =>
       failLine "sd058_grant_mint_succeeds"
         s!"a grant-bearing primary capability must mint through the gate; got: {repr e}"
@@ -1382,12 +1505,12 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
             "revoking the source must remove the minted reply cap"
   -- 3. Unauthorized: the same call without `.grant` is refused on authority.
   expect "sd058_without_grant_refused_on_authority"
-    (match dispatchSyscall (decoded 1 2) caller bootCoreId (mkSt cnodeCapNoGrant) with
+    (match dispatchSyscallAsCurrent (decoded 1 2) caller bootCoreId (mkSt cnodeCapNoGrant) with
      | .error .illegalAuthority => true
      | _ => false)
     "a primary capability lacking grant must be refused with illegalAuthority"
   -- 4. A source that is not a Reply object: fail-closed, nothing written.
-  match dispatchSyscall (decoded 3 2) caller bootCoreId (mkSt cnodeCapGrant) with
+  match dispatchSyscallAsCurrent (decoded 3 2) caller bootCoreId (mkSt cnodeCapGrant) with
   | .error e =>
       expect "sd058_non_reply_source_refused"
         (decide (e = KernelError.invalidCapability))
@@ -1399,7 +1522,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
         "a source naming a non-Reply object must not mint anything"
   -- 5. A primary capability of the wrong target kind: the arm's fail-closed arm.
   expect "sd058_wrong_primary_kind_refused"
-    (match dispatchSyscall (decoded 1 2) caller bootCoreId (mkSt wrongKindCap) with
+    (match dispatchSyscallAsCurrent (decoded 1 2) caller bootCoreId (mkSt wrongKindCap) with
      | .error .invalidCapability => true
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
@@ -1528,7 +1651,7 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
             "the local same-target sweep must destroy the independent sibling \
              (this is the over-revocation the dispatched revoke no longer performs)"
       -- 1b. The LIVE arm, through the dispatcher, removes it.
-      match dispatchSyscall (decoded 1) caller bootCoreId stMinted with
+      match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId stMinted with
       | .error e =>
           failLine "sd059_dispatch_succeeds"
             s!"a write-bearing primary capability must revoke through the gate; got: {repr e}"
@@ -1558,13 +1681,13 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
              refusal is what the revoke discharges"
   -- 3. Authority: the same call without `.write` is refused.
   expect "sd059_without_write_refused_on_authority"
-    (match dispatchSyscall (decoded 1) caller bootCoreId (mkSt cnodeCapNoWrite) with
+    (match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId (mkSt cnodeCapNoWrite) with
      | .error .illegalAuthority => true
      | _ => false)
     "a primary capability lacking write must be refused with illegalAuthority"
   -- 4. A primary capability of the wrong target kind: the arm's fail-closed arm.
   expect "sd059_wrong_primary_kind_refused"
-    (match dispatchSyscall (decoded 1) caller bootCoreId (mkSt wrongKindCap) with
+    (match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId (mkSt wrongKindCap) with
      | .error .invalidCapability => true
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
@@ -1622,7 +1745,7 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
      | .error _ => false)
     "MR0 = 1 names a writable TCB capability at slot 1, so the resolver answers thread 70"
   -- Positive: bound both ways, at the SchedContext's configured band.
-  match dispatchSyscall (decoded 1) caller bootCoreId st with
+  match dispatchSyscallAsCurrent (decoded 1) caller bootCoreId st with
   | .ok ((), st') =>
       expect "sd060_bind_through_tcb_capability_binds_the_target"
         ((st'.getTcb? tgtTid).any (fun t =>
@@ -1634,26 +1757,26 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
         s!"unexpected refusal: {repr e}"
   -- Negative 1: a read-only TCB capability -> illegalAuthority.
   expect "sd060_readonly_tcb_capability_rejected"
-    (match dispatchSyscall (decoded 2) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent (decoded 2) caller bootCoreId st with
      | .error .illegalAuthority => true
      | _ => false)
     "a read-only TCB capability must fail with illegalAuthority"
   -- Negative 2: a writable capability to a non-TCB object -> invalidCapability.
   expect "sd060_non_tcb_capability_rejected"
-    (match dispatchSyscall (decoded 3) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent (decoded 3) caller bootCoreId st with
      | .error .invalidCapability => true
      | _ => false)
     "a capability to a CNode is not a TCB capability and must fail with invalidCapability"
   -- Negative 3 — the retired reading: the target's raw thread id in MR0.  `70`
   -- is an address, it masks to an empty slot, and the chokepoint refuses it.
   expect "sd060_raw_thread_id_in_mr0_is_not_a_capability"
-    (match dispatchSyscall (decoded tgtTid.toNat) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent (decoded tgtTid.toNat) caller bootCoreId st with
      | .error .invalidCapability => true
      | _ => false)
     "naming the thread's id is not holding a capability to it"
   -- Negative 4: an empty slot beside the held ones.
   expect "sd060_empty_slot_rejected"
-    (match dispatchSyscall (decoded 9) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent (decoded 9) caller bootCoreId st with
      | .error .invalidCapability => true
      | _ => false)
     "an empty CSpace slot must fail with invalidCapability"
@@ -1703,7 +1826,7 @@ private def sd061_retype_never_mints_or_destroys_memory_authority : IO Unit := d
   let kindAt (s : SystemState) (o : ObjId) : Option KernelObjectType :=
     (s.getObject? o).map KernelObject.objectType
   -- CONTROL: an ordinary kind is retyped in place.
-  match dispatchSyscall (retype 0 epObj.toNat 2) caller bootCoreId st with
+  match dispatchSyscallAsCurrent (retype 0 epObj.toNat 2) caller bootCoreId st with
   | .ok ((), st') =>
       expect "sd061_control_endpoint_to_notification_commits"
         (kindAt st' epObj == some .notification)
@@ -1714,13 +1837,13 @@ private def sd061_retype_never_mints_or_destroys_memory_authority : IO Unit := d
   -- A retype to an untyped (tag 5) or a frame (tag 8) forges memory authority.
   for tag in [5, 8] do
     expect s!"sd061_retype_to_memory_kind_{tag}_refused"
-      (match dispatchSyscall (retype 0 epObj.toNat tag) caller bootCoreId st with
+      (match dispatchSyscallAsCurrent (retype 0 epObj.toNat tag) caller bootCoreId st with
        | .error .illegalState => kindAt st epObj == some .endpoint
        | _ => false)
       s!"a retype to memory kind tag {tag} must be refused with the endpoint intact"
   -- A frame target is refused, whatever it would become.
   expect "sd061_frame_target_refused"
-    (match dispatchSyscall (retype 1 frObj.toNat 1) caller bootCoreId st with
+    (match dispatchSyscallAsCurrent (retype 1 frObj.toNat 1) caller bootCoreId st with
      | .error .revocationRequired => kindAt st frObj == some .frame
      | _ => false)
     "retyping a frame away must be refused (revocationRequired) with the frame intact"
@@ -2153,8 +2276,9 @@ def main : IO Unit := do
   sd031_dispatch_spillsRegs
   sd032_dispatch_invalidSyscall
   sd033_dispatchFromAbi_total
-  sd034_dispatch_abiMismatch
   sd035_sequentialDispatches
+  sd036_entryWithoutContext_faults
+  sd037_overflowWordsCrossInRuns
   IO.println "--- R2.A: bootAndInitialiseFromPlatform integration ---"
   sd040_bootInitialise_emptyConfig_succeeds
   sd041_bootInitialise_withLabelingContext
@@ -2164,6 +2288,7 @@ def main : IO Unit := do
   sd046_bootInitialisePlatform_installs_binding_labeling
   IO.println "--- WS-SM SM6.B: tcbBindNotification capability authority ---"
   sd050_bindNotification_requires_ntfn_cap
+  dispatcherRefusesCallerNotCurrentOnCore
   sd051_receiveLinkCaller
   sd052_endpointReplyRecvOnCore
   sd052b_replyRecv_donation_switch

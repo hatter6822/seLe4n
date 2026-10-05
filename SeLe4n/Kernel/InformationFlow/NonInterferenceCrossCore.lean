@@ -5320,7 +5320,7 @@ inductive CrossCoreTransition where
   | endpointReceiveDualWithCaps
   /-- SM6.C — the **live** `.replyRecv` arm, `endpointReplyRecvOnCore`: both legs,
   the donation pop and re-donation, and the priority hand-off.  (Audit IPC-2,
-  `v0.36.48`: the separate entry for a two-leg composite below the donation is
+  `v0.36.49`: the separate entry for a two-leg composite below the donation is
   gone with that composite, which no arm ran.) -/
   | endpointReplyRecvDispatch
   /-- SM6.E — the deschedule primitive. -/

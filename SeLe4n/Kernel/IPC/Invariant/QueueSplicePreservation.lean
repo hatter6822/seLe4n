@@ -3594,6 +3594,12 @@ def timeoutStagedTcb (tcb : TCB) : TCB :=
     timedOut := true
     registerContext := tcb.registerContext.stageReturnFrame Architecture.timeoutFrame }
 
+/-- The staged timeout frame keeps the thread's context word-bounded. -/
+theorem timeoutStagedTcb_registerContext_wordBounded (tcb : TCB)
+    (hB : tcb.registerContext.wordBounded) :
+    (timeoutStagedTcb tcb).registerContext.wordBounded :=
+  tcb.registerContext.stageReturnFrame_wordBounded _ hB
+
 @[simp] theorem timeoutStagedTcb_ipcState (tcb : TCB) :
     (timeoutStagedTcb tcb).ipcState = tcb.ipcState := rfl
 @[simp] theorem timeoutStagedTcb_pendingMessage (tcb : TCB) :

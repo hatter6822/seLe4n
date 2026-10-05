@@ -2360,9 +2360,9 @@ operands the scheduler footprints read and the eight arms the object domain
 declares nothing for, so the two resolvers see one decode and disagree only
 about which *locks* it implies. -/
 def declaredSchedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
     Option SchedLockSet :=
-  match abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with
+  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => none
   | some (tid, decoded, stFilled) =>
     (abiEntryLockOperands decoded tid stFilled).bind
@@ -2372,10 +2372,10 @@ def declaredSchedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : Cor
 fail-closed direction the object domain's resolver takes for the same reason,
 and the one a bracket reads as "no exclusion established". -/
 @[simp] theorem declaredSchedLockSetForAbiEntry_of_no_plan (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState)
-    (h : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st = none) :
-    declaredSchedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st = none) :
+    declaredSchedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none := by
   unfold declaredSchedLockSetForAbiEntry
   rw [h]
@@ -2388,13 +2388,13 @@ statement a bracket needs: the nineteen arms this workstream has not given a
 scheduler footprint fall back to the coarse serialisation rather than acquiring
 a footprint nobody proved covers them. -/
 theorem declaredSchedLockSetForAbiEntry_undeclared_none (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (stFilled : SystemState)
-    (hPlan : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = some (tid, decoded, stFilled))
     (h : declaredSchedFootprintSyscall decoded.syscallId = false) :
-    declaredSchedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    declaredSchedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none := by
   unfold declaredSchedLockSetForAbiEntry
   rw [hPlan]
@@ -2413,15 +2413,15 @@ the caller and the operands each domain's footprint is a function of are the sam
 three values.  A decode resolved twice is the shape that lets one domain's
 footprint be acquired around the other domain's transition. -/
 theorem declaredSchedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (stFilled : SystemState) (ops : SyscallLockOperands)
-    (hPlan : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = some (tid, decoded, stFilled))
     (hOps : abiEntryLockOperands decoded tid stFilled = some ops) :
-    declaredLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
         = lockSetForSyscall decoded.syscallId ops stFilled ∧
-    declaredSchedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    declaredSchedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
         = schedLockSetForSyscall decoded.syscallId ops executingCore stFilled := by
   refine ⟨?_, ?_⟩
   · unfold declaredLockSetForAbiEntry
@@ -2648,9 +2648,9 @@ The two single-domain resolvers are **kept**, not retired: each is what its own
 domain's theorems are stated over, and the relation below is what ties them to
 what the seam acquires. -/
 def declaredUnifiedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
     Option SchedLockSet :=
-  match abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with
+  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => none
   | some (tid, decoded, stFilled) =>
     (abiEntryLockOperands decoded tid stFilled).bind
@@ -2659,10 +2659,10 @@ def declaredUnifiedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : C
 /-- **Cut C6h**: an entry whose plan does not resolve declares nothing — the
 fail-closed direction both single-domain resolvers already take. -/
 @[simp] theorem declaredUnifiedLockSetForAbiEntry_of_no_plan (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState)
-    (h : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st = none) :
-    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st = none) :
+    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none := by
   unfold declaredUnifiedLockSetForAbiEntry
   rw [h]
@@ -2673,18 +2673,18 @@ The seam-level fallback condition, and the one that has to name both domains:
 an arm the object domain declares nothing for is still bracketed when the
 scheduler domain declares, and the converse. -/
 theorem declaredUnifiedLockSetForAbiEntry_undeclared (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState)
-    (hObj : declaredLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (hObj : declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none)
-    (hSched : declaredSchedLockSetForAbiEntry ctx executingCore syscallId msgInfo
+    (hSched : declaredSchedLockSetForAbiEntry ctx executingCore syscallId
       x0 x1 x2 x3 x4 x5 st = none) :
-    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none := by
   unfold declaredUnifiedLockSetForAbiEntry
   unfold declaredLockSetForAbiEntry at hObj
   unfold declaredSchedLockSetForAbiEntry at hSched
-  rcases hPlan : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with
+  rcases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
     _ | ⟨tid, decoded, stFilled⟩
   · rfl
   · rw [hPlan] at hObj hSched
@@ -2704,13 +2704,13 @@ the set the bracket acquires — stated rather than left to be read off three
 definitions, which is the shape that lets one domain's footprint be acquired
 around the other domain's transition. -/
 theorem declaredUnifiedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (stFilled : SystemState) (ops : Concurrency.SyscallLockOperands)
-    (hPlan : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = some (tid, decoded, stFilled))
     (hOps : abiEntryLockOperands decoded tid stFilled = some ops) :
-    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = unifiedSchedLockSetForSyscall decoded.syscallId ops executingCore stFilled := by
   unfold declaredUnifiedLockSetForAbiEntry
   rw [hPlan]

@@ -587,7 +587,7 @@ theorem lookupTcb_some_objects
   · -- true: contradiction
     simp [hRes] at h
 
-/-- **Audit IPC-5 (`v0.36.48`): the one TCB field writer.**
+/-- **Audit IPC-5 (`v0.36.49`): the one TCB field writer.**
 
 Look the thread up, apply `f` to its TCB, store the result at the same key.
 Every `storeTcb*` writer below (and `storeTcbQueueLinks` in
@@ -647,7 +647,7 @@ def storeTcbIpcStateAndMessage_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId
   | .error e => .error e
   | .ok ((), st') => .ok st'
 
-/-- **Audit IPC-5 (`v0.36.48`)**: a committed `modifyTcb` is one lookup that
+/-- **Audit IPC-5 (`v0.36.49`)**: a committed `modifyTcb` is one lookup that
 found a TCB and one `storeObject` of `f` applied to it.  Every frame below — and
 so every per-writer frame — is read off this. -/
 theorem modifyTcb_ok_decompose {st st' : SystemState} {tid : SeLe4n.ThreadId}

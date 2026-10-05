@@ -5,8 +5,15 @@ Outputs JSON with:
 - repository identity metadata
 - source-derived sync metadata (stable across branches/merge commits)
 - every Lean module under SeLe4n/ plus Main/tests
-- declaration inventory (def/theorem/lemma/abbrev/instance/structure/inductive/class)
-- cross-file "called" resolution for declaration dependencies
+- declaration inventory (def/theorem/abbrev/instance/opaque/axiom/example/
+  structure/inductive/class, and `where` helpers), each under the name it is
+  declared with and its namespace-qualified `full_name`
+- `called`: the declarations each one's text refers to, by full name, resolved
+  the way Lean resolves names (see `scripts/lean_declarations.py`); `sorry` is
+  recorded as `sorryAx`, the core constant Lean elaborates it to
+- `private: true` on a private declaration (absent otherwise): only its own
+  module can refer to it, which is how a `called` name shared by two private
+  declarations in different modules is told apart
 
 This lets consumers invalidate stale local caches whenever Lean declaration
 surface changes, while avoiding branch/merge-only churn.
@@ -16,350 +23,43 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import re
+import multiprocessing
+import os
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DECL_KINDS = [
-    "inductive",
-    "structure",
-    "class",
-    "def",
-    "theorem",
-    "lemma",
-    "example",
-    "instance",
-    "opaque",
-    "abbrev",
-    "axiom",
-    "constant",
-    "constants",
-    "declare_syntax_cat",
-    "syntax_cat",
-    "syntax",
-    "macro",
-    "macro_rules",
-    "notation",
-    "infix",
-    "infixl",
-    "infixr",
-    "prefix",
-    "postfix",
-    "elab",
-    "elab_rules",
-    "term_elab",
-    "command_elab",
-    "tactic",
-    "universe",
-    "universes",
-    "variable",
-    "variables",
-    "parameter",
-    "parameters",
-    "section",
-    "namespace",
-    "initialize",
-]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-DECL_MODIFIERS = [
-    "private",
-    "protected",
-    "noncomputable",
-    "unsafe",
-    "partial",
-    "scoped",
-    "local",
-]
+from lean_declarations import Corpus, LexError, instance_name, parse_file, references  # noqa: E402,F401
 
-DECL_HEAD_RE = re.compile(
-    r"^\s*(?:@\[[^\]]*\]\s*)*"
-    r"(?:(?:" + "|".join(DECL_MODIFIERS) + r")\s+)*"
-    r"(?P<kind>" + "|".join(DECL_KINDS) + r")\b\s*(?P<rest>.*)$"
-)
-
-NAME_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
-FIRST_NAME_RE = re.compile(r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_'.]*)")
-QUOTED_TOKEN_RE = re.compile(r"\"[^\"\n]*\"")
-
-# Lines whose tokens are namespace qualifiers, not code references.
-# ``open Foo.Bar`` and ``open Foo.Bar in`` introduce names into scope but
-# the qualified path itself is not a semantic reference to a declaration.
-OPEN_LINE_RE = re.compile(r"^\s*open\s+")
-
-NON_REFERENCABLE_DECL_KINDS = {
-    "declare_syntax_cat",
-    "syntax_cat",
-    "syntax",
-    "macro",
-    "macro_rules",
-    "notation",
-    "infix",
-    "infixl",
-    "infixr",
-    "prefix",
-    "postfix",
-    "elab",
-    "elab_rules",
-    "term_elab",
-    "command_elab",
-    "tactic",
-    "universe",
-    "universes",
-    "variable",
-    "variables",
-    "parameter",
-    "parameters",
-    "section",
-    "namespace",
-}
-
-
-def _declaration_ranges(decls: list[tuple[str, str, int]], line_count: int) -> list[tuple[int, int]]:
-    ranges: list[tuple[int, int]] = []
-    for i, (_, _, start_line) in enumerate(decls):
-        next_start = decls[i + 1][2] if i + 1 < len(decls) else line_count + 1
-        ranges.append((start_line - 1, next_start - 1))
-    return ranges
-
-
-def _strip_lean_comments(line: str, block_depth: int, *, strip_strings: bool = False) -> tuple[str, int]:
-    """Strip line comments, nested block comments, and optionally string contents.
-
-    When *strip_strings* is ``True``, plain string contents are removed so that
-    tokens inside string literals are not falsely matched as declaration
-    references.  Interpolated strings (``s!"..."``, ``m!"..."``, etc.) retain
-    their content because ``{expr}`` sections contain real code with legitimate
-    references.
-
-    When *strip_strings* is ``False`` (the default), strings are left intact.
-    This mode is used during declaration header parsing so that quoted names
-    (e.g. ``syntax "visible"``) are preserved.
-
-    Block comment depth is tracked across calls so that multi-line ``/- ... -/``
-    blocks are handled correctly.
-    """
-    out: list[str] = []
-    i = 0
-    n = len(line)
-    while i < n:
-        if block_depth > 0:
-            if i + 1 < n and line[i] == '/' and line[i + 1] == '-':
-                block_depth += 1
-                i += 2
-            elif i + 1 < n and line[i] == '-' and line[i + 1] == '/':
-                block_depth -= 1
-                i += 2
-            else:
-                i += 1
-            continue
-
-        # Line comment — discard rest of line
-        if i + 1 < n and line[i] == '-' and line[i + 1] == '-':
-            break
-
-        # Block comment start
-        if i + 1 < n and line[i] == '/' and line[i + 1] == '-':
-            block_depth += 1
-            i += 2
-            continue
-
-        # String literal handling (only when strip_strings is enabled)
-        if strip_strings and line[i] == '"':
-            # Interpolated strings (s!"...", m!"...", f!"...") contain real
-            # code inside {expr} — keep their content so references are found.
-            is_interpolated = i >= 2 and line[i - 1] == '!' and line[i - 2].isalpha()
-            i += 1
-            if is_interpolated:
-                # Keep all content — {expr} blocks have real references, and
-                # the minor false positives from plain-text portions are
-                # acceptable compared to losing real cross-file references.
-                while i < n:
-                    if line[i] == '\\' and i + 1 < n:
-                        out.append(line[i])
-                        out.append(line[i + 1])
-                        i += 2
-                    elif line[i] == '"':
-                        i += 1
-                        break
-                    else:
-                        out.append(line[i])
-                        i += 1
-            else:
-                # Regular string — strip all content
-                while i < n:
-                    if line[i] == '\\' and i + 1 < n:
-                        i += 2  # skip escaped character
-                    elif line[i] == '"':
-                        i += 1
-                        break
-                    else:
-                        i += 1
-            continue
-
-        # Character literal — skip contents (only when stripping strings)
-        if strip_strings and line[i] == '\'' and i + 2 < n and line[i + 1] != '\'' and line[i + 1] != ' ':
-            # Only skip single-char literals like 'a' or '\n', not prime (')
-            j = i + 1
-            if j < n and line[j] == '\\':
-                j += 2  # escape sequence
-            else:
-                j += 1
-            if j < n and line[j] == '\'':
-                i = j + 1
-                continue
-
-        out.append(line[i])
-        i += 1
-
-    return "".join(out), block_depth
-
-
-def _compute_block_depth(lines: list[str], up_to: int, *, strip_strings: bool = False) -> int:
-    """Compute the block comment nesting depth for lines[0:up_to]."""
-    depth = 0
-    for raw in lines[:up_to]:
-        _, depth = _strip_lean_comments(raw, depth, strip_strings=strip_strings)
-    return depth
-
-
-def _tokenize_decl_ranges(
-    lines: list[str],
-    ranges: list[tuple[int, int]],
-    reference_candidates: set[str],
-) -> list[set[str]]:
-    """Find references to known declarations within each declaration body.
-
-    Improvements over the naive approach:
-    - Block comment depth is correctly initialised from lines preceding the first
-      declaration, so comments that opened in the import/preamble section do not
-      cause false positives inside the first declaration.
-    - String literal contents are stripped (by ``_strip_lean_comments``) to
-      prevent tokens inside strings from being falsely counted.
-    - Qualified name suffix matching: for a token like ``Foo.Bar.baz``, the
-      suffixes ``Bar.baz`` and ``baz`` are also checked against the candidate
-      set, catching qualified references to known declarations.
-    """
-    per_decl: list[set[str]] = []
-    if not ranges:
-        return per_decl
-
-    # Correctly initialise block_depth from lines before the first declaration
-    first_start = ranges[0][0]
-    block_depth = _compute_block_depth(lines, first_start, strip_strings=True)
-
-    for start_idx, end_idx in ranges:
-        refs: set[str] = set()
-        for raw in lines[start_idx:end_idx]:
-            clean, block_depth = _strip_lean_comments(raw, block_depth, strip_strings=True)
-            if not clean:
-                continue
-            # Skip `open` lines — their qualified names are namespace paths,
-            # not semantic references to declarations.
-            if OPEN_LINE_RE.match(clean):
-                continue
-            for token in NAME_TOKEN_RE.findall(clean):
-                # Direct match
-                if token in reference_candidates:
-                    refs.add(token)
-                    continue
-                # Qualified name suffix matching
-                if '.' in token:
-                    parts = token.split('.')
-                    for j in range(1, len(parts)):
-                        suffix = '.'.join(parts[j:])
-                        if suffix in reference_candidates:
-                            refs.add(suffix)
-                            break
-        per_decl.append(refs)
-    return per_decl
-
-
-def _split_head_segment(rest: str) -> str:
-    for marker in (":=", " where", ":", "=>"):
-        idx = rest.find(marker)
-        if idx != -1:
-            return rest[:idx]
-    return rest
-
-
-def _extract_names(kind: str, rest: str, line: int) -> list[str]:
-    rest = rest.strip()
-    if not rest:
-        return [f"<anonymous:{kind}:{line}>"]
-
-    if kind in {"constants", "universes", "variables", "parameters"}:
-        names = NAME_TOKEN_RE.findall(_split_head_segment(rest))
-        if names:
-            return names
-        return [f"<anonymous:{kind}:{line}>"]
-
-    if kind in {
-        "syntax",
-        "notation",
-        "infix",
-        "infixl",
-        "infixr",
-        "prefix",
-        "postfix",
-        "elab",
-        "macro",
-        "macro_rules",
-        "initialize",
-    }:
-        m = FIRST_NAME_RE.match(rest)
-        if m:
-            return [m.group("name")]
-        quoted = QUOTED_TOKEN_RE.search(rest)
-        if quoted:
-            return [quoted.group(0)]
-        if rest[0] in {'`', "'"}:
-            return [rest.split()[0]]
-
-    if kind in {
-        "def",
-        "theorem",
-        "lemma",
-        "example",
-        "instance",
-        "opaque",
-        "abbrev",
-        "axiom",
-        "constant",
-        "inductive",
-        "structure",
-        "class",
-        "declare_syntax_cat",
-        "syntax_cat",
-        "elab_rules",
-        "term_elab",
-        "command_elab",
-        "tactic",
-        "universe",
-        "variable",
-        "parameter",
-        "section",
-        "namespace",
-    }:
-        m = FIRST_NAME_RE.match(rest)
-        if m:
-            return [m.group("name")]
-        if kind in {"variable", "parameter"}:
-            names = NAME_TOKEN_RE.findall(_split_head_segment(rest))
-            if names:
-                return [names[0]]
-
-    return [f"<anonymous:{kind}:{line}>"]
+SCHEMA_VERSION = "2.0.0"
+PROJECT_ROOT = "SeLe4n"
+# Constructors and structure fields resolve references; they are not entries.
+_MEMBER_KINDS = {"ctor", "field"}
 
 
 @dataclass(frozen=True, slots=True)
 class Decl:
     kind: str
     name: str
+    full_name: str | None
     line: int
     called: list[str]
+    # Serialized only when true (`decl_json`): 13 private names repeat across
+    # modules, and a consumer resolving a `called` full name needs to know
+    # which declarer another module cannot see.
+    private: bool = False
+
+
+def decl_json(d: Decl) -> dict:
+    out = asdict(d)
+    if not out.pop("private"):
+        return out
+    out["private"] = True
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,76 +74,87 @@ def module_name(path: Path) -> str:
     return ".".join(rel.parts)
 
 
-def _parse_declaration_headers(lines: list[str]) -> list[tuple[str, str, int]]:
-    """Extract declaration headers (kind, name, line_number) from file lines.
-
-    Correctly tracks nested block comment depth so that declarations appearing
-    inside ``/- ... -/`` blocks are not enumerated.
-    """
-    decls: list[tuple[str, str, int]] = []
-    block_depth = 0
-    for i, line in enumerate(lines, start=1):
-        clean, block_depth = _strip_lean_comments(line, block_depth)
-        if block_depth > 0 and not clean.strip():
-            continue
-        m = DECL_HEAD_RE.match(clean)
-        if m:
-            kind = m.group("kind")
-            for name in _extract_names(kind, m.group("rest"), i):
-                decls.append((kind, name, i))
-    return decls
+# Inherited by forked workers rather than pickled to them: the sources and,
+# for the second pass, the finished corpus.
+_SHARED: dict = {}
 
 
-def _resolve_calls(
-    lines: list[str],
-    decls: list[tuple[str, str, int]],
-    global_names: set[str],
-) -> list[Decl]:
-    """Build Decl objects with cross-file 'called' resolution.
+def _read_module(module: str) -> tuple[str, list, list[str]]:
+    fp = parse_file(_SHARED["sources"][module], module)
+    for d in fp.decls:
+        if d.kind == "instance" and not d.full_name:
+            # The header travels with the declaration: naming it needs the
+            # whole corpus, which only the parent has.
+            d.header_toks = fp.toks[d.header[0]:d.header[1]]
+    return module, fp.decls, fp.imports
 
-    Each declaration's body is scanned for tokens that match any known
-    declaration name from the entire project (not just the current file).
-    Self-references are excluded.
-    """
-    if not decls:
-        return []
 
-    ranges = _declaration_ranges(decls, len(lines))
-    calls_per_decl = _tokenize_decl_ranges(lines, ranges, global_names)
-
-    result: list[Decl] = []
-    for (kind, name, line), called_names in zip(decls, calls_per_decl):
-        # Build self-name set: exclude own name and all its dot-suffixes
-        self_names: set[str] = {name}
-        if '.' in name:
-            parts = name.split('.')
-            for j in range(1, len(parts)):
-                self_names.add('.'.join(parts[j:]))
-
-        result.append(
-            Decl(
-                kind=kind,
-                name=name,
-                line=line,
-                called=sorted(n for n in called_names if n not in self_names),
-            )
+def _resolve_module(module: str) -> tuple[str, list[Decl]]:
+    corpus = _SHARED["corpus"]
+    toks = parse_file(_SHARED["sources"][module], module).toks
+    corpus.enter(module)
+    return module, [
+        Decl(
+            kind=d.kind,
+            name=d.name,
+            full_name=d.full_name or None,
+            line=d.line,
+            called=references(toks, d, corpus) if d.full_name else [],
+            private=d.private,
         )
-    return result
+        for d in corpus.files[module]
+        if d.kind not in _MEMBER_KINDS
+    ]
+
+
+def _map(fn, items: list[str], jobs: int) -> list:
+    """`map`, across forked processes when there is more than one job.
+
+    The result does not depend on `jobs`: every module is read and resolved
+    independently, against the same corpus, and returned in input order.
+    """
+    if jobs > 1 and len(items) > 1 and "fork" in multiprocessing.get_all_start_methods():
+        with multiprocessing.get_context("fork").Pool(jobs) as pool:
+            return pool.map(fn, items, chunksize=max(1, len(items) // (jobs * 8)))
+    return [fn(item) for item in items]
+
+
+def build_declarations(sources: dict[str, str], jobs: int = 1) -> dict[str, list[Decl]]:
+    """Declarations per module, with references resolved across the corpus.
+
+    `sources` maps module name to source text.  Two passes: every file is read
+    into the corpus first, so that a reference resolves against declarations
+    later in the walk as well as earlier ones.
+    """
+    modules = list(sources)
+    _SHARED["sources"] = sources
+    corpus = Corpus()
+    try:
+        for module, decls, imports in _map(_read_module, modules, jobs):
+            corpus.add_file(module, decls, imports)
+
+        # Anonymous instances are named once the corpus is complete: the name
+        # Lean generates depends on what the instance's type refers to.
+        for module in modules:
+            corpus.enter(module)
+            for d in corpus.files[module]:
+                if d.kind == "instance" and not d.full_name:
+                    full = instance_name(d.header_toks, d, corpus, PROJECT_ROOT)
+                    if full:
+                        d.full_name = full
+                        d.name = full[len(d.namespace) + 1:] if d.namespace else full
+                        corpus.add(d)
+
+        _SHARED["corpus"] = corpus
+        return dict(_map(_resolve_module, modules, jobs))
+    finally:
+        _SHARED.clear()
 
 
 def parse_declarations(path: Path) -> list[Decl]:
-    """Public API: parse declarations from a single file with file-local 'called'.
-
-    For backward compatibility with tests and external callers.  The internal
-    ``build_map`` path uses the two-pass cross-file architecture instead.
-    """
-    lines = path.read_text(encoding="utf-8").splitlines()
-    headers = _parse_declaration_headers(lines)
-    local_names: set[str] = set()
-    for kind, name, _ in headers:
-        if kind not in NON_REFERENCABLE_DECL_KINDS and not name.startswith("<anonymous:"):
-            local_names.add(name)
-    return _resolve_calls(lines, headers, local_names)
+    """The declarations of one file, references resolved within that file."""
+    return build_declarations({module_name(path) if path.is_relative_to(ROOT) else path.stem:
+                               path.read_text(encoding="utf-8")}).popitem()[1]
 
 
 def lean_files() -> list[Path]:
@@ -525,43 +236,22 @@ def build_map() -> dict:
     # ---- Single-pass file I/O: read every file exactly once ----
     file_bytes: dict[Path, bytes] = {}
     file_lines: dict[Path, list[str]] = {}
+    file_text: dict[Path, str] = {}
     for path in paths:
         raw = path.read_bytes()
         file_bytes[path] = raw
-        file_lines[path] = raw.decode("utf-8").splitlines()
+        file_text[path] = raw.decode("utf-8")
+        file_lines[path] = file_text[path].splitlines()
 
     source_digest = source_fingerprint(file_bytes, paths)
 
-    # ---- Pass 1: extract declaration headers from every file ----
-    all_headers: dict[Path, list[tuple[str, str, int]]] = {}
-    for path in paths:
-        all_headers[path] = _parse_declaration_headers(file_lines[path])
-
-    # ---- Build global set of referencable declaration names ----
-    global_names: set[str] = set()
-    for headers in all_headers.values():
-        for kind, name, _ in headers:
-            if kind not in NON_REFERENCABLE_DECL_KINDS and not name.startswith("<anonymous:"):
-                global_names.add(name)
-                # For qualified names like "Foo.bar", also register the
-                # unqualified leaf so that code using `open Foo` and then
-                # referencing plain `bar` is correctly resolved.
-                if '.' in name:
-                    parts = name.split('.')
-                    for j in range(1, len(parts)):
-                        global_names.add('.'.join(parts[j:]))
-
-    # ---- Pass 2: resolve cross-file "called" for each module ----
-    modules: list[ModuleEntry] = []
-    for path in paths:
-        decls = _resolve_calls(file_lines[path], all_headers[path], global_names)
-        modules.append(
-            ModuleEntry(
-                module=module_name(path),
-                path=str(path.relative_to(ROOT)),
-                declarations=decls,
-            )
-        )
+    # ---- Declarations and the references between them ----
+    names = {path: module_name(path) for path in paths}
+    by_module = build_declarations({names[p]: file_text[p] for p in paths}, jobs=os.cpu_count() or 1)
+    modules = [
+        ModuleEntry(module=names[p], path=str(p.relative_to(ROOT)), declarations=by_module[names[p]])
+        for p in paths
+    ]
 
     # ---- Summary metrics (computed from cached data, no re-reads) ----
     prod_paths = [p for p in paths if not str(p.relative_to(ROOT)).startswith("tests/")]
@@ -570,12 +260,16 @@ def build_map() -> dict:
     prod_loc = sum(len(file_lines[p]) for p in prod_paths)
     test_loc = sum(len(file_lines[p]) for p in test_paths)
 
-    theorem_pattern = re.compile(r"^\s*(?:@[\w\[\]\.\s]+\s+)?(?:private\s+)?(?:theorem|lemma)\s+")
+    # Counted off the declaration inventory, not a line pattern: the pattern it
+    # replaces counted prose lines inside doc comments that begin with
+    # "theorem" and missed every `protected`/`noncomputable`/`@[…]`-prefixed one.
+    prod_modules = {names[p] for p in prod_paths}
     proved_count = sum(
         1
-        for p in prod_paths
-        for line in file_lines[p]
-        if theorem_pattern.match(line)
+        for m in modules
+        if m.module in prod_modules
+        for d in m.declarations
+        if d.kind in ("theorem", "lemma")
     )
 
     version = "unknown"
@@ -590,7 +284,7 @@ def build_map() -> dict:
 
     decl_total = sum(len(m.declarations) for m in modules)
     return {
-        "schema_version": "1.0.0",
+        "schema_version": SCHEMA_VERSION,
         "repository": {
             "name": "hatter6822/seLe4n",
             "url": "https://github.com/hatter6822/seLe4n",
@@ -620,7 +314,7 @@ def build_map() -> dict:
                 "module": m.module,
                 "path": m.path,
                 "declaration_count": len(m.declarations),
-                "declarations": [asdict(d) for d in m.declarations],
+                "declarations": [decl_json(d) for d in m.declarations],
             }
             for m in modules
         ],
