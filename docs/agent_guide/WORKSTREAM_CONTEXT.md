@@ -44,10 +44,16 @@ carries the theorem that the model is unchanged on states without servers.
 No sub-task has started.  The plan also records three pre-existing findings it
 closes first: `schedContextConfigure` applies priority, domain and a
 caller-supplied deadline to the bound thread under the SchedContext write right
-alone, with no caller-MCP check (CB0.3, CB1.6); and the live tick's exhaustion
+alone, with no caller-MCP check (CB0.3, CB1.7); and the live tick's exhaustion
 arm schedules a refill of at most one tick, so a bound thread receives about one
-tick per period after its first window (CB1.6, which moves the engine to
-per-window refills).  Thirteen review rounds on the planning PR reshaped the design
+tick per period after its first window (CB1.7, which moves the engine to
+per-window refills).  At `v0.36.49` the plan was re-verified against
+`v0.36.46` and absorbed the kernel audit's scheduler findings as sub-tasks
+(the live selector carrying the progress proofs, named per-core bundles, a
+waiter index, a per-domain run queue, machine-word scheduler fields, the
+boot-core twins collapsed), renumbering CB0 and CB1; its one hard
+prerequisite is the KSC-1 reschedule-SGI accumulator in
+`docs/REGISTERED_DEBT.md`, which must land before CB1.3.  Thirteen review rounds on the planning PR reshaped the design
 before any code exists — a transitive tie-break, a key-worsening reschedule
 seam, reconfiguration that never mints budget, every reservation move
 re-admitted per core, label uniformity over bindings, inheritance for bound

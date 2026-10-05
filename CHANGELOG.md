@@ -1,3 +1,40 @@
+## v0.36.49 — WS-CB plan re-verified against v0.36.46; the audit's scheduler findings absorbed
+
+Documentation only: no Lean, Rust or fixture change.
+
+- **`docs/planning/HIERARCHICAL_CBS_PLAN.md` re-verified against the tree at
+  `v0.36.46`**, so it is accurate when the work starts.  Stale facts fixed:
+  `maxLockSetSize` is 24 (WS-HP), not 14, and the retired `lockSet_tcbSuspend`
+  is now `lockSet_tcbSuspendOnCore` (at most 17), so D21's raise stays
+  overtaken; `SyscallId.count` / `COUNT` are 41, so the three new ids are
+  41–43 and the count 44; the §4.9 total-table sweep gains the six `SyscallId`
+  tables added since it was written; the replenish-queue slots move to the
+  scheduler-domain `schedLockSet_…OnCore` sets (`SyscallSchedFootprint.lean`),
+  which already declare the configure purge; `determineExecutingCore` is gone
+  and the executing core is threaded from the trap entry (IPC-8);
+  `TCB.boostedPriority` replaces a non-existent `effectiveRunQueuePriority`;
+  the ReplyRecv donation steps are named as they exist, in wording that holds
+  whether or not the IPC-2 and IPC-5 slices land first; the spec targets are
+  §8.12.1–§8.12.3 and a new §8.12.18; the main trace's `[STD-002]` scenario is
+  recorded as a third `TCB.deadline` setter.
+- **Audit findings absorbed as sub-tasks**, renumbering CB0 and CB1 (78
+  sub-tasks): KSC-11 (CB0.6, the progress, idle, domain and WCRT proofs moved
+  onto the live selector); SZ-5's scheduler-bundle half (CB0.7, CB2.5, CB5.13);
+  KSC-3 / IPC-7 (CB0.8 waiter index, CB1.6, CB1.9 constant fuel and the
+  deletion of `propagatePriorityInheritance`); KSC-2 (CB1.4 per-domain FIFO,
+  CB1.8, CB1.10 representation switch; D2 amended); KSC-10's scheduler fields
+  (CB1.11); KSC-4's scheduler twins collapsed in CB1.7, CB1.8 and CB4.4, with
+  their deletion left to C.1 row 14.  The former CB1.4–CB1.8 are CB1.5–CB1.9;
+  §14 item 11 records the mapping.
+- **KSC-1 ordering made consistent**: the reschedule-SGI accumulator row in
+  `docs/REGISTERED_DEBT.md` now lands `reschedulePendingOnCore` before CB1.3,
+  with the clearing done by each core's scheduling point rather than by the
+  commit, and CB1.8 consumes it; the plan's CB1.3 adds no field.
+- `docs/REGISTERED_DEBT.md` rows citing the plan renumbered (CB1.6 → CB1.7);
+  the no-budget-bind row is closed by CB1.7's rule (e); the `bound*Consistent`
+  row becomes the plan's Q16; `docs/agent_guide/WORKSTREAM_CONTEXT.md` and
+  `docs/agent_guide/LARGE_FILES.md` updated.
+
 ## v0.36.46 — The executing core is threaded from the trap entry; `determineExecutingCore` deleted (IPC-8)
 
 - **Every dispatch arm now uses the core the syscall was entered on.**
