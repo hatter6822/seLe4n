@@ -180,8 +180,15 @@ def trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile) (i : Nat) : UInt64 :=
   else if i = trapFrameTpidrWord then rf.tpidr.val.toUInt64
   else 0
 
-/-- **Save then restore is the identity** on a context whose registers fit in
-64 bits — which every context a trap frame produced does. -/
+/-- **Save then restore is the identity on the layout's registers** — `pc`,
+`sp`, `pstate`, `tpidr` and `x0`–`x30` — for a context whose registers fit in
+64 bits.  The hypothesis is *assumed* here: `RegisterFile` holds unbounded
+`Nat`s and `trapWordsOfRegisterFile` narrows with `Nat.toUInt64`, which wraps.
+A context the HAL handed over satisfies it (`registerFileOfTrapContext_wordBounded`);
+one a syscall return frame or the boot configuration wrote is bounded by review
+of its writers, not by an invariant (registered debt, `docs/REGISTERED_DEBT.md`).
+Nothing is said of `gpr ⟨31⟩` onward, which the layout does not carry and the
+read-back sets to `0`. -/
 theorem registerFileOfTrapWords_trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile)
     (hGpr : ∀ r : SeLe4n.RegName, r.val < 31 → (rf.gpr r).val < 2 ^ 64)
     (hSp : rf.sp.val < 2 ^ 64) (hPc : rf.pc.val < 2 ^ 64) (hPs : rf.pstate.val < 2 ^ 64)
@@ -211,5 +218,67 @@ theorem registerFileOfTrapWords_trapWordsOfRegisterFile (rf : SeLe4n.RegisterFil
     cases h : rf.gpr r
     rw [h] at hLt
     simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
+
+/-- **The context the HAL installs**, as the boundary carries it: the register
+file's thirty-five layout words in one `TrapContext` (`Platform.FFI.restoreTrapFrame`
+hands it to the HAL in one call). -/
+def trapContextOfRegisterFile (rf : SeLe4n.RegisterFile) : TrapContext :=
+  TrapContext.ofWords (trapWordsOfRegisterFile rf)
+
+/-- **The bulk restore stages exactly the words the layout names** — word `i` of
+the context handed over is `trapWordsOfRegisterFile rf i`, for every word of the
+layout. -/
+@[simp] theorem trapContextOfRegisterFile_word (rf : SeLe4n.RegisterFile) (i : Nat)
+    (h : i < trapFrameWordCount) :
+    (trapContextOfRegisterFile rf).word i = trapWordsOfRegisterFile rf i :=
+  TrapContext.word_ofWords _ i h
+
+/-- The words of the register file some words describe are those words, on the
+layout: `UInt64 → Nat → UInt64` is the identity. -/
+theorem trapWordsOfRegisterFile_registerFileOfTrapWords (w : Nat → UInt64) (i : Nat)
+    (h : i < trapFrameWordCount) :
+    trapWordsOfRegisterFile (registerFileOfTrapWords w) i = w i := by
+  unfold trapWordsOfRegisterFile registerFileOfTrapWords
+  by_cases hi : i < 31
+  · simp [hi]
+  · have : i = 31 ∨ i = 32 ∨ i = 33 ∨ i = 34 := by unfold trapFrameWordCount at h; omega
+    rcases this with rfl | rfl | rfl | rfl <;>
+      simp [trapFrameSpWord, trapFramePcWord, trapFramePstateWord, trapFrameTpidrWord]
+
+/-- **Save then restore is the identity on the boundary representation**, with
+no hypothesis: a context the HAL handed over, read as the model's register file
+and handed back, is the same thirty-five words — `UInt64 → Nat → UInt64` loses
+nothing.  This is the Lean-internal decode/encode round trip; the words the HAL
+then installs are these, with `SPSR_EL1` masked to the condition flags at the
+commit (`rust/sele4n-hal/src/trap.rs`, `sanitise_user_spsr`), so the
+cross-language trip is the identity on every word but `pstate`. -/
+@[simp] theorem trapContextOfRegisterFile_registerFileOfTrapContext (c : TrapContext) :
+    trapContextOfRegisterFile (registerFileOfTrapContext c) = c := by
+  rw [trapContextOfRegisterFile, registerFileOfTrapContext]
+  exact (TrapContext.ofWords_congr _ _ fun i h =>
+    trapWordsOfRegisterFile_registerFileOfTrapWords c.word i h).trans (TrapContext.ofWords_word c)
+
+/-- **Restore then save is the identity on the layout's registers** for a
+word-bounded file: the context handed to the HAL, read back as the model's
+register file, agrees with the file that was restored on `pc`, `sp`, `pstate`,
+`tpidr` and `x0`–`x30` — the thirty-five registers the layout carries; `gpr ⟨31⟩`
+onward is not carried and reads back as `0`.  The Lean-internal encode/decode
+direction of `registerFileOfTrapWords_trapWordsOfRegisterFile`, stated over the
+boundary representation; `wordBounded` is assumed, not established by an
+invariant (see that theorem).  The HAL masks `pstate` to the condition flags at
+the commit, so the cross-language trip is not the identity on `pstate`. -/
+theorem registerFileOfTrapContext_trapContextOfRegisterFile (rf : SeLe4n.RegisterFile)
+    (hB : rf.wordBounded) :
+    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).pc = rf.pc ∧
+    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).sp = rf.sp ∧
+    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).pstate = rf.pstate ∧
+    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).tpidr = rf.tpidr ∧
+    (∀ r : SeLe4n.RegName, r.val < 31 →
+      (registerFileOfTrapContext (trapContextOfRegisterFile rf)).gpr r = rf.gpr r) := by
+  obtain ⟨hPc, hSp, hPs, hTp, hGpr⟩ := hB
+  rw [trapContextOfRegisterFile, registerFileOfTrapContext_ofWords]
+  exact registerFileOfTrapWords_trapWordsOfRegisterFile rf
+    (fun r hr => hGpr r (by unfold SeLe4n.RegName.isValid SeLe4n.RegName.arm64GPRCount; omega))
+    hSp hPc hPs hTp
 
 end SeLe4n.Kernel.Architecture

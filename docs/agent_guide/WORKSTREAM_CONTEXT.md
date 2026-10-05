@@ -1498,8 +1498,8 @@ BP7.3).  Four things new code must respect.  (1) **`RegisterFile` carries
 preempted between a compare and its branch with the wrong condition.  (2) **The
 HAL publishes the in-flight frame** for a handler's duration
 (`trap::InFlightFrame`, withdrawn on drop, a nested handler restoring the one it
-displaced), and the Lean entry reads it word by word before its atomic step
-(`Platform.FFI.captureTrapFrame`, `trap::TRAP_FRAME_CONTEXT_WORDS`: `x0`–`x30`,
+displaced), and the Lean entry reads it whole, in one call, before its atomic step
+(`Platform.FFI.captureTrapFrame` over `ffiTrapContext`, `trap::TRAP_FRAME_CONTEXT_WORDS`: `x0`–`x30`,
 `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, and since v0.36.30 `TPIDR_EL0`, which EL0
 writes with no trap — until then a thread read the previous thread's value).  (3) **Every state-committing trap entry saves
 it** — the syscall seam, the fault and unknown-syscall entries, the timer tick

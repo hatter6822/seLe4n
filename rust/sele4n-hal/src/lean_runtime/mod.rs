@@ -332,6 +332,20 @@ pub fn fatal(reason: &str) -> ! {
 
 // ==========================================================================
 // Header access
+/// The bytes the heap holds for the allocation at `o` — its size class, or its
+/// page run's whole pages — or `None` when `o` is not a live heap allocation.
+///
+/// This is the only record of an object's size: under the kernel's
+/// `LEAN_SMALL_ALLOCATOR` configuration `lean_set_st_header` writes `m_cs_sz = 0`
+/// and `lean_small_object_size` asks the allocator (`lean_small_mem_size`), so
+/// the header says nothing about how many bytes follow it.  The heap reads its
+/// out-of-band metadata only, never the memory at `o`, which is why this is
+/// safe for any pointer.
+#[must_use]
+pub fn allocated_bytes(o: Obj) -> Option<usize> {
+    mem::usable_size(o as usize)
+}
+
 // ==========================================================================
 //
 // Every function below takes a pointer to a live heap object — never a boxed
@@ -339,7 +353,8 @@ pub fn fatal(reason: &str) -> ! {
 // this runtime dereferences an object pointer directly; the operations are
 // written against them.
 
-/// The header of `o`.
+/// The header of `o`, for writing — `inc`, `dec` and `set_st_header` need
+/// it; a read-only inspection takes [`header_ref`].
 ///
 /// # Safety
 ///
@@ -349,6 +364,20 @@ pub unsafe fn header<'a>(o: Obj) -> &'a mut LeanObject {
     // SAFETY: the caller guarantees `o` is a live heap object, whose first
     // eight bytes are its header.
     unsafe { &mut *o }
+}
+
+/// The header of `o`, read-only: the form for inspecting an object the Lean
+/// program still owns (a borrowed `@&` argument), where handing out `&mut`
+/// would claim an exclusive access the inspection does not need.
+///
+/// # Safety
+///
+/// `o` must point to a live heap object.
+#[must_use]
+pub unsafe fn header_ref<'a>(o: Obj) -> &'a LeanObject {
+    // SAFETY: the caller guarantees `o` is a live heap object, whose first
+    // eight bytes are its header.
+    unsafe { &*o }
 }
 
 /// `lean_ptr_tag`.
@@ -475,6 +504,22 @@ pub unsafe fn ctor_get_u64(o: Obj, offset: usize) -> u64 {
             .add(HEADER_BYTES + offset)
             .cast::<u64>()
             .read_unaligned()
+    }
+}
+
+/// `lean_ctor_set_uint64(o, offset, v)`: write the scalar field `offset` bytes
+/// past the object fields' start.
+///
+/// # Safety
+///
+/// `o` must be a live constructor object with eight scalar bytes at `offset`.
+pub unsafe fn ctor_set_u64(o: Obj, offset: usize, v: u64) {
+    // SAFETY: forwarded from the caller, as for `ctor_get_u64`.
+    unsafe {
+        o.cast::<u8>()
+            .add(HEADER_BYTES + offset)
+            .cast::<u64>()
+            .write_unaligned(v);
     }
 }
 

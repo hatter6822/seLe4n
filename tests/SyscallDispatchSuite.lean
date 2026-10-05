@@ -481,11 +481,13 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
 
 /-- SD-034: ABI consistency check — when `msgInfo ≠ x1`, the dispatch
     rejects with the `.invalidSyscallArgument` error frame without
-    invoking `syscallEntryChecked`.
+    invoking `syscallEntryChecked`.  Test-only defence: the live entry
+    reads both from the one trapped `x1`, so this suite is the only caller
+    that can make them differ.
 
-The Rust caller's `SyscallArgs::from_trap_frame` constructs `msg_info`
-and `msg_regs[1]` from the same `frame.x1()` slot, so they should always
-be equal at the ABI boundary.  A divergence indicates either a malformed
+The syscall entry (`syscallDispatchCrossCoreEntry`) passes the trapped
+`x1` word as both `msgInfo` and `x1`, so they should always be equal at
+the ABI boundary.  A divergence indicates either a malformed
 caller or memory corruption — the FFI rejects rather than proceeding. -/
 private def sd034_dispatch_abiMismatch : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨10⟩
@@ -508,6 +510,38 @@ private def sd034_dispatch_abiMismatch : IO Unit := do
         (tcb.registerContext.gpr ⟨0⟩ == ⟨0⟩)
         "ABI-mismatch must reject before spilling registers"
   | _ => failLine "sd034_tcb_missing" "TCB missing after ABI-mismatch dispatch"
+
+/-- SD-036 (`v0.36.47` audit): the arm the hardware never reaches — the entry
+handed no context.  `syscallEntryContextOrFaulted` is the pure owner of that
+arm: `none` is the `.faulted` outcome tag and nothing else (no state is read,
+so none can be committed), and `some c` is `c` itself, so the entry dispatches
+on exactly the context the HAL handed over.  The host lane cannot link the
+entry's externs, which is why the arm is a pure function. -/
+private def sd036_entryWithoutContext_faults : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨12⟩
+  let st := mkState [(⟨12⟩, .tcb (mkTcb 12 .Ready))] (some tid)
+  initialiseKernelState st
+  let faulted := Kernel.Architecture.SyscallOutcome.faulted.tagWord
+  expect "sd036a_none_is_the_faulted_tag"
+    (match syscallEntryContextOrFaulted none with
+      | .error tag => tag == faulted && tag == 2
+      | .ok _ => false)
+    "an entry with no published context must answer the .faulted tag (2)"
+  let c : Kernel.Architecture.TrapContext :=
+    Kernel.Architecture.TrapContext.ofWords fun i => 0x2000 + i.toUInt64
+  expect "sd036b_some_is_the_context_itself"
+    (match syscallEntryContextOrFaulted (some c) with
+      | .ok c' => c' == c && c'.x7 == 0x2007 && c'.tpidr == 0x2022
+      | .error _ => false)
+    "an entry with a context must dispatch on exactly that context"
+  -- The frame-less answer commits nothing: the state is what was installed.
+  let st' ← getKernelState
+  match st'.objects[tid.toObjId]? with
+  | some (.tcb tcb) =>
+      expect "sd036c_no_state_committed_without_context"
+        (tcb.registerContext.gpr ⟨0⟩ == ⟨0⟩ && tcb.threadState == .Ready)
+        "the frame-less arm must leave the installed state untouched"
+  | _ => failLine "sd036_tcb_missing" "TCB missing after the frame-less arm"
 
 /-- SD-035: Sequential dispatches — the IO.Ref state evolves
     correctly across multiple syscall invocations.
@@ -2212,6 +2246,7 @@ def main : IO Unit := do
   sd033_dispatchFromAbi_total
   sd034_dispatch_abiMismatch
   sd035_sequentialDispatches
+  sd036_entryWithoutContext_faults
   IO.println "--- R2.A: bootAndInitialiseFromPlatform integration ---"
   sd040_bootInitialise_emptyConfig_succeeds
   sd041_bootInitialise_withLabelingContext

@@ -81,15 +81,7 @@ fn dispatch_svc_accepts_single_register_tcb_management_syscalls() {
         SyscallId::TcbSetFaultHandler,
     ] {
         // A length-1 message (exactly what the `sele4n-sys` wrappers send).
-        let args = SyscallArgs {
-            msg_info: 1,
-            msg_regs: [0; 6],
-            ipc_buffer_addr: None,
-            elr: 0,
-            spsr: 0,
-            sp_el0: 0,
-            x30: 0,
-        };
+        let args = SyscallArgs { msg_info: 1 };
         // Must clear the argument-count gate (any result other than the
         // count-mismatch rejection is acceptable here; on the host lane the
         // inner symbol is a stand-in).

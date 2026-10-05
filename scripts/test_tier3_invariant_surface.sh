@@ -4355,7 +4355,7 @@ run_check "INVARIANT" rg -n -U '^      let stE := PriorityInheritance\.settleRes
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # PR #904 (v0.36.41): the translation rides with the commit, which installs it
 # only once the frame is replaced — never before a commit that may decline.
-run_check "INVARIANT" rg -n -U '^      ffiRestoreStageWord i\.toUInt32 [^\n]*\n    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^    ffiRestoreStageContext \(SeLe4n\.Kernel\.Architecture\.trapContextOfRegisterFile ctx\)\n    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  \| \.idle => ffiRestoreCommit 1 0 0$' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'ffiInstallTranslation (tableBase asid|0 0)' SeLe4n/Platform/FFI.lean
 # WS-BP BP7.6: the restore is live — no seam flag gates it, and none of the
@@ -4634,7 +4634,7 @@ run_check "INVARIANT" rg -n '^fn readiness_guard_dominates\(' rust/sele4n-hal/bu
 run_check "INVARIANT" rg -n '^fn handler_routing_status\(' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn verify_handler_routing_scanner\(\)' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^    verify_handler_routing_scanner\(\);' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -n -U 'elr: frame\.elr_el1,\n\s+spsr: frame\.spsr_el1,\n\s+sp_el0: frame\.sp_el0,\n\s+x30: frame\.gprs\[30\],' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n -U 'words\[\.\.31\]\.copy_from_slice\(&frame\.gprs\);\n\s+words\[31\] = frame\.sp_el0;\n\s+words\[32\] = frame\.elr_el1;\n\s+words\[33\] = frame\.spsr_el1;' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^def syscallCapFaultOf($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def capFaultReceivePhase\?' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem capFaultReceivePhase\?_none_iff_records' SeLe4n/Platform/FFI.lean
@@ -4667,7 +4667,13 @@ run_check "INVARIANT" rg -n '^          match syscallResolveCap gate st with' Se
 run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '\(elr spsr spEl0 x30 : UInt64\) : BaseIO UInt64' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo\n      trapped\.x0 trapped\.x1 trapped\.x2 trapped\.x3 trapped\.x4 trapped\.x5\n      trapped\.x6 trapped\.pc trapped\.pstate trapped\.sp trapped\.x30$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# The syscall's arguments cross the boundary once: the HAL passes the validated
+# id alone, and the Lean side reads every other argument from the context it
+# takes whole.  Capture and restore are one call each, not one per word.
+run_check "INVARIANT" rg -n '^    fn lean_syscall_dispatch_cross_core\(syscall_id: u32\) -> u64;$' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n '^  let trapped ← Platform\.FFI\.ffiTrapContext$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_negative_check "INVARIANT" rg -n 'for i in \[0:SeLe4n\.Kernel\.Architecture\.trapFrameWordCount\]' SeLe4n/Platform/FFI.lean
 # PR #887 review round 3, the review of the round-2 head.  (5) A not-ready
 # core that takes an EL0 abort halts — a frame would be `eret`ed back into the
 # abort — and the fallback frame is host-only; the relation is pinned in
@@ -8204,7 +8210,7 @@ run_check "INVARIANT" rg -n 'add\s+sp, sp, #304$' rust/sele4n-hal/src/trap.S
 run_negative_check "INVARIANT" rg -n '(sub|add)\s+sp, sp, #288$' rust/sele4n-hal/src/trap.S
 run_check "INVARIANT" rg -n -F -- 'const _: () = assert!(core::mem::offset_of!(TrapFrame, tpidr_el0) == 288);' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -F -- 'pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;' rust/sele4n-hal/src/trap.rs
-run_check "INVARIANT" rg -n -F -- '34 => Some(frame.tpidr_el0),' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -F -- 'words[34] = frame.tpidr_el0;' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = word(34);' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = 0;' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^def trapFrameWordCount : Nat := 35$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
