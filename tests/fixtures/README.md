@@ -39,7 +39,10 @@ explicit hash refresh in the same commit.
 companion.**  The table answers two questions of the same row: which files it
 enumerates, and which gate reads each one.  Give each fixture its own row; a
 `Hash` cell may name `<fixture>.sha256` or no file at all.  The table is
-documentation and is kept current by review; no gate reads it.
+documentation and is kept current by review; no gate reads it.  What is
+checked is the code side: Tier 0's `scripts/check_fixture_consumers.py` fails
+on any file in this directory that no Lean, Rust, Python or shell source reads,
+deriving both sets from the tree rather than from this table.
 
 The Tier 2 trace gate (`scripts/test_tier2_trace.sh`) walks every
 `*.expected.sha256` file in this directory and runs `sha256sum -c` on

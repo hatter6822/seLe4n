@@ -26,8 +26,8 @@ invariants are checked here:
    'Y'"), which ends the run as a CodeQL *configuration error* whose
    diagnostics-only "failed run" SARIF code scanning rejects.  Refs must also
    be full 40-character commit SHAs: parity over a mutable tag is meaningless,
-   and the F-14 SHA-pinning scan in ``test_tier0_hygiene.sh`` cannot reach
-   sub-path actions, whose owner/repo segment contains a ``/``.
+   so this gate states its own precondition even though the F-14 scan
+   (``check_actions_sha_pinned.sh``) also resolves sub-path actions.
 
 3. UNMASKED -- the analyze step must not be masked by ``continue-on-error``,
    at the step level *or* at the level of the job containing it.  Masking is

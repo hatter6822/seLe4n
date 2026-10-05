@@ -118,8 +118,10 @@ no canonical index named until WS-RR RR7.32 made that checkable.
 #### Archived plans by ID
 
 Source, tests and Rust cite a closed plan by its **workstream or phase ID**, not
-by path, because Tier 0 forbids `docs/dev_history/` in `SeLe4n/`, `Main.lean`,
-`tests/` and `rust/`.  This table resolves an ID to its plan.  A sub-task ID
+by path.  Tier 0 rejects a `docs/dev_history/` path in the code of `SeLe4n/`,
+`Main.lean`, `tests/` and `rust/`: string literals, include paths and build
+references, read through the code view.  A citation in a comment or docstring is
+held by review.  This table resolves an ID to its plan.  A sub-task ID
 after the workstream (`WS-SM SM3.A.10`, `WS-RA RA.B.5b`, `WS-RR RR8.12`) is a row
 in that plan; a `§` after a phase ID (`WS-SM SM6 §3.1`) is a section of it.
 Each plan's status line is its status when archived; current status is the
@@ -2375,10 +2377,10 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff, under stated packs and
   confinements** (WS-RR RR3.15–RR3.26, `v0.34.43`; compressed here at RR8.14,
   `v0.35.88`).  The bundle family is de-threaded end to end and
-  `scripts/check_ipc_invariant_dethreading.py` (Tier 0) keeps it so, holding the
-  family size stated in prose to its own measurement — the figure and the
-  narrative of how it drifted live in `docs/spec/SELE4N_SPEC.md` and
-  `CHANGELOG.md`, not here.  Four things new code must respect.  (1) **Cite the
+  `scripts/check_ipc_invariant_dethreading.py` (Tier 0) keeps it so; the family
+  size quoted in prose is not gated (run the script's `--report` to measure it),
+  and the figure and the narrative of how it drifted live in
+  `docs/spec/SELE4N_SPEC.md` and `CHANGELOG.md`, not here.  Four things new code must respect.  (1) **Cite the
   right tier.**  `dispatchCapabilityOnly_preserves_ipcInvariantFull`
   (`SeLe4n/Kernel/API.lean`) is **production** and covers every capability-gated
   arm; `dispatchWithCap_preserves_ipcInvariantFull`,

@@ -31,7 +31,8 @@ to the root document itself.
 - When a workstream closes, its plan moves to `docs/dev_history/planning/`,
   after any obligation it still holds is lifted into an active row of
   `docs/REGISTERED_DEBT.md`.  Source must not reference `docs/dev_history/`
-  (a `CLAUDE.md` rule, held by review), so it cites an archived plan by workstream or phase ID,
+  (a `CLAUDE.md` rule: Tier 0 holds code to it through the code view, and
+  review holds comments), so it cites an archived plan by workstream or phase ID,
   and the "Archived plans by ID" table in
   `docs/agent_guide/WORKSTREAM_CONTEXT.md` resolves the ID.
 
@@ -68,7 +69,7 @@ to the root document itself.
 
 | Validation area | Command | What it verifies |
 |---|---|---|
-| Hygiene + forbidden markers + fixture isolation | `./scripts/test_tier0_hygiene.sh` | No `sorry`/`axiom` debt in proof surface; no test contract leakage into production kernel modules; theorem-body spot-check; SHA-pinning regression guard; version sync; website-link protection; **SMP theorem-manifest drift** (`generate_smp_theorem_manifest.py --self-test` then `--check`: every theorem inventory in the tree is claimed by exactly one WS-SM phase, with the entry count the tree measures and a kind the gate validates rather than trusts; the *proposition* count is checked instead by the census inside `PhaseTheoremManifest.lean`, since a text scanner has no elaborator). |
+| Hygiene + forbidden markers + fixture isolation | `./scripts/test_tier0_hygiene.sh` | No `sorry`/`axiom` debt in proof surface; no test contract leakage into production kernel modules; theorem-body spot-check; SHA-pinning of every remote workflow `uses:` (`check_actions_sha_pinned.sh`); every `tests/fixtures/` file has a reader in code (`check_fixture_consumers.py`); no code path into `docs/dev_history/`; version sync; website-link protection; **SMP theorem-manifest drift** (`generate_smp_theorem_manifest.py --self-test` then `--check`: every theorem inventory in the tree is claimed by exactly one WS-SM phase, with the entry count the tree measures and a kind the gate validates rather than trusts; the *proposition* count is checked instead by the census inside `PhaseTheoremManifest.lean`, since a text scanner has no elaborator). |
 | Lean build soundness | `./scripts/test_tier1_build.sh` | Project compiles successfully via `lake build`. |
 | End-to-end executable trace fixture | `./scripts/test_tier2_trace.sh` | Runtime trace still satisfies fixture expectations and scenario/risk-tagged entries. |
 | Negative/adversarial malformed-state suite | `./scripts/test_tier2_negative.sh` | Malformed capability/object/IPC/VSpace/scheduler states fail safely with explicit modeled errors. |

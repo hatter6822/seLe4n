@@ -490,7 +490,7 @@ build rather than a review; documentation is not gated and is held by review:
 | Gates and tests check code, not documentation or comment prose; gates read code, prose reads prose; a presence check is not a relation check; test a gate by breaking the relation | the code-view overlay, the self-test harnesses, review |
 | Implement the improvement — never weaken documentation to match inferior code | review |
 | Deferrals are registered, never silent | review |
-| Source cites an archived plan by workstream ID, never by `docs/dev_history/` path | review |
+| Code never points into `docs/dev_history/`; comments cite an archived plan by workstream ID, never by path | Tier 0 negative check over the code view of `SeLe4n/`, `Main.lean`, `tests/`, `rust/` (code); review (comments) |
 | Report a possible vulnerability the moment you find it | — |
 
 The long-form rationale behind each rule, with the history that earned it, is

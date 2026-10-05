@@ -213,8 +213,8 @@
     `scenario_catalog.py check-fixture-index` (the `tests/fixtures/README.md`
     table and its `Used by` claims) are gone.  The fixture-index machinery
     leaves `scenario_catalog.py` (~975 lines) and its unit tests (~860 lines),
-    and the API it alone used goes with it: `strip_shell`'s `keep_quoted`,
-    `python_code_view`'s `blank_strings` and `lean_code_view.code_view_for`.
+    and so does `python_code_view`'s `blank_strings`, which only it used.  The
+    code halves of two of these checks come back below, without the prose.
   - *Tier 3* (~615 lines): the 50 anchors that read `.md`/`docs/` files, the 58
     prose anchors on Lean comments and docstrings, and the anchors pinning the
     deleted scripts or the fixture-index code.  Prose anchors whose subject is
@@ -234,13 +234,25 @@
     agent-guide documents and five Lean comments that cited the deleted
     scripts are updated, and the metrics are re-synced.
 - **Two harness checks no longer fail silently (same PR).**
-  - *Action SHA pinning* (`test_tier0_hygiene.sh`): the check that every
-    GitHub Action is pinned to a commit SHA ran only `if command -v rg`, with
-    no else branch, so a runner without ripgrep skipped it and printed nothing.
-    It is now unconditional, as the CodeQL check's rule requires.  It falls
-    back to `grep -E`.  It fails, naming the cause, when there is no scanner or
-    the scan errors; the old pipeline also read an erroring scan as a clean
-    tree.  Each unpinned reference is printed as `file:line:text`.
+  - *Action SHA pinning* (new `scripts/check_actions_sha_pinned.sh` and its
+    `--self-test`, run by Tier 0): the old check ran only `if command -v rg`,
+    with no else branch, so a runner without ripgrep skipped it and printed
+    nothing.  Its pattern also missed sub-path actions
+    (`github/codeql-action/init@v3`), owners or repos with digits, and refs
+    that do not start with `v` (`@main`, a short SHA).
+    - The script resolves every `uses:` value into `owner/repo[/path]@ref`
+      and requires a full 40-hex commit SHA.  Local `./` actions are exempt,
+      and `docker://` references need an `@sha256:` digest.
+    - It fails on any shape it cannot classify: a flow mapping, an empty value,
+      an alias, a quoted or spaced key, or a key with no space after its colon.
+    - It is unconditional and scans with `rg`, or `grep -E` without it.  It
+      fails, naming the cause, when there is no scanner, when the scan errors
+      or when it finds no `uses:` at all.
+    - Each finding is printed as `file:line: reason: value`.  The self-test
+      runs 26 cases under each scanner on the host.
+    - The tree's 39 references were already pinned, so no workflow changed.
+    `CI_POLICY.md` §9 and §9.1 and `THREAT_MODEL.md` no longer say the scan
+    misses sub-path actions.
   - *Negative-check output* (`test_lib.sh`): `run_negative_check` and
     `run_prose_negative_check` sent the scanner's output to `/dev/null`, so a
     hit reported only "Forbidden pattern present" and a scanner error only
@@ -253,6 +265,41 @@
   - The prose helpers' comments now match the rule above: they read linker
     scripts, assembly and fixtures produced by code, never documentation or
     comments.
+- **Codex review of 852f56c (same PR).**
+  - *A documentation check left in a code gate*:
+    `check_ipc_invariant_dethreading.py` still read every tracked `.md` file
+    and failed on a stale "post-state across all **N**" figure.  Its
+    `documented_family_size` path, the Markdown walk and their self-test cases
+    are removed.  The gate's code checks are unchanged (127 self-test cases,
+    11/11 checks covered).  The spec, GitBook chapter 12 and
+    `WORKSTREAM_CONTEXT.md` now say the quoted figure is not gated and that
+    `--report` measures it.
+  - *Code must not point into the archive*: Tier 0 again rejects
+    `docs/dev_history` under `SeLe4n/`, `Main.lean`, `tests/` and `rust/`.
+    It is now a `run_negative_check` over the code view, with Markdown
+    excluded, so it catches string literals, include paths and build
+    references, while comments citing an archived plan are a review rule.
+    `CLAUDE.md`, `DEVELOPMENT.md`, the sync matrix and `WORKSTREAM_CONTEXT.md`
+    say which half is checked.
+  - *Every fixture has a reader in code*: the new
+    `scripts/check_fixture_consumers.py` and its `--self-test` run in Tier 0.
+    - The fixtures are the tracked files under `tests/fixtures/`.  The readers
+      are the code views of the Lean, Rust, Python and shell sources under
+      `SeLe4n/`, `Main.lean`, `tests/`, `scripts/` and `rust/`.  Neither set is
+      listed, and no Markdown is read.
+    - A fixture counts as read when a reader names it.  A `.sha256` companion
+      counts when it is named or globbed, or when a reader of its fixture
+      checks the `.sha256`.  A corpus entry counts when it is a row of a
+      `MANIFEST` that a reader names.
+    - A reader suffix the script cannot classify fails, as does an unreadable
+      file, an unparseable `MANIFEST` row or an empty fixture set.
+    - Its 16 self-test cases keep each file and break only its reader.
+    - On the tree, keeping `qemu_boot_expected.txt` and
+      `smp_4core_scheduler.expected` and turning their only readers into
+      comments fails the check, and it names both files and the orphaned
+      companion.
+    - The shell view needs double-quoted text kept, so `strip_shell`'s
+      `keep_quoted` and `lean_code_view.code_view_for` are restored for it.
 
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 

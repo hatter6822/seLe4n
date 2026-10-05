@@ -154,8 +154,14 @@ Covered workflows:
 - `.github/workflows/platform_security_baseline.yml`
 - `.github/workflows/codebase_map_sync.yml`
 
-Tier 0 hygiene (`test_tier0_hygiene.sh`) includes a regression guard that fails if
-any workflow action reference is not SHA-pinned.
+Tier 0 hygiene runs `scripts/check_actions_sha_pinned.sh` and its `--self-test`.
+The script resolves every `uses:` value in `.github/workflows/` into
+`owner/repo[/path]@ref` and fails unless the ref is a full 40-hex commit SHA. Local
+`./` actions are exempt, and a `docker://` reference must carry an `@sha256:` digest.
+Any shape it cannot classify fails: a flow mapping, an empty value, an alias, or a
+key with no space after its colon. It scans with `rg`, or `grep -E` where `rg` is
+absent. It fails, naming the cause, when there is no scanner, when the scan errors,
+or when the scan finds no `uses:` at all. Each finding is printed as `file:line`.
 
 ### 9.1 CodeQL action pin parity
 
@@ -185,10 +191,10 @@ Two mechanisms hold the invariant, at the two points it can break:
 1. **Enforcement** — `scripts/check_codeql_workflow_policy.py`, run unconditionally by
    Tier 0 hygiene together with its `--self-test` witness. It fails on disagreeing
    pins, on disagreeing version comments, and on any codeql-action reference that is
-   not a full 40-character commit SHA. That last check is load-bearing rather than
-   redundant: parity over a mutable tag is meaningless, and the §9 F-14 scan does not
-   reach sub-path actions such as `github/codeql-action/init`, whose owner/repo
-   segment contains a `/`. Because YAML permits quoted scalars, references are read
+   not a full 40-character commit SHA. That last check overlaps the §9 scan, which
+   also resolves sub-path actions such as `github/codeql-action/init`. The gate keeps
+   it because parity over a mutable tag is meaningless, so the parity check states
+   its own precondition. Because YAML permits quoted scalars, references are read
    through a quote-aware scanner — a `uses: "github/codeql-action/init@…"` that a
    plain grep would miss is exactly the mismatch that would slip through.
 2. **Prevention** — the `codeql-action` group in `.github/dependabot.yml`. Dependabot

@@ -101,7 +101,8 @@ Tier 3 invariant surface anchors additionally check for:
 - SHA-pinning of GitHub Actions workflow references (Tier 3 positively
   anchors the four original workflows; the all-workflows guarantee — every
   `uses:` in `.github/workflows/` SHA-pinned, `codebase_map_sync.yml`
-  included — is Tier 0's directory-wide negative scan).
+  included — is Tier 0's `check_actions_sha_pinned.sh`, which resolves every
+  `uses:` value and fails on any it cannot classify).
 
 ## 8) Related security documents
 

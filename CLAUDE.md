@@ -313,7 +313,8 @@ moves to `docs/dev_history/planning/` once any obligation it still holds is
 a row in `docs/REGISTERED_DEBT.md`. Source must not reference
 `docs/dev_history/`, so it cites an archived plan by workstream or phase ID
 (`WS-SM SM6.C`), resolved by the table in
-`docs/agent_guide/WORKSTREAM_CONTEXT.md`. The ownership map is
+`docs/agent_guide/WORKSTREAM_CONTEXT.md`. Tier 0 rejects such a path in code
+(through the code view); review holds comments to the rule. The ownership map is
 [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md).
 
 ## Third-party attribution

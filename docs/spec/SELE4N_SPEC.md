@@ -5735,11 +5735,9 @@ bound on a post-state across all **210** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
-end`.  Since WS-RR RR7.28 the **figure itself** is gated: the same check holds
-every tracked Markdown file outside `CHANGELOG.md` and `docs/dev_history/` — the
-two places the number is history rather than a claim about HEAD — to its own
-measurement, so a cut that adds a bundle fails until the prose it made stale is
-corrected.  The pre-state conditions that replaced them are collected
+end`.  The figure quoted here is not gated: WS-RR RR7.28 held it to the
+measurement, and `v0.36.42` retired that check with the other documentation
+checks, so re-measure it with the script's `--report` when the family grows.  The pre-state conditions that replaced them are collected
 and, where possible, *derived* in
 `SeLe4n/Kernel/IPC/Invariant/Reachability.lean` (`ipcReachable`, proved
 inhabited by the boot state).  The top-level dispatch payoff **exists**:

@@ -96,46 +96,16 @@ else
   fi
 fi
 
-# L-08 supplemental: verify that SHA-pinned GitHub Actions have not regressed to tag-only refs.
-#
-# Unconditional, by the rule stated at the CodeQL check below.  This used to
-# run only `if command -v rg`, with no else branch, so a runner without
-# ripgrep skipped it and said nothing.  It now scans with `grep -E` when `rg`
-# is absent, and fails, naming the cause, when no scanner exists or the one it
-# found errors (status 2: a missing workflows directory, a bad pattern) — the
-# old pipeline read an erroring first scan as a clean tree.  Each unpinned
-# reference is printed as `file:line:text`.
-check_actions_sha_pinned() {
-  local pattern='uses: [a-zA-Z]+/[a-zA-Z-]+@v[0-9]'
-  local -a scan
-  if command -v rg >/dev/null 2>&1; then
-    scan=(rg -n --no-heading --)
-  elif command -v grep >/dev/null 2>&1; then
-    scan=(grep -rnE --)
-  else
-    echo "F-14: neither rg nor grep is on PATH, so the SHA-pinning scan cannot run." >&2
-    return 2
-  fi
-  local hits status=0
-  hits="$("${scan[@]}" "${pattern}" .github/workflows/)" || status=$?
-  if [[ "${status}" -gt 1 ]]; then
-    echo "F-14: ${scan[0]} could not scan .github/workflows/ (exit ${status}), which is not a clean tree." >&2
-    return 2
-  fi
-  local line unpinned=0
-  while IFS= read -r line; do
-    if [[ -z "${line}" || "${line}" =~ @[0-9a-f]{40} ]]; then
-      continue
-    fi
-    echo "${line}" >&2
-    unpinned=1
-  done <<< "${hits}"
-  if [[ "${unpinned}" -eq 1 ]]; then
-    echo "F-14 regression: GitHub Actions must be SHA-pinned (see docs/CI_POLICY.md)." >&2
-    return 1
-  fi
-}
-run_check "HYGIENE" check_actions_sha_pinned
+# Every remote `uses:` in `.github/workflows/` must name a full 40-hex commit
+# SHA (F-14).  The script resolves each value into owner/repo[/path]@ref,
+# exempts local `./` actions, requires an `@sha256:` digest on `docker://`
+# references, and fails on any shape it cannot classify.  It scans with `rg`,
+# or `grep -E` where `rg` is absent, and fails, naming the cause, when there is
+# no scanner, the scan errors or it finds no `uses:` at all.  Unconditional,
+# by the rule stated at the CodeQL check below.  Its self-test runs every case
+# under each scanner on the host.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_actions_sha_pinned.sh" --self-test
+run_check "HYGIENE" "${SCRIPT_DIR}/check_actions_sha_pinned.sh"
 
 # The three CodeQL workflow invariants, each of which independently leaves the
 # code-scanning merge requirement waiting for results that never arrive:
@@ -227,6 +197,22 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/indexed_source.py" --self-test
 # and uninitialised padding zeroed).  The normaliser is self-tested here; the
 # comparison against a live dump runs in the QEMU lane, which has QEMU.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/qemu_virt_dtb_fixture.py" --self-test
+
+# Code must not point into `docs/dev_history/`: a string literal, an include
+# path or a build reference that names an archived file breaks the day the
+# archive is pruned, and the archive is retired precisely because a live
+# document superseded it.  The surface is `SeLe4n`, `Main.lean`, `tests` and
+# `rust`.  `docs/` and `scripts/` stay out of scope, because `docs/` cites its own
+# history and `scripts/` reads one file there by design: the AK7 baseline the
+# cascade gate regenerates.
+#
+# `run_negative_check`, so Lean and Rust are read through the code view: a
+# comment or docstring citing an archived plan is a review rule (cite it by
+# workstream ID instead), not a gate's business.  Markdown under these
+# directories is excluded, since documentation is not tested.  Files with no
+# stripper in `lean_code_view._STRIPPERS` (assembly, the linker script, TOML)
+# are read raw, so a comment in one of them fails closed.
+run_negative_check "HYGIENE" rg -n -g '!*.md' "docs/dev_history" SeLe4n Main.lean tests rust
 
 # WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
 # plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10
@@ -428,6 +414,14 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registr
 # producer and does not parse, which was swept as golden output while the gate
 # reported PASS.  Tier 2 runs the same discovery again, for the list.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" list-manifests
+
+# Every file under `tests/fixtures/` has a reader in code: its name in the code
+# view of a Lean, Rust, Python or shell source; a `.sha256` companion's
+# checksum check; a corpus entry's `MANIFEST` row.  Both sets are derived, no
+# Markdown is read, and a reader suffix the script cannot classify fails.  Its
+# self-test keeps each file and removes only its reader.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_fixture_consumers.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_fixture_consumers.py"
 
 # AN4-A (H-02): enforce `SeLe4n.Kernel.Internal.lifecycleRetypeObject` consumer allowlist.
 # The internal retype primitive bypasses `lifecyclePreRetypeCleanup` and
