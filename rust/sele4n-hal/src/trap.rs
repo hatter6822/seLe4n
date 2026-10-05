@@ -906,9 +906,12 @@ fn classify_synchronous_exception(esr: u64) -> u32 {
         // SAFETY: `lean_classify_synchronous_exception` is the C-callable
         // wrapper the Lean compiler emits for
         // `Kernel.classifySynchronousExceptionExport`.  It takes a `u64` and
-        // returns a `u32`, reads no kernel state and allocates nothing, and
-        // this core's Lean runtime is initialized — the `lean_ready` gate just
-        // checked — so entering the symbol is within the runtime's contract.
+        // returns a `u32` and reads no kernel state.  It does allocate: the
+        // generated C builds an `ExceptionContext` on the Lean heap, outside
+        // the kernel-entry lock, which is why the heap keeps its own lock
+        // (`lean_heap.rs`, the concurrency note).  This core's Lean runtime is
+        // initialized — the `lean_ready` gate just checked — so entering the
+        // symbol is within the runtime's contract.
         unsafe { lean_classify_synchronous_exception(esr) }
     } else {
         classify_synchronous_exception_mirror(esr)
