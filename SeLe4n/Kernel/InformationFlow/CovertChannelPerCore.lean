@@ -8,7 +8,7 @@
 -/
 
 -- STATUS: staged for WS-SM SM8.B — the per-core enforcement boundary and the
--- SMP covert-channel inventory (docs/planning/SMP_INFORMATION_FLOW_PLAN.md
+-- SMP covert-channel inventory (WS-SM SM8
 -- §3.4 / §3.5 / §5 SM8.B.6 … SM8.B.12).
 
 import SeLe4n.Kernel.InformationFlow.NonInterferencePerCore
@@ -18,7 +18,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain
 /-!
 # WS-SM SM8.B — the per-core enforcement boundary and the SMP covert channels
 
-Plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §3.4 / §3.5 / §5 sub-tasks
+WS-SM SM8 §3.4 / §3.5 / §5 sub-tasks
 SM8.B.6 … SM8.B.12.  `NonInterferencePerCore.lean` proves what the SMP kernel
 *does not* leak; this module records what it *does*, and where the enforcement
 that bounds it lives.

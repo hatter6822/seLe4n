@@ -13,7 +13,7 @@
 -- `syscallDispatchFromAbi` (per-core caller via the threaded `executingCore`) and
 -- fires the diff-recovered cross-core `.reschedule` SGIs.  (Former "STATUS:
 -- staged" marker replaced with this landing note per the implement-the-improvement
--- rule; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md.)
+-- rule; see WS-SM SM6.)
 
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Concurrency.Runtime

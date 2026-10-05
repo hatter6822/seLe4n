@@ -5,7 +5,7 @@
 > indivisible; see §4).  A second defect was found while closing it and fixed in
 > the same cut — see §10.
 > **Predecessor finding**: the reply-path residual recorded in
-> [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §A, found while auditing the
+> [`../REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md) §A, found while auditing the
 > `v0.35.4` reply-stack cut.
 > **Sub-task count**: 26 across 6 phases (RM1..RM6), each phase numbered in the
 > order it is to be implemented
@@ -316,7 +316,7 @@ document existing.
   `consumeReplyLink` perform the same two writes in opposite orders through
   different helpers — one question with two answers, and pre-existing.  It is
   registered as a follow-on row in
-  [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §A rather than absorbed into a
+  [`../REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md) §A rather than absorbed into a
   215-mention refactor here.
 - **It does not refuse the out-of-order reply.**  A fail-closed `.illegalState`
   guard would have been far cheaper, and it was measured and rejected: delegated

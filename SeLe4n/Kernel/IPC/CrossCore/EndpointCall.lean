@@ -12,7 +12,7 @@
 -- was wired through the cross-core call (`endpointCallCrossCoreDispatch`, which
 -- builds on this transition). (Former "STATUS: staged" marker replaced with this
 -- landing note per the implement-the-improvement rule; see
--- docs/planning/SMP_CROSS_CORE_IPC_PLAN.md.)
+-- WS-SM SM6.)
 
 import SeLe4n.Kernel.IPC.DualQueue.Transport
 import SeLe4n.Kernel.IPC.DualQueue.WithCaps
@@ -25,7 +25,7 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 # WS-SM SM6.A — Endpoint call across cores
 
 This module is the SM6.A deliverable of the WS-SM Phase 6 cross-core IPC
-workstream (plan `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.2, §5). It
+workstream (WS-SM SM6 §3.2, §5). It
 lifts the single-core `endpointCall` rendezvous (the blocking RPC send) to a
 *cross-core* transition `endpointCallOnCore` that:
 

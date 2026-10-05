@@ -246,7 +246,7 @@ preserves the **whole** IPC invariant bundle — the wrapper is
 `notificationWaitOnCore` at the resolved executing core and nothing else, so
 this is that bundle instantiated.  (The bound-signal wrapper has no such
 corollary yet: `notificationSignalBoundOnCore`'s own bundle is the SM6.D
-bound-delivery debt, registered in `SMP_CROSS_CORE_IPC_PLAN.md`'s SM6.D
+bound-delivery debt, registered in WS-SM SM6.D
 tracked-debt list.) -/
 theorem notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (st : SystemState)

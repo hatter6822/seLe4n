@@ -14,10 +14,10 @@
 > composition of theorems already in the tree — six of about thirty
 > `dispatchWithCap` arms carry an `ipcInvariantFull` bundle at all.  Both are
 > registered in
-> [`ipc_dethreading_pending.txt`](ipc_dethreading_pending.txt), which the gate
+> [`ipc_dethreading_pending.txt`](../../planning/ipc_dethreading_pending.txt), which the gate
 > checks in both directions.
 > Registered as **WS-DT** in
-> [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) (RR0.1, v0.34.26)
+> [`docs/REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md)'s workstream registry (RR0.1, v0.34.26)
 > after the pre-SM10 audit filed its absence from every canonical index as
 > its first blocker.
 > **Closure target**: WS-RR **RR3.15–RR3.26**

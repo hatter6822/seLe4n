@@ -19,7 +19,7 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSet
 # WS-SM SM5.A — Per-core `chooseThread` (lock-set, independence, completeness)
 
 This module is the SM5.A deliverable of the WS-SM Phase 5 per-core
-scheduler (plan `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.1, §5).
+scheduler (WS-SM SM5 §3.1, §5).
 The per-core selection function `chooseThreadOnCore` itself lives in the
 production module `Scheduler.Operations.Selection` (SM5.A.1), because the
 legacy single-core `chooseThread` is now defined to delegate to it

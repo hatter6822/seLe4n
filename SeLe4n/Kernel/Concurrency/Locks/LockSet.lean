@@ -937,10 +937,8 @@ twenty-two, 14 µs at twenty-three and 13 µs at twenty-four
 (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs** —
-the canonical spelling `scripts/check_lock_ceiling_figures.py` holds to the Lean
-sources, so a raise that leaves a copy of any of the three behind is a build
-failure on the cut that makes it stale rather than on the cut that notices.  The figure is *derived* from this constant and must be
+At the value above, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs**.
+The figure is *derived* from this constant and must be
 read off that theorem rather than from this paragraph: at twenty-two the tick
 admits `22 · 3 · 15 = 990 µs ≤ 1000`, and quoting a superseded per-lock cost
 beside the current ceiling states a budget the constant does not satisfy.  Every

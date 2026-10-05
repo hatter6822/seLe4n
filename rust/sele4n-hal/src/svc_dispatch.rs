@@ -237,7 +237,7 @@ impl SyscallId {
         match self {
             Self::Send | Self::Receive | Self::Reply => 0,
             Self::Call => 0,
-            // WS-RA (RA.D.1): reconciled with the Lean decoders, which are
+            // WS-RA RA.D.1: reconciled with the Lean decoders, which are
             // the authority — `decodeCSpaceMintArgs` reads exactly FOUR
             // registers (srcSlot, dstSlot, rights, badge), `decodeCSpaceCopyArgs`
             // (shared by move) exactly TWO, and `decodeLifecycleRetypeArgs`
@@ -270,7 +270,7 @@ impl SyscallId {
             Self::VSpaceUnmap => 2,
             Self::ServiceRegister => 4,
             Self::ServiceRevoke => 1,
-            // WS-RA (RA.D.1, found by the wrapper-length conformance pin):
+            // WS-RA RA.D.1 (found by the wrapper-length conformance pin):
             // the `.serviceQuery` arm reads NO message registers — the
             // endpoint comes from the capability target — and the wrapper
             // sends length 0.  The previous minimum of 1 rejected every

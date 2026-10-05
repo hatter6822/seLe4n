@@ -673,7 +673,7 @@ def chooseBestInBucketEffective
     chooseBestRunnableInDomainEffective st rq.toList activeDomain none
 
 /-- WS-SM SM5.A.1: per-core thread selection (plan
-`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.1).
+WS-SM SM5 §3.1).
 
 The per-core analogue of `chooseThread`: selects the highest-priority
 runnable thread in core `c`'s active scheduling domain, reading **only**

@@ -2942,7 +2942,7 @@ theorem rwLock_reader_count_no_overflow_under_numCores :
 -- ============================================================================
 -- SM2.C-defer §4.1 — RwLockExecution primitives (RwLockKernelStep + RwLockReachable)
 -- ============================================================================
--- See docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md §4.1 for the
+-- See WS-SM SM2.C-defer §4.1 for the
 -- motivation: D-1..D-4 quantify over executions whose initial state is
 -- reachable from `unheld`, NOT arbitrary wf states.  The wf state space
 -- admits non-reachable configurations (e.g. `readers = [r0],

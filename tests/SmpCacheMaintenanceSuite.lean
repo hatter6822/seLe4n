@@ -20,7 +20,7 @@ import SeLe4n.Testing.StateBuilder
 # WS-SM SM7.D — Cache maintenance broadcast suite
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase
-SM7.D deliverables (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §5,
+SM7.D deliverables (WS-SM SM7 §5,
 sub-tasks SM7.D.1–SM7.D.4):
 
 * **SM7.D.1** — the instruction-cache broadcast.  `IC IALLU` reaches only

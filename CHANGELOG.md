@@ -1,3 +1,370 @@
+## v0.36.42 — CLAUDE.md shrunk to durable rules; documentation de-duplicated and completed plans archived
+
+- **`CLAUDE.md` (and its `AGENTS.md` mirror) go from 14,311 lines to under
+  500.**  The file is auto-loaded into every agent session and had grown past
+  the context it was meant to guide.  It now carries only durable rules,
+  conventions and commands, and opens with a prominent rule that no workstream
+  status, history or narrative may be added to it.
+- **Nothing was deleted; every moved line is preserved verbatim** (only
+  relative link targets rewritten to resolve from the new directory):
+  - `docs/agent_guide/WORKSTREAM_CONTEXT.md` — the former "Active workstream
+    context" section (status index, standing constraints, closed workstreams).
+  - `docs/agent_guide/CONVENTIONS_DETAIL.md` — the full "Key conventions"
+    section, including the gate-writing rules and the review history behind
+    each; `CLAUDE.md` keeps a condensed statement of every rule.
+  - `docs/agent_guide/LARGE_FILES.md` — "Reading large files" with the curated
+    **Known large files** list (now also listing the two new large docs).
+  - `docs/agent_guide/RULES_DETAIL.md` — the full text of the sections
+    `CLAUDE.md` now states in condensed form (validation tiers, module build
+    verification, editing large files, search output, background agents,
+    implement-the-improvement, workstream planning documents, session URL
+    hygiene, vulnerability reporting).
+- **Gates follow the content.**  `find_large_lean_files.sh --check` (and the
+  `sync_documentation_metrics.sh` advisory) read the large-files list from
+  `LARGE_FILES.md`; `check_lock_ceiling_figures.py` requires the canonical
+  lock-ceiling statement in `WORKSTREAM_CONTEXT.md` instead of
+  `CLAUDE.md`/`AGENTS.md`; `check_workstream_plan.py` treats
+  `WORKSTREAM_CONTEXT.md` as a companion/canonical index (`LARGE_FILES.md`
+  was briefly one too; withdrawn below);
+  the Tier 3 prose anchors that pinned workstream text in `CLAUDE.md` now pin
+  it in `WORKSTREAM_CONTEXT.md` (negatives still cover `CLAUDE.md` and
+  `AGENTS.md` too).  The `CLAUDE.md` ↔ `AGENTS.md` byte-mirror gate is
+  unchanged and still holds (superseded below: `AGENTS.md` is now a pointer
+  file).
+- **Documentation clean-up (same PR).**
+  - *One home per topic.* Seven GitBook chapters that only restated a root
+    document (25–31: sync matrix, VSpace ADR, dedup map, threat model, CI
+    telemetry, finite-object-store ADR, claim/evidence index) are deleted; the
+    few facts only they carried were merged into the root documents first, and
+    the GitBook navigation now links the root documents directly.
+    `docs/DOCS_DEDUPLICATION_MAP.md` is merged into
+    `docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md` (new §0 *Ownership rules*
+    and §3 *Automation hooks*) and deleted.  The GitBook heading-drift check
+    in `test_docs_sync.sh`, which compared those mirrors, is retired with them.
+  - *Rules stated once.* `docs/DEVELOPMENT.md` §6–§9 and its PR checklist
+    restated `CLAUDE.md`'s rules; they now link to `CLAUDE.md` (the rules file
+    for every contributor) and keep only procedures.  `CLAUDE.md`'s source
+    layout now links `DEVELOPMENT.md` §5, and it gains the one rule only
+    `DEVELOPMENT.md` stated (*deferrals are registered, never silent*).  The
+    SA-2 description duplicated in `DEPLOYMENT_GUIDE.md` links the advisory.
+  - *`AGENTS.md` stops duplicating `CLAUDE.md`.*  It was first made a
+    symlink; review found that a `core.symlinks=false` checkout flattens a
+    symlink to a one-line file the gate still passed, so it is now a regular
+    pointer file (see *Review fixes* below).
+  - *Completed plans archived.* Nine completed plans moved to
+    `docs/dev_history/planning/` (`DONATION_POP_TRIGGER`, `REPLY_FRAME_REMOVAL`,
+    `REPLY_OBJECTS_COMPLETION`, `SCHEDCONTEXT_DONATION_CHAIN`,
+    `SMP_FOUNDATIONS`, `SMP_LOCK_DATATYPE_COMPLETION`,
+    `SMP_PANIC_HANG_REMEDIATION`, `SMP_VERIFIED_LOCK_PRIMITIVES`,
+    `WS_RC_R4_TYPE_LEVEL_PROMOTION`), and the closed workstreams' sections of
+    the workstream context (WS-RA, WS-OD, WS-RM, WS-HP, WS-LC) moved verbatim
+    to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`.  Every link
+    and CHANGELOG link *target* (labels untouched) was repointed;
+    `docs/dev_history/README.md` indexes the archive.  The eleven completed
+    plans kernel source still cited followed once the citations named IDs
+    instead of paths (next item).
+  - *Active plans no longer write workstream content into `CLAUDE.md`.*
+    WS-CB's CB1.7, CB8.4 and CB8.8, SM10's closure row, and the pointer rows in
+    four other live plans now target `docs/agent_guide/WORKSTREAM_CONTEXT.md`
+    (and `LARGE_FILES.md` for the large-file snapshot).
+- **The completed plans source still cited are archived too (same PR).**
+  SM1 (`SMP_RUST_HAL`), SM2.C-defer (`SMP_RWLOCK_DEFERRED_COMPLETION`), SM3
+  (`SMP_PER_OBJECT_LOCKS`), SM4 (`SMP_PER_CORE_STATE`), SM5
+  (`SMP_PER_CORE_SCHEDULER`), SM6 (`SMP_CROSS_CORE_IPC`), SM7
+  (`SMP_TLB_SHOOTDOWN`), SM8 (`SMP_INFORMATION_FLOW`), SM9
+  (`SMP_DECLASSIFICATION_COMPLETION`), WS-RA (`SYSCALL_RETURN_ABI`) and WS-RR
+  (`SMP_RELEASE_READINESS`) moved to `docs/dev_history/planning/`, each
+  checked closed first.  The WS-RR plan's header still read IN FLIGHT, though
+  WS-RR closed at `v0.35.203`; it now says so.
+  - *Source cites IDs, not paths.*  Every citation of these plans in
+    `SeLe4n/` (85 lines in 59 files), `tests/` (22), `rust/` (9, including the
+    `build.rs` panic text) and `lakefile.toml` (1) names the workstream or
+    phase ID instead, keeping any sub-task ID
+    (`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.10) becomes
+    `WS-SM SM3.A.10`) and, where there was none, the § reference.  Comments
+    and strings only, with no line added or removed, so the LoC metrics do
+    not move.  Review holds source to this form; no gate checks it (the
+    Tier 0 path guard was removed in the f4dd9c1 round, below).
+  - *The IDs resolve in a live document.*
+    `docs/agent_guide/WORKSTREAM_CONTEXT.md` gains an "Archived plans by ID"
+    table (WS-SM SM0–SM9 with SM2.C-defer and SM2.E, WS-RA, WS-RR).
+  - *Open obligations were lifted before anything moved.*  WS-RC R4's two
+    follow-on promotions, registered only inside its archived plan, are now
+    two `docs/REGISTERED_DEBT.md` rows with owner and closure target (endpoint
+    queues behind a `NoDupQueue` wrapper; the remaining `RHTable`-shaped
+    fields behind unique-slot wrappers).  SM6's `withLockSet` bundle-carriage
+    item gets its own row (owner fine-lock Track D, post-v1.0.0), and the
+    application-IPC-label row now states WS-RA's two candidate designs itself.
+  - *Tier 3 reads no archived prose.*  Every anchor that read
+    `docs/dev_history/` was re-anchored on the live register, spec or source
+    where the fact is still live, or deleted where it only pinned historical
+    text.  That covers the anchors on `CLOSED_WORKSTREAM_CONTEXT.md`,
+    `DONATION_POP_TRIGGER_PLAN.md` and `REPLY_FRAME_REMOVAL_PLAN.md`, and the
+    eight that read the plans archived here.  Links, script comments,
+    `LARGE_FILES.md`, `docs/codebase_map.json` and the archive index follow
+    the move.
+- **Review fixes (same PR).**
+  - `AGENTS.md` is a short static regular file (index mode `100644`, not a
+    symlink).  It says all rules live in `CLAUDE.md` and must be read first,
+    and copies nothing from `CLAUDE.md`, not even its section list, so it has
+    nothing that can drift and needs no check.  The `CLAUDE.md` ↔ `AGENTS.md`
+    byte-mirror check in `test_docs_sync.sh` is retired with the mirror.
+    `version_locations.sh` drops `AGENTS.md`, which carries no version (35
+    sites).
+  - `check_workstream_plan.py` no longer counts `LARGE_FILES.md` as a
+    canonical index; a size list would make a plan visible by accident.
+  - The claim index's update policy and the PR template no longer ask for the
+    deleted GitBook mirrors.  They ask for any summarizing chapter and the
+    navigation manifest instead.
+  - `docs/dev_history/README.md` calls archived status lines what they are,
+    status at archiving, and names `docs/REGISTERED_DEBT.md` as authoritative.
+  - `UNFINISHED_SMP_WORK.md` finds the WS-SL residual in
+    `WORKSTREAM_CONTEXT.md`, not `CLAUDE.md`.
+  - Sentences that still placed standing constraints or workstream status in
+    `CLAUDE.md` now name `WORKSTREAM_CONTEXT.md`: the planning rule in
+    `RULES_DETAIL.md`, 76 claim-index *Where it is made* cells, GitBook
+    chapter 12, two debt-register rows, CB0.1 and two audit remediations.
+  - Archived plans link their archived siblings, not the old
+    `docs/planning/` paths (nine links in five files under
+    `docs/dev_history/planning/`).
+  - Two stale README figures, found while syncing the translations: the four
+    Rust crates have **80** `.rs` source files under `src/` (the 48 quoted
+    was `sele4n-hal`'s count alone), and the HAL has **four** `.S` sources
+    (`fp_context.S` arrived with WS-BP BP7.9).  Fixed in `README.md`, all 11
+    translated READMEs, `docs/CI_POLICY.md`, the claim index and GitBook
+    chapter 07.
+  - Scripts cite the archived plans by ID (`WS-SM SM9 §3.7`,
+    `WS-SM SM2.C-defer §8`, `WS-SM SM7 §8`), not by `docs/dev_history/` path:
+    the content-flow gate and the Loom, Miri, nightly, Tier 2, Tier 4,
+    Tier 5 and QEMU shootdown scripts.  `scripts/` keeps the archive paths
+    that are machinery: link-check and deferral scopes, historical prose
+    exclusions, gate fixtures and the website manifest.
+  - The *Archived plans by ID* table now resolves every archived workstream
+    that kernel code cites.  It adds WS-RC R4 and R5, WS-DT, WS-LC, WS-OD,
+    WS-RM and WS-HP, plus an *Audit-era workstreams* table mapping WS-A
+    through WS-AN to their audit workstream plans.  WS-AL and WS-AM had no
+    plan of their own, and the row says so.
+  - SM10.6.2 no longer schedules moving `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`,
+    and SM10.6.3's archive list marks the 15 plans this version archived.
+    SM10.6.3 now moves only the 4 still under `docs/planning/`.
+- **Source cites archived plans in one form (same PR).**  Citations are
+  written `WS-<FAMILY> <PHASE>[.<SUB>…]` (`WS-SM SM5.H.4`), the form the
+  *Archived plans by ID* table in `docs/agent_guide/WORKSTREAM_CONTEXT.md`
+  documents.  Comments, docstrings and message strings only; no behaviour
+  changed.
+  - A phase separated from its workstream by punctuation or the word "phase"
+    reads as the bare workstream.  The tree had 80 such sites across eight
+    separators, and every one now uses the canonical form:
+    - `, ` in `(WS-SM, SM5.H.4)`, `(WS-Z, Z5-J)` and `(WS-AB, D1)`;
+    - `/` in `WS-Z/Z6`, and ` / ` in 39 `AL8 (WS-AL / AK7-E.cascade)`-style
+      docstrings, which are now `WS-AL AL8 (cascades AK7-E)`;
+    - ` (` in nine `STATUS: staged for WS-SM (SM0.C …)` markers and in
+      `WS-RA (RA.A.5)`;
+    - `.` in `WS-AB.D2`, `` ` `` in `` WS-BP `BP2.6` ``, `**` in
+      `WS-SM **SM4.E.1**` and ` + ` in `AL1b/WS-AL + AN7-E`;
+    - "phase" or "phases" in `WS-SM phase SM0..SM10`, `WS-AG phases AG3–AG8`,
+      `WS-AN phase AN3-A` and `WS-SM phases (SM5 …)`.
+  - Stale citations fixed:
+    - `WS-HP HP1.4` is `HP1`; the plan has two HP1 rows and keeps
+      `replyFrameBelow?` in HP1.
+    - `WS-E8` named no plan, and its `M-02` was another finding, so the two
+      docstrings now cite `v0.12.1`, the version that added O(1) arbitrary
+      queue removal.
+    - The `WS-OD-PRIO-01`…`WS-RR-PRIO-10` test labels named no plan row, so
+      the suite and its citations name the tests (`pm_od_01`…`pm_od_10`).
+    - `WS-SM SM5.F.14` is `SM5.F.1`, the `computeMaxWaiterPriorityOnCore` row
+      its docstring describes (the plan has ten SM5.F rows).
+    - `WS-RC R2.B.0` is `R2.B`; the plan numbers R2.B.1 to R2.B.6, and the
+      error-discriminant map is the module's own subsection label.
+  - New lookup rows:
+    - `WS-M5-C` and `WS-M6`, the milestone-era workstreams that reused the
+      `WS-M` prefix;
+    - `CHANGELOG.md` for WS-AL and WS-AM, whose phases (`AM1`, `AM4`) exist
+      only as its headings;
+    - `WS-SM SM4.G` and `WS-SM SM7.F.5`, which their plans name only in
+      status notes. Each row also links the `CHANGELOG.md` entry that
+      defines the ID.
+    - The audit-era `WS-A (A1–A8)` row is now written `WS-A`, with the phase
+      range moved into its plan column.
+  - An archived milestone note (`M5_CLOSURE_SYNC.md`) loses a stray indented
+    fence opener that broke its rendering on GitHub.
+- **No gate for documentation.**  Earlier revisions of this PR added a Tier 0
+  gate that resolved every cited workstream ID against the plans' headings and
+  tables (`check_workstream_id_resolution.py`), a shared CommonMark fence
+  reader (`markdown_prose_view.py`) and an `AGENTS.md` generator
+  (`generate_agents_md.py`).  All three are removed: tests are for code, not
+  documentation, and each review round found another Markdown or prose corner
+  case in them.
+- **Documentation checks removed (same PR).**  Tests are for code, not
+  documentation: no gate, test or anchor now reads a `.md` file, `docs/`,
+  README or i18n text, or comment and docstring prose.  This supersedes the
+  *Gates follow the content* item above.
+  - *Deleted scripts* (4,175 lines): `check_workstream_plan.py`,
+    `check_claim_evidence_citations.py`, `check_deferral_registration.py`,
+    `check_lock_ceiling_figures.py`, `check_source_line_citations.py` and its
+    `test_source_line_citations_gate.py`, `check_markdown_links.py`,
+    `check_bcm2712_freshness.sh` (it read a date in a docstring), and
+    `test_docs_sync.sh` (navigation stability, Markdown links, codebase-map,
+    README and translated-metric checks, the large-files list check, the
+    line-citation gate and the doc-gen4 probe) with its CI step and its
+    `test_smoke.sh` call.
+  - *Tier 0*: the plan, claim-evidence, deferral-registration, lock-ceiling and
+    BCM2712 checks, the `docs/dev_history` prose scan over source comments, and
+    `scenario_catalog.py check-fixture-index` (the `tests/fixtures/README.md`
+    table and its `Used by` claims) are gone.  The fixture-index machinery
+    leaves `scenario_catalog.py` (~975 lines) and its unit tests (~860 lines),
+    and so does `python_code_view`'s `blank_strings`, which only it used.  A
+    code-only `docs/dev_history` scan came back in the 852f56c round and was
+    removed in the f4dd9c1 round (both below).
+  - *Tier 3* (~615 lines): the 50 anchors that read `.md`/`docs/` files, the 58
+    prose anchors on Lean comments and docstrings, and the anchors pinning the
+    deleted scripts or the fixture-index code.  Prose anchors whose subject is
+    code stay: `link.ld`, `boot.S`, trace fixtures, the scenario registry, and
+    test-assertion strings.
+  - *Tools kept*: `find_large_lean_files.sh` (now a listing tool only; its
+    `--check` comparison with `LARGE_FILES.md` is removed),
+    `sync_documentation_metrics.sh` (steps 4 and 5, the large-files advisory
+    and `test_docs_sync.sh`, removed), `sync_readme_from_codebase_map.sh`,
+    `sync_translated_metrics.py`, `generate_doc_navigation.py` and
+    `generate_codebase_map.py` (the codebase-map workflow and the version sync
+    read its output).  Version-site sync and website-link protection stay.
+  - *Docs*: `CLAUDE.md` drops the "enforced by"/"checked by" sentences for
+    removed scripts and adds the rule *gates and tests check code, not
+    documentation or comment prose*; `DEVELOPMENT.md`, `CI_POLICY.md`, the sync
+    and coverage matrix, the claim index, `LARGE_FILES.md`, the planning and
+    agent-guide documents and five Lean comments that cited the deleted
+    scripts are updated, and the metrics are re-synced.
+- **Two harness checks no longer fail silently (same PR).**
+  - *Action SHA pinning*: the old Tier 0 check ran only `if command -v rg`,
+    with no else branch, so a runner without ripgrep skipped it and printed
+    nothing, and its pattern missed sub-path actions
+    (`github/codeql-action/init@v3`), owners or repos with digits, and refs
+    that do not start with `v` (`@main`, a short SHA).  Its replacement,
+    `scripts/check_actions_sha_pinned.py`, went through several review rounds
+    (a line scan, then a PyYAML parse of the indexed workflows and local
+    actions, then image digests, a Dockerfile `FROM` parser and finally a
+    refusal of Dockerfile-built actions).  It was retired in the f4dd9c1
+    round (below) for the real tool: the repository's GitHub Actions policy,
+    which refuses any unpinned action at run time.  The tree's 39 references
+    were already pinned, so no workflow changed.
+  - *Negative-check output* (`test_lib.sh`): `run_negative_check` and
+    `run_prose_negative_check` sent the scanner's output to `/dev/null`, so a
+    hit reported only "Forbidden pattern present" and a scanner error only
+    "exit N".  The error itself, such as a missing path or "could not build the
+    Lean code view", was lost.  The output now goes to one temporary file per
+    process, which `finalize_report` removes.  On failure the harness prints
+    the first 20 lines and a count of the rest (`SELE4N_CHECK_OUTPUT_LINES`).
+    A file is used instead of `$(...)` because a subshell would drop the
+    cached code view and rebuild it for every Lean anchor.
+  - The prose helpers' comments now match the rule above: they read fixtures
+    produced by code, never documentation or comments.
+  - *Shell lexer in the identifier-naming gate* (`strip_shell` in
+    `check_identifier_naming.py`): a `${ … }` was matched by the flat pattern
+    `\$\{[^}]*\}`, so `${a[@]+"${a[@]}"}` closed on its inner brace and left
+    a `"` that opened a double-quoted span for the rest of the file.  An
+    apostrophe in a later diagnostic (`Tier 0's`) then opened a single-quoted
+    payload, and every comment below it was read as code.  The lexer now
+    scans every `${ … }` with `parameter_expansion_end` (already used inside
+    substitutions), scans a double-quoted span with its nested `$( … )`,
+    `${ … }` and backticks as their own contexts, honours a top-level
+    backslash escape, reads ANSI-C `$'…'` with its escapes, and treats a
+    backtick inside `$( … )` as nested.  The three scanners share one set of
+    quote helpers.  17 new self-test cases (8 fail on the old lexer).  The
+    `setup_lean_env.sh` PyYAML warning that had been reworded to dodge the bug
+    went back to its natural wording, and later left with the PyYAML install
+    (f4dd9c1 round, below).
+  - *One shell lexer*: `check_dtb_corpus_consumers.py` had its own per-line
+    shell comment stripper, which toggled on every quote with no escapes.
+    An escaped quote before a `#` in a label cut the line and failed the
+    gate, and a run line inside a multi-line string counted.  It now reads
+    `test_tier2_negative.sh` and `test_rust.sh` through `strip_shell` and its
+    own stripper is deleted.  The helper's quoted label reads as spaces in
+    that view, so both patterns now require the command to follow the helper
+    directly, and `echo cargo test --all` no longer passes.  Its self-test
+    grows to 27 cases (a commented-out or string-only run line, `echo`, a `#`
+    in a label, an escaped quote, `${var#pat}`, and `${a[@]+"${a[@]}"}`
+    followed by an apostrophe), and every new mutation must find its target.
+  - *Descriptions of the removed checks*: every live description that said a
+    tier still runs one of the removed documentation checks now says what
+    the tier runs.  `test_smoke.sh` no longer claims "documentation sync" in
+    `TESTING_FRAMEWORK_PLAN.md` or in the README, `QUICKSTART.md` and
+    `CONTRIBUTING.md` of all eleven translations (28 files); Tier 0's list
+    drops BCM2712 freshness; `DEVELOPMENT.md` and the WS-CB plan no longer
+    cite a "plan gate"; GitBook chapter 11 names `generate_codebase_map.py
+    --check` instead of "docs-sync checks"; and `SMP_BOOT_PATH_PLAN.md` says
+    the ABI fixture's wiring is held by its consumers (the Rust suite
+    `include_str!`s it).  Struck register rows, dated findings in
+    `UNFINISHED_SMP_WORK.md`, audits and `CONVENTIONS_DETAIL.md`'s worked
+    examples are history and keep the names.
+- **Codex review of 852f56c (same PR).**
+  - *A documentation check left in a code gate*:
+    `check_ipc_invariant_dethreading.py` still read every tracked `.md` file
+    and failed on a stale "post-state across all **N**" figure.  Its
+    `documented_family_size` path, the Markdown walk and their self-test cases
+    are removed.  The gate's code checks are unchanged (127 self-test cases,
+    11/11 checks covered).  The spec, GitBook chapter 12 and
+    `WORKSTREAM_CONTEXT.md` now say the quoted figure is not gated and that
+    `--report` measures it.
+  - *Code must not point into the archive*: Tier 0 again rejects
+    `docs/dev_history` under `SeLe4n/`, `Main.lean`, `tests/` and `rust/`.
+    It is now a `run_negative_check` over the code view, with Markdown
+    excluded, so it catches string literals, include paths and build
+    references, while comments citing an archived plan are a review rule.
+    The code view now covers assembly and C headers (`//`, `/* */`), the
+    linker script (`/* */`) and TOML (`#`), keeping string literals, so a
+    comment there no longer fails the guard while `.incbin "…"`,
+    `#include "…"`, an `INCLUDE` and a TOML string value still do.  Every
+    anchor that reads those files now reads the view: four `boot.S` anchors
+    that matched comment text match the code, and fourteen `run_prose_check`
+    anchors over `link.ld` and `boot.S` became code checks.
+    `CLAUDE.md`, `DEVELOPMENT.md`, the sync matrix and `WORKSTREAM_CONTEXT.md`
+    say which half is checked.  The guard was removed in the next round
+    (below); the code-view coverage stays.
+  - *Every fixture has a reader in code*: not restored.  A check that a
+    fixture's name appears in code was added and then removed in the same PR,
+    after Codex showed that a dead literal satisfied it and that it read the
+    working tree against the index.  A name in code cannot prove that a test
+    opens the fixture, so orphaned fixtures are left to review, as
+    `tests/fixtures/README.md` says.  The two helpers restored for it
+    (`strip_shell`'s `keep_quoted`, `lean_code_view.code_view_for`) were
+    removed again.
+- **Codex review of f4dd9c1 (same PR).**  All three findings landed on scanner
+  code this PR had added or widened, so this round adds no parsing or scanning
+  code, retires the SHA-pin checker for the repository's own policy, and
+  `CLAUDE.md` gains the rule *use the real tool or don't gate*, with
+  its rationale in `CONVENTIONS_DETAIL.md`.
+  - *The `docs/dev_history` path guard is removed.*  It read comments raw in
+    YAML and every other format with no code view, so a comment in a YAML
+    fixture naming an archived plan would fail Tier 0.  The rule it held is
+    about citations, which are comments and so review's; code that really
+    read an archived file would fail its own tests once the file moved.
+    `CLAUDE.md`, `WORKSTREAM_CONTEXT.md`, `DEVELOPMENT.md` and the sync
+    matrix now say review holds source to the rule.  The code views for
+    `.S`, `.h`, `.ld` and `.toml` stay, since Tier 3 anchors read them.
+  - *A single-quoted or bare helper label*: not accepted.
+    `check_dtb_corpus_consumers.py` refuses a run line it does not classify,
+    which is the gate failing closed, and every invocation in the tree uses a
+    double-quoted label.  Its two findings now name the form it expects,
+    `run_<helper> "<label>" <command>`.
+  - *The SHA-pin checker is retired.*  `check_actions_sha_pinned.py`, its
+    self-test and its Tier 0 wiring are deleted, and so is the PyYAML install
+    that only it needed: `setup_lean_env.sh` is back to its `main` form, and
+    `CLAUDE.md` and `DEVELOPMENT.md` no longer list PyYAML.  The repository's
+    GitHub Actions policy, *Require actions to be pinned to a full-length
+    commit SHA*, enforces action pinning instead: GitHub refuses any unpinned
+    action at run time.  Pinning container, service and `docker://` images to
+    a digest, and building a Docker action from such an image rather than from
+    a Dockerfile, are review rules; the tree has none.  `CI_POLICY.md` §9,
+    `THREAT_MODEL.md`, the sync matrix, `TESTING_FRAMEWORK_PLAN.md` and
+    GitBook chapter 07 say so, and `check_codeql_workflow_policy.py`'s
+    docstring cites the policy.
+  - *Tag comments beside pins*: a review convention, not checked.
+    `CI_POLICY.md` §9 now says so for action SHAs and image digests alike,
+    since no comment may decide whether a gate passes.  For the same reason
+    `check_codeql_workflow_policy.py` no longer compares the version comments
+    beside the codeql-action pins: its self-test now passes agreeing pins
+    under disagreeing comments, and §9.1 says the comments are review's.
+
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 
 - **Security (Codex P1, High): a remote deschedule dropped the running thread's
@@ -708,7 +1075,7 @@ PE-withheld boot, the cross-core SGI round trip, the per-core console stress,
 the TLB shootdown round trip and the shootdown stress — execute on the HAL-only
 and the Lean-linked `virt` images and pass, twelve runs, and the eight that
 drive kernel transitions from user space report NOT RUN naming why.
-[`SMP_TLB_SHOOTDOWN_PLAN.md`](docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md) §8's
+[`SMP_TLB_SHOOTDOWN_PLAN.md`](docs/dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md) §8's
 one open box, which WS-RR RR7.20 kept unchecked because a SKIP is not a pass, is
 ticked on the run.  So is BP6.3's PE-withheld box, and BP8.4's own.
 
@@ -20782,7 +21149,7 @@ than passed, and both spellings (`cleanupPreReceiveDonation` and its `…Checked
 twin, held pointwise equal on `.ok`) are pinned now, since a flip reaching one and
 not the other would break that equality instead of the reading.
 
-Plan: [`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md)
+Plan: [`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md)
 §3.8, whose §3.8.7 records the five things implementing it corrected and §3.8.8
 why the frozen mirror's trigger belongs in this cut rather than in HP8.
 
@@ -22648,7 +23015,7 @@ implementation is out of scope for a cut, the audit "must split the work into
 the proper sequence of PRs … rather than treating documentation surgery as a
 substitute for the code change."  This cut is the sequence.
 
-[`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md)
+[`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/dev_history/planning/DONATION_POP_TRIGGER_PLAN.md)
 — **38 sub-tasks across 9 phases, HP1..HP9**, in execution order.  The
 correction is two changes in a **forced** order rather than one: the splice
 alone is unsound under this kernel's binding-driven trigger, because it re-heads
@@ -32893,7 +33260,7 @@ The phase-theorem manifest measures **909 theorems** across **1119** registered
 entries.
 
 WS-LC is registered in the workstream registry with its own plan,
-[`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
+[`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/dev_history/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
 — 51 sub-tasks across LC1..LC4, scoped ahead of WS-RR RR7 because the fine-lock
 migration tracks widen `withLockSet` footprints onto more syscall arms and the
 withdrawal is what makes those footprints unwindable.  What is still open, and
@@ -45487,7 +45854,7 @@ registered as SM9.C.0 — **and the fix recommended for it in round 4 would not
 have worked**, because `tcb.pendingMessage`, where the signal path stores the
 badge, has no register path either.  SM9.C.0 is re-pointed at WS-RA accordingly.
 
-New plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md)
+New plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/dev_history/planning/SYSCALL_RETURN_ABI_PLAN.md)
 — 38 sub-tasks across ~12-15 PRs in five sub-phases.  The target is seL4's ARM64
 convention exactly: `x0` = badge or primary result, `x1` = `MessageInfo` whose
 **label** carries the error, `x2`-`x5` = message registers.  Errors move to the
@@ -47719,7 +48086,7 @@ Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 SM8.C
 ## v0.33.7 — WS-SM SM8.C: the per-core declassification audit, and the endpoint flow policy wired
 
 **SM8.C LANDED** (plan
-[`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](docs/planning/SMP_INFORMATION_FLOW_PLAN.md)
+[`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](docs/dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md)
 §4.3 / §5 SM8.C.1 … SM8.C.7), all seven sub-tasks, plus SM8.B's registered debt
 (a) — whose closure target the plan assigns to this phase.
 
@@ -63462,7 +63829,7 @@ v0.31.38 — no re-bump; the initial landing was sound + axiom-clean):
 
 Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.B
 (per-core `switchToThread`), SM5.C (cross-core wake via SGI), SM5.D..SM5.K per
-[`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md).
+[`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_SCHEDULER_PLAN.md).
 
 Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.1 (Per-core chooseThread)
 
@@ -63911,7 +64278,7 @@ Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.4 (SM4.D)
 
 Lands the **SM4.D "Cross-subsystem migrations"** sub-phase of the WS-SM
 path-a per-core state replacement
-([`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+([`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §5.4).  Following the exact SM4.C pattern, every cross-subsystem invariant
 that reads scheduler state is lifted from its single-core form (pinned to
 `bootCoreId` after SM4.B) to an **additive, soundness-preserving** per-core
@@ -65136,7 +65503,7 @@ plan §3.4 Pattern 1 rewrite of existing scheduler theorems to take
 ## v0.31.13 — WS-SM SM4.C: per-core scheduler invariant migration
 
 Lands **WS-SM Phase SM4.C "Scheduler invariants migration"** (plan
-[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §5.3 / §5.6), lifting the scheduler invariant *predicates* from the
 single-core forms (pinned to `bootCoreId` after SM4.B) to per-core forms
 parameterised by an explicit `(c : CoreId)`.  The migration follows
@@ -65283,13 +65650,13 @@ Lifecycle / Architecture / InformationFlow / CrossSubsystem theorems
 that read `SchedulerState`); **SM4.E** — retire
 `bootFromPlatform_singleCore_witness` and add the SMP-shape
 witness `bootFromPlatform_smp_witness` per plan §3.8.  See
-[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §§5.4..5.5.
 
 ## v0.31.12 — WS-SM SM4.B: `SchedulerState` path-a `Vector` replacement
 
 Lands **WS-SM Phase SM4.B "SchedulerState path-a replacement"** (plan
-[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §5.2), replacing the seven singular per-core `SchedulerState` fields
 with `Vector α Concurrency.numCores` indexed by `CoreId`, on top of the
 SM4.A `PerCoreVector` bootstrap. All fifteen sub-tasks landed in one
@@ -65368,7 +65735,7 @@ shim). The migration is observably transparent — the executable trace
 ## v0.31.11 — WS-SM SM4.A: per-core `Vector` bootstrap + PlatformBinding
 
 Lands **WS-SM Phase SM4.A "Vector + PlatformBinding"** (plan
-[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §5.1), the foundation for the SM4 path-a replacement of the singular
 `SchedulerState` fields with `Vector α coreCount` indexed by `CoreId`.
 All eight sub-tasks landed in one cut; SM4.A.1 + SM4.A.2 are the new
@@ -65523,7 +65890,7 @@ Follow-on: SM4.B (the `SchedulerState` path-a field replacement),
 SM4.C/SM4.D (scheduler + cross-subsystem theorem migrations), SM4.E
 (`bootFromPlatform_singleCore_witness` retirement +
 `bootFromPlatform_smp_witness`) per
-[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/dev_history/planning/SMP_PER_CORE_STATE_PLAN.md)
 §§5.2–5.5.
 
 Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.1 (SM4.A)
@@ -65570,7 +65937,7 @@ Refs: CLAUDE.md "Versioning policy (every PR bumps the patch version)"
 ### Also released in v0.31.10 — WS-SM SM3.E audit-pass-4: concrete non-vacuity witness for the atomicity bridge (§9b)
 
 Further deep audit of §5.5
-([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
+([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
 A comprehensive axiom sweep over all 106 inventory theorems confirmed they
 are axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only; zero
 `sorryAx` / `native_decide` / `unsafe`), and a full code read found the §1–§10
@@ -65616,7 +65983,7 @@ NONE.
 ## Unreleased — WS-SM SM3.E audit-pass-3: atomicity bridge, observational serializability (write/write coverage), second real Corollary 2.1.11 instantiation
 
 Deepest deep audit of §5.5
-([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
+([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
 Closes the three SM3.E gaps the initial landing *documented as
 deferred* but did not implement.  Per CLAUDE.md's
 `implement-the-improvement` rule, acknowledged-but-unbuilt scope is the
@@ -65709,7 +66076,7 @@ impact: NONE.
 ## Unreleased — WS-SM SM3.E LANDED: serializability (Theorem 2.1.10), conflict-graph acyclicity, commutativity, single-core proof preservation (Corollary 2.1.11) — SM3 CLOSED
 
 Closes §5.5 of
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 (3 PRs, 8 sub-tasks; all LANDED) within the v0.31.9 release cut
 (mirroring the SM3.A / SM3.B / SM3.C / SM3.D landing pattern — no
 version bump; SM3.A..SM3.E close out together en route to v1.0.0).
@@ -65819,7 +66186,7 @@ observational 18).  Full Tier 0+1+2+3 green.  Items deferred past
 v1.0.0 with correctness impact: NONE.
 
 **SM3 acceptance gate** (per
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §8): all formal items checked.  WS-SM SM3 CLOSED with all five
 sub-phases LANDED (SM3.A per-object lock fields, SM3.B lock-set
 extraction, SM3.C 2PL discipline, SM3.D deadlock-freedom, SM3.E
@@ -65884,7 +66251,7 @@ names/docstrings claimed — closed per CLAUDE.md's
 ## Unreleased — WS-SM SM3.D LANDED: deadlock-freedom (Theorem 2.1.9), wait-graph acyclicity, bounded-wait, lock-discipline grounding
 
 Closes §5.4 of
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 (3 PRs, 7 sub-tasks; all LANDED) within the v0.31.9 release cut
 (mirroring the SM3.A / SM3.B / SM3.C landing pattern — no version
 bump; SM3.A..SM3.E close out together en route to v1.0.0).  Builds
@@ -66027,13 +66394,13 @@ No production symbols changed; deadlock suite now ~56 assertions.
 Follow-on: SM3.E (serializability Theorem 2.1.10 + commutativity
 lemmas + `singleCore_proof_preservation` Corollary 2.1.11) closes the
 SM3 phase per
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §5.5.
 
 ## Unreleased — WS-SM SM3.C LANDED: withLockSet 2PL combinator, lockSetHeld predicate, 2PL discipline theorems, dynamic PIP chain-walk locking
 
 Closes §5.3 of
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 (11 sub-tasks; 10 LANDED, 1 deferred to SM5+).  Builds on SM3.A's
 per-object lock fields and SM3.B's `LockSet` / `LockId.lookup` to
 provide the two-phase-locking (2PL) discipline: the `withLockSet`
@@ -67197,7 +67564,7 @@ NONE.  All audit findings have been addressed in the same cut.
 ## Unreleased — WS-SM SM3.B LANDED: LockSet, LockIdProjection, per-transition lockSet declarations, canonical sort theorems
 
 Closes §5.2 of
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 (9 sub-tasks; all LANDED).  Builds on SM3.A's per-object lock
 fields and SM0.I's `LockKind` / `LockId` total order to provide
 the abstract lock-set type, per-syscall lock-set declarations,
@@ -67309,7 +67676,7 @@ NONE.
 SM3.C (`withLockSet` 2PL combinator, `acquireLockOnObject` /
 `releaseLockOnObject`, `lockSetHeld` predicate, RAII discipline)
 per
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §5.3.
 
 ## Unreleased — WS-SM SM3.A audit-pass-7: BEq SchedContext lock + compile-time-checked inventory identifiers
@@ -67712,7 +68079,7 @@ Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1, §4.3 (amended)
 ## Unreleased — WS-SM SM3.A Per-Object Lock Fields
 
 Implements §5.1 of
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 — "Add `lock : RwLock` fields" (5 PRs, 11 sub-tasks).  Wires SM2.C's
 abstract `RwLockState` into every kernel-object struct, plus a
 table-level lock on the SystemState's object store, plus the per-variant
@@ -67844,13 +68211,13 @@ Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`, per-transition
 SM3.A.10 `objectLockOf` projection; SM3.C (`withLockSet` 2PL
 discipline) consumes both SM3.A and SM3.B; SM3.D/SM3.E close with
 deadlock-freedom and serializability theorems.  See
-[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/dev_history/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §§5.2..5.5.
 
 ## Unreleased — WS-SM SM2.E Panic-Hang Remediation (queued MCS-RW lock)
 
 Implements the
-[`docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md`](docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md)
+[`docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md`](docs/dev_history/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md)
 remediation: eliminate every panic and hang in the multi-core
 work, closing the documented `queued_rw_lock::cross_thread_tests`
 flakiness (~50 % hang rate under heavy host-side load) AND the
@@ -67984,7 +68351,7 @@ Refs: PR #790 (cherry-picked the Group A/B/C protocol fixes)
 ## Unreleased — WS-SM SM2.D (FFI bridge + integration for verified lock primitives)
 
 Implements all 8 sub-tasks of
-[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 §5.4: the FFI bridge connecting the verified Lean TicketLock and
 RwLock specifications to the Rust HAL implementations, plus the
 SM2.D.7 22-theorem lockPrimitives aggregator.
@@ -68136,7 +68503,7 @@ Axiom budget for SM2.D: 0 Lean axioms, 0 sorries.
 Items deferred past v1.0.0 with correctness impact: NONE.
 
 Follow-on: SM2.E (documentation) per
-[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 §5.5.
 
 ---
@@ -68144,7 +68511,7 @@ Follow-on: SM2.E (documentation) per
 ## Unreleased — WS-SM SM2.C-defer (RwLock deferred-completion D-1..D-6)
 
 Implements major portions of
-[`docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md)
+[`docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](docs/dev_history/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md)
 post-v1.0.0 closure work for the verified RwLock primitive.  Six
 deferred items (D-1..D-6) covered substantively:
 
@@ -68676,7 +69043,7 @@ Plus audit-pass-3 defensive improvements:
 0 Lean axioms, 0 sorries.  All ARMv8.1-A LSE atomic semantics enter
 operationally via the SM2.A abstract memory model.
 
-See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3
+See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3
 for the full plan and
 [`docs/WORKSTREAM_HISTORY.md`](docs/REGISTERED_DEBT.md) for the
 combined SM2.A+B+C landing entry.
@@ -69138,7 +69505,7 @@ suite` still pass.  Full Tier 0+1+2+3 smoke test green.
 Follow-on: SM2.B (TicketLock spec + Rust impl), SM2.C (RwLock
 spec + Rust impl), SM2.D (FFI bridge + integration), SM2.E
 (documentation).  See
-[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 §§5.2..5.5.
 
 ## v0.31.8 — WS-SM Phase SM1.I landing (miscellaneous HAL improvements; closes SM1)
@@ -69492,7 +69859,7 @@ NONE.
 
 ### SM1 acceptance gate
 
-Per [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+Per [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §8: all items checked.  WS-SM SM1 CLOSED at v0.31.8.  SM2
 (verified lock primitives) and SM3+ (per-object locks →
 per-core scheduler → cross-core IPC → TLB shootdown →
@@ -69699,7 +70066,7 @@ slower).  Post-SM1.E/F the HAL surfaces both, gated behind the
 typed Lean-side `Architecture.tlbiForSharing` and Rust-side
 `gic::send_sgi*` entries.
 
-See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §§5.5–5.8 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active
 workstream context" carries the live tracking.
 
@@ -69954,7 +70321,7 @@ parses the cmdline, defaults to SMP-on (`CmdlineConfig::default()`
 has `smp_enabled = true` per maintainer decision #7), and brings
 up all 4 RPi5 cores by default.
 
-See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §5.4 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
 context" carries the live tracking.
 
@@ -70325,7 +70692,7 @@ NONE.
 
 SM1.E (IS-variant TLBI), SM1.F (SGI primitive), SM1.G (Per-core
 UART), SM1.H (QEMU SMP integration test) — see
-[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §§5.5..5.8.
 
 ## v0.31.5 — WS-SM Phase SM1.C landing (Secondary-core full init)
@@ -70349,7 +70716,7 @@ full per-core boot, then jumps into the Lean kernel via
 `lean_secondary_kernel_main(context_id)` (a placeholder pass-through
 at SM1.C that SM5 will replace with the per-core scheduler entry).
 
-See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §5.3 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
 context" carries the live tracking.
 
@@ -70684,7 +71051,7 @@ hardware paths via `current_per_cpu()` / `current_core_id_from_tpidr()`
 that read `TPIDR_EL1` directly, and is exposed to the Lean kernel
 via the new `ffi_current_core_id` FFI export and
 `Concurrency.currentCoreId : BaseIO CoreId` typed wrapper.  See
-[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §5.2 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
 context" carries the live tracking.
 
@@ -70873,7 +71240,7 @@ NONE.
 SM1.C (Secondary core full init), SM1.D (DTB cmdline parsing),
 SM1.E (IS-variant TLBI), SM1.F (SGI primitive), SM1.G (Per-core
 UART), SM1.H (QEMU SMP integration test) — see
-[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §§5.3..5.8.
 
 ## Unreleased — WS-SM Phase SM1.A landing (PSCI completion)
@@ -70888,7 +71255,7 @@ power down individual cores (`cpu_off`), query firmware version
 Trusted-OS migration requirements (`migrate_info_type`), power off
 the entire system (`system_off`), and cold-reset the system
 (`system_reset`).  See
-[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/dev_history/planning/SMP_RUST_HAL_PLAN.md)
 §5.1 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
 context" carries the live tracking.
 
@@ -71180,7 +71547,7 @@ a single coherent cut.  21 sub-tasks across six categories deliver the
 type-level scaffolding and honesty patches WS-SM phases SM1..SM9
 build on top of — no runtime behavioural change at this cut, single-
 core boot path unchanged.  See
-[`docs/planning/SMP_FOUNDATIONS_PLAN.md`](docs/planning/SMP_FOUNDATIONS_PLAN.md)
+[`docs/planning/SMP_FOUNDATIONS_PLAN.md`](docs/dev_history/planning/SMP_FOUNDATIONS_PLAN.md)
 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
 context" carries the live tracking.
 

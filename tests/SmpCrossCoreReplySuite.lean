@@ -18,7 +18,7 @@ import SeLe4n.Testing.StateBuilder
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM6.C
 "Reply path across cores" deliverable
-(`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.1, §4.3, §5).
+(WS-SM SM6 §3.1, §4.3, §5).
 
 * **§1 Surface anchors** — every public SM6.C symbol resolves at elaboration
   time (rename/removal fails the build).

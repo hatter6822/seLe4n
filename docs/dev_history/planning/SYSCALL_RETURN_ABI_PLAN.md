@@ -737,7 +737,7 @@ diff caught.
 
 - **Blocks**: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
   SM9.C.0 (the badge defect this closes), and
-  [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) SM10.1.
+  [`SMP_RELEASE_CLOSURE_PLAN.md`](../../planning/SMP_RELEASE_CLOSURE_PLAN.md) SM10.1.
 - **Depends on, for one half of one result**: SM10.1's context-restore seam
   (`contextRestoreSeamLive`, `Kernel/Concurrency/ContextRestoreSeam.lean` —
   `false` until SM10.1).  §3.5 splits the blocking orderings out for this
@@ -799,7 +799,7 @@ diff caught.
 
   **Owner**: WS-CB, whose hierarchical-CBS work already reopens the message
   path for its admission protocol, with a row in
-  [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md).  Not WS-BP: the boot path
+  [`docs/REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md).  Not WS-BP: the boot path
   needs no label at all, and scheduling this against SM10.1 would have made
   first boot wait on a userspace-protocol decision.
 

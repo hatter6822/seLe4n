@@ -36,7 +36,7 @@
 //! values fall back to the default for the affected option — the parser
 //! never panics on user input.
 //!
-//! ## Sub-task map (SMP_RUST_HAL_PLAN.md §5.4)
+//! ## Sub-task map (WS-SM SM1 §5.4)
 //!
 //! - **SM1.D.1**: this module's parser ([`parse_cmdline`]) +
 //!   self-contained DTB walker ([`extract_bootargs_into`]).
@@ -262,7 +262,7 @@ impl Default for CmdlineConfig {
     /// **The pairing is the invariant**: if the kernel-entry bracket is
     /// ever removed or bypassed, this default must return to `false` in
     /// the same change.  See
-    /// `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry
+    /// WS-SM SM7 §"Kernel-entry
     /// serialisation".
     ///
     /// `crate::smp::SMP_ENABLED` is likewise `false` at module load, so

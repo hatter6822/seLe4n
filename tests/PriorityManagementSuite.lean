@@ -786,7 +786,7 @@ private def odDonationState (scId : SeLe4n.SchedContextId) : SystemState :=
     (scId.toObjId, .schedContext (odDonatedSc scId ⟨2⟩))
   ]
 
-/-- WS-OD-PRIO-01: the classifier.  A `.bound` thread **owns** its reservation;
+/-- WS-OD: the classifier.  A `.bound` thread **owns** its reservation;
 an `.unbound` or `.donated` one owns none, so its thread-owned parameters (base
 priority and domain) stay on its own TCB.  This is the single decision every
 reader and writer of those parameters is built on, so it is checked directly
@@ -809,7 +809,7 @@ private def pm_od_01_prioritySourceClassifier : IO Unit := do
      | some s => (SchedContextBinding.bound scId).scId? == some s
      | none   => false)
 
-/-- WS-OD-PRIO-02: every priority READER prefers the donee's own band, while the
+/-- WS-OD: every priority READER prefers the donee's own band, while the
 deadline and domain still come from the donated reservation.  A check on the
 priority alone would be satisfied by a kernel that had dropped the reservation
 entirely, so the deadline and domain are asserted in the same breath. -/
@@ -842,7 +842,7 @@ private def pm_od_02_donatedReadsPreferTheTcb : IO Unit := do
        !((resolveEffectivePrioDeadline st donee).1 == ⟨odDonorPriority⟩) &&
        !(effectiveBucketPriority st donee == ⟨odDonorPriority⟩))
 
-/-- WS-OD-PRIO-03: **the security regression.**  `setPriorityOp` on the donee
+/-- WS-OD: **the security regression.**  `setPriorityOp` on the donee
 writes the donee's TCB and leaves the donor's reservation — and the donor's own
 TCB — untouched.  Pre-fix this wrote `SchedContext.priority := 80`. -/
 private def pm_od_03_setPriorityOnDoneeSparesTheDonor : IO Unit := do
@@ -874,7 +874,7 @@ private def pm_od_03_setPriorityOnDoneeSparesTheDonor : IO Unit := do
         (donor'.priority == ⟨odDonorPriority⟩)
     | _ => throw <| IO.userError "donor TCB not found after setPriority"
 
-/-- WS-OD-PRIO-04: the same for the MCP-capping path, which reaches
+/-- WS-OD: the same for the MCP-capping path, which reaches
 `updatePrioritySource` through `setMCPriorityOp`'s cap branch rather than
 directly.  Two syscall arms, one write helper — so the fix has to cover both,
 and this is the check that it does. -/
@@ -897,7 +897,7 @@ private def pm_od_04_setMCPriorityCapOnDoneeSparesTheDonor : IO Unit := do
         (sc'.priority == ⟨odDonorPriority⟩)
     | _ => throw <| IO.userError "donated SchedContext not found after setMCPriority"
 
-/-- WS-OD-PRIO-05: the frozen mirror answers the same question the same way.
+/-- WS-OD: the frozen mirror answers the same question the same way.
 `frozenSetPriority` is `updatePrioritySource`'s second implementation, and one
 question answered in two places is how this class of defect survives a fix. -/
 private def pm_od_05_frozenSetPriorityOnDoneeSparesTheDonor : IO Unit := do
@@ -922,7 +922,7 @@ private def pm_od_05_frozenSetPriorityOnDoneeSparesTheDonor : IO Unit := do
         (sc'.priority == ⟨odDonorPriority⟩)
     | _ => throw <| IO.userError "frozen donated SchedContext not found"
 
-/-- WS-OD-PRIO-06: **the control.**  On a `.bound` thread the write still lands
+/-- WS-OD: **the control.**  On a `.bound` thread the write still lands
 in the reservation and *not* in the TCB, so none of the checks above can be
 satisfied by the priority write having simply been removed.  This is the
 relation-preserving direction: the token (`updatePrioritySource` writing a
@@ -964,7 +964,7 @@ private def pm_od_06_boundControlStillWritesTheReservation : IO Unit := do
       (getCurrentPriority st tcb == ⟨odDoneePriority⟩)
   | none => throw <| IO.userError "bound TCB not found"
 
-/-- WS-OD-PRIO-07: **the mirror crossing.**  `schedContextConfigure` propagates
+/-- WS-OD: **the mirror crossing.**  `schedContextConfigure` propagates
 **both** thread-owned parameters — base priority and domain — into
 `sc.boundThread`'s TCB, and after a donation `boundThread` is the **donee**.  So
 a caller holding a capability on the *client's* reservation could rewrite the
@@ -1010,7 +1010,7 @@ private def pm_od_07_configureOnDonatedReservationSparesTheDonee : IO Unit := do
         (donee'.domain == ⟨0⟩)
     | _ => throw <| IO.userError "donee TCB not found after configure"
 
-/-- WS-OD-PRIO-08: the control for `pm_od_07`.  On a `.bound` thread the
+/-- WS-OD: the control for `pm_od_07`.  On a `.bound` thread the
 propagation still fires, so the gate cannot be satisfied by the propagation
 having been removed.  (`pm_ak2b_02` asserts the same equality; this restates it
 beside the negative it controls, where a reader can see the pair.) -/
@@ -1039,7 +1039,7 @@ private def pm_od_08_configureBoundControlStillPropagates : IO Unit := do
         (tcb'.domain == ⟨5⟩)
     | _ => throw <| IO.userError "bound TCB not found after configure"
 
-/-- WS-RR-PRIO-09 (PR #897's review, `v0.35.136`): **a reservation reconfigured
+/-- WS-RR (PR #897's review, `v0.35.136`): **a reservation reconfigured
 while on loan comes back disagreeing** — the refutation of
 `boundThreadPriorityConsistent` and `boundThreadDomainConsistent` as *invariants*.
 
@@ -1115,7 +1115,7 @@ private def pm_od_09_reconfiguredLoanComesBackDisagreeing : IO Unit := do
           (origin'.domain == ⟨0⟩ && sc'.domain == ⟨5⟩)
       | _, _ => throw <| IO.userError "origin TCB or SC not found after the pop"
 
-/-- WS-RR-PRIO-10: the control for `pm_od_09`, and what makes it a statement
+/-- WS-RR: the control for `pm_od_09`, and what makes it a statement
 about the **reconfiguration** rather than about the pop.
 
 The same fixture and the same pop, with step 2 omitted: the reservation is handed

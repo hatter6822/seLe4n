@@ -2,7 +2,7 @@
 
 > **Phase**: SM6 of WS-SM
 > **Status**: LANDED (v0.31.65 → v0.32.68) — sub-phases A–F per the in-body landing notes
-> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases (original estimate)**: v0.83.0 .. v0.90.x
 > **Calendar estimate**: 8-12 weeks
@@ -255,7 +255,7 @@ partition (54) + AK7 + Rust HAL (724) green.
 | SM6.A.10 | 8 cross-core call scenarios | `tests/SmpCrossCoreCallSuite.lean` (35 runtime assertions at v0.32.58, incl. the SM6.D §block) | ✓ |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM6.B — Notification across cores (3 PRs, 8 sub-tasks)
 
@@ -405,7 +405,7 @@ optional `.reschedule` SGI) — and the signaller does **not** block.
 | SM6.B.8 | 6 cross-core notification scenarios | `tests/SmpCrossCoreNotificationSuite.lean` (42 runtime assertions) | ✓ |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM6.C — Reply path across cores (4 PRs, 10 sub-tasks)
 
@@ -472,7 +472,7 @@ byte-identical, all reply + SMP suites pass, partition (56 staged) + AK7 green.
 | SM6.C.10 | 8 reply scenarios | `tests/SmpCrossCoreReplySuite.lean` (27 runtime assertions) | ✓ |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM6.D — IPC across-core invariant bundle (2 PRs, 6 sub-tasks)
 
@@ -638,7 +638,7 @@ point.
 | SM6.D completion (v0.32.59) | OnCore whole-bundle closures + WithCaps trio + transfer layer | `LookupCongruence.lean` (per-conjunct `…_of_getElem_eq` ×20 + `ipcInvariantFull_of_getElem_eq` + `OffSchedulerAgrees` + step congruences); `notificationSignalOnCore/notificationWaitOnCore/endpointReplyOnCore/endpointReceiveDualOnCore_post_agrees` + `…_preserves_ipcInvariantFull{,_perCore}`; compositional `endpointReplyRecvOnCore_preserves_ipcInvariantFull{,_perCore}` (+ transports `endpointReplyOnCore_tcb_backward/_endpoint_backward/_preserves_replyIdEstablishFresh/_reuse_freshens`); `endpointSendDualWithCaps/endpointReceiveDualWithCaps/endpointCallWithCaps_preserves_ipcInvariantFull_perCore` + `ipcUnwrapCaps_passiveServerIdleFrameOnCore`; boot-frame exactness `passiveServerIdleFrameOnCore_boot_iff` | ✓ |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM6.E — Cancellation across cores (3 PRs, 6 sub-tasks) — LANDED (v0.32.60) + completion cut (v0.32.61) + PR-review cuts (v0.32.62–65) + audit-closure cut (v0.32.66)
 
@@ -693,7 +693,7 @@ formal content of "the cancellation sub-operations run inside the
 | SM6.E.6 | 6 cancellation scenarios | `tests/SmpCancellationSuite.lean` — 17 scenario groups / 107 assertions (endpoint-/notification-/reply-blocked remote-homed victims; running-remote SGI vs running-local no-SGI; bound-donation home-core purge; donated return-to-owner **with §2b replenishment-migration assertions**; dispatcher identity + ghost + `withLockSet` bracket; **completion cut**: notification sole-waiter state correction + two-waiter retention, 3-deep mid-queue splice link patches, mirror SGI (boot-homed victim cancelled from a remote core), the live `suspendThreadOnCore` (remote SGI + diff-seam recovery + local inline successor dispatch + `.Inactive` rejection + single-core inertness), and send-/receive-blocked teardown arms; **v0.32.62 PR-review cut**: the §3.14 PIP-donation-drop scenario — suspending a reply-blocked client drops the server's donated `pipBoost`, re-keys the server's home-core run-queue bucket, and the diff seam pokes both the server's and the victim's home cores; single-core mirror; **v0.32.63**: the §3.15 disinheritance-scheduling scenarios — the deboosted boot current is preempted inline by a mid-priority bystander (single-core mirror included), and a still-current remote server's core is poked by the diff seam's deboosted-current rule), wired Tier-2 (`smp_cancellation_suite`) + Tier-3 anchors | ✓ |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM6.F — Tests + fixtures (3 PRs, 6 sub-tasks) — LANDED (v0.32.67)
 
@@ -717,7 +717,7 @@ closing the §8 acceptance-gate items "2-thread cross-core IPC works" and
 | SM6.F.6 | Surface anchors | in-suite `#check` anchor blocks (§1 of both aggregates: transitions, dispatches, pre-resolution helpers, acceptance-gate theorems, SM6.D.2 six-op preservation) + the Tier-3 grep anchors in `test_tier3_invariant_surface.sh` (runner defs, Tier-2 wiring, pipeline/trace emitters, fixture + sha256 presence, lakefile registrations, the QEMU exerciser registration) | ✓ |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ## 6. Verification strategy
 

@@ -77,7 +77,7 @@ cp scripts/pre-commit-lean-build.sh .git/hooks/pre-commit
 | Niveau | Commande | Portée |
 |--------|----------|--------|
 | 0 + 1 | `./scripts/test_fast.sh` | Hygiène + compilation |
-| 0–2 | `./scripts/test_smoke.sh` | + trace + état négatif + synchronisation docs |
+| 0–2 | `./scripts/test_smoke.sh` | + trace + état négatif |
 | 0–3 | `./scripts/test_full.sh` | + ancres de surface d'invariants + vérification Lean `#check` |
 | 0–4 | `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` | + déterminisme nocturne |
 

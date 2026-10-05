@@ -7,7 +7,7 @@
 > phases: a status header is a present-tense claim and every cut owes it a
 > sweep, which is the rule HP9.5 recorded about acceptance boxes, one artefact
 > over.)*
-> **Predecessor finding**: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
+> **Predecessor finding**: [`../REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md)
 > table C, registered `v0.35.14` — the removal does not preserve the donation
 > accounting at reply-stack depth ≥ 3; **CLOSED at `v0.35.54`**, both halves
 > earned rather than retracted.

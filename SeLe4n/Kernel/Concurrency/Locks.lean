@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM0.I BklState anchor)
+-- STATUS: staged for WS-SM SM0.I (BklState anchor)
 
 import SeLe4n.Kernel.Concurrency.Types
 

@@ -238,8 +238,8 @@ structure SchedContext where
       replenishments (`timerTickBudget`, `applyRefill`,
       `schedContextBind`, `schedContextUnbind`, donation paths) acquire
       in write mode; observation paths (read-only budget queries) acquire
-      in read mode.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`
-      §5.1 (SM3.A.6). -/
+      in read mode.  See
+      WS-SM SM3.A.6. -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
 deriving Repr

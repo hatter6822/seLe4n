@@ -89,10 +89,10 @@ pub enum KernelError {
     NotSupported = 47,
     /// AG3-D: Unmapped interrupt received (no handler registered)
     InvalidIrq = 48,
-    /// AL6 (WS-AL / AK7-F.cascade): `storeObjectKindChecked` rejected a
+    /// WS-AL AL6 (cascades AK7-F): `storeObjectKindChecked` rejected a
     /// cross-variant write to an existing object store entry.
     InvalidObjectType = 49,
-    /// AL1b (WS-AL / AK7-I.cascade): capability operation rejected the
+    /// WS-AL AL1b (cascades AK7-I): capability operation rejected the
     /// `Capability.null` sentinel. Distinct from `InvalidCapability`
     /// (slot empty or non-object target) — this specifically signals the
     /// seL4_CapNull convention (`.object` target with reserved ObjId AND
@@ -351,9 +351,9 @@ mod tests {
         assert_eq!(KernelError::HardwareFault as u32, 46);
         assert_eq!(KernelError::NotSupported as u32, 47);
         assert_eq!(KernelError::InvalidIrq as u32, 48);
-        // AL6 (WS-AL / AK7-F.cascade): kind-check rejection
+        // WS-AL AL6 (cascades AK7-F): kind-check rejection
         assert_eq!(KernelError::InvalidObjectType as u32, 49);
-        // AL1b (WS-AL / AK7-I.cascade): null-cap type-level rejection
+        // WS-AL AL1b (cascades AK7-I): null-cap type-level rejection
         assert_eq!(KernelError::NullCapability as u32, 50);
         // AN7-E (API-M01): partial resolution under noisy-resolution debug
         assert_eq!(KernelError::PartialResolution as u32, 51);

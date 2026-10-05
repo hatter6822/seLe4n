@@ -576,7 +576,7 @@ theorem requireNotNull_some_not_null {cap cap' : Capability}
 end Capability
 
 -- ============================================================================
--- AL1b (WS-AL / AK7-I.cascade): `NonNullCap` subtype for type-level null-cap
+-- WS-AL AL1b (cascades AK7-I): `NonNullCap` subtype for type-level null-cap
 -- rejection. Replaces the earlier runtime-guard approach (reverted because
 -- it overloaded `.invalidCapability`).
 -- ============================================================================
@@ -898,7 +898,7 @@ def installedCount (s : CapTransferSummary) : Nat :=
 
 end CapTransferSummary
 
-/-- WS-Z/Z6-H: Result of a timeout-aware IPC operation.
+/-- WS-Z Z6-H: Result of a timeout-aware IPC operation.
 Distinguishes successful message delivery from budget-driven timeout.
 Used by `timeoutAwareReceive` and related timeout-aware IPC wrappers. -/
 inductive IpcTimeoutResult where
@@ -986,7 +986,7 @@ structure TCB where
   /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
       `none`/`none` means detached from intrusive endpoint wait queues. -/
   queuePrev : Option SeLe4n.ThreadId := none
-  /-- WS-E8: pointer-to-previous-link metadata.
+  /-- Pointer-to-previous-link metadata (`v0.12.1`, O(1) arbitrary removal).
       `endpointHead` means this node is currently referenced by queue head;
       `tcbNext prevTid` means it is referenced by `prevTid.queueNext`.
       Cleared when detached from intrusive endpoint wait queues. -/
@@ -1011,11 +1011,11 @@ structure TCB where
       notification can wake the thread when it is waiting on an endpoint.
       `none` = no bound notification. -/
   boundNotification : Option SeLe4n.ObjId := none
-  /-- WS-Z/Z1-J: Scheduling context binding. Determines whether this thread
+  /-- WS-Z Z1-J: Scheduling context binding. Determines whether this thread
       uses legacy TCB scheduling fields or a first-class SchedContext object.
       Default `.unbound` preserves backward compatibility. -/
   schedContextBinding : SeLe4n.Kernel.SchedContextBinding := .unbound
-  /-- WS-Z/Z6-A: Timeout budget reference for IPC blocking operations.
+  /-- WS-Z Z6-A: Timeout budget reference for IPC blocking operations.
       When a thread blocks on IPC (send/receive/call/reply), this records which
       SchedContext's budget bounds the blocking duration. When the SchedContext's
       budget expires, the thread is unblocked with a timeout error.
@@ -1060,7 +1060,7 @@ structure TCB where
       `RwLockState.unheld` means a freshly-allocated TCB starts with its lock
       available.  Kernel transitions that mutate this TCB acquire the lock in
       write mode; lookups (e.g., scheduler reads, `getTcb?`) acquire in read
-      mode.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.1)
+      mode.  See WS-SM SM3.A.1
       for the per-object lock-field rollout, and SM2.C
       (`Locks/RwLock.lean`) for the abstract operational spec the field
       refines.  Refines bit 63 (writer) + bits 0..62 (readers) of the Rust
@@ -1070,7 +1070,7 @@ structure TCB where
       (WS-RR RR6.10). -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
-  /-- WS-SM SM5.B.4 (plan `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`
+  /-- WS-SM SM5.B.4 (WS-SM SM5
       §3.2 / §5 SM5.B.4): CPU affinity — the core this thread is bound to.
       `none` means *unbound* (the thread may run on any core); `some c` pins
       the thread to core `c`.
@@ -2043,8 +2043,8 @@ structure Endpoint where
   receiveQ : IntrusiveQueue := {}
   /-- WS-SM SM3.A.2: per-Endpoint reader-writer lock state.  Default
       `RwLockState.unheld` means a freshly-allocated Endpoint starts with
-      its lock available.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`
-      §5.1 (SM3.A.2). -/
+      its lock available.  See
+      WS-SM SM3.A.2. -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
@@ -2129,8 +2129,8 @@ structure Notification where
       `RwLockState.unheld` means a freshly-allocated Notification starts
       with its lock available.  `notificationSignal` / `notificationWait`
       acquire in write mode; observation paths (e.g., `getNotification?`)
-      acquire in read mode.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`
-      §5.1 (SM3.A.4). -/
+      acquire in read mode.  See
+      WS-SM SM3.A.4. -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
@@ -2164,7 +2164,7 @@ structure CNode where
       `cspaceMove`, `cspaceDelete`, `cspaceRevoke`) acquire in write mode;
       lookup paths (`cspaceLookupSlot`, `cspaceLookupPath`,
       `resolveCapAddress`) acquire in read mode.  See
-      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.3). -/
+      WS-SM SM3.A.3. -/
   lock       : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr
@@ -2226,7 +2226,7 @@ structure UntypedObject where
       with its lock available.  `retypeFromUntyped` and `untypedAllocate`
       acquire in write mode; observation paths (watermark / freeSpace
       reads) acquire in read mode.  See
-      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.9). -/
+      WS-SM SM3.A.9. -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq

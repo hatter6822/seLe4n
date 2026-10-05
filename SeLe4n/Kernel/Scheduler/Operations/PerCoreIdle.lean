@@ -15,7 +15,7 @@ import SeLe4n.Platform.Boot
 # WS-SM SM5.E — Per-core idle threads
 
 Per-core idle-thread theorems (plan §3.5 / §4.3 of
-`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`).  Each core has a dedicated
+WS-SM SM5).  Each core has a dedicated
 idle TCB — the lowest-priority thread it runs when nothing else is runnable —
 bound to its own core and never migrating.
 

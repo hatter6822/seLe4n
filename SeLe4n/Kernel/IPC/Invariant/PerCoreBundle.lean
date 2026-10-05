@@ -14,7 +14,7 @@ import SeLe4n.Kernel.IPC.Invariant.PerCore
 # WS-SM SM6.D — Per-core IPC structural invariant bundle
 
 This module is the definitional layer of SM6.D (plan
-`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.3 / §5 "SM6.D"): it restricts
+WS-SM SM6.D, §3.3): it restricts
 the full IPC invariant bundle (`ipcInvariantFull`, twenty conjuncts at the
 time of landing — the plan's "15 conjuncts post-R4" grew by five during the
 SM6.D reply-object hardening) to **per-core views** parameterised by an
@@ -760,7 +760,7 @@ theorem queueHeadBlockedConsistent_smp_iff (st : SystemState) :
 /-- WS-SM SM6.D.1: **the per-core IPC invariant bundle** — core `c`'s view
 of `ipcInvariantFull`, one field per conjunct in the same order.
 
-The plan (`SMP_CROSS_CORE_IPC_PLAN.md` §3.3) sketched this aggregate over
+The plan (WS-SM SM6 §3.3) sketched this aggregate over
 the fifteen R4-era conjuncts; the bundle grew to twenty during the SM6.D
 reply-object hardening (reply↔caller linkage, server-first receive stash,
 donation-owner uniqueness, queue-tail blocking, strict link-target

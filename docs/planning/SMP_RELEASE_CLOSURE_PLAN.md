@@ -11,7 +11,7 @@
 > **Audited cut**: `v0.31.2`; **re-baselined against** the pre-SM10
 > completeness audit at `v0.34.3`
 > ([`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §2.2)
-> **Was blocked on**: **WS-RR** ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)) —
+> **Was blocked on**: **WS-RR** ([`SMP_RELEASE_READINESS_PLAN.md`](../dev_history/planning/SMP_RELEASE_READINESS_PLAN.md)) —
 > RR8 closed at `v0.35.203`
 > **Target releases**: v0.98.0 → **v1.0.0**
 > **Calendar estimate**: **14–24 weeks**, superseding the original 4–6 weeks,
@@ -22,10 +22,9 @@
 > **plus the SM10.1 runtime port**, whose twelve work items RR1.11 sizes and
 > sequences in §1.1 but does not yet number — see §1.1's closing note for why
 > the numbering waits for SM10's opening cut.  44 is therefore a floor on the
-> work and an exact count of the schedule as written — which is the thing a
-> gate can hold, and `scripts/check_workstream_plan.py` now does: the number,
-> the phase map and the rows must agree, so numbering the runtime port means
-> updating all three in the same cut
+> work and an exact count of the schedule as written: the number, the phase
+> map and the rows must agree, so numbering the runtime port means updating all
+> three in the same cut
 
 ## 1. Phase goal
 
@@ -136,7 +135,7 @@ impression:
 | 5 | Bare-metal Lean runtime hosting: heap/allocator, `lean_initialize_runtime_module`, `lean_io_mark_end_initialization`, the libc shims the runtime needs | Zero hits for either symbol anywhere in the tree (register finding 40). **The largest single unknown in the phase** | 2–4 w |
 | 6 | `@[export] lean_kernel_main` wrapping `bootAndInitialiseFromPlatform`, plus the RPi5 `PlatformConfig` and root task it consumes | `bootAndInitialiseFromPlatform` exists with no `@[export]` and no callers (register finding 41) | 1–2 w |
 | 7 | Install-ordering resolution for that entry | Already specified below, with two named options; the work is choosing and proving one | 2–4 d |
-| 8 | Per-core `lean_ready` marking, so the five dormant seams go live | Every seam is wired; **no core is marked ready anywhere in the tree** (CLAUDE.md standing constraint) | 3–5 d |
+| 8 | Per-core `lean_ready` marking, so the five dormant seams go live | Every seam is wired; **no core is marked ready anywhere in the tree** (standing constraint, `docs/agent_guide/WORKSTREAM_CONTEXT.md`) | 3–5 d |
 | 9 | Context-restore seam delivering the staged return frame | WS-RA obligation (1) in §2. Staging landed at `v0.33.38`; delivery is SM10.1's | 1–2 w |
 | 10 | Cancellation/timeout error-frame staging before `contextRestoreSeamLive` flips | WS-RA obligation (2), §9 registered debt. Without it a cancelled waiter resumes reading stale arguments as a return value | 3–5 d |
 | 11 | TTBR0 binding and a real context switch | `ffi_switch_to_thread` stores a `u64` into an atomic (register §9 `bootpath`) | 1–2 w |
@@ -175,7 +174,7 @@ lives in the plan that owns the work.
 
 - All of SM0..SM9 complete.
 - Acceptance gates for SM0..SM9 green.
-- **WS-RA complete** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)).
+- **WS-RA complete** ([`SYSCALL_RETURN_ABI_PLAN.md`](../dev_history/planning/SYSCALL_RETURN_ABI_PLAN.md)).
   SM10.1 ships a bootable image, and a kernel whose every successful syscall
   returns the caller's own capability pointer — which userspace decodes as a
   `KernelError` — is not bootable in any useful sense.  WS-RA was sequenced
@@ -254,7 +253,7 @@ lives in the plan that owns the work.
   **The measured WCRT claim**: while the entry lock stands, every kernel entry
   is serialised system-wide, so the live worst-case response time is the
   global-lock bound and `PerCoreWcrt.lean`'s fine-lock bound remains a
-  statement about the *intended* discipline (CLAUDE.md standing constraint).
+  statement about the *intended* discipline (standing constraint, `docs/agent_guide/WORKSTREAM_CONTEXT.md`).
   SM10.4's performance rows and any v1.0.0 latency claim must quote the bound
   the shipped image actually realises — and no bound in that surface converts to
   a *time* until `tCs` is measured on the board, which BP8 is the first point
@@ -283,8 +282,8 @@ a phase that claimed it.
 
 | §2 dependency | Verdict | What decided it |
 |---------------|---------|-----------------|
-| All of SM0..SM9 complete | **Met** | Every phase row in `CLAUDE.md`'s status index is LANDED or CLOSED, SM9 at `v0.33.100`; SM10 is the only open phase and its content is WS-BP |
-| Acceptance gates for SM0..SM9 green | **Met** | The RR8.1 walk (`v0.35.55`, [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) §8), plus the tier stack re-run below |
+| All of SM0..SM9 complete | **Met** | Every phase row in the workstream status index (`docs/agent_guide/WORKSTREAM_CONTEXT.md`, formerly `CLAUDE.md`'s) is LANDED or CLOSED, SM9 at `v0.33.100`; SM10 is the only open phase and its content is WS-BP |
+| Acceptance gates for SM0..SM9 green | **Met** | The RR8.1 walk (`v0.35.55`, [`SMP_RELEASE_READINESS_PLAN.md`](../dev_history/planning/SMP_RELEASE_READINESS_PLAN.md) §8), plus the tier stack re-run below |
 | WS-RA complete | **Met, with SM10.1's inherited half named** | `Architecture.timeoutFrame` and `Architecture.cancelledIpcFrame` resolve in the elaborated environment and `KernelError.ipcCancelled` is present, so §9's staging closed at `v0.34.67` as this section records.  What SM10.1 still owes is **delivery** at the context restore (BP7) |
 | WS-DT complete | **Met** | `dispatchCapabilityOnly_preserves_ipcInvariantFull` (production) and the two staged payoffs all resolve; the RR3.1 de-threading gate reports zero post-state bindings over all 178 bundle statements |
 | Fine-lock Tracks B and C landed | **Met** | `declaredFootprintSyscall` answers `true` on exactly **8 of 35** arms and `lockSetForSyscall_undeclared_none` pins the rest; the seam acquires through `runUnderDeclaredLockSet` |
@@ -369,11 +368,8 @@ and it found three things a read would not have.
 
 ### Phase map
 
-The declared total, this map and the sub-task tables are held equal by
-`scripts/check_workstream_plan.py` (Tier 0).  Until `v0.34.39` the gate's
-ID model was two-level and could not read `SM10.3.14` at all, so it reported
-this plan as NOT CHECKED — and a version-bump ordering defect (see SM10.5)
-sat inside it unseen.
+The declared total, this map and the sub-task tables must agree; they are
+kept equal by the author and the reviewer, since no gate checks plans.
 
 | Phase | Scope | Subs | Est |
 |-------|-------|------|-----|
@@ -571,37 +567,40 @@ every step that does now sits in `SM10.5`, ahead of the validation.
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM10.6.1 | CHANGELOG v1.0.0 closure entry | `CHANGELOG.md` | M |
-| SM10.6.2 | Move WS-RC artefacts to dev_history/audits/, plus `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (a WS-RC artefact that sits under `docs/planning/`) | (file moves) | S |
-| SM10.6.3 | Move WS-SM plan + per-phase docs to dev_history/planning/ — **19 file moves**, enumerated below | (19 file moves) | T |
+| SM10.6.2 | Move WS-RC artefacts to dev_history/audits/.  The one WS-RC plan that sat under `docs/planning/`, `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`, was archived at `v0.36.42` and is not moved again | (file moves) | S |
+| SM10.6.3 | Move the WS-SM plans still under `docs/planning/` to dev_history/planning/ — **4 file moves**, enumerated below; the list's other 15 entries were archived at `v0.36.42` | (4 file moves) | T |
 | SM10.6.4 | Tag v1.0.0 (maintainer-cut) | git tag | T |
 
 **SM10.6.3 archive list.**  The plan carried "11 file moves" against a list
 that omitted SM9's own phase plan and every other WS-SM-adjacent planning
 document — so the sub-task that retires the workstream's paper trail would
 have left a third of it in `docs/planning/`, where a later reader would take
-it for live work.  The list is enumerated here rather than left to the mover:
+it for live work.  The list is enumerated here rather than left to the mover.
+Fifteen of its nineteen entries were archived at `v0.36.42`, each once its
+phase had closed and its open obligations were registered; they are marked
+below, and SM10.6.3 moves only the four that remain:
 
 | # | File | Why it archives with WS-SM |
 |---|------|-----------------------------|
 | 1 | `SMP_MULTICORE_COMPLETION_PLAN.md` | the overview |
-| 2 | `SMP_FOUNDATIONS_PLAN.md` | SM0 |
-| 3 | `SMP_RUST_HAL_PLAN.md` | SM1 |
-| 4 | `SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` | SM2 |
-| 5 | `SMP_PER_OBJECT_LOCKS_PLAN.md` | SM3 |
-| 6 | `SMP_PER_CORE_STATE_PLAN.md` | SM4 |
-| 7 | `SMP_PER_CORE_SCHEDULER_PLAN.md` | SM5 |
-| 8 | `SMP_CROSS_CORE_IPC_PLAN.md` | SM6 |
-| 9 | `SMP_TLB_SHOOTDOWN_PLAN.md` | SM7 |
-| 10 | `SMP_INFORMATION_FLOW_PLAN.md` | SM8 |
-| 11 | `SMP_DECLASSIFICATION_COMPLETION_PLAN.md` | **SM9 — the omission that produced this correction** |
+| 2 | `SMP_FOUNDATIONS_PLAN.md` | SM0 — **archived `v0.36.42`** |
+| 3 | `SMP_RUST_HAL_PLAN.md` | SM1 — **archived `v0.36.42`** |
+| 4 | `SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` | SM2 — **archived `v0.36.42`** |
+| 5 | `SMP_PER_OBJECT_LOCKS_PLAN.md` | SM3 — **archived `v0.36.42`** |
+| 6 | `SMP_PER_CORE_STATE_PLAN.md` | SM4 — **archived `v0.36.42`** |
+| 7 | `SMP_PER_CORE_SCHEDULER_PLAN.md` | SM5 — **archived `v0.36.42`** |
+| 8 | `SMP_CROSS_CORE_IPC_PLAN.md` | SM6 — **archived `v0.36.42`** |
+| 9 | `SMP_TLB_SHOOTDOWN_PLAN.md` | SM7 — **archived `v0.36.42`** |
+| 10 | `SMP_INFORMATION_FLOW_PLAN.md` | SM8 — **archived `v0.36.42`** |
+| 11 | `SMP_DECLASSIFICATION_COMPLETION_PLAN.md` | **SM9 — the omission that produced this correction** — **archived `v0.36.42`** |
 | 12 | `SMP_RELEASE_CLOSURE_PLAN.md` | SM10 (this file) |
-| 13 | `SMP_RELEASE_READINESS_PLAN.md` | WS-RR, the phase that gates this one |
+| 13 | `SMP_RELEASE_READINESS_PLAN.md` | WS-RR, the phase that gates this one — **archived `v0.36.42`** |
 | 14 | `UNFINISHED_SMP_WORK.md` | the register WS-RR closes; its own footer says it moves with them |
 | 15 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` | SM3.C.9's migration, closed by RR7.7–RR7.13, the three uncovered-domain closures RR7.39–RR7.41, and SM10.1 |
-| 16 | `SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | SM2.C-defer, absorbed by RR6 |
-| 17 | `SMP_PANIC_HANG_REMEDIATION_PLAN.md` | the SM2.E remediation |
-| 18 | `SYSCALL_RETURN_ABI_PLAN.md` | WS-RA, whose remaining obligations SM10.1 discharges |
-| 19 | `REPLY_OBJECTS_COMPLETION_PLAN.md` | the SM6.C/SM6.D reply-object companion |
+| 16 | `SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | SM2.C-defer, absorbed by RR6 — **archived `v0.36.42`** |
+| 17 | `SMP_PANIC_HANG_REMEDIATION_PLAN.md` | the SM2.E remediation — **archived `v0.36.42`** |
+| 18 | `SYSCALL_RETURN_ABI_PLAN.md` | WS-RA, whose remaining obligations SM10.1 discharges — **archived `v0.36.42`** |
+| 19 | `REPLY_OBJECTS_COMPLETION_PLAN.md` | the SM6.C/SM6.D reply-object companion — **archived `v0.36.42`** |
 
 **Not moved by this sub-task**, and each for a stated reason — an archive list
 is only correct if the exclusions are as deliberate as the inclusions:
@@ -611,12 +610,12 @@ is only correct if the exclusions are as deliberate as the inclusions:
   still in `docs/planning/` when SM10 opens means RR3 did not close.
 - `HARDWARE_PARTITION_ISOLATION_PLAN.md` — post-v1.0.0 and explicitly out of
   scope for the WS-SM audit.  It stays live.
-- `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` — a WS-RC artefact; **SM10.6.2**
-  moves it with the rest of WS-RC.
+- `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` — a WS-RC artefact, archived at
+  `v0.36.42`; SM10.6.2 no longer carries it.
 
 No path in this list appears in `scripts/website_link_manifest.txt`, so the
-moves cannot 404 the website; `scripts/check_markdown_links.py` still has to
-pass, so in-repo links to the moved paths are updated in the same PR.
+moves cannot 404 the website; in-repo links to the moved paths are still
+updated in the same PR.
 
 ## 4. Version-bump file list
 
@@ -657,7 +656,7 @@ and the only part that belongs in a plan:
 | Manual step | Why the bumper cannot do it |
 |-------------|------------------------------|
 | `CHANGELOG.md` — the `## v1.0.0 — <summary>` entry | Prose. Deliberately not a version site (see CLAUDE.md, *Not version sites*); the bumper only reminds you |
-| `CLAUDE.md` + `AGENTS.md` — active workstream WS-SM → **CLOSED** | A status transition, not a version string. The two files must stay byte-identical |
+| `docs/agent_guide/WORKSTREAM_CONTEXT.md` — active workstream WS-SM → **CLOSED** (its section then moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`); `CLAUDE.md` carries no workstream status | A status transition, not a version string |
 | `docs/CLAIM_EVIDENCE_INDEX.md` — v1.0.0 closure entries | New claims with new evidence cites |
 | `docs/codebase_map.json` — metrics beyond the version field | Regenerated by `./scripts/sync_documentation_metrics.sh`, not by the bumper |
 
@@ -858,7 +857,7 @@ sub-task with three of the five markers still absent.  All three now sit in
 
 ## 9. Cross-references
 
-- **Previous**: [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md), [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md)
+- **Previous**: [`SMP_TLB_SHOOTDOWN_PLAN.md`](../dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md), [`SMP_INFORMATION_FLOW_PLAN.md`](../dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md)
 - **None next** — SM10 is the closure phase; v1.0.0 ships.
 
 ## 10. Theorem catalogue for SM10

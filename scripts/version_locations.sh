@@ -24,7 +24,7 @@
 # declarations, and must never be rewritten by a version bump):
 #   * CHANGELOG.md version headers (`## vX.Y.Z — ...`) and body text.
 #   * "LANDED at vX.Y.Z" / "Version bumped A → B" / "Version stays at X"
-#     notes in CLAUDE.md, AGENTS.md, docs/REGISTERED_DEBT.md,
+#     notes in CLAUDE.md, docs/REGISTERED_DEBT.md,
 #     docs/CLAIM_EVIDENCE_INDEX.md, and docs/planning/*.md.
 #   * The Lean toolchain version (`Lean 4.28.0`) — tracked separately.
 #   * Audit-document filenames (`AUDIT_v0.30.6_*`, `AUDIT_v0.30.11_*`).
@@ -97,10 +97,8 @@ _reg 'CLAUDE.md' \
      'Lake build system, version @VER@' \
      'CLAUDE.md canonical version line'
 
-_reg 'AGENTS.md' \
-     's/(Lake build system, version )[0-9]+[.][0-9]+[.][0-9]+/\1@NEW@/' \
-     'Lake build system, version @VER@' \
-     'AGENTS.md canonical version line (CLAUDE.md mirror)'
+# AGENTS.md is deliberately not registered: it is a pointer to CLAUDE.md that
+# carries no version line.
 
 # --- Root README ------------------------------------------------------------
 _reg 'README.md' \

@@ -152,8 +152,7 @@ run_check_with_timeout "TRACE" lake exe rw_lock_suite
 # WS-SM SM2.C-defer D-1..D-4: deferred-completion test suite.
 # Runtime assertions for the Execution / Reachable infrastructure,
 # writerWaitDepth, append/drop theorems, head-promotion claims, and
-# the concrete event model.  See
-# docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md.
+# the concrete event model.  See WS-SM SM2.C-defer.
 run_check_with_timeout "TRACE" lake exe rw_lock_deferred_suite
 
 # WS-SM SM2.D.6 — Verified-lock-primitive surface anchor suite.

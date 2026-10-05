@@ -29,7 +29,7 @@ import SeLe4n.Kernel.SyscallSchedFootprint
 /-!
 # WS-SM SM8.B — non-interference at the cross-core transitions
 
-Plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §3.3, sub-tasks SM8.B.2 /
+WS-SM SM8 §3.3, sub-tasks SM8.B.2 /
 SM8.B.3.
 
 ## What this module adds that SM6 does not

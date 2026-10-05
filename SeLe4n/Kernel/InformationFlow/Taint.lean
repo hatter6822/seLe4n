@@ -19,7 +19,7 @@ propagation planners and the live seam are `InformationFlow/TaintPropagation.lea
 above `Model/State.lean`.
 
 **Why the bound is a field of the type and not an invariant.**  §6 of
-`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` decides this for all
+WS-SM SM9 decides this for all
 three SM9 mounts: a bound carried by the type costs no `proofLayerInvariantBundle`
 conjunct and — more to the point — no *capacity obligation at every writer*.
 `RefusalLedger` gets it from a `Vector` and two `Fin`s; a taint is a variable-size

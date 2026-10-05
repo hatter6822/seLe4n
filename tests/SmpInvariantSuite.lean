@@ -16,7 +16,7 @@ import SeLe4n.Testing.StateBuilder
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM5.I
 "Per-core invariant suite" deliverable
-(`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §5 SM5.I, §6.1).
+(WS-SM SM5.I, §6.1).
 
 * **§1 Surface anchors** — every public SM5.I symbol resolves at elaboration
   time (rename/removal fails the build): the structural invariant + engine, the

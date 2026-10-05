@@ -8,7 +8,7 @@
 -/
 
 -- STATUS: staged for WS-SM SM6.A cross-core IPC (runtime dispatch wiring
--- gated on the SM5.I FFI seam; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md).
+-- gated on the SM5.I FFI seam; see WS-SM SM6).
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.InformationFlow.Invariant.Operations

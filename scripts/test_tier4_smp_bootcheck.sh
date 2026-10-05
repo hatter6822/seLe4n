@@ -89,8 +89,7 @@ gate test_qemu_smp_kprintln_stress.sh
 # SM7.E.2 — the cross-core TLB shootdown round trip through the live protocol.
 # The shootdown correctness is established FORMALLY for all executions in
 # tests/SmpTlbShootdownSuite.lean; this is its runtime witness on emulated
-# cores, and the run that decides `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
-# §8's acceptance box.
+# cores, and the run that decides WS-SM SM7 §8's acceptance box.
 gate test_qemu_smp_shootdown.sh
 
 # SM7.E.3 — four concurrent initiators, eight generations: the round lock's

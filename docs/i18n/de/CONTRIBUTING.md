@@ -113,7 +113,7 @@ Vollständige Checkliste in [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md
 | Stufe | Befehl | Prüfumfang |
 |-------|--------|-----------|
 | Tier 0+1 | `./scripts/test_fast.sh` | Hygiene + Build |
-| Tier 0–2 | `./scripts/test_smoke.sh` | + Trace + Negative-State + Dokumentationssync |
+| Tier 0–2 | `./scripts/test_smoke.sh` | + Trace + Negative-State |
 | Tier 0–3 | `./scripts/test_full.sh` | + Invariantenoberflächenanker + Lean #check |
 | Tier 0–4 | `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` | + Nächtlicher Determinismus |
 

@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM2.C.20 RwLock refinement bridge).
+-- STATUS: staged for WS-SM SM2.C.20 (RwLock refinement bridge).
 
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 

@@ -84,7 +84,7 @@ Exécutez la suite de tests smoke pour valider que tout fonctionne correctement 
 Cette commande exécute les niveaux 0 à 2 :
 - **Niveau 0** — Hygiène : vérification de l'absence de `sorry`/`axiom`, analyse ShellCheck
 - **Niveau 1** — Compilation : `lake build` complet, profondeur sémantique de preuve
-- **Niveau 2** — Trace + état négatif + synchronisation de la documentation
+- **Niveau 2** — Trace + état négatif
 
 En cas de succès, vous verrez un résumé indiquant que tous les niveaux ont passé.
 

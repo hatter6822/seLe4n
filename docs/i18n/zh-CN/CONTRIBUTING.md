@@ -51,7 +51,7 @@ seLe4n 基于 [GNU 通用公共许可证 v3.0 或更高版本](../../../LICENSE)
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0 + Tier 1：格式检查 + 构建
-./scripts/test_smoke.sh     # + Tier 2：跟踪 + 负状态 + 文档同步
+./scripts/test_smoke.sh     # + Tier 2：跟踪 + 负状态
 ./scripts/test_full.sh      # + Tier 3：不变量表面锚点 + Lean #check 正确性
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4：夜间确定性测试
 ```

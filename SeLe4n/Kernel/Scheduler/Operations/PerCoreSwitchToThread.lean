@@ -14,7 +14,7 @@ import SeLe4n.Kernel.Scheduler.Operations.Core
 # WS-SM SM5.B — Per-core `switchToThread` (lock-set, switch theorems, decidability)
 
 This module is the SM5.B deliverable of the WS-SM Phase 5 per-core scheduler
-(plan `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.2, §5).  The per-core
+(WS-SM SM5 §3.2, §5).  The per-core
 context-switch transition `switchToThreadOnCore` itself (with `preemptCurrentOnCore`
 and the `affinityAdmitsCore` gate) lives in the production module
 `Scheduler.Operations.Selection`, alongside the other switch primitives

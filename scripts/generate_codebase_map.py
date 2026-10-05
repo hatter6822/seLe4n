@@ -499,7 +499,7 @@ def git_head_metadata() -> dict[str, str]:
 
 
 def normalized_for_check(payload: dict) -> dict:
-    """Return the subset that must remain stable for docs-sync checks.
+    """Return the subset that must remain stable for `--check`.
 
     ``repository.head`` is intentionally excluded because branch/commit metadata
     is expected to change across PR branch updates and merge commits.

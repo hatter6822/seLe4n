@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.41-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.42-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,12 +86,12 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.36.41` |
+| **Version** | `0.36.42` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 433,986 across 361 files |
+| **Production Lean LoC** | 433,982 across 361 files |
 | **Test Lean LoC** | 88,629 across 71 test suites |
 | **Proved declarations** | 14,408 theorem/lemma declarations (zero sorry/axiom) |
-| **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
+| **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 80 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
 | **Canonical audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — pre-1.0 comprehensive audit (202 findings; remediated by WS-AK AK1–AK10; archived) |
@@ -110,7 +110,7 @@ and stored in [`docs/codebase_map.json`](docs/codebase_map.json) under the
 ./scripts/setup_lean_env.sh   # install Lean toolchain
 lake build                     # compile all modules
 lake exe sele4n                # run trace harness
-./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state + docs sync)
+./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state)
 ```
 
 ## Documentation
@@ -131,7 +131,7 @@ and is auto-refreshed on merge via CI. Regenerate with
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0+1: hygiene + build
-./scripts/test_smoke.sh     # + Tier 2: trace + negative-state + docs sync
+./scripts/test_smoke.sh     # + Tier 2: trace + negative-state
 ./scripts/test_full.sh      # + Tier 3: invariant surface anchors + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: nightly determinism
 
@@ -140,12 +140,12 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: nightly det
 ```
 
 Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
-theorems, invariants, or documentation anchors.
+theorems, invariants, or Tier 3 anchors.
 
 After any change under `rust/`, run **both** Rust lanes. They cover disjoint
 halves of the same crate: on the host every `#[cfg(target_arch = "aarch64")]`
 block is removed before rustc or clippy sees it, so the host lane cannot see
-the 67 cfg-gated blocks, 57 `asm!` sites or three `.S` sources that make up
+the 67 cfg-gated blocks, 57 `asm!` sites or four `.S` sources that make up
 most of the HAL. The cross lane builds `sele4n-hal` for
 `aarch64-unknown-none-softfloat` in both profiles, verifies the assembly
 sources really assembled, lints the cross target, and disassembles the release

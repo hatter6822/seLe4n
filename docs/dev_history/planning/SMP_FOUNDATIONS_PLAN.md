@@ -4,7 +4,7 @@
 > theorem inventory is registered as SM0 in
 > `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`
 > **Phase**: SM0 of WS-SM
-> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases**: v0.31.3 (landed); SM1+ continues at v0.32.x (~18 small PRs)
 > **Calendar estimate**: 4-6 weeks
@@ -400,7 +400,7 @@ criteria, and can be reverted without affecting the rest.
 ## 5. Detailed sub-task breakdown
 
 SM0 landed at `v0.31.3`. The sub-tasks it carried, in the groups it ran
-them in; what each cut changed is in [`CHANGELOG.md`](../../CHANGELOG.md).
+them in; what each cut changed is in [`CHANGELOG.md`](../../../CHANGELOG.md).
 
 | Group | Sub | Scope |
 |-------|-----|-------|
@@ -529,7 +529,7 @@ No new Lean axioms.
 ## 8. Cross-references
 
 - **Master overview**:
-  [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+  [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 - **Next phase (Rust HAL)**:
   [`SMP_RUST_HAL_PLAN.md`](SMP_RUST_HAL_PLAN.md) — depends on
   SM0.G (PlatformBinding extension), SM0.N (TPIDR_EL1 setup).

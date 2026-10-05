@@ -298,10 +298,10 @@ theorem typedIdDisjointness_trivial (st : SystemState) :
   exact Option.some.inj h'
 
 -- ============================================================================
--- AL6-C (WS-AL / AK7-F.cascade): object-type lockstep invariant
+-- WS-AL AL6-C (cascades AK7-F): object-type lockstep invariant
 -- ============================================================================
 
-/-- AL6-C (WS-AL / AK7-F.cascade): Lockstep invariant between the object
+/-- WS-AL AL6-C (cascades AK7-F): Lockstep invariant between the object
 store (`objects`) and the lifecycle type map (`lifecycle.objectTypes`).
 
 For every populated ObjId, the recorded `objectType` in the lifecycle
@@ -356,7 +356,7 @@ writes at write time; the invariant describes the reachable-state
 shape that callers can rely on at read time. -/
 theorem lifecycleObjectTypeLockstep_schema : True := trivial
 
-/-- AM1-A (WS-AM / AL6-C.hygiene): the default `SystemState` satisfies
+/-- WS-AM AM1-A (AL6-C hygiene): the default `SystemState` satisfies
 `lifecycleObjectTypeLockstep` vacuously because its `objects` table is
 empty, so the universal premise `st.objects[oid]? = some obj` is
 uninhabited for every `oid`. -/
@@ -368,7 +368,7 @@ theorem default_lifecycleObjectTypeLockstep :
     SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid
   simp [this] at h
 
-/-- AM1-B (WS-AM / AL6-C.hygiene): `storeObject` preserves the
+/-- WS-AM AM1-B (AL6-C hygiene): `storeObject` preserves the
 lockstep invariant. Both the `objects` and `lifecycle.objectTypes`
 tables are updated in a single transition with the same key `oid` and
 the matching `obj` / `obj.objectType`, so every post-state query is
@@ -398,7 +398,7 @@ theorem storeObject_preserves_lifecycleObjectTypeLockstep
     simp only [RHTable_getElem?_eq_get?] at this
     exact this hObj'
 
-/-- AM1-C (WS-AM / AL6-C.hygiene): `storeObjectKindChecked` preserves
+/-- WS-AM AM1-C (AL6-C hygiene): `storeObjectKindChecked` preserves
 the lockstep invariant. The wrapper's three branches reduce to:
   * `none` (fresh allocation) — delegates to `storeObject`; use AM1-B.
   * `some existing` with matching `objectType` — delegates to
@@ -643,7 +643,7 @@ theorem storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint
     AF1-B3: Extended from 9 to 10 predicates with `blockingAcyclic`,
     integrating the PIP blocking graph acyclicity assumption.
 
-    AM4-A (WS-AM / AL6-C.hygiene): Extended from 10 to 11 predicates
+    WS-AM AM4-A (AL6-C hygiene): Extended from 10 to 11 predicates
     with `lifecycleObjectTypeLockstep`, elevating the AL6-C
     defense-in-depth predicate from a standalone lemma to a structural
     cross-subsystem guarantee that every kernel entry/exit point can
@@ -683,7 +683,7 @@ def crossSubsystemInvariant (st : SystemState) : Prop :=
   schedContextNotDualBound st ∧
   schedContextRunQueueConsistent st ∧
   PriorityInheritance.blockingAcyclic st ∧  -- AF1-B3: 10th predicate
-  lifecycleObjectTypeLockstep st ∧  -- AM4-A (WS-AM / AL6-C): 11th predicate
+  lifecycleObjectTypeLockstep st ∧  -- WS-AM AM4-A (from AL6-C): 11th predicate
   untypedRegionsDisjoint st  -- AK8-A (WS-AK / C-M01): 12th predicate
 
 /-- Z9-D: Projection — extract `schedContextStoreConsistent` from the bundle. -/
@@ -714,7 +714,7 @@ theorem crossSubsystemInvariant_to_blockingAcyclic
     (st : SystemState) (h : crossSubsystemInvariant st) :
     PriorityInheritance.blockingAcyclic st := h.2.2.2.2.2.2.2.2.2.1
 
-/-- AM4-B (WS-AM / AL6-C.hygiene): Projection — extract
+/-- WS-AM AM4-B (AL6-C hygiene): Projection — extract
 `lifecycleObjectTypeLockstep` from the bundle. 11th conjunct of the
 12-tuple (AK8-A appended `untypedRegionsDisjoint` after). -/
 theorem crossSubsystemInvariant_to_lifecycleObjectTypeLockstep
@@ -4307,8 +4307,8 @@ theorem collectQueueMembers_head_is_start
 /-! ## AN6-F (CX-M03) — `bootFromPlatform_singleCore_witness` RETIRED (SM4.E.1)
 
 The boot-core current-thread witness `bootFromPlatform_singleCore_witness`
-**has been retired** by WS-SM **SM4.E.1** (plan
-`docs/planning/SMP_PER_CORE_STATE_PLAN.md` §4.3 / §5.5).
+**has been retired** by **WS-SM SM4.E.1** (plan
+WS-SM SM4 §4.3 / §5.5).
 
 History: before SM4.B, `SchedulerState.current` was a single
 `Option ThreadId`, and the witness's *type* recorded the structural fact

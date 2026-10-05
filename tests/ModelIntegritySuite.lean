@@ -1740,7 +1740,7 @@ If the arity of `ipcInvariantFull` grows (or shrinks) without the
 projection layer being updated in lockstep, these runtime checks fail at
 build-time because the type signatures no longer align.
 
-(Landed by WS-AN phase AN3-B, IPC-M01.)
+(Landed by WS-AN AN3-B, IPC-M01.)
 -/
 
 /-! ### Type-level assertion: donation primitives reachable from the Operations hub.
@@ -1758,7 +1758,7 @@ ascriptions below additionally pin the public signatures so
 accidental signature changes surface as a test build failure in
 addition to the whole-kernel failure.
 
-(Landed by WS-AN phase AN3-A, H-01.)
+(Landed by WS-AN AN3-A, H-01.)
 -/
 
 open SeLe4n.Model in

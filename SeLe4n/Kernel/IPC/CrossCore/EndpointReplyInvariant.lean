@@ -9,7 +9,7 @@
 
 -- WS-SM SM6.C: PRODUCTION (LANDED).  Entered the production import closure with
 -- `endpointReplyOnCore` when the live `.reply` / `.replyRecv` dispatch was wired
--- through the cross-core reply stack.  See docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.C).
+-- through the cross-core reply stack.  See WS-SM SM6.C.
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.Invariant

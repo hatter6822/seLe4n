@@ -25,7 +25,7 @@
 //!          bounded window, or the system halts (WS-BP BP6.3)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.36.41";
+const KERNEL_VERSION: &str = "0.36.42";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -460,7 +460,7 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64, entry_el: u64) -> ! {
     // `smp_max_cores = 4`.  Maintainer decision #7 enables SMP by
     // default at v1.0.0 *once SM5 lands*; SM5.I serialised kernel entry
     // at v0.32.142, so the default is opt-out again — see `cmdline.rs`
-    // and `SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry serialisation".
+    // and WS-SM SM7 §"Kernel-entry serialisation".
     //
     // SM1.D.2: when `smp_enabled` is true, issue PSCI CPU_ON for each
     // secondary up to `smp_max_cores`, then signal them via SEV.
@@ -832,7 +832,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.36.41");
+        assert_eq!(KERNEL_VERSION, "0.36.42");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

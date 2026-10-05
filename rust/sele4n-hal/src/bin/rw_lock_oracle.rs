@@ -2,8 +2,8 @@
 //! **WS-SM SM2.C-defer D-6 / WS-RR RR6.2, RR6.3**: Rust-side RwLock
 //! oracle binary for the Tier-5 cross-language correspondence harness.
 //!
-//! See `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` §5.6 and
-//! `docs/planning/SMP_RELEASE_READINESS_PLAN.md` §RR6.
+//! See WS-SM SM2.C-defer §5.6 and
+//! WS-RR RR6.
 //!
 //! ## Operation
 //!

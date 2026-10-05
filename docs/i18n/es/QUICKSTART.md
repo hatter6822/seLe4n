@@ -88,7 +88,7 @@ seLe4n utiliza un sistema de pruebas escalonado con cuatro niveles:
 | Nivel | Comando | Qué valida |
 |-------|---------|------------|
 | **Nivel 0 + 1** | `./scripts/test_fast.sh` | Higiene del código + compilación completa |
-| **Nivel 0–2** | `./scripts/test_smoke.sh` | + Trazas de ejecución + pruebas de estado negativo + sincronización de documentación |
+| **Nivel 0–2** | `./scripts/test_smoke.sh` | + Trazas de ejecución + pruebas de estado negativo |
 | **Nivel 0–3** | `./scripts/test_full.sh` | + Anclajes de superficie de invariantes (invariant surface anchors) + verificación `#check` de Lean |
 | **Nivel 0–4** | `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` | + Pruebas de determinismo nocturnas |
 

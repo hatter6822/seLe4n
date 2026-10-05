@@ -852,7 +852,7 @@ fn scan_boot_rs_calls_cmdline_smp_startup() {
              Without these, the kernel falls back to the module-load \
              default `SMP_ENABLED=false`, silently boots single-core, \
              and `smp_enabled=true` in the DTB bootargs has no effect.  \
-             See WS-SM SM1.D in `docs/planning/SMP_RUST_HAL_PLAN.md` §5.4."
+             See WS-SM SM1.D."
         );
     }
 }

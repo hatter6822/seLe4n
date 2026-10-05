@@ -15,7 +15,7 @@ import SeLe4n.Kernel.Concurrency.Runtime
 /-!
 # WS-SM SM5.F — Per-core priority inheritance protocol (theorem surface)
 
-Per-core PIP theorems (plan §3.6 of `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`).
+Per-core PIP theorems (WS-SM SM5 §3.6).
 Under SMP a thread `t` on core `c` blocked on a resource held by a thread `t'` on
 core `c'` boosts `t'` to `t`'s priority; if `c' ≠ c`, the boost emits a
 `.reschedule` SGI to `c'`.

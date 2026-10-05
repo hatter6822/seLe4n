@@ -14,13 +14,13 @@ For pull requests into `main`, branch protection should require all of the follo
 These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job runs only its incremental tier; earlier tiers are gated by job dependencies:
 
 - `test-fast`: `./scripts/test_fast.sh` (Tier 0 + Tier 1)
-- `test-smoke` (after test-fast): `python3 scripts/scenario_catalog.py validate` + `./scripts/test_tier2_trace.sh` + `./scripts/test_tier2_negative.sh` + `./scripts/test_docs_sync.sh`
+- `test-smoke` (after test-fast): `python3 scripts/scenario_catalog.py validate` + `./scripts/test_tier2_trace.sh` + `./scripts/test_tier2_determinism.sh` + `./scripts/test_tier2_negative.sh`
 - `test-full` (after test-smoke): `./scripts/test_tier3_invariant_surface.sh`
 - `test-rust` (`Rust ABI Tests`): `./scripts/test_rust.sh` — workspace tests (incl. `--features std`), ABI conformance suite, `cargo fmt --check`, all-targets clippy. Runs on every PR/push alongside the Lean lanes.
 
 The hardware target has two lanes of its own, also on every PR/push:
 
-- `test-aarch64-cross` (`aarch64 Cross Build`): `./scripts/test_aarch64_cross_build.sh` — `sele4n-hal` for `aarch64-unknown-none-softfloat` in both profiles, the three `.S` sources verified assembled, the cross target linted with `-D warnings`, the release objects disassembled by `scripts/check_fp_simd_free_objects.py`, and (WS-BP BP2.1) a probe linked under `link.ld` by `scripts/check_link_script.py`, which checks the Lean heap arena's placement and the section boundaries the boot map reads (WS-BP BP2.6) on the ELF and proves each of the script's `ASSERT`s live by mutation; and (WS-BP BP5.1) step [7/7] links `sele4n-kernel` — the bare-metal image, its Rust half — in both profiles and runs `scripts/check_kernel_image.py` on the release one.
+- `test-aarch64-cross` (`aarch64 Cross Build`): `./scripts/test_aarch64_cross_build.sh` — `sele4n-hal` for `aarch64-unknown-none-softfloat` in both profiles, the four `.S` sources verified assembled, the cross target linted with `-D warnings`, the release objects disassembled by `scripts/check_fp_simd_free_objects.py`, and (WS-BP BP2.1) a probe linked under `link.ld` by `scripts/check_link_script.py`, which checks the Lean heap arena's placement and the section boundaries the boot map reads (WS-BP BP2.6) on the ELF and proves each of the script's `ASSERT`s live by mutation; and (WS-BP BP5.1) step [7/7] links `sele4n-kernel` — the bare-metal image, its Rust half — in both profiles and runs `scripts/check_kernel_image.py` on the release one.
 - `test-lean-aarch64-archive` (`Lean aarch64 Archive`, WS-BP BP1): `./scripts/test_lean_aarch64_archive.sh` — `libsele4n.a`, the kernel's Lean object code for the same target, built from the elaborator's closure of `SeLe4n` by `scripts/build_lean_aarch64_archive.py` and checked there (closure, allocator configuration, per-module initializers, stdlib fidelity, attributed unresolved symbols, no FP/SIMD register); then `check_kernel_entry_exports.py --require-cross` decides the kernel-entry reconciliation on it and the host archive together.  Since BP2.2 the builder also links the archive with `--gc-sections` from its initializer and every production `@[export]`, and requires every symbol that link leaves undefined to be a global function of the HAL's rlib (the kernel's Lean runtime included) or of `compiler_builtins`.  Then (WS-BP BP5.2–BP5.4) it links the Lean kernel into `sele4n-kernel`, checks the image with `check_kernel_image.py --lean-kernel` and the FP/SIMD gate, cuts `kernel8.img` / `config.txt` with `scripts/build_rpi5_image.sh` and publishes the image's size and section map.  Uploads the archive, `libsele4n.unresolved`, and the `rpi5-kernel-image` artifact.
 
 `scripts/check_aarch64_cross_target.py` (Tier 0) requires both jobs to execute their scripts and install the toolchain components they read object code with.
@@ -29,7 +29,7 @@ The hardware target has two lanes of its own, also on every PR/push:
 smoke job as of v0.34.0, alongside the trace and negative-state checks;
 the nightly workflow (§2) additionally runs the repeat-run replay family.
 
-Documentation sync (`./scripts/test_docs_sync.sh`) is integrated into the smoke CI job and the `test_smoke.sh` entrypoint (WS-H3/M-19). Documentation navigation/link drift is caught automatically on every PR.
+CI tests code, not documentation: no job or tier reads `.md` files, `docs/`, README or i18n text, or comment and docstring prose. Documentation accuracy is a review responsibility; the only documentation-adjacent gates are version-site sync (`scripts/check_version_sync.sh`) and website-link protection (`scripts/check_website_links.sh`), both Tier 0.
 
 ## 2. Deterministic replay evidence (Tier 4)
 
@@ -144,8 +144,25 @@ configuration errors.
 ## 9. WS-E1 GitHub Actions SHA-pinning policy (F-14)
 
 All third-party GitHub Actions in workflow files must be pinned to full 40-character
-commit SHA hashes, not mutable version tags. Each `uses:` reference carries a
-trailing `# vX.Y.Z` comment documenting the version at pin time.
+commit SHA hashes, not mutable version tags. The repository's GitHub Actions
+policy enforces this: **Require actions to be pinned to a full-length commit SHA**
+(Settings → Actions → General) is on, and with it GitHub refuses, at run time,
+any workflow run that uses an action not pinned to a full commit SHA, so an
+unpinned reference fails its run instead of executing. The setting is repository
+configuration, not code in this tree, so it must stay on; no Tier 0 script
+re-checks the pins.
+
+Every image a workflow or action pulls (a job container, a service, a Docker
+action's `docker://` image) is pinned to its `@sha256:` digest, and a Docker
+action is built from such an image, never from a Dockerfile, since what a
+Dockerfile pulls (`FROM`, `COPY --from`, `RUN --mount=from=`, `ONBUILD`,
+`ADD <url>`, a `RUN curl`) cannot be pinned by reading it. These are review
+rules: the GitHub policy covers actions, not images, and no gate checks them.
+The tree has no container, service or Docker action today.
+
+By review convention each pin carries its tag in a comment beside it
+(`# v4.2.2`, `# 3.19`), recording the version at pin time. No gate reads that
+comment, because a comment never decides whether a check passes.
 
 Covered workflows:
 - `.github/workflows/lean_action_ci.yml`
@@ -153,9 +170,6 @@ Covered workflows:
 - `.github/workflows/lean_toolchain_update_proposal.yml`
 - `.github/workflows/platform_security_baseline.yml`
 - `.github/workflows/codebase_map_sync.yml`
-
-Tier 0 hygiene (`test_tier0_hygiene.sh`) includes a regression guard that fails if
-any workflow action reference is not SHA-pinned.
 
 ### 9.1 CodeQL action pin parity
 
@@ -184,12 +198,12 @@ Two mechanisms hold the invariant, at the two points it can break:
 
 1. **Enforcement** — `scripts/check_codeql_workflow_policy.py`, run unconditionally by
    Tier 0 hygiene together with its `--self-test` witness. It fails on disagreeing
-   pins, on disagreeing version comments, and on any codeql-action reference that is
-   not a full 40-character commit SHA. That last check is load-bearing rather than
-   redundant: parity over a mutable tag is meaningless, and the §9 F-14 scan does not
-   reach sub-path actions such as `github/codeql-action/init`, whose owner/repo
-   segment contains a `/`. Because YAML permits quoted scalars, references are read
-   through a quote-aware scanner — a `uses: "github/codeql-action/init@…"` that a
+   pins and on any codeql-action reference that is not a full 40-character commit
+   SHA. That last check overlaps the §9 repository policy; the gate keeps it
+   because parity over a mutable tag is meaningless, so the parity check states
+   its own precondition. The tag comments beside the pins are review's, as in §9.
+   Because YAML permits quoted scalars, references are read through a
+   quote-aware scanner — a `uses: "github/codeql-action/init@…"` that a
    plain grep would miss is exactly the mismatch that would slip through.
 2. **Prevention** — the `codeql-action` group in `.github/dependabot.yml`. Dependabot
    treats `init` and `analyze` as separate dependencies and, ungrouped, opens one PR
@@ -224,4 +238,4 @@ Toolchain-update cadence is automated through:
 ## 11. WS-B10 timing + flake telemetry baseline
 
 Canonical telemetry baseline documentation is published in `docs/CI_TELEMETRY_BASELINE.md`
-with GitBook mirror `docs/gitbook/29-ci-maturity-and-telemetry-baseline.md`.
+(linked directly from the GitBook navigation).

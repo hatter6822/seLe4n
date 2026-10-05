@@ -2,7 +2,7 @@
 
 > **Phase**: SM3 of WS-SM
 > **Status**: CLOSED (v0.31.9) — per-object locks, lock sets, 2PL, deadlock-freedom, serializability; SM3.C.9 @[export] wrapping deferred (see SMP_FINE_LOCK_MIGRATION_PLAN.md)
-> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases (original estimate)**: v0.46.0 .. v0.52.x (after SM1+SM2 complete)
 > **Calendar estimate**: 8-12 weeks
@@ -436,7 +436,7 @@ endpoint/20 (write). The acquisition sequence is unambiguous.
 | SM3.A.11 | `default_objects_locks_unheld` theorem | `Model/State.lean` | `default_objStoreLock_unheld` (objStore unheld at default); `default_objects_locks_unheld` (vacuous discharge — pointwise form); `default_objects_toList_empty` (computable witness); `default_objects_locks_unheld_via_toList` (toList membership variant) | LANDED |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.2 LockId computation + lock-set extraction (SM3.B, 4 PRs, 9 sub-tasks) — LANDED
 
@@ -462,7 +462,7 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
 | SM3.B.2 | `LockId.lookup` |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.3 Two-phase locking discipline (SM3.C, 5 PRs, 11 sub-tasks) — LANDED
 
@@ -470,7 +470,7 @@ All 11 sub-tasks LANDED on branch `claude/quirky-mayer-lSoD2`
 within the v0.31.9 release cut (mirroring the SM3.A / SM3.B
 landing pattern — no version bump; SM3.A..SM3.E close out together
 en route to v1.0.0).  See the CHANGELOG entry "WS-SM SM3.C
-LANDED" and CLAUDE.md / AGENTS.md "Active workstream context" for
+LANDED" and `docs/agent_guide/WORKSTREAM_CONTEXT.md` (formerly CLAUDE.md's "Active workstream context") for
 the full per-sub-task description.
 
 | Sub | Description | Files | Status |
@@ -500,7 +500,7 @@ the full per-sub-task description.
 | SM3.C.11 | Dynamic priority-inheritance chain-walk locking |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.4 Deadlock-freedom (SM3.D, 3 PRs, 7 sub-tasks) — LANDED
 
@@ -508,7 +508,7 @@ All 7 sub-tasks LANDED on branch `claude/friendly-rubin-5wOsy`
 within the v0.31.9 release cut (mirroring the SM3.A / SM3.B / SM3.C
 landing pattern — no version bump; SM3.A..SM3.E close out together
 en route to v1.0.0).  See the CHANGELOG entry "WS-SM SM3.D LANDED"
-and CLAUDE.md / AGENTS.md "Active workstream context" for the full
+and `docs/agent_guide/WORKSTREAM_CONTEXT.md` (formerly CLAUDE.md's "Active workstream context") for the full
 per-sub-task description.
 
 | Sub | Description | Files | Status |
@@ -522,7 +522,7 @@ per-sub-task description.
 | SM3.D.7 | Tests `tests/DeadlockFreedomSuite.lean` (+ non-vacuity witness) | `tests/DeadlockFreedomSuite.lean` | LANDED |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.5 Serializability (SM3.E, 3 PRs, 8 sub-tasks) — LANDED
 
@@ -552,7 +552,7 @@ workstream-ID name the internal-first naming rule forbids), both staged via
 | SM3.E.8 | Surface anchors (8 major theorems) | `tests/SmpSurfaceAnchors.lean` | LANDED |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ## 6. Verification strategy for SM3
 
@@ -631,7 +631,7 @@ No new Lean axioms.
 
 ## 9. Cross-references
 
-- **Master overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+- **Master overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 - **Prerequisites**: [`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md), [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 - **Next phase**: [`SMP_PER_CORE_STATE_PLAN.md`](SMP_PER_CORE_STATE_PLAN.md) — SM4 builds atop SM3's lock discipline.
 

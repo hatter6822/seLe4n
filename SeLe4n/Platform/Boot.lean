@@ -54,10 +54,9 @@ and is guaranteed by the deterministic semantics of all builder operations.
   any duplicate.
 * **Datasheet reference freshness** — BCM2712 constants in
   `SeLe4n/Platform/RPi5/Board.lean` are snapshotted from publicly-available
-  Raspberry Pi Ltd documentation as of the v0.30.x release cut.  A CI
-  hygiene check (`scripts/check_bcm2712_freshness.sh`) warns when the
-  datasheet-reference marker in `Board.lean` is older than one calendar
-  year.  Annual re-verification is logged in the CHANGELOG.
+  Raspberry Pi Ltd documentation as of the v0.30.x release cut.  The
+  datasheet-reference marker in `Board.lean` records the last verification
+  date.  Annual re-verification is logged in the CHANGELOG.
 * **`Main.lean` no-op** — the smoke trace harness does NOT exercise the
   boot path; adding `bootFromPlatform`-related probes there is not
   expected and no such probe is present.

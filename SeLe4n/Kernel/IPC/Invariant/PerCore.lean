@@ -13,7 +13,7 @@ import SeLe4n.Kernel.IPC.Invariant.Defs
 # WS-SM SM4.D — Per-core IPC↔scheduler coherence invariants
 
 This module is the IPC slice of the SM4.D cross-subsystem migration
-(plan `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.4, sub-tasks
+(WS-SM SM4 §5.4, sub-tasks
 SM4.D.1 / SM4.D.2).  It lifts the IPC↔scheduler coherence predicates
 defined in `IPC/Invariant/Defs.lean` from the single-core forms (pinned
 to `bootCoreId` after SM4.B) to per-core forms parameterised by an

@@ -27,7 +27,6 @@
 ```
 
 This update has been completed. The tracked proof issues document now reflects the 4-layer proof infrastructure, the sorry-free preservation theorem, and the deferred TPI-D07-BRIDGE obligation.
-   ```
 
 ### 1.2 Update workstream plan completion evidence
 

@@ -32,10 +32,9 @@ workstream.
 
 ## Datasheet freshness
 
-<!-- AN7-F (PLT-L): last datasheet verification date (YYYY-MM-DD).  The
-     CI hygiene check `scripts/check_bcm2712_freshness.sh` warns when this
-     date is older than one calendar year.  Update in the same commit when
-     you re-verify BCM2712 constants against upstream documentation. -->
+<!-- AN7-F (PLT-L): last datasheet verification date (YYYY-MM-DD).  Update
+     in the same commit when you re-verify BCM2712 constants against upstream
+     documentation. -->
 <!-- BCM2712_DATASHEET_VERIFIED: 2026-09-25 -->
 -/
 

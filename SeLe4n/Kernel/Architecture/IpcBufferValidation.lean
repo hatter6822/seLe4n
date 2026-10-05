@@ -112,7 +112,7 @@ Sequence:
 The thread does NOT need to be suspended — seL4 allows changing the IPC
 buffer of a running thread (the change takes effect on next IPC operation).
 
-**AL8 (WS-AL / AK7-E.cascade) — Type-level validity discipline**: the
+**WS-AL AL8 (cascades AK7-E) — Type-level validity discipline**: the
 `tid` parameter has type `ValidThreadId` to make sentinel-ID rejection
 non-bypassable at compile time. Uses `vtid.val` directly (no `let`
 binding) so `split at` tactics in preservation proofs can pattern-match

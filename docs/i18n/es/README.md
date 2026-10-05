@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.41-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.42-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -74,10 +74,10 @@ demostración de Lean 4:
 
 ### Seguridad y verificación
 
-- **Flujo de información de N dominios** — políticas de flujo parametrizadas que generalizan la partición binaria de seL4. Frontera de aplicación de 43 entradas con demostraciones de no interferencia por operación (inductivo `NonInterferenceStep` de 35 constructores), y un registro de auditoría de desclasificación acotado y de cierre ante fallos (fail-closed), con un lector controlado por capacidades
+- **Flujo de información de N dominios** — políticas de flujo parametrizadas que generalizan la partición binaria de seL4. Frontera de aplicación de 44 entradas con demostraciones de no interferencia por operación (inductivo `NonInterferenceStep` de 35 constructores), y un registro de auditoría de desclasificación acotado y de cierre ante fallos (fail-closed), con un lector controlado por capacidades
 - **Capa de demostración compuesta** — `proofLayerInvariantBundle` compone 16 paquetes de invariantes de subsistema (núcleo del planificador + extensiones CBS, capacidad, IPC + acoplamiento IPC–planificador, ciclo de vida, servicio, VSpace, intersubsistema, consistencia de TLB, consistencia de los esperadores de notificación, cotas de pending/ack del TLB shootdown, invalidación de TLB por núcleo y coherencia de la I-cache, y la cota del registro de auditoría de desclasificación) en una única obligación de nivel superior verificada desde el arranque a través de todas las operaciones
-- **Arquitectura de estado en dos fases** — la fase de construcción con testigos de invariantes alimenta una representación inmutable congelada con equivalencia de consulta demostrada. 24 operaciones congeladas replican la API en vivo
-- **Conjunto completo de operaciones** — todas las operaciones de seL4 implementadas con preservación de invariantes, incluyendo las 5 operaciones diferidas (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
+- **Arquitectura de estado en tres fases** — la fase de construcción con testigos de invariantes alimenta una representación inmutable congelada con equivalencia de consulta demostrada. 24 operaciones congeladas replican la API en vivo
+- **Conjunto completo de operaciones** — todas las operaciones de seL4 implementadas con preservación de invariantes, incluidas la suspensión/reanudación de hilos, la gestión de prioridades (setPriority/setMCPriority) y la configuración del búfer de IPC
 - **Orquestación de servicios** — ciclo de vida de componentes a nivel de kernel con grafos de dependencia y demostraciones de aciclicidad (extensión de seLe4n, no presente en seL4)
 
 ## Estado actual
@@ -96,20 +96,23 @@ demostración de Lean 4:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.36.41` |
+| **Versión** | `0.36.42` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 433.986 en 361 archivos |
+| **LoC de producción en Lean** | 433.982 en 361 archivos |
 | **LoC de pruebas en Lean** | 88.629 en 71 suites de pruebas |
 | **Declaraciones demostradas** | 14.408 declaraciones theorem/lemma (cero sorry/axiom) |
+| **Crates de Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) en 80 archivos fuente |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
+| **Integración con el hardware** | **H3 COMPLETADO** (WS-AG AG1–AG10): HAL, GIC-400, temporizador, tablas de páginas ARMv8, puente FFI, arranque en QEMU |
 | **Auditoría canónica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoría integral previa a 1.0 (202 hallazgos; remediados por WS-AK AK1–AK10; archivada) |
 | **Última auditoría** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — auditoría de preparación previa a 1.0 realizada tras el cierre de WS-AN (sucede a la ahora archivada [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), remediada por WS-AN AN0–AN12). WS-RC R0..R5 completados en v0.31.2; WS-RC R6..R14 absorbidos en WS-SM según el mapeo de absorción SM0.Q.1 (véase [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Plan de flujo de trabajo activo: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
 | **Mapa del código** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventario de declaraciones legible por máquina |
 
 Las métricas se derivan del código fuente mediante `./scripts/generate_codebase_map.py`
 y se almacenan en [`docs/codebase_map.json`](../../../docs/codebase_map.json) bajo la
-clave `readme_sync`. Actualice toda la documentación de forma conjunta usando
-`./scripts/report_current_state.py` como verificación cruzada.
+clave `readme_sync`. Actualice toda la documentación de forma conjunta con
+`./scripts/sync_documentation_metrics.sh` (solo verificación: `--check`);
+`./scripts/report_current_state.py` sigue siendo una verificación cruzada manual.
 
 ## Inicio rápido
 
@@ -117,7 +120,7 @@ clave `readme_sync`. Actualice toda la documentación de forma conjunta usando
 ./scripts/setup_lean_env.sh   # instalar el toolchain de Lean
 lake build                     # compilar todos los módulos
 lake exe sele4n                # ejecutar el arnés de trazas
-./scripts/test_smoke.sh        # validar (higiene + compilación + trazas + estado negativo + sinc. docs)
+./scripts/test_smoke.sh        # validar (higiene + compilación + trazas + estado negativo)
 ```
 
 ## Documentación
@@ -126,7 +129,7 @@ lake exe sele4n                # ejecutar el arnés de trazas
 |---------------|---------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — flujo de trabajo, validación, lista de verificación para PRs | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — especificación e hitos |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — manual completo | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — semántica de referencia de seL4 |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventario legible por máquina | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — historial de flujos de trabajo y hoja de ruta |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventario legible por máquina | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — cada elemento diferido, con un responsable |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — mecánica de contribución | [`CHANGELOG.md`](../../../CHANGELOG.md) — historial de versiones |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) es la fuente de verdad para
@@ -138,13 +141,30 @@ y se actualiza automáticamente en cada merge vía CI. Regenere con
 
 ```bash
 ./scripts/test_fast.sh      # Nivel 0+1: higiene + compilación
-./scripts/test_smoke.sh     # + Nivel 2: trazas + estado negativo + sinc. docs
+./scripts/test_smoke.sh     # + Nivel 2: trazas + estado negativo
 ./scripts/test_full.sh      # + Nivel 3: anclajes de superficie de invariantes + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Nivel 4: determinismo nocturno
+
+./scripts/test_rust.sh                 # Rust en el host: compilación, pruebas, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # el objetivo real del HAL del kernel
 ```
 
 Ejecute al menos `test_smoke.sh` antes de cualquier PR. Ejecute `test_full.sh`
 cuando modifique teoremas, invariantes o anclajes de documentación.
+
+Tras cualquier cambio en `rust/`, ejecute **ambos** carriles de Rust. Cubren
+mitades disjuntas del mismo crate: en el host, cada bloque
+`#[cfg(target_arch = "aarch64")]` se elimina antes de que rustc o clippy lo
+vean, por lo que el carril del host no puede ver los 67 bloques condicionados
+por cfg, los 57 sitios `asm!` ni las cuatro fuentes `.S` que constituyen la mayor
+parte del HAL. El carril cruzado compila `sele4n-hal` para
+`aarch64-unknown-none-softfloat` en ambos perfiles, verifica que las fuentes en
+ensamblador realmente se ensamblaron, ejecuta el linter sobre el objetivo
+cruzado y desensambla los objetos de release para demostrar que no usan ningún
+registro FP/SIMD —el kernel no usa coma flotante y atrapa FP/SIMD en EL1 desde
+su primera instrucción—, y es una compilación y no un `cargo check`, porque
+`check` se detiene antes de la generación de código y nunca llega a un
+ensamblador.
 
 ## Arquitectura
 
@@ -155,9 +175,9 @@ ejecutables y demostraciones de preservación de invariantes verificadas por má
 ┌──────────────────────────────────────────────────────────────────────┐
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│  SchedContext│             │  Donation  │           │                │
+│  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│ SchedContext │             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -189,14 +209,18 @@ SeLe4n/
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
 │   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
+│   │                            installBootVSpaceRoot threads canonical boot VSpace
+│   │                            through bootFromPlatformChecked (WS-RC R3).
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
+│                                VSpaceBoot.lean holds the canonical W^X-compliant
+│                                boot VSpaceRoot (production-wired since WS-RC R3).
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
@@ -215,7 +239,7 @@ en `Operations.lean`, las demostraciones en `Invariant.lean`. El
 | **Planificación** | Servidor esporádico implementado en C (MCS) | CBS con teorema `cbs_bandwidth_bounded` verificado por máquina; `SchedContext` como objeto de kernel controlado por capacidades |
 | **Servidores pasivos** | Donación de SchedContext vía C | Donación verificada con invariante `donationChainAcyclic` |
 | **IPC** | Cola de endpoint con lista enlazada simple | Doble cola intrusiva con eliminación en medio de la cola en O(1); tiempos límite basados en presupuesto |
-| **Flujo de información** | Partición binaria alto/bajo | Política configurable de N dominios con frontera de aplicación de 43 entradas (recuento fijado por `enforcementBoundaryExtended_count`), demostraciones de no interferencia por operación, y un registro de auditoría controlado por capacidades para cada desclasificación autorizada |
+| **Flujo de información** | Partición binaria alto/bajo | Política configurable de N dominios con frontera de aplicación de 44 entradas (recuento fijado por `enforcementBoundaryExtended_count`), demostraciones de no interferencia por operación, y un registro de auditoría controlado por capacidades para cada desclasificación autorizada |
 | **Herencia de prioridad** | PIP implementado en C (rama MCS) | PIP transitivo verificado por máquina con libertad de interbloqueo y cota WCRT paramétrica |
 | **Latencia acotada** | Sin cota WCRT formal | `WCRT = D × L_max + N × (B + P)` demostrada en 8 módulos de vivacidad |
 | **Almacenes de objetos** | Listas enlazadas y arreglos | Tablas hash Robin Hood verificadas (`RHTable`/`RHSet`) con rutas críticas en O(1) |
@@ -223,30 +247,16 @@ en `Operations.lean`, las demostraciones en `Invariant.lean`. El
 | **Demostraciones** | Isabelle/HOL, posteriores al hecho | Comprobador de tipos de Lean 4, ubicadas junto a las transiciones — cero sorry/axiom (recuento de declaraciones demostradas en la tabla [Estado actual](#estado-actual)) |
 | **Plataforma** | HAL a nivel de C | Typeclass `PlatformBinding` con contratos de frontera tipados |
 
-## Próximos pasos
+## Licencia y atribuciones de terceros
 
-El flujo de trabajo activo es **WS-SM** (finalización SMP multinúcleo), que
-fusionó las fases de remediación restantes de WS-RC en el plan de fases
-SM0–SM10 específico de SMP y se cierra en **v1.0.0** con un microkernel SMP
-verificado y arrancable en Raspberry Pi 5. Las fases SM0–SM9 ya están
-completadas: los tipos SMP fundacionales y la jerarquía de bloqueos, la puesta
-en marcha SMP del HAL en Rust, las primitivas de bloqueo verificadas, los
-bloqueos por objeto, el estado y la planificación del planificador por núcleo,
-el IPC entre núcleos, el TLB shootdown y el mantenimiento de caché, el flujo
-de información SMP, y la finalización de la desclasificación (SM9, cerrada en
-v0.33.100). La fase restante es **SM10** (cierre de lanzamiento → v1.0.0). El
-flujo de trabajo del ABI de retorno de llamadas al sistema (**WS-RA**) está
-completo.
-
-**WS-RR** (preparación de lanzamiento SMP), la fase de remediación previa a 1.0, está **completa en v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) y **RR4 — manejo de fallos: IPC de fallo completo con reinicio basado en respuesta (v0.34.44)**, que impide que un hilo con fallo se reanude en la instrucción que lo provocó: el fallo se registra en el TCB, se entrega al endpoint `faultHandler` del hilo a través de la cadena de llamada entre núcleos activa y se atiende con una respuesta que reinicia el hilo en un PC elegido o lo abandona. RR5–RR8 también han aterrizado (RR8 en v0.35.203). **SM10 está ahora bloqueada por WS-BP** (la ruta de arranque bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), que es el contenido de SM10.1 y cuyas siete primeras fases, BP0 a BP6, se completaron en v0.36.2 (quedan BP7 y BP8); luego **SM10** (cierre de lanzamiento → v1.0.0).
-
-Plan maestro: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
-con planes por fase en `docs/planning/SMP_*.md`. El registro canónico por fase
-— que incluye cada cartera de flujos de trabajo completada (WS-B a WS-AB,
-WS-AE a WS-AN, WS-RC R0–R5, WS-RA) — es
-[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md); las
-auditorías previas y los cierres de hitos están archivados en
-[`docs/dev_history/`](../../../docs/dev_history/README.md).
+seLe4n se distribuye bajo la GNU General Public License v3.0 o posterior
+(GPLv3+); consulte [`LICENSE`](../../../LICENSE) para el texto completo. Las
+dependencias de compilación de terceros (`cc`, `find-msvc-tools`, `shlex`,
+todas con doble licencia `MIT OR Apache-2.0`) se usan bajo la opción MIT; sus
+avisos originales de copyright y de permiso se reproducen literalmente en
+[`THIRD_PARTY_LICENSES.md`](../../../THIRD_PARTY_LICENSES.md). El binario del
+kernel no contiene código de terceros enlazado en tiempo de ejecución: el HAL
+es `#![no_std]` y solo usa `core::*`.
 
 ---
 

@@ -12,7 +12,7 @@
 -- dispatch (`API.dispatchWithCap{,Checked}` →
 -- `notificationSignalBoundCrossCoreDispatch{,Checked}`) was wired through it.
 -- (Former "STATUS: staged" marker replaced with this landing note per the
--- implement-the-improvement rule; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §5.)
+-- implement-the-improvement rule; see WS-SM SM6 §3.1, §5.)
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 -- PR #822 review: `boundDeliveryTarget?` (the bound-delivery resolver) so the
@@ -23,7 +23,7 @@ import SeLe4n.Kernel.IPC.Operations.NotificationBind
 # WS-SM SM6.B — Notification across cores
 
 This module is the SM6.B deliverable of the WS-SM Phase 6 cross-core IPC
-workstream (plan `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.1, §5).  It lifts
+workstream (WS-SM SM6 §3.1, §5).  It lifts
 the single-core notification syscalls to *cross-core* transitions under the
 SM3.B per-object lock-set discipline:
 

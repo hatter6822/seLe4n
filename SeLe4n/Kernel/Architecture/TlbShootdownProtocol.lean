@@ -16,7 +16,7 @@ import SeLe4n.Kernel.Concurrency.Sgi
 # WS-SM SM7.B — TLB shootdown protocol transitions
 
 The protocol slice of the TLB/cache shootdown phase
-(`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §3.2, §5 SM7.B): the
+(WS-SM SM7.B, §3.2): the
 initiator's local invalidation (SM7.B.1), the cross-core broadcast
 round (SM7.B.2), the `.tlbShootdownReq` SGI-handler state transition
 (SM7.B.3), the round composition their correctness theorem quantifies

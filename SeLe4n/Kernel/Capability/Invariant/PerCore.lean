@@ -13,7 +13,7 @@ import SeLe4n.Kernel.Capability.Invariant.Defs
 # WS-SM SM4.D — Per-core capability↔scheduler coherence invariants
 
 This module is the Capability slice of the SM4.D cross-subsystem
-migration (plan `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.4,
+migration (WS-SM SM4 §5.4,
 sub-tasks SM4.D.3 / SM4.D.4).  The single scheduler-reading capability
 predicate is `cleanupHookDischarged` (`Capability/Invariant/Defs.lean`),
 whose second conjunct asserts that the cleanup target's TCB carries no

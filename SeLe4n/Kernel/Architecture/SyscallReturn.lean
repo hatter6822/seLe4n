@@ -35,7 +35,7 @@ Nothing in this module is live until the WS-RA flip: the FFI boundary keeps
 the bit-63 `encodeOk` / `encodeError` protocol until `Platform/FFI.lean` and
 the Rust mirror move together (plan §5, the migration window).
 
-Plan: `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` §3 (RA.A.1-RA.A.8).
+Plan: WS-RA RA.A.1-RA.A.8.
 -/
 
 namespace SeLe4n.Model.KernelError
@@ -1309,7 +1309,7 @@ because they are different facts:
 * a **timeout** is the SchedContext budget expiring under a live operation.  The
   endpoint queue entry was removed but the operation was well-formed, and the
   caller may reasonably reissue it — `.ipcTimeout`, which the enum has carried
-  since WS-Z/Z6 for exactly this;
+  since WS-Z Z6 for exactly this;
 * a **cancellation** is the operation being destroyed out from under the thread
   — by `.tcbSuspend` on a blocked victim, by lifecycle cleanup, or by a retype
   of an object it was blocked on.  Reissuing may be meaningless (the endpoint

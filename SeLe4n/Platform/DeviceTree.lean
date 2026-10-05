@@ -273,7 +273,7 @@ def FdtHeader.isValid (hdr : FdtHeader) : Bool :=
   -- **The RR7 audit round**: four conditions `cmdline::validate_fdt_header`
   -- has enforced since its audit pass and this one did not, every one of them
   -- in the direction where *this* side is the permissive one — and this is the
-  -- side WS-BP `BP2.6` makes the blob's only reader.
+  -- side WS-BP BP2.6 makes the blob's only reader.
   --
   -- Alignment: FDT tokens are 4-byte, so an unaligned structure block is read
   -- at offsets no token starts at.  The strings block is 4-byte aligned by

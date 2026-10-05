@@ -8,7 +8,7 @@
 -/
 
 -- STATUS: staged for WS-SM SM6.A.7 cross-core IPC (per-core / ∀-core
--- non-interference; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md).
+-- non-interference; see WS-SM SM6).
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
 import SeLe4n.Kernel.InformationFlow.ProjectionPerCore

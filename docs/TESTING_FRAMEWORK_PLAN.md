@@ -8,7 +8,7 @@ Current stage context: **Active workstream: WS-RR (SMP release readiness) — pr
 
 ## 2. Current enforced tiers
 
-- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`, now ~39 checks: forbidden-marker scan, fixture-isolation guard, wrapper-structure regression, theorem-body spot-check (L-08), SHA-pinning regression, shellcheck (locally optional; CI installs it — AF6-F), version sync, website-link protection, identifier-naming gate + witness suite, CodeQL workflow policy + self-test, `lean_code_view --self-test` + code-view wiring test, anchor-consistency + self-test, AK7 cascade monotonicity, production/staging partition, orphan-fields, codebase-map unit tests, scenario-registry validation, lifecycle-internal allowlist, DeviceTree legacy consumers, physical-address width, BCM2712 freshness, lock FFI symmetry)
+- **Tier 0** hygiene (`scripts/test_tier0_hygiene.sh`, now ~39 checks: forbidden-marker scan, fixture-isolation guard, wrapper-structure regression, theorem-body spot-check (L-08), shellcheck (locally optional; CI installs it — AF6-F), version sync, website-link protection, identifier-naming gate + witness suite, CodeQL workflow policy + self-test, `lean_code_view --self-test` + code-view wiring test, anchor-consistency + self-test, AK7 cascade monotonicity, production/staging partition, orphan-fields, codebase-map unit tests, scenario-registry validation, lifecycle-internal allowlist, DeviceTree legacy consumers, physical-address width, lock FFI symmetry)
 - **Tier 1** build/theorem compile (`scripts/test_tier1_build.sh`: `lake build`, the staged-platform build anchor, the live-arm per-core routing gate, and the content-flow classification reach gate)
 - **Tier 2** executable smoke (`scripts/test_tier2_trace.sh` + `scripts/test_tier2_determinism.sh` (mandatory two-run diff) + `scripts/test_tier2_negative.sh`, including `negative_state_suite` + `information_flow_suite`; `test_smoke.sh` additionally builds `SeLe4n.Platform.Sim.Contract` and runs the Rust gate `scripts/test_rust.sh`)
 - **Tier 3** invariant surface checks (`scripts/test_tier3_invariant_surface.sh`, via full suite),
@@ -16,14 +16,14 @@ Current stage context: **Active workstream: WS-RR (SMP release readiness) — pr
 - **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point with mode-aware status messaging for default vs enabled runs) plus the SMP boot-check family (`scripts/test_tier4_smp_bootcheck.sh` orchestrating the `test_qemu_smp_*.sh` exercisers when a QEMU environment is available)
 - **Tier 5** cross-language correspondence (`scripts/test_tier5_cross_language.sh`, WS-SM SM2.C-defer D-6: Lean-oracle vs Rust lock-primitive correspondence, run from `test_nightly.sh` under `NIGHTLY_ENABLE_EXPERIMENTAL=1`)
 
-Documentation sync (`scripts/test_docs_sync.sh`) verifies GitBook navigation generation, markdown link integrity, and optional doc-gen4 probes. It is integrated into the `test_smoke.sh` entrypoint and the smoke CI job (WS-H3/M-19), catching documentation navigation/link drift on every PR.
+No tier tests documentation: gates, tests and anchors check code (Lean, Rust, build, toolchain, fixtures produced by code, identifier naming). Documentation is kept accurate by review.
 
 ## 3. Required entrypoints and CI contract
 
 Required local/CI entrypoints:
 
 - `./scripts/test_fast.sh` (Tier 0 + Tier 1)
-- `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + Tier 2 trace + Tier 2 negative-state checks + documentation sync)
+- `./scripts/test_smoke.sh` (Tier 0 + Tier 1 + scenario-catalog validation + Tier 2 trace + determinism + negative-state + Sim-contract build + Rust gate `test_rust.sh`; no documentation check, since tests are for code)
 - `./scripts/test_full.sh` (Tier 0 + Tier 1 + Tier 2 + Tier 3)
 
 Nightly deterministic replay entrypoint:

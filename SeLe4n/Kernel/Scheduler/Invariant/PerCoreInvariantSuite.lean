@@ -26,7 +26,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.Preservation
 # WS-SM SM5.I — Per-core invariant suite
 
 This module is the SM5.I deliverable of WS-SM Phase 5 (plan
-`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §5 SM5.I, §6.1).  It assembles
+WS-SM SM5.I, §6.1).  It assembles
 the per-core scheduler invariants that SM4.C/SM4.D defined as **predicates**
 into a coherent suite, and — the heart of SM5.I.8 — proves that **every SM5
 per-core scheduler transition preserves the system-wide SMP invariant**.

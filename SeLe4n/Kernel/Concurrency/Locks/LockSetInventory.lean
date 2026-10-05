@@ -49,7 +49,7 @@ The inventory has six categories matching the plan §5.2 sub-tasks:
   Structural signal to SM3.C that a
   transition invokes a dynamic priority-inheritance chain walk
   whose length is state-discovered.  See SM3.C.11 in
-  `SMP_PER_OBJECT_LOCKS_PLAN.md` §5.3 for the chain-walk locking
+  WS-SM SM3 §5.3 for the chain-walk locking
   design.
 
 ## Identifier validation

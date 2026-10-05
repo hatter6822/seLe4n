@@ -7,8 +7,9 @@ This chapter is a **map**, not a history. What each version added is in
 [`CHANGELOG.md`](https://github.com/hatter6822/seLe4n/blob/main/CHANGELOG.md);
 what a claim rests on is in
 [`CLAIM_EVIDENCE_INDEX.md`](https://github.com/hatter6822/seLe4n/blob/main/docs/CLAIM_EVIDENCE_INDEX.md);
-what new code must assume about the tree today is in `CLAUDE.md`'s *Standing
-constraints and registered debt*.
+what new code must assume about the tree today is in the *Standing
+constraints and registered debt* of
+[`docs/agent_guide/WORKSTREAM_CONTEXT.md`](../agent_guide/WORKSTREAM_CONTEXT.md).
 
 ## 1. How invariants are layered
 
@@ -139,10 +140,8 @@ make the theorem assume what it claims to prove.
 comment-free code view, deriving the conjunct set and each bundle's own
 pre-state rather than matching binder names, and reports **zero** conjuncts
 bound on a post-state across all **210** statements in the family, with the
-conjunct set and the bundle family both derived from the sources.  The figure is
-spelled in the form the gate reads, so a cut that grows the family fails until
-this sentence is corrected — it said 146 while the tree measured 170, unwatched,
-because the claim was phrased in words the gate's locator does not match.
+conjunct set and the bundle family both derived from the sources.  The figure
+quoted here is not gated; the script's `--report` measures it.
 
 The payoff is at the dispatcher:
 
@@ -741,10 +740,7 @@ platform rather than with the lock.
 > members for one.  `tests/LockSetSuite.lean` exhibits the redirecting shape at
 > seventeen, one *narrower* than the popping shape measured at the same operands.
 >
-> At HEAD, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs** —
-> the canonical spelling `scripts/check_lock_ceiling_figures.py` (Tier 0, WS-OD
-> OD3.15) holds to the Lean sources, so this chapter cannot go stale behind the
-> constant the way it did between OD3.7 and OD3.14. See
+> At HEAD, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs**. See
 > [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
 > canonical statement.
 
@@ -788,7 +784,7 @@ platform rather than with the lock.
 > thread carried an inherited boost. The live field clear is now
 > `TCB.restoredToReady`, called by both surfaces: it had been spelled inline
 > inside `updateTcb`'s lambda, so the mirror could only copy its field list.
-> Canonical: [`CLAUDE.md`](../../CLAUDE.md) and
+> Canonical: [`WORKSTREAM_CONTEXT.md`](../agent_guide/WORKSTREAM_CONTEXT.md) and
 > [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §R5.D.
 
 ## 4. Per-core (SMP) lifts

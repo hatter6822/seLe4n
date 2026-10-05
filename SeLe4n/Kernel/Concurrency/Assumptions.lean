@@ -294,8 +294,8 @@ made `SchedulerState.current` (and the other six per-core fields) a
 `Vector α numCores`, so the single-core *state shape* no longer applies.
 The other six remain `perCoreBracketGated`: their single-core property is
 preserved per-core by the FFI interrupt-disabled dispatch bracket, with
-full cross-core retirement tracked against later WS-SM phases (SM5 per-core
-scheduler / SM6 cross-core IPC).  This honest disposition is pinned by
+full cross-core retirement tracked against WS-SM SM5 (the per-core
+scheduler) and SM6 (cross-core IPC).  This honest disposition is pinned by
 `smpRetiredInventory_pathARetired_count` (= 2 at SM4.E); WS-SM SM10 (release
 closure) adds `smpRetiredInventory_complete` once every entry is
 discharged. -/
@@ -309,8 +309,8 @@ inductive SmpRetirementStatus where
   | pathARetired
   /-- The assumption's single-core property is preserved on the calling
       core by the FFI interrupt-disabled dispatch bracket; full cross-core
-      retirement is gated on a later WS-SM phase (SM5 per-core scheduler /
-      SM6 cross-core IPC).  Tracked here for completeness. -/
+      retirement is gated on WS-SM SM5 (the per-core scheduler) or
+      SM6 (cross-core IPC).  Tracked here for completeness. -/
   | perCoreBracketGated
   deriving Repr, DecidableEq, Inhabited
 

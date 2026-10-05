@@ -4296,7 +4296,7 @@ lockSet element.  Separating the two:
   changing `lockSet`'s signature.
 
 Detailed dynamic-walk design lives in SM3.C.11 (see
-`SMP_PER_OBJECT_LOCKS_PLAN.md` §5.3).
+WS-SM SM3 §5.3).
 -/
 
 /-- WS-SM SM3.B.3 audit-pass-5: chain-start hint for `.call`.

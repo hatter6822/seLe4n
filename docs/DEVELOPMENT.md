@@ -7,7 +7,7 @@ you need before you write code.
 **What this file is not.** It is not a status report. What is in flight is in
 [`REGISTERED_DEBT.md`](REGISTERED_DEBT.md); what changed in a given
 version is in [`CHANGELOG.md`](../CHANGELOG.md); what new code must assume
-about the kernel today is in `CLAUDE.md`'s *Standing constraints and registered
+about the kernel today is in `docs/agent_guide/WORKSTREAM_CONTEXT.md`'s *Standing constraints and registered
 debt*.
 
 ---
@@ -118,18 +118,18 @@ minimum `test_smoke.sh` before any PR.
 | Command | Tiers | Covers | Run it when |
 |---------|-------|--------|-------------|
 | `./scripts/test_fast.sh` | 0–1 | hygiene gates + full build | iterating locally |
-| `./scripts/test_smoke.sh` | 0–2 | + trace, determinism, negative state, Rust, docs sync | **minimum before any PR** |
-| `./scripts/test_full.sh` | 0–3 | + invariant surface anchors | changing theorems, invariants or doc anchors |
+| `./scripts/test_smoke.sh` | 0–2 | + trace, determinism, negative state, Rust | **minimum before any PR** |
+| `./scripts/test_full.sh` | 0–3 | + invariant surface anchors | changing theorems, invariants or Tier 3 anchors |
 | `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` | 0–4 | + nightly candidates, Tier-5 cross-language | before a release cut |
 
 What each tier is for:
 
 | Tier | Script | Question it answers |
 |------|--------|---------------------|
-| 0 | `test_tier0_hygiene.sh` | Is the tree well-formed? (~39 gates: naming, versions, links, plan structure, staging partition, axioms, TLBI discipline, cross-target config, de-threading) |
+| 0 | `test_tier0_hygiene.sh` | Is the tree well-formed? (code gates: naming, versions, website links, staging partition, axioms, TLBI discipline, cross-target config, de-threading) |
 | 1 | `test_tier1_build.sh` | Does everything compile, including staged modules? |
 | 2 | `test_tier2_trace.sh`, `_determinism.sh`, `_negative.sh` | Does the kernel produce the fixture trace, deterministically, and reject bad states? |
-| 3 | `test_tier3_invariant_surface.sh` | Do the named theorems and invariants still exist and still say what the docs claim? |
+| 3 | `test_tier3_invariant_surface.sh` | Do the named theorems, invariants and code shapes still exist? |
 | 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance on the QEMU `virt` image — the bring-up, the PE-withheld boot and the in-image exercisers execute on both images (WS-BP BP8.4), the per-core counter check on the Lean-linked one alone (BP8.5); the eight gates that need a user program report NOT RUN until SM10's root task |
 | 5 | `test_tier5_cross_language.sh` | Do the Rust lock primitives agree with their Lean specs? |
 
@@ -388,7 +388,7 @@ lake exe fault_handling_suite
 ```
 
 Or interpret it without building an executable — useful when a suite hits the
-clang bracket-depth limit described in §7:
+clang bracket-depth limit described in `CLAUDE.md`:
 
 ```bash
 lake env lean --run tests/NegativeStateSuite.lean
@@ -444,6 +444,7 @@ SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
 SeLe4n/Platform/DeviceTree.lean  FDT parsing
 SeLe4n/Platform/FFI.lean         Lean <-> Rust HAL bridge (@[extern] / @[export])
 SeLe4n/Platform/Boot.lean        Boot sequence (PlatformConfig -> IntermediateState)
+SeLe4n/Platform/Sim/             Simulation platform contracts
 SeLe4n/Platform/RPi5/            Raspberry Pi 5 (BCM2712) bindings, boot VSpace
 SeLe4n/Platform/Staged.lean      Build anchor pulling staged modules into CI
 SeLe4n/Testing/                  Test harness, state builder, fixtures
@@ -474,202 +475,40 @@ kernel image does not carry them.
 
 ## 6. Rules you will be held to
 
-These are enforced by gates, so violating one fails the build rather than a
-review. Each is here because it was violated at least once.
+The project rules are stated once, canonically, in [`CLAUDE.md`](../CLAUDE.md)
+— the rules file for every contributor, human or agent (it is named for the
+tool that auto-loads it; `AGENTS.md` is a pointer file to it). Read it before your
+first PR. The rules about code are enforced by gates, so violating one fails the
+build rather than a review; documentation is not gated and is held by review:
 
-### No `sorry`, no `axiom`
+| Rule (in `CLAUDE.md`) | Enforced by |
+|---|---|
+| No `sorry` / `axiom` in the production proof surface (`TPI-D*` exceptions only) | Tier 0, `check_module_axioms.py` |
+| Deterministic semantics; typed identifiers | Tier 2, review |
+| Internal-first naming — no workstream codes in identifiers or paths | `check_identifier_naming.py` (Tier 0, reads the git index) |
+| Fixture-backed evidence — `Main.lean` output matches its golden fixture line for line | `test_tier2_trace.sh` |
+| Gates and tests check code, not documentation or comment prose; gates read code, prose reads prose; a presence check is not a relation check; test a gate by breaking the relation | the code-view overlay, the self-test harnesses, review |
+| Implement the improvement — never weaken documentation to match inferior code | review |
+| Deferrals are registered, never silent | review |
+| Source never points into `docs/dev_history/`; it cites an archived plan by workstream ID, never by path | review |
+| Report a possible vulnerability the moment you find it | — |
 
-Forbidden in the production proof surface. Tracked exceptions carry a `TPI-D*`
-annotation. `check_module_axioms.py` runs map-driven rather than by regex,
-because the old regex missed three `@[simp] theorem` declarations.
-
-### Deterministic semantics
-
-Every transition returns explicit success or failure. Never introduce a
-non-deterministic branch.
-
-### Typed identifiers
-
-`ThreadId`, `ObjId`, `CPtr`, `Slot`, `DomainId` and their kin are wrapper
-structures, **not** `Nat` aliases. Convert explicitly with `.toNat` / `.ofNat`.
-
-### Internal-first naming
-
-Every identifier — theorem, function, definition, structure, field, test
-runner, file name, directory name — describes **what it is**, not which
-workstream produced it. Workstream IDs, audit IDs and phase codes (`WS-*`,
-`AN3-*`, `RR4.9`, …) must not appear in any identifier or path.
-
-```
-BAD   an3b_02_projection_typing
-GOOD  ipc_invariant_full_projection_signatures
-```
-
-Workstream IDs belong in docstrings, commit messages, CHANGELOG entries and
-`CLAUDE.md` prose. Enforced by `check_identifier_naming.py`, which scans every
-identifier token and path component over every tracked non-documentation file:
-Rust is held at zero, everything else is pinned by an occurrence-count baseline
-in `scripts/identifier_naming_baseline.json` — a grandfathered name's count may
-fall but never rise.
-
-Documentation paths are exempt by **location**, never by suffix: a `.json`,
-`.txt` or `.expected` file outside `docs/` is code to this gate. Within a file
-the exemption stops at any literal that supplies a linker-visible name
-(`#[export_name]`, an assembly `.global`, a linker-script `PROVIDE`, an `asm!`
-template).
-
-### Fixture-backed evidence
-
-`Main.lean`'s output must match `tests/fixtures/main_trace_smoke.expected`
-**line for line, in order**: the fixture is golden output, regenerated by
-redirecting the producer's stdout over it, and since `v0.35.113`
-`scripts/test_tier2_trace.sh` compares the two sequences rather than asking
-substring containment in each direction — which decided set membership, so a
-duplicated or transposed line passed. Update a fixture only with a stated
-rationale in the PR — see §9.
-
-### Gates read code, prose reads prose
-
-No comment or docstring may decide whether a check passes. Source-scanning
-gates match against the **code view** (`scripts/lean_code_view.py --overlay`) —
-a comment-free, byte-aligned overlay of the tree — so a docstring can neither
-satisfy an anchor nor trip one. This is wired at the helper: `run_check` and
-`run_negative_check` route through the view automatically.
-
-When a check's subject genuinely *is* the text — a module docstring must exist,
-a contract sentence must be present, a retracted figure must not return — use
-`run_prose_check` / `run_prose_negative_check`, which read the real tree.
-
-**Never contort prose to satisfy a scanner.** If a comment cannot say something
-plainly, the scanner is reading the wrong text.
-
-### A presence check is not a relation check
-
-Nearly every gate here is a text scanner, and the recurring way one fails is
-asserting that a *token is present* when the property it means is a *relation*:
-that the flag reaches **this command**, that the guard precedes **this
-instruction**, that the artefact came from **this run**, that the reference is
-**this occurrence**. Presence is necessary and almost never sufficient, and the
-gap is invisible because the token really is there.
-
-**Resolve the text into the structure it stands for before asserting** — expand
-the script's variables and check the command, take byte offsets and check the
-order, parse the array and check the element, lex the source and check the
-scope. The shared views exist for this: `scripts/rust_code_view.py`,
-`scripts/lean_code_view.py`, and `rust_code_views` / `top_level_statements` in
-`rust/sele4n-hal/build.rs`.
-
-Where a scanner genuinely cannot decide (reachability, aliasing through a
-value), say so in its docstring and make it over-approximate, so it fails
-**closed**.
-
-**Test a gate by breaking the relation, not by deleting the token.** A mutation
-that removes the token is survived by any presence check. Keep the token and
-break the relation: leave `hw_target` in the file but build another target;
-keep `--release` but put it on a host build; keep the guard but move it after
-the `asm!`. The self-test harnesses in `check_aarch64_cross_target.py` and
-`check_tlbi_broadcast_discipline.py` **enforce** this — each case declares
-whether its mutation is `preserving` or `deleting`, and the harness fails when
-a check has no preserving case.
-
-**And sweep the siblings.** A fix applied at one call site and not its
-neighbours leaves the class open and reads as closed. Likewise, **an
-enumeration standing in for a derivation** cannot see the thing that does not
-exist yet: derive the set from what the code does and keep any list as a pin
-that fails when the two diverge.
-
-### Implement the improvement
-
-When documentation, a docstring, a comment, a type signature or a design intent
-describes something **better** than the code does, the remediation is to make
-the description true. It is forbidden to weaken the documentation to match
-inferior code.
-
-| You find | You do | Never |
-|----------|--------|-------|
-| A comment referencing a function `X` that does not exist | implement `X` | remove the reference |
-| A docstring describing a complete spec, a truncated implementation | complete the implementation | document the truncation |
-| A stub returning `NotImplemented` where the design says it routes | wire the routing | note the stub |
-| Two call paths handling one condition asymmetrically | make them symmetric | document the asymmetry |
-| An invariant maintained only by convention | enforce it structurally | add a comment about the convention |
-| A proven structure nothing consumes | wire it into the consumer | delete the structure |
-| A capability claim whose path is non-functional | make the path work | qualify the claim |
-
-The one legitimate exception is documentation describing a **worse** state than
-the code — a stale `STATUS: staged` marker on a module since wired into
-production. There, the documentation is the inferior artefact.
-
-When the right implementation is genuinely out of scope, **defer the release**
-and record the debt with a closure target. Do not ship a documentation-only
-patch instead.
-
-### Deferrals are registered, never silent
-
-In-source TODOs that age out with their workstream are forbidden. Every
-deferred item is lifted into the *Registered debt index* in
-[`REGISTERED_DEBT.md`](REGISTERED_DEBT.md) with an owner and a closure
-target, and the source comment cites it by row.
-`check_deferral_registration.py` (Tier 0) fails a comment that declares itself
-untracked and cites nothing, and fails a citation naming a row that does not
-exist.
-
-### Report a vulnerability the moment you find it
-
-If you find a possible CVE-worthy issue — in project code, a dependency, the
-toolchain, CI, or as a gap between the model and real seL4 behaviour — stop and
-surface it with: summary, file and line, severity plus exploitability, evidence
-or reproduction, and suggested remediation. **Do not silently fix it**; it has
-to be tracked and disclosed.
+The long-form rationale behind each rule, with the history that earned it, is
+in [`agent_guide/CONVENTIONS_DETAIL.md`](agent_guide/CONVENTIONS_DETAIL.md) and
+[`agent_guide/RULES_DETAIL.md`](agent_guide/RULES_DETAIL.md).
 
 ---
 
 ## 7. Working in Lean here
 
-### Read and edit large files in chunks
-
-Several files exceed 800 lines. Read with explicit offsets rather than whole:
-
-```
-Read(path, offset=1,   limit=500)
-Read(path, offset=501, limit=500)
-```
+The working rules — read and edit large files in chunks, avoid the deep
+`do`-chain build trap, keep search and command output bounded — are in
+[`CLAUDE.md`](../CLAUDE.md). The curated large-file list and its tooling:
 
 ```bash
 ./scripts/find_large_lean_files.sh                  # list files over threshold
-./scripts/find_large_lean_files.sh --format bullets # regenerate CLAUDE.md's list
-./scripts/find_large_lean_files.sh --check          # is CLAUDE.md's list current?
+./scripts/find_large_lean_files.sh --format bullets # regenerate docs/agent_guide/LARGE_FILES.md's list
 ```
-
-For edits, prefer targeted `old_string`/`new_string` replacements over
-whole-file writes: a whole-file write of a large file times out and truncates
-silently. Read the exact region first so the match includes the real
-indentation. Build new large files incrementally, or with a `cat <<'EOF'`
-heredoc, which has no size limit.
-
-### The `do`-chain build trap
-
-A suite with hundreds of sequential `expectErr` / `expectOkSt` calls in one
-`do`-block compiles to a C `if`-tree deep enough to exceed clang's default
-`-fbracket-depth=256`:
-
-```
-fatal error: bracket nesting level exceeded maximum of 256
-```
-
-The symptom is specific: `lake build <suite>:exe` fails while
-`lake env lean --run <suite>.lean` works, because interpretation does not go
-through the C backend.
-
-**Mitigation**: keep test helpers under ~150 Lean lines and use the
-thin-dispatcher pattern. `tests/NegativeStateSuite.lean`'s `runNegativeChecks`
-is the model — a 13-line dispatcher over 8 per-area sub-helpers. C scope depth
-resets at each function boundary. Factor up front rather than after the break.
-
-### Keep search and command output bounded
-
-If a command or search might return more than ~100 lines, bound it up front:
-`head_limit` on searches, `| tail -80` on builds, or redirect to a file and read
-it in slices. `lake build 2>&1 | tail -80` is the usual form.
 
 ### Proof hygiene
 
@@ -682,61 +521,27 @@ python3 scripts/check_module_axioms.py  # axiom sweep, map-driven
 
 ## 8. Versioning: every PR bumps the patch version
 
-There is no "release cut" accumulation and no `Unreleased` heading. Each merged
-PR ships its own `vX.Y.Z`, and the docs always reflect the live version.
+The policy — canonical source, the version sites, what is not a version site —
+is in [`CLAUDE.md`](../CLAUDE.md) *Versioning policy*; the authoritative site
+list is `scripts/version_locations.sh`.
 
 ```bash
 ./scripts/bump_version.sh 0.34.46     # rewrites every site, then self-verifies
 ./scripts/check_version_sync.sh       # verify only (Tier 0 + pre-commit)
 ```
 
-- **Canonical source**: the `version` field in `lakefile.toml`. Every other
-  site must equal it.
-- **The sites** are listed authoritatively in `scripts/version_locations.sh` —
-  36 of them across `lakefile.toml`, the four `sele4n-*` crates, `KERNEL_VERSION`
-  in `rust/sele4n-hal/src/boot.rs`, the spec, `CLAUDE.md` + `AGENTS.md`, the
-  root README badge and version row, eleven i18n READMEs, three GitBook files
-  and `docs/codebase_map.json`.
-- **Adding a site**: register it once in `scripts/version_locations.sh`; the
-  verifier and the bumper both pick it up.
-- **Then add a CHANGELOG entry** — `## v<new-version> — <summary>` at the top
-  of [`CHANGELOG.md`](../CHANGELOG.md). The bumper reminds you; it does not do
-  it for you.
-- **Not version sites**: historical prose (CHANGELOG headers, "LANDED at
-  vX.Y.Z" notes), the Lean toolchain version, and audit-document filenames.
-
-There is deliberately **no** force-bump gate, so automated contributors are
-never blocked.
+Then add `## v<new-version> — <summary>` at the top of
+[`CHANGELOG.md`](../CHANGELOG.md); the bumper reminds you but does not write it.
 
 ---
 
 ## 9. Documentation rules
 
-### Canonical ownership
-
-| Layer | Owns |
-|-------|------|
-| Root `docs/*.md` | policy, spec, ADRs — the canonical text |
-| `docs/gitbook/` | mirrors that summarize and link to the canonical text |
-| [`CHANGELOG.md`](../CHANGELOG.md) | the per-version narrative, one entry per PR |
-| [`REGISTERED_DEBT.md`](REGISTERED_DEBT.md) | workstream status, ownership, the debt register |
-| `docs/planning/*.md` | the *schedule* for a phase — its sub-tasks, not its history |
-
-A landed phase's plan carries its sub-task table, not an account of what each
-cut changed. That account is the CHANGELOG's, and duplicating it produces two
-records that drift.
-
-### When you change behaviour, theorems or workstream status
-
-Update, in the same PR:
-
-1. `README.md` — metrics sync from `docs/codebase_map.json` (`readme_sync`)
-2. `docs/spec/SELE4N_SPEC.md`
-3. This file, if a command or rule changed
-4. The affected GitBook chapter(s) — canonical root docs take priority
-5. `docs/CLAIM_EVIDENCE_INDEX.md`, if a claim changed
-6. `REGISTERED_DEBT.md`, if workstream status changed
-7. `docs/codebase_map.json`, if Lean sources changed
+What to update when you change behaviour, theorems or workstream status, and
+who owns which topic, are rules in [`CLAUDE.md`](../CLAUDE.md) *Documentation
+rules*; the full ownership map is
+[`DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md).
+This section holds the procedures.
 
 ### Sync commands
 
@@ -745,13 +550,12 @@ Update, in the same PR:
 python3 scripts/generate_codebase_map.py --pretty # regenerate the map
 python3 scripts/generate_codebase_map.py --pretty --check  # is it current?
 ./scripts/sync_readme_from_codebase_map.sh       # README + spec metrics
-./scripts/test_docs_sync.sh                      # the gate CI runs
 python3 scripts/generate_doc_navigation.py       # GitBook README + SUMMARY
 python3 scripts/report_current_state.py          # current metrics, one per line
 ```
 
-`CLAUDE.md` and `AGENTS.md` must stay **byte-identical below their headers** —
-`test_docs_sync.sh` checks it. Edit both in the same PR.
+`AGENTS.md` is a short static pointer to `CLAUDE.md` that copies none of its
+text; edit `CLAUDE.md` only.
 
 ### Fixture updates
 
@@ -798,34 +602,12 @@ The SMP theorem total is **measured, not summed**: the manifest registers one
 entry per phase and the propositionality census resolves each identifier
 against the environment. Never reintroduce a hand-written per-phase figure.
 
-### Website link protection
+### Website links, session URLs, `docs/dev_history/`
 
-The project website links to source files, docs, scripts and directories in
-this repository. Protected paths are listed in
-`scripts/website_link_manifest.txt` and checked by
-`scripts/check_website_links.sh` (Tier 0). To rename or remove one:
-
-1. update the website (`hatter6822.github.io`) to the new path **first**;
-2. then update `scripts/website_link_manifest.txt`;
-3. CI passes only when the manifest and the tree agree.
-
-### Session URL hygiene
-
-A `https://claude.ai/code/session_*` URL must never appear in a commit message,
-PR title or body, in-tree documentation, CHANGELOG entry, source comment, test
-fixture, or any GitHub comment. Cite the canonical document instead:
-
-```
-Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md sections RR5, RR6
-Refs: #761
-Refs: 7da2572
-```
-
-### Ignore `docs/dev_history/`
-
-It holds milestone closeouts, prior audit reports, completed workstream plans
-and legacy GitBook chapters, kept only for traceability. Do not read or
-reference it unless explicitly instructed.
+Protected website paths (`scripts/website_link_manifest.txt`, checked by
+`scripts/check_website_links.sh`), the ban on `claude.ai/code/session_*` URLs
+in anything that ships, and the rule not to read or reference
+`docs/dev_history/` are stated in [`CLAUDE.md`](../CLAUDE.md).
 
 ---
 
@@ -844,7 +626,7 @@ reference it unless explicitly instructed.
 | [`INFORMATION_FLOW_ROADMAP.md`](INFORMATION_FLOW_ROADMAP.md) | the non-interference surface |
 | `*_ADR.md` | architecture decisions and their alternatives |
 | [`planning/`](planning/) | per-phase schedules |
-| [`gitbook/`](gitbook/) | the published book; mirrors of the above |
+| [`gitbook/`](gitbook/) | the handbook: a reading path that links to the above |
 
 ---
 
@@ -855,7 +637,7 @@ reference it unless explicitly instructed.
    the phase plan for the sub-task you are taking. Sub-task numbers are
    execution order: a plan that says `RR5.10` before `RR5.11` means exactly
    that, and a sub-task may only consume a lower-numbered one.
-2. **Read the standing constraints.** `CLAUDE.md`'s *Standing constraints and
+2. **Read the standing constraints.** `docs/agent_guide/WORKSTREAM_CONTEXT.md`'s *Standing constraints and
    registered debt* is current facts about the tree — what a live seam does,
    what is dormant, what new code must not assume. It changes what you may
    write.
@@ -867,26 +649,12 @@ reference it unless explicitly instructed.
 5. **Build the module by name** (§3) and run the right tier (§4).
 6. **Bump the version and write the CHANGELOG entry** (§8).
 7. **Sync the documentation** (§9).
-8. **Stage, then run Tier 0** — the naming and plan gates read the index.
+8. **Stage, then run Tier 0** — the naming gate reads the index.
 9. **Commit.** The hook runs; do not bypass it.
 
 ### PR checklist
 
-Copy into the PR body:
-
-```
-- [ ] Workstream ID identified
-- [ ] Scope is one coherent slice
-- [ ] Transitions are explicit and deterministic
-- [ ] Invariant/theorem updates paired with the implementation
-- [ ] Module build verified (hook installed, not bypassed)
-- [ ] test_smoke.sh passes (test_full.sh if theorems changed)
-- [ ] test_aarch64_cross_build.sh passes (if rust/ changed)
-- [ ] Documentation synchronized
-- [ ] Patch version bumped, all sites synced, CHANGELOG entry added
-- [ ] No website-linked path renamed or removed
-- [ ] No claude.ai session URL anywhere in the commit or PR
-```
+Copy the checklist in [`CLAUDE.md`](../CLAUDE.md) *PR checklist* into the PR body.
 
 ### Definition of done for a milestone-moving change
 
@@ -906,11 +674,11 @@ Copy into the PR body:
 |---------|-------|-----|
 | `lake: command not found` | elan not on PATH | `source ~/.elan/env` |
 | Module passes `lake build` but CI fails | default target does not reach it | `lake build <Module.Path>` by name |
-| `bracket nesting level exceeded maximum of 256` | deep `do`-chain in a suite | split into per-area helpers (§7) |
+| `bracket nesting level exceeded maximum of 256` | deep `do`-chain in a suite | split into per-area helpers (`CLAUDE.md`) |
 | Tier 0 naming gate passes locally, fails in CI | gate reads the git index | `git add` first, then re-run |
 | `check_version_sync.sh` fails | a version site missed | `./scripts/bump_version.sh <version>` |
 | `docs/codebase_map.json is stale` | Lean sources changed after the last sync | `python3 scripts/generate_codebase_map.py --pretty` |
-| `CLAUDE.md 'Known large files' differs` | a file crossed the 10% tolerance | `./scripts/find_large_lean_files.sh --format bullets`, replace the block in **both** CLAUDE.md and AGENTS.md |
+| `LARGE_FILES.md 'Known large files' differs` | a file crossed the 10% tolerance | `./scripts/find_large_lean_files.sh --format bullets`, replace the block in `docs/agent_guide/LARGE_FILES.md` |
 | Cross build fails but `cargo check` was clean | `check` never reaches codegen | that is the point — fix the `asm!` or the encoding |
 | A `TLBI *OS` wrapper halts the core | FEAT_TLBIOS is ARMv8.4-A; Cortex-A76 is ARMv8.2-A | use the `*IS` variant; the `*OS` path is fail-closed by design |
 | Production module cannot import what it needs | it is on the staged allowlist | promote it deliberately, or restructure — production must not import staged |
@@ -951,8 +719,6 @@ SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh   # gate honesty
 ./scripts/test_tier0_hygiene.sh
 ./scripts/check_version_sync.sh
 ./scripts/check_website_links.sh
-python3 scripts/check_workstream_plan.py [--self-test]
-python3 scripts/check_deferral_registration.py
 python3 scripts/check_identifier_naming.py
 python3 scripts/check_module_axioms.py
 python3 scripts/check_proof_depth.py
@@ -964,12 +730,11 @@ python3 scripts/check_tlbi_broadcast_discipline.py
 # --- version and docs --------------------------------------------------
 ./scripts/bump_version.sh <x.y.z>
 ./scripts/sync_documentation_metrics.sh
-./scripts/test_docs_sync.sh
 python3 scripts/generate_codebase_map.py --pretty [--check]
 python3 scripts/generate_doc_navigation.py
 python3 scripts/generate_smp_theorem_manifest.py [--check]
 python3 scripts/report_current_state.py
-./scripts/find_large_lean_files.sh [--check|--format bullets]
+./scripts/find_large_lean_files.sh [--format bullets]
 ```
 
 ---

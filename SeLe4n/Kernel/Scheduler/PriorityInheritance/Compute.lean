@@ -390,7 +390,7 @@ is per-core), so this slice is bounded above by the global value
 (`computeMaxWaiterPriorityOnCore_le_global`) and never used to *set* a boost
 (that would under-boost and re-introduce inversion).
 
-**Slice-membership deviation from the plan (WS-SM SM5.F.14).**  The plan §3.6 sketch
+**Slice-membership deviation from the plan (WS-SM SM5.F.1).**  The plan §3.6 sketch
 partitions waiters by run-queue membership (`w ∈ runQueueOnCore c`).  This
 implementation instead partitions by the waiter's *home* core
 (`determineTargetCore st w == c`, its `cpuAffinity`).  The home-core partition is the

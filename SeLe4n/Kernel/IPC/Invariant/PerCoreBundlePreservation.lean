@@ -16,7 +16,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 # WS-SM SM6.D.2 — Per-operation preservation of the per-core IPC bundle
 
 This module is the preservation layer of SM6.D (plan
-`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.3, Theorem 3.3.1): each of
+WS-SM SM6 §3.3, Theorem 3.3.1): each of
 the six IPC operations — send, receive, call, reply (+ the combined
 reply-receive), signal, wait — preserves every core's view of the IPC
 invariant bundle (`ipcInvariantFull_perCore`, SM6.D.1).

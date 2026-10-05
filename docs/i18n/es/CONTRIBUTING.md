@@ -76,7 +76,7 @@ silenciosamente `lake build` incluso con demostraciones rotas.
 
 ```bash
 ./scripts/test_fast.sh      # Nivel 0 + Nivel 1 (higiene + compilación)
-./scripts/test_smoke.sh     # + Nivel 2 (trazas + estado negativo + sincronización de docs)
+./scripts/test_smoke.sh     # + Nivel 2 (trazas + estado negativo)
 ./scripts/test_full.sh      # + Nivel 3 (anclajes de superficie de invariantes)
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Nivel 4 (determinismo nocturno)
 ```

@@ -8,7 +8,7 @@
 -/
 
 -- STATUS: staged for WS-SM SM8.B per-core non-interference
--- (see docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 SM8.B).
+-- (see WS-SM SM8.B).
 
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
@@ -30,7 +30,7 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
 /-!
 # WS-SM SM8.B — Per-core non-interference
 
-Plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §3.3 / §5 sub-tasks
+WS-SM SM8 §3.3 / §5 sub-tasks
 SM8.B.1 … SM8.B.5, SM8.B.12, SM8.B.13.  SM8.A mounted the observer `(c, L)`
 and the state it sees; this module proves that **transitions** leave that view
 alone.

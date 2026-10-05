@@ -451,7 +451,7 @@ moment the configure operation rewrites those fields. Without explicit removal,
 replenishment window, violating CBS isolation. The `replenishQueue.remove`
 call is idempotent and preserves sort order.
 
-**AL8 (WS-AL / AK7-E.cascade) — Type-level validity discipline**: the
+**WS-AL AL8 (cascades AK7-E) — Type-level validity discipline**: the
 `scId` parameter has type `ValidObjId`. The Lean type system forbids any
 caller from feeding `ObjId.sentinel` into this handler. -/
 def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline domain : Nat)
@@ -674,7 +674,7 @@ theorem bindPlacesParkedThread_congr {st st' : SystemState} (tid : SeLe4n.Thread
    (`effectiveParamsMatchRunQueue`, which since `v0.35.133` reads that field
    at every binding rather than the reservation's)
 
-**AL8 (WS-AL / AK7-E.cascade)**: `scId` is `ValidObjId`, `threadId` is
+**WS-AL AL8 (cascades AK7-E)**: `scId` is `ValidObjId`, `threadId` is
 `ValidThreadId` for compile-time sentinel rejection on BOTH IDs. -/
 def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel Unit :=
   fun st =>
@@ -831,7 +831,7 @@ making the thread passive).  A successful unbind therefore left a runnable
 thread ready and permanently unschedulable.  Callers and proof authors should
 not reason about an intermediate non-runnable state: there is none.
 
-**AL8 (WS-AL / AK7-E.cascade)**: `scId` is `ValidObjId` for compile-time
+**WS-AL AL8 (cascades AK7-E)**: `scId` is `ValidObjId` for compile-time
 sentinel rejection. -/
 def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
   fun st =>

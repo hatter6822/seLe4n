@@ -83,7 +83,7 @@ O seLe4n utiliza um sistema de validação em camadas progressivas:
 | Comando | Camadas | O que valida |
 |---------|---------|-------------|
 | `./scripts/test_fast.sh` | Tier 0 + 1 | Higiene do código + compilação (build) |
-| `./scripts/test_smoke.sh` | Tier 0–2 | + Rastreamento (trace) + estado negativo + sincronia de docs |
+| `./scripts/test_smoke.sh` | Tier 0–2 | + Rastreamento (trace) + estado negativo |
 | `./scripts/test_full.sh` | Tier 0–3 | + Âncoras de superfície de invariantes + corretude de `#check` |
 | `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` | Tier 0–4 | + Determinismo noturno |
 

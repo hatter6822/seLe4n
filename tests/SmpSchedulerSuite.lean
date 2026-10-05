@@ -16,7 +16,7 @@ import SeLe4n.Testing.StateBuilder
 # WS-SM SM5.K.1 — Aggregate SMP per-core scheduler suite
 
 The acceptance-gate aggregate suite for WS-SM Phase SM5
-(`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §8): a **4-thread workload
+(WS-SM SM5 §8): a **4-thread workload
 distributed across 4 cores**, exercising the full SM5 per-core scheduler surface
 end-to-end on a single deterministic fixture.
 

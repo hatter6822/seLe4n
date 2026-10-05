@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM3.E serializability)
+-- STATUS: staged for WS-SM SM3.E (serializability)
 
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Concurrency.Locks.Kind

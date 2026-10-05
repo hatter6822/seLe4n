@@ -11,7 +11,7 @@
 -- `notificationSignalOnCore` when the live bound-aware `.notificationSignal`
 -- dispatch was wired through the cross-core notification stack.  (Former
 -- "STATUS: staged" marker replaced per the implement-the-improvement rule; see
--- docs/planning/SMP_CROSS_CORE_IPC_PLAN.md.)
+-- WS-SM SM6.)
 
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 import SeLe4n.Kernel.IPC.Invariant

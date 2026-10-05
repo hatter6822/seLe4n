@@ -128,7 +128,7 @@ seLe4n은 4단계 검증 시스템을 사용합니다:
 | 단계 | 명령어 | 내용 |
 |------|--------|------|
 | **Tier 0+1** | `./scripts/test_fast.sh` | 위생 검사(hygiene) + 빌드 |
-| **Tier 0-2** | `./scripts/test_smoke.sh` | + 트레이스 + 음성 상태 + 문서 동기화 |
+| **Tier 0-2** | `./scripts/test_smoke.sh` | + 트레이스 + 음성 상태 |
 | **Tier 0-3** | `./scripts/test_full.sh` | + 불변량 표면 앵커 + Lean #check |
 | **Tier 0-4** | `./scripts/test_nightly.sh` | + 야간 결정론 |
 

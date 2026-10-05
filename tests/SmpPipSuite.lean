@@ -16,7 +16,7 @@ import SeLe4n.Testing.StateBuilder
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM5.F
 "Per-core priority inheritance protocol" deliverable
-(`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.6, §5).
+(WS-SM SM5 §3.6, §5).
 
 * **§1 Surface anchors** — every public SM5.F symbol resolves at elaboration
   time (rename/removal fails the build).

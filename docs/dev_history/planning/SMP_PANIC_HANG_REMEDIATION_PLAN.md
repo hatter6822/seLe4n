@@ -284,7 +284,7 @@ Both shapes are testable.
 Stream B isolated the residual `release_write` panic and closed it.  The
 hypothesis triage, the diagnostic ring buffer and the trace analysis were
 apparatus for that investigation, not reusable design: the outcome is in
-[`CHANGELOG.md`](../../CHANGELOG.md) at the SM2.E cuts, and the protocol the
+[`CHANGELOG.md`](../../../CHANGELOG.md) at the SM2.E cuts, and the protocol the
 fix settled on is what `queued_rw_lock.rs` implements today.
 
 ### 6.7 Proof obligation
@@ -315,7 +315,7 @@ post-fix Rust impl.
      | cons op rest ih => ...
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 6.8 Stress regression
 

@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM2.D refinement bridge between the Lean
+-- STATUS: staged for WS-SM SM2.D (refinement bridge between the Lean
 -- abstract TicketLockState and the Rust two-u64 concrete representation;
 -- SM3+ per-object locks first consume the refinement when wiring
 -- kernel-side critical sections through the FFI bridge).

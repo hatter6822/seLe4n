@@ -3,7 +3,7 @@
 #
 # WS-RR RR6.21: miri gate for the deployed reader-writer lock.
 #
-# `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` §8 lists
+# WS-SM SM2.C-defer §8 lists
 # "`cargo +nightly miri test -p sele4n-hal --lib queued_rw_lock` passes
 # with `-Zmiri-strict-provenance`" as a D-5 acceptance gate.  No job ran
 # it before WS-RR RR6.21.

@@ -2,7 +2,7 @@
 
 > **Phase**: SM5 of WS-SM
 > **Status**: LANDED (v0.31.38 → v0.31.64) — sub-phases A–K per the in-body landing notes
-> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases (original estimate)**: v0.71.0 .. v0.82.x
 > **Calendar estimate**: 12-16 weeks
@@ -397,7 +397,7 @@ similar to SM0/SM1 patterns.)
 | SM5.A.8 | Unit tests (6 scenarios) | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM5.B — Per-core switchToThread (5 PRs, 9 sub-tasks)
 
@@ -414,7 +414,7 @@ similar to SM0/SM1 patterns.)
 | SM5.B.9 | 8 unit-test scenarios | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM5.C — Cross-core wake via SGI (6 PRs, 12 sub-tasks)
 
@@ -434,7 +434,7 @@ similar to SM0/SM1 patterns.)
 | SM5.C.12 | Cross-core wake round-trip tests | L |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM5.D — Per-core timer tick (4 PRs, 10 sub-tasks)
 
@@ -452,7 +452,7 @@ similar to SM0/SM1 patterns.)
 | SM5.D.10 | 8 tick scenarios | L |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM5.E — Per-core idle threads (3 PRs, 6 sub-tasks)
 
@@ -466,7 +466,7 @@ similar to SM0/SM1 patterns.)
 | SM5.E.6 | `chooseThreadOnCore_always_succeeds` | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM5.F — Per-core PIP (5 PRs, 10 sub-tasks)
 
@@ -484,7 +484,7 @@ similar to SM0/SM1 patterns.)
 | SM5.F.10 | Cross-core PIP scenarios (tests) | L |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM5.G — Per-core domain scheduling (3 PRs, 6 sub-tasks)
 
@@ -498,7 +498,7 @@ similar to SM0/SM1 patterns.)
 | SM5.G.6 | 5 domain-rotation tests | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM5.H — Per-core CBS (4 PRs, 8 sub-tasks)
 
@@ -514,7 +514,7 @@ similar to SM0/SM1 patterns.)
 | SM5.H.8 | 6 cross-core CBS tests | L |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM5.I — Per-core invariant suite (5 PRs, 10 sub-tasks)
 
@@ -532,7 +532,7 @@ similar to SM0/SM1 patterns.)
 | SM5.I.10 | Tier-3 surface anchors | S |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM5.J — WCRT under fine locks (2 PRs, 5 sub-tasks)
 
@@ -545,7 +545,7 @@ similar to SM0/SM1 patterns.)
 | SM5.J.5 | WCRT scenarios (3 tests) | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### SM5.K — Tests + fixtures (3 PRs, 6 sub-tasks)
 
@@ -559,7 +559,7 @@ similar to SM0/SM1 patterns.)
 | SM5.K.6 | Surface anchors | S |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ## 6. Verification strategy for SM5
 

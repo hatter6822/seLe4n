@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.41-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.42-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -72,10 +72,10 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 
 ### 보안과 검증
 
-- **N-도메인 정보 흐름** — seL4의 이진 파티션을 일반화하는 매개변수화된 흐름 정책. 연산별 비간섭 증명(35-생성자 `NonInterferenceStep` 귀납형)을 갖춘 43-항목 시행 경계, 그리고 능력 게이트 리더를 갖춘 유계·페일클로즈드(fail-closed) 기밀 해제 감사 추적
+- **N-도메인 정보 흐름** — seL4의 이진 파티션을 일반화하는 매개변수화된 흐름 정책. 연산별 비간섭 증명(35-생성자 `NonInterferenceStep` 귀납형)을 갖춘 44-항목 시행 경계, 그리고 능력 게이트 리더를 갖춘 유계·페일클로즈드(fail-closed) 기밀 해제 감사 추적
 - **합성 증명 계층** — `proofLayerInvariantBundle`이 16개 서브시스템 불변량 번들(스케줄러 코어 + CBS 확장, 능력, IPC + IPC–스케줄러 결합, 생명주기, 서비스, VSpace, 교차 서브시스템, TLB 일관성, 알림 대기자 일관성, TLB 슈트다운 pending/ack 한계, 코어별 TLB 무효화 및 I-캐시 일관성, 그리고 기밀 해제 감사 로그 한계)을 부트에서 모든 연산까지 검증되는 단일 최상위 의무로 합성합니다
-- **2단계 상태 아키텍처** — 불변량 증거를 갖춘 빌더 단계가 증명된 조회 동치를 갖춘 동결 불변 표현으로 이행합니다. 24개 동결 연산이 라이브 API를 반영합니다
-- **완전한 연산 집합** — 5개 지연 연산(suspend/resume, setPriority/setMCPriority, setIPCBuffer)을 포함하여 모든 seL4 연산이 불변량 보존과 함께 구현되었습니다
+- **3단계 상태 아키텍처** — 불변량 증거를 갖춘 빌더 단계가 증명된 조회 동치를 갖춘 동결 불변 표현으로 이행합니다. 24개 동결 연산이 라이브 API를 반영합니다
+- **완전한 연산 집합** — 스레드 suspend/resume, 우선순위 관리(setPriority/setMCPriority), IPC 버퍼 구성에 이르기까지 모든 seL4 연산이 불변량 보존과 함께 구현되었습니다
 - **서비스 오케스트레이션** — 의존성 그래프와 비순환성 증명을 갖춘 커널 수준 컴포넌트 생명주기 (seL4에 없는 seLe4n 확장)
 
 ## 현재 상태
@@ -94,19 +94,22 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 
 | 속성 | 값 |
 |------|-----|
-| **버전** | `0.36.41` |
+| **버전** | `0.36.42` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 361개 파일, 433,986줄 |
+| **프로덕션 Lean LoC** | 361개 파일, 433,982줄 |
 | **테스트 Lean LoC** | 71개 테스트 스위트, 88,629줄 |
 | **증명된 선언** | 14,408개 theorem/lemma 선언 (sorry/axiom 제로) |
+| **Rust 크레이트** | 4개(`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`), 소스 파일 80개 |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
+| **하드웨어 바인딩** | **H3 완료** (WS-AG AG1–AG10): HAL, GIC-400, 타이머, ARMv8 페이지 테이블, FFI 브리지, QEMU 부팅 |
 | **정식 감사** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — 1.0 이전 종합 감사 (202건 발견; WS-AK AK1–AK10 으로 해결됨; 보관됨) |
 | **최신 감사** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — WS-AN 마감 후 수행된 1.0 이전 준비 상태 감사 (WS-AN AN0–AN12 로 해결되어 현재 보관된 [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) 를 계승). WS-RC R0..R5 는 v0.31.2 에서 완료됨; WS-RC R6..R14 는 SM0.Q.1 흡수 매핑에 따라 WS-SM 으로 흡수됨 ([`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) 참조). 활성 작업 스트림 계획: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
 | **코드베이스 맵** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 기계 판독 가능한 선언 인벤토리 |
 
-지표는 `./scripts/generate_codebase_map.py`에 의해 코드베이스에서 산출되며,
-[`docs/codebase_map.json`](../../../docs/codebase_map.json)의 `readme_sync` 키에
-저장됩니다. `./scripts/report_current_state.py`로 교차 검증할 수 있습니다.
+메트릭은 `./scripts/generate_codebase_map.py`가 코드베이스에서 도출하며
+[`docs/codebase_map.json`](../../../docs/codebase_map.json)의 `readme_sync` 키 아래에 저장됩니다.
+모든 문서는 `./scripts/sync_documentation_metrics.sh`(검증 전용: `--check`)로 함께 갱신하십시오.
+`./scripts/report_current_state.py`는 계속 수동 교차 검증 용도로 사용됩니다.
 
 ## 빠른 시작
 
@@ -114,7 +117,7 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 ./scripts/setup_lean_env.sh   # Lean 툴체인 설치
 lake build                     # 모든 모듈 컴파일
 lake exe sele4n                # 트레이스 하니스 실행
-./scripts/test_smoke.sh        # 검증 (위생 + 빌드 + 트레이스 + 음성 상태 + 문서 동기화)
+./scripts/test_smoke.sh        # 검증 (위생 + 빌드 + 트레이스 + 음성 상태)
 ```
 
 ## 문서
@@ -123,7 +126,7 @@ lake exe sele4n                # 트레이스 하니스 실행
 |-------------|--------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — 작업 흐름, 검증, PR 체크리스트 | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — 사양 및 마일스톤 |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — 전체 핸드북 | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — seL4 참조 의미론 |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 기계 판독 가능 인벤토리 | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — 작업 스트림 이력 및 로드맵 |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 기계 판독 가능 인벤토리 | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — 모든 지연 항목과 그 담당자 |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — 기여 방법 | [`CHANGELOG.md`](../../../CHANGELOG.md) — 버전 이력 |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json)이 프로젝트 지표의 진실의 원천입니다.
@@ -135,13 +138,27 @@ lake exe sele4n                # 트레이스 하니스 실행
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0+1: 위생 검사 + 빌드
-./scripts/test_smoke.sh     # + Tier 2: 트레이스 + 음성 상태 + 문서 동기화
+./scripts/test_smoke.sh     # + Tier 2: 트레이스 + 음성 상태
 ./scripts/test_full.sh      # + Tier 3: 불변량 표면 앵커 + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: 야간 결정론
+
+./scripts/test_rust.sh                 # 호스트 Rust: 빌드, 테스트, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # 커널 HAL의 실제 타깃
 ```
 
 PR 제출 전 최소 `test_smoke.sh`를 실행하십시오. 정리, 불변량, 또는 문서 앵커 변경 시
 `test_full.sh`를 실행하십시오.
+
+`rust/` 아래를 변경한 후에는 Rust 레인 **두 개 모두**를 실행하십시오. 두 레인은
+같은 크레이트의 서로 겹치지 않는 절반씩을 담당합니다. 호스트에서는 모든
+`#[cfg(target_arch = "aarch64")]` 블록이 rustc나 clippy가 보기 전에 제거되므로,
+호스트 레인은 HAL의 대부분을 이루는 67개의 cfg 게이트 블록, 57개의 `asm!` 사이트,
+네 개의 `.S` 소스를 볼 수 없습니다. 크로스 레인은 `aarch64-unknown-none-softfloat`용
+`sele4n-hal`을 두 프로필 모두로 빌드하고, 어셈블리 소스가 실제로 어셈블되었는지
+검증하고, 크로스 타깃을 린트하며, 릴리스 오브젝트를 디스어셈블하여 FP/SIMD
+레지스터를 전혀 사용하지 않음을 증명합니다. 커널은 FP를 사용하지 않으며 첫
+명령어부터 EL1에서 FP/SIMD를 트랩합니다. 또한 이는 `cargo check`가 아닌 실제
+빌드인데, `check`는 코드 생성 전에 멈추어 어셈블러에 도달하지 않기 때문입니다.
 
 ## 아키텍처
 
@@ -152,9 +169,9 @@ seLe4n은 계층화된 계약으로 구성되어 있으며, 각 계층은 실행
 ┌──────────────────────────────────────────────────────────────────────┐
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│  SchedContext│             │  Donation  │           │                │
+│  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│ SchedContext │             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -186,14 +203,18 @@ SeLe4n/
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
 │   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
+│   │                            installBootVSpaceRoot threads canonical boot VSpace
+│   │                            through bootFromPlatformChecked (WS-RC R3).
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
+│                                VSpaceBoot.lean holds the canonical W^X-compliant
+│                                boot VSpaceRoot (production-wired since WS-RC R3).
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
@@ -211,7 +232,7 @@ tests/                           Executable test suites + fixtures
 | **스케줄링** | C 구현 산발 서버 (MCS) | 기계 검증 `cbs_bandwidth_bounded` 정리를 갖춘 CBS; `SchedContext`를 능력 제어 커널 객체로 |
 | **수동 서버** | C를 통한 SchedContext 기부 | `donationChainAcyclic` 불변량을 갖춘 검증된 기부 |
 | **IPC** | 단일 연결 리스트 엔드포인트 큐 | O(1) 큐 중간 제거를 갖춘 침입형 이중 큐; 예산 기반 타임아웃 |
-| **정보 흐름** | 이진 고/저 파티션 | 43-항목 시행 경계(항목 수는 `enforcementBoundaryExtended_count` 로 고정), 연산별 NI 증명, 그리고 승인된 모든 기밀 해제에 대한 능력 게이트 감사 추적을 갖춘 N-도메인 구성 가능 정책 |
+| **정보 흐름** | 이진 고/저 파티션 | 44-항목 시행 경계(항목 수는 `enforcementBoundaryExtended_count` 로 고정), 연산별 NI 증명, 그리고 승인된 모든 기밀 해제에 대한 능력 게이트 감사 추적을 갖춘 N-도메인 구성 가능 정책 |
 | **우선순위 상속** | C 구현 PIP (MCS 브랜치) | 교착 상태 자유와 매개변수적 WCRT 한계를 갖춘 기계 검증 전이적 PIP |
 | **유계 지연** | 공식 WCRT 한계 없음 | 8개 활성 모듈에 걸쳐 증명된 `WCRT = D × L_max + N × (B + P)` |
 | **객체 저장소** | 연결 리스트와 배열 | O(1) 핫 패스를 갖춘 검증된 Robin Hood 해시 테이블 (`RHTable`/`RHSet`) |
@@ -219,25 +240,15 @@ tests/                           Executable test suites + fixtures
 | **증명** | Isabelle/HOL, 사후(post-hoc) | Lean 4 타입 검사기, 전이와 동일 위치 — sorry/axiom 제로 (증명된 선언 수는 [현재 상태](#현재-상태) 표 참조) |
 | **플랫폼** | C 수준 HAL | 타입된 경계 계약을 갖춘 `PlatformBinding` 타입클래스 |
 
-## 다음 단계
+## 라이선스 및 서드파티 저작자 표시
 
-활성 작업 스트림은 **WS-SM**(SMP 멀티코어 완성)입니다. WS-RC의 남은 해결
-단계를 SMP 전용 SM0–SM10 단계 계획으로 병합했으며, Raspberry Pi 5에서 부팅
-가능한 검증된 SMP 마이크로커널로 **v1.0.0**에서 마감됩니다. SM0–SM9 단계는
-모두 완료되었습니다 — 기초 SMP 타입과 잠금 계층, Rust HAL의 SMP 기동, 검증된
-잠금 프리미티브, 객체별 잠금, 코어별 스케줄러 상태와 스케줄링, 코어 간 IPC,
-TLB 슈트다운과 캐시 유지 관리, SMP 정보 흐름, 그리고 기밀 해제 완성(SM9,
-v0.33.100 에서 마감). 남은 단계는 **SM10**(릴리스 마감 → v1.0.0)입니다.
-시스템 콜 반환 ABI 작업 스트림(**WS-RA**)은 완료되었습니다.
-
-**WS-RR**(SMP 릴리스 준비) — 1.0 이전 교정 단계는 **v0.35.203 에서 완료되었습니다**([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0(v0.34.26), RR1(v0.34.41), RR2(v0.34.42), RR3(v0.34.43), 그리고 **RR4 — 폴트 처리: 응답 기반 재시작을 갖춘 완전한 폴트 IPC(v0.34.44)**. RR4 는 폴트가 발생한 스레드가 폴트를 일으킨 명령에서 재개되는 것을 막습니다: 폴트는 TCB 에 기록되고, 활성 코어 간 call 체인을 통해 스레드의 `faultHandler` 엔드포인트로 전달되며, 선택한 PC 에서 스레드를 재시작하거나 포기하는 응답으로 처리됩니다. RR5–RR8 도 모두 완료되었습니다(RR8 은 v0.35.203). 이제 **SM10 은 WS-BP**(베어메탈 부트 경로, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md))**에 의해 차단되어 있습니다** — SM10.1 의 내용이며 처음 일곱 단계 BP0 부터 BP6 까지는 v0.36.2 에서 완료되었습니다 (BP7 과 BP8 이 남아 있습니다). 그다음이 **SM10**(릴리스 마감 → v1.0.0)입니다.
-
-마스터 계획: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
-단계별 계획은 `docs/planning/SMP_*.md` 에 있습니다. 완료된 모든 작업 스트림
-포트폴리오(WS-B~WS-AB, WS-AE~WS-AN, WS-RC R0–R5, WS-RA)를 포함하는 단계별
-정본 기록은 [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
-입니다. 이전 감사 및 마일스톤 마감 보고서는
-[`docs/dev_history/`](../../../docs/dev_history/README.md)에 보관되어 있습니다.
+seLe4n 자체는 GNU General Public License v3.0 이상(GPLv3+)으로 라이선스됩니다.
+전문은 [`LICENSE`](../../../LICENSE)를 참조하십시오. 서드파티 빌드 의존성(`cc`,
+`find-msvc-tools`, `shlex`, 모두 `MIT OR Apache-2.0` 이중 라이선스)은 MIT
+옵션으로 사용되며, 각 업스트림의 저작권 및 허가 고지는
+[`THIRD_PARTY_LICENSES.md`](../../../THIRD_PARTY_LICENSES.md)에 원문 그대로
+수록되어 있습니다. 커널 바이너리에는 런타임에 링크되는 서드파티 코드가 전혀
+없습니다 — HAL은 `#![no_std]`이며 `core::*`만 사용합니다.
 
 ---
 

@@ -75,7 +75,7 @@ cp scripts/pre-commit-lean-build.sh .git/hooks/pre-commit
 |---------|--------|------------|
 | 0 | `test_fast.sh` | Гигиена кода: отсутствие `sorry`/`axiom`, целостность ссылок сайта |
 | 1 | `test_fast.sh` | Компиляция: `lake build` завершается успешно |
-| 2 | `test_smoke.sh` | Трассировка + негативные состояния + синхронизация документации |
+| 2 | `test_smoke.sh` | Трассировка + негативные состояния |
 | 3 | `test_full.sh` | Якоря поверхности инвариантов + проверка корректности Lean `#check` |
 | 4 | `test_nightly.sh` | Ночной тест детерминизма (требуется `NIGHTLY_ENABLE_EXPERIMENTAL=1`) |
 

@@ -22,6 +22,7 @@ proof-friendly and explicitly extensible.
    - `vspaceMapPage` (fails with `.asidNotBound` or `.mappingConflict`),
    - `vspaceUnmapPage` (fails with `.asidNotBound` or `.translationFault`),
    - `vspaceLookup` (fails with `.asidNotBound` or `.translationFault`).
+   All three are total functions with typed errors — no undefined behaviour.
 3. Add WS-B1 invariant surface:
    - ASID-root uniqueness,
    - virtual non-overlap,
@@ -38,7 +39,7 @@ proof-friendly and explicitly extensible.
 | Workstream | Change |
 |------------|--------|
 | WS-C7 | Replaced bounded numeric scanning with explicit object-index traversal for ASID discovery. |
-| WS-G6 | Migrated `VSpaceRoot.mappings` from `List (VAddr × PAddr)` to `Std.HashMap VAddr PAddr` for O(1) operations. |
+| WS-G6 | Migrated `VSpaceRoot.mappings` from `List (VAddr × PAddr)` to `Std.HashMap VAddr PAddr` for O(1) operations; `noVirtualOverlap` becomes trivially true (hash-map key uniqueness) and the round-trip theorems were re-proved. |
 | WS-G3 | Added `asidTable : Std.HashMap ASID ObjId` for O(1) ASID resolution; `asidTableConsistent` invariant; `vspaceInvariantBundle` extended to 3 conjuncts. |
 | WS-H11 | Enriched mappings to `HashMap VAddr (PAddr × PagePermissions)` with W^X enforcement; `vspaceInvariantBundle` extended to 5 conjuncts (+ `wxExclusiveInvariant` + `boundedAddressTranslation`); `VSpaceBackend` enriched with permissions; `MachineConfig.wellFormed` enforces `endAddr ≤ 2^physicalAddressWidth`; abstract TLB model (`TlbState`, `adapterFlushTlb`, `tlbConsistent`). |
 | WS-Q2 | Migrated `mappings` (and the other kernel stores) to the verified Robin Hood table: `mappings : RHTable VAddr (PAddr × PagePermissions)` (`Model/Object/Structures.lean`); the ASID table joined as `asidTable : RHTable` (`Model/State.lean`). |
@@ -63,6 +64,9 @@ proof-friendly and explicitly extensible.
   (`BarrierKind` + composite emitters, `rust/sele4n-hal/src/barriers.rs`)
   and the SM7 TLB-shootdown protocol.
 - Tight coupling to physical memory frame allocator semantics.
+
+The `VSpaceBackend` typeclass is the platform-agnostic abstraction point for
+these hardware-facing concerns.
 
 Of these, only the frame-allocator coupling remains tracked as a post-WS-B1
 expansion. WS-C7 removed the bounded discovery-window hack in favor of

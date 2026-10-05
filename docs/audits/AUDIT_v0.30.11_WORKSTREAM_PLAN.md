@@ -6,7 +6,7 @@
 > [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md);
 > the SM0 phase plan (foundations & honesty patches, including the
 > SM0.Q.1 absorption mapping) is at
-> [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](../planning/SMP_FOUNDATIONS_PLAN.md).
+> [`docs/dev_history/planning/SMP_FOUNDATIONS_PLAN.md`](../dev_history/planning/SMP_FOUNDATIONS_PLAN.md).
 > See §15 below for the per-phase WS-RC → WS-SM absorption mapping.
 > This document is **historical for the R0..R5 record** and **a
 > source for R6..R14 absorbed scope**.  Future updates to R6..R14

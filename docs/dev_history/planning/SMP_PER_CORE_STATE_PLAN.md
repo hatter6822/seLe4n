@@ -2,7 +2,7 @@
 
 > **Phase**: SM4 of WS-SM
 > **Status**: LANDED (v0.31.37) — per-core Vector state, SchedulerState, register banks, invariant migration, idle bootstrap.  SM4.C.11's liveness-form migration was Scheduler-subsystem scope and is now **mostly delivered by SM5.J** (v0.31.64); its residual — the `bootCoreId`-pinned `stepPrecondition`/`stepPost`/`ValidTrace` step relation — is owned by **WS-SL**, not by this plan (RR0.10, v0.34.26)
-> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases (original estimate)**: v0.53.0 .. v0.70.x (largest phase)
 > **Calendar estimate**: 20-26 weeks
@@ -418,7 +418,7 @@ Cleared at the start of each per-core tick (SM5.D.9).
 | SM4.A.8 | `allCores`, `allCores_length`, `allCores_nodup` (from SM0.E) | Recap | T |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.2 SchedulerState path-a replacement (SM4.B, 5 PRs, 15 sub-tasks)
 
@@ -441,7 +441,7 @@ Cleared at the start of each per-core tick (SM5.D.9).
 | SM4.B.15 | Regression test: single-core trace fixture preserved | `main_trace_smoke.expected` byte-identical at single-core scenario | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.3 Scheduler invariants migration (SM4.C, 10 PRs, 30 sub-tasks)
 
@@ -482,7 +482,7 @@ invariant file. Pattern (from §3.4):
 | SM4.C.30 | Cross-core `schedulerInvariant_perCore_pairwise` | Theorem | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.4 Cross-subsystem migrations (SM4.D, 8 PRs, 22 sub-tasks)
 
@@ -515,7 +515,7 @@ SchedulerState.
 | SM4.D.22 | `Kernel/Architecture/SyscallEntry.lean` | 4 | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.5 Witness retirement + replacement (SM4.E, 2 PRs, 5 sub-tasks)
 
@@ -528,7 +528,7 @@ SchedulerState.
 | SM4.E.5 | Add `smpRetiredInventory` aggregator (8 entries, all retired). Pin size at 8. | New aggregator + size witness | M |
 
 *Landed. What each cut changed, and what its review rounds found, is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.6 Per-core invariant suite (within SM4.C.29 + .30)
 
@@ -644,7 +644,7 @@ No new Lean axioms.
 
 ## 9. Cross-references
 
-- **Master overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+- **Master overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 - **Prerequisites**: [`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md)
 - **Parallel phase**: [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md)
 - **Next phase**: [`SMP_PER_CORE_SCHEDULER_PLAN.md`](SMP_PER_CORE_SCHEDULER_PLAN.md)

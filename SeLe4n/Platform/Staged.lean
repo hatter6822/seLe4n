@@ -135,7 +135,7 @@ import SeLe4n.Kernel.Concurrency.LockBridge
 -- `scripts/check_lock_ffi_symmetry.sh`.
 import SeLe4n.Kernel.Concurrency.LockPrimitives
 -- WS-RR RR0.6: the SMP completion-phase theorem manifest.  One entry per
--- WS-SM phase SM0..SM10, each naming the theorem inventories that phase
+-- WS-SM SM0..SM10, each phase naming the theorem inventories that phase
 -- owns; `smpInventoriedTheoremCount` is the sum over those entries, and
 -- each entry's declared count is proved equal to the real inventory
 -- lengths.  This is the SM10 theorem marker the release-closure plan
@@ -201,7 +201,7 @@ import SeLe4n.Kernel.Scheduler.Invariant.PerCore
 -- base-aggregate bridge for `chooseThread`.  Composes existing single-
 -- core preservation theorems with the SM4.C SMP-preservation skeleton.
 import SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation
--- WS-SM SM5.I: per-core invariant suite (plan `SMP_PER_CORE_SCHEDULER_PLAN.md`
+-- WS-SM SM5.I: per-core invariant suite (WS-SM SM5
 -- §5 SM5.I, §6.1).  Assembles the SM4.C/SM4.D per-core predicates into the
 -- coherent suite and proves SM5.I.8 — preservation by every SM5 per-core
 -- transition — via the `schedulerInvariantStructural_perCore` / `_smp` safety
@@ -258,7 +258,7 @@ import SeLe4n.Kernel.CrossSubsystemPerCorePreservation
 -- per-core form" coverage.  SM5's per-core platform bring-up consumes it.
 import SeLe4n.Platform.RPi5.RuntimeContractPerCore
 -- WS-SM SM5.A: per-core `chooseThread` (plan
--- `SMP_PER_CORE_SCHEDULER_PLAN.md` §3.1, §5).  The selection function
+-- WS-SM SM5 §3.1, §5).  The selection function
 -- `chooseThreadOnCore` itself is production-reached (the legacy
 -- `chooseThread` delegates to it, SM5.A.5); this module collects the
 -- forward-looking SM5.A theorems: the `RunQueueLockId` + the cross-domain
@@ -273,7 +273,7 @@ import SeLe4n.Platform.RPi5.RuntimeContractPerCore
 -- first runtime exerciser (which will move it production-reached).
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
 -- WS-SM SM5.B: per-core `switchToThread` (plan
--- `SMP_PER_CORE_SCHEDULER_PLAN.md` §3.2, §5).  The context-switch transition
+-- WS-SM SM5 §3.2, §5).  The context-switch transition
 -- `switchToThreadOnCore` itself (with `preemptCurrentOnCore` / the
 -- `affinityAdmitsCore` gate) is in production `Scheduler.Operations.Selection`;
 -- this module collects the forward-looking SM5.B theorems: the cross-domain
@@ -287,7 +287,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
 -- exerciser (wiring `switchToThreadOnCore` + the runtime `withLockSet`
 -- acquisition over `switchToThreadOnCoreLockSet`).
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
--- WS-SM SM5.C: cross-core wake via SGI (plan `SMP_PER_CORE_SCHEDULER_PLAN.md`
+-- WS-SM SM5.C: cross-core wake via SGI (WS-SM SM5
 -- §3.3, §4.4, §5).  The wake transitions (`enqueueRunnableOnCore`,
 -- `determineTargetCore`, `wakeThread`, `handleRescheduleSgiOnCore`,
 -- `setThreadCpuAffinity`) are production defs in `Scheduler.Operations.Selection`;
@@ -443,7 +443,7 @@ import SeLe4n.Kernel.SyscallSchedContainment
 -- entries proven via the prepared/schedule per-phase frames; only the budget-phase
 -- frame (timeoutBlockedThreads object-frame) remains as tracked-debt residual.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
--- WS-SM SM5.J: WCRT under fine locks (plan `SMP_PER_CORE_SCHEDULER_PLAN.md` §3.9,
+-- WS-SM SM5.J: WCRT under fine locks (WS-SM SM5 §3.9,
 -- §5 SM5.J).  Bounds the per-core scheduler operations' worst-case response time
 -- under per-object RW fine locks, extending the R5 domain-rotation / band-exhaustion
 -- `wcrtBound` with the SMP lock-contention dimension: SM5.J.1 `WCRT_lockSet` (the

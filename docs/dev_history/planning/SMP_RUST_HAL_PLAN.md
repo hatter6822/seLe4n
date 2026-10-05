@@ -2,7 +2,7 @@
 
 > **Phase**: SM1 of WS-SM
 > **Status**: LANDED (v0.31.3 → v0.31.8) — PSCI, per-CPU, secondary init, TLBI, SGI, QEMU
-> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+> **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases (original estimate)**: v0.33.0 .. v0.45.x (parallel with SM2)
 > **Calendar estimate**: 16-22 weeks (parallel with SM2 verified-lock work)
@@ -280,7 +280,7 @@ files, code skeleton, acceptance, PR template, estimate.)
 | SM1.A.8 | PSCI documentation map |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.2 Per-CPU data + TPIDR_EL1 (SM1.B, 3 PRs, 7 sub-tasks) — **LANDED at v0.31.4**
 
@@ -374,7 +374,7 @@ files, code skeleton, acceptance, PR template, estimate.)
 | SM1.B.7 | Test `test_per_cpu_data_layout` |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.3 Secondary core full init (SM1.C, 6 PRs, 12 sub-tasks) — **LANDED at v0.31.5**
 
@@ -460,7 +460,7 @@ files, code skeleton, acceptance, PR template, estimate.)
 | SM1.C.12 | Full secondary-init host stubs + tests |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.4 DTB cmdline + Phase 5 (SM1.D, 3 PRs, 6 sub-tasks) — **LANDED at v0.31.6**
 
@@ -474,7 +474,7 @@ files, code skeleton, acceptance, PR template, estimate.)
 | SM1.D.6 | `smp_max_cores` cmdline option |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.5 IS-variant TLB instructions (SM1.E, 3 PRs, 5 sub-tasks) — **LANDED at v0.31.7**
 
@@ -487,7 +487,7 @@ files, code skeleton, acceptance, PR template, estimate.)
 | SM1.E.5 | Migrate kernel-side callers |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 # Tier-0 hygiene check: no production kernel caller emits
 # non-IS TLBI directly.
@@ -520,7 +520,7 @@ fi
 | SM1.F.2 | `gic::send_sgi(target_mask, intid)` |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.7 Cross-core kprintln synchronization (SM1.G, 2 PRs, 4 sub-tasks) — **LANDED at v0.31.7**
 
@@ -532,7 +532,7 @@ fi
 | SM1.G.4 | `kprintln_core!` macro |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ### 5.8 QEMU SMP integration (SM1.H, 2 PRs, 5 sub-tasks) — **LANDED at v0.31.7**
 
@@ -541,7 +541,7 @@ fi
 | SM1.H.1 | Full `test_qemu_smp_bringup.sh` implementation |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 # Check 4 cores reported ready.
 ready_count=$(grep -c "\[smp\] core .: ready" "$LOG" || true)
@@ -615,7 +615,7 @@ test handler.
 | SM1.I.6 | Extended cargo tests — **LANDED** |
 
 *Landed. The implementation is the source; what each cut changed is in
-[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+[`CHANGELOG.md`](../../../CHANGELOG.md) under the versions above.*
 
 ## 6. Verification strategy for SM1
 
@@ -701,7 +701,7 @@ SM1 is complete when:
 ## 9. Cross-references
 
 - **Master overview**:
-  [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
+  [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md)
 - **Previous phase**: [`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md)
 - **Parallel phase**:
   [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)

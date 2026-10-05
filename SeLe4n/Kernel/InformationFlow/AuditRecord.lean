@@ -297,7 +297,7 @@ structure DeclassificationEvent where
   timestamp : Nat
   /-- WS-SM SM8.C.1: the core the declassification was performed on.
 
-      Plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §4.3: when a thread on
+      WS-SM SM8 §4.3: when a thread on
       one core declassifies state observed on another (via cross-core IPC), the
       audit trail must record where the downgrade happened, or a chain spanning
       cores cannot be attributed.  Deliberately **not** defaulted: a default
@@ -475,7 +475,7 @@ recorded or does not happen.
 The availability cost is real and is *not* mitigated in this cut, because the
 only sound mitigation is a consumer that drains the trail, and no read
 interface exists yet (registered as SM8.E debt in
-`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`).  A future ring buffer would have
+WS-SM SM8).  A future ring buffer would have
 to record its own overflow — a dropped entry that leaves no trace of the drop
 is the same unaudited downgrade in a different disguise. -/
 

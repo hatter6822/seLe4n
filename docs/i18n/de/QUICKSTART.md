@@ -98,8 +98,7 @@ Führt Tier 0 (Hygienechecks) und Tier 1 (Build-Validierung) aus.
 ./scripts/test_smoke.sh
 ```
 
-Umfasst zusätzlich Tier 2: Trace-Validierung, Negative-State-Tests und
-Dokumentationssynchronisation.
+Umfasst zusätzlich Tier 2: Trace-Validierung und Negative-State-Tests.
 
 ### Vollständiger Test (bei Theorem-/Invariantenänderungen)
 

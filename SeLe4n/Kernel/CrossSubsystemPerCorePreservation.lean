@@ -16,7 +16,7 @@ import SeLe4n.Kernel.Capability.Invariant
 # WS-SM SM4.D audit-pass-2 — per-operation cross-subsystem SMP-preservation
 
 This module is the preservation layer of the SM4.D cross-subsystem
-migration (plan `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.4).  It is
+migration (WS-SM SM4 §5.4).  It is
 the SM4.D analogue of SM4.C's `Scheduler/Invariant/PerCorePreservation.lean`:
 it connects the per-core / `∀ c` SMP invariant *predicates* (landed in the
 SM4.D modules) to the kernel's *transitions*, by proving that concrete

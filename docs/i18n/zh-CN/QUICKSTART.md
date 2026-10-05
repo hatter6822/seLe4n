@@ -80,7 +80,7 @@ seLe4n 采用分层测试体系，按严格程度递增排列：
 ./scripts/test_smoke.sh
 ```
 
-在 Tier 0-1 的基础上，增加跟踪验证（trace validation）、负状态测试（negative-state tests）和文档同步检查。**提交 PR 前至少需通过此测试。**
+在 Tier 0-1 的基础上，增加跟踪验证（trace validation）和负状态测试（negative-state tests）。**提交 PR 前至少需通过此测试。**
 
 ### Tier 0-3：完整测试
 
