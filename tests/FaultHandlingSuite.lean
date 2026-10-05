@@ -132,7 +132,7 @@ open SeLe4n.Testing
 #check @faultEntryFrame?_none
 -- `v0.36.47` audit (the `Nat`-backed register file row): the by-byte word read,
 -- the carried word bound, its preservation by the entries' saves and the SVC
--- seam's spill, and the live restore path's discharge of it.
+-- seam's spill, and the restore path's discharge of it under the predicate.
 #check @Kernel.Architecture.TrapContext.wordOfByte
 #check @Kernel.Architecture.TrapContext.word_of_ge
 #check @Kernel.Architecture.registerContextsWordBounded

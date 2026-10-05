@@ -266,7 +266,9 @@ onward is not carried and reads back as `0`.  The Lean-internal encode/decode
 direction of `registerFileOfTrapWords_trapWordsOfRegisterFile`, stated over the
 boundary representation; `wordBounded` is the per-context bound
 `registerContextsWordBounded` carries, and `restoreTargetOnCore_user_roundTrip`
-discharges it on the live restore path.  The HAL masks `pstate` to the condition flags at
+discharges it on the restore path from that predicate as a hypothesis on the
+state — preserved by every writer, not yet a bundle conjunct nor a boot-state
+theorem (the register-file row of `docs/REGISTERED_DEBT.md`).  The HAL masks `pstate` to the condition flags at
 the commit, so the cross-language trip is not the identity on `pstate`. -/
 theorem registerFileOfTrapContext_trapContextOfRegisterFile (rf : SeLe4n.RegisterFile)
     (hB : rf.wordBounded) :

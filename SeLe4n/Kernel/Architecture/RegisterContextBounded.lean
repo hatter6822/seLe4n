@@ -28,10 +28,14 @@ copies and the runtime adapter's register write.  Each writes either a
 `UInt64` read as a `Nat`, a value copied from another bounded context, or a
 `pc` rewound below the one it had.
 
-The payoff is at the live restore path: `restoreTargetOnCore_user_roundTrip`
+The payoff is at the restore path: `restoreTargetOnCore_user_roundTrip`
 discharges `registerFileOfTrapContext_trapContextOfRegisterFile`'s hypothesis
-from the carried predicate, so the context a core resumes is the thirty-five
-words the model held, with no caller-supplied bound.
+from the predicate, so under `registerContextsWordBounded st` the context a
+core resumes is the thirty-five words the model held.  The predicate is a
+hypothesis on the state, not yet a fact of it: it is preserved by every writer
+(§2–§3) but is neither a conjunct of the IPC or scheduler bundles nor
+established of the boot state — both are owed by the register-file row of
+`docs/REGISTERED_DEBT.md`.
 
 Invariant side of the Operations/Invariant split for `TrapFrameSave`,
 `ContextRestore`, `SyscallReturn` and the writers above; the predicate is not
@@ -359,7 +363,7 @@ theorem writeRegisterState_preserves_registerContextsWordBounded (reg : SeLe4n.R
     (SeLe4n.writeReg_wordBounded _ _ _ (h.2 bootCoreId) hv)
 
 -- ============================================================================
--- §4  The live restore path, and the state the kernel starts from
+-- §4  The restore path under the predicate, and the state the kernel starts from
 -- ============================================================================
 
 /-- **The context a core resumes is word-bounded**: `restoreTargetOnCore` names

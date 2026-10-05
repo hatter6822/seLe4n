@@ -64,7 +64,10 @@ overflow registers 1 call where it was 112.
   `RegisterFile.default_wordBounded`, `timeoutStagedTcb_registerContext_wordBounded`),
   and `restoreTargetOnCore_user_roundTrip` discharges
   `registerFileOfTrapContext_trapContextOfRegisterFile`'s hypothesis on the
-  live restore path from the carried predicate.
+  restore path **from `registerContextsWordBounded st` as a hypothesis**: the
+  predicate is preserved by every writer but is not yet a bundle conjunct nor
+  established of the boot state (the shortened debt row owns both), so the
+  round trip is a live guarantee only once the row closes.
 - **The FP/SIMD context crosses the Lean boundary whole, in one call each
   way** (closes the `v0.36.47` row "The FP/SIMD context still crosses the
   Lean boundary one word per call").  `FpContext` is now a structure of 66

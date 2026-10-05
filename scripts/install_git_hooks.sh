@@ -42,7 +42,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CANONICAL_HOOK="${SCRIPT_DIR}/pre-commit-lean-build.sh"
-HOOK_RELATIVE="../../scripts/pre-commit-lean-build.sh"
+# The symlink target is the canonical script's absolute path: the hooks
+# directory is wherever git says it is (`--git-path hooks`, which honours
+# `core.hooksPath`, a path outside `.git/` or outside the repository), so no
+# fixed relative path from it reaches `scripts/`.
+HOOK_TARGET="${CANONICAL_HOOK}"
 
 MODE="install"
 for arg in "$@"; do
@@ -130,8 +134,8 @@ install_hook() {
   # Prefer a symlink so future edits to pre-commit-lean-build.sh propagate
   # without a reinstall. Fall back to a copy for symlink-hostile filesystems
   # (Windows WSL w/ certain mounts, some NFS configurations).
-  if ln -s "${HOOK_RELATIVE}" "${HOOK_PATH}" 2>/dev/null; then
-    log "installed pre-commit hook as symlink → ${HOOK_RELATIVE}"
+  if ln -s "${HOOK_TARGET}" "${HOOK_PATH}" 2>/dev/null; then
+    log "installed pre-commit hook as symlink → ${HOOK_TARGET}"
     return 0
   fi
   log "symlink failed; falling back to copy"

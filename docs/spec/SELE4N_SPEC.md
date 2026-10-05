@@ -5037,8 +5037,12 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   `RegisterFile.wordBounded` file — a bound
   `Kernel.Architecture.registerContextsWordBounded` carries for every saved
   context and every core's bank, preserved by every register-context writer
-  (`SeLe4n/Kernel/Architecture/RegisterContextBounded.lean`) and discharged
-  on the live restore path by `restoreTargetOnCore_user_roundTrip` — agreeing
+  (`SeLe4n/Kernel/Architecture/RegisterContextBounded.lean`); on the restore
+  path `restoreTargetOnCore_user_roundTrip` discharges the file's bound from
+  that predicate, which is a **hypothesis on the state**: it is not yet a
+  conjunct of the IPC or scheduler bundles nor established of the boot state
+  (the register-file row of `docs/REGISTERED_DEBT.md`), so no live-path
+  guarantee is claimed beyond preservation by every writer — agreeing
   on the thirty-five registers the layout carries; the HAL masks `SPSR_EL1`
   to the condition flags at the commit, so the cross-language trip is not the
   identity on `pstate`), the by-index read `TrapContext.word` a bound test
