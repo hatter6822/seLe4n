@@ -765,7 +765,7 @@ theorem endpointReplyOnCore_confinedToCores (replier target : SeLe4n.ThreadId)
         · exact observableSlotsConfinedToCores_of_eq _ rfl
 
 -- ============================================================================
--- §4a SM6.C — the receive leg, and the composed `replyRecv`
+-- §4a SM6.C — the receive leg
 -- ============================================================================
 
 -- SM8.B.2, relocated at **WS-RR RR8.12**: `endpointReceiveDualWriteSet` is
@@ -1857,9 +1857,10 @@ theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId
 -- the reply leg, `replyRecvPopDonation`, the receive leg **and**
 -- `replyRecvPostReceiveDonation` — the last of which may donate the new client's
 -- SchedContext, may deschedule the now-passive recorded server on its own core,
--- and always reverts the recorded server's priority-inheritance chain.
--- `endpointReplyRecvOnCore` (§4a) is only the reply and receive legs, so it never
--- bounded the live arm.
+-- and always reverts the recorded server's priority-inheritance chain.  Until
+-- `v0.36.49` that name denoted a two-leg composite (reply, then the bare receive
+-- leg of §4a) no arm called, so the theorems below were about code that never
+-- ran; the live body carries the name now and they bound the arm itself.
 --
 -- **WS-RM (`v0.35.6`)**: the pop sits *between* the two legs, matching
 -- seL4-MCS's `doReplyTransfer` → `reply_remove` → `receiveIPC` order.  It writes
@@ -2129,7 +2130,8 @@ theorem endpointReceiveDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.O
 `API.dispatchWithCap`'s `.replyRecv` arm routes through — writes no core outside
 `endpointReplyRecvWriteSet`.
 
-All three legs, at the states they really run at. The receive leg's
+The reply leg, the donation pop, the receive leg and the post-receive
+donation, at the states they really run at. The receive leg's
 `objects.invExt` premise is discharged from the reply leg's own preservation
 theorem rather than assumed, exactly as in §4a. -/
 theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
