@@ -4672,7 +4672,7 @@ run_check "INVARIANT" rg -n -U '^    syscallDispatchCrossCoreBracketedStep ctx e
 # id alone, and the Lean side reads every other argument from the context it
 # takes whole.  Capture and restore are one call each, not one per word.
 run_check "INVARIANT" rg -n '^    fn lean_syscall_dispatch_cross_core\(syscall_id: u32\) -> u64;$' rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^  let some trapped ← Platform\.FFI\.ffiTrapContext$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^  let trapped ← Platform\.FFI\.ffiTrapContext$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_negative_check "INVARIANT" rg -n 'for i in \[0:SeLe4n\.Kernel\.Architecture\.trapFrameWordCount\]' SeLe4n/Platform/FFI.lean
 # PR #887 review round 3, the review of the round-2 head.  (5) A not-ready
 # core that takes an EL0 abort halts — a frame would be `eret`ed back into the

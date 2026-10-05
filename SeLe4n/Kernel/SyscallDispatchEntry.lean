@@ -694,6 +694,18 @@ def readCallerOverflowWords (execCore : CoreId) (msgInfo : UInt64) :
       (Architecture.IpcBufferRead.callerOverflowAddrs st tid msgInfo).mapM fun pa => do
         pure (pa, ← Platform.FFI.ffiReadUserWord pa.toNat.toUInt64)
 
+/-- **The context the syscall entry dispatches on, or the outcome it answers
+without one.**  An `SVC` handler always publishes its frame before it
+dispatches (`rust/sele4n-hal/src/trap.rs`), so an entry the HAL hands no context
+is a kernel defect, and the answer is to fail closed: `.faulted` with no state
+read, no state committed and no restore staged, on which the trap layer halts
+the PE (`halt_after_delivered_syscall_fault`).  Pure, so the host suite runs the
+arm no hardware path reaches (`tests/SyscallDispatchSuite.lean`). -/
+def syscallEntryContextOrFaulted :
+    Option Architecture.TrapContext → Except UInt64 Architecture.TrapContext
+  | some trapped => .ok trapped
+  | none => .error Architecture.SyscallOutcome.faulted.tagWord
+
 /-- **WS-SM SM6.A**: the cross-core-aware syscall dispatch entry — the live
 SGI-dispatch seam.  Reads the deployment labeling context and the executing core
 from the hardware (`currentCoreId`), runs the verified
@@ -762,10 +774,12 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- message info (`x1`), the six message registers, the IPC buffer (`x6`) and
   -- the fault window (`ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30`).  An `SVC`
   -- handler always publishes its frame before it dispatches, so an entry with
-  -- none is a kernel defect and fails closed: `.faulted` with no restore
-  -- staged, on which the trap layer halts.
-  let some trapped ← Platform.FFI.ffiTrapContext
-    | pure Architecture.SyscallOutcome.faulted.tagWord
+  -- none is a kernel defect and fails closed (`syscallEntryContextOrFaulted`):
+  -- `.faulted` with no restore staged, on which the trap layer halts the PE.
+  let trapped ← Platform.FFI.ffiTrapContext
+  let trapped ← match syscallEntryContextOrFaulted trapped with
+    | .ok trapped => pure trapped
+    | .error tag => return tag
   let frame := some (Architecture.registerFileOfTrapContext trapped)
   let msgInfo := trapped.x1
   -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
@@ -839,8 +853,10 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
       (do
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
-        let some trapped ← Platform.FFI.ffiTrapContext
-          | pure Architecture.SyscallOutcome.faulted.tagWord
+        let trapped ← Platform.FFI.ffiTrapContext
+        let trapped ← match syscallEntryContextOrFaulted trapped with
+          | .ok trapped => pure trapped
+          | .error tag => return tag
         let frame := some (Architecture.registerFileOfTrapContext trapped)
         let msgInfo := trapped.x1
         let words ← readCallerOverflowWords execCore msgInfo

@@ -91,7 +91,21 @@ call per word.  A structure whose fields are all `UInt64` compiles to a single
 constructor object with no object fields and `8 · 35` scalar bytes, field `i` at
 byte offset `8 · i` — the layout `rust/sele4n-hal/src/ffi.rs` reads and writes
 (`TRAP_CONTEXT_SCALAR_BYTES`).  The model's register file stays the proofs'
-view of a context; `registerFileOfTrapContext` is the conversion. -/
+view of a context; `registerFileOfTrapContext` is the conversion.
+
+**What pins the layout.**  On the Lean side, `ofWords` is a *positional*
+anonymous constructor while `word` reads by field *name*, so `word_ofWords`
+is a proof that declared position `i` holds layout word `i`: a field reordered
+or inserted without the same change to `word` fails elaboration.  On the Rust
+side, `trap_context_of_lean` refuses an object whose allocated size is not
+exactly the 35-word constructor's (`TRAP_CONTEXT_OBJECT_BYTES`), and
+`const` assertions hold `TRAP_FRAME_CONTEXT_WORDS` to 35 and
+`TRAP_CONTEXT_SCALAR_BYTES` to eight times it, so a field added on either side
+alone is refused at run time rather than read past.  Neither pin reaches a
+same-size permutation that is applied consistently on one side — that the
+compiler places the fields in declaration order at `8 · i` is checked today by
+reading the generated C, and an executed cross-language test of it is
+registered debt (`docs/REGISTERED_DEBT.md`, the `TrapContext` layout row). -/
 structure TrapContext where
   /-- `x0`. -/
   x0 : UInt64
@@ -163,6 +177,7 @@ structure TrapContext where
   pstate : UInt64
   /-- `TPIDR_EL0`, the thread pointer (word 34). -/
   tpidr : UInt64
+  deriving Repr, DecidableEq, Inhabited
 
 namespace TrapContext
 
@@ -206,17 +221,29 @@ def word (c : TrapContext) : Nat → UInt64
   | _ => 0
 
 /-- The context whose word `i` is `w i`.  Inlined, so a caller's `w` is applied
-at each index directly rather than through a closure. -/
+at each index directly rather than through a closure.
+
+This is the Lean-side layout pin: the constructor is applied *positionally*,
+so field `i` of the structure is `w i` by construction, and `word_ofWords`
+(which reads each field by *name*) proves that declared position `i` is layout
+word `i`.  A field reordered or inserted in `TrapContext` without the same
+change here and in `word` fails to elaborate. -/
 @[inline] def ofWords (w : Nat → UInt64) : TrapContext :=
   ⟨w 0, w 1, w 2, w 3, w 4, w 5, w 6, w 7, w 8, w 9, w 10, w 11, w 12, w 13, w 14, w 15, w 16, w 17, w 18, w 19, w 20, w 21, w 22, w 23, w 24, w 25, w 26, w 27, w 28, w 29, w 30, w 31, w 32, w 33, w 34⟩
 
 /-- **Encoding a context's words and decoding them is the identity.** -/
-theorem ofWords_word (c : TrapContext) : ofWords c.word = c := by
+@[simp] theorem ofWords_word (c : TrapContext) : ofWords c.word = c := by
   cases c; rfl
+
+/-- Two word functions that agree on the layout's words build the same context. -/
+theorem ofWords_congr (w w' : Nat → UInt64)
+    (h : ∀ i, i < trapFrameWordCount → w i = w' i) : ofWords w = ofWords w' := by
+  simp only [ofWords]
+  congr 1 <;> exact h _ (by decide)
 
 /-- **Decoding then encoding is the identity on the layout's words** — every
 word below `trapFrameWordCount` crosses the boundary unchanged. -/
-theorem word_ofWords (w : Nat → UInt64) :
+@[simp] theorem word_ofWords (w : Nat → UInt64) :
     ∀ i, i < trapFrameWordCount → (ofWords w).word i = w i
   | 0, _ => rfl
   | 1, _ => rfl
@@ -258,26 +285,33 @@ theorem word_ofWords (w : Nat → UInt64) :
 end TrapContext
 
 /-- **The register file a trap context holds** — the model's view of the words
-the HAL handed over: `registerFileOfTrapWords` on `TrapContext.word`
-(`registerFileOfTrapContext_eq`), with the named registers read off their
-fields. -/
+the HAL handed over: `registerFileOfTrapWords` on `TrapContext.word`, so the
+question "which register is which word" has the one owner above. -/
 def registerFileOfTrapContext (c : TrapContext) : SeLe4n.RegisterFile :=
-  { pc := ⟨c.pc.toNat⟩
-    sp := ⟨c.sp.toNat⟩
-    gpr := fun r => if r.val < 31 then ⟨(c.word r.val).toNat⟩ else ⟨0⟩
-    pstate := ⟨c.pstate.toNat⟩
-    tpidr := ⟨c.tpidr.toNat⟩ }
+  registerFileOfTrapWords c.word
 
-/-- The context's register file is the one its words describe. -/
-theorem registerFileOfTrapContext_eq (c : TrapContext) :
-    registerFileOfTrapContext c = registerFileOfTrapWords c.word := rfl
+/-- The register file a trap frame's words describe is word-bounded: every
+register is a `UInt64` read as a `Nat`, or the zero register's `0`. -/
+theorem registerFileOfTrapWords_wordBounded (word : Nat → UInt64) :
+    (registerFileOfTrapWords word).wordBounded := by
+  refine ⟨UInt64.toNat_lt_size _, UInt64.toNat_lt_size _, UInt64.toNat_lt_size _,
+    UInt64.toNat_lt_size _, fun r _ => ?_⟩
+  simp only [registerFileOfTrapWords]
+  split
+  · exact UInt64.toNat_lt_size _
+  · show (0 : Nat) < 2 ^ 64; omega
+
+/-- A context the HAL handed over reads back as a word-bounded register file. -/
+theorem registerFileOfTrapContext_wordBounded (c : TrapContext) :
+    (registerFileOfTrapContext c).wordBounded :=
+  registerFileOfTrapWords_wordBounded c.word
 
 /-- The bulk boundary loses nothing: a context built from words reads back as
 the register file those words describe. -/
-theorem registerFileOfTrapContext_ofWords (w : Nat → UInt64) :
+@[simp] theorem registerFileOfTrapContext_ofWords (w : Nat → UInt64) :
     registerFileOfTrapContext (TrapContext.ofWords w) = registerFileOfTrapWords w := by
   have h := TrapContext.word_ofWords w
-  simp only [registerFileOfTrapContext_eq, registerFileOfTrapWords, trapFramePcWord, trapFrameSpWord,
+  simp only [registerFileOfTrapContext, registerFileOfTrapWords, trapFramePcWord, trapFrameSpWord,
     trapFramePstateWord, trapFrameTpidrWord]
   rw [h 32 (by decide), h 31 (by decide), h 33 (by decide), h 34 (by decide)]
   congr 1

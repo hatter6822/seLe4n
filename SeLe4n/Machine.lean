@@ -261,6 +261,18 @@ structure RegisterFile where
 instance : Inhabited RegisterFile where
   default := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun _ => ⟨0⟩ }
 
+/-- **Every register of `rf` fits in one machine word** — `pc`, `sp`, `pstate`,
+`tpidr` and every valid general-purpose register.  `RegValue` is an unbounded
+`Nat`, so this is the hypothesis under which the trap-frame conversion is
+lossless: `Kernel.Architecture.trapContextOfRegisterFile` narrows each register
+with `Nat.toUInt64`, which wraps a value at or above `2^64`.  A context the HAL
+handed over satisfies it (`Kernel.Architecture.registerFileOfTrapContext_wordBounded`);
+carrying it as an invariant of every saved context is registered debt
+(`docs/REGISTERED_DEBT.md`, the `Nat`-backed register file row). -/
+def RegisterFile.wordBounded (rf : RegisterFile) : Prop :=
+  rf.pc.valid ∧ rf.sp.valid ∧ rf.pstate.valid ∧ rf.tpidr.valid ∧
+    ∀ r : RegName, r.isValid → (rf.gpr r).valid
+
 /-- WS-H12c: Manual `Repr` for `RegisterFile`. Since `gpr` is a function
 (`RegName → RegValue`), only `pc` and `sp` are shown in trace output. -/
 instance : Repr RegisterFile where
@@ -776,20 +788,16 @@ updates the single-core `regs` view. -/
     (v : RegisterFile) : (ms.setRegsOnCore c v).systemRegisters = ms.systemRegisters := rfl
 
 /-- R7-C/L-03: Machine-state word-boundedness invariant.
-    Asserts that all register values (PC, SP, and all GPRs) fit in one machine
+    Asserts that every register value of every core's bank fits in one machine
     word. This is always true on real ARM64 hardware but must be stated as an
     invariant in the abstract model since the underlying `Nat` type is unbounded.
 
-    S1-N: This predicate covers *all* fields in `RegisterFile`: `pc`, `sp`,
-    and every valid GPR index (0..31). CPSR/PSTATE is not modeled in the
-    abstract register file — ARM64 condition flags are not used by seL4's
-    syscall ABI and are therefore outside the kernel's trust boundary.
-    If CPSR is added in future hardware-binding work (WS-T), this invariant
-    must be extended accordingly. -/
+    S1-N / WS-BP BP7.3: the predicate is `RegisterFile.wordBounded` on every
+    core's bank, so it covers *all* fields of `RegisterFile`: `pc`, `sp`,
+    `pstate` (`SPSR_EL1`, modelled since WS-BP BP7.3), `tpidr` (`TPIDR_EL0`)
+    and every valid GPR index (0..31). -/
 def machineWordBounded (ms : MachineState) : Prop :=
-  ∀ (c : CoreId),
-    (ms.regsOnCore c).pc.valid ∧ (ms.regsOnCore c).sp.valid ∧
-    ∀ (r : RegName), r.isValid → ((ms.regsOnCore c).gpr r).valid
+  ∀ (c : CoreId), (ms.regsOnCore c).wordBounded
 
 /-- R7-C/L-03: The default machine state satisfies word-boundedness.
     Every core's register bank is initialized to 0 (the default `coreRegs` is
@@ -801,7 +809,9 @@ theorem machineWordBounded_default : machineWordBounded (default : MachineState)
   have hr : (default : MachineState).regsOnCore c = (default : RegisterFile) :=
     PerCoreVector.replicate_get numCores (default : RegisterFile) c
   rw [hr]
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · show (0 : Nat) < 2 ^ 64; omega
+  · show (0 : Nat) < 2 ^ 64; omega
   · show (0 : Nat) < 2 ^ 64; omega
   · show (0 : Nat) < 2 ^ 64; omega
   · intro _ _; show (0 : Nat) < 2 ^ 64; omega

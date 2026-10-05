@@ -1896,7 +1896,9 @@ register file via `readReg layout.capPtrReg`, etc.
 
 The FFI also takes a separate `msgInfo` parameter, which the syscall
 entry (`syscallDispatchCrossCoreEntry`) reads from the same trapped `x1`
-word it passes as `x1`.
+word it passes as `x1`, so on the live path the two are equal by
+construction and `syscallDispatchFromAbi`'s mismatch guard is a defence
+only the host suite can reach (`sd034` in `tests/SyscallDispatchSuite.lean`).
 We do **not** write `msgInfo` to the register file separately because
 `x1` already populates the `layout.msgInfoReg = ⟨1⟩` slot that
 `decodeMsgInfo` reads — writing both would be a redundant overwrite,
@@ -2891,10 +2893,14 @@ def syscallDispatchFromAbi
     (elr spsr spEl0 x30 : UInt64) : Kernel Architecture.SyscallOutcome :=
   fun st =>
     -- ABI consistency check: the syscall entry passes the trapped `x1` as
-    -- both `msgInfo` and `x1` (`syscallDispatchCrossCoreEntry`).  If the
-    -- Lean side observes a mismatch,
-    -- the FFI boundary has been violated and we reject before
-    -- touching kernel state.  Errors ride the x1 label as frames computed
+    -- both `msgInfo` and `x1` (`syscallDispatchCrossCoreEntry`), so no live
+    -- caller can make the two differ and this arm is reachable only from a
+    -- host test (`sd034`) — defence in depth, kept because the parameter is
+    -- in the signature of every dispatch caller (thirty-odd sites) and
+    -- removing it is a wider cut than this guard: registered debt, the
+    -- `syscallDispatchFromAbi` `msgInfo` row of `docs/REGISTERED_DEBT.md`.
+    -- On a mismatch we reject
+    -- before touching kernel state.  Errors ride the x1 label as frames computed
     -- HERE, never staged into any TCB (WS-RA RA.B.4,
     -- `syscallDispatchFromAbi_error_stages_no_frame`).  The two pre-dispatch
     -- rejections below return the pre-state itself; the entry rejection
