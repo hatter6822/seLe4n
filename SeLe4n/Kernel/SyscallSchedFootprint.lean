@@ -21,7 +21,7 @@ import SeLe4n.Kernel.SchedLockBracket
 Every scheduler-domain footprint declared so far sits beside the transition it is
 about: `schedLockSet_endpointSendOnCore` in `EndpointSend.lean`,
 `schedLockSet_endpointCallOnCore` in `EndpointCallDispatch.lean`,
-`schedLockSet_endpointReplyRecvOnCore` in `API.lean`, and so on.  That placement
+`schedLockSet_endpointReplyRecvOnCore` in `EndpointReplyRecv.lean`, and so on.  That placement
 is not a convention this module abandons — it is one this module cannot follow,
 for a reason worth stating once rather than rediscovering per arm.
 

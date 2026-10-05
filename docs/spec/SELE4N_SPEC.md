@@ -51,7 +51,7 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.49` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 435,048 across 366 Lean files |
+| **Production LoC** | 435,053 across 366 Lean files |
 | **Test LoC** | 88,955 across 71 Lean test suites |
 | **Proved declarations** | 14,391 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -5822,7 +5822,7 @@ both dispatch tables calls `endpointReplyRecvOnCore`
 capability-installing receive leg that re-links the same Reply object, post-receive
 donation, receive-leg priority hand-off, then the two return-frame stagers. Before
 `v0.36.49` that name belonged to a two-leg composite (reply then bare receive) that
-no arm called, while the live body was `endpointReplyRecvOnCore` in `API.lean`; the composite
+no arm called, while the live body was `replyRecvBody` in `API.lean`; the composite
 and its theorems were deleted and the live body took the name, so the theorems that
 name it — `endpointReplyRecvOnCore_preserves_ipcInvariantFull`
 (`IPC/Invariant/DispatchPayoff.lean`), `endpointReplyRecvOnCore_confinedToCores`,

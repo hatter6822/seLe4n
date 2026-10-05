@@ -89,8 +89,10 @@ syscalls whose arm SM6 re-routed through a cross-core wrapper.
 
 Read off `API.dispatchWithCapChecked` / `dispatchCapabilityOnly` arm by arm, not
 from the plan: `.call` runs `endpointCallCrossCoreDispatchChecked`, `.reply` runs
-`endpointReplyCrossCoreDispatchChecked`, `.replyRecv` runs `endpointReplyRecvOnCore` (the
-two-leg composition), `.receive` runs the per-core `endpointReceiveDualWithCapsOnCore`,
+`endpointReplyCrossCoreDispatchChecked`, `.replyRecv` runs `endpointReplyRecvOnCore`
+(`IPC/CrossCore/EndpointReplyRecv.lean`: reply leg, donation pop, capability-installing
+receive leg, post-receive donation, receive-leg priority hand-off), `.receive` runs
+the per-core `endpointReceiveDualWithCapsOnCore`,
 the two notification arms run their bound / wait cross-core dispatches, and
 `.tcbSuspend` runs `suspendThreadOnCore`.
 
