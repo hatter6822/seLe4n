@@ -1,3 +1,4 @@
+import textwrap
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -5,183 +6,193 @@ from tempfile import TemporaryDirectory
 import scripts.generate_codebase_map as m
 
 
+def decls_of(sources: dict[str, str]) -> dict[str, dict[str, m.Decl]]:
+    """`{module: {full_name or kind@line: Decl}}` for in-memory sources."""
+    out = {}
+    for module, decls in m.build_declarations(
+        {k: textwrap.dedent(v).lstrip("\n") for k, v in sources.items()}
+    ).items():
+        out[module] = {(d.full_name or f"{d.kind}@{d.line}"): d for d in decls}
+    return out
+
+
 class GenerateCodebaseMapTests(unittest.TestCase):
-    def test_parse_declarations_detects_supported_kinds(self) -> None:
-        fixture = Path("/tmp/test_generate_codebase_map_fixture.lean")
-        fixture.write_text(
-            """
-inductive MyType
-structure Bundle where
-private def hidden : Nat := 1
-theorem stable : True := by trivial
-class Marker where
-  x : Nat
-""".strip()
-            + "\n",
-            encoding="utf-8",
-        )
-        decls = m.parse_declarations(fixture)
+    def test_declarations_carry_their_namespace(self) -> None:
+        got = decls_of({"A": """
+            namespace Outer.Inner
+            inductive MyType
+              | one
+            structure Bundle where
+              x : Nat
+            private def hidden : Nat := 1
+            theorem Bundle.stable : True := trivial
+            def _root_.rootLevel : Nat := 2
+            end Outer.Inner
+            class Marker where
+              x : Nat
+            """})["A"]
         self.assertEqual(
-            [(d.kind, d.name) for d in decls],
+            [(d.kind, d.name, d.full_name) for d in got.values()],
             [
-                ("inductive", "MyType"),
-                ("structure", "Bundle"),
-                ("def", "hidden"),
-                ("theorem", "stable"),
-                ("class", "Marker"),
+                ("inductive", "MyType", "Outer.Inner.MyType"),
+                ("structure", "Bundle", "Outer.Inner.Bundle"),
+                ("def", "hidden", "Outer.Inner.hidden"),
+                ("theorem", "Bundle.stable", "Outer.Inner.Bundle.stable"),
+                ("def", "rootLevel", "rootLevel"),
+                ("class", "Marker", "Marker"),
             ],
         )
 
-    def test_parse_declarations_supports_extended_schema_kinds(self) -> None:
-        fixture = Path("/tmp/test_generate_codebase_map_extended_fixture.lean")
-        fixture.write_text(
-            """
-constant alpha : Nat
-constants beta gamma : Nat
-axiom hAxiom : True
-example : True := by trivial
-opaque hiddenImpl : Nat
-abbrev alias := alpha
-instance : Inhabited Nat where
-  default := 0
-initialize initValue : Nat := 0
-syntax "foo" : command
-macro "bar" : command => `(command| #check Nat)
-macro_rules
-  | `(command| baz) => `(command| #check Nat)
-notation "⊕" => Nat.add
-infixl:65 " +++ " => Nat.add
-prefix:70 "@@" => Nat.succ
-postfix:max "!!" => Nat.succ
-elab "z" : term => `(Nat.zero)
-elab_rules : term
-  | `(z2) => `(Nat.zero)
-term_elab myTerm : term
-command_elab myCmd
-  | `(command| #noop) => pure ()
-tactic myTac
-declare_syntax_cat mycat
-syntax_cat myothercat
-universe u
-universes v w
-variable (x : Nat)
-variables (y z : Nat)
-parameter (p : Nat)
-parameters (q r : Nat)
-section MySection
-namespace MyNamespace
-""".strip()
-            + "\n",
-            encoding="utf-8",
-        )
+    def test_identifiers_are_read_whole(self) -> None:
+        # `?`, `!`, `'`, subscripts, Greek letters and «quoted» names are all
+        # identifier characters; the line-regex reader cut `get?` to `get` and
+        # recorded `τW5a` as anonymous.
+        got = decls_of({"A": """
+            def get? : Option Nat := none
+            def get! : Nat := 0
+            def f₁' : Nat := 0
+            def τW5a : Nat := 0
+            def «weird name» : Nat := 0
+            """})["A"]
+        self.assertEqual(sorted(got), sorted(["get?", "get!", "f₁'", "τW5a", "weird name"]))
 
-        decls = m.parse_declarations(fixture)
-        got = {(d.kind, d.name) for d in decls}
-        expected_subset = {
-            ("constant", "alpha"),
-            ("constants", "beta"),
-            ("constants", "gamma"),
-            ("axiom", "hAxiom"),
-            ("opaque", "hiddenImpl"),
-            ("abbrev", "alias"),
-            ("instance", "<anonymous:instance:7>"),
-            ("initialize", "initValue"),
-            ("syntax", '"foo"'),
-            ("macro", '"bar"'),
-            ("macro_rules", "<anonymous:macro_rules:12>"),
-            ("notation", '"⊕"'),
-            ("infixl", '" +++ "'),
-            ("prefix", '"@@"'),
-            ("postfix", '"!!"'),
-            ("elab", '"z"'),
-            ("elab_rules", "<anonymous:elab_rules:19>"),
-            ("term_elab", "myTerm"),
-            ("command_elab", "myCmd"),
-            ("tactic", "myTac"),
-            ("declare_syntax_cat", "mycat"),
-            ("syntax_cat", "myothercat"),
-            ("universe", "u"),
-            ("universes", "v"),
-            ("universes", "w"),
-            ("variable", "x"),
-            ("variables", "y"),
-            ("variables", "z"),
-            ("parameter", "p"),
-            ("parameters", "q"),
-            ("parameters", "r"),
-            ("section", "MySection"),
-            ("namespace", "MyNamespace"),
-        }
-        self.assertTrue(expected_subset.issubset(got))
+    def test_headers_may_span_lines_and_carry_attributes(self) -> None:
+        got = decls_of({"A": """
+            @[simp,
+              inline]
+            protected noncomputable def
+                spread : Nat := 1
+            set_option maxHeartbeats 0 in
+            @[simp] theorem afterOption : True := trivial
+            """})["A"]
+        self.assertEqual(got["spread"].line, 3)
+        self.assertEqual(got["afterOption"].line, 6)
 
-    def test_parse_declarations_ignores_comments_and_handles_modifiers(self) -> None:
-        fixture = Path("/tmp/test_generate_codebase_map_comments_fixture.lean")
-        fixture.write_text(
-            """
--- def commentedOut := 0
-/-
-  theorem hiddenInBlock : True := by trivial
--/
-noncomputable def visibleDef : Nat := 1
-unsafe theorem visibleTheorem : True := by trivial
-local syntax "visible" : term
-""".strip()
-            + "\n",
-            encoding="utf-8",
-        )
+    def test_comments_and_literals_declare_nothing(self) -> None:
+        got = decls_of({"A": r"""
+            -- def commentedOut := 0
+            /- theorem hiddenInBlock : True := by trivial
+               /- nested -/ def stillHidden := 0 -/
+            def s : String := "
+            namespace Fake
+            theorem inString : True := trivial"
+            def r : String := r#"def inRaw " := 0"#
+            def c : Char := '"'
+            def visible : Nat := 1
+            """})["A"]
+        self.assertEqual(sorted(got), ["c", "r", "s", "visible"])
 
-        decls = m.parse_declarations(fixture)
-        self.assertEqual(
-            [(d.kind, d.name) for d in decls],
-            [
-                ("def", "visibleDef"),
-                ("theorem", "visibleTheorem"),
-                ("syntax", '"visible"'),
-            ],
-        )
+    def test_scope_commands_are_not_declarations(self) -> None:
+        got = decls_of({"A": """
+            universe u
+            variable (x : Nat)
+            section S
+            open Nat in
+            def a : Nat := 1
+            end S
+            namespace N
+            example : True := trivial
+            end N
+            """})["A"]
+        self.assertEqual([(d.kind, d.full_name) for d in got.values()], [("def", "a"), ("example", None)])
 
-    def test_parse_declarations_collects_internal_called(self) -> None:
-        fixture = Path("/tmp/test_generate_codebase_map_called_fixture.lean")
-        fixture.write_text(
-            """
-def leaf : Nat := 1
+    def test_helpers_are_declarations_of_their_own(self) -> None:
+        got = decls_of({"A": """
+            def outer (n : Nat) : Nat := go n
+            where
+              go : Nat → Nat
+                | 0 => 0
+                | k + 1 => go k
+            def loop (n : Nat) : Nat :=
+              let rec walk : Nat → Nat
+                | 0 => 0
+                | k + 1 => walk k
+              walk n
+            instance : Inhabited Nat where
+              default := 0
+            """})["A"]
+        self.assertIn("outer.go", got)
+        self.assertIn("loop.walk", got)
+        self.assertNotIn("default", {d.name for d in got.values()})
 
-def helper : Nat :=
-  leaf + leaf
+    def test_references_resolve_through_namespaces(self) -> None:
+        got = decls_of({"A": """
+            namespace X
+            def leaf : Nat := 1
+            def helper : Nat := leaf + leaf
+            end X
+            namespace Y
+            def leaf : Nat := 2
+            def root : Nat := X.helper + leaf
+            end Y
+            """})["A"]
+        self.assertEqual(got["X.helper"].called, ["X.leaf"])
+        # `leaf` inside `Y` is `Y.leaf`; a short-name reader linked both.
+        self.assertEqual(got["Y.root"].called, ["X.helper", "Y.leaf"])
 
-def root : Nat :=
-  helper + leaf
-""".strip()
-            + "\n",
-            encoding="utf-8",
-        )
+    def test_references_skip_bound_variables_and_suffixes(self) -> None:
+        got = decls_of({"A": """
+            def get : Nat := 0
+            def get? : Option Nat := none
+            def x : Nat := 0
+            def usesQuestion : Option Nat := get?
+            def shadows (x : Nat) : Nat := x
+            def lambda : Nat → Nat := fun get => get
+            """})["A"]
+        self.assertEqual(got["usesQuestion"].called, ["get?"])
+        self.assertEqual(got["shadows"].called, [])
+        self.assertEqual(got["lambda"].called, [])
 
-        decls = m.parse_declarations(fixture)
-        got = {d.name: d.called for d in decls}
-        self.assertEqual(got["leaf"], [])
-        self.assertEqual(got["helper"], ["leaf"])
-        self.assertEqual(got["root"], ["helper", "leaf"])
+    def test_references_follow_field_types_and_constructors(self) -> None:
+        got = decls_of({"A": """
+            structure Table where
+              size : Nat
+            def Table.invExt (t : Table) : Prop := t.size = 0
+            structure State where
+              objects : Table
+            inductive Op
+              | send
+            theorem keeps (st : State) : st.objects.invExt := sorry
+            def pick : Op := .send
+            """})["A"]
+        self.assertEqual(got["keeps"].called, ["State", "Table.invExt"])
+        self.assertEqual(got["pick"].called, ["Op"])
 
-    def test_parse_declarations_called_excludes_namespace_and_section_symbols(self) -> None:
-        fixture = Path("/tmp/test_generate_codebase_map_called_namespace_fixture.lean")
-        fixture.write_text(
-            """
-namespace X
+    def test_references_respect_imports_and_privacy(self) -> None:
+        got = decls_of({
+            "Base": "def shared : Nat := 1\nprivate def secret : Nat := 2\n",
+            "Other": "def stray : Nat := 3\n",
+            "User": "import Base\ndef use : Nat := shared + secret + stray\n",
+        })
+        self.assertEqual(got["User"]["use"].called, ["shared"])
 
-def helper : Nat := 1
+    def test_anonymous_instances(self) -> None:
+        got = decls_of({"A": """
+            namespace N
+            structure Obj where
+              v : Nat
+            instance : Inhabited Obj := ⟨⟨0⟩⟩
+            namespace Obj
+            instance : Repr Obj := ⟨fun _ _ => "o"⟩
+            end Obj
+            instance (o : Obj) : Decidable (o.v = 0) := inferInstance
+            end N
+            """})["A"]
+        self.assertIn("N.instInhabitedObj", got)
+        self.assertIn("N.Obj.instRepr", got)
+        # A binder decides the generated name only after elaboration: no guess.
+        self.assertEqual([d.name for d in got.values() if d.kind == "instance" and d.full_name is None], [""])
 
-theorem t : True := by
-  have _ : Nat := helper
-  trivial
-""".strip()
-            + "\n",
-            encoding="utf-8",
-        )
+    def test_unterminated_comment_is_refused(self) -> None:
+        with self.assertRaises(m.LexError):
+            m.build_declarations({"A": "/- never closed\ndef a := 1\n"})
 
-        decls = m.parse_declarations(fixture)
-        got = {d.name: d.called for d in decls}
-        self.assertEqual(got["X"], [])
-        self.assertEqual(got["t"], ["helper"])
+    def test_parse_declarations_reads_one_file(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            fixture = Path(tmpdir) / "Fixture.lean"
+            fixture.write_text("def leaf : Nat := 1\ndef root : Nat := leaf\n", encoding="utf-8")
+            decls = m.parse_declarations(fixture)
+        self.assertEqual([(d.name, d.called) for d in decls], [("leaf", []), ("root", ["leaf"])])
 
     def test_module_name_is_repo_relative(self) -> None:
         self.assertEqual(m.module_name(m.ROOT / "SeLe4n/Kernel/API.lean"), "SeLe4n.Kernel.API")
@@ -230,7 +241,7 @@ theorem t : True := by
             "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)",
         }
         base = {
-            "schema_version": "1.0.0",
+            "schema_version": m.SCHEMA_VERSION,
             "repository": {
                 "name": "hatter6822/seLe4n",
                 "url": "https://github.com/hatter6822/seLe4n",
@@ -272,7 +283,7 @@ theorem t : True := by
             "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)",
         }
         base = {
-            "schema_version": "1.0.0",
+            "schema_version": m.SCHEMA_VERSION,
             "repository": {"name": "hatter6822/seLe4n", "url": "https://github.com/hatter6822/seLe4n"},
             "source_sync": {"source_digest": "abc"},
             "summary": {"module_count": 1, "declaration_count": 2},

@@ -12,8 +12,9 @@ sweep driven off `docs/codebase_map.json`, described as "generated from the
 elaborated source" and therefore "exhaustive by construction".
 
 **That description was false, and PR #861 review round 5 caught it.**
-`scripts/generate_codebase_map.py` builds the map with a line-oriented
-`DECL_HEAD_RE` over source text — it never consults Lean's environment.  So the
+`scripts/generate_codebase_map.py` builds the map by reading source text (then
+a line-oriented regex; since v0.36.44 the tokenizing reader in
+`scripts/lean_declarations.py`) — it never consults Lean's environment.  So the
 map sees the *syntax* a file contains, not the *constants* the file produces:
 a `macro_rules`/`elab` command that generates a theorem contributes only the
 macro invocation to the map, and the generated constant is absent from both the

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.44-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.36.45-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -81,11 +81,11 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 
 | विशेषता | मान |
 |----------|------|
-| **संस्करण** | `0.36.44` |
+| **संस्करण** | `0.36.45` |
 | **Lean टूलचेन** | `v4.28.0` |
-| **उत्पादन Lean LoC** | 361 फ़ाइलों में 433,982 |
-| **परीक्षण Lean LoC** | 71 परीक्षण सुइट्स में 88,629 |
-| **प्रमाणित घोषणाएँ** | 14,408 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
+| **उत्पादन Lean LoC** | 362 फ़ाइलों में 434,075 |
+| **परीक्षण Lean LoC** | 71 परीक्षण सुइट्स में 88,690 |
+| **प्रमाणित घोषणाएँ** | 14,317 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
 | **Rust क्रेट्स** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`), 80 स्रोत फ़ाइलों में |
 | **लक्ष्य हार्डवेयर** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **हार्डवेयर बाइंडिंग** | **H3 पूर्ण** (WS-AG AG1–AG10): HAL, GIC-400, टाइमर, ARMv8 पेज टेबल, FFI ब्रिज, QEMU बूट |
