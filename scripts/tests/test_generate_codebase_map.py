@@ -178,6 +178,9 @@ class GenerateCodebaseMapTests(unittest.TestCase):
             "User": "import Base\ndef use : Nat := shared + secret + stray\n",
         })
         self.assertEqual(got["User"]["use"].called, ["shared"])
+        # Only a private declaration carries the flag in the artifact.
+        self.assertEqual(m.decl_json(got["Base"]["secret"])["private"], True)
+        self.assertNotIn("private", m.decl_json(got["Base"]["shared"]))
 
     def test_anonymous_instances(self) -> None:
         got = decls_of({"A": """

@@ -11,6 +11,9 @@ Outputs JSON with:
 - `called`: the declarations each one's text refers to, by full name, resolved
   the way Lean resolves names (see `scripts/lean_declarations.py`); `sorry` is
   recorded as `sorryAx`, the core constant Lean elaborates it to
+- `private: true` on a private declaration (absent otherwise): only its own
+  module can refer to it, which is how a `called` name shared by two private
+  declarations in different modules is told apart
 
 This lets consumers invalidate stale local caches whenever Lean declaration
 surface changes, while avoiding branch/merge-only churn.
@@ -45,6 +48,18 @@ class Decl:
     full_name: str | None
     line: int
     called: list[str]
+    # Serialized only when true (`decl_json`): 13 private names repeat across
+    # modules, and a consumer resolving a `called` full name needs to know
+    # which declarer another module cannot see.
+    private: bool = False
+
+
+def decl_json(d: Decl) -> dict:
+    out = asdict(d)
+    if not out.pop("private"):
+        return out
+    out["private"] = True
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +100,7 @@ def _resolve_module(module: str) -> tuple[str, list[Decl]]:
             full_name=d.full_name or None,
             line=d.line,
             called=references(toks, d, corpus) if d.full_name else [],
+            private=d.private,
         )
         for d in corpus.files[module]
         if d.kind not in _MEMBER_KINDS
@@ -298,7 +314,7 @@ def build_map() -> dict:
                 "module": m.module,
                 "path": m.path,
                 "declaration_count": len(m.declarations),
-                "declarations": [asdict(d) for d in m.declarations],
+                "declarations": [decl_json(d) for d in m.declarations],
             }
             for m in modules
         ],
