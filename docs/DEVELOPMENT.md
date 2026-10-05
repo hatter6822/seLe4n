@@ -43,7 +43,7 @@ Lean seam executes on hardware merely because it is wired.
 ```bash
 # Toolchain, elan, Lean 4.28.0, and the git hooks. Runs automatically as a
 # SessionStart hook; run it by hand on a fresh clone.
-./scripts/setup_lean_env.sh                  # includes shellcheck + ripgrep + PyYAML
+./scripts/setup_lean_env.sh                  # includes shellcheck + ripgrep
 ./scripts/setup_lean_env.sh --skip-test-deps # toolchain only, no test deps
 ./scripts/setup_lean_env.sh --build          # also run a full build
 
@@ -490,7 +490,7 @@ build rather than a review; documentation is not gated and is held by review:
 | Gates and tests check code, not documentation or comment prose; gates read code, prose reads prose; a presence check is not a relation check; test a gate by breaking the relation | the code-view overlay, the self-test harnesses, review |
 | Implement the improvement — never weaken documentation to match inferior code | review |
 | Deferrals are registered, never silent | review |
-| Code never points into `docs/dev_history/`; comments cite an archived plan by workstream ID, never by path | Tier 0 negative check over the code view of `SeLe4n/`, `Main.lean`, `tests/`, `rust/` (code); review (comments) |
+| Source never points into `docs/dev_history/`; it cites an archived plan by workstream ID, never by path | review |
 | Report a possible vulnerability the moment you find it | — |
 
 The long-form rationale behind each rule, with the history that earned it, is

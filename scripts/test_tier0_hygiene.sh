@@ -96,27 +96,6 @@ else
   fi
 fi
 
-# Every remote `uses:` must name a full 40-hex commit SHA, and every image an
-# `@sha256:` digest (F-14).  The script takes its files from the git index with
-# nothing pruned (the tracked `.github/workflows/*.y*ml` and every tracked
-# `action.y*ml`), reads them from the index, and parses them as YAML through a
-# loader that rejects duplicate keys, so a key is what YAML resolves it to (an
-# escaped `"\u0075ses"` is `uses`, an alias is its anchor, a `<<` merge is
-# applied).  It follows the schema to the positions GitHub resolves --
-# `jobs.<id>.uses`, `jobs.<id>.steps[*].uses`, a job's `container` (or its
-# `image`), `services.<id>.image`, and an action's `runs.steps[*].uses` and
-# `runs.image` -- so a key named `uses` anywhere else (an input, a `with:`
-# argument) is data.  A `uses` must be a SHA-pinned remote, a `docker://` image
-# with an `@sha256:` digest, or a `./` reference, which is resolved to its
-# tracked workflow or `action.y*ml` and checked in turn (a visited set stops a
-# cycle); an image needs an `@sha256:` digest, and a `runs.image` that builds
-# a Dockerfile is refused, since what a Dockerfile pulls cannot be bounded
-# statically.  A wrong type on the way, and anything it cannot parse or
-# classify, fails.  A missing PyYAML fails with the install command; it is
-# not a skip.  Unconditional, by the rule stated at the CodeQL check below.
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_actions_sha_pinned.py" --self-test
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_actions_sha_pinned.py"
-
 # The three CodeQL workflow invariants, each of which independently leaves the
 # code-scanning merge requirement waiting for results that never arrive:
 # `init`+`analyze` must both exist; every `github/codeql-action/*` reference
@@ -207,25 +186,6 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/indexed_source.py" --self-test
 # and uninitialised padding zeroed).  The normaliser is self-tested here; the
 # comparison against a live dump runs in the QEMU lane, which has QEMU.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/qemu_virt_dtb_fixture.py" --self-test
-
-# Code must not point into `docs/dev_history/`: a string literal, an include
-# path or a build reference that names an archived file breaks the day the
-# archive is pruned, and the archive is retired precisely because a live
-# document superseded it.  The surface is `SeLe4n`, `Main.lean`, `tests` and
-# `rust`.  `docs/` and `scripts/` stay out of scope, because `docs/` cites its own
-# history and `scripts/` reads one file there by design: the AK7 baseline the
-# cascade gate regenerates.
-#
-# `run_negative_check`, so the files are read through the code view: a
-# comment or docstring citing an archived plan is a review rule (cite it by
-# workstream ID instead), not a gate's business.  The view covers Lean, Rust,
-# assembly and C headers (`//` and `/* */`), the linker script (`/* */`) and
-# TOML (`#`), and keeps string literals, so `.incbin "…"`, `#include "…"` and a
-# TOML string value naming an archived path still fail.  Markdown under these
-# directories is excluded, since documentation is not tested.  A file type
-# with no stripper in `lean_code_view._STRIPPERS` (YAML, `Cargo.lock`,
-# `.gitignore`) is read raw, so a comment in one of them fails closed.
-run_negative_check "HYGIENE" rg -n -g '!*.md' "docs/dev_history" SeLe4n Main.lean tests rust
 
 # WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
 # plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10

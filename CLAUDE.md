@@ -89,7 +89,7 @@ live version.
 # Environment setup (runs automatically via SessionStart hook — no build)
 ./scripts/setup_lean_env.sh --skip-test-deps
 
-# Full setup including test dependencies (shellcheck, ripgrep, PyYAML)
+# Full setup including test dependencies (shellcheck, ripgrep)
 ./scripts/setup_lean_env.sh
 
 # Manual build (run separately after setup)
@@ -245,6 +245,9 @@ these rules are what keeps them honest):
   structure it stands for (the command, the order, the scope, the element)
   before asserting; where a scanner cannot, make it over-approximate and fail
   **closed**.
+- **Use the real tool or don't gate**: never hand-write a parser for a format
+  that has one (shell, YAML, Dockerfile…); call it, or leave it to review. A
+  refused unusual-but-valid form is failing closed: don't widen the scanner.
 - **Test a gate by breaking the relation, not by deleting the token** — keep
   the token, break the relation, and confirm the gate fails.
 - **Sweep every site that asks the same question** once a resolver exists;
@@ -314,8 +317,8 @@ moves to `docs/dev_history/planning/` once any obligation it still holds is
 a row in `docs/REGISTERED_DEBT.md`. Source must not reference
 `docs/dev_history/`, so it cites an archived plan by workstream or phase ID
 (`WS-SM SM6.C`), resolved by the table in
-`docs/agent_guide/WORKSTREAM_CONTEXT.md`. Tier 0 rejects such a path in code
-(through the code view); review holds comments to the rule. The ownership map is
+`docs/agent_guide/WORKSTREAM_CONTEXT.md`. Review holds source to the rule;
+no gate checks it. The ownership map is
 [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md).
 
 ## Third-party attribution

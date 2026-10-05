@@ -83,7 +83,8 @@
     (`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.10) becomes
     `WS-SM SM3.A.10`) and, where there was none, the § reference.  Comments
     and strings only, with no line added or removed, so the LoC metrics do
-    not move.  The Tier 0 ban on `docs/dev_history` in source is unchanged.
+    not move.  Review holds source to this form; no gate checks it (the
+    Tier 0 path guard was removed in the f4dd9c1 round, below).
   - *The IDs resolve in a live document.*
     `docs/agent_guide/WORKSTREAM_CONTEXT.md` gains an "Archived plans by ID"
     table (WS-SM SM0–SM9 with SM2.C-defer and SM2.E, WS-RA, WS-RR).
@@ -135,10 +136,9 @@
   - Scripts cite the archived plans by ID (`WS-SM SM9 §3.7`,
     `WS-SM SM2.C-defer §8`, `WS-SM SM7 §8`), not by `docs/dev_history/` path:
     the content-flow gate and the Loom, Miri, nightly, Tier 2, Tier 4,
-    Tier 5 and QEMU shootdown scripts.  The Tier 0 path scan stays scoped to
-    `SeLe4n/`, `Main.lean`, `tests/` and `rust/`, because `scripts/` holds
-    archive paths as machinery: link-check and deferral scopes, historical
-    prose exclusions, gate fixtures and the website manifest.
+    Tier 5 and QEMU shootdown scripts.  `scripts/` keeps the archive paths
+    that are machinery: link-check and deferral scopes, historical prose
+    exclusions, gate fixtures and the website manifest.
   - The *Archived plans by ID* table now resolves every archived workstream
     that kernel code cites.  It adds WS-RC R4 and R5, WS-DT, WS-LC, WS-OD,
     WS-RM and WS-HP, plus an *Audit-era workstreams* table mapping WS-A
@@ -213,8 +213,9 @@
     `scenario_catalog.py check-fixture-index` (the `tests/fixtures/README.md`
     table and its `Used by` claims) are gone.  The fixture-index machinery
     leaves `scenario_catalog.py` (~975 lines) and its unit tests (~860 lines),
-    and so does `python_code_view`'s `blank_strings`, which only it used.  The
-    `docs/dev_history` scan comes back below over code only, without the prose.
+    and so does `python_code_view`'s `blank_strings`, which only it used.  A
+    code-only `docs/dev_history` scan came back in the 852f56c round and was
+    removed in the f4dd9c1 round (both below).
   - *Tier 3* (~615 lines): the 50 anchors that read `.md`/`docs/` files, the 58
     prose anchors on Lean comments and docstrings, and the anchors pinning the
     deleted scripts or the fixture-index code.  Prose anchors whose subject is
@@ -234,67 +235,18 @@
     agent-guide documents and five Lean comments that cited the deleted
     scripts are updated, and the metrics are re-synced.
 - **Two harness checks no longer fail silently (same PR).**
-  - *Action SHA pinning* (new `scripts/check_actions_sha_pinned.py` and its
-    `--self-test`, run by Tier 0): the old check ran only `if command -v rg`,
+  - *Action SHA pinning*: the old Tier 0 check ran only `if command -v rg`,
     with no else branch, so a runner without ripgrep skipped it and printed
-    nothing.  Its pattern also missed sub-path actions
+    nothing, and its pattern missed sub-path actions
     (`github/codeql-action/init@v3`), owners or repos with digits, and refs
-    that do not start with `v` (`@main`, a short SHA).  A first rewrite still
-    scanned lines, and Codex showed that an escaped key (`"\u0075ses"`)
-    walked past it, so the check now parses instead.
-    - It takes its files from the git index with nothing pruned (the tracked
-      `.github/workflows/*.y*ml` and every tracked `action.y*ml`), reads them
-      from the index, and parses them with PyYAML, through a loader that
-      rejects duplicate keys.  An earlier version walked the working tree and
-      pruned `node_modules`, `target` and the like, while exempting `./`
-      references, so Codex showed that an unpinned step in a local action under
-      a pruned directory passed.  An escaped key is `uses`, an alias is its
-      anchor's value, a `<<` merge is applied, and a flow mapping is a mapping.
-    - It follows the schema to the positions GitHub resolves
-      (`jobs.<id>.uses`, `jobs.<id>.steps[*].uses`, `runs.steps[*].uses`), so
-      a key named `uses` elsewhere (an action input, a `with:` argument, an
-      `env:` variable) is data; an earlier version matched the key name
-      anywhere and failed such a legal input.  A wrong type on the way (a job
-      or step that is not a mapping, `steps` that are not a sequence) fails.
-      Each `uses` value must be `owner/repo[/path]@<40-hex SHA>`, and
-      `docker://` references need an `@sha256:` digest.  A local `./path` reference is resolved, as the runner
-      resolves it, to its tracked workflow or `action.y*ml`, which is checked in
-      turn, so a chain of local actions is followed to its end (a visited set
-      stops a cycle).  A local reference with no tracked target, or one that
-      leaves the repository, fails, as does an action file tracked as a
-      symlink.
-    - Images are checked the same way, at the keys GitHub pulls them from:
-      `jobs.<id>.container` (a string, or its `image`),
-      `jobs.<id>.services.<id>.image`, and an action's `runs.image`.  Each
-      must carry an `@sha256:` digest.  A `runs.image` that is not
-      `docker://` builds a Dockerfile and is refused outright.  An earlier
-      round parsed the Dockerfile's `FROM` lines, and Codex then showed
-      `COPY --from=alpine:latest` slipping past; `RUN --mount=from=`,
-      `ONBUILD`, `ADD <url>` and a `RUN curl` pull images or code the same
-      way, so no static reading bounds what a Dockerfile pulls.  The tree has
-      no Docker action, and the finding says to use a digest-pinned
-      `docker://` image.  A job, `services`, service or `runs` that is not a mapping,
-      a container or service with no image, and an image it cannot classify
-      (an expression, a short digest) fail.  `<<` merges are resolved, so a
-      container merged into a job is checked.
-    - A file that does not parse fails, as does a non-string or empty value or
-      any value it cannot classify, and so does a tree with no workflows or no
-      `uses:` or image at all.  A missing PyYAML fails with the install command.
-      `setup_lean_env.sh`, which every CI job that runs Tier 0 calls, installs
-      it with the test dependencies (the `python3-yaml` package, then pip).
-    - Each finding is printed as `file:line: reason: value`.  The self-test
-      has 69 cases, each in a scratch git repository, including the escaped
-      key, a duplicate key, an escaped duplicate, aliases, a flow mapping, an
-      action under `node_modules`, a missing or untracked target, a cycle and
-      a chain of local actions, an action input and a `with:`/`env:` key named
-      `uses` (both pass), and unpinned, unclassifiable and merged-in
-      container, service and Docker-action images, and Dockerfile actions
-      (refused even when every `FROM` is pinned).  A loader that accepts
-      duplicates, or a walk that matches only plain keys, fails it.
-    - The tree's 39 references were already pinned, and no workflow uses a
-      container, a service or a Docker action, so no workflow changed.
-    `CI_POLICY.md` §9 and §9.1 and `THREAT_MODEL.md` describe the parse and no
-    longer say the scan misses sub-path actions.
+    that do not start with `v` (`@main`, a short SHA).  Its replacement,
+    `scripts/check_actions_sha_pinned.py`, went through several review rounds
+    (a line scan, then a PyYAML parse of the indexed workflows and local
+    actions, then image digests, a Dockerfile `FROM` parser and finally a
+    refusal of Dockerfile-built actions).  It was retired in the f4dd9c1
+    round (below) for the real tool: the repository's GitHub Actions policy,
+    which refuses any unpinned action at run time.  The tree's 39 references
+    were already pinned, so no workflow changed.
   - *Negative-check output* (`test_lib.sh`): `run_negative_check` and
     `run_prose_negative_check` sent the scanner's output to `/dev/null`, so a
     hit reported only "Forbidden pattern present" and a scanner error only
@@ -317,10 +269,10 @@
     `${ … }` and backticks as their own contexts, honours a top-level
     backslash escape, reads ANSI-C `$'…'` with its escapes, and treats a
     backtick inside `$( … )` as nested.  The three scanners share one set of
-    quote helpers.  17 new self-test cases (8 fail on the old lexer); the
-    `setup_lean_env.sh` warning that was reworded to dodge the bug is back to
-    its natural wording, and the gate reads the comments after it as
-    comments.
+    quote helpers.  17 new self-test cases (8 fail on the old lexer).  The
+    `setup_lean_env.sh` PyYAML warning that had been reworded to dodge the bug
+    went back to its natural wording, and later left with the PyYAML install
+    (f4dd9c1 round, below).
   - *One shell lexer*: `check_dtb_corpus_consumers.py` had its own per-line
     shell comment stripper, which toggled on every quote with no escapes.
     An escaped quote before a `#` in a label cut the line and failed the
@@ -366,7 +318,8 @@
     that matched comment text match the code, and fourteen `run_prose_check`
     anchors over `link.ld` and `boot.S` became code checks.
     `CLAUDE.md`, `DEVELOPMENT.md`, the sync matrix and `WORKSTREAM_CONTEXT.md`
-    say which half is checked.
+    say which half is checked.  The guard was removed in the next round
+    (below); the code-view coverage stays.
   - *Every fixture has a reader in code*: not restored.  A check that a
     fixture's name appears in code was added and then removed in the same PR,
     after Codex showed that a dead literal satisfied it and that it read the
@@ -375,6 +328,42 @@
     `tests/fixtures/README.md` says.  The two helpers restored for it
     (`strip_shell`'s `keep_quoted`, `lean_code_view.code_view_for`) were
     removed again.
+- **Codex review of f4dd9c1 (same PR).**  All three findings landed on scanner
+  code this PR had added or widened, so this round adds no parsing or scanning
+  code, retires the SHA-pin checker for the repository's own policy, and
+  `CLAUDE.md` gains the rule *use the real tool or don't gate*, with
+  its rationale in `CONVENTIONS_DETAIL.md`.
+  - *The `docs/dev_history` path guard is removed.*  It read comments raw in
+    YAML and every other format with no code view, so a comment in a YAML
+    fixture naming an archived plan would fail Tier 0.  The rule it held is
+    about citations, which are comments and so review's; code that really
+    read an archived file would fail its own tests once the file moved.
+    `CLAUDE.md`, `WORKSTREAM_CONTEXT.md`, `DEVELOPMENT.md` and the sync
+    matrix now say review holds source to the rule.  The code views for
+    `.S`, `.h`, `.ld` and `.toml` stay, since Tier 3 anchors read them.
+  - *A single-quoted or bare helper label*: not accepted.
+    `check_dtb_corpus_consumers.py` refuses a run line it does not classify,
+    which is the gate failing closed, and every invocation in the tree uses a
+    double-quoted label.  Its two findings now name the form it expects,
+    `run_<helper> "<label>" <command>`.
+  - *The SHA-pin checker is retired.*  `check_actions_sha_pinned.py`, its
+    self-test and its Tier 0 wiring are deleted, and so is the PyYAML install
+    that only it needed: `setup_lean_env.sh` is back to its `main` form, and
+    `CLAUDE.md` and `DEVELOPMENT.md` no longer list PyYAML.  The repository's
+    GitHub Actions policy, *Require actions to be pinned to a full-length
+    commit SHA*, enforces action pinning instead: GitHub refuses any unpinned
+    action at run time.  Pinning container, service and `docker://` images to
+    a digest, and building a Docker action from such an image rather than from
+    a Dockerfile, are review rules; the tree has none.  `CI_POLICY.md` §9,
+    `THREAT_MODEL.md`, the sync matrix, `TESTING_FRAMEWORK_PLAN.md` and
+    GitBook chapter 07 say so, and `check_codeql_workflow_policy.py`'s
+    docstring cites the policy.
+  - *Tag comments beside pins*: a review convention, not checked.
+    `CI_POLICY.md` §9 now says so for action SHAs and image digests alike,
+    since no comment may decide whether a gate passes.  For the same reason
+    `check_codeql_workflow_policy.py` no longer compares the version comments
+    beside the codeql-action pins: its self-test now passes agreeing pins
+    under disagreeing comments, and §9.1 says the comments are review's.
 
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 

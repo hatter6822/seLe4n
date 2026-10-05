@@ -202,9 +202,9 @@ def check_gates(tier2: str, rust_script: str) -> list[str]:
     problems = []
     if not re.search(r"^\s*run_\w+\s+lake exe ak9_platform_suite\b",
                      strip_shell(tier2), re.M):
-        problems.append("Tier 2 does not run `lake exe ak9_platform_suite`")
+        problems.append('Tier 2 does not run `run_<helper> "<label>" lake exe ak9_platform_suite`')
     if not re.search(r"^\s*run_\w+\s+cargo test --all\b", strip_shell(rust_script), re.M):
-        problems.append("scripts/test_rust.sh does not run `cargo test --all`")
+        problems.append('scripts/test_rust.sh does not run `run_<helper> "<label>" cargo test --all`')
     return problems
 
 

@@ -122,6 +122,31 @@
   source and check the scope.  Where a scanner genuinely cannot
   (reachability, aliasing through a value), say so in its docstring and
   make it over-approximate, so it fails **closed**.
+- **Use the real tool or don't gate.**  Never hand-write a parser for a
+  language or format that has a real implementation (shell, YAML,
+  Dockerfile…): call the real parser or tool, or leave the property to
+  review.  A gate that refuses a valid but unusual form is failing closed by
+  design; answer that finding, don't widen the scanner.
+
+  PR #906 (`v0.36.42`) earned this.  After its first review round
+  (852f56c), nearly every finding landed on scanner code the PR itself had
+  added or widened, and each fix added more scanner for the next round to
+  review.  The line-based `uses:` scan missed an escaped key, an alias, a
+  merge and a flow mapping until it became a PyYAML parse, and the whole
+  checker was then retired for the real tool: the repository's GitHub
+  Actions policy, which refuses an unpinned action at run time.  A
+  Dockerfile `FROM` parser grew parser directives, an `escape` directive and
+  a `# syntax=` check, and was then beaten by `COPY --from=alpine:latest`,
+  so it was deleted and a Dockerfile-built action is refused (now by
+  review, with the checker gone).  A fixture-reader
+  check was satisfied by a dead literal and removed.  The `docs/dev_history`
+  path guard read comments in every format the code view had no stripper
+  for, so it was removed and the citation rule left to review.  And moving a
+  gate onto the hand-written shell lexer drew a finding that a single-quoted
+  or bare helper label is refused, which is the gate failing closed, not a
+  bug.  The hand-written views that predate this rule (`strip_shell`, the
+  Lean and Rust code views) stay as they are, but they are not widened: a
+  form they cannot classify is refused, and the finding is answered.
 - **Test a gate by breaking the relation, not by deleting the token.**
   The corollary, and the reason every instance above passed its own
   self-test: the fixtures mutated by *removal*, which any presence check

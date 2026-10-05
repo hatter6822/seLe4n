@@ -118,12 +118,10 @@ no canonical index named until WS-RR RR7.32 made that checkable.
 #### Archived plans by ID
 
 Source, tests and Rust cite a closed plan by its **workstream or phase ID**, not
-by path.  Tier 0 rejects a `docs/dev_history/` path in the code of `SeLe4n/`,
-`Main.lean`, `tests/` and `rust/`: string literals, include paths and build
-references, read through the code view.  A citation in a comment or docstring is
-held by review.  This table resolves an ID to its plan.  A sub-task ID
-after the workstream (`WS-SM SM3.A.10`, `WS-RA RA.B.5b`, `WS-RR RR8.12`) is a row
-in that plan; a `§` after a phase ID (`WS-SM SM6 §3.1`) is a section of it.
+by path.  Review holds source to that rule; no gate checks it.  This table
+resolves an ID to its plan.  A sub-task ID after the workstream
+(`WS-SM SM3.A.10`, `WS-RA RA.B.5b`, `WS-RR RR8.12`) is a row in that plan; a
+`§` after a phase ID (`WS-SM SM6 §3.1`) is a section of it.
 Each plan's status line is its status when archived; current status is the
 phase table above and `docs/REGISTERED_DEBT.md`.
 

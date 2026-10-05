@@ -144,14 +144,25 @@ configuration errors.
 ## 9. WS-E1 GitHub Actions SHA-pinning policy (F-14)
 
 All third-party GitHub Actions in workflow files must be pinned to full 40-character
-commit SHA hashes, not mutable version tags. Each `uses:` reference carries a
-trailing `# vX.Y.Z` comment documenting the version at pin time. Every image a
-workflow or action pulls (a job container, a service, a Docker action's
-`docker://` image) is pinned the same way, to its `@sha256:` digest, with the
-tag in a comment beside it. A Docker action is built from a digest-pinned
-`docker://` image, never from a Dockerfile: what a Dockerfile pulls (`FROM`,
-`COPY --from`, `RUN --mount=from=`, `ONBUILD`, `ADD <url>`, a `RUN curl`) is not
-bounded by any static check, so a Dockerfile-built action is refused.
+commit SHA hashes, not mutable version tags. The repository's GitHub Actions
+policy enforces this: **Require actions to be pinned to a full-length commit SHA**
+(Settings → Actions → General) is on, and with it GitHub refuses, at run time,
+any workflow run that uses an action not pinned to a full commit SHA, so an
+unpinned reference fails its run instead of executing. The setting is repository
+configuration, not code in this tree, so it must stay on; no Tier 0 script
+re-checks the pins.
+
+Every image a workflow or action pulls (a job container, a service, a Docker
+action's `docker://` image) is pinned to its `@sha256:` digest, and a Docker
+action is built from such an image, never from a Dockerfile, since what a
+Dockerfile pulls (`FROM`, `COPY --from`, `RUN --mount=from=`, `ONBUILD`,
+`ADD <url>`, a `RUN curl`) cannot be pinned by reading it. These are review
+rules: the GitHub policy covers actions, not images, and no gate checks them.
+The tree has no container, service or Docker action today.
+
+By review convention each pin carries its tag in a comment beside it
+(`# v4.2.2`, `# 3.19`), recording the version at pin time. No gate reads that
+comment, because a comment never decides whether a check passes.
 
 Covered workflows:
 - `.github/workflows/lean_action_ci.yml`
@@ -159,43 +170,6 @@ Covered workflows:
 - `.github/workflows/lean_toolchain_update_proposal.yml`
 - `.github/workflows/platform_security_baseline.yml`
 - `.github/workflows/codebase_map_sync.yml`
-
-Tier 0 hygiene runs `scripts/check_actions_sha_pinned.py` and its `--self-test`.
-The script takes its files from the git index (`git ls-files`, what CI checks
-out), with nothing pruned: the tracked `.github/workflows/*.yml` / `*.yaml` and
-every tracked `action.yml` / `action.yaml`. It reads their text from the index
-as well and parses it as YAML, with PyYAML and a loader that rejects duplicate
-keys. A key is therefore what YAML resolves it to: an escaped
-`"\u0075ses"` is `uses`, an alias is its anchor's value, a `<<` merge is
-applied, and a flow mapping is a mapping. The walk follows the schema to the
-positions GitHub resolves, `jobs.<id>.uses` and `jobs.<id>.steps[*].uses` in a
-workflow and `runs.steps[*].uses` in an action, so a key named `uses` anywhere
-else (an action input, a `with:` argument, an `env:` variable) is data. A
-`uses` value must be `owner/repo[/path]@ref` with a full 40-hex commit SHA as
-the ref, and a `docker://` reference must carry an `@sha256:` digest. A
-document, job, step, `services`, service or `runs` that is not a mapping, and
-`steps` that are not a sequence, fail. A local `./path`
-reference is resolved against the repository root, as the runner resolves it, to
-a tracked workflow file or to the tracked `action.yml` / `action.yaml` in that
-directory, and the target is checked in turn, so a chain of local actions is
-followed to its end (a visited set stops a cycle). A local reference with no
-tracked target, or one that leaves the repository, fails, as does a workflow or
-action file tracked as a symlink or a submodule.
-
-The image keys are read where GitHub reads them: `jobs.<id>.container` (a
-string, or its `image`) and `jobs.<id>.services.<id>.image` in a workflow, and
-`runs.image` in an action. Each must be `[docker://]image[:tag]@sha256:<64 hex>`.
-A `runs.image` that is not `docker://` builds a Dockerfile and fails, whatever
-the Dockerfile contains; the finding says to use a digest-pinned `docker://`
-image instead.
-A `jobs`, job, `services`, service or `runs` that is not a mapping, and a
-container or service with no image, fail.
-
-A file that does not parse fails, as does a non-string or empty value or any
-value the script cannot classify. A missing PyYAML fails with the install command
-(`scripts/setup_lean_env.sh` installs it with the test dependencies), and so does
-a tree with no workflows or no `uses:` or image at all. Each finding is printed as
-`file:line`.
 
 ### 9.1 CodeQL action pin parity
 
@@ -224,12 +198,12 @@ Two mechanisms hold the invariant, at the two points it can break:
 
 1. **Enforcement** — `scripts/check_codeql_workflow_policy.py`, run unconditionally by
    Tier 0 hygiene together with its `--self-test` witness. It fails on disagreeing
-   pins, on disagreeing version comments, and on any codeql-action reference that is
-   not a full 40-character commit SHA. That last check overlaps the §9 scan, which
-   also resolves sub-path actions such as `github/codeql-action/init`. The gate keeps
-   it because parity over a mutable tag is meaningless, so the parity check states
-   its own precondition. Because YAML permits quoted scalars, references are read
-   through a quote-aware scanner — a `uses: "github/codeql-action/init@…"` that a
+   pins and on any codeql-action reference that is not a full 40-character commit
+   SHA. That last check overlaps the §9 repository policy; the gate keeps it
+   because parity over a mutable tag is meaningless, so the parity check states
+   its own precondition. The tag comments beside the pins are review's, as in §9.
+   Because YAML permits quoted scalars, references are read through a
+   quote-aware scanner — a `uses: "github/codeql-action/init@…"` that a
    plain grep would miss is exactly the mismatch that would slip through.
 2. **Prevention** — the `codeql-action` group in `.github/dependabot.yml`. Dependabot
    treats `init` and `analyze` as separate dependencies and, ungrouped, opens one PR

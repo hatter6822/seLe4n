@@ -73,6 +73,11 @@ Security goals:
    - Tier 3 anchors enforce presence of threat-model and installer-checksum hardening symbols.
 5. **SHA-pinning**
    - Every GitHub Actions workflow reference uses a pinned commit SHA (WS-E1 F-14).
+     The repository's GitHub Actions policy, "Require actions to be pinned to a
+     full-length commit SHA", enforces it: GitHub refuses, at run time, any
+     workflow run that uses an unpinned action.  Container, service and
+     `docker://` images are pinned to an `@sha256:` digest as a review rule
+     (the tree has none today); see `docs/CI_POLICY.md` §9.
 
 ## 6) Residual risk and follow-on work
 
@@ -99,14 +104,9 @@ Tier 3 invariant surface anchors additionally check for:
 
 - setup-script checksum verification symbols,
 - SHA-pinning of GitHub Actions workflow references (Tier 3 positively
-  anchors the four original workflows; the all-workflows guarantee — every
-  `uses:` in `.github/workflows/` SHA-pinned, `codebase_map_sync.yml`
-  included — is Tier 0's `check_actions_sha_pinned.py`, which parses the
-  tracked workflows and composite actions as YAML, follows each local `./`
-  action to its tracked file, requires an `@sha256:` digest on every job
-  container, service and Docker-action image, refuses a Docker action built
-  from a Dockerfile (what a Dockerfile pulls cannot be bounded statically),
-  and fails on any `uses:` or image value it cannot classify or resolve).
+  anchors the four original workflows; the all-workflows guarantee is the
+  repository's GitHub Actions policy, which refuses any unpinned action at
+  run time, not a script in this tree).
 
 ## 8) Related security documents
 

@@ -26,8 +26,8 @@ invariants are checked here:
    'Y'"), which ends the run as a CodeQL *configuration error* whose
    diagnostics-only "failed run" SARIF code scanning rejects.  Refs must also
    be full 40-character commit SHAs: parity over a mutable tag is meaningless,
-   so this gate states its own precondition even though the F-14 scan
-   (``check_actions_sha_pinned.py``) also resolves sub-path actions.
+   so this gate states its own precondition even though the repository's
+   GitHub Actions policy (F-14) also refuses an unpinned action at run time.
 
 3. UNMASKED -- the analyze step must not be masked by ``continue-on-error``,
    at the step level *or* at the level of the job containing it.  Masking is
@@ -88,15 +88,14 @@ def unquote(value: str) -> str:
 
 
 class Line:
-    __slots__ = ("no", "indent", "code", "stripped", "comment")
+    __slots__ = ("no", "indent", "code", "stripped")
 
     def __init__(self, no: int, raw: str):
-        code, comment = split_comment(raw.rstrip("\n"))
+        code, _comment = split_comment(raw.rstrip("\n"))
         self.no = no
         self.code = code
         self.stripped = code.strip()
         self.indent = len(code) - len(code.lstrip(" ")) if self.stripped else 0
-        self.comment = comment
 
 
 def read_lines(path: str) -> list[Line]:
@@ -105,7 +104,9 @@ def read_lines(path: str) -> list[Line]:
 
 
 def codeql_ref(line: Line):
-    """Return (sub_action, ref, version_comment) for a codeql `uses:` line."""
+    """Return (sub_action, ref) for a codeql `uses:` line.  The `# vX.Y.Z`
+    tag comment beside the pin is a review convention, not checked: a
+    comment never decides whether a gate passes."""
     if not line.stripped:
         return None
     match = USES_RE.match(line.stripped)
@@ -116,7 +117,7 @@ def codeql_ref(line: Line):
         return None
     spec = value[len(MARKER):]
     sub_action, _, ref = spec.partition("@")
-    return sub_action.strip(), ref.strip(), line.comment.strip()
+    return sub_action.strip(), ref.strip()
 
 
 def is_key(line: Line, name: str) -> bool:
@@ -183,7 +184,7 @@ def masked_at_step(block: list[Line]) -> bool:
 def scan(root: str) -> list[str]:
     workflows = os.path.join(root, ".github", "workflows")
     problems: list[str] = []
-    refs: list[tuple[str, int, str, str, str]] = []
+    refs: list[tuple[str, int, str, str]] = []
 
     paths = []
     if os.path.isdir(workflows):
@@ -198,7 +199,7 @@ def scan(root: str) -> list[str]:
         for line in lines:
             parsed = codeql_ref(line)
             if parsed:
-                refs.append((rel, line.no, parsed[0], parsed[1], parsed[2]))
+                refs.append((rel, line.no, parsed[0], parsed[1]))
 
         # UNMASKED, step level.
         for block in step_blocks(lines):
@@ -239,7 +240,7 @@ def scan(root: str) -> list[str]:
         return problems
 
     # PARITY.
-    for rel, no, sub_action, ref, _ in refs:
+    for rel, no, sub_action, ref in refs:
         if not SHA_RE.match(ref):
             problems.append(
                 f"{rel}:{no}: `{sub_action}@{ref}` is not a full 40-character commit SHA"
@@ -247,16 +248,11 @@ def scan(root: str) -> list[str]:
 
     distinct_refs = {ref[3] for ref in refs}
     if len(distinct_refs) > 1:
-        sites = ", ".join(f"{r}:{n} {s}@{ref[:12]}" for r, n, s, ref, _ in refs)
+        sites = ", ".join(f"{r}:{n} {s}@{ref[:12]}" for r, n, s, ref in refs)
         problems.append(
             "github/codeql-action/* references disagree -- `init` stamps its config "
             "with its own version and `analyze` rejects a config from a different "
             f"one, so the run ends in a configuration error: {sites}"
-        )
-    elif len({ref[4] for ref in refs}) > 1:
-        sites = ", ".join(f"{r}:{n} # {c}" for r, n, _, _, c in refs)
-        problems.append(
-            f"codeql-action refs share a commit but their version comments disagree: {sites}"
         )
 
     return problems
@@ -340,7 +336,9 @@ def self_test() -> int:
         ("a deleted analyze step", _workflow(analyze=False), False),
         ("a step NAMED after the flag",
          _workflow(analyze_name="Run CodeQL without continue-on-error masking"), True),
-        ("disagreeing version comments", _workflow(analyze_comment="v4.37.4"), False),
+        # The tag comment is review's: a comment never decides a gate.
+        ("agreeing pins under disagreeing tag comments",
+         _workflow(analyze_comment="v4.37.4"), True),
     ]
 
     failures = 0
