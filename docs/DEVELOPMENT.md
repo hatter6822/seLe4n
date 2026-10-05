@@ -43,7 +43,7 @@ Lean seam executes on hardware merely because it is wired.
 ```bash
 # Toolchain, elan, Lean 4.28.0, and the git hooks. Runs automatically as a
 # SessionStart hook; run it by hand on a fresh clone.
-./scripts/setup_lean_env.sh                  # includes shellcheck + ripgrep
+./scripts/setup_lean_env.sh                  # includes shellcheck + ripgrep + PyYAML
 ./scripts/setup_lean_env.sh --skip-test-deps # toolchain only, no test deps
 ./scripts/setup_lean_env.sh --build          # also run a full build
 

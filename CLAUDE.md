@@ -89,7 +89,7 @@ live version.
 # Environment setup (runs automatically via SessionStart hook — no build)
 ./scripts/setup_lean_env.sh --skip-test-deps
 
-# Full setup including test dependencies (shellcheck, ripgrep)
+# Full setup including test dependencies (shellcheck, ripgrep, PyYAML)
 ./scripts/setup_lean_env.sh
 
 # Manual build (run separately after setup)

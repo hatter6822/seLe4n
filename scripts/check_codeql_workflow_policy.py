@@ -27,7 +27,7 @@ invariants are checked here:
    diagnostics-only "failed run" SARIF code scanning rejects.  Refs must also
    be full 40-character commit SHAs: parity over a mutable tag is meaningless,
    so this gate states its own precondition even though the F-14 scan
-   (``check_actions_sha_pinned.sh``) also resolves sub-path actions.
+   (``check_actions_sha_pinned.py``) also resolves sub-path actions.
 
 3. UNMASKED -- the analyze step must not be masked by ``continue-on-error``,
    at the step level *or* at the level of the job containing it.  Masking is

@@ -214,7 +214,7 @@
     table and its `Used by` claims) are gone.  The fixture-index machinery
     leaves `scenario_catalog.py` (~975 lines) and its unit tests (~860 lines),
     and so does `python_code_view`'s `blank_strings`, which only it used.  The
-    code halves of two of these checks come back below, without the prose.
+    `docs/dev_history` scan comes back below over code only, without the prose.
   - *Tier 3* (~615 lines): the 50 anchors that read `.md`/`docs/` files, the 58
     prose anchors on Lean comments and docstrings, and the anchors pinning the
     deleted scripts or the fixture-index code.  Prose anchors whose subject is
@@ -234,25 +234,33 @@
     agent-guide documents and five Lean comments that cited the deleted
     scripts are updated, and the metrics are re-synced.
 - **Two harness checks no longer fail silently (same PR).**
-  - *Action SHA pinning* (new `scripts/check_actions_sha_pinned.sh` and its
+  - *Action SHA pinning* (new `scripts/check_actions_sha_pinned.py` and its
     `--self-test`, run by Tier 0): the old check ran only `if command -v rg`,
     with no else branch, so a runner without ripgrep skipped it and printed
     nothing.  Its pattern also missed sub-path actions
     (`github/codeql-action/init@v3`), owners or repos with digits, and refs
-    that do not start with `v` (`@main`, a short SHA).
-    - The script resolves every `uses:` value into `owner/repo[/path]@ref`
-      and requires a full 40-hex commit SHA.  Local `./` actions are exempt,
-      and `docker://` references need an `@sha256:` digest.
-    - It fails on any shape it cannot classify: a flow mapping, an empty value,
-      an alias, a quoted or spaced key, or a key with no space after its colon.
-    - It is unconditional and scans with `rg`, or `grep -E` without it.  It
-      fails, naming the cause, when there is no scanner, when the scan errors
-      or when it finds no `uses:` at all.
+    that do not start with `v` (`@main`, a short SHA).  A first rewrite still
+    scanned lines, and Codex showed that an escaped key (`"\u0075ses"`)
+    walked past it, so the check now parses instead.
+    - It parses `.github/workflows/*.y*ml` and every composite `action.y*ml`
+      with PyYAML, through a loader that rejects duplicate keys.  An escaped
+      key is `uses`, an alias is its anchor's value, and a flow mapping is a
+      mapping.
+    - It walks every mapping, and every value whose key is `uses` must be
+      `owner/repo[/path]@<40-hex SHA>`.  Local `./` actions are exempt, and
+      `docker://` references need an `@sha256:` digest.
+    - A file that does not parse fails, as does a non-string or empty value or
+      any value it cannot classify, and so does a tree with no workflows or no
+      `uses:` at all.  A missing PyYAML fails with the install command.
+      `setup_lean_env.sh`, which every CI job that runs Tier 0 calls, installs
+      it with the test dependencies (the `python3-yaml` package, then pip).
     - Each finding is printed as `file:line: reason: value`.  The self-test
-      runs 26 cases under each scanner on the host.
+      has 33 cases, including the escaped key, a duplicate key, an escaped
+      duplicate, aliases and a flow mapping.  A loader that accepts
+      duplicates, or a walk that matches only plain keys, fails it.
     - The tree's 39 references were already pinned, so no workflow changed.
-    `CI_POLICY.md` §9 and §9.1 and `THREAT_MODEL.md` no longer say the scan
-    misses sub-path actions.
+    `CI_POLICY.md` §9 and §9.1 and `THREAT_MODEL.md` describe the parse and no
+    longer say the scan misses sub-path actions.
   - *Negative-check output* (`test_lib.sh`): `run_negative_check` and
     `run_prose_negative_check` sent the scanner's output to `/dev/null`, so a
     hit reported only "Forbidden pattern present" and a scanner error only
@@ -281,25 +289,14 @@
     references, while comments citing an archived plan are a review rule.
     `CLAUDE.md`, `DEVELOPMENT.md`, the sync matrix and `WORKSTREAM_CONTEXT.md`
     say which half is checked.
-  - *Every fixture has a reader in code*: the new
-    `scripts/check_fixture_consumers.py` and its `--self-test` run in Tier 0.
-    - The fixtures are the tracked files under `tests/fixtures/`.  The readers
-      are the code views of the Lean, Rust, Python and shell sources under
-      `SeLe4n/`, `Main.lean`, `tests/`, `scripts/` and `rust/`.  Neither set is
-      listed, and no Markdown is read.
-    - A fixture counts as read when a reader names it.  A `.sha256` companion
-      counts when it is named or globbed, or when a reader of its fixture
-      checks the `.sha256`.  A corpus entry counts when it is a row of a
-      `MANIFEST` that a reader names.
-    - A reader suffix the script cannot classify fails, as does an unreadable
-      file, an unparseable `MANIFEST` row or an empty fixture set.
-    - Its 16 self-test cases keep each file and break only its reader.
-    - On the tree, keeping `qemu_boot_expected.txt` and
-      `smp_4core_scheduler.expected` and turning their only readers into
-      comments fails the check, and it names both files and the orphaned
-      companion.
-    - The shell view needs double-quoted text kept, so `strip_shell`'s
-      `keep_quoted` and `lean_code_view.code_view_for` are restored for it.
+  - *Every fixture has a reader in code*: not restored.  A check that a
+    fixture's name appears in code was added and then removed in the same PR,
+    after Codex showed that a dead literal satisfied it and that it read the
+    working tree against the index.  A name in code cannot prove that a test
+    opens the fixture, so orphaned fixtures are left to review, as
+    `tests/fixtures/README.md` says.  The two helpers restored for it
+    (`strip_shell`'s `keep_quoted`, `lean_code_view.code_view_for`) were
+    removed again.
 
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 

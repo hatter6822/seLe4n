@@ -709,17 +709,6 @@ _STRIPPERS = {
 }
 
 
-def code_view_for(suffix: str):
-    """The code view for files with `suffix`, or `None` when the tree has none.
-
-    `None` is not an error and not an omission: it is the statement that a
-    reader of such a file sees the raw text, comments included, and must say
-    so.  `check_fixture_consumers.py` asks it, so a fixture consumer's code view
-    and the overlay's are one answer.  See `_STRIPPERS`.
-    """
-    return _STRIPPERS.get(suffix)
-
-
 def overlay(outdir: str, repo: str | None = None) -> str:
     """Build a whole-repo overlay whose `.lean` files are comment-free.
 

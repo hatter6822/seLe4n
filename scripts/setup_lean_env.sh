@@ -122,6 +122,8 @@ fast_path_ready() {
   # installed the test dependencies.
   if [ "${SKIP_TEST_DEPS}" -eq 0 ]; then
     command -v qemu-system-aarch64 >/dev/null 2>&1 || return 1
+    # Check 5: PyYAML, which Tier 0's action-pin check parses workflows with.
+    python3 -c 'import yaml' >/dev/null 2>&1 || return 1
   fi
   return 0
 }
@@ -358,6 +360,12 @@ install_missing_packages() {
       missing_apt+=("qemu-system-arm")
       missing_any=1
     fi
+    # PyYAML: Tier 0's action-pin check parses the workflows with it and
+    # fails without it.  `ensure_python_yaml` falls back to pip below.
+    if ! python3 -c 'import yaml' >/dev/null 2>&1; then
+      missing_apt+=("python3-yaml")
+      missing_any=1
+    fi
   fi
 
   # zstd: try a quick install without apt-get update first (from local cache).
@@ -394,6 +402,7 @@ install_missing_packages() {
           shellcheck) dnf_pkgs+=("ShellCheck") ;;
           # Fedora/RHEL split the emulator per target architecture.
           qemu-system-arm) dnf_pkgs+=("qemu-system-aarch64") ;;
+          python3-yaml) dnf_pkgs+=("python3-pyyaml") ;;
           *) dnf_pkgs+=("${pkg}") ;;
         esac
       done
@@ -405,6 +414,7 @@ install_missing_packages() {
         case "${pkg}" in
           shellcheck) yum_pkgs+=("ShellCheck") ;;
           qemu-system-arm) yum_pkgs+=("qemu-system-aarch64") ;;
+          python3-yaml) yum_pkgs+=("python3-pyyaml") ;;
           *) yum_pkgs+=("${pkg}") ;;
         esac
       done
@@ -415,6 +425,7 @@ install_missing_packages() {
         case "${pkg}" in
           # Arch ships every system target in one package.
           qemu-system-arm) pacman_pkgs+=("qemu-system-aarch64") ;;
+          python3-yaml) pacman_pkgs+=("python-yaml") ;;
           *) pacman_pkgs+=("${pkg}") ;;
         esac
       done
@@ -429,10 +440,12 @@ install_missing_packages() {
           # qemu-system-aarch64 still absent and every tier-4 gate skipping.
           # The repo's own macOS instructions already say `brew install qemu`.
           qemu-system-arm) brew_pkgs+=("qemu") ;;
+          # Homebrew's Python takes PyYAML from pip (`ensure_python_yaml`).
+          python3-yaml) ;;
           *) brew_pkgs+=("${pkg}") ;;
         esac
       done
-      for pkg in "${brew_pkgs[@]}"; do
+      for pkg in ${brew_pkgs[@]+"${brew_pkgs[@]}"}; do
         brew install "${pkg}" || true
       done
     fi
@@ -720,6 +733,22 @@ fi
 if [ -n "${PKG_BG_PID}" ]; then
   wait "${PKG_BG_PID}" 2>/dev/null || true
 fi
+
+# PyYAML for Tier 0's action-pin check: the package manager above is tried
+# first, then pip.  If neither works, say so here; the check itself fails with
+# the same install command rather than skipping.
+ensure_python_yaml() {
+  if [ "${SKIP_TEST_DEPS}" -eq 1 ] || python3 -c 'import yaml' >/dev/null 2>&1; then
+    return 0
+  fi
+  log_elapsed "PyYAML not importable; installing with pip"
+  python3 -m pip install --user --quiet pyyaml >/dev/null 2>&1 \
+    || python3 -m pip install --quiet pyyaml >/dev/null 2>&1 || true
+  if ! python3 -c 'import yaml' >/dev/null 2>&1; then
+    echo "[setup] warning: PyYAML is not importable; the Tier 0 action-pin check will fail until it is; run: python3 -m pip install pyyaml" >&2
+  fi
+}
+ensure_python_yaml
 
 log_elapsed "Lean environment is ready"
 log_elapsed "lake version: $(lake --version)"

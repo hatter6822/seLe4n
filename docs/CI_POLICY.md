@@ -154,14 +154,19 @@ Covered workflows:
 - `.github/workflows/platform_security_baseline.yml`
 - `.github/workflows/codebase_map_sync.yml`
 
-Tier 0 hygiene runs `scripts/check_actions_sha_pinned.sh` and its `--self-test`.
-The script resolves every `uses:` value in `.github/workflows/` into
-`owner/repo[/path]@ref` and fails unless the ref is a full 40-hex commit SHA. Local
-`./` actions are exempt, and a `docker://` reference must carry an `@sha256:` digest.
-Any shape it cannot classify fails: a flow mapping, an empty value, an alias, or a
-key with no space after its colon. It scans with `rg`, or `grep -E` where `rg` is
-absent. It fails, naming the cause, when there is no scanner, when the scan errors,
-or when the scan finds no `uses:` at all. Each finding is printed as `file:line`.
+Tier 0 hygiene runs `scripts/check_actions_sha_pinned.py` and its `--self-test`.
+The script parses `.github/workflows/*.yml` / `*.yaml` and every composite action's
+`action.yml` / `action.yaml` as YAML, with PyYAML and a loader that rejects
+duplicate keys. A key is therefore what YAML resolves it to: an escaped
+`"\u0075ses"` is `uses`, an alias is its anchor's value, and a flow mapping is a
+mapping. Every mapping is walked, and every value whose key is `uses` must be
+`owner/repo[/path]@ref` with a full 40-hex commit SHA as the ref. Local `./`
+actions are exempt, and a `docker://` reference must carry an `@sha256:` digest.
+A file that does not parse fails, as does a non-string or empty value or any
+value the script cannot classify. A missing PyYAML fails with the install command
+(`scripts/setup_lean_env.sh` installs it with the test dependencies), and so does
+a tree with no workflows or no `uses:` at all. Each finding is printed as
+`file:line`.
 
 ### 9.1 CodeQL action pin parity
 

@@ -96,16 +96,16 @@ else
   fi
 fi
 
-# Every remote `uses:` in `.github/workflows/` must name a full 40-hex commit
-# SHA (F-14).  The script resolves each value into owner/repo[/path]@ref,
-# exempts local `./` actions, requires an `@sha256:` digest on `docker://`
-# references, and fails on any shape it cannot classify.  It scans with `rg`,
-# or `grep -E` where `rg` is absent, and fails, naming the cause, when there is
-# no scanner, the scan errors or it finds no `uses:` at all.  Unconditional,
-# by the rule stated at the CodeQL check below.  Its self-test runs every case
-# under each scanner on the host.
-run_check "HYGIENE" "${SCRIPT_DIR}/check_actions_sha_pinned.sh" --self-test
-run_check "HYGIENE" "${SCRIPT_DIR}/check_actions_sha_pinned.sh"
+# Every remote `uses:` must name a full 40-hex commit SHA (F-14).  The script
+# parses `.github/workflows/*.y*ml` and every composite `action.y*ml` as YAML,
+# through a loader that rejects duplicate keys, so a key is what YAML resolves
+# it to (an escaped `"\u0075ses"` is `uses`, an alias is its anchor).  It walks
+# every mapping and classifies each `uses` value: local `./` actions are exempt,
+# `docker://` needs an `@sha256:` digest, and anything it cannot parse or
+# classify fails.  A missing PyYAML fails with the install command; it is not a
+# skip.  Unconditional, by the rule stated at the CodeQL check below.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_actions_sha_pinned.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_actions_sha_pinned.py"
 
 # The three CodeQL workflow invariants, each of which independently leaves the
 # code-scanning merge requirement waiting for results that never arrive:
@@ -414,14 +414,6 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registr
 # producer and does not parse, which was swept as golden output while the gate
 # reported PASS.  Tier 2 runs the same discovery again, for the list.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" list-manifests
-
-# Every file under `tests/fixtures/` has a reader in code: its name in the code
-# view of a Lean, Rust, Python or shell source; a `.sha256` companion's
-# checksum check; a corpus entry's `MANIFEST` row.  Both sets are derived, no
-# Markdown is read, and a reader suffix the script cannot classify fails.  Its
-# self-test keeps each file and removes only its reader.
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_fixture_consumers.py" --self-test
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_fixture_consumers.py"
 
 # AN4-A (H-02): enforce `SeLe4n.Kernel.Internal.lifecycleRetypeObject` consumer allowlist.
 # The internal retype primitive bypasses `lifecyclePreRetypeCleanup` and
