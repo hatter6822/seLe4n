@@ -242,22 +242,34 @@
     that do not start with `v` (`@main`, a short SHA).  A first rewrite still
     scanned lines, and Codex showed that an escaped key (`"\u0075ses"`)
     walked past it, so the check now parses instead.
-    - It parses `.github/workflows/*.y*ml` and every composite `action.y*ml`
-      with PyYAML, through a loader that rejects duplicate keys.  An escaped
+    - It takes its files from the git index with nothing pruned (the tracked
+      `.github/workflows/*.y*ml` and every tracked `action.y*ml`), reads them
+      from the index, and parses them with PyYAML, through a loader that
+      rejects duplicate keys.  An earlier version walked the working tree and
+      pruned `node_modules`, `target` and the like, while exempting `./`
+      references, so Codex showed that an unpinned step in a local action under
+      a pruned directory passed.  An escaped
       key is `uses`, an alias is its anchor's value, and a flow mapping is a
       mapping.
     - It walks every mapping, and every value whose key is `uses` must be
-      `owner/repo[/path]@<40-hex SHA>`.  Local `./` actions are exempt, and
-      `docker://` references need an `@sha256:` digest.
+      `owner/repo[/path]@<40-hex SHA>`, and `docker://` references need an
+      `@sha256:` digest.  A local `./path` reference is resolved, as the runner
+      resolves it, to its tracked workflow or `action.y*ml`, which is checked in
+      turn, so a chain of local actions is followed to its end (a visited set
+      stops a cycle).  A local reference with no tracked target, or one that
+      leaves the repository, fails, as does an action file tracked as a
+      symlink.
     - A file that does not parse fails, as does a non-string or empty value or
       any value it cannot classify, and so does a tree with no workflows or no
       `uses:` at all.  A missing PyYAML fails with the install command.
       `setup_lean_env.sh`, which every CI job that runs Tier 0 calls, installs
       it with the test dependencies (the `python3-yaml` package, then pip).
     - Each finding is printed as `file:line: reason: value`.  The self-test
-      has 33 cases, including the escaped key, a duplicate key, an escaped
-      duplicate, aliases and a flow mapping.  A loader that accepts
-      duplicates, or a walk that matches only plain keys, fails it.
+      has 42 cases, including the escaped key, a duplicate key, an escaped
+      duplicate, aliases, a flow mapping, an action under `node_modules`, a
+      missing or untracked target, a cycle and a chain of local actions, each
+      in a scratch git repository.  A loader that accepts duplicates, or a
+      walk that matches only plain keys, fails it.
     - The tree's 39 references were already pinned, so no workflow changed.
     `CI_POLICY.md` §9 and §9.1 and `THREAT_MODEL.md` describe the parse and no
     longer say the scan misses sub-path actions.

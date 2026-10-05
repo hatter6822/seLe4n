@@ -155,13 +155,21 @@ Covered workflows:
 - `.github/workflows/codebase_map_sync.yml`
 
 Tier 0 hygiene runs `scripts/check_actions_sha_pinned.py` and its `--self-test`.
-The script parses `.github/workflows/*.yml` / `*.yaml` and every composite action's
-`action.yml` / `action.yaml` as YAML, with PyYAML and a loader that rejects
-duplicate keys. A key is therefore what YAML resolves it to: an escaped
+The script takes its files from the git index (`git ls-files`, what CI checks
+out), with nothing pruned: the tracked `.github/workflows/*.yml` / `*.yaml` and
+every tracked `action.yml` / `action.yaml`. It reads their text from the index
+as well and parses it as YAML, with PyYAML and a loader that rejects duplicate
+keys. A key is therefore what YAML resolves it to: an escaped
 `"\u0075ses"` is `uses`, an alias is its anchor's value, and a flow mapping is a
 mapping. Every mapping is walked, and every value whose key is `uses` must be
-`owner/repo[/path]@ref` with a full 40-hex commit SHA as the ref. Local `./`
-actions are exempt, and a `docker://` reference must carry an `@sha256:` digest.
+`owner/repo[/path]@ref` with a full 40-hex commit SHA as the ref, and a
+`docker://` reference must carry an `@sha256:` digest. A local `./path`
+reference is resolved against the repository root, as the runner resolves it, to
+a tracked workflow file or to the tracked `action.yml` / `action.yaml` in that
+directory, and the target is checked in turn, so a chain of local actions is
+followed to its end (a visited set stops a cycle). A local reference with no
+tracked target, or one that leaves the repository, fails, as does a workflow or
+action file tracked as a symlink or a submodule.
 A file that does not parse fails, as does a non-string or empty value or any
 value the script cannot classify. A missing PyYAML fails with the install command
 (`scripts/setup_lean_env.sh` installs it with the test dependencies), and so does

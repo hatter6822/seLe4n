@@ -166,7 +166,7 @@ run_check "INVARIANT" rg -n '^def notificationSignal($|[ ({:\[\]])' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^def notificationWait($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^def notificationInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 
-# WS-B7 closure anchors: information-flow policy/projection baseline and milestone docs.
+# WS-B7 closure anchors: information-flow policy/projection baseline.
 run_check "INVARIANT" rg -n '^inductive Confidentiality($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^structure SecurityLabel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^def securityFlowsTo($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
@@ -10370,7 +10370,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariant
 run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 
-# WS-H12f: Test harness & documentation sync anchors.
+# WS-H12f: Test harness anchors.
 # Trace function definitions in MainTraceHarness.
 run_check "INVARIANT" rg -n '^private def runDequeueOnDispatchTrace($|[ ({:\[\]])' SeLe4n/Testing/MainTraceHarness.lean
 run_check "INVARIANT" rg -n '^private def runInlineContextSwitchTrace($|[ ({:\[\]])' SeLe4n/Testing/MainTraceHarness.lean
@@ -18682,7 +18682,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -n "TMP_FIXTURE" scripts/audit_testi
 # fixtures, consumers that do not read them.  (C) The Tier 2 controls mutate the
 # real fixture in place and restore it from the index, which permanently
 # discarded a maintainer's unstaged edits -- and a maintainer editing a fixture
-# is exactly who runs `--controls-only`.
+# is exactly who runs `--controls-only`.  The (B) check read the README, so
+# it was removed at v0.36.42 with the other documentation checks.
 # ===========================================================================
 # (A) The duplicate declaration is refused INSIDE `classify_fixture`, before the
 # assignment it would otherwise overwrite...

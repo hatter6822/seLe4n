@@ -97,13 +97,17 @@ else
 fi
 
 # Every remote `uses:` must name a full 40-hex commit SHA (F-14).  The script
-# parses `.github/workflows/*.y*ml` and every composite `action.y*ml` as YAML,
-# through a loader that rejects duplicate keys, so a key is what YAML resolves
-# it to (an escaped `"\u0075ses"` is `uses`, an alias is its anchor).  It walks
-# every mapping and classifies each `uses` value: local `./` actions are exempt,
-# `docker://` needs an `@sha256:` digest, and anything it cannot parse or
-# classify fails.  A missing PyYAML fails with the install command; it is not a
-# skip.  Unconditional, by the rule stated at the CodeQL check below.
+# takes its files from the git index with nothing pruned (the tracked
+# `.github/workflows/*.y*ml` and every tracked `action.y*ml`), reads them from
+# the index, and parses them as YAML through a loader that rejects duplicate
+# keys, so a key is what YAML resolves it to (an escaped `"\u0075ses"` is
+# `uses`, an alias is its anchor).  It walks every mapping and classifies each
+# `uses` value: a local `./` reference is resolved to its tracked workflow or
+# `action.y*ml` and checked in turn (a visited set stops a cycle), and one with
+# no tracked target fails; `docker://` needs an `@sha256:` digest; anything it
+# cannot parse or classify fails.  A missing PyYAML fails with the install
+# command; it is not a skip.  Unconditional, by the rule stated at the CodeQL
+# check below.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_actions_sha_pinned.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_actions_sha_pinned.py"
 

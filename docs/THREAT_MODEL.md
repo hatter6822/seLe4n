@@ -102,8 +102,9 @@ Tier 3 invariant surface anchors additionally check for:
   anchors the four original workflows; the all-workflows guarantee — every
   `uses:` in `.github/workflows/` SHA-pinned, `codebase_map_sync.yml`
   included — is Tier 0's `check_actions_sha_pinned.py`, which parses the
-  workflows and composite actions as YAML and fails on any `uses:` value it
-  cannot classify).
+  tracked workflows and composite actions as YAML, follows each local `./`
+  action to its tracked file, and fails on any `uses:` value it cannot
+  classify or resolve).
 
 ## 8) Related security documents
 

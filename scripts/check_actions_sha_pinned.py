@@ -11,17 +11,26 @@ resolves it to: `"\\u0075ses"` is `uses`, an alias is its anchor's value, and
 a flow mapping is a mapping.  Every mapping in every document is walked, and
 every value whose key is `uses` is classified:
 
-  ./path                          a local action: exempt
+  ./path                          a local action or reusable workflow: followed
   docker://image@sha256:<64 hex>  a container: the digest is required
   owner/repo[/path]@<40 hex>      a remote action or reusable workflow
 
 Anything else fails, as does a file that does not parse.  Parsing goes through
 a loader that rejects duplicate keys, since YAML leaves the winner of a
 duplicate to the reader.  A non-string or empty value, a missing PyYAML, a
-missing workflows directory and a tree with no `uses:` at all also fail.
+tree with no tracked workflow and a tree with no `uses:` at all also fail.
 
-Files: `.github/workflows/*.yml` and `*.yaml` (the files GitHub runs) and every
-composite action's `action.yml` / `action.yaml` in the repository.
+Files come from the git index (`git ls-files`, what CI checks out), and their
+text is read from the index too, so the names and the bytes describe the same
+snapshot.  Nothing is pruned.  The roots are `.github/workflows/*.yml` and
+`*.yaml` (the files GitHub runs) and every tracked `action.yml` /
+`action.yaml`.  A `./path` reference is resolved against the repository root,
+as the runner resolves it, to a tracked workflow file or to the tracked
+`action.yml` / `action.yaml` in that directory, and the target is checked in
+turn, so a chain of local actions is followed to its end; a visited set stops
+a cycle.  A local reference with no tracked target, one that leaves the
+repository, and a workflow or action file tracked as a symlink or submodule
+fail closed: the runner would read a file this check never saw.
 
 Usage:
     check_actions_sha_pinned.py              # check the repository
@@ -31,9 +40,13 @@ Usage:
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 import sys
 import tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from indexed_source import DerivationFailed, indexed_contents, run_git  # noqa: E402
 
 try:
     import yaml
@@ -49,8 +62,12 @@ REMOTE_RE = re.compile(r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)(/[^@\s]+)?@([^@\s]+
 DOCKER_RE = re.compile(r"docker://[^@\s]+@sha256:[0-9a-f]{64}")
 STR_TAG = "tag:yaml.org,2002:str"
 MERGE_TAG = "tag:yaml.org,2002:merge"
-#: Directories never searched for composite actions: VCS data, build output.
-PRUNE = {".git", ".lake", "target", "node_modules", "__pycache__"}
+#: A workflow GitHub runs: a YAML file directly in `.github/workflows`.
+WORKFLOW_RE = re.compile(r"\.github/workflows/[^/]+\.ya?ml")
+#: The metadata file a `./dir` action reference resolves to.
+ACTION_NAMES = ("action.yml", "action.yaml")
+#: Index modes whose blob is not the file the runner reads: symlink, submodule.
+INDIRECT_MODES = {"120000": "a symlink", "160000": "a submodule"}
 
 
 class StrictLoader(yaml.SafeLoader):
@@ -112,14 +129,11 @@ def uses_values(node, seen: set[int]):
             yield from uses_values(item, seen)
 
 
-def check_file(root: str, rel: str, counts: dict[str, int]) -> list[str]:
-    path = os.path.join(root, rel)
-    try:
-        with open(path, encoding="utf-8") as handle:
-            text = handle.read()
-    except (OSError, UnicodeDecodeError) as err:
-        return [f"{rel}: cannot be read ({err}), so its `uses:` cannot be checked"]
+def check_text(rel: str, text: str, counts: dict[str, int]
+               ) -> tuple[list[str], list[tuple[int, str]]]:
+    """(problems, local references as (line, value)) for one file's text."""
     problems: list[str] = []
+    local: list[tuple[int, str]] = []
     loader = StrictLoader(text)
     try:
         while loader.check_node():
@@ -135,6 +149,8 @@ def check_file(root: str, rel: str, counts: dict[str, int]) -> list[str]:
                 if reason:
                     problems.append(f"{rel}:{line}: {reason}: {value.value}")
                     continue
+                if value.value.startswith("./"):
+                    local.append((line, value.value))
                 kind = ("local" if value.value.startswith("./") else
                         "docker" if value.value.startswith("docker://") else "remote")
                 counts[kind] += 1
@@ -146,34 +162,81 @@ def check_file(root: str, rel: str, counts: dict[str, int]) -> list[str]:
                         f"`uses:` cannot be checked")
     finally:
         loader.dispose()
-    return problems
+    return problems, local
 
 
-def target_files(root: str) -> tuple[list[str], list[str]]:
-    """(files to check, problems).  The workflows directory must exist."""
-    problems: list[str] = []
-    files: list[str] = []
-    workflows = os.path.join(root, ".github", "workflows")
-    if not os.path.isdir(workflows):
-        problems.append(".github/workflows: missing, so no workflow was checked")
-    else:
-        for name in sorted(os.listdir(workflows)):
-            if name.endswith((".yml", ".yaml")) and \
-                    os.path.isfile(os.path.join(workflows, name)):
-                files.append(f".github/workflows/{name}")
-    for base, dirs, names in os.walk(root):
-        dirs[:] = sorted(d for d in dirs if d not in PRUNE)
-        for name in names:
-            if name in ("action.yml", "action.yaml"):
-                files.append(os.path.relpath(os.path.join(base, name), root))
-    return files, problems
+def tracked_modes(root: str) -> dict[str, str]:
+    """Every path in the index, with its mode (`git ls-files --stage`)."""
+    out = run_git(root, ["ls-files", "--stage", "-z"])
+    modes: dict[str, str] = {}
+    for entry in out.decode("utf-8", "surrogateescape").split("\0"):
+        if not entry:
+            continue
+        meta, sep, path = entry.partition("\t")
+        if not sep or not meta.split():
+            raise DerivationFailed(["git", "ls-files", "--stage", "-z"], 0, "",
+                                   f"unreadable entry {entry!r}")
+        modes[path] = meta.split()[0]
+    return modes
+
+
+def resolve_local(value: str, modes: dict[str, str]) -> tuple[list[str], str | None]:
+    """The tracked file(s) a `./path` reference runs, else the reason none."""
+    target = posixpath.normpath(value[2:] or ".")
+    if target == ".." or target.startswith(("../", "/")):
+        return [], "local reference leaves the repository"
+    if target in modes:
+        if WORKFLOW_RE.fullmatch(target):
+            return [target], None
+        return [], "local reference names a tracked file that is not a workflow"
+    prefix = "" if target == "." else target + "/"
+    found = [prefix + name for name in ACTION_NAMES if prefix + name in modes]
+    if not found:
+        return [], "local reference has no tracked action.yml or action.yaml"
+    return found, None
 
 
 def check(root: str) -> tuple[list[str], dict[str, int]]:
+    """Check the roots, then every local target they reach, once each."""
     counts = {"remote": 0, "docker": 0, "local": 0}
-    files, problems = target_files(root)
-    for rel in files:
-        problems.extend(check_file(root, rel, counts))
+    problems: list[str] = []
+    try:
+        modes = tracked_modes(root)
+    except DerivationFailed as err:
+        return [f"the git index cannot be listed ({err}), so nothing was checked"], counts
+    roots = [p for p in sorted(modes) if WORKFLOW_RE.fullmatch(p)]
+    if not roots:
+        problems.append(".github/workflows: no tracked workflow, so no workflow "
+                        "was checked")
+    roots += [p for p in sorted(modes) if posixpath.basename(p) in ACTION_NAMES
+              and p not in roots]
+    visited: set[str] = set()
+    pending = roots
+    while pending:
+        batch = [p for p in dict.fromkeys(pending) if p not in visited]
+        pending = []
+        visited.update(batch)
+        try:
+            texts = indexed_contents(root, batch)
+        except DerivationFailed as err:
+            return problems + [f"the index cannot be read ({err}), so "
+                               f"{len(batch)} file(s) were not checked"], counts
+        for rel in batch:
+            if modes[rel] in INDIRECT_MODES:
+                problems.append(f"{rel}: tracked as {INDIRECT_MODES[modes[rel]]}, "
+                                f"so the file the runner reads is not checked")
+                continue
+            if rel not in texts:
+                problems.append(f"{rel}: not UTF-8 text in the index, so its "
+                                f"`uses:` cannot be checked")
+                continue
+            found, local = check_text(rel, texts[rel], counts)
+            problems.extend(found)
+            for line, value in local:
+                targets, reason = resolve_local(value, modes)
+                if reason:
+                    problems.append(f"{rel}:{line}: {reason}: {value}")
+                pending.extend(targets)
     if not problems and not sum(counts.values()):
         problems.append("no `uses:` reference found in .github/workflows or any "
                         "action.yml, so nothing was checked")
@@ -182,8 +245,9 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
 
 # --------------------------------------------------------------------------
 # Self-test.  Each case's lines start at line 8 of a workflow whose line 7 is
-# a pinned step, and a failing case must name the line it fails on, so a
-# finding that loses its location fails the self-test too.
+# a pinned step; each tree is a scratch git repository.  Every finding of a
+# failing case must name the location it fails on, so a finding that loses its
+# location, or a spurious extra one, fails the self-test too.
 # --------------------------------------------------------------------------
 SHA = "0123456789abcdef0123456789abcdef01234567"
 DIGEST = "0123456789abcdef" * 4
@@ -230,6 +294,59 @@ CASES = [
 ]
 
 
+W = ".github/workflows/w.yml"
+
+
+def _workflow(lines: list[str]) -> str:
+    return "\n".join(HEAD + [STEP + line for line in lines]) + "\n"
+
+
+def _action(*steps: str) -> str:
+    """A composite action whose first step is on line 5."""
+    return ("name: a\nruns:\n  using: composite\n  steps:\n"
+            + "".join(f"    - uses: {step}\n" for step in steps))
+
+
+PINNED = _action(f"actions/cache@{SHA}")
+UNPINNED = _action("actions/cache@v4")
+
+TREES = [
+    # (passes, label, tracked files, untracked files, tracked symlinks, must_name)
+    (False, "an unpinned step in a composite action",
+     {W: _workflow([]), ".github/actions/setup/action.yml": UNPINNED}, {}, {},
+     ".github/actions/setup/action.yml:5"),
+    (False, "an action under node_modules (a pruned walk skipped it)",
+     {W: _workflow(["- uses: ./node_modules/evil"]),
+      "node_modules/evil/action.yml": UNPINNED}, {}, {}, "node_modules/evil/action.yml:5"),
+    (False, "a local reference with no target",
+     {W: _workflow(["- uses: ./.github/actions/missing"])}, {}, {}, f"{W}:8"),
+    (False, "a local reference whose target is not tracked",
+     {W: _workflow(["- uses: ./tools/act"])}, {"tools/act/action.yml": PINNED}, {},
+     f"{W}:8"),
+    (False, "a local reference that leaves the repository",
+     {W: _workflow(["- uses: ./a/../../other"])}, {}, {}, f"{W}:8"),
+    (False, "a local reference to a file that is not a workflow",
+     {W: _workflow(["- uses: ./run.sh"]), "run.sh": "true\n"}, {}, {}, f"{W}:8"),
+    (True, "a cycle of local actions",
+     {W: _workflow(["- uses: ./a"]), "a/action.yml": _action("./b", f"actions/cache@{SHA}"),
+      "b/action.yml": _action("./a")}, {}, {}, ""),
+    (False, "a chain of local actions ending in an unpinned step",
+     {W: _workflow(["- uses: ./a"]), "a/action.yml": _action("./b"),
+      "b/action.yaml": _action("./c/"), "c/action.yml": UNPINNED}, {}, {}, "c/action.yml:5"),
+    (True, "a local reusable workflow",
+     {W: "on: push\njobs:\n  call:\n    uses: ./.github/workflows/r.yml\n",
+      ".github/workflows/r.yml": _workflow([])}, {}, {}, ""),
+    (False, "an action file tracked as a symlink",
+     {W: _workflow(["- uses: ./a"]), "real.yml": UNPINNED}, {}, {"a/action.yml": "../real.yml"},
+     "a/action.yml:"),
+    (False, "a workflow that is not tracked",
+     {}, {W: _workflow(["- uses: actions/checkout@v4"])}, {}, ".github/workflows"),
+    (False, "workflows with no `uses:` (a .md file is not a workflow)",
+     {W: "name: t\non: push\njobs: {}\n",
+      ".github/workflows/notes.md": "- uses: actions/checkout@v4\n"}, {}, {}, "no `uses:`"),
+]
+
+
 def _write(root: str, rel: str, text: str) -> None:
     full = os.path.join(root, rel)
     os.makedirs(os.path.dirname(full), exist_ok=True)
@@ -237,13 +354,28 @@ def _write(root: str, rel: str, text: str) -> None:
         handle.write(text)
 
 
-def _workflow(lines: list[str]) -> str:
-    return "\n".join(HEAD + [STEP + line for line in lines]) + "\n"
+def _tree(root: str, tracked: dict[str, str], untracked: dict[str, str],
+          links: dict[str, str]) -> None:
+    """A git repository at `root`: `tracked` and `links` staged, `untracked` not."""
+    os.makedirs(root)
+    run_git(root, ["init", "-q"])
+    for rel, text in tracked.items():
+        _write(root, rel, text)
+    for rel, target in links.items():
+        os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+        os.symlink(target, os.path.join(root, rel))
+    run_git(root, ["add", "--all"])
+    for rel, text in untracked.items():
+        _write(root, rel, text)
 
 
 def self_test() -> int:
     failures = 0
     checked = 0
+    # A hook exports GIT_DIR / GIT_INDEX_FILE; the scratch repositories must not
+    # inherit them, or `git add` would stage into the caller's index.
+    for name in [name for name in os.environ if name.startswith("GIT_")]:
+        del os.environ[name]
 
     def expect(label: str, root: str, passes: bool, must_name: str) -> None:
         nonlocal failures, checked
@@ -253,34 +385,22 @@ def self_test() -> int:
             verdict = "passed" if not problems else f"failed: {problems}"
             print(f"SELF-TEST FAIL: {label}: {verdict}", file=sys.stderr)
             failures += 1
-        elif must_name and not any(p.startswith(must_name) for p in problems):
-            print(f"SELF-TEST FAIL: {label}: no finding starts with {must_name}: "
-                  f"{problems}", file=sys.stderr)
+        elif must_name and not all(p.startswith(must_name) for p in problems):
+            print(f"SELF-TEST FAIL: {label}: a finding does not start with "
+                  f"{must_name}: {problems}", file=sys.stderr)
             failures += 1
 
     with tempfile.TemporaryDirectory() as tmp:
         for index, (passes, label, lines, must_name) in enumerate(CASES):
             root = os.path.join(tmp, f"case{index}")
-            _write(root, ".github/workflows/w.yml", _workflow(lines))
+            _tree(root, {W: _workflow(lines),
+                         ".github/actions/local/action.yml": PINNED}, {}, {})
             expect(label, root, passes, must_name and f".github/workflows/{must_name}")
-
-        root = os.path.join(tmp, "composite")
-        _write(root, ".github/workflows/w.yml", _workflow([]))
-        _write(root, ".github/actions/setup/action.yml",
-               "name: s\nruns:\n  using: composite\n  steps:\n"
-               "    - uses: actions/cache@v4\n")
-        expect("an unpinned step in a composite action", root, False,
-               ".github/actions/setup/action.yml:5")
-
-        root = os.path.join(tmp, "nodir")
-        os.makedirs(root)
-        expect("a tree with no workflows directory", root, False, ".github/workflows")
-
-        root = os.path.join(tmp, "nouses")
-        _write(root, ".github/workflows/w.yml", "name: t\non: push\njobs: {}\n")
-        _write(root, ".github/workflows/notes.md", "- uses: actions/checkout@v4\n")
-        expect("workflows with no `uses:` (a .md file is not a workflow)",
-               root, False, "no `uses:`")
+        for index, (passes, label, tracked, untracked, links, must_name) in \
+                enumerate(TREES):
+            root = os.path.join(tmp, f"tree{index}")
+            _tree(root, tracked, untracked, links)
+            expect(label, root, passes, must_name)
 
     if failures:
         print(f"SELF-TEST FAILED: {failures} of {checked} case(s).", file=sys.stderr)
