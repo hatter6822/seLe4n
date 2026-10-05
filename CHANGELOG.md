@@ -13,11 +13,21 @@
   `ffi_restore_stage_context` stages a borrowed one in one call before the
   unchanged `ffi_restore_commit`.  The trap-frame marshalling drops from 72
   extern calls per entry to 3.  The model's `RegisterFile` stays the proofs'
-  view (`registerFileOfTrapContext`), and the round trip is proved:
-  `TrapContext.ofWords_word`, `TrapContext.word_ofWords` (every word below
-  `trapFrameWordCount`), `registerFileOfTrapContext_ofWords` and
-  `registerFileOfTrapContext_trapContextOfRegisterFile` (restore then save is
-  the identity on a 64-bit context).  On the Rust side
+  view (`registerFileOfTrapContext`, which is `registerFileOfTrapWords` on
+  `TrapContext.word`), and the Lean-internal encode/decode round trip is
+  proved: `TrapContext.ofWords_word`, `TrapContext.word_ofWords` (every word
+  below `trapFrameWordCount`), `registerFileOfTrapContext_ofWords`,
+  `trapContextOfRegisterFile_registerFileOfTrapContext` (a context read as the
+  model's register file and handed back is the same thirty-five words, no
+  hypothesis) and `registerFileOfTrapContext_trapContextOfRegisterFile` (a
+  word-bounded register file — `RegisterFile.wordBounded`, which every
+  handed-over context satisfies, `registerFileOfTrapContext_wordBounded` —
+  restored and read back agrees on the thirty-five registers the layout
+  carries).  What is proved is the Lean side of the boundary: the HAL masks
+  `SPSR_EL1` to the condition flags at the commit (`trap.rs`,
+  `sanitise_user_spsr`), so the cross-language trip is not the identity on
+  `pstate`, and agreement between the compiled Lean layout and the Rust
+  reader rests on the pins recorded below.  On the Rust side
   `trap::trap_frame_context` is the one owner of the layout,
   `ffi::trap_context_to_lean` / `trap_context_of_lean` marshal it (the latter
   refusing, and the stage halting on, any object not of the constructor's
@@ -26,12 +36,15 @@
   `in_flight_frame_present`, `restore_stage_word(_in)` and
   `RestoreRefusal::IndexOutOfRange` are retired.
 - **The syscall arguments are read once.**  `dispatch_svc` passed 13 scalars
-  (`msg_info`, `x0`–`x5`, the IPC buffer, `ELR_EL1`, `SPSR_EL1`, `SP_EL0`,
-  `x30`) and the Lean entry then re-read the same frame.  The export
-  `lean_syscall_dispatch_cross_core` now takes only the validated syscall id;
-  `syscallDispatchCrossCoreEntry` reads every other argument from the
-  context it captured, and an entry with no published frame fails closed
-  (`.faulted`, nothing staged, so the trap layer halts).  `SyscallArgs` keeps
+  (the syscall id, `msg_info`, `x0`–`x5`, the IPC buffer, `ELR_EL1`,
+  `SPSR_EL1`, `SP_EL0`, `x30`) and the Lean entry then re-read the same
+  frame.  The export `lean_syscall_dispatch_cross_core` now takes only the
+  validated syscall id — the other 12 arguments are gone;
+  `syscallDispatchCrossCoreEntry` reads every one of them from the context it
+  captured, and an entry with no published frame fails closed
+  (`syscallEntryContextOrFaulted`: `.faulted`, nothing read, nothing
+  committed, nothing staged, so the trap layer halts the PE —
+  `halt_after_delivered_syscall_fault`).  `SyscallArgs` keeps
   only the prefilter's `msg_info`.  Common-path extern calls per syscall
   (no overflow words, SGIs, physical writes, shootdown, I-cache or FP
   release): 75 before, 6 after.
@@ -51,14 +64,63 @@
   `LEAN_SMALL_ALLOCATOR`, `lean_set_st_header` writes `m_cs_sz = 0`, and
   `lean_small_object_size` asks the allocator), so a layout drift would have
   read past the object instead of halting.  It now refuses, before any read,
-  a pointer the kernel heap does not report as a live allocation of at least
-  `TRAP_CONTEXT_OBJECT_BYTES` (header plus 280 scalar bytes), read through the
-  new `lean_runtime::allocated_bytes` (the heap's out-of-band size record,
-  the same one `lean_small_mem_size` serves).  New tests refuse tag-0,
-  no-field constructors of 0, 8 and 272 scalar bytes, a pointer outside the
-  heap and a freed object, and pin the round-tripped object at exactly
-  `TRAP_CONTEXT_OBJECT_BYTES`; with the size check disabled the refusal tests
-  fail.
+  a pointer the kernel heap does not report as a live allocation of exactly
+  `TRAP_CONTEXT_OBJECT_BYTES` (header plus 280 scalar bytes — a small-object
+  size class, which is what makes the exact check sound; `const` assertions
+  hold it to one), read through the new `lean_runtime::allocated_bytes` (the
+  heap's out-of-band size record, the same one `lean_small_mem_size` serves).
+  Tests refuse tag-0, no-field constructors of 0, 8 and 272 scalar bytes and
+  — the audit's case, a field added to the Lean structure alone — of 288 and
+  352, a pointer outside the heap and a freed object, and pin the
+  round-tripped object at exactly `TRAP_CONTEXT_OBJECT_BYTES`; with the check
+  weakened to a lower bound the longer-object test fails.
+- **The layout's pins, stated** (audit of this PR).  The Lean side: `ofWords`
+  applies the constructor positionally and `word` reads by field name, so
+  `word_ofWords` proves declared position `i` is layout word `i`.  The Rust
+  side: `const` assertions hold `TRAP_FRAME_CONTEXT_WORDS` to 35 and
+  `TRAP_CONTEXT_SCALAR_BYTES` to eight times it (the compiler checks them; no
+  scanner), and the exact-size refusal catches a field added on either side
+  alone.  What neither reaches — a same-size permutation applied consistently
+  on one side, i.e. that the compiler places the fields in declaration order
+  at `8 · i` — is an executed cross-language test, registered as debt
+  (`docs/REGISTERED_DEBT.md`) with the size check's coverage stated.
+- **Tests on the seam** (audit of this PR).  `TrapContext` derives `Repr`,
+  `DecidableEq` and `Inhabited`; `tests/SmpSwitchToThreadSuite.lean` asserts the
+  value-level round trips on a frame with a distinct value in every register
+  (each layout word at its index and under its field name; file → context →
+  file; context → file → context, the high bit set).  The frame-less arm of
+  the syscall entry is the pure `syscallEntryContextOrFaulted`, which
+  `tests/SyscallDispatchSuite.lean` runs (`sd036`: `none` is the `.faulted`
+  tag with nothing committed; `some c` is `c`).  On the Rust side
+  `ffi_trap_context_in` and `ffi_restore_stage_context_in` are the testable
+  forms of the two entries: the `Option` encoding (`none` = `lean_box(0)`,
+  `some` = tag 1 with one object field holding the 288-byte tag-0 object, each
+  word at its offset), the stage reaching the core's staging buffer, and the
+  halt on a refused object and on a refused stage (`#[should_panic]`, since
+  the host `fatal_halt` panics).  `lean_runtime::header_ref` is the read-only
+  header accessor the borrowed inspection now uses.
+- **One answer per question** (audit of this PR).  `trap_context_of_lean`'s
+  `# Safety` states the real contract (any pointer; a live heap object must
+  stay live; everything else is refused on the heap's metadata);
+  `ffi_restore_stage_context`'s comment no longer cites a precedent that does
+  not exist (it is the one Lean-called entry here that takes an object
+  pointer); `build.rs`'s reason for the classifier upcall agrees with
+  `lean_heap.rs` (it allocates, under the heap's own lock); the `SyscallArgs`
+  test sets only the register it reads; `syscallDispatchFromAbi`'s
+  `msgInfo ≠ x1` guard is documented as test-only defence, since the live
+  entry passes the one trapped `x1` as both (removing the parameter touches
+  thirty-odd call sites and is left for a wider cut).
+  `registerFileOfTrapContext_eq` is retired with the definition it restated.
+- **Registered debt** (audit of this PR, `docs/REGISTERED_DEBT.md` §A, closure
+  target the next FFI slice): the executed cross-language layout test; the
+  FP/SIMD context still crossing per word (`1 + 66` calls to capture, `66 + 1`
+  to load); `lean_handle_fault` / `lean_handle_unknown_syscall` still taking
+  15 scalars while their Lean entries re-capture the frame; overflow message
+  registers crossing one `ffiReadUserWord` per word (up to `maxOverflowSlots`
+  = 116); and the Lean-internal cost of the boundary (boxed `UInt64`s, the
+  16-slot `gpr` closure, the `Nat`-backed `RegisterFile`, whose
+  word-boundedness `RegisterFile.wordBounded` names but no invariant carries
+  — `machineWordBounded` is now its per-core form).
 - Tier 3: the restore and syscall-argument anchors follow the new relation
   (the stage call before the commit; the step fed from `trapped`; the
   one-argument extern; the trap-frame context layout in `trap.rs`), and a
