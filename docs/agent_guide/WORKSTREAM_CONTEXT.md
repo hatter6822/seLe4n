@@ -1657,8 +1657,20 @@ the disassembly gate exempts the two FP routines **by symbol**, reconciled both
 ways.  (6) **A thread a core's registers still hold is not destroyed**
 (`threadHeldOnSomeCore`, `.revocationRequired`): the release would otherwise
 write a destroyed thread's values into whatever TCB the retype creates under its
-id.  `retypeTargetDetached` carries `tcbFpReleased` for the payoff.  Executing
-the switch on the image is BP8's.
+id.  `retypeTargetDetached` carries `tcbFpReleased` for the payoff.  (7) **The
+context crosses the boundary whole, in one call each way** (the FFI slice after
+PR #912): `FpContext` is a structure of 66 `UInt64` fields (528 scalar bytes,
+field `i` at offset `8 · i`), handed over by `ffiFpCapture` and staged by
+`ffiFpStageContext` before `ffiFpLoadCommit` — 1 and 2 extern calls where each
+direction was 67 — with the encode/decode trip proved
+(`FpContext.ofWords_word`, `word_ofWords`, `ofWords_congr`, `default_word`),
+the HAL refusing any allocated size but the constructor's 536 bytes
+(`ffi::scalar_words_of_lean`, the one owner of both contexts' shape), and
+the compiled layout executed against the HAL's offsets by the cross-language
+test below.  A new boundary context takes the same shape: all-`UInt64` fields,
+positional `ofWords` against by-name `word`, the exact-size refusal, and a
+probe in `SeLe4n/Testing/BoundaryProbes.lean`.  Executing the switch on the
+image is BP8's.
 
 **The boot starts both initial threads, one per domain** (`v0.36.23`, BP7.11).
 Until then every configured thread was installed `.Inactive` and nothing ever
