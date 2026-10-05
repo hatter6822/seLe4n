@@ -389,12 +389,12 @@ which host binaries must not link.  The `.error` arm is refuted by
 `syscallDispatchFromAbi_total`; it throws rather than fabricating an
 outcome. -/
 private def dispatchViaRef (syscallId : UInt32)
-    (msgInfo x0 x1 x2 x3 x4 x5 ipcBuf : UInt64) :
+    (x0 x1 x2 x3 x4 x5 ipcBuf : UInt64) :
     IO Kernel.Architecture.SyscallOutcome := do
   let st ← getKernelState
   let ctx ← getKernelLabelingContext
   match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId
-      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBuf 0 0 0 0 st with
+      syscallId x0 x1 x2 x3 x4 x5 ipcBuf 0 0 0 0 st with
   | Except.ok (outcome, st') =>
       initialiseKernelState st'
       pure outcome
@@ -423,7 +423,7 @@ private def sd030_dispatch_noCurrent : IO Unit := do
   let st := mkState [] none
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
-  let outcome ← dispatchViaRef 0 0 0 0 0 0 0 0 0
+  let outcome ← dispatchViaRef 0 0 0 0 0 0 0 0
   expect "sd030_illegalState_error_frame"
     (isErrorFrameFor outcome .illegalState)
     "no-current dispatch must return the illegalState error frame"
@@ -439,7 +439,7 @@ private def sd031_dispatch_spillsRegs : IO Unit := do
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- Invoke with a syscallId that's out of the modeled range; the call
   -- must return an error frame and preserve the spilled registers.
-  let _ ← dispatchViaRef 0xFFFFFFFF 0 0xDEADBEEF 0 0 0 0 0 0
+  let _ ← dispatchViaRef 0xFFFFFFFF 0xDEADBEEF 0 0 0 0 0 0
   let st' ← getKernelState
   match st'.objects[tid.toObjId]? with
   | some (.tcb tcb) =>
@@ -459,7 +459,7 @@ private def sd032_dispatch_invalidSyscall : IO Unit := do
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- syscallId 99 is outside the modeled set.
-  let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0 0
+  let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0
   expect "sd032_invalid_syscall_error_frame"
     (isSomeErrorFrame outcome)
     "unmodeled syscall ID must surface as an error frame"
@@ -471,45 +471,13 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨9⟩
   let st := mkState [(⟨9⟩, .tcb (mkTcb 9 .Ready))] (some tid)
   let ctx := SeLe4n.Kernel.testLabelingContext
-  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0 0
+  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0
       0 0 0 0 st with
   | Except.ok _ =>
       passLine "sd033_dispatchFromAbi_returns_ok"
   | Except.error _ =>
       failLine "sd033_dispatchFromAbi_returns_ok"
         "syscallDispatchFromAbi must never return Except.error"
-
-/-- SD-034: ABI consistency check — when `msgInfo ≠ x1`, the dispatch
-    rejects with the `.invalidSyscallArgument` error frame without
-    invoking `syscallEntryChecked`.  Test-only defence: the live entry
-    reads both from the one trapped `x1`, so this suite is the only caller
-    that can make them differ.
-
-The syscall entry (`syscallDispatchCrossCoreEntry`) passes the trapped
-`x1` word as both `msgInfo` and `x1`, so they should always be equal at
-the ABI boundary.  A divergence indicates either a malformed
-caller or memory corruption — the FFI rejects rather than proceeding. -/
-private def sd034_dispatch_abiMismatch : IO Unit := do
-  let tid : SeLe4n.ThreadId := ⟨10⟩
-  let st := mkState [(⟨10⟩, .tcb (mkTcb 10 .Ready))] (some tid)
-  initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
-  -- Pass msgInfo=0xAAAA and x1=0xBBBB (≠ msgInfo).  Per the FFI ABI
-  -- contract these must agree; the dispatcher rejects.
-  let outcome ← dispatchViaRef 0 0xAAAA 0 0xBBBB 0 0 0 0 0
-  expect "sd034a_invalidSyscallArgument_frame"
-    (isErrorFrameFor outcome .invalidSyscallArgument)
-    "ABI-mismatch must yield the invalidSyscallArgument error frame"
-  -- Verify the kernel state is NOT mutated on the ABI-mismatch path.
-  let st' ← getKernelState
-  match st'.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
-      -- TCB.registerContext.gpr ⟨0⟩ should still be the default value (0)
-      -- because the dispatch rejected before writeFfiRegistersToTcb was called.
-      expect "sd034b_no_register_spill_on_abi_mismatch"
-        (tcb.registerContext.gpr ⟨0⟩ == ⟨0⟩)
-        "ABI-mismatch must reject before spilling registers"
-  | _ => failLine "sd034_tcb_missing" "TCB missing after ABI-mismatch dispatch"
 
 /-- SD-036 (`v0.36.47` audit): the arm the hardware never reaches — the entry
 handed no context.  `syscallEntryContextOrFaulted` is the pure owner of that
@@ -554,7 +522,7 @@ private def sd035_sequentialDispatches : IO Unit := do
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- First dispatch: spills x0=0x111 into the TCB.
-  let _ ← dispatchViaRef 99 0 0x111 0 0 0 0 0 0
+  let _ ← dispatchViaRef 99 0x111 0 0 0 0 0 0
   let st1 ← getKernelState
   match st1.objects[tid.toObjId]? with
   | some (.tcb tcb1) =>
@@ -563,7 +531,7 @@ private def sd035_sequentialDispatches : IO Unit := do
         "first dispatch must spill x0=0x111"
   | _ => failLine "sd035_tcb_missing_1" "TCB missing after first dispatch"
   -- Second dispatch: spills x0=0x222 into the (now-updated) TCB.
-  let _ ← dispatchViaRef 99 0 0x222 0 0 0 0 0 0
+  let _ ← dispatchViaRef 99 0x222 0 0 0 0 0 0
   let st2 ← getKernelState
   match st2.objects[tid.toObjId]? with
   | some (.tcb tcb2) =>
@@ -2244,7 +2212,6 @@ def main : IO Unit := do
   sd031_dispatch_spillsRegs
   sd032_dispatch_invalidSyscall
   sd033_dispatchFromAbi_total
-  sd034_dispatch_abiMismatch
   sd035_sequentialDispatches
   sd036_entryWithoutContext_faults
   IO.println "--- R2.A: bootAndInitialiseFromPlatform integration ---"

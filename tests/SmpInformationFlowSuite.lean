@@ -8976,7 +8976,7 @@ private def runRefusalSeamWriteChecks : IO Unit := do
   -- class a monitor cannot see.  The *policy-path* refusals travel the same
   -- boundary in §13.2, under a deployment the probe serves.
   assertBool "END TO END: the boundary commits the record and returns the plain error frame"
-    (match Platform.FFI.syscallDispatchFromAbi ctx c1 declassId 0 5 0 0 0 0 0 0 0 0 0 0
+    (match Platform.FFI.syscallDispatchFromAbi ctx c1 declassId 5 0 0 0 0 0 0 0 0 0 0
         niState with
      | .error _ => false
      | .ok (outcome, committed) =>
@@ -8992,7 +8992,7 @@ private def runRefusalSeamWriteChecks : IO Unit := do
          decide (committed.declassificationRefusals.attemptCount.val = 1) &&
          decide (committed.declassificationAuditLog = niState.declassificationAuditLog))
   assertBool "NEGATIVE: the same boundary call for an EXEMPT syscall records nothing"
-    (match Platform.FFI.syscallDispatchFromAbi ctx c1 sendId 0 5 0 0 0 0 0 0 0 0 0 0
+    (match Platform.FFI.syscallDispatchFromAbi ctx c1 sendId 5 0 0 0 0 0 0 0 0 0 0
         niState with
      | .error _ => false
      | .ok (_, committed) =>
@@ -9258,7 +9258,7 @@ private def runRefusalAcceptanceChecks : IO Unit := do
   -- refusals travel the same boundary in §13.2.
   assertBool "END TO END: the committed refusal reads back live, and the caller's frame is exactly its reason's"
     (match Platform.FFI.syscallDispatchFromAbi auditMonitorLabeling c1
-        (SyscallId.declassify.toNat.toUInt32) 0 5 0 0 0 0 0 0 0 0 0 0 auditMixedState with
+        (SyscallId.declassify.toNat.toUInt32) 5 0 0 0 0 0 0 0 0 0 0 auditMixedState with
      | .error _ => false
      | .ok (outcome, committed) =>
          match committed.declassificationRefusals.recent.get
@@ -11772,7 +11772,7 @@ refuses hop 2, so the committed record must carry the resolved receiver. -/
 private def deniedSignalDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
   Platform.FFI.syscallDispatchFromAbi signalReceiverDeniedLabeling c1
-    (SyscallId.declassifySignal.toNat.toUInt32) 1 2 1 0x5C 0 0 0 0 0 0 0 0
+    (SyscallId.declassifySignal.toNat.toUInt32) 2 1 0x5C 0 0 0 0 0 0 0 0
     seamBoundaryState
 
 /-- §13.2 fixture — the denied `.declassify` at the SAME state: the deny-all
@@ -11782,7 +11782,7 @@ resolves to the public notification, so the refusal is the policy gate's own
 private def deniedDeclassifyDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
   Platform.FFI.syscallDispatchFromAbi declassifyDenyAllLabeling c1
-    (SyscallId.declassify.toNat.toUInt32) 0 3 0 0 0 0 0 0 0 0 0 0 seamBoundaryState
+    (SyscallId.declassify.toNat.toUInt32) 3 0 0 0 0 0 0 0 0 0 0 seamBoundaryState
 
 /-- §13.2  SM9.E.2 — the refusal seam covers BOTH declassifying syscalls, at
 the boundary the hardware calls.

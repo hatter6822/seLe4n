@@ -196,7 +196,7 @@ private def dispatchFromAbi (syscallId : Nat) (msgInfoRaw : UInt64)
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
   SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling
     SeLe4n.Kernel.Concurrency.bootCoreId
-    syscallId.toUInt32 msgInfoRaw
+    syscallId.toUInt32
     capPtrValue.toUInt64 msgInfoRaw x2 0 0 0
     0 0 0 0 0 st
 
@@ -333,7 +333,7 @@ private def dispatchFromAbiOn (core : SeLe4n.Kernel.Concurrency.CoreId)
     (x2 x3 x4 : UInt64) (st : SystemState) :
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
   SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core
-    syscallId.toUInt32 msgInfoRaw capPtr msgInfoRaw x2 x3 x4 0
+    syscallId.toUInt32 capPtr msgInfoRaw x2 x3 x4 0
     0 0 0 0 0 st
 
 -- ============================================================================
@@ -693,7 +693,7 @@ private def dispatchAudit (ctx : LabelingContext) (syscallId : Nat) (capPtr : Na
   let msgInfoRaw : UInt64 := regCount.toUInt64
   SeLe4n.Platform.FFI.syscallDispatchFromAbi ctx
     SeLe4n.Kernel.Concurrency.bootCoreId
-    syscallId.toUInt32 msgInfoRaw
+    syscallId.toUInt32
     capPtr.toUInt64 msgInfoRaw r0.toUInt64 r1.toUInt64 r2.toUInt64 0
     0 0 0 0 0 st
 
@@ -765,11 +765,6 @@ private def returnAbiTraceLines : List String :=
   , outcomeLine "badge wait after signal 42" waitAfterSignal
   , outcomeLine "blocking wait (idle notification)"
       (dispatchFromAbi SyscallId.notificationWait.toNat 0 0 witnessState)
-  , outcomeLine "abi mismatch (msgInfo 0xAAAA, x1 = msgInfo forced unequal)"
-      (SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling
-        SeLe4n.Kernel.Concurrency.bootCoreId
-        SyscallId.notificationSignal.toNat.toUInt32 0xAAAA
-        capPtrValue.toUInt64 0xBBBB 0 0 0 0 0 0 0 0 0 witnessState)
   , s!"[ret-abi] error labels: all {errorCount} discriminants round-trip = {labelRoundtrips}; {errorCount} unassigned = {labelBoundary}"
   , s!"[ret-abi] full-width badge frame: " ++
       frameCells (Kernel.Architecture.returnFrameOfBadge
@@ -1213,7 +1208,7 @@ restore target, exactly as `syscallDispatchCrossCoreEntry` commits them. -/
 private def entryStepOn (ctx : LabelingContext) (core : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : Nat) (msgInfoRaw capPtr x2 : UInt64) (st : SystemState) :=
   SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep ctx core syscallId.toUInt32
-    msgInfoRaw capPtr msgInfoRaw x2 0 0 0 0 0 0 0 0 st
+    capPtr msgInfoRaw x2 0 0 0 0 0 0 0 0 st
 
 /-- The end-to-end run: wait on the boot core, declassify-signal from core 1,
 then the boot core takes the `.reschedule` the signal posted.  Returns the wait's
@@ -1331,7 +1326,7 @@ private def overflowSendRun (rxWrite sync : Bool) :
   let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st1 peerTid sevenRegisters
   let stS := if sync then syncSenderOverflow st1 sevenRegisters else st1
   let (_, st2) ← SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core1
-    SyscallId.send.toNat.toUInt32 sevenRegisters epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
+    SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
     0 0 0 0 stS
   pure (stagedFrame st2 callerTid, st2.pendingPhysicalWrites, addrs)
 
@@ -1367,7 +1362,7 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
   | .error e => assertBool s!"12 SEAM: the receive runs (got .error {reprStr e})" false
   | .ok (_, st1) => do
       let (r, stC) := SeLe4n.Kernel.syscallDispatchCrossCoreStep trustedLabeling core1
-        SyscallId.send.toNat.toUInt32 sevenRegisters epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
+        SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
         0 0 0 0 (syncSenderOverflow st1 sevenRegisters)
       assertBool "12 SEAM: the step hands the runtime the three user-word stores"
         (r.2.2.2.2.2.2.1 == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,

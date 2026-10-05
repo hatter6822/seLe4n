@@ -477,13 +477,13 @@ bracket is the state the growing phase ended in.  That is what keeps the runtime
 half honest: the growing phase's writes are lock words, and pokes derived
 against a base that already carries them describe the state the action saw. -/
 def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
-    (syscallId : UInt32) (msgInfo : UInt64) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
-  match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+  match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st with
   | Except.ok (outcome, st') =>
       -- WS-BP BP7.4: the returning caller's result is in its saved context and
@@ -526,21 +526,21 @@ commits owes no physical write, and the writes it hands the runtime are the ones
 the committed transition recorded.  So a write is performed once — by the seam
 this commit returns to — and none is stranded into the next syscall. -/
 theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
+    (execCore : CoreId) (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     ∃ outcome st',
-      Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (outcome, st') ∧
-      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
-      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1 =
         (PriorityInheritance.settleResidencyOnCore
           (PriorityInheritance.scheduleLocalSuccessor st
             (Architecture.stageCallerReturn st st' execCore outcome) execCore)
           execCore).pendingPhysicalWrites := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
-    msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
   refine ⟨outcome, st', h, ?_, ?_⟩ <;> simp [syscallDispatchCrossCoreStep, h]
 
 /-- **WS-RR RR7.12**: what a revalidation refusal returns to the caller.
@@ -608,16 +608,16 @@ the entry's own pre-state:
 `execCore` is the lock-holding core, which is the core the syscall executes on: a
 footprint acquired in another core's name would exclude nobody. -/
 def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext) (execCore : CoreId)
-    (syscallId : UInt32) (msgInfo : UInt64) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   match Concurrency.runBracketed schedulerLockBracketDomain
-      (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5)
+      (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId x0 x1 x2 x3 x4 x5)
       execCore
-      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30) st with
   | .undeclared r => r
   | .committed r => r
@@ -632,13 +632,13 @@ declarations safe: the arms that are not declared yet are bit-identical, on the
 pre-state, with no lock written.  Definitional, so a refactor that starts
 acquiring something on the undeclared path stops this elaborating. -/
 theorem syscallDispatchCrossCoreBracketedStep_undeclared (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
+    (execCore : CoreId) (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
-    (h : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (h : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId x0 x1 x2 x3 x4 x5 st
       = none) :
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30 st
-      = syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      = syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st := by
   unfold syscallDispatchCrossCoreBracketedStep
   rw [Concurrency.runBracketed_undeclared _ _ _ _ st h]
@@ -651,16 +651,16 @@ The load-bearing negative.  A guard that refused *after* running the dispatch
 would be worse than no guard: the syscall would have committed against a
 resolution the guard judged stale. -/
 theorem syscallDispatchCrossCoreBracketedStep_refused (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
+    (execCore : CoreId) (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
     (S : SchedLockSet)
-    (hDecl : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (hDecl : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId x0 x1 x2 x3 x4 x5 st
           = some S)
-    (hGuard : ¬ (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+    (hGuard : ¬ (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId x0 x1 x2 x3 x4 x5
           (schedAcquireAll execCore S.lockAcquireSequence st) = some S ∧
         schedLockSetHeld execCore S
           (schedAcquireAll execCore S.lockAcquireSequence st))) :
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30 st
       = syscallBracketRefusalResult execCore
           (schedUnwindAll execCore S.lockAcquireSequence.reverse
@@ -787,7 +787,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- thread wrote.
   let words ← readCallerOverflowWords execCore msgInfo
   let result ← Platform.FFI.modifyGetKernelState fun st =>
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId
       trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
       trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
       (Architecture.IpcBufferRead.syncUserWords
@@ -861,7 +861,7 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
         let msgInfo := trapped.x1
         let words ← readCallerOverflowWords execCore msgInfo
         let result ← Platform.FFI.modifyGetKernelState fun st =>
-          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo
+          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId
             trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
             trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
             (Architecture.IpcBufferRead.syncUserWords
@@ -898,19 +898,18 @@ outcome the challenge fears — breaks this theorem. -/
 theorem vacatedCore_next_syscall_rejected
     (ctx : LabelingContext) (execCore : CoreId)
     (pre post : SystemState)
-    (syscallId : UInt32) (msgInfo : UInt64)
+    (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
-    (hMsg : msgInfo = x1)
     (hVacated :
       (PriorityInheritance.scheduleLocalSuccessor pre post execCore).scheduler.currentOnCore
         execCore = none) :
-    Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+    Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30
         (PriorityInheritance.scheduleLocalSuccessor pre post execCore)
       = Except.ok (.returns (Architecture.errorFrame .illegalState),
                    PriorityInheritance.scheduleLocalSuccessor pre post execCore) :=
-  Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId msgInfo
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hMsg hVacated
+  Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hVacated
 
 /-- **WS-SM SM6.A** trace-safety witness: on the boot core, when every thread's
 home core is the boot core (the single-core configuration), the diff-recovered

@@ -4647,8 +4647,8 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|
 run_check "INVARIANT" rg -n '^  \| faulted$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^  \| \.faulted   => 2$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem tagWord_faulted_ne_blocks($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^                \.ok \(\.faulted,$' SeLe4n/Platform/FFI.lean
-run_negative_check "INVARIANT" rg -n '^                \.ok \(\.blocks,$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^              \.ok \(\.faulted,$' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n '^              \.ok \(\.blocks,$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^        2 => Ok\(SvcOutcome::Faulted\),' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n -U 'Ok\(crate::svc_dispatch::SvcOutcome::Faulted\) => \{\n\s+halt_after_delivered_syscall_fault\(frame\);\n\s+\}' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^fn halt_after_delivered_syscall_fault\(frame: &TrapFrame\) -> !' rust/sele4n-hal/src/trap.rs
@@ -4667,7 +4667,7 @@ run_check "INVARIANT" rg -n '^          match syscallResolveCap gate st with' Se
 run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo\n      trapped\.x0 trapped\.x1 trapped\.x2 trapped\.x3 trapped\.x4 trapped\.x5\n      trapped\.x6 trapped\.pc trapped\.pstate trapped\.sp trapped\.x30$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId\n      trapped\.x0 trapped\.x1 trapped\.x2 trapped\.x3 trapped\.x4 trapped\.x5\n      trapped\.x6 trapped\.pc trapped\.pstate trapped\.sp trapped\.x30$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The syscall's arguments cross the boundary once: the HAL passes the validated
 # id alone, and the Lean side reads every other argument from the context it
 # takes whole.  Capture and restore are one call each, not one per word.
@@ -11041,7 +11041,6 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_total($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_illegalState_when_no_current($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_abiMismatch_rejected($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_id_when_not_tcb($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # WS-RC R2.B.4 / WS-SM SM6.A: Rust ↔ Lean symbol alignment — the FFI inner
@@ -20933,7 +20932,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem declaredSchedLockSetForAbiEntry_
 # re-derives neither the gate nor the capability lookup.  The negative is scoped
 # to this declaration because the file legitimately names both elsewhere (the
 # `.replyRecv` CSpace-root agreement is stated over them).
-run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stFilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stFilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def declaredSchedLockSetForAbiEntry[^\n]*(\n([ \t][^\n]*)?)*(abiEntryGate|syscallLookupCap)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 # One record, two domains: the object resolver must be blind to the five fields
 # the scheduler footprints read, or a field added for one domain silently moves

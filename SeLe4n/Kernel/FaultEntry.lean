@@ -669,10 +669,9 @@ backed by a thread that is in fact descheduled, never one left runnable at the
 `SVC`. -/
 theorem syscallDispatchFromAbi_capFault_not_dispatchable
     (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (msgInfo : UInt64)
+    (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (fault : Fault)
-    (hMsg : msgInfo = x1)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
@@ -681,11 +680,11 @@ theorem syscallDispatchFromAbi_capFault_not_dispatchable
     (hCap : Platform.FFI.syscallCapFaultOf SeLe4n.arm64DefaultLayout
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke
         = some fault)
-    (hCommit : Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId msgInfo
+    (hCommit : Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (.faulted, st')) :
     ¬ dispatchableOnCore st' tid executingCore := by
-  rw [Platform.FFI.syscallDispatchFromAbi_capFault_faulted ctx executingCore syscallId msgInfo
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hMsg hCur hSyscall hCap]
+  rw [Platform.FFI.syscallDispatchFromAbi_capFault_faulted ctx executingCore syscallId
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hCur hSyscall hCap]
     at hCommit
   have hSt : st' = Platform.FFI.deliverSyscallCapFault ctx executingCore
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid fault
