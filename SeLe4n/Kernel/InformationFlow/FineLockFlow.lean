@@ -1956,7 +1956,7 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
     (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st'))
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
-        dispatchSyscallChecked ctx decoded tid
+        dispatchSyscallChecked ctx decoded tid executingCore
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid
               decoded.overflowCount) = .ok ((), stPost) →
         projectState ctx observer stPost
@@ -2232,7 +2232,7 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore (ctx : LabelingConte
         (lockSetAcquiredState S lockCore s) = .ok ((), st'))
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
-        dispatchSyscallChecked ctx decoded tid
+        dispatchSyscallChecked ctx decoded tid executingCore
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
               (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount)
               = .ok ((), stPost) →
@@ -2379,7 +2379,7 @@ theorem secureInformationFlow_underFineLocks (ctx : LabelingContext) (L : Securi
         (lockSetAcquiredState S lockCore s) = .ok ((), st'))
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
-        dispatchSyscallChecked ctx decoded tid
+        dispatchSyscallChecked ctx decoded tid executingCore
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
               (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount)
               = .ok ((), stPost) →
@@ -2581,7 +2581,7 @@ theorem entryDecode_some_entry_dispatches (ctx : LabelingContext)
     (s : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (h : entryDecode ctx layout executingCore regCount s = some (tid, decoded)) :
     syscallEntryChecked ctx layout executingCore regCount s
-      = dispatchSyscallChecked ctx decoded tid
+      = dispatchSyscallChecked ctx decoded tid executingCore
           (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
             decoded.overflowCount) := by
   unfold entryDecode at h

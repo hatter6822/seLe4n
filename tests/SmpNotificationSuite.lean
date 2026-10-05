@@ -622,7 +622,7 @@ private def runCheckedDispatchChecks : IO Unit := do
   match okExcept (switchToThreadOnCore stFourCore c2 waiter2) with
   | none => assertBool "wait-dispatch setup (dispatch waiter 2 on core 2)" false
   | some stCur =>
-    let (stWaited, resWait) := notificationWaitCrossCoreDispatch nId waiter2 stCur
+    let (stWaited, resWait) := notificationWaitCrossCoreDispatch nId waiter2 c2 stCur
     -- The dispatch must SUCCEED with no consumed badge (the block path) — a
     -- regression returning `.error` while partially blocking would otherwise
     -- satisfy the state-only checks below.
@@ -643,7 +643,7 @@ private def runCheckedDispatchChecks : IO Unit := do
         (decide (boundDeliveryTarget? stBound nId = some (boundT, epId)))
       -- ALLOWED (all public): the bound delivery goes through, badge delivered.
       let (stAllow, resAllow) :=
-        notificationSignalBoundCrossCoreDispatchChecked allPublicCtx nId signallerT badge1 stBound
+        notificationSignalBoundCrossCoreDispatchChecked allPublicCtx nId signallerT badge1 bootCoreId stBound
       assertBool "an all-public bound signal delivers the badge to the bound TCB"
         (match resAllow with | .ok _ => deliveredBadgeIs stAllow boundT badge1 | .error _ => false)
       -- DENIED signaler→notification (high signaller → low notification): fail-closed.
@@ -652,7 +652,7 @@ private def runCheckedDispatchChecks : IO Unit := do
           threadLabelOf := fun t => if t == signallerT then highLabel else lowLabel
           endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
       let (stD1, resD1) :=
-        notificationSignalBoundCrossCoreDispatchChecked sigDeniedCtx nId signallerT badge1 stBound
+        notificationSignalBoundCrossCoreDispatchChecked sigDeniedCtx nId signallerT badge1 bootCoreId stBound
       assertBool "a high signaller → low notification signal is denied (.flowDenied)"
         (match resD1 with | .error .flowDenied => true | _ => false)
       assertBool "the denied signaler→notification signal leaves the notification unchanged"
@@ -664,7 +664,7 @@ private def runCheckedDispatchChecks : IO Unit := do
           threadLabelOf := fun t => if t == boundT then lowLabel else highLabel
           endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
       let (stD2, resD2) :=
-        notificationSignalBoundCrossCoreDispatchChecked recvDeniedCtx nId signallerT badge1 stBound
+        notificationSignalBoundCrossCoreDispatchChecked recvDeniedCtx nId signallerT badge1 bootCoreId stBound
       assertBool "review #3: a bound delivery to a LOW receiver is denied (.flowDenied)"
         (match resD2 with | .error .flowDenied => true | _ => false)
       assertBool "review #3: the denied bound delivery does NOT leak the badge to the low receiver"

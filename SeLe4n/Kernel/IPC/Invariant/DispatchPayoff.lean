@@ -233,7 +233,7 @@ theorem replyRecvBody_preserves_ipcInvariantFull
       (∀ (tid' : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st2.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid) ∧
       (∀ st3, replyRecvPostReceiveDonation tid ((recordedReplyServer? st prevCaller).getD tid)
-          nextThread (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD tid))
+          nextThread ec
           (replyRecvPoppedDonation rid prevCaller
             (endpointReplyOnCore tid prevCaller msg ec st).1)
           st2 = .ok ((), st3) →
@@ -307,8 +307,7 @@ theorem replyRecvBody_preserves_ipcInvariantFull
                       hReturnStage nextThread summary2 sgi2 st2 hRecv
                     cases hRet : replyRecvPostReceiveDonation tid
                         ((recordedReplyServer? st prevCaller).getD tid) nextThread
-                        (determineExecutingCore st
-                          ((recordedReplyServer? st prevCaller).getD tid)) returnedSc? st2 with
+                        ec returnedSc? st2 with
                     | error e => rw [hRet] at hStep; cases hStep
                     | ok pair3 =>
                         obtain ⟨u3, st3⟩ := pair3; cases u3
@@ -317,8 +316,7 @@ theorem replyRecvBody_preserves_ipcInvariantFull
                         obtain ⟨rfl, hOut⟩ := hStep
                         have hInv3 := replyRecvPostReceiveDonation_preserves_ipcInvariantFull
                           tid ((recordedReplyServer? st prevCaller).getD tid) nextThread
-                          (determineExecutingCore st
-                            ((recordedReplyServer? st prevCaller).getD tid))
+                          ec
                           returnedSc? st2 st3 () hObjInv2 hInv2 hSrvIdle2 hNotOwner2 hRet
                         have hObjInv3 := hObjInv3f st3 hRet
                         -- WS-OD OD3.14: the receive leg's priority hand-off runs
@@ -350,7 +348,7 @@ top of the capability-only tier's pack.  Every field is a pre-state fact —
 several quantify over a stage's committed state, which is a pre-state-computable
 expression — so the payoff binds nothing on the post-state. -/
 structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
-    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (cap : Capability)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st : SystemState) : Prop where
   reachable : ipcReachable st
   capOnly : capabilityDispatchQuiescence decoded cap st
@@ -365,8 +363,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           gate.capDepth (cap.rights.mem .grant) st).1,
         badge := cap.badge, capsGranted := cap.rights.mem .grant } cap.rights
       decoded.capRecvSlot
-      (determineExecutingCore (resolveExtraCaps gate.cspaceRoot
-        (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st).2 tid)
+      executingCore
       (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
         (cap.rights.mem .grant) st).2 = (st1, res) →
     st1.objects.invExt
@@ -377,8 +374,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           gate.capDepth (cap.rights.mem .grant) st).1,
         badge := cap.badge, capsGranted := cap.rights.mem .grant } cap.rights
       decoded.capRecvSlot
-      (determineExecutingCore (resolveExtraCaps gate.cspaceRoot
-        (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st).2 tid)
+      executingCore
       (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
         (cap.rights.mem .grant) st).2 = (st1, res) →
     st1.objects.invExt
@@ -396,12 +392,12 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     (∀ rid, replyIdOpt = some rid → replyIdEstablishFresh st rid) ∧
     (∀ (tcb : TCB),
       (endpointReceiveDualOnCore epId tid replyIdOpt
-          (determineExecutingCore st tid) st).1.getTcb? tid = some tcb →
+          executingCore st).1.getTcb? tid = some tcb →
       ∀ m, tcb.pendingMessage = some m →
       ∀ (i : Nat) (c : TransferCap), m.caps[i]? = some c →
         ∀ b, c.cap.badge = some b → b.valid) ∧
     (∀ st1 res, endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
-        decoded.capRecvSlot (determineExecutingCore st tid) st = (st1, res) →
+        decoded.capRecvSlot executingCore st = (st1, res) →
       st1.objects.invExt) ∧
     -- **WS-OD OD3.6**: the arm's rendezvous donation makes the receiver hold a
     -- `.donated` binding, and `donationOwnerValid` demands that a donation's
@@ -412,7 +408,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     -- pre-state-computable expression, so the pack stays pre-state.
     (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
       (endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
-          decoded.capRecvSlot (determineExecutingCore st tid) st).1.getTcb? s = some sTcb →
+          decoded.capRecvSlot executingCore st).1.getTcb? s = some sTcb →
       sTcb.schedContextBinding ≠ .donated sc0 tid)
   replyStage : ∀ rid (r : Reply) (callerTid : SeLe4n.ThreadId),
     decoded.syscallId = .reply → cap.target = .replyCap rid →
@@ -427,28 +423,28 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
             caps := #[], badge := cap.badge }
-          (determineExecutingCore st tid) st).1.objects[s.toObjId]? = some (.tcb sTcb) →
+          executingCore st).1.objects[s.toObjId]? = some (.tcb sTcb) →
       sTcb.schedContextBinding = .donated sc callerTid →
       ∃ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid ∧
         replyFrameHeadHolder? (endpointReplyOnCore tid callerTid
             { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
               caps := #[], badge := cap.badge }
-            (determineExecutingCore st tid) st).1 hid = some (sc, s)) ∧
+            executingCore st).1 hid = some (sc, s)) ∧
     (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
       replyFrameHeadHolderDonation (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
             caps := #[], badge := cap.badge }
-          (determineExecutingCore st tid) st).1 hid callerTid) ∧
+          executingCore st).1 hid callerTid) ∧
     (∀ (hid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
       answeredReplyObject? st callerTid = some hid →
       replyFrameHeadHolder? (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
             caps := #[], badge := cap.badge }
-          (determineExecutingCore st tid) st).1 hid = some (scId, holder) →
+          executingCore st).1 hid = some (scId, holder) →
       ∀ tcb, (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
             caps := #[], badge := cap.badge }
-          (determineExecutingCore st tid) st).1.getTcb? holder = some tcb →
+          executingCore st).1.getTcb? holder = some tcb →
         passiveServerIdleAllowed tcb.ipcState) ∧
     -- **WS-OD OD4.4**: the arm's donation return resolves its new owner off the
     -- context's own reply stack, at the state the reply leg committed; this is
@@ -456,7 +452,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     (∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-            caps := #[], badge := cap.badge } (determineExecutingCore st tid) st).1
+            caps := #[], badge := cap.badge } executingCore st).1
         scId serverTid originalOwner) ∧
     -- **`v0.35.157`**: the origin redirect's coherence obligation -- the
     -- binding → head fact at the resolved origin, gated on the trigger, the
@@ -464,11 +460,11 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
       redirectedOriginFrameCoherent (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-            caps := #[], badge := cap.badge } (determineExecutingCore st tid) st).1
+            caps := #[], badge := cap.badge } executingCore st).1
         hid callerTid) ∧
     (∀ st1 res, endpointReplyCrossCoreDispatch tid callerTid
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-          caps := #[], badge := cap.badge } (determineExecutingCore st tid) st
+          caps := #[], badge := cap.badge } executingCore st
         = (st1, res) →
       st1.objects.invExt)
   signalNoBoundTarget : ∀ notifId, decoded.syscallId = .notificationSignal →
@@ -481,7 +477,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
               1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
             caps := #[], badge := replyBadge }
-          (determineExecutingCore st tid) st).1).objects[s.toObjId]?
+          executingCore st).1).objects[s.toObjId]?
         = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 prevCaller) ∧
     -- **WS-RM (`v0.35.6`)**: the donation pop runs between the two legs, and
@@ -495,32 +491,32 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st).1 rid prevCaller ∧
+        executingCore st).1 rid prevCaller ∧
     (∀ scId holder,
       replyFrameHeadHolder? (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st).1 rid = some (scId, holder) →
+        executingCore st).1 rid = some (scId, holder) →
       ∀ tcb, (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st).1.getTcb? holder = some tcb →
+        executingCore st).1.getTcb? holder = some tcb →
         passiveServerIdleAllowed tcb.ipcState) ∧
     (∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st).1 scId serverTid originalOwner) ∧
+        executingCore st).1 scId serverTid originalOwner) ∧
     -- **`v0.35.157`**: the origin redirect's coherence obligation, as in
     -- `replyStage`, at the state the pop between the legs runs on.
     redirectedOriginFrameCoherent (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st).1 rid prevCaller ∧
+        executingCore st).1 rid prevCaller ∧
     -- **WS-OD OD4.4**: the receive leg's pre-receive cleanup pops whatever
     -- donation the receiver abandoned; the pop resolves its new owner off that
     -- context's own reply stack, at the state the reply leg **and the donation
@@ -530,48 +526,48 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st).1) tid ∧
+        executingCore st).1) tid ∧
     (∃ tcb : TCB,
       (replyRecvPostPopState rid prevCaller
         (endpointReplyOnCore tid prevCaller
           { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
               1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
             caps := #[], badge := replyBadge }
-          (determineExecutingCore st tid) st).1).getTcb? tid = some tcb ∧
+          executingCore st).1).getTcb? tid = some tcb ∧
       tcb.ipcState = .ready) ∧
     allTimeoutBudgetsNone (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st).1) ∧
+        executingCore st).1) ∧
     replyIdEstablishFresh (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
-        (determineExecutingCore st tid) st).1) rid ∧
+        executingCore st).1) rid ∧
     (∀ (tcb : TCB),
-      (endpointReceiveDualOnCore epId tid (some rid) (determineExecutingCore st tid)
+      (endpointReceiveDualOnCore epId tid (some rid) executingCore
           (replyRecvPostPopState rid prevCaller
             (endpointReplyOnCore tid prevCaller
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
                 caps := #[], badge := replyBadge }
-              (determineExecutingCore st tid) st).1)).1.getTcb? tid = some tcb →
+              executingCore st).1)).1.getTcb? tid = some tcb →
       ∀ m, tcb.pendingMessage = some m →
       ∀ (i : Nat) (c : TransferCap), m.caps[i]? = some c →
         ∀ b, c.cap.badge = some b → b.valid) ∧
     (∀ (nextThread : SeLe4n.ThreadId) (summary2 : CapTransferSummary)
         (sgi2 : Option (CoreId × Concurrency.SgiKind)) (st2 : SystemState),
       endpointReceiveDualWithCapsOnCore epId tid (some rid) gate.cspaceRoot
-          decoded.capRecvSlot (determineExecutingCore st tid)
+          decoded.capRecvSlot executingCore
           (replyRecvPostPopState rid prevCaller
             (endpointReplyOnCore tid prevCaller
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
                 caps := #[], badge := replyBadge }
-              (determineExecutingCore st tid) st).1)
+              executingCore st).1)
         = (st2, .ok (nextThread, summary2, sgi2)) →
       st2.objects.invExt ∧
       -- **PR #897 review**: the idle-state obligation is the HOLDER's, keyed on
@@ -584,19 +580,19 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
                 caps := #[], badge := replyBadge }
-              (determineExecutingCore st tid) st).1 = some (scId, holder) →
+              executingCore st).1 = some (scId, holder) →
         ∀ tcb, st2.getTcb? holder = some tcb →
           passiveServerIdleAllowed tcb.ipcState) ∧
       (∀ (tid' : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st2.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid) ∧
       (∀ st3, replyRecvPostReceiveDonation tid ((recordedReplyServer? st prevCaller).getD tid)
-          nextThread (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD tid))
+          nextThread executingCore
           (replyRecvPoppedDonation rid prevCaller
             (endpointReplyOnCore tid prevCaller
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
                 caps := #[], badge := replyBadge }
-              (determineExecutingCore st tid) st).1)
+              executingCore st).1)
           st2 = .ok ((), st3) →
         st3.objects.invExt))
 
@@ -636,27 +632,27 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     threadHasPendingFault st callerTid = true →
     (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
       (endpointReplyOnCore tid callerTid IpcMessage.empty
-          (determineExecutingCore st tid) st).1.objects[s.toObjId]? = some (.tcb sTcb) →
+          executingCore st).1.objects[s.toObjId]? = some (.tcb sTcb) →
       sTcb.schedContextBinding = .donated sc callerTid →
       ∃ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid ∧
         replyFrameHeadHolder? (endpointReplyOnCore tid callerTid IpcMessage.empty
-            (determineExecutingCore st tid) st).1 hid = some (sc, s)) ∧
+            executingCore st).1 hid = some (sc, s)) ∧
     (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
       replyFrameHeadHolderDonation (endpointReplyOnCore tid callerTid IpcMessage.empty
-          (determineExecutingCore st tid) st).1 hid callerTid) ∧
+          executingCore st).1 hid callerTid) ∧
     (∀ (hid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
       answeredReplyObject? st callerTid = some hid →
       replyFrameHeadHolder? (endpointReplyOnCore tid callerTid IpcMessage.empty
-          (determineExecutingCore st tid) st).1 hid = some (scId, holder) →
+          executingCore st).1 hid = some (scId, holder) →
       ∀ tcb, (endpointReplyOnCore tid callerTid IpcMessage.empty
-          (determineExecutingCore st tid) st).1.getTcb? holder = some tcb →
+          executingCore st).1.getTcb? holder = some tcb →
         passiveServerIdleAllowed tcb.ipcState) ∧
     (∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid callerTid IpcMessage.empty
-          (determineExecutingCore st tid) st).1 scId serverTid originalOwner) ∧
+          executingCore st).1 scId serverTid originalOwner) ∧
     (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
       redirectedOriginFrameCoherent (endpointReplyOnCore tid callerTid IpcMessage.empty
-          (determineExecutingCore st tid) st).1 hid callerTid)
+          executingCore st).1 hid callerTid)
 
 /-- WS-RR RR3.24 (**the dispatch payoff**): every syscall `dispatchWithCap`
 routes preserves `ipcInvariantFull`.  The capability-only tier delegates to
@@ -664,19 +660,19 @@ RR3.23's payoff; the IPC arms compose the per-transition bundles with the
 staging writes.  Staged because the `.call` arm reads the staged call-chain
 bundle; every hypothesis is a pre-state fact. -/
 theorem dispatchWithCap_preserves_ipcInvariantFull
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (st st' : SystemState)
-    (hPack : syscallDispatchQuiescence decoded tid gate cap st)
-    (hStep : dispatchWithCap decoded tid gate cap st = .ok ((), st')) :
+    (hPack : syscallDispatchQuiescence decoded tid executingCore gate cap st)
+    (hStep : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st')) :
     ipcInvariantFull st' := by
   have hInv := hPack.reachable.ipcInvariantFull
   have hObjInv := hPack.reachable.objects_invExt
   have hBudgets := hPack.reachable.allTimeoutBudgetsNone
   unfold dispatchWithCap at hStep
-  cases hCapOnly : dispatchCapabilityOnly decoded cap tid with
+  cases hCapOnly : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
       rw [hCapOnly] at hStep
-      exact dispatchCapabilityOnly_preserves_ipcInvariantFull decoded cap tid k st st'
+      exact dispatchCapabilityOnly_preserves_ipcInvariantFull decoded cap tid executingCore k st st'
         hCapOnly hObjInv hInv hPack.capOnly hStep
   | none =>
       rw [hCapOnly] at hStep
@@ -714,7 +710,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               have hSendInv := endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
                 epId tid { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
                 cap.rights decoded.capRecvSlot
-                (determineExecutingCore stR tid) stR
+                executingCore stR
                 hInvR hObjInvR hBudgetsR hRB hFreshR hTailR
                 (fun tcb hTcb => by
                   rw [hTCR] at hTcb
@@ -731,7 +727,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               cases hSend : endpointSendDualWithCapsOnCore epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
                   cap.rights decoded.capRecvSlot
-                  (determineExecutingCore stR tid) stR with
+                  executingCore stR with
               | mk st1 res1 =>
                   rw [hSend] at hStep hSendInv
                   cases res1 with
@@ -786,7 +782,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                 hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
               have hRecvInv := endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
                 epId tid replyIdOpt gate.cspaceRoot decoded.capRecvSlot
-                (determineExecutingCore st tid) st hInv hObjInv hCleanupStack hBudgets
+                executingCore st hInv hObjInv hCleanupStack hBudgets
                 hFresh hTailR hRidFresh
                 (fun tcb hTcb => by
                   rw [hTC] at hTcb
@@ -798,7 +794,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   exact hReadyC)
                 hDeliveredBadges
               cases hRecv : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt
-                  gate.cspaceRoot decoded.capRecvSlot (determineExecutingCore st tid) st with
+                  gate.cspaceRoot decoded.capRecvSlot executingCore st with
               | mk st1 res1 =>
                   rw [hRecv] at hStep hRecvInv
                   cases res1 with
@@ -825,21 +821,21 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                       -- chain walk adds no obligation: it writes `pipBoost` and
                       -- run-queue buckets, which the bundle reads nowhere.
                       cases hDonation : applyReceiveRendezvousHandoff st1 tid nextThread
-                          (determineExecutingCore st tid) with
+                          executingCore with
                       | error e => rw [hDonation] at hStep; simp only [] at hStep; cases hStep
                       | ok stDon =>
                           rw [hDonation] at hStep
                           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                           have hDonInv : ipcInvariantFull stDon :=
                             applyReceiveRendezvousHandoff_preserves_ipcInvariantFull st1 stDon
-                              tid nextThread (determineExecutingCore st tid) hObjInv1 hRecvInv
+                              tid nextThread executingCore hObjInv1 hRecvInv
                               (fun s sTcb sc0 hs => by
                                 rw [hRecv] at hRecvNotOwner
                                 exact hRecvNotOwner s sTcb sc0 hs)
                               hDonation
                           have hDonObj : stDon.objects.invExt :=
                             applyReceiveRendezvousHandoff_preserves_objects_invExt st1 stDon
-                              tid nextThread (determineExecutingCore st tid) hObjInv1 hDonation
+                              tid nextThread executingCore hObjInv1 hDonation
                           have hSC := stageWokenSendCompletion_preserves_ipcInvariantFull stDon
                             ((st.getEndpoint? epId).bind (·.sendQ.head)) hDonObj hDonInv
                           have hSCobj := stageWokenSendCompletion_objects_invExt stDon
@@ -885,7 +881,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               have hCallInv := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                 epId tid { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
                 cap.rights decoded.capRecvSlot
-                (determineExecutingCore stR tid) stR
+                executingCore stR
                 hInvR hObjInvR hBudgetsR hRB hFreshR hTailR
                 (fun tcb hTcb => by
                   rw [hTCR] at hTcb
@@ -907,7 +903,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               cases hCall : endpointCallCrossCoreDispatch epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
                   cap.rights decoded.capRecvSlot
-                  (determineExecutingCore stR tid) stR with
+                  executingCore stR with
               | mk st1 res1 =>
                   rw [hCall] at hStep hCallInv
                   cases res1 with
@@ -952,10 +948,10 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                       hPack.replyFaultStage rid reply callerTid hSy hTgt hR hCaller hF
                     have hFaultInv := faultReplyOnCore_preserves_ipcInvariantFull tid
                       callerTid decoded.msgInfo decoded.msgRegs
-                      (determineExecutingCore st tid) st hInv hObjInv hBudgets hFDon
+                      executingCore st hInv hObjInv hBudgets hFDon
                       hFHolderDon hFHolderIdle hFStack hFOrigin
                     cases hFR : faultReplyOnCore tid callerTid decoded.msgInfo decoded.msgRegs
-                        (determineExecutingCore st tid) st with
+                        executingCore st with
                     | mk stF resF =>
                         rw [hFR] at hStep hFaultInv
                         cases resF with
@@ -974,11 +970,11 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                     have hReplyInv := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
                       tid callerTid
                       { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
-                      (determineExecutingCore st tid) st hInv hObjInv
+                      executingCore st hInv hObjInv
                       hDon hHolderDon hBudgets hHolderIdle hReplyStack hOriginCoh
                     cases hReply : endpointReplyCrossCoreDispatch tid callerTid
                         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
-                        (determineExecutingCore st tid) st with
+                        executingCore st with
                     | mk st1 res1 =>
                         rw [hReply] at hStep hReplyInv
                         cases res1 with
@@ -1042,17 +1038,17 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               simp only [hDec] at hStep
               have hNoBound := hPack.signalNoBoundTarget notifId hSy hTgt
               have hReduce : notificationSignalBoundCrossCoreDispatch notifId args.badge
-                  tid st = notificationSignalOnCore notifId args.badge
-                    (determineExecutingCore st tid) st := by
+                  executingCore st = notificationSignalOnCore notifId args.badge
+                    executingCore st := by
                 unfold notificationSignalBoundCrossCoreDispatch
                 exact notificationSignalBoundOnCore_fallthrough_eq notifId args.badge
-                  (determineExecutingCore st tid) st hNoBound
+                  executingCore st hNoBound
               rw [hReduce] at hStep
               have hSigInv := notificationSignalOnCore_preserves_ipcInvariantFull notifId
-                args.badge (determineExecutingCore st tid) st hInv hObjInv
+                args.badge executingCore st hInv hObjInv
                 hPack.reachable.notificationWaiterConsistent hBudgets
               cases hSig : notificationSignalOnCore notifId args.badge
-                  (determineExecutingCore st tid) st with
+                  executingCore st with
               | mk st1 res1 =>
                   rw [hSig] at hStep hSigInv
                   cases res1 with
@@ -1061,7 +1057,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                       simp only [] at hStep
                       have hObjInv1 : st1.objects.invExt := by
                         have h := notificationSignalOnCore_preserves_objects_invExt
-                          notifId args.badge (determineExecutingCore st tid) st hObjInv
+                          notifId args.badge executingCore st hObjInv
                         rw [hSig] at h; exact h
                       cases hClear : clearWokenReceiverStash
                           ((boundDeliveryTarget? st notifId).map (·.1)) st1 with
@@ -1106,7 +1102,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
         case object notifId =>
           obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
           have hWaitInv := notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull
-            notifId tid st hInv hObjInv
+            notifId tid executingCore st hInv hObjInv
             (fun tcb hTcb => by
               rw [hTC] at hTcb
               obtain rfl := Option.some.inj hTcb
@@ -1120,7 +1116,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               rw [hTC] at hTcb
               obtain rfl := Option.some.inj hTcb
               exact hReadyC)
-          cases hWait : notificationWaitCrossCoreDispatch notifId tid st with
+          cases hWait : notificationWaitCrossCoreDispatch notifId tid executingCore st with
           | mk st1 res1 =>
               rw [hWait] at hStep hWaitInv
               cases res1 with
@@ -1135,7 +1131,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                       have hObjInv1 : st1.objects.invExt := by
                         have h := notificationWaitCrossCoreDispatch_preserves_objects_invExt
-                          notifId tid st hObjInv
+                          notifId tid executingCore st hObjInv
                         rw [hWait] at h; exact h
                       rw [← hStep]
                       exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
@@ -1154,7 +1150,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                 hPack.replyRecvStage rid prevCaller replyBadge epId hSy hTgt hRR
               cases hBody : replyRecvBody epId tid rid prevCaller
                   { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size, caps := #[], badge := replyBadge }
-                  gate.cspaceRoot decoded.capRecvSlot (determineExecutingCore st tid) st with
+                  gate.cspaceRoot decoded.capRecvSlot executingCore st with
               | error e => simp only [hBody] at hStep; cases hStep
               | ok pairB =>
                   obtain ⟨summary, stB⟩ := pairB
@@ -1162,7 +1158,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                   obtain ⟨hInvB, hObjInvB⟩ := replyRecvBody_preserves_ipcInvariantFull
                     epId tid rid prevCaller _ gate.cspaceRoot decoded.capRecvSlot
-                    (determineExecutingCore st tid) st stB summary
+                    executingCore st stB summary
                     hPack.reachable hNoEdge1 hHolderDon1 hHolderIdle1 hStackValid1
                     hOriginCoh1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1 hBadges1 hRetStage
                     hBody
@@ -1180,11 +1176,11 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
 `ipcInvariantFull` — the capability resolution is read-only, the dispatch tier
 is RR3.24's payoff, and the taint application writes only the taint map. -/
 theorem dispatchSyscall_preserves_ipcInvariantFull
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st st' : SystemState)
     (hPack : ∀ (gate : SyscallGate) (cap : Capability),
       syscallLookupCap gate st = .ok (cap, st) →
-      syscallDispatchQuiescence decoded tid gate cap st)
-    (hStep : dispatchSyscall decoded tid st = .ok ((), st')) :
+      syscallDispatchQuiescence decoded tid executingCore gate cap st)
+    (hStep : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
     ipcInvariantFull st' := by
   unfold dispatchSyscall SystemState.getObject? at hStep
   cases hT : st.objects[tid.toObjId]? with
@@ -1199,7 +1195,7 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
               cases rootObj with
               | cnode rootCn =>
                   simp only [hRoot] at hStep
-                  cases hInvk : syscallInvoke { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCap decoded tid { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
+                  cases hInvk : syscallInvoke { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCap decoded tid executingCore { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
                   | error e => rw [hInvk] at hStep; cases hStep
                   | ok pair =>
                       obtain ⟨u, stPost⟩ := pair; cases u
@@ -1216,7 +1212,7 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
                               (syscallResolveCap_of_lookup _ st cap stL hLk)
                           subst hStEq
                           have hInvPost := dispatchWithCap_preserves_ipcInvariantFull
-                            decoded tid _ cap stL stPost
+                            decoded tid executingCore _ cap stL stPost
                             (hPack _ cap hLk) hInvk
                           rw [← hStep]
                           refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInvPost
@@ -1255,9 +1251,9 @@ plus the declassifying signal's unbound-delivery confinement — that arm is
 live only on this tier, so only this tier's pack carries its confinement.
 Every field is a pre-state fact. -/
 structure checkedSyscallDispatchQuiescence (decoded : SyscallDecodeResult)
-    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (cap : Capability)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st : SystemState) : Prop where
-  base : syscallDispatchQuiescence decoded tid gate cap st
+  base : syscallDispatchQuiescence decoded tid executingCore gate cap st
   declassifySignalNoBoundTarget : ∀ notifId,
     decoded.syscallId = .declassifySignal → cap.target = .object notifId →
     boundDeliveryTarget? st notifId = none
@@ -1268,18 +1264,18 @@ rebuilt unchecked dispatch equation; the four SM9 arms close from their
 transitions' frames and the declassified signal's fallthrough bundle. -/
 theorem dispatchWithCapChecked_preserves_ipcInvariantFull
     (ctx : LabelingContext) (decoded : SyscallDecodeResult)
-    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (cap : Capability)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st st' : SystemState)
-    (hQ : checkedSyscallDispatchQuiescence decoded tid gate cap st)
-    (hStep : dispatchWithCapChecked ctx decoded tid gate cap st = .ok ((), st')) :
+    (hQ : checkedSyscallDispatchQuiescence decoded tid executingCore gate cap st)
+    (hStep : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
     ipcInvariantFull st' := by
   have hInv := hQ.base.reachable.ipcInvariantFull
   have hObjInv := hQ.base.reachable.objects_invExt
   unfold dispatchWithCapChecked at hStep
-  cases hCapOnly : dispatchCapabilityOnly decoded cap tid with
+  cases hCapOnly : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
       rw [hCapOnly] at hStep
-      exact dispatchCapabilityOnly_preserves_ipcInvariantFull decoded cap tid k st st'
+      exact dispatchCapabilityOnly_preserves_ipcInvariantFull decoded cap tid executingCore k st st'
         hCapOnly hObjInv hInv hQ.base.capOnly hStep
   | none =>
       rw [hCapOnly] at hStep
@@ -1300,7 +1296,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                     caps := resolvedCaps, badge := cap.badge,
                     capsGranted := cap.rights.mem .grant } cap.rights
-                  decoded.capRecvSlot (determineExecutingCore stR tid) stR with
+                  decoded.capRecvSlot executingCore stR with
               | mk st1 res1 =>
                   rw [hDisp] at hStep
                   unfold endpointSendCrossCoreDispatchChecked at hDisp
@@ -1313,12 +1309,12 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     subst hB
                     simp only [] at hStep; cases hStep
                   split at hDisp
-                  · have hU : dispatchWithCap decoded tid gate cap st
+                  · have hU : dispatchWithCap decoded tid executingCore gate cap st
                         = .ok ((), st') := by
                       unfold dispatchWithCap
                       simp only [hCapOnly0, hSy, hTgt, hRes, hDisp]
                       exact hStep
-                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate
+                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
                       cap st st' hQ.base hU
                   · injection hDisp with hA hB
                     subst hB
@@ -1329,11 +1325,11 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         case object epId =>
           split at hStep
           · cases hStep
-          · have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+          · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
               unfold dispatchWithCap
               simp only [hCapOnly0, hSy, hTgt]
               exact hStep
-            exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap st st'
+            exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap st st'
               hQ.base hU
         all_goals cases hStep
       case call =>
@@ -1347,17 +1343,17 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                     caps := resolvedCaps, badge := cap.badge,
                     capsGranted := cap.rights.mem .grant } cap.rights
-                  decoded.capRecvSlot (determineExecutingCore stR tid) stR with
+                  decoded.capRecvSlot executingCore stR with
               | mk st1 res1 =>
                   rw [hDisp] at hStep
                   unfold endpointCallCrossCoreDispatchChecked at hDisp
                   split at hDisp
-                  · have hU : dispatchWithCap decoded tid gate cap st
+                  · have hU : dispatchWithCap decoded tid executingCore gate cap st
                         = .ok ((), st') := by
                       unfold dispatchWithCap
                       simp only [hCapOnly0, hSy, hTgt, hRes, hDisp]
                       exact hStep
-                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate
+                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
                       cap st st' hQ.base hU
                   · injection hDisp with hA hB
                     subst hB
@@ -1386,14 +1382,14 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     -- on *both* branches under the arm's own flow guard.
                     rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid
                           callerTid decoded.msgInfo decoded.msgRegs _
-                          (determineExecutingCore st tid) st hFlow] at hStep
-                    have hU : dispatchWithCap decoded tid gate cap st
+                          executingCore st hFlow] at hStep
+                    have hU : dispatchWithCap decoded tid executingCore gate cap st
                         = .ok ((), st') := by
                       unfold dispatchWithCap
                       simp only [hCapOnly0, hSy, hTgt,
                         replyAnsweredCaller?_of_getReply st rid reply hRep, hCaller]
                       exact hStep
-                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate
+                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
                       cap st st' hQ.base hU
                   next => cases hStep
         all_goals cases hStep
@@ -1407,11 +1403,11 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               unfold cspaceMintChecked at hStep
               simp only [] at hStep
               split at hStep
-              · have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+              · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
                   simp only [hCapOnly0, hSy, hTgt, hDec]
                   exact hStep
-                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hU
               · cases hStep
         all_goals cases hStep
@@ -1425,11 +1421,11 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               unfold cspaceCopyChecked at hStep
               simp only [] at hStep
               split at hStep
-              · have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+              · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
                   simp only [hCapOnly0, hSy, hTgt, hDec]
                   exact hStep
-                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hU
               · cases hStep
         all_goals cases hStep
@@ -1443,11 +1439,11 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               unfold cspaceMoveChecked at hStep
               simp only [] at hStep
               split at hStep
-              · have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+              · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
                   simp only [hCapOnly0, hSy, hTgt, hDec]
                   exact hStep
-                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hU
               · cases hStep
         all_goals cases hStep
@@ -1461,11 +1457,11 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               unfold registerServiceChecked at hStep
               simp only [] at hStep
               split at hStep
-              · have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+              · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
                   simp only [hCapOnly0, hSy, hTgt, hDec]
                   exact hStep
-                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hU
               · cases hStep
         all_goals cases hStep
@@ -1481,16 +1477,16 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   (ctx.objectLabelOf notifId) with
               | false =>
                   rw [notificationSignalBoundCrossCoreDispatchChecked_flow_denied
-                        ctx notifId tid args.badge st hFlow] at hStep
+                        ctx notifId tid args.badge executingCore st hFlow] at hStep
                   simp only [] at hStep; cases hStep
               | true =>
                   rw [notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_no_delivery
-                        ctx notifId tid args.badge st hFlow hNoBound] at hStep
-                  have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+                        ctx notifId tid args.badge executingCore st hFlow hNoBound] at hStep
+                  have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                     unfold dispatchWithCap
                     simp only [hCapOnly0, hSy, hTgt, hDec]
                     exact hStep
-                  exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate
+                  exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
                     cap st st' hQ.base hU
         all_goals cases hStep
       case notificationWait =>
@@ -1500,16 +1496,16 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               (ctx.threadLabelOf tid) with
           | false =>
               rw [notificationWaitCrossCoreDispatchChecked_flow_denied
-                    ctx notifId tid st hFlow] at hStep
+                    ctx notifId tid executingCore st hFlow] at hStep
               simp only [] at hStep; cases hStep
           | true =>
               rw [notificationWaitCrossCoreDispatchChecked_flow_allowed
-                    ctx notifId tid st hFlow] at hStep
-              have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+                    ctx notifId tid executingCore st hFlow] at hStep
+              have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                 unfold dispatchWithCap
                 simp only [hCapOnly0, hSy, hTgt]
                 exact hStep
-              exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+              exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                 st st' hQ.base hU
         all_goals cases hStep
       case replyRecv =>
@@ -1524,11 +1520,11 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                 simp only [hResv] at hStep
                 split at hStep
                 next hFlow =>
-                  have hU : dispatchWithCap decoded tid gate cap st = .ok ((), st') := by
+                  have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                     unfold dispatchWithCap
                     simp only [hCapOnly0, hSy, hTgt, hResv]
                     exact hStep
-                  exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate cap
+                  exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                     st st' hQ.base hU
                 next => cases hStep
         all_goals cases hStep
@@ -1537,7 +1533,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
         case object targetId =>
           obtain ⟨tidC, hCur, hEq⟩ := declassifyObjectFromCore_frame_of_ok
             (liftLegacyContext ctx) ctx.declassificationPolicy
-            (determineExecutingCore st tid) targetId st st' hStep
+            executingCore targetId st st' hStep
           rw [hEq]
           refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInv
           · rfl
@@ -1552,8 +1548,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               simp only [hDec] at hStep
               have hNoBound := hQ.declassifySignalNoBoundTarget notifId hSy hTgt
               cases hDisp : notificationSignalDeclassifiedCrossCoreDispatch
-                  (liftLegacyContext ctx) ctx.declassificationPolicy notifId tid
-                  args.badge st with
+                  (liftLegacyContext ctx) ctx.declassificationPolicy notifId
+                  args.badge executingCore st with
               | mk st1 res1 =>
                   rw [hDisp] at hStep
                   cases res1 with
@@ -1564,13 +1560,13 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       have hSigInv : ipcInvariantFull st1 :=
                         notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                          args.badge (determineExecutingCore st tid) st st1 sgi1 hNoBound
+                          args.badge executingCore st st1 sgi1 hNoBound
                           hInv hObjInv hQ.base.reachable.notificationWaiterConsistent
                           hQ.base.reachable.allTimeoutBudgetsNone hDisp
                       have hObjInv1 : st1.objects.invExt :=
                         notificationSignalDeclassifiedOnCore_preserves_objects_invExt
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                          args.badge (determineExecutingCore st tid) st st1 sgi1
+                          args.badge executingCore st st1 sgi1
                           hObjInv hDisp
                       cases hClear : clearWokenReceiverStash
                           ((boundDeliveryTarget? st notifId).map (·.1)) st1 with
@@ -1627,7 +1623,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       simp only [hOp] at hStep
                       cases hRead : auditReadFromCore (liftLegacyContext ctx)
                           (validatedAuditMonitorClearance ctx)
-                          (determineExecutingCore st tid) op st with
+                          executingCore op st with
                       | error e => rw [hRead] at hStep; cases hStep
                       | ok pairR =>
                           obtain ⟨w, st1⟩ := pairR
@@ -1635,7 +1631,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                           have hFr := auditReadFromCore_frame (liftLegacyContext ctx)
                             (validatedAuditMonitorClearance ctx)
-                            (determineExecutingCore st tid) op st w st1 hRead
+                            executingCore op st w st1 hRead
                           rw [← hStep, hFr]
                           exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _
                             hObjInv hInv
@@ -1653,7 +1649,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   simp only [hDecA] at hStep
                   cases hDrain : auditDrainVisiblePrefix (liftLegacyContext ctx)
                       (validatedAuditMonitorClearance ctx)
-                      (determineExecutingCore st tid) args.count st with
+                      executingCore args.count st with
                   | error e => rw [hDrain] at hStep; cases hStep
                   | ok pairD =>
                       obtain ⟨n, st1⟩ := pairD
@@ -1661,7 +1657,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                       obtain ⟨hEq, -, -⟩ := auditDrain_frame (liftLegacyContext ctx)
                         (validatedAuditMonitorClearance ctx)
-                        (determineExecutingCore st tid) args.count st n st1 hDrain
+                        executingCore args.count st n st1 hDrain
                       have hInv1 : ipcInvariantFull st1 := by
                         rw [hEq]
                         refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInv
@@ -1685,11 +1681,11 @@ lookup implies (`syscallResolveCap_of_lookup`), so the one hypothesis
 covers both routes. -/
 theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (ctx : LabelingContext) (decoded : SyscallDecodeResult)
-    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st st' : SystemState)
     (hPack : ∀ (gate : SyscallGate) (cap : Capability),
       syscallResolveCap gate st = .ok (cap, st) →
-      checkedSyscallDispatchQuiescence decoded tid gate cap st)
-    (hStep : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
+      checkedSyscallDispatchQuiescence decoded tid executingCore gate cap st)
+    (hStep : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
     ipcInvariantFull st' := by
   unfold dispatchSyscallChecked SystemState.getObject? at hStep
   cases hT : st.objects[tid.toObjId]? with
@@ -1707,7 +1703,7 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
                   cases hTF : syscallChecksTargetFirst decoded.syscallId with
                   | true =>
                       simp only [hTF, if_true] at hStep
-                      cases hInvk : syscallInvokeResolved { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
+                      cases hInvk : syscallInvokeResolved { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
                       | error e => rw [hInvk] at hStep; cases hStep
                       | ok pair =>
                           obtain ⟨u, stPost⟩ := pair; cases u
@@ -1723,14 +1719,14 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
                                 syscallResolveCap_implies_capability_at_slot _ st cap stL hRz
                               subst hStEq
                               have hInvPost := dispatchWithCapChecked_preserves_ipcInvariantFull
-                                ctx decoded tid _ cap stL stPost (hPack _ cap hRz) hInvk
+                                ctx decoded tid executingCore _ cap stL stPost (hPack _ cap hRz) hInvk
                               rw [← hStep]
                               refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInvPost
                               · exact applySyscallTaint_objects _ _ _
                               · exact applySyscallTaint_scheduler _ _ _
                   | false =>
                       simp only [hTF, Bool.false_eq_true, if_false] at hStep
-                      cases hInvk : syscallInvoke { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
+                      cases hInvk : syscallInvoke { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
                       | error e => rw [hInvk] at hStep; cases hStep
                       | ok pair =>
                           obtain ⟨u, stPost⟩ := pair; cases u
@@ -1747,7 +1743,7 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
                                 syscallResolveCap_implies_capability_at_slot _ st cap stL hRz
                               subst hStEq
                               have hInvPost := dispatchWithCapChecked_preserves_ipcInvariantFull
-                                ctx decoded tid _ cap stL stPost (hPack _ cap hRz) hInvk
+                                ctx decoded tid executingCore _ cap stL stPost (hPack _ cap hRz) hInvk
                               rw [← hStep]
                               refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInvPost
                               · exact applySyscallTaint_objects _ _ _
@@ -2121,7 +2117,7 @@ instance exercises the state-shaped fields; its `.send`-shaped decode and
 `.replyCap` target leave the *indexed* fields vacuous, which is what the
 per-arm instances in §7b below exist to close (PR #886 review). -/
 theorem syscallDispatchQuiescence_inhabited :
-    syscallDispatchQuiescence witnessDecoded witnessTid witnessGate witnessCap
+    syscallDispatchQuiescence witnessDecoded witnessTid Concurrency.bootCoreId witnessGate witnessCap
       witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnly,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -2148,7 +2144,7 @@ theorem syscallDispatchQuiescence_inhabited :
 /-- The checked-tier pack is inhabited too: the base witness plus the
 declassifying signal's confinement, vacuous at a `.send`-shaped decode. -/
 theorem checkedSyscallDispatchQuiescence_inhabited :
-    checkedSyscallDispatchQuiescence witnessDecoded witnessTid witnessGate
+    checkedSyscallDispatchQuiescence witnessDecoded witnessTid Concurrency.bootCoreId witnessGate
       witnessCap witnessSt3 :=
   ⟨syscallDispatchQuiescence_inhabited, by
     intro notifId hSy
@@ -2269,7 +2265,7 @@ private theorem witnessCapOnlySignal :
 `boundDeliveryTarget? = none` is computed on the present (non-notification)
 object rather than assumed. -/
 theorem syscallDispatchQuiescence_inhabited_signal :
-    syscallDispatchQuiescence witnessDecodedSignal witnessTid witnessGateSignal
+    syscallDispatchQuiescence witnessDecodedSignal witnessTid Concurrency.bootCoreId witnessGateSignal
       witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlySignal,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -2428,7 +2424,7 @@ private theorem witnessCapOnlyRetype :
 is named, and detachedness is proven of the witness state -- with the bind
 decoder's donation field firing through the same register file. -/
 theorem syscallDispatchQuiescence_inhabited_retype :
-    syscallDispatchQuiescence witnessDecodedRetype witnessTid witnessGateRetype
+    syscallDispatchQuiescence witnessDecodedRetype witnessTid Concurrency.bootCoreId witnessGateRetype
       witnessCap witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyRetype,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -2513,7 +2509,7 @@ both fire, and the staged transition's `invExt` conclusion is discharged by
 evaluating the transition on the witness state -- the refusal path returns
 the state whose invariant is already proven. -/
 theorem syscallDispatchQuiescence_inhabited_send :
-    syscallDispatchQuiescence witnessDecoded witnessTid witnessGate
+    syscallDispatchQuiescence witnessDecoded witnessTid Concurrency.bootCoreId witnessGate
       witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecoded rfl,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -2559,7 +2555,7 @@ delivered-caps conjunct reads the stored TCB (no pending message), and the
 transition's `invExt` conclusion is discharged by evaluation on the witness
 state. -/
 theorem syscallDispatchQuiescence_inhabited_receive :
-    syscallDispatchQuiescence witnessDecodedRecv witnessTid witnessGateRecv
+    syscallDispatchQuiescence witnessDecodedRecv witnessTid Concurrency.bootCoreId witnessGateRecv
       witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedRecv rfl,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -2621,7 +2617,7 @@ private theorem witnessSt3_getEndpoint_seven :
 target -- the cross-core dispatch's `invExt` conclusion by evaluation, and
 the rendezvous field on the computed absent-endpoint lookup. -/
 theorem syscallDispatchQuiescence_inhabited_call :
-    syscallDispatchQuiescence witnessDecodedCall witnessTid witnessGateCall
+    syscallDispatchQuiescence witnessDecodedCall witnessTid Concurrency.bootCoreId witnessGateCall
       witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyEndpointOf witnessDecodedCall rfl,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -2684,7 +2680,7 @@ private theorem witnessCapOnlyMint :
 /-- **The mint badge validity is exercised**: the registers decode and the
 decoded badge's validity is computed. -/
 theorem syscallDispatchQuiescence_inhabited_mint :
-    syscallDispatchQuiescence witnessDecodedMint witnessTid witnessGateMint
+    syscallDispatchQuiescence witnessDecodedMint witnessTid Concurrency.bootCoreId witnessGateMint
       witnessCap witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyMint,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -2755,7 +2751,7 @@ private theorem witnessCapOnlyDeclassifySignal :
     exact witnessThreadQuiescent
 
 private theorem syscallDispatchQuiescence_inhabited_declassifySignal :
-    syscallDispatchQuiescence witnessDecodedDeclassifySignal witnessTid
+    syscallDispatchQuiescence witnessDecodedDeclassifySignal witnessTid Concurrency.bootCoreId
       witnessGateDeclassifySignal witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyDeclassifySignal,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -2783,7 +2779,7 @@ private theorem syscallDispatchQuiescence_inhabited_declassifySignal :
 and the object target both fire, and `boundDeliveryTarget? = none` is
 computed on the present object. -/
 theorem checkedSyscallDispatchQuiescence_inhabited_declassifySignal :
-    checkedSyscallDispatchQuiescence witnessDecodedDeclassifySignal witnessTid
+    checkedSyscallDispatchQuiescence witnessDecodedDeclassifySignal witnessTid Concurrency.bootCoreId
       witnessGateDeclassifySignal witnessCapTcbObject witnessSt3 :=
   ⟨syscallDispatchQuiescence_inhabited_declassifySignal, by
     intro notifId hSy hTgt
@@ -2968,7 +2964,7 @@ the stored reply; the remaining `caller = some _` premise is where the
 retype lever's freshness constraint stops (only the call rendezvous creates
 a caller-carrying reply). -/
 theorem syscallDispatchQuiescence_inhabited_reply :
-    syscallDispatchQuiescence witnessDecodedReply witnessTid witnessGateReply
+    syscallDispatchQuiescence witnessDecodedReply witnessTid Concurrency.bootCoreId witnessGateReply
       witnessCapReply witnessSt4 := by
   refine ⟨witnessReachable4, witnessCapOnlyReply,
     ⟨witnessTcbBound, witnessSt4_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -3041,7 +3037,7 @@ private theorem witnessCapOnlyBind :
 read off the stored binding for every thread a caller's CSpace could resolve
 MR0 to (`v0.35.204`: the operand is a TCB capability address now). -/
 theorem syscallDispatchQuiescence_inhabited_bind :
-    syscallDispatchQuiescence witnessDecodedBind witnessTid witnessGateBind
+    syscallDispatchQuiescence witnessDecodedBind witnessTid Concurrency.bootCoreId witnessGateBind
       witnessCap witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyBind,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -3104,7 +3100,7 @@ private theorem witnessCapOnlyUnbind :
 premises fire against the present object holding a TCB where a SchedContext
 is demanded. -/
 theorem syscallDispatchQuiescence_inhabited_unbind :
-    syscallDispatchQuiescence witnessDecodedUnbind witnessTid witnessGateUnbind
+    syscallDispatchQuiescence witnessDecodedUnbind witnessTid Concurrency.bootCoreId witnessGateUnbind
       witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlyUnbind,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
@@ -3165,7 +3161,7 @@ private theorem witnessCapOnlySuspend :
 `.tcbSuspend` decode and the object target fire, and the field is proven of
 the present witness thread. -/
 theorem syscallDispatchQuiescence_inhabited_suspend :
-    syscallDispatchQuiescence witnessDecodedSuspend witnessTid
+    syscallDispatchQuiescence witnessDecodedSuspend witnessTid Concurrency.bootCoreId
       witnessGateSuspend witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessReachable3, witnessCapOnlySuspend,
     ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,

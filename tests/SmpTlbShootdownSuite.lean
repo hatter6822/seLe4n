@@ -1857,7 +1857,7 @@ private def udDispatch (slots : List (SeLe4n.Slot × Capability)) :
       .readOnly (udState slots) with
   | .error e => .error e
   | .ok ((), stMapped) =>
-      SeLe4n.Kernel.dispatchSyscall udDecoded udCaller stMapped
+      SeLe4n.Kernel.dispatchSyscall udDecoded udCaller bootCoreId stMapped
 
 private def runLiveDispatchChecks : IO Unit := do
   IO.println "-- §4.10 live dispatch (.vspaceUnmap: CSpace lookup + authority + round)"

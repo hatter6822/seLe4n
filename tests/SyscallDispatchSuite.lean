@@ -827,19 +827,19 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
       msgRegs := #[SeLe4n.RegValue.ofNat 1],          -- notification CPtr → slot 1
       inlineCount := 1, overflowCount := 0 }
   -- Positive: TCB cap (slot 0) + notification cap (slot 1) → bind succeeds, target bound.
-  let rOk := dispatchSyscall decoded caller (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])
+  let rOk := dispatchSyscall decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])
   expect "sd050_bindNtfn_authorized_binds_target"
     (match rOk with
      | .ok ((), st') => (st'.getTcb? (SeLe4n.ThreadId.ofNat 70)).any (fun t => decide (t.boundNotification = some ntfnId))
      | .error _ => false)
     "authorized bind did not bind the target TCB"
   -- Negative 1: notification cap ABSENT (slot 1 empty) → fail-closed (invalidCapability).
-  let rNoCap := dispatchSyscall decoded caller (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap)])
+  let rNoCap := dispatchSyscall decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap)])
   expect "sd050_bindNtfn_no_cap_rejected"
     (match rNoCap with | .error .invalidCapability => true | _ => false)
     "bind without a held notification cap should fail with invalidCapability"
   -- Negative 2: notification cap present but READ-only (no `.write`) → illegalAuthority.
-  let rRO := dispatchSyscall decoded caller (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCapRO)])
+  let rRO := dispatchSyscall decoded caller bootCoreId (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCapRO)])
   expect "sd050_bindNtfn_readonly_cap_rejected"
     (match rRO with | .error .illegalAuthority => true | _ => false)
     "bind with a read-only notification cap should fail with illegalAuthority"
@@ -893,7 +893,7 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
       syscallId := .tcbSuspend,
       msgRegs := #[], inlineCount := 0, overflowCount := 0 }
   expect "sd054_tcbSuspend_on_idle_target_refused"
-    (match dispatchSyscall decoded caller st with
+    (match dispatchSyscall decoded caller bootCoreId st with
      | .error .invalidCapability => true
      | _ => false)
     "a suspend aimed at an idle TCB must be refused at resolution"
@@ -916,7 +916,7 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
       msgRegs := #[⟨tcbCPtr⟩], inlineCount := 1, overflowCount := 0 }
   let idle0Tid : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
   expect "sd054_tcb_capability_naming_idle_is_refused_at_the_chokepoint"
-    (match dispatchCapabilityOnly (bindDecoded 0) scCap caller with
+    (match dispatchCapabilityOnly (bindDecoded 0) scCap caller bootCoreId with
      | some f =>
        match f st with
        | .error .invalidCapability => true
@@ -1342,7 +1342,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
     (decide (SeLe4n.Kernel.syscallRequiredRight .mintReplyCap = AccessRight.grant))
     "the mint arm must require grant authority on the primary capability"
   -- 1. Authorized: the mint commits and the destination holds the reply ABI's cap.
-  match dispatchSyscall (decoded 1 2) caller (mkSt cnodeCapGrant) with
+  match dispatchSyscall (decoded 1 2) caller bootCoreId (mkSt cnodeCapGrant) with
   | .error e =>
       failLine "sd058_grant_mint_succeeds"
         s!"a grant-bearing primary capability must mint through the gate; got: {repr e}"
@@ -1382,12 +1382,12 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
             "revoking the source must remove the minted reply cap"
   -- 3. Unauthorized: the same call without `.grant` is refused on authority.
   expect "sd058_without_grant_refused_on_authority"
-    (match dispatchSyscall (decoded 1 2) caller (mkSt cnodeCapNoGrant) with
+    (match dispatchSyscall (decoded 1 2) caller bootCoreId (mkSt cnodeCapNoGrant) with
      | .error .illegalAuthority => true
      | _ => false)
     "a primary capability lacking grant must be refused with illegalAuthority"
   -- 4. A source that is not a Reply object: fail-closed, nothing written.
-  match dispatchSyscall (decoded 3 2) caller (mkSt cnodeCapGrant) with
+  match dispatchSyscall (decoded 3 2) caller bootCoreId (mkSt cnodeCapGrant) with
   | .error e =>
       expect "sd058_non_reply_source_refused"
         (decide (e = KernelError.invalidCapability))
@@ -1399,7 +1399,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
         "a source naming a non-Reply object must not mint anything"
   -- 5. A primary capability of the wrong target kind: the arm's fail-closed arm.
   expect "sd058_wrong_primary_kind_refused"
-    (match dispatchSyscall (decoded 1 2) caller (mkSt wrongKindCap) with
+    (match dispatchSyscall (decoded 1 2) caller bootCoreId (mkSt wrongKindCap) with
      | .error .invalidCapability => true
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
@@ -1528,7 +1528,7 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
             "the local same-target sweep must destroy the independent sibling \
              (this is the over-revocation the dispatched revoke no longer performs)"
       -- 1b. The LIVE arm, through the dispatcher, removes it.
-      match dispatchSyscall (decoded 1) caller stMinted with
+      match dispatchSyscall (decoded 1) caller bootCoreId stMinted with
       | .error e =>
           failLine "sd059_dispatch_succeeds"
             s!"a write-bearing primary capability must revoke through the gate; got: {repr e}"
@@ -1558,13 +1558,13 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
              refusal is what the revoke discharges"
   -- 3. Authority: the same call without `.write` is refused.
   expect "sd059_without_write_refused_on_authority"
-    (match dispatchSyscall (decoded 1) caller (mkSt cnodeCapNoWrite) with
+    (match dispatchSyscall (decoded 1) caller bootCoreId (mkSt cnodeCapNoWrite) with
      | .error .illegalAuthority => true
      | _ => false)
     "a primary capability lacking write must be refused with illegalAuthority"
   -- 4. A primary capability of the wrong target kind: the arm's fail-closed arm.
   expect "sd059_wrong_primary_kind_refused"
-    (match dispatchSyscall (decoded 1) caller (mkSt wrongKindCap) with
+    (match dispatchSyscall (decoded 1) caller bootCoreId (mkSt wrongKindCap) with
      | .error .invalidCapability => true
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
@@ -1622,7 +1622,7 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
      | .error _ => false)
     "MR0 = 1 names a writable TCB capability at slot 1, so the resolver answers thread 70"
   -- Positive: bound both ways, at the SchedContext's configured band.
-  match dispatchSyscall (decoded 1) caller st with
+  match dispatchSyscall (decoded 1) caller bootCoreId st with
   | .ok ((), st') =>
       expect "sd060_bind_through_tcb_capability_binds_the_target"
         ((st'.getTcb? tgtTid).any (fun t =>
@@ -1634,26 +1634,26 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
         s!"unexpected refusal: {repr e}"
   -- Negative 1: a read-only TCB capability -> illegalAuthority.
   expect "sd060_readonly_tcb_capability_rejected"
-    (match dispatchSyscall (decoded 2) caller st with
+    (match dispatchSyscall (decoded 2) caller bootCoreId st with
      | .error .illegalAuthority => true
      | _ => false)
     "a read-only TCB capability must fail with illegalAuthority"
   -- Negative 2: a writable capability to a non-TCB object -> invalidCapability.
   expect "sd060_non_tcb_capability_rejected"
-    (match dispatchSyscall (decoded 3) caller st with
+    (match dispatchSyscall (decoded 3) caller bootCoreId st with
      | .error .invalidCapability => true
      | _ => false)
     "a capability to a CNode is not a TCB capability and must fail with invalidCapability"
   -- Negative 3 — the retired reading: the target's raw thread id in MR0.  `70`
   -- is an address, it masks to an empty slot, and the chokepoint refuses it.
   expect "sd060_raw_thread_id_in_mr0_is_not_a_capability"
-    (match dispatchSyscall (decoded tgtTid.toNat) caller st with
+    (match dispatchSyscall (decoded tgtTid.toNat) caller bootCoreId st with
      | .error .invalidCapability => true
      | _ => false)
     "naming the thread's id is not holding a capability to it"
   -- Negative 4: an empty slot beside the held ones.
   expect "sd060_empty_slot_rejected"
-    (match dispatchSyscall (decoded 9) caller st with
+    (match dispatchSyscall (decoded 9) caller bootCoreId st with
      | .error .invalidCapability => true
      | _ => false)
     "an empty CSpace slot must fail with invalidCapability"
@@ -1703,7 +1703,7 @@ private def sd061_retype_never_mints_or_destroys_memory_authority : IO Unit := d
   let kindAt (s : SystemState) (o : ObjId) : Option KernelObjectType :=
     (s.getObject? o).map KernelObject.objectType
   -- CONTROL: an ordinary kind is retyped in place.
-  match dispatchSyscall (retype 0 epObj.toNat 2) caller st with
+  match dispatchSyscall (retype 0 epObj.toNat 2) caller bootCoreId st with
   | .ok ((), st') =>
       expect "sd061_control_endpoint_to_notification_commits"
         (kindAt st' epObj == some .notification)
@@ -1714,13 +1714,13 @@ private def sd061_retype_never_mints_or_destroys_memory_authority : IO Unit := d
   -- A retype to an untyped (tag 5) or a frame (tag 8) forges memory authority.
   for tag in [5, 8] do
     expect s!"sd061_retype_to_memory_kind_{tag}_refused"
-      (match dispatchSyscall (retype 0 epObj.toNat tag) caller st with
+      (match dispatchSyscall (retype 0 epObj.toNat tag) caller bootCoreId st with
        | .error .illegalState => kindAt st epObj == some .endpoint
        | _ => false)
       s!"a retype to memory kind tag {tag} must be refused with the endpoint intact"
   -- A frame target is refused, whatever it would become.
   expect "sd061_frame_target_refused"
-    (match dispatchSyscall (retype 1 frObj.toNat 1) caller st with
+    (match dispatchSyscall (retype 1 frObj.toNat 1) caller bootCoreId st with
      | .error .revocationRequired => kindAt st frObj == some .frame
      | _ => false)
     "retyping a frame away must be refused (revocationRequired) with the frame intact"

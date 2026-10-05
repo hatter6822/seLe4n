@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.44` (`lakefile.toml`) |
+| **Package version** | `0.36.45` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 434,075 across 362 Lean files |
-| **Test LoC** | 88,690 across 71 Lean test suites |
+| **Production LoC** | 434,056 across 362 Lean files |
+| **Test LoC** | 88,687 across 71 Lean test suites |
 | **Proved declarations** | 14,410 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
@@ -4708,6 +4708,14 @@ Every kernel object has a decidable well-formedness predicate:
   `checkedDispatch_flowDenied_preserves_state` proves state preservation on flow
   denial. AH1: Checked `.send` now delegates to `endpointSendDualWithCaps`
   (capability transfer) matching the unchecked path.
+- **The executing core is a parameter, not a derivation** (v0.36.45).
+  `syscallEntryChecked` receives the core the syscall trapped on and threads it
+  through `dispatchSyscallChecked` → `dispatchWithCapChecked` /
+  `dispatchCapabilityOnly` to every arm as `executingCore`; the unchecked
+  `syscallEntry` (the boot-pinned pre-SMP entry, which resolves its caller on
+  `bootCoreId`) passes `bootCoreId`.  No arm re-derives the core by scanning
+  `currentOnCore`, and there is no boot-core fallback: the state-scanning
+  resolver that had one was deleted.
 - **MMIO adapter**: `mmioRead`/`mmioWrite` in `Platform/RPi5/MmioAdapter.lean`
   validate device-region membership. `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C`
   validate the full byte range of the write (AF3-B: prevents boundary-spill into

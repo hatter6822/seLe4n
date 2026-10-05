@@ -1,3 +1,51 @@
+## v0.36.45 — The executing core is threaded from the trap entry; `determineExecutingCore` deleted (IPC-8)
+
+- **Every dispatch arm now uses the core the syscall was entered on.**
+  `syscallEntryChecked` already received the trapping core (`executingCore`,
+  read from `TPIDR_EL1` by the cross-core seam) and then discarded it: each arm
+  re-derived it by scanning `currentOnCore` with `determineExecutingCore`, at
+  ~90 sites in `API.lean` and ~180 tree-wide.  The core is now a parameter of
+  `dispatchSyscallChecked`, `dispatchSyscall`, `dispatchWithCapChecked`,
+  `dispatchWithCap`, `dispatchCapabilityOnly` and `vspaceMapFromFrameCap`, and
+  of the below-API wrappers `notificationSignalBoundCrossCoreDispatch{,Checked}`,
+  `notificationWaitCrossCoreDispatch{,Checked}` and
+  `notificationSignalDeclassifiedCrossCoreDispatch`.  The unchecked
+  `syscallEntry` — the boot-pinned pre-SMP entry, which resolves its caller on
+  `bootCoreId` — passes `bootCoreId`.
+- **`determineExecutingCore` and `determineExecutingCore_sound` are deleted**,
+  and with them the silent fallback to the boot core for a thread current on no
+  core (the fallback behind the PR #895 round-11 defect).  Nothing in the tree
+  re-derives the executing core from the state any more.
+- **The non-caller use is retired too.**  `replyRecvBody` computed
+  `serverCore := determineExecutingCore st recordedServer` for the return
+  donation's priority-inheritance walk.  That core only steers the walk's SGI
+  decision, whose reference is "the core executing this syscall", so the walk is
+  now told `executingCore`; the committed state is provably unchanged
+  (`propagatePipChainCrossCore_state_core_independent`, new).
+- **Theorems retargeted, not weakened.**  Every theorem that mentioned the
+  resolver is now stated over the threaded core (an explicit
+  `(executingCore : CoreId)` binder after the caller), including the
+  `syscallDelegates` obligations and their discharges, the dispatch payoffs and
+  quiescence packs (`syscallDispatchQuiescence` / `checkedSyscallDispatchQuiescence`
+  gain the core; their non-vacuity witnesses run at `bootCoreId`), and the
+  cross-core NI and declassification statements.  The `syscallEntry` theorems
+  are stated at `bootCoreId`, the core that entry dispatches on.
+- **Dead parameter removed.**  `notificationSignalBoundCrossCoreDispatch` and
+  `notificationSignalDeclassifiedCrossCoreDispatch` read their `signaler`
+  argument only to derive the core, so it is gone (the checked bound form keeps
+  it for its flow gate).
+- **Tests** pass the core the caller runs on explicitly (core 1 for the fault
+  handler in `FaultHandlingSuite`, core 2 for the core-2 waiter in
+  `SmpNotificationSuite`, `bootCoreId` where the old resolver fell back to it);
+  the assertions that exercised the resolver now state the fact they relied on
+  (the caller is current on the trapping core / the server is current on no
+  core).  Tier 3 anchors that pinned `(determineExecutingCore st tid)` in the
+  arms now pin `executingCore`.
+- **KSC-1 / HAL-3 (the per-syscall `computeCrossCoreSgis` diff over the whole
+  object index, and the retained pre-state) is not in this slice**; it is
+  registered in `docs/REGISTERED_DEBT.md` with what it needs, ahead of
+  WS-CB CB1.7.
+
 ## v0.36.44 — the object model no longer imports the RwLock proofs
 
 - **The RwLock state types have their own module.**  `AccessMode`,

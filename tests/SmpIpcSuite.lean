@@ -49,7 +49,7 @@ pipelines** threaded through the evolving state:
 * **§3.7** 2PL lock-set discipline on the live pipeline states (state-resolved
   footprints, hierarchical kinds, exact resolved footprint sizes, SM5.J WCRT
   bound);
-* **§3.8** live-dispatch coherence: `determineExecutingCore` + the full
+* **§3.8** live-dispatch coherence: the trapping core + the full
   `endpointCallCrossCoreDispatch` agree with the bare transition;
 * **§3.9** SchedContext **donation** round trip: a bound-SC client calls a
   passive (unbound-SC) server homed on a remote core — the SC donates to the
@@ -107,7 +107,6 @@ open SeLe4n.Testing
 #check @endpointReplyCrossCoreDispatch
 #check @endpointReplyCrossCoreDispatchChecked
 #check @removeRunnableOnCore
-#check @determineExecutingCore
 #check @determineTargetCore
 #check @wakeThread
 #check @handleRescheduleSgiOnCore
@@ -724,19 +723,19 @@ private def runLockDisciplineChecks : IO Unit := do
       (decide ((tcbLock clientA, AccessMode.write) ∈ replyLs.pairs))
 
 -- ============================================================================
--- §3.8 Live-dispatch coherence (determineExecutingCore + full dispatch)
+-- §3.8 Live-dispatch coherence (the trapping core + full dispatch)
 -- ============================================================================
 
 private def runDispatchCoherenceChecks : IO Unit := do
-  IO.println "--- §3.8 live-dispatch coherence (determineExecutingCore + cross-core dispatch) ---"
-  -- The executing core is derived from the live per-core current slots.
+  IO.println "--- §3.8 live-dispatch coherence (trapping core + cross-core dispatch) ---"
+  -- The executing core is the core the syscall trapped on, threaded from the
+  -- entry: the checked entry resolves the caller as that core's current thread,
+  -- so a syscall trapped on core 2 dispatches core 2's current thread there.
   match okExcept (switchToThreadOnCore stFourCore c2 clientC) with
   | none => assertBool "switch setup (dispatch C on core 2) succeeded" false
   | some stCur =>
-    assertBool "determineExecutingCore resolves the caller's current core"
-      (determineExecutingCore stCur clientC == c2)
-  assertBool "determineExecutingCore falls back to the boot core for a non-current thread"
-    (determineExecutingCore stFourCore serverD == bootCoreId)
+    assertBool "the trapping core's current thread is the caller"
+      (stCur.scheduler.currentOnCore c2 == some clientC)
   -- The full cross-core dispatch (WithCaps + donation + PIP) agrees with the
   -- bare transition on the capless rendezvous: same SGI, same receiver wake.
   match okPair (endpointReceiveDualOnCore epAB serverB (some replyB) c1 stFourCore) with
@@ -823,10 +822,9 @@ private def runDonationChecks : IO Unit := do
       (match stCall.getTcb? donServer with
        | some t => decide ((resolveEffectivePrioDeadline stCall t).1 = ⟨60⟩) | none => false)
     -- Dispatch the woken donated server on its HOME core (core 1) so it is CURRENT
-    -- there before the reply: `endpointReplyCrossCoreDispatch` derives the
-    -- donation-return cleanup core from `determineExecutingCore st server`, so a
-    -- non-current server would fall back to the boot core and never be descheduled
-    -- on core 1 (leaving the now-passive server runnable there).
+    -- there before the reply: the reply is issued from the core the server runs
+    -- on, so the server must be current on core 1 for the scenario to be the one
+    -- a real `seL4_Reply` from core 1 produces.
     match okExcept (handleRescheduleSgiOnCore stCall c1) with
     | none => assertBool "donation: core 1 handles the call wake SGI" false
     | some stDispatched =>
@@ -1164,8 +1162,8 @@ private def runDonationMigrationChecks : IO Unit := do
       -- resolver rather than the fixture's opinion of it.
       assertBool "pre: ...and NOT current there — genuinely preempted"
         (stCallQ.scheduler.currentOnCore c1 != some donServer)
-      assertBool "pre: ...so the retired proxy would have answered the boot core"
-        (decide (determineExecutingCore stCallQ donServer = Concurrency.bootCoreId)
+      assertBool "pre: ...so the retired current-on proxy would have answered the boot core"
+        (Concurrency.allCores.all (fun c => stCallQ.scheduler.currentOnCore c != some donServer)
           && decide (c1 != Concurrency.bootCoreId))
       assertBool "pre: ...while the resolver answers core 1"
         (decide (placedCoreOf? stCallQ donServer = some c1))
@@ -1463,7 +1461,7 @@ private def apiDispatch (slots : List (SeLe4n.Slot × Capability)) (capSlot : Na
     Except KernelError (Unit × SystemState) :=
   match endpointReceiveDual apiEp apiServer (some apiReply) (stApi slots) with
   | .error e => .error e
-  | .ok (_, stRecv) => dispatchSyscall (apiCallDecoded capSlot) apiCaller stRecv
+  | .ok (_, stRecv) => dispatchSyscall (apiCallDecoded capSlot) apiCaller bootCoreId stRecv
 
 private def runLiveApiChecks : IO Unit := do
   IO.println "--- §3.12 live API dispatch (dispatchSyscall .call: CSpace lookup + authority + cross-core) ---"
@@ -1498,10 +1496,10 @@ private def runLiveApiChecks : IO Unit := do
         endpointLabelOf := fun _ => lowLabel
         serviceLabelOf := fun _ => lowLabel }
     assertBool "live checked .call under a high→low policy fails with flowDenied"
-      (match dispatchSyscallChecked apiDeniedCtx (apiCallDecoded 0) apiCaller stRecv with
+      (match dispatchSyscallChecked apiDeniedCtx (apiCallDecoded 0) apiCaller bootCoreId stRecv with
        | .error .flowDenied => true | _ => false)
     assertBool "live checked .call under an all-public policy succeeds"
-      (match dispatchSyscallChecked allPublicCtx (apiCallDecoded 0) apiCaller stRecv with
+      (match dispatchSyscallChecked allPublicCtx (apiCallDecoded 0) apiCaller bootCoreId stRecv with
        | .ok _ => true | _ => false)
 
 -- ============================================================================
@@ -4736,7 +4734,7 @@ private def runCallReplyFootprintChecks : IO Unit := do
   | none => assertBool "Cut C3a setup (d): recv, call, dispatch and second call succeed" false
   | some stQ =>
     assertBool "(d) setup: the server executes on core 1 holding the client's context, and the client carries no fault"
-      (determineExecutingCore stQ donServer == c1
+      (stQ.scheduler.currentOnCore c1 == some donServer
         && (match stQ.getTcb? donServer with
             | some t => t.schedContextBinding == .donated scClient donClient | none => false)
         && !threadHasPendingFault stQ donClient)

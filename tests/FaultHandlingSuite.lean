@@ -1087,7 +1087,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
   -- empty slot (3) is refused as no capability at all.
   assertBool "pre: the orphan has no fault handler"
     (resolveErr stRunning orphan == some .invalidCapability)
-  match dispatchWithCap (setHandlerDecoded 0) handler configGate orphanTcbCap stRunning with
+  match dispatchWithCap (setHandlerDecoded 0) handler c1 configGate orphanTcbCap stRunning with
   | .ok (_, st1) =>
       assertBool "the live tcbSetFaultHandler arm installs the CPtr on the target"
         ((st1.getTcb? orphan).bind (·.faultHandler) == some (SeLe4n.CPtr.ofNat 0))
@@ -1108,17 +1108,17 @@ private def runConfigureAndResumeChecks : IO Unit := do
       | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
   | .error e => assertBool s!"tcbSetFaultHandler must succeed (got {repr e})" false
   assertBool "a send + grant-reply capability is admitted as a handler"
-    (match dispatchWithCap (setHandlerDecoded 2) handler configGate orphanTcbCap stRunning with
+    (match dispatchWithCap (setHandlerDecoded 2) handler c1 configGate orphanTcbCap stRunning with
      | .ok (_, st') => (st'.getTcb? orphan).bind (·.faultHandler) == some (SeLe4n.CPtr.ofNat 2)
      | .error _ => false)
   assertBool "a read-only capability is refused at set time on rights"
-    (errorOf (dispatchWithCap (setHandlerDecoded 1) handler configGate orphanTcbCap stRunning)
+    (errorOf (dispatchWithCap (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning)
       == some .illegalAuthority)
   assertBool "an empty slot is refused at set time as no capability"
-    (errorOf (dispatchWithCap (setHandlerDecoded 3) handler configGate orphanTcbCap stRunning)
+    (errorOf (dispatchWithCap (setHandlerDecoded 3) handler c1 configGate orphanTcbCap stRunning)
       == some .invalidCapability)
   assertBool "a refused configuration leaves the field as it was"
-    (match dispatchWithCap (setHandlerDecoded 1) handler configGate orphanTcbCap stRunning with
+    (match dispatchWithCap (setHandlerDecoded 1) handler c1 configGate orphanTcbCap stRunning with
      | .ok _ => false
      | .error _ => (stRunning.getTcb? orphan).bind (·.faultHandler) == none)
   -- The write right is checked by the real lookup path (`syscallLookupCap`
@@ -1132,7 +1132,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
     let cn : KernelObject := .cnode (rootCnode.insert (SeLe4n.Slot.ofNat 3) cap)
     { stRunning with objects := stRunning.objects.insert cnRoot cn }
   let viaLookup (st : SystemState) :=
-    dispatchSyscall { setHandlerDecoded 0 with capAddr := SeLe4n.CPtr.ofNat 3 } handler st
+    dispatchSyscall { setHandlerDecoded 0 with capAddr := SeLe4n.CPtr.ofNat 3 } handler c1 st
   assertBool "a capability without the write right cannot configure a handler"
     (errorOf (viaLookup (orphanCapAt3 [.read])) == some .illegalAuthority)
   assertBool "…and with the write right the real lookup path installs it"
@@ -1150,7 +1150,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
       threadStateOf stSusp orphan == some .Inactive)
   assertBool "pre: the reply seam would take the fault branch on it"
     (threadHasPendingFault stSusp orphan)
-  match dispatchWithCap resumeTcbDecoded handler configGate orphanTcbCap stSusp with
+  match dispatchWithCap resumeTcbDecoded handler c1 configGate orphanTcbCap stSusp with
   | .ok (_, stRes) =>
       assertBool "resuming a double-faulted thread retires its fault"
         (pendingFaultOf stRes orphan == none && !threadHasPendingFault stRes orphan)
@@ -1164,9 +1164,9 @@ private def runConfigureAndResumeChecks : IO Unit := do
         (threadStateOf stRes orphan == some .Ready)
       -- The recovery story: repair the configuration, resume, fault again —
       -- and this time it is delivered.
-      match dispatchWithCap (setHandlerDecoded 0) handler configGate orphanTcbCap stSusp with
+      match dispatchWithCap (setHandlerDecoded 0) handler c1 configGate orphanTcbCap stSusp with
       | .ok (_, stCfg) =>
-          match dispatchWithCap resumeTcbDecoded handler configGate orphanTcbCap stCfg with
+          match dispatchWithCap resumeTcbDecoded handler c1 configGate orphanTcbCap stCfg with
           | .ok (_, stRes2) =>
               match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRes2 with
               | (stRecv2, .ok _) =>
@@ -1184,7 +1184,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
   let stPlain := faultSuspendOnCore stRunning weak c3
   assertBool "control: a plain suspend records no fault"
     ((pendingFaultOf stPlain weak).isNone)
-  match dispatchWithCap resumeTcbDecoded handler configGate
+  match dispatchWithCap resumeTcbDecoded handler c1 configGate
       { orphanTcbCap with target := .object weak.toObjId } stPlain with
   | .ok (_, stW) =>
       assertBool "control: resuming an unfaulted thread does not touch its saved pc"
@@ -1495,7 +1495,7 @@ private def runReplySeamChecks : IO Unit := do
             = endpointReplyDispatchReplenishCores handler faulter IpcMessage.empty c1 afterFault)
           && (replyTransferReplenishCores handler faulter IpcMessage.empty c1 afterFault).isEmpty)
       -- The restart reply, through the live dispatch.
-      match dispatchWithCap replyDecoded handler replyGate replyCapH afterFault with
+      match dispatchWithCap replyDecoded handler c1 replyGate replyCapH afterFault with
       | .ok (_, stD) =>
           assertBool "the live .reply dispatch moves the faulted thread's pc to the handler's choice"
             (savedPcOf stD faulter == some 0x9_9000)
@@ -1511,7 +1511,7 @@ private def runReplySeamChecks : IO Unit := do
       | .error e =>
           assertBool s!"the live .reply dispatch must succeed (got {repr e})" false
       -- A payload-free reply through the same seam is the plain resume.
-      match dispatchWithCap resumeDecoded handler replyGate replyCapH afterFault with
+      match dispatchWithCap resumeDecoded handler c1 replyGate replyCapH afterFault with
       | .ok (_, stR) =>
           assertBool "a payload-free live reply resumes at the faulting instruction"
             (savedPcOf stR faulter == some 0x4_0000)
@@ -1619,7 +1619,7 @@ private def runFaultDonationChecks : IO Unit := do
         (threadHasPendingFault afterFault faulter)
       -- The live reply, on that state: the branch the payoff covers since
       -- `v0.35.195`, and the reservation comes home.
-      match dispatchWithCap replyDecoded handler replyGate replyCapH afterFault with
+      match dispatchWithCap replyDecoded handler c1 replyGate replyCapH afterFault with
       | .ok (_, stD) =>
           assertBool "the live .reply dispatch answers a faulted caller that had donated"
             (pendingFaultOf stD faulter == none)
@@ -1635,7 +1635,7 @@ private def runFaultDonationChecks : IO Unit := do
       -- The **abandon** arm on the same donating state: the outcome whose
       -- idle-state obligation used to be `faultReplyOnCore_preserves_ipcInvariantFull`'s
       -- `hTargetIdleAllowed` hypothesis.
-      match dispatchWithCap abandonDecoded handler replyGate replyCapH afterFault with
+      match dispatchWithCap abandonDecoded handler c1 replyGate replyCapH afterFault with
       | .ok (_, stA) =>
           assertBool "the live .reply dispatch abandons a faulted caller that had donated"
             (pendingFaultOf stA faulter == none && threadStateOf stA faulter == some .Inactive)
@@ -1752,7 +1752,7 @@ where
         let (stSusp, _) :=
           faultDeliverOnCore stRunning orphan theFault (faultContextOfThread stRunning orphan 0x5_0000 0x3C0) c2
         let resumed :=
-          match dispatchWithCap resumeTcbDecoded handler configGate orphanTcbCap stSusp with
+          match dispatchWithCap resumeTcbDecoded handler c1 configGate orphanTcbCap stSusp with
           | .ok (_, stRes) =>
               s!"resume of double-faulted orphan: fault retired = {repr (pendingFaultOf stRes orphan |>.isNone)} pc = {repr (savedPcOf stRes orphan)}"
           | .error e => s!"resume of double-faulted orphan FAILED {repr e}"

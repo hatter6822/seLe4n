@@ -10584,7 +10584,7 @@ private def runDeclassifiedSignalWaiterGateChecks : IO Unit := do
     (decide (securityFlowsTo (niLabeling.threadLabelOf highCurrent)
         (niLabeling.objectLabelOf highNotification) = true) &&
      (match SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatchChecked niLabeling
-         highNotification highCurrent (SeLe4n.Badge.ofNatMasked 0x5C) declassSignalState with
+         highNotification highCurrent (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState with
       | (st', .ok _) =>
           (match st'.getTcb? crossCoreWaiter with
            | some tcb =>

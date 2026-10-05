@@ -894,18 +894,18 @@ def notificationSignalDeclassifiedOnCore (ctx : GenericLabelingContext)
                   | some st2 => (st2, .ok sgi)
 
 /-- WS-SM SM9.C.2: the cross-core dispatch the live arm calls — the transition
-with the executing core read from the state, exactly as SM6.B's
-`notificationSignalBoundCrossCoreDispatch` does.
+at the core the syscall trapped on (threaded from the entry point), exactly as
+SM6.B's `notificationSignalBoundCrossCoreDispatch` does.
 
 Deliberately **not** a boot-pinned sibling: the actor and the wake target are
 both per-core facts, and a `bootCoreId` form would be the defect the per-core
 routing gate exists to catch. -/
 def notificationSignalDeclassifiedCrossCoreDispatch (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge) (st : SystemState) :
+    (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
   notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
-    (determineExecutingCore st signaler) st
+    executingCore st
 
 -- ============================================================================
 -- §5  WS-SM SM9.C.1 — path reductions and the fail-closed arms
@@ -2235,15 +2235,15 @@ theorem notificationSignalDeclassifiedOnCore_preserves_trailDestinations
 
 /-- WS-SM SM9.C.2: the live dispatch **is** the transition at the caller's own
 core — definitional, so every §5–§12 theorem is a statement about the live arm
-with `c := determineExecutingCore st signaler`. -/
+with `c := executingCore`, the core the syscall trapped on. -/
 @[simp] theorem notificationSignalDeclassifiedCrossCoreDispatch_eq
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
-    (st : SystemState) :
-    notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId signaler
-      badge st =
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (executingCore : CoreId) (st : SystemState) :
+    notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId
+      badge executingCore st =
       notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
-        (determineExecutingCore st signaler) st := rfl
+        executingCore st := rfl
 
 
 -- ============================================================================

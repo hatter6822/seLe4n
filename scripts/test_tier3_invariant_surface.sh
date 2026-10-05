@@ -2114,7 +2114,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDona
 # call and passes the undescheduled state, which is exactly the defect.
 run_check "INVARIANT" rg -n '^def replyRecvHolderDeschedule($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # ...at the core the server is ACTUALLY placed on, resolved by the step itself.
-# Round 9 took the caller's `serverCore`, which is `determineExecutingCore` -- a
+# Round 9 took the caller's `serverCore`, which was a since-deleted resolver -- a
 # core the server is CURRENT on, else `bootCoreId` -- so a preempted server was
 # descheduled on a queue it was not on and the defect survived untouched
 # (PR #895 review round 10).  The negative below is that pre-fix spelling.
@@ -3967,8 +3967,8 @@ run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?
 run_check "INVARIANT" rg -n -U 'def resolveVSpaceMapFrame[^\n]*(\n([ \t][^\n]*)?)*          match st\.getFrame\? frameObjId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  if perms\.write && !frameCap\.hasRight \.write then \.error \.illegalAuthority$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^  else if perms\.cacheable == frame\.isDevice \|\| \(frame\.isDevice && perms\.execute\) then\n    \.error \.policyDenied$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*\(determineExecutingCore st tid\) args\.asid args\.vaddr frame\.base perms st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^              vspaceMapFromFrameCap tid args st$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*executingCore args\.asid args\.vaddr frame\.base perms st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^              vspaceMapFromFrameCap tid executingCore args st$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_requires_frame_cap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_maps_frame_base($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -4065,7 +4065,7 @@ run_check "INVARIANT" rg -n 'and .\.vspaceMap. maps the CARVED page, writable' t
 # through the `.vspaceUnmap` arm's own transition and the result checked, and
 # the carved frames are ERASED (their ids and store capacity return) through
 # the one primitive that erases, which touches frames only.
-run_check "INVARIANT" rg -n -U '  \| \.untypedReset =>\n    some <\| match cap\.target with\n    \| \.object untypedId => fun st =>\n        untypedResetWithShootdown \(determineExecutingCore st tid\) untypedId st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.untypedReset =>\n    some <\| match cap\.target with\n    \| \.object untypedId => fun st =>\n        untypedResetWithShootdown executingCore untypedId st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*      match untypedCarvedSubtree st ut with\n      \| none => \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*        else if !carvedSubtreeRetirable st ids then \.error \.revocationRequired\n        else if !carvedSubtreeFramesInRegion st ut ids then \.error \.illegalState\n        else if !carvedSubtreeUnreferenced st ids then \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n -U 'def carvedSubtreeWalk[^\n]*(\n([ \t][^\n]*)?)*  \| 0, _ :: _, _ => none' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
@@ -4104,8 +4104,8 @@ run_check "INVARIANT" rg -n '^pub fn untyped_reset\(untyped_cap: CPtr\)' rust/se
 # the frozen delete, which has no unmap, refuses what it cannot finalise.
 run_check "INVARIANT" rg -n -U '        else if capabilityMappingLive st frameCap then \.error \.invalidCapability' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*            cspaceRecordFrameMapping frameSlot\n              \{ asid := args\.asid, vaddr := args\.vaddr, epoch := epoch \} st2' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,10}            cspaceDeleteSlotFinalising \(determineExecutingCore st tid\) addr st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,8}            cspaceRevokeCdtFinalising \(determineExecutingCore st tid\) addr st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,10}            cspaceDeleteSlotFinalising executingCore addr st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,8}            cspaceRevokeCdtFinalising executingCore addr st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceDeleteSlot addr st with\n    \| \.error e => \.error e\n    \| \.ok \(\(\), st1\) =>\n      finaliseDestroyedCapabilities executingCore st \(slotMappedPages st addr\) st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceRevokeCdt addr st with\n    \| \.error e => \.error e\n    \| \.ok \(pages, st1\) => finaliseDestroyedCapabilities executingCore st pages st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # One revocation: the materialized fold REPORTS the page each destroyed
@@ -4144,7 +4144,7 @@ run_check "INVARIANT" rg -n '^  \| \.untypedResetDispatch => \.delegationProof \
 # broadcast TLBI empties TLBs and leaves every TTBR0_EL1 alone, so the bare
 # reset must not come back as the live arm, and the HAL eviction must precede
 # the local invalidation on both servicing paths.
-run_negative_check "INVARIANT" rg -n 'untypedReset \(determineExecutingCore st tid\) untypedId st' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'untypedReset executingCore untypedId st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedResetWithShootdown [^\n]*(\n([ \t][^\n]*)?)*      \.ok \(\(\), retypeAsidRoundFold executingCore \(untypedResetShootdownAsids st untypedId\) st1\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n -U 'def untypedResetRetiredRootAsids[^\n]*(\n([ \t][^\n]*)?)*  ids\.filterMap fun id => \(st\.getVSpaceRoot\? id\)\.map VSpaceRoot\.asid' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^theorem untypedResetShootdownAsids_mem($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
@@ -17320,8 +17320,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 
 # (2) The live dispatch computes no core for the donation leg.  Bounded to the
-# declaration, because `determineExecutingCore` is a legitimate resolver
-# elsewhere and a file-wide negative would fire on a clean tree.
+# declaration, because a file-wide negative would fire on a clean tree.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\n]*(\n([ \t][^\n]*)?)*let expectedCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 
 # (3) The single-core bridge is CONDITIONAL on the placement.  An unconditional
@@ -17348,7 +17347,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOn
 # (5) The witness exhibits BOTH spellings on one state.  A witness that only
 # showed the fix working could not tell a real fix from a fixture that never
 # queued the server anywhere but the boot core.
-run_prose_check "TRACE" rg -n 'NEGATIVE: the superseded .determineExecutingCore. deschedule leaves it queued' tests/SmpCrossCoreReplySuite.lean
+run_prose_check "TRACE" rg -n 'NEGATIVE: the superseded boot-core-fallback deschedule leaves it queued' tests/SmpCrossCoreReplySuite.lean
 run_prose_check "TRACE" rg -n 'the donation return DESCHEDULES a queued recorded server' tests/SmpCrossCoreReplySuite.lean
 
 # ============================================================================
@@ -21415,7 +21414,7 @@ run_negative_check "INVARIANT" rg -n 'callerKeyedCallDonatedSc\?|senderKeyedDona
 # claimed to destroy it.  Since WS-BP BP7.1 (`v0.36.7`) the arm runs that
 # variant's FINALISING form, which also removes every mapping a destroyed frame
 # capability recorded.
-run_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*cspaceRevokeCdtFinalising \(determineExecutingCore st tid\) addr st" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*cspaceRevokeCdtFinalising executingCore addr st" SeLe4n/Kernel/API.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*cspaceRevoke addr st$" SeLe4n/Kernel/API.lean'
 # ...and it takes the DELETE's decoder, since both name one slot of the invoked
 # CNode and a second decoder for one operand is a spelling nobody needs.

@@ -42,8 +42,9 @@ reported.  A term has no spelling: `sched.currentOnCore bootCoreId`,
 `currentOnCore st.scheduler bootCoreId`, `currentOnCore (prepare st).scheduler
 bootCoreId` and the same call wrapped over four lines are one `Expr`.  So the
 question is now "is this application's argument the `bootCoreId` constant",
-which no formatting can hide, and `determineExecutingCore`'s `find?…getD`
-fallback is excluded structurally rather than by tuning.
+which no formatting can hide, and a searched-core `find?…getD` fallback (the
+shape of the executing-core resolver deleted at v0.36.45) is excluded
+structurally rather than by tuning.
 
 Source text is still read for *root resolution* -- which definition a mapped
 enforcement label names, and whether the dispatch arm calls it.  That is a
@@ -213,10 +214,11 @@ TOP = re.compile(r"^(?:@\[|/--|/-!|private\s|protected\s|partial\s|noncomputable
 # question moves from "does this text match" to "is this application's
 # argument the `bootCoreId` constant", which no formatting can hide.
 #
-# It also gets last round's precision for free.  `determineExecutingCore`
-# reads `currentOnCore c` for a *searched* core and uses `bootCoreId` as a
-# `find?.getD` fallback; as a term the primitive's arguments simply are not
-# `bootCoreId`, so no tuning is needed to exclude it.
+# It also gets last round's precision for free.  A resolver that reads
+# `currentOnCore c` for a *searched* core and uses `bootCoreId` only as a
+# `find?.getD` fallback (the executing-core resolver deleted at v0.36.45 had
+# that shape) does not pass the constant to the primitive, so no tuning is
+# needed to exclude it.
 # ---------------------------------------------------------------------------
 
 PROBE_TEMPLATE = """-- Both roots: `SeLe4n` is the production library; `Platform.Staged` pulls the

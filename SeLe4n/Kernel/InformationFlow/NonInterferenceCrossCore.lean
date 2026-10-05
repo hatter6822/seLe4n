@@ -2242,7 +2242,7 @@ theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
             -- confinement transports across them unchanged.
             cases hDon : replyRecvPostReceiveDonation receiver
                 ((recordedReplyServer? st prevCaller).getD receiver) nextThread
-                (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD receiver))
+                executingCore
                 returnedSc? st2 with
             | error e =>
                 rw [hDon] at hStep
@@ -2253,7 +2253,7 @@ theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               have hConf := replyRecvPostReceiveDonation_confinedToCores receiver
                 ((recordedReplyServer? st prevCaller).getD receiver) nextThread
-                (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD receiver))
+                executingCore
                 returnedSc? st2 st3 u2 hDon
               -- WS-OD OD3.14: the receive leg's priority hand-off is the fourth
               -- leg, read at the state it runs at.  On a non-delegated reply it is
@@ -2263,8 +2263,7 @@ theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
               have hStaged : observableSlotsConfinedToCores st2 st'
                   (replyRecvPostReceiveDonationWriteSet receiver
                     ((recordedReplyServer? st prevCaller).getD receiver) nextThread
-                    (determineExecutingCore st
-                      ((recordedReplyServer? st prevCaller).getD receiver)) returnedSc? st2 ++
+                    executingCore returnedSc? st2 ++
                     receiveLegPipHandoffWriteSet st3 receiver nextThread
                       ((recordedReplyServer? st prevCaller).getD receiver) executingCore) := by
                 rw [← hStep.2]
@@ -4090,11 +4089,11 @@ are the per-core map and, since `v0.36.7`, the frame capability's mapping record
 (`vspaceMapFromFrameCap_ok`) — one CNode store, which writes neither the
 scheduler nor the machine — so the bound is the per-core map's own. -/
 theorem vspaceMapFromFrameCap_confinedToCores
-    (tid : SeLe4n.ThreadId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState)
-    (hStep : vspaceMapFromFrameCap tid args st = .ok ((), st')) :
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState)
+    (hStep : vspaceMapFromFrameCap tid executingCore args st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] := by
   obtain ⟨_, _, frame, st1, -, -, -, -, -, hMap, epoch, st2, hT, hRec⟩ :=
-    vspaceMapFromFrameCap_ok tid args st st' hStep
+    vspaceMapFromFrameCap_ok tid executingCore args st st' hStep
   -- WS-BP BP7.1 (`v0.36.7`): the mapping record is one CNode store, and
   -- (PR #904 review, `v0.36.41`) the epoch tag a root store and a frame store —
   -- none writes the scheduler or the machine.
@@ -4112,12 +4111,12 @@ theorem vspaceMapFromFrameCap_confinedToCores
 invisible on every core, stated at the definition the arm runs. -/
 theorem vspaceMapFromFrameCap_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver)
-    (tid : SeLe4n.ThreadId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState) (c : CoreId)
-    (hStep : vspaceMapFromFrameCap tid args st = .ok ((), st'))
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState) (c : CoreId)
+    (hStep : vspaceMapFromFrameCap tid executingCore args st = .ok ((), st'))
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer (by simp)
-    (vspaceMapFromFrameCap_confinedToCores tid args st st' hStep) hShared
+    (vspaceMapFromFrameCap_confinedToCores tid executingCore args st st' hStep) hShared
 
 /-- SM8.B.2: the I-cache broadcast seam writes only `perCoreICache` and the
 maintenance ledger, so it frames whatever its wrapped transition frames. -/
@@ -5586,7 +5585,7 @@ below-API transition it wraps, so the narrower theorem never bounded it.
 Two entries are a different case and are *not* re-pointed, because their live arm
 calls the `…OnCore` transition **directly**:
 `notificationSignalBoundCrossCoreDispatch` and `notificationWaitCrossCoreDispatch`
-are definitionally `…OnCore … (determineExecutingCore st …) st`. For those the
+are definitionally `…OnCore … executingCore st`. For those the
 `…OnCore` theorem is a statement about the live arm already.
 
 **Being a leg does not stop something being a live arm** (PR #861 review round

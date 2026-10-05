@@ -501,6 +501,25 @@ theorem propagatePipChainCrossCore_step (st : SystemState) (tid : ThreadId) (ec 
         (tailRes.1, here ++ tailRes.2)
       | none => (res.1, here) := rfl
 
+/-- The executing core steers only the chain walk's SGI list, never its state:
+each step's boost is `updatePipBoostOnCore` at the holder's home core
+(`determineTargetCore`), and `executingCore` is read only by the
+"is the home core remote?" SGI decision.  So a caller that discards the SGIs
+(`.1`) may pass any core and commits the same state — the fact the `.replyRecv`
+arm's donation return relies on when it names the core the syscall runs on. -/
+theorem propagatePipChainCrossCore_state_core_independent (st : SystemState)
+    (tid : ThreadId) (c c' : CoreId) (fuel : Nat) :
+    (propagatePipChainCrossCore st tid c fuel).1
+      = (propagatePipChainCrossCore st tid c' fuel).1 := by
+  induction fuel generalizing st tid with
+  | zero => rfl
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step, propagatePipChainCrossCore_step]
+    have hBoost : (pipBoostWithWake st tid c).1 = (pipBoostWithWake st tid c').1 := rfl
+    cases blockingServer st tid with
+    | none => exact hBoost
+    | some next => simp only []; rw [hBoost]; exact ih _ _
+
 /-- WS-SM SM5.F.2: `updatePipBoostOnCore` preserves the object-store invariant —
 the only object write is the holder's `pipBoost` `insert` (the per-core bucket
 migration touches only the scheduler). -/

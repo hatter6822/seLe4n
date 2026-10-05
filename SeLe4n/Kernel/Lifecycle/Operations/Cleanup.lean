@@ -61,8 +61,9 @@ its step clears `currentOnCore c` wherever it finds the thread — including the
 core's `current` slot is cleared, and before WS-BP BP7.6 no successor was
 scheduled and execution returned through a frame whose TCB the retype had
 scrubbed and re-purposed.  Subsequent
-syscalls from that core resolve `determineExecutingCore` to `bootCoreId`, so
-their scheduling effects land on the wrong core — a denial of service against
+syscalls from that core resolved the executing core (then re-derived from the
+state, with a `bootCoreId` fallback since deleted) to the boot core, so
+their scheduling effects landed on the wrong core — a denial of service against
 every thread on that core, not only the caller.
 
 Partly pre-existing rather than introduced by the per-core sweep: the pre-SMP
