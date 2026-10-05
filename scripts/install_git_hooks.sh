@@ -74,8 +74,14 @@ fi
 # Non-git-repo guard. setup_lean_env.sh invokes us unconditionally, but tarball
 # extracts and zip downloads do not have a .git directory. Skip quietly in that
 # case — the installer is not relevant.
-GIT_DIR_REL=""
-if ! GIT_DIR_REL="$(git -C "${REPO_ROOT}" rev-parse --git-dir 2>/dev/null)"; then
+#
+# The hooks directory is the one git itself consults: `rev-parse --git-path
+# hooks` honours `core.hooksPath` and, in a linked worktree, resolves to the
+# COMMON `.git/hooks` rather than `.git/worktrees/<name>/hooks`, which git never
+# reads — so a hook installed from a worktree protects every checkout of the
+# repository, and `--check` reports what actually runs.
+HOOKS_DIR_REL=""
+if ! HOOKS_DIR_REL="$(git -C "${REPO_ROOT}" rev-parse --git-path hooks 2>/dev/null)"; then
   if [[ "${MODE}" == "check" ]]; then
     echo "ERROR: not a git repository at ${REPO_ROOT}; --check cannot verify hook installation" >&2
     exit 2
@@ -84,14 +90,13 @@ if ! GIT_DIR_REL="$(git -C "${REPO_ROOT}" rev-parse --git-dir 2>/dev/null)"; the
   exit 0
 fi
 
-# Resolve absolute git-dir path.
-if [[ "${GIT_DIR_REL}" = /* ]]; then
-  GIT_DIR="${GIT_DIR_REL}"
+# Resolve absolute hooks-dir path.
+if [[ "${HOOKS_DIR_REL}" = /* ]]; then
+  HOOKS_DIR="${HOOKS_DIR_REL}"
 else
-  GIT_DIR="${REPO_ROOT}/${GIT_DIR_REL}"
+  HOOKS_DIR="${REPO_ROOT}/${HOOKS_DIR_REL}"
 fi
 
-HOOKS_DIR="${GIT_DIR}/hooks"
 HOOK_PATH="${HOOKS_DIR}/pre-commit"
 
 mkdir -p "${HOOKS_DIR}"
