@@ -27,9 +27,10 @@
   code rather than the text discussing it. This is wired at the helper,
   not at the call site: `run_check` / `run_negative_check` route through
   the view automatically, because requiring an opt-in would mean the
-  obvious way to write a new anchor is the wrong one. For code the view
-  does not cover — a linker script, assembly, a fixture produced by code —
-  declare the check with **`run_prose_check`** / **`run_prose_negative_check`**,
+  obvious way to write a new anchor is the wrong one. The view covers
+  Lean, Rust, assembly and C headers, linker scripts and TOML
+  (`lean_code_view._STRIPPERS`). For code it does not cover — a fixture
+  produced by code — declare the check with **`run_prose_check`** / **`run_prose_negative_check`**,
   which read the real tree; never point them at a comment or docstring,
   because comment prose is documentation and is not tested. Both mechanisms are pinned by witnesses in
   Tier 0 (`lean_code_view.py --self-test` for the stripper,

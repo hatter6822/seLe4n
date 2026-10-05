@@ -745,7 +745,7 @@ ensure_python_yaml() {
   python3 -m pip install --user --quiet pyyaml >/dev/null 2>&1 \
     || python3 -m pip install --quiet pyyaml >/dev/null 2>&1 || true
   if ! python3 -c 'import yaml' >/dev/null 2>&1; then
-    echo "[setup] warning: PyYAML is not importable; the Tier 0 action-pin check will fail until it is; run: python3 -m pip install pyyaml" >&2
+    echo "[setup] warning: PyYAML is not importable (Tier 0's action-pin check will fail until it is; run: python3 -m pip install pyyaml)" >&2
   fi
 }
 ensure_python_yaml

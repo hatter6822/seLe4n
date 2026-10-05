@@ -417,6 +417,26 @@ _PRESERVED: list[tuple[str, str]] = [
 ]
 
 
+#: The other views: (suffix, source, the exact view).  A comment is blanked to
+#: spaces in place; a string, a cpp directive and a TOML value are code.
+_OTHER_VIEWS: list[tuple[str, str, str]] = [
+    (".S", "mov x0, x1 // docs/x\n", "mov x0, x1          \n"),
+    (".S", "/* a\nb */ ret\n", "    \n     ret\n"),
+    (".S", '.incbin "docs/x" // c\n', '.incbin "docs/x"     \n'),
+    (".S", '#include "a//b.h" /* c */\n', '#include "a//b.h"        \n'),
+    (".S", '.ascii "a\\"//b" // c\n', '.ascii "a\\"//b"     \n'),
+    (".S", "// the kernel's entry\nret\n", "                     \nret\n"),
+    (".S", "mov w0, #'/' // c\n", "mov w0, #'/'     \n"),
+    (".h", "#define P \"docs/x\" /* c */\n", "#define P \"docs/x\"        \n"),
+    (".ld", "a = b; // not a comment\n", "a = b; // not a comment\n"),
+    (".ld", 'INCLUDE "x.ld" /* docs/x */\n', 'INCLUDE "x.ld"             \n'),
+    (".toml", 'path = "docs/x" # c\n', 'path = "docs/x"    \n'),
+    (".toml", "# docs/x\nname = 'a#b'\n", "        \nname = 'a#b'\n"),
+    (".toml", 's = "a\\"#b" # c\n', 's = "a\\"#b"    \n'),
+    (".toml", 's = """\n# kept\n"""\n', 's = """\n# kept\n"""\n'),
+    (".toml", "s = '''a#b''' # c\n", "s = '''a#b'''    \n"),
+]
+
 # PR #889 review round 5: what `blank_strings` must and must not do.  Each
 # case is (name, source, code that must survive, token that must not).
 # Blanking is length-preserving, so a blanked literal normalises to `" "`.
@@ -596,6 +616,35 @@ def _self_test() -> int:
         failures += 1
         print("[lean-code-view] FAIL: unterminated block comment did not raise")
 
+    for suffix, source, want in _OTHER_VIEWS:
+        got = _STRIPPERS[suffix](source)
+        if got != want:
+            failures += 1
+            print(f"[lean-code-view] FAIL {suffix} view of {source!r}: "
+                  f"want {want!r}, got {got!r}")
+    try:
+        _STRIPPERS[".S"]("/* open forever\nret\n")
+    except UnterminatedComment:
+        pass
+    else:
+        failures += 1
+        print("[lean-code-view] FAIL: unterminated `/*` in a .S file did not raise")
+    # Geometry over the real files of each non-Lean view: a view moves no byte
+    # and only ever writes a space.
+    import subprocess
+    other = [p for p in subprocess.run(
+        ["git", "ls-files", "-z", "--", *(f"*{x}" for x in (".S", ".h", ".ld", ".toml"))],
+        capture_output=True, check=True).stdout.decode().split("\0") if p]
+    for path in other:
+        src = open(path, encoding="utf-8").read()
+        got = _STRIPPERS[os.path.splitext(path)[1]](src)
+        if len(got) != len(src) or any(a != b and b != " " for a, b in zip(src, got)):
+            failures += 1
+            print(f"[lean-code-view] FAIL: the view of {path} moved or rewrote a byte")
+    if len(other) < 5:
+        failures += 1
+        print(f"[lean-code-view] FAIL: only {len(other)} non-Lean files walked")
+
     # The property the gates rely on, checked over the real tree rather than
     # over fixtures: stripping never moves a byte, so `rg -n` line numbers on
     # the view are line numbers in the source.
@@ -657,7 +706,7 @@ def _self_test() -> int:
         return 1
     cases = (len(_CASES) + len(_PRESERVED) + len(_STRING_BLANKED)
              + len(_ATTRIBUTE_ARGUMENTS)
-             + len(_ATTRIBUTE_ARGUMENTS_KEPT) + 2)
+             + len(_ATTRIBUTE_ARGUMENTS_KEPT) + len(_OTHER_VIEWS) + 3)
     print(f"[lean-code-view] SELF-TEST PASS ({cases} cases, "
           f"{checked} tree files, overlay prune witnessed)")
     return 0
@@ -691,6 +740,108 @@ def _rust_code(text: str) -> str:
     return rust_code_view.code(text)
 
 
+#: What can start a comment or a literal in C-family source, with and without
+#: `//` line comments.
+_C_TRIGGER = {True: re.compile(r"//|/\*|[\"']"), False: re.compile(r"/\*|[\"']")}
+#: A character literal that closes as one: `'x'` or `'\n'`.
+_C_CHAR = re.compile(r"'(?:\\.|[^\\'\n])'")
+
+
+def _c_family_code(text: str, line_comments: bool) -> str:
+    """Blank C-family comments, keeping string literals and geometry.
+
+    For `.S` and `.h`, which reach the assembler or compiler through cpp, and
+    for linker scripts.  `/* */` is a comment (it does not nest) and, with
+    `line_comments`, so is `//` to end of line; a linker script has no `//`
+    comment, so there it is ordinary text.  A `"` string runs to its unescaped
+    close and is kept, so `.incbin "path"` and `#include "path"` are code, and
+    a `//` inside one is not a comment.  `#` lines are cpp directives, which
+    are code.  A `'` is kept as a character literal only when it closes as one,
+    so an apostrophe never swallows what follows it.  A block comment open at
+    end of input raises `UnterminatedComment`, as Lean's does.
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    trigger = _C_TRIGGER[line_comments]
+    while i < n:
+        m = trigger.search(text, i)
+        if m is None:
+            out.append(text[i:])
+            break
+        out.append(text[i:m.start()])
+        i = m.start()
+        token = m.group()
+        if token == "//":
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            out.append(_blanked(text[i:end]))
+        elif token == "/*":
+            close = text.find("*/", i + 2)
+            if close < 0:
+                raise UnterminatedComment("`/*` comment still open at end of input")
+            end = close + 2
+            out.append(_blanked(text[i:end]))
+        elif token == '"':
+            end = i + 1
+            while end < n and text[end] not in '"\n':
+                end += 2 if text[end] == "\\" else 1
+            end = min(end + 1, n) if end < n and text[end] == '"' else min(end, n)
+            out.append(text[i:end])
+        else:
+            char = _C_CHAR.match(text, i)
+            end = char.end() if char else i + 1
+            out.append(text[i:end])
+        i = end
+    return "".join(out)
+
+
+#: What can start a comment or a string in TOML; the triple quotes first.
+_TOML_TRIGGER = re.compile(r"#|\"\"\"|'''|[\"']")
+
+
+def _toml_code(text: str) -> str:
+    """Blank TOML comments, keeping strings and geometry.
+
+    `#` outside a string is a comment to end of line.  Strings are kept: a
+    basic `"..."` (with `\\` escapes) and a literal `'...'` end at their close
+    or at the line's end, and the multi-line `\"\"\"...\"\"\"` (with escapes)
+    and `'''...'''` at their closing delimiter, which may carry up to two more
+    quotes of content.  A string still open at end of input keeps the rest,
+    which over-keeps: a gate reading it sees more text, never less.
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        m = _TOML_TRIGGER.search(text, i)
+        if m is None:
+            out.append(text[i:])
+            break
+        out.append(text[i:m.start()])
+        i = m.start()
+        token = m.group()
+        if token == "#":
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            out.append(_blanked(text[i:end]))
+        elif len(token) == 3:
+            end = i + 3
+            while end < n and not text.startswith(token, end):
+                end += 2 if token == '"""' and text[end] == "\\" else 1
+            end = min(end + 3, n)
+            extra = 0
+            while extra < 2 and end < n and text[end] == token[0]:
+                end, extra = end + 1, extra + 1
+            out.append(text[i:end])
+        else:
+            end = i + 1
+            while end < n and text[end] not in token + "\n":
+                end += 2 if token == '"' and text[end] == "\\" else 1
+            end = min(end + 1, n) if end < n and text[end] == token else min(end, n)
+            out.append(text[i:end])
+        i = end
+    return "".join(out)
+
+
 #: The code view for each language whose files a gate scans, by file suffix.
 #:
 #: **A language absent from this table is read RAW, and that is a decision.**
@@ -706,6 +857,10 @@ def _rust_code(text: str) -> str:
 _STRIPPERS = {
     ".lean": strip,
     ".rs": _rust_code,
+    ".S": lambda text: _c_family_code(text, line_comments=True),
+    ".h": lambda text: _c_family_code(text, line_comments=True),
+    ".ld": lambda text: _c_family_code(text, line_comments=False),
+    ".toml": _toml_code,
 }
 
 

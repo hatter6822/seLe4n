@@ -237,8 +237,9 @@ these rules are what keeps them honest):
   (`scripts/lean_code_view.py --overlay`, `scripts/rust_code_view.py`);
   `run_check` / `run_negative_check` route through it automatically.
   `run_prose_check` / `run_prose_negative_check` read raw text, for code the
-  view does not cover (linker scripts, assembly, fixtures produced by code);
-  never point them at a comment or docstring. Never contort prose to satisfy
+  view does not cover (fixtures produced by code; the view covers Lean, Rust,
+  assembly, C headers, linker scripts and TOML); never point them at a
+  comment or docstring. Never contort prose to satisfy
   a scanner.
 - **A presence check is not a relation check.** Resolve the text into the
   structure it stands for (the command, the order, the scope, the element)

@@ -248,29 +248,45 @@
       rejects duplicate keys.  An earlier version walked the working tree and
       pruned `node_modules`, `target` and the like, while exempting `./`
       references, so Codex showed that an unpinned step in a local action under
-      a pruned directory passed.  An escaped
-      key is `uses`, an alias is its anchor's value, and a flow mapping is a
-      mapping.
-    - It walks every mapping, and every value whose key is `uses` must be
-      `owner/repo[/path]@<40-hex SHA>`, and `docker://` references need an
-      `@sha256:` digest.  A local `./path` reference is resolved, as the runner
+      a pruned directory passed.  An escaped key is `uses`, an alias is its
+      anchor's value, a `<<` merge is applied, and a flow mapping is a mapping.
+    - It follows the schema to the positions GitHub resolves
+      (`jobs.<id>.uses`, `jobs.<id>.steps[*].uses`, `runs.steps[*].uses`), so
+      a key named `uses` elsewhere (an action input, a `with:` argument, an
+      `env:` variable) is data; an earlier version matched the key name
+      anywhere and failed such a legal input.  A wrong type on the way (a job
+      or step that is not a mapping, `steps` that are not a sequence) fails.
+      Each `uses` value must be `owner/repo[/path]@<40-hex SHA>`, and
+      `docker://` references need an `@sha256:` digest.  A local `./path` reference is resolved, as the runner
       resolves it, to its tracked workflow or `action.y*ml`, which is checked in
       turn, so a chain of local actions is followed to its end (a visited set
       stops a cycle).  A local reference with no tracked target, or one that
       leaves the repository, fails, as does an action file tracked as a
       symlink.
+    - Images are checked the same way, at the keys GitHub pulls them from:
+      `jobs.<id>.container` (a string, or its `image`),
+      `jobs.<id>.services.<id>.image`, and an action's `runs.image`.  Each
+      must carry an `@sha256:` digest, and a `runs.image` that is not
+      `docker://` is a Dockerfile path that must name a tracked file beside
+      the action.  A job, `services`, service or `runs` that is not a mapping,
+      a container or service with no image, and an image it cannot classify
+      (an expression, a short digest) fail.  `<<` merges are resolved, so a
+      container merged into a job is checked.
     - A file that does not parse fails, as does a non-string or empty value or
       any value it cannot classify, and so does a tree with no workflows or no
-      `uses:` at all.  A missing PyYAML fails with the install command.
+      `uses:` or image at all.  A missing PyYAML fails with the install command.
       `setup_lean_env.sh`, which every CI job that runs Tier 0 calls, installs
       it with the test dependencies (the `python3-yaml` package, then pip).
     - Each finding is printed as `file:line: reason: value`.  The self-test
-      has 42 cases, including the escaped key, a duplicate key, an escaped
-      duplicate, aliases, a flow mapping, an action under `node_modules`, a
-      missing or untracked target, a cycle and a chain of local actions, each
-      in a scratch git repository.  A loader that accepts duplicates, or a
-      walk that matches only plain keys, fails it.
-    - The tree's 39 references were already pinned, so no workflow changed.
+      has 69 cases, each in a scratch git repository, including the escaped
+      key, a duplicate key, an escaped duplicate, aliases, a flow mapping, an
+      action under `node_modules`, a missing or untracked target, a cycle and
+      a chain of local actions, an action input and a `with:`/`env:` key named
+      `uses` (both pass), and unpinned, unclassifiable and merged-in
+      container, service and Docker-action images.  A loader that accepts
+      duplicates, or a walk that matches only plain keys, fails it.
+    - The tree's 39 references were already pinned, and no workflow uses a
+      container, a service or a Docker action, so no workflow changed.
     `CI_POLICY.md` §9 and §9.1 and `THREAT_MODEL.md` describe the parse and no
     longer say the scan misses sub-path actions.
   - *Negative-check output* (`test_lib.sh`): `run_negative_check` and
@@ -282,8 +298,22 @@
     the first 20 lines and a count of the rest (`SELE4N_CHECK_OUTPUT_LINES`).
     A file is used instead of `$(...)` because a subshell would drop the
     cached code view and rebuild it for every Lean anchor.
-  - The prose helpers' comments now match the rule above: they read linker
-    scripts, assembly and fixtures produced by code, never documentation or
+  - The prose helpers' comments now match the rule above: they read fixtures
+    produced by code, never documentation or comments.
+  - *Shell lexer in the identifier-naming gate* (`strip_shell` in
+    `check_identifier_naming.py`): a `${ … }` was matched by the flat pattern
+    `\$\{[^}]*\}`, so `${a[@]+"${a[@]}"}` closed on its inner brace and left
+    a `"` that opened a double-quoted span for the rest of the file.  An
+    apostrophe in a later diagnostic (`Tier 0's`) then opened a single-quoted
+    payload, and every comment below it was read as code.  The lexer now
+    scans every `${ … }` with `parameter_expansion_end` (already used inside
+    substitutions), scans a double-quoted span with its nested `$( … )`,
+    `${ … }` and backticks as their own contexts, honours a top-level
+    backslash escape, reads ANSI-C `$'…'` with its escapes, and treats a
+    backtick inside `$( … )` as nested.  The three scanners share one set of
+    quote helpers.  17 new self-test cases (8 fail on the old lexer); the
+    `setup_lean_env.sh` warning that was reworded to dodge the bug is back to
+    its natural wording, and the gate reads the comments after it as
     comments.
 - **Codex review of 852f56c (same PR).**
   - *A documentation check left in a code gate*:
@@ -299,6 +329,13 @@
     It is now a `run_negative_check` over the code view, with Markdown
     excluded, so it catches string literals, include paths and build
     references, while comments citing an archived plan are a review rule.
+    The code view now covers assembly and C headers (`//`, `/* */`), the
+    linker script (`/* */`) and TOML (`#`), keeping string literals, so a
+    comment there no longer fails the guard while `.incbin "…"`,
+    `#include "…"`, an `INCLUDE` and a TOML string value still do.  Every
+    anchor that reads those files now reads the view: four `boot.S` anchors
+    that matched comment text match the code, and fourteen `run_prose_check`
+    anchors over `link.ld` and `boot.S` became code checks.
     `CLAUDE.md`, `DEVELOPMENT.md`, the sync matrix and `WORKSTREAM_CONTEXT.md`
     say which half is checked.
   - *Every fixture has a reader in code*: not restored.  A check that a

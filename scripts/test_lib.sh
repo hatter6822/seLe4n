@@ -434,7 +434,8 @@ run_gate_check() {
 }
 
 # The opt-out: a check that reads the real text of code the code view does not
-# cover — a linker script, an assembly source, a fixture produced by code.
+# cover — a fixture produced by code.  (Lean, Rust, assembly, C headers, linker
+# scripts and TOML have views: `lean_code_view._STRIPPERS`.)
 # Never documentation, a comment or a docstring: gates and tests check code
 # (`CLAUDE.md`, "Writing gates and checks").  Rare by construction; if a new
 # one is not obviously about such a file, it is a code check written wrongly.
@@ -493,7 +494,7 @@ _show_check_output() {
 }
 
 # The dual of `run_prose_check`: a forbidden text in a file the code view does
-# not cover (a linker script's retired assertion).  Reads the real text, so the
+# not cover (a fixture produced by code).  Reads the real text, so the
 # same rule holds: never documentation, a comment or a docstring.
 run_prose_negative_check() {
   local category="$1"

@@ -3864,8 +3864,8 @@ run_check "INVARIANT" rg -n '^const BLOCK_KERNEL_RODATA: u64 = NORMAL_BASE \| AP
 run_negative_check "INVARIANT" rg -n 'const BLOCK_NORMAL: u64 = DESC_VALID \| AF \| SH_INNER \| ATTR_IDX_NORMAL \| AP_RW_EL1 \| UXN;' rust/sele4n-hal/src/mmu.rs
 # The permission boundaries are the linker's, inside the sections they bound,
 # and the read-only data begins where the text ends (no orphan between them).
-run_prose_check "INVARIANT" rg -n -U '    \.text : ALIGN\(4096\) \{\n        \*\(\.text \.text\.\*\)\n        \. = ALIGN\(4096\);\n        __text_end = \.;' rust/sele4n-hal/link.ld
-run_prose_check "INVARIANT" rg -n -F 'ASSERT(__rodata_start == __text_end, "the read-only data must begin where the kernel text ends")' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n -U '    \.text : ALIGN\(4096\) \{\n        \*\(\.text \.text\.\*\)\n        \. = ALIGN\(4096\);\n        __text_end = \.;' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n -F 'ASSERT(__rodata_start == __text_end, "the read-only data must begin where the kernel text ends")' rust/sele4n-hal/link.ld
 # WS-BP BP3: the deployment's boot configuration.
 # BP3.1 — one install step: every boot object, the binding's root included,
 # goes through `createBootObject`, which registers a VSpace root's ASID.
@@ -3894,17 +3894,17 @@ run_check "INVARIANT" rg -n '^def rpi5KernelReservedEnd : Nat := 0x1000_0000$' S
 # boot path's constant reads the board the image is built for.
 run_check "INVARIANT" rg -n '^pub const KERNEL_RESERVED_END: u64 = crate::board::BOARD\.kernel_reserved_end;$' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n -U '^pub const RPI5: BoardMap = BoardMap \{[^\n]*(\n([ \t][^\n]*)?)*?\n    ram_base: 0x0,\n    kernel_reserved_end: 0x1000_0000,$' rust/sele4n-hal/src/board.rs
-run_prose_check "INVARIANT" rg -n '^KERNEL_RESERVED_END = 0x10000000;$' rust/sele4n-hal/link.ld
-run_prose_check "INVARIANT" rg -n -F 'ASSERT(__lean_heap_end <= KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
-run_prose_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END % 0x200000 == 0,' rust/sele4n-hal/link.ld
-run_prose_check "INVARIANT" rg -n -F 'ASSERT(RAM_BASE % 0x40000000 == 0 && KERNEL_RESERVED_END > RAM_BASE && KERNEL_RESERVED_END - RAM_BASE <= 0x40000000,' rust/sele4n-hal/link.ld
-run_prose_check "INVARIANT" rg -n -F 'ASSERT(ORIGIN(RAM) == RAM_BASE + 0x80000,' rust/sele4n-hal/link.ld
-run_prose_check "INVARIANT" rg -n '^RAM_BASE = 0x0;$' rust/sele4n-hal/link.ld
-run_prose_negative_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END <= 0x40000000,' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n '^KERNEL_RESERVED_END = 0x10000000;$' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n -F 'ASSERT(__lean_heap_end <= KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END % 0x200000 == 0,' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n -F 'ASSERT(RAM_BASE % 0x40000000 == 0 && KERNEL_RESERVED_END > RAM_BASE && KERNEL_RESERVED_END - RAM_BASE <= 0x40000000,' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n -F 'ASSERT(ORIGIN(RAM) == RAM_BASE + 0x80000,' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n '^RAM_BASE = 0x0;$' rust/sele4n-hal/link.ld
+run_negative_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END <= 0x40000000,' rust/sele4n-hal/link.ld
 # WS-BP BP7.10: the linker's RAM region IS the kernel's reserved extent.
-run_prose_check "INVARIANT" rg -n -F 'ASSERT(ORIGIN(RAM) + LENGTH(RAM) == KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
-run_prose_check "INVARIANT" rg -n '^    RAM \(rwx\) : ORIGIN = 0x80000, LENGTH = 0xFF80000$' rust/sele4n-hal/link.ld
-run_prose_negative_check "INVARIANT" rg -n -F "smallest RPi5's 1 GiB" rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n -F 'ASSERT(ORIGIN(RAM) + LENGTH(RAM) == KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n '^    RAM \(rwx\) : ORIGIN = 0x80000, LENGTH = 0xFF80000$' rust/sele4n-hal/link.ld
+run_negative_check "INVARIANT" rg -n -F "smallest RPi5's 1 GiB" rust/sele4n-hal/link.ld
 run_check "INVARIANT" rg -n 'fn the_kernel_reserved_extent_is_the_lean_and_linker_one\(\)' rust/sele4n-hal/src/mmu.rs
 # BP3.3/BP3.4 — the deployment config boots, installs both separation
 # witnesses, and is what the hardware entry boots.
@@ -5554,16 +5554,16 @@ run_check "INVARIANT" rg -n '^    fn the_device_tree_window_is_the_dereference_b
 # any other level halts.  build.rs pins the routine item for item, and both
 # scanners refuse the retired prologue-first order.
 run_check "INVARIANT" rg -n '^    scan_el1_entry\(\);$' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -U -n '^_start:\n(\n|    //[^\n]*\n)*    b       \.L_image_body[^\n]*\n(    \.[^\n]*\n){9}\.L_image_body:\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb\n    mov     x20, x9 ' rust/sele4n-hal/src/boot.S
-run_check "INVARIANT" rg -U -n '^secondary_entry:\n(\n|    //[^\n]*\n)*    bl      \.L_enter_el1\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr\n    isb$' rust/sele4n-hal/src/boot.S
-run_negative_check "INVARIANT" rg -U -n '^(_start|secondary_entry):\n(\n|    //[^\n]*\n)*    msr     cpacr_el1, xzr' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^_start:\n([ \t]*\n)*    b       \.L_image_body[^\n]*\n(    \.[^\n]*\n){9}\.L_image_body:\n([ \t]*\n)*    bl      \.L_enter_el1\n([ \t]*\n)*    msr     cpacr_el1, xzr\n    isb\n    mov     x20, x9 ' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^secondary_entry:\n([ \t]*\n)*    bl      \.L_enter_el1\n([ \t]*\n)*    msr     cpacr_el1, xzr\n    isb$' rust/sele4n-hal/src/boot.S
+run_negative_check "INVARIANT" rg -U -n '^(_start|secondary_entry):\n([ \t]*\n)*    msr     cpacr_el1, xzr' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -n '"the FP trap written before the drop to EL1",' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -U -n '^\.L_enter_el1:\n    msr     daifset, #0xf\n    mrs     x9, currentel\n    cmp     x9, #0x4\n    b\.ne    \.L_enter_el1_from_el2\n    ret\n\.L_enter_el1_from_el2:\n    cmp     x9, #0x8\n    b\.ne    \.L_unsupported_el$' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -U -n '^    mov     x9, #0x33ff\n    msr     cptr_el2, x9$' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -U -n '^    mrs     x9, mpidr_el1\n    msr     vmpidr_el2, x9$' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -U -n '^    mov     x9, #0x3c5\n    msr     spsr_el2, x9\n    msr     elr_el2, x30\n    mov     x9, #0x8\n    eret$' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -U -n '^\.L_unsupported_el:\n    wfe\n    b       \.L_unsupported_el$' rust/sele4n-hal/src/boot.S
-run_check "INVARIANT" rg -U -n '^    mov     x0, x19                 // x0 = DTB pointer \(first argument\)\n    mov     x1, x20 ' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^    mov     x0, x19[ \t]*\n    mov     x1, x20 ' rust/sele4n-hal/src/boot.S
 # The PSCI conduit follows the entry level: an EL2 entry leaves nothing at
 # EL2 to take an `hvc`, so every call goes through `psci_call` and an EL2
 # entry selects `smc`.  No wrapper may hard-code `hvc #0` again: the two
@@ -7734,7 +7734,7 @@ run_check "INVARIANT" rg -n -U '^\.balign 128\n    msr spsel, #0\n    b   __el1_
 run_check "INVARIANT" rg -n -U '^__el0_sync_entry:\n    save_context\n    set_fault_stack\n    bl      handle_synchronous_exception$' rust/sele4n-hal/src/trap.S
 run_check "INVARIANT" rg -n -U '^__el0_irq_entry:\n    save_context\n    set_fault_stack\n    bl      handle_irq_per_core$' rust/sele4n-hal/src/trap.S
 run_check "INVARIANT" rg -n -U '^        if layout\.in_stack_guard\(addr\) \{\n[ \t]*\n            BootMapping::Unmapped$' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n '^    lsl     x1, x1, #17              // x1 = index \* SECONDARY_STACK_STRIDE \(128 KiB\)$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -n '^    lsl     x1, x1, #17[ \t]*$' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -n '^        frame\.sp_el0 = idle\.sp_el0;$' rust/sele4n-hal/src/trap.rs
 # PR #904 (v0.36.41): the boot-entry contract refuses a configuration argument
 # whose project closure is compiled to something other than its kernel term.
@@ -7844,8 +7844,8 @@ run_check "INVARIANT" rg -n -U '^fn board_link_script\(manifest_dir: &str\) -> S
 run_check "INVARIANT" rg -n '^const IMAGE_HEADER: \[&str; 10\] = \[$' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^        let first = entry_body_index\(&items, entry, at\)\?;$' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^        let call = entry_body_index\(&items, entry, at\)\?;$' rust/sele4n-hal/build.rs
-run_prose_check "INVARIANT" rg -n '^    \.word   0x644d5241              // magic' rust/sele4n-hal/src/boot.S
-run_prose_check "INVARIANT" rg -n '^__kernel_image_size = __lean_heap_end - _start;$' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n '^    \.word   0x644d5241[ \t]*$' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -n '^__kernel_image_size = __lean_heap_end - _start;$' rust/sele4n-hal/link.ld
 # The FP/SIMD gate reads the header's data words as data, and admits data only
 # in `_start`'s first 64 bytes.
 run_check "INVARIANT" rg -n '^            if function != IMAGE_HEADER_FUNCTION or not 0 <= offset < IMAGE_HEADER_BYTES:$' scripts/check_fp_simd_free_objects.py

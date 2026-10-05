@@ -282,6 +282,61 @@ check("an echoed diagnostic stays prose",
       CODED in gate.strip_shell("echo " + dq + CODED + " done" + dq), False)
 
 
+# --- The quote state machine: what opens a span, and where it closes ------
+# A flat `${...}` pattern closed `${a[@]+"${a[@]}"}` on the inner brace and
+# left a `"` that opened a double-quoted span running to the next quote in
+# the FILE.  In `setup_lean_env.sh` the parity stayed flipped from there on,
+# and an apostrophe in a later diagnostic (`Tier 0's`) then opened a
+# single-quoted payload that kept every comment below it as code.  Each case
+# below puts a quote of the other kind where the old machine misread it and
+# a coded comment after it: the comment must stay prose.
+after = "\n# " + CODED + "\n"
+check("an expansion whose word is quoted closes at its own brace",
+      CODED in gate.strip_shell(
+          "for p in " + dollar + "{a[@]+" + dq + dollar + "{a[@]}" + dq + "}; do :; done"
+          + "\necho " + dq + "it" + q + "s (x)" + dq + after), False)
+check("an apostrophe inside double quotes opens nothing",
+      CODED in gate.strip_shell("echo " + dq + "Tier 0" + q + "s (check)" + dq + after), False)
+check("a double quote inside single quotes opens nothing",
+      CODED in gate.strip_shell("echo " + q + "say " + dq + "hi" + q + after), False)
+check("an escaped apostrophe outside quotes opens nothing",
+      CODED in gate.strip_shell("echo don\\" + q + "t" + after), False)
+check("an escaped double quote outside quotes opens nothing",
+      CODED in gate.strip_shell("echo \\" + dq + "x" + after), False)
+check("an escaped double quote inside double quotes does not close them",
+      CODED in gate.strip_shell("echo " + dq + "a \\" + dq + " b" + q + dq + after), False)
+check("an ANSI-C $'...' closes at its unescaped quote",
+      CODED in gate.strip_shell("x=" + dollar + q + "it\\" + q + "s" + q + after), False)
+check("an ANSI-C $'...' payload is kept",
+      CODED in gate.strip_shell("x=" + dollar + q + CODED + "\\n" + q), True)
+check("a # inside single quotes is not a comment",
+      CODED in gate.strip_shell("grep " + q + "a # " + CODED + q + " f"), True)
+check("a # inside ${var#pat} is not a comment",
+      CODED in gate.strip_shell("echo " + dollar + "{x#" + CODED + "}"), True)
+check("a # pattern with a quote still closes the expansion",
+      CODED in gate.strip_shell("echo " + dollar + "{x#" + q + "a}" + q + "}" + after), False)
+quoted_sub = dq + dollar + "(basename " + dq + dollar + "f" + dq + ")" + dq
+check("a substitution inside double quotes keeps its own quotes (one span)",
+      gate.double_quote_end(quoted_sub + " x", 0), len(quoted_sub))
+check("an apostrophe in a substitution's own quotes opens nothing",
+      CODED in gate.strip_shell(
+          "x=" + dq + dollar + "(echo " + dq + "it" + q + "s" + dq + ")" + dq + after), False)
+check("nested substitutions inside double quotes keep their own quotes",
+      CODED in gate.strip_shell(
+          "x=" + dq + dollar + "(echo " + dq + dollar + "(date " + dq + "+%s" + q + dq
+          + ")" + dq + ")" + dq + after), False)
+check("a command inside a quoted nested substitution is kept",
+      CODED in gate.strip_shell(
+          "x=" + dq + dollar + "(" + CODED + " " + dq + dollar + "f" + dq + ")" + dq), True)
+backtick_sub = dollar + "(echo `echo )`)"
+check("a backtick inside $( ... ) is a nested context (its paren is text)",
+      gate.command_substitution_end(backtick_sub + " x", 0), len(backtick_sub))
+check("an apostrophe in a heredoc body after an expansion opens nothing",
+      CODED in gate.strip_shell(
+          "y=" + dollar + "{a[@]+" + dq + dollar + "{a[@]}" + dq + "}\ncat <<EOF\nit"
+          + q + "s\nEOF" + after), False)
+
+
 # --- Config and data formats are not Python prose ---------------------
 # A YAML `run:` is a command and a TOML value is often a package or
 # target name; the Python stripper blanked both as quoted prose.

@@ -145,7 +145,10 @@ configuration errors.
 
 All third-party GitHub Actions in workflow files must be pinned to full 40-character
 commit SHA hashes, not mutable version tags. Each `uses:` reference carries a
-trailing `# vX.Y.Z` comment documenting the version at pin time.
+trailing `# vX.Y.Z` comment documenting the version at pin time. Every image a
+workflow or action pulls (a job container, a service, a Docker action's
+`docker://` image) is pinned the same way, to its `@sha256:` digest, with the
+tag in a comment beside it.
 
 Covered workflows:
 - `.github/workflows/lean_action_ci.yml`
@@ -160,20 +163,34 @@ out), with nothing pruned: the tracked `.github/workflows/*.yml` / `*.yaml` and
 every tracked `action.yml` / `action.yaml`. It reads their text from the index
 as well and parses it as YAML, with PyYAML and a loader that rejects duplicate
 keys. A key is therefore what YAML resolves it to: an escaped
-`"\u0075ses"` is `uses`, an alias is its anchor's value, and a flow mapping is a
-mapping. Every mapping is walked, and every value whose key is `uses` must be
-`owner/repo[/path]@ref` with a full 40-hex commit SHA as the ref, and a
-`docker://` reference must carry an `@sha256:` digest. A local `./path`
+`"\u0075ses"` is `uses`, an alias is its anchor's value, a `<<` merge is
+applied, and a flow mapping is a mapping. The walk follows the schema to the
+positions GitHub resolves, `jobs.<id>.uses` and `jobs.<id>.steps[*].uses` in a
+workflow and `runs.steps[*].uses` in an action, so a key named `uses` anywhere
+else (an action input, a `with:` argument, an `env:` variable) is data. A
+`uses` value must be `owner/repo[/path]@ref` with a full 40-hex commit SHA as
+the ref, and a `docker://` reference must carry an `@sha256:` digest. A
+document, job, step, `services`, service or `runs` that is not a mapping, and
+`steps` that are not a sequence, fail. A local `./path`
 reference is resolved against the repository root, as the runner resolves it, to
 a tracked workflow file or to the tracked `action.yml` / `action.yaml` in that
 directory, and the target is checked in turn, so a chain of local actions is
 followed to its end (a visited set stops a cycle). A local reference with no
 tracked target, or one that leaves the repository, fails, as does a workflow or
 action file tracked as a symlink or a submodule.
+
+The image keys are read where GitHub reads them: `jobs.<id>.container` (a
+string, or its `image`) and `jobs.<id>.services.<id>.image` in a workflow, and
+`runs.image` in an action. Each must be `[docker://]image[:tag]@sha256:<64 hex>`.
+A `runs.image` that is not `docker://` is a Dockerfile path, resolved against
+the action's directory as the runner resolves it, and must name a tracked file.
+A `jobs`, job, `services`, service or `runs` that is not a mapping, and a
+container or service with no image, fail.
+
 A file that does not parse fails, as does a non-string or empty value or any
 value the script cannot classify. A missing PyYAML fails with the install command
 (`scripts/setup_lean_env.sh` installs it with the test dependencies), and so does
-a tree with no workflows or no `uses:` at all. Each finding is printed as
+a tree with no workflows or no `uses:` or image at all. Each finding is printed as
 `file:line`.
 
 ### 9.1 CodeQL action pin parity

@@ -814,8 +814,80 @@ def strip_hash(text: str) -> str:
 # prose-read-as-code the `$( … )` scan was written to stop, one spelling
 # over.  Both substitution forms now route through `strip_shell`
 # recursively.
-SHELL_EXPANSION = re.compile(
-    r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*")
+# A plain `$name` expansion.  A `${ … }` is SCANNED by
+# `parameter_expansion_end`, never matched by a pattern: its word may hold
+# quotes and nested expansions (`${a[@]+"${a[@]}"}`), and a flat `\$\{[^}]*\}`
+# closed on the inner `}`, leaving a `"` that opened a double-quoted span the
+# rest of the file then lived inside.
+SHELL_VARIABLE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
+
+
+def single_quote_end(text: str, at: int) -> int:
+    """Index just past the `'` closing the single quote at `at`, or `-1`.
+    Nothing is special inside: not a backslash, not a `"`."""
+    k = text.find("'", at + 1)
+    return -1 if k < 0 else k + 1
+
+
+def ansi_c_quote_end(text: str, at: int) -> int:
+    """Index just past the `'` closing the `$'` at `at`, or `-1`.  Unlike a
+    plain single quote, a backslash escapes here, so `$'it\\'s'` is one span."""
+    j, n = at + 2, len(text)
+    while j < n:
+        if text[j] == "\\":
+            j += 2
+            continue
+        if text[j] == "'":
+            return j + 1
+        j += 1
+    return -1
+
+
+def double_quote_end(text: str, at: int) -> int:
+    """Index just past the `"` closing the double quote at `at`, or `-1`.
+
+    A backslash escapes; a `'` is literal; and `$( … )`, `${ … }` and
+    backticks open nested contexts whose own quotes are independent, so
+    `"$(basename "$f")"` is ONE span.  Stopping at the inner `"` split it in
+    two and every quote after it on the line changed sides.
+    """
+    j, n = at + 1, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == '"':
+            return j + 1
+        k = nested_end(text, j)
+        if k < 0:
+            return -1
+        j = k if k > j else j + 1
+    return -1
+
+
+def nested_end(text: str, at: int) -> int:
+    """Where the substitution or expansion opening at `at` ends: past its
+    close, `-1` when it does not close, or `at` itself when nothing opens."""
+    if text.startswith("$(", at):
+        return command_substitution_end(text, at)
+    if text.startswith("${", at):
+        return parameter_expansion_end(text, at)
+    if text[at] == "`":
+        return backtick_substitution_end(text, at)
+    return at
+
+
+def quoted_end(text: str, at: int) -> int:
+    """Where the quoted span opening at `at` ends (`'…'`, `$'…'` or `"…"`):
+    past its close, `-1` when it does not close, or `at` when none opens."""
+    if text.startswith("$'", at):
+        return ansi_c_quote_end(text, at)
+    if text[at] == "'":
+        return single_quote_end(text, at)
+    if text[at] == '"':
+        return double_quote_end(text, at)
+    return at
 
 
 def backtick_substitution_end(text: str, at: int) -> int:
@@ -874,19 +946,11 @@ def command_substitution_end(text: str, at: int) -> int:
                 return -1
             j = k
             continue
-        if c == "'":
-            k = text.find("'", j + 1)
+        k = quoted_end(text, j)
+        if k != j:
             if k < 0:
                 return -1
-            j = k + 1
-            continue
-        if c == '"':
-            k = j + 1
-            while k < n and text[k] != '"':
-                k += 2 if text[k] == "\\" else 1
-            if k >= n:
-                return -1
-            j = k + 1
+            j = k
             continue
         # PR #889 review round 20: a parameter expansion is a brace-delimited
         # region in which `)` is *pattern text*, not structure.  Bash accepts
@@ -895,6 +959,12 @@ def command_substitution_end(text: str, at: int) -> int:
         # code after it and every identifier there stopped being scanned.
         if c == "$" and j + 1 < n and text[j + 1] == "{":
             k = parameter_expansion_end(text, j)
+            if k < 0:
+                return -1
+            j = k
+            continue
+        if c == "`":
+            k = backtick_substitution_end(text, j)
             if k < 0:
                 return -1
             j = k
@@ -926,19 +996,11 @@ def parameter_expansion_end(text: str, at: int) -> int:
         if c == "\\":
             j += 2
             continue
-        if c == "'":
-            k = text.find("'", j + 1)
+        k = quoted_end(text, j)
+        if k != j:
             if k < 0:
                 return -1
-            j = k + 1
-            continue
-        if c == '"':
-            k = j + 1
-            while k < n and text[k] != '"':
-                k += 2 if text[k] == "\\" else 1
-            if k >= n:
-                return -1
-            j = k + 1
+            j = k
             continue
         if c == "$" and j + 1 < n and text[j + 1] == "(":
             k = command_substitution_end(text, j)
@@ -998,29 +1060,35 @@ def is_command_payload(text: str, at: int) -> bool:
 
 
 def keep_expansions(span: str) -> str:
-    """Blank a double-quoted span except its command substitutions."""
+    """Blank a double-quoted span except its expansions and substitutions.
+
+    One left-to-right scan under the rules `double_quote_end` used to find the
+    span: a backslash escapes, a `${ … }` (scanned, so its own quotes and
+    nested expansions are inside it) and a `$name` are kept, and a `$( … )`
+    or backtick substitution is kept as its own code view, its body lexed by
+    `strip_shell`.  A flat `$( … )` pattern closes on the first `)`, including
+    one that is text inside a quoted regex, which is why nothing here is a
+    pattern but the plain `$name`.
+    """
     out = [c if c == "\n" else " " for c in span]
-    for m in SHELL_EXPANSION.finditer(span):
-        out[m.start():m.end()] = list(span[m.start():m.end()])
-    # `$(...)` is scanned rather than matched, for the reason
-    # `SHELL_EXPANSION` records: a flat pattern closes on the first `)`,
-    # including one that is text inside a quoted regex.
-    at = 0
-    while (at := span.find("$(", at)) >= 0:
-        end = command_substitution_end(span, at)
-        if end < 0:
-            break
-        out[at:end] = list(command_substitution_view(span, at, end))
-        at = end
-    # ...and the legacy backtick spelling, which is live inside double quotes
-    # exactly as `$( … )` is (PR #889 review round 14).
-    at = 0
-    while (at := span.find("`", at)) >= 0:
-        end = backtick_substitution_end(span, at)
-        if end < 0:
-            break
-        out[at:end] = list(backtick_substitution_view(span, at, end))
-        at = end
+    j, n = 0, len(span)
+    while j < n:
+        if span[j] == "\\":
+            j += 2
+            continue
+        if span.startswith("$(", j) and (end := command_substitution_end(span, j)) > 0:
+            out[j:end] = list(command_substitution_view(span, j, end))
+        elif span[j] == "`" and (end := backtick_substitution_end(span, j)) > 0:
+            out[j:end] = list(backtick_substitution_view(span, j, end))
+        elif span.startswith("${", j) and (end := parameter_expansion_end(span, j)) > 0:
+            out[j:end] = list(span[j:end])
+        elif (m := SHELL_VARIABLE.match(span, j)):
+            end = m.end()
+            out[j:end] = list(span[j:end])
+        else:
+            j += 1
+            continue
+        j = end
     return "".join(out)
 
 
@@ -1127,30 +1195,34 @@ def strip_shell(text: str) -> str:
               and (m := HEREDOC_OPEN.match(text, i))):
             pending.append((m.group(2) or m.group(3) or m.group(4), bool(m.group(1))))
             out.append(m.group(0)); i = m.end()
+        elif text[i] == "\\":
+            # An escaped character is one literal character: `\\'`, `\\"` and
+            # `\\#` open nothing.  Unescaped, the quote opened a span that ran
+            # to the next quote in the file.
+            out.append(text[i:i + 2]); i = min(i + 2, n)
         elif text.startswith("$(", i) and (end := command_substitution_end(text, i)) > 0:
             out.append(command_substitution_view(text, i, end))
             i = end
         elif text[i] == "`" and (end := backtick_substitution_end(text, i)) > 0:
             out.append(backtick_substitution_view(text, i, end))
             i = end
-        elif (m := SHELL_EXPANSION.match(text, i)):
+        elif text.startswith("${", i) and (end := parameter_expansion_end(text, i)) > 0:
+            out.append(text[i:end]); i = end
+        elif (m := SHELL_VARIABLE.match(text, i)):
             out.append(m.group(0)); i = m.end()
         elif text[i] == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):
             j = text.find("\n", i)
             j = n if j < 0 else j
             out.append(" " * (j - i)); i = j
-        elif text[i] == "'":
-            j = text.find("'", i + 1)
-            j = n if j < 0 else j + 1
-            out.append(text[i:j]); i = j          # payload: keep verbatim
+        elif text.startswith("$'", i) or text[i] == "'":
+            # `'…'` and ANSI-C `$'…'` (where a backslash escapes) are payload:
+            # kept verbatim.
+            j = quoted_end(text, i)
+            j = n if j < 0 else j
+            out.append(text[i:j]); i = j
         elif text[i] == '"':
-            j = i + 1
-            while j < n:
-                if text[j] == "\\":
-                    j += 2; continue
-                if text[j] == '"':
-                    j += 1; break
-                j += 1
+            j = double_quote_end(text, i)
+            j = n if j < 0 else j
             span = text[i:j]
             out.append(span if is_command_payload(text, i)
                        else keep_expansions(span))
