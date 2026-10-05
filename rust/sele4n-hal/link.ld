@@ -13,8 +13,10 @@
  *                             GIC-400), mapped Device by the boot tables;
  *                             DRAM is contiguous from 0 below it
  *
- * Kernel load address: 0x80000 (standard RPi5 kernel entry point, matching
- * the address used by U-Boot and the RPi firmware bootloader).
+ * Kernel load address: 0x80000.  Not the firmware's default 64-bit
+ * `kernel_address` (0x200000): the `config.txt` the image build writes pins
+ * the firmware to this address, and `boot.S`'s `_start` halts if it finds
+ * itself running anywhere else (the image is not position-independent).
  *
  * Section order: .text.boot → .text.vectors → .text.sele4n_fp_context → .text → .rodata → .data → .bss
  *   → .stack → .smp_stacks → .lean_heap → .dtb_window → .boot_table_pool

@@ -10,6 +10,8 @@
 import SeLe4n.Kernel.Architecture.InterruptDispatch
 import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.StateBuilder
+import SeLe4n.Platform.RPi5.Board
+import SeLe4n.Platform.QemuVirt.Board
 
 /-! # AK3-C.5 / AK3-L: Interrupt Dispatch Regression Tests
 
@@ -17,7 +19,7 @@ Focused regression coverage for AK3-C (GIC EOI differentiation) and
 AK3-L (`eoiPending` audit trail). Exercises:
 
 - Spurious INTIDs (≥ 1020): no EOI, no state change
-- Out-of-range INTIDs ([224, 1020)): no handler dispatch at Lean layer,
+- Out-of-range INTIDs ([320, 1020)): no handler dispatch at Lean layer,
   HAL handles EOI
 - In-range INTIDs: handler runs, EOI emitted via `endOfInterrupt`
 - `eoiPending` audit trail: populated on ack, drained on EOI, empty
@@ -40,7 +42,7 @@ def test_t01_ack_spurious : IO Unit := do
   | .ok _ =>
     throw <| IO.userError "T01: expected spurious, got ok"
 
-/-- T02: INTID in [224, 1020) → outOfRange; returns `.error .outOfRange n`
+/-- T02: INTID in [320, 1020) → outOfRange; returns `.error .outOfRange n`
     with `n` matching the raw INTID. -/
 def test_t02_ack_out_of_range : IO Unit := do
   match acknowledgeInterrupt 500 with
@@ -51,7 +53,7 @@ def test_t02_ack_out_of_range : IO Unit := do
   | .ok _ =>
     throw <| IO.userError "T02: expected outOfRange, got ok"
 
-/-- T03: INTID < 224 → `.ok intId`. -/
+/-- T03: INTID < 320 → `.ok intId`. -/
 def test_t03_ack_handled : IO Unit := do
   match acknowledgeInterrupt 30 with
   | .ok intId =>
@@ -67,13 +69,61 @@ def test_t04_ack_boundary_spurious : IO Unit := do
   | _ =>
     throw <| IO.userError "T04: expected spurious at 1020"
 
-/-- T05: INTID = 223 (last handled) → ok, not outOfRange. -/
+/-- T05: INTID = 319 (last handled) → ok, and INTID 320 (one past the
+    BCM2712's 288 SPIs) → outOfRange. -/
 def test_t05_ack_boundary_handled : IO Unit := do
-  match acknowledgeInterrupt 223 with
+  match acknowledgeInterrupt 319 with
   | .ok intId =>
-    expectCond "interrupt-dispatch" "223 is still handled" (intId.val == 223)
+    expectCond "interrupt-dispatch" "319 is still handled" (intId.val == 319)
   | _ =>
-    throw <| IO.userError "T05: expected .ok at 223"
+    throw <| IO.userError "T05: expected .ok at 319"
+  match acknowledgeInterrupt 320 with
+  | .error (.outOfRange n) =>
+    expectCond "interrupt-dispatch" "320 is the first outOfRange INTID" (n == 320)
+  | _ =>
+    throw <| IO.userError "T05: expected outOfRange at 320"
+
+/-- The model's `InterruptId` bound is the RPi5 binding's interrupt-line count
+    — SGIs and PPIs plus `gicSpiCount` SPIs — so the INTIDs the RPi5
+    interrupt contract supports and the ones `acknowledgeInterrupt` can
+    dispatch are one set.  QEMU `virt`'s lines fit inside it. -/
+example : InterruptId = Fin (SeLe4n.Platform.RPi5.gicSpiCount + 32) := rfl
+example : SeLe4n.Platform.QemuVirt.qemuVirtGicSpiCount + 32 ≤ 320 := by decide
+
+/-- T05b: the BCM2712's high SPIs — GIC_SPI 209 (PCIe0 INTA), 244 (the
+    main level-2 controller behind every SoC GPIO interrupt), 273/274 (the
+    SD hosts) and 276 (UARTA), INTIDs 241, 276, 305, 306 and 308 in Linux's
+    `bcm2712.dtsi` — are acknowledged and dispatched to the notification
+    registered for them, badged by INTID.  Under the former 192-SPI cap
+    every one of them was `outOfRange`. -/
+def test_t05b_high_spis_dispatch : IO Unit := do
+  let ntfnId : SeLe4n.ObjId := ⟨300⟩
+  for spi in [209, 244, 273, 274, 276] do
+    let intid := spi + 32
+    match acknowledgeInterrupt intid with
+    | .ok intId =>
+      expectCond "interrupt-dispatch" s!"SPI {spi} (INTID {intid}) acknowledged"
+        (intId.val == intid)
+    | _ => throw <| IO.userError s!"T05b: SPI {spi} (INTID {intid}) not acknowledged"
+    let st0 :=
+      (BootstrapBuilder.empty
+        |>.withObject ntfnId (.notification
+            { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+        |>.withIrqHandler ⟨intid⟩ ntfnId
+        |>.withLifecycleObjectType ntfnId .notification
+        |>.buildChecked)
+    match interruptDispatchSequence st0 intid with
+    | .ok ((), st1) =>
+      match st1.objects[ntfnId]? with
+      | some (.notification ntfn) =>
+        expectCond "interrupt-dispatch" s!"SPI {spi}: notification signalled"
+          (ntfn.state == .active)
+        expectCond "interrupt-dispatch" s!"SPI {spi}: badge is the INTID"
+          (ntfn.pendingBadge == some (SeLe4n.Badge.ofNatMasked intid))
+        expectCond "interrupt-dispatch" s!"SPI {spi}: EOI drained the audit trail"
+          (intid ∉ st1.machine.eoiPending)
+      | _ => throw <| IO.userError s!"T05b: SPI {spi}: notification missing"
+    | .error e => throw <| IO.userError s!"T05b: SPI {spi}: dispatch failed {repr e}"
 
 /-- T06: AK3-L — `ackInterruptAudit` prepends to `eoiPending`. -/
 def test_t06_ack_audit_push : IO Unit := do
@@ -154,7 +204,7 @@ def test_t11_eoi_before_handler : IO Unit := do
     have left the ack record visible to the handler. -/
 def test_t12_eoi_filters_only_target_intid : IO Unit := do
   -- Build a state with a sentinel ack already pending. The sentinel
-  -- is INTID 99 (a valid Fin 224 value not equal to the dispatched
+  -- is INTID 99 (a valid Fin 320 value not equal to the dispatched
   -- INTID 30). A correct EOI ordering filters only INTID 30 and
   -- leaves the sentinel.
   let st0 : SeLe4n.Model.SystemState := default
@@ -192,6 +242,7 @@ def runAllTests : IO Unit := do
   test_t03_ack_handled
   test_t04_ack_boundary_spurious
   test_t05_ack_boundary_handled
+  test_t05b_high_spis_dispatch
   test_t06_ack_audit_push
   test_t07_eoi_drains
   test_t08_round_trip_empty

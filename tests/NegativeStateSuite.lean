@@ -2255,19 +2255,22 @@ def runWSH15PlatformChecks : IO Unit := do
   else
     throw <| IO.userError "H15 IRQ INTID 0 should be supported (SGI range)"
 
-  -- H15-PLAT-04: RPi5 interrupt contract — INTID 223 is supported (last SPI)
-  let irq223 : SeLe4n.Irq := ⟨223⟩
-  if @decide _ (contract.irqLineSupportedDecidable irq223) then
-    IO.println "positive check passed [H15 IRQ INTID 223 supported]"
-  else
-    throw <| IO.userError "H15 IRQ INTID 223 should be supported (last SPI)"
+  -- H15-PLAT-04: RPi5 interrupt contract — INTID 308 (UARTA, GIC_SPI 276,
+  -- the highest SPI `bcm2712.dtsi` wires) and INTID 319 (the last of the
+  -- BCM2712's 288 SPIs) are supported
+  for intid in [308, 319] do
+    let irq : SeLe4n.Irq := ⟨intid⟩
+    if @decide _ (contract.irqLineSupportedDecidable irq) then
+      IO.println s!"positive check passed [H15 IRQ INTID {intid} supported]"
+    else
+      throw <| IO.userError s!"H15 IRQ INTID {intid} should be supported (BCM2712 SPI)"
 
-  -- H15-PLAT-05: RPi5 interrupt contract — INTID 224 is NOT supported
-  let irq224 : SeLe4n.Irq := ⟨224⟩
-  if @decide _ (contract.irqLineSupportedDecidable irq224) then
-    throw <| IO.userError "H15 IRQ INTID 224 should NOT be supported"
+  -- H15-PLAT-05: RPi5 interrupt contract — INTID 320 is NOT supported
+  let irq320 : SeLe4n.Irq := ⟨320⟩
+  if @decide _ (contract.irqLineSupportedDecidable irq320) then
+    throw <| IO.userError "H15 IRQ INTID 320 should NOT be supported"
   else
-    IO.println "negative check passed [H15 IRQ INTID 224 not supported]"
+    IO.println "negative check passed [H15 IRQ INTID 320 not supported]"
 
   -- H15-PLAT-06: RPi5 boot contract — objectTypeMetadata verified by theorem
   -- `rpi5BootContract_objectType_holds` is a proof that the predicate holds.

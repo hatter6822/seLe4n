@@ -105,12 +105,17 @@ pub const TIMER_PPI_ID: u32 = 30;
 /// Matches Lean `spuriousInterruptId`.
 pub const SPURIOUS_THRESHOLD: u32 = 1020;
 
-/// Number of SPI lines on BCM2712 (INTIDs 32-223).
-/// Matches Lean `gicSpiCount`.
-pub const SPI_COUNT: u32 = 192;
+/// The interrupt lines this board's distributor implements and the kernel
+/// programs: INTIDs `[0, MAX_INTID)` — 320 on the BCM2712 (288 SPIs, up to
+/// UARTA at `GIC_SPI 276` in `bcm2712.dtsi`), 288 on QEMU `virt`.  The
+/// board's `gic_intid_count`, which the Lean binding states too
+/// (`gicIntIds` in the shared boot-map fixture).  [`init_gic`] refuses a
+/// distributor whose `GICD_TYPER.ITLinesNumber` reports fewer.
+pub const MAX_INTID: u32 = crate::board::BOARD.gic_intid_count;
 
-/// Total supported INTIDs (SGIs + PPIs + SPIs = 224).
-pub const MAX_INTID: u32 = 224;
+/// Number of SPI lines this board wires (INTIDs `32..MAX_INTID`).
+/// Matches Lean `gicSpiCount` (RPi5) / `qemuVirtGicSpiCount` (`virt`).
+pub const SPI_COUNT: u32 = MAX_INTID - 32;
 
 // ============================================================================
 // GIC-400 Distributor Register Offsets
@@ -205,8 +210,8 @@ pub fn init_distributor(base: usize) {
     // ARM GIC-400 TRM §4.3.1: GICD_CTLR.Enable = 0
     mmio_write32(base + gicd::CTLR, 0);
 
-    // Number of 32-interrupt register banks needed.
-    // MAX_INTID = 224, so we need ceil(224/32) = 7 banks.
+    // Number of 32-interrupt register banks needed: MAX_INTID is whole
+    // banks on every board (`board::well_formed`), 10 on the BCM2712.
     let num_banks = MAX_INTID.div_ceil(32) as usize;
 
     // Step 2: Configure interrupt groups — all Group 0 (IRQ delivery)
@@ -361,6 +366,7 @@ pub const fn is_spurious(intid: u32) -> bool {
 /// and PPIs (registers 0-7) are banked / read-only and cannot serve as
 /// a self-check target.
 pub fn init_gic() {
+    check_interrupt_lines(GICD_BASE);
     init_distributor(GICD_BASE);
     self_check_distributor(GICD_BASE);
     init_cpu_interface(GICC_BASE);
@@ -488,6 +494,51 @@ pub fn init_cpu_interface_secondary(core_id: u64) {
     );
 }
 
+/// The interrupt lines a distributor implements, from its `GICD_TYPER`:
+/// `32 × (ITLinesNumber + 1)`, `ITLinesNumber` being bits \[4:0\] (GICv2
+/// architecture specification, IHI0048B §4.3.2).  The count includes the
+/// 32 private INTIDs, and the architecture caps it at 1020 usable ones.
+pub const fn implemented_interrupt_lines(typer: u32) -> u32 {
+    32 * ((typer & 0x1F) + 1)
+}
+
+/// Whether a distributor reporting `typer` implements every line the
+/// kernel serves on this board ([`MAX_INTID`]).  More lines are fine — the
+/// kernel leaves the excess at their reset state (disabled), and an INTID
+/// beyond [`MAX_SUPPORTED_INTID`] is EOI'd without dispatch — but fewer
+/// would mean SPIs the interrupt contract names can never fire.
+pub const fn interrupt_lines_cover_board(typer: u32) -> bool {
+    implemented_interrupt_lines(typer) >= MAX_INTID
+}
+
+/// Refuse a distributor that implements fewer interrupt lines than the board
+/// map says the kernel serves, before any of them is programmed.
+///
+/// On the target this halts the boot (`cpu::fatal_halt`) with a diagnostic
+/// naming both counts: the board's interrupt contract, the Lean IRQ table and
+/// the distributor loops are all sized by [`MAX_INTID`], so a smaller
+/// distributor would leave contract-supported SPIs silently unreachable — the
+/// failure the former 192-SPI cap had against the BCM2712's real wiring.  On
+/// host builds the register read is stubbed to 0 (see
+/// [`read_distributor_register`]), so the halt is configured out there and
+/// the relation is tested through [`interrupt_lines_cover_board`].
+fn check_interrupt_lines(base: usize) {
+    let typer = read_distributor_register(base, gicd::TYPER);
+    if !interrupt_lines_cover_board(typer) {
+        #[cfg(all(target_arch = "aarch64", not(test)))]
+        {
+            crate::kprintln!(
+                "[gic] FATAL: the distributor implements {} interrupt lines (GICD_TYPER {:#x}); {} needs {}",
+                implemented_interrupt_lines(typer),
+                typer,
+                crate::board::BOARD.name,
+                MAX_INTID
+            );
+            crate::cpu::fatal_halt();
+        }
+    }
+}
+
 /// AN8-D (RUST-M05): boot-time GICD_ITARGETSR readback self-check.
 ///
 /// `init_distributor` writes `0x0101_0101` to all SPI ITARGETSR registers
@@ -582,18 +633,19 @@ fn read_distributor_register(base: usize, offset: usize) -> u32 {
     }
 }
 
-/// BCM2712 (RPi5) supported INTID count. INTIDs in `[MAX_SUPPORTED, 1020)`
-/// are within the GIC-400 architecture but unsupported on this hardware;
-/// they can surface due to errata or SMP races and must still receive EOI
-/// to prevent GIC lockup.
+/// The model's supported INTID count — the BCM2712's 320 lines. INTIDs in
+/// `[MAX_SUPPORTED_INTID, 1020)` are within the GIC-400 architecture but
+/// unsupported; they can surface due to errata or SMP races and must still
+/// receive EOI to prevent GIC lockup.  Every board's [`MAX_INTID`] is at
+/// most this (`board::well_formed`).
 ///
-/// AK3-C.4: Aligns with Lean `InterruptDispatch.lean` `InterruptId := Fin 224`.
-pub const MAX_SUPPORTED_INTID: u32 = 224;
+/// AK3-C.4: Aligns with Lean `InterruptDispatch.lean` `InterruptId := Fin 320`.
+pub const MAX_SUPPORTED_INTID: u32 = 320;
 
 /// AK3-C.4 (A-H02 / HIGH): GIC acknowledge result — three-way distinction
 /// matching the Lean model's `AckError` inductive:
-/// - `Handled(intid)`:    valid INTID ∈ [0, 224) — dispatch + EOI
-/// - `OutOfRange(intid)`: INTID ∈ [224, 1020) — **EOI required**, no dispatch
+/// - `Handled(intid)`:    valid INTID ∈ [0, 320) — dispatch + EOI
+/// - `OutOfRange(intid)`: INTID ∈ [320, 1020) — **EOI required**, no dispatch
 /// - `Spurious`:          INTID ≥ 1020 — no EOI per GIC-400 spec
 ///
 /// This replaces the earlier `is_spurious` binary check which conflated
@@ -602,7 +654,7 @@ pub const MAX_SUPPORTED_INTID: u32 = 224;
 pub enum AckResult {
     /// INTID is within supported range; dispatch the handler and EOI.
     Handled(u32),
-    /// INTID ∈ [224, 1020) — unsupported on BCM2712 but legal on GIC-400.
+    /// INTID ∈ [320, 1020) — unsupported on BCM2712 but legal on GIC-400.
     /// The caller MUST emit EOI with this raw value to complete the
     /// interrupt cycle.
     OutOfRange(u32),
@@ -1195,7 +1247,7 @@ pub const fn iar_source_cpu(iar: u32) -> u8 {
 ///
 /// - Handled INTIDs: EOI + dispatch (normal path)
 /// - OutOfRange INTIDs: EOI (prevents GIC lockup on errata / SMP races
-///   delivering INTID ∈ [224, 1020)); no handler dispatch because the
+///   delivering INTID ∈ [320, 1020)); no handler dispatch because the
 ///   INTID is unsupported on this platform.
 /// - Spurious INTIDs (≥ 1020): no EOI per GIC-400 spec.
 ///
@@ -1363,17 +1415,57 @@ mod tests {
     }
 
     #[test]
-    fn spi_count_matches_lean() {
-        // InterruptDispatch.lean: gicSpiCount = 192 (INTIDs 32-223)
-        assert_eq!(SPI_COUNT, 192);
-        assert_eq!(MAX_INTID, 224); // SGI(16) + PPI(16) + SPI(192)
+    fn the_board_interrupt_lines_are_the_lean_ones() {
+        // Read from the fixture the Lean suite writes (`gicIntIds`, the
+        // binding's `gicSpiCount + 32`), so the lines the HAL programs and
+        // requires of GICD_TYPER are the ones the interrupt contract names.
+        assert_eq!(
+            u64::from(MAX_INTID),
+            crate::mmu::lean_boot_map_scalar("gicIntIds")
+        );
+        assert_eq!(SPI_COUNT, MAX_INTID - 32);
+    }
+
+    #[test]
+    fn the_bcm2712_serves_every_spi_its_device_tree_wires() {
+        // `bcm2712.dtsi`: GIC_SPI 209 (PCIe0 INTA) .. 276 (UARTA) — INTIDs
+        // 241..=308.  The former 192-SPI cap made all of them OutOfRange.
+        assert_eq!(crate::board::RPI5.gic_intid_count, 320);
+        assert_eq!(MAX_SUPPORTED_INTID, 320);
+        for spi in 209..=276u32 {
+            assert!(spi + 32 < crate::board::RPI5.gic_intid_count, "SPI {spi}");
+            assert_eq!(
+                classify_iar(spi + 32),
+                AckResult::Handled(spi + 32),
+                "SPI {spi}"
+            );
+        }
+    }
+
+    #[test]
+    fn gicd_typer_interrupt_line_check() {
+        // ITLinesNumber = 9 is the BCM2712's 320 lines; 6 is the 224 the old
+        // cap assumed; 8 is QEMU virt's 288; 31 is the architectural 1024.
+        assert_eq!(implemented_interrupt_lines(9), 320);
+        assert_eq!(implemented_interrupt_lines(6), 224);
+        assert_eq!(implemented_interrupt_lines(8), 288);
+        assert_eq!(implemented_interrupt_lines(0xFFFF_FFFF), 1024);
+        // Only bits [4:0] are ITLinesNumber: CPUNumber (bits [7:5]) and
+        // SecurityExtn (bit 10) do not change the count.
+        assert_eq!(implemented_interrupt_lines((3 << 5) | (1 << 10) | 9), 320);
+        // The board's own count is covered, one bank fewer is refused,
+        // more is admitted.
+        let banks = MAX_INTID / 32;
+        assert!(interrupt_lines_cover_board(banks - 1));
+        assert!(!interrupt_lines_cover_board(banks - 2));
+        assert!(interrupt_lines_cover_board(31));
     }
 
     #[test]
     fn spurious_detection() {
         assert!(!is_spurious(0));
         assert!(!is_spurious(30)); // timer PPI
-        assert!(!is_spurious(223)); // last valid SPI
+        assert!(!is_spurious(319)); // last valid SPI
         assert!(!is_spurious(1019)); // just below threshold
         assert!(is_spurious(1020)); // spurious threshold
         assert!(is_spurious(1023)); // standard spurious ID
@@ -1401,14 +1493,15 @@ mod tests {
 
     #[test]
     fn num_register_banks() {
-        // 224 INTIDs / 32 per bank = 7 banks (ceil-divide)
-        assert_eq!(MAX_INTID.div_ceil(32), 7);
+        // 320 INTIDs / 32 per bank = 10 banks on the BCM2712.
+        assert_eq!(crate::board::RPI5.gic_intid_count.div_ceil(32), 10);
+        assert_eq!(MAX_INTID.div_ceil(32) * 32, MAX_INTID);
     }
 
     #[test]
     fn num_priority_regs() {
-        // 224 INTIDs / 4 per register = 56 registers (ceil-divide)
-        assert_eq!(MAX_INTID.div_ceil(4), 56);
+        // 320 INTIDs / 4 per register = 80 registers on the BCM2712.
+        assert_eq!(crate::board::RPI5.gic_intid_count.div_ceil(4), 80);
     }
 
     #[test]
@@ -1426,18 +1519,11 @@ mod tests {
         // INTID 30 (timer PPI) → Handled
         // INTID 500 (unsupported on BCM2712) → OutOfRange
         // INTID 1020/1023 (special) → Spurious
-        let classify = |raw: u32| -> AckResult {
-            if raw >= SPURIOUS_THRESHOLD {
-                AckResult::Spurious
-            } else if raw >= MAX_SUPPORTED_INTID {
-                AckResult::OutOfRange(raw)
-            } else {
-                AckResult::Handled(raw)
-            }
-        };
+        let classify = classify_iar;
         assert_eq!(classify(30), AckResult::Handled(30));
-        assert_eq!(classify(223), AckResult::Handled(223));
-        assert_eq!(classify(224), AckResult::OutOfRange(224));
+        assert_eq!(classify(308), AckResult::Handled(308)); // UARTA, GIC_SPI 276
+        assert_eq!(classify(319), AckResult::Handled(319));
+        assert_eq!(classify(320), AckResult::OutOfRange(320));
         assert_eq!(classify(500), AckResult::OutOfRange(500));
         assert_eq!(classify(1019), AckResult::OutOfRange(1019));
         assert_eq!(classify(1020), AckResult::Spurious);
@@ -2438,7 +2524,9 @@ mod tests {
     fn classify_iar_ignores_source_cpu_bits() {
         assert_eq!(classify_iar(1), AckResult::Handled(1));
         assert_eq!(classify_iar(1 | (3 << 10)), AckResult::Handled(1));
-        assert_eq!(classify_iar(300), AckResult::OutOfRange(300));
+        assert_eq!(classify_iar(300), AckResult::Handled(300));
+        assert_eq!(classify_iar(500), AckResult::OutOfRange(500));
+        assert_eq!(classify_iar(500 | (3 << 10)), AckResult::OutOfRange(500));
         assert_eq!(classify_iar(1023), AckResult::Spurious);
     }
 
@@ -2479,9 +2567,9 @@ mod tests {
         let mut eoi_value = None;
         let mut handler_fired = false;
         let handled =
-            dispatch_irq_with_iar_inner(300, |v| eoi_value = Some(v), |_, _| handler_fired = true);
+            dispatch_irq_with_iar_inner(500, |v| eoi_value = Some(v), |_, _| handler_fired = true);
         assert!(handled);
-        assert_eq!(eoi_value, Some(300));
+        assert_eq!(eoi_value, Some(500));
         assert!(!handler_fired);
     }
 }

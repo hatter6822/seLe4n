@@ -321,14 +321,25 @@ def rpi5MachineConfig : SeLe4n.MachineConfig :=
 
 /-- Number of shared peripheral interrupts (SPIs) on BCM2712 GIC-400.
 
-    U8-B/U-L19: The GIC-400 specification supports up to 480 SPIs
-    (INTIDs 32–511), but the BCM2712 SoC only wires 192 SPIs
-    (INTIDs 32–223). If future BCM2712 errata or board revisions expose
-    additional SPIs, this constant and the interrupt contract's
-    `irqLineSupported` predicate must be updated together. The current
-    cap of 192 matches publicly available BCM2712 documentation and
-    Raspberry Pi Ltd kernel device trees. -/
-def gicSpiCount : Nat := 192
+    The GIC-400 architecture supports up to 480 SPIs (INTIDs 32–511); the
+    BCM2712's distributor is configured with 288 (INTIDs 32–319,
+    `GICD_TYPER.ITLinesNumber = 9`).  Linux's `bcm2712.dtsi` wires devices to
+    SPIs up to 276 — PCIe0/1/2 INTx and MSI (`GIC_SPI 209`–`234`), the
+    brcmstb level-2 controllers behind every SoC GPIO interrupt (`238`–`247`),
+    V3D (`249`/`250`), MIP1 (`247`–`262`), both SD hosts (`273`/`274`) and
+    UARTA, the Bluetooth UART (`276`, INTID 308) — and the `rpi5_machine`
+    QEMU model gives its GIC-400 `num-irq = 320` from the same tree.  The
+    highest wired SPI rounded up to whole 32-line banks is 288.
+
+    The HAL refuses a distributor that implements fewer lines: `init_gic`
+    reads `GICD_TYPER.ITLinesNumber` before programming anything and halts
+    the boot with a diagnostic when `32 × (ITLinesNumber + 1)` is below
+    `gicSpiCount + 32`.  The interrupt contract's `irqLineSupported`, the
+    deployment's IRQ table (`rpi5IrqTable`), the model's `InterruptId`
+    bound and the HAL's `RPI5.gic_intid_count` all follow this constant
+    (`tests/fixtures/boot_map.expected`'s `gicIntIds` line holds the HAL to
+    it). -/
+def gicSpiCount : Nat := 288
 
 /-- ARM Generic Timer PPI (Private Peripheral Interrupt) ID.
     Non-secure physical timer: INTID 30. -/
@@ -457,7 +468,8 @@ tracks validation status.
 | `rpi5MemoryMapForConfig` RAM | `[0, ramSize)` | `bcm2712.dtsi` `axi` `ranges <0x00 0 0x00 0 0x10 0>` — DRAM contiguous from 0 | Cross-checked |
 | `timerFrequencyHz` | 54 MHz | RPi5 crystal; CNTFRQ_EL0 | Carried over |
 | `rpi5MachineConfig.physicalAddressWidth` | 40-bit | Cortex-A76 TRM r4p1 §B2.58: `ID_AA64MMFR0_EL1.PARange = 0b0010` (the `44` carried over from AJ3-B was corrected by the v0.36.2 audit; the HAL derives `TCR_EL1.IPS` from the register, BP8.1 reads it back) | Cross-checked |
-| `gicSpiCount`, `timerPpiId`, `virtualTimerPpiId` | 192, 30, 27 | ARM GIC architecture; RPi kernel DTS | Carried over |
+| `gicSpiCount` | 288 | `bcm2712.dtsi`: highest wired SPI is `GIC_SPI 276` (UARTA), rounded up to whole 32-line banks; `rpi5_machine` model `num-irq = 320`; checked at boot against `GICD_TYPER.ITLinesNumber` | Cross-checked |
+| `timerPpiId`, `virtualTimerPpiId` | 30, 27 | ARM GIC architecture; RPi kernel DTS | Carried over |
 
 **The BCM2712 address-map correction (v0.36.2).**  Until that version this
 table marked `peripheralBaseLow` (`0xFE00_0000`), a UART at `0xFE20_1000`, a

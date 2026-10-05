@@ -178,7 +178,7 @@ theorem bindPlatformConfig_qemuVirtPlatformConfigFor (board : SeLe4n.MachineConf
 -- ============================================================================
 
 -- `virt`'s GICv2 carries 256 SPIs, so the IRQ table the duplicate and handler
--- checks walk is longer than the RPi5's 192 and the default recursion budget
+-- checks walk is long enough that the default recursion budget
 -- runs out before `decide` finishes; the budget is raised for those two only.
 set_option maxRecDepth 8192 in
 theorem qemuVirtBoundPlatformConfig_wellFormed :

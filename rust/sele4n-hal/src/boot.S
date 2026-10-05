@@ -1,8 +1,10 @@
 // seLe4n ARM64 Boot Assembly
 //
-// Entry point for the kernel, placed at 0x80000 (standard RPi5 kernel load
-// address). U-Boot or the RPi firmware loads the kernel image here and jumps
-// to _start with:
+// Entry point for the kernel, linked at 0x80000 above the base of RAM
+// (`link.ld`; the `config.txt` the image build writes pins the firmware's
+// `kernel_address` to it).  The image is not position-independent, so
+// `_start` first checks it runs where it was linked and halts if not
+// (Step 0.75).  The loader jumps to _start with:
 //   x0 = DTB pointer (physical address of device tree blob)
 //   x1-x3 = reserved (zero)
 //
@@ -88,6 +90,33 @@ _start:
     msr     cpacr_el1, xzr
     isb
     mov     x20, x9                 // x20 = the level the firmware entered at
+
+    // =====================================================================
+    // Step 0.75: the image must run at its link address.
+    //
+    // The image is linked for one address (`link.ld`'s ORIGIN) and is not
+    // position-independent: the boot map (`mmu::IMAGE_ORIGIN`), the
+    // exception vectors' and every function pointer's absolute addresses,
+    // and the BSS/stack symbols all assume it.  A loader that places it
+    // elsewhere — the firmware's default 64-bit `kernel_address` (0x200000)
+    // plus the header's `text_offset`, say — would otherwise run on until
+    // the first absolute address and fail silently or corrupt memory.  So
+    // compare where `_start` actually is (`adr`, PC-relative) with where it
+    // was linked (built in x11 from the `movz`/`movk` absolute relocations of
+    // `_start`, which the static link resolves — no data word in the text,
+    // which `check_fp_simd_free_objects.py` refuses) and halt this PE
+    // deterministically on any
+    // difference, before BSS is zeroed or a byte of RAM is written.  The
+    // UART is not initialised yet, so the halt is silent: a `wfe` loop at
+    // `.L_load_address_mismatch`.
+    // =====================================================================
+    adr     x10, _start             // x10 = where the image runs
+    movz    x11, #:abs_g3:_start    // x11 = where it was linked
+    movk    x11, #:abs_g2_nc:_start
+    movk    x11, #:abs_g1_nc:_start
+    movk    x11, #:abs_g0_nc:_start
+    cmp     x10, x11
+    b.ne    .L_load_address_mismatch
 
     // =====================================================================
     // Step 1: Core ID check — only cluster-0 core-0 proceeds
@@ -233,6 +262,12 @@ _start:
 .L_secondary_spin:
     wfe
     b       .L_secondary_spin
+
+// Step 0.75's halt: the image was loaded somewhere other than its link
+// address.  Nothing has been written; the PE parks with interrupts masked.
+.L_load_address_mismatch:
+    wfe
+    b       .L_load_address_mismatch
 
 // =========================================================================
 // AN9-J (DEF-R-HAL-L20): Secondary-core entry point

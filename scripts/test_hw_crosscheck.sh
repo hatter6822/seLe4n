@@ -171,7 +171,7 @@ log_section "META" "Constants requiring a bare-metal seLe4n boot (no kernel imag
 log_section "META" "  - socPeripheralBase (0x10_7C00_0000) — verifiable via /proc/iomem"
 log_section "META" "  - peripheralBaseHigh (0x1000000000) — requires 64-bit MMIO probe"
 log_section "META" "  - gicCpuInterfaceBase (0x10_7FFF_A000) — requires devmem read"
-log_section "META" "  - gicSpiCount (192) — requires GIC GICD_TYPER read"
+log_section "META" "  - gicSpiCount (288) — the kernel halts at boot if GICD_TYPER.ITLinesNumber reports fewer lines"
 log_section "META" "  - timerPpiId (30) / virtualTimerPpiId (27) — requires IRQ test"
 log_section "META" "  - maxASID (65536) — requires ID_AA64MMFR0_EL1 read"
 record_skip "META" "7 Board.lean constants listed above — no bootable kernel image exists to read them from"

@@ -46,6 +46,13 @@ pub struct BoardMap {
     pub gicd_base: usize,
     /// The GICv2 CPU interface.
     pub gicc_base: usize,
+    /// The interrupt lines the board's distributor implements and the kernel
+    /// serves: INTIDs `[0, gic_intid_count)`, the 32 private ones and every
+    /// SPI the board wires, in whole 32-line banks.  `gic::init_gic` refuses
+    /// a distributor whose `GICD_TYPER.ITLinesNumber` reports fewer, and
+    /// programs exactly these.  The Lean binding states the same count
+    /// (`tests/fixtures/boot_map.expected`'s `gicIntIds` line).
+    pub gic_intid_count: u32,
 }
 
 /// The Raspberry Pi 5 (BCM2712): DRAM contiguous from 0, UART10 and the
@@ -54,6 +61,9 @@ pub struct BoardMap {
 /// `tests/fixtures/boot_map.expected`).  UART10's clock is `bcm2712.dtsi`'s
 /// fixed `clk_uart`, 9.216 MHz — exactly `16 × 115200 × 5`, so the
 /// 115200-baud divisor is `IBRD = 5, FBRD = 0` with no rounding error.
+/// The GIC-400 carries 288 SPIs (320 INTIDs): `bcm2712.dtsi` wires devices
+/// up to `GIC_SPI 276` (UARTA), rounded up to whole banks (Board.lean
+/// `gicSpiCount`).
 pub const RPI5: BoardMap = BoardMap {
     name: "Raspberry Pi 5 (BCM2712)",
     ram_base: 0x0,
@@ -64,6 +74,7 @@ pub const RPI5: BoardMap = BoardMap {
     uart_clock_hz: 9_216_000,
     gicd_base: 0x10_7FFF_9000,
     gicc_base: 0x10_7FFF_A000,
+    gic_intid_count: 320,
 };
 
 /// QEMU's `virt` machine (`hw/arm/virt.c`, `base_memmap`): RAM from
@@ -72,7 +83,8 @@ pub const RPI5: BoardMap = BoardMap {
 /// `0x0900_0000` on a 24 MHz `apb-pclk`.  The device window is the 32 MiB
 /// `[0x0800_0000, 0x0A00_0000)` holding both, whole 2 MiB blocks in the
 /// gigabyte below RAM.  The reserved extent is the same 256 MiB the RPi5
-/// reserves, at the base of `virt`'s RAM.
+/// reserves, at the base of `virt`'s RAM.  QEMU's `NUM_IRQS` is 256, so the
+/// GICv2 carries 288 INTIDs (`num-irq = NUM_IRQS + 32`).
 pub const QEMU_VIRT: BoardMap = BoardMap {
     name: "QEMU virt (GICv2, PL011)",
     ram_base: 0x4000_0000,
@@ -83,6 +95,7 @@ pub const QEMU_VIRT: BoardMap = BoardMap {
     uart_clock_hz: 24_000_000,
     gicd_base: 0x0800_0000,
     gicc_base: 0x0801_0000,
+    gic_intid_count: 288,
 };
 
 /// The board this image is built for.
@@ -121,6 +134,9 @@ const fn well_formed(b: &BoardMap) -> bool {
         && (b.gicc_base as u64) >= b.device_window_base
         && (b.gicc_base as u64) < b.device_window_top
         && b.uart_clock_hz > 0
+        && b.gic_intid_count > 32
+        && b.gic_intid_count.is_multiple_of(32)
+        && b.gic_intid_count <= crate::gic::MAX_SUPPORTED_INTID
 }
 
 const _: () = assert!(well_formed(&RPI5));
@@ -157,5 +173,21 @@ mod tests {
             ..QEMU_VIRT
         };
         assert!(!well_formed(&bad));
+    }
+
+    #[test]
+    fn an_interrupt_line_count_outside_whole_banks_or_the_model_is_refused() {
+        // A partial bank, the private lines alone, and more lines than the
+        // model's `InterruptId` admits (`gic::MAX_SUPPORTED_INTID`) are each
+        // refused; every board's own count is admitted.
+        for count in [0, 32, 300, crate::gic::MAX_SUPPORTED_INTID + 32] {
+            let bad = BoardMap {
+                gic_intid_count: count,
+                ..RPI5
+            };
+            assert!(!well_formed(&bad), "{count} interrupt lines admitted");
+        }
+        assert!(well_formed(&RPI5));
+        assert!(well_formed(&QEMU_VIRT));
     }
 }
