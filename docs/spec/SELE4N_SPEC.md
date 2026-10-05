@@ -5050,8 +5050,15 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   reading the staged object only after the kernel heap reports a live
   allocation of exactly the constructor's 288 bytes and its header names tag
   `0` with no object fields, halting every PE on anything else — a size drift
-  is refused, a same-size permutation is not, which an executed
-  cross-language test owes (`docs/REGISTERED_DEBT.md`); the syscall seam
+  is refused; a same-size permutation applied consistently on one side, which
+  every proof survives, is what the executed cross-language layout test
+  catches (`rust/sele4n-lean-boundary`, run by Tier 1 through
+  `scripts/test_lean_boundary_layout.sh`: an object built at the HAL's offsets
+  with a distinct value in every word is read by the compiled Lean's
+  `TrapContext.word`, and one the compiled Lean built is read back at those
+  offsets, in a process linking the compiled host archive and the toolchain's
+  runtime; swapping two fields together with `word` and `ofWords` fails it);
+  the syscall seam
   reads its arguments from that context, once, the HAL passes it only the
   validated syscall id, and an entry handed no context answers `.faulted`
   with nothing committed (`syscallEntryContextOrFaulted`), on which the trap
@@ -5152,7 +5159,20 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
 - **Per-thread FP/SIMD state, switched lazily** (`v0.36.22`, WS-BP BP7.9).
   `TCB.fpContext` (`v0`–`v31`, `FPCR`, `FPSR`) is erased by
   `projectKernelObject`, and `MachineState.fpOwner` records whose values each
-  core's registers hold.  EC `0x07` from EL0 is `fpAccessOnCore` (entry
+  core's registers hold.  The context crosses the Lean boundary **whole, in
+  one FFI call each way** (the FFI slice after PR #912): `FpContext` is a
+  structure of 66 `UInt64` fields — the 64 vector doublewords, `FPCR`,
+  `FPSR` — handed over by `ffiFpCapture` and staged by `ffiFpStageContext`
+  before `ffiFpLoadCommit`, so a capture is one extern call where it was 67
+  and a load two where it was 67; the encode/decode round trip is proved
+  (`FpContext.ofWords_word`, `FpContext.word_ofWords`,
+  `FpContext.ofWords_congr`; `FpContext.default_word` for the fresh thread's
+  all-zero context), the layout is pinned as `TrapContext`'s is (the
+  positional `ofWords` against the by-name `word`; `const` assertions on the
+  HAL's `FP_CONTEXT_SCALAR_BYTES` of 528 and the exact-size refusal of
+  `fp_context_of_lean` at the constructor's 536 bytes, halting every PE on
+  anything else — one owner for both contexts' shape, `scalar_words_of_lean`),
+  and the same cross-language layout test executes it for all 66 words.  EC `0x07` from EL0 is `fpAccessOnCore` (entry
   `lean_handle_fp_access`): the registers' live values are saved into the
   recorded owner and the trapping thread's **own** context is loaded
   (`fpAccessOnCore_load_eq_own_context`); a thread whose live values are on

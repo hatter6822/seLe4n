@@ -32,6 +32,17 @@ run_check "BUILD" lake build SeLe4n:static
 run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py" --self-test
 run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py"
 
+# The boundary layout test: the compiled Lean's `TrapContext` and `FpContext`
+# place field `i` at scalar offset `8 · i`, where the HAL reads and writes it.
+# The proofs pin that declared position `i` is layout word `i` and the HAL
+# refuses an object of any other size; neither reaches a same-size permutation
+# applied consistently on one side, or a compiler that lays scalar fields out
+# other than in declaration order.  `rust/sele4n-lean-boundary` links the host
+# archive built just above (and the test-only probes' library) with the
+# toolchain's runtime and executes the layout in both directions.  It needs
+# `cargo` as well as `lake`, and fails rather than skips without either.
+run_check "BUILD" "${SCRIPT_DIR}/test_lean_boundary_layout.sh"
+
 # AN7-D.7 (PLT-M07): force the seven staged platform-binding modules into
 # the build graph.  Without this, regressions in modules not reached from
 # `Main.lean` (e.g., the RPi5 boot VSpaceRoot AN7-D.2) would go undetected

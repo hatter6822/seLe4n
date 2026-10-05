@@ -128,8 +128,16 @@ echo "[1/8] Building all crates (host target)..."
 run_cargo_step "Build succeeded" cargo build --all --features host_tools
 echo ""
 
+# `sele4n-lean-boundary` is excluded here and run by
+# `scripts/test_lean_boundary_layout.sh` (from `test_tier1_build.sh`): it
+# links the compiled host Lean archives and the Lean toolchain's runtime, which
+# this lane — the Rust-only one, in CI a job with no Lean toolchain — does not
+# have.  The exclusion is not a skip: built without the archives the crate's
+# one test fails naming what is missing, so a `cargo test --all` without this
+# flag is loud, and the layout test itself runs wherever the archives are
+# built.  The crate stays in the build, format and lint steps below.
 echo "[2/8] Running unit tests..."
-run_cargo_step "Unit tests passed" cargo test --all --features std,host_tools
+run_cargo_step "Unit tests passed" cargo test --all --exclude sele4n-lean-boundary --features std,host_tools
 echo ""
 
 echo "[3/8] Running conformance tests (RUST-XVAL-001..014)..."

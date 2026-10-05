@@ -102,10 +102,16 @@ exactly the 35-word constructor's (`TRAP_CONTEXT_OBJECT_BYTES`), and
 `const` assertions hold `TRAP_FRAME_CONTEXT_WORDS` to 35 and
 `TRAP_CONTEXT_SCALAR_BYTES` to eight times it, so a field added on either side
 alone is refused at run time rather than read past.  Neither pin reaches a
-same-size permutation that is applied consistently on one side — that the
-compiler places the fields in declaration order at `8 · i` is checked today by
-reading the generated C, and an executed cross-language test of it is
-registered debt (`docs/REGISTERED_DEBT.md`, the `TrapContext` layout row). -/
+same-size permutation that is applied consistently on one side — the
+structure, `word` and `ofWords` reordered together, which every proof
+survives — or a compiler that lays scalar fields out other than in declaration
+order; that the compiled Lean places field `i` at `8 · i` is **executed** by
+`rust/sele4n-lean-boundary` (`scripts/test_lean_boundary_layout.sh`, run by
+Tier 1): an object built at the HAL's offsets with a distinct value in every
+word is read by this module's `word` through the test-only exports of
+`SeLe4n/Testing/BoundaryProbes.lean`, and one `ofWords` built is read back at
+the HAL's offsets, in a process that links the compiled host archive and the
+toolchain's runtime. -/
 structure TrapContext where
   /-- `x0`. -/
   x0 : UInt64

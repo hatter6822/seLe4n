@@ -1899,7 +1899,15 @@ private def runTraceFixtureCheck : IO Unit := do
 /-- A context no fresh thread holds: every doubleword `0xA5`, a non-zero `FPCR`
 (round towards zero) and `FPSR` (an inexact flag). -/
 private def ctxA : SeLe4n.FpContext :=
-  { q := _root_.Vector.replicate 64 0xA5, fpcr := 0xC00000, fpsr := 0x10 }
+  SeLe4n.FpContext.ofWords fun i => if i < 64 then 0xA5 else if i = 64 then 0xC00000 else 0x10
+
+/-- Word `i` of the distinct-valued context: a different value in every one of
+the sixty-six words, so a word read from the wrong position fails. -/
+private def distinctFpWord (i : Nat) : UInt64 :=
+  0x4000_0000_0000_0000 + i.toUInt64 * 0x0101
+
+/-- A context with a distinct value in every word. -/
+private def ctxDistinct : SeLe4n.FpContext := SeLe4n.FpContext.ofWords distinctFpWord
 
 private def fpCtxOf (st : SystemState) (t : SeLe4n.ThreadId) : Option SeLe4n.FpContext :=
   (st.getTcb? t).map (·.fpContext)
@@ -1981,6 +1989,27 @@ private def runLazyFpChecks : IO Unit := do
     (match lifecyclePreRetypeCleanup stFault faulter.toObjId (.tcb tcbF) (.tcb tcbF) with
      | .ok _ => true
      | _ => false)
+  -- 8. The wire layout, with a distinct value in every one of the 66 words:
+  --    `word i` reads back what `ofWords` put at position `i`, nothing past
+  --    the layout, the encode/decode trip is the identity, and the context a
+  --    release writes into the TCB is read back word for word.
+  assertBool "every one of the 66 words reads back from its own position"
+    ((List.range SeLe4n.fpContextWordCount).all fun i => ctxDistinct.word i == distinctFpWord i)
+  assertBool "the 66 words are pairwise distinct"
+    ((List.range SeLe4n.fpContextWordCount).all fun i =>
+      (List.range SeLe4n.fpContextWordCount).all fun j => (i == j) == (ctxDistinct.word i == ctxDistinct.word j))
+  assertBool "nothing is read past the layout" (ctxDistinct.word SeLe4n.fpContextWordCount == 0)
+  assertBool "encode then decode is the identity on the distinct context"
+    (SeLe4n.FpContext.ofWords ctxDistinct.word == ctxDistinct)
+  assertBool "the default context is all zeroes"
+    ((List.range SeLe4n.fpContextWordCount).all fun i => (default : SeLe4n.FpContext).word i == 0)
+  let stRel := fpReleaseOnCore stSw c0 ctxDistinct
+  assertBool "a release writes the whole distinct context into the owner's TCB"
+    (fpCtxOf stRel faulter == some ctxDistinct)
+  assertBool "and the TCB's copy reads back word for word"
+    (match fpCtxOf stRel faulter with
+     | some c => (List.range SeLe4n.fpContextWordCount).all fun i => c.word i == distinctFpWord i
+     | none => false)
 
 /-- Whether a core has anything to resume — the question the trap layer asks
 after a fault, unknown-syscall or FP/SIMD entry, halting the PE on `false`. -/

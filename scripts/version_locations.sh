@@ -78,7 +78,7 @@ _reg 'rust/Cargo.lock' \
      '/^name = "sele4n-/{n;s/(^version = ")[0-9]+[.][0-9]+[.][0-9]+(")/\1@NEW@\2/;}' \
      '__CARGO_LOCK__' \
      'rust/Cargo.lock sele4n-* crate versions' \
-     4
+     5
 
 _reg 'rust/sele4n-hal/src/boot.rs' \
      's/(KERNEL_VERSION[^"]*")[0-9]+[.][0-9]+[.][0-9]+(")/\1@NEW@\2/' \
