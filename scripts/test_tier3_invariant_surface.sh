@@ -2247,15 +2247,15 @@ run_negative_check "INVARIANT" rg -n 'rendezvousDequeuedCall stDon dequeued' SeL
 # NEGATIVE: no dispatch arm may match on the donation alone.  The token stays in
 # the tree (the hand-off is defined over it), so this refuses the RELATION --
 # an arm that donates and does not walk -- rather than the name.
-run_negative_check "INVARIANT" rg -n 'match applyReceiveRendezvousDonation st. tid dequeued with' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'match applyReceiveRendezvousDonation st. tid dequeued with' SeLe4n/Kernel/API.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 # `endpointReplyRecvOnCore` runs the SAME step for its receive leg, gated on the equality
 # that makes the reply leg's walk BE the receiver's.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*applyReceiveLegPipHandoff st3 tid nextThread recordedServer" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # NEGATIVE: passing the RECEIVER as the already-walked thread would make the step
 # unconditionally inert -- every name present, the fix disabled.
-run_negative_check "INVARIANT" rg -n 'applyReceiveLegPipHandoff st3 tid nextThread tid' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'applyReceiveLegPipHandoff st3 tid nextThread tid' SeLe4n/Kernel/API.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 # NEGATIVE: and the body must not inline the walk instead of sharing the step.
-run_negative_check "INVARIANT" rg -n 'PriorityInheritance.propagatePipChainCrossCore st3' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'PriorityInheritance.propagatePipChainCrossCore st3' SeLe4n/Kernel/API.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 # The obligation set the live transition owes, composed from the donation's and
 # the walk's rather than re-derived.
 run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
