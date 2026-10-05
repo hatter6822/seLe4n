@@ -55,7 +55,7 @@ unauthorized=""
 # a docstring is not a consumer, and — the direction that bit here — the comment
 # recording a symbol's *removal* is not a reintroduction of it.  This is the
 # same correction round 8 made at `check_physical_address_width.sh` and
-# `check_claim_evidence_citations.py`; the sweep did not reach here because the
+# a since-retired documentation gate; the sweep did not reach here because the
 # gate's own `filter_comments` asserted the names were "distinctive enough that
 # every match is a real consumer", which stopped being true the moment one of
 # them appeared in prose.

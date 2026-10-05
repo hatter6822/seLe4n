@@ -22,10 +22,9 @@
 > **plus the SM10.1 runtime port**, whose twelve work items RR1.11 sizes and
 > sequences in §1.1 but does not yet number — see §1.1's closing note for why
 > the numbering waits for SM10's opening cut.  44 is therefore a floor on the
-> work and an exact count of the schedule as written — which is the thing a
-> gate can hold, and `scripts/check_workstream_plan.py` now does: the number,
-> the phase map and the rows must agree, so numbering the runtime port means
-> updating all three in the same cut
+> work and an exact count of the schedule as written: the number, the phase
+> map and the rows must agree, so numbering the runtime port means updating all
+> three in the same cut
 
 ## 1. Phase goal
 
@@ -369,11 +368,8 @@ and it found three things a read would not have.
 
 ### Phase map
 
-The declared total, this map and the sub-task tables are held equal by
-`scripts/check_workstream_plan.py` (Tier 0).  Until `v0.34.39` the gate's
-ID model was two-level and could not read `SM10.3.14` at all, so it reported
-this plan as NOT CHECKED — and a version-bump ordering defect (see SM10.5)
-sat inside it unseen.
+The declared total, this map and the sub-task tables must agree; they are
+kept equal by the author and the reviewer, since no gate checks plans.
 
 | Phase | Scope | Subs | Est |
 |-------|-------|------|-----|
@@ -618,8 +614,8 @@ is only correct if the exclusions are as deliberate as the inclusions:
   `v0.36.42`; SM10.6.2 no longer carries it.
 
 No path in this list appears in `scripts/website_link_manifest.txt`, so the
-moves cannot 404 the website; `scripts/check_markdown_links.py` still has to
-pass, so in-repo links to the moved paths are updated in the same PR.
+moves cannot 404 the website; in-repo links to the moved paths are still
+updated in the same PR.
 
 ## 4. Version-bump file list
 

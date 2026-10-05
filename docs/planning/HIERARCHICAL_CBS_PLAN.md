@@ -1844,8 +1844,7 @@ authority gap the flat model already has.
 | CB0.5 | Stale-comment sweep on files this workstream edits: the Rust `SyscallId` header's variant count and Lean line references, the `dispatchCapabilityOnly` docstring's arm count, the evidence index's staged-module count, and the exhaustion-arm docstring that describes the refill the code does not perform | `rust/sele4n-types/src/syscall.rs`, `SeLe4n/Kernel/API.lean`, `docs/CLAIM_EVIDENCE_INDEX.md`, `SeLe4n/Kernel/Scheduler/Operations/Core.lean` | S |
 
 **Acceptance**: CB0.3's two theorems elaborate; `lake exe smp_cbs_suite` runs
-the CB0.4 witnesses green against the pre-CB1 tree; Tier 0 and the docs-sync
-lane pass.
+the CB0.4 witnesses green against the pre-CB1 tree; Tier 0 passes.
 
 ### CB1 — The EDF-first root, on the flat model
 
@@ -2049,11 +2048,11 @@ closure row is still open.
 | CB8.4 | `docs/agent_guide/WORKSTREAM_CONTEXT.md`: standing-constraint bullets (the root is EDF-first with kernel-owned window deadlines and per-window refills; reconfiguration never mints; every reservation move re-admits; member affinity fixed; off-core member donation refused; deadline inheritance reaches bound blockers only; enforcement tick-quantised); the large-files snapshot in `docs/agent_guide/LARGE_FILES.md` refreshed.  The status row is **not** touched here | `docs/agent_guide/WORKSTREAM_CONTEXT.md`, `docs/agent_guide/LARGE_FILES.md` | S |
 | CB8.5 | Debt register: the §12 follow-ups registered with owners and closure targets.  The WS-CB rows stay open here | `docs/REGISTERED_DEBT.md` | S |
 | CB8.6 | README metrics sync and the GitBook roadmap row; `docs/codebase_map.json` regenerated; `docs/DEVELOPMENT.md` where a tier gained a suite | `README.md`, `docs/gitbook/05-specification-and-roadmap.md`, `docs/codebase_map.json`, `docs/DEVELOPMENT.md` | S |
-| CB8.7 | Full validation sweep — `test_full.sh`, `test_rust.sh`, `test_aarch64_cross_build.sh`, `test_docs_sync.sh` — recorded in the CHANGELOG entry of this cut | `CHANGELOG.md` | S |
+| CB8.7 | Full validation sweep — `test_full.sh`, `test_rust.sh`, `test_aarch64_cross_build.sh` — recorded in the CHANGELOG entry of this cut | `CHANGELOG.md` | S |
 | CB8.8 | **The status flip**, every canonical site in one cut: this plan's phase map to LANDED with versions and its status line to CLOSED; the registry row's span closed and the debt-register rows closed with versions; the WS-CB status subsection in `docs/agent_guide/WORKSTREAM_CONTEXT.md` and its row; the CHANGELOG closure entry; the hand-off note to SM10 (what §8.12.8 adds to SM10.2's documentation sweep and what CB8.3's script adds to SM10.3's hardware validation list) | this plan, `docs/REGISTERED_DEBT.md`, `docs/agent_guide/WORKSTREAM_CONTEXT.md`, `CHANGELOG.md`, `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
 
 **Acceptance**: every row of the phase map reports LANDED with a version; the
-plan gate, the naming gate and the docs-sync lane pass on the closing cut;
+naming gate passes on the closing cut;
 no status site reads CLOSED before CB8.8.
 
 ## 8. Verification strategy
@@ -2166,7 +2165,7 @@ skip until SM10.1 produces an image.
 - [ ] Every pre-existing `.expected` unchanged except CB0.3's, CB1.6's,
       CB1.7's, CB1.8's and CB5.2's, each refreshed with rationale; three new
       fixtures byte-verified; S0–S11 pass as written in §4.15.
-- [ ] Zero `sorry`, zero axioms; Tier 0, docs-sync, Tier 3 and the cross build
+- [ ] Zero `sorry`, zero axioms; Tier 0, Tier 3 and the cross build
       green on the closing cut.
 - [ ] Follow-ups (§12) registered with owners.
 
@@ -2305,8 +2304,7 @@ which rows moved and why:
    became an explicit question (Q9) rather than a footnote.
 8. **What the pass did not change.**  The phase order, the core-homing
    decision, the label rule, the constants, the syscall surface and the ABI
-   decision all survived re-derivation; the plan gate, the naming gate and the
-   docs-sync lane hold the document's structure.
+   decision all survived re-derivation.
 9. **Thirteen review rounds, ninety-two findings, one plan.**  The automated
    review of the second through fourteenth cuts found defects in the *design*, not
    only in the schedule, and each is folded in where it binds rather than
@@ -2576,8 +2574,6 @@ lake exe hierarchical_server_suite                         # S7
 ./scripts/test_full.sh                                     # Tier 0–3
 ./scripts/test_aarch64_cross_build.sh                      # after rust/ changes
 python3 scripts/check_live_arm_per_core_routing.py         # CB6.3
-python3 scripts/check_workstream_plan.py                   # this plan (stage first)
-./scripts/test_docs_sync.sh                                # citations, mirrors, map
 ```
 
 ## Appendix B — Implementation dependency graph

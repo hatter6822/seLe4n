@@ -328,7 +328,7 @@ def indexed_text(rels: list[str]) -> dict[str, str]:
     from the same place, and for a gate that place is the index.
 
     The `cat-file --batch` loop this delegates to was written out here AND in
-    `check_deferral_registration.indexed_contents`, identically, and both
+    a since-retired documentation gate's `indexed_contents`, identically, and both
     answered a failed derivation with `{}` -- which is what a batch of paths
     none of which are in the index also returns, so the gate would evaluate
     nothing and report every inventory claimed.  `v0.35.147` collapsed the pair

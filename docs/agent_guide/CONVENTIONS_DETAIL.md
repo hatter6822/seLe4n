@@ -5,6 +5,14 @@
 > link targets were rewritten to resolve from this directory.  See
 > [`CLAUDE.md`](../../CLAUDE.md) for the condensed, binding statement
 > of each rule.
+>
+> **Tests are for code, not documentation** (`v0.36.42`).  No gate, test or
+> anchor reads `.md` files, `docs/`, README or i18n text, or comment and
+> docstring prose.  The worked examples below still name the documentation
+> checks that were retired then (the plan, claim-evidence, deferral-registration,
+> lock-ceiling-figure, line-citation, Markdown-link and fixture-index checks,
+> and the Tier 3 prose anchors on comments); those names are the history of how
+> each rule was earned, not live gates.
 
 ## Key conventions
 
@@ -19,11 +27,11 @@
   code rather than the text discussing it. This is wired at the helper,
   not at the call site: `run_check` / `run_negative_check` route through
   the view automatically, because requiring an opt-in would mean the
-  obvious way to write a new anchor is the wrong one. When a check's
-  subject genuinely *is* the text — a module docstring must exist, a
-  contract sentence must be present, a retracted figure must not come
-  back — declare it with **`run_prose_check`** / **`run_prose_negative_check`**,
-  which read the real tree. Both mechanisms are pinned by witnesses in
+  obvious way to write a new anchor is the wrong one. For code the view
+  does not cover — a linker script, assembly, a fixture produced by code —
+  declare the check with **`run_prose_check`** / **`run_prose_negative_check`**,
+  which read the real tree; never point them at a comment or docstring,
+  because comment prose is documentation and is not tested. Both mechanisms are pinned by witnesses in
   Tier 0 (`lean_code_view.py --self-test` for the stripper,
   `test_code_view_wiring.sh` for the routing), since a stripper that
   stops stripping and a helper that stops routing both fail silently.
@@ -1831,7 +1839,8 @@
 
 
   **And a rule stated is not a rule enforced — give it a check, not a third
-  telling** (PR #895 review round 9, `v0.35.22`).  Round 8 closed with *sharing
+  telling** (PR #895 review round 9, `v0.35.22`; a rule about *code* — checks
+  are for code, not documentation).  Round 8 closed with *sharing
   an answer stops two answers from diverging; it does not make a new answer
   inherit what the old one learned*, and recorded it in this file.  Round 9 found
   **six more** bare keyword spellings in the very file whose one correct pattern
@@ -3241,9 +3250,8 @@
   5. **Deleting a symbol means sweeping every citation of it.**  Prose naming a
      declaration that no longer exists reads exactly like prose naming one that
      does, and the deletion's blast radius includes docstrings, `CLAUDE.md` /
-     `AGENTS.md`, the spec, the claim index, GitBook, the debt register, the plan
-     and the `CITATION_EXEMPTIONS` table in
-     `scripts/check_claim_evidence_citations.py`.  Leave a **tombstone** where
+     `AGENTS.md`, the spec, the claim index, GitBook, the debt register and the
+     plan.  Leave a **tombstone** where
      the symbol was, naming what replaced it: a reader arriving from a citation
      you missed needs somewhere to land, and the tombstone is what makes the
      miss recoverable instead of mystifying.
@@ -3542,6 +3550,4 @@
   contents are both read from the git index, so the gate checks what is
   being committed rather than the working tree.  The gate's own
   mechanisms are pinned by `scripts/test_identifier_naming_gate.py`
-  (Tier 0), since a scanner that under-reaches fails silently; the
-  source-citation gate carries the same kind of witness suite in
-  `scripts/test_source_line_citations_gate.py`, for the same reason.
+  (Tier 0), since a scanner that under-reaches fails silently.

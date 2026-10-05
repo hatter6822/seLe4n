@@ -371,7 +371,7 @@ def _gate_sources() -> list[Path]:
 #: than reported).  The pattern required `\b` on *both* sides of a *single*
 #: keyword, so `\b(?:fn|struct|enum|...)\s+` -- a keyword inside an
 #: alternation, with the trailing boundary written as `\s+` -- passed
-#: unnoticed, and `check_claim_evidence_citations.py` carried exactly that
+#: unnoticed, and a since-retired documentation gate carried exactly that
 #: spelling for its Rust declaration heads.  Round 9 built this check so "the
 #: next such pattern fails on the day it is written"; a check that enumerates
 #: the shapes it has seen is the same defect it exists to close, one level
@@ -415,13 +415,8 @@ def _escapes_blanked(line: str) -> str:
 NON_RUST_KEYWORD_SOURCES: "dict[str, str]" = {}
 
 
-def python_code_view(text: str, blank_strings: bool = False) -> str:
+def python_code_view(text: str) -> str:
     """`text` with comments and docstrings blanked, byte-aligned, code kept.
-
-    **Public since `v0.35.152`**, because it gained a second asker:
-    `scenario_catalog.consumer_code_view` needs exactly this view to decide
-    whether a Python gate's CODE opens a fixture, and a second Python stripper
-    beside this one is the duplication this module's own rules retire.
 
     **Gates read code, prose reads prose**, applied to this project's own
     scanners.  The subject here is a regex *fragment* -- a string literal that
@@ -436,15 +431,8 @@ def python_code_view(text: str, blank_strings: bool = False) -> str:
     and Python answers it exactly: a bare string expression statement is a
     docstring wherever it appears, while an f-string, a concatenation or a
     string in argument position is not.  Byte alignment is preserved so the line
-    numbers reported are the file's own.
-
-    **`blank_strings` is the caller's question, not this view's** (`v0.35.154`).
-    The default keeps string contents, because the commonest asker wants the text
-    a literal holds -- a regex fragment, a fixture path.  An asker whose question
-    is *is this occurrence of an IDENTIFIER a read* needs them gone, because a
-    name inside a string literal is not a read: that is the `code_no_strings`
-    counterpart this module already has for Rust, and the same one-lexer,
-    policy-as-a-parameter shape `strip_shell` took at `v0.35.152`.
+    numbers reported are the file's own.  String contents are kept, because
+    the asker wants the text a literal holds -- a regex fragment.
     """
     out = list(text)
 
@@ -472,11 +460,6 @@ def python_code_view(text: str, blank_strings: bool = False) -> str:
 
     if tree is not None:
         for node in ast.walk(tree):
-            if blank_strings and isinstance(node, ast.Constant) \
-                    and isinstance(node.value, str):
-                blank(offset(node.lineno, node.col_offset),
-                      offset(node.end_lineno, node.end_col_offset))
-                continue
             if not isinstance(node, ast.Expr):
                 continue
             value = node.value
@@ -767,8 +750,6 @@ def ident() -> str:
 NON_RUST_IDENT_SOURCES = {
     "check_aarch64_cross_target.py":
         "POSIX shell variable and function names, which are ASCII by that grammar",
-    "check_claim_evidence_citations.py":
-        "Lean, Python, shell and assembly declaration heads in citation targets",
     "check_identifier_naming.py":
         "shell variables, heredoc delimiters and version tags",
     "check_ipc_invariant_dethreading.py":

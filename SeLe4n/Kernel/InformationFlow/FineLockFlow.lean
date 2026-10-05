@@ -2891,8 +2891,8 @@ against a ceiling of nine, so two neighbour locks did not fit.  That reason is
 spent — every raise since has left room, and at the time of writing
 `lockSet_tcbSuspendOnCore_size_le_seventeen` sits well inside `maxLockSetSize`, so
 the two would fit with room over.  (Both figures are derived and both have moved
-repeatedly; the canonical live statement is the ceiling sentence
-`scripts/check_lock_ceiling_figures.py` holds, and this paragraph deliberately
+repeatedly; the canonical live statement is the ceiling paragraph of
+`LockSet.lean`, and this paragraph deliberately
 quotes neither, because the decision below does not rest on them.)  The reason
 that remains is the one that was always load-bearing: the members would be
 **redundant**, not merely affordable.  The finer authority is already declared where it belongs, in the

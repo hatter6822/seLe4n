@@ -126,7 +126,7 @@ HELPER_RE = re.compile(
 HELPER_NAME_RE = re.compile(r"^run_(?:prose_)?(?:negative_)?check(?:_with_timeout)?\s")
 
 # The tools an anchor can be built out of.  Word-bounded so a path like
-# `check_bcm2712_freshness.sh` is not read as naming one.
+# `scripts/egrep_wrapper.sh` is not read as naming one.
 SEARCH_TOOLS = ("rg", "grep", "egrep", "fgrep")
 SEARCH_TOOL_RE = re.compile(
     r"(?<![\w./-])(?:" + "|".join(SEARCH_TOOLS) + r")(?![\w-])")

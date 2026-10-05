@@ -118,18 +118,18 @@ minimum `test_smoke.sh` before any PR.
 | Command | Tiers | Covers | Run it when |
 |---------|-------|--------|-------------|
 | `./scripts/test_fast.sh` | 0–1 | hygiene gates + full build | iterating locally |
-| `./scripts/test_smoke.sh` | 0–2 | + trace, determinism, negative state, Rust, docs sync | **minimum before any PR** |
-| `./scripts/test_full.sh` | 0–3 | + invariant surface anchors | changing theorems, invariants or doc anchors |
+| `./scripts/test_smoke.sh` | 0–2 | + trace, determinism, negative state, Rust | **minimum before any PR** |
+| `./scripts/test_full.sh` | 0–3 | + invariant surface anchors | changing theorems, invariants or Tier 3 anchors |
 | `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` | 0–4 | + nightly candidates, Tier-5 cross-language | before a release cut |
 
 What each tier is for:
 
 | Tier | Script | Question it answers |
 |------|--------|---------------------|
-| 0 | `test_tier0_hygiene.sh` | Is the tree well-formed? (~39 gates: naming, versions, links, plan structure, staging partition, axioms, TLBI discipline, cross-target config, de-threading) |
+| 0 | `test_tier0_hygiene.sh` | Is the tree well-formed? (code gates: naming, versions, website links, staging partition, axioms, TLBI discipline, cross-target config, de-threading) |
 | 1 | `test_tier1_build.sh` | Does everything compile, including staged modules? |
 | 2 | `test_tier2_trace.sh`, `_determinism.sh`, `_negative.sh` | Does the kernel produce the fixture trace, deterministically, and reject bad states? |
-| 3 | `test_tier3_invariant_surface.sh` | Do the named theorems and invariants still exist and still say what the docs claim? |
+| 3 | `test_tier3_invariant_surface.sh` | Do the named theorems, invariants and code shapes still exist? |
 | 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance on the QEMU `virt` image — the bring-up, the PE-withheld boot and the in-image exercisers execute on both images (WS-BP BP8.4), the per-core counter check on the Lean-linked one alone (BP8.5); the eight gates that need a user program report NOT RUN until SM10's root task |
 | 5 | `test_tier5_cross_language.sh` | Do the Rust lock primitives agree with their Lean specs? |
 
@@ -478,8 +478,8 @@ kernel image does not carry them.
 The project rules are stated once, canonically, in [`CLAUDE.md`](../CLAUDE.md)
 — the rules file for every contributor, human or agent (it is named for the
 tool that auto-loads it; `AGENTS.md` is a pointer file to it). Read it before your
-first PR. Most rules are enforced by gates, so violating one fails the build
-rather than a review:
+first PR. The rules about code are enforced by gates, so violating one fails the
+build rather than a review; documentation is not gated and is held by review:
 
 | Rule (in `CLAUDE.md`) | Enforced by |
 |---|---|
@@ -487,10 +487,10 @@ rather than a review:
 | Deterministic semantics; typed identifiers | Tier 2, review |
 | Internal-first naming — no workstream codes in identifiers or paths | `check_identifier_naming.py` (Tier 0, reads the git index) |
 | Fixture-backed evidence — `Main.lean` output matches its golden fixture line for line | `test_tier2_trace.sh` |
-| Gates read code, prose reads prose; a presence check is not a relation check; test a gate by breaking the relation | the code-view overlay, the self-test harnesses |
+| Gates and tests check code, not documentation or comment prose; gates read code, prose reads prose; a presence check is not a relation check; test a gate by breaking the relation | the code-view overlay, the self-test harnesses, review |
 | Implement the improvement — never weaken documentation to match inferior code | review |
-| Deferrals are registered, never silent | `check_deferral_registration.py` (Tier 0) |
-| Source cites an archived plan by workstream ID, never by `docs/dev_history/` path | the Tier 0 `docs/dev_history` scan |
+| Deferrals are registered, never silent | review |
+| Source cites an archived plan by workstream ID, never by `docs/dev_history/` path | review |
 | Report a possible vulnerability the moment you find it | — |
 
 The long-form rationale behind each rule, with the history that earned it, is
@@ -508,7 +508,6 @@ The working rules — read and edit large files in chunks, avoid the deep
 ```bash
 ./scripts/find_large_lean_files.sh                  # list files over threshold
 ./scripts/find_large_lean_files.sh --format bullets # regenerate docs/agent_guide/LARGE_FILES.md's list
-./scripts/find_large_lean_files.sh --check          # is that list current?
 ```
 
 ### Proof hygiene
@@ -551,7 +550,6 @@ This section holds the procedures.
 python3 scripts/generate_codebase_map.py --pretty # regenerate the map
 python3 scripts/generate_codebase_map.py --pretty --check  # is it current?
 ./scripts/sync_readme_from_codebase_map.sh       # README + spec metrics
-./scripts/test_docs_sync.sh                      # the gate CI runs
 python3 scripts/generate_doc_navigation.py       # GitBook README + SUMMARY
 python3 scripts/report_current_state.py          # current metrics, one per line
 ```
@@ -721,8 +719,6 @@ SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh   # gate honesty
 ./scripts/test_tier0_hygiene.sh
 ./scripts/check_version_sync.sh
 ./scripts/check_website_links.sh
-python3 scripts/check_workstream_plan.py [--self-test]
-python3 scripts/check_deferral_registration.py
 python3 scripts/check_identifier_naming.py
 python3 scripts/check_module_axioms.py
 python3 scripts/check_proof_depth.py
@@ -734,12 +730,11 @@ python3 scripts/check_tlbi_broadcast_discipline.py
 # --- version and docs --------------------------------------------------
 ./scripts/bump_version.sh <x.y.z>
 ./scripts/sync_documentation_metrics.sh
-./scripts/test_docs_sync.sh
 python3 scripts/generate_codebase_map.py --pretty [--check]
 python3 scripts/generate_doc_navigation.py
 python3 scripts/generate_smp_theorem_manifest.py [--check]
 python3 scripts/report_current_state.py
-./scripts/find_large_lean_files.sh [--check|--format bullets]
+./scripts/find_large_lean_files.sh [--format bullets]
 ```
 
 ---

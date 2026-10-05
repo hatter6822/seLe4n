@@ -1,6 +1,6 @@
 # Reading large files (agent reference)
 
-> How to read large files, and the curated Known large files list checked by `scripts/find_large_lean_files.sh --check`.  Moved verbatim from `CLAUDE.md` (and its former `AGENTS.md`
+> How to read large files, and the hand-curated Known large files list (refresh it with `scripts/find_large_lean_files.sh --format bullets`).  Moved verbatim from `CLAUDE.md` (and its former `AGENTS.md`
 > mirror) so the auto-loaded agent guidance stays small; only relative
 > link targets were rewritten to resolve from this directory.  See
 > [`CLAUDE.md`](../../CLAUDE.md) for the condensed, binding statement
@@ -263,14 +263,10 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `SeLe4n/Kernel/Architecture/Fault.lean` (~802 lines)
-This bullet block is a **curated snapshot**, not a static enumeration.
-`scripts/find_large_lean_files.sh --check` (called from
-`scripts/sync_documentation_metrics.sh`) compares it against the live
-tree and emits a warning when drift is detected. To refresh after a
-substantial source-tree change, run
-`./scripts/find_large_lean_files.sh --format bullets` and replace the
-bullets above. The literal `**Known large files**` header anchors the
-script's awk-based extraction — do not rename or rewrap it.
+This bullet block is a **curated snapshot**, not a static enumeration,
+and no gate compares it with the tree. To refresh after a substantial
+source-tree change, run `./scripts/find_large_lean_files.sh --format bullets`
+and replace the bullets above.
 
 When editing large files, read the specific region around the target
 lines first (e.g. `offset=380, limit=40`) rather than the whole file.

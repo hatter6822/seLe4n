@@ -2007,18 +2007,12 @@ code may assume:
   `WCRT_lockSet_le_budget_of_admissible` the payoff and
   `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  At
   HEAD, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs**.
-  Those three figures are **derived**, and since WS-OD OD3.15
-  `scripts/check_lock_ceiling_figures.py` (Tier 0) holds every prose copy of them
-  to the Lean sources: the constants and the formula that combines them are read
-  out of `LockSet.lean`, `Types.lean` and `PerCoreWcrt.lean`, and every tracked
-  Markdown and Lean file outside `CHANGELOG.md` and `docs/dev_history/` is scanned
-  for the canonical spelling above.  Narrative may name an old value freely
-  (`OD3.5 raised the ceiling to 11`); a **live** claim is written in that spelling
-  or it is not checkable, and a phrase that comes close without matching is
-  reported as a gate defect rather than skipped.  Five documents are pinned to
-  carry the statement, so deleting the sentence is not a way to satisfy the gate.
-  Four consecutive review rounds each found a stale copy the previous round's
-  sweep had missed, which is what made this a mechanism rather than a correction.  New code
+  Those three figures are **derived** from the constants and the formula in
+  `LockSet.lean`, `Types.lean` and `PerCoreWcrt.lean`; no gate checks prose copies
+  of them, so quote the theorem (`admissibleCriticalSection_rpi5Tick`) rather than
+  restating a figure, and update any live copy in the cut that raises the
+  ceiling.  Narrative may name an old value freely
+  (`OD3.5 raised the ceiling to 11`).  New code
   must not quote a numeric syscall WCRT for this kernel; measuring `tCs` on the
   target is an acceptance criterion of RR7.39–RR7.41 and fine-lock Track D.
 - **The syscall seam brackets; the scheduler entries do not** (WS-RR RR7.12,

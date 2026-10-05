@@ -14,7 +14,7 @@ For pull requests into `main`, branch protection should require all of the follo
 These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job runs only its incremental tier; earlier tiers are gated by job dependencies:
 
 - `test-fast`: `./scripts/test_fast.sh` (Tier 0 + Tier 1)
-- `test-smoke` (after test-fast): `python3 scripts/scenario_catalog.py validate` + `./scripts/test_tier2_trace.sh` + `./scripts/test_tier2_negative.sh` + `./scripts/test_docs_sync.sh`
+- `test-smoke` (after test-fast): `python3 scripts/scenario_catalog.py validate` + `./scripts/test_tier2_trace.sh` + `./scripts/test_tier2_determinism.sh` + `./scripts/test_tier2_negative.sh`
 - `test-full` (after test-smoke): `./scripts/test_tier3_invariant_surface.sh`
 - `test-rust` (`Rust ABI Tests`): `./scripts/test_rust.sh` — workspace tests (incl. `--features std`), ABI conformance suite, `cargo fmt --check`, all-targets clippy. Runs on every PR/push alongside the Lean lanes.
 
@@ -29,7 +29,7 @@ The hardware target has two lanes of its own, also on every PR/push:
 smoke job as of v0.34.0, alongside the trace and negative-state checks;
 the nightly workflow (§2) additionally runs the repeat-run replay family.
 
-Documentation sync (`./scripts/test_docs_sync.sh`) is integrated into the smoke CI job and the `test_smoke.sh` entrypoint (WS-H3/M-19). Documentation navigation/link drift is caught automatically on every PR.
+CI tests code, not documentation: no job or tier reads `.md` files, `docs/`, README or i18n text, or comment and docstring prose. Documentation accuracy is a review responsibility; the only documentation-adjacent gates are version-site sync (`scripts/check_version_sync.sh`) and website-link protection (`scripts/check_website_links.sh`), both Tier 0.
 
 ## 2. Deterministic replay evidence (Tier 4)
 

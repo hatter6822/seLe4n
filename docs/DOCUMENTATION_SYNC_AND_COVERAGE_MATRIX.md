@@ -31,7 +31,7 @@ to the root document itself.
 - When a workstream closes, its plan moves to `docs/dev_history/planning/`,
   after any obligation it still holds is lifted into an active row of
   `docs/REGISTERED_DEBT.md`.  Source must not reference `docs/dev_history/`
-  (a Tier 0 gate), so it cites an archived plan by workstream or phase ID,
+  (a `CLAUDE.md` rule, held by review), so it cites an archived plan by workstream or phase ID,
   and the "Archived plans by ID" table in
   `docs/agent_guide/WORKSTREAM_CONTEXT.md` resolves the ID.
 
@@ -68,27 +68,28 @@ to the root document itself.
 
 | Validation area | Command | What it verifies |
 |---|---|---|
-| Hygiene + forbidden markers + fixture isolation | `./scripts/test_tier0_hygiene.sh` | No `sorry`/`axiom` debt in proof surface; no test contract leakage into production kernel modules; theorem-body spot-check; SHA-pinning regression guard; version sync; workstream-plan arithmetic; **SMP theorem-manifest drift** (`generate_smp_theorem_manifest.py --self-test` then `--check`: every theorem inventory in the tree is claimed by exactly one WS-SM phase, with the entry count the tree measures and a kind the gate validates rather than trusts; the *proposition* count is checked instead by the census inside `PhaseTheoremManifest.lean`, since a text scanner has no elaborator). |
+| Hygiene + forbidden markers + fixture isolation | `./scripts/test_tier0_hygiene.sh` | No `sorry`/`axiom` debt in proof surface; no test contract leakage into production kernel modules; theorem-body spot-check; SHA-pinning regression guard; version sync; website-link protection; **SMP theorem-manifest drift** (`generate_smp_theorem_manifest.py --self-test` then `--check`: every theorem inventory in the tree is claimed by exactly one WS-SM phase, with the entry count the tree measures and a kind the gate validates rather than trusts; the *proposition* count is checked instead by the census inside `PhaseTheoremManifest.lean`, since a text scanner has no elaborator). |
 | Lean build soundness | `./scripts/test_tier1_build.sh` | Project compiles successfully via `lake build`. |
 | End-to-end executable trace fixture | `./scripts/test_tier2_trace.sh` | Runtime trace still satisfies fixture expectations and scenario/risk-tagged entries. |
 | Negative/adversarial malformed-state suite | `./scripts/test_tier2_negative.sh` | Malformed capability/object/IPC/VSpace/scheduler states fail safely with explicit modeled errors. |
 | Invariant surface anchors | `./scripts/test_tier3_invariant_surface.sh` | Critical theorem/definition/trace anchors still exist after refactors. |
-| Documentation sync | `./scripts/test_docs_sync.sh` | GitBook navigation generation is reproducible, local markdown links resolve, metrics stay synced from `codebase_map.json`. Runs in CI on every PR (smoke lane) and inside `test_smoke.sh`. |
 | Nightly candidates / determinism replay | `./scripts/test_tier4_nightly_candidates.sh` and `NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` | Multi-run determinism, nightly artifacts, and seeded stochastic probe replay. |
 | Fast lane | `./scripts/test_fast.sh` | Tier 0 + Tier 1 quick validation. |
-| Smoke lane | `./scripts/test_smoke.sh` | Tier 0 + Tier 1 + scenario-catalog validation + Tier 2 trace + determinism + negative-state + Sim-contract build + Rust gate (`test_rust.sh`) + docs sync. |
+| Smoke lane | `./scripts/test_smoke.sh` | Tier 0 + Tier 1 + scenario-catalog validation + Tier 2 trace + determinism + negative-state + Sim-contract build + Rust gate (`test_rust.sh`). |
 | Full lane | `./scripts/test_full.sh` | Tier 0 + Tier 1 + Tier 2 + Tier 3 validation. |
 
 ## 3) Automation hooks
 
+**No gate, test or anchor checks documentation** — tests are for code.
+These hooks are maintainer tools, run by hand; review keeps the documents
+accurate.
+
 1. `scripts/generate_doc_navigation.py` generates `docs/gitbook/README.md` and
    `docs/gitbook/SUMMARY.md` from `docs/gitbook/navigation_manifest.json`.
-2. `scripts/check_markdown_links.py` validates local markdown links across
-   tracked `*.md` files (`docs/dev_history/` excluded).
-3. `scripts/test_docs_sync.sh` runs navigation generation, verifies the
-   generated files are stable, runs markdown-link validation, checks metric
-   propagation and the large-files list, and opportunistically invokes
-   `doc-gen4` when available. It runs in CI on every PR.
+2. `scripts/sync_documentation_metrics.sh` regenerates
+   `docs/codebase_map.json` and propagates its metrics into the README, the
+   specification, the translated READMEs and the GitBook surfaces that quote
+   them (`--check` reports drift without writing).
 
 ## 4) PR synchronization checklist (required)
 
@@ -96,7 +97,7 @@ For documentation/planning PRs:
 
 1. Update canonical source docs first.
 2. Update any GitBook chapter that summarises the topic, and the navigation manifest if a document is added, moved or retired.
-3. Run at least `test_smoke.sh`; run `test_full.sh` when theorem/invariant anchors or policy text changes.
+3. Run at least `test_smoke.sh`; run `test_full.sh` when theorem/invariant anchors change.
 4. If planning baseline or test policy changes, run `test_nightly.sh` (or explain why not run).
 5. Verify references with targeted `rg -n` checks for newly introduced docs/chapters.
 6. Regenerate the navigation outputs (`python3 scripts/generate_doc_navigation.py`) when the manifest changes.
@@ -121,11 +122,9 @@ For documentation/planning PRs:
   snapshot pinned here is drift by construction).
   **The translated and GitBook figures are synced** (WS-RR RR7.35,
   `v0.34.85`): `scripts/sync_translated_metrics.py` drives the eleven i18n
-  READMEs and the four GitBook surfaces that quote them, and
-  `scripts/test_docs_sync.sh` fails on drift, so "the translations mirror the
-  root README" is enforced rather than asserted.  It had not been: the locales
-  published a `v0.33.101` snapshot and the GitBook surfaces two *different*
-  stale generations.  Three of those languages inflect the counted noun, so the
+  READMEs and the four GitBook surfaces that quote them; run it (or
+  `scripts/sync_documentation_metrics.sh`) after a metrics change, since no
+  gate checks the translations.  Three of those languages inflect the counted noun, so the
   sync selects the form by CLDR plural category and **refuses to run** rather
   than guess an inflection it has not been given.
   **This file still pins no figure of its own**, and should not start: run

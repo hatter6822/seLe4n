@@ -36,14 +36,10 @@ explicit hash refresh in the same commit.
 | `qemu_smp_bringup_expected.txt` | `qemu_smp_bringup_expected.txt.sha256` | `scripts/test_qemu_smp_bringup.sh` (WS-BP BP8.2), in both its modes — rows of a scope and a line prefix, each matching a line that begins with it: `secondary` rows in order among each secondary's own `[smp] core N:` lines, `boot` rows in order over the whole log, `lean` rows (with `--lean-kernel`) anywhere, for every core where the row carries `{N}`.  The gate also refuses a torn line, whatever the rows say.  It boots the HAL-only and the Lean-linked `virt` images on four PEs at EL1 and EL2; `scripts/test_lean_aarch64_archive.sh` runs both modes, and the gate verifies this companion itself. |
 
 **One fixture per row, and the `Hash` cell holds only that fixture's own
-companion.**  `scripts/scenario_catalog.py check-fixture-index` enforces that
-shape (`v0.35.136`), because the table answers two questions and they are asked
-of the same row: which files it enumerates, and which gate reads each one.  The
-first accounts for every name in a row; the second validates a claim about one
-file.  A row naming two fixtures was therefore accounted for whole and validated
-in part, and a fixture placed in the `Hash` cell was accounted for and validated
-not at all — either way listed, hashed and compared by nothing.  Give each
-fixture its own row; a `Hash` cell may name `<fixture>.sha256` or no file at all.
+companion.**  The table answers two questions of the same row: which files it
+enumerates, and which gate reads each one.  Give each fixture its own row; a
+`Hash` cell may name `<fixture>.sha256` or no file at all.  The table is
+documentation and is kept current by review; no gate reads it.
 
 The Tier 2 trace gate (`scripts/test_tier2_trace.sh`) walks every
 `*.expected.sha256` file in this directory and runs `sha256sum -c` on
@@ -76,17 +72,13 @@ own `# Suite:` header — so a new manifest is checked with no edit to any gate,
 and one that declares no producer fails discovery rather than dropping silently
 out of the domain.
 
-At `v0.35.111` three of those gates' own checks turned out to be the presence
+At `v0.35.111` some of those gates' own checks turned out to be the presence
 checks they exist to replace.  What that changes for anyone editing this
-directory: a fixture is indexed by a **row of the `## Files` table below** naming
-it in the `Fixture` or `Hash` column — a mention in the `Used by` prose, or in any
-other table, declares nothing — and the reconciliation runs in both directions, so
-a row naming a file you delete fails as loudly as a file you add without a row.  A
-manifest that carries a `# Suite:` header and does not parse is an **error** rather
-than a file quietly treated as golden output; and each row's
+directory: a manifest that carries a `# Suite:` header and does not parse is an
+**error** rather than a file quietly treated as golden output; and each row's
 `expected_trace_fragment` must name **that row's own** scenario id, because a
-fragment naming a different one is evidence for the wrong assertion.  Those last
-two are checked in Tier 0, before any build.
+fragment naming a different one is evidence for the wrong assertion.  Both are
+checked in Tier 0, before any build.
 
 ## The shared device-tree corpus (`dtb/`)
 

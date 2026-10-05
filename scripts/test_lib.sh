@@ -433,10 +433,11 @@ run_gate_check() {
   return 1
 }
 
-# The opt-out: a check whose subject really is the prose — a documentation
-# citation, a comment that must name the theorem it argues from, a status line.
-# Runs against the real tree.  Rare by construction; if a new one is not
-# obviously about documentation, it is probably a code check written wrongly.
+# The opt-out: a check that reads the real text of code the code view does not
+# cover — a linker script, an assembly source, a fixture produced by code.
+# Never documentation, a comment or a docstring: gates and tests check code
+# (`CLAUDE.md`, "Writing gates and checks").  Rare by construction; if a new
+# one is not obviously about such a file, it is a code check written wrongly.
 run_prose_check() {
   local category="$1"
   shift
@@ -454,6 +455,77 @@ run_prose_check() {
   return 1
 }
 
+# Where a negative check's scanner output goes.  A file, not `$(...)`: a
+# command substitution is a subshell, and `_run_with_view` caches the Lean code
+# view in a shell variable that a subshell would discard, so every Lean anchor
+# would rebuild the overlay.  Created on first use; `finalize_report` removes it.
+_CHECK_OUTPUT_FILE=""
+_check_output_file() {
+  if [[ -z "${_CHECK_OUTPUT_FILE}" ]]; then
+    _CHECK_OUTPUT_FILE="$(mktemp "${TMPDIR:-/tmp}/sele4n-check-output.XXXXXX")"
+  fi
+}
+
+# How many lines of a failed check's output to show.
+SELE4N_CHECK_OUTPUT_LINES="${SELE4N_CHECK_OUTPUT_LINES:-20}"
+
+# Print the first `SELE4N_CHECK_OUTPUT_LINES` lines a failed check wrote to
+# `_CHECK_OUTPUT_FILE`, then a count of the rest, so a pattern that matches the
+# whole tree cannot flood the log.
+_show_check_output() {
+  local category="$1"
+  local limit="${SELE4N_CHECK_OUTPUT_LINES}"
+  local -a lines=()
+  mapfile -t -n "${limit}" lines < "${_CHECK_OUTPUT_FILE}"
+  if [[ "${#lines[@]}" -eq 0 ]]; then
+    log_section "${category}" "  (the command printed nothing)"
+    return 0
+  fi
+  local line
+  for line in "${lines[@]}"; do
+    log_section "${category}" "  ${line}"
+  done
+  local total
+  total="$(grep -c '' "${_CHECK_OUTPUT_FILE}")" || total="${#lines[@]}"
+  if [[ "${total}" -gt "${#lines[@]}" ]]; then
+    log_section "${category}" "  ... and $((total - ${#lines[@]})) more line(s)"
+  fi
+}
+
+# The dual of `run_prose_check`: a forbidden text in a file the code view does
+# not cover (a linker script's retired assertion).  Reads the real text, so the
+# same rule holds: never documentation, a comment or a docstring.
+run_prose_negative_check() {
+  local category="$1"
+  shift
+
+  log_section "${category}" "RUN (prose, must not match): $*"
+  local status=0
+  _check_output_file
+  _run_command "$@" >"${_CHECK_OUTPUT_FILE}" 2>&1 || status=$?
+
+  case "${status}" in
+    0)
+      record_failure "${category}" "Forbidden wording present: $*"
+      _show_check_output "${category}"
+      ;;
+    1)
+      log_section "${category}" "PASS"
+      return 0
+      ;;
+    *)
+      record_failure "${category}" \
+        "Prose negative check errored (status ${status}), which is not absence: $*"
+      _show_check_output "${category}"
+      ;;
+  esac
+
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    finalize_report
+  fi
+  return 1
+}
+
 # WS-SM SM8.B (v0.33.5): the dual of `run_check` — the command MUST fail.
 #
 # This used to carry a CONVENTION — "match a definition, not a mention" —
@@ -465,9 +537,9 @@ run_prose_check() {
 # docstring saying "there is no `setDomainSchedule`" is invisible to an anchor
 # banning `setDomainSchedule`, and the pattern may be written plainly.
 #
-# The convention survives only where it is still load-bearing: a check over
-# `docs/`, or one routed through `run_prose_check`, reads real text and must
-# still distinguish a use from an explanation by construction.
+# The convention survives only where it is still load-bearing: a check routed
+# through `run_prose_check` reads real text and must still distinguish a use
+# from an explanation by construction.
 #
 # Surface anchors so far could only pin that something *is* present.  Several
 # SM8.B findings were the opposite shape: a tautology that must not come back, a
@@ -483,44 +555,11 @@ run_prose_check() {
 # nonzero status as "absent" made those errors silent PASSes, i.e. a gate that
 # fails open exactly when it is misconfigured, which is when it is least likely
 # to be noticed.  Status 2 (and anything else) is now an infrastructure failure.
-# The prose dual of `run_negative_check`: a forbidden *wording*, not a forbidden
-# construct.  Reads the real text.
 #
-# Needed because routing negative checks through the code view would otherwise
-# make three of them vacuous overnight: an anchor forbidding "bits per domain
-# switch" inside a Lean docstring can never fire against a view with no
-# docstrings in it, so it would pass forever and report a retracted figure as
-# absent.  A mechanism that silently disarms an existing check is not an
-# improvement on the convention it replaced, so the split is explicit on both
-# sides — `run_negative_check` for constructs, this for wording.
-run_prose_negative_check() {
-  local category="$1"
-  shift
-
-  log_section "${category}" "RUN (prose, must not match): $*"
-  local status=0
-  _run_command "$@" >/dev/null 2>&1 || status=$?
-
-  case "${status}" in
-    0)
-      record_failure "${category}" "Forbidden wording present: $*"
-      ;;
-    1)
-      log_section "${category}" "PASS"
-      return 0
-      ;;
-    *)
-      record_failure "${category}" \
-        "Prose negative check errored (status ${status}), which is not absence: $*"
-      ;;
-  esac
-
-  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
-    finalize_report
-  fi
-  return 1
-}
-
+# A failure shows what the scanner printed: the forbidden hit's `file:line`, or
+# the scanner's own error ("could not build the Lean code view", a missing
+# tool).  Discarding that output left a failure reading only "status N", which
+# says that something is wrong and not where.  See `_show_check_output`.
 run_negative_check() {
   local category="$1"
   shift
@@ -530,11 +569,13 @@ run_negative_check() {
   local _t0
   _now_ms
   _t0="${NOW_MS}"
-  _run_with_view "$@" >/dev/null 2>&1 || status=$?
+  _check_output_file
+  _run_with_view "$@" >"${_CHECK_OUTPUT_FILE}" 2>&1 || status=$?
 
   case "${status}" in
     0)
       record_failure "${category}" "Forbidden pattern present: $*"
+      _show_check_output "${category}"
       ;;
     1)
       _note_duration "${_t0}" "$*"
@@ -544,6 +585,7 @@ run_negative_check() {
     *)
       record_failure "${category}" \
         "Negative check could not run (exit ${status}, not a clean no-match): $*"
+      _show_check_output "${category}"
       ;;
   esac
 
@@ -641,6 +683,10 @@ run_check_with_timeout() {
 }
 
 finalize_report() {
+  if [[ -n "${_CHECK_OUTPUT_FILE}" ]]; then
+    rm -f "${_CHECK_OUTPUT_FILE}"
+    _CHECK_OUTPUT_FILE=""
+  fi
   _report_slow_checks
   _report_skipped_gates
   if [[ "${FAILURE_COUNT}" -gt 0 ]]; then

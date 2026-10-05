@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """The git index as a gate reads it — and a failure that is not an empty answer.
 
-Four Tier 0 gates derive their whole domain from git: which paths the index
+Several Tier 0 gates derive their whole domain from git: which paths the index
 holds, and what bytes each one holds.  Every one of them wrote the same two
 things, and every one of them got the same half wrong.
 
-**The duplication.**  `check_deferral_registration.indexed_contents` and
+**The duplication.**  A since-retired documentation gate's `indexed_contents` and
 `generate_smp_theorem_manifest.indexed_text` were the same `cat-file --batch`
 parser — the same loop, the same `<sha> <type> <size>` header split, the same
 `i += size + 1` and the same trailing comment explaining it — under two names
@@ -21,7 +21,7 @@ index that cannot be read, or a revision that was never fetched all read as *the
 tree is clean*.  Measured across `scripts/`: **seven** such sites, in four
 gates, where the review that opened this cut reported two.  Every one of them
 sat under a docstring stating the contract its own failure branch violated —
-`check_deferral_registration`'s promised a working-tree fallback it did not
+the retired gate's promised a working-tree fallback it did not
 perform; `generate_smp_theorem_manifest`'s said "the paths and the bytes come
 from the same place, and for a gate that place is the index", then evaluated
 neither.

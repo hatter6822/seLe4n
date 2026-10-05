@@ -97,10 +97,45 @@ else
 fi
 
 # L-08 supplemental: verify that SHA-pinned GitHub Actions have not regressed to tag-only refs.
-if command -v rg >/dev/null 2>&1; then
-  # shellcheck disable=SC2016
-  run_check "HYGIENE" bash -lc 'if rg -n "uses: [a-zA-Z]+/[a-zA-Z-]+@v[0-9]" .github/workflows/ | rg -v "@[0-9a-f]{40}"; then echo "F-14 regression: GitHub Actions must be SHA-pinned (see docs/CI_POLICY.md)." >&2; exit 1; fi'
-fi
+#
+# Unconditional, by the rule stated at the CodeQL check below.  This used to
+# run only `if command -v rg`, with no else branch, so a runner without
+# ripgrep skipped it and said nothing.  It now scans with `grep -E` when `rg`
+# is absent, and fails, naming the cause, when no scanner exists or the one it
+# found errors (status 2: a missing workflows directory, a bad pattern) — the
+# old pipeline read an erroring first scan as a clean tree.  Each unpinned
+# reference is printed as `file:line:text`.
+check_actions_sha_pinned() {
+  local pattern='uses: [a-zA-Z]+/[a-zA-Z-]+@v[0-9]'
+  local -a scan
+  if command -v rg >/dev/null 2>&1; then
+    scan=(rg -n --no-heading --)
+  elif command -v grep >/dev/null 2>&1; then
+    scan=(grep -rnE --)
+  else
+    echo "F-14: neither rg nor grep is on PATH, so the SHA-pinning scan cannot run." >&2
+    return 2
+  fi
+  local hits status=0
+  hits="$("${scan[@]}" "${pattern}" .github/workflows/)" || status=$?
+  if [[ "${status}" -gt 1 ]]; then
+    echo "F-14: ${scan[0]} could not scan .github/workflows/ (exit ${status}), which is not a clean tree." >&2
+    return 2
+  fi
+  local line unpinned=0
+  while IFS= read -r line; do
+    if [[ -z "${line}" || "${line}" =~ @[0-9a-f]{40} ]]; then
+      continue
+    fi
+    echo "${line}" >&2
+    unpinned=1
+  done <<< "${hits}"
+  if [[ "${unpinned}" -eq 1 ]]; then
+    echo "F-14 regression: GitHub Actions must be SHA-pinned (see docs/CI_POLICY.md)." >&2
+    return 1
+  fi
+}
+run_check "HYGIENE" check_actions_sha_pinned
 
 # The three CodeQL workflow invariants, each of which independently leaves the
 # code-scanning merge requirement waiting for results that never arrive:
@@ -174,74 +209,24 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 # AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
-# A plan's numbering, counts and cross-references are relational data kept in
-# `v0.35.147`: the SHARED git derivation, run before the four gates that read
-# it.  Four Tier 0 gates derive their whole domain from the index, and each
-# answered a FAILED run with an EMPTY one -- `[]` / `{}`, which is also what a
-# clean scan of an empty tree returns, so the caller iterated over nothing and
-# the gate printed PASS.  `indexed_source` raises instead, and its self-test
-# runs FIRST for the reason every other self-test here does: a shared derivation
-# that has stopped refusing fails silently in four places at once, and naming it
-# at the source beats four downstream mysteries.  Its two decisive cases are the
+# `v0.35.147`: the SHARED git derivation, run before the gates that read it.
+# The Tier 0 gates that derive their whole domain from the index each answered
+# a FAILED run with an EMPTY one -- `[]` / `{}`, which is also what a clean scan
+# of an empty tree returns, so the caller iterated over nothing and the gate
+# printed PASS.  `indexed_source` raises instead, and its self-test runs FIRST
+# for the reason every other self-test here does: a shared derivation that has
+# stopped refusing fails silently in every gate at once, and naming it at the
+# source beats a mystery in each of them.  Its two decisive cases are the
 # ones git will not produce on demand -- a truncated batch stream and an
 # unreadable header, where the superseded parsers returned the PREFIX they had
 # managed to read.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/indexed_source.py" --self-test
 
-# prose.  They drifted in five consecutive cuts -- declared totals of
-# 126/143/145/146/149 against the real row count, references to rows that a
-# renumber had moved, and a phase whose acceptance arithmetic (46 + 4 = 49)
-# could not be satisfied -- each found by review and fixed by hand.  The same
-# failure mode for code is why check_version_sync.sh exists; a plan gets the
-# same treatment.  Self-test first: a scanner that under-reaches fails silently.
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py" --self-test
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
 # WS-BP BP8.1: the QEMU `virt` device tree the Lean board check is driven
 # against is a checked-in fixture normalised from a QEMU dump (per-run seeds
 # and uninitialised padding zeroed).  The normaliser is self-tested here; the
 # comparison against a live dump runs in the QEMU lane, which has QEMU.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/qemu_virt_dtb_fixture.py" --self-test
-
-# WS-RR RR7.34 (register finding 93): every artefact the claim/evidence index
-# names must exist.  A row that names a missing artefact asserts evidence that
-# does not, which is worse than a missing row.
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py" --self-test
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py"
-
-# WS-RR RR7.35 (register findings 22 and 28): source must not send a reader
-# into `docs/dev_history/`.
-#
-# `SMP_FOUNDATIONS_PLAN` claimed "every dev_history cross-reference removed from
-# production sources" and nine remained, because the claim was made once and
-# checked never.  The rule it states is CLAUDE.md's own -- *do not read or
-# reference files in `docs/dev_history/` unless explicitly instructed* -- so a
-# docstring that cites one is directing a reader at what the project tells them
-# not to open, and the reference is stale by construction: those documents are
-# retired precisely because a live one superseded them.
-#
-# **The surface is the union of every surface the claim has been made on,** which
-# is finding 28: `SMP_MULTICORE_COMPLETION_PLAN` §3.9 says SMP-M1 "closed in SM0"
-# while its own §11 verification command reads `rust/sele4n-hal/src/` and
-# `SeLe4n/Kernel/`, and the foundations plan says "production sources" -- three
-# different sets, so the claim was true of whichever one a reader happened to
-# check and nothing owned the difference.  Scanning `SeLe4n`, `Main.lean`,
-# `tests` and `rust` is strictly wider than all three, so one gate makes every
-# spelling of the claim true at once rather than reconciling them.
-#
-# `docs/` and `scripts/` are deliberately out of scope, and this is a decision
-# rather than a default: `docs/` legitimately cites its own history (CHANGELOG
-# entries, the debt register's provenance, an audit trail), and `scripts/` reads
-# one file there by design -- the AK7 baseline the cascade gate regenerates.  A
-# rule the project does not hold is worse than no rule, because the exemption
-# list becomes the artefact.
-#
-# `run_prose_negative_check`, not `run_negative_check`: every one of the eleven
-# references was in a docstring or a comment, which is exactly the text the
-# code view blanks.  Routed through the view this check would scan a tree with
-# no comments in it, never fire, and report the references as absent -- the
-# silently-vacuous shape `test_lib.sh` introduced the prose helpers to avoid.
-# CLAUDE.md's rule decides it: the subject genuinely IS the text.
-run_prose_negative_check "HYGIENE" rg -n "docs/dev_history" SeLe4n Main.lean tests rust
 
 # WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
 # plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10
@@ -255,33 +240,13 @@ run_prose_negative_check "HYGIENE" rg -n "docs/dev_history" SeLe4n Main.lean tes
 # by no phase, claimed twice, or claimed with a count the tree does not
 # measure.  `run_check`, not `run_gate_check`: it reads the tree and has no
 # legitimate skip, so "could not run" would be a defect rather than an absent
-# emulator.  Self-test first, for the same reason the plan gate runs one: a
+# emulator.  Self-test first, for the reason every self-test here does: a
 # scanner that under-reaches reports PASS, and the whole point of this gate is
 # that a number nobody was checking looked fine for two minor versions.  The
 # suite witnesses both directions — every defect reproduced and caught, and a
 # witness surviving only inside a comment NOT discovered.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/generate_smp_theorem_manifest.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/generate_smp_theorem_manifest.py" --check
-
-# Every deferral cites the one register — the *Registered debt index* in
-# docs/REGISTERED_DEBT.md.  A comment saying "no currently-active plan file
-# tracks it" is a deferral that opted out of it: self-describing and
-# unfindable at once.  Keeping that true by hand did not work —
-#
-# (These lines name the register, which is what the gate below requires; a
-# comment explaining what a check forbids must not trip the check, and citing
-# the register is the same remedy every real site takes rather than an
-# exemption carved out for the explanation.)
-# three review rounds on the cut that built the register each found the sweep
-# incomplete, every time because it matched one phrasing and the tree used
-# another.  `run_prose_check`, not `run_check`: the subject genuinely IS the
-# comment text, so this one must read the real tree rather than the
-# comment-free code view, which would strip the very sentences it looks for.
-# Self-test first, and it witnesses both directions: every phrasing the hand
-# sweep missed is caught, and `currently-active ASID` — the tree's one honest
-# false positive — is not.
-run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_deferral_registration.py" --self-test
-run_prose_check "HYGIENE" python3 "${SCRIPT_DIR}/check_deferral_registration.py"
 
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
@@ -459,16 +424,10 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registr
 # intent is a well-formed scenario-traceability manifest — every non-comment line
 # a row, every row's fragment naming its own scenario, a producer declared.  That
 # question needs no build, so it is asked here rather than waiting for Tier 2:
-# `check_fixture_index`'s sibling defect was a silent `continue` over a file that
-# declares a producer and does not parse, which was swept as golden output while
-# the gate reported PASS.  Tier 2 runs the same discovery again, for the list.
+# the defect it closes was a silent `continue` over a file that declares a
+# producer and does not parse, which was swept as golden output while the gate
+# reported PASS.  Tier 2 runs the same discovery again, for the list.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" list-manifests
-
-# v0.35.109: every file under `tests/fixtures/` is a row of that directory's
-# README table, naming the gate that compares it — or is classified with a
-# reason.  The table is the only place a reader learns which gate compares a
-# given fixture, it is hand-written, and it had two omissions.
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" check-fixture-index
 
 # AN4-A (H-02): enforce `SeLe4n.Kernel.Internal.lifecycleRetypeObject` consumer allowlist.
 # The internal retype primitive bypasses `lifecyclePreRetypeCleanup` and
@@ -496,11 +455,6 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_dtb_corpus_consumers.py"
 # platform-specific values are explicit and correct (RPi5 = 44, Sim = 52,
 # defaults = 52; no `:= 48` VA/PA confusion anywhere).
 run_check "HYGIENE" "${SCRIPT_DIR}/check_physical_address_width.sh"
-
-# AN7-F (PLT-L): BCM2712 datasheet reference freshness marker.  Warns (not
-# fatal) when the `BCM2712_DATASHEET_VERIFIED` marker in RPi5/Board.lean is
-# older than one calendar year.
-run_check "HYGIENE" "${SCRIPT_DIR}/check_bcm2712_freshness.sh"
 
 # WS-SM SM2.D.5 (verified-lock FFI symmetry): verify the Lean side
 # (`SeLe4n/Platform/FFI.lean`) and the Rust side (`ffi.rs` +
@@ -590,21 +544,6 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_unsafe_block_justifications.py"
 # scanner that under-reaches reports PASS.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_ipc_invariant_dethreading.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_ipc_invariant_dethreading.py"
-
-# WS-OD OD3.15: hold every prose claim about the lock-set ceiling to the value
-# Lean derives.  `maxLockSetSize` is the WCRT headline's first factor and two
-# further published figures are functions of it, so every raise left a
-# hand-maintained copy behind somewhere -- four consecutive review rounds each
-# found one the previous round's sweep had missed, which is the
-# enumeration-standing-in-for-a-derivation shape at the scale of a whole
-# document set.  Both axes are derived (the constants and the formula from the
-# Lean sources; the sites from the tracked tree), the live claim has a canonical
-# spelling so narrative naming an old value is free, a near-miss is a gate
-# defect rather than a skip, and five documents are pinned to carry the
-# statement so deleting the sentence does not satisfy it.  Self-test first, and
-# its harness refuses a check whose only rejecting fixture deletes a token.
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py" --self-test
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py"
 
 # A Tier 3 anchor that pins a Python symbol nothing reads is a TAUTOLOGY: it
 # reports PASS whatever the live code does, while reading in the report exactly

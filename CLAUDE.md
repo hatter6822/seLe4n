@@ -112,7 +112,7 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 ```
 
 - Run at least `test_smoke.sh` before any PR; run `test_full.sh` when changing
-  theorems, invariants, or documentation anchors.
+  theorems, invariants, or Tier 3 anchors.
 - **A tier stops at its first failing check.** Pass `--continue` to any tier
   script to collect every failure in one pass.
 - **After a refactor, sweep the Tier 3 anchors over every file the cut touched
@@ -155,8 +155,7 @@ Many files in this repo exceed 500 lines. Read in chunks with `offset` and
 `limit` (≤500 lines per call), and when editing, read only the region around
 the target lines (e.g. `offset=380, limit=40`). Run
 `./scripts/find_large_lean_files.sh` to list the files that need pagination;
-the curated **Known large files** list (checked by
-`find_large_lean_files.sh --check` in `test_docs_sync.sh`) lives in
+the hand-curated **Known large files** list lives in
 [`docs/agent_guide/LARGE_FILES.md`](docs/agent_guide/LARGE_FILES.md).
 
 ## Writing and editing large files
@@ -220,8 +219,7 @@ Full text and examples for these three sections:
 - **Deferrals are registered, never silent.** No in-source TODO that ages out
   with its workstream: every deferred item is a row in the *Registered debt
   index* of `docs/REGISTERED_DEBT.md` with an owner and a closure target, and
-  the source comment cites the row. Enforced by
-  `scripts/check_deferral_registration.py` (Tier 0).
+  the source comment cites the row.
 - **Retired code is removed, not left to pollute the tree.** A superseded
   definition, theorem, resolver or policy is deleted in the same cut, not
   kept beside its replacement. "Unused" is measured over the code view and
@@ -231,12 +229,17 @@ Full text and examples for these three sections:
 **Writing gates and checks** (the project's gates are mostly text scanners;
 these rules are what keeps them honest):
 
+- **Gates and tests check code, not documentation or comment prose.** No
+  gate, test or anchor reads a `.md` file, `docs/`, README or i18n text, or a
+  comment or docstring; documentation is kept accurate by review.
 - **Gates read code, prose reads prose.** No comment or docstring may decide
   whether a check passes. Source-scanning gates match against the code view
   (`scripts/lean_code_view.py --overlay`, `scripts/rust_code_view.py`);
-  `run_check` / `run_negative_check` route through it automatically. When the
-  subject genuinely *is* the text, use `run_prose_check` /
-  `run_prose_negative_check`. Never contort prose to satisfy a scanner.
+  `run_check` / `run_negative_check` route through it automatically.
+  `run_prose_check` / `run_prose_negative_check` read raw text, for code the
+  view does not cover (linker scripts, assembly, fixtures produced by code);
+  never point them at a comment or docstring. Never contort prose to satisfy
+  a scanner.
 - **A presence check is not a relation check.** Resolve the text into the
   structure it stands for (the command, the order, the scope, the element)
   before asserting; where a scanner cannot, make it over-approximate and fail
@@ -251,7 +254,8 @@ these rules are what keeps them honest):
   a scanner's default branch is a decision (refuse what you cannot classify);
   a failed derivation is not an empty one.
 - **A fix retires more than it changes** — sweep what was pinning the thing
-  you changed, and a rule stated is not a rule enforced: give it a check.
+  you changed, and a rule about code stated is not a rule enforced: give it
+  a check.
 
 The full text of these rules, with the measurements and review history that
 earned each one, is in
@@ -380,12 +384,9 @@ implemented.** A plan's numbering is its schedule:
   both land in one sub-task; if neither half compiles alone, merge the rows.
 - **Renumbering is cheap before work starts and expensive after.**
 
-This applies to every plan under `docs/planning/`.
-`scripts/check_workstream_plan.py` (Tier 0, reads the git index) checks the
-structural half: per-phase numbering, phase map vs rows, declared totals,
-no self/forward consumption, and that every `<PREFIX><phase>.<sub>` citation
-in the plans and their companion documents resolves to a real row. It cannot
-check the semantic ordering rule — that stays a reader's job.
+This applies to every plan under `docs/planning/`. Plans are documentation,
+so no gate checks them; keeping their numbering and citations consistent is
+the author's and the reviewer's job.
 
 Full text: [`docs/agent_guide/RULES_DETAIL.md`](docs/agent_guide/RULES_DETAIL.md).
 

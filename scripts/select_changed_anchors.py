@@ -922,13 +922,12 @@ def changed_paths() -> tuple[list[str], str, str]:
        to see; and the untracked files because `git diff` cannot see a file this
        cut *adds* until it is staged, and without them a cut whose only change is
        a new file falls through to derivation 3 and sweeps the **previous** cut.
-    2. `SELE4N_PLAN_BASE_REF` against `HEAD` — the CI case, and *deliberately the
-       same variable* `check_workstream_plan.py` reads.  Both gates ask one
-       question — *what does this cut change relative to the revision it is
-       merging into* — and `lean_action_ci.yml`'s fast lane already fetches that
-       base and exports it for the plan gate, so reading it here costs nothing and
-       gives the **whole PR** rather than its tip commit.  A second variable would
-       be the same question answered in two places, with two chances to go stale.
+    2. `SELE4N_PLAN_BASE_REF` against `HEAD` — the CI case.  The question is
+       *what does this cut change relative to the revision it is merging into*,
+       and `lean_action_ci.yml`'s fast lane fetches that base and exports it in
+       this variable, so reading it gives the **whole PR** rather than its tip
+       commit.  (The name predates this gate: a since-retired documentation gate
+       read the same variable first.)
     3. `HEAD~1` against `HEAD` — a clean local checkout sitting at the tip commit.
 
     A derived change set that selects zero anchors is an honest zero.  A change

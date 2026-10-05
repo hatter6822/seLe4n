@@ -194,9 +194,65 @@
   reader (`markdown_prose_view.py`) and an `AGENTS.md` generator
   (`generate_agents_md.py`).  All three are removed: tests are for code, not
   documentation, and each review round found another Markdown or prose corner
-  case in them.  `check_workstream_plan.py` keeps `main`'s fence handling; its
-  only change is reading `WORKSTREAM_CONTEXT.md` as a companion and canonical
-  index, because the workstream index moved there.
+  case in them.
+- **Documentation checks removed (same PR).**  Tests are for code, not
+  documentation: no gate, test or anchor now reads a `.md` file, `docs/`,
+  README or i18n text, or comment and docstring prose.  This supersedes the
+  *Gates follow the content* item above.
+  - *Deleted scripts* (4,175 lines): `check_workstream_plan.py`,
+    `check_claim_evidence_citations.py`, `check_deferral_registration.py`,
+    `check_lock_ceiling_figures.py`, `check_source_line_citations.py` and its
+    `test_source_line_citations_gate.py`, `check_markdown_links.py`,
+    `check_bcm2712_freshness.sh` (it read a date in a docstring), and
+    `test_docs_sync.sh` (navigation stability, Markdown links, codebase-map,
+    README and translated-metric checks, the large-files list check, the
+    line-citation gate and the doc-gen4 probe) with its CI step and its
+    `test_smoke.sh` call.
+  - *Tier 0*: the plan, claim-evidence, deferral-registration, lock-ceiling and
+    BCM2712 checks, the `docs/dev_history` prose scan over source comments, and
+    `scenario_catalog.py check-fixture-index` (the `tests/fixtures/README.md`
+    table and its `Used by` claims) are gone.  The fixture-index machinery
+    leaves `scenario_catalog.py` (~975 lines) and its unit tests (~860 lines),
+    and the API it alone used goes with it: `strip_shell`'s `keep_quoted`,
+    `python_code_view`'s `blank_strings` and `lean_code_view.code_view_for`.
+  - *Tier 3* (~615 lines): the 50 anchors that read `.md`/`docs/` files, the 58
+    prose anchors on Lean comments and docstrings, and the anchors pinning the
+    deleted scripts or the fixture-index code.  Prose anchors whose subject is
+    code stay: `link.ld`, `boot.S`, trace fixtures, the scenario registry, and
+    test-assertion strings.
+  - *Tools kept*: `find_large_lean_files.sh` (now a listing tool only; its
+    `--check` comparison with `LARGE_FILES.md` is removed),
+    `sync_documentation_metrics.sh` (steps 4 and 5, the large-files advisory
+    and `test_docs_sync.sh`, removed), `sync_readme_from_codebase_map.sh`,
+    `sync_translated_metrics.py`, `generate_doc_navigation.py` and
+    `generate_codebase_map.py` (the codebase-map workflow and the version sync
+    read its output).  Version-site sync and website-link protection stay.
+  - *Docs*: `CLAUDE.md` drops the "enforced by"/"checked by" sentences for
+    removed scripts and adds the rule *gates and tests check code, not
+    documentation or comment prose*; `DEVELOPMENT.md`, `CI_POLICY.md`, the sync
+    and coverage matrix, the claim index, `LARGE_FILES.md`, the planning and
+    agent-guide documents and five Lean comments that cited the deleted
+    scripts are updated, and the metrics are re-synced.
+- **Two harness checks no longer fail silently (same PR).**
+  - *Action SHA pinning* (`test_tier0_hygiene.sh`): the check that every
+    GitHub Action is pinned to a commit SHA ran only `if command -v rg`, with
+    no else branch, so a runner without ripgrep skipped it and printed nothing.
+    It is now unconditional, as the CodeQL check's rule requires.  It falls
+    back to `grep -E`.  It fails, naming the cause, when there is no scanner or
+    the scan errors; the old pipeline also read an erroring scan as a clean
+    tree.  Each unpinned reference is printed as `file:line:text`.
+  - *Negative-check output* (`test_lib.sh`): `run_negative_check` and
+    `run_prose_negative_check` sent the scanner's output to `/dev/null`, so a
+    hit reported only "Forbidden pattern present" and a scanner error only
+    "exit N".  The error itself, such as a missing path or "could not build the
+    Lean code view", was lost.  The output now goes to one temporary file per
+    process, which `finalize_report` removes.  On failure the harness prints
+    the first 20 lines and a count of the rest (`SELE4N_CHECK_OUTPUT_LINES`).
+    A file is used instead of `$(...)` because a subshell would drop the
+    cached code view and rebuild it for every Lean anchor.
+  - The prose helpers' comments now match the rule above: they read linker
+    scripts, assembly and fixtures produced by code, never documentation or
+    comments.
 
 ## v0.36.41 — PR #904 review fixed: a vacated core's frame reaches its thread, mapping epochs, a non-materialising ASID scan; the PR's registered rows fixed
 

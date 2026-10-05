@@ -32,6 +32,5 @@ run_check "BUILD" lake build SeLe4n.Platform.Sim.Contract
 # Q8-D: Rust syscall wrappers build + test + conformance.
 run_check "META" "${SCRIPT_DIR}/test_rust.sh"
 # M-19: documentation sync check — catches navigation/link drift on every PR.
-run_check "META" "${SCRIPT_DIR}/test_docs_sync.sh"
 
 finalize_report

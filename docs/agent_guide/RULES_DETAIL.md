@@ -19,7 +19,7 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 ```
 
 Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
-theorems, invariants, or documentation anchors.
+theorems, invariants, or Tier 3 anchors.
 
 **A tier stops at its first failing check.**  `run_check` calls
 `finalize_report` unless `--continue` is passed, so one run names *one* broken
@@ -338,22 +338,10 @@ Concretely:
 This applies to every plan under `docs/planning/`, and to the per-phase
 tables in the status index of `docs/agent_guide/WORKSTREAM_CONTEXT.md`.
 
-**The structural half is machine-checked.**
-`scripts/check_workstream_plan.py` (Tier 0) holds every plan that declares an
-exact `Sub-task count` to its own arithmetic: sub-task numbers run 1..N per
-phase, the phase map matches the rows, the declared total matches the phase
-map, a findings column sums to its acceptance total, no row consumes itself or
-a later one, and every `<PREFIX><phase>.<sub>` citation — in the plan and in
-`UNFINISHED_SMP_WORK.md`, `REGISTERED_DEBT.md`, `CLAUDE.md`, `AGENTS.md` and
-`docs/agent_guide/WORKSTREAM_CONTEXT.md` — resolves to a real row.  It reads the git index, so it checks what is being
-committed rather than what happens to be in the tree.  Legacy letter-group
-plans (`SM6.A.1`) and plans declaring an estimate range are reported but not
-held to flat numbering; closed workstreams are not renumbered.
-
-What it deliberately does **not** check is whether a reference that resolves
-still *means* what it did before a renumber, and it cannot see the semantic
-ordering rule above.  Those stay a reader's job — which is why the rule is
-stated, not merely gated.
+Plans are documentation, so no gate checks them: per-phase numbering, the
+phase map against the rows, declared totals, no self- or forward consumption,
+and every `<PREFIX><phase>.<sub>` citation resolving to a real row are the
+author's job, and the reviewer's.  So is the semantic ordering rule above.
 
 ## Session URL hygiene
 

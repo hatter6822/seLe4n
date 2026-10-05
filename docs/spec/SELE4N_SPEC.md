@@ -51,7 +51,7 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.42` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 433,986 across 361 Lean files |
+| **Production LoC** | 433,982 across 361 Lean files |
 | **Test LoC** | 88,629 across 71 Lean test suites |
 | **Proved declarations** | 14,408 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -4065,12 +4065,9 @@ alongside the latent inventory (closing SMP-H3).
    **At HEAD, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs**.**
    All three are *derived* — from `maxLockSetSize`, `numCores` and
    `rpi5TickBudgetMicros`, through `admissibleCriticalSection`'s own
-   formula — and since WS-OD OD3.15 (v0.34.142)
-   `scripts/check_lock_ceiling_figures.py` (Tier 0) holds every prose
-   copy of them to those sources.  The spelling above is canonical:
-   narrative may name a superseded value freely, a live claim is
-   written that way or it is not checkable, and a near-miss is
-   reported as a gate defect rather than skipped.  Quote the theorem
+   formula.  No gate checks prose copies of them, so a raise updates
+   every live copy in the same cut; narrative may name a superseded
+   value freely.  Quote the theorem
    (`admissibleCriticalSection_rpi5Tick`), never this paragraph.
 
    The WCRT headline is parametric in the constant, so

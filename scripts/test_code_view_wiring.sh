@@ -51,6 +51,11 @@ cleanup() {
   rm -f "${REPO_ROOT}/${FIXTURE}" "${REPO_ROOT}/.lake/build/leancodeview/${FIXTURE}"
   rm -f "${REPO_ROOT}/${RUST_FIXTURE}" \
         "${REPO_ROOT}/.lake/build/leancodeview/${RUST_FIXTURE}"
+  # The negative checks' output file; `finalize_report`, which removes it
+  # elsewhere, is never reached in this script.
+  if [[ -n "${_CHECK_OUTPUT_FILE:-}" ]]; then
+    rm -f "${_CHECK_OUTPUT_FILE}"
+  fi
 }
 trap cleanup EXIT
 

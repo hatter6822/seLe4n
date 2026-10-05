@@ -374,8 +374,8 @@ def attribute_arguments(view: str, keyword: str) -> list[str]:
 #
 # A scanner that under-reaches fails silently, which is the whole complaint
 # this module answers, so its own mechanisms are pinned here rather than
-# assumed — the same discipline `test_identifier_naming_gate.py` and
-# `test_source_line_citations_gate.py` apply to theirs.
+# assumed — the same discipline `test_identifier_naming_gate.py` applies to
+# its gate.
 # ---------------------------------------------------------------------------
 
 # Each case states the *code* that must survive, whitespace-normalised, and the
@@ -703,24 +703,10 @@ def _rust_code(text: str) -> str:
 #: Both views keep string contents, because a Tier 3 anchor may be about what an
 #: `asm!` template puts in the symbol table and a fixture path is a string
 #: literal.  A question that needs them gone asks `code_no_strings` instead.
-#:
-#: Hoisted to module scope at `v0.35.116`: `overlay` had it as a local, so
-#: `scenario_catalog.py` -- which asks the same question of a fixture consumer's
-#: source -- would have had to spell a second copy.
 _STRIPPERS = {
     ".lean": strip,
     ".rs": _rust_code,
 }
-
-
-def code_view_for(suffix: str):
-    """The code view for files with `suffix`, or `None` when the tree has none.
-
-    `None` is not an error and not an omission: it is the statement that a
-    consumer over such a file reads the raw text, comments included, and must
-    say so.  See `_STRIPPERS`.
-    """
-    return _STRIPPERS.get(suffix)
 
 
 def overlay(outdir: str, repo: str | None = None) -> str:

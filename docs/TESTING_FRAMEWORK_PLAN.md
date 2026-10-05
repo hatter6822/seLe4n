@@ -16,7 +16,7 @@ Current stage context: **Active workstream: WS-RR (SMP release readiness) — pr
 - **Tier 4** staged nightly candidates (`scripts/test_tier4_nightly_candidates.sh` via `scripts/test_nightly.sh`; explicit opt-in extension point with mode-aware status messaging for default vs enabled runs) plus the SMP boot-check family (`scripts/test_tier4_smp_bootcheck.sh` orchestrating the `test_qemu_smp_*.sh` exercisers when a QEMU environment is available)
 - **Tier 5** cross-language correspondence (`scripts/test_tier5_cross_language.sh`, WS-SM SM2.C-defer D-6: Lean-oracle vs Rust lock-primitive correspondence, run from `test_nightly.sh` under `NIGHTLY_ENABLE_EXPERIMENTAL=1`)
 
-Documentation sync (`scripts/test_docs_sync.sh`) verifies GitBook navigation generation, markdown link integrity, and optional doc-gen4 probes. It is integrated into the `test_smoke.sh` entrypoint and the smoke CI job (WS-H3/M-19), catching documentation navigation/link drift on every PR.
+No tier tests documentation: gates, tests and anchors check code (Lean, Rust, build, toolchain, fixtures produced by code, identifier naming). Documentation is kept accurate by review.
 
 ## 3. Required entrypoints and CI contract
 

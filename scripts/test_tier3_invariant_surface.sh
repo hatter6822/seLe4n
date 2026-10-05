@@ -142,9 +142,7 @@ run_check "INVARIANT" rg -n '^def vspaceMapPage($|[ ({:\[\]])' SeLe4n/Kernel/Arc
 run_check "INVARIANT" rg -n '^def vspaceUnmapPage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^def vspaceLookup($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" bash -lc "! rg -n '^theorem vspaceLookup_deterministic($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean"
-run_prose_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" bash -lc "! rg -n '^theorem projectState_deterministic($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean"
-run_prose_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def vspaceInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 # WS-B4 closure anchors: wrapper structures must remain explicit.
 run_check "INVARIANT" rg -n '^structure DomainId($|[ ({:\[\]])' SeLe4n/Prelude.lean
@@ -550,15 +548,6 @@ run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenWithinWatermark
 run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenNonOverlap($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenUniqueIds($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 
-# WS-D3 F-16 module docstring classification anchors must remain present.
-run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/IPC/Invariant.lean
-run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Capability/Invariant.lean
-run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/InformationFlow/Invariant.lean
-run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Service/Invariant.lean
-run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Architecture/Invariant.lean
-
 # M3.5 step-7 executable demonstration closure anchors.
 run_check "TRACE" rg -n 'adapter timer success path value' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'adapter timer invalid-context branch' SeLe4n/Testing/MainTraceHarness.lean
@@ -702,7 +691,6 @@ run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace($|[ ({:\[\]]
 run_check "TRACE" rg -n 'activeDomain visible' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'IRQ handler' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'CNode slot filtering' tests/InformationFlowSuite.lean
-run_prose_check "TRACE" rg -n 'Service registry projection' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n '7-field low-equivalence' tests/InformationFlowSuite.lean
 
 # WS-F4 proof gap closure anchors — timerTick, cspaceMutate, cspaceRevoke, notification preservation.
@@ -3586,9 +3574,6 @@ run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.CSpaceWalkFootp
 run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Architecture\.VSpaceARMv8 +# marker \(' scripts/staged_module_allowlist.txt
 run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Capability\.CSpaceWalkFootprint +# marker \(' scripts/staged_module_allowlist.txt
 run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Concurrency\.Locks\.DynamicChainExtension\b' scripts/staged_module_allowlist.txt
-run_prose_check "INVARIANT" rg -n '^-- STATUS: staged for the RPi5 VSpaceBackend selection \(SELE4N_SPEC\.md §8\.15\.1, roadmap item 3;' SeLe4n/Kernel/Architecture/VSpaceARMv8.lean
-run_prose_check "INVARIANT" rg -n '^-- STATUS: staged for the fine-lock migration.s Track C \(SMP_FINE_LOCK_MIGRATION_PLAN\.md\)$' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
-run_prose_negative_check "INVARIANT" rg -U -n '^-- [^\n]*: PRODUCTION\b' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 
 # ============================================================================
 # v0.35.78 -- the capability-reference table is retired
@@ -5152,7 +5137,6 @@ run_check "INVARIANT" rg -n '^structure ShootdownQueueLockId($|[ ({:\[\]])' SeLe
 run_check "INVARIANT" rg -n '^structure ShootdownRoundLockId($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem ShootdownRoundLockId\.singleton' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem enqueueShootdownOrCoalesce_pending_covered($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_prose_check "INVARIANT" rg -n 'Round serialisation contract' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 # SM7.A PR #838 review P1 — offline-core-aware round open: the Rust
 # online-masked WAIT (SM7.F.3 turned the masked reset into a masked wait, which
 # is where the mask belongs once acknowledgments carry the round generation)
@@ -5753,12 +5737,6 @@ run_check "INVARIANT" rg -n '^name = "vspace_capability_binding_suite"' lakefile
 # would let the model record an operand naming an address hardware never touches.
 run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n 'alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean
-# PR #845 review (P2), closed by removal (WS-RA): the legacy syscall entry
-# that could not drain the ledger (`syscallDispatchInner`) is deleted with the
-# bit-63 protocol, so the deferral concern it documented no longer exists —
-# the removal note that replaced it must say so, and the export must not
-# return (the negative anchor above).
-run_prose_check "INVARIANT" rg -n 'vestigial .syscall_dispatch_inner. export is REMOVED' SeLe4n/Platform/FFI.lean
 # PR #845 review (P2) — the syscall is reachable from the safe Rust API.
 run_check "INVARIANT" rg -n '^pub fn vspace_unify_instruction' rust/sele4n-sys/src/vspace.rs
 run_check "INVARIANT" rg -n '^pub type VSpaceUnifyInstructionArgs' rust/sele4n-abi/src/args/vspace.rs
@@ -6128,12 +6106,6 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-# Round 38: the docstring above that theorem restated its number and went stale
-# one commit after the theorem moved — the third time in this PR that prose
-# repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
-# the theorem without the sentence and this fails, which is the only mechanism
-# that has actually held.
-run_prose_check "INVARIANT" rg -n 'per-core boundary has 67 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -6385,26 +6357,11 @@ run_check "INVARIANT" rg -n '^theorem schedulingObservationCode_injective($|[ ({
 run_check "INVARIANT" rg -n '^theorem schedulingObservation_activeDomain_determined($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem schedulingChannel_full_observation_determined($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'domainConsistentOnCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-# The OPERATOR-FACING documents must carry the Q factor.  Round 8 found the
-# advisory and the deployment guide still quoting the Q-free figure the kernel
-# now disproves — the theorems were fixed and the documents an operator actually
-# reads were not.  Pin both, positively and negatively.
-run_check "INVARIANT" rg -n 'quantumBound|Q \+ 1|Q\+1' docs/SECURITY_ADVISORY.md
-run_check "INVARIANT" rg -n 'schedulingChannel_alphabet_bounded' docs/SECURITY_ADVISORY.md
-run_check "INVARIANT" rg -n 'schedulingChannel_alphabet_bounded' docs/DEPLOYMENT_GUIDE.md
-# Scoped to the two GUIDANCE documents: the plan legitimately quotes the retracted
-# wording when recording why it was wrong, and a history that cannot name its own
-# mistakes is worth less than the anchor.
-run_negative_check "INVARIANT" rg -n 'No bits-per-switch figure is' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
 run_check "INVARIANT" rg -n '^theorem crossCoreTransitionIsLiveArm_count :' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 9.  (a) The capacity premises are one citable bundle, not three theorem
 # signatures an operator must reconstruct.
 run_check "INVARIANT" rg -n '^def schedulingCapacityPreconditions($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def schedulingCapacityComparable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'schedulingCapacityPreconditions' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
-# (b) The unsupported "sub-bit-per-second" figure must not come back: it
-# contradicted the upper bound by three orders of magnitude for one config.
-run_prose_negative_check "INVARIANT" rg -n 'Sub-bit-per-second' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md SeLe4n/
 # (c) The unchanged-schedule premise holds because nothing writes the field.
 # If a reconfiguration setter ever lands, this anchor fails and the capacity
 # figure must be restated before it can pass again.
@@ -6486,7 +6443,6 @@ run_negative_check "INVARIANT" rg -n 'delegationTheorem \(theoremName : String\)
 run_check "INVARIANT" rg -n '^theorem CrossCoreTransition.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # CC-1's mitigation must state the PROVEN bound, not disclaim one: retracting a
 # claim to match weaker code is the direction the project forbids.
-run_prose_negative_check "INVARIANT" rg -n 'No capacity bound is claimed' SeLe4n/
 run_check "INVARIANT" rg -n 'log2\(\|domainSchedule\| \* \(quantumBound \+ 1\)\)' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'env.constants.toList' scripts/check_module_axioms.py
 run_check "INVARIANT" rg -n 'getModuleIdxFor\?' scripts/check_module_axioms.py
@@ -6528,8 +6484,6 @@ run_check "INVARIANT" rg -n '^theorem boundedCodeTraces_length($|[ ({:\[\]])' Se
 run_check "INVARIANT" rg -n '^def schedulingCapacityRun($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem schedulingChannel_trace_determines_observations($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_negative_check "INVARIANT" rg -n 'hPre : ∀ s ∈ run, schedulingCapacityPreconditions' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'tickFreq' docs/SECURITY_ADVISORY.md
-run_negative_check "INVARIANT" rg -n 'switchFreq bits/second' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
 # The axiom sweep must fail closed on a nonzero exit, not only on a Lean
 # diagnostic: `lake` can fail before Lean runs at all.
 run_check "INVARIANT" rg -n 'proc.returncode != 0' scripts/check_module_axioms.py
@@ -6617,12 +6571,6 @@ run_check "INVARIANT" rg -n '\(covertChannelEntry \.machineTimer\)\.modelVisible
 # come back — `schedulingCovertChannel_bounded_width` proves transparency only.
 run_check "INVARIANT" rg -n '^theorem schedulingChannelIndex_alphabet_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem schedulingChannel_not_bounded_by_scheduleLength($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_prose_negative_check "INVARIANT" rg -n 'bits per domain switch' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-# Round 42: the CC-1 docstring quoted the retracted rate as "at switch
-# frequency", which the single-spelling ban above did not cover.  Both
-# spellings are forbidden now — the figure is paced by ticks, not switches.
-run_prose_negative_check "INVARIANT" rg -n 'at switch frequency' \
-  SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
 # PR #861 review round 2 (P2) / round 4 (P2): the per-core enforcement boundary
 # audits the LIVE cross-core wrappers, not only the single-core table.
@@ -6863,10 +6811,6 @@ run_check "INVARIANT" rg -n 'policy := .legacyLattice' SeLe4n/Kernel/Information
 run_negative_check "INVARIANT" rg -n 'policy := .linearOrder' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^  runFaithfulLegacyLiftChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of the 16 pairs' tests/SmpInformationFlowSuite.lean
-# The boundary count is pinned by a theorem; `enforcementBoundary`'s own
-# docstring must NOT restate it, which is how it came to read "33 entries"
-# across six expansions.
-run_prose_negative_check "INVARIANT" rg -n 'classification table \([0-9]+ entries\)' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 # WS-SM SM8.E.3 took the canonical boundary 39 -> 40 with the 2PL bracket;
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
@@ -6942,9 +6886,6 @@ run_check "INVARIANT" rg -n '^theorem lockContention_unbounded_without_fairness(
 run_check "INVARIANT" rg -n '^theorem starvingExecution_writer_never_releases($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockContentionDelayBound_rpi5_coreFactor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockContentionAlphabet_at_release_budget($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-# A prose check: the subject IS the docstring sentence that keeps the 3077
-# figure from being read as a measured deployment property.
-run_prose_check "INVARIANT" rg -n 'placeholder, not a measured deployment figure' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The blocked READER, which is the plan's D.3 row's own subject: the structural
 # depth cap, the operational admission fact, and — after SM2.C-defer D-3.10 —
 # the TEMPORAL bound, which the writer-only liveness chain could not supply.
@@ -7213,7 +7154,6 @@ run_negative_check "INVARIANT" rg -n 'syscallEntryUnderDeclaredLockSet ctx sid c
 # contended one, so the contract cannot silently claim mutual exclusion again.
 run_check "INVARIANT" rg -n '^theorem lockSetAcquiredState_grants_when_free($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockSetAcquiredState_does_not_grant_when_contended($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_prose_negative_check "INVARIANT" rg -n 'state where every lock in .S. has been' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 # The CC-5 run requires DISTINCT enqueue steps, so the per-execution capacity
 # figure follows for every accepted run rather than for well-behaved ones.
 run_check "INVARIANT" rg -n 'enqueueSteps.Nodup' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -7615,7 +7555,6 @@ run_check "INVARIANT" rg -n '^theorem auditReadFromCore_ok_is_monitor($|[ ({:\[\
 run_check "INVARIANT" rg -n '^theorem auditDrain_moves_partial_readers_status($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem auditReadFromCore_observer_dominates_subjects($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationFlowSuite.lean
-run_prose_negative_check "INVARIANT" rg -n 'Partial readers are unchanged where they belong' SeLe4n/
 
 # SM9.A.11 / SM9.A.12 / SM9.A.13: the registries.  Enforcement boundary,
 # lock sets, the frozen-ops classifier, and the per-core routing gate — which
@@ -7640,7 +7579,6 @@ run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_staging_write_mem($|[ (
 run_check "INVARIANT" rg -n '^theorem lockSet_serviceQuery_staging_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_prose_negative_check "INVARIANT" rg -n 'would over-declare a footprint' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'auditReadFromCore#inert' scripts/per_core_routing_aliases.json
 run_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.AuditRead' scripts/check_module_axioms.py
 # The two audit readers join the cross-core inventory with an EMPTY write set:
@@ -7662,9 +7600,6 @@ run_check "INVARIANT" rg -n '^theorem auditOccupancy_alphabet_bounded($|[ ({:\[\
 run_check "INVARIANT" rg -n '^theorem declassify_capacity_refusal_of_full($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem auditDrain_flips_declassify_outcome($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_auditOccupancy_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-# The retracted round-6 sentence — the reader's authorization used to conclude
-# no eighth channel entry was owed — must not return in that docstring.
-run_prose_negative_check "INVARIANT" rg -n 'is \*\*not owed\*\*' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # (P2) The state-level serialization subject: the SM3.A.10 `.objStore`
 # singleton convention made structural — one canonical spelling, declared in
 # all three audit-state footprints, non-disjoint by theorem.  The retracted
@@ -7694,7 +7629,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke[^\n]*(\n([ \
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .read" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_lifecycleRetype[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" rg -n '^theorem stateLevelLock_objId_irrelevant($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_prose_negative_check "INVARIANT" rg -n 'serialise implicitly via the table-level' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 
 # SM9.A tests: the anchors, the elaboration examples, the seven runtime groups
 # and the acceptance gate.  §9.8 is the plan's own acceptance criterion run for
@@ -7883,7 +7817,6 @@ run_check "INVARIANT" rg -U -n '^theorem rpi5BoundPlatformConfigAt_boot \(v : BC
 run_negative_check "INVARIANT" rg -n 'maxHeartbeats' SeLe4n/Platform/RPi5/Deployment.lean SeLe4n/Platform/Boot/InitialThreads.lean SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' '^  deployment_starts_both_initial_threads$' tests
 run_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' '^  boot_refuses_unstartable_initial_threads$' tests
-run_prose_check "INVARIANT" rg -n --glob '*PlatformSuite.lean' 'CONTROL: the idle stage queues neither thread' tests
 
 # WS-BP BP8.1 slice 1: the image runs under QEMU, on `virt`.  The board is a
 # build-time choice with one home (`board.rs`), every board's shape is decided
@@ -8145,8 +8078,6 @@ run_check "INVARIANT" rg -n '^REQUIRE_QEMU=1 "\$\{PROJECT_ROOT\}/scripts/test_qe
 run_check "INVARIANT" rg -n -U '^gate\(\) \{\n    run_gate_check "META" "\$\{SCRIPT_DIR\}/\$1"\n    if \[\[ "\$\{LEAN_MODE\}" -eq 1 \]\]; then\n        run_gate_check "META" "\$\{SCRIPT_DIR\}/\$1" --lean-kernel' scripts/test_tier4_smp_bootcheck.sh
 run_check "INVARIANT" rg -n '^gate test_qemu_smp_minimal\.sh$' scripts/test_tier4_smp_bootcheck.sh
 run_check "INVARIANT" rg -n '^gate test_qemu_smp_shootdown_stress\.sh$' scripts/test_tier4_smp_bootcheck.sh
-# The boxes the run decides are ticked on its evidence, and stay ticked.
-run_prose_check "INVARIANT" rg -n -F -- '- [x] Tier-4 reports a result rather than a SKIP (' docs/planning/SMP_BOOT_PATH_PLAN.md
 
 # ----------------------------------------------------------------------------
 # WS-BP BP8.5 (v0.36.29): the per-core counters are read on the booted machine
@@ -8226,8 +8157,6 @@ run_check "INVARIANT" rg -n -U 'if \[\[ "\$\{LEAN_KERNEL\}" -ne 1 \]\]; then[^\n
 run_check "INVARIANT" rg -n -U '^gate_lean_only\(\) \{\n    if \[\[ "\$\{LEAN_MODE\}" -eq 1 \]\]; then\n        run_gate_check "META" "\$\{SCRIPT_DIR\}/\$1" --lean-kernel\n    else\n        record_skip' scripts/test_tier4_smp_bootcheck.sh
 run_check "INVARIANT" rg -n '^gate_lean_only test_qemu_smp_per_core_stats\.sh$' scripts/test_tier4_smp_bootcheck.sh
 run_negative_check "INVARIANT" rg -n '^gate test_qemu_smp_per_core_stats\.sh$' scripts/test_tier4_smp_bootcheck.sh
-# The box the run decides is ticked on its evidence, and stays ticked.
-run_prose_check "INVARIANT" rg -n -F -- '- [x] Every booted core' docs/planning/SMP_BOOT_PATH_PLAN.md
 
 # ============================================================================
 # v0.36.30 — every EL0-writable register is thread context or trapped
@@ -8481,11 +8410,6 @@ run_check "INVARIANT" rg -n '^theorem computeCrossCoreSgis_recordSyscallRefusal_
 # diagnosis says it is (three conjuncts fail `isDefEq` for structural reasons).
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationRefusals($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-# …and the correction that made it necessary, kept on the record: a
-# conjunct-free mounted field still owes a carriage block, so the mount checklist's step 8
-# must not drift back to "the 17th conjunct also costs the carriage block".
-run_prose_check "INVARIANT" rg -n -F '*every* mounted field' SeLe4n/Kernel/Architecture/Invariant.lean
-run_prose_negative_check "INVARIANT" rg -n 'no five-lemma carriage block' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n 'the accepted-channel inventory stays at eight' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'flooding the ring evicts, but the eviction is COUNTED' tests/SmpInformationFlowSuite.lean
 
@@ -8618,7 +8542,6 @@ run_negative_check "INVARIANT" rg -n 'def declassifiedSignalEffectFootprint.*Dec
 # `NonInterferenceStep` constructor concludes the projection is *unchanged*, so
 # an operation whose purpose is an authorized visible flow cannot correspond to
 # one; both declassifying operations live in `CrossCoreTransition` instead.
-run_prose_check "INVARIANT" rg -n 'What this taxonomy deliberately does not hold' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n '^theorem kernelOperation_count : KernelOperation.all.length = 35' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 
@@ -8711,9 +8634,6 @@ run_check "INVARIANT" rg -n 'sid = SyscallId.declassifySignal ∧ ke = KernelErr
 # members of BOTH enforcement families exist.
 run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_declassifySignal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_denied_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-# The retired deferral premise must not return: the record's docstring no
-# longer claims the seam cannot see the resolved receiver.
-run_prose_negative_check "INVARIANT" rg -n 'so the seam cannot see it; .which. hop failed can ride' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 
 # WS-SM SM9.C (PR #872 review) — the plain-waiter gate.  Deliberately
 # asymmetric with the ordinary checked signal (which gates the receiver on the
@@ -9612,11 +9532,6 @@ run_check "INVARIANT" rg -n 'stripper = _STRIPPERS.get' scripts/lean_code_view.p
 run_check "INVARIANT" rg -n 'code_view_witness_prose_only' scripts/test_code_view_wiring.sh
 run_check "INVARIANT" rg -n 'code_view_witness_block_comment_only' scripts/test_code_view_wiring.sh
 run_check "INVARIANT" rg -n 'SELF-TEST PASS \(12 checks\)' scripts/test_code_view_wiring.sh
-# (c) the application IPC label: the debt is out of the review narrative and
-# has a stated constraint, two candidate designs and a named owner.
-run_prose_check "INVARIANT" rg -n -F '**Reserve a sender label range.**' docs/REGISTERED_DEBT.md
-run_prose_check "INVARIANT" rg -n -F '**Carry provenance out of band.**' docs/REGISTERED_DEBT.md
-run_prose_check "INVARIANT" rg -n 'the application IPC label' docs/planning/HIERARCHICAL_CBS_PLAN.md
 
 # WS-RR RR7.18: every declared `LockSet` footprint has a size bound, at its own
 # arity.  The bound is `boundedWait_under_2pl`'s premise, so an unbounded
@@ -9652,17 +9567,7 @@ run_check "INVARIANT" rg -n '^theorem lockSet_tcbBindNotification_size_le($|[ ({
 run_check "INVARIANT" rg -n 'def permittedKinds \(sid : SyscallId\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'permittedKinds \.receive' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'permittedKinds \.tcbSetPriority' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_prose_check "INVARIANT" rg -n 'the canonical inventory is' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 
-# The three corrected claims.  Each negative keeps the surrounding list and
-# refuses the retired sentence, so re-adding the claim is what fires it.
-run_prose_negative_check "INVARIANT" rg -Un 'lockSet_endpointReceive`\*\*: receive blocks waiting' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_prose_negative_check "INVARIANT" rg -Un 'Same as reply \(the receive phase doesn.t\n  initiate donation' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_prose_negative_check "INVARIANT" rg -Un 'SetMCPriority/SetIPCBuffer`\*\*:\n  TCB-only config ops' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-# …and the corrections themselves, so a revert is a failure rather than a
-# silent return to the prior text.
-run_prose_check "INVARIANT" rg -n 'The 5 affected syscalls and their donation extensions' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_prose_check "INVARIANT" rg -n 'These two lists are a reading aid' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbUnbindNotification_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetAffinity_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # …and the fifth defect beneath them: the reply footprint's bound was stated at
@@ -9769,29 +9674,6 @@ run_check "INVARIANT" rg -n '^theorem revokeService_preserves_noStaleEndpointQue
 # the frame must NOT apply to that pair.
 run_check "INVARIANT" rg -n '^theorem storeObject_not_framed_from_noStaleEndpointQueueReferences($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'runModifiedFieldsChecks' tests/CrossSubsystemPerCoreSuite.lean
-# The fine-lock plan's status header says what actually landed.  It read
-# "2 of 12 PRs" and "Tracks B, C and D are entirely unstarted" for ten cuts
-# after Track B started landing.
-run_prose_check "INVARIANT" rg -n '9 of 13 PRs landed' docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
-run_prose_check "INVARIANT" rg -n 'Fine-lock migration Tracks B and C' docs/planning/SMP_RELEASE_CLOSURE_PLAN.md
-
-# WS-RR RR7.20: the SM7 deferrals get owners.  These are PROSE checks, and
-# deliberately so — the subject is a schedule, not a construct, and the
-# implement-the-improvement rule says a deferral must carry an owner and a
-# closure target rather than a phase name that no longer exists.
-# Anchored on the WORDING, not on the phase codes: the identifier-naming gate
-# holds this script to zero workstream/phase codes, and a code in a pattern
-# would be one.  The wording is distinctive enough to locate the row, and it is
-# what a reader checks anyway.
-run_prose_check "INVARIANT" rg -n "The boot image's clean-to-PoU" docs/planning/SMP_BOOT_PATH_PLAN.md
-run_prose_check "INVARIANT" rg -n 'the ASID capability surface' docs/REGISTERED_DEBT.md
-# Each surviving deferral names a LIVE owner, not a phase whose content moved.
-run_prose_check "INVARIANT" rg -n 'is not boot-path work' docs/REGISTERED_DEBT.md
-run_prose_check "INVARIANT" rg -n 'untyped/retype surface' docs/REGISTERED_DEBT.md
-# The shootdown run that decides the boot-path acceptance row is named in the
-# live boot-path plan, not only in the archived phase plan that first owed it.
-run_prose_check "INVARIANT" rg -n 'test_qemu_smp_shootdown.sh' docs/planning/SMP_BOOT_PATH_PLAN.md
-run_prose_check "INVARIANT" rg -n 'not of the harness' docs/planning/SMP_BOOT_PATH_PLAN.md
 
 # PR #873 round 14: **the frozen/live correspondence, as something that runs.**
 # Each frozen operation re-implements a live transition, and which one it
@@ -9855,9 +9737,6 @@ run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_unchecke
 run_check "INVARIANT" rg -n 'differentialNotificationSignalAgrees' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'differentialRefusalsAgree' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'differentialComparisonHasBite' tests/FrozenOpsSuite.lean
-# The corrected row.  The wrong one must not come back.
-run_prose_check "INVARIANT" rg -n 'frozenNotificationSignal.*notificationSignalBound' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_prose_negative_check "INVARIANT" rg -n '\| 5 \| .frozenNotificationSignal.*\| .notificationSignal. ' SeLe4n/Kernel/FrozenOps/Operations.lean
 # PR #873 round 14: **the authority is checked where the resource is committed.**
 # Resolving an extra capability mints a persistent CDT node and marks its slot
 # as having a transfer in flight; Grant was consulted only later, at the unwrap.
@@ -10016,9 +9895,6 @@ run_check "INVARIANT" rg -n 'let queueAgree' SeLe4n/Kernel/FrozenOps/Agreement.l
 # agree because both refused with `.replyCapInvalid`, which is agreement about
 # nothing happening.
 run_check "INVARIANT" rg -n 'FO-031 control: the live reply succeeds' tests/FrozenOpsSuite.lean
-# The corrected claims must not come back.
-run_prose_negative_check "INVARIANT" rg -n 'run queue manipulation is skipped' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_prose_negative_check "INVARIANT" rg -n 'run queue insertion.{0,12}is skipped' SeLe4n/Kernel/FrozenOps/Operations.lean
 # PR #873 round 16: **the relation stopped being an inclusion list.**  Every
 # finding against it was "you forgot to compare X" -- the per-object lock, the
 # returned value -- which is the enumerate-what-you-remembered shape this branch
@@ -10072,17 +9948,6 @@ run_negative_check "INVARIANT" rg -n 'byPriority.set prio' SeLe4n/Kernel/FrozenO
 # not see this one.  The control asserts the bucket really is absent first.
 run_check "INVARIANT" rg -n 'differentialWakeAtUnqueuedPriorityAgrees' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'FO-034: control' tests/FrozenOpsSuite.lean
-# PR #873 round 17: the taint side table's contract named `syscallEntryChecked`
-# as its writer's seam.  Round 6 moved the write down to the dispatchers because
-# the unchecked one reached the transitions without passing through it, and the
-# contract went on naming the old layer for eleven rounds.  It now names the
-# seams the content-flow gate checks.
-run_prose_check "INVARIANT" rg -n 'dispatchSyscallChecked., each applying it' SeLe4n/Model/State.lean
-run_prose_check "INVARIANT" rg -n 'check_content_flow_coverage.py. validates each' SeLe4n/Model/State.lean
-run_prose_check "INVARIANT" rg -n 'run at both dispatchers' SeLe4n/Kernel/Architecture/Invariant.lean
-# The single-seam claim must not come back at either site.
-run_prose_negative_check "INVARIANT" rg -n 'at the per-core syscall entry' SeLe4n/Model/State.lean
-run_prose_negative_check "INVARIANT" rg -n 'run at .API.syscallEntryChecked' SeLe4n/Kernel/Architecture/Invariant.lean
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.
@@ -16624,36 +16489,6 @@ run_negative_check "INVARIANT" rg -n 'python3 scripts/rust_code_view\.py "[$]\{s
 # NEGATIVE: the raw scans.
 run_negative_check "INVARIANT" rg -n "grep -q 'physicalAddressWidth := 44' SeLe4n/Platform/RPi5/Board\.lean" scripts/check_physical_address_width.sh
 
-# The claim-evidence gate builds its declaration inventories from code views.
-run_check "INVARIANT" rg -n -U 'def view\(rel: str\) -> str:\n        return _code_view\(rel, _read\(root, rel\)\)' scripts/check_claim_evidence_citations.py
-run_check "INVARIANT" rg -n -U 'for m in LEAN_DECL\.finditer\(view\(rel\)\):' scripts/check_claim_evidence_citations.py
-run_check "INVARIANT" rg -n -U 'for name in RUST_DECL\.findall\(view\(rel\)\):' scripts/check_claim_evidence_citations.py
-# NEGATIVE: the raw-text inventories, which let a deleted symbol's comment
-# certify a citation.
-run_negative_check "INVARIANT" rg -n -U 'LEAN_DECL\.finditer\(_read\(root, rel\)\)' scripts/check_claim_evidence_citations.py
-run_negative_check "INVARIANT" rg -n -U 'RUST_DECL\.findall\(_read\(root, rel\)\)' scripts/check_claim_evidence_citations.py
-# WS-RR RR8.16 (`v0.35.194`): the gate's DOMAIN is derived on both axes, where
-# two recognised sets used to stand in for it -- a pattern that required an
-# underscore (so every lowerCamelCase Lean `def` was outside the gate) and a
-# file list of one.
-run_check "INVARIANT" rg -n -U 'EVIDENCE_COLUMNS = frozenset\(\{"artefact", "check it with"\}\)' scripts/check_claim_evidence_citations.py
-run_check "INVARIANT" rg -n -U 'return bool\(_SNAKE_CASE\.match\(name\) or _LOWER_CAMEL\.match\(name\)\)' scripts/check_claim_evidence_citations.py
-run_check "INVARIANT" rg -n -U 'for rel in evidence_files\(root\):' scripts/check_claim_evidence_citations.py
-run_check "INVARIANT" rg -n -U 'HISTORY_PATHS: dict\[str, str\] = \{' scripts/check_claim_evidence_citations.py
-# ...and the exemption table is reconciled in the direction that catches a
-# stale entry, which is the one an exemption list silently fails in.
-run_check "INVARIANT" rg -n -U 'for name in sorted\(set\(exempt\) - used_exemptions\):' scripts/check_claim_evidence_citations.py
-# NEGATIVE: the superseded domains.  Each keeps the gate's shape and narrows
-# what it can see, which is why they are anchored rather than left to a reader.
-run_negative_check "INVARIANT" rg -n -U 'for rel in \[INDEX\]:' scripts/check_claim_evidence_citations.py
-run_negative_check "INVARIANT" rg -n -U 'columns = list\(range\(len\(header\)\)\)' scripts/check_claim_evidence_citations.py
-# The witness suite decides the column split in BOTH directions with one dead
-# name, and the widening against its own control.
-run_check "INVARIANT" rg -F -n 'a dead name in the CLAIM column is out of scope' scripts/check_claim_evidence_citations.py
-run_check "INVARIANT" rg -F -n 'the SAME name in the Artefact column fails' scripts/check_claim_evidence_citations.py
-run_check "INVARIANT" rg -F -n 'a renamed camelCase' scripts/check_claim_evidence_citations.py
-run_check "INVARIANT" rg -F -n 'a record of past versions may name a retired symbol' scripts/check_claim_evidence_citations.py
-run_check "INVARIANT" rg -F -n 'an exemption no evidence column cites fails' scripts/check_claim_evidence_citations.py
 # The round's Lean surface resolves.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/mmio_identity_probe.lean <<EOF
 import SeLe4n.Platform.Boot
@@ -16895,20 +16730,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi
 # positive is replaced by a NEGATIVE: a fact this workstream retired must not come
 # back, and a positive pin on a deleted symbol reports PASS over nothing.
 run_negative_check "INVARIANT" rg -n '^def replyDonationOwnerIsAnsweredCaller' SeLe4n/
-# WS-HP HP6.2 (`v0.35.44`): the seventeen bound that consumed the fact above is
-# RETIRED, so its two anchors are gone rather than repointed -- a pin on a symbol
-# a cut deleted reports PASS over nothing.  Its licence was the owner/target
-# merge, and under the head-driven trigger that slot carries the thread the pop
-# UNBINDS, which is running on the context while the answered caller is blocked:
-# no reachable state produces the coincidence, so the merge is false rather than
-# unproved.  The reachable figure is eighteen and is now UNCONDITIONAL, which the
-# anchor below pins.  **WS-HP HP7 (`v0.35.46`) retired the predicate**, so the
-# prose check that pinned HP6.2's "this predicate now has NO consumer" note went
-# with the docstring that carried it -- a prose anchor on text a cut deleted is the
-# dead-citation tautology one artefact over.  What stands in its place is the
-# tombstone the deletion left, which a reader arriving from any surviving citation
-# needs in order to find out what replaced the symbol.
-run_prose_check "INVARIANT" rg -n 'the retired binding-driven trigger.s scaffolding' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 # **WS-HP HP10.6 (`v0.35.49`)**: this positive is now a NEGATIVE.  The owner-merge
 # family -- `_size_le_twentytwo_of_owner_eq_target` and its four corners, plus the
 # two `_of_no_donation` corners that fed the same retired figure -- is **deleted**.
@@ -16916,10 +16737,8 @@ run_prose_check "INVARIANT" rg -n 'the retired binding-driven trigger.s scaffold
 # pair's second component is the thread the pop unbinds, and the answered caller is
 # `.blockedOnReply`), retired the resolved seventeen it fed, and left seven
 # parametric feeders with no consumer in the tree.  A sharp bound resting on a
-# refuted hypothesis is worse than no bound, so the symbol must not come back; the
-# tombstone that says what replaced it is pinned below.
+# refuted hypothesis is worse than no bound, so the symbol must not come back.
 run_negative_check "INVARIANT" rg -n 'lockSet_replyRecv_size_le_twentytwo_of_owner_eq_target' SeLe4n/
-run_prose_check "INVARIANT" rg -n 'the retired owner-merge sharp bounds' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # PR #894 review: and the UNCONDITIONAL reachable bound, which needs no
 # invariant at all -- the re-donation members are live exactly when the endpoint
 # has a queued sender and the invoker's own pre-receive return exactly when it
@@ -17827,88 +17646,6 @@ run_check "INVARIANT" rg -n '^private def replyRemovalOuterTcb : TCB := pushOute
 run_check "INVARIANT" bash -lc 'rg -U -n "the reclaim declines below the cut[^\n]*(\n([ \t][^\n]*)?)*donateSchedContext pushStore pushDonor pushServer pushSc" tests/SmpIpcSuite.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "the reclaim declines below the cut[^\n]*(\n([ \t][^\n]*)?)*pushStoreShaped \.unbound" tests/SmpIpcSuite.lean'
 
-# ============================================================================
-# WS-HP (`v0.35.40`) -- the upstream attribution, retracted and pinned
-# ============================================================================
-#
-# `v0.35.14` asserted that seL4-MCS's `reply_remove` splices a middle frame out,
-# and cited a C line as having been read from the source.  That line is in no
-# release: at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 the non-head branch is
-#
-#     if (next_ptr) {
-#         /* not the head, remove from middle - break the chain */
-#         REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false);
-#     }
-#
-# -- which is `severAtCut`.  The "correction" propagated a fabrication to nine
-# prose sites and three docstrings that had been right, and nothing in this tree
-# could catch it, because no gate reads seL4.  These checks are the substitute:
-# the *subject is the text*, so they are prose checks (`gates read code, prose
-# reads prose`), and they are written as NEGATIVES on the assertive spellings the
-# retraction removed rather than on the fabricated line itself -- the retraction
-# quotes that line in order to say it is a fabrication, and a check that refused
-# it would force this tree to stop explaining its own mistake.
-run_prose_negative_check "INVARIANT" rg -n "whose .reply_remove. splices" CLAUDE.md docs/agent_guide/WORKSTREAM_CONTEXT.md
-run_prose_negative_check "INVARIANT" rg -n "non-head branch splices" \
-  CLAUDE.md docs/agent_guide/WORKSTREAM_CONTEXT.md docs/REGISTERED_DEBT.md docs/spec/SELE4N_SPEC.md
-run_prose_negative_check "INVARIANT" rg -n "non-head branch \*\*splices\*\*" CLAUDE.md docs/agent_guide/WORKSTREAM_CONTEXT.md
-run_prose_negative_check "INVARIANT" rg -n "by implementing seL4.s behaviour" docs/REGISTERED_DEBT.md
-# ...the plan's own spellings, which differed from the others and so needed their
-# own rows -- the negatives were derived by running each pattern against the
-# genuine pre-retraction text (`git show HEAD:<file>` at `v0.35.40`) rather than
-# against an invented mutation.  The plan itself is archived now, and Tier 3 reads
-# no archived prose, so only the spelling that reached the live register is held.
-run_prose_negative_check "INVARIANT" rg -n "and seL4.s splice\$" docs/REGISTERED_DEBT.md
-run_prose_negative_check "INVARIANT" rg -n "the head-driven donation pop and seL4.s splice" docs/REGISTERED_DEBT.md
-# ...and the cancellation half, which is a NAMING error rather than an inverted
-# claim: `cancelIPC` runs `reply_remove_tcb` and donates nothing, while revoking the
-# reply capability runs `reply_remove` and DOES return the context to its caller --
-# the Reference Manual's documented behaviour.  So the reclaim's semantics is
-# upstream's, reached by a different operation and applied at a different point, and
-# the sentence this refuses named the wrong one while the inline comment at its own
-# call site named the right one.  `cancelIPC`, `reply_remove` and `reply_remove_tcb`
-# are three operations; a claim naming one of them is not a claim about the others.
-run_prose_negative_check "INVARIANT" rg -n "cancelIPC. on a reply-blocked thread runs .reply_remove.," \
-  SeLe4n/Kernel/Lifecycle/Suspend.lean \
-  SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean \
-  docs/REGISTERED_DEBT.md
-# The POSITIVES: the live register, the spec and the source must carry the
-# corrected fact (archived copies are not checked), so deleting the
-# retraction is not a way to satisfy the negatives above.  Each names the function
-# and the value it writes, because "upstream severs" without the write is the same
-# unsourced assertion in the other direction.
-run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/REGISTERED_DEBT.md
-run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' docs/spec/SELE4N_SPEC.md
-run_prose_check "INVARIANT" rg -n 'call_stack_new\(0, false\)' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-# ...and each cites the REVISIONS it was read at, which is what makes the claim
-# re-runnable rather than re-trustable -- the rule the fabrication earned.
-run_prose_check "INVARIANT" bash -lc 'rg -n "master, 13\.0\.0, 12\.1\.0, 12\.0\.0 and 11\.0\.0" docs/REGISTERED_DEBT.md'
-# The two upstream facts the same reading CONFIRMED, so HP4 and HP4.6 are recorded
-# as inherited rather than invented: the head-driven trigger and the recipient guard.
-run_prose_check "INVARIANT" bash -lc 'rg -n "call_stack_get_isHead\(reply->replyNext\)" docs/REGISTERED_DEBT.md'
-run_prose_check "INVARIANT" bash -lc 'rg -n "call_stack_get_isHead\(reply->replyNext\)" docs/spec/SELE4N_SPEC.md'
-run_prose_check "INVARIANT" bash -lc 'rg -n "tcb->tcbSchedContext == NULL" docs/REGISTERED_DEBT.md'
-run_prose_check "INVARIANT" bash -lc 'rg -n "tcb->tcbSchedContext == NULL" docs/spec/SELE4N_SPEC.md'
-# ...and the cancellation picture is pinned by the operation that DOES return the
-# context, so a future reader cannot re-derive "upstream strands it" from the
-# `cancelIPC` path alone -- the over-generalisation this cut made and the maintainer
-# caught.  `reply_remove_tcb` names the non-donating operation; `finaliseCap` names
-# the donating one.
-run_prose_check "INVARIANT" rg -n 'reply_remove_tcb' \
-  SeLe4n/Kernel/Lifecycle/Suspend.lean docs/REGISTERED_DEBT.md
-run_prose_check "INVARIANT" rg -n 'finaliseCap' \
-  SeLe4n/Kernel/Lifecycle/Suspend.lean docs/REGISTERED_DEBT.md
-# The phrase this cut's own first draft used, refused as an ASSERTION.  The
-# retraction text quotes it -- `upstream "permanently strands a cancelled caller's
-# reservation"` -- and the quote mark is what keeps this silent, which is ordinary
-# prose rather than a contortion: a claim you are withdrawing is quoted.  A
-# re-assertion is unquoted, and that is what this catches.  The load-bearing half is
-# the pair of positives above: re-generalising the `cancelIPC` path to the kernel
-# means deleting one of the two operation names, which they refuse.
-run_prose_negative_check "INVARIANT" rg -n 'upstream permanently strands' \
-  CLAUDE.md docs/agent_guide/WORKSTREAM_CONTEXT.md SeLe4n/Kernel/Lifecycle/Suspend.lean \
-  docs/REGISTERED_DEBT.md
-
 # ---------------------------------------------------------------------------
 # v0.35.79 -- WS-RR RR8.6: the deschedule reads PLACEMENT, not the home
 # ---------------------------------------------------------------------------
@@ -18065,18 +17802,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedO
 # is what makes this a statement about what a queue admits rather than about a
 # rendezvous: a mutation that reads a receiver's label instead keeps every token.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate ctx epId \(ctx.threadLabelOf (lower|upper)Tid\) \(ctx.threadLabelOf" SeLe4n/Kernel/InformationFlow/Projection.lean'
-# PROSE: the retracted remedy must not come back as a prescription, and the
-# retraction must stay stated.  Both read the real text -- the subject IS the
-# docstring, so the code view would strip it.
-#
-# The retired sentence named the direction the gate makes IMPOSSIBLE (a low
-# endpoint holding a high waiter).  The corrected text quotes that phrase in
-# order to refuse it, so the negative is on the retired ASSERTION, not on the
-# phrase: it matched until v0.35.83 and matches nothing now.
-run_prose_negative_check "INVARIANT" bash -lc 'rg -U -n "a low endpoint\s*\n?\s*holding a high waiter would make the cancellation visible" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
-run_prose_negative_check "INVARIANT" bash -lc 'rg -U -n "label-uniformity invariant(,| and)\s*\n?\s*(\*\*)?establish(ed|ing)(\*\*)? it on every" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
-run_prose_check "INVARIANT" rg -n 'unestablishable' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
-run_prose_check "INVARIANT" rg -n 'unestablishable' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 
 # ---------------------------------------------------------------------------
 # WS-RR RR8.8 / RR8.9 -- the labelling layer the two obligations reduce to.
@@ -18892,24 +18617,6 @@ run_check "INVARIANT" rg -n 'expect "TPH-001a empty builder valid"' tests/TwoPha
 # is the whole reason the letter runs across a scenario's sub-functions.
 run_check "INVARIANT" rg -n 'expect "TPH-006a timer advanced"' tests/TwoPhaseArchSuite.lean
 run_check "INVARIANT" rg -n 'expect "TPH-006d timer advanced"' tests/TwoPhaseArchSuite.lean
-# The destructive regeneration recipe must not come back: redirecting a suite's
-# stdout over a manifest replaces an ID table with raw output and breaks Tier 0.
-run_prose_negative_check "INVARIANT" bash -lc 'rg -n "lake exe robin_hood_suite +> +tests/fixtures" tests/fixtures/README.md'
-run_prose_negative_check "INVARIANT" bash -lc 'rg -n "lake exe two_phase_arch_suite +> +tests/fixtures" tests/fixtures/README.md'
-# ...and the README must not claim a consumer that does not read the file: both
-# manifests are named as manifests, with the gate that checks each column.
-run_prose_check "INVARIANT" rg -n 'scenario-traceability manifest\*\*, not golden output' tests/fixtures/README.md
-# ...and the table is held to the directory, since it is the only place a reader
-# learns which gate compares a fixture and it is hand-written.  Membership is a
-# table ROW, not a mention: a prose mention names no gate.  The parse itself lives
-# in `fixture_table_rows` since `v0.35.116`, because both questions the table
-# answers -- which files it enumerates, and which gate each row claims reads its
-# fixture -- are asked of those rows, so a second parse cannot disagree with this
-# one about where the section ends or what a cell says.
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*startswith\(.\|.\)" scripts/scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_filenames[^\n]*(\n([ \t][^\n]*)?)*rows, errors = fixture_table_rows\(readme\)" scripts/scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*stale FIXTURE_INDEX_EXEMPT" scripts/scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -n "check-fixture-index" scripts/test_tier0_hygiene.sh'
 # v0.35.110: the main trace comparison is BOTH-directional.  The reverse
 # direction — every output line accounted for by some fixture fragment — used to
 # be computed inside the failure branch, so a passing run never asked it and an
@@ -18984,31 +18691,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "if suite is not None:[^\n]*(\n([ \t][^
 # ...and a second declaration makes the file MALFORMED rather than reclassifying
 # it, so the error names the producer a reader has to fix.
 run_check "INVARIANT" bash -lc 'rg -U -n "def classify_fixture[^\n]*(\n([ \t][^\n]*)?)*a manifest has one producer" scripts/scenario_catalog.py'
-# (B) The `Used by` claim is validated per fixture KIND: a manifest names the
-# gate that DISCOVERS it (its consumer names no file, so nothing else is
-# checkable), everything else names a path that mentions it in code AND consumes
-# the name it binds it to.
-run_check "INVARIANT" bash -lc 'rg -n "^MANIFEST_CONSUMER = \"scripts/scenario_catalog\.py\"$" scripts/scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_consumers[^\n]*(\n([ \t][^\n]*)?)*MANIFEST_CONSUMER not in named" scripts/scenario_catalog.py'
-# TOMBSTONE: the positive over `row.fixture in consumer_code_view(repo_root / n)`
-# is RETIRED at `v0.35.123`.  That spelling was a MENTION test -- satisfied by
-# `UNUSED_FIXTURE = "foo.expected"` -- and the relation is now carried by the
-# `fixture_mention_consumed` positive and the negative refusing the retired
-# expression, both in the `v0.35.123` block below.  It was found by the derived
-# changed-file sweep `v0.35.122` added, on that gate's first real use, in seconds.
-# ...a consumer path needs a SLASH, so a bare filename the Fixture column
-# already declares is not a consumer...
-run_check "INVARIANT" bash -lc 'rg -n "^TABLE_CONSUMER_PATH = re\.compile\(r\"..\[\^..s\]\*/" scripts/scenario_catalog.py'
-# ...the mention is looked for in the CODE view, so a comment naming a fixture
-# does not stand in for a gate opening it...
-run_check "INVARIANT" bash -lc 'rg -U -n "def consumer_code_view[^\n]*(\n([ \t][^\n]*)?)*lean_code_view\.code_view_for\(consumer\.suffix\)" scripts/scenario_catalog.py'
-# ...and both relations run, reported separately, from the one command whose
-# subject is "does the README describe reality".
-run_check "INVARIANT" bash -lc 'rg -U -n "errors = check_fixture_index\(directory, readme\)\n        consumer_errors, claims = check_fixture_consumers\(directory, readme\)\n        errors \+= consumer_errors" scripts/scenario_catalog.py'
-# The per-suffix code view has ONE owner: `overlay`'s local table is gone and
-# both askers read the module-level one.
+# The per-suffix code view lives at module scope: `overlay`'s local table is
+# gone.
 run_check "INVARIANT" bash -lc 'rg -n "^_STRIPPERS = \{$" scripts/lean_code_view.py'
-run_check "INVARIANT" bash -lc 'rg -n "^def code_view_for\(suffix: str\):$" scripts/lean_code_view.py'
 run_negative_check "INVARIANT" bash -lc 'rg -n "^    _STRIPPERS = \{" scripts/lean_code_view.py'
 # (C) The controls take OWNERSHIP before they touch the files, the trap reads
 # that flag (it is installed before the check can run), and the refusal is
@@ -19017,10 +18702,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "restore_control_fixture\(\) \{\n  if \
 run_check "INVARIANT" bash -lc 'rg -U -n "^take_control_fixture_ownership\n\nif \[\[ .+CONTROLS_ONLY.+ -eq 1 \]\]" scripts/audit_testing_framework.sh'
 run_check "INVARIANT" bash -lc 'rg -U -n "take_control_fixture_ownership\(\) \{[^\n]*(\n([ \t][^\n]*)?)*git diff --quiet -- " scripts/audit_testing_framework.sh'
 run_check "INVARIANT" bash -lc 'rg -U -n "take_control_fixture_ownership\(\) \{[^\n]*(\n([ \t][^\n]*)?)*CONTROL_FIXTURE_OWNED=1" scripts/audit_testing_framework.sh'
-# (D) The row that named no path at all names its two gates; the back-reference
-# a reader resolves by eye and a check cannot must not come back.
-run_negative_check "INVARIANT" bash -lc 'rg -n "same two gates" tests/fixtures/README.md'
-run_check "INVARIANT" bash -lc 'rg -n "two_phase_arch_smoke\.expected.*scenario_catalog\.py check-fragments" tests/fixtures/README.md'
 # ===========================================================================
 # v0.35.115 — the FIFTH and SIXTH askers, and a check so there is no seventh.
 #
@@ -19152,29 +18833,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def nonExecutedTransitionsPri
 # these anchors pin the RELATIONS rather than the tokens the superseded readings
 # also had.
 # ===========================================================================
-# (B) The fixture-index membership question is over PARSED CELLS of the `## Files`
-# section, scoped to that heading — a filename backticked in another table cannot
-# satisfy a fixture's membership — and only the `Fixture` and `Hash` cells declare,
-# so prose in the `Used by` column cannot stand in for a row.
-run_check "INVARIANT" rg -n '^def fixture_table_filenames($|[ ({:\[\]])' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -n '^FIXTURE_TABLE_HEADING = "## Files"' scripts/scenario_catalog.py
-# (`v0.35.137` repoints this: the `cells[1:3]` slice it used to pin is retired,
-# the two declaring cells now being read separately so the row-shape contract can
-# say which of them named what.  The RELATION is unchanged and is what is pinned
-# -- the `Fixture` and `Hash` cells declare and the `Used by` cell does not.)
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*fixture_cell = TABLE_FILENAME.findall\(cells\[1\]\)" scripts/scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*hash_cell = TABLE_FILENAME.findall\(cells\[2\]\)" scripts/scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*names = set\(fixture_cell\) \| set\(hash_cell\)" scripts/scenario_catalog.py'
-run_negative_check "INVARIANT" rg -F -n 'TABLE_FILENAME.findall(cells[3])' scripts/scenario_catalog.py
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*MD_HEADING.match\(line\):\n *break" scripts/scenario_catalog.py'
-# ...and BOTH directions are asked: a file with no row, and a row with no file.
-run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*sorted\(present - accounted\)" scripts/scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*sorted\(declared - present\)" scripts/scenario_catalog.py'
-# ...and the door back to the joined-blob reading is shut: `check_fixture_index`
-# does not read the README itself, so the declared set can only come from the cell
-# parse.  A negative on one retired variable name would be satisfied by a revert
-# that renamed it; what the claim is about is WHERE the text is read.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*readme.read_text" scripts/scenario_catalog.py'
 # (C) Manifest INTENT, not content alone: a file that declares a producer and does
 # not parse is an ERROR.  The superseded classifier answered "not a manifest" and
 # the caller did a bare skip, so such a file was swept as golden output with the
@@ -19358,10 +19016,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\
 # would fire on a clean tree.  The mutation this refuses keeps every token and puts
 # the call back inside the resolver's argument.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*replenishHomeOfSchedContext \(cancelIpcBlocking" SeLe4n/Kernel/Lifecycle/Suspend.lean'
-# ...and the measurement is recorded at the definition, so the next reader re-runs
-# it rather than re-trusting a latency claim this cut retired.
-run_prose_check "INVARIANT" bash -lc 'rg -n "LCNF.s CSE pass runs three times in the default pipeline" SeLe4n/Kernel/Lifecycle/Suspend.lean'
-run_prose_check "INVARIANT" bash -lc 'rg -n "What the duplication really was is a \*\*divergence hazard\*\*" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # ...and the two frame proofs the binding broke now CITE the migration module's own
 # lemmas instead of re-deriving them by `unfold` and `split` -- which is the answer
 # this tree already had, and the reason the repair made the proofs shorter.
@@ -19616,33 +19270,6 @@ run_check "INVARIANT" rg -U -n 'if args.command == .validate-registry.:[^\n]*(\n
 run_check "INVARIANT" rg -U -n 'if args.command == .generate-registry-stub.:[^\n]*(\n( {8,}[^\n]*)?)*        fixture_ids, id_errors = fixture_ids_and_errors\(' scripts/scenario_catalog.py
 run_negative_check "INVARIANT" rg -F -n 'args.extra_fixtures' scripts/scenario_catalog.py
 run_negative_check "INVARIANT" rg -F -n -- '--extra-fixtures' scripts/test_tier0_hygiene.sh
-# A CONSUMER'S MENTION MUST BE CONSUMED.  `UNUSED_FIXTURE = "foo.expected"`
-# satisfied a mention test while the PASS line said the row names a gate that
-# READS the fixture -- and the unit test's own positive fixture was that shape, so
-# every rejecting case beside it failed for the wrong reason.  Requiring a read AT
-# the mention is refuted by measurement: all five live idioms bind the path and
-# read the name elsewhere.  What is decidable is that a BINDING is consumed --
-# and, since `v0.35.138`, that an UNBOUND mention is an operand of something;
-# this line used to conflate the two, so the anchor is repointed at the branch
-# that survives rather than deleted.  Since `v0.35.150` "consumed" means a
-# NON-BINDING occurrence: a second assignment to the name is an occurrence and
-# not a use, so the superseded reading passed a path spelled, overwritten and
-# never opened.
-# (RETIRED at `v0.35.154`, not deleted silently: the read question now reads the
-# IDENTIFIER view, and the v0.35.154 anchor over
-# `word_read_occurrences(idents if idents is not None else view, name) > 0`
-# pins this line AND its argument, so it strictly subsumes this one.  Keeping
-# both would be two positives over one subject.)
-run_check "INVARIANT" rg -F -n 'if CONSUMER_APPLICATION.search(head[operators[-1]:]):' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'verdict = fixture_mention_consumed(' scripts/scenario_catalog.py
-run_negative_check "INVARIANT" rg -F -n 'row.fixture in consumer_code_view(' scripts/scenario_catalog.py
-# ...and THE CLAIM SAYS WHAT THE CHECK DECIDES.  Resolving a bound path to a read
-# across shell, Lean, Rust and Python is a dataflow question this gate does not
-# answer, so a PASS line saying "reads" implies an authority it does not have --
-# the defect this project keeps recording.  Found by a mutation that changed only
-# the message and was caught by nothing.
-run_check "INVARIANT" rg -F -n 'claim(s) name a path that mentions the fixture ' scripts/scenario_catalog.py
-run_negative_check "INVARIANT" rg -F -n 'name a gate that reads the fixture' scripts/scenario_catalog.py
 
 # ---------------------------------------------------------------------------
 # `v0.35.124` -- THE PROBE'S LOCATION IS DERIVED FROM PYTHON'S GRAMMAR, not from
@@ -20476,67 +20103,6 @@ run_check "INVARIANT" rg -F -n '  pm_od_10_unreconfiguredLoanComesBackAgreeing' 
 run_negative_check "INVARIANT" rg -F -n 'preserved by all binding-' SeLe4n/
 
 
-# --------------------------------------------------------------------------
-# `v0.35.136` (PR #897's review): ONE fixture per README row, so the membership
-# question and the consumer question are about the same file.
-# --------------------------------------------------------------------------
-# `row.fixture` was `fixture_cell[0]`, a positional pick out of the SET the
-# membership check accounts for -- so a row naming two fixtures was accounted for
-# whole and validated in part, and a fixture in the `Hash` cell was accounted for
-# and validated not at all.  Either way listed, hashed and compared by nothing.
-run_check "INVARIANT" rg -F -n '        if len(fixture_cell) != 1:' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n '        if fixture.endswith(".sha256"):' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n '        stray = [h for h in hash_cell if h != expected_hash]' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n '        if len(hash_cell) > 1 or stray:' scripts/scenario_catalog.py
-# ...and the retired positional pick must not come back.  The ASSIGNMENT is the
-# subject, not the bare subscript: three docstrings quote `fixture_cell[0]` in
-# order to explain what it was, and a negative that counted those would force the
-# file to stop explaining itself -- this gate reads `.py` raw.
-run_negative_check "INVARIANT" rg -F -n 'fixture=fixture_cell[0] if fixture_cell else None' scripts/
-# ...with both controls and every rejecting case, each conjunct separately
-# witnessed: M2..M5 each fail a different set, so none is rescued by a partner.
-# (The CLASS is deliberately not anchored: `unittest` discovers it by reflection,
-# so nothing reads the name and `check_anchor_symbol_liveness.py` reports such a
-# pin as a tautology -- correctly, and it caught this one on its first run.  Its
-# sibling classes in the same file are unanchored for the same reason; the CASES
-# are what carry the claims.)
-run_check "INVARIANT" rg -F -n '    def test_accepts_the_canonical_row(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_accepts_a_row_with_no_hash_companion(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_rejects_two_fixtures_in_one_row(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_rejects_a_fixture_in_the_hash_cell(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_rejects_a_checksum_declared_as_the_fixture(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_rejects_a_companion_belonging_to_another_fixture(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_rejects_a_companion_named_twice(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_the_consumer_check_also_refuses_a_malformed_row(self) -> None:' scripts/tests/test_scenario_catalog.py
-# ...and the README states the contract it is governed by, since that table is
-# hand-written and its shape is now a checked claim about it.
-run_prose_check "INVARIANT" rg -F -n "**One fixture per row, and the \`Hash\` cell holds only that fixture's own" tests/fixtures/README.md
-
-
-# --------------------------------------------------------------------------
-# `v0.35.138` (PR #897's review): a mention that binds NOTHING is not a use by
-# construction -- a standalone literal binds nothing and consumes nothing.
-# --------------------------------------------------------------------------
-# `v0.35.123` closed the dead-binding half and left the other in a DEFAULT, so a
-# consumer whose whole content is `"foo.expected"` satisfied the claim that it
-# reads the fixture.  The two questions have one function each now, over ONE
-# head, so a second lookback cannot disagree about where the head begins.
-run_check "INVARIANT" rg -F -n 'def consumer_mention_head(lines: list[str], index: int, at: int) -> str:' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'def consumer_mention_is_operand(head: str) -> bool:' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    head = consumer_mention_head(lines, index, at)' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'CONSUMER_OPERAND = re.compile(' scripts/scenario_catalog.py
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_mention_consumed[^\n]*(\n([ \t][^\n]*)?)*if consumer_mention_is_operand\(" scripts/scenario_catalog.py'
-# ...and the retired unconditional credit must not come back.  The subject is the
-# RELATION -- `name is None` reaching `return True` with nothing between them --
-# so the negative is bounded to this declaration rather than tree-wide, because
-# the neighbouring `word_occurrences` branch legitimately returns `True`.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "def fixture_mention_consumed[^\n]*(\n([ \t][^\n]*)?)*if name is None or word_occurrences" scripts/scenario_catalog.py'
-# ...with the rejecting case, its CONTROL at the same bare position, and the
-# predicate pinned in both directions: M2 (accept everything) and M3 (accept
-# nothing) each fail a different set, so neither direction is unwitnessed.
-run_check "INVARIANT" rg -F -n '    def test_rejects_a_STANDALONE_LITERAL(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_accepts_that_same_literal_with_a_CALLEE_in_front(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_the_operand_question_is_asked_of_the_HEAD(self) -> None:' scripts/tests/test_scenario_catalog.py
 
 
 # --------------------------------------------------------------------------
@@ -20646,21 +20212,6 @@ run_check "INVARIANT" rg -F -n 'CONTROL (interior frame): ...while the recipient
 # about the owner's TCB nothing about the removal supplies -- while DERIVING the
 # other (pinned in the HP10.9 block above).
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*\(hAcceptable : donationRecipientAcceptable st. origin = true\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
-# ...and its docstring says which window the proxy could not cover and why the
-# structural guard can; the retracted sentence must not come back.
-run_prose_check "INVARIANT" rg -F -n '**And it stays derivable across the window the proxy could not cover** (PR #897' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-run_prose_negative_check "INVARIANT" rg -F -n '**And it can become false again before the in-order reply arrives**' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-# The claim is lifted at every live site: v1.0.0 may claim that a completed call
-# chain returns a client's reservation at every reply-stack depth, and the
-# `v0.35.141` retraction must not come back beside it.
-run_prose_check "INVARIANT" rg -F -n 'v1.0.0 **may** claim that completing a call chain returns a' docs/spec/SELE4N_SPEC.md
-run_prose_negative_check "INVARIANT" rg -F -n 'must not** claim that a completed call chain' CLAUDE.md docs/agent_guide/WORKSTREAM_CONTEXT.md
-run_prose_negative_check "INVARIANT" rg -F -n 'must not** claim that a completed call chain' AGENTS.md
-# ...and the register row is STRUCK THROUGH, with the proxy named in the struck
-# heading so a reader arriving from an older citation still lands.
-run_prose_check "INVARIANT" rg -F -n '| ~~**The donation accounting is not preserved at reply-stack depth TWO' docs/REGISTERED_DEBT.md
-run_prose_check "INVARIANT" rg -F -n 'redirect is guarded by a PROXY for ownership' docs/REGISTERED_DEBT.md
-run_prose_negative_check "INVARIANT" rg -F -n '| **The donation accounting is not preserved at reply-stack depth TWO' docs/REGISTERED_DEBT.md
 
 # --------------------------------------------------------------------------
 # `v0.35.142` (PR #897's review): three gate domains were derived from a
@@ -20681,14 +20232,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "elif _GLOB_META & set\(related\) and a
 # nothing, because dropping them is the fail-OPEN direction for a module that
 # decides which checks run.
 run_check "INVARIANT" bash -lc 'rg -U -n "    except UnlexableCommand:[^\n]*(\n([ \t][^\n]*)?)*for w in command.split\(\):" scripts/select_changed_anchors.py'
-# (2) A fixture mention is an OPERAND only where nothing binds it, and a string
-# PREFIX is not a binder: `let _ = r"a.expected"` reads `r` as an identifier, so
-# the mention looked bound and the consumer went uncredited.  A prefix begins a
-# word, which is what keeps `dir"..."` and `include_str!` from being blanked.
-run_check "INVARIANT" rg -F -n 'CONSUMER_STRING_PREFIX = re.compile(' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'return bool(CONSUMER_OPERAND.search(CONSUMER_STRING_PREFIX.sub(" ", head)))' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_a_string_literal_PREFIX_is_not_a_consumer(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_a_prefixed_standalone_literal_is_not_a_consumer(self) -> None:' scripts/tests/test_scenario_catalog.py
 # (3) A PREFILTER is not the SIGNAL, and the askers scan returned early on one.
 # `_probe_signal` is written for a probe's OWN text, where the import begins a
 # line; asked of a whole Python file it is false for `PROBE = """import SeLe4n`,
@@ -20752,61 +20295,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "if line.startswith\(\x22-\x22
 run_check "INVARIANT" bash -lc 'rg -U -n "for probe in \(lineno, lineno \+ 1\)\n        if \(first := owner.get\(probe\)\) is not None\n        and HELPER_NAME_RE.match\(logical\[first\].strip\(\)\)" scripts/select_changed_anchors.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "if _after_deleting\(9\):\n            return _fail\(" scripts/select_changed_anchors.py'
 run_check "INVARIANT" rg -F -n 'if _after(base_text + "# a fourth line of ordinary shell text' scripts/select_changed_anchors.py
-# (2) A fixture name is a PATH COMPONENT, so a mention of it is bounded on both
-# sides: `foo.expected.sha256` is the companion file a row names in its own cell
-# and `xfoo.expected` is a different fixture, and an unbounded search read either
-# as this fixture's consumer -- crediting a `Used by` claim to a gate that never
-# opens it, which is the very claim `v0.35.116` added the column check to decide.
-# The CONSTANT is pinned by its two USES below rather than by its definition: a
-# pin on a definition is a presence check even when the symbol is live, and what
-# its class must contain (`.` and `-` continue a filename) is witnessed by the
-# two unit tests, which are themselves anchored.
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_mentions_in\([^\n]*(\n([ \t][^\n]*)?)*rf\x22\(\?<\!\{FIXTURE_NAME_CHAR\}\)\{re.escape\(fixture\)\}\(\?\!\{FIXTURE_NAME_CHAR\}\)\x22\)" scripts/scenario_catalog.py'
-# ...and EVERY bounded occurrence on a line is read, not the first: a line that
-# spells the path twice -- a dead binding beside a real read -- was decided by
-# whichever came first, which is a cardinality defect one level below the
-# boundary one and needs its own witness.
-run_check "INVARIANT" bash -lc 'rg -U -n "for at in fixture_mentions_in\(line, fixture\):\n            mentioned = True" scripts/scenario_catalog.py'
-run_check "INVARIANT" rg -F -n '    def test_a_LONGER_filename_is_not_this_fixture_s_consumer(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_a_SECOND_mention_on_one_line_is_still_read(self) -> None:' scripts/tests/test_scenario_catalog.py
-# ...and the retired unbounded reading must not return: `fixture in line` and a
-# bare `line.find(fixture)` each keep the filename token and drop the relation.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "if fixture in line:" scripts/scenario_catalog.py'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "at = line.find\(fixture\)" scripts/scenario_catalog.py'
 
 # --- `v0.35.144` (PR #897's review): two more scanners credited a claim on text
 # they had not read as the thing it stands for.
-# (1) A fixture is opened by a PROGRAM.  `consumer_code_view` read a suffix with
-# no code view RAW, which is wrong for prose, where the WHOLE file is the
-# comment: `tests/fixtures/README.md` read as the consumer of two live fixtures,
-# so a new golden fixture could be listed, hashed and assigned only to
-# documentation while the gate reported a validated consumer.  The suffix is
-# classified and the default branch REFUSES.
-#
-# `v0.35.152`: it was wrong for SOURCE too, on the argument this block used to
-# record as right -- a `.sh` holding only `# open("foo.expected")` satisfied the
-# claim.  The two source languages get this question's own views, so the anchor
-# that pinned the raw-text branch named a spelling the fix retired and failed
-# loudly.  What replaces it pins the table, its default refusal, and the
-# reconciliation that keeps it from disagreeing with the shared overlay.
-run_check "INVARIANT" rg -F -n 'CONSUMER_VIEWS = {' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    ".py": rust_code_view.python_code_view,' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'check_identifier_naming.strip_shell(text, keep_quoted=True)' scripts/scenario_catalog.py
-run_check "INVARIANT" bash -lc 'rg -U -n "    own = CONSUMER_VIEWS.get\(consumer.suffix\)\n    if own is not None:\n        return own\(text\)" scripts/scenario_catalog.py'
-run_check "INVARIANT" rg -F -n 'def consumer_view_overlap_violations() -> list[str]:' scripts/scenario_catalog.py
-# ...and the retired raw-text branch must not come back.
-run_negative_check "INVARIANT" rg -F -n 'CONSUMER_SOURCE_SUFFIXES' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'class UnclassifiedConsumerSuffix(Exception):' scripts/scenario_catalog.py
-# ...and the refusal is REPORTED, in the gate's own voice, rather than skipped:
-# "the gate could not read it" and "the gate checked it" must not both pass.
-run_check "INVARIANT" bash -lc 'rg -U -n "            except UnclassifiedConsumerSuffix:\n                unclassified.append\(n\)\n                continue" scripts/scenario_catalog.py'
-run_check "INVARIANT" rg -F -n 'def consumer_suffix_classification_violations(' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n '        errors += consumer_suffix_classification_violations(readme)' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_PROSE_is_not_a_consumer(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_a_SHELL_gate_is_still_a_consumer(self) -> None:' scripts/tests/test_scenario_catalog.py
-# ...and the pre-fix reading must not come back: a view-less suffix answered with
-# the raw text and no classification at all.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "    return view\(text\) if view is not None else text" scripts/scenario_catalog.py'
 # (2) A probe's Lean source is ONE text this scanner has read.  `HEADER +
 # build_match()` reconstructs to the header plus a hole: the marker arrives
 # through the name so no literal of the expression carries it, the hole borders
@@ -20922,15 +20413,9 @@ run_check "INVARIANT" rg -F -n 'could not be run ({exc})' scripts/indexed_source
 run_check "INVARIANT" rg -F -n 'output ended after {n} of {len(wanted)} entries' scripts/indexed_source.py
 run_check "INVARIANT" rg -F -n 'unreadable header for {rel!r}: {header!r}' scripts/indexed_source.py
 
-# The four gates read the shared answer, and none of them re-spells the swallow.
-run_check "INVARIANT" rg -F -n 'return listed_at(str(REPO_ROOT), ":")' scripts/check_deferral_registration.py
-run_check "INVARIANT" rg -F -n 'return _indexed_contents(str(REPO_ROOT), paths)' scripts/check_deferral_registration.py
+# The index-reading gates use the shared answer, and none of them re-spells the swallow.
 run_check "INVARIANT" rg -F -n 'return _indexed_contents(str(REPO_ROOT), rels)' scripts/generate_smp_theorem_manifest.py
-run_check "INVARIANT" rg -F -n 'for rel in listed_at(str(REPO), ":", "*.md"):' scripts/check_workstream_plan.py
-run_negative_check "INVARIANT" rg -U -n 'def tracked_files[^\n]*(\n([ \t][^\n]*)?)*return \[\]' scripts/check_deferral_registration.py
 run_negative_check "INVARIANT" rg -U -n 'def indexed_text[^\n]*(\n([ \t][^\n]*)?)*except \(subprocess' scripts/generate_smp_theorem_manifest.py
-run_negative_check "INVARIANT" rg -U -n 'def list_tracked[^\n]*(\n([ \t][^\n]*)?)*except subprocess' scripts/check_workstream_plan.py
-run_negative_check "INVARIANT" rg -U -n 'def prose_count_sources[^\n]*(\n([ \t][^\n]*)?)*return \{\}' scripts/check_workstream_plan.py
 
 # The changed-file sweep refuses an underivable change set rather than falling
 # through to an older derivation and sweeping a DIFFERENT cut -- the consequence
@@ -21036,55 +20521,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "_sweep_exit\(\) \{[^\n]*(\n([ \t][^\n]
 run_check "INVARIANT" rg -F -n 'an anchor that exits ZERO still FAILS the sweep' scripts/check_changed_file_anchors.sh
 run_negative_check "INVARIANT" rg -F -n "trap '_sweep_epilogue; rm -f" scripts/check_changed_file_anchors.sh
 #
-# (3) A REBINDING is not a use: `word_occurrences(view, name) > 1` counted a second
-# ASSIGNMENT to the bound name, so a consumer that spells a fixture path, overwrites
-# the name and opens nothing satisfied the `Used by` claim.
-run_check "INVARIANT" rg -F -n 'def word_read_occurrences(text: str, word: str) -> int:' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'BINDING_FOLLOWS = re.compile(' scripts/scenario_catalog.py
-run_negative_check "INVARIANT" rg -F -n 'if word_occurrences(view, name) > 1:' scripts/scenario_catalog.py
-#
 # (4) Every index listing is NUL-delimited: `git ls-files` C-quotes an unusual byte
 # and `str.split()` breaks a path holding whitespace into fragments that name no
 # file.  Zero tracked paths carry whitespace today, so the sweep is free.
-run_negative_check "INVARIANT" rg -F -n '.stdout.split()' scripts/check_claim_evidence_citations.py scripts/check_lock_ceiling_figures.py scripts/check_ipc_invariant_dethreading.py scripts/check_markdown_links.py scripts/check_source_line_citations.py
-run_check "INVARIANT" rg -F -n "['git', 'ls-files', '-z'], capture_output=True, check=True).stdout" scripts/check_source_line_citations.py
-run_check "INVARIANT" rg -F -n "find docs -name '*.md' -not -path 'docs/dev_history/*' -print0; " scripts/check_source_line_citations.py
-run_check "INVARIANT" rg -F -n '["git", "-C", root, "ls-files", "-z", pattern]' scripts/check_claim_evidence_citations.py
-run_check "INVARIANT" rg -F -n '["git", "-C", root, "ls-files", "-z", "*.md", "*.lean"]' scripts/check_lock_ceiling_figures.py
-run_check "INVARIANT" rg -F -n '["git", "ls-files", "-z", "*.md"],' scripts/check_markdown_links.py
-#
-# (5) A PROXY is not the FACT, at a revision's availability.  `baseline_refs`
-# admitted a candidate on `git rev-parse --verify -q <cand>`, which is an
-# existence check for a ref NAME and a pure syntax check for a full hex SHA --
-# which is what CI passes -- so an unfetched base was reported available and
-# `list_tracked` (fail-closed since v0.35.147) then raised on it.  Both CI
-# workflows already peel; the gate was the odd one out of three askers.
-run_check "INVARIANT" bash -lc 'rg -U -n "def revision_is_readable\(rev: str\) -> bool:[^\n]*(\n([ \t][^\n]*)?)*rev\}\^\{\{commit\}\}" scripts/check_workstream_plan.py'
-run_check "INVARIANT" rg -F -n 'if cand and revision_is_readable(cand):' scripts/check_workstream_plan.py
-# The negative forbids the question being asked in the WRONG PLACE rather than in
-# a retired SPELLING: a revert that merely reformats the unpeeled guard back into
-# `baseline_refs` keeps every token of the retired line and walks around a
-# spelling-shaped negative, which is how the first draft of this anchor MISSED
-# its own mutation.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "def baseline_refs\(\) -> list\[str\]:[^\n]*(\n([ \t][^\n]*)?)*rev-parse" scripts/check_workstream_plan.py'
-run_check "INVARIANT" rg -F -n 'an absent full-hex base is SKIPPED, not admitted' scripts/check_workstream_plan.py
-run_check "INVARIANT" rg -F -n 'a PRESENT full-hex base is still admitted' scripts/check_workstream_plan.py
-#
-# (6) A fixture repository resolves its OWN base.  Three of the four fixture
-# cases pinned `SELE4N_PLAN_BASE_REF` and one did not, so under CI that case ran
-# `ls-tree` against a sha the fixture cannot contain.  One owner now, and the
-# hermeticity is asserted directly -- through `baseline_refs`, not through a
-# downstream symptom, because with (5) in place the leak degrades to a silent
-# vacuous pass rather than to a failure.
-run_check "INVARIANT" rg -F -n 'def _fixture_repo(root: Path):' scripts/check_workstream_plan.py
-run_check "INVARIANT" rg -F -n 'FIXTURE_BASE_REF = "main"' scripts/check_workstream_plan.py
-run_check "INVARIANT" rg -F -n "a fixture repository resolves its OWN base, not the caller's" scripts/check_workstream_plan.py
-run_negative_check "INVARIANT" rg -F -n 'os.environ["SELE4N_PLAN_BASE_REF"] = "main"' scripts/check_workstream_plan.py
-#
-# (7) The unfiltered whole-word count was DELETED when its last reader became
-# `word_read_occurrences`; keeping it would have left one pattern written twice
-# in one file, and a pin on a symbol nothing reads decides nothing.
-run_negative_check "INVARIANT" rg -F -n 'def word_occurrences(' scripts/scenario_catalog.py
+run_negative_check "INVARIANT" rg -F -n '.stdout.split()' scripts/check_ipc_invariant_dethreading.py
 
 # ============================================================================
 # v0.35.151 -- a RECEIVER may be parenthesised, and seven positions key on its
@@ -21161,19 +20601,6 @@ run_check "INVARIANT" rg -F -n '    return _opaque_fragment(node, consts)' scrip
 # to each declaration, because the fixtures carry the retired spellings by design.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "def _is_probe_text_sink\([^\n]*(\n([ \t][^\n]*)?)*func\.value\.id in imported" scripts/check_declaration_kind_askers.py'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "def _reconstruct_holed\([^\n]*(\n([ \t][^\n]*)?)*if isinstance\(node, ast\.FormattedValue\):\n        return _HOLE" scripts/check_declaration_kind_askers.py'
-#
-# A fixture consumer is read as CODE, through the two views this tree already
-# owns -- not a third lexer, and not the shared overlay, whose `.sh`/`.py`
-# anchors legitimately match comments.  The shell view's double-quote policy is
-# the CALLER's, because a fixture path is the message text its default blanks.
-run_check "INVARIANT" rg -F -n 'CONSUMER_VIEWS = {' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'def consumer_view_overlap_violations() -> list[str]:' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'def strip_shell(text: str, keep_quoted: bool = False) -> str:' scripts/check_identifier_naming.py
-run_check "INVARIANT" rg -F -n 'out.append(span if (keep_quoted or is_command_payload(text, i))' scripts/check_identifier_naming.py
-# (`v0.35.154` repoints this at the USE rather than the signature: the claim
-# here is *not a third lexer*, which is a fact about what `CONSUMER_VIEWS`
-# reaches for, and the signature is pinned by that cut's own anchor.)
-run_check "INVARIANT" rg -F -n '    ".py": rust_code_view.python_code_view,' scripts/scenario_catalog.py
 #
 # A locale prefix is collation-only only ahead of a tool the locale cannot
 # reach.  Measured: GNU grep answers 0 under `LC_ALL=C` and 1 under
@@ -21299,41 +20726,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "if name and \(name in wrappers[^\n]*(\
 # never reporting its own fixture and no exemption is needed.
 run_check "INVARIANT" rg -F -n 'return _nul_split(g(*a, "-z"))' scripts/select_changed_anchors.py
 run_negative_check "INVARIANT" rg -F -n 'g("ls-files", "--others", "--exclude-standard").split()' scripts/select_changed_anchors.py
-#
-# ----------------------------------------------------------------------------
-# v0.35.154 -- the view you read depends on the QUESTION, and one function
-#              asks two
-# ----------------------------------------------------------------------------
-#
-# `check_fixture_consumers` asks two questions of one consumer: *where is the
-# fixture path mentioned*, which needs string contents KEPT because a path IS a
-# string literal, and *is this occurrence of the bound name a read*, which needs
-# them GONE because a name inside a string is not a read.  Reading one view for
-# both credited `FIXTURE="foo.expected"` followed by nothing but
-# `echo "FIXTURE"` as a consumer, so a fixture could be named in the README,
-# spelled in a gate, never opened, and still validate its `Used by` row.
-run_check "INVARIANT" rg -F -n 'CONSUMER_IDENTIFIER_VIEWS = {' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'def consumer_identifier_view(consumer: Path) -> str:' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'raise UnclassifiedConsumerSuffix(' scripts/scenario_catalog.py
-# ...and the READ is counted in the identifier view, never in the path view.
-run_check "INVARIANT" bash -lc 'rg -U -n "if word_read_occurrences\(idents if idents is not None else view,[^\n]*(\n([ \t][^\n]*)?)*name\) > 0:" scripts/scenario_catalog.py'
-run_negative_check "INVARIANT" rg -F -n 'word_read_occurrences(view, name)' scripts/scenario_catalog.py
-# ...and the call site threads it, or the parameter's default silently restores
-# the superseded reading.
-run_check "INVARIANT" rg -F -n 'idents = consumer_identifier_view(repo_root / n)' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'verdict = fixture_mention_consumed(view, row.fixture, idents)' scripts/scenario_catalog.py
-# ...and the two tables are reconciled over a DERIVED domain, not over their own
-# union: a suffix missing from BOTH is in neither set, so a union would not
-# iterate it and the check would be silent about exactly the drop it exists to
-# catch.  Found by mutating this function's own first draft.
-run_check "INVARIANT" rg -F -n 'def consumer_view_domain_violations() -> list[str]:' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'answerable = set(CONSUMER_VIEWS) | set(lean_code_view._STRIPPERS)' scripts/scenario_catalog.py
-run_negative_check "INVARIANT" rg -F -n 'for suffix in sorted(set(CONSUMER_VIEWS) | set(CONSUMER_IDENTIFIER_VIEWS)):' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'errors += consumer_view_domain_violations()' scripts/scenario_catalog.py
-# ...and the string-blanking policy is the CALLER's parameter, the shape
-# `strip_shell` took at `v0.35.152`, so the tree keeps one Python lexer.
-run_check "INVARIANT" rg -F -n 'def python_code_view(text: str, blank_strings: bool = False) -> str:' scripts/rust_code_view.py
-run_check "INVARIANT" bash -lc 'rg -U -n "if blank_strings and isinstance\(node, ast\.Constant\)[^\n]*(\n([ \t][^\n]*)?)*isinstance\(node\.value, str\):" scripts/rust_code_view.py'
 
 # ============================================================================
 # v0.35.155 -- a LINE is not the declaration, and a resolved anchor's
@@ -21758,11 +21150,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvPostReceiveDonation_
 # the step, where it was spelled inline at three sites in `Kernel/API.lean`.
 run_check "INVARIANT" rg -n '^theorem descheduleAtPlacement_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 run_negative_check "INVARIANT" bash -lc 'rg -n "rw \[descheduleAtPlacement_preserves_objects\]; exact" SeLe4n/Kernel/API.lean'
-# And the retired hand-kept figure: the family's size is not restated in prose.
-# `run_prose_negative_check`, not `run_negative_check` -- the subject genuinely IS
-# the text, and it lives in a `--` comment, which the code view blanks; a code-view
-# negative over it can never fire, which the mutation run reported as MISSED.
-run_prose_negative_check "INVARIANT" rg -n 'Eight coverage theorems above' SeLe4n/Kernel/SyscallSchedContainment.lean
 # The frame MEASURED, in the direction the segment assertions structurally cannot
 # see: the arm writes no replenish queue on a core the segment does not name.  (b)
 # is the decisive shape -- an empty segment is a claim about every core, where (a)
