@@ -35,8 +35,9 @@ build runs.  What it holds:
 5. **Both suites are run by a gate**: Tier 2 executes `ak9_platform_suite`, and
    `scripts/test_rust.sh` runs the workspace's unit tests.
 
-Every source is read through its code view (`rust_code_view`, `lean_code_view`),
-so a comment naming the runner can neither satisfy nor trip a check.  **WS-BP
+Every source is read through its code view (`rust_code_view`, `lean_code_view`,
+and for the gate scripts the tree's one shell lexer, `strip_shell`), so a
+comment naming the runner can neither satisfy nor trip a check.  **WS-BP
 BP2.6** retired the Rust `/memory` walk, so the question both suites still share
 is the structural one; the corpus and this gate stay for as long as the bootargs
 reader walks the structure block in Rust.
@@ -54,12 +55,15 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import generate_dtb_corpus as corpus  # noqa: E402
 import lean_code_view  # noqa: E402
 import rust_code_view  # noqa: E402
+from check_identifier_naming import strip_shell  # noqa: E402  (the one shell lexer)
 
 ROOT = SCRIPT_DIR.parent
 RUST_CONSUMER = ROOT / "rust" / "sele4n-hal" / "src" / "cmdline.rs"
 LEAN_CONSUMER = ROOT / "tests" / "Ak9PlatformSuite.lean"
 TIER2_SCRIPT = ROOT / "scripts" / "test_tier2_negative.sh"
 RUST_SCRIPT = ROOT / "scripts" / "test_rust.sh"
+#: The Tier 2 line the self-test mutates around; `check_gates` asks the relation.
+TIER2_RUN = 'run_check_with_timeout "TRACE" lake exe ak9_platform_suite'
 
 RUST_MODULE = "dtb_corpus_tests"
 RUST_TEST = "every_corpus_fixture_agrees_with_the_manifest"
@@ -187,32 +191,21 @@ def check_lean_consumer(text: str) -> list[str]:
 
 
 def check_gates(tier2: str, rust_script: str) -> list[str]:
+    """Each script runs its suite as a `run_*` helper's command.
+
+    Both scripts are read through `strip_shell`, which blanks comments and
+    reads a double-quoted argument as message text: the helper's quoted label
+    becomes spaces, so the command must follow the helper directly.  A line
+    inside a multi-line string, a commented-out call and `echo <command>` do
+    not count.
+    """
     problems = []
-    t2 = _shell_code(tier2)
-    if not re.search(r"^\s*run_\w+\s+\"?\w+\"?\s+lake exe ak9_platform_suite\b", t2, re.M):
+    if not re.search(r"^\s*run_\w+\s+lake exe ak9_platform_suite\b",
+                     strip_shell(tier2), re.M):
         problems.append("Tier 2 does not run `lake exe ak9_platform_suite`")
-    if not re.search(r"^\s*run_\w+\s+.*\bcargo test --all\b", _shell_code(rust_script), re.M):
+    if not re.search(r"^\s*run_\w+\s+cargo test --all\b", strip_shell(rust_script), re.M):
         problems.append("scripts/test_rust.sh does not run `cargo test --all`")
     return problems
-
-
-def _shell_code(text: str) -> str:
-    """Shell text with `#` comments dropped (a `#` inside quotes is kept)."""
-    out = []
-    for line in text.splitlines():
-        quote = None
-        cut = len(line)
-        for i, ch in enumerate(line):
-            if quote:
-                if ch == quote:
-                    quote = None
-            elif ch in "'\"":
-                quote = ch
-            elif ch == "#" and (i == 0 or line[i - 1].isspace()):
-                cut = i
-                break
-        out.append(line[:cut])
-    return "\n".join(out)
 
 
 def check_tree() -> list[str]:
@@ -233,6 +226,14 @@ def check_tree() -> list[str]:
     problems += check_lean_consumer(LEAN_CONSUMER.read_text())
     problems += check_gates(TIER2_SCRIPT.read_text(), RUST_SCRIPT.read_text())
     return problems
+
+
+def _swap(text: str, old: str, new: str) -> str:
+    """`text` with its one `old` replaced; a mutation that misses its target
+    would make a case pass vacuously, so a miss is an error."""
+    if text.count(old) != 1:
+        raise AssertionError(f"self-test mutation target occurs {text.count(old)} times: {old!r}")
+    return text.replace(old, new)
 
 
 def self_test() -> int:
@@ -292,6 +293,29 @@ def self_test() -> int:
         ("Tier 2 echoes the suite instead of running it",
          lambda: check_gates(tier2.replace("lake exe ak9_platform_suite",
                                            "echo lake exe ak9_platform_suite"), rust_sh), True),
+        # The shell view is the shared lexer, so these hold its quote rules.
+        ("test_rust.sh echoes cargo test instead of running it",
+         lambda: check_gates(tier2, _swap(rust_sh, '" cargo test --all', '" echo cargo test --all')),
+         True),
+        ("Tier 2's run line commented out",
+         lambda: check_gates(_swap(tier2, TIER2_RUN, "# " + TIER2_RUN), rust_sh), True),
+        ("Tier 2's run line only inside a multi-line string",
+         lambda: check_gates(_swap(tier2, TIER2_RUN, 'echo "usage:\n  '
+                                   + TIER2_RUN.replace('"TRACE"', "TRACE") + '\n"'), rust_sh),
+         True),
+        ("a `#` inside the label's quotes",
+         lambda: check_gates(_swap(tier2, TIER2_RUN, TIER2_RUN.replace('"TRACE"', '"TRACE #ak9"')),
+                             rust_sh), False),
+        ("an escaped quote and a `#` inside the label",
+         lambda: check_gates(tier2, _swap(rust_sh, '"Unit tests passed"',
+                                          '"Unit \\" #1 passed"')), False),
+        ("a `#` inside `${var#pat}` before the run line",
+         lambda: check_gates(_swap(tier2, TIER2_RUN, "x=${x#* } # note\n" + TIER2_RUN), rust_sh),
+         False),
+        ("`${a[@]+\"${a[@]}\"}` and an apostrophe before the run line",
+         lambda: check_gates(_swap(
+             tier2, TIER2_RUN, 'for a in ${xs[@]+"${xs[@]}"}; do :; done\necho "it\'s"\n# x\n'
+             + TIER2_RUN), rust_sh), False),
         ("a blob with no manifest row",
          lambda: check_bijection(manifest, names | {"stray"}), True),
         ("a row with no blob",

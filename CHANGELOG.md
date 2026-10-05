@@ -315,6 +315,17 @@
     `setup_lean_env.sh` warning that was reworded to dodge the bug is back to
     its natural wording, and the gate reads the comments after it as
     comments.
+  - *One shell lexer*: `check_dtb_corpus_consumers.py` had its own per-line
+    shell comment stripper, which toggled on every quote with no escapes.
+    An escaped quote before a `#` in a label cut the line and failed the
+    gate, and a run line inside a multi-line string counted.  It now reads
+    `test_tier2_negative.sh` and `test_rust.sh` through `strip_shell` and its
+    own stripper is deleted.  The helper's quoted label reads as spaces in
+    that view, so both patterns now require the command to follow the helper
+    directly, and `echo cargo test --all` no longer passes.  Its self-test
+    grows to 27 cases (a commented-out or string-only run line, `echo`, a `#`
+    in a label, an escaped quote, `${var#pat}`, and `${a[@]+"${a[@]}"}`
+    followed by an apostrophe), and every new mutation must find its target.
 - **Codex review of 852f56c (same PR).**
   - *A documentation check left in a code gate*:
     `check_ipc_invariant_dethreading.py` still read every tracked `.md` file
