@@ -113,7 +113,7 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 ./scripts/setup_lean_env.sh   # Lean ツールチェーンのインストール
 lake build                     # 全モジュールのコンパイル
 lake exe sele4n                # トレースハーネスの実行
-./scripts/test_smoke.sh        # 検証（衛生チェック + ビルド + トレース + ネガティブステート + ドキュメント同期）
+./scripts/test_smoke.sh        # 検証（衛生チェック + ビルド + トレース + ネガティブステート）
 ```
 
 ## ドキュメント
@@ -133,7 +133,7 @@ lake exe sele4n                # トレースハーネスの実行
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0+1：衛生チェック + ビルド
-./scripts/test_smoke.sh     # + Tier 2：トレース + ネガティブステート + ドキュメント同期
+./scripts/test_smoke.sh     # + Tier 2：トレース + ネガティブステート
 ./scripts/test_full.sh      # + Tier 3：不変条件サーフェスアンカー + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4：ナイトリー決定性検証
 

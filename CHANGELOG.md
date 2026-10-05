@@ -268,7 +268,12 @@
       `jobs.<id>.services.<id>.image`, and an action's `runs.image`.  Each
       must carry an `@sha256:` digest, and a `runs.image` that is not
       `docker://` is a Dockerfile path that must name a tracked file beside
-      the action.  A job, `services`, service or `runs` that is not a mapping,
+      the action, and that Dockerfile is read from the index as BuildKit
+      reads it (directives, continuations, comments, `--platform`,
+      `AS <name>`): each `FROM` must be `scratch`, an earlier stage or
+      digest-pinned, and a `# syntax=` frontend digest-pinned; an image from
+      a build argument, an unknown flag, a malformed `FROM` and a file with
+      no `FROM` fail.  A job, `services`, service or `runs` that is not a mapping,
       a container or service with no image, and an image it cannot classify
       (an expression, a short digest) fail.  `<<` merges are resolved, so a
       container merged into a job is checked.
@@ -278,12 +283,15 @@
       `setup_lean_env.sh`, which every CI job that runs Tier 0 calls, installs
       it with the test dependencies (the `python3-yaml` package, then pip).
     - Each finding is printed as `file:line: reason: value`.  The self-test
-      has 69 cases, each in a scratch git repository, including the escaped
+      has 83 cases, each in a scratch git repository, including the escaped
       key, a duplicate key, an escaped duplicate, aliases, a flow mapping, an
       action under `node_modules`, a missing or untracked target, a cycle and
       a chain of local actions, an action input and a `with:`/`env:` key named
       `uses` (both pass), and unpinned, unclassifiable and merged-in
-      container, service and Docker-action images.  A loader that accepts
+      container, service and Docker-action images, and Dockerfiles (a pinned
+      multi-stage file with flags, continuations and comments; a tag, no tag,
+      a build argument, a later stage name, an unknown flag, a malformed
+      `FROM`, no `FROM`, an unpinned `# syntax=`).  A loader that accepts
       duplicates, or a walk that matches only plain keys, fails it.
     - The tree's 39 references were already pinned, and no workflow uses a
       container, a service or a Docker action, so no workflow changed.
@@ -326,6 +334,18 @@
     grows to 27 cases (a commented-out or string-only run line, `echo`, a `#`
     in a label, an escaped quote, `${var#pat}`, and `${a[@]+"${a[@]}"}`
     followed by an apostrophe), and every new mutation must find its target.
+  - *Descriptions of the removed checks*: every live description that said a
+    tier still runs one of the removed documentation checks now says what
+    the tier runs.  `test_smoke.sh` no longer claims "documentation sync" in
+    `TESTING_FRAMEWORK_PLAN.md` or in the README, `QUICKSTART.md` and
+    `CONTRIBUTING.md` of all eleven translations (28 files); Tier 0's list
+    drops BCM2712 freshness; `DEVELOPMENT.md` and the WS-CB plan no longer
+    cite a "plan gate"; GitBook chapter 11 names `generate_codebase_map.py
+    --check` instead of "docs-sync checks"; and `SMP_BOOT_PATH_PLAN.md` says
+    the ABI fixture's wiring is held by its consumers (the Rust suite
+    `include_str!`s it).  Struck register rows, dated findings in
+    `UNFINISHED_SMP_WORK.md`, audits and `CONVENTIONS_DETAIL.md`'s worked
+    examples are history and keep the names.
 - **Codex review of 852f56c (same PR).**
   - *A documentation check left in a code gate*:
     `check_ipc_invariant_dethreading.py` still read every tracked `.md` file

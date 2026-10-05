@@ -120,7 +120,7 @@ security model) від seL4, водночас впроваджуючи архі�
 ./scripts/setup_lean_env.sh   # встановлення тулчейна Lean
 lake build                     # компіляція всіх модулів
 lake exe sele4n                # запуск трасувального стенда
-./scripts/test_smoke.sh        # валідація (гігієна + збірка + трасування + негативні стани + синхронізація документації)
+./scripts/test_smoke.sh        # валідація (гігієна + збірка + трасування + негативні стани)
 ```
 
 ## Документація
@@ -141,7 +141,7 @@ lake exe sele4n                # запуск трасувального сте�
 
 ```bash
 ./scripts/test_fast.sh      # Рівень 0+1: гігієна + збірка
-./scripts/test_smoke.sh     # + Рівень 2: трасування + негативні стани + синхронізація документації
+./scripts/test_smoke.sh     # + Рівень 2: трасування + негативні стани
 ./scripts/test_full.sh      # + Рівень 3: якорі поверхні інваріантів + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Рівень 4: нічний тест детермінізму
 

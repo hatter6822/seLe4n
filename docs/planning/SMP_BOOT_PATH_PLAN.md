@@ -211,8 +211,11 @@ decision the rows did not anticipate: BP0.3's freshness is decided where Lean
 can be asked (the suite that emits the table, Tier 2, and the Rust suite that
 reads it) rather than by a Tier 0 script, because deriving the table before a
 build would mean reading Lean source with a scanner, which this project retires;
-Tier 0 holds the *wiring* (both consumers named and reading the file) through
-the fixture index's `Used by` reconciliation.
+The *wiring* is held by the consumers themselves: the Lean suite writes the
+file in Tier 2, and the Rust conformance suite `include_str!`s it, so a missing
+or renamed fixture fails that build.  (Tier 0's fixture index `Used by`
+reconciliation held it until `v0.36.42`, when that documentation check was
+removed.)
 
 ### BP1 — aarch64 Lean object code (4 sub-tasks)
 

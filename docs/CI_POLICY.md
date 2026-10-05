@@ -147,8 +147,10 @@ All third-party GitHub Actions in workflow files must be pinned to full 40-chara
 commit SHA hashes, not mutable version tags. Each `uses:` reference carries a
 trailing `# vX.Y.Z` comment documenting the version at pin time. Every image a
 workflow or action pulls (a job container, a service, a Docker action's
-`docker://` image) is pinned the same way, to its `@sha256:` digest, with the
-tag in a comment beside it.
+`docker://` image, and each `FROM` and `# syntax=` frontend of a Docker
+action's Dockerfile) is pinned the same way, to its `@sha256:` digest, with the
+tag in a comment beside it (in a Dockerfile, on the comment line above, since a
+`#` after an instruction is an argument there).
 
 Covered workflows:
 - `.github/workflows/lean_action_ci.yml`
@@ -184,6 +186,13 @@ string, or its `image`) and `jobs.<id>.services.<id>.image` in a workflow, and
 `runs.image` in an action. Each must be `[docker://]image[:tag]@sha256:<64 hex>`.
 A `runs.image` that is not `docker://` is a Dockerfile path, resolved against
 the action's directory as the runner resolves it, and must name a tracked file.
+That Dockerfile is read from the index as BuildKit reads it (parser directives,
+an `escape` directive, line continuations, comment lines, `--platform=…`,
+`AS <name>`): each `FROM` must name `scratch`, a stage named by an earlier
+`FROM … AS`, or a digest-pinned image, and a `# syntax=` frontend must be
+digest-pinned. An image built from a build argument (`$`), a `FROM` flag other
+than `--platform`, a malformed `FROM`, an `escape` directive other than `\` or
+a backtick, and a Dockerfile with no `FROM` fail.
 A `jobs`, job, `services`, service or `runs` that is not a mapping, and a
 container or service with no image, fail.
 

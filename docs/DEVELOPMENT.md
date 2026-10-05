@@ -649,7 +649,7 @@ in anything that ships, and the rule not to read or reference
 5. **Build the module by name** (§3) and run the right tier (§4).
 6. **Bump the version and write the CHANGELOG entry** (§8).
 7. **Sync the documentation** (§9).
-8. **Stage, then run Tier 0** — the naming and plan gates read the index.
+8. **Stage, then run Tier 0** — the naming gate reads the index.
 9. **Commit.** The hook runs; do not bypass it.
 
 ### PR checklist

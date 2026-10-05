@@ -15,7 +15,7 @@ Machine-readable mirror: [`docs/codebase_map.json`](../../docs/codebase_map.json
 - **`source_sync`** — stable `source_digest` (SHA256) for cache invalidation, plus volatile `repository.head` git metadata.
 - **`modules`** — per-module declaration inventory with `called` arrays for internal references.
 
-Docs-sync checks compare only the stable subset so branch/merge-only churn does not fail CI.
+`generate_codebase_map.py --check` compares only the stable subset, so branch/merge-only churn does not make the post-merge refresh rewrite the map.
 
 ## 1. Repository-level structure
 

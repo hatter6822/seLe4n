@@ -117,7 +117,7 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 ./scripts/setup_lean_env.sh   # Lean 툴체인 설치
 lake build                     # 모든 모듈 컴파일
 lake exe sele4n                # 트레이스 하니스 실행
-./scripts/test_smoke.sh        # 검증 (위생 + 빌드 + 트레이스 + 음성 상태 + 문서 동기화)
+./scripts/test_smoke.sh        # 검증 (위생 + 빌드 + 트레이스 + 음성 상태)
 ```
 
 ## 문서
@@ -138,7 +138,7 @@ lake exe sele4n                # 트레이스 하니스 실행
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0+1: 위생 검사 + 빌드
-./scripts/test_smoke.sh     # + Tier 2: 트레이스 + 음성 상태 + 문서 동기화
+./scripts/test_smoke.sh     # + Tier 2: 트레이스 + 음성 상태
 ./scripts/test_full.sh      # + Tier 3: 불변량 표면 앵커 + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: 야간 결정론
 

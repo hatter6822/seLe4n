@@ -120,7 +120,7 @@ clé `readme_sync`. Mettez à jour l'ensemble de la documentation en une seule f
 ./scripts/setup_lean_env.sh   # installer la chaîne d'outils Lean
 lake build                     # compiler tous les modules
 lake exe sele4n                # exécuter le harnais de trace
-./scripts/test_smoke.sh        # valider (hygiène + compilation + trace + état négatif + synchro docs)
+./scripts/test_smoke.sh        # valider (hygiène + compilation + trace + état négatif)
 ```
 
 ## Documentation
@@ -141,7 +141,7 @@ et est actualisé automatiquement à chaque merge via CI. Regénérez avec
 
 ```bash
 ./scripts/test_fast.sh      # Niveau 0+1 : hygiène + compilation
-./scripts/test_smoke.sh     # + Niveau 2 : trace + état négatif + synchro docs
+./scripts/test_smoke.sh     # + Niveau 2 : trace + état négatif
 ./scripts/test_full.sh      # + Niveau 3 : ancres de surface d'invariants + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Niveau 4 : déterminisme nocturne
 

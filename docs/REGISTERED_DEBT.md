@@ -635,7 +635,7 @@ family grows with the walks — two new ones, plus the reply leg's own corrected
 name the thread it actually walks from.
 
 **OD3.15 landed at `v0.34.142`** — the ceiling's derived figures stop being
-hand-maintained.  `scripts/check_lock_ceiling_figures.py` (Tier 0) holds every
+hand-maintained.  `scripts/check_lock_ceiling_figures.py` (Tier 0) held every
 prose copy of `maxLockSetSize`, the RPi5 tick's admissible per-lock cost and the
 uniform-cost envelope to the Lean sources they are derived from, on RR7.28's
 shape: both axes derived, a canonical spelling for the live claim so narrative

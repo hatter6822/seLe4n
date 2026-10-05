@@ -56,7 +56,7 @@ lake exe sele4n
 | コマンド | 対象 Tier | 内容 |
 |---------|----------|------|
 | `./scripts/test_fast.sh` | Tier 0 + 1 | 衛生チェック + ビルド |
-| `./scripts/test_smoke.sh` | Tier 0〜2 | + トレース + ネガティブステート + ドキュメント同期 |
+| `./scripts/test_smoke.sh` | Tier 0〜2 | + トレース + ネガティブステート |
 | `./scripts/test_full.sh` | Tier 0〜3 | + 不変条件サーフェスアンカー + Lean `#check` 正確性検証 |
 | `./scripts/test_nightly.sh` | Tier 0〜4 | + ナイトリー決定性検証（`NIGHTLY_ENABLE_EXPERIMENTAL=1` 要設定） |
 

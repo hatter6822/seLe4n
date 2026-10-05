@@ -103,7 +103,7 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 ./scripts/setup_lean_env.sh   # تثبيت سلسلة أدوات Lean
 lake build                     # ترجمة جميع الوحدات
 lake exe sele4n                # تشغيل أداة التتبع (trace harness)
-./scripts/test_smoke.sh        # التحقق (نظافة + بناء + تتبع + حالة سلبية + مزامنة الوثائق)
+./scripts/test_smoke.sh        # التحقق (نظافة + بناء + تتبع + حالة سلبية)
 ```
 
 ## التوثيق
@@ -124,7 +124,7 @@ lake exe sele4n                # تشغيل أداة التتبع (trace harness
 
 ```bash
 ./scripts/test_fast.sh      # المستوى 0+1: نظافة + بناء
-./scripts/test_smoke.sh     # + المستوى 2: تتبع + حالة سلبية + مزامنة الوثائق
+./scripts/test_smoke.sh     # + المستوى 2: تتبع + حالة سلبية
 ./scripts/test_full.sh      # + المستوى 3: مراسي سطح الثوابت + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + المستوى 4: حتمية ليلية
 

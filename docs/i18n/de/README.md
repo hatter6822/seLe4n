@@ -120,7 +120,7 @@ Aktualisieren Sie die gesamte Dokumentation gemeinsam mit
 ./scripts/setup_lean_env.sh   # Lean-Toolchain installieren
 lake build                     # alle Module kompilieren
 lake exe sele4n                # Trace-Harness ausführen
-./scripts/test_smoke.sh        # validieren (Hygiene + Build + Trace + Negative-State + Docs-Sync)
+./scripts/test_smoke.sh        # validieren (Hygiene + Build + Trace + Negative-State)
 ```
 
 ## Dokumentation
@@ -141,7 +141,7 @@ und wird bei Merge automatisch via CI aktualisiert. Regenerieren mit
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0+1: Hygiene + Build
-./scripts/test_smoke.sh     # + Tier 2: Trace + Negative-State + Docs-Sync
+./scripts/test_smoke.sh     # + Tier 2: Trace + Negative-State
 ./scripts/test_full.sh      # + Tier 3: Invariantenoberflächenanker + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: nächtlicher Determinismus
 

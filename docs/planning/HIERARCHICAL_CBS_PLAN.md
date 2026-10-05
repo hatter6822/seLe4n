@@ -332,7 +332,8 @@ a one-shot timer.
   primitives and the flow-classification tables and must not overlap a WS-RR
   cut that does.  RR6 (lock primitives) never collides.
 * **Within a phase the rows are sequential** unless a row says otherwise.
-  A row consumes only lower-numbered rows; the plan gate enforces this.
+  A row consumes only lower-numbered rows; the author and the reviewer
+  hold this (no gate checks plans, per `CLAUDE.md`).
 * **SM10 independence.**  Nothing here needs the image; nothing in SM10 needs
   this.  If SM10.1 lands first, CB6's fixtures are re-cut against the live
   seams and nothing else moves.
@@ -2065,8 +2066,7 @@ no status site reads CLOSED before CB8.8.
 * `./scripts/test_aarch64_cross_build.sh` after any change under `rust/`
   (CB0.5, CB1.6, CB6.1, CB6.2, CB6.7, CB6.8) — `sele4n-hal` depends on `sele4n-abi`,
   so the argument-struct cut is a kernel-target change like the id cut.
-* Stage before running Tier 0: the plan gate and the naming gate read the
-  index.
+* Stage before running Tier 0: the naming gate reads the index.
 * Before opening the PR for a row, walk the five questions of §7's preamble
   against the diff: builds alone; every theorem over a changed live
   definition re-proved; every newly reachable behaviour specified and pinned;

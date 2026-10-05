@@ -105,7 +105,7 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 ./scripts/setup_lean_env.sh   # Lean टूलचेन स्थापित करें
 lake build                     # सभी मॉड्यूल संकलित करें
 lake exe sele4n                # ट्रेस हार्नेस चलाएँ
-./scripts/test_smoke.sh        # सत्यापन (स्वच्छता + निर्माण + ट्रेस + नकारात्मक-स्थिति + दस्तावेज़ समन्वय)
+./scripts/test_smoke.sh        # सत्यापन (स्वच्छता + निर्माण + ट्रेस + नकारात्मक-स्थिति)
 ```
 
 ## दस्तावेज़ीकरण
@@ -126,7 +126,7 @@ lake exe sele4n                # ट्रेस हार्नेस चला
 
 ```bash
 ./scripts/test_fast.sh      # टियर 0+1: स्वच्छता + निर्माण
-./scripts/test_smoke.sh     # + टियर 2: ट्रेस + नकारात्मक-स्थिति + दस्तावेज़ समन्वय
+./scripts/test_smoke.sh     # + टियर 2: ट्रेस + नकारात्मक-स्थिति
 ./scripts/test_full.sh      # + टियर 3: अपरिवर्तनीय सतह एंकर + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + टियर 4: रात्रिकालीन नियतिवाद
 

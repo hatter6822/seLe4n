@@ -113,7 +113,7 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 ./scripts/setup_lean_env.sh   # 安装 Lean 工具链
 lake build                     # 编译所有模块
 lake exe sele4n                # 运行跟踪测试工具
-./scripts/test_smoke.sh        # 验证（格式检查 + 构建 + 跟踪 + 负状态 + 文档同步）
+./scripts/test_smoke.sh        # 验证（格式检查 + 构建 + 跟踪 + 负状态）
 ```
 
 ## 文档
@@ -133,7 +133,7 @@ lake exe sele4n                # 运行跟踪测试工具
 
 ```bash
 ./scripts/test_fast.sh      # Tier 0+1：格式检查 + 构建
-./scripts/test_smoke.sh     # + Tier 2：跟踪 + 负状态 + 文档同步
+./scripts/test_smoke.sh     # + Tier 2：跟踪 + 负状态
 ./scripts/test_full.sh      # + Tier 3：不变量表面锚点 + Lean #check
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4：夜间确定性测试
 

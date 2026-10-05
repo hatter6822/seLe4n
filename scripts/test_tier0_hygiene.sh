@@ -110,9 +110,10 @@ fi
 # with an `@sha256:` digest, or a `./` reference, which is resolved to its
 # tracked workflow or `action.y*ml` and checked in turn (a visited set stops a
 # cycle); an image needs an `@sha256:` digest, and a `runs.image` Dockerfile
-# path must name a tracked file.  A wrong type on the way, and anything it
-# cannot parse or classify, fails.  A missing PyYAML fails with the install
-# command; it is not a skip.  Unconditional, by the rule stated at the CodeQL
+# path must name a tracked file whose every `FROM` (and `# syntax=` frontend)
+# is `scratch`, an earlier stage or digest-pinned.  A wrong type on the way,
+# and anything it cannot parse or classify, fails.  A missing PyYAML fails
+# with the install command; it is not a skip.  Unconditional, by the rule stated at the CodeQL
 # check below.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_actions_sha_pinned.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_actions_sha_pinned.py"
