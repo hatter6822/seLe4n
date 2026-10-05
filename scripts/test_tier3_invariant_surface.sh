@@ -8877,7 +8877,10 @@ run_check "INVARIANT" rg -n 'ipcCapTransferArrivalOrder' tests/OperationChainSui
 # slot and RETURNS the transfer summary, so `extraCaps` is the installed count.
 run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid \(some rid\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_negative_check "INVARIANT" rg -n 'endpointReceiveDualOnCore epId tid \(some rid\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
-run_check "INVARIANT" rg -n 'endpointReplyRecvOnCore epId tid rid prevCaller msg gate.cspaceRoot' SeLe4n/Kernel/API.lean
+# Audit IPC-2 (`v0.36.49`): BOTH dispatch tables call the one transition.  Pinned
+# per declaration, so rerouting either arm while the other still calls it fails.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchWithCap [^\n]*(\n([ \t][^\n]*)?)*endpointReplyRecvOnCore epId tid rid prevCaller msg gate.cspaceRoot" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchWithCapChecked [^\n]*(\n([ \t][^\n]*)?)*endpointReplyRecvOnCore epId tid rid prevCaller msg gate.cspaceRoot" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n 'replyRecvCapTransferArrivalOrder' tests/OperationChainSuite.lean
 
 # PR #873 round 8 (SECURITY): **a receive that dequeued nothing installs

@@ -249,7 +249,8 @@ the return is the identity.
 One definition for both reply-shaped arms: the `.reply` dispatch's replenish
 segment reads it at the reply leg's post-state
 (`endpointReplyDispatchReplenishCores`, §6), and so does the `.replyRecv`
-footprint's pop component (`replyRecvHandoffReplenishCores`, `Kernel/API.lean`),
+footprint's pop component (`replyRecvHandoffReplenishCores`,
+`IPC/CrossCore/EndpointReplyRecv.lean`),
 whose pop resolves the same trigger at the same state
 (`replyRecvPopDonation_holder_eq_frameHead`).  Spelled through the two named home
 resolvers rather than through `determineTargetCore` directly, so the three readers

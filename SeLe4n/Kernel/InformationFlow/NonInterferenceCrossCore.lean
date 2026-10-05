@@ -1867,8 +1867,9 @@ theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId
 -- no core (`replyRecvPopDonation_confinedToCores`), so the arm's declared set is
 -- unchanged by the move.
 
--- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvDescheduleAndWalkWriteSet` moved to `Kernel/API.lean`, beside the
--- transition it describes.  A write set declared in a STAGED module is one the
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvDescheduleAndWalkWriteSet` moved out of this module,
+-- beside the transition it describes (since `v0.36.49` both live in
+-- `IPC/CrossCore/EndpointReplyRecv.lean`).  A write set declared in a STAGED module is one the
 -- production scheduler footprint cannot read, which is the layering rule Cuts 5
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
 -- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
@@ -1933,8 +1934,9 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
           simpa using observableSlotsConfinedToCores_trans hReturn
             (migrateSchedContextReplenishment_confinedToCores st1' oldScId _ _)
 
--- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvHolderDescheduleWriteSet` moved to `Kernel/API.lean`, beside the
--- transition it describes.  A write set declared in a STAGED module is one the
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvHolderDescheduleWriteSet` moved out of this module,
+-- beside the transition it describes (since `v0.36.49` both live in
+-- `IPC/CrossCore/EndpointReplyRecv.lean`).  A write set declared in a STAGED module is one the
 -- production scheduler footprint cannot read, which is the layering rule Cuts 5
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
 -- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
@@ -1954,8 +1956,9 @@ theorem replyRecvHolderDeschedule_confinedToCores (tid holder : SeLe4n.ThreadId)
     -- because they are the same step, not two spellings that happen to agree.
     exact descheduleAtPlacement_confinedToCores st holder
 
--- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvPostReceiveDonationWriteSet` moved to `Kernel/API.lean`, beside the
--- transition it describes.  A write set declared in a STAGED module is one the
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvPostReceiveDonationWriteSet` moved out of this module,
+-- beside the transition it describes (since `v0.36.49` both live in
+-- `IPC/CrossCore/EndpointReplyRecv.lean`).  A write set declared in a STAGED module is one the
 -- production scheduler footprint cannot read, which is the layering rule Cuts 5
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
 -- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
@@ -2120,8 +2123,9 @@ theorem endpointReceiveDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.O
         receiverCspaceRoot receiverSlotBase executingCore st))
   simpa using h
 
--- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `endpointReplyRecvWriteSet` moved to `Kernel/API.lean`, beside the
--- transition it describes.  A write set declared in a STAGED module is one the
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `endpointReplyRecvWriteSet` moved out of this module,
+-- beside the transition it describes (since `v0.36.49` both live in
+-- `IPC/CrossCore/EndpointReplyRecv.lean`).  A write set declared in a STAGED module is one the
 -- production scheduler footprint cannot read, which is the layering rule Cuts 5
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
 -- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
