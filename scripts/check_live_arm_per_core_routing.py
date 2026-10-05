@@ -43,7 +43,7 @@ reported.  A term has no spelling: `sched.currentOnCore bootCoreId`,
 bootCoreId` and the same call wrapped over four lines are one `Expr`.  So the
 question is now "is this application's argument the `bootCoreId` constant",
 which no formatting can hide, and a searched-core `find?…getD` fallback (the
-shape of the executing-core resolver deleted at v0.36.45) is excluded
+shape of the executing-core resolver deleted at v0.36.46) is excluded
 structurally rather than by tuning.
 
 Source text is still read for *root resolution* -- which definition a mapped
@@ -216,7 +216,7 @@ TOP = re.compile(r"^(?:@\[|/--|/-!|private\s|protected\s|partial\s|noncomputable
 #
 # It also gets last round's precision for free.  A resolver that reads
 # `currentOnCore c` for a *searched* core and uses `bootCoreId` only as a
-# `find?.getD` fallback (the executing-core resolver deleted at v0.36.45 had
+# `find?.getD` fallback (the executing-core resolver deleted at v0.36.46 had
 # that shape) does not pass the constant to the primitive, so no tuning is
 # needed to exclude it.
 # ---------------------------------------------------------------------------

@@ -865,7 +865,7 @@ stated here at the entry, over the state the entry commits.  With the dispatch
 live it covers a core whose run queue held no successor.
 
 The fallback the challenge describes belonged to a state-scanning
-executing-core resolver that IPC-8 (`v0.36.45`) deleted: the core is now
+executing-core resolver that IPC-8 (`v0.36.46`) deleted: the core is now
 threaded from this entry through the dispatcher, so no arm re-derives it and no
 fallback exists anywhere.  Resolution happens first, in
 `syscallDispatchFromAbi`, and it has no fallback: no current thread on the issuing core means `.illegalState` with the
