@@ -104,9 +104,9 @@ Tier 3 invariant surface anchors additionally check for:
   included — is Tier 0's `check_actions_sha_pinned.py`, which parses the
   tracked workflows and composite actions as YAML, follows each local `./`
   action to its tracked file, requires an `@sha256:` digest on every job
-  container, service and Docker-action image, including each `FROM` of a
-  Docker action's Dockerfile, and fails on any `uses:` or
-  image value it cannot classify or resolve).
+  container, service and Docker-action image, refuses a Docker action built
+  from a Dockerfile (what a Dockerfile pulls cannot be bounded statically),
+  and fails on any `uses:` or image value it cannot classify or resolve).
 
 ## 8) Related security documents
 

@@ -22,14 +22,12 @@ value is classified:
 The keys GitHub pulls an image from are read the same way:
 `jobs.<id>.container` (a string, or its `image`) and
 `jobs.<id>.services.<id>.image` in a workflow, and `runs.image` in an action.
-Each must be `[docker://]image[:tag]@sha256:<64 hex>`; a `runs.image` that is
-not `docker://` is a Dockerfile path, resolved against the action's directory
-as the runner resolves it, and must name a tracked file, whose images are
-checked in turn: each `FROM` (read as BuildKit reads it: parser directives,
-continuations, comments, `--platform`, `AS <name>`) must name `scratch`, an
-earlier stage or a digest-pinned image, and a `# syntax=` frontend must be
-digest-pinned.  A document, `jobs`,
-job, step, `services`, service or `runs` that is not a mapping, `steps` that
+Each must be `[docker://]image[:tag]@sha256:<64 hex>`.  A `runs.image` that
+is not `docker://` builds a Dockerfile, and is refused outright: what a
+Dockerfile pulls (`FROM`, `COPY --from`, `RUN --mount=from=`, `ONBUILD`,
+`ADD <url>`, a `RUN curl`) is not bounded by any static reading, so a
+Dockerfile action cannot be shown to pull only pinned images.  A document,
+`jobs`, job, step, `services`, service or `runs` that is not a mapping, `steps` that
 are not a sequence, a container or service with no image, and a value whose
 shape is not one of these fail.
 
@@ -233,8 +231,7 @@ def check_text(rel: str, text: str, counts: dict[str, int]
                ) -> tuple[list[str], list[tuple[int, str, str]]]:
     """(problems, local references) for one file's text.
 
-    A local reference is (line, field, value): a `uses` value naming `./path`,
-    or a `runs.image` naming a Dockerfile rather than a `docker://` image.
+    A local reference is (line, field, value): a `uses` value naming `./path`.
     """
     problems: list[str] = []
     local: list[tuple[int, str, str]] = []
@@ -265,8 +262,11 @@ def check_text(rel: str, text: str, counts: dict[str, int]
                         counts["image" if text_value.startswith("docker://")
                                else "remote"] += 1
                 elif field == "runs.image" and not text_value.startswith("docker://"):
-                    local.append((line, field, text_value))
-                    counts["local"] += 1
+                    problems.append(
+                        f"{rel}:{line}: `runs.image` builds a Dockerfile, and what a "
+                        f"Dockerfile pulls cannot be bounded by a static check; use a "
+                        f"digest-pinned `docker://image@sha256:<64 hex>` instead: "
+                        f"{text_value}")
                 elif reason := classify_image(text_value):
                     problems.append(f"{rel}:{line}: `{field}`: {reason}: {text_value}")
                 else:
@@ -313,139 +313,6 @@ def resolve_local(value: str, modes: dict[str, str]) -> tuple[list[str], str | N
     return found, None
 
 
-def resolve_dockerfile(rel: str, value: str, modes: dict[str, str]
-                       ) -> tuple[str | None, str | None]:
-    """(the tracked Dockerfile an action's `runs.image` path names, why not).
-
-    The runner resolves the path against the action's own directory.
-    """
-    if not value or value.startswith("/") or re.search(r"\s|\$\{\{", value):
-        return None, "cannot classify this `runs.image` (not docker:// and not a path)"
-    target = posixpath.normpath(posixpath.join(posixpath.dirname(rel), value))
-    if target == ".." or target.startswith("../"):
-        return None, "`runs.image` leaves the repository"
-    if target not in modes or modes[target] in INDIRECT_MODES:
-        return None, f"`runs.image` names no tracked file (resolved to {target})"
-    return target, None
-
-
-#: A parser directive: `# key=value` in the lines before anything else.
-DIRECTIVE_RE = re.compile(r"#[ \t]*([A-Za-z][A-Za-z0-9_-]*)[ \t]*=[ \t]*(\S*)[ \t]*")
-
-
-def dockerfile_instructions(text: str) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
-    """(instructions as (first line, joined text), problems as (line, reason)).
-
-    As BuildKit reads it: parser directives are the `# key=value` lines at the
-    very top, and `escape` picks the continuation character (`\\` or a
-    backtick); `syntax` names a frontend image, which is pulled, so it is
-    returned as a `syntax` pseudo-instruction and checked like a `FROM`.
-    A line ending in the escape character (trailing blanks allowed) continues
-    on the next, which is appended without trimming; a comment line or a
-    blank line inside a continuation is dropped.  A here-document body is not
-    recognised, so a body line that starts with `FROM` is checked as one:
-    that over-reads, which fails rather than passes.
-    """
-    lines = text.split("\n")
-    problems: list[tuple[int, str]] = []
-    instructions: list[tuple[int, str]] = []
-    escape = "\\"
-    seen: set[str] = set()
-    start = 0
-    for start, raw in enumerate(lines):
-        match = DIRECTIVE_RE.fullmatch(raw.strip())
-        if not match:
-            break
-        key, value = match.group(1).lower(), match.group(2)
-        if key in seen:
-            problems.append((start + 1, f"parser directive `{key}` is given twice"))
-        seen.add(key)
-        if key == "escape":
-            if value not in ("\\", "`"):
-                problems.append((start + 1, f"cannot classify escape character {value!r}"))
-            escape = value or "\\"
-        elif key == "syntax":
-            instructions.append((start + 1, f"syntax {value}"))
-    else:
-        start = len(lines)
-    continued = re.compile(re.escape(escape) + r"[ \t]*$")
-    index = start
-    while index < len(lines):
-        raw = lines[index]
-        index += 1
-        if not raw.strip() or raw.lstrip().startswith("#"):
-            continue
-        first = index
-        line, more = continued.subn("", raw.lstrip())
-        while more and index < len(lines):
-            raw = lines[index]
-            index += 1
-            if not raw.strip() or raw.lstrip().startswith("#"):
-                continue
-            part, more = continued.subn("", raw)
-            line += part
-        instructions.append((first, line))
-    return instructions, problems
-
-
-def check_dockerfile(rel: str, text: str, counts: dict[str, int]) -> list[str]:
-    """Every image a Dockerfile pulls is digest-pinned.
-
-    Each `FROM [--platform=…] <image> [AS <name>]` names `scratch`, a stage
-    named by an earlier `FROM … AS`, or an image with an `@sha256:` digest,
-    and a `syntax` directive names a digest-pinned frontend.  An image built
-    from a build argument (`$`), a flag other than `--platform`, a malformed
-    `FROM`, a bad `escape` directive and a file with no `FROM` fail.
-    """
-    instructions, shape = dockerfile_instructions(text)
-    problems = [f"{rel}:{line}: {reason}" for line, reason in shape]
-    stages: set[str] = set()
-    froms = 0
-    for line, instruction in instructions:
-        words = instruction.split()
-        keyword = words[0].lower()
-        if keyword not in ("from", "syntax"):
-            continue
-        where = f"{rel}:{line}"
-        if keyword == "syntax":
-            image = words[1] if len(words) == 2 else ""
-            reason = ("cannot classify an image built from a build argument"
-                      if "$" in image else classify_image(image))
-            if reason:
-                problems.append(f"{where}: `# syntax` frontend: {reason}: {image}")
-            else:
-                counts["image"] += 1
-            continue
-        froms += 1
-        args = words[1:]
-        while args and args[0].startswith("--"):
-            if not args[0].lower().startswith("--platform="):
-                problems.append(f"{where}: cannot classify the FROM flag `{args[0]}`")
-            args = args[1:]
-        if len(args) == 3 and args[1].lower() == "as":
-            image, stage = args[0], args[2].lower()
-        elif len(args) == 1:
-            image, stage = args[0], None
-        else:
-            problems.append(f"{where}: cannot classify this FROM: {instruction.strip()}")
-            continue
-        if "$" in image:
-            problems.append(f"{where}: cannot classify an image built from a build "
-                            f"argument: {image}")
-        elif image.lower() == "scratch" or image.lower() in stages:
-            counts["local"] += 1
-        elif reason := classify_image(image):
-            problems.append(f"{where}: FROM: {reason}: {image}")
-        else:
-            counts["image"] += 1
-        if stage:
-            stages.add(stage)
-    if not froms:
-        problems.append(f"{rel}: has no FROM instruction, so its base image cannot "
-                        f"be checked")
-    return problems
-
-
 def check(root: str) -> tuple[list[str], dict[str, int]]:
     """Check the roots, then every local target they reach, once each."""
     counts = {"remote": 0, "image": 0, "local": 0}
@@ -461,7 +328,6 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
     roots += [p for p in sorted(modes) if posixpath.basename(p) in ACTION_NAMES
               and p not in roots]
     visited: set[str] = set()
-    dockerfiles: dict[str, None] = {}
     pending = roots
     while pending:
         batch = [p for p in dict.fromkeys(pending) if p not in visited]
@@ -483,29 +349,11 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
                 continue
             found, local = check_text(rel, texts[rel], counts)
             problems.extend(found)
-            for line, field, value in local:
-                if field == "runs.image":
-                    dockerfile, reason = resolve_dockerfile(rel, value, modes)
-                    if dockerfile:
-                        dockerfiles[dockerfile] = None
-                    targets = []
-                else:
-                    targets, reason = resolve_local(value, modes)
+            for line, _field, value in local:
+                targets, reason = resolve_local(value, modes)
                 if reason:
                     problems.append(f"{rel}:{line}: {reason}: {value}")
                 pending.extend(targets)
-    # The Dockerfiles the visited actions build, read from the same index.
-    try:
-        texts = indexed_contents(root, list(dockerfiles))
-    except DerivationFailed as err:
-        return problems + [f"the index cannot be read ({err}), so "
-                           f"{len(dockerfiles)} Dockerfile(s) were not checked"], counts
-    for rel in dockerfiles:
-        if rel not in texts:
-            problems.append(f"{rel}: not UTF-8 text in the index, so its FROM "
-                            f"images cannot be checked")
-        else:
-            problems.extend(check_dockerfile(rel, texts[rel], counts))
     if not problems and not sum(counts.values()):
         problems.append("no `uses:` or image reference found in .github/workflows "
                         "or any action.yml, so nothing was checked")
@@ -660,9 +508,6 @@ TREES = [
      {}, {}, ""),
     (True, "a Docker action on a pinned docker:// image",
      {**RUN_D, "d/action.yml": _docker(f"docker://alpine:3.8@sha256:{DIGEST}")}, {}, {}, ""),
-    (True, "a Docker action on a tracked Dockerfile beside it",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"), "d/Dockerfile": "FROM scratch\n"},
-     {}, {}, ""),
     (False, "a container on a tag", {W: _job(["container: node:18"])}, {}, {}, f"{W}:6"),
     (False, "a container mapping on a tag",
      {W: _job(["container:", "  image: node:18"])}, {}, {}, f"{W}:7"),
@@ -688,64 +533,18 @@ TREES = [
      {}, {}, f"{W}:3"),
     (False, "a Docker action on a docker:// tag",
      {**RUN_D, "d/action.yml": _docker("docker://alpine:3.8")}, {}, {}, "d/action.yml:4"),
-    (False, "a Docker action on a remote image without docker://",
-     {**RUN_D, "d/action.yml": _docker("alpine:3.8")}, {}, {}, "d/action.yml:4"),
-    (False, "a Docker action on an untracked Dockerfile",
+    # A Dockerfile action is refused outright, however its Dockerfile reads.
+    (False, "a Docker action built from a Dockerfile",
+     {**RUN_D, "d/action.yml": _docker("Dockerfile"), "d/Dockerfile": "FROM scratch\n"},
+     {}, {}, "d/action.yml:4"),
+    (False, "a Dockerfile action whose every FROM is pinned",
+     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
+      "d/Dockerfile": f"FROM alpine:3.19@sha256:{DIGEST}\nRUN true\n"}, {}, {}, "d/action.yml:4"),
+    (False, "a Dockerfile action whose Dockerfile is not tracked",
      {**RUN_D, "d/action.yml": _docker("Dockerfile")}, {"d/Dockerfile": "FROM scratch\n"},
      {}, "d/action.yml:4"),
-    (False, "a Docker action on a Dockerfile outside the repository",
-     {**RUN_D, "d/action.yml": _docker("../../Dockerfile")}, {}, {}, "d/action.yml:4"),
-    # A Dockerfile's FROM images, as BuildKit reads them.
-    (True, "a Dockerfile FROM pinned to a digest",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
-      "d/Dockerfile": f"FROM alpine:3.19@sha256:{DIGEST}\nRUN true\n"}, {}, {}, ""),
-    (True, "a multi-stage Dockerfile: flags, continuation, comments, stage names",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
-      "d/Dockerfile": "# FROM alpine:latest is a comment\n"
-                      "from --platform=$BUILDPLATFORM \\  \n  # the base\n\n"
-                      f"    ghcr.io/o/base@sha256:{DIGEST} as Build\n"
-                      "RUN make\nFROM scratch\nFROM build AS final\n"}, {}, {}, ""),
-    (True, "a pinned syntax frontend and a backtick escape",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
-      "d/Dockerfile": f"# syntax=docker/dockerfile:1@sha256:{DIGEST}\n# escape=`\n"
-                      f"FROM `\n  alpine@sha256:{DIGEST}\n"}, {}, {}, ""),
-    (False, "a Dockerfile FROM on a tag",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"), "d/Dockerfile": "FROM alpine:latest\n"},
-     {}, {}, "d/Dockerfile:1"),
-    (False, "a Dockerfile FROM with no tag",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"), "d/Dockerfile": "FROM alpine\n"},
-     {}, {}, "d/Dockerfile:1"),
-    (False, "an unpinned FROM after a pinned stage",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
-      "d/Dockerfile": f"FROM alpine@sha256:{DIGEST} AS a\nRUN x\nFROM debian:12\n"},
-     {}, {}, "d/Dockerfile:3"),
-    (False, "an unpinned image split across a continuation",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"), "d/Dockerfile": "FROM alp\\\nine:3\n"},
-     {}, {}, "d/Dockerfile:1"),
-    (False, "a FROM built from a build argument",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
-      "d/Dockerfile": f"ARG BASE=alpine@sha256:{DIGEST}\nFROM ${{BASE}}\n"},
-     {}, {}, "d/Dockerfile:2"),
-    (False, "a stage named only later",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
-      "d/Dockerfile": f"FROM build\nFROM alpine@sha256:{DIGEST} AS build\n"},
-     {}, {}, "d/Dockerfile:1"),
-    (False, "a FROM flag other than --platform",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
-      "d/Dockerfile": f"FROM --pull=always alpine@sha256:{DIGEST}\n"}, {}, {}, "d/Dockerfile:1"),
-    (False, "a malformed FROM",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
-      "d/Dockerfile": f"FROM alpine@sha256:{DIGEST} AS\n"}, {}, {}, "d/Dockerfile:1"),
-    (False, "a Dockerfile with no FROM",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"), "d/Dockerfile": "RUN true\n"},
-     {}, {}, "d/Dockerfile"),
-    (False, "an unpinned syntax frontend",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
-      "d/Dockerfile": f"# syntax=docker/dockerfile:1\nFROM alpine@sha256:{DIGEST}\n"},
-     {}, {}, "d/Dockerfile:1"),
-    (False, "an escape directive it cannot classify",
-     {**RUN_D, "d/action.yml": _docker("Dockerfile"),
-      "d/Dockerfile": f"# escape=x\nFROM alpine@sha256:{DIGEST}\n"}, {}, {}, "d/Dockerfile:1"),
+    (False, "a Docker action on a remote image without docker://",
+     {**RUN_D, "d/action.yml": _docker("alpine:3.8")}, {}, {}, "d/action.yml:4"),
     (False, "an action whose `runs` is not a mapping",
      {**RUN_D, "d/action.yml": "name: d\nruns: docker\n"}, {}, {}, "d/action.yml:2"),
 ]
