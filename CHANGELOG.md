@@ -1,4 +1,4 @@
-## v0.36.49 — WS-CB plan re-verified against v0.36.46; the audit's scheduler findings absorbed
+## v0.36.50 — WS-CB plan re-verified against v0.36.46; the audit's scheduler findings absorbed; WS-CV registered
 
 Documentation only: no Lean, Rust or fixture change.
 
@@ -50,6 +50,346 @@ Documentation only: no Lean, Rust or fixture change.
   (a heap allocation counter, a two-trap hazard test through the boundary
   crate), not stated.  `HIERARCHICAL_CBS_PLAN.md`'s status and the
   `WS-CB` registry row say it opens after WS-CV, re-verified by CV5.3.
+- `scripts/identifier_naming_baseline.json` regenerated (+2 occurrences):
+  registering WS-CV makes `CV<n>` a phase-code family, and the naming gate's
+  camel-case split reads the boot log's hardware name `GICv2`
+  (`tests/fixtures/qemu_boot_expected.txt`, `qemu_lean_boot_expected.txt`) as
+  one, so those two occurrences are grandfathered; nothing else collides.
+- Merged onto `v0.36.49` (the IPC-2 / IPC-5 slice): the CBS plan's hedges
+  over whether `endpointReplyRecvOnCore` and `modifyTcb` land first now
+  name them as landed; the `Nat`-backed register-file debt row names WS-CV
+  as its owner (closed by CV5.1, the bundle conjunct and boot census
+  retiring with the carrier at CV1.1); `CONTEXT_BY_VALUE_PLAN.md`'s
+  citations re-checked at this head (`Machine.lean:836`, `Heap::alloc`).
+
+## v0.36.49 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
+
+- **The `.replyRecv` arm now calls the transition its theorems are about.**  The
+  live body, `replyRecvBody` in `API.lean`, moved to
+  `IPC/CrossCore/EndpointReplyRecv.lean` under the name `endpointReplyRecvOnCore`,
+  with its donation halves (`replyRecvPopDonation`, `replyRecvPostReceiveDonation`),
+  its per-core write sets and its scheduler footprint.  Their proofs moved to
+  `IPC/CrossCore/EndpointReplyRecvInvariant.lean`.  Both dispatch tables call it.
+  Behaviour is unchanged.
+- **The two-leg composite that held the name is deleted.**  The old
+  `endpointReplyRecvOnCore` (reply leg, then the bare receive leg) had no caller:
+  no donation pop, no capability installation, no re-donation and no PIP
+  hand-off.  The census pinned it as not executed.  Deleted with it, because
+  they were stated only about it: `…_passiveServerIdleFrameOnCore`,
+  `…_preserves_ipcInvariantFull`, `…_preserves_ipcInvariantFull_perCore`,
+  `…_preserves_objects_invExt`, `…_observer_atomic`, `…_atomic_under_lockSet`,
+  the old `endpointReplyRecvWriteSet`, `…_confinedToCores`,
+  `…_crossCoreNonInterference`, and the `.endpointReplyRecv` cross-core
+  inventory entry, which named a theorem about code no arm ran.
+- **The names now cover the live path.**
+  - `endpointReplyRecvOnCore_preserves_ipcInvariantFull` (`DispatchPayoff.lean`)
+    is the global bundle.
+  - `endpointReplyRecvOnCore_confinedToCores` and
+    `endpointReplyRecvOnCore_crossCoreNonInterference` are the per-core
+    confinement and non-interference results; the inventory entry is
+    `.endpointReplyRecvDispatch`.
+  - `schedLockSet_endpointReplyRecvOnCore_coversWrites` is the scheduler
+    footprint coverage.
+  - New for the live transition: `endpointReplyRecvOnCore_preserves_objects_invExt`
+    (unconditional) and `endpointReplyRecvOnCore_observer_atomic` (at the full
+    `lockSet_replyRecv` arity).
+  - The inventory is now 32 transitions with 23 remote writers.
+    `tests/fixtures/smp_information_flow.expected` changes for that reason only.
+- **Registered:** the live transition has no `ipcInvariantFull_perCore`
+  flagship yet (`docs/REGISTERED_DEBT.md`, Table C).  The deleted per-core
+  theorem covered the composite, never the arm.
+- **`endpointReplyRecvWithDonation` is deleted** with its `_unfold` lemma.  This
+  single-core donation-aware ReplyRecv was an orphan under `Donation.lean`'s own
+  rule: no caller, and no equivalence theorem tying it to the live form.
+- **`modifyTcb` is the one TCB field writer (IPC-5).**
+  - `storeTcbIpcState`, `storeTcbPendingMessage`, `storeTcbIpcStateAndMessage`,
+    `storeTcbReceiveComplete` and `storeTcbQueueLinks` are now
+    `modifyTcb st tid f` with a field update for `f`.  Behaviour is unchanged.
+  - Frame lemmas proved once, for every `f`: `modifyTcb_ok_decompose`, `_scheduler_eq`,
+    `_machine_eq`, `_preserves_objects_ne`, `_preserves_objects_invExt`,
+    `_notification_backward`, `_kindPreservingWrite`, `_cdt_eq`, and
+    `_preserves_badgeWellFormed`.
+  - 33 per-writer copies of those lemmas are now one-line instances.
+  - Proofs that unfold a writer now unfold `modifyTcb` too.
+- Tests retargeted to the live transition: `SmpIpcSuite` §3.5 and §3.6,
+  `SmpCrossCoreReplySuite` §3.5, and the `SmpInformationFlowSuite` write-set
+  checks.  Tier 3 anchors moved to the new files.
+
+## v0.36.48 — the six rows the #912 audit deferred: the FP/SIMD context, the fault entries and the overflow registers cross the boundary whole, the layout is executed, the word bound is carried
+
+Works the six debt rows registered at `v0.36.47` by the audit of PR #912:
+five close, and the `Nat`-backed register-file row stays, shortened to what
+remains (the bundle conjunct, the boot-state census and the model change).  Extern calls
+per operation after this cut: a fault or unknown-syscall entry 3 scalars where
+it took 15; an FP owner switch 3 calls where it was 134; a 116-word IPC's
+overflow registers 1 call where it was 112.
+
+
+- **The syscall seam decodes the message info from the one trapped `x1`**
+  (closes the `msgInfo`-twice row).  `Platform.FFI.syscallDispatchFromAbi`,
+  `abiEntryPlan`, `declaredSchedLockSetForAbiEntry`,
+  `declaredUnifiedLockSetForAbiEntry`, `syscallDispatchCrossCoreStep` and the
+  bracketed step lost their `msgInfo` parameter; the dispatcher decodes it from
+  `x1` inside.  The `msgInfo ≠ x1` guard — reachable only from a host test,
+  since the entry read both words from the one `TrapContext` — is deleted with
+  its theorem (`syscallDispatchFromAbi_abiMismatch_rejected`), its host test
+  (`sd034_dispatch_abiMismatch`) and its fixture line
+  (`tests/fixtures/syscall_return_abi.expected`).  33 sites in 17 files.
+- **`lean_handle_fault` and `lean_handle_unknown_syscall` take
+  `(core_id, esr, far)`** — three scalars where they took fifteen (closes the
+  fault-window-twice row).  `elr`, `spsr`, `x0`–`x7`, `sp` and `lr` are read
+  from the published frame through the pure `Kernel.faultEntryFrame?`, which
+  fails closed on a missing context exactly as `syscallEntryContextOrFaulted`
+  does (`faultEntryFrame?_none`, host test §6g of
+  `tests/FaultHandlingSuite.lean`); `trap.rs`, the extern declarations and the
+  export-signature gate's expectations follow.
+- **A sender's overflow message registers are read in runs**
+  (`ffi_read_user_words base count`, answered as a `ByteArray` of `8·count`
+  bytes; closes the per-word overflow row).  `readCallerOverflowWords` groups
+  the slot addresses into same-page contiguous runs
+  (`IpcBufferRead.wordRuns`, `wordRuns_within_page`), so a 116-word IPC costs
+  one extern call (two when the 512-byte-aligned buffer's slots 64–115 straddle
+  a page) where it cost 112; the HAL refuses a run that leaves its page
+  (`user_word_run_admissible`, unit-tested: exact run, crossing refused,
+  zero-length) and Lean fails closed with the `.faulted` tag on a batch of the
+  wrong size (`overflowWordsOrFaulted`, `sd037_overflowWordsCrossInRuns`).
+  `ffiReadUserWord` / `ffi_read_user_word` are retired; `syncUserWords` is
+  unchanged.
+- **The `Nat`-backed register file's cheap wins** (the row stays, shortened to
+  the bundle conjunct, the boot-state census and the model change).
+  `TrapContext.word` is one bound test and a byte-indexed `match`
+  (`TrapContext.wordOfByte`): the generated C went from a chain of 35
+  `lean_nat_dec_eq` on a boxed `Nat` to one `lean_nat_dec_lt` and 35
+  `lean_uint8_dec_eq` on an unboxed byte, which clang lowers to a jump table
+  (`cmp w8, #34; b.hi; adrp .LJTI; br` on aarch64).  The bracketed syscall
+  step takes `trapped : Architecture.TrapContext`, so the closure
+  `modifyGetKernelState` is handed captures 6 slots where it captured 16
+  (`syscallDispatchCrossCoreEntry_def` still `rfl`).
+  `Kernel.Architecture.registerContextsWordBounded`
+  (`SeLe4n/Kernel/Architecture/RegisterContextBounded.lean`) carries
+  `RegisterFile.wordBounded` for every TCB's saved context and every core's
+  bank, with a preservation theorem for every register-context writer —
+  `saveTrapFrameOnCore`, `saveVacatedFrameOnCore`, `saveCapturedTrapFrame(At)`,
+  `saveCapturedSyscallFrame(At)`, `writeReturnFrameToTcb`,
+  `writeRestartFrameToTcb`, `writeFaultRegistersToTcb`,
+  `writeFfiRegistersToTcb`, `saveOutgoingContext(OnCore)`,
+  `restoreIncomingContext(OnCore)(UnlessCurrent)`, `dispatchIdleOnCore`,
+  `preemptCurrentOnCore`, `switchToThreadOnCore`, `Adapter.writeRegisterState`
+  — on the pure writers' lemmas (`writeReg_wordBounded`,
+  `stageReturnFrame_wordBounded`, `stageRestartFrame_wordBounded`,
+  `FaultRegisterWindow.spill_wordBounded`, `restartAtSvc_wordBounded`,
+  `RegisterFile.default_wordBounded`, `timeoutStagedTcb_registerContext_wordBounded`),
+  and `restoreTargetOnCore_user_roundTrip` discharges
+  `registerFileOfTrapContext_trapContextOfRegisterFile`'s hypothesis on the
+  restore path **from `registerContextsWordBounded st` as a hypothesis**: the
+  predicate is preserved by every writer but is not yet a bundle conjunct nor
+  established of the boot state (the shortened debt row owns both), so the
+  round trip is a live guarantee only once the row closes.
+- **The FP/SIMD context crosses the Lean boundary whole, in one call each
+  way** (closes the `v0.36.47` row "The FP/SIMD context still crosses the
+  Lean boundary one word per call").  `FpContext` is now a structure of 66
+  `UInt64` fields (`v0Lo`, `v0Hi` … `v31Hi`, `fpcr`, `fpsr`: 528 scalar
+  bytes, one constructor object, field `i` at offset `8 · i`) in place of the
+  `Vector UInt64 64` plus two fields it was, with the same shape of proof as
+  `TrapContext`: `FpContext.ofWords_word`, `FpContext.word_ofWords`,
+  `FpContext.ofWords_congr`, `FpContext.word_of_count_le`, and
+  `FpContext.default_word` (the fresh thread's context is every word `0`;
+  `FpContext` is `UInt64`-backed, so no `wordBounded` statement arises).
+  `Platform.FFI.ffiFpCapture : BaseIO FpContext` saves the registers and hands
+  the whole context over, and `ffiFpStageContext : (@& FpContext) → BaseIO
+  Unit` stages it before `ffiFpLoadCommit`; `ffiFpCapturedWord` and
+  `ffiFpStageWord` are retired with `ffi_fp_captured_word`,
+  `ffi_fp_stage_word`, `fp_context::captured_word`, `stage_word(_in)`,
+  `staged_word` and `FpBuffer::{word,set_word}`.  **Extern calls on the FP
+  owner-switch path**: a capture is 1 call where it was 67
+  (`ffiFpCapture` + 66 `ffiFpCapturedWord`), a load 2 where it was 67 (66
+  `ffiFpStageWord` + `ffiFpLoadCommit`); an owner switch that captures and
+  loads is 3 where it was 134.  On the Rust side the question "is this object
+  a constructor of exactly `N` `UInt64` fields" has one owner for both
+  contexts, `ffi::scalar_words_of_lean` / `scalar_words_to_lean`
+  (`trap_context_of_lean` and the new `fp_context_of_lean` are its
+  35- and 66-word instances), refusing any allocated size but the
+  constructor's — `FP_CONTEXT_OBJECT_BYTES`, 536, `const`-asserted to be a
+  small-object size class — and `ffi_fp_stage_context` halts every PE on a
+  refused object or core, as `ffi_restore_stage_context` does.  Rust tests:
+  the 66-word round trip at offsets `8 · i`, refusal of another tag, of
+  object fields, of a `TrapContext` (and of an `FpContext` by
+  `trap_context_of_lean`), of shorter and longer same-header objects, of a
+  pointer outside the heap and a freed object, the host capture's encoding,
+  and the stage entry's staging and both halts.  Lean: `tests/
+  FaultHandlingSuite.lean` §4c step 8 drives a context with a distinct value
+  in every one of the 66 words through `word`, `ofWords`, the default and a
+  release into the TCB.
+- **An executed cross-language layout test** (closes the `v0.36.47` row
+  "Nothing executed checks that the compiled Lean `Architecture.TrapContext`
+  places its 35 `UInt64` fields in declaration order at scalar offset
+  `8 · i`").  `rust/sele4n-lean-boundary` is a host test crate that links the
+  compiled host Lean archive (`lake build SeLe4n:static`), a test-only
+  library of `@[export]` probes (`SeLe4n/Testing/BoundaryProbes.lean`,
+  `lake build SeLe4nBoundaryProbes:static`; outside `SeLe4n.lean`'s closure,
+  so nothing of it reaches the kernel's archive) and the toolchain's
+  `libleanshared`, initialises the runtime and the module, and — with the
+  toolchain's own `lean.h` operations (`shim.c`), not the HAL's runtime —
+  builds objects at the HAL's offsets with a distinct value in every word and
+  asks the compiled Lean's `TrapContext.word` / `FpContext.word` for each;
+  runs `trapContextOfRegisterFile ∘ registerFileOfTrapContext` and
+  `FpContext.ofWords ∘ FpContext.word` and reads every word back at `8 · i`;
+  reads objects the compiled Lean built (`ofWords` of a seed) back at the
+  HAL's offsets and holds them to the HAL's sizes (288 and 536 bytes); and
+  decodes the `Option TrapContext` encoding `ffi_trap_context` answers.
+  **Permutation detection, verified**: with `x5` and `x6` swapped in the
+  `TrapContext` structure and in `ofWords` consistently, every proof still
+  compiles and the four `TrapContext` tests fail on word 5 (the compiled
+  `word 5` reads the HAL's word 6, and the Lean-built object holds word 6 at
+  offset 40), with the fields restored all eight pass.  Wired into Tier 1
+  (`scripts/test_lean_boundary_layout.sh`, right after the host static
+  archive `test_tier1_build.sh` already builds): it needs `lake` and
+  `cargo` and fails rather than skips without either or without the
+  archives; `test_rust.sh`'s Lean-less `cargo test --all` excludes the crate
+  (built without the archives its one test fails naming what to run, so the
+  exclusion is visible, not a skip) and still builds, formats and lints it.
+  `libgcc_s` is linked ahead of `libleanshared`, whose bundled libunwind
+  would otherwise interpose on Rust's unwinder and turn a failed assertion
+  into an abort.
+- **Housekeeping found along the way.**  `scripts/install_git_hooks.sh`
+  installed into `rev-parse --git-dir`'s `hooks/`, which in a linked worktree
+  is `.git/worktrees/<name>/hooks` — a directory git never consults — so a
+  hook installed from a worktree ran nowhere and `--check` reported one that
+  did run as missing; it now targets `rev-parse --git-path hooks`, the
+  directory git reads (common `.git/hooks`, or `core.hooksPath`).  The fast CI
+  lane installs the pinned Rust toolchain, since Tier 1 now runs the boundary
+  layout crate.  `scripts/check_identifier_naming.py` classifies `.c` with
+  its C stripper (the shim the layout crate compiles), and
+  `scripts/version_locations.sh` counts the five `sele4n-*` crates in
+  `Cargo.lock`.
+
+## v0.36.47 — the user context crosses the Lean boundary in one call each way; syscall arguments are read once
+
+- **Bulk trap-frame transfer.**  Every kernel entry that saves or restores a
+  thread's context (the syscall seam, the timer tick, the `.reschedule`
+  receiver, the fault and unknown-syscall entries, the secondary bring-up)
+  moved it across the FFI one word per call: `ffi_trap_frame_present` plus 35
+  `ffi_trap_frame_word` calls in, 35 `ffi_restore_stage_word` calls plus
+  `ffi_restore_commit` out — 72 extern calls per entry, each captured word
+  boxed into an `Array UInt64`.  The boundary representation is now
+  `Architecture.TrapContext`, a structure of 35 `UInt64` fields that compiles
+  to one constructor object of 280 scalar bytes: `ffi_trap_context` hands the
+  whole in-flight context over as `Option TrapContext` in one call, and
+  `ffi_restore_stage_context` stages a borrowed one in one call before the
+  unchanged `ffi_restore_commit`.  The trap-frame marshalling drops from 72
+  extern calls per entry to 3.  The model's `RegisterFile` stays the proofs'
+  view (`registerFileOfTrapContext`, which is `registerFileOfTrapWords` on
+  `TrapContext.word`), and the Lean-internal encode/decode round trip is
+  proved: `TrapContext.ofWords_word`, `TrapContext.word_ofWords` (every word
+  below `trapFrameWordCount`), `registerFileOfTrapContext_ofWords`,
+  `trapContextOfRegisterFile_registerFileOfTrapContext` (a context read as the
+  model's register file and handed back is the same thirty-five words, no
+  hypothesis) and `registerFileOfTrapContext_trapContextOfRegisterFile` (a
+  word-bounded register file — `RegisterFile.wordBounded`, which every
+  handed-over context satisfies, `registerFileOfTrapContext_wordBounded` —
+  restored and read back agrees on the thirty-five registers the layout
+  carries).  What is proved is the Lean side of the boundary: the HAL masks
+  `SPSR_EL1` to the condition flags at the commit (`trap.rs`,
+  `sanitise_user_spsr`), so the cross-language trip is not the identity on
+  `pstate`, and agreement between the compiled Lean layout and the Rust
+  reader rests on the pins recorded below.  On the Rust side
+  `trap::trap_frame_context` is the one owner of the layout,
+  `ffi::trap_context_to_lean` / `trap_context_of_lean` marshal it (the latter
+  refusing, and the stage halting on, any object not of the constructor's
+  shape), and `lean_runtime::ctor_set_u64` is `lean_ctor_set_uint64`.  The
+  per-word FFI symbols, `trap_frame_word`, `in_flight_frame_word(_in)`,
+  `in_flight_frame_present`, `restore_stage_word(_in)` and
+  `RestoreRefusal::IndexOutOfRange` are retired.
+- **The syscall arguments are read once.**  `dispatch_svc` passed 13 scalars
+  (the syscall id, `msg_info`, `x0`–`x5`, the IPC buffer, `ELR_EL1`,
+  `SPSR_EL1`, `SP_EL0`, `x30`) and the Lean entry then re-read the same
+  frame.  The export `lean_syscall_dispatch_cross_core` now takes only the
+  validated syscall id — the other 12 arguments are gone;
+  `syscallDispatchCrossCoreEntry` reads every one of them from the context it
+  captured, and an entry with no published frame fails closed
+  (`syscallEntryContextOrFaulted`: `.faulted`, nothing read, nothing
+  committed, nothing staged, so the trap layer halts the PE —
+  `halt_after_delivered_syscall_fault`).  `SyscallArgs` keeps
+  only the prefilter's `msg_info`.  Common-path extern calls per syscall
+  (no overflow words, SGIs, physical writes, shootdown, I-cache or FP
+  release): 75 before, 6 after.
+- **The Lean heap's lock is not redundant, and stays.**  The audit claim that
+  the kernel-entry lock already serialises every Lean allocation does not
+  hold: the exception classifier (`lean_classify_synchronous_exception`) runs
+  before the entry lock on every core and its compiled body allocates its
+  `ExceptionContext` (`lean_alloc_ctor(0, 0, 32)`), and a secondary core's
+  bring-up handshake (`lean_ready::initialise_core_runtime`) allocates and
+  frees a heap probe outside the entry lock while other cores may be serving
+  entries.  `lean_heap.rs`'s concurrency note now states those two callers in
+  place of the old, inaccurate reason.
+- **The restore boundary checks the object's size before reading it.**  A
+  review found that `trap_context_of_lean` accepted any tag-0 constructor with
+  no object fields and then read 35 words: the header cannot tell a
+  `TrapContext` from a shorter constructor of the same shape (under
+  `LEAN_SMALL_ALLOCATOR`, `lean_set_st_header` writes `m_cs_sz = 0`, and
+  `lean_small_object_size` asks the allocator), so a layout drift would have
+  read past the object instead of halting.  It now refuses, before any read,
+  a pointer the kernel heap does not report as a live allocation of exactly
+  `TRAP_CONTEXT_OBJECT_BYTES` (header plus 280 scalar bytes — a small-object
+  size class, which is what makes the exact check sound; `const` assertions
+  hold it to one), read through the new `lean_runtime::allocated_bytes` (the
+  heap's out-of-band size record, the same one `lean_small_mem_size` serves).
+  Tests refuse tag-0, no-field constructors of 0, 8 and 272 scalar bytes and
+  — the audit's case, a field added to the Lean structure alone — of 288 and
+  352, a pointer outside the heap and a freed object, and pin the
+  round-tripped object at exactly `TRAP_CONTEXT_OBJECT_BYTES`; with the check
+  weakened to a lower bound the longer-object test fails.
+- **The layout's pins, stated** (audit of this PR).  The Lean side: `ofWords`
+  applies the constructor positionally and `word` reads by field name, so
+  `word_ofWords` proves declared position `i` is layout word `i`.  The Rust
+  side: `const` assertions hold `TRAP_FRAME_CONTEXT_WORDS` to 35 and
+  `TRAP_CONTEXT_SCALAR_BYTES` to eight times it (the compiler checks them; no
+  scanner), and the exact-size refusal catches a field added on either side
+  alone.  What neither reaches — a same-size permutation applied consistently
+  on one side, i.e. that the compiler places the fields in declaration order
+  at `8 · i` — is an executed cross-language test, registered as debt
+  (`docs/REGISTERED_DEBT.md`) with the size check's coverage stated.
+- **Tests on the seam** (audit of this PR).  `TrapContext` derives `Repr`,
+  `DecidableEq` and `Inhabited`; `tests/SmpSwitchToThreadSuite.lean` asserts the
+  value-level round trips on a frame with a distinct value in every register
+  (each layout word at its index and under its field name; file → context →
+  file; context → file → context, the high bit set).  The frame-less arm of
+  the syscall entry is the pure `syscallEntryContextOrFaulted`, which
+  `tests/SyscallDispatchSuite.lean` runs (`sd036`: `none` is the `.faulted`
+  tag with nothing committed; `some c` is `c`).  On the Rust side
+  `ffi_trap_context_in` and `ffi_restore_stage_context_in` are the testable
+  forms of the two entries: the `Option` encoding (`none` = `lean_box(0)`,
+  `some` = tag 1 with one object field holding the 288-byte tag-0 object, each
+  word at its offset), the stage reaching the core's staging buffer, and the
+  halt on a refused object and on a refused stage (`#[should_panic]`, since
+  the host `fatal_halt` panics).  `lean_runtime::header_ref` is the read-only
+  header accessor the borrowed inspection now uses.
+- **One answer per question** (audit of this PR).  `trap_context_of_lean`'s
+  `# Safety` states the real contract (any pointer; a live heap object must
+  stay live; everything else is refused on the heap's metadata);
+  `ffi_restore_stage_context`'s comment no longer cites a precedent that does
+  not exist (it is the one Lean-called entry here that takes an object
+  pointer); `build.rs`'s reason for the classifier upcall agrees with
+  `lean_heap.rs` (it allocates, under the heap's own lock); the `SyscallArgs`
+  test sets only the register it reads; `syscallDispatchFromAbi`'s
+  `msgInfo ≠ x1` guard is documented as test-only defence, since the live
+  entry passes the one trapped `x1` as both (removing the parameter touches
+  thirty-odd call sites and is left for a wider cut).
+  `registerFileOfTrapContext_eq` is retired with the definition it restated.
+- **Registered debt** (audit of this PR, `docs/REGISTERED_DEBT.md` §A, closure
+  target the next FFI slice): the executed cross-language layout test; the
+  FP/SIMD context still crossing per word (`1 + 66` calls to capture, `66 + 1`
+  to load); `lean_handle_fault` / `lean_handle_unknown_syscall` still taking
+  15 scalars while their Lean entries re-capture the frame; overflow message
+  registers crossing one `ffiReadUserWord` per word (up to `maxOverflowSlots`
+  = 116); and the Lean-internal cost of the boundary (boxed `UInt64`s, the
+  16-slot `gpr` closure, the `Nat`-backed `RegisterFile`, whose
+  word-boundedness `RegisterFile.wordBounded` names but no invariant carries
+  — `machineWordBounded` is now its per-core form).
+- Tier 3: the restore and syscall-argument anchors follow the new relation
+  (the stage call before the commit; the step fed from `trapped`; the
+  one-argument extern; the trap-frame context layout in `trap.rs`), and a
+  negative anchor refuses a per-word loop in `Platform/FFI.lean`.
 
 ## v0.36.46 — The executing core is threaded from the trap entry; `determineExecutingCore` deleted (IPC-8)
 

@@ -74,7 +74,7 @@ caller-supplied deadline to the bound thread under the SchedContext write right
 alone, with no caller-MCP check (CB0.3, CB1.7); and the live tick's exhaustion
 arm schedules a refill of at most one tick, so a bound thread receives about one
 tick per period after its first window (CB1.7, which moves the engine to
-per-window refills).  At `v0.36.49` the plan was re-verified against
+per-window refills).  At `v0.36.50` the plan was re-verified against
 `v0.36.46` and absorbed the kernel audit's scheduler findings as sub-tasks
 (the live selector carrying the progress proofs, named per-core bundles, a
 waiter index, a per-domain run queue, machine-word scheduler fields, the
@@ -1531,10 +1531,16 @@ BP7.3).  Four things new code must respect.  (1) **`RegisterFile` carries
 preempted between a compare and its branch with the wrong condition.  (2) **The
 HAL publishes the in-flight frame** for a handler's duration
 (`trap::InFlightFrame`, withdrawn on drop, a nested handler restoring the one it
-displaced), and the Lean entry reads it word by word before its atomic step
-(`Platform.FFI.captureTrapFrame`, `trap::TRAP_FRAME_CONTEXT_WORDS`: `x0`–`x30`,
+displaced), and the Lean entry reads it whole, in one call, before its atomic step
+(`Platform.FFI.captureTrapFrame` over `ffiTrapContext`, `trap::TRAP_FRAME_CONTEXT_WORDS`: `x0`–`x30`,
 `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, and since v0.36.30 `TPIDR_EL0`, which EL0
-writes with no trap — until then a thread read the previous thread's value).  (3) **Every state-committing trap entry saves
+writes with no trap — until then a thread read the previous thread's value;
+since v0.36.47 as the 35-field `Architecture.TrapContext` in one call each way,
+and the compiled layout — field `i` at scalar offset `8 · i`, where the HAL
+reads it — is **executed** by `rust/sele4n-lean-boundary` through
+`scripts/test_lean_boundary_layout.sh` in Tier 1, linking the compiled host
+archive and the toolchain's runtime; a same-size permutation of the structure
+that every proof survives fails it).  (3) **Every state-committing trap entry saves
 it** — the syscall seam, the fault and unknown-syscall entries, the timer tick
 and the `.reschedule` receiver — into **both** the executing core's bank and the
 current thread's `registerContext` (`Architecture.saveTrapFrameOnCore`), so
@@ -1642,7 +1648,10 @@ VSpace, eight-byte aligned, declared RAM, and writable when `needWrite`) is what
 the seam reads and what a delivery writes; a new path touching a thread's buffer
 asks it, never `root.lookup` directly.  (2) **The model holds no thread's memory,
 so a read of it is synced first**: the syscall seam reads the caller's words from
-RAM (`readCallerOverflowWords`, `ffi_read_user_word`) and writes them in with
+RAM (`readCallerOverflowWords` — in contiguous same-page runs since the
+`v0.36.47` audit, one `ffi_read_user_words` call per run answering a
+`ByteArray`; `IpcBufferRead.wordRuns`, `expandRuns_wordRuns`,
+`wordRuns_within_page`) and writes them in with
 `syncUserWords` in the atomic step before the decode — `ipcBufferReadMr_syncUserWord`
 is the relation, over `writeUInt64` and `readUInt64_writeUInt64`.  A new kernel
 read of user memory is synced the same way.  (3) **A write to a thread's memory is
@@ -1690,8 +1699,20 @@ the disassembly gate exempts the two FP routines **by symbol**, reconciled both
 ways.  (6) **A thread a core's registers still hold is not destroyed**
 (`threadHeldOnSomeCore`, `.revocationRequired`): the release would otherwise
 write a destroyed thread's values into whatever TCB the retype creates under its
-id.  `retypeTargetDetached` carries `tcbFpReleased` for the payoff.  Executing
-the switch on the image is BP8's.
+id.  `retypeTargetDetached` carries `tcbFpReleased` for the payoff.  (7) **The
+context crosses the boundary whole, in one call each way** (the FFI slice after
+PR #912): `FpContext` is a structure of 66 `UInt64` fields (528 scalar bytes,
+field `i` at offset `8 · i`), handed over by `ffiFpCapture` and staged by
+`ffiFpStageContext` before `ffiFpLoadCommit` — 1 and 2 extern calls where each
+direction was 67 — with the encode/decode trip proved
+(`FpContext.ofWords_word`, `word_ofWords`, `ofWords_congr`, `default_word`),
+the HAL refusing any allocated size but the constructor's 536 bytes
+(`ffi::scalar_words_of_lean`, the one owner of both contexts' shape), and
+the compiled layout executed against the HAL's offsets by the cross-language
+test below.  A new boundary context takes the same shape: all-`UInt64` fields,
+positional `ofWords` against by-name `word`, the exact-size refusal, and a
+probe in `SeLe4n/Testing/BoundaryProbes.lean`.  Executing the switch on the
+image is BP8's.
 
 **The boot starts both initial threads, one per domain** (`v0.36.23`, BP7.11).
 Until then every configured thread was installed `.Inactive` and nothing ever
@@ -3838,7 +3859,7 @@ code may assume:
   left the **deschedule** on the binding-era proxy; HP6.8 (`v0.35.45`) is what
   makes the two disagree, because a spliced middle caller leaves an **orphan
   head** whose context is bound to a thread the caller never recorded.  Measured
-  on the live `replyRecvBody`: the holder ended `.unbound` and still queued
+  on the live `endpointReplyRecvOnCore`: the holder ended `.unbound` and still queued
   (`hasSufficientBudget` is unconditionally `true` for an unbound thread, so it
   runs at its legacy TCB band charged to no reservation — PR #895 round 8's
   defect on the sibling site that round did not sweep), while a bystander still
@@ -4097,8 +4118,8 @@ code may assume:
   the send/receive/stash/wait and `replyRecvReturnDonation` bundles are all
   production (`EndpointReplyInvariant` always was — the first staging rationale
   misnamed it).  Production code must not cite the call chain's bundle.  RR3.22 (v0.34.43)
-  closed two of the four gaps this bullet used to list: the `replyRecvBody`
-  three-stage composite (`replyRecvBody_preserves_ipcInvariantFull`,
+  closed two of the four gaps this bullet used to list: the `endpointReplyRecvOnCore`
+  three-stage composite (`endpointReplyRecvOnCore_preserves_ipcInvariantFull`,
   `IPC/Invariant/DispatchPayoff.lean`, staged with the payoff tier) and the
   `Architecture.stage*` return-frame writes
   (`IPC/Invariant/DispatchArmPreservation.lean`, production).  **All three
@@ -4599,8 +4620,8 @@ code may assume:
   transition, registered rather than implied.
 - **...and the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
   RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
-  `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's own SM8.B write
-  set, which `replyRecvBody_confinedToCores` is stated at — and of
+  `schedFootprintOfCores` of `endpointReplyRecvWriteSet` — the arm's own SM8.B write
+  set, which `endpointReplyRecvOnCore_confinedToCores` is stated at — and of
   `replyRecvHandoffReplenishCores`, the cores its **three** SchedContext hand-offs
   migrate between: the pop between the legs (`replyRecvPopDonation`, WS-RM), the
   receive leg's block-path return (`cleanupPreReceiveDonationMigrated`,
@@ -4615,7 +4636,7 @@ code may assume:
   the re-donation's `callDonationSchedContext?` at the post-deschedule state
   (`replyRecvPostReceiveReplenishCores`, over the post-state form
   `rendezvousCallDonationReplenishCores`) — which is the discipline
-  `replyRecvBodyWriteSet` established for the run segment, and the reason this arm
+  `endpointReplyRecvWriteSet` established for the run segment, and the reason this arm
   could not take `.receive`'s pre-state form: the pop rewrites the receiver's
   binding between the legs, so a pre-state reading of the receive leg's donation
   guard would be a proxy for the guard the transition reads two legs later.  The
@@ -4633,7 +4654,7 @@ code may assume:
   (4) **The empty segment is exact in both directions**: where the pop hands
   nothing back and the block path returns no loan, the footprint names no
   replenish lock (`…_no_replenishQueue_of_no_donation`) and the live transition
-  writes none (`replyRecvBody_replenishQueueOnCore_of_no_donation`, composed from
+  writes none (`endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation`, composed from
   the reply leg's new frame `endpointReplyOnCore_replenishQueueOnCore`, the pop's
   `none` arm being the identity, the receive leg's `…_of_no_preReturn` frame and
   the two walks' frames).  (5) **That licence pins a divergence, deliberately.**
@@ -4647,7 +4668,7 @@ code may assume:
   passive/legacy split; a cut that makes the arm donate widens
   `replyRecvPostReceiveReplenishCores`'s `none` arm and breaks the licence, so the
   footprint and the transition move together or not at all.  (6) **The two chain
-  walks are in the run segment**: `replyRecvBodyWriteSet` re-runs the spine to the
+  walks are in the run segment**: `endpointReplyRecvWriteSet` re-runs the spine to the
   state each walk starts from and appends `pipChainWriteSet` there, so the walked
   members' run queues are static members, and the `pipChainStart_replyRecv*`
   obligations add the object domain's per-member TCB locks through
@@ -4920,7 +4941,7 @@ code may assume:
   the **post-revert** state, because the reclaim rebinds the victim and WS-OD
   OD5.3's second pop then migrates to the *outer caller's* home — a core the
   pre-state cannot name, the victim holding no binding there.  So the segment
-  re-runs the spine, exactly as `replyRecvBodyWriteSet` does, and a Tier 3
+  re-runs the spine, exactly as `endpointReplyRecvWriteSet` does, and a Tier 3
   negative refuses a pre-state reading of G3's arm.
 
   (4) **The donation-arm frame has ONE owner, at an explicit purge core.**
@@ -6342,7 +6363,7 @@ code may assume:
   `hNoDonationOwnedBy` was **false** in exactly the state the handler replies
   from — the premise the path it was named for refutes.
   **`.replyRecv` does not route through the seam yet**
-  — `replyRecvBody` fuses a reply leg, a receive leg and a donation return, and
+  — `endpointReplyRecvOnCore` fuses a reply leg, a receive leg and a donation return, and
   a fault reply changes what the latter two are handed — so a handler must
   answer a fault with `.reply` and take its next request separately; that is
   registered debt too, and new code must not assume `.replyRecv` retires a
@@ -6369,8 +6390,10 @@ code may assume:
   between syscalls holds the *last syscall's* arguments, so a context built
   from it alone would report a stale argument window and, on a payload-free
   resume, reinstall it over the thread's live registers.  `lean_handle_fault`
-  therefore takes fifteen words, and new code must not build a fault context
-  off the mirror without spilling first.  (7) The entry derives its cross-core
+  therefore spills the trap frame's window first — since the `v0.36.47` audit
+  it takes three words (the core, `ESR_EL1`, `FAR_EL1`) and decodes the window
+  once from the published in-flight frame (`faultEntryFrame?`) — and new code
+  must not build a fault context off the mirror without spilling first.  (7) The entry derives its cross-core
   pokes from the pre/post **diff** (`computeCrossCoreSgis`), as the syscall
   seam does, never from the single SGI the Call chain surfaces; and it runs
   the executing core's successor through `scheduleLocalSuccessor`, live since

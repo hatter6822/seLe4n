@@ -11,15 +11,17 @@
 //! (`MachineState.fpOwner`) and when it changes hands
 //! (`Architecture.fpAccessOnCore`, `Architecture.fpReleaseOnCore`); this module
 //! is what moves the values.  Two per-core buffers of [`FP_CONTEXT_WORDS`]
-//! doublewords — the Lean `FpContext.word` layout — carry them across the FFI:
+//! doublewords — the Lean `FpContext.word` layout — carry them across the FFI,
+//! the whole context in **one** call each way (`ffi::fp_context_to_lean`,
+//! `ffi::fp_context_of_lean`), where the seam used to move one word per call:
 //!
 //! * [`capture`] stores the live registers into the core's **capture** buffer
-//!   (`sele4n_fp_save_context`), which the Lean kernel reads word by word
-//!   ([`captured_word`]) and commits into the owner's TCB.  The save routine
-//!   leaves the trap **armed**: a capture is taken exactly when the values are
-//!   about to stop being the running thread's.
-//! * The Lean kernel stages the context it answers word by word into the core's
-//!   **load** buffer ([`stage_word`]) and [`load_commit`] loads it
+//!   (`sele4n_fp_save_context`) and hands the buffer's words over, which the
+//!   Lean kernel commits into the owner's TCB.  The save routine leaves the
+//!   trap **armed**: a capture is taken exactly when the values are about to
+//!   stop being the running thread's.
+//! * The Lean kernel stages the context it answers into the core's **load**
+//!   buffer ([`stage_context`]) and [`load_commit`] loads it
 //!   (`sele4n_fp_load_context`) — every register the context names, `FPCR` and
 //!   `FPSR` included, so nothing a previous owner left survives — with the trap
 //!   lifted.
@@ -41,6 +43,10 @@ use core::cell::UnsafeCell;
 /// `SeLe4n.fpContextWordCount`.
 pub const FP_CONTEXT_WORDS: usize = 66;
 
+/// A thread's FP/SIMD context as its [`FP_CONTEXT_WORDS`] words, in the Lean
+/// `FpContext.word` layout — the form the context crosses the boundary in.
+pub type FpContextWords = [u64; FP_CONTEXT_WORDS];
+
 /// A core's FP/SIMD buffer, 16-byte aligned for the `stp`/`ldp q` pairs.
 #[repr(C, align(16))]
 pub struct FpBuffer(UnsafeCell<[u64; FP_CONTEXT_WORDS]>);
@@ -56,24 +62,18 @@ impl FpBuffer {
         Self(UnsafeCell::new([0; FP_CONTEXT_WORDS]))
     }
 
-    /// Word `index`, or `None` past the context.
+    /// The buffer's words.
     #[must_use]
-    pub fn word(&self, index: usize) -> Option<u64> {
+    pub fn words(&self) -> FpContextWords {
         // SAFETY: see the `Sync` impl — only the owning core touches the
         // buffer, and not concurrently with itself.
-        unsafe { (*self.0.get()).get(index).copied() }
+        unsafe { *self.0.get() }
     }
 
-    /// Set word `index`; `false` past the context.
-    pub fn set_word(&self, index: usize, value: u64) -> bool {
-        // SAFETY: as in `word`.
-        match unsafe { (*self.0.get()).get_mut(index) } {
-            Some(slot) => {
-                *slot = value;
-                true
-            }
-            None => false,
-        }
+    /// Overwrite every word of the buffer.
+    pub fn set_words(&self, words: &FpContextWords) {
+        // SAFETY: as in `words`.
+        unsafe { *self.0.get() = *words };
     }
 
     /// The buffer's base address, for the save and load routines.
@@ -97,6 +97,13 @@ pub type FpBuffers = [FpBuffer; crate::svc_dispatch::RETURN_FRAME_CORES];
 
 static CAPTURE: FpBuffers = [const { FpBuffer::new() }; crate::svc_dispatch::RETURN_FRAME_CORES];
 static LOAD: FpBuffers = [const { FpBuffer::new() }; crate::svc_dispatch::RETURN_FRAME_CORES];
+
+/// **WS-BP BP7.9**: per core, the buffer [`load_commit`] loads — what
+/// `ffi::ffi_fp_stage_context` stages into.
+#[must_use]
+pub fn load_buffers() -> &'static FpBuffers {
+    &LOAD
+}
 
 #[cfg(all(feature = "hw_target", target_arch = "aarch64"))]
 extern "C" {
@@ -130,8 +137,11 @@ fn core_index() -> usize {
 }
 
 /// **WS-BP BP7.9**: save the executing PE's live FP/SIMD registers into its
-/// capture buffer, arming the trap (`Platform.FFI.ffiFpCapture`).
-pub fn capture() {
+/// capture buffer, arming the trap, and hand the buffer's words over — the
+/// whole context in one call (`Platform.FFI.ffiFpCapture`).  On the host there
+/// are no registers to save, so the answer is the buffer as it stands.
+#[must_use]
+pub fn capture() -> FpContextWords {
     let Some(buf) = CAPTURE.get(core_index()) else {
         crate::gic::halt_all();
     };
@@ -142,35 +152,27 @@ pub fn capture() {
     unsafe {
         sele4n_fp_save_context(buf.as_mut_ptr());
     }
-    #[cfg(not(all(feature = "hw_target", target_arch = "aarch64")))]
-    let _ = buf;
+    buf.words()
 }
 
-/// **WS-BP BP7.9**: word `index` of the executing PE's capture buffer; `0`
-/// past the context (`Platform.FFI.ffiFpCapturedWord`).
-#[must_use]
-pub fn captured_word(index: u32) -> u64 {
-    CAPTURE
-        .get(core_index())
-        .and_then(|b| b.word(index as usize))
-        .unwrap_or(0)
+/// **WS-BP BP7.9**: stage the context the executing PE loads, whole (the
+/// testable form takes the buffers and the core).  `false` past the core
+/// array, with nothing written.
+pub fn stage_context_in(buffers: &FpBuffers, core: usize, words: &FpContextWords) -> bool {
+    match buffers.get(core) {
+        Some(buf) => {
+            buf.set_words(words);
+            true
+        }
+        None => false,
+    }
 }
 
-/// **WS-BP BP7.9**: stage word `index` of the context the executing PE loads
-/// (the testable form takes the buffers and the core).  `false` past the
-/// context or the core array.
-pub fn stage_word_in(buffers: &FpBuffers, core: usize, index: u32, value: u64) -> bool {
-    buffers
-        .get(core)
-        .is_some_and(|b| b.set_word(index as usize, value))
-}
-
-/// **WS-BP BP7.9**: stage word `index` of the executing PE's load
-/// (`Platform.FFI.ffiFpStageWord`).  A word past the context is a kernel
-/// defect — the Lean kernel stages exactly [`FP_CONTEXT_WORDS`] — so it halts
-/// the system rather than loading a partly staged context.
-pub fn stage_word(index: u32, value: u64) {
-    if !stage_word_in(&LOAD, core_index(), index, value) {
+/// **WS-BP BP7.9**: stage the executing PE's load, the whole context in one
+/// call (`Platform.FFI.ffiFpStageContext`).  A core past the buffers is a
+/// kernel defect, so it halts the system rather than loading nothing.
+pub fn stage_context(words: &FpContextWords) {
+    if !stage_context_in(&LOAD, core_index(), words) {
         crate::gic::halt_all();
     }
 }
@@ -197,15 +199,6 @@ pub fn load_commit() {
     #[cfg(not(all(feature = "hw_target", target_arch = "aarch64")))]
     let _ = buf;
     set_trap_for_resume(false);
-}
-
-/// **WS-BP BP7.9**: word `index` of the executing PE's staged load — the
-/// host tests' observable of what [`load_commit`] would load.
-#[must_use]
-pub fn staged_word(index: u32) -> u64 {
-    LOAD.get(core_index())
-        .and_then(|b| b.word(index as usize))
-        .unwrap_or(0)
 }
 
 /// **WS-BP BP7.9**: set the FP/SIMD trap for what the core resumes — lifted
@@ -239,26 +232,38 @@ mod tests {
         assert_eq!(core::mem::size_of::<FpBuffer>(), FP_CONTEXT_WORDS * 8);
     }
 
+    /// A staged context lands whole in its core's buffer, every word at its
+    /// own position (the words are distinct), and in no other core's.
     #[test]
-    fn a_staged_word_lands_in_its_core_and_nowhere_else() {
+    fn a_staged_context_lands_in_its_core_and_nowhere_else() {
         let buffers: FpBuffers =
             [const { FpBuffer::new() }; crate::svc_dispatch::RETURN_FRAME_CORES];
-        assert!(stage_word_in(&buffers, 1, 64, 0xF0C4));
-        assert_eq!(buffers[1].word(64), Some(0xF0C4));
-        assert_eq!(buffers[0].word(64), Some(0));
+        let words: FpContextWords = core::array::from_fn(|i| 0xF0C4_0000 + i as u64);
+        assert!(stage_context_in(&buffers, 1, &words));
+        assert_eq!(buffers[1].words(), words);
+        assert_eq!(buffers[0].words(), [0; FP_CONTEXT_WORDS]);
     }
 
+    /// A core past the buffers is refused, with nothing written anywhere.
     #[test]
-    fn a_word_past_the_context_or_the_cores_is_refused() {
+    fn a_core_past_the_buffers_is_refused() {
         let buffers: FpBuffers =
             [const { FpBuffer::new() }; crate::svc_dispatch::RETURN_FRAME_CORES];
-        assert!(!stage_word_in(&buffers, 0, FP_CONTEXT_WORDS as u32, 1));
-        assert!(!stage_word_in(
+        let words: FpContextWords = [1; FP_CONTEXT_WORDS];
+        assert!(!stage_context_in(
             &buffers,
             crate::svc_dispatch::RETURN_FRAME_CORES,
-            0,
-            1
+            &words
         ));
-        assert_eq!(buffers[0].word(FP_CONTEXT_WORDS), None);
+        for buf in &buffers {
+            assert_eq!(buf.words(), [0; FP_CONTEXT_WORDS]);
+        }
+    }
+
+    /// On the host a capture is the capture buffer as it stands: all zeroes,
+    /// `FP_CONTEXT_WORDS` of them.
+    #[test]
+    fn a_host_capture_is_the_zero_buffer() {
+        assert_eq!(capture(), [0; FP_CONTEXT_WORDS]);
     }
 }

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.49-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.50-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -80,7 +80,7 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 
 | السمة | القيمة |
 |-------|--------|
-| **الإصدار** | `0.36.49` |
+| **الإصدار** | `0.36.50` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
 | **أسطر Lean الإنتاجية** | 434,075 عبر 362 ملفًا |
 | **أسطر Lean للاختبارات** | 88,690 عبر 71 مجموعة اختبار |

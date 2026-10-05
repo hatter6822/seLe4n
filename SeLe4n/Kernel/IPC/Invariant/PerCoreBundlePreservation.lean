@@ -235,7 +235,7 @@ theorem storeTcbIpcState_passiveServerIdleFrameOnCore
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid0 ipc = .ok st') :
     passiveServerIdleFrameOnCore st st' c := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hL : lookupTcb st tid0 with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -264,7 +264,7 @@ theorem storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid0 ipc msg = .ok st') :
     passiveServerIdleFrameOnCore st st' c := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid0 with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -290,7 +290,7 @@ theorem storeTcbReceiveComplete_passiveServerIdleFrameOnCore
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid0 msg = .ok st') :
     passiveServerIdleFrameOnCore st st' c := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hL : lookupTcb st tid0 with
   | none => simp [hL] at hStep
   | some tcb =>

@@ -3061,7 +3061,7 @@ theorem endpointQueueEnqueue_empty_queueNext_none
             -- tcb'' is tcbWithQueueLinks tcbP none (some .endpointHead) none
             -- Its queueNext is none by definition of tcbWithQueueLinks
             -- But we need to extract queueNext = none. Let's unfold.
-            unfold storeTcbQueueLinks at hLink
+            unfold storeTcbQueueLinks modifyTcb at hLink
             cases hLookup2 : lookupTcb pair.2 tid with
             | none => simp [hLookup2] at hLink
             | some tcb2 =>
@@ -3156,7 +3156,7 @@ theorem endpointQueueEnqueue_then_popHead_succeeds
     -- Reduce the match on Except.ok to expose storeTcbQueueLinks body
     simp only []
     -- Inline storeTcbQueueLinks: lookupTcb succeeds, storeObject always ok
-    unfold storeTcbQueueLinks
+    unfold storeTcbQueueLinks modifyTcb
     rw [hLookupSt1]; simp only []
     -- Now match on storeObject result
     cases hStore2 : storeObject tid.toObjId _ st1 with

@@ -482,7 +482,6 @@ private def runRendezvousChecks : IO Unit := do
 #check @endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
 #check @endpointReplyOnCore_reuse_freshens
 #check @endpointReplyRecvOnCore_preserves_ipcInvariantFull
-#check @endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
 -- WS-RR RR3.12 — the reply chain's relaxed-invariant surface:
 #check @donationOwnerValidExcept
 #check @donationOwnerFrameExcept
@@ -562,7 +561,7 @@ private def runRendezvousChecks : IO Unit := do
 #check @stageDeliveredMessage_preserves_ipcInvariantFull
 #check @stageWokenDelivery_preserves_ipcInvariantFull
 #check @stageWokenSendCompletion_preserves_ipcInvariantFull
-#check @replyRecvBody_preserves_ipcInvariantFull
+#check @endpointReplyRecvOnCore_preserves_ipcInvariantFull
 -- WS-RR RR3.23–RR3.25 — the dispatch payoffs and their pre-state packs
 -- (the capability tier production in `API.lean`; the two dispatch tiers
 -- staged in `IPC/Invariant/DispatchPayoff.lean` with the call-chain surface):
@@ -946,53 +945,11 @@ example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     originalOwner hObjInv stcb hServerObj hServerBind hUnique hInv none
     (donationReturnOuterValid_none st serverTid originalOwner) h
 
-/-- SM6.D completion (seL4-MCS one-object reuse): the composed cross-core
-`replyRecv` accepts a reply object that is *in use by the answered caller* —
-the reply leg's folded consume frees it before the receive leg re-stashes it.
-The disjunctive `hReplyIdValid` premise's reuse arm is exercised here. -/
-example (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) (rid : SeLe4n.ReplyId) (ec c : CoreId) (st : SystemState)
-    (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
-      (scId : SeLe4n.SchedContextId),
-      st.objects[tid.toObjId]? = some (.tcb tcb) →
-      tcb.schedContextBinding ≠ .donated scId replyTarget)
-    (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
-      st.objects[epId]? = some (.endpoint ep) →
-      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
-      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
-    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
-      st.objects[endpointId]? = some (.endpoint ep) →
-      ep.receiveQ.tail = some tailTid →
-      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
-        st.objects[epId']? = some (.endpoint ep') →
-        (epId' ≠ endpointId →
-          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
-        (epId' = endpointId → ep'.sendQ.tail ≠ some tailTid))
-    -- the reuse arm: `rid` is the answered caller's in-use reply object
-    (hUnstashed : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →
-        tcb.pendingReceiveReply ≠ some rid)
-    (hPresent : ∃ r, st.getReply? rid = some r)
-    (hLinked : ∃ tcbT, st.getTcb? replyTarget = some tcbT ∧ tcbT.replyObject = some rid)
-    (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
-        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
-    (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
-        tcb.ipcState = .ready)
-    -- **WS-OD OD4.4**: the receive leg's pre-receive cleanup pops the receiver's
-    -- donation, so the obligation is stated at the store that cleanup runs on —
-    -- the reply leg's own post-state.
-    (hStackValid : cleanupDonationStackValid
-      (endpointReplyOnCore receiver replyTarget msg ec st).1 receiver) :
-    ipcInvariantFull_perCore
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1 c :=
-  endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore endpointId receiver replyTarget
-    msg (some rid) ec st hInv hObjInv hNoDonationOwnedBy hStackValid hAllBudgetsNone
-    hFreshReceiver hRecvTailFresh
-    (fun rid' hRid' => Or.inr (by
-      obtain rfl : rid = rid' := Option.some.inj hRid'
-      exact ⟨hUnstashed, hPresent, hLinked⟩))
-    hReceiverNotRecv hReceiverReady c
+-- Audit IPC-2 (`v0.36.49`): the one-object-reuse `example` that stood here was
+-- stated over the deleted two-leg ReplyRecv composite.  The live
+-- `endpointReplyRecvOnCore` reuses the answered Reply object by construction
+-- (it receives with `some rid`, the very capability it replied through), and its
+-- preservation theorem is `endpointReplyRecvOnCore_preserves_ipcInvariantFull`.
 
 /-- SM6.D completion (representative): the capability-carrying send — the
 transition behind the **live** `.send` dispatch — preserves every core's
@@ -1200,20 +1157,20 @@ private def bracketState : SystemState :=
   base
 
 /-- The ABI words of a `.tcbSuspend` on the capability at slot 1:
-`syscallId = 20`, `msgInfo = 0`, `x0 = 1` (the CPtr), `x1..x5 = 0`. -/
+`syscallId = 20`, `x0 = 1` (the CPtr), `x1..x5 = 0`. -/
 private def bracketDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 private def bracketPlan (st : SystemState) :
     Option (SeLe4n.ThreadId × SyscallDecodeResult × SystemState) :=
   abiEntryPlan harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The step the bracket wraps, at those same words. -/
 private def bracketStepFn (st : SystemState) :=
   syscallDispatchCrossCoreStep harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
     (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
 
 /-- Which arm of the bracket this entry takes, as the bracket itself computes
@@ -1223,28 +1180,26 @@ private def bracketOutcome (st : SystemState) :=
 
 private def bracketRun (st : SystemState) :=
   syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
-    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+    (syscallId := 20) (trapped := { (default : Architecture.TrapContext) with x0 := 1 }) st
 
 /-- `.cspaceMint` (id 4) — an arm this cut leaves undeclared, for the fallback. -/
 private def undeclaredRun (st : SystemState) :=
   syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
-    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
-    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+    (syscallId := 4) (trapped := { (default : Architecture.TrapContext) with x0 := 1 }) st
 
 private def undeclaredBare (st : SystemState) :=
   syscallDispatchCrossCoreStep harnessLabelingContext bootCoreId
-    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
     (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
 
 private def undeclaredDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- **WS-OD OD3.5**: `.replyRecv`'s footprint declares for a delegated reply,
 and names the recorded server's TCB.
 
-`replyRecvBody` returns the donation of `(recordedReplyServer? st prevCaller).getD tid`,
+`endpointReplyRecvOnCore` returns the donation of `(recordedReplyServer? st prevCaller).getD tid`,
 which on a delegated reply is not the invoking thread — so the transition writes
 that server's TCB while the footprint named neither it nor the second hand-off's
 SchedContext.  PR #892 review round 6 answered that by making the arm **refuse**,
@@ -1415,12 +1370,12 @@ footprints are functions of are one decode, so neither domain can bracket one
 syscall's locks around another's transition. -/
 private def bracketSchedDecl (st : SystemState) : Option SchedLockSet :=
   declaredSchedLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The same entry's scheduler-domain footprint at an **undeclared** arm. -/
 private def undeclaredSchedDecl (st : SystemState) : Option SchedLockSet :=
   declaredSchedLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The same state with the victim **active**, so the suspend arm's footprint is
 its full one rather than the `.Inactive` refusal's.  One field apart from
@@ -1515,12 +1470,12 @@ lock *words* — `schedAcquireLock`'s `.object` arm calls SM3.C's own
 brackets that would take the object-store table lock twice. -/
 private def bracketUnifiedDecl (st : SystemState) : Option SchedLockSet :=
   declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The same entry at an **undeclared** arm. -/
 private def undeclaredUnifiedDecl (st : SystemState) : Option SchedLockSet :=
   declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- **Cut C6h**: every mutation of the production side here fails to ELABORATE
 rather than failing this suite — the membership theorems and the bracket's own

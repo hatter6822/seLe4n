@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecv
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -82,7 +83,6 @@ open SeLe4n.Testing
 
 -- SM6.C 2PL atomicity (reply + replyRecv):
 #check @endpointReplyOnCore_atomic_under_lockSet
-#check @endpointReplyRecvOnCore_atomic_under_lockSet
 
 -- SM6.C per-core wake locality:
 #check @endpointReplyOnCore_perCore_consistent
@@ -136,7 +136,7 @@ open SeLe4n.Testing
 #check @endpointReplyCrossCoreDispatchChecked_flow_allowed
 -- PR #822 review: the raw-thread `endpointReplyRecvCrossCoreDispatch{,Checked}`
 -- wrappers were removed (they bypassed the reply cap); the live `.replyRecv` routes
--- through the reply-object-aware `API.replyRecvBody`.  The below-API combined
+-- through the reply-object-aware `API.endpointReplyRecvOnCore`.  The below-API combined
 -- transition `endpointReplyRecvOnCore` (anchored above) remains the building block.
 
 -- SM6.C.9 reply donation-chain length bound:
@@ -506,22 +506,38 @@ private def runFrameSpliceChecks : IO Unit := do
          && (st2.getReply? replyId707 == postDetached.getReply? replyId707)
      | .error _ => false)
 
+/-- The `.replyRecv` fixture: `stBase` plus the free Reply object the server
+answers through and then re-stashes for its next caller (audit IPC-2: the live
+transition takes the reply capability's object, not an optional fresh one). -/
+private def stReplyRecv : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject serverTid.toObjId (.tcb (mkTcb 601 50 none .ready))
+    |>.withObject clientLocalTid.toObjId
+        (.tcb (mkTcb 602 30 none (.blockedOnReply epId (some serverTid))))
+    |>.withObject replyId709.toObjId (.reply { replyId := replyId709 })
+    |>.withRunnable [serverTid]
+    |>.build)
+
 private def runReplyRecvChecks : IO Unit := do
   IO.println "--- §3.5 SM6.C.5 replyRecv combined op (reply leg wakes caller) ---"
-  -- The reply leg of replyRecv wakes the recorded caller; the receive leg then
-  -- blocks the server on the (empty) endpoint.
-  let (st', res) := endpointReplyRecvOnCore epId serverTid clientLocalTid replyMsg none bootCoreId stBase
-  assertBool "replyRecv succeeds (reply leg + receive leg)"
-    (match res with | .ok _ => true | .error _ => false)
-  assertBool "replyRecv reply leg delivers the payload to the caller (.ready + registers)"
-    (match st'.getTcb? clientLocalTid with
-     | some t => decide (t.ipcState = .ready ∧ t.pendingMessage = some replyMsg)
-     | none => false)
-  -- The receive leg blocks the server on the endpoint (no sender was waiting).
-  assertBool "replyRecv receive leg blocks the server on the endpoint (no waiting sender)"
-    (match st'.getTcb? serverTid with
-     | some t => decide (t.ipcState = .blockedOnReceive epId)
-     | none => false)
+  -- The reply leg of the live replyRecv wakes the recorded caller; the receive
+  -- leg then blocks the server on the (empty) endpoint, stashing the same Reply.
+  match endpointReplyRecvOnCore epId serverTid replyId709 clientLocalTid replyMsg cnRoot
+      (SeLe4n.Slot.ofNat 0) bootCoreId stReplyRecv with
+  | .error _ => assertBool "replyRecv succeeds (reply leg + receive leg)" false
+  | .ok (summary, st') =>
+    assertBool "replyRecv installs no capabilities when nothing was received"
+      (summary.installedCount == 0)
+    assertBool "replyRecv reply leg delivers the payload to the caller (.ready + registers)"
+      (match st'.getTcb? clientLocalTid with
+       | some t => decide (t.ipcState = .ready ∧ t.pendingMessage = some replyMsg)
+       | none => false)
+    -- The receive leg blocks the server on the endpoint (no sender was waiting).
+    assertBool "replyRecv receive leg blocks the server on the endpoint (no waiting sender)"
+      (match st'.getTcb? serverTid with
+       | some t => decide (t.ipcState = .blockedOnReceive epId)
+       | none => false)
 
 private def runDonationChecks : IO Unit := do
   IO.println "--- §3.3' SM6.C.3 donation-chain lock-set extension ---"

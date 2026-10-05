@@ -1953,7 +1953,7 @@ theorem storeTcbQueueLinks_tcb_queueNext_backward
   by_cases hEq : y.toObjId = tid.toObjId
   · obtain ⟨origTcb, hOrig⟩ : ∃ t, st.objects[tid.toObjId]? = some (.tcb t) := by
       cases hL : lookupTcb st tid with
-      | none => exfalso; unfold storeTcbQueueLinks at hStep; rw [hL] at hStep; simp at hStep
+      | none => exfalso; unfold storeTcbQueueLinks modifyTcb at hStep; rw [hL] at hStep; simp at hStep
       | some t => exact ⟨t, lookupTcb_some_objects st tid t hL⟩
     obtain ⟨tcbS, hTcbS, hQNS⟩ :=
       storeTcbQueueLinks_stored_queueNext st st' tid prev pprev next hObjInv hStep
@@ -5134,7 +5134,7 @@ theorem storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyOb
     (hNotBlocked : ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), ipc ≠ .blockedOnReply ep rt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     blockedOnReplyHasReplyObject st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -5163,7 +5163,7 @@ theorem storeTcbReceiveComplete_nonBlocked_preserves_blockedOnReplyHasReplyObjec
     (hInv : blockedOnReplyHasReplyObject st)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     blockedOnReplyHasReplyObject st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -5191,7 +5191,7 @@ theorem storeTcbIpcState_nonBlocked_preserves_blockedOnReplyHasReplyObject
     (hNotBlocked : ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), ipc ≠ .blockedOnReply ep rt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     blockedOnReplyHasReplyObject st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -5220,7 +5220,7 @@ theorem storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject
     (hInv : blockedOnReplyHasReplyObject st)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     blockedOnReplyHasReplyObject st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -6264,7 +6264,7 @@ theorem storeTcbQueueLinks_replyLinkageFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     replyLinkageFrame st st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -6292,7 +6292,7 @@ theorem storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     replyLinkageFrame st st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -6337,7 +6337,7 @@ theorem storeTcbIpcState_replyLinkageFrame_of_unlinked
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     replyLinkageFrame st st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -6363,7 +6363,7 @@ theorem storeTcbReceiveComplete_replyLinkageFrame_of_unlinked
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     replyLinkageFrame st st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7150,7 +7150,7 @@ theorem storeTcbIpcState_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     sameSchedContextBindings st st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7211,7 +7211,7 @@ theorem storeTcbIpcStateAndMessage_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     sameSchedContextBindings st st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7232,7 +7232,7 @@ theorem storeTcbReceiveComplete_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     sameSchedContextBindings st st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7256,7 +7256,7 @@ theorem storeTcbQueueLinks_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     sameSchedContextBindings st st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7325,7 +7325,7 @@ theorem storeTcbReceiveComplete_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     timeoutBudgetFrame st st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7348,7 +7348,7 @@ theorem storeTcbQueueLinks_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     timeoutBudgetFrame st st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7480,7 +7480,7 @@ theorem storeTcbIpcState_donationOwnerFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     donationOwnerFrame st st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7505,7 +7505,7 @@ theorem storeTcbIpcStateAndMessage_donationOwnerFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     donationOwnerFrame st st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7530,7 +7530,7 @@ theorem storeTcbReceiveComplete_donationOwnerFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     donationOwnerFrame st st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7588,7 +7588,7 @@ theorem storeTcbQueueLinks_donationOwnerFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     donationOwnerFrame st st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7683,7 +7683,7 @@ theorem storeTcbIpcState_passiveServerIdleFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid0 ipc = .ok st') :
     passiveServerIdleFrame st st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hL : lookupTcb st tid0 with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7729,7 +7729,7 @@ theorem storeTcbIpcStateAndMessage_passiveServerIdleFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid0 ipc msg = .ok st') :
     passiveServerIdleFrame st st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid0 with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7859,7 +7859,7 @@ theorem storeTcbReceiveComplete_passiveServerIdleFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid0 msg = .ok st') :
     passiveServerIdleFrame st st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hL : lookupTcb st tid0 with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7885,7 +7885,7 @@ theorem storeTcbIpcState_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid0 ipc = .ok st') :
     timeoutBudgetFrame st st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hL : lookupTcb st tid0 with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7944,7 +7944,7 @@ theorem storeTcbIpcStateAndMessage_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid0 ipc msg = .ok st') :
     timeoutBudgetFrame st st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid0 with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -7982,7 +7982,7 @@ theorem storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
     (hTargetOk : ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), ipc = .blockedOnReply ep rt → rt.isSome)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     blockedOnReplyHasTarget st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -8010,7 +8010,7 @@ theorem storeTcbReceiveComplete_preserves_blockedOnReplyHasTarget
     (hInv : blockedOnReplyHasTarget st)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     blockedOnReplyHasTarget st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -8036,7 +8036,7 @@ theorem storeTcbIpcState_preserves_blockedOnReplyHasTarget
     (hTargetOk : ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), ipc = .blockedOnReply ep rt → rt.isSome)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     blockedOnReplyHasTarget st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -8109,7 +8109,7 @@ theorem storeTcbQueueLinks_preserves_blockedOnReplyHasTarget
     (hInv : blockedOnReplyHasTarget st)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     blockedOnReplyHasTarget st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -13220,7 +13220,7 @@ theorem storeTcbIpcStateAndMessage_donationOwnerFrameExcept
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     donationOwnerFrameExcept st st' tid := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -13872,7 +13872,7 @@ theorem storeTcbIpcStateAndMessage_preserves_pendingReceiveReplyWellFormed
         tcb.pendingReceiveReply = some rid → ∃ ep, ipc = .blockedOnReceive ep)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     pendingReceiveReplyWellFormed st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -13910,7 +13910,7 @@ theorem storeTcbReceiveComplete_preserves_pendingReceiveReplyWellFormed
     (hInv : pendingReceiveReplyWellFormed st)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     pendingReceiveReplyWellFormed st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -13938,7 +13938,7 @@ theorem storeTcbIpcState_preserves_pendingReceiveReplyWellFormed
         tcb.pendingReceiveReply = some rid → ∃ ep, ipc = .blockedOnReceive ep)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     pendingReceiveReplyWellFormed st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -13971,7 +13971,7 @@ theorem storeTcbQueueLinks_preserves_pendingReceiveReplyWellFormed
     (hInv : pendingReceiveReplyWellFormed st)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     pendingReceiveReplyWellFormed st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -14142,7 +14142,7 @@ theorem storeTcbIpcStateAndMessage_getTcb?_backward
     (y : SeLe4n.ThreadId) (tcY : TCB) (hY : st'.getTcb? y = some tcY) :
     ∃ tc0, st.getTcb? y = some tc0 ∧ tc0.pendingReceiveReply = tcY.pendingReceiveReply ∧
       (y ≠ tid → tc0.ipcState = tcY.ipcState) := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hL : lookupTcb st tid with
   | none => simp [hL] at hStep
   | some tcb =>
@@ -14692,7 +14692,7 @@ theorem storeTcbIpcState_preserves_replyIdEstablishFresh
     (hFresh : replyIdEstablishFresh st rid)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     replyIdEstablishFresh st' rid := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hTcb : lookupTcb st tid with
   | none => simp [hTcb] at hStep
   | some tcb =>
@@ -14717,7 +14717,7 @@ theorem storeTcbIpcStateAndMessage_preserves_replyIdEstablishFresh
     (hFresh : replyIdEstablishFresh st rid)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     replyIdEstablishFresh st' rid := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hTcb : lookupTcb st tid with
   | none => simp [hTcb] at hStep
   | some tcb =>
@@ -15021,12 +15021,12 @@ theorem endpointCall_preserves_pendingReceiveReplyWellFormed
                   rw [hIpc0 hyP, hIpcE hyC]
                 -- The deliver/block stores' target slots each held a TCB pre-store.
                 have hDelivTarget : ∃ t, pair.2.2.objects[pair.1.toObjId]? = some (.tcb t) := by
-                  unfold storeTcbIpcStateAndMessage at hMsg
+                  unfold storeTcbIpcStateAndMessage modifyTcb at hMsg
                   cases hL : lookupTcb pair.2.2 pair.1 with
                   | none => simp [hL] at hMsg
                   | some t => exact ⟨t, lookupTcb_some_objects pair.2.2 pair.1 t hL⟩
                 have hBlockTarget : ∃ t, (ensureRunnable st2 pair.1).objects[caller.toObjId]? = some (.tcb t) := by
-                  unfold storeTcbIpcStateAndMessage at hIpc
+                  unfold storeTcbIpcStateAndMessage modifyTcb at hIpc
                   cases hL : lookupTcb (ensureRunnable st2 pair.1) caller with
                   | none => simp [hL] at hIpc
                   | some t => exact ⟨t, lookupTcb_some_objects (ensureRunnable st2 pair.1) caller t hL⟩
@@ -16091,7 +16091,7 @@ theorem removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkag
 + caller `tcb.replyObject := none`). PR #827 #3 folds it into the `endpointReply` /
 `endpointReplyRecv` primitives so a *direct* reply consumes the link (establishing
 `replyCallerLinkageReciprocal` internally and de-threading `hRCLRecip'`), and the
-redundant separate `consumeCallerReply` is dropped from `replyBody` / `replyRecvBody`
+redundant separate `consumeCallerReply` is dropped from `replyBody` / `endpointReplyRecvOnCore`
 / the live `.reply` dispatch. These `consumeCallerReply_preserves_*` lemmas are the
 per-conjunct frames the folded preservation peels consume. Each composes a `.reply`
 store frame (the reply-leg write, a no-op when the reply is absent) with a `.tcb`
@@ -18136,7 +18136,7 @@ theorem endpointQueueEnqueue_blockStore_establishes_queueHeadBlockedConsistent
   obtain ⟨epPost, hEpPost, hHeadDisj, hOtherHead⟩ :=
     endpointQueueEnqueue_post_head_cases endpointId isReceiveQ tid st st1 ep hObj hObjInv hEnq
   have hTidTcb : ∃ t, st2.objects[tid.toObjId]? = some (.tcb t) := by
-    unfold storeTcbIpcStateAndMessage at hStore
+    unfold storeTcbIpcStateAndMessage modifyTcb at hStore
     cases hLk : lookupTcb st1 tid with
     | none => simp [hLk] at hStore
     | some tcb0 =>
@@ -18637,7 +18637,7 @@ theorem notificationWait_preserves_queueNextTargetBlocked
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
           obtain ⟨wTcb1, hWMem1⟩ : ∃ t, st1.objects[waiter.toObjId]? = some (.tcb t) := by
-            unfold storeTcbIpcState at hSI
+            unfold storeTcbIpcState modifyTcb at hSI
             cases hL : lookupTcb st1 waiter with
             | none => simp [hL] at hSI
             | some t => exact ⟨t, lookupTcb_some_objects st1 waiter t hL⟩
@@ -18939,7 +18939,7 @@ theorem notificationWait_preserves_endpointQueueTailBlockedConsistent
           -- the waiter's TCB exists in `st1` (the store succeeded) and is `.ready` (framed from `st`).
           obtain ⟨wtcb1, hLk1⟩ : ∃ w, lookupTcb st1 waiter = some w := by
             cases hL : lookupTcb st1 waiter with
-            | none => unfold storeTcbIpcState at hSI; rw [hL] at hSI; simp at hSI
+            | none => unfold storeTcbIpcState modifyTcb at hSI; rw [hL] at hSI; simp at hSI
             | some w => exact ⟨w, rfl⟩
           have hWTcb1 := lookupTcb_some_objects st1 waiter wtcb1 hLk1
           have hNe : waiter.toObjId ≠ notificationId := by
@@ -19030,7 +19030,7 @@ theorem notificationWait_preserves_queueHeadBlockedConsistent
           obtain ⟨_, rfl⟩ := hStep
           obtain ⟨wtcb1, hLk1⟩ : ∃ w, lookupTcb st1 waiter = some w := by
             cases hL : lookupTcb st1 waiter with
-            | none => unfold storeTcbIpcState at hSI; rw [hL] at hSI; simp at hSI
+            | none => unfold storeTcbIpcState modifyTcb at hSI; rw [hL] at hSI; simp at hSI
             | some w => exact ⟨w, rfl⟩
           have hWTcb1 := lookupTcb_some_objects st1 waiter wtcb1 hLk1
           have hNe : waiter.toObjId ≠ notificationId := by
@@ -19551,7 +19551,7 @@ theorem endpointReceiveDual_preserves_queueNextTargetBlocked
                     obtain ⟨_, rfl⟩ := hStep
                     -- the running receiver is `.ready` at `stLinked` (transported backward).
                     obtain ⟨recvTcbL, hRecvMemL⟩ : ∃ t, stLinked.objects[receiver.toObjId]? = some (.tcb t) := by
-                      unfold storeTcbIpcStateAndMessage at hPend
+                      unfold storeTcbIpcStateAndMessage modifyTcb at hPend
                       cases hL : lookupTcb stLinked receiver with
                       | none => simp [hL] at hPend
                       | some t => exact ⟨t, lookupTcb_some_objects stLinked receiver t hL⟩
@@ -19592,7 +19592,7 @@ theorem endpointReceiveDual_preserves_queueNextTargetBlocked
                 obtain ⟨_, rfl⟩ := hStep
                 obtain ⟨recvTcbR, hRecvMemR⟩ : ∃ t,
                     (ensureRunnable st2 pair.1).objects[receiver.toObjId]? = some (.tcb t) := by
-                  unfold storeTcbIpcStateAndMessage at hPend
+                  unfold storeTcbIpcStateAndMessage modifyTcb at hPend
                   cases hL : lookupTcb (ensureRunnable st2 pair.1) receiver with
                   | none => simp [hL] at hPend
                   | some t => exact ⟨t, lookupTcb_some_objects _ receiver t hL⟩
@@ -20237,7 +20237,7 @@ theorem endpointCall_preserves_queueHeadBlockedConsistent
             have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _
               (some msg) hObjInv1 hMsg
             have hP1Tcb : ∃ t, st2.objects[pair.1.toObjId]? = some (.tcb t) := by
-              unfold storeTcbIpcStateAndMessage at hMsg
+              unfold storeTcbIpcStateAndMessage modifyTcb at hMsg
               cases hL : lookupTcb pair.2.2 pair.1 with
               | none => simp [hL] at hMsg
               | some t0 =>
@@ -20263,7 +20263,7 @@ theorem endpointCall_preserves_queueHeadBlockedConsistent
               -- caller's store-pre TCB (the caller store succeeds) + its st-side ipcState.
               obtain ⟨callerTcb, hCallerMem⟩ : ∃ ct,
                   (ensureRunnable st2 pair.1).objects[caller.toObjId]? = some (.tcb ct) := by
-                unfold storeTcbIpcStateAndMessage at hIpc
+                unfold storeTcbIpcStateAndMessage modifyTcb at hIpc
                 cases hL : lookupTcb (ensureRunnable st2 pair.1) caller with
                 | none => simp [hL] at hIpc
                 | some t => exact ⟨t, lookupTcb_some_objects _ caller t hL⟩
@@ -20427,7 +20427,7 @@ theorem endpointCall_preserves_queueNextTargetBlocked
                 hObjInvE hIpc
               obtain ⟨callerTcb, hCallerMem⟩ : ∃ ct,
                   (ensureRunnable st2 pair.1).objects[caller.toObjId]? = some (.tcb ct) := by
-                unfold storeTcbIpcStateAndMessage at hIpc
+                unfold storeTcbIpcStateAndMessage modifyTcb at hIpc
                 cases hL : lookupTcb (ensureRunnable st2 pair.1) caller with
                 | none => simp [hL] at hIpc
                 | some t => exact ⟨t, lookupTcb_some_objects _ caller t hL⟩
@@ -22141,7 +22141,7 @@ theorem endpointReply_preserves_replyCallerLinkageReciprocal
             have hMidTarget : (ensureRunnable st1 target).objects[target.toObjId]?
                 = some (.tcb { tcb with ipcState := .ready, pendingMessage := some msg }) := by
               rw [ensureRunnable_preserves_objects]
-              unfold storeTcbIpcStateAndMessage at hStore
+              unfold storeTcbIpcStateAndMessage modifyTcb at hStore
               simp only [hLookup] at hStore
               cases hSt : storeObject target.toObjId
                   (.tcb { tcb with ipcState := .ready, pendingMessage := some msg }) st with

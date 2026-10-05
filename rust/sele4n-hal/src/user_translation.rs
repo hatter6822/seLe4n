@@ -379,24 +379,62 @@ pub fn apply_physical_write(write: PhysicalWrite) {
 /// **WS-BP BP7.8: read the user word at `addr`** — a sender's message register
 /// past the four the trap frame carries, read out of its IPC buffer so the Lean
 /// kernel decodes what the thread wrote rather than its model of memory.
-/// `None` when `addr` is not [`user_word_admissible`]; the caller halts, since
-/// the Lean kernel names only its caller's own RAM frames.
+///
+/// **`v0.36.47` audit: a run, not a word.**  `[base, base + 8 · count)` is
+/// admissible when `base` is a [`user_word_admissible`] word and the run stays
+/// in `base`'s page (`base % PAGE_BYTES + 8 · count ≤ PAGE_BYTES`), so one
+/// translation of the base covers every word of it and every word is itself
+/// admissible.  The Lean kernel groups a sender's overflow slots into exactly
+/// such runs (`IpcBufferRead.wordRuns`, with `wordRuns_within_page` the proof
+/// that it never asks for a run leaving the page), so a refusal here is a
+/// kernel defect and the caller halts.  A zero-length run at an admissible
+/// base reads nothing.
 #[must_use]
-pub fn read_user_word(addr: u64, covered: impl Fn(u64, u64) -> bool) -> Option<u64> {
-    if !user_word_admissible(addr, covered) {
+pub fn user_word_run_admissible(base: u64, count: u64, covered: impl Fn(u64, u64) -> bool) -> bool {
+    let Some(bytes) = count.checked_mul(8) else {
+        return false;
+    };
+    let Some(end_in_page) = (base % PAGE_BYTES).checked_add(bytes) else {
+        return false;
+    };
+    user_word_admissible(base, covered) && end_in_page <= PAGE_BYTES
+}
+
+/// Read the admissible run `[base, base + 8 · count)` into `out` as `8 · count`
+/// little-endian bytes, word by word.  `None` when the run is not
+/// [`user_word_run_admissible`] or `out` is not exactly the run's size; the
+/// caller halts.  On a host build the words read as zero, as the single-word
+/// reader's did.
+#[must_use]
+pub fn read_user_words(
+    base: u64,
+    count: u64,
+    covered: impl Fn(u64, u64) -> bool,
+    out: &mut [u8],
+) -> Option<()> {
+    if !user_word_run_admissible(base, count, covered) {
         return None;
     }
-    #[cfg(target_arch = "aarch64")]
-    {
+    let Ok(count) = usize::try_from(count) else {
+        return None;
+    };
+    if out.len() != count.checked_mul(8)? {
+        return None;
+    }
+    for (i, slot) in out.chunks_exact_mut(8).enumerate() {
+        #[allow(unused_variables)]
+        let addr = base + 8 * i as u64;
+        #[cfg(target_arch = "aarch64")]
         // SAFETY: as `apply_physical_write`'s user-word store: an admissible,
-        // aligned word of a thread's RAM frame under the identity map; one
-        // aligned 64-bit load.
-        Some(unsafe { core::ptr::read_volatile(addr as *const u64) })
+        // aligned word of a thread's RAM frame under the identity map — the
+        // run check above admits every word of the run — one aligned 64-bit
+        // load.
+        let word = unsafe { core::ptr::read_volatile(addr as *const u64) };
+        #[cfg(not(target_arch = "aarch64"))]
+        let word = 0u64;
+        slot.copy_from_slice(&word.to_le_bytes());
     }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        Some(0)
-    }
+    Some(())
 }
 
 /// **The value `TTBR0_EL1` takes for an address space**: its table page in
@@ -763,9 +801,53 @@ mod tests {
         // RAM the boot map does not cover is refused.
         assert!(!user_word_admissible(RAM_PAGE, |_, _| false));
         // The read side answers exactly where the write side admits.
-        assert_eq!(read_user_word(RAM_PAGE + 8, covered), Some(0));
-        assert_eq!(read_user_word(pool, covered), None);
-        assert_eq!(read_user_word(RAM_PAGE + 3, covered), None);
+        let mut one = [0xAAu8; 8];
+        assert_eq!(
+            read_user_words(RAM_PAGE + 8, 1, covered, &mut one),
+            Some(())
+        );
+        assert_eq!(one, [0u8; 8]);
+        assert_eq!(read_user_words(pool, 1, covered, &mut one), None);
+        assert_eq!(read_user_words(RAM_PAGE + 3, 1, covered, &mut one), None);
+    }
+
+    /// `v0.36.47` audit: a run of user words is admitted exactly when its base
+    /// is an admissible word and the run stays in the base's page — the bound
+    /// the Lean side proves it never exceeds (`wordRuns_within_page`).
+    #[test]
+    fn a_user_word_run_is_bounded_by_its_page() {
+        // The exact run: 116 words (the longest overflow message) ending on
+        // the last byte of the page.
+        let exact = RAM_PAGE + PAGE_BYTES - 8 * 116;
+        assert!(user_word_run_admissible(exact, 116, covered));
+        let mut words = [0xAAu8; 8 * 116];
+        assert_eq!(read_user_words(exact, 116, covered, &mut words), Some(()));
+        assert!(words.iter().all(|b| *b == 0));
+        // One word further: the run leaves the page and is refused, although
+        // its base and all but its last word are admissible.
+        let crossing = exact + 8;
+        assert!(user_word_admissible(crossing, covered));
+        assert!(user_word_admissible(crossing + 8 * 114, covered));
+        assert!(!user_word_run_admissible(crossing, 116, covered));
+        assert_eq!(read_user_words(crossing, 116, covered, &mut words), None);
+        // Clipped to the page it is admitted again.
+        assert!(user_word_run_admissible(crossing, 115, covered));
+        // A zero-length run reads nothing — admitted at an admissible base,
+        // refused where a single word would be.
+        let mut none: [u8; 0] = [];
+        assert!(user_word_run_admissible(RAM_PAGE, 0, covered));
+        assert_eq!(read_user_words(RAM_PAGE, 0, covered, &mut none), Some(()));
+        assert!(!user_word_run_admissible(RAM_PAGE + 4, 0, covered));
+        assert!(!user_word_run_admissible(
+            crate::mmu::BOOT_TABLE_POOL_BASE,
+            0,
+            covered
+        ));
+        // A buffer of the wrong size is refused rather than partly filled.
+        let mut short = [0u8; 8];
+        assert_eq!(read_user_words(RAM_PAGE, 2, covered, &mut short), None);
+        // A count whose byte size overflows is refused, not wrapped.
+        assert!(!user_word_run_admissible(RAM_PAGE, u64::MAX / 4, covered));
     }
 
     #[test]

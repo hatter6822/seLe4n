@@ -208,7 +208,7 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
                pendingMessage := none
                pendingReceiveReply := none })) st1 = .ok ((), s) := ⟨_, rfl⟩
   have hRc : storeTcbReceiveComplete st1 tid none = .ok sRc := by
-    unfold storeTcbReceiveComplete
+    unfold storeTcbReceiveComplete modifyTcb
     rw [hT1]
     simp only []
     rw [hStoreRc]

@@ -35,15 +35,7 @@ use sele4n_hal::svc_dispatch::{dispatch_svc, SyscallArgs, SyscallId};
 
 /// The zero-argument frame the seam tests dispatch with.
 fn zero_args() -> SyscallArgs {
-    SyscallArgs {
-        msg_info: 0,
-        msg_regs: [0; 6],
-        ipc_buffer_addr: None,
-        elr: 0,
-        spsr: 0,
-        sp_el0: 0,
-        x30: 0,
-    }
+    SyscallArgs { msg_info: 0 }
 }
 
 #[test]

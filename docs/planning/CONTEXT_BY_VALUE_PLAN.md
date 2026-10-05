@@ -98,7 +98,7 @@ conversion, no allocation), and the HAL hands its in-flight context over as a
 
 Stores: `TCB.registerContext : RegisterFile := default`
 (`Model/Object/Types.lean:1007`, the only TCB register field); `MachineState.coreRegs
-: Vector RegisterFile numCores` (`Machine.lean:840`) with `regsOnCore` /
+: Vector RegisterFile numCores` (`Machine.lean:836`) with `regsOnCore` /
 `setRegsOnCore`; `FrozenSystemState` shares `MachineState` and `TCB`;
 `ObservableState.machineRegs : Option RegisterFile` (`InformationFlow/Projection.lean:82`);
 `RestoreTarget.user (context : RegisterFile)` (`ContextRestore.lean:131`).
@@ -299,7 +299,8 @@ where `RegValue` stays (D1).
 ### 3.6 Measurement (CV0, CV5)
 
 - `lean_heap::HeapStats` gains a monotone `allocations` counter (every
-  `alloc_small` / `alloc_big`); `ffi_heap_allocations : BaseIO UInt64` exposes
+  `Heap::alloc_small` and every `Heap::alloc`, the big-object path
+  `lean_alloc_object` serves from); `ffi_heap_allocations : BaseIO UInt64` exposes
   it to the host harness only (`SeLe4n/Testing/`, outside the kernel archive,
   as `BoundaryProbes` is).  A host test runs one syscall round trip and prints
   the delta; the baseline is recorded at CV0.1 and the result at CV5.2 in the

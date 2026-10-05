@@ -477,13 +477,13 @@ bracket is the state the growing phase ended in.  That is what keeps the runtime
 half honest: the growing phase's writes are lock words, and pokes derived
 against a base that already carries them describe the state the action saw. -/
 def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
-    (syscallId : UInt32) (msgInfo : UInt64) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
-  match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+  match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st with
   | Except.ok (outcome, st') =>
       -- WS-BP BP7.4: the returning caller's result is in its saved context and
@@ -526,21 +526,21 @@ commits owes no physical write, and the writes it hands the runtime are the ones
 the committed transition recorded.  So a write is performed once — by the seam
 this commit returns to — and none is stranded into the next syscall. -/
 theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
+    (execCore : CoreId) (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     ∃ outcome st',
-      Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (outcome, st') ∧
-      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
-      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1 =
         (PriorityInheritance.settleResidencyOnCore
           (PriorityInheritance.scheduleLocalSuccessor st
             (Architecture.stageCallerReturn st st' execCore outcome) execCore)
           execCore).pendingPhysicalWrites := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
-    msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
   refine ⟨outcome, st', h, ?_, ?_⟩ <;> simp [syscallDispatchCrossCoreStep, h]
 
 /-- **WS-RR RR7.12**: what a revalidation refusal returns to the caller.
@@ -606,19 +606,26 @@ the entry's own pre-state:
   is committed but the unwinding, and the caller gets `.illegalState`.
 
 `execCore` is the lock-holding core, which is the core the syscall executes on: a
-footprint acquired in another core's name would exclude nobody. -/
+footprint acquired in another core's name would exclude nobody.
+
+`trapped` is the context the caller trapped with, whole (`v0.36.47` audit): the
+step reads the six message registers, the IPC buffer (`x6`) and the fault window
+(`pc`, `pstate`, `sp`, `x30`) off it here, so the closure the entry hands
+`Platform.FFI.modifyGetKernelState` captures one object rather than eleven boxed
+`UInt64`s. -/
 def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext) (execCore : CoreId)
-    (syscallId : UInt32) (msgInfo : UInt64) (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (trapped : Architecture.TrapContext) (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   match Concurrency.runBracketed schedulerLockBracketDomain
-      (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5)
+      (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
+        trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5)
       execCore
-      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30) st with
+      (syscallDispatchCrossCoreStep ctx execCore syscallId
+        trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+        trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30) st with
   | .undeclared r => r
   | .committed r => r
   | .refused unwound => syscallBracketRefusalResult execCore unwound
@@ -632,14 +639,14 @@ declarations safe: the arms that are not declared yet are bit-identical, on the
 pre-state, with no lock written.  Definitional, so a refactor that starts
 acquiring something on the undeclared path stops this elaborating. -/
 theorem syscallDispatchCrossCoreBracketedStep_undeclared (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
-    (h : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
-      = none) :
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st
-      = syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-          ipcBufferAddr elr spsr spEl0 x30 st := by
+    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.TrapContext)
+    (st : SystemState)
+    (h : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
+      trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 st = none) :
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
+      = syscallDispatchCrossCoreStep ctx execCore syscallId
+          trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+          trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30 st := by
   unfold syscallDispatchCrossCoreBracketedStep
   rw [Concurrency.runBracketed_undeclared _ _ _ _ st h]
 
@@ -651,23 +658,54 @@ The load-bearing negative.  A guard that refused *after* running the dispatch
 would be worse than no guard: the syscall would have committed against a
 resolution the guard judged stale. -/
 theorem syscallDispatchCrossCoreBracketedStep_refused (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
-    (S : SchedLockSet)
-    (hDecl : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
-          = some S)
-    (hGuard : ¬ (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.TrapContext)
+    (st : SystemState) (S : SchedLockSet)
+    (hDecl : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
+          trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 st = some S)
+    (hGuard : ¬ (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
+          trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
           (schedAcquireAll execCore S.lockAcquireSequence st) = some S ∧
         schedLockSetHeld execCore S
           (schedAcquireAll execCore S.lockAcquireSequence st))) :
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
       = syscallBracketRefusalResult execCore
           (schedUnwindAll execCore S.lockAcquireSequence.reverse
             (schedAcquireAll execCore S.lockAcquireSequence st)) := by
   unfold syscallDispatchCrossCoreBracketedStep
   rw [Concurrency.runBracketed_refused _ _ _ _ st S hDecl hGuard]
   rfl
+
+/-- **The sender's overflow words, from the batches the HAL answered**
+(`v0.36.47` audit): each run's `ByteArray` decoded to its `n` words
+(`IpcBufferRead.wordsOfBatches`) and zipped back onto the addresses the runs
+were built from.  A batch of any other size — or a different number of batches
+than runs — is a HAL defect the hardware never produces (it halts on a refused
+run instead), and the answer is to fail closed exactly as
+`syscallEntryContextOrFaulted` does: the `.faulted` tag, on which the entry
+commits nothing and the trap layer halts the PE.  Pure, so the host suite runs
+the decode and that arm (`tests/SyscallDispatchSuite.lean`). -/
+def overflowWordsOrFaulted (addrs : List SeLe4n.PAddr) (runs : List (SeLe4n.PAddr × Nat))
+    (batches : List ByteArray) : Except UInt64 (List (SeLe4n.PAddr × UInt64)) :=
+  match Architecture.IpcBufferRead.wordsOfBatches runs batches with
+  | some ws => .ok (addrs.zip ws)
+  | none => .error Architecture.SyscallOutcome.faulted.tagWord
+
+/-- **Every address gets its word**: on the runs of `addrs`, a decoded answer
+pairs the addresses in order with one word each — the pairs' addresses are
+`addrs` itself — so `syncUserWords` writes exactly the words the loop synced. -/
+theorem overflowWordsOrFaulted_addrs (addrs : List SeLe4n.PAddr) (batches : List ByteArray)
+    (pairs : List (SeLe4n.PAddr × UInt64))
+    (h : overflowWordsOrFaulted addrs (Architecture.IpcBufferRead.wordRuns addrs) batches
+        = .ok pairs) :
+    pairs.map Prod.fst = addrs := by
+  unfold overflowWordsOrFaulted at h
+  split at h
+  · rename_i ws hws
+    cases h
+    have hLen := Architecture.IpcBufferRead.wordsOfBatches_length _ _ _ hws
+    rw [Architecture.IpcBufferRead.expandRuns_wordRuns] at hLen
+    exact List.map_fst_zip (Nat.le_of_eq hLen.symm)
+  · cases h
 
 /-- **WS-BP BP7.8: the sender's message registers past the fourth, read from
 RAM.**  The decode reads a syscall's overflow message registers out of the
@@ -684,15 +722,41 @@ the decode runs.  The addresses are resolved on the state read here and the
 words written on the state the commit closure receives; those are one state,
 because the kernel-entry lock serialises every committing entry and nothing
 between the two reads writes an address space.  A syscall that asks for no
-overflow reads nothing (`callerOverflowAddrs` answers `[]`). -/
+overflow reads nothing (`callerOverflowAddrs` answers `[]`).
+
+**`v0.36.47` audit: the words cross in runs, not one per call.**  The slots
+are grouped into their contiguous same-page runs (`IpcBufferRead.wordRuns` —
+one run for a buffer inside a page, two for one straddling a boundary; on a
+116-word message that is one or two `ffiReadUserWords` calls where there were
+116), each run crosses as one `ByteArray` of `8 · n` bytes, and the pure
+`overflowWordsOrFaulted` decodes the batches back onto the addresses.  The
+runs name exactly the addresses the loop read, in order
+(`expandRuns_wordRuns`), and never leave a page
+(`wordRuns_within_page`), so the HAL's run bound is never the kernel's own
+refusal. -/
 def readCallerOverflowWords (execCore : CoreId) (msgInfo : UInt64) :
-    BaseIO (List (SeLe4n.PAddr × UInt64)) := do
+    BaseIO (Except UInt64 (List (SeLe4n.PAddr × UInt64))) := do
   let st ← Platform.FFI.getKernelState
   match st.scheduler.currentOnCore execCore with
-  | none => pure []
+  | none => pure (.ok [])
   | some tid =>
-      (Architecture.IpcBufferRead.callerOverflowAddrs st tid msgInfo).mapM fun pa => do
-        pure (pa, ← Platform.FFI.ffiReadUserWord pa.toNat.toUInt64)
+      let addrs := Architecture.IpcBufferRead.callerOverflowAddrs st tid msgInfo
+      let runs := Architecture.IpcBufferRead.wordRuns addrs
+      let batches ← runs.mapM fun run =>
+        Platform.FFI.ffiReadUserWords run.1.toNat.toUInt64 run.2.toUInt64
+      pure (overflowWordsOrFaulted addrs runs batches)
+
+/-- **The context the syscall entry dispatches on, or the outcome it answers
+without one.**  An `SVC` handler always publishes its frame before it
+dispatches (`rust/sele4n-hal/src/trap.rs`), so an entry the HAL hands no context
+is a kernel defect, and the answer is to fail closed: `.faulted` with no state
+read, no state committed and no restore staged, on which the trap layer halts
+the PE (`halt_after_delivered_syscall_fault`).  Pure, so the host suite runs the
+arm no hardware path reaches (`tests/SyscallDispatchSuite.lean`). -/
+def syscallEntryContextOrFaulted :
+    Option Architecture.TrapContext → Except UInt64 Architecture.TrapContext
+  | some trapped => .ok trapped
+  | none => .error Architecture.SyscallOutcome.faulted.tagWord
 
 /-- **WS-SM SM6.A**: the cross-core-aware syscall dispatch entry — the live
 SGI-dispatch seam.  Reads the deployment labeling context and the executing core
@@ -744,10 +808,7 @@ describes the state that was actually committed;
 its scheduler slots.  Inert (`st'' = st'`) for every syscall that left a thread
 running on this core — including every arm of a single-core build. -/
 @[export lean_syscall_dispatch_cross_core]
-def syscallDispatchCrossCoreEntry
-    (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64) (elr spsr spEl0 x30 : UInt64) : BaseIO UInt64 := do
+def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   let ctx ← Platform.FFI.getKernelLabelingContext
   let execCore ← Concurrency.currentCoreId
   -- **WS-RR RR7.12**: the atomic step now runs inside its declared per-object
@@ -761,14 +822,26 @@ def syscallDispatchCrossCoreEntry
   -- PR #904 review (`v0.36.41`): on a core a remote deschedule vacated, the
   -- frame goes to the core's resident thread rewound to the `SVC`
   -- (`saveCapturedSyscallFrame`), so the interrupted syscall is re-issued.
-  let frame ← Platform.FFI.captureTrapFrame
+  -- The frame is also where the syscall's arguments are read, once: the
+  -- message info (`x1`), the six message registers, the IPC buffer (`x6`) and
+  -- the fault window (`ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30`).  An `SVC`
+  -- handler always publishes its frame before it dispatches, so an entry with
+  -- none is a kernel defect and fails closed (`syscallEntryContextOrFaulted`):
+  -- `.faulted` with no restore staged, on which the trap layer halts the PE.
+  let trapped ← Platform.FFI.ffiTrapContext
+  let trapped ← match syscallEntryContextOrFaulted trapped with
+    | .ok trapped => pure trapped
+    | .error tag => return tag
+  let frame := some (Architecture.registerFileOfTrapContext trapped)
+  let msgInfo := trapped.x1
   -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
   -- and synced into the model in the atomic step, so the decode reads what the
   -- thread wrote.
-  let words ← readCallerOverflowWords execCore msgInfo
+  let words ← match ← readCallerOverflowWords execCore msgInfo with
+    | .ok words => pure words
+    | .error tag => return tag
   let result ← Platform.FFI.modifyGetKernelState fun st =>
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped
       (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st execCore frame) words)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
@@ -827,19 +900,22 @@ atomic step read off the committed post-state) so a refactor that drops the SGI
 firing, the state commit or the record breaks this marker at elaboration;
 combined with `@[export]` (which the Rust extern resolves against) the seam
 cannot regress silently. -/
-theorem syscallDispatchCrossCoreEntry_def
-    (syscallId : UInt32) (msgInfo : UInt64) (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64) (elr spsr spEl0 x30 : UInt64) :
-    syscallDispatchCrossCoreEntry syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr
-        elr spsr spEl0 x30 =
+theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
+    syscallDispatchCrossCoreEntry syscallId =
       (do
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
-        let frame ← Platform.FFI.captureTrapFrame
-        let words ← readCallerOverflowWords execCore msgInfo
+        let trapped ← Platform.FFI.ffiTrapContext
+        let trapped ← match syscallEntryContextOrFaulted trapped with
+          | .ok trapped => pure trapped
+          | .error tag => return tag
+        let frame := some (Architecture.registerFileOfTrapContext trapped)
+        let msgInfo := trapped.x1
+        let words ← match ← readCallerOverflowWords execCore msgInfo with
+          | .ok words => pure words
+          | .error tag => return tag
         let result ← Platform.FFI.modifyGetKernelState fun st =>
-          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-            ipcBufferAddr elr spsr spEl0 x30
+          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped
             (Architecture.IpcBufferRead.syncUserWords
               (Architecture.saveCapturedSyscallFrame st execCore frame) words)
         let frame := result.1.mailboxFrame
@@ -874,19 +950,18 @@ outcome the challenge fears — breaks this theorem. -/
 theorem vacatedCore_next_syscall_rejected
     (ctx : LabelingContext) (execCore : CoreId)
     (pre post : SystemState)
-    (syscallId : UInt32) (msgInfo : UInt64)
+    (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
-    (hMsg : msgInfo = x1)
     (hVacated :
       (PriorityInheritance.scheduleLocalSuccessor pre post execCore).scheduler.currentOnCore
         execCore = none) :
-    Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+    Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30
         (PriorityInheritance.scheduleLocalSuccessor pre post execCore)
       = Except.ok (.returns (Architecture.errorFrame .illegalState),
                    PriorityInheritance.scheduleLocalSuccessor pre post execCore) :=
-  Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId msgInfo
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hMsg hVacated
+  Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hVacated
 
 /-- **WS-SM SM6.A** trace-safety witness: on the boot core, when every thread's
 home core is the boot core (the single-core configuration), the diff-recovered

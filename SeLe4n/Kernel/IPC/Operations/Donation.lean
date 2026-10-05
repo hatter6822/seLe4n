@@ -38,9 +38,9 @@ The donation logic is split across two sibling modules:
   witnesses). Re-exported by `SeLe4n.Kernel.IPC.Operations` (the IPC operations
   hub).
 * This file - donation-aware wrappers around the core transport-layer IPC
-  entry points (`endpointReplyWithDonation`, `endpointReplyRecvWithDonation`;
-  `endpointCallWithDonation` was deleted at `v0.35.192` — see the tombstone
-  below). These unavoidably depend on
+  entry point `endpointReplyWithDonation` (`endpointCallWithDonation` was
+  deleted at `v0.35.192` and `endpointReplyRecvWithDonation` at `v0.36.49` — see
+  the tombstones below). These unavoidably depend on
   `SeLe4n.Kernel.IPC.DualQueue.Transport`, so re-exporting this file from
   the operations hub would reintroduce the `Operations -> Donation ->
   Transport -> Core -> Operations` import cycle closed by AI4-A.
@@ -124,45 +124,16 @@ def endpointReplyWithDonation
             .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
       | none => .error .invalidArgument
 
-/-- Z7: Donation-aware endpointReplyRecv. Composes:
-1. Standard endpointReplyRecv (reply + receive) — server still holds donated SC during reply
-2. Return old donation from replier AFTER the reply completes
-3. (New donation from incoming caller is handled by the Call path)
-
-**Ordering rationale (AUD-3)**: The donation return happens AFTER `endpointReplyRecv`
-completes, not before. The server needs the donated SchedContext while replying
-(it's the currently running thread with that SC's budget). After the reply delivers
-the message and the server enters the receive path, the SC is returned. -/
-def endpointReplyRecvWithDonation
-    (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId)
-    (replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage)
-    -- WS-SM SM6.D (#7.1 fold): the reply object the server supplies for the next
-    -- caller on the receive leg, threaded into the folded `endpointReplyRecv`.
-    (replyId : Option SeLe4n.ReplyId) : Kernel Unit :=
-  fun st =>
-    -- **WS-HP HP4.2**: the answered frame, read before the reply leg clears it.
-    let answered? := answeredReplyObject? st replyTarget
-    match endpointReplyRecv endpointId receiver replyTarget msg replyId st with
-    | .error e => .error e
-    | .ok ((), st') =>
-      -- Z7-D1: Return old donation AFTER reply+receive completes
-      -- AH2-C: Propagate donation return errors.
-      -- **WS-HP HP4.2**: the pop takes the answered caller `replyTarget` and its
-      -- pre-state frame, for the reason `endpointReplyWithDonation` records.
-      match SeLe4n.ThreadId.toValid? replyTarget with
-      | some targetVtid =>
-        match answered? with
-        | none =>
-            .ok ((), PriorityInheritance.revertPriorityInheritance st' receiver)
-        | some rid =>
-          match applyReplyDonation st' rid targetVtid with
-          | .error e => .error e
-          | .ok st'' =>
-            -- D4-M: Revert PIP for the reply portion
-            .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
-      | none => .error .invalidArgument
+-- **Audit IPC-2 (`v0.36.49`): `endpointReplyRecvWithDonation` is DELETED.**
+--
+-- The single-core donation-aware ReplyRecv (`endpointReplyRecv`, then
+-- `applyReplyDonation`, then `revertPriorityInheritance`) had no caller: the live
+-- `.replyRecv` arm runs `endpointReplyRecvOnCore` (`IPC/CrossCore/EndpointReplyRecv.lean`),
+-- which pops the donation between the legs, installs the receive leg's
+-- capabilities, re-donates on a new `Call` and hands off priority inheritance.
+-- Like `endpointCallWithDonation` above it was tied to that live form by no
+-- equivalence theorem and consumed by nothing but its own `_unfold` lemma, so it
+-- was an orphan under this file's rule.
 
 -- ============================================================================
 -- AJ1-D (M-01): Decomposition lemmas for donation-aware wrappers
@@ -229,28 +200,6 @@ theorem endpointReplyWithDonation_refuses_delegated_replier
     simp only [Nat.not_lt.mpr hRegs, Nat.not_lt.mpr hCaps, if_false, hTcb, hIpc,
       hDelegated, Bool.false_eq_true, if_false]
   simp only [endpointReplyWithDonation, hReply]
-
-/-- AJ1-D (M-01): `endpointReplyRecvWithDonation` decomposes into:
-`endpointReplyRecv` → `applyReplyDonation` → `revertPriorityInheritance`,
-gated by a `receiver.toValid?` shim. -/
-theorem endpointReplyRecvWithDonation_unfold
-    (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) (replyId : Option SeLe4n.ReplyId) (st : SystemState) :
-    endpointReplyRecvWithDonation endpointId receiver replyTarget msg replyId st =
-    (match endpointReplyRecv endpointId receiver replyTarget msg replyId st with
-     | .error e => .error e
-     | .ok ((), st') =>
-       match SeLe4n.ThreadId.toValid? replyTarget with
-       | some targetVtid =>
-         match answeredReplyObject? st replyTarget with
-         | none => .ok ((), PriorityInheritance.revertPriorityInheritance st' receiver)
-         | some rid =>
-           match applyReplyDonation st' rid targetVtid with
-           | .error e => .error e
-           | .ok st'' =>
-             .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
-       | none => .error .invalidArgument) := by
-  rfl
 
 -- ============================================================================
 -- WS-RR RR2.1 / RR2.2 — the cross-core call donation
@@ -946,7 +895,7 @@ This is the post-state form of the `.receive` footprint's pre-state segment
 (`endpointReceiveHandoffReplenishCores`).  That one is read *before* the receive leg
 runs and licensed across it by a binding frame, because a bracket resolves a
 footprint before the transition; this one is read by a footprint that already
-computes the state its leg runs on (`replyRecvBodyWriteSet`'s discipline, where each
+computes the state its leg runs on (`endpointReplyRecvWriteSet`'s discipline, where each
 leg is read at the state it actually runs at), so it asks the donation's OWN guard
 on the donation's OWN state and needs no bridge.  The two are not merged, and
 deliberately: a pre-state reading of `callDonationSchedContext?` at the `.replyRecv`

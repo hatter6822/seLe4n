@@ -83,6 +83,15 @@ namespace RegValue
 /-- R7-C/L-03: Decidable validity check for runtime use. -/
 @[inline] def isValid (r : RegValue) : Bool := isWord64Dec r.val
 
+/-- A register value read from a 64-bit word is valid: `UInt64.toNat` is below
+`2^64`. -/
+theorem valid_of_uint64 (x : UInt64) : RegValue.valid ⟨x.toNat⟩ :=
+  UInt64.toNat_lt_size x
+
+/-- A register value read from a 32-bit word is valid. -/
+theorem valid_of_uint32 (x : UInt32) : RegValue.valid ⟨x.toNat⟩ :=
+  Nat.lt_trans (UInt32.toNat_lt_size x) (by decide)
+
 instance : ToString RegValue where
   toString r := toString r.toNat
 
@@ -260,6 +269,25 @@ structure RegisterFile where
 
 instance : Inhabited RegisterFile where
   default := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun _ => ⟨0⟩ }
+
+/-- **Every register of `rf` fits in one machine word** — `pc`, `sp`, `pstate`,
+`tpidr` and every valid general-purpose register.  `RegValue` is an unbounded
+`Nat`, so this is the hypothesis under which the trap-frame conversion is
+lossless: `Kernel.Architecture.trapContextOfRegisterFile` narrows each register
+with `Nat.toUInt64`, which wraps a value at or above `2^64`.  A context the HAL
+handed over satisfies it (`Kernel.Architecture.registerFileOfTrapContext_wordBounded`);
+`Kernel.Architecture.registerContextsWordBounded` carries it for every saved
+context and every core's bank, every register-context writer preserves it
+(`SeLe4n/Kernel/Architecture/RegisterContextBounded.lean`), and the live restore
+path discharges it (`Kernel.Architecture.restoreTargetOnCore_user_roundTrip`). -/
+def RegisterFile.wordBounded (rf : RegisterFile) : Prop :=
+  rf.pc.valid ∧ rf.sp.valid ∧ rf.pstate.valid ∧ rf.tpidr.valid ∧
+    ∀ r : RegName, r.isValid → (rf.gpr r).valid
+
+/-- The all-zero register file — a fresh thread's, and every bank's at boot — is
+word-bounded. -/
+theorem RegisterFile.default_wordBounded : (default : RegisterFile).wordBounded := by
+  refine ⟨?_, ?_, ?_, ?_, fun _ _ => ?_⟩ <;> (show (0 : Nat) < 2 ^ 64; omega)
 
 /-- WS-H12c: Manual `Repr` for `RegisterFile`. Since `gpr` is a function
 (`RegName → RegValue`), only `pc` and `sp` are shown in trace output. -/
@@ -439,57 +467,355 @@ structure SystemRegisterFile where
 instance : Inhabited SystemRegisterFile where
   default := {}
 
-/-- **WS-BP BP7.9: a thread's FP/SIMD context** — `v0`–`v31`, `FPCR`, `FPSR`.
+/-- **WS-BP BP7.9: a thread's FP/SIMD context** — `v0`–`v31`, `FPCR`, `FPSR`, as
+the HAL hands it over.
 
-Each 128-bit vector register is two doublewords, low first, so `q` holds
-`2 * 32` words: `q[2 * n]` is `v`n`'s bits [63:0] and `q[2 * n + 1]` its bits
-[127:64].  That is the order the HAL's save and load routines store and load
-them (`fp_context.S`, one `stp qN, qN+1` per pair), and `fpContextWordCount`
-words in all cross the FFI: the 64, then `FPCR`, then `FPSR`.
+Each 128-bit vector register is two doublewords, low first: word `2 · n` is
+`v`n`'s bits [63:0] and word `2 · n + 1` its bits [127:64], the order the HAL's
+save and load routines store and load them (`fp_context.S`, one `stp qN, qN+1`
+per pair); then `FPCR`, then `FPSR` — `fpContextWordCount` words in all.
 
-A fresh thread's context is all zeroes (`default`), which is what the lazy switch
-loads the first time the thread uses FP/SIMD: the load overwrites every register
-it names, so nothing a previous occupant of the core's registers left behind is
-visible to it. -/
+This is the boundary representation of the context: the HAL moves the whole of
+it across the FFI in **one** call each way (`Platform.FFI.ffiFpCapture` in,
+`Platform.FFI.ffiFpStageContext` out), where the seam used to issue one call per
+word.  A structure whose fields are all `UInt64` compiles to a single
+constructor object with no object fields and `8 · 66` scalar bytes, field `i` at
+byte offset `8 · i` — the layout `rust/sele4n-hal/src/ffi.rs` reads and writes
+(`FP_CONTEXT_SCALAR_BYTES`).  The layout is pinned the same way as
+`Architecture.TrapContext`'s: `ofWords` applies the constructor *positionally*
+while `word` reads by field *name*, so `word_ofWords` proves declared position
+`i` is layout word `i`; the HAL refuses an object of any other allocated size;
+and `rust/sele4n-lean-boundary` executes the compiled layout against the
+HAL's offsets on the host.
+
+A fresh thread's context is all zeroes (`default`, every word `0`:
+`FpContext.default_word`), which is what the lazy switch loads the first time
+the thread uses FP/SIMD: the load overwrites every register it names, so nothing
+a previous occupant of the core's registers left behind is visible to it. -/
 structure FpContext where
-  q : _root_.Vector UInt64 64
-  fpcr : UInt64 := 0
-  fpsr : UInt64 := 0
-  deriving DecidableEq, Repr
-
-instance : Inhabited FpContext where
-  default := { q := _root_.Vector.replicate 64 0 }
+  /-- `v0` bits [63:0] (word 0). -/
+  v0Lo : UInt64
+  /-- `v0` bits [127:64] (word 1). -/
+  v0Hi : UInt64
+  /-- `v1` bits [63:0] (word 2). -/
+  v1Lo : UInt64
+  /-- `v1` bits [127:64] (word 3). -/
+  v1Hi : UInt64
+  /-- `v2` bits [63:0] (word 4). -/
+  v2Lo : UInt64
+  /-- `v2` bits [127:64] (word 5). -/
+  v2Hi : UInt64
+  /-- `v3` bits [63:0] (word 6). -/
+  v3Lo : UInt64
+  /-- `v3` bits [127:64] (word 7). -/
+  v3Hi : UInt64
+  /-- `v4` bits [63:0] (word 8). -/
+  v4Lo : UInt64
+  /-- `v4` bits [127:64] (word 9). -/
+  v4Hi : UInt64
+  /-- `v5` bits [63:0] (word 10). -/
+  v5Lo : UInt64
+  /-- `v5` bits [127:64] (word 11). -/
+  v5Hi : UInt64
+  /-- `v6` bits [63:0] (word 12). -/
+  v6Lo : UInt64
+  /-- `v6` bits [127:64] (word 13). -/
+  v6Hi : UInt64
+  /-- `v7` bits [63:0] (word 14). -/
+  v7Lo : UInt64
+  /-- `v7` bits [127:64] (word 15). -/
+  v7Hi : UInt64
+  /-- `v8` bits [63:0] (word 16). -/
+  v8Lo : UInt64
+  /-- `v8` bits [127:64] (word 17). -/
+  v8Hi : UInt64
+  /-- `v9` bits [63:0] (word 18). -/
+  v9Lo : UInt64
+  /-- `v9` bits [127:64] (word 19). -/
+  v9Hi : UInt64
+  /-- `v10` bits [63:0] (word 20). -/
+  v10Lo : UInt64
+  /-- `v10` bits [127:64] (word 21). -/
+  v10Hi : UInt64
+  /-- `v11` bits [63:0] (word 22). -/
+  v11Lo : UInt64
+  /-- `v11` bits [127:64] (word 23). -/
+  v11Hi : UInt64
+  /-- `v12` bits [63:0] (word 24). -/
+  v12Lo : UInt64
+  /-- `v12` bits [127:64] (word 25). -/
+  v12Hi : UInt64
+  /-- `v13` bits [63:0] (word 26). -/
+  v13Lo : UInt64
+  /-- `v13` bits [127:64] (word 27). -/
+  v13Hi : UInt64
+  /-- `v14` bits [63:0] (word 28). -/
+  v14Lo : UInt64
+  /-- `v14` bits [127:64] (word 29). -/
+  v14Hi : UInt64
+  /-- `v15` bits [63:0] (word 30). -/
+  v15Lo : UInt64
+  /-- `v15` bits [127:64] (word 31). -/
+  v15Hi : UInt64
+  /-- `v16` bits [63:0] (word 32). -/
+  v16Lo : UInt64
+  /-- `v16` bits [127:64] (word 33). -/
+  v16Hi : UInt64
+  /-- `v17` bits [63:0] (word 34). -/
+  v17Lo : UInt64
+  /-- `v17` bits [127:64] (word 35). -/
+  v17Hi : UInt64
+  /-- `v18` bits [63:0] (word 36). -/
+  v18Lo : UInt64
+  /-- `v18` bits [127:64] (word 37). -/
+  v18Hi : UInt64
+  /-- `v19` bits [63:0] (word 38). -/
+  v19Lo : UInt64
+  /-- `v19` bits [127:64] (word 39). -/
+  v19Hi : UInt64
+  /-- `v20` bits [63:0] (word 40). -/
+  v20Lo : UInt64
+  /-- `v20` bits [127:64] (word 41). -/
+  v20Hi : UInt64
+  /-- `v21` bits [63:0] (word 42). -/
+  v21Lo : UInt64
+  /-- `v21` bits [127:64] (word 43). -/
+  v21Hi : UInt64
+  /-- `v22` bits [63:0] (word 44). -/
+  v22Lo : UInt64
+  /-- `v22` bits [127:64] (word 45). -/
+  v22Hi : UInt64
+  /-- `v23` bits [63:0] (word 46). -/
+  v23Lo : UInt64
+  /-- `v23` bits [127:64] (word 47). -/
+  v23Hi : UInt64
+  /-- `v24` bits [63:0] (word 48). -/
+  v24Lo : UInt64
+  /-- `v24` bits [127:64] (word 49). -/
+  v24Hi : UInt64
+  /-- `v25` bits [63:0] (word 50). -/
+  v25Lo : UInt64
+  /-- `v25` bits [127:64] (word 51). -/
+  v25Hi : UInt64
+  /-- `v26` bits [63:0] (word 52). -/
+  v26Lo : UInt64
+  /-- `v26` bits [127:64] (word 53). -/
+  v26Hi : UInt64
+  /-- `v27` bits [63:0] (word 54). -/
+  v27Lo : UInt64
+  /-- `v27` bits [127:64] (word 55). -/
+  v27Hi : UInt64
+  /-- `v28` bits [63:0] (word 56). -/
+  v28Lo : UInt64
+  /-- `v28` bits [127:64] (word 57). -/
+  v28Hi : UInt64
+  /-- `v29` bits [63:0] (word 58). -/
+  v29Lo : UInt64
+  /-- `v29` bits [127:64] (word 59). -/
+  v29Hi : UInt64
+  /-- `v30` bits [63:0] (word 60). -/
+  v30Lo : UInt64
+  /-- `v30` bits [127:64] (word 61). -/
+  v30Hi : UInt64
+  /-- `v31` bits [63:0] (word 62). -/
+  v31Lo : UInt64
+  /-- `v31` bits [127:64] (word 63). -/
+  v31Hi : UInt64
+  /-- `FPCR` (word 64). -/
+  fpcr : UInt64
+  /-- `FPSR` (word 65). -/
+  fpsr : UInt64
+  deriving Repr, DecidableEq
 
 /-- **WS-BP BP7.9**: the words an `FpContext` occupies on the wire. -/
 def fpContextWordCount : Nat := 66
 
+namespace FpContext
+
 /-- **WS-BP BP7.9**: word `i` of a context, in the wire layout — the 64 vector
 doublewords, `FPCR`, `FPSR`, and `0` past them. -/
-def FpContext.word (ctx : FpContext) (i : Nat) : UInt64 :=
-  if h : i < 64 then ctx.q.get ⟨i, h⟩
-  else if i = 64 then ctx.fpcr
-  else if i = 65 then ctx.fpsr
-  else 0
+def word (c : FpContext) : Nat → UInt64
+  | 0 => c.v0Lo
+  | 1 => c.v0Hi
+  | 2 => c.v1Lo
+  | 3 => c.v1Hi
+  | 4 => c.v2Lo
+  | 5 => c.v2Hi
+  | 6 => c.v3Lo
+  | 7 => c.v3Hi
+  | 8 => c.v4Lo
+  | 9 => c.v4Hi
+  | 10 => c.v5Lo
+  | 11 => c.v5Hi
+  | 12 => c.v6Lo
+  | 13 => c.v6Hi
+  | 14 => c.v7Lo
+  | 15 => c.v7Hi
+  | 16 => c.v8Lo
+  | 17 => c.v8Hi
+  | 18 => c.v9Lo
+  | 19 => c.v9Hi
+  | 20 => c.v10Lo
+  | 21 => c.v10Hi
+  | 22 => c.v11Lo
+  | 23 => c.v11Hi
+  | 24 => c.v12Lo
+  | 25 => c.v12Hi
+  | 26 => c.v13Lo
+  | 27 => c.v13Hi
+  | 28 => c.v14Lo
+  | 29 => c.v14Hi
+  | 30 => c.v15Lo
+  | 31 => c.v15Hi
+  | 32 => c.v16Lo
+  | 33 => c.v16Hi
+  | 34 => c.v17Lo
+  | 35 => c.v17Hi
+  | 36 => c.v18Lo
+  | 37 => c.v18Hi
+  | 38 => c.v19Lo
+  | 39 => c.v19Hi
+  | 40 => c.v20Lo
+  | 41 => c.v20Hi
+  | 42 => c.v21Lo
+  | 43 => c.v21Hi
+  | 44 => c.v22Lo
+  | 45 => c.v22Hi
+  | 46 => c.v23Lo
+  | 47 => c.v23Hi
+  | 48 => c.v24Lo
+  | 49 => c.v24Hi
+  | 50 => c.v25Lo
+  | 51 => c.v25Hi
+  | 52 => c.v26Lo
+  | 53 => c.v26Hi
+  | 54 => c.v27Lo
+  | 55 => c.v27Hi
+  | 56 => c.v28Lo
+  | 57 => c.v28Hi
+  | 58 => c.v29Lo
+  | 59 => c.v29Hi
+  | 60 => c.v30Lo
+  | 61 => c.v30Hi
+  | 62 => c.v31Lo
+  | 63 => c.v31Hi
+  | 64 => c.fpcr
+  | 65 => c.fpsr
+  | _ => 0
 
-/-- **WS-BP BP7.9**: the context the wire words describe — the inverse of
-`FpContext.word` on its 66 words. -/
-def FpContext.ofWords (w : Nat → UInt64) : FpContext :=
-  { q := _root_.Vector.ofFn fun i => w i.val, fpcr := w 64, fpsr := w 65 }
+/-- **WS-BP BP7.9**: the context whose word `i` is `w i`.  Inlined, so a
+caller's `w` is applied at each index directly rather than through a closure.
 
-/-- **WS-BP BP7.9**: reading a context back off its own words is the identity,
-so the save → wire → TCB and TCB → wire → load paths lose nothing. -/
-theorem FpContext.ofWords_word (ctx : FpContext) : FpContext.ofWords ctx.word = ctx := by
-  cases ctx with
-  | mk q fpcr fpsr =>
-    have hq : (_root_.Vector.ofFn fun i : Fin 64 =>
-        FpContext.word { q := q, fpcr := fpcr, fpsr := fpsr } i.val) = q := by
-      apply _root_.Vector.ext
-      intro i hi
-      simp only [_root_.Vector.getElem_ofFn, FpContext.word, dif_pos hi]
-      rfl
-    show FpContext.mk _ _ _ = FpContext.mk q fpcr fpsr
-    rw [hq]
-    rfl
+The Lean-side layout pin: the constructor is applied *positionally*, so field
+`i` of the structure is `w i` by construction, and `word_ofWords` (which reads
+each field by *name*) proves that declared position `i` is layout word `i`.  A
+field reordered or inserted in `FpContext` without the same change here and in
+`word` fails to elaborate. -/
+@[inline] def ofWords (w : Nat → UInt64) : FpContext :=
+  ⟨w 0, w 1, w 2, w 3, w 4, w 5, w 6, w 7, w 8, w 9, w 10, w 11, w 12, w 13, w 14, w 15, w 16, w 17, w 18, w 19, w 20, w 21, w 22, w 23, w 24, w 25, w 26, w 27, w 28, w 29, w 30, w 31, w 32, w 33, w 34, w 35, w 36, w 37, w 38, w 39, w 40, w 41, w 42, w 43, w 44, w 45, w 46, w 47, w 48, w 49, w 50, w 51, w 52, w 53, w 54, w 55, w 56, w 57, w 58, w 59, w 60, w 61, w 62, w 63, w 64, w 65⟩
+
+/-- **Encoding a context's words and decoding them is the identity**, so the
+save → wire → TCB and TCB → wire → load paths lose nothing. -/
+@[simp] theorem ofWords_word (c : FpContext) : ofWords c.word = c := by
+  cases c; rfl
+
+/-- Two word functions that agree on the layout's words build the same context. -/
+theorem ofWords_congr (w w' : Nat → UInt64)
+    (h : ∀ i, i < fpContextWordCount → w i = w' i) : ofWords w = ofWords w' := by
+  simp only [ofWords]
+  congr 1 <;> exact h _ (by decide)
+
+/-- **Decoding then encoding is the identity on the layout's words** — every
+word below `fpContextWordCount` crosses the boundary unchanged. -/
+@[simp] theorem word_ofWords (w : Nat → UInt64) :
+    ∀ i, i < fpContextWordCount → (ofWords w).word i = w i
+  | 0, _ => rfl
+  | 1, _ => rfl
+  | 2, _ => rfl
+  | 3, _ => rfl
+  | 4, _ => rfl
+  | 5, _ => rfl
+  | 6, _ => rfl
+  | 7, _ => rfl
+  | 8, _ => rfl
+  | 9, _ => rfl
+  | 10, _ => rfl
+  | 11, _ => rfl
+  | 12, _ => rfl
+  | 13, _ => rfl
+  | 14, _ => rfl
+  | 15, _ => rfl
+  | 16, _ => rfl
+  | 17, _ => rfl
+  | 18, _ => rfl
+  | 19, _ => rfl
+  | 20, _ => rfl
+  | 21, _ => rfl
+  | 22, _ => rfl
+  | 23, _ => rfl
+  | 24, _ => rfl
+  | 25, _ => rfl
+  | 26, _ => rfl
+  | 27, _ => rfl
+  | 28, _ => rfl
+  | 29, _ => rfl
+  | 30, _ => rfl
+  | 31, _ => rfl
+  | 32, _ => rfl
+  | 33, _ => rfl
+  | 34, _ => rfl
+  | 35, _ => rfl
+  | 36, _ => rfl
+  | 37, _ => rfl
+  | 38, _ => rfl
+  | 39, _ => rfl
+  | 40, _ => rfl
+  | 41, _ => rfl
+  | 42, _ => rfl
+  | 43, _ => rfl
+  | 44, _ => rfl
+  | 45, _ => rfl
+  | 46, _ => rfl
+  | 47, _ => rfl
+  | 48, _ => rfl
+  | 49, _ => rfl
+  | 50, _ => rfl
+  | 51, _ => rfl
+  | 52, _ => rfl
+  | 53, _ => rfl
+  | 54, _ => rfl
+  | 55, _ => rfl
+  | 56, _ => rfl
+  | 57, _ => rfl
+  | 58, _ => rfl
+  | 59, _ => rfl
+  | 60, _ => rfl
+  | 61, _ => rfl
+  | 62, _ => rfl
+  | 63, _ => rfl
+  | 64, _ => rfl
+  | 65, _ => rfl
+  | n + 66, h => absurd h (by unfold fpContextWordCount; omega)
+
+/-- A word past the layout reads `0`. -/
+theorem word_of_count_le (c : FpContext) (i : Nat) (h : fpContextWordCount ≤ i) :
+    c.word i = 0 := by
+  obtain ⟨n, rfl⟩ : ∃ n, i = n + 66 := ⟨i - 66, by unfold fpContextWordCount at h; omega⟩
+  rfl
+
+end FpContext
+
+/-- A fresh thread's FP/SIMD context: every word `0`. -/
+instance : Inhabited FpContext where
+  default := FpContext.ofWords fun _ => 0
+
+/-- Every word of the default context is `0` — the context a fresh thread's
+first FP/SIMD use loads names no value a previous occupant of the registers
+left behind. -/
+theorem FpContext.default_word (i : Nat) : (default : FpContext).word i = 0 := by
+  by_cases h : i < fpContextWordCount
+  · exact FpContext.word_ofWords _ i h
+  · exact FpContext.word_of_count_le _ i (Nat.le_of_not_lt h)
 
 /-- Top-level abstract machine state manipulated by kernel transitions.
     AG3-B (P-04): All `MachineConfig` fields are now carried in machine state
@@ -776,20 +1102,18 @@ updates the single-core `regs` view. -/
     (v : RegisterFile) : (ms.setRegsOnCore c v).systemRegisters = ms.systemRegisters := rfl
 
 /-- R7-C/L-03: Machine-state word-boundedness invariant.
-    Asserts that all register values (PC, SP, and all GPRs) fit in one machine
+    Asserts that every register value of every core's bank fits in one machine
     word. This is always true on real ARM64 hardware but must be stated as an
     invariant in the abstract model since the underlying `Nat` type is unbounded.
 
-    S1-N: This predicate covers *all* fields in `RegisterFile`: `pc`, `sp`,
-    and every valid GPR index (0..31). CPSR/PSTATE is not modeled in the
-    abstract register file — ARM64 condition flags are not used by seL4's
-    syscall ABI and are therefore outside the kernel's trust boundary.
-    If CPSR is added in future hardware-binding work (WS-T), this invariant
-    must be extended accordingly. -/
+    S1-N / WS-BP BP7.3: the predicate is `RegisterFile.wordBounded` on every
+    core's bank, so it covers *all* fields of `RegisterFile`: `pc`, `sp`,
+    `pstate` (`SPSR_EL1`, modelled since WS-BP BP7.3), `tpidr` (`TPIDR_EL0`)
+    and every valid GPR index (0..31).  It is the bank half of
+    `Kernel.Architecture.registerContextsWordBounded`, which pairs it with the
+    same bound on every TCB's saved context. -/
 def machineWordBounded (ms : MachineState) : Prop :=
-  ∀ (c : CoreId),
-    (ms.regsOnCore c).pc.valid ∧ (ms.regsOnCore c).sp.valid ∧
-    ∀ (r : RegName), r.isValid → ((ms.regsOnCore c).gpr r).valid
+  ∀ (c : CoreId), (ms.regsOnCore c).wordBounded
 
 /-- R7-C/L-03: The default machine state satisfies word-boundedness.
     Every core's register bank is initialized to 0 (the default `coreRegs` is
@@ -801,16 +1125,29 @@ theorem machineWordBounded_default : machineWordBounded (default : MachineState)
   have hr : (default : MachineState).regsOnCore c = (default : RegisterFile) :=
     PerCoreVector.replicate_get numCores (default : RegisterFile) c
   rw [hr]
-  refine ⟨?_, ?_, ?_⟩
-  · show (0 : Nat) < 2 ^ 64; omega
-  · show (0 : Nat) < 2 ^ 64; omega
-  · intro _ _; show (0 : Nat) < 2 ^ 64; omega
+  exact RegisterFile.default_wordBounded
 
 def readReg (rf : RegisterFile) (r : RegName) : RegValue :=
   rf.gpr r
 
 def writeReg (rf : RegisterFile) (r : RegName) (v : RegValue) : RegisterFile :=
   { rf with gpr := fun r' => if r'.val = r.val then v else rf.gpr r' }
+
+/-- Writing a valid value into a word-bounded file keeps it word-bounded. -/
+theorem writeReg_wordBounded (rf : RegisterFile) (r : RegName) (v : RegValue)
+    (hB : rf.wordBounded) (hv : v.valid) : (writeReg rf r v).wordBounded := by
+  obtain ⟨hPc, hSp, hPs, hTp, hGpr⟩ := hB
+  refine ⟨hPc, hSp, hPs, hTp, fun r' hr' => ?_⟩
+  show RegValue.valid (if r'.val = r.val then v else rf.gpr r')
+  split
+  · exact hv
+  · exact hGpr r' hr'
+
+/-- Writing a 64-bit word into a word-bounded file keeps it word-bounded — the
+form every register writer below the boundary takes. -/
+theorem writeReg_uint64_wordBounded (rf : RegisterFile) (r : RegName) (x : UInt64)
+    (hB : rf.wordBounded) : (writeReg rf r ⟨x.toNat⟩).wordBounded :=
+  writeReg_wordBounded rf r _ hB (RegValue.valid_of_uint64 x)
 
 def readMem (ms : MachineState) (addr : PAddr) : UInt8 :=
   ms.memory addr

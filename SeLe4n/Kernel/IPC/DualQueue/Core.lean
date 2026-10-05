@@ -24,12 +24,7 @@ def storeTcbQueueLinks
     (prev : Option SeLe4n.ThreadId)
     (pprev : Option QueuePPrev)
     (next : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
-  match lookupTcb st tid with
-  | none => .error .objectNotFound
-  | some tcb =>
-      match storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
-      | .error e => .error e
-      | .ok ((), st') => .ok st'
+  modifyTcb st tid (fun tcb => tcbWithQueueLinks tcb prev pprev next)
 
 
 
@@ -43,18 +38,8 @@ theorem storeTcbQueueLinks_machine_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
-    st'.machine = st.machine := by
-  unfold storeTcbQueueLinks at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_machine_eq st pair.2 tid.toObjId _ hStore
+    st'.machine = st.machine :=
+  modifyTcb_machine_eq hStep
 
 /-- WS-F1: storeTcbQueueLinks preserves objects at IDs other than tid.toObjId. -/
 theorem storeTcbQueueLinks_preserves_objects_ne
@@ -63,18 +48,8 @@ theorem storeTcbQueueLinks_preserves_objects_ne
     (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
-    st'.objects[oid]? = st.objects[oid]? := by
-  unfold storeTcbQueueLinks at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq : pair.snd = st' := Except.ok.inj hStep; subst hEq
-      exact storeObject_objects_ne' st tid.toObjId oid _ pair hNe hObjInv hStore
+    st'.objects[oid]? = st.objects[oid]? :=
+  modifyTcb_preserves_objects_ne oid hNe hObjInv hStep
 
 /-- **WS-RR RR8.16** (`v0.35.200`): the link store is a `kindPreservingWrite` —
 one `storeObject` of a `.tcb` at a key the store has already resolved to a TCB.
@@ -90,20 +65,8 @@ theorem storeTcbQueueLinks_kindPreservingWrite
     {next : Option SeLe4n.ThreadId}
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
-    kindPreservingWrite st st' := by
-  unfold storeTcbQueueLinks at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      obtain ⟨_, s1⟩ := pair
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_kindPreservingWrite hObjInv hStore
-        (lookupTcb_some_objects st tid tcb hTcb) rfl (by simp [KernelObject.objectType])
+    kindPreservingWrite st st' :=
+  modifyTcb_kindPreservingWrite hObjInv hStep
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and it writes neither CDT table. -/
 theorem storeTcbQueueLinks_cdt_eq
@@ -111,37 +74,16 @@ theorem storeTcbQueueLinks_cdt_eq
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev}
     {next : Option SeLe4n.ThreadId}
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
-  unfold storeTcbQueueLinks at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      obtain ⟨_, s1⟩ := pair
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact ⟨storeObject_cdt_eq _ _ _ _ hStore, storeObject_cdtNodeSlot_eq _ _ _ _ hStore⟩
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot :=
+  modifyTcb_cdt_eq hStep
 
 /-- WS-F1: storeTcbQueueLinks does not modify the scheduler. -/
 theorem storeTcbQueueLinks_scheduler_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
-    st'.scheduler = st.scheduler := by
-  unfold storeTcbQueueLinks at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore
+    st'.scheduler = st.scheduler :=
+  modifyTcb_scheduler_eq hStep
 
 /-- WS-F1: storeTcbQueueLinks backward endpoint preservation. -/
 theorem storeTcbQueueLinks_endpoint_backward
@@ -153,7 +95,7 @@ theorem storeTcbQueueLinks_endpoint_backward
     (hEp : st'.objects[oid]? = some (.endpoint ep)) :
     st.objects[oid]? = some (.endpoint ep) := by
   by_cases hEq : oid = tid.toObjId
-  · subst hEq; unfold storeTcbQueueLinks at hStep
+  · subst hEq; unfold storeTcbQueueLinks modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some tcb =>
@@ -174,20 +116,8 @@ theorem storeTcbQueueLinks_notification_backward
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
-    st.objects[oid]? = some (.notification ntfn) := by
-  by_cases hEq : oid = tid.toObjId
-  · subst hEq; unfold storeTcbQueueLinks at hStep
-    cases hLookup : lookupTcb st tid with
-    | none => simp [hLookup] at hStep
-    | some tcb =>
-      simp only [hLookup] at hStep
-      cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
-      | error e => simp [hStore] at hStep
-      | ok pair =>
-        simp only [hStore] at hStep
-        have := Except.ok.inj hStep; subst this
-        rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hNtfn; cases hNtfn
-  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hObjInv hStep] at hNtfn; exact hNtfn
+    st.objects[oid]? = some (.notification ntfn) :=
+  modifyTcb_notification_backward oid ntfn hObjInv hStep hNtfn
 
 /-- IPC de-threading D3: `storeTcbQueueLinks` preserves `.reply` objects backward
 (it only writes a TCB).  Mirror of `storeTcbQueueLinks_notification_backward`. -/
@@ -200,7 +130,7 @@ theorem storeTcbQueueLinks_reply_backward
     (hReply : st'.objects[oid]? = some (.reply r)) :
     st.objects[oid]? = some (.reply r) := by
   by_cases hEq : oid = tid.toObjId
-  · subst hEq; unfold storeTcbQueueLinks at hStep
+  · subst hEq; unfold storeTcbQueueLinks modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some tcb =>
@@ -226,7 +156,7 @@ theorem storeTcbQueueLinks_reply_forward
     st'.objects[oid]? = some (.reply r) := by
   by_cases hEq : oid = tid.toObjId
   · -- target slot held a reply, but `storeTcbQueueLinks` requires a TCB there.
-    exfalso; subst hEq; unfold storeTcbQueueLinks at hStep
+    exfalso; subst hEq; unfold storeTcbQueueLinks modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some origTcb =>
@@ -247,7 +177,7 @@ theorem storeTcbQueueLinks_tcb_ipcState_backward
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
   by_cases hEq : anyTid.toObjId = tid.toObjId
   · -- Target: queue links changed but ipcState preserved
-    unfold storeTcbQueueLinks at hStep
+    unfold storeTcbQueueLinks modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some origTcb =>
@@ -279,7 +209,7 @@ theorem storeTcbQueueLinks_tcb_cpuAffinity_backward
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.cpuAffinity = tcb'.cpuAffinity := by
   by_cases hEq : anyTid.toObjId = tid.toObjId
   · -- Target: queue links changed but cpuAffinity preserved
-    unfold storeTcbQueueLinks at hStep
+    unfold storeTcbQueueLinks modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some origTcb =>
@@ -309,7 +239,7 @@ theorem storeTcbQueueLinks_tcb_pendingMessage_backward
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.pendingMessage = tcb'.pendingMessage := by
   by_cases hEq : anyTid.toObjId = tid.toObjId
   · -- Target: queue links changed but pendingMessage preserved
-    unfold storeTcbQueueLinks at hStep
+    unfold storeTcbQueueLinks modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some origTcb =>
@@ -342,7 +272,7 @@ theorem storeTcbQueueLinks_tcb_pendingReceiveReply_backward
       tcb.pendingReceiveReply = tcb'.pendingReceiveReply := by
   by_cases hEq : anyTid.toObjId = tid.toObjId
   · -- Target: queue links changed but pendingReceiveReply preserved
-    unfold storeTcbQueueLinks at hStep
+    unfold storeTcbQueueLinks modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some origTcb =>
@@ -370,7 +300,7 @@ theorem storeTcbQueueLinks_tcb_forward
     (hTcb : st.objects[oid]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
   by_cases hEq : oid = tid.toObjId
-  · subst hEq; unfold storeTcbQueueLinks at hStep
+  · subst hEq; unfold storeTcbQueueLinks modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some origTcb =>
@@ -393,7 +323,7 @@ theorem storeTcbQueueLinks_endpoint_forward
     (hEp : st.objects[oid]? = some (.endpoint ep)) :
     ∃ ep', st'.objects[oid]? = some (.endpoint ep') := by
   by_cases hEq : oid = tid.toObjId
-  · subst hEq; unfold storeTcbQueueLinks at hStep
+  · subst hEq; unfold storeTcbQueueLinks modifyTcb at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some tcb =>
@@ -406,41 +336,9 @@ theorem storeTcbQueueLinks_preserves_objects_invExt
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
-    st'.objects.invExt := by
-  unfold storeTcbQueueLinks at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq : pair.snd = st' := Except.ok.inj hStep; subst hEq
-      exact storeObject_preserves_objects_invExt' st tid.toObjId _ pair hObjInv hStore
+    st'.objects.invExt :=
+  modifyTcb_preserves_objects_invExt hObjInv hStep
 
--- WS-L1/L1-A: Return type includes pre-dequeue TCB. Non-queue fields
--- (ipcState, pendingMessage, priority, domain) are accurate; queue link
--- fields (queuePrev, queuePPrev, queueNext) are stale (cleared in post-state).
---
--- PR #873 round 11: **a parked sender must be carrying its message.** Every
--- send-queue dequeue in this kernel is a delivery -- the two callers are the
--- single-core and per-core receives, both of which store the head's
--- `pendingMessage` straight into the receiver -- so a message-less head means
--- handing the receiver `none` and reporting success, with `receiverTaintEdges`
--- joining the sender's provenance into a receiver that received nothing.
---
--- The invariant is what makes that state unreachable:
--- `blockedThreadsPendingMessageConsistent` requires `.blockedOnSend` /
--- `.blockedOnCall` to carry a message, so no state satisfying `ipcInvariantFull`
--- can present one. This guard is the fail-closed complement for the states that
--- carry no invariant -- a below-API construction, a thawed snapshot -- exactly
--- as the `replyStashValid` check guards a field the invariant also constrains.
--- It sits at the dequeue rather than in each receive body so the two
--- near-identical receives cannot drift, and mirrors `frozenQueuePopHead`, which
--- refuses the same head with the same error on the side where there is no
--- invariant to lean on at all. The receive queue is unaffected: a thread parked
--- to *receive* correctly holds nothing.
 def endpointQueuePopHead
     (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool)

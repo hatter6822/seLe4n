@@ -19,8 +19,8 @@ This module contains **only** the donation helpers that depend solely on
 `SeLe4n.Kernel.IPC.Operations.Endpoint` (`lookupTcb`, `storeObject`,
 `removeRunnable`, `donateSchedContext`, `returnDonatedSchedContext`,
 `cleanupPreReceiveDonation`). The transport-dependent wrappers
-(`endpointReplyWithDonation`, `endpointReplyRecvWithDonation` and their unfold
-lemmas; the Call form was deleted at `v0.35.192`) remain in the
+(`endpointReplyWithDonation` and its unfold lemma; the Call form was deleted at
+`v0.35.192` and the ReplyRecv form at `v0.36.49`) remain in the
 sibling module `SeLe4n.Kernel.IPC.Operations.Donation`, which also imports
 this file so that legacy single-import consumers continue to see the full
 donation API unchanged.

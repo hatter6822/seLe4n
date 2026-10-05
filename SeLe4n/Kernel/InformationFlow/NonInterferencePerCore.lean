@@ -804,7 +804,7 @@ theorem storeTcbReceiveComplete_confinedToCore (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (msg : Option IpcMessage) (c₀ : CoreId)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     observableSlotsConfinedToCore st st' c₀ := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hTcb : lookupTcb st tid with
   | none => simp [hTcb] at hStep
   | some tcb =>

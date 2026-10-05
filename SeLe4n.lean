@@ -35,6 +35,7 @@ import SeLe4n.Kernel.Architecture.RegisterDecode
 -- RegisterDecode / SyscallArgDecode.
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Architecture.TrapFrameSaveInvariant
+import SeLe4n.Kernel.Architecture.RegisterContextBounded
 -- WS-BP BP7.5: a switch resumes the incoming thread with the frame its TCB
 -- holds, so the timeout and cancellation frames RR7.14 stages are delivered.
 import SeLe4n.Kernel.Scheduler.Operations.ResumeDelivery

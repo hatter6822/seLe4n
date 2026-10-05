@@ -1098,8 +1098,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.endpointReplyChecked
   , `SeLe4n.Kernel.endpointReplyRecv
   , `SeLe4n.Kernel.endpointReplyRecvChecked
-  , `SeLe4n.Kernel.endpointReplyRecvOnCore
-  , `SeLe4n.Kernel.endpointReplyRecvWithDonation
   , `SeLe4n.Kernel.endpointReplyWithDonation
   , `SeLe4n.Kernel.endpointSendDual
   , `SeLe4n.Kernel.endpointSendDualChecked

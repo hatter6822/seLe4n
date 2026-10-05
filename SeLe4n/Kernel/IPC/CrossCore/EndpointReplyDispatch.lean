@@ -11,7 +11,7 @@
 -- the API layer; the live `API.dispatchWithCap{,Checked}` `.reply` arm routes through
 -- `endpointReplyCrossCoreDispatch{,Checked}` here, passing the core the syscall
 -- trapped on (threaded from the entry).  The live `.replyRecv` arm routes
--- through the reply-object-aware `replyRecvBody` (in `API`), which resolves the
+-- through the reply-object-aware `endpointReplyRecvOnCore` (in `API`), which resolves the
 -- *reply capability* (authority flows from holding the reply cap, exactly like
 -- `.reply`) and consumes / re-links the first-class Reply object — it does NOT use a
 -- raw-thread dispatch here.  See WS-SM SM6 §3.1, §4.3,
@@ -33,7 +33,7 @@ and the information-flow-checked `endpointReplyCrossCoreDispatchChecked`.  These
 dispatch arm can route through them — the cross-core generalisation of the
 single-core `endpointReplyWithDonation`.
 
-The live `.replyRecv` syscall is handled one layer up by `API.replyRecvBody`, which
+The live `.replyRecv` syscall is handled one layer up by `API.endpointReplyRecvOnCore`, which
 resolves the reply *capability* and consumes / re-links the first-class Reply object;
 the underlying combined reply-and-receive transition (`endpointReplyRecvOnCore`, in
 `EndpointReply`) remains available as a below-API building block.  There is
@@ -944,7 +944,7 @@ theorem endpointReplyCrossCoreDispatchChecked_flow_allowed
 -- ============================================================================
 --
 -- NOTE: there is deliberately no raw-thread cross-core `.replyRecv` dispatch
--- wrapper here.  The live `.replyRecv` syscall routes through `API.replyRecvBody`,
+-- wrapper here.  The live `.replyRecv` syscall routes through `API.endpointReplyRecvOnCore`,
 -- which resolves the reply *capability* and consumes / re-links the first-class
 -- Reply object; the underlying combined transition `endpointReplyRecvOnCore`
 -- (in `EndpointReply`) remains the below-API building block.  A raw `(replyTarget :

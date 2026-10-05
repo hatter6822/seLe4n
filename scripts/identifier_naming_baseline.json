@@ -37,6 +37,10 @@
   "lakefile.toml": 1,
   "tests/An9HardwareBindingSuite.lean": 1
  },
+ "GICv2": {
+  "tests/fixtures/qemu_boot_expected.txt": 1,
+  "tests/fixtures/qemu_lean_boot_expected.txt": 1
+ },
  "SM0": {
   "scripts/test_tier3_invariant_surface.sh": 7
  },

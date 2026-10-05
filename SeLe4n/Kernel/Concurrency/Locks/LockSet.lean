@@ -895,7 +895,7 @@ write needs on a `.replyRecv` that also returns a donation.
 **WS-OD OD3.5: 9 → 11**, and the two members are the same defect RR7.11 fixed,
 found on the same footprint.  `lockSet_replyRecv` declared **one**
 `schedContextLock` — the donation the reply leg *returns* — while
-`replyRecvBody` performs **two** SchedContext hand-offs: after the return it
+`endpointReplyRecvOnCore` performs **two** SchedContext hand-offs: after the return it
 runs `applyCallDonationOnCore nextThread tid`, whose `donateSchedContext` writes
 the *new* caller's SchedContext (`boundThread := tid`).  That object is provably
 not the returned one (two threads cannot be bound to one context), and it is not

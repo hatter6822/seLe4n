@@ -335,7 +335,7 @@ theorem schedLockSet_replyTransferOnCore_coversWrites (replier callerTid : SeLe4
 
 /-- **WS-RR RR8.12 Cut C6e**: `.replyRecv`'s footprint covers its writes.
 
-The arm whose footprint covers its **whole** body: `replyRecvBodyWriteSet` re-runs
+The arm whose footprint covers its **whole** body: `endpointReplyRecvWriteSet` re-runs
 the spine to the state each of the two chain walks starts from and appends
 `pipChainWriteSet` there (Cut C2), so the walked members' run queues are static
 members rather than a dynamically declared extension — which is what makes this a
@@ -352,17 +352,17 @@ theorem schedLockSet_endpointReplyRecvOnCore_coversWrites (endpointId : SeLe4n.O
     (S : SchedLockSet) (hObjInv : st.objects.invExt)
     (hS : SchedLockSet.ofList? (schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId
       prevCaller msg receiverCspaceRoot receiverSlotBase executingCore st) = some S)
-    (hStep : replyRecvBody endpointId receiver replyId prevCaller msg receiverCspaceRoot
+    (hStep : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg receiverCspaceRoot
         receiverSlotBase executingCore st = .ok (summary, st')) :
     schedFootprintCoversWrites S st st' :=
   schedFootprintCoversWrites_of_confined S
-    (replyRecvBodyWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
+    (endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
       receiverSlotBase executingCore st)
     (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
       receiverSlotBase executingCore st) st st' (SchedLockSet.ofList?_pairs hS)
-    (replyRecvBody_confinedToCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
+    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
       receiverSlotBase executingCore st st' summary hObjInv hStep)
-    (fun d hd => replyRecvBody_replenishQueueOnCore_ne endpointId receiver replyId prevCaller msg
+    (fun d hd => endpointReplyRecvOnCore_replenishQueueOnCore_ne endpointId receiver replyId prevCaller msg
       receiverCspaceRoot receiverSlotBase executingCore st st' summary d hObjInv hd hStep)
 
 /-- **WS-RR RR8.12 Cut C6f**: `.receive`'s footprint covers its writes — the leg

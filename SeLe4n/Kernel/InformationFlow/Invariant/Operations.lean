@@ -1413,7 +1413,7 @@ theorem storeTcbQueueLinks_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   simp only [tcbWithQueueLinks] at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
@@ -1764,7 +1764,7 @@ theorem storeTcbQueueLinks_preserves_objectIndexSetComplete
     (hComplete : objectIndexSetComplete st)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     objectIndexSetComplete st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hTcb : lookupTcb st tid with
   | none => simp [hTcb] at hStep
   | some tcb =>
@@ -1788,7 +1788,7 @@ theorem storeTcbQueueLinks_preserves_objectIndexSet_invExt
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     st'.objectIndexSet.table.invExt := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hTcb : lookupTcb st tid with
   | none => simp [hTcb] at hStep
   | some tcb =>
@@ -2554,7 +2554,7 @@ theorem endpointReplyRecv_preserves_projection
             replace hEp' := hEpBackMid ep' hEp'
             by_cases hSenderNe : sender'.toObjId = replyTarget.toObjId
             · -- sender at same ObjId as replyTarget — queueNext preserved
-              unfold storeTcbIpcStateAndMessage at hStore; simp only [hLookup] at hStore
+              unfold storeTcbIpcStateAndMessage modifyTcb at hStore; simp only [hLookup] at hStore
               cases hStObj : storeObject replyTarget.toObjId
                   (.tcb { tcb with ipcState := .ready, pendingMessage := some replyMsg }) st with
               | error e => simp [hStObj] at hStore

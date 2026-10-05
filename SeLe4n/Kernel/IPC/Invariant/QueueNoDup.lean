@@ -74,7 +74,7 @@ theorem storeTcbQueueLinks_preserves_endpointQueueNoDup
   -- Endpoint objects are unaffected by TCB stores: need oid ≠ tid.toObjId
   have hNe : oid ≠ tid.toObjId := by
     intro hEq; subst hEq
-    unfold storeTcbQueueLinks at hStore
+    unfold storeTcbQueueLinks modifyTcb at hStore
     cases hLk : lookupTcb st tid with
     | none => simp [hLk] at hStore
     | some tcb =>
@@ -153,7 +153,7 @@ theorem storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
     endpointQueueNoDup st' := by
-  unfold storeTcbIpcStateAndMessage at hStore
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>
@@ -191,7 +191,7 @@ theorem storeTcbReceiveComplete_preserves_endpointQueueNoDup
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbReceiveComplete st tid msg = .ok st') :
     endpointQueueNoDup st' := by
-  unfold storeTcbReceiveComplete at hStore
+  unfold storeTcbReceiveComplete modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>
@@ -236,7 +236,7 @@ theorem storeTcbIpcState_preserves_endpointQueueNoDup
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbIpcState st tid ipcState = .ok st') :
     endpointQueueNoDup st' := by
-  unfold storeTcbIpcState at hStore
+  unfold storeTcbIpcState modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>
@@ -270,7 +270,7 @@ theorem storeTcbPendingMessage_preserves_endpointQueueNoDup
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbPendingMessage st tid msg = .ok st') :
     endpointQueueNoDup st' := by
-  unfold storeTcbPendingMessage at hStore
+  unfold storeTcbPendingMessage modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>
