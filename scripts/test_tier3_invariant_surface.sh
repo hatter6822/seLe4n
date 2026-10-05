@@ -5564,6 +5564,14 @@ run_check "INVARIANT" rg -U -n '^    mrs     x9, mpidr_el1\n    msr     vmpidr_e
 run_check "INVARIANT" rg -U -n '^    mov     x9, #0x3c5\n    msr     spsr_el2, x9\n    msr     elr_el2, x30\n    mov     x9, #0x8\n    eret$' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -U -n '^\.L_unsupported_el:\n    wfe\n    b       \.L_unsupported_el$' rust/sele4n-hal/src/boot.S
 run_check "INVARIANT" rg -U -n '^    mov     x0, x19[ \t]*\n    mov     x1, x20 ' rust/sele4n-hal/src/boot.S
+# `_start` runs at its link address or not at all: right after the FP trap, and
+# before BSS is zeroed or any RAM written, it compares its PC-relative address
+# with its link address (absolute `movz`/`movk` relocations) and parks the PE on a difference
+# (the image is not position-independent; a loader placing it at the
+# firmware's default `kernel_address` + `text_offset` would otherwise run on
+# into its first absolute address).
+run_check "INVARIANT" rg -U -n '^    mov     x20, x9 [^\n]*\n([ \t]*\n)*    adr     x10, _start[ \t]*\n    movz    x11, #:abs_g3:_start[ \t]*\n    movk    x11, #:abs_g2_nc:_start\n    movk    x11, #:abs_g1_nc:_start\n    movk    x11, #:abs_g0_nc:_start\n    cmp     x10, x11[ \t]*\n    b\.ne    \.L_load_address_mismatch[ \t]*\n([ \t]*\n)*    mrs     x1, mpidr_el1' rust/sele4n-hal/src/boot.S
+run_check "INVARIANT" rg -U -n '^\.L_load_address_mismatch:\n    wfe\n    b       \.L_load_address_mismatch$' rust/sele4n-hal/src/boot.S
 # The PSCI conduit follows the entry level: an EL2 entry leaves nothing at
 # EL2 to take an `hvc`, so every call goes through `psci_call` and an EL2
 # entry selects `smc`.  No wrapper may hard-code `hvc #0` again: the two

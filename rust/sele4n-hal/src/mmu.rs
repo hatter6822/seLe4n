@@ -2866,7 +2866,8 @@ mod qemu_virt_boot_map_tests {
                 | ["physicalAddressWidth", _]
                 | ["declaredCores", _]
                 | ["tablePool", _, _]
-                | ["asidSpace", _] => {}
+                | ["asidSpace", _]
+                | ["gicIntIds", _] => {}
                 _ => panic!("unrecognised virt boot-map line {line:?}"),
             }
         }
@@ -3089,6 +3090,9 @@ mod boot_map_tests {
                 // WS-BP BP7.2: the model's ASID space, which
                 // `the_lean_asid_space_is_the_one_the_hal_programs` reads.
                 ["asidSpace", _] => {}
+                // The interrupt lines the binding supports, which `gic.rs`'s
+                // `the_board_interrupt_lines_are_the_lean_ones` reads.
+                ["gicIntIds", _] => {}
                 _ => panic!("unrecognised boot-map line {line:?}"),
             }
         }

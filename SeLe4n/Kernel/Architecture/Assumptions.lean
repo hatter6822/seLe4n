@@ -369,7 +369,7 @@ timer tick, and interrupt handling).
 Models the GIC-400 interrupt controller dispatch path: acknowledge (GICC_IAR
 read) → dispatch (route by INTID) → end-of-interrupt (GICC_EOIR write). The
 GIC-400 INTID space is partitioned into SGIs (0–15), PPIs (16–31), and SPIs
-(32–223). The non-secure physical timer PPI (INTID 30) routes to `timerTick`.
+(32–319). The non-secure physical timer PPI (INTID 30) routes to `timerTick`.
 Mapped SPIs route to `notificationSignal` for the registered handler endpoint.
 Spurious interrupts (INTID ≥ 1020) are silently dropped.
 
@@ -477,8 +477,9 @@ The following hardware constraints are assumed for the Raspberry Pi 5 target:
 - **Sequential memory model**: All memory operations are sequentially ordered.
   DMB/DSB/ISB barriers are modeled as no-ops in the sequential model but are
   emitted in the Rust HAL for hardware correctness.
-- **GIC-400 interrupt range**: BCM2712 implements 192 SPIs (INTIDs 32–223),
-  bounded by `InterruptId := Fin 224`.
+- **GIC-400 interrupt range**: BCM2712 implements 288 SPIs (INTIDs 32–319),
+  bounded by `InterruptId := Fin 320`; the HAL checks the distributor's
+  `GICD_TYPER.ITLinesNumber` covers them before enabling any.
 - **Timer frequency**: 54 MHz crystal oscillator (CNTFRQ_EL0 = 54000000).
   Default tick rate: 1000 Hz (1ms ticks, 54000 counter increments per tick).
 - **ARMv8-A page granule**: 4 KiB pages with 4-level translation (L0–L3).

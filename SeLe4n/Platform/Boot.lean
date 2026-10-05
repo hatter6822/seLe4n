@@ -6428,6 +6428,16 @@ private theorem listAllDistinct_eq_true_iff {α : Type} [DecidableEq α] (l : Li
       simp only [listAllDistinct, Bool.and_eq_true, Bool.not_eq_true', List.nodup_cons, ih]
       simp
 
+/-- An IRQ table whose INTIDs are `List.Nodup` passes the boot's duplicate
+    check.  A deployment proves its table's uniqueness structurally with this
+    rather than by evaluating the O(n²) transparent scan, which outgrows the
+    elaborator's budget on a table of a few hundred entries (the BCM2712's
+    288 SPIs). -/
+theorem irqsUnique_of_nodup (irqs : List IrqEntry)
+    (h : (irqs.map (·.irq.toNat)).Nodup) : irqsUnique irqs = true := by
+  rw [irqsUnique_eq_transparent, irqsUniqueTransparent, listAllDistinct_eq_true_iff]
+  exact h
+
 /-- **WS-BP BP3.3**: a well-formed config's object ids are pairwise distinct. -/
 theorem PlatformConfig.wellFormed_objectIds_pairwise (config : PlatformConfig)
     (h : config.wellFormed = true) :

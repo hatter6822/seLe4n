@@ -1,3 +1,47 @@
+## v0.36.43 — the GIC serves every BCM2712 SPI; the image refuses to run off its link address
+
+- **The BCM2712 interrupt range is 320 INTIDs, not 224.**  The model, the
+  RPi5 interrupt contract and the HAL capped the GIC-400 at 192 SPIs
+  (INTIDs 32–223), a cap whose docstring claimed it matched the Raspberry Pi
+  device trees.  It did not: Linux's `bcm2712.dtsi` wires PCIe0/1/2 INTx and
+  MSI (`GIC_SPI 209`–`234`), the brcmstb level-2 controllers behind every SoC
+  GPIO interrupt (`238`–`247`), V3D, MIP1, both SD hosts (`273`/`274`) and
+  UARTA (`276`, INTID 308), and the `rpi5_machine` QEMU model configures its
+  GIC-400 with `num-irq = 320` from the same tree.  None of those could be
+  enabled or dispatched — the distributor loops stopped at bank 7 and an
+  acknowledge was EOI'd as out of range.  `gicSpiCount` is now 288 (the
+  highest wired SPI rounded up to whole 32-line banks), `InterruptId` is
+  `Fin 320`, and the simulation contract follows; the provenance row and the
+  contract docstrings now give the device-tree evidence.
+- **The HAL checks the distributor at boot.**  `init_gic` reads
+  `GICD_TYPER.ITLinesNumber` before programming anything and halts with a
+  diagnostic (`cpu::fatal_halt`) if the distributor implements fewer lines than
+  the board serves.  The count is a `BoardMap` field (`gic_intid_count`: 320 on
+  the RPi5, 288 on QEMU `virt`, whose `NUM_IRQS` is 256), sizes every
+  distributor loop, and is held to the Lean binding by a new `gicIntIds` line in
+  both shared boot-map fixtures (`gic::tests::the_board_interrupt_lines_are_the_lean_ones`);
+  `board::well_formed` refuses a count that is not whole banks or exceeds the
+  model's `InterruptId`.
+- **Tests.**  `InterruptDispatchSuite` dispatches SPIs 209, 244, 273, 274 and
+  276 to a registered notification (badge = INTID, EOI drained), pins the
+  319/320 boundary, and holds `InterruptId = Fin (gicSpiCount + 32)` at compile
+  time; `NegativeStateSuite` checks INTIDs 308/319 supported and 320 refused;
+  the HAL tests classify every SPI 209–276 as handled and exercise the
+  `GICD_TYPER` relation.  The HAL's classification test now calls
+  `classify_iar` instead of a local copy of it.
+- **`_start` refuses to run off its link address.**  The image is linked for
+  `RAM base + 0x80000` and is not position-independent, but nothing checked
+  where a loader actually put it; the Raspberry Pi firmware's default 64-bit
+  `kernel_address` is 0x200000, and a loader that adds the header's
+  `text_offset` places it at 0x280000.  Right after the FP trap, before BSS is
+  zeroed or any RAM written, `_start` now compares its PC-relative address
+  (`adr`) with its link address (built from `movz`/`movk` absolute relocations
+  of `_start`, so no data word enters the text) and parks the PE on any
+  difference.  The
+  `config.txt` the image build writes already pins `kernel_address` to the
+  link address; this makes a mismatch a deterministic halt instead of a silent
+  crash.  Three Tier 3 anchors pin the check's position and its halt.
+
 ## v0.36.42 — CLAUDE.md shrunk to durable rules; documentation de-duplicated and completed plans archived
 
 - **`CLAUDE.md` (and its `AGENTS.md` mirror) go from 14,311 lines to under

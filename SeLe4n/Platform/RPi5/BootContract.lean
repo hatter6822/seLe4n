@@ -84,7 +84,7 @@ theorem rpi5BootContract_objectType_holds : rpi5BootContract.objectTypeMetadataC
 
 /-- WS-H15b/A-41: RPi5 interrupt contract with GIC-400 range validation.
 
-    **Supported range:** INTIDs 0–223 (SGIs 0–15, PPIs 16–31, SPIs 32–223).
+    **Supported range:** INTIDs 0–319 (SGIs 0–15, PPIs 16–31, SPIs 32–319).
     SGIs (software-generated interrupts) are included because the GIC-400
     distributes them like any other interrupt.
 
@@ -92,15 +92,17 @@ theorem rpi5BootContract_objectType_holds : rpi5BootContract.objectTypeMetadataC
     - SGIs (INTIDs 0–15) are software-generated inter-processor interrupts
       used for IPI signalling. They are NOT wired to hardware peripherals.
       The kernel should not register device drivers for SGI INTIDs.
-    - The GIC-400 on BCM2712 supports up to 192 SPIs (INTIDs 32–223).
-      BCM2712 extended peripherals routed through INTIDs ≥ 224 (if any
-      exist on future board revisions) are NOT covered by this contract.
-      AN9 (hardware binding) must extend `gicSpiCount` if BCM2712
-      documentation reveals SPIs beyond INTID 223.
+    - The GIC-400 on BCM2712 is configured with 288 SPIs (INTIDs 32–319,
+      `gicSpiCount`).  Linux's `bcm2712.dtsi` wires devices up to SPI 276
+      (UARTA, INTID 308): PCIe, every SoC GPIO interrupt (through the
+      brcmstb level-2 controllers at SPIs 238–247), V3D, both SD hosts and
+      the Bluetooth UART all lie above the 192-SPI cap this contract used to
+      carry.  The HAL halts the boot if the distributor's
+      `GICD_TYPER.ITLinesNumber` reports fewer lines than this.
 
     **Handler mapping:** For supported IRQ lines, the handler must be
     registered in the kernel's IRQ handler table (`st.irqHandlers`).
-    Unsupported IRQ lines (INTID ≥ 224) have no mapping requirement.
+    Unsupported IRQ lines (INTID ≥ 320) have no mapping requirement.
 
     WS-H15a/M-13: Decidable fields provided for both predicates. -/
 def rpi5InterruptContract : InterruptBoundaryContract :=

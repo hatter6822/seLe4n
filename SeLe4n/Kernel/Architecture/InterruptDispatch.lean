@@ -29,7 +29,7 @@ Integrates with the GIC-400 interrupt controller on Raspberry Pi 5.
 
 - INTIDs 0–15: SGIs (Software Generated Interrupts)
 - INTIDs 16–31: PPIs (Private Peripheral Interrupts)
-- INTIDs 32–223: SPIs (Shared Peripheral Interrupts)
+- INTIDs 32–319: SPIs (Shared Peripheral Interrupts; BCM2712 wires 288)
 - INTIDs 1020–1023: Special (spurious)
 -/
 
@@ -44,11 +44,16 @@ open SeLe4n.Kernel
 -- ============================================================================
 
 /-- AG3-D: GIC-400 interrupt ID for RPi5 (BCM2712).
-    Bounded to 224 INTIDs (0–223): SGIs (0–15), PPIs (16–31), SPIs (32–223).
-    This bound is RPi5/BCM2712-specific. The GIC-400 architecture supports
-    up to 480 INTIDs, but BCM2712 only implements 192 SPIs (32–223).
-    A future multi-platform build would parameterize this bound. -/
-abbrev InterruptId := Fin 224
+    Bounded to 320 INTIDs (0–319): SGIs (0–15), PPIs (16–31), SPIs (32–319).
+    This bound is the BCM2712's distributor configuration: 288 SPIs, the
+    highest wired one being UARTA at SPI 276 (INTID 308) in Linux's
+    `bcm2712.dtsi` (`SeLe4n.Platform.RPi5.gicSpiCount`; the RPi5 contract's
+    `irqLineSupported` admits exactly `Fin (gicSpiCount + 32)`, which
+    `tests/InterruptDispatchSuite.lean` holds equal to this type).  QEMU
+    `virt`'s 256 SPIs (INTIDs 32–287) fit inside it.  The GIC-400
+    architecture admits up to 480 SPIs; a future multi-platform build would
+    parameterize this bound. -/
+abbrev InterruptId := Fin 320
 
 /-- AG3-D: Non-secure physical timer PPI (INTID 30). -/
 def timerInterruptId : InterruptId := ⟨30, by omega⟩
@@ -67,8 +72,8 @@ def spuriousInterruptThreshold : Nat := 1020
     distinction between:
     - **Spurious** (INTID ≥ 1020 per GIC-400 spec) — NO EOI per spec; writing
       EOIR for a spurious INTID is harmless but unnecessary.
-    - **OutOfRange** (INTID ∈ [224, 1020)) — legal INTID space on the GIC but
-      unsupported on RPi5's BCM2712 (only 224 INTIDs). Hardware errata or
+    - **OutOfRange** (INTID ∈ [320, 1020)) — legal INTID space on the GIC but
+      unsupported on RPi5's BCM2712 (only 320 INTIDs). Hardware errata or
       SMP races can deliver such IAR values. **Must still EOI** to complete
       the interrupt cycle and avoid GIC lockup.
     - **Erratum** (valid INTID but handler fails) — see `interruptDispatchSequence`.
@@ -77,7 +82,7 @@ def spuriousInterruptThreshold : Nat := 1020
     always emitted unless the interrupt was spurious. -/
 inductive AckError where
   | spurious                       -- INTID ≥ 1020 — skip EOI per GIC spec
-  | outOfRange (rawIntId : Nat)    -- INTID ∈ [224, 1020) — emit EOI, no dispatch
+  | outOfRange (rawIntId : Nat)    -- INTID ∈ [320, 1020) — emit EOI, no dispatch
   deriving Repr, DecidableEq
 
 /-- AK3-C (A-H02 / HIGH): Acknowledge an interrupt by reading the interrupt
@@ -87,7 +92,7 @@ inductive AckError where
 def acknowledgeInterrupt (rawIntId : Nat) :
     Except AckError InterruptId :=
   if rawIntId ≥ spuriousInterruptThreshold then .error .spurious
-  else if h : rawIntId < 224 then .ok ⟨rawIntId, h⟩
+  else if h : rawIntId < 320 then .ok ⟨rawIntId, h⟩
   else .error (.outOfRange rawIntId)
 
 /-- AG3-D / AK3-L (A-M10 / MEDIUM): End-of-interrupt signal. Models writing
@@ -207,10 +212,10 @@ def handleInterrupt (st : SystemState) (intId : InterruptId) :
       already closed at EOI time.
     - Spurious interrupt (INTID ≥ 1020): no EOI per GIC spec; no ack
       record, no state change.
-    - Out-of-range INTID (∈ [224, 1020)): **EOI is still emitted at HAL
+    - Out-of-range INTID (∈ [320, 1020)): **EOI is still emitted at HAL
       layer** to close the GIC interrupt cycle; at the Lean layer no
       handler dispatch and no audit-trail change because no valid
-      `InterruptId : Fin 224` can be constructed. The hardware HAL
+      `InterruptId : Fin 320` can be constructed. The hardware HAL
       writes the raw IAR value to EOIR — see
       `rust/sele4n-hal/src/gic.rs` (AK3-C.4).
 
@@ -242,7 +247,7 @@ def interruptDispatchSequence (st : SystemState) (rawIntId : Nat) :
   | .error (.outOfRange _) =>
     -- AK3-C: out-of-range — no handler dispatch at Lean layer; HAL emits
     -- EOI with raw IAR value. No audit-trail change at Lean layer because
-    -- no `InterruptId : Fin 224` witness can be produced.
+    -- no `InterruptId : Fin 320` witness can be produced.
     .ok ((), st)
 
 -- ============================================================================
@@ -260,7 +265,7 @@ theorem interruptDispatchSequence_spurious (st : SystemState) (rawIntId : Nat)
     the HAL emits EOI with the raw IAR value to prevent GIC lockup. -/
 theorem interruptDispatchSequence_outOfRange (st : SystemState) (rawIntId : Nat)
     (hInRange : rawIntId < spuriousInterruptThreshold)
-    (hOutOfRange : ¬(rawIntId < 224)) :
+    (hOutOfRange : ¬(rawIntId < 320)) :
     interruptDispatchSequence st rawIntId = .ok ((), st) := by
   have hNot : ¬(spuriousInterruptThreshold ≤ rawIntId) := Nat.not_le.mpr hInRange
   simp only [interruptDispatchSequence, acknowledgeInterrupt,

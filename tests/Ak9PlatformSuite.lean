@@ -2485,6 +2485,12 @@ private def bootMapTableLines : List String :=
     -- so the handoff's `LEAN_DECLARED_CORE_COUNT` is the binding's `coreCount`
     -- rather than a literal beside a comment naming it.
     ++ [s!"declaredCores {bootMapHex (SeLe4n.Platform.PlatformBinding.coreCount (platform := SeLe4n.Platform.RPi5.RPi5Platform))}"]
+    -- ...and the interrupt lines the binding supports (SGIs and PPIs plus
+    -- `gicSpiCount` SPIs), as `gicIntIds <n>` — read back by `gic.rs`'s
+    -- `the_board_interrupt_lines_are_the_lean_ones`, so the lines the HAL
+    -- programs, and requires `GICD_TYPER.ITLinesNumber` to cover at boot, are
+    -- the ones the interrupt contract and the IRQ table name.
+    ++ [s!"gicIntIds {bootMapHex (gicSpiCount + 32)}"]
     -- The BCM2712 address-map correction (v0.36.2): the MMIO windows the
     -- binding programs, as `mmio <name> <base> <size>`, taken from
     -- `mmioRegions` in order — read back by the HAL's UART and GIC tests, so
@@ -2634,6 +2640,7 @@ private def qemuVirtBootMapTableLines : List String :=
     ++ [s!"asidSpace {bootMapHex qemuVirtMachineConfig.maxASID}"]
     ++ [s!"tablePool {bootMapHex qemuVirtBootTablePoolBase} {bootMapHex qemuVirtBootTablePoolPages}"]
     ++ [s!"declaredCores {bootMapHex (SeLe4n.Platform.PlatformBinding.coreCount (platform := QemuVirtPlatform))}"]
+    ++ [s!"gicIntIds {bootMapHex (qemuVirtGicSpiCount + 32)}"]
     ++ (["uart", "gicd", "gicc"].zip qemuVirtMmioRegions).map (fun (name, r) =>
         s!"mmio {name} {bootMapHex r.base.toNat} {bootMapHex r.size}")
     ++ map.map (fun r =>

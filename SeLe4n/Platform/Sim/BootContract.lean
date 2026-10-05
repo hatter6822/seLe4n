@@ -31,7 +31,7 @@ initial conditions are met.
 ## AI5-B (H-02): Bounded IRQ Range
 
 The interrupt contract restricts supported IRQ lines to the GIC-400 INTID
-range (0–223: SGIs + PPIs + SPIs). This matches the hardware range used by
+range (0–319: SGIs + PPIs + SPIs). This matches the hardware range used by
 the RPi5 production contract, ensuring simulation tests exercise realistic
 interrupt routing constraints.
 -/
@@ -43,10 +43,11 @@ open SeLe4n.Model
 
 /-- AI5-A (H-01): Maximum IRQ INTID supported in simulation.
 
-    Matches the GIC-400 INTID space: SGIs (0–15) + PPIs (16–31) + SPIs (32–223).
+    Matches the BCM2712 GIC-400 INTID space: SGIs (0–15) + PPIs (16–31) +
+    SPIs (32–319).
     The simulation platform uses the same IRQ range as RPi5 to ensure test
     coverage of interrupt routing bounds. -/
-def simMaxIrqId : Nat := 224
+def simMaxIrqId : Nat := 320
 
 /-- AI5-A (H-01): Simulation boot contract with substantive predicates.
 
@@ -100,13 +101,13 @@ theorem simBootContract_objectType_holds :
 
 /-- AI5-B (H-02): Simulation interrupt contract with GIC-400 range validation.
 
-    **Supported range:** INTIDs 0–223 (SGIs 0–15, PPIs 16–31, SPIs 32–223).
+    **Supported range:** INTIDs 0–319 (SGIs 0–15, PPIs 16–31, SPIs 32–319).
     This matches the RPi5 production contract range, ensuring simulation tests
     exercise realistic interrupt bounds.
 
     **Handler mapping:** For supported IRQ lines, the handler must be
     registered in the kernel's IRQ handler table (`st.irqHandlers`).
-    Unsupported IRQ lines (INTID ≥ 224) have no mapping requirement. -/
+    Unsupported IRQ lines (INTID ≥ 320) have no mapping requirement. -/
 def simInterruptContract : InterruptBoundaryContract :=
   {
     irqLineSupported := fun irq => irq.toNat < simMaxIrqId

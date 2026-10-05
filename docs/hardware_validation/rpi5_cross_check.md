@@ -25,7 +25,7 @@ Constants are verified using one of:
 | 4 | `timerFrequencyHz` | `54000000` | *pending* | PENDING | MRS CNTFRQ_EL0 |
 | 5 | `rpi5MemoryMapForConfig` RAM | `[0, ramSize)` per variant (contiguous from 0 on the BCM2712; the `ramStart`/`ramEnd` pair with `ramEnd = 0xFC000000` was the BCM2711 map until v0.36.2) | *pending* | PENDING | Memory read/write test at both ends; compare the firmware's `/memory@0` account (see plan row BP7.10 — the account withholds the top of the first gigabyte) |
 | 6 | `socPeripheralBase` / `socPeripheralSize` | `[0x10_7C00_0000, +64 MiB)` — the one device region (`peripheralStart`/`peripheralEnd` at `0xFE000000`/`0xFF850000` were the BCM2711's until v0.36.2) | *pending* | PENDING | MMIO access test at both ends of the window |
-| 7 | `gicSpiCount` | `192` | *pending* | PENDING | Read GICD_TYPER ITLinesNumber |
+| 7 | `gicSpiCount` | `288` | *pending* | PENDING | Read GICD_TYPER ITLinesNumber (the kernel's `init_gic` halts the boot if it reports fewer than 320 lines) |
 | 8 | `timerPpiId` | `30` | *pending* | PENDING | Timer interrupt fires on INTID 30 |
 | 9 | `registerWidth` | `64` | 64 | VERIFIED | ARM64 architecture invariant |
 | 10 | `virtualAddressWidth` | `48` | *pending* | PENDING | Read ID_AA64MMFR0_EL1.PARange |

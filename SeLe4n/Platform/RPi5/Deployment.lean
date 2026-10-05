@@ -64,7 +64,7 @@ here:
   task holding a capability to the untrusted thread would be a flow the labeling
   exists to forbid.  Each initial thread's CNode names only its own objects.
 * **Device interrupts go to the boot domain, SPIs only.**  The table registers
-  every shared peripheral interrupt the contract supports (INTIDs 32–223,
+  every shared peripheral interrupt the contract supports (INTIDs 32–319,
   `rpi5InterruptContract`) to one notification, badged by INTID
   (`handleInterrupt`); SGIs are the kernel's inter-processor channel and PPIs are
   per-core (the timer PPI is the kernel's tick), so neither is delegated.
@@ -398,16 +398,30 @@ theorem bindPlatformConfig_rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) 
 -- firmware may report (BP7.10)
 -- ============================================================================
 
+/-- The IRQ table names every INTID once: it is `32 + i` over `range
+    gicSpiCount`, an injective image of a duplicate-free list.  Proved
+    structurally, so the boot's duplicate check is not evaluated over the
+    table's 288 entries. -/
+theorem rpi5IrqTable_irqsUnique : irqsUnique rpi5IrqTable = true := by
+  apply irqsUnique_of_nodup
+  unfold rpi5IrqTable
+  rw [List.map_map]
+  apply List.Pairwise.map _ _ List.nodup_range
+  intro a b hab h
+  exact hab (by simp only [Function.comp_def, SeLe4n.Irq.toNat] at h; omega)
+
 /-- **WS-BP BP3.3**: on each family member, the bound configuration is
-    well-formed — all seven conjuncts.  The two duplicate checks run a hash set
-    the kernel cannot reduce, so they are rewritten to their transparent forms
-    first (`irqsUnique_eq_transparent`, `objectIdsUnique_eq_transparent`);
-    everything else is `decide`. -/
+    well-formed — all seven conjuncts.  The IRQ table's duplicate check is
+    `rpi5IrqTable_irqsUnique`, proved once for every member; the object
+    table's runs a hash set the kernel cannot reduce, so it is rewritten to its
+    transparent form first (`objectIdsUnique_eq_transparent`); everything else
+    is `decide`. -/
 private theorem member_wellFormed :
     ∀ v ∈ rpi5Variants, (rpi5BoundPlatformConfigAt v).wellFormed = true := by
   apply rpi5Variants_cases <;>
     (unfold PlatformConfig.wellFormed
-     rw [irqsUnique_eq_transparent, objectIdsUnique_eq_transparent]
+     rw [show ∀ v, (rpi5BoundPlatformConfigAt v).irqTable = rpi5IrqTable from fun _ => rfl,
+       rpi5IrqTable_irqsUnique, objectIdsUnique_eq_transparent, Bool.true_and]
      decide)
 
 private theorem member_bootSafe :
@@ -419,6 +433,10 @@ private theorem member_asidsDistinct :
     ∀ v ∈ rpi5Variants, bootVSpaceAsidsDistinct (rpi5BoundPlatformConfigAt v) = true := by
   apply rpi5Variants_cases <;> decide
 
+-- The BCM2712's 288 SPIs make the IRQ table the handler check walks longer
+-- than the default recursion budget covers (as `virt`'s 256 do there), so the
+-- budget is raised for this theorem only.
+set_option maxRecDepth 8192 in
 private theorem member_irqHandlers :
     ∀ v ∈ rpi5Variants, irqHandlersReferenceNotifications (rpi5BoundPlatformConfigAt v) = true := by
   apply rpi5Variants_cases <;> decide
