@@ -4313,7 +4313,7 @@ run_check "INVARIANT" rg -n '^        \(Architecture\.saveCapturedSyscallFrame s
 run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st execCore frame' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # WS-BP BP7.8: the sender's overflow words are read from RAM and synced into the
 # model before the decode, at the seam and in its structural marker.
-run_check "INVARIANT" rg -n '^  let words ← readCallerOverflowWords execCore msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^  let words ← match ← readCallerOverflowWords execCore msgInfo with$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^      \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := faultEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := unknownSyscallEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean

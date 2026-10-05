@@ -669,6 +669,38 @@ theorem syscallDispatchCrossCoreBracketedStep_refused (ctx : LabelingContext)
   rw [Concurrency.runBracketed_refused _ _ _ _ st S hDecl hGuard]
   rfl
 
+/-- **The sender's overflow words, from the batches the HAL answered**
+(`v0.36.47` audit): each run's `ByteArray` decoded to its `n` words
+(`IpcBufferRead.wordsOfBatches`) and zipped back onto the addresses the runs
+were built from.  A batch of any other size — or a different number of batches
+than runs — is a HAL defect the hardware never produces (it halts on a refused
+run instead), and the answer is to fail closed exactly as
+`syscallEntryContextOrFaulted` does: the `.faulted` tag, on which the entry
+commits nothing and the trap layer halts the PE.  Pure, so the host suite runs
+the decode and that arm (`tests/SyscallDispatchSuite.lean`). -/
+def overflowWordsOrFaulted (addrs : List SeLe4n.PAddr) (runs : List (SeLe4n.PAddr × Nat))
+    (batches : List ByteArray) : Except UInt64 (List (SeLe4n.PAddr × UInt64)) :=
+  match Architecture.IpcBufferRead.wordsOfBatches runs batches with
+  | some ws => .ok (addrs.zip ws)
+  | none => .error Architecture.SyscallOutcome.faulted.tagWord
+
+/-- **Every address gets its word**: on the runs of `addrs`, a decoded answer
+pairs the addresses in order with one word each — the pairs' addresses are
+`addrs` itself — so `syncUserWords` writes exactly the words the loop synced. -/
+theorem overflowWordsOrFaulted_addrs (addrs : List SeLe4n.PAddr) (batches : List ByteArray)
+    (pairs : List (SeLe4n.PAddr × UInt64))
+    (h : overflowWordsOrFaulted addrs (Architecture.IpcBufferRead.wordRuns addrs) batches
+        = .ok pairs) :
+    pairs.map Prod.fst = addrs := by
+  unfold overflowWordsOrFaulted at h
+  split at h
+  · rename_i ws hws
+    cases h
+    have hLen := Architecture.IpcBufferRead.wordsOfBatches_length _ _ _ hws
+    rw [Architecture.IpcBufferRead.expandRuns_wordRuns] at hLen
+    exact List.map_fst_zip (Nat.le_of_eq hLen.symm)
+  · cases h
+
 /-- **WS-BP BP7.8: the sender's message registers past the fourth, read from
 RAM.**  The decode reads a syscall's overflow message registers out of the
 caller's IPC buffer (`RegisterDecode.decodeSyscallArgsFromState` →
@@ -684,15 +716,29 @@ the decode runs.  The addresses are resolved on the state read here and the
 words written on the state the commit closure receives; those are one state,
 because the kernel-entry lock serialises every committing entry and nothing
 between the two reads writes an address space.  A syscall that asks for no
-overflow reads nothing (`callerOverflowAddrs` answers `[]`). -/
+overflow reads nothing (`callerOverflowAddrs` answers `[]`).
+
+**`v0.36.47` audit: the words cross in runs, not one per call.**  The slots
+are grouped into their contiguous same-page runs (`IpcBufferRead.wordRuns` —
+one run for a buffer inside a page, two for one straddling a boundary; on a
+116-word message that is one or two `ffiReadUserWords` calls where there were
+116), each run crosses as one `ByteArray` of `8 · n` bytes, and the pure
+`overflowWordsOrFaulted` decodes the batches back onto the addresses.  The
+runs name exactly the addresses the loop read, in order
+(`expandRuns_wordRuns`), and never leave a page
+(`wordRuns_within_page`), so the HAL's run bound is never the kernel's own
+refusal. -/
 def readCallerOverflowWords (execCore : CoreId) (msgInfo : UInt64) :
-    BaseIO (List (SeLe4n.PAddr × UInt64)) := do
+    BaseIO (Except UInt64 (List (SeLe4n.PAddr × UInt64))) := do
   let st ← Platform.FFI.getKernelState
   match st.scheduler.currentOnCore execCore with
-  | none => pure []
+  | none => pure (.ok [])
   | some tid =>
-      (Architecture.IpcBufferRead.callerOverflowAddrs st tid msgInfo).mapM fun pa => do
-        pure (pa, ← Platform.FFI.ffiReadUserWord pa.toNat.toUInt64)
+      let addrs := Architecture.IpcBufferRead.callerOverflowAddrs st tid msgInfo
+      let runs := Architecture.IpcBufferRead.wordRuns addrs
+      let batches ← runs.mapM fun run =>
+        Platform.FFI.ffiReadUserWords run.1.toNat.toUInt64 run.2.toUInt64
+      pure (overflowWordsOrFaulted addrs runs batches)
 
 /-- **The context the syscall entry dispatches on, or the outcome it answers
 without one.**  An `SVC` handler always publishes its frame before it
@@ -785,7 +831,9 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
   -- and synced into the model in the atomic step, so the decode reads what the
   -- thread wrote.
-  let words ← readCallerOverflowWords execCore msgInfo
+  let words ← match ← readCallerOverflowWords execCore msgInfo with
+    | .ok words => pure words
+    | .error tag => return tag
   let result ← Platform.FFI.modifyGetKernelState fun st =>
     syscallDispatchCrossCoreBracketedStep ctx execCore syscallId
       trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
@@ -859,7 +907,9 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
           | .error tag => return tag
         let frame := some (Architecture.registerFileOfTrapContext trapped)
         let msgInfo := trapped.x1
-        let words ← readCallerOverflowWords execCore msgInfo
+        let words ← match ← readCallerOverflowWords execCore msgInfo with
+          | .ok words => pure words
+          | .error tag => return tag
         let result ← Platform.FFI.modifyGetKernelState fun st =>
           syscallDispatchCrossCoreBracketedStep ctx execCore syscallId
             trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5

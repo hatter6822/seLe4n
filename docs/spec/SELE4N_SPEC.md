@@ -5128,7 +5128,14 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   thread's own VSpace, eight-byte aligned, declared RAM, writable for a write).
   The syscall seam reads a sender's overflow words from RAM and syncs them into
   the model before the decode (`readCallerOverflowWords`, `syncUserWords`,
-  `ipcBufferReadMr_syncUserWord`); the delivery every wake shares records the
+  `ipcBufferReadMr_syncUserWord`) — since the `v0.36.47` audit in contiguous
+  same-page runs, one `ffi_read_user_words` call per run answering a
+  `ByteArray` of `8 · n` bytes (`IpcBufferRead.wordRuns`; the runs are the
+  address list, `expandRuns_wordRuns`, and never leave a page,
+  `wordRuns_within_page`; a 116-word message is one call, two on a buffer
+  straddling a page boundary, where it was 116), the pure decode failing the
+  entry closed on an answer of any other size (`overflowWordsOrFaulted`);
+  the delivery every wake shares records the
   receiver's as `PhysicalWrite.storeUserWord` stores the seam performs — the
   fault seams now drain the ledger too — and the frame's `MessageInfo` length
   counts exactly the words written (`returnMessageInfo`'s `overflow`).  The HAL

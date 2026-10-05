@@ -1863,16 +1863,45 @@ pub extern "C" fn mmu_apply_physical_write(
     crate::lean_runtime::base_io_unit()
 }
 
-/// **WS-BP BP7.8**: read the user word at `addr` — a sender's message register
-/// past the four its trap frame carries — `Platform.FFI.ffiReadUserWord`.  The
-/// Lean kernel names only a word of its caller's own RAM frame
-/// (`IpcBufferRead.ipcBufferSlotPAddr?`), so an address
-/// [`crate::user_translation::user_word_admissible`] refuses is a kernel defect
-/// and **halts the system**, for the reason [`mmu_apply_physical_write`] gives.
+/// `ffi_read_user_words` over a coverage predicate (the testable form): the
+/// run `[base, base + 8 · count)` as a fresh Lean `ByteArray` of `8 · count`
+/// little-endian bytes, its one reference the caller's, or `None` when
+/// [`crate::user_translation::user_word_run_admissible`] refuses the run.
+/// Nothing is allocated for a refused run.
+#[must_use]
+pub fn read_user_words_lean(
+    base: u64,
+    count: u64,
+    covered: impl Fn(u64, u64) -> bool,
+) -> Option<crate::lean_runtime::Obj> {
+    if !crate::user_translation::user_word_run_admissible(base, count, &covered) {
+        return None;
+    }
+    let len = usize::try_from(count).ok()?.checked_mul(8)?;
+    let bytes = crate::lean_runtime::array::alloc_sarray(1, len, len);
+    // SAFETY: `bytes` is the fresh scalar array just allocated with `len`
+    // one-byte elements, referenced nowhere else; the slice does not outlive
+    // this call.
+    let out = unsafe { crate::lean_runtime::array::sarray_bytes_mut(bytes) };
+    // The run was admitted above and `out` is exactly its size, so the read
+    // cannot refuse; a refusal here would be a defect in this function.
+    crate::user_translation::read_user_words(base, count, covered, out)?;
+    Some(bytes)
+}
+
+/// **WS-BP BP7.8, batched at the `v0.36.47` audit**: read the `count` user
+/// words at `base` — a contiguous run of a sender's message registers past the
+/// four its trap frame carries — `Platform.FFI.ffiReadUserWords`.  The Lean
+/// kernel names only runs of its caller's own RAM frame that stay in one page
+/// (`IpcBufferRead.wordRuns`, `wordRuns_within_page`), so a run
+/// [`crate::user_translation::user_word_run_admissible`] refuses is a kernel
+/// defect and **halts the system**, for the reason [`mmu_apply_physical_write`]
+/// gives.  The answer is a `ByteArray` of exactly `8 · count` bytes, which the
+/// Lean side checks (`IpcBufferRead.wordsOfBytes`).
 #[no_mangle]
-pub extern "C" fn ffi_read_user_word(addr: u64) -> u64 {
-    match crate::user_translation::read_user_word(addr, crate::mmu::is_boot_cacheable_range) {
-        Some(word) => word,
+pub extern "C" fn ffi_read_user_words(base: u64, count: u64) -> crate::lean_runtime::Obj {
+    match read_user_words_lean(base, count, crate::mmu::is_boot_cacheable_range) {
+        Some(bytes) => bytes,
         None => crate::gic::halt_all(),
     }
 }
@@ -2101,6 +2130,34 @@ mod tests {
     /// field — holding the frame's 35 words in layout order, each at its
     /// own offset (every register of the frame is distinct, so a word read
     /// from the wrong position fails).
+    /// `v0.36.47` audit: a run of user words crosses as one `ByteArray` of
+    /// `8 · count` bytes — a scalar array, no word boxed — and a run the HAL
+    /// refuses allocates nothing.
+    #[test]
+    fn ffi_read_user_words_answers_a_byte_array_of_the_run() {
+        const PAGE: u64 = 4096;
+        let ram_page = crate::mmu::KERNEL_RESERVED_END + 0x5000;
+        let covered =
+            |base: u64, size: u64| base >= crate::mmu::KERNEL_RESERVED_END && size <= PAGE;
+        let bytes = read_user_words_lean(ram_page + 16, 3, covered).expect("an admissible run");
+        assert!(!crate::lean_runtime::is_scalar(bytes));
+        // SAFETY: `bytes` is the live scalar array just built.
+        unsafe {
+            let header = crate::lean_runtime::header_ref(bytes);
+            assert_eq!(header.tag, crate::lean_runtime::TAG_SCALAR_ARRAY);
+            let data = crate::lean_runtime::array::sarray_bytes(bytes);
+            assert_eq!(data.len(), 24);
+            assert!(data.iter().all(|b| *b == 0));
+        }
+        let empty = read_user_words_lean(ram_page, 0, covered).expect("a zero-length run");
+        // SAFETY: `empty` is the live scalar array just built.
+        unsafe {
+            assert_eq!(crate::lean_runtime::array::sarray_bytes(empty).len(), 0);
+        }
+        assert!(read_user_words_lean(ram_page + PAGE - 8, 2, covered).is_none());
+        assert!(read_user_words_lean(ram_page + 4, 1, covered).is_none());
+    }
+
     #[test]
     fn ffi_trap_context_encodes_the_published_frame_as_a_lean_option() {
         let slots = fresh_slots();

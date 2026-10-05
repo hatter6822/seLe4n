@@ -1609,7 +1609,10 @@ VSpace, eight-byte aligned, declared RAM, and writable when `needWrite`) is what
 the seam reads and what a delivery writes; a new path touching a thread's buffer
 asks it, never `root.lookup` directly.  (2) **The model holds no thread's memory,
 so a read of it is synced first**: the syscall seam reads the caller's words from
-RAM (`readCallerOverflowWords`, `ffi_read_user_word`) and writes them in with
+RAM (`readCallerOverflowWords` — in contiguous same-page runs since the
+`v0.36.47` audit, one `ffi_read_user_words` call per run answering a
+`ByteArray`; `IpcBufferRead.wordRuns`, `expandRuns_wordRuns`,
+`wordRuns_within_page`) and writes them in with
 `syncUserWords` in the atomic step before the decode — `ipcBufferReadMr_syncUserWord`
 is the relation, over `writeUInt64` and `readUInt64_writeUInt64`.  A new kernel
 read of user memory is synced the same way.  (3) **A write to a thread's memory is

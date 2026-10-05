@@ -511,6 +511,70 @@ private def sd036_entryWithoutContext_faults : IO Unit := do
         "the frame-less arm must leave the installed state untouched"
   | _ => failLine "sd036_tcb_missing" "TCB missing after the frame-less arm"
 
+open Kernel.Architecture.IpcBufferRead in
+/-- SD-037 (`v0.36.47` audit): the sender's overflow words cross in runs.
+`wordRuns` groups consecutive same-page words and nothing else; `wordsOfBytes`
+decodes a run's `8 · n` little-endian bytes and refuses any other size; and
+`overflowWordsOrFaulted` zips the decoded batches back onto the addresses, or
+answers the `.faulted` tag — the arm the hardware never reaches, since the HAL
+halts on a refused run rather than answering a short one. -/
+private def sd037_overflowWordsCrossInRuns : IO Unit := do
+  let pa (n : Nat) : SeLe4n.PAddr := SeLe4n.PAddr.ofNat n
+  -- Three consecutive words of one page are one run; a gap, or a page
+  -- boundary, starts another; the runs expand back to the list.
+  expect "sd037a_consecutive_words_are_one_run"
+    (wordRuns [pa 0x1000, pa 0x1008, pa 0x1010] == [(pa 0x1000, 3)])
+    "three consecutive same-page words must form one run"
+  expect "sd037b_a_gap_splits_the_run"
+    (wordRuns [pa 0x1000, pa 0x1010] == [(pa 0x1000, 1), (pa 0x1010, 1)])
+    "non-consecutive words must not share a run"
+  expect "sd037c_a_page_boundary_splits_the_run"
+    (wordRuns [pa 0x1FF0, pa 0x1FF8, pa 0x2000, pa 0x2008]
+      == [(pa 0x1FF0, 2), (pa 0x2000, 2)])
+    "a run must never cross a page boundary"
+  let straddling := (List.range 116).map (fun i => pa (0x1E00 + 8 * i))
+  expect "sd037d_a_116_word_buffer_straddling_a_page_is_two_runs"
+    (wordRuns straddling == [(pa 0x1E00, 64), (pa 0x2000, 52)] &&
+      expandRuns (wordRuns straddling) == straddling)
+    "a 512-aligned buffer across a page boundary must be exactly two runs"
+  let inPage := (List.range 116).map (fun i => pa (0x3000 + 8 * i))
+  expect "sd037e_a_116_word_buffer_inside_a_page_is_one_run"
+    (wordRuns inPage == [(pa 0x3000, 116)])
+    "a buffer inside one page must be one run (one extern call)"
+  -- The decode: little-endian words, exact size only.
+  let bytes := ByteArray.mk #[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                              0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80]
+  expect "sd037f_little_endian_decode"
+    (wordsOfBytes 2 bytes == some [0x0807060504030201, 0x80000000000000FF])
+    "a run's bytes must decode little-endian, word by word"
+  expect "sd037g_wrong_size_is_refused"
+    ((wordsOfBytes 3 bytes).isNone && (wordsOfBytes 1 bytes).isNone &&
+      wordsOfBytes 0 (ByteArray.mk #[]) == some [])
+    "a batch of any size but 8·n must decode to nothing; an empty run to no words"
+  -- The seam's decode: the pairs carry the addresses in order, or fail closed.
+  let addrs := [pa 0x1000, pa 0x1008]
+  let faulted := Kernel.Architecture.SyscallOutcome.faulted.tagWord
+  expect "sd037h_batches_zip_onto_the_addresses"
+    (match overflowWordsOrFaulted addrs (wordRuns addrs) [bytes] with
+      | .ok pairs => pairs == [(pa 0x1000, 0x0807060504030201), (pa 0x1008, 0x80000000000000FF)]
+      | .error _ => false)
+    "a decoded batch must pair each address with its word, in order"
+  expect "sd037i_a_short_batch_is_the_faulted_tag"
+    (match overflowWordsOrFaulted addrs (wordRuns addrs) [bytes.extract 0 8] with
+      | .error tag => tag == faulted && tag == 2
+      | .ok _ => false)
+    "a batch not of its run's size must answer the .faulted tag (2)"
+  expect "sd037j_a_missing_batch_is_the_faulted_tag"
+    (match overflowWordsOrFaulted addrs (wordRuns addrs) [] with
+      | .error tag => tag == faulted
+      | .ok _ => false)
+    "fewer batches than runs must answer the .faulted tag"
+  expect "sd037k_no_overflow_reads_nothing"
+    (match overflowWordsOrFaulted [] (wordRuns []) [] with
+      | .ok pairs => pairs.isEmpty
+      | .error _ => false)
+    "a syscall with no overflow must sync no words and not fault"
+
 /-- SD-035: Sequential dispatches — the IO.Ref state evolves
     correctly across multiple syscall invocations.
 
@@ -2214,6 +2278,7 @@ def main : IO Unit := do
   sd033_dispatchFromAbi_total
   sd035_sequentialDispatches
   sd036_entryWithoutContext_faults
+  sd037_overflowWordsCrossInRuns
   IO.println "--- R2.A: bootAndInitialiseFromPlatform integration ---"
   sd040_bootInitialise_emptyConfig_succeeds
   sd041_bootInitialise_withLabelingContext

@@ -3149,15 +3149,25 @@ def icMaintenanceBroadcast
 @[extern "mmu_apply_physical_write"]
 opaque ffiApplyPhysicalWrite : UInt64 → UInt64 → UInt64 → BaseIO Unit
 
-/-- **WS-BP BP7.8: the user word at `addr`** — a word of the caller's own RAM
-    frame, read so the kernel decodes the message registers the thread wrote
-    into its IPC buffer rather than its model of that memory.  The HAL admits
-    only an eight-byte aligned word of RAM past the kernel's reserved extent
-    and halts the system on anything else.
+/-- **WS-BP BP7.8 (batched at the `v0.36.47` audit): the `count` user words
+    at `base`** — a run of the caller's own RAM frame, read so the kernel
+    decodes the message registers the thread wrote into its IPC buffer rather
+    than its model of that memory.  One call per contiguous run
+    (`IpcBufferRead.wordRuns`): the HAL translates the base once, bounds the
+    run against its page (`base % 4096 + 8 · count ≤ 4096`,
+    `user_translation::user_word_run_admissible`) and answers the words as a
+    `ByteArray` of exactly `8 · count` little-endian bytes — one scalar
+    allocation, no word boxed on the way over.  It admits only an eight-byte
+    aligned base of RAM past the kernel's reserved extent and a run that stays
+    in the page, and halts the system on anything else: the kernel never asks
+    for such a run (`IpcBufferRead.wordRuns_within_page`), so a refusal is a
+    kernel defect.  The Lean side checks the answer's size
+    (`IpcBufferRead.wordsOfBytes`) and fails the syscall entry closed on any
+    other (`Kernel.overflowWordsOrFaulted`).
 
-    Rust: `ffi_read_user_word` in `sele4n-hal/src/ffi.rs`. -/
-@[extern "ffi_read_user_word"]
-opaque ffiReadUserWord : UInt64 → BaseIO UInt64
+    Rust: `ffi_read_user_words` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_read_user_words"]
+opaque ffiReadUserWords : UInt64 → UInt64 → BaseIO ByteArray
 
 /-- **WS-BP BP7.2**: typed wrapper over `ffiApplyPhysicalWrite`. -/
 def physicalWriteApply (w : SeLe4n.Kernel.Architecture.PhysicalWrite) : BaseIO Unit :=
