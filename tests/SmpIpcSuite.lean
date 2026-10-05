@@ -582,7 +582,8 @@ private def runClientFirstChecks : IO Unit := do
           (ipcStateIs stRep clientA .ready && pendingMessageIs stRep clientA (some replyMsgB))
 
 -- ============================================================================
--- §3.5 Server steady-state: replyRecv (reply leg + receive leg, SGI union)
+-- §3.5 Server steady-state: replyRecv (reply leg + receive leg; the cross-core
+--      SGIs are re-derived from the state diff at the syscall entry, not here)
 -- ============================================================================
 
 private def runReplyRecvLoopChecks : IO Unit := do
