@@ -182,12 +182,12 @@ def trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile) (i : Nat) : UInt64 :=
 
 /-- **Save then restore is the identity on the layout's registers** — `pc`,
 `sp`, `pstate`, `tpidr` and `x0`–`x30` — for a context whose registers fit in
-64 bits.  The hypothesis is *assumed* here: `RegisterFile` holds unbounded
-`Nat`s and `trapWordsOfRegisterFile` narrows with `Nat.toUInt64`, which wraps.
-A context the HAL handed over satisfies it (`registerFileOfTrapContext_wordBounded`);
-one a syscall return frame or the boot configuration wrote is bounded by review
-of its writers, not by an invariant (registered debt, `docs/REGISTERED_DEBT.md`).
-Nothing is said of `gpr ⟨31⟩` onward, which the layout does not carry and the
+64 bits.  The hypothesis is needed: `RegisterFile` holds unbounded `Nat`s and
+`trapWordsOfRegisterFile` narrows with `Nat.toUInt64`, which wraps.  A context
+the HAL handed over satisfies it (`registerFileOfTrapContext_wordBounded`), and
+`registerContextsWordBounded` carries it for every saved context and every
+core's bank, each register-context writer preserving it
+(`SeLe4n/Kernel/Architecture/RegisterContextBounded.lean`).  Nothing is said of `gpr ⟨31⟩` onward, which the layout does not carry and the
 read-back sets to `0`. -/
 theorem registerFileOfTrapWords_trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile)
     (hGpr : ∀ r : SeLe4n.RegName, r.val < 31 → (rf.gpr r).val < 2 ^ 64)
@@ -264,8 +264,9 @@ register file, agrees with the file that was restored on `pc`, `sp`, `pstate`,
 `tpidr` and `x0`–`x30` — the thirty-five registers the layout carries; `gpr ⟨31⟩`
 onward is not carried and reads back as `0`.  The Lean-internal encode/decode
 direction of `registerFileOfTrapWords_trapWordsOfRegisterFile`, stated over the
-boundary representation; `wordBounded` is assumed, not established by an
-invariant (see that theorem).  The HAL masks `pstate` to the condition flags at
+boundary representation; `wordBounded` is the per-context bound
+`registerContextsWordBounded` carries, and `restoreTargetOnCore_user_roundTrip`
+discharges it on the live restore path.  The HAL masks `pstate` to the condition flags at
 the commit, so the cross-language trip is not the identity on `pstate`. -/
 theorem registerFileOfTrapContext_trapContextOfRegisterFile (rf : SeLe4n.RegisterFile)
     (hB : rf.wordBounded) :

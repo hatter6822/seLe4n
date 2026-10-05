@@ -318,18 +318,63 @@ theorem unknownSyscallEntryStep_kernel_origin_inert (lctx : LabelingContext)
   · rw [hEl1]; rfl
   · rfl
 
+/-- **The frame the two fault exports deliver from, decoded once** (`v0.36.47`
+audit).  The HAL hands `lean_handle_fault` and `lean_handle_unknown_syscall`
+three scalars — the core, and the two syndrome words that are the trap's and
+not the context's (`ESR_EL1`, `FAR_EL1`) — and every other word the delivery
+needs is read from the one context the trap handler published
+(`Platform.FFI.ffiTrapContext`): the frame to save into the core and the
+caller's TCB, the exception context (`ELR_EL1`, `SPSR_EL1`), and the fault
+window (`x0`–`x7`, `SP_EL0`, `x30`).  Before this the exports took the window
+as fifteen scalars *and* re-captured the same frame — two sources for one set
+of registers inside one handler.
+
+`none` is the arm the hardware never reaches — an entry handed no context — and
+it fails closed exactly as the syscall entry's `syscallEntryContextOrFaulted`
+does: nothing is read, nothing is committed, no restore is staged, and the
+trap layer, finding no restored frame, halts the PE.  Pure, so the host suite
+runs that arm and checks the decode word for word
+(`tests/FaultHandlingSuite.lean` §6g). -/
+def faultEntryFrame? (esr far : UInt64) : Option Architecture.TrapContext →
+    Option (SeLe4n.RegisterFile × ExceptionContext × FaultRegisterWindow)
+  | none => none
+  | some c =>
+      some (Architecture.registerFileOfTrapContext c,
+            { esr := esr, elr := c.pc, spsr := c.pstate, far := far },
+            { gprs := #[c.x0, c.x1, c.x2, c.x3, c.x4, c.x5, c.x6, c.x7],
+              sp := c.sp, lr := c.x30 })
+
+/-- The decode, word for word: the saved frame is the context's register file,
+the exception context carries the trap's syndrome words beside the context's
+`ELR_EL1` and `SPSR_EL1`, and the window is `x0`–`x7`, `SP_EL0` and `x30`. -/
+theorem faultEntryFrame?_some (esr far : UInt64) (c : Architecture.TrapContext) :
+    faultEntryFrame? esr far (some c) =
+      some (Architecture.registerFileOfTrapContext c,
+            { esr := esr, elr := c.pc, spsr := c.pstate, far := far },
+            { gprs := #[c.x0, c.x1, c.x2, c.x3, c.x4, c.x5, c.x6, c.x7],
+              sp := c.sp, lr := c.x30 }) := rfl
+
+/-- …and the arm no hardware path reaches decodes nothing, so the entries
+commit nothing. -/
+theorem faultEntryFrame?_none (esr far : UInt64) :
+    faultEntryFrame? esr far none = none := rfl
+
 /-- WS-RR RR4.23 (**the export**): the C-callable fault seam.
 
 `trap.rs`'s abort and exception arms invoke this inside
 `kernel_entry::with_kernel_entry`, having routed the `SVC` class away first
-and halted on a kernel-origin exception.  Takes the syndrome and the trap
-frame's fault window — `x0`-`x7`, `SP_EL0`, `x30` — fifteen words in all.
-Reads the deployment labeling context, atomically commits `faultEntryStep`
-against the live kernel state, then fires the cross-core SGIs the diff
-surfaced — the same read-context / commit / fire-SGIs shape
-`syscallDispatchCrossCoreEntry` has, and for the same reason: the context read
-is a pure read of a boot-installed value, so it need not be inside the commit
-closure, while the delivery must be.
+and halted on a kernel-origin exception.  Takes the core and the trap's two
+syndrome words (`ESR_EL1`, `FAR_EL1`) — three scalars; the fault window
+(`x0`-`x7`, `SP_EL0`, `x30`) and the exception context's `ELR_EL1` and
+`SPSR_EL1` are decoded from the one published trap context
+(`faultEntryFrame?`), read once.  Reads the deployment labeling context,
+atomically commits `faultEntryStep` against the live kernel state, then fires
+the cross-core SGIs the diff surfaced — the same read-context / read-frame /
+commit / fire-SGIs shape `syscallDispatchCrossCoreEntry` has, and for the
+same reason: the context read is a pure read of a boot-installed value, so it
+need not be inside the commit closure, while the delivery must be.  An entry
+handed no context commits nothing and stages no restore, on which the trap
+layer halts the PE.
 
 **WS-BP BP7.8**: and it drains the physical-write ledger the same way, read and
 cleared in the atomic step and performed first.  A fault message carries up to
@@ -338,59 +383,57 @@ once, so the words past the fourth are user-word stores into its IPC buffer —
 recorded by the delivery (`Architecture.stageDeliveredMessage`) and owed to RAM
 by this seam. -/
 @[export lean_handle_fault]
-def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
-    (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) : BaseIO Unit := do
+def faultEntry (coreId esr far : UInt64) : BaseIO Unit := do
   let lctx ← Platform.FFI.getKernelLabelingContext
-  let frame ← Platform.FFI.captureTrapFrame
-  let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
-    let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
-    let (sgis, st') :=
-      faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
-        { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
-    let st' := PriorityInheritance.settleResidencyAt st' coreId
-    ((sgis,
-      (Concurrency.coreIdOfUInt64? coreId).map
-        (fun c => (c, st'.scheduler.currentOnCore c)),
-      Concurrency.restoreTargetAt st' coreId,
-      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
-      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
-  Platform.FFI.completePhysicalWrites r.2.2.2.1
-  Concurrency.fireCrossCoreSgis r.1
-  Platform.FFI.completeIcacheMaintenance r.2.2.2.2
-  Concurrency.releaseSwitchedFpOwner coreId
-  Platform.FFI.restoreTrapFrame r.2.2.1
-  Concurrency.recordCommittedCurrentThreadHw r.2.1
+  match faultEntryFrame? esr far (← Platform.FFI.ffiTrapContext) with
+  | none => pure ()
+  | some (frame, ectx, w) =>
+    let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+      let st := Concurrency.saveCapturedTrapFrameAt st0 coreId (some frame)
+      let (sgis, st') := faultEntryStep lctx st ectx w coreId
+      let st' := PriorityInheritance.settleResidencyAt st' coreId
+      ((sgis,
+        (Concurrency.coreIdOfUInt64? coreId).map
+          (fun c => (c, st'.scheduler.currentOnCore c)),
+        Concurrency.restoreTargetAt st' coreId,
+        (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+        Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+    Platform.FFI.completePhysicalWrites r.2.2.2.1
+    Concurrency.fireCrossCoreSgis r.1
+    Platform.FFI.completeIcacheMaintenance r.2.2.2.2
+    Concurrency.releaseSwitchedFpOwner coreId
+    Platform.FFI.restoreTrapFrame r.2.2.1
+    Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 /-- Review round (PR #887, **the export**): the C-callable unknown-syscall
 seam.  `trap.rs`'s `SVC` arm invokes it — inside `with_kernel_entry`, behind
 the per-core `lean_ready` gate — when `dispatch_svc` rejects the syscall
 number, instead of publishing an `invalidSyscallNumber` error frame: the
 thread is delivered to its fault handler as seL4's `UnknownSyscall`, or
-suspended fail-closed.  Same fifteen words as `lean_handle_fault`; the
-syscall number rides in the window's `x7`. -/
+suspended fail-closed.  Same three scalars and the same one-frame decode as
+`lean_handle_fault`; the syscall number rides in the window's `x7`. -/
 @[export lean_handle_unknown_syscall]
-def unknownSyscallEntry (coreId : UInt64) (esr elr spsr far : UInt64)
-    (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) : BaseIO Unit := do
+def unknownSyscallEntry (coreId esr far : UInt64) : BaseIO Unit := do
   let lctx ← Platform.FFI.getKernelLabelingContext
-  let frame ← Platform.FFI.captureTrapFrame
-  let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
-    let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId frame
-    let (sgis, st') :=
-      unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
-        { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
-    let st' := PriorityInheritance.settleResidencyAt st' coreId
-    ((sgis,
-      (Concurrency.coreIdOfUInt64? coreId).map
-        (fun c => (c, st'.scheduler.currentOnCore c)),
-      Concurrency.restoreTargetAt st' coreId,
-      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
-      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
-  Platform.FFI.completePhysicalWrites r.2.2.2.1
-  Concurrency.fireCrossCoreSgis r.1
-  Platform.FFI.completeIcacheMaintenance r.2.2.2.2
-  Concurrency.releaseSwitchedFpOwner coreId
-  Platform.FFI.restoreTrapFrame r.2.2.1
-  Concurrency.recordCommittedCurrentThreadHw r.2.1
+  match faultEntryFrame? esr far (← Platform.FFI.ffiTrapContext) with
+  | none => pure ()
+  | some (frame, ectx, w) =>
+    let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+      let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId (some frame)
+      let (sgis, st') := unknownSyscallEntryStep lctx st ectx w coreId
+      let st' := PriorityInheritance.settleResidencyAt st' coreId
+      ((sgis,
+        (Concurrency.coreIdOfUInt64? coreId).map
+          (fun c => (c, st'.scheduler.currentOnCore c)),
+        Concurrency.restoreTargetAt st' coreId,
+        (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+        Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+    Platform.FFI.completePhysicalWrites r.2.2.2.1
+    Concurrency.fireCrossCoreSgis r.1
+    Platform.FFI.completeIcacheMaintenance r.2.2.2.2
+    Concurrency.releaseSwitchedFpOwner coreId
+    Platform.FFI.restoreTrapFrame r.2.2.1
+    Concurrency.recordCommittedCurrentThreadHw r.2.1
 
 -- ============================================================================
 -- §2b  WS-BP BP7.9 — the lazy FP/SIMD switch's entry
@@ -524,57 +567,59 @@ scanner, the seam cannot regress silently — the discipline the timer and
 The record matters here even though the trap layer halts after a delivered
 fault on a core with no restore staged: the delivery *vacates* this core, so leaving the HAL
 mirror naming the faulted thread would be a stale name pointing at a
-descheduled frame — exactly what RR7.26's clear-on-vacate exists to prevent. -/
-theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
-    (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) :
-    faultEntry coreId esr elr spsr far x0 x1 x2 x3 x4 x5 x6 x7 sp lr =
+descheduled frame — exactly what RR7.26's clear-on-vacate exists to prevent.
+
+**`v0.36.47` audit**: the marker also pins that the entry reads the frame
+**once** — the window and the exception context are `faultEntryFrame?`'s
+decode of the one captured context, and the `none` arm commits nothing. -/
+theorem faultEntry_def (coreId esr far : UInt64) :
+    faultEntry coreId esr far =
       (do
         let lctx ← Platform.FFI.getKernelLabelingContext
-        let frame ← Platform.FFI.captureTrapFrame
-        let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
-          let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
-          let (sgis, st') :=
-            faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
-              { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
-          let st' := PriorityInheritance.settleResidencyAt st' coreId
-          ((sgis,
-            (Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c)),
-            Concurrency.restoreTargetAt st' coreId,
-            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
-            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
-        Platform.FFI.completePhysicalWrites r.2.2.2.1
-        Concurrency.fireCrossCoreSgis r.1
-        Platform.FFI.completeIcacheMaintenance r.2.2.2.2
-        Concurrency.releaseSwitchedFpOwner coreId
-        Platform.FFI.restoreTrapFrame r.2.2.1
-        Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
+        match faultEntryFrame? esr far (← Platform.FFI.ffiTrapContext) with
+        | none => pure ()
+        | some (frame, ectx, w) =>
+          let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+            let st := Concurrency.saveCapturedTrapFrameAt st0 coreId (some frame)
+            let (sgis, st') := faultEntryStep lctx st ectx w coreId
+            let st' := PriorityInheritance.settleResidencyAt st' coreId
+            ((sgis,
+              (Concurrency.coreIdOfUInt64? coreId).map
+                (fun c => (c, st'.scheduler.currentOnCore c)),
+              Concurrency.restoreTargetAt st' coreId,
+              (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+              Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+          Platform.FFI.completePhysicalWrites r.2.2.2.1
+          Concurrency.fireCrossCoreSgis r.1
+          Platform.FFI.completeIcacheMaintenance r.2.2.2.2
+          Concurrency.releaseSwitchedFpOwner coreId
+          Platform.FFI.restoreTrapFrame r.2.2.1
+          Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 /-- The same marker for the unknown-syscall seam. -/
-theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
-    (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) :
-    unknownSyscallEntry coreId esr elr spsr far x0 x1 x2 x3 x4 x5 x6 x7 sp lr =
+theorem unknownSyscallEntry_def (coreId esr far : UInt64) :
+    unknownSyscallEntry coreId esr far =
       (do
         let lctx ← Platform.FFI.getKernelLabelingContext
-        let frame ← Platform.FFI.captureTrapFrame
-        let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
-          let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId frame
-          let (sgis, st') :=
-            unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
-              { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
-          let st' := PriorityInheritance.settleResidencyAt st' coreId
-          ((sgis,
-            (Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c)),
-            Concurrency.restoreTargetAt st' coreId,
-            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
-            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
-        Platform.FFI.completePhysicalWrites r.2.2.2.1
-        Concurrency.fireCrossCoreSgis r.1
-        Platform.FFI.completeIcacheMaintenance r.2.2.2.2
-        Concurrency.releaseSwitchedFpOwner coreId
-        Platform.FFI.restoreTrapFrame r.2.2.1
-        Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
+        match faultEntryFrame? esr far (← Platform.FFI.ffiTrapContext) with
+        | none => pure ()
+        | some (frame, ectx, w) =>
+          let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
+            let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId (some frame)
+            let (sgis, st') := unknownSyscallEntryStep lctx st ectx w coreId
+            let st' := PriorityInheritance.settleResidencyAt st' coreId
+            ((sgis,
+              (Concurrency.coreIdOfUInt64? coreId).map
+                (fun c => (c, st'.scheduler.currentOnCore c)),
+              Concurrency.restoreTargetAt st' coreId,
+              (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+              Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
+          Platform.FFI.completePhysicalWrites r.2.2.2.1
+          Concurrency.fireCrossCoreSgis r.1
+          Platform.FFI.completeIcacheMaintenance r.2.2.2.2
+          Concurrency.releaseSwitchedFpOwner coreId
+          Platform.FFI.restoreTrapFrame r.2.2.1
+          Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
 
 /-- The shared delivery inherits the progress guarantee: whatever it commits,
 the thread that was current on `c` is not dispatchable there afterwards.
@@ -669,10 +714,9 @@ backed by a thread that is in fact descheduled, never one left runnable at the
 `SVC`. -/
 theorem syscallDispatchFromAbi_capFault_not_dispatchable
     (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (msgInfo : UInt64)
+    (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (fault : Fault)
-    (hMsg : msgInfo = x1)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
@@ -681,11 +725,11 @@ theorem syscallDispatchFromAbi_capFault_not_dispatchable
     (hCap : Platform.FFI.syscallCapFaultOf SeLe4n.arm64DefaultLayout
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke
         = some fault)
-    (hCommit : Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId msgInfo
+    (hCommit : Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (.faulted, st')) :
     ¬ dispatchableOnCore st' tid executingCore := by
-  rw [Platform.FFI.syscallDispatchFromAbi_capFault_faulted ctx executingCore syscallId msgInfo
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hMsg hCur hSyscall hCap]
+  rw [Platform.FFI.syscallDispatchFromAbi_capFault_faulted ctx executingCore syscallId
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hCur hSyscall hCap]
     at hCommit
   have hSt : st' = Platform.FFI.deliverSyscallCapFault ctx executingCore
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid fault

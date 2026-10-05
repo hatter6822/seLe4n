@@ -1609,7 +1609,10 @@ VSpace, eight-byte aligned, declared RAM, and writable when `needWrite`) is what
 the seam reads and what a delivery writes; a new path touching a thread's buffer
 asks it, never `root.lookup` directly.  (2) **The model holds no thread's memory,
 so a read of it is synced first**: the syscall seam reads the caller's words from
-RAM (`readCallerOverflowWords`, `ffi_read_user_word`) and writes them in with
+RAM (`readCallerOverflowWords` — in contiguous same-page runs since the
+`v0.36.47` audit, one `ffi_read_user_words` call per run answering a
+`ByteArray`; `IpcBufferRead.wordRuns`, `expandRuns_wordRuns`,
+`wordRuns_within_page`) and writes them in with
 `syncUserWords` in the atomic step before the decode — `ipcBufferReadMr_syncUserWord`
 is the relation, over `writeUInt64` and `readUInt64_writeUInt64`.  A new kernel
 read of user memory is synced the same way.  (3) **A write to a thread's memory is
@@ -6336,8 +6339,10 @@ code may assume:
   between syscalls holds the *last syscall's* arguments, so a context built
   from it alone would report a stale argument window and, on a payload-free
   resume, reinstall it over the thread's live registers.  `lean_handle_fault`
-  therefore takes fifteen words, and new code must not build a fault context
-  off the mirror without spilling first.  (7) The entry derives its cross-core
+  therefore spills the trap frame's window first — since the `v0.36.47` audit
+  it takes three words (the core, `ESR_EL1`, `FAR_EL1`) and decodes the window
+  once from the published in-flight frame (`faultEntryFrame?`) — and new code
+  must not build a fault context off the mirror without spilling first.  (7) The entry derives its cross-core
   pokes from the pre/post **diff** (`computeCrossCoreSgis`), as the syscall
   seam does, never from the single SGI the Call chain surfaces; and it runs
   the executing core's successor through `scheduleLocalSuccessor`, live since

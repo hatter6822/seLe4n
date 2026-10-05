@@ -83,6 +83,15 @@ namespace RegValue
 /-- R7-C/L-03: Decidable validity check for runtime use. -/
 @[inline] def isValid (r : RegValue) : Bool := isWord64Dec r.val
 
+/-- A register value read from a 64-bit word is valid: `UInt64.toNat` is below
+`2^64`. -/
+theorem valid_of_uint64 (x : UInt64) : RegValue.valid ⟨x.toNat⟩ :=
+  UInt64.toNat_lt_size x
+
+/-- A register value read from a 32-bit word is valid. -/
+theorem valid_of_uint32 (x : UInt32) : RegValue.valid ⟨x.toNat⟩ :=
+  Nat.lt_trans (UInt32.toNat_lt_size x) (by decide)
+
 instance : ToString RegValue where
   toString r := toString r.toNat
 
@@ -267,11 +276,18 @@ instance : Inhabited RegisterFile where
 lossless: `Kernel.Architecture.trapContextOfRegisterFile` narrows each register
 with `Nat.toUInt64`, which wraps a value at or above `2^64`.  A context the HAL
 handed over satisfies it (`Kernel.Architecture.registerFileOfTrapContext_wordBounded`);
-carrying it as an invariant of every saved context is registered debt
-(`docs/REGISTERED_DEBT.md`, the `Nat`-backed register file row). -/
+`Kernel.Architecture.registerContextsWordBounded` carries it for every saved
+context and every core's bank, every register-context writer preserves it
+(`SeLe4n/Kernel/Architecture/RegisterContextBounded.lean`), and the live restore
+path discharges it (`Kernel.Architecture.restoreTargetOnCore_user_roundTrip`). -/
 def RegisterFile.wordBounded (rf : RegisterFile) : Prop :=
   rf.pc.valid ∧ rf.sp.valid ∧ rf.pstate.valid ∧ rf.tpidr.valid ∧
     ∀ r : RegName, r.isValid → (rf.gpr r).valid
+
+/-- The all-zero register file — a fresh thread's, and every bank's at boot — is
+word-bounded. -/
+theorem RegisterFile.default_wordBounded : (default : RegisterFile).wordBounded := by
+  refine ⟨?_, ?_, ?_, ?_, fun _ _ => ?_⟩ <;> (show (0 : Nat) < 2 ^ 64; omega)
 
 /-- WS-H12c: Manual `Repr` for `RegisterFile`. Since `gpr` is a function
 (`RegName → RegValue`), only `pc` and `sp` are shown in trace output. -/
@@ -795,7 +811,9 @@ updates the single-core `regs` view. -/
     S1-N / WS-BP BP7.3: the predicate is `RegisterFile.wordBounded` on every
     core's bank, so it covers *all* fields of `RegisterFile`: `pc`, `sp`,
     `pstate` (`SPSR_EL1`, modelled since WS-BP BP7.3), `tpidr` (`TPIDR_EL0`)
-    and every valid GPR index (0..31). -/
+    and every valid GPR index (0..31).  It is the bank half of
+    `Kernel.Architecture.registerContextsWordBounded`, which pairs it with the
+    same bound on every TCB's saved context. -/
 def machineWordBounded (ms : MachineState) : Prop :=
   ∀ (c : CoreId), (ms.regsOnCore c).wordBounded
 
@@ -809,18 +827,29 @@ theorem machineWordBounded_default : machineWordBounded (default : MachineState)
   have hr : (default : MachineState).regsOnCore c = (default : RegisterFile) :=
     PerCoreVector.replicate_get numCores (default : RegisterFile) c
   rw [hr]
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
-  · show (0 : Nat) < 2 ^ 64; omega
-  · show (0 : Nat) < 2 ^ 64; omega
-  · show (0 : Nat) < 2 ^ 64; omega
-  · show (0 : Nat) < 2 ^ 64; omega
-  · intro _ _; show (0 : Nat) < 2 ^ 64; omega
+  exact RegisterFile.default_wordBounded
 
 def readReg (rf : RegisterFile) (r : RegName) : RegValue :=
   rf.gpr r
 
 def writeReg (rf : RegisterFile) (r : RegName) (v : RegValue) : RegisterFile :=
   { rf with gpr := fun r' => if r'.val = r.val then v else rf.gpr r' }
+
+/-- Writing a valid value into a word-bounded file keeps it word-bounded. -/
+theorem writeReg_wordBounded (rf : RegisterFile) (r : RegName) (v : RegValue)
+    (hB : rf.wordBounded) (hv : v.valid) : (writeReg rf r v).wordBounded := by
+  obtain ⟨hPc, hSp, hPs, hTp, hGpr⟩ := hB
+  refine ⟨hPc, hSp, hPs, hTp, fun r' hr' => ?_⟩
+  show RegValue.valid (if r'.val = r.val then v else rf.gpr r')
+  split
+  · exact hv
+  · exact hGpr r' hr'
+
+/-- Writing a 64-bit word into a word-bounded file keeps it word-bounded — the
+form every register writer below the boundary takes. -/
+theorem writeReg_uint64_wordBounded (rf : RegisterFile) (r : RegName) (x : UInt64)
+    (hB : rf.wordBounded) : (writeReg rf r ⟨x.toNat⟩).wordBounded :=
+  writeReg_wordBounded rf r _ hB (RegValue.valid_of_uint64 x)
 
 def readMem (ms : MachineState) (addr : PAddr) : UInt8 :=
   ms.memory addr
