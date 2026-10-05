@@ -8,11 +8,11 @@
 -/
 
 import SeLe4n.Prelude
--- WS-SM SM3.A.6: per-SchedContext lock field requires the abstract
--- operational RwLock specification from SM2.C.  This import does not
--- introduce a cycle: `Concurrency.Locks.RwLock` depends transitively
--- only on `Prelude` (via `Concurrency.Types` and `Concurrency.MemoryModel`).
-import SeLe4n.Kernel.Concurrency.Locks.RwLock
+-- WS-SM SM3.A.6: per-SchedContext lock field needs the RwLock state type
+-- from SM2.C.  Only the types-only module is imported (not the
+-- `Locks.RwLock` specification and its proofs); it depends only on
+-- `Concurrency.Types`.
+import SeLe4n.Kernel.Concurrency.Locks.RwLockState
 
 /-! # SchedContext Types — WS-Z Phase Z1
 

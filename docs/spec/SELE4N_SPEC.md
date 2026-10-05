@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.43` (`lakefile.toml`) |
+| **Package version** | `0.36.44` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 434,031 across 361 Lean files |
+| **Production LoC** | 434,075 across 362 Lean files |
 | **Test LoC** | 88,690 across 71 Lean test suites |
 | **Proved declarations** | 14,410 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -1517,11 +1517,17 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `docs/dev_history/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` §5.3 for
    the full plan.
 
-   **Abstract spec** (`SeLe4n.Kernel.Concurrency.Locks.RwLock`):
+   **Abstract spec** (`SeLe4n.Kernel.Concurrency.Locks.RwLock`,
+   which re-exports its state types from
+   `SeLe4n.Kernel.Concurrency.Locks.RwLockState`):
    `AccessMode` inductive (`.read` / `.write`).  `RwLockState`
    3-field structure (`writerHeld : Option CoreId`, `readers :
    List CoreId`, `waiters : List (CoreId × AccessMode)`).
-   `unheld` canonical seed.  `RwLockOp` 5-constructor inductive
+   `unheld` canonical seed.  The kernel-object model
+   (`Model/Object/Types.lean`, `Reply.lean`, `SchedContext/Types.lean`)
+   imports only the types-only `Locks.RwLockState` module, so the
+   lock's operational specification and proofs are not in the
+   model layer's import closure (v0.36.44).  `RwLockOp` 5-constructor inductive
    (`tryAcquireRead`, `releaseRead`, `tryAcquireWrite`,
    `releaseWrite`, `cancel`).  `cancel` (v0.34.51) is the
    withdrawal a two-phase-locking growing phase needs: it

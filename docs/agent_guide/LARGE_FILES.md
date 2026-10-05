@@ -28,7 +28,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23845 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12495 lines)
 - `SeLe4n/Kernel/API.lean` (~10218 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9480 lines)
 - `docs/spec/SELE4N_SPEC.md` (~8740 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8709 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8235 lines)

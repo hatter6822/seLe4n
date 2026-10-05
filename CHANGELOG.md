@@ -1,3 +1,30 @@
+## v0.36.44 — the object model no longer imports the RwLock proofs
+
+- **The RwLock state types have their own module.**  `AccessMode`,
+  `RwLockState`, `RwLockState.unheld`, its three field witnesses and
+  `RwLockState.default_eq_unheld` move verbatim from
+  `Kernel/Concurrency/Locks/RwLock.lean` into the new
+  `Kernel/Concurrency/Locks/RwLockState.lean`, which imports only
+  `Concurrency.Types` (for `CoreId`).  `Locks/RwLock.lean` imports it, so
+  every `import SeLe4n.Kernel.Concurrency.Locks.RwLock` still sees every
+  name it saw before; no declaration was renamed or restated.
+- **The kernel-object model imports only the types.**
+  `Model/Object/Types.lean`, `Model/Object/Reply.lean` and
+  `Kernel/SchedContext/Types.lean` carried a `lock : RwLockState` field and
+  imported the whole ~9.5k-line operational specification (and, through
+  it, `Concurrency.MemoryModel`) to get it.  They now import
+  `Locks.RwLockState`.  Modules that transitively import `Locks.RwLock`
+  fall from 394 of 433 to 211 of 434 (`Concurrency.MemoryModel`: 399 →
+  217), so editing a RwLock proof no longer rebuilds the object model and
+  everything above it.
+- **`Model/Object/Types.lean` imports `Kernel.SchedContext.Types`, not
+  the `Kernel.SchedContext` hub.**  It needs only the SchedContext object
+  type; the hub also re-exports the budget operations and their
+  invariants, which sat on the model layer's critical path.  The longest
+  import chain falls from 80 modules to 75.
+- Measured with a script over the `import` lines of every module under
+  `SeLe4n/`, `tests/` and `Main.lean`; refs: audit finding SZ-12.
+
 ## v0.36.43 — the GIC serves every BCM2712 SPI; the image refuses to run off its link address
 
 - **The BCM2712 interrupt range is 320 INTIDs, not 224.**  The model, the
