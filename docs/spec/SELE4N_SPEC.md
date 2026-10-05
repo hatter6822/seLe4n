@@ -5028,7 +5028,10 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   the fixed-width `Architecture.TrapContext` — `ffiTrapContext` in,
   `ffiRestoreStageContext` out — with the word round trip proved
   (`TrapContext.word_ofWords`, `TrapContext.ofWords_word`,
-  `registerFileOfTrapContext_trapContextOfRegisterFile`); the syscall seam
+  `registerFileOfTrapContext_trapContextOfRegisterFile`), and the HAL reading
+  the staged object only after the kernel heap reports a live allocation of at
+  least the constructor's 288 bytes and its header names tag `0` with no object
+  fields, halting the system on anything else; the syscall seam
   reads its arguments from that context, once, and the HAL passes it only the
   validated syscall id)
   and saves it into the executing core's bank and the current thread's context

@@ -1595,15 +1595,29 @@ pub fn trap_context_to_lean(words: &crate::trap::TrapContextWords) -> crate::lea
     o
 }
 
+/// The bytes a Lean `Architecture.TrapContext` object occupies: its header and
+/// [`TRAP_CONTEXT_SCALAR_BYTES`] scalar bytes, no object fields.
+pub const TRAP_CONTEXT_OBJECT_BYTES: usize =
+    crate::lean_runtime::HEADER_BYTES + TRAP_CONTEXT_SCALAR_BYTES;
+
 /// The words of the Lean `Architecture.TrapContext` `o`, or `None` when `o` is
-/// not a constructor of that shape (tag `0`, no object fields) — a boundary
-/// defect the caller halts on.
+/// not a constructor of that shape — a boundary defect the caller halts on.
+///
+/// The shape is three facts, each checked before anything past it is read:
+/// `o` is a live kernel-heap allocation of at least
+/// [`TRAP_CONTEXT_OBJECT_BYTES`] bytes (the allocator's record, the only one
+/// there is: the header's `m_cs_sz` is `0` under `LEAN_SMALL_ALLOCATOR`), and
+/// its header names constructor tag `0` with no object fields.  The size check
+/// is what keeps the read in bounds: the header cannot tell a `TrapContext`
+/// from a shorter tag-0 constructor with no object fields, so a layout drift or
+/// a wrong object is refused rather than read past its end.
 ///
 /// # Safety
 ///
-/// `o` must be a scalar or a live Lean object; when it has the shape above it
-/// must be a `TrapContext`, so it carries `TRAP_CONTEXT_SCALAR_BYTES` scalar
-/// bytes.
+/// `o` must be a scalar or a live Lean object, not freed during the call.  Its
+/// size and shape are not part of the contract: both are checked here, and a
+/// pointer the heap does not hold as a live allocation is refused before it
+/// is dereferenced.
 #[must_use]
 pub unsafe fn trap_context_of_lean(
     o: crate::lean_runtime::Obj,
@@ -1611,14 +1625,19 @@ pub unsafe fn trap_context_of_lean(
     if crate::lean_runtime::is_scalar(o) {
         return None;
     }
-    // SAFETY: `o` is a live heap object by the caller's contract.
+    if crate::lean_runtime::allocated_bytes(o)? < TRAP_CONTEXT_OBJECT_BYTES {
+        return None;
+    }
+    // SAFETY: `o` is a live heap allocation of at least
+    // `TRAP_CONTEXT_OBJECT_BYTES ≥ HEADER_BYTES` bytes, checked above.
     let header = unsafe { crate::lean_runtime::header(o) };
     if header.tag != 0 || header.other != 0 {
         return None;
     }
-    // SAFETY: `o` is a `TrapContext` by the caller's contract and the shape
-    // test above, so every offset `8 · i` below `TRAP_CONTEXT_SCALAR_BYTES`
-    // names one of its scalar fields.
+    // SAFETY: with no object fields the scalar area starts at `HEADER_BYTES`,
+    // and every offset `8 · i + 8 ≤ TRAP_CONTEXT_SCALAR_BYTES`, so each read
+    // lies inside the `TRAP_CONTEXT_OBJECT_BYTES` the allocation was checked
+    // to hold.
     Some(core::array::from_fn(|i| unsafe {
         crate::lean_runtime::ctor_get_u64(o, 8 * i)
     }))
@@ -1880,6 +1899,10 @@ mod tests {
         unsafe {
             let header = crate::lean_runtime::header(o);
             assert_eq!((header.tag, header.other), (0, 0));
+            assert_eq!(
+                crate::lean_runtime::allocated_bytes(o),
+                Some(TRAP_CONTEXT_OBJECT_BYTES)
+            );
             for (i, word) in words.iter().enumerate() {
                 assert_eq!(crate::lean_runtime::ctor_get_u64(o, 8 * i), *word);
             }
@@ -1903,6 +1926,51 @@ mod tests {
             crate::lean_runtime::ctor_set(with_fields, 0, crate::lean_runtime::boxed(0));
             assert_eq!(trap_context_of_lean(with_fields), None);
             crate::lean_runtime::dec(with_fields);
+        }
+    }
+
+    /// A tag-0 constructor with no object fields — the header a `TrapContext`
+    /// carries — but fewer scalar bytes is refused on its allocated size, not
+    /// read past its end: the header alone cannot tell the two apart.  The
+    /// one-word-short case is the boundary: a 280-byte object (header plus 272
+    /// scalar bytes) sits in the 280-byte class, one word below
+    /// `TRAP_CONTEXT_OBJECT_BYTES`.
+    #[test]
+    fn a_shorter_tag_zero_constructor_is_refused_on_its_size() {
+        for scalar_bytes in [0, 8, TRAP_CONTEXT_SCALAR_BYTES - 8] {
+            let short = crate::lean_runtime::alloc_ctor(0, 0, scalar_bytes);
+            // SAFETY: `short` is a live object built here.
+            unsafe {
+                let header = crate::lean_runtime::header(short);
+                assert_eq!((header.tag, header.other), (0, 0));
+                assert!(
+                    crate::lean_runtime::allocated_bytes(short).unwrap()
+                        < TRAP_CONTEXT_OBJECT_BYTES
+                );
+                assert_eq!(trap_context_of_lean(short), None);
+                crate::lean_runtime::dec(short);
+            }
+        }
+    }
+
+    /// A pointer the heap does not hold as a live allocation is refused before
+    /// it is dereferenced: an address no heap serves, and an object already
+    /// freed.
+    #[test]
+    fn a_trap_context_pointer_outside_the_heap_is_refused() {
+        let words = [0u64; crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize];
+        let outside = core::ptr::addr_of!(words)
+            .cast_mut()
+            .cast::<crate::lean_runtime::LeanObject>();
+        // SAFETY: `outside` is refused on the heap's metadata, never read.
+        assert_eq!(unsafe { trap_context_of_lean(outside) }, None);
+        let freed = trap_context_to_lean(&words);
+        // SAFETY: `freed` is the live object just built; the release frees it,
+        // and the refusal below reads only the heap's metadata.
+        unsafe {
+            crate::lean_runtime::dec(freed);
+            assert_eq!(crate::lean_runtime::allocated_bytes(freed), None);
+            assert_eq!(trap_context_of_lean(freed), None);
         }
     }
 

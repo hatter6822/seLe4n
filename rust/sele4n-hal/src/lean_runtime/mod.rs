@@ -332,6 +332,20 @@ pub fn fatal(reason: &str) -> ! {
 
 // ==========================================================================
 // Header access
+/// The bytes the heap holds for the allocation at `o` — its size class, or its
+/// page run's whole pages — or `None` when `o` is not a live heap allocation.
+///
+/// This is the only record of an object's size: under the kernel's
+/// `LEAN_SMALL_ALLOCATOR` configuration `lean_set_st_header` writes `m_cs_sz = 0`
+/// and `lean_small_object_size` asks the allocator (`lean_small_mem_size`), so
+/// the header says nothing about how many bytes follow it.  The heap reads its
+/// out-of-band metadata only, never the memory at `o`, which is why this is
+/// safe for any pointer.
+#[must_use]
+pub fn allocated_bytes(o: Obj) -> Option<usize> {
+    mem::usable_size(o as usize)
+}
+
 // ==========================================================================
 //
 // Every function below takes a pointer to a live heap object — never a boxed

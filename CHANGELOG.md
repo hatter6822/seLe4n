@@ -44,6 +44,21 @@
   frees a heap probe outside the entry lock while other cores may be serving
   entries.  `lean_heap.rs`'s concurrency note now states those two callers in
   place of the old, inaccurate reason.
+- **The restore boundary checks the object's size before reading it.**  A
+  review found that `trap_context_of_lean` accepted any tag-0 constructor with
+  no object fields and then read 35 words: the header cannot tell a
+  `TrapContext` from a shorter constructor of the same shape (under
+  `LEAN_SMALL_ALLOCATOR`, `lean_set_st_header` writes `m_cs_sz = 0`, and
+  `lean_small_object_size` asks the allocator), so a layout drift would have
+  read past the object instead of halting.  It now refuses, before any read,
+  a pointer the kernel heap does not report as a live allocation of at least
+  `TRAP_CONTEXT_OBJECT_BYTES` (header plus 280 scalar bytes), read through the
+  new `lean_runtime::allocated_bytes` (the heap's out-of-band size record,
+  the same one `lean_small_mem_size` serves).  New tests refuse tag-0,
+  no-field constructors of 0, 8 and 272 scalar bytes, a pointer outside the
+  heap and a freed object, and pin the round-tripped object at exactly
+  `TRAP_CONTEXT_OBJECT_BYTES`; with the size check disabled the refusal tests
+  fail.
 - Tier 3: the restore and syscall-argument anchors follow the new relation
   (the stage call before the commit; the step fed from `trapped`; the
   one-argument extern; the trap-frame context layout in `trap.rs`), and a
