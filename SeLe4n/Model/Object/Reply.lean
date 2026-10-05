@@ -8,10 +8,10 @@
 -/
 
 import SeLe4n.Prelude
--- WS-SM SM6.D: per-Reply lock field requires the abstract operational RwLock
--- specification from SM2.C.  This import does not introduce a cycle:
--- `Concurrency.Locks.RwLock` depends transitively only on `Prelude`.
-import SeLe4n.Kernel.Concurrency.Locks.RwLock
+-- WS-SM SM6.D: per-Reply lock field needs the RwLock state type from SM2.C.
+-- Only the types-only module is imported (not the `Locks.RwLock`
+-- specification and its proofs); it depends only on `Concurrency.Types`.
+import SeLe4n.Kernel.Concurrency.Locks.RwLockState
 
 /-! # Reply object — WS-SM SM6.D
 

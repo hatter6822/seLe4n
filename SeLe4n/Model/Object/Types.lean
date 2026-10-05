@@ -10,18 +10,22 @@
 import SeLe4n.Machine
 import SeLe4n.Model.Fault
 import SeLe4n.Kernel.RobinHood
-import SeLe4n.Kernel.SchedContext
+-- Only the SchedContext object type is needed here, not the subsystem hub
+-- (`Kernel.SchedContext` also re-exports the budget operations and their
+-- invariants, which would sit on the model layer's critical path).
+import SeLe4n.Kernel.SchedContext.Types
 import SeLe4n.Model.Object.NoDupList
 import SeLe4n.Model.Object.UniqueSlotMap
 -- WS-SM SM3.A.1..A.4/A.6..A.9: per-object lock state.  Every kernel-object
 -- struct carries a `lock : RwLockState` field whose default `RwLockState.unheld`
--- means freshly-allocated objects start with the lock available.  Wires the
--- abstract operational specification from SM2.C (`RwLockState`, `unheld`)
--- into the model layer so SM3.B..E can extract per-transition lock sets,
--- prove deadlock-freedom (Theorem 2.1.9), serializability (Theorem 2.1.10),
--- and single-core proof preservation (Corollary 2.1.11) without further
--- structural changes.
-import SeLe4n.Kernel.Concurrency.Locks.RwLock
+-- means freshly-allocated objects start with the lock available.  Only the
+-- SM2.C state types (`AccessMode`, `RwLockState`, `unheld`) are imported
+-- here; the operational specification and its proofs (`Locks.RwLock`) stay
+-- out of the model layer's import closure, and SM3.B..E import them where
+-- they extract lock sets and prove deadlock-freedom (Theorem 2.1.9),
+-- serializability (Theorem 2.1.10) and single-core proof preservation
+-- (Corollary 2.1.11).
+import SeLe4n.Kernel.Concurrency.Locks.RwLockState
 
 namespace SeLe4n.Model
 
