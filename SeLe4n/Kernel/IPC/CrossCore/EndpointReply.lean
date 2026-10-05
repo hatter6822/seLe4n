@@ -46,10 +46,10 @@ per-object lock-set discipline:
   on a `blockedOnSend` rendezvous the woken sender is routed to *its* home core
   via `wakeThread` (surfacing the optional SGI).  A `blockedOnCall` sender
   becomes `blockedOnReply` (not woken), exactly as single-core.
-* **`endpointReplyRecvOnCore`** — the cross-core generalisation of
-  `endpointReplyRecv`: the reply leg (`endpointReplyOnCore`) then the receive leg
-  (`endpointReceiveDualOnCore`), surfacing the union of both legs' cross-core
-  SGIs.
+* The composed ReplyRecv, `endpointReplyRecvOnCore`, lives in
+  `IPC/CrossCore/EndpointReplyRecv.lean`: the reply leg above, the donation pop,
+  the capability-installing receive leg, the post-receive donation and the
+  receive leg's priority hand-off — the one transition the `.replyRecv` arm runs.
 
 The single-core forms (in `IPC.DualQueue.Transport`) remain the canonical
 bootCore semantics; these cross-core transitions substitute only the scheduler
@@ -784,31 +784,6 @@ theorem endpointReceiveDualWithCapsOnCore_blocked_installs_nothing
   unfold endpointReceiveDualWithCapsOnCore
   simp [hRecv, hBlocked]
 
-/-- WS-SM SM6.C.5 (plan §3.1): reply-and-receive across cores.
-
-The cross-core generalisation of `endpointReplyRecv`: the reply leg
-(`endpointReplyOnCore receiver replyTarget …` — the server `receiver` replies to
-the recorded caller `replyTarget`) then the receive leg
-(`endpointReceiveDualOnCore endpointId receiver …` — the server receives its next
-request).  Surfaces the **union** of both legs' cross-core SGIs (the reply-leg
-caller wake and, on a `blockedOnSend` rendezvous, the receive-leg sender wake).
-
-On any failed leg the pre-state is returned (`withLockSet` clean release), so the
-combined op is all-or-nothing exactly as the single-core `endpointReplyRecv`. -/
-def endpointReplyRecvOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
-    -- WS-SM SM6.D (#7.2 fold): the reply object the server supplies for the *next*
-    -- caller on the receive leg, threaded into the folded `endpointReceiveDualOnCore`.
-    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
-    (st : SystemState) :
-    SystemState × Except KernelError (List (CoreId × SgiKind)) :=
-  match endpointReplyOnCore receiver replyTarget msg executingCore st with
-  | (_, .error e) => (st, .error e)
-  | (st1, .ok replySgi?) =>
-      match endpointReceiveDualOnCore endpointId receiver replyId executingCore st1 with
-      | (_, .error e) => (st, .error e)
-      | (st2, .ok (_, recvSgi?)) => (st2, .ok (replySgi?.toList ++ recvSgi?.toList))
-
 -- ============================================================================
 -- §2  Pre-resolution helpers + state-resolved lock-sets (plan §3.1)
 -- ============================================================================
@@ -1277,7 +1252,7 @@ theorem receiveRendezvousCallSender?_of_blockedOnCall (st : SystemState)
 
 /-- **WS-OD OD3.5: the SchedContext the receive leg's rendezvous donates.**
 
-`replyRecvBody`'s post-receive stage is `replyRecvPostReceiveDonation`, and it
+`endpointReplyRecvOnCore`'s post-receive stage is `replyRecvPostReceiveDonation`, and it
 does not stop at the return: when the thread the receive leg dequeues turns out
 to have `Call`ed, it runs `applyCallDonationOnCore nextThread tid`, whose
 `donateSchedContext` writes the **new** caller's SchedContext.  That object is
@@ -2933,50 +2908,6 @@ theorem endpointReplyOnCore_atomic_under_lockSet
               (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?
             replyId? belowHeadReply? outerCaller? donatedHead?
             answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)).2) :=
-  lockSet_atomic_under_2pl _ executingCore _ s
-
-/-- WS-SM SM6.C.5 (companion): the cross-core `replyRecv` is likewise a single
-2PL-atomic step under its `replyRecv` lock-set. -/
-theorem endpointReplyRecvOnCore_atomic_under_lockSet
-    (endpointId : SeLe4n.ObjId) (receiver target : SeLe4n.ThreadId) (msg : IpcMessage)
-    (replyId : Option SeLe4n.ReplyId)
-    (executingCore : CoreId) (cnRoot : SeLe4n.ObjId) (newSender? : Option SeLe4n.ThreadId)
-    (donatedSc? : Option SeLe4n.SchedContextId) (donatedOwner? : Option SeLe4n.ThreadId)
-    -- WS-OD OD3.5: stated over the two members OD3.5 added too, so the atomicity
-    -- claim covers the footprint a live `.replyRecv` actually acquires.
-    (installsCaps : Bool) (donationServer? : Option SeLe4n.ThreadId)
-    (redonatedSc? : Option SeLe4n.SchedContextId)
-    -- WS-OD OD3.7: and over both below-head reads, for the same reason.
-    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
-    -- WS-OD OD3.13 / `v0.35.4`: and over the queue neighbour, the re-donation's
-    -- old head and the returned context's head.
-    (queueNeighbour? : Option SeLe4n.ThreadId)
-    (redonationOldHead? donatedHead? : Option SeLe4n.ReplyId)
-    -- **PR #894 review / WS-RM (`v0.35.6`)**: and over the invoker's own
-    -- pre-receive return and the frame the reply leg's splice writes.  Stated
-    -- rather than defaulted: an atomicity claim checked at one argument value
-    -- while the resolved footprint supplies another is about a different
-    -- footprint.
-    (preReturnSc? : Option SeLe4n.SchedContextId) (preReturnOwner? : Option SeLe4n.ThreadId)
-    (preReturnHead? preReturnBelowHead? : Option SeLe4n.ReplyId)
-    (preReturnOuterCaller? : Option SeLe4n.ThreadId)
-    (answeredFrameAbove? : Option SeLe4n.ReplyId)
-    -- **WS-HP HP3.1**: and at the frame-below arity -- the second member the
-    -- removal's splice writes.
-    (answeredFrameBelow? : Option SeLe4n.ReplyId)
-    -- **WS-HP HP10.6**: and at the origin-recipient arity.
-    (originRecipient? : Option SeLe4n.ThreadId)
-    (s : SystemState) :
-    withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId installsCaps donationServer? redonatedSc? belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead? preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead? preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?)
-        executingCore (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore) s
-      = (unwindAll executingCore
-          (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId installsCaps donationServer? redonatedSc? belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead? preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead? preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence.reverse
-          (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore
-            (acquireAll executingCore
-              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId installsCaps donationServer? redonatedSc? belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead? preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead? preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)).1,
-         (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore
-            (acquireAll executingCore
-              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId installsCaps donationServer? redonatedSc? belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead? preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead? preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================

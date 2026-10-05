@@ -182,7 +182,7 @@ theorem storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent
     (hNotCall : ∀ epId, ipcState ≠ .blockedOnCall epId)
     (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
     ipcStateQueueMembershipConsistent st' := by
-  unfold storeTcbIpcStateAndMessage at hStore
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>
@@ -278,7 +278,7 @@ theorem storeTcbIpcState_preserves_ipcStateQueueMembershipConsistent
     (hNotCall : ∀ epId, ipcState ≠ .blockedOnCall epId)
     (hStore : storeTcbIpcState st tid ipcState = .ok st') :
     ipcStateQueueMembershipConsistent st' := by
-  unfold storeTcbIpcState at hStore
+  unfold storeTcbIpcState modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>
@@ -370,7 +370,7 @@ theorem storeTcbIpcState_general_preserves_ipcStateQueueMembershipConsistent
              st'.objects[prev.toObjId]? = some (KernelObject.tcb prevTcb) ∧
              prevTcb.queueNext = some tid)) :
     ipcStateQueueMembershipConsistent st' := by
-  unfold storeTcbIpcState at hStore
+  unfold storeTcbIpcState modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>
@@ -735,7 +735,7 @@ theorem storeTcbPendingMessage_preserves_ipcStateQueueMembershipConsistent
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbPendingMessage st tid msg = .ok st') :
     ipcStateQueueMembershipConsistent st' := by
-  unfold storeTcbPendingMessage at hStore
+  unfold storeTcbPendingMessage modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>
@@ -856,7 +856,7 @@ theorem storeTcbIpcStateAndMessage_general_preserves_ipcStateQueueMembershipCons
              st'.objects[prev.toObjId]? = some (KernelObject.tcb prevTcb) ∧
              prevTcb.queueNext = some tid)) :
     ipcStateQueueMembershipConsistent st' := by
-  unfold storeTcbIpcStateAndMessage at hStore
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>
@@ -1042,7 +1042,7 @@ theorem storeTcbQueueLinks_preserves_ipcStateQueueMembershipConsistent
   -- Helper: epId ≠ target.toObjId (endpoint slot ≠ TCB slot)
   have hNeEp : ∀ epId ep, st.objects[epId]? = some (.endpoint ep) → epId ≠ target.toObjId := by
     intro epId ep hEp h; rw [h] at hEp
-    unfold storeTcbQueueLinks at hStep
+    unfold storeTcbQueueLinks modifyTcb at hStep
     cases hLk : lookupTcb st target with
     | none => simp [hLk] at hStep
     | some tcb => have := lookupTcb_some_objects st target tcb hLk; rw [this] at hEp; cases hEp
@@ -1319,7 +1319,7 @@ theorem storeTcbQueueLinks_stored_queueNext
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧ tcb'.queueNext = next := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1342,7 +1342,7 @@ theorem storeTcbQueueLinks_stored_queuePrev
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧ tcb'.queuePrev = prev := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1396,7 +1396,7 @@ theorem storeTcbIpcStateAndMessage_partial_preserves_ipcStateQueueMembershipCons
     (hNotCall : ∀ epId, ipcState ≠ .blockedOnCall epId)
     (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
     ipcStateQueueMembershipConsistent st' := by
-  unfold storeTcbIpcStateAndMessage at hStore
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>
@@ -1501,7 +1501,7 @@ theorem storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsist
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbReceiveComplete st tid msg = .ok st') :
     ipcStateQueueMembershipConsistent st' := by
-  unfold storeTcbReceiveComplete at hStore
+  unfold storeTcbReceiveComplete modifyTcb at hStore
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStore
   | some tcb =>

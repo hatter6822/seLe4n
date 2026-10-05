@@ -107,7 +107,7 @@ theorem storeTcbIpcState_preserves_blockedThreadsPendingMessageConsistent
       | .blockedOnCall _ => tcb.pendingMessage.isSome
       | _ => True) :
     blockedThreadsPendingMessageConsistent st' := by
-  unfold storeTcbIpcState at hStore
+  unfold storeTcbIpcState modifyTcb at hStore
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStore
   | some tcb =>
@@ -153,7 +153,7 @@ theorem storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsist
       | .blockedOnCall _ => msg.isSome
       | _ => True) :
     blockedThreadsPendingMessageConsistent st' := by
-  unfold storeTcbIpcStateAndMessage at hStore
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStore
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStore
   | some tcb =>
@@ -194,7 +194,7 @@ theorem storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent
     (hStore : storeTcbReceiveComplete st tid msg = .ok st')
     (hInv : blockedThreadsPendingMessageConsistent st) :
     blockedThreadsPendingMessageConsistent st' := by
-  unfold storeTcbReceiveComplete at hStore
+  unfold storeTcbReceiveComplete modifyTcb at hStore
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStore
   | some tcb =>
@@ -230,7 +230,7 @@ theorem storeTcbQueueLinks_preserves_blockedThreadsPendingMessageConsistent
     (hStore : storeTcbQueueLinks st tid prev pprev next = .ok st')
     (hInv : blockedThreadsPendingMessageConsistent st) :
     blockedThreadsPendingMessageConsistent st' := by
-  unfold storeTcbQueueLinks at hStore
+  unfold storeTcbQueueLinks modifyTcb at hStore
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStore
   | some tcb =>
@@ -278,7 +278,7 @@ theorem storeTcbPendingMessage_preserves_blockedThreadsPendingMessageConsistent
       | .blockedOnCall _ => msg.isSome
       | _ => True) :
     blockedThreadsPendingMessageConsistent st' := by
-  unfold storeTcbPendingMessage at hStore
+  unfold storeTcbPendingMessage modifyTcb at hStore
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStore
   | some tcb =>

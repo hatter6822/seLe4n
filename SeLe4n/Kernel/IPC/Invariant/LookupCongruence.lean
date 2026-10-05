@@ -703,7 +703,7 @@ theorem storeTcbIpcStateAndMessage_offSchedulerAgrees {s1 s2 r2 : SystemState}
     (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
     (h2 : storeTcbIpcStateAndMessage s2 tid ipc msg = .ok r2) :
     ∃ r1, storeTcbIpcStateAndMessage s1 tid ipc msg = .ok r1 ∧ OffSchedulerAgrees r1 r2 := by
-  unfold storeTcbIpcStateAndMessage at h2 ⊢
+  unfold storeTcbIpcStateAndMessage modifyTcb at h2 ⊢
   rw [lookupTcb_congr_getElem hRel.objects tid] at h2
   cases hL : lookupTcb s1 tid with
   | none => simp only [hL] at h2; cases h2
@@ -733,7 +733,7 @@ theorem storeTcbQueueLinks_offSchedulerAgrees {s1 s2 r2 : SystemState}
     (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
     (h2 : storeTcbQueueLinks s2 tid prev pprev next = .ok r2) :
     ∃ r1, storeTcbQueueLinks s1 tid prev pprev next = .ok r1 ∧ OffSchedulerAgrees r1 r2 := by
-  unfold storeTcbQueueLinks at h2 ⊢
+  unfold storeTcbQueueLinks modifyTcb at h2 ⊢
   rw [lookupTcb_congr_getElem hRel.objects tid] at h2
   cases hL : lookupTcb s1 tid with
   | none => simp only [hL] at h2; cases h2

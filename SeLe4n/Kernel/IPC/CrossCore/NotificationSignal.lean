@@ -945,7 +945,7 @@ theorem notification_ne_waiter_of_store
     by_cases hRes : waiter.isReserved
     · simp [hRes]
     · simp [hRes, hNtfn]
-  simp [storeTcbIpcStateAndMessage, hLk] at hMsg
+  simp [storeTcbIpcStateAndMessage, modifyTcb, hLk] at hMsg
 
 /-- WS-SM SM6.B.3 (preservation through the cross-core wake): after the
 cross-core signal, the **observable** notification has exactly the remaining

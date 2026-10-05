@@ -89,8 +89,10 @@ syscalls whose arm SM6 re-routed through a cross-core wrapper.
 
 Read off `API.dispatchWithCapChecked` / `dispatchCapabilityOnly` arm by arm, not
 from the plan: `.call` runs `endpointCallCrossCoreDispatchChecked`, `.reply` runs
-`endpointReplyCrossCoreDispatchChecked`, `.replyRecv` runs `replyRecvBody` (the
-two-leg composition), `.receive` runs the per-core `endpointReceiveDualWithCapsOnCore`,
+`endpointReplyCrossCoreDispatchChecked`, `.replyRecv` runs `endpointReplyRecvOnCore`
+(`IPC/CrossCore/EndpointReplyRecv.lean`: reply leg, donation pop, capability-installing
+receive leg, post-receive donation, receive-leg priority hand-off), `.receive` runs
+the per-core `endpointReceiveDualWithCapsOnCore`,
 the two notification arms run their bound / wait cross-core dispatches, and
 `.tcbSuspend` runs `suspendThreadOnCore`.
 
@@ -102,7 +104,7 @@ re-routes *where* a transition lands, never *what authority* it demands — and
 Two of these entries name an operation that performs no flow check itself:
 `.receive` runs the *unchecked* `endpointReceiveDualWithCapsOnCore` because its enclosing
 arm has already rejected a denied `endpoint→receiver` flow with `.flowDenied`
-before reaching it, and `replyRecvBody` likewise runs under the arm's
+before reaching it, and `endpointReplyRecvOnCore` likewise runs under the arm's
 `securityFlowsTo` guard on `replier→prevCaller`.  That is the same convention the
 canonical boundary uses (`cspaceDelete` names `cspaceDeleteSlot`, not a
 `…Checked` wrapper): the entry names the operation reached, the class records how
@@ -112,7 +114,7 @@ the function gates, which it does not. -/
 def crossCoreEnforcementEntries : List EnforcementClass :=
   [ .policyGated "endpointCallCrossCoreDispatchChecked"
   , .policyGated "endpointReplyCrossCoreDispatchChecked"
-  , .policyGated "replyRecvBody"
+  , .policyGated "endpointReplyRecvOnCore"
   -- PR #873 round 6: the `.receive` arm was routed off the bare per-core
   -- receive, which delivered a parked sender's message wholesale and installed
   -- none of the capabilities it was carrying — so a transfer happened or not
@@ -242,7 +244,7 @@ second thing to keep in sync). -/
 def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .call                => "endpointCallCrossCoreDispatchChecked"
   | .reply               => "endpointReplyCrossCoreDispatchChecked"
-  | .replyRecv           => "replyRecvBody"
+  | .replyRecv           => "endpointReplyRecvOnCore"
   | .receive             => "endpointReceiveDualWithCapsOnCore"
   | .notificationSignal  => "notificationSignalBoundCrossCoreDispatchChecked"
   | .notificationWait    => "notificationWaitCrossCoreDispatchChecked"

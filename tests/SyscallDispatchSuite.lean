@@ -1903,13 +1903,13 @@ private def sd051_receiveLinkCaller : IO Unit := do
          | .error _ => false)
         "a non-Call (Send) rendezvous must not establish a reply link"
 
-/-- SD-052: faithful seL4-MCS `.replyRecv` body (`replyRecvBody`). Replies to the
+/-- SD-052: faithful seL4-MCS `.replyRecv` body (`endpointReplyRecvOnCore`). Replies to the
     recorded previous caller (resolved from the reply object), CONSUMES the answered
     single-use reply link, then receives — re-linking the same reply object to the
     next caller (here none is queued, so the link stays consumed and the server
     blocks on the endpoint). Closes the prior gap where `.replyRecv` delivered the
     reply but left `reply.caller` / `replyObject` set (in-use reply cap leak). -/
-private def sd052_replyRecvBody : IO Unit := do
+private def sd052_endpointReplyRecvOnCore : IO Unit := do
   let server  : SeLe4n.ThreadId := ⟨1⟩
   let clientA : SeLe4n.ThreadId := ⟨2⟩
   let epId    : SeLe4n.ObjId := ⟨10⟩
@@ -1925,7 +1925,7 @@ private def sd052_replyRecvBody : IO Unit := do
       |>.build)
   let msg : IpcMessage :=
     { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
-  match SeLe4n.Kernel.replyRecvBody epId server rid clientA msg (SeLe4n.ObjId.ofNat 0)
+  match SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid clientA msg (SeLe4n.ObjId.ofNat 0)
       (SeLe4n.Slot.ofNat 0) bootCoreId st with
   | .ok (_, st') =>
       expect "sd052a_prev_caller_replied"
@@ -1940,7 +1940,7 @@ private def sd052_replyRecvBody : IO Unit := do
       expect "sd052d_server_blocked_on_receive"
         ((st'.getTcb? server).any (fun t => decide (t.ipcState = .blockedOnReceive epId)))
         "the server should block on the endpoint (no next sender queued)"
-  | .error _ => failLine "sd052_replyRecvBody" "replyRecvBody should succeed"
+  | .error _ => failLine "sd052_endpointReplyRecvOnCore" "endpointReplyRecvOnCore should succeed"
 
 /-- SD-052b (PR #822 review): a PASSIVE server (running on a donated SchedContext)
     that does `.replyRecv` and immediately rendezvouses with a *queued* `Call` must
@@ -1999,9 +1999,9 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
   | (st1, .ok _) =>
       let msg : IpcMessage :=
         { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
-      match SeLe4n.Kernel.replyRecvBody epId server rid clientA msg (SeLe4n.ObjId.ofNat 0)
+      match SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid clientA msg (SeLe4n.ObjId.ofNat 0)
           (SeLe4n.Slot.ofNat 0) bootCoreId st1 with
-      | .error _ => failLine "sd052b" "replyRecvBody should succeed"
+      | .error _ => failLine "sd052b" "endpointReplyRecvOnCore should succeed"
       | .ok (_, st') =>
           expect "sd052b_prev_caller_replied"
             ((st'.getTcb? clientA).any (fun t => decide (t.ipcState = .ready)))
@@ -2063,9 +2063,9 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
     (SeLe4n.Kernel.replyFrameHeadHolder? st0 rid == some (scA, server))
     "the frame must head the context the RECORDED server holds, not the delegate"
   -- No queued sender on the endpoint → the delegate blocks on the receive leg.
-  match SeLe4n.Kernel.replyRecvBody epId delegate rid clientA msg (SeLe4n.ObjId.ofNat 0)
+  match SeLe4n.Kernel.endpointReplyRecvOnCore epId delegate rid clientA msg (SeLe4n.ObjId.ofNat 0)
       (SeLe4n.Slot.ofNat 0) bootCoreId st0 with
-  | .error _ => failLine "sd052c" "delegated replyRecvBody should succeed (cap-based authority)"
+  | .error _ => failLine "sd052c" "delegated endpointReplyRecvOnCore should succeed (cap-based authority)"
   | .ok (_, st') =>
       expect "sd052c_prev_caller_replied"
         ((st'.getTcb? clientA).any (fun t => decide (t.ipcState = .ready)))
@@ -2290,7 +2290,7 @@ def main : IO Unit := do
   sd050_bindNotification_requires_ntfn_cap
   dispatcherRefusesCallerNotCurrentOnCore
   sd051_receiveLinkCaller
-  sd052_replyRecvBody
+  sd052_endpointReplyRecvOnCore
   sd052b_replyRecv_donation_switch
   sd052c_replyRecv_delegated_returns_recorded_server_donation
   sd053_serverFirstLink

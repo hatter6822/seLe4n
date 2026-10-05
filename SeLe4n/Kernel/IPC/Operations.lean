@@ -33,8 +33,9 @@ Decomposed into:
   `Operations -> Donation -> Transport -> Core -> Operations` cycle.
 
 The transport-dependent donation wrappers
-(`endpointReplyWithDonation`, `endpointReplyRecvWithDonation`; the Call form
-was deleted at `v0.35.192`, superseded by `endpointCallCrossCoreDispatch`)
+(`endpointReplyWithDonation`; the Call form was deleted at `v0.35.192`,
+superseded by `endpointCallCrossCoreDispatch`, and the ReplyRecv form at
+`v0.36.49`, superseded by `endpointReplyRecvOnCore`)
 remain in
 `SeLe4n.Kernel.IPC.Operations.Donation` and are importable directly from
 consumers that need them; they are NOT re-exported here by design (per

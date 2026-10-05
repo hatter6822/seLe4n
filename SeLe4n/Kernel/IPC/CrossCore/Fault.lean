@@ -585,7 +585,7 @@ stage.  Both branches fail closed with the post-state discarded.
 ## What this seam does not yet cover
 
 `.replyRecv` — the *idiomatic* server loop, and the one a real fault handler
-would use — does **not** route through here.  `replyRecvBody` composes
+would use — does **not** route through here.  `endpointReplyRecvOnCore` composes
 `endpointReplyOnCore` with a receive leg and a donation return in one
 transition, so the fault branch cannot simply be substituted for its reply
 leg: a fault reply restarts or abandons the answered thread instead of

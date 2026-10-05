@@ -360,7 +360,7 @@ theorem storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
     (h : queuePPrevAgreesWithPrev st) : queuePPrevAgreesWithPrev st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hLk : lookupTcb st tid with
   | none => rw [hLk] at hStep; cases hStep
   | some tcb =>
@@ -794,7 +794,7 @@ theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink, hAcyclic, hPP, hHD⟩ := hInv
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -888,7 +888,7 @@ theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink, hAcyclic, hPP, hHD⟩ := hInv
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -944,7 +944,7 @@ theorem storeTcbReceiveComplete_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink, hAcyclic, hPP, hHD⟩ := hInv
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -996,7 +996,7 @@ theorem storeTcbPendingMessage_preserves_dualQueueSystemInvariant
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpInv, hLink, hAcyclic, hPP, hHD⟩ := hInv
-  unfold storeTcbPendingMessage at hStep
+  unfold storeTcbPendingMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1190,7 +1190,7 @@ theorem storeTcbQueueLinks_result_tcb
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     ∃ origTcb, lookupTcb st tid = some origTcb ∧
     st'.objects[tid.toObjId]? = some (.tcb (tcbWithQueueLinks origTcb prev pprev next)) := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>

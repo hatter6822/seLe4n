@@ -133,7 +133,7 @@ private theorem ipcInvariantFull_of_exceptDonationOwner_of_no_edge
   · exact hBlocked
 
 -- ============================================================================
--- §3  `replyRecvBody` — the `.replyRecv` three-stage composite
+-- §3  `endpointReplyRecvOnCore` — the `.replyRecv` three-stage composite
 -- ============================================================================
 
 /-- **`.replyRecv`'s composite bundle**: reply leg (relaxed at the woken
@@ -153,7 +153,7 @@ accessor is derived from `replyRecvPopDonation` and is total, so it stays a
 pre-state-computable expression and the pack stays flat.  The pop's own two
 obligations (`hSrvIdle1`, `hStackValid1`) are stated at the reply leg's state,
 which is where it runs. -/
-theorem replyRecvBody_preserves_ipcInvariantFull
+theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
@@ -238,10 +238,10 @@ theorem replyRecvBody_preserves_ipcInvariantFull
             (endpointReplyOnCore tid prevCaller msg ec st).1)
           st2 = .ok ((), st3) →
         st3.objects.invExt))
-    (hStep : replyRecvBody epId tid rid prevCaller msg receiverCspaceRoot
+    (hStep : endpointReplyRecvOnCore epId tid rid prevCaller msg receiverCspaceRoot
       receiverSlotBase ec st = .ok (summary, stOut)) :
     ipcInvariantFull stOut ∧ stOut.objects.invExt := by
-  unfold replyRecvBody at hStep
+  unfold endpointReplyRecvOnCore at hStep
   dsimp only [] at hStep
   have hExc1 := endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner tid
     prevCaller msg ec st hReach.ipcInvariantFull hReach.objects_invExt
@@ -1148,7 +1148,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               obtain ⟨hNoEdge1, hHolderDon1, hHolderIdle1, hStackValid1, hOriginCoh1,
                   hCleanupStack1, hReady1, hBudgets1, hRidFresh1, hBadges1, hRetStage⟩ :=
                 hPack.replyRecvStage rid prevCaller replyBadge epId hSy hTgt hRR
-              cases hBody : replyRecvBody epId tid rid prevCaller
+              cases hBody : endpointReplyRecvOnCore epId tid rid prevCaller
                   { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size, caps := #[], badge := replyBadge }
                   gate.cspaceRoot decoded.capRecvSlot executingCore st with
               | error e => simp only [hBody] at hStep; cases hStep
@@ -1156,7 +1156,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   obtain ⟨summary, stB⟩ := pairB
                   simp only [hBody] at hStep
                   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                  obtain ⟨hInvB, hObjInvB⟩ := replyRecvBody_preserves_ipcInvariantFull
+                  obtain ⟨hInvB, hObjInvB⟩ := endpointReplyRecvOnCore_preserves_ipcInvariantFull
                     epId tid rid prevCaller _ gate.cspaceRoot decoded.capRecvSlot
                     executingCore st stB summary
                     hPack.reachable hNoEdge1 hHolderDon1 hHolderIdle1 hStackValid1

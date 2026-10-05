@@ -216,7 +216,7 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent
       st.objects[tid.toObjId]? = some (.tcb tcbTid) →
       queueNextBlockingMatch tcbA.ipcState ipcState) :
     queueNextBlockingConsistent st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some origTcb =>
@@ -336,7 +336,7 @@ theorem storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent
       st.objects[epId]? = some (.endpoint ep) →
       ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid) :
     queueHeadBlockedConsistent st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -374,7 +374,7 @@ theorem storeTcbIpcStateAndMessage_ready_preserves_queueHeadBlockedConsistent
     (hStep : storeTcbIpcStateAndMessage st tid .ready msg = .ok st') :
     queueHeadBlockedConsistent st' := by
   have hMem : ∃ tcbTid, st.objects[tid.toObjId]? = some (.tcb tcbTid) := by
-    unfold storeTcbIpcStateAndMessage at hStep
+    unfold storeTcbIpcStateAndMessage modifyTcb at hStep
     cases hL : lookupTcb st tid with
     | none => simp [hL] at hStep
     | some t => exact ⟨t, lookupTcb_some_objects st tid t hL⟩
@@ -393,7 +393,7 @@ theorem storeTcbPendingMessage_preserves_queueHeadBlockedConsistent
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
     queueHeadBlockedConsistent st' := by
-  unfold storeTcbPendingMessage at hStep
+  unfold storeTcbPendingMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -436,7 +436,7 @@ theorem storeTcbReceiveComplete_preserves_queueNextBlockingConsistent
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     queueNextBlockingConsistent st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some origTcb =>
@@ -480,7 +480,7 @@ theorem storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent
       st.objects[epId]? = some (.endpoint ep) →
       ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid) :
     queueHeadBlockedConsistent st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -519,7 +519,7 @@ theorem storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent
       st.objects[epId]? = some (.endpoint ep) →
       ep.receiveQ.tail ≠ some tid ∧ ep.sendQ.tail ≠ some tid) :
     endpointQueueTailBlockedConsistent st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -554,7 +554,7 @@ theorem storeTcbPendingMessage_preserves_queueNextBlockingConsistent
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
     queueNextBlockingConsistent st' := by
-  unfold storeTcbPendingMessage at hStep
+  unfold storeTcbPendingMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some origTcb =>
@@ -795,7 +795,7 @@ theorem storeTcbIpcState_preserves_queueNextBlockingConsistent
       st.objects[tid.toObjId]? = some (.tcb tcbTid) →
       queueNextBlockingMatch tcbA.ipcState ipcState) :
     queueNextBlockingConsistent st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some origTcb =>
@@ -958,7 +958,7 @@ theorem storeTcbIpcState_preserves_queueHeadBlockedConsistent
       st.objects[epId]? = some (.endpoint ep) →
       ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid) :
     queueHeadBlockedConsistent st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1084,7 +1084,7 @@ theorem storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
       st.objects[epId]? = some (.endpoint ep) →
       ep.receiveQ.tail ≠ some tid ∧ ep.sendQ.tail ≠ some tid) :
     endpointQueueTailBlockedConsistent st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1117,7 +1117,7 @@ theorem storeTcbPendingMessage_preserves_endpointQueueTailBlockedConsistent
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
     endpointQueueTailBlockedConsistent st' := by
-  unfold storeTcbPendingMessage at hStep
+  unfold storeTcbPendingMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1155,7 +1155,7 @@ theorem storeTcbIpcState_preserves_endpointQueueTailBlockedConsistent
       st.objects[epId]? = some (.endpoint ep) →
       ep.receiveQ.tail ≠ some tid ∧ ep.sendQ.tail ≠ some tid) :
     endpointQueueTailBlockedConsistent st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1779,7 +1779,7 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked
       (∀ ep, (tcbA.ipcState = .blockedOnSend ep ∨ tcbA.ipcState = .blockedOnCall ep) →
         (ipcState = .blockedOnSend ep ∨ ipcState = .blockedOnCall ep))) :
     queueNextTargetBlocked st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some origTcb =>
@@ -1930,7 +1930,7 @@ theorem storeTcbIpcState_preserves_queueNextTargetBlocked
       (∀ ep, (tcbA.ipcState = .blockedOnSend ep ∨ tcbA.ipcState = .blockedOnCall ep) →
         (ipcState = .blockedOnSend ep ∨ ipcState = .blockedOnCall ep))) :
     queueNextTargetBlocked st' := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some origTcb =>
@@ -2004,7 +2004,7 @@ theorem storeTcbIpcStateAndMessage_tcb_queueNext_backward
     (y : SeLe4n.ThreadId) (tcb' : TCB)
     (hTcb' : st'.objects[y.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = tcb'.queueNext := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some origTcb =>
@@ -2032,7 +2032,7 @@ theorem storeTcbIpcState_tcb_queueNext_backward
     (y : SeLe4n.ThreadId) (tcb' : TCB)
     (hTcb' : st'.objects[y.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = tcb'.queueNext := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some origTcb =>
@@ -2203,7 +2203,7 @@ theorem storeTcbReceiveComplete_preserves_queueNextTargetBlocked
     (hNoIncoming : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
       st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some tid) :
     queueNextTargetBlocked st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some origTcb =>

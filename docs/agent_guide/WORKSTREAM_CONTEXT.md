@@ -3826,7 +3826,7 @@ code may assume:
   left the **deschedule** on the binding-era proxy; HP6.8 (`v0.35.45`) is what
   makes the two disagree, because a spliced middle caller leaves an **orphan
   head** whose context is bound to a thread the caller never recorded.  Measured
-  on the live `replyRecvBody`: the holder ended `.unbound` and still queued
+  on the live `endpointReplyRecvOnCore`: the holder ended `.unbound` and still queued
   (`hasSufficientBudget` is unconditionally `true` for an unbound thread, so it
   runs at its legacy TCB band charged to no reservation — PR #895 round 8's
   defect on the sibling site that round did not sweep), while a bystander still
@@ -4085,8 +4085,8 @@ code may assume:
   the send/receive/stash/wait and `replyRecvReturnDonation` bundles are all
   production (`EndpointReplyInvariant` always was — the first staging rationale
   misnamed it).  Production code must not cite the call chain's bundle.  RR3.22 (v0.34.43)
-  closed two of the four gaps this bullet used to list: the `replyRecvBody`
-  three-stage composite (`replyRecvBody_preserves_ipcInvariantFull`,
+  closed two of the four gaps this bullet used to list: the `endpointReplyRecvOnCore`
+  three-stage composite (`endpointReplyRecvOnCore_preserves_ipcInvariantFull`,
   `IPC/Invariant/DispatchPayoff.lean`, staged with the payoff tier) and the
   `Architecture.stage*` return-frame writes
   (`IPC/Invariant/DispatchArmPreservation.lean`, production).  **All three
@@ -4587,8 +4587,8 @@ code may assume:
   transition, registered rather than implied.
 - **...and the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
   RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
-  `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's own SM8.B write
-  set, which `replyRecvBody_confinedToCores` is stated at — and of
+  `schedFootprintOfCores` of `endpointReplyRecvWriteSet` — the arm's own SM8.B write
+  set, which `endpointReplyRecvOnCore_confinedToCores` is stated at — and of
   `replyRecvHandoffReplenishCores`, the cores its **three** SchedContext hand-offs
   migrate between: the pop between the legs (`replyRecvPopDonation`, WS-RM), the
   receive leg's block-path return (`cleanupPreReceiveDonationMigrated`,
@@ -4603,7 +4603,7 @@ code may assume:
   the re-donation's `callDonationSchedContext?` at the post-deschedule state
   (`replyRecvPostReceiveReplenishCores`, over the post-state form
   `rendezvousCallDonationReplenishCores`) — which is the discipline
-  `replyRecvBodyWriteSet` established for the run segment, and the reason this arm
+  `endpointReplyRecvWriteSet` established for the run segment, and the reason this arm
   could not take `.receive`'s pre-state form: the pop rewrites the receiver's
   binding between the legs, so a pre-state reading of the receive leg's donation
   guard would be a proxy for the guard the transition reads two legs later.  The
@@ -4621,7 +4621,7 @@ code may assume:
   (4) **The empty segment is exact in both directions**: where the pop hands
   nothing back and the block path returns no loan, the footprint names no
   replenish lock (`…_no_replenishQueue_of_no_donation`) and the live transition
-  writes none (`replyRecvBody_replenishQueueOnCore_of_no_donation`, composed from
+  writes none (`endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation`, composed from
   the reply leg's new frame `endpointReplyOnCore_replenishQueueOnCore`, the pop's
   `none` arm being the identity, the receive leg's `…_of_no_preReturn` frame and
   the two walks' frames).  (5) **That licence pins a divergence, deliberately.**
@@ -4635,7 +4635,7 @@ code may assume:
   passive/legacy split; a cut that makes the arm donate widens
   `replyRecvPostReceiveReplenishCores`'s `none` arm and breaks the licence, so the
   footprint and the transition move together or not at all.  (6) **The two chain
-  walks are in the run segment**: `replyRecvBodyWriteSet` re-runs the spine to the
+  walks are in the run segment**: `endpointReplyRecvWriteSet` re-runs the spine to the
   state each walk starts from and appends `pipChainWriteSet` there, so the walked
   members' run queues are static members, and the `pipChainStart_replyRecv*`
   obligations add the object domain's per-member TCB locks through
@@ -4908,7 +4908,7 @@ code may assume:
   the **post-revert** state, because the reclaim rebinds the victim and WS-OD
   OD5.3's second pop then migrates to the *outer caller's* home — a core the
   pre-state cannot name, the victim holding no binding there.  So the segment
-  re-runs the spine, exactly as `replyRecvBodyWriteSet` does, and a Tier 3
+  re-runs the spine, exactly as `endpointReplyRecvWriteSet` does, and a Tier 3
   negative refuses a pre-state reading of G3's arm.
 
   (4) **The donation-arm frame has ONE owner, at an explicit purge core.**
@@ -6330,7 +6330,7 @@ code may assume:
   `hNoDonationOwnedBy` was **false** in exactly the state the handler replies
   from — the premise the path it was named for refutes.
   **`.replyRecv` does not route through the seam yet**
-  — `replyRecvBody` fuses a reply leg, a receive leg and a donation return, and
+  — `endpointReplyRecvOnCore` fuses a reply leg, a receive leg and a donation return, and
   a fault reply changes what the latter two are handed — so a handler must
   answer a fault with `.reply` and take its next request separately; that is
   registered debt too, and new code must not assume `.replyRecv` retires a

@@ -525,7 +525,7 @@ private def replyDeliveryScenario :
   pure (ready, stagedFrame st1 callerTid)
 
 /-- 9e: `.replyRecv` — the compound arm's reply leg stages the previous
-caller's frame through `replyRecvBody`'s own composition (a distinct call
+caller's frame through `endpointReplyRecvOnCore`'s own composition (a distinct call
 site from 9d's `.reply` arm); the receive leg blocks the server (empty
 endpoint), so the server's own outcome is `.blocks`. -/
 private def replyRecvDeliveryScenario :

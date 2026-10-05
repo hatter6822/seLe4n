@@ -306,7 +306,7 @@ theorem storeTcbIpcState_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold storeTcbIpcState at hStep
+  unfold storeTcbIpcState modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none =>
     simp [hLookup] at hStep
@@ -361,7 +361,7 @@ theorem storeTcbPendingMessage_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold storeTcbPendingMessage at hStep
+  unfold storeTcbPendingMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -403,7 +403,7 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -483,7 +483,7 @@ theorem storeTcbReceiveComplete_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
   | some tcb =>

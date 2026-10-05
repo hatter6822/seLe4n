@@ -1181,7 +1181,7 @@ theorem storeTcbQueueLinks_determineTargetCore_eq (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     determineTargetCore st' x = determineTargetCore st x := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   split at hStep
   · exact absurd hStep (by simp)
   · next tcb hLk =>
@@ -1231,7 +1231,7 @@ theorem storeTcbReceiveComplete_determineTargetCore_eq (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     determineTargetCore st' x = determineTargetCore st x := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   cases hTcb : lookupTcb st tid with
   | none => simp [hTcb] at hStep
   | some tcb =>
@@ -1448,7 +1448,7 @@ theorem storeTcbIpcStateAndMessage_determineTargetCore_eq
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     determineTargetCore st' x = determineTargetCore st x := by
   refine determineTargetCore_congr st st' x ?_
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStep
   | some tcb =>
@@ -1621,7 +1621,7 @@ theorem storeTcbQueueLinks_getSchedContext?_eq (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     st'.getSchedContext? scId = st.getSchedContext? scId := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   split at hStep
   · exact absurd hStep (by simp)
   · next tcb hLk =>
@@ -1804,7 +1804,7 @@ theorem storeTcbIpcStateAndMessage_getSchedContext?_eq
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     st'.getSchedContext? scId = st.getSchedContext? scId := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStep
   | some tcb =>
@@ -1950,7 +1950,7 @@ theorem storeTcbIpcStateAndMessage_getTcb?_ipcState
   obtain ⟨tcb', hTcb'⟩ :=
     storeTcbIpcStateAndMessage_tcb_exists_at_target st st' tid ipc msg hObjInv hStep
       (by cases hL : lookupTcb st tid with
-          | none => simp [storeTcbIpcStateAndMessage, hL] at hStep
+          | none => simp [storeTcbIpcStateAndMessage, modifyTcb, hL] at hStep
           | some tcb => exact ⟨tcb, lookupTcb_some_objects st tid tcb hL⟩)
   exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb',
          storeTcbIpcStateAndMessage_ipcState_eq st st' tid ipc msg hObjInv hStep tcb' hTcb'⟩
@@ -2273,7 +2273,7 @@ theorem storeTcbReceiveComplete_getTcb?_ipcState
   obtain ⟨tcb', hTcb'⟩ :=
     storeTcbReceiveComplete_tcb_exists_at_target st st' tid msg hObjInv hStep
       (by cases hL : lookupTcb st tid with
-          | none => simp [storeTcbReceiveComplete, hL] at hStep
+          | none => simp [storeTcbReceiveComplete, modifyTcb, hL] at hStep
           | some tcb => exact ⟨tcb, lookupTcb_some_objects st tid tcb hL⟩)
   exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb',
          storeTcbReceiveComplete_ipcState_eq st st' tid msg hObjInv hStep tcb' hTcb'⟩

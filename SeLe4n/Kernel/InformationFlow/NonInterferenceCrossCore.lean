@@ -765,7 +765,7 @@ theorem endpointReplyOnCore_confinedToCores (replier target : SeLe4n.ThreadId)
         · exact observableSlotsConfinedToCores_of_eq _ rfl
 
 -- ============================================================================
--- §4a SM6.C — the receive leg, and the composed `replyRecv`
+-- §4a SM6.C — the receive leg
 -- ============================================================================
 
 -- SM8.B.2, relocated at **WS-RR RR8.12**: `endpointReceiveDualWriteSet` is
@@ -902,63 +902,6 @@ theorem endpointReceiveDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
               rw [hT2, hT1, hSender] at hChain
               exact observableSlotsConfinedToCores_mono (by intro c hc; simpa using hc) hChain
             · exact observableSlotsConfinedToCores_of_eq _ rfl
-
-/-- SM8.B.2: **the cores a cross-core `replyRecv` may write** — the answered
-caller's home core from the reply leg, plus whatever the receive leg writes at
-the state the reply leg leaves behind.
-
-Like `endpointCallDispatchChainWriteSet` this mirrors the transition's own
-control flow rather than guessing: the receive leg runs at `st1`, the reply's
-post-state, so its write set is read there. Reading it at `st` would be wrong
-for the same reason the call's chain leg cannot be read at `st` — the reply
-unblocks a thread, which can change which sender heads the send queue. -/
-def endpointReplyRecvWriteSet (endpointId : SeLe4n.ObjId)
-    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
-    (executingCore : CoreId) (st : SystemState) : List CoreId :=
-  determineTargetCore st replyTarget ::
-    (match endpointReplyOnCore receiver replyTarget msg executingCore st with
-     | (st1, .ok _) => endpointReceiveDualWriteSet st1 endpointId executingCore
-     | (_, .error _) => [])
-
-/-- SM8.B.2 (**SM6.C, cross-core** — the composed `replyRecv`): both legs
-together stay inside `endpointReplyRecvWriteSet`.
-
-`endpointReplyRecvOnCore` is all-or-nothing: a failed leg returns the pre-state,
-so only the both-succeed path writes anything, and there it is exactly the reply
-leg's target home core followed by the receive leg's set at the intermediate
-state. The receive leg's `objects.invExt` premise is discharged from the reply
-leg's own preservation theorem rather than assumed. -/
-theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
-    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
-    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
-    observableSlotsConfinedToCores st
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1
-      (endpointReplyRecvWriteSet endpointId receiver replyTarget msg executingCore st) := by
-  unfold endpointReplyRecvOnCore endpointReplyRecvWriteSet
-  have hReply := endpointReplyOnCore_confinedToCores receiver replyTarget msg executingCore st
-    hObjInv
-  have hInv1 : (endpointReplyOnCore receiver replyTarget msg executingCore st).1.objects.invExt :=
-    endpointReplyOnCore_preserves_objects_invExt receiver replyTarget msg executingCore st hObjInv
-  cases hRep : endpointReplyOnCore receiver replyTarget msg executingCore st with
-  | mk st1 res =>
-    rw [hRep] at hReply hInv1
-    cases res with
-    | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
-    | ok replySgi =>
-      simp only []
-      have hRecv := endpointReceiveDualOnCore_confinedToCores endpointId receiver replyId
-        executingCore st1 hInv1
-      cases hRcv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st1 with
-      | mk st2 res2 =>
-        rw [hRcv] at hRecv
-        cases res2 with
-        | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
-        | ok pair =>
-          rcases pair with ⟨_, recvSgi⟩
-          simp only []
-          have h := observableSlotsConfinedToCores_trans hReply hRecv
-          simpa using h
 
 -- ============================================================================
 -- §5 SM6.E — the cancellation transition
@@ -1910,21 +1853,23 @@ theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId
 -- §5d The live `.replyRecv` arm itself
 -- ============================================================================
 --
--- `API.dispatchWithCap`'s `.replyRecv` arm routes to `replyRecvBody`, which is
+-- `API.dispatchWithCap`'s `.replyRecv` arm routes to `endpointReplyRecvOnCore`, which is
 -- the reply leg, `replyRecvPopDonation`, the receive leg **and**
 -- `replyRecvPostReceiveDonation` — the last of which may donate the new client's
 -- SchedContext, may deschedule the now-passive recorded server on its own core,
--- and always reverts the recorded server's priority-inheritance chain.
--- `endpointReplyRecvOnCore` (§4a) is only the reply and receive legs, so it never
--- bounded the live arm.
+-- and always reverts the recorded server's priority-inheritance chain.  Until
+-- `v0.36.49` that name denoted a two-leg composite (reply, then the bare receive
+-- leg of §4a) no arm called, so the theorems below were about code that never
+-- ran; the live body carries the name now and they bound the arm itself.
 --
 -- **WS-RM (`v0.35.6`)**: the pop sits *between* the two legs, matching
 -- seL4-MCS's `doReplyTransfer` → `reply_remove` → `receiveIPC` order.  It writes
 -- no core (`replyRecvPopDonation_confinedToCores`), so the arm's declared set is
 -- unchanged by the move.
 
--- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvDescheduleAndWalkWriteSet` moved to `Kernel/API.lean`, beside the
--- transition it describes.  A write set declared in a STAGED module is one the
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvDescheduleAndWalkWriteSet` moved out of this module,
+-- beside the transition it describes (since `v0.36.49` both live in
+-- `IPC/CrossCore/EndpointReplyRecv.lean`).  A write set declared in a STAGED module is one the
 -- production scheduler footprint cannot read, which is the layering rule Cuts 5
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
 -- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
@@ -1946,7 +1891,7 @@ theorem replyRecvDescheduleAndWalk_confinedToCores (holder recordedServer : SeLe
 per-core silent — the donation return writes neither a scheduler slot nor the
 machine, and SM8.A's `onCore_perCore_independence` puts the replenish queue
 outside the observer's read set — so every core the fused resolution names comes
-from its post-receive half.  That is what lets `replyRecvBody` move the pop to
+from its post-receive half.  That is what lets `endpointReplyRecvOnCore` move the pop to
 the other side of the receive leg without its declared set changing. -/
 theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId)
@@ -1989,8 +1934,9 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
           simpa using observableSlotsConfinedToCores_trans hReturn
             (migrateSchedContextReplenishment_confinedToCores st1' oldScId _ _)
 
--- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvHolderDescheduleWriteSet` moved to `Kernel/API.lean`, beside the
--- transition it describes.  A write set declared in a STAGED module is one the
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvHolderDescheduleWriteSet` moved out of this module,
+-- beside the transition it describes (since `v0.36.49` both live in
+-- `IPC/CrossCore/EndpointReplyRecv.lean`).  A write set declared in a STAGED module is one the
 -- production scheduler footprint cannot read, which is the layering rule Cuts 5
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
 -- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
@@ -2010,8 +1956,9 @@ theorem replyRecvHolderDeschedule_confinedToCores (tid holder : SeLe4n.ThreadId)
     -- because they are the same step, not two spellings that happen to agree.
     exact descheduleAtPlacement_confinedToCores st holder
 
--- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvPostReceiveDonationWriteSet` moved to `Kernel/API.lean`, beside the
--- transition it describes.  A write set declared in a STAGED module is one the
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvPostReceiveDonationWriteSet` moved out of this module,
+-- beside the transition it describes (since `v0.36.49` both live in
+-- `IPC/CrossCore/EndpointReplyRecv.lean`).  A write set declared in a STAGED module is one the
 -- production scheduler footprint cannot read, which is the layering rule Cuts 5
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
 -- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
@@ -2154,7 +2101,7 @@ theorem endpointReceiveDualWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
         | (rename_i h; exact ipcUnwrapCaps_preserves_machine _ _ _ _ _ _ _ h)
 
 /-- SM8.B.2 (**the live `.replyRecv` receive-leg bound**, PR #873 round 7): the
-WithCaps per-core receive — the form `replyRecvBody` now runs — is confined to the
+WithCaps per-core receive — the form `endpointReplyRecvOnCore` now runs — is confined to the
 bare receive's write set. The capability install writes no core at all, so the
 two forms declare the same per-core footprint and every pin taken against the
 bare set still describes the live leg. -/
@@ -2176,35 +2123,37 @@ theorem endpointReceiveDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.O
         receiverCspaceRoot receiverSlotBase executingCore st))
   simpa using h
 
--- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvBodyWriteSet` moved to `Kernel/API.lean`, beside the
--- transition it describes.  A write set declared in a STAGED module is one the
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `endpointReplyRecvWriteSet` moved out of this module,
+-- beside the transition it describes (since `v0.36.49` both live in
+-- `IPC/CrossCore/EndpointReplyRecv.lean`).  A write set declared in a STAGED module is one the
 -- production scheduler footprint cannot read, which is the layering rule Cuts 5
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
 -- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
 
-/-- SM8.B.2 (**the live `.replyRecv` bound**): `replyRecvBody` — the function
+/-- SM8.B.2 (**the live `.replyRecv` bound**): `endpointReplyRecvOnCore` — the function
 `API.dispatchWithCap`'s `.replyRecv` arm routes through — writes no core outside
-`replyRecvBodyWriteSet`.
+`endpointReplyRecvWriteSet`.
 
-All three legs, at the states they really run at. The receive leg's
+The reply leg, the donation pop, the receive leg and the post-receive
+donation, at the states they really run at. The receive leg's
 `objects.invExt` premise is discharged from the reply leg's own preservation
 theorem rather than assumed, exactly as in §4a. -/
-theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
+theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : replyRecvBody endpointId receiver replyId prevCaller msg receiverCspaceRoot
+    (hStep : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg receiverCspaceRoot
         receiverSlotBase executingCore st
       = .ok (summary, st')) :
     observableSlotsConfinedToCores st st'
-      (replyRecvBodyWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
+      (endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
         receiverSlotBase executingCore st) := by
   have hReply := endpointReplyOnCore_confinedToCores receiver prevCaller msg executingCore st
     hObjInv
   have hInv1 : (endpointReplyOnCore receiver prevCaller msg executingCore st).1.objects.invExt :=
     endpointReplyOnCore_preserves_objects_invExt receiver prevCaller msg executingCore st hObjInv
-  unfold replyRecvBody replyRecvBodyWriteSet at *
+  unfold endpointReplyRecvOnCore endpointReplyRecvWriteSet at *
   simp only [] at hStep
   cases hRep : endpointReplyOnCore receiver prevCaller msg executingCore st with
   | mk st1 res =>
@@ -2281,21 +2230,21 @@ theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
 kernel really runs on a cross-core `ReplyRecv` is invisible to any core outside
 its write set, with no hypothesis on the clearance of the answered caller, the
 rendezvousing sender, the recorded server or any chain member. -/
-theorem replyRecvBody_crossCoreNonInterference (ctx : LabelingContext)
+theorem endpointReplyRecvOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : replyRecvBody endpointId receiver replyId prevCaller msg receiverCspaceRoot
+    (hStep : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg receiverCspaceRoot
         receiverSlotBase executingCore st
       = .ok (summary, st'))
-    (hne : c ∉ replyRecvBodyWriteSet endpointId receiver replyId prevCaller msg
+    (hne : c ∉ endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg
       receiverCspaceRoot receiverSlotBase executingCore st)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (replyRecvBody_confinedToCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
+    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
       receiverSlotBase executingCore st st' summary hObjInv hStep)
     hShared
 
@@ -4754,25 +4703,6 @@ theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference (ctx : Labeli
       receiverCspaceRoot receiverSlotBase executingCore st hObjInv)
     hShared
 
-/-- SM8.B.2 (SM6.C, **the composed live `.replyRecv`**): both legs together are
-invisible to any core outside the union of the reply target's home core and the
-receive leg's set at the intermediate state. -/
-theorem endpointReplyRecvOnCore_crossCoreNonInterference (ctx : LabelingContext)
-    (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
-    (st : SystemState) (c : CoreId)
-    (hObjInv : st.objects.invExt)
-    (hne : c ∉ endpointReplyRecvWriteSet endpointId receiver replyTarget msg executingCore st)
-    (hShared : sharedViewUnchanged ctx observer st
-      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1) :
-    projectStateOnCore ctx observer
-        (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1 c
-      = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer hne
-    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyTarget msg replyId
-      executingCore st hObjInv)
-    hShared
-
 /-- SM8.B.2 (SM6.B, **the live `.signal` bound-delivery arm**): a bound-aware
 signal is invisible to any core that is neither the bound TCB's home core (when
 the badge is delivered directly) nor the plain signal's waiter home core. -/
@@ -5394,10 +5324,11 @@ inductive CrossCoreTransition where
   capabilities, which `.receive` reaches directly and `.replyRecv` reaches as its
   second leg (PR #873 rounds 6 and 7). -/
   | endpointReceiveDualWithCaps
-  /-- SM6.C — both `replyRecv` legs, below the donation. -/
-  | endpointReplyRecv
-  /-- SM6.C — the **live** `.replyRecv` arm: both legs *and* the donation. -/
-  | replyRecvBodyDispatch
+  /-- SM6.C — the **live** `.replyRecv` arm, `endpointReplyRecvOnCore`: both legs,
+  the donation pop and re-donation, and the priority hand-off.  (Audit IPC-2,
+  `v0.36.49`: the separate entry for a two-leg composite below the donation is
+  gone with that composite, which no arm ran.) -/
+  | endpointReplyRecvDispatch
   /-- SM6.E — the deschedule primitive. -/
   | deschedule
   /-- SM6.E — the *composed* IPC-blocking cancellation (teardown + deschedule). -/
@@ -5472,7 +5403,7 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .notificationSignal, .notificationSignalBound,
    .notificationWait, .endpointReply, .endpointReplyDispatch, .endpointReceiveDual,
    .endpointReceiveDualWithCaps,
-   .endpointReplyRecv, .replyRecvBodyDispatch, .deschedule, .cancelIpcBlocking,
+   .endpointReplyRecvDispatch, .deschedule, .cancelIpcBlocking,
    .suspendThreadDispatch, .resumeThreadDispatch,
    .setPriorityDispatch, .setMCPriorityDispatch,
    .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
@@ -5525,8 +5456,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .endpointReceiveDual => niName! endpointReceiveDualOnCore_crossCoreNonInterference
   | .endpointReceiveDualWithCaps =>
       niName! endpointReceiveDualWithCapsOnCore_crossCoreNonInterference
-  | .endpointReplyRecv => niName! endpointReplyRecvOnCore_crossCoreNonInterference
-  | .replyRecvBodyDispatch => niName! replyRecvBody_crossCoreNonInterference
+  | .endpointReplyRecvDispatch => niName! endpointReplyRecvOnCore_crossCoreNonInterference
   | .deschedule => niName! descheduleThread_crossCoreNonInterference
   | .cancelIpcBlocking => niName! cancelIpcBlockingOnCore_crossCoreNonInterference
   | .suspendThreadDispatch => niName! suspendThreadOnCore_crossCoreNonInterference
@@ -5561,7 +5491,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .auditDrainDispatch =>
       niName! auditDrainDispatch_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 33 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 32 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -5576,7 +5506,7 @@ reporting coverage it did not have.
 from** (PR #861 review round 5). Three entries failed that test and now have
 wrapper entries of their own: `.reply` routes to `endpointReplyCrossCoreDispatch`
 (which adds the donation return and the PIP reversion), `.replyRecv` to
-`replyRecvBody` (which adds the donation pop and the post-receive donation),
+`endpointReplyRecvOnCore` (which adds the donation pop and the post-receive donation),
 and `.tcbSuspend` to
 `suspendThreadOnCore` (which adds the chain reversion, the running-core dequeue
 and a scheduling point). Each does strictly more per-core writing than the
@@ -5593,7 +5523,7 @@ are definitionally `…OnCore … executingCore st`. For those the
 a third entry of that kind while the `.receive` arm invoked it directly; it is
 not any more. Both receive-shaped live arms now reach
 `endpointReceiveDualWithCapsOnCore` (`.receive` since PR #873 round 6,
-`replyRecvBody`'s second leg since round 7), which installs a parked send's
+`endpointReplyRecvOnCore`'s second leg since round 7), which installs a parked send's
 capabilities and is therefore *not* the bare transition. So the bare receive
 joins `.notificationSignal` and `.endpointReply` as a below-API entry and
 `.endpointReceiveDualWithCaps` carries the live-arm claim — along with
@@ -5618,8 +5548,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   -- receive-shaped live arms reach the WithCaps form.
   | .endpointReceiveDual => false
   | .endpointReceiveDualWithCaps => true
-  | .endpointReplyRecv => false
-  | .replyRecvBodyDispatch => true
+  | .endpointReplyRecvDispatch => true
   | .deschedule => false
   | .cancelIpcBlocking => false
   | .suspendThreadDispatch => true
@@ -5718,8 +5647,7 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .endpointReplyDispatch => some .reply
   | .endpointReceiveDual => none
   | .endpointReceiveDualWithCaps => some .receive
-  | .endpointReplyRecv => none
-  | .replyRecvBodyDispatch => some .replyRecv
+  | .endpointReplyRecvDispatch => some .replyRecv
   | .deschedule => none
   | .cancelIpcBlocking => none
   | .suspendThreadDispatch => some .tcbSuspend
@@ -5763,9 +5691,8 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .endpointReceiveDual =>
       .readOffTheArm "below-API transition; live arm is .endpointReceiveDualWithCaps"
   | .endpointReceiveDualWithCaps => .delegationProof .receive syscallDelegates_receive
-  | .endpointReplyRecv => .readOffTheArm "both legs below the donation; live arm is .replyRecvBodyDispatch"
-  | .replyRecvBodyDispatch =>
-      .readOffTheArm "checked `.replyRecv` arm calls replyRecvBody; delegation theorem pending"
+  | .endpointReplyRecvDispatch =>
+      .readOffTheArm "checked `.replyRecv` arm calls endpointReplyRecvOnCore; delegation theorem pending"
   | .deschedule => .readOffTheArm "below-API primitive, not a syscall arm"
   | .cancelIpcBlocking => .readOffTheArm "below-API composite; live arm is .suspendThreadDispatch"
   | .suspendThreadDispatch => .delegationProof .tcbSuspend syscallDelegates_tcbSuspend
@@ -5853,8 +5780,7 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .endpointReplyDispatch => true
   | .endpointReceiveDual => true
   | .endpointReceiveDualWithCaps => true
-  | .endpointReplyRecv => true
-  | .replyRecvBodyDispatch => true
+  | .endpointReplyRecvDispatch => true
   | .deschedule => true
   | .cancelIpcBlocking => true
   | .suspendThreadDispatch => true
@@ -5883,6 +5809,6 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .auditDrainDispatch => false
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 24 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 23 := by decide
 
 end SeLe4n.Kernel

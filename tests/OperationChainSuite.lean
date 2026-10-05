@@ -1157,13 +1157,13 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
      | .ok (summary, _) => summary.results.isEmpty && !serverSlotFilled stA1
      | .error _ => false)
   let (summaryA, stA2) ← expectOkSt "chain12d: A — .replyRecv collects the parked request"
-    (SeLe4n.Kernel.replyRecvBody epId server rid prevCaller replyMsg serverCNode recvSlot
+    (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg serverCNode recvSlot
       bootCoreId stA1)
 
   -- Ordering B: the server calls `.replyRecv` FIRST (its receive leg blocks),
   -- then the request arrives and rendezvouses.
   let (summaryB0, stB1) ← expectOkSt "chain12d: B — .replyRecv blocks on the receive leg"
-    (SeLe4n.Kernel.replyRecvBody epId server rid prevCaller replyMsg serverCNode recvSlot
+    (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg serverCNode recvSlot
       bootCoreId stBase)
   expect "chain12d: B — a blocked receive leg installs nothing yet"
     (summaryB0.results.isEmpty && !serverSlotFilled stB1)
@@ -1193,14 +1193,14 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
     SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender requestNoGrant
       (AccessRightSet.ofList [.read, .write]) recvSlot bootCoreId stBase
   let (summaryC, stC2) ← expectOkSt "chain12d: C — .replyRecv collects a non-granting request"
-    (SeLe4n.Kernel.replyRecvBody epId server rid prevCaller replyMsg serverCNode recvSlot
+    (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg serverCNode recvSlot
       bootCoreId stC1)
   expect "chain12d: NEGATIVE — a non-granting parked request installs nothing"
     (!serverSlotFilled stC2 && summaryC.installedCount == 0)
 
   -- NEGATIVE, load-bearing: the BARE per-core receive — what the leg ran until
   -- this cut — installs nothing on the very state ordering A succeeds from.  If
-  -- `replyRecvBody` is ever routed back to it, the positive above fails rather
+  -- `endpointReplyRecvOnCore` is ever routed back to it, the positive above fails rather
   -- than the difference going unnoticed.
   let (stBare, _) :=
     SeLe4n.Kernel.endpointReceiveDualOnCore epId server (some rid) bootCoreId stA1

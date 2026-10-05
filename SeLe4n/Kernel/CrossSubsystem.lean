@@ -1847,7 +1847,7 @@ theorem storeTcbQueueLinks_preservesFieldsOutside
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
-  unfold storeTcbQueueLinks at hStep
+  unfold storeTcbQueueLinks modifyTcb at hStep
   split at hStep
   · cases hStep
   · split at hStep
@@ -1861,7 +1861,7 @@ theorem storeTcbIpcStateAndMessage_preservesFieldsOutside
     (ipcState : ThreadIpcState) (msg : Option IpcMessage)
     (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
-  unfold storeTcbIpcStateAndMessage at hStep
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
   split at hStep
   · cases hStep
   · split at hStep
@@ -1874,7 +1874,7 @@ theorem storeTcbReceiveComplete_preservesFieldsOutside
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
-  unfold storeTcbReceiveComplete at hStep
+  unfold storeTcbReceiveComplete modifyTcb at hStep
   split at hStep
   · cases hStep
   · split at hStep

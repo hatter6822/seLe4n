@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecv
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -82,7 +83,6 @@ open SeLe4n.Testing
 
 -- SM6.C 2PL atomicity (reply + replyRecv):
 #check @endpointReplyOnCore_atomic_under_lockSet
-#check @endpointReplyRecvOnCore_atomic_under_lockSet
 
 -- SM6.C per-core wake locality:
 #check @endpointReplyOnCore_perCore_consistent
@@ -135,9 +135,9 @@ open SeLe4n.Testing
 #check @endpointReplyCrossCoreDispatchChecked_flow_denied
 #check @endpointReplyCrossCoreDispatchChecked_flow_allowed
 -- PR #822 review: the raw-thread `endpointReplyRecvCrossCoreDispatch{,Checked}`
--- wrappers were removed (they bypassed the reply cap); the live `.replyRecv` routes
--- through the reply-object-aware `API.replyRecvBody`.  The below-API combined
--- transition `endpointReplyRecvOnCore` (anchored above) remains the building block.
+-- wrappers were removed (they bypassed the reply cap).  The live `.replyRecv` is the
+-- one reply-object-aware transition `endpointReplyRecvOnCore` (anchored above, in
+-- `IPC/CrossCore/EndpointReplyRecv.lean`), which both dispatch tables call.
 
 -- SM6.C.9 reply donation-chain length bound:
 #check @endpointReply_donation_chain_length_bounded
@@ -506,22 +506,64 @@ private def runFrameSpliceChecks : IO Unit := do
          && (st2.getReply? replyId707 == postDetached.getReply? replyId707)
      | .error _ => false)
 
+/-- The `.replyRecv` fixture: `stBase` plus the Reply object the server answers
+through, **mutually linked** to the local client exactly as `Call` leaves it
+(`reply.caller = clientLocal`, `clientLocal.replyObject = reply`).  That link is
+the state the syscall arm's `resolveReplyRecvReply` accepts: it answers
+`replyAnsweredCaller?`, which is `.replyCapInvalid` on an unlinked Reply, so a
+fixture without the link would exercise a state the arm never reaches (audit
+IPC-2: the live transition takes the reply capability's object and re-stashes
+it for the next caller, not an optional fresh one). -/
+private def stReplyRecv : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject serverTid.toObjId (.tcb (mkTcb 601 50 none .ready))
+    |>.withObject clientLocalTid.toObjId
+        (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                  replyObject := some replyId709 })
+    |>.withObject replyId709.toObjId
+        (.reply { replyId := replyId709, caller := some clientLocalTid })
+    |>.withRunnable [serverTid]
+    |>.build)
+
 private def runReplyRecvChecks : IO Unit := do
   IO.println "--- §3.5 SM6.C.5 replyRecv combined op (reply leg wakes caller) ---"
-  -- The reply leg of replyRecv wakes the recorded caller; the receive leg then
-  -- blocks the server on the (empty) endpoint.
-  let (st', res) := endpointReplyRecvOnCore epId serverTid clientLocalTid replyMsg none bootCoreId stBase
-  assertBool "replyRecv succeeds (reply leg + receive leg)"
-    (match res with | .ok _ => true | .error _ => false)
-  assertBool "replyRecv reply leg delivers the payload to the caller (.ready + registers)"
-    (match st'.getTcb? clientLocalTid with
-     | some t => decide (t.ipcState = .ready ∧ t.pendingMessage = some replyMsg)
-     | none => false)
-  -- The receive leg blocks the server on the endpoint (no sender was waiting).
-  assertBool "replyRecv receive leg blocks the server on the endpoint (no waiting sender)"
-    (match st'.getTcb? serverTid with
-     | some t => decide (t.ipcState = .blockedOnReceive epId)
-     | none => false)
+  -- The caller handed to the transition is the one the arm's resolver computes
+  -- from the reply capability's object, so this call is the arm's call.
+  assertBool "replyRecv fixture: the Reply's answered caller is the one the arm resolves"
+    (decide (replyAnsweredCaller? stReplyRecv replyId709 = some clientLocalTid))
+  -- The reply leg of the live replyRecv wakes the recorded caller; the receive
+  -- leg then blocks the server on the (empty) endpoint, stashing the same Reply.
+  match endpointReplyRecvOnCore epId serverTid replyId709 clientLocalTid replyMsg cnRoot
+      (SeLe4n.Slot.ofNat 0) bootCoreId stReplyRecv with
+  | .error _ => assertBool "replyRecv succeeds (reply leg + receive leg)" false
+  | .ok (summary, st') =>
+    -- One Reply object, consumed by the reply leg and re-stashed by the receive
+    -- leg: the caller↔Reply link is torn down on both halves, and the freed
+    -- object is the server's `pendingReceiveReply` for its next caller.
+    assertBool "replyRecv consumes the answered Reply (no caller, off every stack)"
+      (match st'.getReply? replyId709 with
+       | some r => decide (r.isFree = true)
+       | none => false)
+    assertBool "replyRecv clears the answered caller's `replyObject` half of the link"
+      (match st'.getTcb? clientLocalTid with
+       | some t => decide (t.replyObject = none)
+       | none => false)
+    assertBool "replyRecv re-stashes the SAME Reply on the blocked server for its next caller"
+      (match st'.getTcb? serverTid with
+       | some t => decide (t.pendingReceiveReply = some replyId709)
+       | none => false)
+    assertBool "replyRecv installs no capabilities when nothing was received"
+      (summary.installedCount == 0)
+    assertBool "replyRecv reply leg delivers the payload to the caller (.ready + registers)"
+      (match st'.getTcb? clientLocalTid with
+       | some t => decide (t.ipcState = .ready ∧ t.pendingMessage = some replyMsg)
+       | none => false)
+    -- The receive leg blocks the server on the endpoint (no sender was waiting).
+    assertBool "replyRecv receive leg blocks the server on the endpoint (no waiting sender)"
+      (match st'.getTcb? serverTid with
+       | some t => decide (t.ipcState = .blockedOnReceive epId)
+       | none => false)
 
 private def runDonationChecks : IO Unit := do
   IO.println "--- §3.3' SM6.C.3 donation-chain lock-set extension ---"

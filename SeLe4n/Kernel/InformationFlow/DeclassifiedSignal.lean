@@ -72,7 +72,7 @@ theorem storeTcbQueueLinks_declassificationAuditLog_eq (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
     (h : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     st'.declassificationAuditLog = st.declassificationAuditLog := by
-  unfold storeTcbQueueLinks at h
+  unfold storeTcbQueueLinks modifyTcb at h
   split at h
   · exact absurd h (by simp)
   · split at h
@@ -88,7 +88,7 @@ theorem storeTcbQueueLinks_declassificationAuditEpoch_eq (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
     (h : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     st'.declassificationAuditEpoch = st.declassificationAuditEpoch := by
-  unfold storeTcbQueueLinks at h
+  unfold storeTcbQueueLinks modifyTcb at h
   split at h
   · exact absurd h (by simp)
   · split at h
@@ -103,7 +103,7 @@ theorem storeTcbIpcStateAndMessage_declassificationAuditLog_eq (st st' : SystemS
     (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState) (msg : Option IpcMessage)
     (h : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
     st'.declassificationAuditLog = st.declassificationAuditLog := by
-  unfold storeTcbIpcStateAndMessage at h
+  unfold storeTcbIpcStateAndMessage modifyTcb at h
   split at h
   · exact absurd h (by simp)
   · split at h
@@ -118,7 +118,7 @@ theorem storeTcbReceiveComplete_declassificationAuditLog_eq (st st' : SystemStat
     (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (h : storeTcbReceiveComplete st tid msg = .ok st') :
     st'.declassificationAuditLog = st.declassificationAuditLog := by
-  unfold storeTcbReceiveComplete at h
+  unfold storeTcbReceiveComplete modifyTcb at h
   split at h
   · exact absurd h (by simp)
   · split at h

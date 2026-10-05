@@ -11,11 +11,11 @@
 -- the API layer; the live `API.dispatchWithCap{,Checked}` `.reply` arm routes through
 -- `endpointReplyCrossCoreDispatch{,Checked}` here, passing the core the syscall
 -- trapped on (threaded from the entry).  The live `.replyRecv` arm routes
--- through the reply-object-aware `replyRecvBody` (in `API`), which resolves the
--- *reply capability* (authority flows from holding the reply cap, exactly like
--- `.reply`) and consumes / re-links the first-class Reply object — it does NOT use a
--- raw-thread dispatch here.  See WS-SM SM6 §3.1, §4.3,
--- §5 (SM6.C).
+-- through the reply-object-aware `endpointReplyRecvOnCore` (in
+-- `IPC/CrossCore/EndpointReplyRecv`), which resolves the *reply capability*
+-- (authority flows from holding the reply cap, exactly like `.reply`) and consumes /
+-- re-links the first-class Reply object — it does NOT use a raw-thread dispatch
+-- here.  See WS-SM SM6 §3.1, §4.3, §5 (SM6.C).
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
@@ -33,17 +33,17 @@ and the information-flow-checked `endpointReplyCrossCoreDispatchChecked`.  These
 dispatch arm can route through them — the cross-core generalisation of the
 single-core `endpointReplyWithDonation`.
 
-The live `.replyRecv` syscall is handled one layer up by `API.replyRecvBody`, which
-resolves the reply *capability* and consumes / re-links the first-class Reply object;
-the underlying combined reply-and-receive transition (`endpointReplyRecvOnCore`, in
-`EndpointReply`) remains available as a below-API building block.  There is
-deliberately **no** raw-thread `.replyRecv` dispatch wrapper here — it would expose a
-reply-without-the-reply-cap surface that bypasses the single-use Reply object.
+The live `.replyRecv` syscall is `endpointReplyRecvOnCore` in
+`IPC/CrossCore/EndpointReplyRecv`, which resolves the reply *capability* and
+consumes / re-links the first-class Reply object (both dispatch tables in `API`
+call it).  There is deliberately **no** raw-thread `.replyRecv` dispatch wrapper
+here — it would expose a reply-without-the-reply-cap surface that bypasses the
+single-use Reply object.
 
 Each dispatch composes:
 
-* the cross-core reply (`endpointReplyOnCore` / `endpointReplyRecvOnCore` — wakes
-  the original caller on its *home* core);
+* the cross-core reply (`endpointReplyOnCore` — wakes the original caller on its
+  *home* core);
 * the SchedContext **donation return** (`applyReplyDonationOnCore` — returns the
   replier's donated SC to the original owner and deschedules the now-passive
   replier on *its own* core); and
@@ -249,7 +249,8 @@ the return is the identity.
 One definition for both reply-shaped arms: the `.reply` dispatch's replenish
 segment reads it at the reply leg's post-state
 (`endpointReplyDispatchReplenishCores`, §6), and so does the `.replyRecv`
-footprint's pop component (`replyRecvHandoffReplenishCores`, `Kernel/API.lean`),
+footprint's pop component (`replyRecvHandoffReplenishCores`,
+`IPC/CrossCore/EndpointReplyRecv.lean`),
 whose pop resolves the same trigger at the same state
 (`replyRecvPopDonation_holder_eq_frameHead`).  Spelled through the two named home
 resolvers rather than through `determineTargetCore` directly, so the three readers
@@ -944,10 +945,9 @@ theorem endpointReplyCrossCoreDispatchChecked_flow_allowed
 -- ============================================================================
 --
 -- NOTE: there is deliberately no raw-thread cross-core `.replyRecv` dispatch
--- wrapper here.  The live `.replyRecv` syscall routes through `API.replyRecvBody`,
--- which resolves the reply *capability* and consumes / re-links the first-class
--- Reply object; the underlying combined transition `endpointReplyRecvOnCore`
--- (in `EndpointReply`) remains the below-API building block.  A raw `(replyTarget :
+-- wrapper here.  The live `.replyRecv` syscall is `endpointReplyRecvOnCore` in
+-- `IPC/CrossCore/EndpointReplyRecv`, which resolves the reply *capability* and
+-- consumes / re-links the first-class Reply object.  A raw `(replyTarget :
 -- ThreadId)` dispatch wrapper was removed because it exposed a reply-without-the-
 -- reply-cap surface that bypassed the single-use Reply object (PR #822 review).
 
