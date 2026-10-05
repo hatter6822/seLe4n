@@ -33,9 +33,10 @@ executing while the model said its core had no current thread.  Found by
 PR #861 review round 15.
 
 The consequence is a **fail-closed rejection**, not misrouting (round 43
-corrected this note, which claimed the latter).  `determineExecutingCore`'s
-`bootCoreId` fallback is real but unreachable here: it is only consulted once a
-caller id is in hand, and resolution runs first — `syscallDispatchFromAbi`
+corrected this note, which claimed the latter).  The executing core is
+threaded from the entry, never re-derived with a `bootCoreId` fallback (the
+state-scanning resolver that had one was deleted at `v0.36.46`), and
+resolution runs first — `syscallDispatchFromAbi`
 reads `currentOnCore` for the *issuing* core and returns `.illegalState` with
 the state unmodified when it is empty
 (`Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current`, mounted at

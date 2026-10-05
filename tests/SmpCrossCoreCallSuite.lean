@@ -138,10 +138,11 @@ open SeLe4n.Testing
 #check @endpointCallCrossCoreDispatchChecked_flow_denied
 #check @endpointCallCrossCoreDispatchChecked_flow_allowed
 
--- SM6.A live `.call`: the executing core derived from live state (the caller is
--- the current thread on its core) — no hardware-core parameter threaded:
-#check @determineExecutingCore
-#check @determineExecutingCore_sound
+-- SM6.A live `.call`: the executing core is the trapping core, threaded from the
+-- checked entry through the dispatcher (never re-derived from the state):
+#check @syscallEntryChecked
+#check @dispatchSyscallChecked
+#check @dispatchWithCapChecked
 
 -- SM6.A live SGI-dispatch seam: the cross-core-aware syscall dispatch entry +
 -- its body-shape marker + the single-core inertness (trace-safety) witness:

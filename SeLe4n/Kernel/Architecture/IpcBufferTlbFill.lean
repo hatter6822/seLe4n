@@ -192,6 +192,28 @@ theorem tlbFillIpcBufferOnCore_frame
   | none => exact ⟨rfl, rfl, rfl⟩
   | some plan => exact foldl_tlbFillOnCore_frame c plan.1 plan.2 st
 
+/-- An access-time fill moves no scheduler state: in particular every core's
+current thread is the one it was before the fill.  `syscallEntryChecked`
+dispatches on the filled state, and the dispatcher's caller/core guard
+(`currentOnCore executingCore = some tid`) reads it there; this is why the
+guard sees the same answer the entry resolved the caller from. -/
+theorem tlbFillIpcBufferOnCore_scheduler
+    (st : SystemState) (c : CoreId) (tid : ThreadId) (overflowCount : Nat) :
+    (tlbFillIpcBufferOnCore st c tid overflowCount).scheduler = st.scheduler := by
+  unfold tlbFillIpcBufferOnCore
+  cases ipcBufferWalkPlan st tid overflowCount with
+  | none => rfl
+  | some plan =>
+    simp only
+    generalize plan.2 = pages
+    induction pages generalizing st with
+    | nil => rfl
+    | cons page rest ih =>
+      simp only [List.foldl_cons]
+      rw [ih]
+      unfold tlbFillOnCore
+      cases tlbWalkEntry st plan.1 page <;> rfl
+
 /-- The fold leaves every other core's view untouched. -/
 private theorem foldl_tlbFillOnCore_tlbOnCore_ne
     {c c' : CoreId} (asid : SeLe4n.ASID) (pages : List VAddr)

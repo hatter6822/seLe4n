@@ -149,7 +149,7 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
           = some (tid, decoded, stFilled)) :
     Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId msgInfo
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
-      = (match dispatchSyscallChecked ctx decoded tid stFilled with
+      = (match dispatchSyscallChecked ctx decoded tid executingCore stFilled with
          | .error ke =>
              match Platform.FFI.syscallCapFaultOf SeLe4n.arm64DefaultLayout
                  (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)

@@ -681,9 +681,9 @@ private def runDonationChecks : IO Unit := do
   --
   -- The decisive witness for the finding, and it has to be built this way: the
   -- recorded server is **queued on a non-boot core and current on none**, which
-  -- is what a preempted passive server looks like and the one shape
-  -- `determineExecutingCore` cannot see — that resolver finds a core a thread is
-  -- *current* on and otherwise answers `bootCoreId`.
+  -- is what a preempted passive server looks like and the one shape the retired
+  -- current-on resolver could not see — it found a core a thread is *current* on
+  -- and otherwise answered `bootCoreId`.
   --
   -- Under the superseded spelling the deschedule ran
   -- `removeRunnableOnCore … bootCoreId`, which edits core 0's queue and current
@@ -723,8 +723,8 @@ private def runDonationChecks : IO Unit := do
       core2 serverTid
   assertBool "PRECONDITION: the recorded server is queued on core 2 before the return"
     ((stQueuedServer.scheduler.runQueueOnCore core2).contains serverTid)
-  assertBool "…and current on NO core, which is what makes `determineExecutingCore` answer the boot core"
-    (decide (determineExecutingCore stQueuedServer serverTid = bootCoreId))
+  assertBool "…and current on NO core, which is what made the retired current-on proxy answer the boot core"
+    (Concurrency.allCores.all (fun c => stQueuedServer.scheduler.currentOnCore c != some serverTid))
   assertBool "…so the placement resolver and the superseded proxy disagree here"
     (decide (placedCoreOf? stQueuedServer serverTid = some core2))
   assertBool "…and the head-driven trigger names the queued server as the holder"
@@ -744,18 +744,16 @@ private def runDonationChecks : IO Unit := do
           -- operation no longer typechecks — the frame lemmas name the placement
           -- resolver — so the only way to show the witness discriminates is to
           -- exhibit what the pre-fix step computed.  `removeRunnableOnCore` at
-          -- `determineExecutingCore`'s answer edits core 0 and the server is on
+          -- the retired proxy's boot-core answer edits core 0 and the server is on
           -- core 2, so it stays queued and stays selectable at its legacy TCB
           -- priority against no reservation.
-          assertBool "NEGATIVE: the superseded `determineExecutingCore` deschedule leaves it queued"
-            ((removeRunnableOnCore stQueuedServer serverTid
-                (determineExecutingCore stQueuedServer serverTid)
+          assertBool "NEGATIVE: the superseded boot-core-fallback deschedule leaves it queued"
+            ((removeRunnableOnCore stQueuedServer serverTid bootCoreId
               ).scheduler.runQueueOnCore core2 |>.contains serverTid)
           assertBool "…so the two spellings genuinely differ on core 2's queue"
             (!((descheduleAtPlacement stQueuedServer serverTid
                  ).scheduler.runQueueOnCore core2 |>.contains serverTid)
-             && ((removeRunnableOnCore stQueuedServer serverTid
-                    (determineExecutingCore stQueuedServer serverTid)
+             && ((removeRunnableOnCore stQueuedServer serverTid bootCoreId
                   ).scheduler.runQueueOnCore core2 |>.contains serverTid))
       | .error _ =>
           assertBool "the donation return succeeds on the queued-server shape" false

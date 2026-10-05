@@ -9,8 +9,8 @@
 
 -- WS-SM SM6.A: PRODUCTION (LANDED). The pure `.call` dispatch ops below the API
 -- layer; the live `API.dispatchWithCap{,Checked}` `.call` arm routes through
--- `endpointCallCrossCoreDispatch{,Checked}` here, deriving the executing core
--- from the live state (`determineExecutingCore`). (Former "STATUS: staged"
+-- `endpointCallCrossCoreDispatch{,Checked}` here, passing the core the syscall
+-- trapped on, threaded from the entry point. (Former "STATUS: staged"
 -- marker replaced with this landing note per the implement-the-improvement rule;
 -- see WS-SM SM6.)
 
@@ -37,36 +37,6 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
-
--- ============================================================================
--- §0 Executing-core derivation (per-core dispatch without a parameter)
--- ============================================================================
-
-/-- WS-SM SM6.A: the core a syscall is executing on, derived from the live state.
-A thread issuing a syscall is the *current* thread on its core, so the executing
-core is the unique `c` with `currentOnCore c = some tid` — found by scanning
-`Concurrency.allCores`, defaulting to `bootCoreId` (the boot-pinned fallback, and
-the single-core answer). This lets the live `.call` dispatch identify and
-deschedule the caller on its *own* core without threading a hardware-core
-parameter through the `Kernel`-monad dispatch chain (which returns `Kernel Unit`,
-applying its state positionally). -/
-def determineExecutingCore (st : SystemState) (tid : SeLe4n.ThreadId) : CoreId :=
-  (Concurrency.allCores.find? (fun c => st.scheduler.currentOnCore c == some tid)).getD
-    Concurrency.bootCoreId
-
-/-- `determineExecutingCore` always returns a core on which the caller is the
-current thread, *or* the `bootCoreId` fallback — it never invents a core that
-isn't running the caller. (Either `find?` succeeds, witnessing `currentOnCore c
-= some tid`, or it falls back to the boot core.) -/
-theorem determineExecutingCore_sound (st : SystemState) (tid : SeLe4n.ThreadId) :
-    determineExecutingCore st tid = Concurrency.bootCoreId
-      ∨ st.scheduler.currentOnCore (determineExecutingCore st tid) = some tid := by
-  unfold determineExecutingCore
-  cases hf : Concurrency.allCores.find? (fun c => st.scheduler.currentOnCore c == some tid) with
-  | none => exact Or.inl (by simp)
-  | some c =>
-    have hc := List.find?_some hf
-    exact Or.inr (by simpa using hc)
 
 -- ============================================================================
 -- §1 Cross-core `endpointCallWithCaps`

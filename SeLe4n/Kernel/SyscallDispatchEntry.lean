@@ -864,10 +864,11 @@ opposite, that the next syscall silently falls back to `bootCoreId` — so it is
 stated here at the entry, over the state the entry commits.  With the dispatch
 live it covers a core whose run queue held no successor.
 
-The fallback the challenge describes is real but belongs to
-`determineExecutingCore`, which is reached only with a caller id already in
-hand.  Resolution happens first, in `syscallDispatchFromAbi`, and it has no
-fallback: no current thread on the issuing core means `.illegalState` with the
+The fallback the challenge describes belonged to a state-scanning
+executing-core resolver that IPC-8 (`v0.36.46`) deleted: the core is now
+threaded from this entry through the dispatcher, so no arm re-derives it and no
+fallback exists anywhere.  Resolution happens first, in
+`syscallDispatchFromAbi`, and it has no fallback: no current thread on the issuing core means `.illegalState` with the
 state returned unmodified.  A change that gave the entry a fallback core — the
 outcome the challenge fears — breaks this theorem. -/
 theorem vacatedCore_next_syscall_rejected

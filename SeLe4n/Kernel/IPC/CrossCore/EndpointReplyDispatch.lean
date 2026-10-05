@@ -9,8 +9,8 @@
 
 -- WS-SM SM6.C: PRODUCTION (LANDED).  The pure cross-core `.reply` dispatch op below
 -- the API layer; the live `API.dispatchWithCap{,Checked}` `.reply` arm routes through
--- `endpointReplyCrossCoreDispatch{,Checked}` here, deriving the executing core from
--- the live state (`determineExecutingCore`).  The live `.replyRecv` arm routes
+-- `endpointReplyCrossCoreDispatch{,Checked}` here, passing the core the syscall
+-- trapped on (threaded from the entry).  The live `.replyRecv` arm routes
 -- through the reply-object-aware `replyRecvBody` (in `API`), which resolves the
 -- *reply capability* (authority flows from holding the reply cap, exactly like
 -- `.reply`) and consumes / re-links the first-class Reply object — it does NOT use a

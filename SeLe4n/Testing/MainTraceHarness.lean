@@ -1752,7 +1752,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
   | .ok mapArgs =>
     -- S6-A/T6-C: perms are now typed as PagePermissions (validated at decode)
-    match SeLe4n.Kernel.vspaceMapFromFrameCap ksdMapCaller mapArgs stVspace with
+    match SeLe4n.Kernel.vspaceMapFromFrameCap ksdMapCaller bootCoreId mapArgs stVspace with
     | .error e => IO.println s!"[KSD-005] vspaceMap dispatch error: {reprStr e}"
     | .ok (_, stMapped) =>
       match SeLe4n.Kernel.Architecture.vspaceLookup mapArgs.asid mapArgs.vaddr stMapped with
