@@ -164,6 +164,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sele4n-lean-boundary"
+version = "0.36.47"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "sele4n-sys"
 version = "0.36.47"
 dependencies = [

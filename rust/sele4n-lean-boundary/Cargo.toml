@@ -1,0 +1,24 @@
+[package]
+name = "sele4n-lean-boundary"
+description = "Host test executing the compiled Lean layout of the kernel's boundary contexts against the HAL's offsets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+# No dependencies: the crate links the compiled host Lean archives and the
+# toolchain's `libleanshared`, resolved by `build.rs`, and nothing else.  It
+# deliberately does not depend on `sele4n-hal`, whose own Lean runtime
+# (`lean_runtime`, `#[no_mangle] lean_*`) would be a second definition of
+# every runtime symbol `libleanshared` provides.
+[dependencies]
+
+[build-dependencies]
+cc = "1.2"
+
+# The tests are `tests/`; the library carries none of its own, so no
+# harness is linked for it.
+[lib]
+test = false
+doctest = false

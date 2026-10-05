@@ -67,7 +67,7 @@ live version.
   force-bump (increment-vs-`main`) gate, so automated contributors
   (e.g. dependabot) are never blocked.
 - **The version sites** (authoritative list in
-  `scripts/version_locations.sh`): `lakefile.toml`; the four `sele4n-*`
+  `scripts/version_locations.sh`): `lakefile.toml`; the five `sele4n-*`
   crates in `rust/Cargo.toml` / `rust/Cargo.lock`; `KERNEL_VERSION` in
   `rust/sele4n-hal/src/boot.rs`; `docs/spec/SELE4N_SPEC.md`; `CLAUDE.md`
   (not `AGENTS.md`, which carries no version); the root `README.md` badge +
