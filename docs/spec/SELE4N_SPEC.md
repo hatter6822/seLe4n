@@ -4387,8 +4387,13 @@ alongside the latent inventory (closing SMP-H3).
    thread's weakened when its priority dropped, its deadline grew later or
    its domain changed.  Reconfiguring a scheduling context that moves its
    bound thread's domain therefore pokes the core the thread is queued or
-   running on; before, neither the diff nor the flags did, and that core
-   ran the thread out of its domain until its next tick.
+   running on; before, neither the diff nor the flags did.  For a queued
+   thread that is the whole fix: the receiver re-selects over the queue,
+   so a thread that moved into the active domain can preempt.  For a
+   running thread the receiver does not yet evict an incumbent outside the
+   active domain (`handleRescheduleSgiOnCore` compares only priority and
+   deadline), so it keeps running until it blocks or is preempted; that is
+   a registered debt row.
 
    **SM4.C — per-core scheduler invariant migration (v0.31.13).**  Lifts
    the scheduler invariant *predicates* from the single-core forms (pinned

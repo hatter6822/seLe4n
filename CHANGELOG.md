@@ -3,9 +3,13 @@
 Follow-up to the KSC-1 accumulator.  The selector admits a thread only when
 its domain is the core's active domain, but the key both the reschedule flags
 and the diff compared was `(priority, deadline)`.  Reconfiguring a scheduling
-context that moved its bound thread's domain therefore poked no remote core:
-the core the thread was queued or running on kept running it out of its domain
-until its next tick.
+context that moved its bound thread's domain therefore poked no remote core.
+
+- **Scope.**  For a thread queued on another core the poke is the whole fix:
+  the receiver re-selects, so a thread that moved into the active domain can
+  preempt.  For a thread running on another core the receiver still keeps an
+  incumbent that left the active domain (it compares only priority and
+  deadline); evicting it is a new registered debt row.
 
 - **One key.**  `markKeyChangeFor`, `markKeyChangeFrom` and `crossCoreSgiBody`
   now read `effectiveSchedParams` (`priority × deadline × domain`, the triple
