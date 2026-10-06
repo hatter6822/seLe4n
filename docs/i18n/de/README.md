@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.51-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.52-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -95,11 +95,11 @@ Lean-4-Beweissystem ermöglicht werden:
 
 | Eigenschaft | Wert |
 |-------------|------|
-| **Version** | `0.36.51` |
+| **Version** | `0.36.52` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 436.439 über 367 Dateien |
-| **Test-LoC (Lean)** | 89.313 über 72 Testsuiten |
-| **Bewiesene Deklarationen** | 14.525 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Produktions-LoC (Lean)** | 436.899 über 368 Dateien |
+| **Test-LoC (Lean)** | 89.320 über 72 Testsuiten |
+| **Bewiesene Deklarationen** | 14.555 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Rust-Crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) über 80 Quelldateien |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware-Anbindung** | **H3 ABGESCHLOSSEN** (WS-AG AG1–AG10): HAL, GIC-400, Timer, ARMv8-Seitentabellen, FFI-Brücke, QEMU-Boot |
