@@ -163,7 +163,13 @@ jobs:
           # AN11-F (LOW): job-tagged cache key (smoke lane).  See the
           # comment at test-fast above for the rationale.
           key: ${{ runner.os }}-${{ runner.arch }}-lean-smoke-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          # On a key miss (every PR bumps `lakefile.toml`'s version, so a PR's
+          # first run and the push merging it always miss), seed from the
+          # cache this run's fast job has just saved under the same key: it
+          # holds this cut's kernel build.  An older smoke cache is the
+          # fallback.
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
             ${{ runner.os }}-${{ runner.arch }}-lean-smoke-
             ${{ runner.os }}-${{ runner.arch }}-lean-fast-
             ${{ runner.os }}-${{ runner.arch }}-lean-
@@ -221,7 +227,11 @@ jobs:
           # the broadest set of targets, so its `.lake/build` is the
           # canonical seed for the smaller smoke / fast lanes.
           key: ${{ runner.os }}-${{ runner.arch }}-lean-full-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          # Key miss: seed from this run's smoke, then fast, cache under the
+          # same key (see the smoke lane's comment), before any older cache.
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-smoke-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+            ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
             ${{ runner.os }}-${{ runner.arch }}-lean-full-
             ${{ runner.os }}-${{ runner.arch }}-lean-smoke-
             ${{ runner.os }}-${{ runner.arch }}-lean-
