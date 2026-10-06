@@ -16,28 +16,12 @@ These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job
 - `test-fast`: `./scripts/test_fast.sh` (Tier 0 + Tier 1)
 - `test-smoke` (after test-fast): `python3 scripts/scenario_catalog.py validate` + `./scripts/test_tier2_trace.sh` + `./scripts/test_tier2_determinism.sh` + `./scripts/test_tier2_negative.sh`
 - `test-full` (after test-smoke): `./scripts/test_tier3_invariant_surface.sh`
-- `test-rust` (`Rust ABI Tests`): `./scripts/test_rust.sh` — workspace tests (incl. `--features std`), ABI conformance suite, `cargo fmt --check`, all-targets clippy. Runs on every PR alongside the Lean lanes.
+- `test-rust` (`Rust ABI Tests`): `./scripts/test_rust.sh` — workspace tests (incl. `--features std`), ABI conformance suite, `cargo fmt --check`, all-targets clippy. Runs on every PR/push alongside the Lean lanes.
 
-The hardware target has two lanes of its own, also on every PR:
+The hardware target has two lanes of its own, also on every PR/push:
 
 - `test-aarch64-cross` (`aarch64 Cross Build`): `./scripts/test_aarch64_cross_build.sh` — `sele4n-hal` for `aarch64-unknown-none-softfloat` in both profiles, the four `.S` sources verified assembled, the cross target linted with `-D warnings`, the release objects disassembled by `scripts/check_fp_simd_free_objects.py`, and (WS-BP BP2.1) a probe linked under `link.ld` by `scripts/check_link_script.py`, which checks the Lean heap arena's placement and the section boundaries the boot map reads (WS-BP BP2.6) on the ELF and proves each of the script's `ASSERT`s live by mutation; and (WS-BP BP5.1) step [7/7] links `sele4n-kernel` — the bare-metal image, its Rust half — in both profiles and runs `scripts/check_kernel_image.py` on the release one.
 - `test-lean-aarch64-archive` (`Lean aarch64 Archive`, WS-BP BP1): `./scripts/test_lean_aarch64_archive.sh` — `libsele4n.a`, the kernel's Lean object code for the same target, built from the elaborator's closure of `SeLe4n` by `scripts/build_lean_aarch64_archive.py` and checked there (closure, allocator configuration, per-module initializers, stdlib fidelity, attributed unresolved symbols, no FP/SIMD register); then `check_kernel_entry_exports.py --require-cross` decides the kernel-entry reconciliation on it and the host archive together.  Since BP2.2 the builder also links the archive with `--gc-sections` from its initializer and every production `@[export]`, and requires every symbol that link leaves undefined to be a global function of the HAL's rlib (the kernel's Lean runtime included) or of `compiler_builtins`.  Then (WS-BP BP5.2–BP5.4) it links the Lean kernel into `sele4n-kernel`, checks the image with `check_kernel_image.py --lean-kernel` and the FP/SIMD gate, cuts `kernel8.img` / `config.txt` with `scripts/build_rpi5_image.sh` and publishes the image's size and section map.  Uploads the archive, `libsele4n.unresolved`, and the `rpi5-kernel-image` artifact.
-
-**Which lanes run on a push to `main`.** Every lane runs on every pull request
-and on manual dispatch.  The `Classify Push` job asks GitHub whether the pushed
-commit is a merged pull request's merge commit (the pull request's
-`merge_commit_sha`).  If it is, that tree already passed every required check
-on the PR's merge ref (§4 has branch protection require those checks and the
-branch to be up to date), so the required Smoke, Full and `Rust ABI Tests`
-lanes are skipped.  Any other push to `main` (an admin or bypass push), or a
-failed lookup, runs them.  Every lane
-that is not a required check still runs on the push, because a pull request can
-merge before such a lane finishes or after it fails, and the push is then the
-lane's only run on that tree: `Tiered Tests / Fast` (required too, but it also
-seeds the caches the next pull request restores), `Lean aarch64 Archive`,
-`Loom Concurrency Model` and `aarch64 Cross Build`.  On a pull request the Smoke
-and Full lanes seed a cache miss from the Fast lane's cache of the same run
-(§3), so they never depend on a `main`-side cache of their own.
 
 `scripts/check_aarch64_cross_target.py` (Tier 0) requires both jobs to execute their scripts and install the toolchain components they read object code with.
 
@@ -64,7 +48,7 @@ CI jobs restore shared caches for:
 - `.lake/build` (the ARM64 fast lane deliberately caches only `~/.elan` +
   `.lake/packages` under its `lean-nobuild` key)
 
-Cache keys are derived from `lean-toolchain`, `lake-manifest.json`, `lakefile.toml`, and `scripts/setup_lean_env.sh` so toolchain/dependency/setup changes invalidate stale state.  Because every pull request bumps the version in `lakefile.toml`, a pull request's first run always misses its keys; the Smoke and Full lanes then restore the cache the Fast lane (and, for Full, the Smoke lane) saved earlier in the same run under the same key, before falling back to an older cache.
+Cache keys are derived from `lean-toolchain`, `lake-manifest.json`, `lakefile.toml`, and `scripts/setup_lean_env.sh` so toolchain/dependency/setup changes invalidate stale state.  Because every pull request bumps the version in `lakefile.toml`, a pull request's first run and the push that merges it always miss their keys; the Smoke and Full lanes then restore the cache the Fast lane (and, for Full, the Smoke lane) saved earlier in the same run under the same key, before falling back to an older cache.
 
 ## 4. Manual branch-protection setup checklist
 

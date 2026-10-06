@@ -1,7 +1,7 @@
 ## v0.36.56 — CI: stop re-running lanes that add no signal
 
-Cuts runner time per pull-request push and per merge without dropping any
-check from pull requests or any security scan.
+Cuts runner time per pull-request push without dropping any check from pull
+requests or from `main`, or any security scan.
 
 - **ARM64 fast gate off pull requests.**  `Platform Signal / ARM64 Fast Gate`
   re-ran `test_fast.sh`, which `Tiered Tests / Fast` already runs on every pull
@@ -9,23 +9,13 @@ check from pull requests or any security scan.
   runner-minutes a push).  It now runs on pushes to `main`, weekly and on
   dispatch.  The Gitleaks, Trivy and CodeQL job is unchanged and still runs on
   every pull request and every push to `main`.
-- **A merge to `main` skips the required lanes it already passed.**  Branch
-  protection requires Smoke, Full and `Rust ABI Tests` to pass on the pull
-  request's merge ref, so they are skipped on a push that the new
-  `Classify Push` job finds, from GitHub's record of the merge, to be a merged
-  pull request's merge commit.  Any other push to `main` (an admin or bypass
-  push) or a failed lookup runs them.  Every lane that is not
-  a required check (Loom, `aarch64 Cross Build`, `Lean aarch64 Archive`) still
-  runs there, since a pull request can merge before such a lane finishes and
-  the push is then its only run; `Tiered Tests / Fast` runs too, as the merged
-  tree's build and hygiene check and as the cache the next pull request seeds
-  from.  Manual dispatch still runs every lane.
 - **Smoke and Full seed from this run's caches.**  Every pull request bumps
-  `lakefile.toml`, so its first run misses every Lean cache key; Smoke and Full
-  now restore the cache the Fast (and Smoke) lane just saved under the same
-  key, holding this cut's kernel build, before any older cache.  This is what
-  lets `main` stop maintaining Smoke and Full caches.
-- `docs/CI_POLICY.md` §1, §3 and §6 say which lanes run on which event.
+  `lakefile.toml`, so its first run (and the push merging it) misses every Lean
+  cache key; Smoke and Full now restore the cache the Fast (and Smoke) lane just
+  saved under the same key, holding this cut's kernel build, before falling
+  back to the previous merge's cache.
+- Every other lane runs as before on every pull request and every push to
+  `main`.  `docs/CI_POLICY.md` §3 and §6 say so.
 
 ## v0.36.55 — KSC-1 reschedule-SGI accumulator, PR C: the seams fire from the flags and drop the pre-state
 
