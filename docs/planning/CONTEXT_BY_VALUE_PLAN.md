@@ -158,8 +158,9 @@ the reachability census) are restated over the word.
 `machine.coreRegs` both become the new `RegisterFile`; `contextMatchesCurrent`
 (`machine.regs == tcb.registerContext`) keeps its statement and becomes
 decidable equality, because the structure derives `DecidableEq` and the
-`BEq` is lawful — `RegisterFile.not_lawfulBEq`, `TCB.not_lawfulBEq` and the
-`beq_*` lemmas that stood in for `LawfulBEq` retire.  Collapsing the bank into
+`BEq` is lawful — `RegisterFile.not_lawfulBEq` and `TCB.not_lawfulBEq` retire
+at CV1.1, and the `beq_*` lemmas that stood in for `LawfulBEq` are kept there
+as one-line corollaries and retire with their last consumer at CV1.2.  Collapsing the bank into
 the TCB (the physical registers *are* the current thread's context) would
 delete `setRegsOnCore` (148 lines), `contextMatchesCurrent` (86 theorems) and
 the information-flow `machineRegs` projection's independent source; it is a
@@ -221,8 +222,10 @@ where `RegValue` stays (D1).
   `writeReg_zero_register` (`r.val ≥ 31 → writeReg rf r v = rf`) replace today's
   two lemmas; `writeReg_wordBounded` and `writeReg_uint64_wordBounded` retire.
 - `RegisterFile.ext` becomes the derived structure extensionality; the
-  `funext hgpr` form and `RegisterFile.beq_self/_def/_symm/_trans`,
-  `not_lawfulBEq` retire (`BEq` is `DecidableEq`'s and lawful).
+  `funext hgpr` form and `not_lawfulBEq` retire (`BEq` is `DecidableEq`'s and
+  lawful); `RegisterFile.beq_self/_def/_symm/_trans` are re-proved as
+  corollaries of `LawfulBEq` and kept until CV1.2 retires them with their last
+  consumer.
 - `wordBounded`, `default_wordBounded`, `machineWordBounded`,
   `machineWordBounded_default` retire (D5).  `setPC` writes `pc` as a `UInt64`.
 - `MachineState.coreRegs : Vector RegisterFile numCores` and `regsOnCore` /
@@ -236,7 +239,8 @@ where `RegValue` stays (D1).
   lambda: becomes a structure update of `x0`–`x7`, `x30`, `sp`),
   `writeFfiRegistersToTcb`, `restartAtSvc` (`pc - 4` in `UInt64`, wrapping
   subtraction stated and proved harmless under `pc ≥ 4` for a frame from an
-  `SVC`), `Adapter.writeRegisterState` (narrows under `value.valid`).
+  `SVC`), `Adapter.writeRegisterState` and `adapterWriteRegister` (retyped to take a
+  `UInt64`; nothing narrows — §3.1).
 - `FaultContext.ofRegisterFile`, `decodeSyscallArgs` / `readReg`,
   `readReturnFrame`, `readReturnValue`, `RestoreTarget.deliveredFrame?`: read
   through `gpr` as today (`RegValue` out), or through the field where the
@@ -253,20 +257,25 @@ where `RegValue` stays (D1).
 ### 3.3 The boundary (CV2)
 
 - `Architecture.TrapContext` deleted; `Platform.FFI.ffiRestoreStageContext :
-  (@& RegisterFile) → BaseIO Unit`; `restoreTrapFrame` stages `ctx` directly.
+  (@& RegisterFile) → BaseIO Unit`; `restoreTrapFrame` stages `ctx` directly;
+  the entry binding becomes `Platform.FFI.ffiTrapContext : BaseIO (Option
+  RegisterFile)` for this phase (the HAL writes the 35 words into a
+  `RegisterFile` object; `syscallEntryContextOrFaulted` and the entry wrappers
+  read it directly) — a temporary, still-allocating binding that §3.4 replaces.
 - `registerFileOfTrapWords`, `registerFileOfTrapContext`,
   `trapWordsOfRegisterFile`, `trapContextOfRegisterFile`, both round-trip
   theorems and `registerFileOfTrapContext_wordBounded` deleted; their Tier 3
   anchors (`ContextRestore` `:4358`, `TrapFrameSave` `:4342–4343`) deleted or
   retargeted to `snapshot` (§3.4).
 - `Kernel.faultEntryFrame?` answers `Option (RegisterFile × ExceptionContext ×
-  FaultRegisterWindow)` from an `InFlightContext` (§3.4), the `RegisterFile` by
-  `snapshot`.
+  FaultRegisterWindow)` from the `Option RegisterFile` binding in this phase;
+  CV3.1 moves its input to `InFlightContext` with the `RegisterFile` taken by
+  `snapshot` (§3.4).
 - `SeLe4n/Testing/BoundaryProbes.lean` and `rust/sele4n-lean-boundary/tests/layout.rs`
-  retarget: the probes export `RegisterFile.word` / `ofWords` and
-  `InFlightContext.snapshot`; the Rust side's `TRAP_CONTEXT_*` constants are
-  unchanged (35 words) and the test adds "a snapshot of an in-flight object is
-  a *different* object with the same 35 words".
+  retarget: the probes export `RegisterFile.word` / `ofWords`; the Rust side's
+  `TRAP_CONTEXT_*` constants are unchanged (35 words).  The `snapshot` export
+  and the "a snapshot of an in-flight object is a *different* object with the
+  same 35 words" test are CV3.3's (§3.4).
 - `scalar_words_of_lean::<35>` / `trap_context_of_lean` keep their exact-size
   refusal for heap objects.
 
@@ -374,7 +383,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 |---|---|---|
 | CV4.1 | `restoreTargetOnCore` / `restoreTrapFrame` on the TCB's object; `RestoreTarget.user (context : RegisterFile)` unchanged in statement | `ContextRestore.lean`, `FFI.lean` |
 | CV4.2 | `stageReturnFrame` as a structure update on the TCB's context; measured allocation count per syscall recorded | `SyscallReturn.lean`, measurement |
-| CV4.3 | `IpcMessage.registers : Array RegValue` → `Array UInt64`, with `SyscallDecodeResult.msgRegs`, `replyRegisters` and `FaultReply`'s register arrays where they feed it — **not measurement-gated**: a message register is any user `UInt64`, and one `≥ 2^63` read as a `Nat` allocates a bignum whatever CV4.2's workload happens to carry, so the input-dependent allocation goes by construction; `RegValue.valid` retires with its last array; the decode and return-frame readers restated; a Tier 2 case sends a high-bit word (`≥ 2^63`) through the IPC path and CV0.1's counter shows no allocation for it | `Model/Object/Types.lean`, `Architecture/SyscallArgDecode.lean`, decode/return-frame readers, one Tier 2 case |
+| CV4.3 | `IpcMessage.registers : Array RegValue` → `Array UInt64`, with `SyscallDecodeResult.msgRegs`, `replyRegisters` and `FaultReply`'s register arrays where they feed it — **not measurement-gated**: a message register is any user `UInt64`, and one `≥ 2^63` read as a `Nat` allocates a bignum whatever CV4.2's workload happens to carry, so the input-dependent allocation goes by construction; `RegValue.valid` retires with its last array; the decode and return-frame readers restated; a Tier 2 case sends a high-bit word (`≥ 2^63`) through the IPC path for the semantics (the word arrives intact), and the allocation evidence is the kernel lane's: CV0.1's `heap_allocations_per_syscall` exerciser gains a high-bit IPC scenario (a send whose message registers carry `≥ 2^63`) whose delta is read beside the plain round trip, since the host Lean runtime has no counter (§3.6) | `Model/Object/Types.lean`, `Architecture/SyscallArgDecode.lean`, decode/return-frame readers, one Tier 2 case |
 
 ### CV5 — closure
 
