@@ -122,7 +122,15 @@ Documentation only: no Lean, Rust or fixture change.
   resolves the unbound thread's core with `placedCoreOf?`, so a thread
   queued off its home core is removed, not left `.passive` on a queue.  The
   sixteenth round: CB0.8's writer pin gains the timeout prefix's bare
-  `storeObject` (the fourth writer) and its footprint pin the tick's.
+  `storeObject` (the fourth writer) and its footprint pin the tick's.  The
+  seventeenth round: CV0.2's witness splits at word 31 (four words are read
+  eagerly today); CB0.8's writer pin is the code-view search's output by
+  definition, the `_fromTcb` stores included; CB1.2 defines
+  `SchedContext.windowEnd` over today's `periodStart`, which CB1.7 makes
+  `deadline`; CV4.4 takes the bank only while the caller is still current;
+  CV §1.1's sites are every allocating runtime call `lean.h` names, the
+  sites WS-CV rows change are first-table rows, and the dispatcher is taken
+  net at each reading; T19's remote arm allows a request already pending.
 
 ## v0.36.49 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
 
