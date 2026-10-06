@@ -28,6 +28,13 @@ permissions:
 jobs:
   architecture-arm64-fast:
     name: Platform Signal / ARM64 Fast Gate
+    # Not on pull requests: this lane re-runs the same `test_fast.sh` that
+    # `Tiered Tests / Fast` runs on every pull request, on an ARM64 host, and
+    # rebuilds the whole Lean tree to do it (it keeps no `.lake/build` cache).
+    # It runs on every push to `main`, weekly and on dispatch, so an
+    # ARM64-host regression surfaces within one merge.  The security scan
+    # below still runs on every pull request.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04-arm
 
     steps:

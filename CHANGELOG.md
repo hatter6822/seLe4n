@@ -1,4 +1,4 @@
-## v0.36.56 — The reschedule key includes the thread's domain, and the receiver evicts an out-of-domain incumbent, locally too
+## v0.36.57 — The reschedule key includes the thread's domain, and the receiver evicts an out-of-domain incumbent, locally too
 
 Follow-up to the KSC-1 accumulator.  The selector admits a thread only when
 its domain is the core's active domain, but the key both the reschedule flags
@@ -63,6 +63,25 @@ context that moved its bound thread's domain therefore poked no remote core.
   running on core 1 and runs core 1's receiver: it goes idle with the thread
   re-queued, or runs a queued lower-priority in-domain thread instead; with the
   domain unchanged the incumbent keeps running.
+
+## v0.36.56 — CI: stop re-running lanes that add no signal
+
+Cuts runner time per pull-request push without dropping any check from pull
+requests or from `main`, or any security scan.
+
+- **ARM64 fast gate off pull requests.**  `Platform Signal / ARM64 Fast Gate`
+  re-ran `test_fast.sh`, which `Tiered Tests / Fast` already runs on every pull
+  request, and rebuilt the whole Lean tree on an ARM64 host to do it (about 12
+  runner-minutes a push).  It now runs on pushes to `main`, weekly and on
+  dispatch.  The Gitleaks, Trivy and CodeQL job is unchanged and still runs on
+  every pull request and every push to `main`.
+- **Smoke and Full seed from this run's caches.**  Every pull request bumps
+  `lakefile.toml`, so its first run (and the push merging it) misses every Lean
+  cache key; Smoke and Full now restore the cache the Fast (and Smoke) lane just
+  saved under the same key, holding this cut's kernel build, before falling
+  back to the previous merge's cache.
+- Every other lane runs as before on every pull request and every push to
+  `main`.  `docs/CI_POLICY.md` §3 and §6 say so.
 
 ## v0.36.55 — KSC-1 reschedule-SGI accumulator, PR C: the seams fire from the flags and drop the pre-state
 

@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.56` (`lakefile.toml`) |
+| **Package version** | `0.36.57` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 443,171 across 376 Lean files |
 | **Test LoC** | 89,514 across 72 Lean test suites |
@@ -4378,7 +4378,7 @@ alongside the latent inventory (closing SMP-H3).
    is not yet a theorem (a registered debt row); the suspend entry's refusal
    arm still returns its pre-state (another).
 
-   **The key includes the domain (`v0.36.56`).**  The selector admits a
+   **The key includes the domain (`v0.36.57`).**  The selector admits a
    thread only when `tcb.domain` is the core's active domain, so a domain
    move changes eligibility as surely as a priority or deadline move.  The
    key `markKeyChangeFor` compares and `crossCoreSgiBody` diffs is now
@@ -4395,7 +4395,7 @@ alongside the latent inventory (closing SMP-H3).
    none the incumbent is re-queued and the core left idle
    (`dropCurrentOnCore`).  The core's idle thread is never dropped.
 
-   **The executing core consumes its own flag (`v0.36.56`).**  No SGI
+   **The executing core consumes its own flag (`v0.36.57`).**  No SGI
    names the executing core, so a flag a step raises on the core it ran on
    (a writer that weakened the caller's own key, or an enqueue that may
    outrank it) is consumed inline: the commit seams' local reschedule
@@ -4408,7 +4408,7 @@ alongside the latent inventory (closing SMP-H3).
    handler runs under the core's own lock: the step's lock footprint need
    not cover this core's queue and slot.
 
-   **An empty core resumes the idle loop (`v0.36.56`).**  A core with no
+   **An empty core resumes the idle loop (`v0.36.57`).**  A core with no
    current thread resumes the kernel's wait loop
    (`restoreTargetOnCore` names `.idle`), not nothing.  The trap layer
    returns through the frame it captured when no restore is installed, and

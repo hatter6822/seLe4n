@@ -48,7 +48,7 @@ CI jobs restore shared caches for:
 - `.lake/build` (the ARM64 fast lane deliberately caches only `~/.elan` +
   `.lake/packages` under its `lean-nobuild` key)
 
-Cache keys are derived from `lean-toolchain`, `lake-manifest.json`, `lakefile.toml`, and `scripts/setup_lean_env.sh` so toolchain/dependency/setup changes invalidate stale state.
+Cache keys are derived from `lean-toolchain`, `lake-manifest.json`, `lakefile.toml`, and `scripts/setup_lean_env.sh` so toolchain/dependency/setup changes invalidate stale state.  Because every pull request bumps the version in `lakefile.toml`, a pull request's first run and the push that merges it always miss their keys; the Smoke and Full lanes then restore the cache the Fast lane (and, for Full, the Smoke lane) saved earlier in the same run under the same key, before falling back to an older cache.
 
 ## 4. Manual branch-protection setup checklist
 
@@ -82,8 +82,9 @@ The `Platform and Security Baseline` workflow (`.github/workflows/platform_secur
    - Trivy filesystem vulnerability scanning (HIGH/CRITICAL severities),
    - CodeQL analysis for GitHub Actions workflows.
 
-This workflow runs on pull requests, pushes to `main`, weekly schedule, and manual dispatch.
-For fork-origin pull requests, the security-scan job is conditionally skipped because `security-events: write` permissions are unavailable in that context; architecture-targeted fast-gate coverage still runs.
+The security scan runs on pull requests, pushes to `main`, weekly schedule, and manual dispatch.
+The ARM64 fast gate runs on pushes to `main`, the weekly schedule and manual dispatch, not on pull requests: it re-runs the `test_fast.sh` that `Tiered Tests / Fast` already runs on every pull request, rebuilding the whole Lean tree on an ARM64 host, so an ARM64-host regression surfaces on the push that merges it.
+For fork-origin pull requests, the security-scan job is conditionally skipped because `security-events: write` permissions are unavailable in that context; the x86 `Tiered Tests` lanes still run.
 The workflow permissions include `pull-requests: read` so the Gitleaks PR commit-diff scan path can read pull request commits without `Resource not accessible by integration` failures.
 The security scan job performs a full-history checkout (`actions/checkout` with `fetch-depth: 0`) so Gitleaks PR commit-range scans do not fail with ambiguous revision errors on shallow clones.
 CodeQL analysis is a hard-fail gate: the analyze step carries no `continue-on-error` (see §8 for the policy and the reversal that made it blocking).
@@ -133,7 +134,7 @@ What blocking does and does not mean:
   under which the code-scanning merge requirement will otherwise hang.
 - Fork-origin pull requests are unaffected: the whole `security-baseline-scan` job is
   skipped for them by its `if:` guard, because `security-events: write` is not
-  available to fork-origin runs. Architecture-targeted fast-gate coverage still runs.
+  available to fork-origin runs. The x86 `Tiered Tests` lanes still run.
 - Dependabot pull requests upload successfully today (observed in both #858 and #859,
   whose diagnostic SARIF uploads were accepted), so blocking does not strand them.
 

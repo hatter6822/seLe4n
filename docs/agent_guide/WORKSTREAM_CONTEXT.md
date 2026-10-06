@@ -89,7 +89,7 @@ the coverage relation, its bridge to the diff and the primitive lemmas, at
 (PR B2a) at `v0.36.53`; coverage through every dispatcher arm and every
 committing seam, with the bound-unbind and resume hooks (PR B2b), at
 `v0.36.54`; and the seam switch (PR C), which closes the row, at `v0.36.55`; the key
-both compare gained the thread's domain at `v0.36.56`).  Thirteen review rounds on the planning PR reshaped the design
+both compare gained the thread's domain at `v0.36.57`).  Thirteen review rounds on the planning PR reshaped the design
 before any code exists — a transitive tie-break, a key-worsening reschedule
 seam, reconfiguration that never mints budget, every reservation move
 re-admitted per core, label uniformity over bindings, inheritance for bound

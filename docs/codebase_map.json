@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "local/exec-flag",
-      "commit_sha": "d7d2045b1fbb0053c5f4e5dcc61675ce3d912acf",
-      "tree_sha": "db389a216e536688b3bcde7ea5ddd4750870a96a",
-      "committed_at_utc": "2026-10-06T22:56:52+00:00"
+      "commit_sha": "971a307bed078b83e6cdcaee75afdb0698844a60",
+      "tree_sha": "e1ee0d12bafc7d2d3e8c8bb3be14bf68e3f3c7c0",
+      "committed_at_utc": "2026-10-06T23:29:21+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 24435
   },
   "readme_sync": {
-    "version": "0.36.56",
+    "version": "0.36.57",
     "lean_toolchain": "v4.28.0",
     "production_files": 376,
     "production_loc": 443171,
