@@ -383,7 +383,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 |---|---|---|
 | CV4.1 | `restoreTargetOnCore` / `restoreTrapFrame` on the TCB's object; `RestoreTarget.user (context : RegisterFile)` unchanged in statement | `ContextRestore.lean`, `FFI.lean` |
 | CV4.2 | `stageReturnFrame` as a structure update on the TCB's context; measured allocation count per syscall recorded | `SyscallReturn.lean`, measurement |
-| CV4.3 | `IpcMessage.registers : Array RegValue` → `Array UInt64`, with `SyscallDecodeResult.msgRegs`, `replyRegisters` and `FaultReply`'s register arrays where they feed it — **not measurement-gated**: a message register is any user `UInt64`, and one `≥ 2^63` read as a `Nat` allocates a bignum whatever CV4.2's workload happens to carry, so the input-dependent allocation goes by construction; `RegValue.valid` retires with its last array; the decode and return-frame readers restated; a Tier 2 case sends a high-bit word (`≥ 2^63`) through the IPC path for the semantics (the word arrives intact), and the allocation evidence is the kernel lane's: CV0.1's `heap_allocations_per_syscall` exerciser gains a high-bit IPC scenario (a send whose message registers carry `≥ 2^63`) whose delta is read beside the plain round trip, since the host Lean runtime has no counter (§3.6) | `Model/Object/Types.lean`, `Architecture/SyscallArgDecode.lean`, decode/return-frame readers, one Tier 2 case |
+| CV4.3 | `IpcMessage.registers : Array RegValue` → an **unboxed** word carrier, `MessageWords`, a `ByteArray` of `8 · len` bytes (`len ≤ maxMessageRegisters = 120`) with `get i` / `set i v` assembling and splitting the word through `uget` / `uset` (eight scalar byte operations per word, no object per element), with `SyscallDecodeResult.msgRegs`, `replyRegisters` and `FaultReply`'s register arrays where they feed it — **not `Array UInt64`**, whose every push boxes its element through `lean_box_uint64` (a heap object for the word, so the input-dependent allocation would survive and contradict §1.1's zero-`lean_box_uint64` read) — and **not measurement-gated**: a message register is any user `UInt64`, and one `≥ 2^63` read as a `Nat` allocates a bignum whatever CV4.2's workload happens to carry, so the input-dependent allocation goes by construction; `RegValue.valid` retires with its last array; the decode and return-frame readers restated over `MessageWords`; the generated C of `RegisterDecode.c` and `SyscallArgDecode.c` read for `lean_box_uint64` on the decode path as §1.1 reads the entry modules, with the high-bit case; a Tier 2 case sends a high-bit word (`≥ 2^63`) through the IPC path for the semantics (the word arrives intact), and the allocation evidence is the kernel lane's: CV0.1's `heap_allocations_per_syscall` exerciser gains a high-bit IPC scenario (a send whose message registers carry `≥ 2^63`) whose delta is read beside the plain round trip, since the host Lean runtime has no counter (§3.6) | `Model/Object/Types.lean`, `Architecture/SyscallArgDecode.lean`, decode/return-frame readers, one Tier 2 case |
 
 ### CV5 — closure
 
@@ -418,11 +418,16 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 - **Exclusivity of the TCB object at the return-frame write** is not promised;
   §3.5 measures it.  If the TCB is shared at that point the syscall pays one
   more 280-byte copy, still far below today's forty allocations.
-- **`IpcMessage.registers` becomes `Array UInt64` at CV4.3**, after the
-  entry/exit path (CV1–CV4.2) rather than with it, because the arrays have
-  their own readers; a `UInt64` word ≥ 2^63 read as a `Nat` allocates a bignum
-  on an input the user chooses, which no workload measurement can rule out, so
-  the retype is unconditional and the high-bit case is a test.
+- **`IpcMessage.registers` becomes the unboxed `MessageWords` at CV4.3**,
+  after the entry/exit path (CV1–CV4.2) rather than with it, because the
+  arrays have their own readers; a `UInt64` word ≥ 2^63 read as a `Nat`
+  allocates a bignum on an input the user chooses, which no workload
+  measurement can rule out, so the retype is unconditional and the high-bit
+  case is a test.  `Array UInt64` is not the carrier: Lean boxes every
+  `UInt64` array element (`lean_box_uint64` allocates a heap object), so it
+  would move the allocation, not remove it; a fixed 120-field scalar structure
+  would be unboxed too but copies 960 bytes per update, which the `ByteArray`
+  avoids.
 - **Collapsing the per-core bank into the TCB** (D2) is not this workstream.
   It would remove `contextMatchesCurrent` and `setRegsOnCore`, change the
   information-flow projection's source and every unwinding relation that reads
