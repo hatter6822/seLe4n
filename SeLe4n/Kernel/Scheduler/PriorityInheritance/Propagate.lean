@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute
+import SeLe4n.Kernel.Scheduler.Operations.ReschedulePending
 
 namespace SeLe4n.Kernel.PriorityInheritance
 
@@ -45,6 +46,11 @@ def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : Syst
     -- Only update if pipBoost actually changed
     if tcb.pipBoost == newBoost then st
     else
+      -- The reschedule-SGI accumulator (KSC-1): the holder's effective key
+      -- before the boost write, for `markKeyChangeFor` on every leaf below —
+      -- a re-bucketed holder flags its home, a current holder flags the core
+      -- running it on a drop, and nothing else flags anything.
+      let preKey := resolveEffectivePrioDeadline st tcb
       -- Update TCB with new (GLOBAL) pipBoost
       let tcb' := { tcb with pipBoost := newBoost }
       let st' := st.rewriteObject tid.toObjId (KernelObject.tcb tcb')
@@ -54,12 +60,12 @@ def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : Syst
         let oldPrio := (resolveEffectivePrioDeadline st tcb).1
         let newPrio := (resolveEffectivePrioDeadline st' tcb').1
         if oldPrio != newPrio then
-          { st' with
+          markKeyChangeFor { st' with
             scheduler := st'.scheduler.setRunQueueOnCore c
               (((st'.scheduler.runQueueOnCore c).remove tid).insert tid newPrio)
-          }
-        else st'
-      else st'
+          } tid preKey
+        else markKeyChangeFor st' tid preKey
+      else markKeyChangeFor st' tid preKey
   | none => st
 
 /-- D4-G / AN5-C: the single-core PIP boost update — `updatePipBoostOnCore` at
@@ -210,11 +216,14 @@ theorem updatePipBoost_ipcState_frame (st : SystemState) (tid : ThreadId)
         · -- In run queue
           split
           · -- Priority changed → scheduler updated, objects have insert
+            rw [markKeyChangeFor_objects]
             show (st.objects.insert tid.toObjId _).get? t.toObjId = _
             exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
           · -- Priority unchanged → same objects with insert
+            rw [markKeyChangeFor_objects]
             exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
         · -- Not in run queue → same objects with insert
+          rw [markKeyChangeFor_objects]
           exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
   case h_2 => rfl
 
@@ -249,8 +258,8 @@ theorem updatePipBoost_self_ipcState (st : SystemState) (tid : ThreadId)
     refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
     -- All scheduler branches have .objects = st.objects.insert ..., so hSelf applies
     by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
-    · simp only [hRQ, ite_true]; split <;> exact hSelf
-    · simp only [hRQ, ite_false]; exact hSelf
+    · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
+    · simp only [hRQ, ite_false]; rw [markKeyChangeFor_objects]; exact hSelf
 
 /-- AE3-I/S-01: `updatePipBoost` preserves `blockingServer` for all threads.
 This is the main frame theorem: the blocking graph is invariant under PIP
@@ -319,8 +328,8 @@ theorem updatePipBoost_preserves_blockingServer (st : SystemState) (tid : Thread
             some (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) :=
           RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
         by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
-        · simp only [hRQ, ite_true]; split <;> exact hSelf
-        · simp only [hRQ, ite_false]; exact hSelf
+        · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
+        · simp only [hRQ, ite_false]; rw [markKeyChangeFor_objects]; exact hSelf
   · exact blockingServer_congr_objects _ _ _ (updatePipBoost_ipcState_frame st tid hObjInv t hEq)
 
 -- ============================================================================
@@ -366,9 +375,9 @@ theorem updatePipBoostOnCore_objects_at (st : SystemState) (c : CoreId) (tid : T
   · exact ⟨tcb.pipBoost, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb⟩
   · split
     · split
-      · exact ⟨computeMaxWaiterPriority st tid, hIns _⟩
-      · exact ⟨computeMaxWaiterPriority st tid, hIns _⟩
-    · exact ⟨computeMaxWaiterPriority st tid, hIns _⟩
+      · (rw [markKeyChangeFor_objects]; exact ⟨computeMaxWaiterPriority st tid, hIns _⟩)
+      · (rw [markKeyChangeFor_objects]; exact ⟨computeMaxWaiterPriority st tid, hIns _⟩)
+    · (rw [markKeyChangeFor_objects]; exact ⟨computeMaxWaiterPriority st tid, hIns _⟩)
 
 /-- WS-RR RR2.6: `updatePipBoostOnCore` leaves every thread's run-queue
 *membership* unchanged on every core.  Its bucket migration removes the boosted
@@ -386,7 +395,8 @@ theorem updatePipBoostOnCore_mem_runQueueOnCore (st : SystemState) (c c' : CoreI
     · split
       · rename_i hIn
         split
-        · by_cases hcc : c = c'
+        · rw [markKeyChangeFor_runQueueOnCore]
+          by_cases hcc : c = c'
           · subst hcc
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
             rw [RunQueue.mem_insert, RunQueue.mem_remove]
@@ -399,8 +409,8 @@ theorem updatePipBoostOnCore_mem_runQueueOnCore (st : SystemState) (c c' : CoreI
               · exact Or.inr hEq
               · exact Or.inl ⟨hx, hEq⟩
           · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
-        · exact Iff.rfl
-      · exact Iff.rfl
+        · rw [markKeyChangeFor_runQueueOnCore]; exact Iff.rfl
+      · rw [markKeyChangeFor_runQueueOnCore]; exact Iff.rfl
   · exact Iff.rfl
 
 /-- WS-SM SM5.F.2 (plan §3.6): cross-core PIP boost with wake.
@@ -533,9 +543,9 @@ theorem updatePipBoostOnCore_preserves_objects_invExt (st : SystemState) (c : Co
     · exact hInv
     · split
       · split
-        · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
-        · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
-      · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
+        · (rw [markKeyChangeFor_objects]; exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv)
+        · (rw [markKeyChangeFor_objects]; exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv)
+      · (rw [markKeyChangeFor_objects]; exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv)
   · exact hInv
 
 /-- WS-SM SM5.F.2: `updatePipBoostOnCore` does not change `objects[oid]?` for any
@@ -549,10 +559,13 @@ theorem updatePipBoostOnCore_objects_ne (st : SystemState) (c : CoreId) (tid : T
     · rfl
     · split
       · split
-        · show (st.objects.insert tid.toObjId _)[oid]? = _
+        · rw [markKeyChangeFor_objects]
+          show (st.objects.insert tid.toObjId _)[oid]? = _
           exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-        · exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-      · exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
+        · rw [markKeyChangeFor_objects]
+          exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
+      · rw [markKeyChangeFor_objects]
+        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
   · rfl
 
 /-- WS-SM SM5.F.2: `updatePipBoostOnCore` never writes any core's `current` slot. -/
@@ -561,14 +574,8 @@ theorem updatePipBoostOnCore_currentOnCore (st : SystemState) (c c' : CoreId)
     (updatePipBoostOnCore st c tid).scheduler.currentOnCore c'
       = st.scheduler.currentOnCore c' := by
   simp only [updatePipBoostOnCore]
-  split
-  · rename_i tcb _
-    split
-    · rfl
-    · split
-      · split <;> rfl
-      · rfl
-  · rfl
+  repeat' split
+  all_goals simp [SystemState.rewriteObject_scheduler]
 
 /-- WS-SM SM5.F.2: `pipBoostWithWake`'s state component is the per-core boost on the
 holder's home core. -/
@@ -830,15 +837,8 @@ theorem updatePipBoostOnCore_replenishQueueOnCore (st : SystemState) (c c' : Cor
     (updatePipBoostOnCore st c tid).scheduler.replenishQueueOnCore c'
       = st.scheduler.replenishQueueOnCore c' := by
   simp only [updatePipBoostOnCore]
-  split
-  · split
-    · rfl
-    · split
-      · split
-        · exact SchedulerState.setRunQueueOnCore_replenishQueueOnCore _ _ _ _
-        · rfl
-      · rfl
-  · rfl
+  repeat' split
+  all_goals simp [SystemState.rewriteObject_scheduler]
 
 /-- WS-RR RR2.20 (frame): a PIP boost never changes any SchedContext.  Its only
 object write stores a `.tcb` at the holder's slot — a slot that already held a
@@ -1052,15 +1052,16 @@ theorem updatePipBoostOnCore_preserves_runQueueOnCore_wellFormed (st : SystemSta
     · exact hwf
     · split
       · split
-        · by_cases hcc : c = c'
+        · rw [markKeyChangeFor_runQueueOnCore]
+          by_cases hcc : c = c'
           · subst hcc
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
             exact RunQueue.insert_preserves_wellFormed _
               (RunQueue.remove_preserves_wellFormed _ hwf tid) tid _
           · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
             exact hwf
-        · exact hwf
-      · exact hwf
+        · rw [markKeyChangeFor_runQueueOnCore]; exact hwf
+      · rw [markKeyChangeFor_runQueueOnCore]; exact hwf
   · exact hwf
 
 /-- `v0.35.158`: ...and so does the boost-with-wake step. -/
@@ -1117,15 +1118,16 @@ theorem updatePipBoostOnCore_runQueueUniqueOnCore (st : SystemState)
     · exact h
     · split
       · split
-        · by_cases hcc : c = c'
+        · rw [markKeyChangeFor_runQueueOnCore]
+          by_cases hcc : c = c'
           · subst hcc
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
             exact RunQueue.insert_preserves_toList_nodup _ _ _
               (RunQueue.remove_preserves_toList_nodup _ tid h)
           · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
             exact h
-        · exact h
-      · exact h
+        · rw [markKeyChangeFor_runQueueOnCore]; exact h
+      · rw [markKeyChangeFor_runQueueOnCore]; exact h
   · exact h
 
 /-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
@@ -1160,26 +1162,16 @@ a `rewriteObject` (which touches `objects` alone) and a run-queue update (which
 touches `scheduler` alone), so both capability-side CDT conjuncts are framed. -/
 theorem updatePipBoostOnCore_cdtNodeSlot (st : SystemState) (c : CoreId) (tid : ThreadId) :
     (updatePipBoostOnCore st c tid).cdtNodeSlot = st.cdtNodeSlot := by
-  simp only [updatePipBoostOnCore, SystemState.rewriteObject]
-  split
-  · split
-    · rfl
-    · split
-      · split <;> rfl
-      · rfl
-  · rfl
+  simp only [updatePipBoostOnCore]
+  repeat' split
+  all_goals simp [SystemState.rewriteObject]
 
 /-- WS-RR RR8.16 (`v0.35.197`): ...and no derivation tree. -/
 theorem updatePipBoostOnCore_cdt (st : SystemState) (c : CoreId) (tid : ThreadId) :
     (updatePipBoostOnCore st c tid).cdt = st.cdt := by
-  simp only [updatePipBoostOnCore, SystemState.rewriteObject]
-  split
-  · split
-    · rfl
-    · split
-      · split <;> rfl
-      · rfl
-  · rfl
+  simp only [updatePipBoostOnCore]
+  repeat' split
+  all_goals simp [SystemState.rewriteObject]
 
 /-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
 theorem pipBoostWithWake_cdtNodeSlot (st : SystemState) (tid : ThreadId) (ec : CoreId) :

@@ -1596,8 +1596,11 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
       rename_i tcb _
       intro c
       refine replenishQueueAffinityConsistentOnCore_transfer st _ c ?_ ?_ ?_ (hCons c)
-      · -- Entries: the purge removes, and never adds.
+      · -- Entries: the purge removes, and never adds (and the reschedule-pending
+        -- mark writes no replenish queue).
         intro e hMem
+        dsimp only at hMem
+        rw [markKeyChangeFor_replenishQueueOnCore] at hMem
         have hMem' : e ∈ ((SchedContextOps.purgeReplenishmentOnCore
             (st.updateTcb tid fun t =>
               { t with schedContextBinding := SchedContextBinding.unbound })
@@ -1612,6 +1615,8 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
           exact hMem'
       · -- `boundThread`: the one object write is a TCB's.
         intro k
+        dsimp only
+        rw [markKeyChangeFor_getSchedContext?]
         show ((st.updateTcb tid fun t =>
           { t with schedContextBinding := SchedContextBinding.unbound }).getSchedContext? k).map _
             = _
@@ -1619,6 +1624,8 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
       · -- Home cores: the TCB write moves no `cpuAffinity`.
         intro x
         refine determineTargetCore_congr _ _ x ?_
+        dsimp only
+        rw [markKeyChangeFor_getTcb?]
         show ((st.updateTcb tid fun t =>
           { t with schedContextBinding := SchedContextBinding.unbound }).getTcb? x).map
             (·.cpuAffinity) = _

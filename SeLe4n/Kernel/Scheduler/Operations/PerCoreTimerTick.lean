@@ -1097,7 +1097,7 @@ theorem scheduleEffectiveOnCore_preserves_objects_invExt (st : SystemState) (c :
   · -- WS-SM SM5.E (folded idle): the `none` branch dispatches idle if dispatchable;
     -- `idleFallbackOnCore_objects` discharges both arms (idle / `none`) at once.
     simp only [Except.ok.injEq] at hStep; subst hStep
-    rw [idleFallbackOnCore_objects]
+    rw [SystemState.clearReschedulePendingOnCore_objects, idleFallbackOnCore_objects]
     exact saveOutgoingContextOnCore_preserves_objects_invExt st c hInv
   · split at hStep
     · split at hStep
@@ -1261,7 +1261,8 @@ theorem enqueueRunnableOnCore_lastTimeoutErrorsOnCore (st : SystemState) (c : Co
   unfold enqueueRunnableOnCore; split
   · split
     · rfl
-    · simp only [SchedulerState.setRunQueueOnCore_lastTimeoutErrorsOnCore]
+    · simp only [SchedulerState.markReschedulePendingOnCore_lastTimeoutErrorsOnCore,
+        SchedulerState.setRunQueueOnCore_lastTimeoutErrorsOnCore]
   · rfl
 
 /-- WS-SM SM5.D.4: `processOneReplenishmentOnCore` leaves the machine unchanged. -/
@@ -1856,7 +1857,7 @@ theorem scheduleEffectiveOnCore_objects_eq (st : SystemState) (c : CoreId)
     cases res with
     | none =>
       simp only [Except.ok.injEq] at hStep; subst hStep
-      rw [idleFallbackOnCore_objects]
+      rw [SystemState.clearReschedulePendingOnCore_objects, idleFallbackOnCore_objects]
     | some tid =>
       cases hTcb : st.getTcb? tid with
       | none => simp [hTcb] at hStep
@@ -1902,7 +1903,8 @@ theorem scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed (st : SystemS
         simp only [hTcb] at hStep
         split at hStep
         · simp only [Except.ok.injEq] at hStep; subst hStep
-          simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+          simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+            SchedulerState.setCurrentOnCore_runQueueOnCore,
             restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [saveOutgoingContextOnCore_scheduler_eq]
           exact RunQueue.remove_preserves_wellFormed _ hwf tid
@@ -1934,7 +1936,8 @@ theorem scheduleEffectiveOnCore_establishes_currentThreadValidOnCore (st : Syste
         split at hStep
         · simp only [Except.ok.injEq] at hStep; subst hStep
           unfold currentThreadValidOnCore
-          simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+          simp only [SchedulerState.clearReschedulePendingOnCore_currentOnCore,
+            SchedulerState.setCurrentOnCore_currentOnCore_self]
           exact scheduleEffectiveOnCore_getTcb?_isSome st c _ tid hInv hCopy ⟨tcb, hTcb⟩
         · simp at hStep
 
@@ -1993,7 +1996,9 @@ theorem scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore (st : S
         split at hStep
         · simp only [Except.ok.injEq] at hStep; subst hStep
           unfold queueCurrentConsistentOnCore
-          simp only [SchedulerState.setCurrentOnCore_currentOnCore_self,
+          simp only [SchedulerState.clearReschedulePendingOnCore_currentOnCore,
+            SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+            SchedulerState.setCurrentOnCore_currentOnCore_self,
             SchedulerState.setCurrentOnCore_runQueueOnCore, restoreIncomingContextOnCore_scheduler,
             SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [saveOutgoingContextOnCore_scheduler_eq]
@@ -2095,7 +2100,8 @@ theorem scheduleEffectiveOnCore_runQueue_toList_subset (st : SystemState) (c : C
         simp only [hTcb] at hStep
         split at hStep
         · simp only [Except.ok.injEq] at hStep; subst hStep
-          simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+          simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+            SchedulerState.setCurrentOnCore_runQueueOnCore,
             restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hx
           rw [saveOutgoingContextOnCore_scheduler_eq] at hx
           rw [RunQueue.mem_toList_iff_mem] at hx ⊢
@@ -2911,7 +2917,8 @@ theorem scheduleEffectiveOnCore_preserves_runQueueOnCore_nodup (st : SystemState
         simp only [hTcb] at hStep
         split at hStep
         · simp only [Except.ok.injEq] at hStep; subst hStep
-          simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+          simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+            SchedulerState.setCurrentOnCore_runQueueOnCore,
             restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [saveOutgoingContextOnCore_scheduler_eq]
           exact RunQueue.remove_preserves_toList_nodup _ tid hnd
@@ -3136,7 +3143,8 @@ theorem scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore (s
             rw [← hStep]; simp [SchedulerState.setCurrentOnCore_currentOnCore_self]
           have hact : st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c := by
             rw [← hStep]
-            simp only [SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContextOnCore_scheduler,
+            simp only [SchedulerState.clearReschedulePendingOnCore_activeDomainOnCore,
+              SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContextOnCore_scheduler,
               SchedulerState.setRunQueueOnCore_activeDomainOnCore]
             rw [saveOutgoingContextOnCore_scheduler_eq]
           obtain ⟨tcb', hg, hdom⟩ := scheduleEffectiveOnCore_getTcb?_domain st c st' tid tcb hInv hCopy hTcb

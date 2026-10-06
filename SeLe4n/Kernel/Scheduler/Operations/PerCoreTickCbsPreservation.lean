@@ -139,7 +139,9 @@ theorem scheduleEffectiveOnCore_replenishQueueOnCore (st : SystemState) (c : Cor
     cases res with
     | none =>
       simp only [Except.ok.injEq] at hStep; subst hStep
-      rw [idleFallbackOnCore_replenishQueueOnCore, saveOutgoingContextOnCore_scheduler_eq]
+      rw [SystemState.clearReschedulePendingOnCore_scheduler,
+        SchedulerState.clearReschedulePendingOnCore_replenishQueueOnCore,
+        idleFallbackOnCore_replenishQueueOnCore, saveOutgoingContextOnCore_scheduler_eq]
     | some tid =>
       cases hTcb : st.getTcb? tid with
       | none => simp [hTcb] at hStep
@@ -148,7 +150,8 @@ theorem scheduleEffectiveOnCore_replenishQueueOnCore (st : SystemState) (c : Cor
         split at hStep
         · simp only [Except.ok.injEq] at hStep
           rw [← hStep]
-          simp only [SchedulerState.setCurrentOnCore_replenishQueueOnCore,
+          simp only [SchedulerState.clearReschedulePendingOnCore_replenishQueueOnCore,
+            SchedulerState.setCurrentOnCore_replenishQueueOnCore,
             restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep

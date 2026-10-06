@@ -1033,6 +1033,7 @@ theorem migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
       · -- write branch: scheduler = (setRunQueueOnCore fromCore rqFrom).setRunQueueOnCore toCore rqTo
         rename_i tcb _ _
         unfold runQueueOnCoreWellFormed at h ⊢
+        rw [SeLe4n.Model.SchedulerState.markReschedulePendingOnCore_runQueueOnCore]
         by_cases hToc : toCore = c'
         · subst hToc
           simp only [SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
@@ -1297,9 +1298,9 @@ theorem updatePipBoost_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.Thr
     · rfl
     · split
       · split
-        · rfl
-        · rfl
-      · rfl
+        · rw [markKeyChangeFor_replenishQueueOnCore]; rfl
+        · rw [markKeyChangeFor_replenishQueueOnCore]
+      · rw [markKeyChangeFor_replenishQueueOnCore]
   · rfl
 
 /-- WS-SM SM5.H (frame): reverting priority inheritance never touches any
@@ -1641,6 +1642,8 @@ theorem migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent
       · -- write branch: the scheduler is the two-core run-queue update.
         rename_i hContains
         intro hxMem
+        dsimp only at hxMem
+        rw [SeLe4n.Model.SchedulerState.markReschedulePendingOnCore_runQueueOnCore] at hxMem
         by_cases hToc : toCore = c'
         · -- c' = toCore: the migrated `x` is an old member or `tid` itself.
           subst hToc

@@ -4107,6 +4107,44 @@ theorem pendingPhysicalWrites_write_preserves_projection
     projectState ctx observer { st with pendingPhysicalWrites := m } =
       projectState ctx observer st := rfl
 
+/-- The reschedule-SGI accumulator (KSC-1, non-interference): a write to a
+core's `reschedulePending` flag is invisible to the information-flow
+projection.  The flag records only that a scheduling point is owed on a core;
+the SGI the commit derives from it is a function of the same `(pre, post)`
+pair the diff reads today, so the per-core non-interference arguments over the
+entry keep their shape — this is the frame they rewrite through for the
+writers' marks and the scheduling points' clears. -/
+theorem reschedulePending_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (v : _root_.Vector Bool SeLe4n.Kernel.Concurrency.numCores) :
+    projectState ctx observer
+        { st with scheduler := { st.scheduler with reschedulePending := v } } =
+      projectState ctx observer st := rfl
+
+/-- The writers' mark, through the frame above. -/
+theorem markReschedulePendingOnCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    projectState ctx observer (st.markReschedulePendingOnCore c) =
+      projectState ctx observer st := rfl
+
+/-- The scheduling points' clear, through the frame above. -/
+theorem clearReschedulePendingOnCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    projectState ctx observer (st.clearReschedulePendingOnCore c) =
+      projectState ctx observer st := rfl
+
+/-- The key-change hook, through the mark's frame: every leaf of
+`markKeyChangeFor` is the identity or one `markReschedulePendingOnCore`. -/
+theorem markKeyChangeFor_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline) :
+    projectState ctx observer (markKeyChangeFor st tid k) =
+      projectState ctx observer st :=
+  markKeyChangeFor_extract_frame (projectState ctx observer) st tid k
+    (fun c => markReschedulePendingOnCore_preserves_projection ctx observer st c)
+
 /-- WS-SM SM8.C.8 (non-interference): a write to the mounted declassification
 audit trail is invisible to the information-flow projection.
 
@@ -4385,13 +4423,19 @@ theorem migrateRunQueueOnAffinityChange_preserves_projection
       · -- write branch: the two-core run-queue update.
         simp only [projectState, projectCurrent, projectActiveDomain,
           projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
+          SchedulerState.markReschedulePendingOnCore_currentOnCore,
+          SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
+          SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
+          SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
           SchedulerState.setRunQueueOnCore_currentOnCore,
           SchedulerState.setRunQueueOnCore_activeDomainOnCore,
           SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
           SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
         congr 1
-        simp only [projectRunnable, SchedulerState.runnable]
-        -- Reduce the boot-core run-queue read through the two writes.
+        simp only [projectRunnable, SchedulerState.runnable,
+          SchedulerState.markReschedulePendingOnCore_runQueueOnCore]
+        -- Reduce the boot-core run-queue read through the two writes (the
+        -- destination core's reschedule-pending mark reads out above).
         by_cases hTo : toCore = bootCoreId
         · subst hTo
           rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
@@ -4770,7 +4814,9 @@ theorem setPriorityOnCore_preserves_projection
           exact hProj1
         simp only [] at hStep
         exact priorityRescheduleOnCore_preserves_projection ctx observer st _ st' _
-          executingCore _ sgi hProj2 hReschedProj hStep
+          executingCore _ sgi
+          ((markKeyChangeFor_preserves_projection ctx observer _ _ _).trans hProj2)
+          hReschedProj hStep
       · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
 
@@ -4921,7 +4967,9 @@ theorem setMCPriorityOnCore_preserves_projection
                  newMCP _ hTargetThreadHigh]
             exact hProj1
           exact priorityRescheduleOnCore_preserves_projection ctx observer st _ st' _
-            executingCore true sgi hProj2 hReschedProj hStep
+            executingCore true sgi
+            ((markKeyChangeFor_preserves_projection ctx observer _ _ _).trans hProj2)
+            hReschedProj hStep
         · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hs, -⟩ := hStep
           exact hs ▸ hStAfterMCP

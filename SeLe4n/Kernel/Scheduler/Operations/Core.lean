@@ -1188,7 +1188,9 @@ def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
       -- the single-core boot trace and idle-free fixtures are byte-identical.  This
       -- is what makes the live per-core tick / domain paths (`timerTickOnCore` /
       -- `scheduleDomainOnCore`, which call this) actually run the idle thread.
-      .ok (idleFallbackOnCore (saveOutgoingContextOnCore st c) c)
+      -- The reschedule-SGI accumulator (KSC-1): a scheduling point on `c`
+      -- clears `c`'s flag as its last write (both `.ok` arms).
+      .ok ((idleFallbackOnCore (saveOutgoingContextOnCore st c) c).clearReschedulePendingOnCore c)
   | .ok (some tid) =>
       match st.getTcb? tid with
       | some tcb =>
@@ -1198,7 +1200,8 @@ def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
             let stDequeued := { stSaved with scheduler :=
               stSaved.scheduler.setRunQueueOnCore c ((stSaved.scheduler.runQueueOnCore c).remove tid) }
             let stRestored := restoreIncomingContextOnCore stDequeued c tid
-            .ok { stRestored with scheduler := stRestored.scheduler.setCurrentOnCore c (some tid) }
+            .ok { stRestored with scheduler := (stRestored.scheduler.setCurrentOnCore c (some tid))
+              |>.clearReschedulePendingOnCore c }
           else
             .error .schedulerInvariantViolation
       | _ => .error .schedulerInvariantViolation
@@ -2677,7 +2680,11 @@ def migrateRunQueueOnAffinityChange (st : SystemState) (tid : SeLe4n.ThreadId)
       if (st.scheduler.runQueueOnCore fromCore).contains tid then
         let rqFrom := (st.scheduler.runQueueOnCore fromCore).remove tid
         let rqTo := (st.scheduler.runQueueOnCore toCore).insert tid (tcb.boostedPriority)
-        let sched' := (st.scheduler.setRunQueueOnCore fromCore rqFrom).setRunQueueOnCore toCore rqTo
+        -- The reschedule-SGI accumulator (KSC-1): the insert on `toCore` is a
+        -- wake there (the diff's queue rule); the removal from `fromCore`
+        -- stales nothing.
+        let sched' := ((st.scheduler.setRunQueueOnCore fromCore rqFrom).setRunQueueOnCore toCore rqTo)
+          |>.markReschedulePendingOnCore toCore
         { st with scheduler := sched' }
       else st
 
@@ -2701,32 +2708,12 @@ no reservation moves no replenish entry. -/
       · simp
       · rfl
 
-/-- WS-SM SM6.E (PR #831 review 4, P1): the core **actually running** `tid` —
-the first core whose current slot holds it (`none` when not current anywhere).
-`determineTargetCore` is the wake/queue *home* (affinity defaulting to boot),
-but the two can diverge: unbinding a thread running on a secondary core is
-admitted (`setThreadCpuAffinityWithMigration`'s reject gate fires only when
-the NEW affinity forbids the running core, and `cpuAffinity = none` admits
-every core), leaving the thread current on that core while its home reverts
-to `bootCoreId`.  A suspend must deschedule and poke the running core, not
-the home — descheduling only the home would mark the victim `.Inactive`
-while the secondary core keeps executing it.  Completeness of the
-first-match scan rests on `currentThreadUniqueAcrossCores`
-(`Scheduler/Invariant/PerCore.lean`, audit closure): a thread is current on
-at most one core.
-
-**Lives here, not in `Lifecycle/Suspend.lean`, since PR #861 review round 39.**
-The unbind path needs it too — its preemption guard was keyed on
-`determineTargetCore` while the wrapper's reschedule was keyed on this, and
-those diverge for exactly the case the paragraph above describes.  Fixing that
-required the predicate to be visible from `SchedContext/Operations.lean`, which
-cannot import `Suspend`; this module is the lowest one both can see, and a
-"which core runs this thread" query belongs with the scheduler operations
-regardless.  `Lifecycle.Suspend.runningCoreOf?` remains a working name via an
-`export`, so every existing qualified reference is unchanged. -/
-def runningCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
-  SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
-    st.scheduler.currentOnCore c == some tid)
+-- The reschedule-SGI accumulator (KSC-1): `runningCoreOf?` moved down once
+-- more, to `Scheduler/Operations/Selection.lean`, so `markKeyChangeFor`
+-- (`Scheduler/Operations/ReschedulePending.lean`) can read it from the
+-- priority-inheritance writers, which this module's import chain
+-- (`IPC/Operations/Timeout` → `PriorityInheritance/Propagate`) sits above.
+-- Its qualified name is unchanged.
 
 /-- WS-SM SM5.H.4 (plan §3.8, full thread migration): set a thread's CPU affinity
 **and** migrate everything that follows the thread to its new home core — its

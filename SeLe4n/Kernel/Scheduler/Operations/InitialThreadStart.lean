@@ -100,7 +100,9 @@ theorem initialThreadStartable_spec {st : SystemState} {tid : SeLe4n.ThreadId}
 /-- **WS-BP BP7.11** (the decomposition): on a thread that resolves and is
 queued nowhere, the start is two writes at the thread's key — the flag, then
 the enqueue's `.ready` — and one run-queue insert on its home core at its
-boosted priority.  Everything the other lemmas say is read off this. -/
+boosted priority, with the home core's reschedule-pending flag raised by the
+enqueue (the KSC-1 accumulator).  Everything the other lemmas say is read off
+this. -/
 theorem startInitialThreadOnCore_eq {st : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
     (hT : st.getTcb? tid = some tcb) (hNR : runnableOnSomeCore st tid = false)
     (hInv : st.objects.invExt) :
@@ -109,9 +111,9 @@ theorem startInitialThreadOnCore_eq {st : SystemState} {tid : SeLe4n.ThreadId} {
         objects := (st.objects.insert tid.toObjId
             (.tcb { tcb with threadState := .Ready })).insert tid.toObjId
             (.tcb (startedThread tcb))
-        scheduler := st.scheduler.setRunQueueOnCore (determineTargetCore st tid)
+        scheduler := (st.scheduler.setRunQueueOnCore (determineTargetCore st tid)
           ((st.scheduler.runQueueOnCore (determineTargetCore st tid)).insert tid
-            tcb.boostedPriority) } := by
+            tcb.boostedPriority)).markReschedulePendingOnCore (determineTargetCore st tid) } := by
   unfold startInitialThreadOnCore
   rw [SystemState.updateTcb_eq_of_some hT]
   have hT1 : ({ st with objects := (st.objects.insert tid.toObjId
@@ -200,18 +202,21 @@ theorem startInitialThreadOnCore_objects_ne {st : SystemState} {tid : SeLe4n.Thr
       show (st.objects.insert _ _).get? k = st.objects.get? k
       exact RHTable.getElem?_insert_ne _ _ _ _ hNeB hInv
 
-/-- **WS-BP BP7.11**: the start writes the run queue, and no other scheduler
+/-- **WS-BP BP7.11**: the start writes the run queue and the reschedule-pending
+flags (the KSC-1 accumulator the enqueue raises), and no other scheduler
 field. -/
 theorem startInitialThreadOnCore_scheduler_runQueueOnly (st : SystemState)
     (tid : SeLe4n.ThreadId) :
-    ∃ rq, (startInitialThreadOnCore st tid).scheduler =
-      { st.scheduler with runQueue := rq } := by
+    ∃ rq rp, (startInitialThreadOnCore st tid).scheduler =
+      { st.scheduler with runQueue := rq, reschedulePending := rp } := by
   unfold startInitialThreadOnCore enqueueRunnableOnCore
   split
   · split
-    · exact ⟨st.scheduler.runQueue, by rw [SystemState.updateTcb_scheduler]⟩
-    · exact ⟨_, by rw [SystemState.updateTcb_scheduler]; rfl⟩
-  · exact ⟨st.scheduler.runQueue, by rw [SystemState.updateTcb_scheduler]⟩
+    · exact ⟨st.scheduler.runQueue, st.scheduler.reschedulePending,
+        by rw [SystemState.updateTcb_scheduler]⟩
+    · exact ⟨_, _, by rw [SystemState.updateTcb_scheduler]; rfl⟩
+  · exact ⟨st.scheduler.runQueue, st.scheduler.reschedulePending,
+      by rw [SystemState.updateTcb_scheduler]⟩
 
 /-- **WS-BP BP7.11**: the start writes no current slot on any core — it does
 not dispatch. -/
@@ -219,7 +224,7 @@ theorem startInitialThreadOnCore_currentOnCore (st : SystemState) (tid : SeLe4n.
     (c : CoreId) :
     (startInitialThreadOnCore st tid).scheduler.currentOnCore c =
       st.scheduler.currentOnCore c := by
-  obtain ⟨rq, hrq⟩ := startInitialThreadOnCore_scheduler_runQueueOnly st tid
+  obtain ⟨rq, rp, hrq⟩ := startInitialThreadOnCore_scheduler_runQueueOnly st tid
   rw [hrq]; rfl
 
 /-- **WS-BP BP7.11**: the home core's run queue gains the thread at its
@@ -231,6 +236,8 @@ theorem startInitialThreadOnCore_runQueueOnCore_self {st : SystemState}
       (st.scheduler.runQueueOnCore (determineTargetCore st tid)).insert tid
         tcb.boostedPriority := by
   rw [startInitialThreadOnCore_eq hT hNR hInv]
+  show ((_ : SchedulerState).markReschedulePendingOnCore _).runQueueOnCore _ = _
+  rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore]
   exact SchedulerState.setRunQueueOnCore_runQueueOnCore_self _ _ _
 
 /-- **WS-BP BP7.11**: where the start writes nothing to the scheduler — the
@@ -264,6 +271,8 @@ theorem startInitialThreadOnCore_runQueueOnCore_ne (st : SystemState)
     cases hNR : runnableOnSomeCore st tid with
     | false =>
       rw [startInitialThreadOnCore_eq hT hNR hInv]
+      show ((_ : SchedulerState).markReschedulePendingOnCore _).runQueueOnCore _ = _
+      rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore]
       exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc
     | true =>
       unfold startInitialThreadOnCore enqueueRunnableOnCore

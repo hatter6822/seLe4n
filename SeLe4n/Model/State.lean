@@ -101,6 +101,28 @@ structure SchedulerState where
       survive across rounds. -/
   lastTimeoutErrors : Vector (List (SeLe4n.ThreadId × KernelError)) numCores :=
     Vector.replicate numCores []
+  /-- The reschedule-SGI accumulator (the KSC-1 / HAL-3 row of
+      `docs/REGISTERED_DEBT.md`; WS-CB's per-core `reschedulePendingOnCore`
+      flag is this field and WS-CB adds no second one).  `true` from the
+      moment a transition makes core `c`'s scheduling decision stale — a
+      run-queue insert on `c`, a change of `c`'s `current` slot, or a write to
+      the effective priority/deadline of a thread queued or current on `c` —
+      until a scheduling point runs on `c` (`handleRescheduleSgiOnCore`,
+      `scheduleEffectiveOnCore`) and clears it as its last write.  Read through
+      `reschedulePendingOnCore`, set by the writers through
+      `markReschedulePendingOnCore` / `markKeyChangeFor`, never cleared by a
+      writer: it means "a scheduling point is owed on `c`" for as long as one is.
+
+      **Landed inert.**  The live syscall commit still derives its `.reschedule`
+      SGIs from the whole-object-index diff (`computeCrossCoreSgis`); the
+      Tier 2 `reschedule_pending_suite` pins the flag's `false → true` set
+      against that diff on every SMP scenario, and the seam switch to
+      `rescheduleSgisFromFlags` is the row's PR C.  Like the two ledgers
+      (`pendingPhysicalWrites`, `pendingIcacheMaintenance`) it is written under
+      the kernel-entry lock that serialises every committing entry, so it is
+      outside the per-core lock-footprint obligations and outside the
+      information-flow projection (`reschedulePending_write_preserves_projection`). -/
+  reschedulePending : Vector Bool numCores := Vector.replicate numCores false
   deriving Repr
 
 /-! ### WS-SM SM4.B.8: per-core scheduler-state accessors (path-a)
@@ -141,6 +163,9 @@ def domainScheduleIndexOnCore (s : SchedulerState) (c : CoreId) : Nat :=
 def lastTimeoutErrorsOnCore (s : SchedulerState) (c : CoreId) :
     List (SeLe4n.ThreadId × KernelError) :=
   s.lastTimeoutErrors.get c
+/-- Is a scheduling point owed on core `c` (the reschedule-SGI accumulator)? -/
+def reschedulePendingOnCore (s : SchedulerState) (c : CoreId) : Bool :=
+  s.reschedulePending.get c
 
 /-! ### WS-SM SM4.B.phase-2: per-core scheduler-state setters (path-a)
 
@@ -174,6 +199,29 @@ def setDomainScheduleIndexOnCore (s : SchedulerState) (c : CoreId) (v : Nat) :
 def setLastTimeoutErrorsOnCore (s : SchedulerState) (c : CoreId)
     (v : List (SeLe4n.ThreadId × KernelError)) : SchedulerState :=
   { s with lastTimeoutErrors := s.lastTimeoutErrors.set c.val v c.isLt }
+/-- Write core `c`'s reschedule-pending flag. -/
+def setReschedulePendingOnCore (s : SchedulerState) (c : CoreId) (v : Bool) : SchedulerState :=
+  { s with reschedulePending := s.reschedulePending.set c.val v c.isLt }
+/-- A writer's half of the accumulator: record that core `c`'s scheduling
+decision is stale.  Every run-queue insert on `c`, every change of `c`'s
+`current` slot and every effective-key write on a thread placed on `c` ends in
+this (directly, or through `markKeyChangeFor`). -/
+def markReschedulePendingOnCore (s : SchedulerState) (c : CoreId) : SchedulerState :=
+  s.setReschedulePendingOnCore c true
+/-- A scheduling point's half: core `c` has re-run its scheduler, so nothing
+is owed — the **last** write of `handleRescheduleSgiOnCore` and
+`scheduleEffectiveOnCore`, after the selector's own slot writes. -/
+def clearReschedulePendingOnCore (s : SchedulerState) (c : CoreId) : SchedulerState :=
+  s.setReschedulePendingOnCore c false
+/-- `markReschedulePendingOnCore` under a condition the writer has already
+decided — `removeRunnableOnCore` and the destroy sweep flag core `c` exactly
+when they change its `current` slot (a pure queue removal stales no decision:
+the selector never picks a thread that is not there).  An unconditional
+setter rather than an `if` around the mark, so every other-field read after
+it reduces without a case split; the stored value is the old flag **or** the
+condition, so a writer never lowers a flag. -/
+def markReschedulePendingOnCoreIf (s : SchedulerState) (c : CoreId) (b : Bool) : SchedulerState :=
+  s.setReschedulePendingOnCore c (s.reschedulePendingOnCore c || b)
 
 /-- WS-SM SM4.B.10: per-core extensionality (plan §3.3).  Two scheduler
 states are equal once their per-core fields agree at *every* `CoreId` and
@@ -191,6 +239,7 @@ theorem ext_perCore {s₁ s₂ : SchedulerState}
     (hDTR  : ∀ c : CoreId, s₁.domainTimeRemainingOnCore c = s₂.domainTimeRemainingOnCore c)
     (hDSI  : ∀ c : CoreId, s₁.domainScheduleIndexOnCore c = s₂.domainScheduleIndexOnCore c)
     (hLTE  : ∀ c : CoreId, s₁.lastTimeoutErrorsOnCore c = s₂.lastTimeoutErrorsOnCore c)
+    (hRP   : ∀ c : CoreId, s₁.reschedulePendingOnCore c = s₂.reschedulePendingOnCore c)
     (hSched : s₁.domainSchedule = s₂.domainSchedule)
     (hSlice : s₁.configDefaultTimeSlice = s₂.configDefaultTimeSlice) :
     s₁ = s₂ := by
@@ -201,8 +250,9 @@ theorem ext_perCore {s₁ s₂ : SchedulerState}
   have h5 : s₁.domainTimeRemaining = s₂.domainTimeRemaining := PerCoreVector.ext fun c => hDTR c
   have h6 : s₁.domainScheduleIndex = s₂.domainScheduleIndex := PerCoreVector.ext fun c => hDSI c
   have h7 : s₁.lastTimeoutErrors = s₂.lastTimeoutErrors := PerCoreVector.ext fun c => hLTE c
-  obtain ⟨rq1, cu1, ad1, dtr1, dsch1, dsi1, cdts1, rpl1, lte1⟩ := s₁
-  obtain ⟨rq2, cu2, ad2, dtr2, dsch2, dsi2, cdts2, rpl2, lte2⟩ := s₂
+  have h8 : s₁.reschedulePending = s₂.reschedulePending := PerCoreVector.ext fun c => hRP c
+  obtain ⟨rq1, cu1, ad1, dtr1, dsch1, dsi1, cdts1, rpl1, lte1, rp1⟩ := s₁
+  obtain ⟨rq2, cu2, ad2, dtr2, dsch2, dsi2, cdts2, rpl2, lte2, rp2⟩ := s₂
   simp_all
 
 
@@ -439,6 +489,181 @@ runtime suite exercises and that SM5's genuine cross-core writes consume. -/
 @[simp] theorem setLastTimeoutErrorsOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
     (s.setLastTimeoutErrorsOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
   simp [SchedulerState.setLastTimeoutErrorsOnCore]
+/-! ### The reschedule-SGI accumulator's store/load algebra
+
+The same shape as the seven fields above: `_self`, the same-field cross-core
+`_ne`, the cross-field frames in both directions, and the two system-wide
+fields.  `markReschedulePendingOnCore` / `clearReschedulePendingOnCore` are
+the two values the writers and the scheduling points store, so each has its
+own reductions rather than asking `simp` to see through the definition. -/
+@[simp] theorem setReschedulePendingOnCore_reschedulePendingOnCore_self (s : SchedulerState) (c : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).reschedulePendingOnCore c = v := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.reschedulePendingOnCore]
+@[simp] theorem setReschedulePendingOnCore_reschedulePendingOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : Bool) (h : c ≠ c') :
+    (s.setReschedulePendingOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp only [SchedulerState.setReschedulePendingOnCore, SchedulerState.reschedulePendingOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne s.reschedulePending c c' v h
+@[simp] theorem setReschedulePendingOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).currentOnCore c' = s.currentOnCore c' := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.currentOnCore]
+@[simp] theorem setReschedulePendingOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.runQueueOnCore]
+@[simp] theorem setReschedulePendingOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.replenishQueueOnCore]
+@[simp] theorem setReschedulePendingOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.activeDomainOnCore]
+@[simp] theorem setReschedulePendingOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.domainTimeRemainingOnCore]
+@[simp] theorem setReschedulePendingOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.domainScheduleIndexOnCore]
+@[simp] theorem setReschedulePendingOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.lastTimeoutErrorsOnCore]
+@[simp] theorem setReschedulePendingOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).domainSchedule = s.domainSchedule := by
+  simp [SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setReschedulePendingOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
+  simp [SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setCurrentOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
+    (s.setCurrentOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.setCurrentOnCore, SchedulerState.reschedulePendingOnCore]
+@[simp] theorem setRunQueueOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
+    (s.setRunQueueOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.setRunQueueOnCore, SchedulerState.reschedulePendingOnCore]
+@[simp] theorem setReplenishQueueOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
+    (s.setReplenishQueueOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.reschedulePendingOnCore]
+@[simp] theorem setActiveDomainOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) :
+    (s.setActiveDomainOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.reschedulePendingOnCore]
+@[simp] theorem setDomainTimeRemainingOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setDomainTimeRemainingOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.reschedulePendingOnCore]
+@[simp] theorem setDomainScheduleIndexOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setDomainScheduleIndexOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.reschedulePendingOnCore]
+@[simp] theorem setLastTimeoutErrorsOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
+    (s.setLastTimeoutErrorsOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.reschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_reschedulePendingOnCore_self (s : SchedulerState) (c : CoreId) :
+    (s.markReschedulePendingOnCore c).reschedulePendingOnCore c = true := by
+  simp [SchedulerState.markReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_reschedulePendingOnCore_ne (s : SchedulerState) (c c' : CoreId) (h : c ≠ c') :
+    (s.markReschedulePendingOnCore c).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore, h]
+@[simp] theorem markReschedulePendingOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.markReschedulePendingOnCore c).currentOnCore c' = s.currentOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.markReschedulePendingOnCore c).runQueueOnCore c' = s.runQueueOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.markReschedulePendingOnCore c).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.markReschedulePendingOnCore c).activeDomainOnCore c' = s.activeDomainOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.markReschedulePendingOnCore c).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.markReschedulePendingOnCore c).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.markReschedulePendingOnCore c).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_domainSchedule (s : SchedulerState) (c : CoreId) :
+    (s.markReschedulePendingOnCore c).domainSchedule = s.domainSchedule := by
+  simp [SchedulerState.markReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) :
+    (s.markReschedulePendingOnCore c).configDefaultTimeSlice = s.configDefaultTimeSlice := by
+  simp [SchedulerState.markReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_reschedulePendingOnCore_self (s : SchedulerState) (c : CoreId) :
+    (s.clearReschedulePendingOnCore c).reschedulePendingOnCore c = false := by
+  simp [SchedulerState.clearReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_reschedulePendingOnCore_ne (s : SchedulerState) (c c' : CoreId) (h : c ≠ c') :
+    (s.clearReschedulePendingOnCore c).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore, h]
+@[simp] theorem clearReschedulePendingOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.clearReschedulePendingOnCore c).currentOnCore c' = s.currentOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.clearReschedulePendingOnCore c).runQueueOnCore c' = s.runQueueOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.clearReschedulePendingOnCore c).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.clearReschedulePendingOnCore c).activeDomainOnCore c' = s.activeDomainOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.clearReschedulePendingOnCore c).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.clearReschedulePendingOnCore c).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.clearReschedulePendingOnCore c).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_domainSchedule (s : SchedulerState) (c : CoreId) :
+    (s.clearReschedulePendingOnCore c).domainSchedule = s.domainSchedule := by
+  simp [SchedulerState.clearReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) :
+    (s.clearReschedulePendingOnCore c).configDefaultTimeSlice = s.configDefaultTimeSlice := by
+  simp [SchedulerState.clearReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCoreIf_reschedulePendingOnCore_self (s : SchedulerState) (c : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).reschedulePendingOnCore c = (s.reschedulePendingOnCore c || b) := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf]
+@[simp] theorem markReschedulePendingOnCoreIf_reschedulePendingOnCore_ne (s : SchedulerState) (c c' : CoreId) (b : Bool) (h : c ≠ c') :
+    (s.markReschedulePendingOnCoreIf c b).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf, h]
+@[simp] theorem markReschedulePendingOnCoreIf_currentOnCore (s : SchedulerState) (c c' : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).currentOnCore c' = s.currentOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf]
+@[simp] theorem markReschedulePendingOnCoreIf_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).runQueueOnCore c' = s.runQueueOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf]
+@[simp] theorem markReschedulePendingOnCoreIf_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf]
+@[simp] theorem markReschedulePendingOnCoreIf_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).activeDomainOnCore c' = s.activeDomainOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf]
+@[simp] theorem markReschedulePendingOnCoreIf_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf]
+@[simp] theorem markReschedulePendingOnCoreIf_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf]
+@[simp] theorem markReschedulePendingOnCoreIf_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf]
+@[simp] theorem markReschedulePendingOnCoreIf_domainSchedule (s : SchedulerState) (c : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).domainSchedule = s.domainSchedule := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf]
+@[simp] theorem markReschedulePendingOnCoreIf_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).configDefaultTimeSlice = s.configDefaultTimeSlice := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf]
+
+/-- The mark and a run-queue write touch different fields, so they commute —
+the rewrite that pushes an accumulator mark outward through a scheduler stage. -/
+theorem setRunQueueOnCore_markReschedulePendingOnCore (s : SchedulerState) (c c' : CoreId)
+    (q : SeLe4n.Kernel.RunQueue) :
+    (s.markReschedulePendingOnCore c).setRunQueueOnCore c' q
+      = (s.setRunQueueOnCore c' q).markReschedulePendingOnCore c := rfl
+
+/-- The mark and a current-slot write commute, for the same reason. -/
+theorem setCurrentOnCore_markReschedulePendingOnCore (s : SchedulerState) (c c' : CoreId)
+    (v : Option SeLe4n.ThreadId) :
+    (s.markReschedulePendingOnCore c).setCurrentOnCore c' v
+      = (s.setCurrentOnCore c' v).markReschedulePendingOnCore c := rfl
+
 end SchedulerState
 
 /-- WS-G4: Compatibility alias — `runnable` projects to the flat list maintained
@@ -1638,6 +1863,13 @@ syscall-boundary property the runtime seam maintains starts here. -/
 @[simp] theorem default_pendingPhysicalWrites :
     (default : SystemState).pendingPhysicalWrites = [] := rfl
 
+/-- The reschedule-SGI accumulator (KSC-1): at boot no scheduling point is
+owed on any core — every flag starts `false`, so the first remote write a
+step makes is the first SGI the commit surfaces. -/
+@[simp] theorem default_reschedulePendingOnCore (c : CoreId) :
+    (default : SystemState).scheduler.reschedulePendingOnCore c = false :=
+  PerCoreVector.replicate_get _ _ c
+
 /-- WS-SM SM8.C.8: at boot no declassification has occurred, so the audit trail
 is empty.  The `.declassify` syscall is the only writer, so this is the trail's
 whole content until userspace runs. -/
@@ -2455,6 +2687,18 @@ theorem storeObject_pendingPhysicalWrites_eq
     pair.2.pendingPhysicalWrites = st.pendingPhysicalWrites := by
   unfold storeObject at hStore; cases hStore; rfl
 
+/-- The reschedule-SGI accumulator (KSC-1): `storeObject` frames every core's
+flag — only the scheduler writers set it and only a scheduling point clears
+it, so an object store never silently owes (or silently discharges) one. -/
+theorem storeObject_reschedulePendingOnCore_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) (c : CoreId) :
+    pair.2.scheduler.reschedulePendingOnCore c = st.scheduler.reschedulePendingOnCore c := by
+  unfold storeObject at hStore; cases hStore; rfl
+
 /-- WS-SM SM8.C.8: `storeObject` frames the declassification audit trail.
 
 Load-bearing rather than routine: `declassifyStore` *is* a `storeObject` under
@@ -2853,6 +3097,48 @@ def getSchedContext? (st : SystemState) (scId : SeLe4n.SchedContextId)
   match st.objects[scId.toObjId]? with
   | some (.schedContext sc) => some sc
   | _                       => none
+
+/-! ### The reschedule-SGI accumulator at state level
+
+`SchedulerState.markReschedulePendingOnCore` / `clearReschedulePendingOnCore`
+lifted to `SystemState`, for the writers and scheduling points that hold a
+whole state rather than a scheduler record.  Scheduler-only updates: every
+object read and every other scheduler slot reduce through them. -/
+
+/-- Record that core `c`'s scheduling decision is stale (the writer hook). -/
+def markReschedulePendingOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  { st with scheduler := st.scheduler.markReschedulePendingOnCore c }
+
+/-- Record that core `c` has run a scheduling point (the clearing hook). -/
+def clearReschedulePendingOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  { st with scheduler := st.scheduler.clearReschedulePendingOnCore c }
+
+@[simp] theorem markReschedulePendingOnCore_objects (st : SystemState) (c : CoreId) :
+    (st.markReschedulePendingOnCore c).objects = st.objects := rfl
+@[simp] theorem markReschedulePendingOnCore_objectIndex (st : SystemState) (c : CoreId) :
+    (st.markReschedulePendingOnCore c).objectIndex = st.objectIndex := rfl
+@[simp] theorem markReschedulePendingOnCore_machine (st : SystemState) (c : CoreId) :
+    (st.markReschedulePendingOnCore c).machine = st.machine := rfl
+@[simp] theorem markReschedulePendingOnCore_scheduler (st : SystemState) (c : CoreId) :
+    (st.markReschedulePendingOnCore c).scheduler = st.scheduler.markReschedulePendingOnCore c := rfl
+@[simp] theorem markReschedulePendingOnCore_getTcb? (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : (st.markReschedulePendingOnCore c).getTcb? tid = st.getTcb? tid := rfl
+@[simp] theorem markReschedulePendingOnCore_getSchedContext? (st : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) :
+    (st.markReschedulePendingOnCore c).getSchedContext? scId = st.getSchedContext? scId := rfl
+@[simp] theorem clearReschedulePendingOnCore_objects (st : SystemState) (c : CoreId) :
+    (st.clearReschedulePendingOnCore c).objects = st.objects := rfl
+@[simp] theorem clearReschedulePendingOnCore_objectIndex (st : SystemState) (c : CoreId) :
+    (st.clearReschedulePendingOnCore c).objectIndex = st.objectIndex := rfl
+@[simp] theorem clearReschedulePendingOnCore_machine (st : SystemState) (c : CoreId) :
+    (st.clearReschedulePendingOnCore c).machine = st.machine := rfl
+@[simp] theorem clearReschedulePendingOnCore_scheduler (st : SystemState) (c : CoreId) :
+    (st.clearReschedulePendingOnCore c).scheduler = st.scheduler.clearReschedulePendingOnCore c := rfl
+@[simp] theorem clearReschedulePendingOnCore_getTcb? (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : (st.clearReschedulePendingOnCore c).getTcb? tid = st.getTcb? tid := rfl
+@[simp] theorem clearReschedulePendingOnCore_getSchedContext? (st : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) :
+    (st.clearReschedulePendingOnCore c).getSchedContext? scId = st.getSchedContext? scId := rfl
 
 /-- WS-RR (`v0.35.133`): the **base priority a thread runs at** — `TCB.priority`,
 at every binding, because that is the only place it is stored.

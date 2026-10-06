@@ -154,8 +154,13 @@ def applyPriorityChangeOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : 
     (newPriority : SeLe4n.Priority) (executingCore : CoreId) (shouldPreempt : Bool) :
     Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
   priorityRescheduleOnCore
-    (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid newPriority
-      (determineTargetCore st tid))
+    -- The reschedule-SGI accumulator (KSC-1): after the write and the
+    -- re-bucket, flag the target's core exactly when its effective key
+    -- changed (a queued target) or dropped (a current one).
+    (markKeyChangeFor
+      (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid newPriority
+        (determineTargetCore st tid))
+      tid (resolveEffectivePrioDeadline st tcb))
     (Lifecycle.Suspend.runningCoreOf? st tid) executingCore shouldPreempt
 
 /-- WS-SM SM8.B: a non-preempting change (a raise, or a ceiling that does not
@@ -163,8 +168,10 @@ bite) surfaces no SGI. -/
 theorem applyPriorityChangeOnCore_no_preempt (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority) (executingCore : CoreId) :
     applyPriorityChangeOnCore st tid tcb newPriority executingCore false
-      = .ok (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid
-              newPriority (determineTargetCore st tid), none) := by
+      = .ok (markKeyChangeFor
+              (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid
+                newPriority (determineTargetCore st tid))
+              tid (resolveEffectivePrioDeadline st tcb), none) := by
   simp [applyPriorityChangeOnCore, priorityRescheduleOnCore]
 
 /-- WS-SM SM8.B (operation): **set a thread's priority, across cores.**

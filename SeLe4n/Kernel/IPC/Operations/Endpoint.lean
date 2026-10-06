@@ -106,10 +106,15 @@ finding ID, the affected site, and the remediation applied.
 /-- WS-G4/F-P02: O(1) amortized remove via RunQueue. -/
 def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   { st with
-      scheduler := (st.scheduler.setRunQueueOnCore bootCoreId
+      scheduler := ((st.scheduler.setRunQueueOnCore bootCoreId
           ((st.scheduler.runQueueOnCore bootCoreId).remove tid)).setCurrentOnCore bootCoreId
           (if (st.scheduler.currentOnCore bootCoreId) = some tid then none
-            else (st.scheduler.currentOnCore bootCoreId))
+            else (st.scheduler.currentOnCore bootCoreId)))
+          -- The reschedule-SGI accumulator (KSC-1): the boot-core instance of
+          -- `removeRunnableOnCore`'s mark, so the bridge
+          -- `removeRunnableOnCore_bootCoreId` stays a definitional equality.
+          |>.markReschedulePendingOnCoreIf bootCoreId
+            (st.scheduler.currentOnCore bootCoreId == some tid)
   }
 
 /-- WS-SM SM8.B (PR #861 review round 17): **does core `c` hold this thread at
@@ -143,10 +148,13 @@ def removeRunnableStepOnCore (tid : SeLe4n.ThreadId) (st : SystemState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) : SystemState :=
   if threadOccupiesCore st tid c then
     { st with
-        scheduler := (st.scheduler.setRunQueueOnCore c
+        scheduler := ((st.scheduler.setRunQueueOnCore c
             ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
             (if (st.scheduler.currentOnCore c) = some tid then none
-              else (st.scheduler.currentOnCore c)) }
+              else (st.scheduler.currentOnCore c)))
+            -- The reschedule-SGI accumulator (KSC-1): flagged exactly when
+            -- the `current` slot changes, as `removeRunnableOnCore`.
+            |>.markReschedulePendingOnCoreIf c (st.scheduler.currentOnCore c == some tid) }
   else st
 
 /-- WS-SM SM8.B: the guard is exactly "this core holds the thread", so an
@@ -521,8 +529,12 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
     match st.getTcb? tid with
     | some tcb =>
         { st with
-            scheduler := st.scheduler.setRunQueueOnCore bootCoreId
-              ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority)
+            scheduler := (st.scheduler.setRunQueueOnCore bootCoreId
+              ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority))
+              -- The reschedule-SGI accumulator (KSC-1): the boot-core instance
+              -- of `enqueueRunnableOnCore`'s mark, so the wake paths' bridge
+              -- `wakeThread_bootCore_eq_ensureRunnable` stays an equation.
+              |>.markReschedulePendingOnCore bootCoreId
         }
     | none => st
 

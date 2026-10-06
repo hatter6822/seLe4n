@@ -319,6 +319,13 @@ run_check_with_timeout "TRACE" lake exe smp_idle_suite
 # (restoreToReadyWithWake), and the SM5.F theorem-inventory partition counts.
 run_check_with_timeout "TRACE" lake exe smp_pip_suite
 
+# KSC-1 (reschedule-SGI accumulator, PR A) — the reschedule-pending flag is
+# inert until PR C switches the seams; this suite pins it to the live diff
+# (`computeCrossCoreSgis`): flags raised ⊇ cores the diff names (= for exact
+# writers), scheduling points clear only their own core, no writer lowers a
+# flag.
+run_check_with_timeout "TRACE" lake exe reschedule_pending_suite
+
 # WS-SM SM5.G — per-core domain scheduling.  Runtime assertions for the SM5.G.6
 # domain-rotation scenarios on concrete domain-schedule fixtures: single-domain
 # no-op, multi-domain rotation (domain + index + time), cyclic return-to-start

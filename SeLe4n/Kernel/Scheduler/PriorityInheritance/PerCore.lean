@@ -86,8 +86,8 @@ theorem updatePipBoostOnCore_preserves_objectIndex (st : SystemState) (c : CoreI
     split
     · rfl
     · split
-      · split <;> rfl
-      · rfl
+      · split <;> (rw [markKeyChangeFor_objectIndex]; rfl)
+      · rw [markKeyChangeFor_objectIndex]; rfl
   · rfl
 
 /-- WS-SM SM5.F.2 (PIP graph invariant): `updatePipBoostOnCore` preserves
@@ -122,8 +122,8 @@ theorem updatePipBoostOnCore_preserves_blockingServer (st : SystemState) (c : Co
         have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
           (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hObjInv
         by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
-        · simp only [hRQ, ite_true]; split <;> exact hSelf
-        · simp only [hRQ, ite_false]; exact hSelf
+        · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
+        · simp only [hRQ, ite_false, markKeyChangeFor_objects]; exact hSelf
   · exact blockingServer_congr_objects _ _ _
       (updatePipBoostOnCore_objects_ne st c tid t.toObjId
         (fun h => hEq (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm) hObjInv)
@@ -151,9 +151,10 @@ theorem updatePipBoostOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId
     · rfl
     · split
       · split
-        · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ h
-        · rfl
-      · rfl
+        · rw [markKeyChangeFor_runQueueOnCore]
+          exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ h
+        · rw [markKeyChangeFor_runQueueOnCore]; rfl
+      · rw [markKeyChangeFor_runQueueOnCore]; rfl
   · rfl
 
 /-- WS-SM SM5.F.2: the holder's post-boost `pipBoost` is the GLOBAL
@@ -179,8 +180,8 @@ theorem updatePipBoostOnCore_getTcb?_pipBoost (st : SystemState) (c : CoreId) (t
     have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
       (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hInv
     by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
-    · simp only [hRQ, ite_true]; split <;> exact hSelf
-    · simp only [hRQ, ite_false]; exact hSelf
+    · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
+    · simp only [hRQ, ite_false, markKeyChangeFor_objects]; exact hSelf
 
 -- ============================================================================
 -- §2  SM5.F.1 / SM5.F.3 — pipBoost_perCore_consistent
@@ -712,8 +713,8 @@ theorem updatePipBoostOnCore_getTcb?_cpuAffinity (st : SystemState) (c : CoreId)
     have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
       (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hInv
     by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
-    · simp only [hRQ, ite_true]; split <;> exact hSelf
-    · simp only [hRQ, ite_false]; exact hSelf
+    · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
+    · simp only [hRQ, ite_false, markKeyChangeFor_objects]; exact hSelf
 
 /-- WS-SM SM5.F.4 (cpuAffinity-stability / home-core stability): a PIP boost
 preserves *every* thread's home core (`determineTargetCore`).  `determineTargetCore`
@@ -1705,23 +1706,26 @@ theorem scheduleLocalSuccessor_dispatches (pre post : SystemState) (execCore : C
   have hOutrank : candidateOutranksCurrentOnCore post execCore tid = true :=
     candidateOutranksCurrentOnCore_of_vacated post execCore tid
       (localSuccessorNeeded_post_none pre post execCore hNeeded)
-  have hHandle : handleRescheduleSgiOnCore post execCore = .ok st' := by
-    rw [handleRescheduleSgiOnCore_eq_switch_of_choose_some post execCore tid hChosen hOutrank]
-    exact hSwitch
+  have hHandle : handleRescheduleSgiOnCore post execCore
+      = .ok (st'.clearReschedulePendingOnCore execCore) := by
+    rw [handleRescheduleSgiOnCore_eq_switch_of_choose_some post execCore tid hChosen hOutrank,
+      hSwitch]
+    rfl
   unfold scheduleLocalSuccessor
   rw [if_pos hNeeded, hHandle]
-  exact handleRescheduleSgiOnCore_switches_current post execCore tid st' hChosen hOutrank hHandle
+  exact handleRescheduleSgiOnCore_switches_current post execCore tid _ hChosen hOutrank hHandle
 
 /-- WS-SM SM8.B: and the selection side cannot be what blocks it.  A vacated
 core whose run queue holds no budget-eligible thread keeps the committed
 post-state — the honest idle outcome, distinct from the defect it replaces
 (which idled a core whose queue *did* hold an eligible thread). -/
 theorem scheduleLocalSuccessor_idle_of_no_candidate (pre post : SystemState) (execCore : CoreId)
+    (hNeeded : localSuccessorNeeded pre post execCore = true)
     (hChosen : chooseThreadEffectiveOnCore post execCore = .ok none) :
-    scheduleLocalSuccessor pre post execCore = post := by
+    scheduleLocalSuccessor pre post execCore
+      = post.clearReschedulePendingOnCore execCore := by
   unfold scheduleLocalSuccessor handleRescheduleSgiOnCore
-  rw [hChosen]
-  split <;> rfl
+  rw [if_pos hNeeded, hChosen]
 
 /-- WS-SM SM5.F.4: the dispatch body emits only `.reschedule` SGIs. -/
 theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid : ObjId)

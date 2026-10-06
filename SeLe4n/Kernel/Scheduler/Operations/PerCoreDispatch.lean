@@ -162,7 +162,8 @@ theorem scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone (st : System
     · split at hEff
       · simp only [Except.ok.injEq] at hEff
         subst hEff
-        rw [SchedulerState.setCurrentOnCore_currentOnCore_self] at hcur
+        rw [SchedulerState.clearReschedulePendingOnCore_currentOnCore,
+          SchedulerState.setCurrentOnCore_currentOnCore_self] at hcur
         exact absurd hcur (by simp)
       · exact absurd hEff (by simp)
     · exact absurd hEff (by simp)

@@ -885,11 +885,15 @@ def releaseSchedContextBinding (st : SystemState) (scId : SeLe4n.SchedContextId)
   | none => st
   | some tid =>
     match st.getTcb? tid with
-    | some _ =>
+    | some tcb =>
       let st1 := st.updateTcb tid fun t =>
         { t with schedContextBinding := SchedContextBinding.unbound }
       let st2 := SchedContextOps.purgeReplenishmentOnCore st1 (determineTargetCore st tid) scId
-      { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }
+      -- The reschedule-SGI accumulator (KSC-1): the bound thread's deadline
+      -- reverts from the destroyed reservation's to its own, so a queued or
+      -- current thread's core is flagged exactly when that key changed.
+      markKeyChangeFor { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }
+        tid (resolveEffectivePrioDeadline st tcb)
     | none =>
       let st1 := SchedContextOps.purgeReplenishmentFromAllCores st scId
       { st1 with scThreadIndex := scThreadIndexRemove st1.scThreadIndex scId tid }
@@ -910,7 +914,8 @@ theorem releaseSchedContextBinding_of_bound (st : SystemState)
       (let st1 := st.updateTcb tid fun t =>
         { t with schedContextBinding := SchedContextBinding.unbound }
        let st2 := SchedContextOps.purgeReplenishmentOnCore st1 (determineTargetCore st tid) scId
-       { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }) := by
+       markKeyChangeFor { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }
+         tid (resolveEffectivePrioDeadline st tcb)) := by
   simp only [releaseSchedContextBinding, hBound, hTcb]
 
 /-- `v0.35.165`: the release at a context whose bound thread the store has lost —
@@ -999,7 +1004,7 @@ each use site, for the reason the purges' own frames give. -/
   split
   · rfl
   · split
-    · simp only [SchedContextOps.purgeReplenishmentOnCore]
+    · simp only [markKeyChangeFor_tlbShootdown, SchedContextOps.purgeReplenishmentOnCore]
       rw [SystemState.updateTcb_eq_objects_update]
     · simp
 
@@ -1036,7 +1041,7 @@ theorem releaseSchedContextBinding_objects_of_bound (st : SystemState)
       (st.updateTcb tid fun t =>
         { t with schedContextBinding := SchedContextBinding.unbound }).objects := by
   rw [releaseSchedContextBinding_of_bound st scId sc tid tcb hBound hTcb]
-  simp only [SchedContextOps.purgeReplenishmentOnCore_objects]
+  simp only [markKeyChangeFor_objects, SchedContextOps.purgeReplenishmentOnCore_objects]
 
 /-- **`v0.35.185`**: and the two arms that write no object at all — a context
 bound to nothing, and one whose bound thread the store has lost, where the whole

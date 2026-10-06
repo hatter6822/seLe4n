@@ -520,8 +520,15 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
               -- under the store's proof for it.
               match stStored.getTcbWitnessed? boundTid with
               | some ⟨boundTcb, hBound⟩ =>
-                .ok ((), schedContextConfigureBoundPropagate stStored scIdTyped boundTid
-                  boundTcb hBound priority domain)
+                -- The reschedule-SGI accumulator (KSC-1): the bound thread's
+                -- effective key read against the PRE-state's reservation (the
+                -- SC store above moved its deadline and the propagation may
+                -- move its priority); `markKeyChangeFor` flags its placement
+                -- exactly when the key the selector orders by changed, so an
+                -- immaterial reconfigure flags nothing.
+                let preKey := resolveEffectivePrioDeadline st boundTcb
+                .ok ((), markKeyChangeFor (schedContextConfigureBoundPropagate stStored scIdTyped
+                  boundTid boundTcb hBound priority domain) boundTid preKey)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
           .error .resourceExhausted
@@ -794,12 +801,19 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             else if bindPlacesParkedThread st2 vThreadId.val tcb sc then
               let rqInserted := (st2.scheduler.runQueueOnCore bindHome).insert vThreadId.val
                 (resolveInsertPriority st2 vThreadId.val sc)
-              { st2 with scheduler := st2.scheduler.setRunQueueOnCore bindHome rqInserted }
+              -- The reschedule-SGI accumulator (KSC-1): the placement is a
+              -- wake on `bindHome` (the diff's queue rule), flagged as such.
+              { st2 with scheduler := (st2.scheduler.setRunQueueOnCore bindHome rqInserted)
+                  |>.markReschedulePendingOnCore bindHome }
             else st2
             -- S-05/PERF-O1: Add thread to per-SchedContext thread index
             let st4 := { st3 with scThreadIndex :=
               (scThreadIndexAdd st3.scThreadIndex scIdTyped vThreadId.val) }
-            .ok ((), st4)
+            -- The reschedule-SGI accumulator (KSC-1): the bind moved the
+            -- thread's effective key (its deadline is the reservation's now,
+            -- its priority the reservation's); the hook flags a re-bucketed
+            -- or current thread's core exactly when that key changed.
+            .ok ((), markKeyChangeFor st4 vThreadId.val (resolveEffectivePrioDeadline st tcb))
           | _ => .error .illegalState
         | none => .error .objectNotFound
     | none => .error .objectNotFound
@@ -886,8 +900,11 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           let unbindHome := determineTargetCore st tid
           let runCore? := runningCoreOf? st tid
           let wasCurrent := runCore?.isSome
+          -- The reschedule-SGI accumulator (KSC-1): clearing a core's
+          -- `current` slot stales its decision (the diff's slot rule).
           let sched0 := match runCore? with
-            | some runCore => st.scheduler.setCurrentOnCore runCore none
+            | some runCore => (st.scheduler.setCurrentOnCore runCore none)
+                |>.markReschedulePendingOnCore runCore
             | none => st.scheduler
           -- Z5-H2: re-bucket the thread at its post-unbind (legacy) priority.
           --
@@ -911,9 +928,14 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           let legacyPrio := updatedTcb.boostedPriority
           let homeQueue := sched0.runQueueOnCore unbindHome
           let rebucketed := (homeQueue.remove tid).insert tid legacyPrio
+          -- The reschedule-SGI accumulator (KSC-1): a thread that was current
+          -- is PLACED on its home here (a wake there, flagged as such); a
+          -- queued thread is re-bucketed, and the key hook at the end flags
+          -- its home exactly when the legacy key differs.
           let sched1 :=
             if tid ∈ homeQueue then sched0.setRunQueueOnCore unbindHome rebucketed
-            else if wasCurrent then sched0.setRunQueueOnCore unbindHome rebucketed
+            else if wasCurrent then (sched0.setRunQueueOnCore unbindHome rebucketed)
+              |>.markReschedulePendingOnCore unbindHome
             else sched0
           -- The scheduler stage is a scheduler-only update of the pre-state
           -- (`v0.35.71`): its object table IS the pre-state's, definitionally,
@@ -945,7 +967,10 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
           let st5 := { st4 with scThreadIndex :=
             (scThreadIndexRemove st4.scThreadIndex scIdTyped tid) }
-          .ok ((), st5)
+          -- The reschedule-SGI accumulator (KSC-1): the thread's key is its
+          -- legacy one now; a re-bucketed queued thread flags its home exactly
+          -- when that differs from the reservation's key.
+          .ok ((), markKeyChangeFor st5 tid (resolveEffectivePrioDeadline st tcb))
         -- Bound thread's TCB not found — clear SC side anyway
         | none =>
           -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other
@@ -1028,7 +1053,9 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
           -- WS-SM SM8.B (review round 13): re-enqueue on the thread's HOME core.
           let refillHome := determineTargetCore st2 tid
           if tid ∉ (st2.scheduler.runQueueOnCore refillHome) && (st2.scheduler.currentOnCore refillHome) != some tid then
-            { st2 with scheduler := st2.scheduler.setRunQueueOnCore refillHome ((st2.scheduler.runQueueOnCore refillHome).insert tid (resolveInsertPriority st2 tid targetSc)) }
+            -- The reschedule-SGI accumulator (KSC-1): a wake on `refillHome`.
+            { st2 with scheduler := (st2.scheduler.setRunQueueOnCore refillHome ((st2.scheduler.runQueueOnCore refillHome).insert tid (resolveInsertPriority st2 tid targetSc)))
+                |>.markReschedulePendingOnCore refillHome }
           else st2
         | none => st2
       else st2
@@ -1054,6 +1081,22 @@ private theorem runnableOnSomeCore_of_insert (s : SystemState)
   rw [runnableOnSomeCore]
   refine List.any_eq_true.mpr ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, ?_⟩
   rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
+    ← RunQueue.mem_iff_contains, RunQueue.mem_insert]
+  exact Or.inr rfl
+
+/-- `runnableOnSomeCore_of_insert` for the placement arm's shape, whose
+run-queue write carries the home core's reschedule-pending mark (the KSC-1
+accumulator) — the mark leaves every run queue as it was. -/
+private theorem runnableOnSomeCore_of_insert_marked (s : SystemState)
+    (c c' : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) (q : RunQueue)
+    (pr : SeLe4n.Priority) :
+    runnableOnSomeCore
+        { s with scheduler := (s.scheduler.setRunQueueOnCore c (q.insert tid pr))
+            |>.markReschedulePendingOnCore c' } tid = true := by
+  rw [runnableOnSomeCore]
+  refine List.any_eq_true.mpr ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, ?_⟩
+  rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
     ← RunQueue.mem_iff_contains, RunQueue.mem_insert]
   exact Or.inr rfl
 
@@ -1098,7 +1141,7 @@ theorem schedContextBind_places_parked_thread
             · split at h
               · dsimp only at h
                 rw [Except.ok.injEq, Prod.mk.injEq] at h
-                rw [← h.2]
+                rw [← h.2, markKeyChangeFor_runnableOnSomeCore]
                 -- The guard transports from the pre-state: both of the bind's
                 -- writes are object rewrites, so the intermediate state's
                 -- scheduler IS the pre-state's.
@@ -1113,7 +1156,7 @@ theorem schedContextBind_places_parked_thread
                   exact runnableOnSomeCore_of_insert _ _ _ _ _
                 · split
                   · -- The placement arm: Cut B2's own write.
-                    exact runnableOnSomeCore_of_insert _ _ _ _ _
+                    exact runnableOnSomeCore_of_insert_marked _ _ _ _ _ _
                   · -- The identity arm is UNREACHABLE under the hypothesis: the
                     -- guard is the pre-state's, which this arm's condition denies.
                     rename_i hParkArm
@@ -1179,7 +1222,7 @@ theorem schedContextBind_leaves_unplaced_of_exhausted
             · split at h
               · dsimp only at h
                 rw [Except.ok.injEq, Prod.mk.injEq] at h
-                rw [← h.2]
+                rw [← h.2, markKeyChangeFor_placedCoreOf?]
                 have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
                     (pf : _) (f : TCB → TCB),
                     ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler

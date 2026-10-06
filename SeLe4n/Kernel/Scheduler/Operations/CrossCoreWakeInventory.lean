@@ -197,7 +197,7 @@ def crossCoreWakeTheorems : List CrossCoreWakeTheorem :=
       wakeThread_preserves_target_runQueue_wellFormed .wake,
     ccwt! "wakeThread_independent_of_other_core: cross-core independence frame"
       wakeThread_independent_of_other_core .wake,
-    ccwt! "SchedStep: a single per-core scheduler step (enqueue or switch)"
+    ccwt! "SchedStep: a single per-core scheduler step (enqueue, switch or pending-flag clear)"
       SchedStep .wake,
     ccwt! "SchedReachable: the RT-closure of scheduler steps"
       SchedReachable .wake,

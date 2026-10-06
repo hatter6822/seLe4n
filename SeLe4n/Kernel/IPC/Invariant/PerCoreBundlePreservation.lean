@@ -326,10 +326,10 @@ theorem ensureRunnable_mem_old_onCore (st : SystemState) (tid0 x : SeLe4n.Thread
   · split
     · by_cases hc : bootCoreId = c
       · subst hc
-        simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
         rw [RunQueue.mem_insert]
         exact Or.inl hMem
-      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+      · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
         exact hMem
     · exact hMem
 
@@ -1441,9 +1441,11 @@ theorem enqueueRunnableOnCore_mem_old (st : SystemState) (c c' : CoreId)
     · exact hMem
     · by_cases hcc : c' = c
       · subst hcc
-        simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
         exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inl hMem)
-      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ (Ne.symm hcc)]
+      · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ (Ne.symm hcc)]
         exact hMem
 
 open SeLe4n.Model.SystemState in

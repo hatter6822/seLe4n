@@ -219,7 +219,7 @@ theorem applyPriorityChangeOnCore_replenishQueueOnCore (st st' : SystemState)
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at h
   rw [priorityRescheduleOnCore_replenishQueueOnCore _ st' _ executingCore shouldPreempt
-      sgi c h,
+      sgi c h, markKeyChangeFor_replenishQueueOnCore,
     SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_replenishQueueOnCore]
   obtain ⟨objs, hEq⟩ :=
     SchedContext.PriorityManagement.updatePrioritySource_only_modifies_objects st tid tcb
@@ -870,16 +870,18 @@ theorem schedContextBind_replenishQueueOnCore (st st' : SystemState)
             · split at h
               · dsimp only at h
                 rw [Except.ok.injEq, Prod.mk.injEq] at h
-                rw [← h.2]
+                rw [← h.2, markKeyChangeFor_replenishQueueOnCore]
                 -- Three arms since Cut B2 (`v0.35.182`): the re-bucket, the
                 -- placement of a parked runnable thread, and the identity.  All
-                -- three write a run queue or nothing, so none moves a replenish
-                -- queue — which is what keeps this arm's segment EMPTY.
+                -- three write a run queue (and the placement a reschedule-pending
+                -- flag) or nothing, so none moves a replenish queue — which is
+                -- what keeps this arm's segment EMPTY.
                 split
                 · simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
                     SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
                 · split
-                  · simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+                  · simp only [SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
+                      SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
                       SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
                   · simp only [SystemState.updateTcb_scheduler,
                       SystemState.rewriteObject_scheduler]
@@ -940,7 +942,8 @@ theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemStat
         · split at h
           · rename_i boundTcb hBound _
             rw [Except.ok.injEq, Prod.mk.injEq] at h
-            rw [← h.2, schedContextConfigureBoundPropagate_replenishQueueOnCore, hSched]
+            rw [← h.2, markKeyChangeFor_replenishQueueOnCore,
+              schedContextConfigureBoundPropagate_replenishQueueOnCore, hSched]
             exact SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm
           · rw [Except.ok.injEq, Prod.mk.injEq] at h
             rw [← h.2, hSched]
@@ -997,7 +1000,7 @@ theorem schedContextUnbind_replenishQueueOnCore_ne_of_tcb (st st' : SystemState)
   split at h
   · exact absurd h (by simp)
   · rw [Except.ok.injEq, Prod.mk.injEq] at h
-    rw [← h.2]
+    rw [← h.2, markKeyChangeFor_replenishQueueOnCore]
     dsimp only
     rw [SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm,
       SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
@@ -1427,6 +1430,8 @@ theorem releaseSchedContextBinding_replenishQueueOnCore_ne (st : SystemState)
           rw [hTcb] at hne
           dsimp only
           simp only [List.mem_singleton] at hne
+          rw [markKeyChangeFor_replenishQueueOnCore]
+          dsimp only
           rw [SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _
             (fun hc => hne hc.symm), SystemState.updateTcb_scheduler]
 
