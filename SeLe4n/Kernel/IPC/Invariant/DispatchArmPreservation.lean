@@ -4447,7 +4447,7 @@ private theorem cleanupTcbReferences_id_of_detached
 the object store nor the scheduler — the sweeps are identities, the reservation
 arm is the identity (the pack refuses a bound or donated target, `v0.35.164`),
 and the CDT/serviceRegistry writes are outside the bundle's read set. -/
-private theorem lifecyclePreRetypeCleanup_detached_frame
+theorem lifecyclePreRetypeCleanup_detached_frame
     (st stClean : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
     (hObjInv : st.objects.invExt)
     (hObj : st.objects[target]? = some currentObj)

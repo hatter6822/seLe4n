@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.ReschedulePendingArms.Ipc
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
 
 /-!
 # The checked dispatcher's own arms cover
@@ -116,6 +117,146 @@ theorem notificationSignalDeclassifiedOnCore_stepCovers (e : CoreId)
       exact ⟨stepCovers_trans hB (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl),
         hBInv⟩
 
+/-! ### Retype -/
+
+/-- A write that moves only slot `X` keeps the key of every thread that neither
+lives at `X` nor names `X` as its scheduling context. -/
+theorem schedKeyView_eq_of_slotUnread {pre post : SystemState} {X : SeLe4n.ObjId}
+    (hFrame : ∀ oid, oid ≠ X → keyInputsOf post.objects[oid]? = keyInputsOf pre.objects[oid]?)
+    {t : SeLe4n.ThreadId} (ht : t.toObjId ≠ X)
+    (hNo : ∀ tcb, pre.getTcb? t = some tcb → ∀ sc, tcb.schedContextBinding.scId? = some sc →
+      sc.toObjId ≠ X) :
+    schedKeyView post t = schedKeyView pre t := by
+  have hT := getTcb?_keyFields_of_keyInputsOf (hFrame _ ht)
+  unfold schedKeyView
+  cases hq : post.getTcb? t <;> cases hp : pre.getTcb? t <;> simp only [hq, hp] at hT ⊢
+  · rfl
+  · simp at hT
+  · simp at hT
+  · rename_i b a
+    simp only [Option.map_some, Option.some.injEq] at hT ⊢
+    rw [resolveEffectivePrioDeadline_congr_binding hT (fun sc hsc =>
+      getSchedContext?_deadline_of_keyInputsOf (hFrame _ (hNo a hp sc hsc)))]
+
+/-- **The retype covers**, under the detachment pack the dispatch's invariant
+payoff already consumes: the cleanup is the identity on the object store and the
+scheduler, so the retype is one store at a slot no placed thread lives at or
+reads its deadline from. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers (e : CoreId)
+    {ec : CoreId} {authCap : Capability} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (hBi : schedContextBindingBidirectional st) (hDet : retypeTargetDetached st target)
+    (hPlaced : ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨
+      st.scheduler.currentOnCore c = some t) → (st.getTcb? t).isSome)
+    (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache ec authCap target newObj st
+      = .ok ((), st')) :
+    stepCovers e st st' := by
+  obtain ⟨stB, hB, hObjB, hSchB⟩ :=
+    lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame h
+  obtain ⟨_, cur, stClean, hCur, hClean, hStore⟩ := lifecycleRetypeDirectWithCleanup_ok_decompose hB
+  obtain ⟨hCO, hCS, _⟩ :=
+    lifecyclePreRetypeCleanup_detached_frame st stClean target cur newObj hInv hCur hDet hClean
+  have hScrubInv : (scrubObjectMemory stClean target cur.objectType).objects.invExt := by
+    rw [scrubObjectMemory_objects_eq, hCO]; exact hInv
+  have hSched : st'.scheduler = st.scheduler := by
+    rw [hSchB, storeObject_scheduler_eq _ _ _ _ hStore]; exact hCS
+  have hFrame : ∀ oid, oid ≠ target → st'.objects[oid]? = st.objects[oid]? := by
+    intro oid hne
+    rw [hObjB, storeObject_objects_ne _ _ _ _ _ hne hScrubInv hStore,
+      scrubObjectMemory_objects_eq, hCO]
+  have hUnread : ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨
+      st.scheduler.currentOnCore c = some t) → schedKeyView st' t = schedKeyView st t := by
+    intro c t hP
+    obtain ⟨tcb, hT⟩ := Option.isSome_iff_exists.mp (hPlaced c t hP)
+    have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+    have ht : t.toObjId ≠ target := by
+      intro hEq
+      rw [hEq] at hTo
+      have hDs := hDet.tcbDescheduled tcb hTo c
+      have hId : tcb.tid = t :=
+        SeLe4n.ThreadId.toObjId_injective _ _ ((hDet.tcbSelfId tcb hTo).trans hEq.symm)
+      rw [hId] at hDs
+      rcases hP with hQ | hQ
+      · have hQ' : (st.scheduler.runQueueOnCore c).contains t = true := hQ
+        rw [hDs.1] at hQ'; cases hQ'
+      · exact hDs.2 hQ
+    refine schedKeyView_eq_of_slotUnread (fun oid hne => by rw [hFrame oid hne]) ht ?_
+    intro tcb' hT' sc hsc hEq
+    rw [hT] at hT'; cases hT'
+    obtain ⟨sco, hSo, _⟩ := hBi t tcb sc hTo hsc
+    rw [hEq] at hSo
+    exact hDet.notSc sco hSo
+  refine ⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
+    fun c _ hc => by rw [hSched]; exact hc⟩
+  · rw [hSched] at ht; exact ⟨ht, (hUnread c t (Or.inl ht)).symm⟩
+  · rw [hSched] at ht; exact schedKeyNotWeakened_of_eq (hUnread c t (Or.inr ht)).symm
+
+/-! ### The capability-only arms -/
+
+/-- **Every arm `dispatchCapabilityOnly` routes covers**, on the executing core,
+under the binding reciprocity, the placement facts and the retype detachment
+pack — the pre-state facts the dispatch's invariant payoff consumes. -/
+theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap : Capability}
+    {tid : SeLe4n.ThreadId} {ec : CoreId} {k : Kernel Unit} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hPlaced : ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨
+      st.scheduler.currentOnCore c = some t) → (st.getTcb? t).isSome)
+    (hDet : ∀ args, decoded.syscallId = .lifecycleRetype →
+      decodeLifecycleRetypeArgs decoded = .ok args → retypeTargetDetached st args.targetObj)
+    (hK : dispatchCapabilityOnly decoded cap tid ec = some k)
+    (h : k st = .ok ((), st')) : stepCovers ec st st' := by
+  unfold dispatchCapabilityOnly at hK
+  cases hId : decoded.syscallId <;> rw [hId] at hK <;> simp only [Option.some.injEq,
+    reduceCtorEq] at hK
+  all_goals subst hK
+  all_goals cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
+  all_goals first | (cases h; done) | skip
+  case lifecycleRetype.object =>
+    split at h
+    · cases h
+    · rename_i args hArgs
+      exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers ec hInv hBi
+        (hDet args hId hArgs) hPlaced h
+  all_goals (repeat' split at h)
+  all_goals first | (cases h; done) | skip
+  all_goals try first
+    | exact (cspaceDeleteSlotFinalising_keyFrame _ _ _ _ hInv h).stepCovers
+    | exact (cspaceRevokeCdtFinalising_keyFrame _ _ _ _ hInv h).stepCovers
+    | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCovers
+    | exact (untypedResetWithShootdown_keyFrame _ _ _ _ hInv h).stepCovers
+    | exact (vspaceMapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCovers
+    | exact (vspaceRootOnlyWrite_keyFrame
+        (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCovers
+    | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
+        (Architecture.vspaceUnifyInstructionPage_frame h).1
+        (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCovers
+    | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
+        (revokeService_preserves_objects _ _ _ h) (revokeService_preserves_scheduler _ _ _ h)).stepCovers
+    | exact (schedContextConfigure_stepCovers _ _ _ _ _ _ _ _ _ hInv hBi h).1
+    | exact (schedContextBind_stepCovers _ _ _ _ _ hInv h).1
+    | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCovers
+    | exact (pageTableMap_keyFrame _ _ _ _ _ hInv h).stepCovers
+    | exact (pageTableUnmap_keyFrame _ _ _ hInv h).stepCovers
+    | (cases h; rename_i hU
+       first
+        | (rw [lookupServiceByCap_preserves_state _ _ _ _ hU]
+           exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCovers)
+        | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU).1
+        | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCovers
+        | exact (suspendThreadOnCore_stepCovers _ _ _ _ _ hInv hU).1
+        | exact stepCovers_trans (retirePendingFaultForResume_keyFrame _ _ hInv).stepCovers
+            (resumeThreadOnCore_stepCovers _ _ _ _ _
+              (retirePendingFaultForResume_keyFrame _ _ hInv).2.2 hU).1
+        | exact (setPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU).1
+        | exact (setMCPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU).1
+        | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU).1
+        | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCovers
+        | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCovers
+        | exact (setThreadSpace_keyFrame _ _ _ _ _ hInv hU).stepCovers)
+  all_goals
+    obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ h
+    exact (untypedRetypeObject_keyFrame _ _ _ _ _ _ hInv hU).stepCovers
+
 /-! ### The checked dispatcher -/
 
 /-- Read a pair-returning transition's coverage off the equation that named its
@@ -151,18 +292,21 @@ theorem keyFrame_trans_stage {x : SystemState} {w p : Option SeLe4n.ThreadId}
   have h1 := stageWokenDelivery_keyFrame x w 0 hx
   exact h1.trans (stageWokenDelivery_keyFrame _ p 0 h1.2.2)
 
-/-- **Every arm `dispatchWithCapChecked` routes itself covers**, given that the
-capability-only arms it delegates to do. -/
+/-- **Every arm `dispatchWithCapChecked` routes covers** on the executing core,
+the capability-only arms it delegates included. -/
 theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
-    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {executingCore : CoreId}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId}
     {gate : SyscallGate} {cap : Capability} {st st' : SystemState} (hInv : st.objects.invExt)
-    (hCapOnly : ∀ k, dispatchCapabilityOnly decoded cap tid executingCore = some k →
-      k st = .ok ((), st') → stepCovers e st st')
-    (h : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
+    (hBi : schedContextBindingBidirectional st)
+    (hPlaced : ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨
+      st.scheduler.currentOnCore c = some t) → (st.getTcb? t).isSome)
+    (hDet : ∀ args, decoded.syscallId = .lifecycleRetype →
+      decodeLifecycleRetypeArgs decoded = .ok args → retypeTargetDetached st args.targetObj)
+    (h : dispatchWithCapChecked ctx decoded tid e gate cap st = .ok ((), st')) :
     stepCovers e st st' := by
   unfold dispatchWithCapChecked at h
-  cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
-  | some k => rw [hC] at h; exact hCapOnly k hC h
+  cases hC : dispatchCapabilityOnly decoded cap tid e with
+  | some k => rw [hC] at h; exact dispatchCapabilityOnly_stepCovers hInv hBi hPlaced hDet hC h
   | none =>
   rw [hC] at h
   dsimp only at h
