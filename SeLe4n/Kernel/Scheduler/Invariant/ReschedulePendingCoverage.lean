@@ -493,4 +493,110 @@ theorem markKeyChangeFor_covers {e : CoreId} {pre mid : SystemState}
       exact (Classical.byContradiction fun h => hB ⟨ht, fun h' => h (h' kq hq)⟩)
     · exact schedKeyNotWeakened_of_eq (hOthers t hEq).symm kq hq
 
+/-! ### Per-thread flagging: the binding writers' hook -/
+
+/-- Every core a key change on `tid` stales between `pre` and `post` is flagged
+in `post`: a core whose queue holds `tid` when its key moved, and a core whose
+current slot holds it when its key weakened. -/
+def keyChangeFlagged (pre post : SystemState) (tid : SeLe4n.ThreadId) : Prop :=
+  ∀ c, ((tid ∈ post.scheduler.runQueueOnCore c ∧ schedKeyView post tid ≠ schedKeyView pre tid) ∨
+      (post.scheduler.currentOnCore c = some tid ∧ ¬ schedKeyNotWeakened pre post tid)) →
+    post.scheduler.reschedulePendingOnCore c = true
+
+/-- **Coverage from per-thread flagging.**  A step whose every moved key is
+flagged, and whose every remote core is flagged or kept its slots (its queue
+may only shrink), covers. -/
+theorem reschedulePendingCovers_of_keyChangeFlagged {e : CoreId} {pre post : SystemState}
+    (hKeys : ∀ t, schedKeyView post t = schedKeyView pre t ∨ keyChangeFlagged pre post t)
+    (hSlots : ∀ c, c ≠ e → post.scheduler.reschedulePendingOnCore c = true ∨
+      ((∀ t, t ∈ post.scheduler.runQueueOnCore c → t ∈ pre.scheduler.runQueueOnCore c) ∧
+        post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)) :
+    reschedulePendingCovers e pre post := by
+  intro c hc
+  rcases hSlots c hc with hUp | ⟨hRq, hCur⟩
+  · exact Or.inl hUp
+  by_cases hF : post.scheduler.reschedulePendingOnCore c = true
+  · exact Or.inl hF
+  refine Or.inr ⟨fun t ht => ⟨hRq t ht, ?_⟩, hCur, fun t ht => ?_⟩
+  · rcases hKeys t with h | h
+    · exact h.symm
+    · exact Classical.byContradiction fun hne => hF (h c (Or.inl ⟨ht, fun h' => hne h'.symm⟩))
+  · rcases hKeys t with h | h
+    · exact schedKeyNotWeakened_of_eq h.symm
+    · exact Classical.byContradiction fun hw => hF (h c (Or.inr ⟨ht, hw⟩))
+
+/-- Flagging survives a later step that moves no slot, no key and no flag down. -/
+theorem keyChangeFlagged_of_flagOnly {pre mid post : SystemState} {tid : SeLe4n.ThreadId}
+    (h : keyChangeFlagged pre mid tid)
+    (hRq : ∀ c, post.scheduler.runQueueOnCore c = mid.scheduler.runQueueOnCore c)
+    (hCur : ∀ c, post.scheduler.currentOnCore c = mid.scheduler.currentOnCore c)
+    (hKey : ∀ t, schedKeyView post t = schedKeyView mid t)
+    (hMono : ∀ c, mid.scheduler.reschedulePendingOnCore c = true →
+      post.scheduler.reschedulePendingOnCore c = true) :
+    keyChangeFlagged pre post tid := by
+  intro c hc
+  apply hMono c
+  apply h c
+  have hW : schedKeyNotWeakened pre post tid ↔ schedKeyNotWeakened pre mid tid := by
+    unfold schedKeyNotWeakened; rw [hKey]
+  rw [hRq, hCur, hKey] at hc
+  rcases hc with hc | ⟨hc1, hc2⟩
+  · exact Or.inl hc
+  · exact Or.inr ⟨hc1, fun hw => hc2 (hW.mpr hw)⟩
+
+@[simp] theorem schedKeyView_markKeyChangeFrom (pre post : SystemState) (tid t : SeLe4n.ThreadId) :
+    schedKeyView (markKeyChangeFrom pre post tid) t = schedKeyView post t :=
+  markKeyChangeFrom_extract_frame (fun s => schedKeyView s t) pre post tid (fun _ _ => rfl)
+
+@[simp] theorem markKeyChangeFrom_runQueueOnCore (pre post : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) :
+    (markKeyChangeFrom pre post tid).scheduler.runQueueOnCore c = post.scheduler.runQueueOnCore c :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.runQueueOnCore c) pre post tid
+    (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_currentOnCore (pre post : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) :
+    (markKeyChangeFrom pre post tid).scheduler.currentOnCore c = post.scheduler.currentOnCore c :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.currentOnCore c) pre post tid
+    (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
+
+theorem markKeyChangeFrom_reschedulePendingOnCore_mono (pre post : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) (h : post.scheduler.reschedulePendingOnCore c = true) :
+    (markKeyChangeFrom pre post tid).scheduler.reschedulePendingOnCore c = true := by
+  unfold markKeyChangeFrom
+  split
+  · exact markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ h
+  · simp [markReschedulePendingWhere_reschedulePendingOnCore, h]
+
+/-- **The hook flags what it is called for**: every core the key change on
+`tid` stales, read against `pre`. -/
+theorem markKeyChangeFrom_flagged (pre mid : SystemState) (tid : SeLe4n.ThreadId) :
+    keyChangeFlagged pre (markKeyChangeFrom pre mid tid) tid := by
+  intro c hc
+  simp only [markKeyChangeFrom_runQueueOnCore, markKeyChangeFrom_currentOnCore,
+    schedKeyView_markKeyChangeFrom] at hc
+  have hW : schedKeyNotWeakened pre (markKeyChangeFrom pre mid tid) tid ↔
+      schedKeyNotWeakened pre mid tid := by
+    unfold schedKeyNotWeakened; simp only [schedKeyView_markKeyChangeFrom]
+  cases hT : pre.getTcb? tid with
+  | some tcb =>
+    have hEq : markKeyChangeFrom pre mid tid =
+        markKeyChangeFor mid tid (resolveEffectivePrioDeadline pre tcb) := by
+      unfold markKeyChangeFrom; rw [hT]
+    rw [hEq]
+    rcases hc with ⟨hm, hne⟩ | ⟨hcur, hw⟩
+    · exact markKeyChangeFor_reschedulePendingOnCore_of_moved hT hm hne
+    · exact markKeyChangeFor_reschedulePendingOnCore_of_weakened hT hcur
+        (fun h' => hw (hW.mpr (by rw [hEq] at *; exact h')))
+  | none =>
+    have hEq : markKeyChangeFrom pre mid tid = markReschedulePendingWhere mid
+        (fun c => (mid.scheduler.runQueueOnCore c).contains tid ||
+          mid.scheduler.currentOnCore c == some tid) allCores := by
+      unfold markKeyChangeFrom; rw [hT]
+    rw [hEq, markReschedulePendingWhere_reschedulePendingOnCore]
+    rcases hc with ⟨hm, -⟩ | ⟨hcur, -⟩
+    · have hm' : (mid.scheduler.runQueueOnCore c).contains tid = true := hm
+      simp [hm']
+    · simp [hcur]
+
 end SeLe4n.Kernel

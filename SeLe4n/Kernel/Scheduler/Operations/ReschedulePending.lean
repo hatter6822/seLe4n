@@ -125,6 +125,28 @@ theorem markKeyChangeFor_extract_frame {F : Type} (extract : SystemState → F)
   unfold markKeyChangeFor
   exact markReschedulePendingWhere_extract_frame extract h st _ allCores
 
+/-- The key hook for a writer that hands in its **pre-state** rather than a key
+it already read: `tid`'s key is read on `pre`, the flags are raised on `post`.
+A thread with no TCB in `pre` had no key, so every core still holding it in a
+queue or the current slot is flagged.  The binding writers (donation, its
+return, the donation cancels) end in this, once per thread whose binding they
+moved. -/
+def markKeyChangeFrom (pre post : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match pre.getTcb? tid with
+  | some tcb => markKeyChangeFor post tid (resolveEffectivePrioDeadline pre tcb)
+  | none => markReschedulePendingWhere post
+      (fun c => (post.scheduler.runQueueOnCore c).contains tid ||
+        post.scheduler.currentOnCore c == some tid) allCores
+
+theorem markKeyChangeFrom_extract_frame {F : Type} (extract : SystemState → F)
+    (pre post : SystemState) (tid : SeLe4n.ThreadId)
+    (h : ∀ (s : SystemState) c, extract (s.markReschedulePendingOnCore c) = extract s) :
+    extract (markKeyChangeFrom pre post tid) = extract post := by
+  unfold markKeyChangeFrom
+  split
+  · exact markKeyChangeFor_extract_frame extract post tid _ h
+  · exact markReschedulePendingWhere_extract_frame extract h post _ allCores
+
 /-- The `.reschedule` SGIs a step owes, from the flag vector captured before
 dispatch and the committed state's: one per core other than the executing core
 whose flag went `false → true`.  A core already pending at the step's start is
