@@ -862,7 +862,7 @@ The store invariant is a conjunct rather than a separate lemma because the
 revocation fold (`v0.35.190`) needs it *between* iterations: each
 `cspaceDeleteSlotCore` takes `st.objects.invExt` as a hypothesis, so a fold over
 descendants has to carry it forward from the step that just ran. -/
-private theorem cspaceDeleteSlotCore_shape
+theorem cspaceDeleteSlotCore_shape
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :

@@ -635,10 +635,10 @@ def tcbKeyFields (t : TCB) :
     SeLe4n.Priority × SeLe4n.Deadline × SchedContextBinding × Option SeLe4n.Priority :=
   (t.priority, t.deadline, t.schedContextBinding, t.pipBoost)
 
-theorem getTcb?_keyFields_of_keyInputsEq {pre post : SystemState} (h : keyInputsEq pre post)
-    (t : SeLe4n.ThreadId) :
+/-- One slot's key inputs fix a TCB's key fields there. -/
+theorem getTcb?_keyFields_of_keyInputsOf {pre post : SystemState} {t : SeLe4n.ThreadId}
+    (hk : keyInputsOf post.objects[t.toObjId]? = keyInputsOf pre.objects[t.toObjId]?) :
     (post.getTcb? t).map tcbKeyFields = (pre.getTcb? t).map tcbKeyFields := by
-  have hk := h t.toObjId
   unfold SystemState.getTcb?
   revert hk
   generalize post.objects[t.toObjId]? = a
@@ -652,10 +652,16 @@ theorem getTcb?_keyFields_of_keyInputsEq {pre post : SystemState} (h : keyInputs
     | none => cases o <;> simp_all [keyInputsOf]
     | some o' => cases o <;> cases o' <;> simp_all [keyInputsOf, tcbKeyFields]
 
-theorem getSchedContext?_deadline_of_keyInputsEq {pre post : SystemState}
-    (h : keyInputsEq pre post) (sc : SeLe4n.SchedContextId) :
+theorem getTcb?_keyFields_of_keyInputsEq {pre post : SystemState} (h : keyInputsEq pre post)
+    (t : SeLe4n.ThreadId) :
+    (post.getTcb? t).map tcbKeyFields = (pre.getTcb? t).map tcbKeyFields :=
+  getTcb?_keyFields_of_keyInputsOf (h t.toObjId)
+
+/-- One slot's key inputs fix a scheduling context's deadline there. -/
+theorem getSchedContext?_deadline_of_keyInputsOf {pre post : SystemState}
+    {sc : SeLe4n.SchedContextId}
+    (hk : keyInputsOf post.objects[sc.toObjId]? = keyInputsOf pre.objects[sc.toObjId]?) :
     (post.getSchedContext? sc).map (·.deadline) = (pre.getSchedContext? sc).map (·.deadline) := by
-  have hk := h sc.toObjId
   unfold SystemState.getSchedContext?
   revert hk
   generalize post.objects[sc.toObjId]? = a
@@ -668,6 +674,11 @@ theorem getSchedContext?_deadline_of_keyInputsEq {pre post : SystemState}
   | some o => cases b with
     | none => cases o <;> simp_all [keyInputsOf]
     | some o' => cases o <;> cases o' <;> simp_all [keyInputsOf]
+
+theorem getSchedContext?_deadline_of_keyInputsEq {pre post : SystemState}
+    (h : keyInputsEq pre post) (sc : SeLe4n.SchedContextId) :
+    (post.getSchedContext? sc).map (·.deadline) = (pre.getSchedContext? sc).map (·.deadline) :=
+  getSchedContext?_deadline_of_keyInputsOf (h sc.toObjId)
 
 /-- The effective key reads the key fields and the contexts' deadlines alone. -/
 theorem resolveEffectivePrioDeadline_congr_deadline {st st' : SystemState} {a b : TCB}
@@ -700,6 +711,91 @@ theorem schedKeyView_eq_of_keyInputsEq {pre post : SystemState} (h : keyInputsEq
   · simp only [Option.map_some, Option.some.injEq] at hT ⊢
     rw [resolveEffectivePrioDeadline_congr_deadline
       (getSchedContext?_deadline_of_keyInputsEq h) hT]
+
+/-- **No key input moved but `tid`'s own TCB's**, and `tid`'s slot holds no
+scheduling context on either side, so no other thread's key can read it. -/
+def keyInputsEqExcept (tid : SeLe4n.ThreadId) (pre post : SystemState) : Prop :=
+  (∀ oid, oid ≠ tid.toObjId →
+    keyInputsOf post.objects[oid]? = keyInputsOf pre.objects[oid]?) ∧
+  (∀ sc, pre.objects[tid.toObjId]? ≠ some (.schedContext sc)) ∧
+  (∀ sc, post.objects[tid.toObjId]? ≠ some (.schedContext sc))
+
+theorem keyInputsEqExcept.trans {tid : SeLe4n.ThreadId} {a b d : SystemState}
+    (h₁ : keyInputsEqExcept tid a b) (h₂ : keyInputsEqExcept tid b d) :
+    keyInputsEqExcept tid a d :=
+  ⟨fun oid h => (h₂.1 oid h).trans (h₁.1 oid h), h₁.2.1, h₂.2.2⟩
+
+theorem keyInputsEqExcept.trans_keyInputsEq {tid : SeLe4n.ThreadId} {a b d : SystemState}
+    (h₁ : keyInputsEqExcept tid a b) (h₂ : keyInputsEq b d) : keyInputsEqExcept tid a d := by
+  refine ⟨fun oid h => (h₂ oid).trans (h₁.1 oid h), h₁.2.1, fun sc hd => ?_⟩
+  have hk := h₂ tid.toObjId
+  rw [hd] at hk
+  cases hb : b.objects[tid.toObjId]? with
+  | none => rw [hb] at hk; cases hk
+  | some o =>
+    rw [hb] at hk
+    cases o <;> simp [keyInputsOf] at hk
+    exact h₁.2.2 _ hb
+
+theorem keyInputsEq.trans_keyInputsEqExcept {tid : SeLe4n.ThreadId} {a b d : SystemState}
+    (h₁ : keyInputsEq a b) (h₂ : keyInputsEqExcept tid b d) : keyInputsEqExcept tid a d := by
+  refine ⟨fun oid h => (h₂.1 oid h).trans (h₁ oid), fun sc ha => ?_, h₂.2.2⟩
+  have hk := h₁ tid.toObjId
+  rw [ha] at hk
+  cases hb : b.objects[tid.toObjId]? with
+  | none => rw [hb] at hk; cases hk
+  | some o =>
+    rw [hb] at hk
+    cases o <;> simp [keyInputsOf] at hk
+    exact h₂.2.1 _ hb
+
+/-- Every other thread keeps its key. -/
+theorem schedKeyView_eq_of_keyInputsEqExcept {tid : SeLe4n.ThreadId} {pre post : SystemState}
+    (h : keyInputsEqExcept tid pre post) {t : SeLe4n.ThreadId} (ht : t ≠ tid) :
+    schedKeyView post t = schedKeyView pre t := by
+  have hNe : t.toObjId ≠ tid.toObjId := fun e => ht (SeLe4n.ThreadId.toObjId_injective _ _ e)
+  have hT := getTcb?_keyFields_of_keyInputsOf (h.1 _ hNe)
+  have hSc : ∀ sc, (post.getSchedContext? sc).map (·.deadline) =
+      (pre.getSchedContext? sc).map (·.deadline) := by
+    intro sc
+    by_cases hs : sc.toObjId = tid.toObjId
+    · have hq : post.getSchedContext? sc = none := by
+        unfold SystemState.getSchedContext?; rw [hs]
+        split
+        · rename_i x hx; exact absurd hx (h.2.2 x)
+        · rfl
+      have hp : pre.getSchedContext? sc = none := by
+        unfold SystemState.getSchedContext?; rw [hs]
+        split
+        · rename_i x hx; exact absurd hx (h.2.1 x)
+        · rfl
+      rw [hq, hp]
+    · exact getSchedContext?_deadline_of_keyInputsOf (h.1 _ hs)
+  unfold schedKeyView
+  cases hq : post.getTcb? t <;> cases hp : pre.getTcb? t <;> simp only [hq, hp] at hT ⊢
+  · rfl
+  · simp at hT
+  · simp at hT
+  · simp only [Option.map_some, Option.some.injEq] at hT ⊢
+    rw [resolveEffectivePrioDeadline_congr_deadline hSc hT]
+
+/-- A TCB update at `tid` moves no key input but `tid`'s. -/
+theorem keyInputsEqExcept_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId}
+    {f : TCB → TCB} (hInv : st.objects.invExt) (hT : (st.getTcb? tid).isSome) :
+    keyInputsEqExcept tid st (st.updateTcb tid f) := by
+  obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hT
+  have hO : st.objects[tid.toObjId]? = some (.tcb t) := by
+    unfold SystemState.getTcb? at ht; split at ht <;> simp_all
+  unfold SystemState.updateTcb keyInputsEqExcept
+  rw [SystemState.getTcbWitnessed?_eq_some ht]
+  refine ⟨?_, ?_, ?_⟩
+  · intro oid h
+    show keyInputsOf (st.rewriteObject _ _ _).objects[oid]? = _
+    rw [SystemState.rewriteObject_objects_ne st _ oid _ _ (Ne.symm h) hInv]
+  · intro sc hs; rw [hO] at hs; cases hs
+  · intro sc hs
+    change (st.rewriteObject _ _ _).objects[tid.toObjId]? = _ at hs
+    rw [SystemState.rewriteObject_objects_self st _ _ _ hInv] at hs; cases hs
 
 /-- An in-place rewrite that keeps its slot's key inputs moves none. -/
 theorem keyInputsEq_rewriteObject {st : SystemState} {id : SeLe4n.ObjId} {new : KernelObject}
@@ -776,5 +872,19 @@ theorem stepCovers_of_scheduler_eq {e : CoreId} {pre post : SystemState}
     stepCovers e pre post :=
   stepCovers_of_scheduler_eq_except_reschedule hKeys (by rw [hSched])
     (reschedulePendingMonotone_of_scheduler_eq hSched)
+
+/-- **A key write on `tid` followed by the key hook covers**: the write moved no
+other key, every remote core is flagged or kept its slots (a queue may only
+shrink), and no remote flag dropped. -/
+theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hPre : pre.getTcb? tid = some tcb)
+    (hKeys : keyInputsEqExcept tid pre mid)
+    (hSlots : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = true ∨
+      ((∀ t, t ∈ mid.scheduler.runQueueOnCore c → t ∈ pre.scheduler.runQueueOnCore c) ∧
+        mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c))
+    (hMono : reschedulePendingMonotone e pre mid) :
+    stepCovers e pre (markKeyChangeFor mid tid (resolveEffectivePrioDeadline pre tcb)) :=
+  ⟨markKeyChangeFor_covers hPre (fun _ ht => schedKeyView_eq_of_keyInputsEqExcept hKeys ht) hSlots,
+   fun c hc h => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ (hMono c hc h)⟩
 
 end SeLe4n.Kernel
