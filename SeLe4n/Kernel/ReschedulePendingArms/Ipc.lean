@@ -252,7 +252,9 @@ theorem endpointSendDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeL
     {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
     stepCovers e st (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
-      receiverSlotBase executingCore st).1 := by
+      receiverSlotBase executingCore st).1 ∧
+    (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
+      receiverSlotBase executingCore st).1.objects.invExt := by
   unfold endpointSendDualWithCapsOnCore
   obtain ⟨hSend, hSendInv⟩ := endpointSendDualOnCore_stepCovers e
     (endpointId := endpointId) (sender := sender)
@@ -263,14 +265,15 @@ theorem endpointSendDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeL
   obtain ⟨st1, res⟩ := r
   dsimp only at hSend hSendInv ⊢
   cases res with
-  | error _ => exact hSend
+  | error _ => exact ⟨hSend, hSendInv⟩
   | ok sgi =>
     dsimp only
     repeat' split
     all_goals first
-      | exact hSend
-      | (apply stepCovers_trans hSend; apply capabilityKeyFrame.stepCovers
-         apply ipcUnwrapCaps_keyFrame hSendInv; assumption)
+      | exact ⟨hSend, hSendInv⟩
+      | (rename_i hU
+         have hF := ipcUnwrapCaps_keyFrame hSendInv hU
+         exact ⟨stepCovers_trans hSend hF.stepCovers, hF.2.2⟩)
 
 /-- The live checked send covers on every outcome. -/
 theorem endpointSendCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -278,15 +281,17 @@ theorem endpointSendCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : Labe
     {endpointRights : AccessRightSet} {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId}
     {st : SystemState} (hInv : st.objects.invExt) :
     stepCovers e st (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg
-      endpointRights receiverSlotBase executingCore st).1 := by
+      endpointRights receiverSlotBase executingCore st).1 ∧
+    (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg
+      endpointRights receiverSlotBase executingCore st).1.objects.invExt := by
   unfold endpointSendCrossCoreDispatchChecked
   split
-  · exact stepCovers_refl e st
+  · exact ⟨stepCovers_refl e st, hInv⟩
   split
-  · exact stepCovers_refl e st
+  · exact ⟨stepCovers_refl e st, hInv⟩
   split
   · exact endpointSendDualWithCapsOnCore_stepCovers e hInv
-  · exact stepCovers_refl e st
+  · exact ⟨stepCovers_refl e st, hInv⟩
 
 /-! ### Receive -/
 
@@ -721,7 +726,9 @@ theorem endpointCallCrossCoreDispatch_stepCovers (e : CoreId) {endpointId : SeLe
     {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
     stepCovers e st (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
-      receiverSlotBase executingCore st).1 := by
+      receiverSlotBase executingCore st).1 ∧
+    (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
+      receiverSlotBase executingCore st).1.objects.invExt := by
   unfold endpointCallCrossCoreDispatch
   obtain ⟨hC, hCInv⟩ := endpointCallWithCapsOnCore_stepCovers e
     (endpointId := endpointId) (caller := caller) (msg := msg)
@@ -732,28 +739,30 @@ theorem endpointCallCrossCoreDispatch_stepCovers (e : CoreId) {endpointId : SeLe
   obtain ⟨st1, res⟩ := r
   dsimp only at hC hCInv ⊢
   cases res with
-  | error _ => exact hC
+  | error _ => exact ⟨hC, hCInv⟩
   | ok p =>
     obtain ⟨summary, sgi⟩ := p
     dsimp only
     repeat' split
     all_goals first
-      | exact hC
+      | exact ⟨hC, hCInv⟩
       | (rename_i hD
          obtain ⟨hDc, hDInv⟩ := applyCallDonationOnCore_stepCovers e hCInv hD
-         exact stepCovers_trans (stepCovers_trans hC hDc)
-           (propagatePipChainCrossCore_stepCovers e executingCore _ _ _ hDInv).1)
+         exact (propagatePipChainCrossCore_stepCovers e executingCore _ _ _ hDInv).imp_left
+           (stepCovers_trans (stepCovers_trans hC hDc)))
 
 theorem endpointCallCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId} {msg : IpcMessage}
     {endpointRights : AccessRightSet} {receiverSlotBase : SeLe4n.Slot} {executingCore : CoreId}
     {st : SystemState} (hInv : st.objects.invExt) :
     stepCovers e st (endpointCallCrossCoreDispatchChecked ctx endpointId caller msg
-      endpointRights receiverSlotBase executingCore st).1 := by
+      endpointRights receiverSlotBase executingCore st).1 ∧
+    (endpointCallCrossCoreDispatchChecked ctx endpointId caller msg
+      endpointRights receiverSlotBase executingCore st).1.objects.invExt := by
   unfold endpointCallCrossCoreDispatchChecked
   split
   · exact endpointCallCrossCoreDispatch_stepCovers e hInv
-  · exact stepCovers_refl e st
+  · exact ⟨stepCovers_refl e st, hInv⟩
 
 /-! ### Reply -/
 
@@ -1166,32 +1175,36 @@ theorem notificationSignalOnCore_stepCovers (e : CoreId) {notificationId : SeLe4
 theorem notificationSignalBoundOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.ObjId}
     {badge : SeLe4n.Badge} {executingCore : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
-    stepCovers e st (notificationSignalBoundOnCore notificationId badge executingCore st).1 := by
+    stepCovers e st (notificationSignalBoundOnCore notificationId badge executingCore st).1 ∧
+      (notificationSignalBoundOnCore notificationId badge executingCore st).1.objects.invExt := by
   unfold notificationSignalBoundOnCore
   split
   · dsimp only
     split
-    · exact stepCovers_refl e st
+    · exact ⟨stepCovers_refl e st, hInv⟩
     · rename_i st1 hR
       have hF1 := endpointQueueRemoveDual_keyFrame hInv hR
       split
-      · exact stepCovers_refl e st
+      · exact ⟨stepCovers_refl e st, hInv⟩
       · rename_i st2 hT
         have hF2 := hF1.trans (storeTcbReceiveComplete_keyFrame hF1.2.2 hT)
-        exact stepCovers_trans hF2.stepCovers (wakeThread_stepCovers e st2 _ executingCore hF2.2.2).1
-  · exact (notificationSignalOnCore_stepCovers e hInv).1
+        exact (wakeThread_stepCovers e st2 _ executingCore hF2.2.2).imp_left
+          (stepCovers_trans hF2.stepCovers)
+  · exact notificationSignalOnCore_stepCovers e hInv
 
 theorem notificationSignalBoundCrossCoreDispatchChecked_stepCovers (e : CoreId)
     {ctx : LabelingContext} {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId}
     {badge : SeLe4n.Badge} {executingCore : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
     stepCovers e st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
-      badge executingCore st).1 := by
+      badge executingCore st).1 ∧
+    (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
+      badge executingCore st).1.objects.invExt := by
   unfold notificationSignalBoundCrossCoreDispatchChecked
   repeat' split
   all_goals first
     | exact notificationSignalBoundOnCore_stepCovers e hInv
-    | exact stepCovers_refl e st
+    | exact ⟨stepCovers_refl e st, hInv⟩
 
 /-- The per-core wait covers on every outcome: consuming a badge keeps the
 waiter runnable, and blocking takes it off the executing core. -/
