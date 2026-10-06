@@ -797,7 +797,9 @@ theorem cancelBoundDonation_scheduler_runQueue_eq
   · -- .bound case
     injection h with h; subst h
     -- Two in-place rewrites and a replenish-queue write: the run queue and the
-    -- current slot are read off the scheduler both rewrites leave alone.
+    -- current slot are read off the scheduler both rewrites leave alone (the key
+    -- hook writes flags alone).
+    rw [markKeyChangeFrom_runQueueOnCore, markKeyChangeFrom_currentOnCore]
     constructor <;>
       (rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler]; try rfl)
   · -- wrong variant: `.error .illegalState ≠ .ok st'` — contradiction
@@ -898,7 +900,8 @@ theorem cancelBoundDonation_serviceRegistry_eq
   split at h
   · -- .bound case: two nested matches, all branches preserve serviceRegistry
     injection h with h; subst h
-    rw [SystemState.updateTcb_serviceRegistry, SystemState.updateSchedContext_serviceRegistry]
+    rw [markKeyChangeFrom_serviceRegistry, SystemState.updateTcb_serviceRegistry,
+      SystemState.updateSchedContext_serviceRegistry]
   · simp at h
 
 /-- D1-I/R5.A: `cancelDonatedDonation` preserves serviceRegistry by
@@ -1985,6 +1988,7 @@ theorem cancelBoundDonation_preserves_objects_invExt
   · -- `.bound scId` arm.
     injection h with h
     subst h
+    rw [markKeyChangeFrom_objects]
     exact SystemState.updateTcb_preserves_objects_invExt _ _ _
       (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
   · -- `.donated` / `.unbound`: rejected with `.illegalState`.
@@ -2128,6 +2132,7 @@ theorem cancelBoundDonation_preserves_ipcInvariant
     simp only [cancelBoundDonation, hB] at h
     injection h with h
     subst h
+    refine ipcInvariant_of_objects_eq (markKeyChangeFrom_objects _ _ _) ?_
     -- Two in-place rewrites, a SchedContext then a TCB — neither is a
     -- notification, so the notification lookups are the pre-state's.
     have hInv1 : (st.updateSchedContext scId fun sc =>

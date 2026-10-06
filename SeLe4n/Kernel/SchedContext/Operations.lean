@@ -159,6 +159,20 @@ private theorem purgeReplenishmentFromAllCores_frame
   purgeReplenishmentFromAllCores_frame (·.scheduler.runQueueOnCore c') scId
     (fun s c => purgeReplenishmentOnCore_runQueueOnCore s c scId c') st
 
+@[simp] theorem purgeReplenishmentOnCore_reschedulePendingOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentOnCore st c scId).scheduler.reschedulePendingOnCore c'
+      = st.scheduler.reschedulePendingOnCore c' := by
+  simp [purgeReplenishmentOnCore]
+
+@[simp] theorem purgeReplenishmentFromAllCores_reschedulePendingOnCore (st : SystemState)
+    (scId : SchedContextId) (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentFromAllCores st scId).scheduler.reschedulePendingOnCore c'
+      = st.scheduler.reschedulePendingOnCore c' :=
+  purgeReplenishmentFromAllCores_frame (·.scheduler.reschedulePendingOnCore c') scId
+    (fun s c => purgeReplenishmentOnCore_reschedulePendingOnCore s c scId c') st
+
 @[simp] theorem purgeReplenishmentFromAllCores_activeDomainOnCore (st : SystemState)
     (scId : SchedContextId) (c' : SeLe4n.Kernel.Concurrency.CoreId) :
     (purgeReplenishmentFromAllCores st scId).scheduler.activeDomainOnCore c'

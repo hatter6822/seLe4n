@@ -383,8 +383,12 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
     else
       -- home core of the resumed thread (where it re-enters the run queue)
       let target := determineTargetCore st tid
-      -- H3a/H3b/H3c: IPC clear + threadState := .Ready + GLOBAL pipBoost recompute
-      let st2 := resumeReadyMidState st tid
+      -- H3a/H3b/H3c: IPC clear + threadState := .Ready + GLOBAL pipBoost recompute.
+      -- The recompute is a key write, so it ends in the key hook (KSC-1): a core
+      -- still holding `tid` queued or current is flagged when its key moved.  An
+      -- `.Inactive` thread sits on no core, so under the kernel invariants this
+      -- raises nothing; the hook is what makes the coverage hold without them.
+      let st2 := markKeyChangeFrom st (resumeReadyMidState st tid) tid
       -- H4: enqueue on the home core
       let st3 := enqueueRunnableOnCore st2 target tid
       -- H5: process the reschedule (PR #811 P2-5).
@@ -831,8 +835,11 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
     let st2 := { st2 with scThreadIndex :=
       (scThreadIndexRemove st2.scThreadIndex scId tid) }
     -- Clear TCB binding
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    .ok (st2.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound })
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.  The binding
+    -- write moves `tid`'s key, so it ends in the key hook (KSC-1), exactly as the
+    -- per-core twin `cancelBoundDonationOnCore` does.
+    .ok (markKeyChangeFrom st
+      (st2.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound }) tid)
   | _ => .error .illegalState
 
 /-- D1-D / R5.A (DEEP-SUSP-02): Cancel a donated SchedContext binding.

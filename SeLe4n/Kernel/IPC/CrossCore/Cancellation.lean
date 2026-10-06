@@ -3145,6 +3145,7 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
     simp only [cancelBoundDonationOnCore, hB] at h
     injection h with h
     subst h
+    refine ipcInvariant_of_objects_eq (markKeyChangeFrom_objects _ _ _) ?_
     -- Two in-place rewrites, a SchedContext then a TCB — neither is a
     -- notification, so the notification lookups are the pre-state's.
     have hInv1 : (st.updateSchedContext scId fun sc =>
@@ -4729,7 +4730,8 @@ theorem cancelBoundDonationOnCore_replenishments_purged
   injection h with h
   subst h
   intro c e hMem
-  rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler] at hMem
+  rw [markKeyChangeFrom_replenishQueueOnCore, SystemState.updateTcb_scheduler,
+    SystemState.updateSchedContext_scheduler] at hMem
   by_cases hc : c = rqCore
   · subst hc
     simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self] at hMem

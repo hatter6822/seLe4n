@@ -330,6 +330,36 @@ private def runDonationReturnChecks : IO Unit := do
     IO.println s!"  FAIL: returnDonatedSchedContext returned {repr e}"
     throw (IO.userError "returnDonatedSchedContext failed")
 
+/-- The bound scheduling context of §2.8, deadline 9. -/
+private def scBound : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 301
+/-- The thread bound to it, queued on core 1. -/
+private def boundTid : SeLe4n.ThreadId := ThreadId.ofNat 240
+
+private def boundTcb : TCB :=
+  { mkReadyTcb 240 6 (some core1) .Ready with schedContextBinding := .bound scBound }
+
+private def stBound : SystemState :=
+  let base := BootstrapBuilder.empty
+    |>.withObject boundTid.toObjId (.tcb boundTcb)
+    |>.withObject scBound.toObjId (.schedContext { SchedContext.empty scBound with
+        boundThread := some boundTid, deadline := ⟨9⟩ })
+    |>.build
+  { base with
+      scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(boundTid, ⟨6⟩)]) }
+
+/-- §2.8 the bound unbind (`cancelBoundDonationOnCore`): the thread's effective
+deadline stops being the context's, and the thread is queued on another core,
+so that core is flagged. -/
+private def runBoundUnbindChecks : IO Unit := do
+  IO.println "--- §2.8 cancelBoundDonationOnCore ---"
+  match cancelBoundDonationOnCore stBound boundTid boundTcb core1 with
+  | .ok post =>
+    checkDiff "unbind of a thread queued on a remote core" stBound post core0 false
+    expectRaised "unbind of a thread queued on a remote core" stBound post core0 [core1]
+  | .error e =>
+    IO.println s!"  FAIL: cancelBoundDonationOnCore returned {repr e}"
+    throw (IO.userError "cancelBoundDonationOnCore failed")
+
 -- ============================================================================
 -- §3  Scheduling points clear their own flag and nobody else's
 -- ============================================================================
@@ -390,6 +420,7 @@ def runReschedulePendingChecks : IO Unit := do
   runPriorityChecks
   runAffinityChecks
   runDonationReturnChecks
+  runBoundUnbindChecks
   runClearChecks
   runMonotonicityChecks
   IO.println "=== reschedule_pending_suite: all checks passed ==="

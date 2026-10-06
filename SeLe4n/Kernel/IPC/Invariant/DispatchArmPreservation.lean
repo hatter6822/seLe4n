@@ -84,6 +84,13 @@ theorem markKeyChangeFor_preserves_ipcInvariantFull (st : SystemState)
   ipcInvariantFull_of_flagOnlyWrite (markKeyChangeFor_objects _ _ _)
     (markKeyChangeFor_runQueueOnCore _ _ _) (markKeyChangeFor_currentOnCore _ _ _) h
 
+/-- The pre-state form of the hook writes a flag or nothing. -/
+theorem markKeyChangeFrom_preserves_ipcInvariantFull (pre st : SystemState)
+    (tid : SeLe4n.ThreadId) (h : ipcInvariantFull st) :
+    ipcInvariantFull (markKeyChangeFrom pre st tid) :=
+  ipcInvariantFull_of_flagOnlyWrite (markKeyChangeFrom_objects _ _ _)
+    (markKeyChangeFrom_runQueueOnCore _ _ _) (markKeyChangeFrom_currentOnCore _ _ _) h
+
 /-- A scheduling point's closing clear writes a flag and nothing else. -/
 theorem clearReschedulePendingOnCore_preserves_ipcInvariantFull (st : SystemState)
     (c : CoreId) (h : ipcInvariantFull st) :
@@ -862,7 +869,7 @@ The store invariant is a conjunct rather than a separate lemma because the
 revocation fold (`v0.35.190`) needs it *between* iterations: each
 `cspaceDeleteSlotCore` takes `st.objects.invExt` as a hypothesis, so a fold over
 descendants has to carry it forward from the step that just ran. -/
-private theorem cspaceDeleteSlotCore_shape
+theorem cspaceDeleteSlotCore_shape
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
@@ -4440,7 +4447,7 @@ private theorem cleanupTcbReferences_id_of_detached
 the object store nor the scheduler — the sweeps are identities, the reservation
 arm is the identity (the pack refuses a bound or donated target, `v0.35.164`),
 and the CDT/serviceRegistry writes are outside the bundle's read set. -/
-private theorem lifecyclePreRetypeCleanup_detached_frame
+theorem lifecyclePreRetypeCleanup_detached_frame
     (st stClean : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
     (hObjInv : st.objects.invExt)
     (hObj : st.objects[target]? = some currentObj)
@@ -4934,19 +4941,22 @@ theorem resumeThreadOnCore_preserves_ipcInvariantFull
       dsimp only [] at hStep
       split at hStep
       · cases hStep
-      · have hMid := resumeReadyMidState_preserves_ipcInvariantFull st vtid.val hObjInv hQ hInv
+      · have hMid := markKeyChangeFrom_preserves_ipcInvariantFull st _ vtid.val
+          (resumeReadyMidState_preserves_ipcInvariantFull st vtid.val hObjInv hQ hInv)
+        have hMidInv : (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
+            vtid.val).objects.invExt := by
+          rw [markKeyChangeFrom_objects]; exact resumeReadyMidState_objects_invExt st vtid.val hObjInv
         have hEnq := enqueueRunnableOnCore_preserves_ipcInvariantFull
-          (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
-          (determineTargetCore st vtid.val) vtid.val
-          (resumeReadyMidState_objects_invExt st vtid.val hObjInv)
-          (resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ) hMid
+          (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
+          (determineTargetCore st vtid.val) vtid.val hMidInv
+          (by rw [markKeyChangeFrom_getTcb?]
+              exact resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ) hMid
         have hEnqInv := enqueueRunnableOnCore_objects_invExt
-          (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
-          (determineTargetCore st vtid.val) vtid.val
-          (resumeReadyMidState_objects_invExt st vtid.val hObjInv)
+          (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
+          (determineTargetCore st vtid.val) vtid.val hMidInv
         split at hStep
         · cases hRes : handleRescheduleSgiOnCore (enqueueRunnableOnCore
-              (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
+              (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
               (determineTargetCore st vtid.val) vtid.val) ec with
           | ok st4 =>
               rw [hRes] at hStep
@@ -5336,6 +5346,7 @@ private theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
       rw [SystemState.updateTcb_eq_of_some hT2] at hStep
       dsimp only [] at hStep
       cases hStep
+      refine markKeyChangeFrom_preserves_ipcInvariantFull st _ tid ?_
       refine ipcInvariantFull_of_schedBindingRewrite st _ tid scId tcb
         { tcb with schedContextBinding := .unbound } sc
         { sc with boundThread := none, isActive := false, donationOrigin := none } hInv hStored ?_ hScPre ?_ ?_
@@ -5464,6 +5475,7 @@ private theorem cancelBoundDonationOnCore_victim_shape
           rw [SystemState.updateTcb_eq_of_some hT2] at hStep
           dsimp only [] at hStep
           cases hStep
+          simp only [markKeyChangeFrom_getTcb?]
           intro tcbX hX
           have hXobj := (SystemState.getTcb?_eq_some_iff _ tid tcbX).mp hX
           rw [show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none })).insert tid.toObjId (KernelObject.tcb { tcb with schedContextBinding := .unbound }))[tid.toObjId]? = some (KernelObject.tcb { tcb with schedContextBinding := .unbound }) from by simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1] at hXobj
@@ -5478,6 +5490,7 @@ private theorem cancelBoundDonationOnCore_victim_shape
           rw [SystemState.updateTcb_eq_of_some hT2] at hStep
           dsimp only [] at hStep
           cases hStep
+          simp only [markKeyChangeFrom_getTcb?]
           intro tcbX hX
           have hXobj := (SystemState.getTcb?_eq_some_iff _ tid tcbX).mp hX
           rw [show (st.objects.insert tid.toObjId (KernelObject.tcb { tcb with schedContextBinding := .unbound }))[tid.toObjId]? = some (KernelObject.tcb { tcb with schedContextBinding := .unbound }) from by simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv] at hXobj
