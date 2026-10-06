@@ -117,7 +117,28 @@ theorem notificationSignalDeclassifiedOnCore_stepCovers (e : CoreId)
       exact ⟨stepCovers_trans hB (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl),
         hBInv⟩
 
+/-- A key frame covers and keeps the store invariant. -/
+theorem capabilityKeyFrame.stepCoversInv {e : CoreId} {st st' : SystemState}
+    (h : capabilityKeyFrame st st') : SeLe4n.Kernel.stepCovers e st st' ∧ st'.objects.invExt :=
+  ⟨h.stepCovers, h.2.2⟩
+
+/-- Coverage composes, the invariant read off the second leg. -/
+theorem stepCoversInv_trans {e : CoreId} {a b d : SystemState} (h₁ : stepCovers e a b)
+    (h₂ : stepCovers e b d ∧ d.objects.invExt) : stepCovers e a d ∧ d.objects.invExt :=
+  ⟨stepCovers_trans h₁ h₂.1, h₂.2⟩
+
 /-! ### Retype -/
+
+/-- Every thread queued or current on a core has a TCB. -/
+def placedThreadsHaveTcbs (st : SystemState) : Prop :=
+  ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨ st.scheduler.currentOnCore c = some t) →
+    (st.getTcb? t).isSome
+
+/-- A retype the decode names targets a detached object — the pre-state pack
+the dispatch's invariant payoff consumes (`capabilityDispatchQuiescence`). -/
+def retypeDetachedFor (decoded : SyscallDecodeResult) (st : SystemState) : Prop :=
+  ∀ args, decoded.syscallId = .lifecycleRetype →
+    decodeLifecycleRetypeArgs decoded = .ok args → retypeTargetDetached st args.targetObj
 
 /-- A write that moves only slot `X` keeps the key of every thread that neither
 lives at `X` nor names `X` as its scheduling context. -/
@@ -146,11 +167,10 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers (e : C
     {ec : CoreId} {authCap : Capability} {target : SeLe4n.ObjId} {newObj : KernelObject}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st) (hDet : retypeTargetDetached st target)
-    (hPlaced : ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨
-      st.scheduler.currentOnCore c = some t) → (st.getTcb? t).isSome)
+    (hPlaced : placedThreadsHaveTcbs st)
     (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache ec authCap target newObj st
       = .ok ((), st')) :
-    stepCovers e st st' := by
+    stepCovers e st st' ∧ st'.objects.invExt := by
   obtain ⟨stB, hB, hObjB, hSchB⟩ :=
     lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame h
   obtain ⟨_, cur, stClean, hCur, hClean, hStore⟩ := lifecycleRetypeDirectWithCleanup_ok_decompose hB
@@ -186,10 +206,11 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers (e : C
     obtain ⟨sco, hSo, _⟩ := hBi t tcb sc hTo hsc
     rw [hEq] at hSo
     exact hDet.notSc sco hSo
-  refine ⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
-    fun c _ hc => by rw [hSched]; exact hc⟩
+  refine ⟨⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
+    fun c _ hc => by rw [hSched]; exact hc⟩, ?_⟩
   · rw [hSched] at ht; exact ⟨ht, (hUnread c t (Or.inl ht)).symm⟩
   · rw [hSched] at ht; exact schedKeyNotWeakened_of_eq (hUnread c t (Or.inr ht)).symm
+  · rw [hObjB]; exact storeObject_preserves_objects_invExt _ _ _ _ hScrubInv hStore
 
 /-! ### The capability-only arms -/
 
@@ -199,12 +220,10 @@ pack — the pre-state facts the dispatch's invariant payoff consumes. -/
 theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap : Capability}
     {tid : SeLe4n.ThreadId} {ec : CoreId} {k : Kernel Unit} {st st' : SystemState}
     (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
-    (hPlaced : ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨
-      st.scheduler.currentOnCore c = some t) → (st.getTcb? t).isSome)
-    (hDet : ∀ args, decoded.syscallId = .lifecycleRetype →
-      decodeLifecycleRetypeArgs decoded = .ok args → retypeTargetDetached st args.targetObj)
+    (hPlaced : placedThreadsHaveTcbs st)
+    (hDet : retypeDetachedFor decoded st)
     (hK : dispatchCapabilityOnly decoded cap tid ec = some k)
-    (h : k st = .ok ((), st')) : stepCovers ec st st' := by
+    (h : k st = .ok ((), st')) : stepCovers ec st st' ∧ st'.objects.invExt := by
   unfold dispatchCapabilityOnly at hK
   cases hId : decoded.syscallId <;> rw [hId] at hK <;> simp only [Option.some.injEq,
     reduceCtorEq] at hK
@@ -220,42 +239,42 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
   all_goals (repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals try first
-    | exact (cspaceDeleteSlotFinalising_keyFrame _ _ _ _ hInv h).stepCovers
-    | exact (cspaceRevokeCdtFinalising_keyFrame _ _ _ _ hInv h).stepCovers
-    | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCovers
-    | exact (untypedResetWithShootdown_keyFrame _ _ _ _ hInv h).stepCovers
-    | exact (vspaceMapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCovers
+    | exact (cspaceDeleteSlotFinalising_keyFrame _ _ _ _ hInv h).stepCoversInv
+    | exact (cspaceRevokeCdtFinalising_keyFrame _ _ _ _ hInv h).stepCoversInv
+    | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv
+    | exact (untypedResetWithShootdown_keyFrame _ _ _ _ hInv h).stepCoversInv
+    | exact (vspaceMapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
     | exact (vspaceRootOnlyWrite_keyFrame
-        (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCovers
+        (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv
     | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
         (Architecture.vspaceUnifyInstructionPage_frame h).1
-        (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCovers
+        (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv
     | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
-        (revokeService_preserves_objects _ _ _ h) (revokeService_preserves_scheduler _ _ _ h)).stepCovers
-    | exact (schedContextConfigure_stepCovers _ _ _ _ _ _ _ _ _ hInv hBi h).1
-    | exact (schedContextBind_stepCovers _ _ _ _ _ hInv h).1
-    | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCovers
-    | exact (pageTableMap_keyFrame _ _ _ _ _ hInv h).stepCovers
-    | exact (pageTableUnmap_keyFrame _ _ _ hInv h).stepCovers
+        (revokeService_preserves_objects _ _ _ h) (revokeService_preserves_scheduler _ _ _ h)).stepCoversInv
+    | exact (schedContextConfigure_stepCovers _ _ _ _ _ _ _ _ _ hInv hBi h)
+    | exact (schedContextBind_stepCovers _ _ _ _ _ hInv h)
+    | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv
+    | exact (pageTableMap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
+    | exact (pageTableUnmap_keyFrame _ _ _ hInv h).stepCoversInv
     | (cases h; rename_i hU
        first
         | (rw [lookupServiceByCap_preserves_state _ _ _ _ hU]
-           exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCovers)
-        | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU).1
-        | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCovers
-        | exact (suspendThreadOnCore_stepCovers _ _ _ _ _ hInv hU).1
-        | exact stepCovers_trans (retirePendingFaultForResume_keyFrame _ _ hInv).stepCovers
+           exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv)
+        | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU)
+        | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv
+        | exact (suspendThreadOnCore_stepCovers _ _ _ _ _ hInv hU)
+        | exact stepCoversInv_trans (retirePendingFaultForResume_keyFrame _ _ hInv).stepCovers
             (resumeThreadOnCore_stepCovers _ _ _ _ _
-              (retirePendingFaultForResume_keyFrame _ _ hInv).2.2 hU).1
-        | exact (setPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU).1
-        | exact (setMCPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU).1
-        | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU).1
-        | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCovers
-        | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCovers
-        | exact (setThreadSpace_keyFrame _ _ _ _ _ hInv hU).stepCovers)
+              (retirePendingFaultForResume_keyFrame _ _ hInv).2.2 hU)
+        | exact (setPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
+        | exact (setMCPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
+        | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)
+        | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
+        | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
+        | exact (setThreadSpace_keyFrame _ _ _ _ _ hInv hU).stepCoversInv)
   all_goals
     obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ h
-    exact (untypedRetypeObject_keyFrame _ _ _ _ _ _ hInv hU).stepCovers
+    exact (untypedRetypeObject_keyFrame _ _ _ _ _ _ hInv hU).stepCoversInv
 
 /-! ### The checked dispatcher -/
 
@@ -276,13 +295,13 @@ theorem stepCovers_clearStash_stage {e : CoreId} {st s st' : SystemState}
     (h : (match clearWokenReceiverStash woken? s with
       | .error e => .error e
       | .ok ((), s') => .ok ((), stage s')) = (.ok ((), st') : Except KernelError (Unit × SystemState))) :
-    stepCovers e st st' := by
+    stepCovers e st st' ∧ st'.objects.invExt := by
   split at h
   · cases h
   · rename_i s3 hClr
     cases h
     have hF := clearWokenReceiverStash_keyFrame woken? hInv hClr
-    exact stepCovers_trans (stepCovers_trans hS hF.stepCovers) (hStage _ hF.2.2).stepCovers
+    exact stepCoversInv_trans (stepCovers_trans hS hF.stepCovers) (hStage _ hF.2.2).stepCoversInv
 
 /-- The two badge stagings a signal arm ends with. -/
 theorem keyFrame_trans_stage {x : SystemState} {w p : Option SeLe4n.ThreadId}
@@ -298,12 +317,10 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId}
     {gate : SyscallGate} {cap : Capability} {st st' : SystemState} (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st)
-    (hPlaced : ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨
-      st.scheduler.currentOnCore c = some t) → (st.getTcb? t).isSome)
-    (hDet : ∀ args, decoded.syscallId = .lifecycleRetype →
-      decodeLifecycleRetypeArgs decoded = .ok args → retypeTargetDetached st args.targetObj)
+    (hPlaced : placedThreadsHaveTcbs st)
+    (hDet : retypeDetachedFor decoded st)
     (h : dispatchWithCapChecked ctx decoded tid e gate cap st = .ok ((), st')) :
-    stepCovers e st st' := by
+    stepCovers e st st' ∧ st'.objects.invExt := by
   unfold dispatchWithCapChecked at h
   cases hC : dispatchCapabilityOnly decoded cap tid e with
   | some k => rw [hC] at h; exact dispatchCapabilityOnly_stepCovers hInv hBi hPlaced hDet hC h
@@ -318,7 +335,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     rename_i hA
     cases h
     rw [auditReadFromCore_frame _ _ _ _ _ _ _ hA]
-    exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCovers
+    exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -327,8 +344,8 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     unfold auditDrainVisiblePrefix at hA
     split at hA
     · cases hA
-      refine stepCovers_trans (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl) ?_
-      apply capabilityKeyFrame.stepCovers
+      refine stepCoversInv_trans (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl) ?_
+      apply capabilityKeyFrame.stepCoversInv
       exact writeReturnFrameToTcb_keyFrame _ _ _ (by exact hInv)
     · cases hA
   all_goals
@@ -361,8 +378,8 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     have hS1 := stageWokenSendCompletion_keyFrame stDon
       ((st.getEndpoint? epId).bind (·.sendQ.head)) hDInv
     have hS2 := stageDeliveredMessage_keyFrame _ tid summ.installedCount hS1.2.2
-    exact stepCovers_trans (stepCovers_trans (stepCovers_trans hV hD) hS1.stepCovers)
-      hS2.stepCovers
+    exact stepCoversInv_trans (stepCovers_trans (stepCovers_trans hV hD) hS1.stepCovers)
+      hS2.stepCoversInv
   case none.call.object epId =>
     generalize hR : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
       (cap.rights.mem .grant) st = r at h
@@ -377,8 +394,8 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
       cases h
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (endpointCallCrossCoreDispatchChecked_stepCovers e hF1.2.2) hCall
-      exact stepCovers_trans (stepCovers_trans hF1.stepCovers hS)
-        (stageWokenDelivery_keyFrame _ _ _ hSInv).stepCovers
+      exact stepCoversInv_trans (stepCovers_trans hF1.stepCovers hS)
+        (stageWokenDelivery_keyFrame _ _ _ hSInv).stepCoversInv
     · cases h
   case none.reply.replyCap rid =>
     repeat' split at h
@@ -391,7 +408,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
       unfold cspaceMintChecked at h
       dsimp only at h
       split at h
-      · exact (cspaceMintWithCdt_keyFrame _ _ _ _ _ _ hInv h).stepCovers
+      · exact (cspaceMintWithCdt_keyFrame _ _ _ _ _ _ hInv h).stepCoversInv
       · cases h
   case none.cspaceCopy.object cnodeId =>
     repeat' split at h
@@ -399,7 +416,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     unfold cspaceCopyChecked at h
     dsimp only at h
     split at h
-    · exact (cspaceCopy_keyFrame _ _ _ _ hInv h).stepCovers
+    · exact (cspaceCopy_keyFrame _ _ _ _ hInv h).stepCoversInv
     · cases h
   case none.cspaceMove.object cnodeId =>
     repeat' split at h
@@ -407,7 +424,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     unfold cspaceMoveChecked at h
     dsimp only at h
     split at h
-    · exact (cspaceMove_keyFrame _ _ _ _ hInv h).stepCovers
+    · exact (cspaceMove_keyFrame _ _ _ _ hInv h).stepCoversInv
     · cases h
   case none.serviceRegister.object epId =>
     repeat' split at h
@@ -415,7 +432,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     unfold registerServiceChecked at h
     dsimp only at h
     split at h
-    · exact (registerService_keyFrame hInv h).stepCovers
+    · exact (registerService_keyFrame hInv h).stepCoversInv
     · cases h
   case none.notificationSignal.object notifId =>
     split at h
@@ -434,11 +451,11 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
       cases h
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationWaitCrossCoreDispatchChecked_stepCovers e hInv) hW
-      exact stepCovers_trans hS (writeReturnFrameToTcb_keyFrame _ _ _ hSInv).stepCovers
+      exact stepCoversInv_trans hS (writeReturnFrameToTcb_keyFrame _ _ _ hSInv).stepCoversInv
     · rename_i hW
       cases h
-      exact (stepCovers_of_pair_eq
-        (notificationWaitCrossCoreDispatchChecked_stepCovers e hInv) hW).1
+      exact stepCovers_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_stepCovers e hInv) hW
     · cases h
   case none.replyRecv.object epId =>
     repeat' split at h
@@ -446,13 +463,13 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     rename_i summ stR hRR
     cases h
     obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e hInv hRR
-    exact stepCovers_trans hS (stageDeliveredMessage_keyFrame _ tid _ hSInv).stepCovers
+    exact stepCoversInv_trans hS (stageDeliveredMessage_keyFrame _ tid _ hSInv).stepCoversInv
   case none.declassify.object targetId =>
     unfold declassifyObjectFromCore at h
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rw [(authorizeDeclassificationOnCore_frame _ _ _ _ _ _ _ _ _ h).1]
-    exact stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl
+    exact ⟨stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl, hInv⟩
   case none.declassifySignal.object notifId =>
     split at h
     · cases h
@@ -480,12 +497,10 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {e : CoreId}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st)
-    (hPlaced : ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨
-      st.scheduler.currentOnCore c = some t) → (st.getTcb? t).isSome)
-    (hDet : ∀ args, decoded.syscallId = .lifecycleRetype →
-      decodeLifecycleRetypeArgs decoded = .ok args → retypeTargetDetached st args.targetObj)
+    (hPlaced : placedThreadsHaveTcbs st)
+    (hDet : retypeDetachedFor decoded st)
     (h : dispatchSyscallChecked ctx decoded tid e st = .ok ((), st')) :
-    stepCovers e st st' := by
+    stepCovers e st st' ∧ st'.objects.invExt := by
   unfold dispatchSyscallChecked at h
   split at h
   · cases h
@@ -499,8 +514,9 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     · cases h
     rename_i stPost hD
     cases h
-    refine stepCovers_trans (b := stPost) ?_
-      (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl)
+    suffices hP : stepCovers e st stPost ∧ stPost.objects.invExt from
+      ⟨stepCovers_trans hP.1 (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl),
+        hP.2⟩
   · unfold syscallInvoke at hD
     split at hD
     · cases hD
@@ -513,5 +529,52 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     · rename_i cap s1 hR
       cases syscallResolveCap_state hR
       exact dispatchWithCapChecked_stepCovers e hInv hBi hPlaced hDet hD
+
+/-- The detachment pack does not read the per-core TLBs. -/
+theorem retypeDetachedFor_perCoreTlb {decoded : SyscallDecodeResult} {st : SystemState}
+    {t : Vector TlbState Concurrency.numCores} (h : retypeDetachedFor decoded st) :
+    retypeDetachedFor decoded { st with perCoreTlb := t } := by
+  intro args h1 h2
+  have hD := h args h1 h2
+  cases hD
+  constructor <;> assumption
+
+/-- Every syscall the executing core's current thread can decode from `st`
+retypes, if it retypes at all, a detached target. -/
+def entryRetypeDetached (e : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
+    (st : SystemState) : Prop :=
+  ∀ tid regs s decoded, st.scheduler.currentOnCore e = some tid →
+    lookupThreadRegisterContext tid st = .ok (regs, s) →
+    Architecture.RegisterDecode.decodeSyscallArgsFromState st tid layout regs regCount
+      = .ok decoded →
+    retypeDetachedFor decoded st
+
+/-- **The checked syscall entry covers** on the executing core: the register
+read and the decode read, and the IPC-buffer fill writes one core's TLB. -/
+theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
+    {layout : SeLe4n.SyscallRegisterLayout} {e : CoreId} {regCount : Nat}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (hBi : schedContextBindingBidirectional st) (hPlaced : placedThreadsHaveTcbs st)
+    (hDet : entryRetypeDetached e layout regCount st)
+    (h : syscallEntryChecked ctx layout e regCount st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold syscallEntryChecked at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  rename_i tid hCur
+  split at h
+  · cases h
+  rename_i regs s hLk
+  split at h
+  · cases h
+  rename_i decoded hDec
+  dsimp only at h
+  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
+    decoded.overflowCount
+  rw [ht] at h
+  exact dispatchSyscallChecked_stepCovers (st := { st with perCoreTlb := t }) hInv hBi hPlaced
+    (retypeDetachedFor_perCoreTlb (hDet tid regs s decoded hCur hLk hDec)) h
 
 end SeLe4n.Kernel

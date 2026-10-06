@@ -905,12 +905,13 @@ abandon's deschedule. -/
 theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.ThreadId}
     {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {executingCore : CoreId}
     {st : SystemState} (hInv : st.objects.invExt) :
-    stepCovers e st (faultReplyOnCore replier faulted mi regs executingCore st).1 := by
+    stepCovers e st (faultReplyOnCore replier faulted mi regs executingCore st).1 ∧
+    (faultReplyOnCore replier faulted mi regs executingCore st).1.objects.invExt := by
   unfold faultReplyOnCore
   split
-  · exact stepCovers_refl e st
+  · exact ⟨stepCovers_refl e st, hInv⟩
   split
-  · exact stepCovers_refl e st
+  · exact ⟨stepCovers_refl e st, hInv⟩
   dsimp only
   obtain ⟨hR, hRInv⟩ := endpointReplyCrossCoreDispatch_stepCovers e (replier := replier)
     (target := faulted) (msg := IpcMessage.empty) (executingCore := executingCore) hInv
@@ -919,21 +920,21 @@ theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.Threa
   obtain ⟨st1, res⟩ := r
   dsimp only at hR hRInv ⊢
   cases res with
-  | error _ => exact stepCovers_refl e st
+  | error _ => exact ⟨stepCovers_refl e st, hInv⟩
   | ok sgi =>
     dsimp only
-    refine stepCovers_trans hR ?_
     unfold faultReplyApplyOnCore
     split
     · unfold applyFaultRestart
+      refine ⟨stepCovers_trans hR ?_, SystemState.updateTcb_preserves_objects_invExt _ _ _ hRInv⟩
       apply capabilityKeyFrame.stepCovers
       exact updateTcb_keyFrame st1 faulted (fun _ => rfl) hRInv
     · unfold faultAbandonOnCore
-      refine stepCovers_trans
-        (removeRunnableOnCore_stepCovers e st1 faulted (determineTargetCore st1 faulted)) ?_
+      refine ⟨stepCovers_trans (stepCovers_trans hR
+        (removeRunnableOnCore_stepCovers e st1 faulted (determineTargetCore st1 faulted))) ?_,
+        SystemState.updateTcb_preserves_objects_invExt _ _ _ (by exact hRInv)⟩
       apply capabilityKeyFrame.stepCovers
-      exact updateTcb_keyFrame _ faulted (fun _ => rfl) (by
-        exact hRInv)
+      exact updateTcb_keyFrame _ faulted (fun _ => rfl) (by exact hRInv)
 
 /-- The checked reply transfer covers on its `.ok`. -/
 theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -942,7 +943,7 @@ theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContex
     (hInv : st.objects.invExt)
     (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg executingCore st
       = .ok ((), st')) :
-    stepCovers e st st' := by
+    stepCovers e st st' ∧ st'.objects.invExt := by
   unfold replyTransferOnCoreChecked at h
   split at h
   · have hF := faultReplyOnCore_stepCovers e (replier := replier) (faulted := callerTid)
@@ -963,7 +964,8 @@ theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContex
     | ok _ =>
       intro h hR hRInv
       cases h
-      exact stepCovers_trans hR (stageDeliveredMessage_keyFrame s callerTid 0 hRInv).stepCovers
+      have hS := stageDeliveredMessage_keyFrame s callerTid 0 hRInv
+      exact ⟨stepCovers_trans hR hS.stepCovers, hS.2.2⟩
 
 /-! ### Notifications -/
 
