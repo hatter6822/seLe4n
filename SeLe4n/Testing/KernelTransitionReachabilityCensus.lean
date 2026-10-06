@@ -1055,6 +1055,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Liveness.traceStateAt
   , `SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCoreState
   , `SeLe4n.Kernel.PriorityInheritance.propagatePriorityInheritance
+  -- KSC-1 PR C (`v0.36.55`): the two-state form, kept as the statement the
+  -- seam theorems are written against.  The seams run its body,
+  -- `scheduleLocalSuccessorFrom`, over the caller they captured before the
+  -- transition, so the pre-state is not kept alive to read it.
+  , `SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
   , `SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.migrateRunQueueBucket
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp

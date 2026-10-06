@@ -400,8 +400,8 @@ private def runResumeChecks : IO Unit := do
 /-- §3.5: SM5.F inventory partition counts. -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.5 SM5.F theorem inventory ---"
-  assertBool "inventory has 99 entries"
-    (decide (perCorePipTheorems.length = 99))
+  assertBool "inventory has 95 entries"
+    (decide (perCorePipTheorems.length = 95))
   assertBool "compute category has 8 entries"
     (decide ((perCorePipTheorems.filter (fun t => t.category == .compute)).length = 8))
   assertBool "updateBoost category has 14 entries"
@@ -416,8 +416,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCorePipTheorems.filter (fun t => t.category == .blockingGraph)).length = 10))
   assertBool "memoryModel category has 2 entries"
     (decide ((perCorePipTheorems.filter (fun t => t.category == .memoryModel)).length = 2))
-  assertBool "dispatch category has 8 entries"
-    (decide ((perCorePipTheorems.filter (fun t => t.category == .dispatch)).length = 8))
+  assertBool "dispatch category has 4 entries"
+    (decide ((perCorePipTheorems.filter (fun t => t.category == .dispatch)).length = 4))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCorePipTheorems.map (·.identifier)).Nodup)
 
