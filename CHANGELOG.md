@@ -17,9 +17,10 @@ Documentation only: no Lean, Rust or fixture change.
   whether or not the IPC-2 and IPC-5 slices land first; the spec targets are
   §8.12.1–§8.12.3 and a new §8.12.18; the main trace's `[STD-002]` scenario is
   recorded as a third `TCB.deadline` setter.
-- **Audit findings absorbed as sub-tasks**, renumbering CB0 and CB1 (79
-  sub-tasks, CB6.10 among them, CB4's hierarchy-invariant preservation folded
-  into its two switch cuts): KSC-11 (CB0.6, the progress, idle, domain and WCRT proofs moved
+- **Audit findings absorbed as sub-tasks**, renumbering CB0 and CB1 (CB6.10
+  among them, CB4's hierarchy-invariant preservation folded into its two
+  switch cuts; the per-phase tally is the plan's §6, the one site a count is
+  written): KSC-11 (CB0.6, the progress, idle, domain and WCRT proofs moved
   onto the live selector); SZ-5's scheduler-bundle half (CB0.7, CB2.5, CB5.13);
   KSC-3 / IPC-7 (CB0.8 waiter index, CB1.6, CB1.9 constant fuel and the
   deletion of `propagatePriorityInheritance`); KSC-2 (CB1.4 per-domain FIFO,
@@ -36,7 +37,7 @@ Documentation only: no Lean, Rust or fixture change.
   row becomes the plan's Q16; `docs/agent_guide/WORKSTREAM_CONTEXT.md` and
   `docs/agent_guide/LARGE_FILES.md` updated.
 - **WS-CV registered: the register context by value**
-  (`docs/planning/CONTEXT_BY_VALUE_PLAN.md`, 20 sub-tasks, CV0–CV5), and
+  (`docs/planning/CONTEXT_BY_VALUE_PLAN.md`, phases CV0–CV5), and
   scheduled **before WS-CB** by the maintainer's decision of 2026-10-05.
   The TCB's `registerContext`, the per-core banks and the boundary become one
   35-`UInt64` `RegisterFile` (`Architecture.TrapContext` retired), the HAL
@@ -62,6 +63,22 @@ Documentation only: no Lean, Rust or fixture change.
   as its owner (closed by CV5.3, the bundle conjunct and boot census
   retiring with the carrier at CV1.1); `CONTEXT_BY_VALUE_PLAN.md`'s
   citations re-checked at this head (`Machine.lean:836`, `Heap::alloc`).
+- **Ten review rounds, fixed by cause rather than by instance** (the CBS
+  plan's §14 item 12): a sub-task count is now written in one place per plan
+  (the CBS phase map; WS-CV writes none) and the headers, this entry, the
+  registry and `WORKSTREAM_CONTEXT.md` carry no copy; a set a row rests on
+  (CB1.11's retype fields, CB0.3's `TCB.domain` writers, CV4.3's word
+  carriers, CV4.4's second references) is written as the derivation that
+  produces it with the known members as the pin (§7's sixth per-row
+  question); WS-CV's acceptance is an enumerated allocation budget (§1.1)
+  instead of "at most two", which adds CV0.4 — the exception classifier
+  classifies the `ESR_EL1` word and allocates no `ExceptionContext` — and
+  §3.5 / CV4.4 are re-baselined on the tree (the entry wrapper already commits
+  through `modifyGetKernelState`; CV4.4 reads the caller itself, so WS-CV no
+  longer orders against the KSC-1 accumulator); CV4.3 retypes the fault
+  window's `Array UInt64`s with a high-bit saved-GPR case; the hazard test
+  uses a blocking syscall, whose stage rewrites no word; CB1.12 makes the
+  unbind of a running or queued thread a removal, with its files.
 
 ## v0.36.49 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
 

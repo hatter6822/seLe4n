@@ -39,7 +39,7 @@ each core's in-flight context over as a **persistent per-core object**
 way into the model is `snapshot` — so the model cannot retain the per-core
 buffer, by type rather than by convention.  Plan:
 [`docs/planning/CONTEXT_BY_VALUE_PLAN.md`](../planning/CONTEXT_BY_VALUE_PLAN.md)
-(20 sub-tasks, CV0–CV5).  Why first: at `v0.36.47` a saved context was a
+(phases CV0–CV5).  Why first: at `v0.36.47` a saved context was a
 closure capturing the trap-context object, so a reused per-core buffer would
 have rewritten other threads' saved registers, and the entry/exit path made
 about forty heap allocations per syscall; a representation change is cheapest
