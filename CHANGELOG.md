@@ -9,12 +9,14 @@ check from pull requests or any security scan.
   runner-minutes a push).  It now runs on pushes to `main`, weekly and on
   dispatch.  The Gitleaks, Trivy and CodeQL job is unchanged and still runs on
   every pull request and every push to `main`.
-- **A push to `main` runs only the cache-seeding lanes.**  The merged tree
-  already passed every lane on the pull request's merge ref, so Smoke, Full,
-  `Rust ABI Tests`, Loom and `aarch64 Cross Build` are skipped on the push;
-  `Tiered Tests / Fast` and `Lean aarch64 Archive` still run there, as the
-  merged tree's build, hygiene and QEMU boot check and as the caches the next
-  pull request seeds from.  Manual dispatch still runs every lane.
+- **A push to `main` skips the required lanes it already passed.**  Branch
+  protection requires Smoke, Full and `Rust ABI Tests` to pass on the pull
+  request's merge ref, so they are skipped on the push.  Every lane that is not
+  a required check (Loom, `aarch64 Cross Build`, `Lean aarch64 Archive`) still
+  runs there, since a pull request can merge before such a lane finishes and
+  the push is then its only run; `Tiered Tests / Fast` runs too, as the merged
+  tree's build and hygiene check and as the cache the next pull request seeds
+  from.  Manual dispatch still runs every lane.
 - **Smoke and Full seed from this run's caches.**  Every pull request bumps
   `lakefile.toml`, so its first run misses every Lean cache key; Smoke and Full
   now restore the cache the Fast (and Smoke) lane just saved under the same
