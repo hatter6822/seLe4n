@@ -229,10 +229,13 @@ theorem removeRunnable_preserves_projection
     projectState ctx observer (removeRunnable st tid) = projectState ctx observer st := by
   have hRun : projectRunnable ctx observer (removeRunnable st tid) = projectRunnable ctx observer st := by
     simp only [projectRunnable, removeRunnable, SchedulerState.runnable,
+      SchedulerState.markReschedulePendingOnCoreIf_runQueueOnCore,
       SchedulerState.setCurrentOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
     exact RunQueue.toList_filter_remove_neg _ tid (threadObservable ctx observer) hTidHigh
   have hCur : projectCurrent ctx observer (removeRunnable st tid) = projectCurrent ctx observer st := by
-    simp only [projectCurrent, removeRunnable, SchedulerState.setCurrentOnCore_currentOnCore_self]
+    simp only [projectCurrent, removeRunnable,
+      SchedulerState.markReschedulePendingOnCoreIf_currentOnCore,
+      SchedulerState.setCurrentOnCore_currentOnCore_self]
     cases hC : st.scheduler.currentOnCore bootCoreId with
     | none => simp
     | some x =>
@@ -256,7 +259,9 @@ theorem removeRunnable_preserves_projection
       projectDomainScheduleIndex ctx observer st := rfl
   have hMR : projectMachineRegs ctx observer (removeRunnable st tid) =
       projectMachineRegs ctx observer st := by
-    simp only [projectMachineRegs, removeRunnable, SchedulerState.setCurrentOnCore_currentOnCore_self]
+    simp only [projectMachineRegs, removeRunnable,
+      SchedulerState.markReschedulePendingOnCoreIf_currentOnCore,
+      SchedulerState.setCurrentOnCore_currentOnCore_self]
     cases hC : st.scheduler.currentOnCore bootCoreId with
     | none => simp
     | some x =>
@@ -285,17 +290,19 @@ theorem ensureRunnable_preserves_projection
     | none => rfl
     | some tcb =>
           show projectState ctx observer
-              { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority) } =
+              { st with scheduler := (st.scheduler.setRunQueueOnCore bootCoreId
+                  ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority))
+                  |>.markReschedulePendingOnCore bootCoreId } =
               projectState ctx observer st
           -- setRunQueueOnCore frames every projection except projectRunnable.
           simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
             projectDomainScheduleIndex, projectMachineRegs,
-            SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
-            SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
-            SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+            SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.markReschedulePendingOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+            SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore, SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+            SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
           congr 1
           simp only [projectRunnable, SchedulerState.runnable,
-            SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           exact RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem
 
 /-- storeTcbIpcState at a non-observable object preserves projection (single-state). -/

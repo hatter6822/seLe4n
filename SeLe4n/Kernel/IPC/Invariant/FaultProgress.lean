@@ -321,11 +321,15 @@ theorem handleRescheduleSgiOnCore_preserves_not_dispatchable
         (RunQueue.mem_toList_iff_mem _ tid).mp
           (chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hwf hChoose)
       have hu : u ≠ tid := fun hEq => hQ (hEq ▸ hMem)
-      obtain ⟨hQ', hC'⟩ :=
-        switchToThreadOnCore_preserves_not_dispatchable_onCore st st' c tid u hu hStep hQ hC
-      rintro (hm | hc)
-      · exact hQ' hm
-      · exact hC' hc
+      split at hStep
+      · rename_i sSw hSw
+        rw [Except.ok.injEq] at hStep; subst hStep
+        obtain ⟨hQ', hC'⟩ :=
+          switchToThreadOnCore_preserves_not_dispatchable_onCore st sSw c tid u hu hSw hQ hC
+        rintro (hm | hc)
+        · exact hQ' hm
+        · exact hC' hc
+      · exact absurd hStep (by simp)
     · rw [← Except.ok.inj hStep]; exact h
 
 -- ============================================================================

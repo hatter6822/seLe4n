@@ -377,7 +377,7 @@ private theorem schedContextUnbind_ok_char
           -- pre-state, so the two typed writes over it reduce to the double
           -- insert whatever the stage's scheduler is -- no split needed -- and
           -- the purge's object component is definitionally the identity.
-          simp only [purgeReplenishmentOnCore_objects]
+          simp only [markKeyChangeFor_objects, purgeReplenishmentOnCore_objects]
           exact SystemState.updateTcb_after_rewriteObject_schedContext_objects
             _ vScId.val _ _ tid tcb _ hObjInv hTcb
         · -- the replenish queue: only the final home-core purge touches it.
@@ -569,13 +569,15 @@ private theorem schedContextBind_ok_char
               vThreadId.val tcb _ hObjInv hTcb] at h
             cases h
             refine ⟨?_, ?_⟩
-            · -- objects: both rebucket arms share the double-insert store.
-              simp only []
+            · -- objects: both rebucket arms share the double-insert store, and
+              -- the reschedule-pending hook writes no object.
+              simp only [markKeyChangeFor_objects]
               repeat' split
               all_goals rfl
-            · -- the replenish queues: the rebucket writes a run queue only.
+            · -- the replenish queues: the rebucket writes a run queue (and the
+              -- placement arm a reschedule-pending flag) only.
               intro c
-              simp only []
+              simp only [markKeyChangeFor_replenishQueueOnCore]
               repeat' split
               all_goals simp
 

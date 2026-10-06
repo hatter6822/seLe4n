@@ -595,19 +595,21 @@ structure TCB where
   inheritedDeadline : Option Deadline := none
   -- `deadline` removed (CB1.5): unbound threads are deadline-less.
 
--- SeLe4n/Model/State.lean (landed by the KSC-1 reschedule-SGI accumulator
--- of docs/REGISTERED_DEBT.md, before CB1.3 — §5; WS-CB adds no second flag)
+-- SeLe4n/Model/State.lean (landed inert by the KSC-1 reschedule-SGI
+-- accumulator of docs/REGISTERED_DEBT.md at v0.36.51, its PR A; the seam
+-- switch is the row's PR C, before CB1.3 — §5; WS-CB adds no second flag)
 structure SchedulerState where
   ...
   /-- `true` from the moment a transition makes core `c`'s scheduling decision
       stale (a remote run-queue write, a remote `current`-slot change, a write
       to a remote queued or current thread's effective key) until a scheduling
       point runs on `c` (`handleRescheduleSgiOnCore`, `scheduleEffectiveOnCore`,
-      the tick) and clears it (§4.4).  The syscall commit surfaces a
-      `.reschedule` SGI for each remote core whose flag went `false → true` in
-      the step, read against a captured pre-dispatch copy of this vector; it
-      does not clear the flag.  The model's record of a scheduling point owed. -/
-  reschedulePendingOnCore : Vector Bool numCores := default
+      the tick) and clears it as its last write (§4.4).  The syscall commit
+      surfaces a `.reschedule` SGI for each remote core whose flag went
+      `false → true` in the step, read against a captured pre-dispatch copy of
+      this vector; it does not clear the flag.  The model's record of a
+      scheduling point owed.  Read through `reschedulePendingOnCore c`. -/
+  reschedulePending : Vector Bool numCores := Vector.replicate numCores false
 ```
 
 Every added field is threaded through the manual `BEq` instances, the `ext`
@@ -908,7 +910,7 @@ the outranked thread current, so no theorem can say the current is maximal on
 that core at that instant.  The model therefore records the request:
 `reschedulePendingOnCore c` (§4.1) is set by **every** site that surfaces a
 `.reschedule` SGI for `c` — the seam's remote arm, `pipBoostWithWake`, the
-cross-core wake paths — and cleared by the flagged core's own scheduling point (`handleRescheduleSgiOnCore`, `scheduleEffectiveOnCore`) as its **last** write, after it has chosen: the handler's own `switchToThreadOnCore` is a writer, so a clear on entry could be re-set by the very step that is enacting it.
+cross-core wake paths — and cleared by the flagged core's own scheduling point (`handleRescheduleSgiOnCore`, `scheduleEffectiveOnCore`) as its **last** write, after it has chosen: the handler's own `switchToThreadOnCore` is a writer, so a clear on entry could be re-set by the very step that is enacting it.  Landed at `v0.36.51` (the KSC-1 row's PR A).
 **The flag is not WS-CB's**: it is the reschedule-SGI accumulator the KSC-1 row
 of `docs/REGISTERED_DEBT.md` lands before CB1.3, which also retires the
 commit's whole-object-index diff (`computeCrossCoreSgis` stays as the

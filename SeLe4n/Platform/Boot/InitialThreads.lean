@@ -179,7 +179,7 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     (tid : SeLe4n.ThreadId) (hStart : initialThreadStartable ist.state tid = true)
     (h : bootStartShape ist) : bootStartShape (startInitialThread ist tid) := by
   have hInv := ist.hAllTables.1.1
-  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, hSch⟩, hQueue⟩ := h
+  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, rp, hSch⟩, hQueue⟩ := h
   have hFrame := startInitialThreadOnCore_frame ist.state tid hInv
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro oid obj hObj
@@ -213,8 +213,8 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
       hB | ⟨_, _, hc | hc⟩
     · exact hB
     all_goals cases hc
-  · obtain ⟨rq', hrq'⟩ := startInitialThreadOnCore_scheduler_runQueueOnly ist.state tid
-    refine ⟨rq', ?_⟩
+  · obtain ⟨rq', rp', hrq'⟩ := startInitialThreadOnCore_scheduler_runQueueOnly ist.state tid
+    refine ⟨rq', rp', ?_⟩
     show (startInitialThreadOnCore ist.state tid).scheduler = _
     rw [hrq', hSch]
   · exact startInitialThreadOnCore_preserves_runQueueBootSound hStart hInv bootCoreId hQueue
@@ -262,7 +262,7 @@ theorem bootFromPlatformCheckedStartedFor_currentOnCore
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist)
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     ist.state.scheduler.currentOnCore c = none := by
-  obtain ⟨_, _, _, _, ⟨rq, hSch⟩, _⟩ :=
+  obtain ⟨_, _, _, _, ⟨rq, rp, hSch⟩, _⟩ :=
     bootFromPlatformCheckedStartedFor_bootStartShape cores hNodup config ist h
   rw [hSch]
   exact (default_state_perCoreInitialized c).1

@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.Scheduler.Operations.Core
+import SeLe4n.Kernel.Scheduler.Operations.ReschedulePending
 import SeLe4n.Kernel.Scheduler.Operations.Preservation
 
 /-! # Scheduler Operations — Re-export Hub
@@ -20,6 +21,9 @@ is decomposed into:
   thread selection, and context save/restore definitions.
 - **Core**: Context save/restore frame lemmas and core scheduler transitions
   (schedule, handleYield, timerTick, switchDomain, scheduleDomain).
+- **ReschedulePending**: the reschedule-SGI accumulator's writer hook for
+  effective-key writes (`markKeyChangeFor`) and the flag-derived SGI list
+  (`rescheduleSgisFromFlags`, the diff's successor at the commit).
 - **Preservation**: All scheduler invariant preservation theorems (base bundle,
   domain-awareness, time-slice, EDF, context-matches, full bundle composition).
 -/

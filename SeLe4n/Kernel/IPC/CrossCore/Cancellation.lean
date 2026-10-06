@@ -5170,7 +5170,11 @@ theorem handleRescheduleSgiOnCore_preserves_unplaced
           (threadPlacedOnSomeCore_eq_true_iff st u).mpr (Or.inr ⟨c, hMem⟩)
         rw [h] at hPlaced
         exact Bool.false_ne_true hPlaced
-      exact switchToThreadOnCore_preserves_unplaced st st' c tid u hu hStep h
+      split at hStep
+      · rename_i sSw hSw
+        rw [Except.ok.injEq] at hStep; subst hStep
+        exact switchToThreadOnCore_preserves_unplaced st sSw c tid u hu hSw h
+      · exact absurd hStep (by simp)
     · rw [← Except.ok.inj hStep]; exact h
 
 /-- **`v0.35.158`**: G7 — the suspend's scheduling point keeps an unplaced

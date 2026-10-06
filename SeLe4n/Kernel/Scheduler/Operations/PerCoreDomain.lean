@@ -930,7 +930,9 @@ theorem scheduleEffectiveOnCore_activeDomainOnCore (st : SystemState) (c : CoreI
     cases res with
     | none =>
       simp only [Except.ok.injEq] at hStep; subst hStep
-      rw [idleFallbackOnCore_activeDomainOnCore, saveOutgoingContextOnCore_scheduler_eq]
+      rw [SystemState.clearReschedulePendingOnCore_scheduler,
+        SchedulerState.clearReschedulePendingOnCore_activeDomainOnCore,
+        idleFallbackOnCore_activeDomainOnCore, saveOutgoingContextOnCore_scheduler_eq]
     | some tid =>
       cases hTcb : st.getTcb? tid with
       | none => simp [hTcb] at hStep
@@ -939,7 +941,8 @@ theorem scheduleEffectiveOnCore_activeDomainOnCore (st : SystemState) (c : CoreI
         split at hStep
         · simp only [Except.ok.injEq] at hStep
           rw [← hStep]
-          simp only [SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContextOnCore_scheduler,
+          simp only [SchedulerState.clearReschedulePendingOnCore_activeDomainOnCore,
+            SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContextOnCore_scheduler,
             SchedulerState.setRunQueueOnCore_activeDomainOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
@@ -956,7 +959,9 @@ theorem scheduleEffectiveOnCore_domainSchedule (st : SystemState) (c : CoreId)
     cases res with
     | none =>
       simp only [Except.ok.injEq] at hStep; subst hStep
-      rw [idleFallbackOnCore_domainSchedule, saveOutgoingContextOnCore_scheduler_eq]
+      rw [SystemState.clearReschedulePendingOnCore_scheduler,
+        SchedulerState.clearReschedulePendingOnCore_domainSchedule,
+        idleFallbackOnCore_domainSchedule, saveOutgoingContextOnCore_scheduler_eq]
     | some tid =>
       cases hTcb : st.getTcb? tid with
       | none => simp [hTcb] at hStep
@@ -965,7 +970,8 @@ theorem scheduleEffectiveOnCore_domainSchedule (st : SystemState) (c : CoreId)
         split at hStep
         · simp only [Except.ok.injEq] at hStep
           rw [← hStep]
-          simp only [SchedulerState.setCurrentOnCore, SchedulerState.setRunQueueOnCore,
+          simp only [SchedulerState.clearReschedulePendingOnCore_domainSchedule,
+            SchedulerState.setCurrentOnCore, SchedulerState.setRunQueueOnCore,
             restoreIncomingContextOnCore_scheduler]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
@@ -1131,7 +1137,9 @@ theorem scheduleEffectiveOnCore_domainScheduleIndexOnCore (st : SystemState) (c 
     cases res with
     | none =>
       simp only [Except.ok.injEq] at hStep; subst hStep
-      rw [idleFallbackOnCore_domainScheduleIndexOnCore, saveOutgoingContextOnCore_scheduler_eq]
+      rw [SystemState.clearReschedulePendingOnCore_scheduler,
+        SchedulerState.clearReschedulePendingOnCore_domainScheduleIndexOnCore,
+        idleFallbackOnCore_domainScheduleIndexOnCore, saveOutgoingContextOnCore_scheduler_eq]
     | some tid =>
       cases hTcb : st.getTcb? tid with
       | none => simp [hTcb] at hStep
@@ -1140,7 +1148,8 @@ theorem scheduleEffectiveOnCore_domainScheduleIndexOnCore (st : SystemState) (c 
         split at hStep
         · simp only [Except.ok.injEq] at hStep
           rw [← hStep]
-          simp only [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore, restoreIncomingContextOnCore_scheduler,
+          simp only [SchedulerState.clearReschedulePendingOnCore_domainScheduleIndexOnCore,
+            SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore, restoreIncomingContextOnCore_scheduler,
             SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep

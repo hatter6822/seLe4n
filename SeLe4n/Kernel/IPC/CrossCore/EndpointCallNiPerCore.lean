@@ -207,7 +207,8 @@ theorem enqueueRunnableOnCore_projectRunnableOnCore_high (ctx : LabelingContext)
       simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
       split
       · rfl
-      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
         exact RunQueue.toList_filter_insert_neg' _ tid _ _ hHigh
   · rw [enqueueRunnableOnCore_runQueueOnCore_ne st c c' tid (fun e => hcc e.symm)]
 
@@ -262,7 +263,8 @@ theorem enqueueRunnableOnCore_activeDomainOnCore (st : SystemState) (c : CoreId)
     simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · rfl
-    · simp only [SchedulerState.setRunQueueOnCore_activeDomainOnCore]
+    · simp only [SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
+        SchedulerState.setRunQueueOnCore_activeDomainOnCore]
 
 /-- `enqueueRunnableOnCore` leaves every core's domain-time-remaining slot. -/
 theorem enqueueRunnableOnCore_domainTimeRemainingOnCore (st : SystemState) (c : CoreId)
@@ -275,7 +277,8 @@ theorem enqueueRunnableOnCore_domainTimeRemainingOnCore (st : SystemState) (c : 
     simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · rfl
-    · simp only [SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
+    · simp only [SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
+        SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
 
 /-- `enqueueRunnableOnCore` leaves every core's domain-schedule-index slot. -/
 theorem enqueueRunnableOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId)
@@ -288,7 +291,8 @@ theorem enqueueRunnableOnCore_domainScheduleIndexOnCore (st : SystemState) (c : 
     simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · rfl
-    · simp only [SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+    · simp only [SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
+        SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
 
 /-- `enqueueRunnableOnCore` leaves the machine registers untouched. -/
 theorem enqueueRunnableOnCore_machineEq (st : SystemState) (c : CoreId)

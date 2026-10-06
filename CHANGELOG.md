@@ -1,3 +1,80 @@
+## v0.36.51 — KSC-1 reschedule-SGI accumulator, PR A: the per-core flag, its writers and the differential pin (inert)
+
+The first of the three cuts the KSC-1 / HAL-3 row of `docs/REGISTERED_DEBT.md`
+plans.  **Behaviour-preserving**: the live pre/post diff
+(`computeCrossCoreSgis`) is still what decides which remote cores a syscall,
+fault entry or cross-core suspend pokes; the flag this cut lands is written
+and cleared but read by nothing on the dispatch path — it is pinned to the
+diff by a Tier 2 differential suite until PR C switches the seams.  Every
+`tests/fixtures/*.expected` is byte-identical.
+
+- **`SchedulerState.reschedulePending : Vector Bool numCores`**
+  (`Model/State.lean`), modelled on `pendingPhysicalWrites`: accessor
+  `reschedulePendingOnCore`, setters `setReschedulePendingOnCore`,
+  `markReschedulePendingOnCore`, `clearReschedulePendingOnCore`,
+  `markReschedulePendingOnCoreIf`, the store/load `@[simp]` algebra, the
+  tenth `ext_perCore` hypothesis, `default_reschedulePendingOnCore`, the
+  `SystemState`-level mark/clear with their field frames, and the
+  information-flow projection frames (the flag is not in `projectState`).
+- **`Scheduler/Operations/ReschedulePending.lean`** (new):
+  `markKeyChangeFor st tid preKey` flags the core a thread is placed on
+  (queued or current) exactly when its effective `(priority, deadline)`
+  key changed against the captured pre-state key; `rescheduleSgisFromFlags
+  pre post e` names the remote cores whose flag went `false → true`, with
+  `mem_rescheduleSgisFromFlags_iff` / `_all_reschedule` / `_not_execCore` /
+  `_nil_of_eq`; forty `@[simp]` frames and `markKeyChangeFor_extract_frame`.
+- **Writers hooked** — every write that can make a remote core's scheduling
+  decision stale sets that core's flag: `enqueueRunnableOnCore`,
+  `removeRunnableOnCore` / `removeRunnableStepOnCore` (only when the removed
+  thread was current — a queued-thread removal flags nothing, as the diff
+  does), the boot-core `removeRunnable` / `ensureRunnable` (their `rfl`
+  bridges kept), `migrateRunQueueOnAffinityChange` (the destination core),
+  `startInitialThreadOnCore`, `updatePipBoostOnCore` (an immaterial boost
+  flags nothing), `applyPriorityChangeOnCore` (a raise on a current thread
+  flags nothing; a drop or a queued re-bucket flags its core),
+  `schedContextConfigure`'s bound arm, `schedContextBind` (placement and key),
+  `schedContextUnbind` (deschedule and key), `schedContextYieldTo`,
+  `releaseSchedContextBinding`.
+- **Clears as the last write of the flagged core's own scheduling points**:
+  `handleRescheduleSgiOnCore` (every `.ok` arm) and `scheduleEffectiveOnCore`
+  (idle and dispatch arms).  `SchedStep` gains `clearPending`;
+  `perCoreRescheduleStep_id_or_switch` is three-way;
+  `scheduleLocalSuccessor_idle_of_no_candidate` takes the successor-needed
+  hypothesis; `bootStartShape` and `startInitialThreadOnCore_scheduler_runQueueOnly`
+  quantify the flag vector beside the run queues.
+- **Tier 2 `reschedule_pending_suite`** (`tests/ReschedulePendingSuite.lean`,
+  wired in `scripts/test_tier2_negative.sh`): over the SMP scenarios the SGI
+  suites already build — cross-core PIP boost (material, local, immaterial,
+  non-runnable), `wakeThread` / `restoreToReadyWithWake`, queue removal and
+  deschedule, `suspendThreadOnCore`, priority raise / drop / re-bucket /
+  unchanged, affinity migration — the remote cores whose flag rose during
+  the step are a superset of the cores `computeCrossCoreSgis` names and, for
+  every exact writer, the same set, with each expected set stated outright;
+  `handleRescheduleSgiOnCore` and `scheduleEffectiveOnCore` clear only their
+  own core; no writer lowers a flag.
+- **Proof repair** (~45 files): `markKeyChangeFor` / clear frames threaded
+  through the PIP preservation pack (`updatePipBoost_frame` gains the
+  flag-write hypothesis), the IPC dispatch-arm preservation
+  (`ipcInvariantFull_of_flagOnlyWrite`), the per-core invariant suite
+  (`…_perCore_of_flagOnlyWrite` for the structural, register-bank and Nodup
+  bundles), the cross-core non-interference confinement
+  (`clearReschedulePendingOnCore_confinedToCores`,
+  `markKeyChangeFor_confinedToCores`, `observableSlotsConfinedToCores_then_flagOnly`),
+  the sched-lock bracket and the per-core wake / tick / CBS / domain files.
+  `runningCoreOf?` moved from `Scheduler/Operations/Core.lean` to
+  `Selection.lean` (its two Tier 3 anchors retargeted); the
+  `schedContextConfigure` and `releaseSchedContextBinding` shape anchors now
+  pin the key-change wrapper.
+- **What remains of the row**: PR B — the soundness theorem that the flag's
+  core set equals `(computeCrossCoreSgis pre post execCore).map Prod.fst` as a
+  set on every committable transition, modulo cores already pending; PR C —
+  the seams read the flags, the three shootdown diffs and `stageCallerReturn`
+  read captured pre-state fields, and `st` is dropped before dispatch.
+  Not hooked in this cut (no scheduler slot or key write of their own on the
+  live path, re-checked when PR B states the theorem): `donateSchedContext` /
+  `returnDonatedSchedContext`, `restoreToReadyMidState` /
+  `resumeReadyMidState`, `cancelBoundDonation(OnCore)`, `cbsUpdateDeadline`.
+
 ## v0.36.50 — WS-CB plan re-verified against v0.36.46; the audit's scheduler findings absorbed; WS-CV registered
 
 Documentation only: no Lean, Rust or fixture change.

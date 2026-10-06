@@ -478,7 +478,14 @@ theorem releaseSchedContextBinding_refutes_schedContextBindingConsistent
     (hTcb : st.getTcb? tid = some tcb) :
     ¬ schedContextBindingConsistent (releaseSchedContextBinding st scId sc) := by
   intro hCons
-  rw [releaseSchedContextBinding_of_bound st scId sc tid tcb hBound hTcb] at hCons
+  -- The release's one object write is the TCB rewrite (the replenish purge, the
+  -- index removal and the reschedule-pending mark write no object), and the
+  -- invariant reads objects alone, so it transfers to the rewrite's state.
+  have hObjEq := releaseSchedContextBinding_objects_of_bound st scId sc tid tcb hBound hTcb
+  replace hCons := schedContextBindingConsistent_transfer
+    (st' := st.updateTcb tid fun t => { t with schedContextBinding := SchedContextBinding.unbound })
+    (fun _ => by unfold SystemState.getTcb?; rw [hObjEq])
+    (fun _ => by unfold SystemState.getSchedContext?; rw [hObjEq]) hCons
   -- The released state still holds `sc` at `scId`: the arm writes a TCB, a
   -- replenish queue and an index entry, none of which is a scheduling context,
   -- and the last two are record updates of fields `getSchedContext?` never reads

@@ -290,6 +290,13 @@ theorem schedFootprintCoversWrites_refl (S : SchedLockSet) (st : SystemState) :
     schedFootprintCoversWrites S st st :=
   ⟨fun _ _ _ => rfl, fun _ _ => ⟨rfl, rfl, rfl⟩, fun _ _ => rfl⟩
 
+/-- A footprint covers a step that writes only a core's reschedule-pending flag
+(the KSC-1 accumulator): no clause of the coverage reads it. -/
+theorem schedFootprintCoversWrites_clearReschedulePendingOnCore (S : SchedLockSet)
+    (st : SystemState) (c : CoreId) :
+    schedFootprintCoversWrites S st (st.clearReschedulePendingOnCore c) :=
+  ⟨fun _ _ _ => rfl, fun _ _ => ⟨rfl, rfl, rfl⟩, fun _ _ => rfl⟩
+
 /-- **WS-RR RR8.12 Cut C6h**: coverage is MONOTONE in the footprint.
 
 A footprint that names more locks covers at least what a smaller one covers,
@@ -397,19 +404,22 @@ theorem not_mem_handleRescheduleSgiOnCoreLockSet_replenishQueue (c d : CoreId) :
     List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq, and_true]
   rintro (h | h) <;> exact absurd h (by simp)
 
-/-- **WS-RR RR7.39**: the reschedule step is the identity or one switch on the
-decoded core.
+/-- **WS-RR RR7.39**: the reschedule step is the identity, the core's own
+reschedule-pending clear, or one switch (then that clear) on the decoded core.
 
-`handleRescheduleSgiOnCore` returns `.ok st` on three of its four arms (selector
-error propagates, no candidate, candidate does not outrank) and
-`switchToThreadOnCore` on the fourth, and `perCoreRescheduleStep` swallows the
-error arm.  Naming the disjunction once is what lets every frame below be an
-instance of the switch's own frames rather than a re-derivation. -/
+`handleRescheduleSgiOnCore` propagates the selector's error, returns the
+decoded core's flag clear (the KSC-1 accumulator's scheduling-point write) when
+there is no candidate or the candidate does not outrank, and the switch followed
+by that clear otherwise; `perCoreRescheduleStep` swallows the error arms.  Naming
+the disjunction once is what lets every frame below be an instance of the
+switch's own frames rather than a re-derivation. -/
 theorem perCoreRescheduleStep_id_or_switch (st : SystemState) (coreId : UInt64)
     (h : coreId.toNat < numCores) :
     perCoreRescheduleStep st coreId = st ∨
+      perCoreRescheduleStep st coreId = st.clearReschedulePendingOnCore ⟨coreId.toNat, h⟩ ∨
       ∃ tid st', switchToThreadOnCore st ⟨coreId.toNat, h⟩ tid = .ok st' ∧
-        perCoreRescheduleStep st coreId = st' := by
+        perCoreRescheduleStep st coreId
+          = st'.clearReschedulePendingOnCore ⟨coreId.toNat, h⟩ := by
   unfold perCoreRescheduleStep
   rw [dif_pos h]
   unfold handleRescheduleSgiOnCore
@@ -417,15 +427,15 @@ theorem perCoreRescheduleStep_id_or_switch (st : SystemState) (coreId : UInt64)
   | error e => exact Or.inl rfl
   | ok cand =>
     cases cand with
-    | none => exact Or.inl rfl
+    | none => exact Or.inr (Or.inl rfl)
     | some tid =>
       simp only
       by_cases hOut : candidateOutranksCurrentOnCore st ⟨coreId.toNat, h⟩ tid
       · rw [if_pos hOut]
         cases hSw : switchToThreadOnCore st ⟨coreId.toNat, h⟩ tid with
         | error e => exact Or.inl rfl
-        | ok st' => exact Or.inr ⟨tid, st', hSw, rfl⟩
-      · rw [if_neg hOut]; exact Or.inl rfl
+        | ok st' => exact Or.inr (Or.inr ⟨tid, st', hSw, rfl⟩)
+      · rw [if_neg hOut]; exact Or.inr (Or.inl rfl)
 
 /-- **WS-RR RR7.39 (the payoff for the reschedule seam)**: the verified
 reschedule step's writes are inside the footprint the entry declares.
@@ -442,8 +452,9 @@ theorem perCoreRescheduleStep_coversWrites (st : SystemState) (coreId : UInt64)
       ⟨handleRescheduleSgiOnCoreLockSet ⟨coreId.toNat, h⟩,
         switchToThreadOnCoreLockSet_keys_nodup _⟩
       st (perCoreRescheduleStep st coreId) := by
-  rcases perCoreRescheduleStep_id_or_switch st coreId h with hId | ⟨tid, st', hSw, hEq⟩
+  rcases perCoreRescheduleStep_id_or_switch st coreId h with hId | hClr | ⟨tid, st', hSw, hEq⟩
   · rw [hId]; exact schedFootprintCoversWrites_refl _ _
+  · rw [hClr]; exact schedFootprintCoversWrites_clearReschedulePendingOnCore _ _ _
   · rw [hEq]
     refine ⟨?_, ?_, ?_⟩
     · -- the object lock IS declared, so this clause has no content

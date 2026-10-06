@@ -947,6 +947,31 @@ theorem cancelIpcBlocking_confinedToCores (st : SystemState) (tid : SeLe4n.Threa
 -- false, so the chain walk gets a write set of its own, by the same discipline:
 -- computed from the pre-state, mirroring the transition's own recursion.
 
+/-- KSC-1 (the reschedule-SGI accumulator): the reschedule-pending flags are not
+observable slots, so clearing one is confined to no core. -/
+theorem clearReschedulePendingOnCore_confinedToCores (st : SystemState) (c : CoreId) :
+    observableSlotsConfinedToCores st (st.clearReschedulePendingOnCore c) [] :=
+  ⟨fun _ _ => by simp, fun _ _ => by simp, fun _ _ => by simp, fun _ _ => by simp,
+   fun _ _ => by simp, fun _ _ => rfl⟩
+
+/-- KSC-1: the key-change writer only raises flags, so it is confined to no core. -/
+theorem markKeyChangeFor_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline) :
+    observableSlotsConfinedToCores st (markKeyChangeFor st tid k) [] :=
+  ⟨fun _ _ => by rw [markKeyChangeFor_runQueueOnCore],
+   fun _ _ => by rw [markKeyChangeFor_currentOnCore],
+   fun _ _ => by rw [markKeyChangeFor_activeDomainOnCore],
+   fun _ _ => by rw [markKeyChangeFor_domainTimeRemainingOnCore],
+   fun _ _ => by rw [markKeyChangeFor_domainScheduleIndexOnCore],
+   fun _ _ => by rw [markKeyChangeFor_machine]⟩
+
+/-- KSC-1: a trailing flag-only write does not widen a confinement set. -/
+theorem observableSlotsConfinedToCores_then_flagOnly {st stMid st' : SystemState}
+    {cs : List CoreId} (h₁ : observableSlotsConfinedToCores st stMid cs)
+    (h₂ : observableSlotsConfinedToCores stMid st' []) :
+    observableSlotsConfinedToCores st st' cs :=
+  List.append_nil cs ▸ observableSlotsConfinedToCores_trans h₁ h₂
+
 /-- SM8.B.2: a PIP re-bucketing writes core `c`'s run queue and the boosted
 TCB, and nothing else per-core. -/
 theorem updatePipBoostOnCore_confinedToCores (st : SystemState) (c : CoreId)
@@ -960,9 +985,13 @@ theorem updatePipBoostOnCore_confinedToCores (st : SystemState) (c : CoreId)
   all_goals repeat' split
   all_goals first
     | rfl
-    | simp only [SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+    | (simp only [markKeyChangeFor_activeDomainOnCore,
+        markKeyChangeFor_domainTimeRemainingOnCore,
+        markKeyChangeFor_domainScheduleIndexOnCore, markKeyChangeFor_machine,
+        SchedulerState.setRunQueueOnCore_activeDomainOnCore,
         SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
         SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+       try rfl)
 
 /-- SM8.B.2: one chain step writes exactly the boosted thread's home core. -/
 theorem pipBoostWithWake_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -2342,10 +2371,18 @@ theorem handleRescheduleSgiOnCore_confinedToCores (st st' : SystemState) (c : Co
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact observableSlotsConfinedToCores_refl _ _
+  · rw [Except.ok.injEq] at h; subst h
+    exact observableSlotsConfinedToCores_widen_any (clearReschedulePendingOnCore_confinedToCores st c)
   · split at h
-    · exact switchToThreadOnCore_confinedToCores st st' c _ h
-    · rw [Except.ok.injEq] at h; subst h; exact observableSlotsConfinedToCores_refl _ _
+    · split at h
+      · rename_i sSw hSw
+        rw [Except.ok.injEq] at h; subst h
+        exact observableSlotsConfinedToCores_then_flagOnly
+          (switchToThreadOnCore_confinedToCores st sSw c _ hSw)
+          (clearReschedulePendingOnCore_confinedToCores sSw c)
+      · exact absurd h (by simp)
+    · rw [Except.ok.injEq] at h; subst h
+      exact observableSlotsConfinedToCores_widen_any (clearReschedulePendingOnCore_confinedToCores st c)
 
 /-- SM8.B.2: the suspend pipeline's G7 scheduling point writes at most the
 **executing** core. Its remote leg is an SGI *return value*, not a state
@@ -3207,33 +3244,46 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
             -- the same core the write set names, so each clause is the same
             -- lemma twice and then `rfl`; the write set does not move.
             · have hne : determineTargetCore st vThreadId.val ≠ c := fun h => hc h.symm
+              -- KSC-1: the key-change flag wraps the bind's final state and the
+              -- placement arm raises the home core's flag; neither moves a slot.
+              refine (markKeyChangeFor_runQueueOnCore _ _ _ _).trans ?_
               split
               · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ (hHome ▸ hne)
               · split
-                · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ (hHome ▸ hne)
+                · exact (SchedulerState.markReschedulePendingOnCore_runQueueOnCore _ _ _).trans
+                    (SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ (hHome ▸ hne))
                 · rfl
-            · split
+            · refine (markKeyChangeFor_currentOnCore _ _ _ _).trans ?_
+              split
               · exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ c _
               · split
-                · exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ c _
+                · exact (SchedulerState.markReschedulePendingOnCore_currentOnCore _ _ _).trans
+                    (SchedulerState.setRunQueueOnCore_currentOnCore _ _ c _)
                 · rfl
-            · split
+            · refine (markKeyChangeFor_activeDomainOnCore _ _ _ _).trans ?_
+              split
               · exact SchedulerState.setRunQueueOnCore_activeDomainOnCore _ _ c _
               · split
-                · exact SchedulerState.setRunQueueOnCore_activeDomainOnCore _ _ c _
+                · exact (SchedulerState.markReschedulePendingOnCore_activeDomainOnCore _ _ _).trans
+                    (SchedulerState.setRunQueueOnCore_activeDomainOnCore _ _ c _)
                 · rfl
-            · split
+            · refine (markKeyChangeFor_domainTimeRemainingOnCore _ _ _ _).trans ?_
+              split
               · exact SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore _ _ c _
               · split
-                · exact SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore _ _ c _
+                · exact (SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore _ _ _).trans
+                    (SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore _ _ c _)
                 · rfl
-            · split
+            · refine (markKeyChangeFor_domainScheduleIndexOnCore _ _ _ _).trans ?_
+              split
               · exact SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore _ _ c _
               · split
-                · exact SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore _ _ c _
+                · exact (SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore _ _ _).trans
+                    (SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore _ _ c _)
                 · rfl
             · -- registers: untouched on all three arms, but the projection only
               -- reduces once the run-queue `if`s are resolved.
+              refine (congrArg (fun m => m.regsOnCore c) (markKeyChangeFor_machine _ _ _)).trans ?_
               split
               · rfl
               · split <;> rfl
@@ -3492,6 +3542,34 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                 (have hNil : c ∉ ([] : List CoreId) := by simp) <;>
                 ((try dsimp only [SystemState.rewriteObject]); repeat' split) <;>
                 first
+                  -- KSC-1: every propagate arm is wrapped by the key-change
+                  -- flag write, which moves no slot; strip it first.
+                  | (rw [markKeyChangeFor_runQueueOnCore]
+                     first
+                       | exact hStoredConf.runQueue c hNil
+                       | (rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ hne]
+                          exact hStoredConf.runQueue c hNil))
+                  | (rw [markKeyChangeFor_currentOnCore]
+                     first
+                       | exact hStoredConf.current c hNil
+                       | (rw [SchedulerState.setRunQueueOnCore_currentOnCore]
+                          exact hStoredConf.current c hNil))
+                  | (rw [markKeyChangeFor_activeDomainOnCore]
+                     first
+                       | exact hStoredConf.activeDomain c hNil
+                       | (rw [SchedulerState.setRunQueueOnCore_activeDomainOnCore]
+                          exact hStoredConf.activeDomain c hNil))
+                  | (rw [markKeyChangeFor_domainTimeRemainingOnCore]
+                     first
+                       | exact hStoredConf.domainTimeRemaining c hNil
+                       | (rw [SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
+                          exact hStoredConf.domainTimeRemaining c hNil))
+                  | (rw [markKeyChangeFor_domainScheduleIndexOnCore]
+                     first
+                       | exact hStoredConf.domainScheduleIndex c hNil
+                       | (rw [SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+                          exact hStoredConf.domainScheduleIndex c hNil))
+                  | (rw [markKeyChangeFor_machine]; exact hStoredConf.regs c hNil)
                   -- arms that stop at `stStored` / `stWithTcb` (object writes only)
                   | exact hStoredConf.runQueue c hNil
                   | exact hStoredConf.current c hNil
@@ -3669,7 +3747,9 @@ theorem applyPriorityChangeOnCore_confinedToCores (base st' : SystemState)
       executingCore shouldPreempt = .ok (st', sgi)) :
     observableSlotsConfinedToCores base st' [determineTargetCore base tid, executingCore] :=
   observableSlotsConfinedToCores_trans
-    (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
+    (observableSlotsConfinedToCores_then_flagOnly
+      (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
+      (markKeyChangeFor_confinedToCores _ tid (resolveEffectivePrioDeadline base tcb)))
     (priorityRescheduleOnCore_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `priorityControlWriteSet` moved to the

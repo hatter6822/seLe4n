@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.36.50"
+version = "0.36.51"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -436,6 +436,14 @@ root = "tests.SmpIdleSuite"
 [[lean_exe]]
 name = "smp_pip_suite"
 root = "tests.SmpPipSuite"
+
+# KSC-1 (reschedule-SGI accumulator, PR A) — the per-core reschedule-pending
+# flag's differential suite: over the SMP scenarios the flags a step raises
+# cover (and, for exact writers, equal) the cores the live diff names; the
+# scheduling points clear only their own flag; no writer lowers one.
+[[lean_exe]]
+name = "reschedule_pending_suite"
+root = "tests.ReschedulePendingSuite"
 
 # WS-SM SM5.G — Per-core domain scheduling test suite.  Surface anchors +
 # elaboration-time theorem-application witnesses + runtime assertions for the

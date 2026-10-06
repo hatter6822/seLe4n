@@ -1597,9 +1597,10 @@ open SeLe4n.Kernel
 -- D1-G: suspendThread (composite)
 -- ============================================================================
 
--- WS-SM SM8.B (PR #861 review round 39): `runningCoreOf?` moved down to
--- `Scheduler/Operations/Core.lean` so the unbind path can key its preemption
--- guard on it (see the definition's docstring).  Re-exported here so
+-- WS-SM SM8.B (PR #861 review round 39): `runningCoreOf?` moved down to the
+-- scheduler operations (`Scheduler/Operations/Selection.lean` since the
+-- reschedule-SGI accumulator, KSC-1) so the unbind path and the key-change
+-- hook can key on it (see the definition's docstring).  Re-exported here so
 -- `Lifecycle.Suspend.runningCoreOf?` keeps resolving for every existing
 -- qualified reference.
 export SeLe4n.Kernel (runningCoreOf?)

@@ -416,7 +416,14 @@ theorem handleRescheduleSgiOnCore_preserves_replenishQueueAffinityConsistentOnCo
     · exact absurd hStep (by simp)
     · rw [Except.ok.injEq] at hStep; subst hStep; rfl
     · split at hStep
-      · exact switchToThreadOnCore_determineTargetCore st c _ st' hInv hStep t
+      · split at hStep
+        · rename_i sSw hSw
+          rw [Except.ok.injEq] at hStep; subst hStep
+          rw [show determineTargetCore (sSw.clearReschedulePendingOnCore c) t
+                = determineTargetCore sSw t from by
+              unfold determineTargetCore; rw [SystemState.clearReschedulePendingOnCore_getTcb?]]
+          exact switchToThreadOnCore_determineTargetCore st c _ sSw hInv hSw t
+        · exact absurd hStep (by simp)
       · rw [Except.ok.injEq] at hStep; subst hStep; rfl
   · intro scId
     unfold handleRescheduleSgiOnCore at hStep
@@ -424,7 +431,12 @@ theorem handleRescheduleSgiOnCore_preserves_replenishQueueAffinityConsistentOnCo
     · exact absurd hStep (by simp)
     · rw [Except.ok.injEq] at hStep; subst hStep; rfl
     · split at hStep
-      · exact switchToThreadOnCore_boundThread st c _ st' hInv hStep scId
+      · split at hStep
+        · rename_i sSw hSw
+          rw [Except.ok.injEq] at hStep; subst hStep
+          rw [SystemState.clearReschedulePendingOnCore_getSchedContext?]
+          exact switchToThreadOnCore_boundThread st c _ sSw hInv hSw scId
+        · exact absurd hStep (by simp)
       · rw [Except.ok.injEq] at hStep; subst hStep; rfl
   · exact hCons
 

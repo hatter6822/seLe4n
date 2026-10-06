@@ -117,14 +117,22 @@ theorem enqueueRunnableOnCore_preserves_projection
       case _ =>
         simp only [projectRunnable, SchedulerState.runnable]
         by_cases hc : c = bootCoreId
-        · subst hc; rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        · subst hc
+          rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+            SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           exact RunQueue.toList_filter_insert_neg' _ _ _ _ hHighThread
-        · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+        · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+            SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
       all_goals
         first
           | rfl
           | simp only [projectCurrent, projectMachineRegs, projectActiveDomain,
               projectDomainTimeRemaining, projectDomainSchedule, projectDomainScheduleIndex,
+              SchedulerState.markReschedulePendingOnCore_currentOnCore,
+              SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
+              SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
+              SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
+              SchedulerState.markReschedulePendingOnCore_domainSchedule,
               SchedulerState.setRunQueueOnCore_currentOnCore,
               SchedulerState.setRunQueueOnCore_activeDomainOnCore,
               SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,

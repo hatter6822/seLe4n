@@ -1450,8 +1450,11 @@ def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
       else
         { st.rewriteObject tid.toObjId (.tcb { tcb with ipcState := .ready })
             (SystemState.rewriteAdmissible_tcb h _) with
-            scheduler := st.scheduler.setRunQueueOnCore c
-              ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)) }
+            scheduler := (st.scheduler.setRunQueueOnCore c
+              ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)))
+              -- The reschedule-SGI accumulator (KSC-1): a run-queue insert on
+              -- `c` stales `c`'s decision (the diff's wake rule).
+              |>.markReschedulePendingOnCore c }
   | none => st
 
 /-- **WS-RR RR8.16** (`v0.35.199`): the enqueue is a `kindPreservingWrite` — its
@@ -1499,7 +1502,8 @@ theorem enqueueRunnableOnCore_replenishQueueOnCore (st : SystemState) (c : CoreI
   unfold enqueueRunnableOnCore; split
   · split
     · rfl
-    · simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+    · simp only [SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
+        SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
   · rfl
 
 /-- WS-SM SM5.C.2/.9 (plan §3.3): the core a thread is woken onto.
@@ -1521,6 +1525,35 @@ def determineTargetCore (st : SystemState) (tid : SeLe4n.ThreadId) : CoreId :=
       | some c' => c'
       | none    => bootCoreId
   | none => bootCoreId
+/-- WS-SM SM6.E (PR #831 review 4, P1): the core **actually running** `tid` —
+the first core whose current slot holds it (`none` when not current anywhere).
+`determineTargetCore` is the wake/queue *home* (affinity defaulting to boot),
+but the two can diverge: unbinding a thread running on a secondary core is
+admitted (`setThreadCpuAffinityWithMigration`'s reject gate fires only when
+the NEW affinity forbids the running core, and `cpuAffinity = none` admits
+every core), leaving the thread current on that core while its home reverts
+to `bootCoreId`.  A suspend must deschedule and poke the running core, not
+the home — descheduling only the home would mark the victim `.Inactive`
+while the secondary core keeps executing it.  Completeness of the
+first-match scan rests on `currentThreadUniqueAcrossCores`
+(`Scheduler/Invariant/PerCore.lean`, audit closure): a thread is current on
+at most one core.
+
+**Lives here, beside `determineTargetCore`, not in `Lifecycle/Suspend.lean`
+(PR #861 review round 39) and no longer in `Scheduler/Operations/Core.lean`
+(the reschedule-SGI accumulator, KSC-1).**  The unbind path needs it — its
+preemption guard was keyed on `determineTargetCore` while the wrapper's
+reschedule was keyed on this, and those diverge for exactly the case the
+paragraph above describes — and so does `markKeyChangeFor`
+(`Scheduler/Operations/ReschedulePending.lean`), which the priority-inheritance
+writers call and which `Core.lean`'s import chain sits above; the two homes of a
+thread's placement are answered side by side.  `Lifecycle.Suspend.runningCoreOf?`
+remains a working name via an `export`, so every existing qualified reference
+is unchanged. -/
+def runningCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
+  SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
+    st.scheduler.currentOnCore c == some tid)
+
 /-- **WS-RR RR7.30**: the routing decision never names a PE the board does not
 have.
 
@@ -1606,10 +1639,14 @@ instance — see `removeRunnableOnCore_bootCoreId`. -/
 def removeRunnableOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     SystemState :=
   { st with
-      scheduler := (st.scheduler.setRunQueueOnCore c
+      scheduler := ((st.scheduler.setRunQueueOnCore c
           ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
           (if (st.scheduler.currentOnCore c) = some tid then none
-            else (st.scheduler.currentOnCore c)) }
+            else (st.scheduler.currentOnCore c)))
+          -- The reschedule-SGI accumulator (KSC-1): exactly when the `current`
+          -- slot changes (the diff's slot rule); a pure queue removal stales
+          -- nothing, so it flags nothing.
+          |>.markReschedulePendingOnCoreIf c (st.scheduler.currentOnCore c == some tid) }
 
 /-- **WS-RR RR8.6**: remove `tid` from a placement its caller has already
 resolved — `descheduleAtPlacement`'s body, split out so a transition that must
@@ -2273,12 +2310,19 @@ write locks), which subsumes both the selection's reads and the
 domains. -/
 def handleRescheduleSgiOnCore (st : SystemState) (c : CoreId) :
     Except KernelError SystemState :=
+  -- The reschedule-SGI accumulator (KSC-1): this is a scheduling point on `c`,
+  -- so every `.ok` arm ends by clearing `c`'s flag — AFTER the switch's own
+  -- slot writes, which is what makes the flag mean "a point is owed" and not
+  -- "a point was entered".
   match chooseThreadEffectiveOnCore st c with
   | .error e => .error e
-  | .ok none => .ok st
+  | .ok none => .ok (st.clearReschedulePendingOnCore c)
   | .ok (some tid) =>
-      if candidateOutranksCurrentOnCore st c tid then switchToThreadOnCore st c tid
-      else .ok st
+      if candidateOutranksCurrentOnCore st c tid then
+        match switchToThreadOnCore st c tid with
+        | .ok st' => .ok (st'.clearReschedulePendingOnCore c)
+        | .error e => .error e
+      else .ok (st.clearReschedulePendingOnCore c)
 
 /-- WS-SM SM5.C.8 (plan §3.3, §4.1): set a thread's CPU affinity.
 

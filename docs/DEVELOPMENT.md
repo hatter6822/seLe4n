@@ -391,7 +391,7 @@ mode read dropped — each fail the named model.
 
 ### Running one suite
 
-There are 71 `lean_exe` targets. Run one directly:
+There are 73 `lean_exe` targets. Run one directly:
 
 ```bash
 lake exe negative_state_suite

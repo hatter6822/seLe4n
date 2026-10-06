@@ -198,7 +198,7 @@ example (s : SchedulerState) (c c' : CoreId) (h : c ≠ c')
 -- on the system-wide fields) collapses two states to equal.
 example : (default : SchedulerState) = (default : SchedulerState) :=
   SchedulerState.ext_perCore (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
-    (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) rfl rfl
+    (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) rfl rfl
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): re-run every decidable check at runtime so

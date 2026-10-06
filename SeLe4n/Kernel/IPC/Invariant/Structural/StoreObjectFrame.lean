@@ -974,7 +974,7 @@ theorem ensureRunnable_preserves_contextMatchesCurrent
     | none => exact hInv
     | some tcb =>
       -- setRunQueueOnCore preserves current/objects/machine, so contextMatchesCurrent is framed.
-      simpa only [contextMatchesCurrent, SchedulerState.setRunQueueOnCore_currentOnCore] using hInv
+      simpa only [contextMatchesCurrent, SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore] using hInv
 
 /-- WS-H12c: `removeRunnable` preserves `contextMatchesCurrent`. -/
 theorem removeRunnable_preserves_contextMatchesCurrent
@@ -982,6 +982,7 @@ theorem removeRunnable_preserves_contextMatchesCurrent
     (hInv : contextMatchesCurrent st) :
     contextMatchesCurrent (removeRunnable st tid) := by
   simp only [removeRunnable, contextMatchesCurrent,
+    SchedulerState.markReschedulePendingOnCoreIf_currentOnCore,
     SchedulerState.setCurrentOnCore_currentOnCore_self]
   by_cases hEq : (st.scheduler.currentOnCore bootCoreId) = some tid
   · rw [if_pos hEq]; trivial
