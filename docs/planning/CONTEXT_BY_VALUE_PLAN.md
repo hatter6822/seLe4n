@@ -76,9 +76,12 @@ conversion, no allocation), and the HAL hands its in-flight context over as a
   reading the generated C at CV5.1, not by a scanner).
 - The HAL's `ffi_trap_context` allocates nothing (`lean_heap` counter
   unchanged across the call; Rust unit test, CV3.4).
-- The two-trap hazard test (CV3.5): two traps on one core, the first's context
-  saved into a TCB, the second's words all distinct from the first's — the
-  saved TCB's context is unchanged, word for word.
+- The two-trap hazard test (CV0.2, re-run at CV3.5): two traps on one core,
+  the first's context saved into a TCB **through the real save path**
+  (`saveCapturedSyscallFrame`, reached through the exported entry wrapper),
+  the second's words all distinct from the first's and published into the
+  same per-core object — the TCB's saved context, read back from the state
+  after the second trap, is the first trap's, word for word.
 - Every tier green; every Tier 3 anchor scoped to a touched file executed.
 
 ### 1.2 The surface, measured at `v0.36.48`
@@ -136,8 +139,8 @@ with `word` the byte-indexed jump table `v0.36.48` introduced); `readReg` is
 `r.val ≥ 31` (`x31` is the zero register; today's lambda stores the write and
 `readReg_writeReg` reads it back, which no hardware does).  `RegValue` stays as
 the type of a register *value* where arrays of them live (`IpcMessage.registers`,
-`SyscallDecodeResult.msgRegs`, `replyRegisters`, `FaultReply`); `RegValue.valid`
-stays with them.  `writeReg` takes a `UInt64`-valued argument where every live
+`SyscallDecodeResult.msgRegs`, `replyRegisters`, `FaultReply`) until CV4.3
+retypes those arrays to `UInt64`; `RegValue.valid` stays with them until then.  `writeReg` takes a `UInt64`-valued argument where every live
 writer already has one (`stageReturnFrame`, `spill`, `writeFfiRegistersToTcb`
 are fed `UInt64`s and wrap them today); the one writer handed an arbitrary
 `RegValue`, `Adapter.writeRegisterState`, narrows with `.toUInt64` under its
@@ -280,9 +283,9 @@ where `RegValue` stays (D1).
 - Rust tests: the per-core object's header after `lean_dec` is unchanged
   (persistence); `ffi_trap_context` leaves the heap's `live_allocations`
   unchanged; two traps on one core with distinct words, a snapshot of the first
-  taken in between, the snapshot unchanged after the second (the hazard test,
-  CV3.5, executed through the boundary crate against the compiled
-  `snapshot`); the by-address acceptance in `trap_context_of_lean` and its
+  taken in between, the snapshot unchanged after the second (a unit test of
+  the compiled `snapshot`, beside — not instead of — the hazard test of CV0.2,
+  which drives the real save path and reads the TCB back, re-run at CV3.5); the by-address acceptance in `trap_context_of_lean` and its
   refusal of a *different* core's object.
 
 ### 3.5 Restore and the return frame (CV4)
@@ -316,16 +319,15 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 | # | Sub-task | Output |
 |---|---|---|
 | CV0.1 | The heap allocation counter (§3.6) and the host round-trip measurement; record the baseline per syscall at the plan's opening version in `CHANGELOG.md` | `lean_heap.rs`, `SeLe4n/Testing/HeapMeasure.lean`, one Tier 2 host test |
-| CV0.2 | The two-trap hazard test written against today's code, **expected to pass today** (every trap allocates) — it is the regression test CV3 must keep green | `rust/sele4n-lean-boundary/tests/` |
+| CV0.2 | The two-trap hazard test written against today's code, **expected to pass today** (every trap allocates), **through the real TCB save path**: the boundary crate publishes trap 1's words, calls the exported entry wrapper so `saveCapturedSyscallFrame` stores the first context into a TCB of a probe state, publishes trap 2's words (all distinct) through the same per-core path, then reads that TCB's saved context back through a `BoundaryProbes` export and compares it word for word to trap 1's (§1.1) — a standalone snapshot comparison would still pass if an entry wrapper retained the reusable object, skipped the snapshot at the save site or stored the wrong context, so it is not the acceptance; this test is the regression test CV3 must keep green | `rust/sele4n-lean-boundary/tests/`, `SeLe4n/Testing/BoundaryProbes.lean` |
 | CV0.3 | Sweep the 78 Tier 3 anchor lines of §1.2 into a list in this plan's §7, each with the sub-task that retargets or deletes it | §7 below |
 
-### CV1 — the carrier (§3.1, §3.2): the bulk of the work, one PR per row
+### CV1 — the carrier (§3.1, §3.2): the bulk of the work, one PR per row, each with its own documentation
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV1.1 | `RegisterFile` as the 35-field `UInt64` structure with `gpr`, `readReg`, `writeReg`, `word`, `ofWords` and their lemmas; `TrapContext`'s layout constants move; `wordBounded` retires; the three `not_lawfulBEq` witnesses (§6) are deleted — they are false on a lawful carrier and only prose cites them — while `RegisterFile.beq_self` / `beq_def` / `beq_symm` and the other `beq_*` lemmas are **kept as compatibility lemmas**, re-proved as one-line corollaries of `LawfulBEq`, so their consumers in the scheduler, architecture and information-flow files compile unchanged in this row; **in the same row, because nothing compiles beyond `Machine.lean` without them**: the writers of §3.2 on the new carrier (`stageReturnFrame`, `stageRestartFrame`, `spill`, `writeFfiRegistersToTcb`, `restartAtSvc`, `writeRegisterState`, `setPC`), the 49 literals, `Repr`; the `_wordBounded` lemmas and `RegisterContextBounded.lean` deleted; `contextMatchesCurrent` proofs simplified to decidable equality; **every one of the 292 register theorems compiles**; fixture `main_trace_smoke.expected` unchanged or its change justified | `SeLe4n/Machine.lean`, the 43 `SeLe4n/` files, the 8 test suites |
-| CV1.2 | The information-flow surface: `ObservableState.machineRegs`, the per-core fragments and `lowEquivalentSliceOnCoreCheckWithRegs` on lawful equality; the `machineRegs` unwinding relations re-proved where they cited `beq_*`; then the `beq_*` compatibility lemmas of CV1.1 are **retired with their last consumer** — every citing site (the scheduler and architecture files included, enumerated by the build when the lemmas are deleted) rewritten to `beq_iff_eq` / decidable equality — so the lemmas are never deleted while a consumer remains (consumes CV1.1) | `InformationFlow/*`, `Machine.lean`, the remaining `beq_*` consumers |
-| CV1.3 | Docs for CV1: `docs/spec/SELE4N_SPEC.md` (the register-file passages), `docs/DEVELOPMENT.md` §5 if a file moved, `WORKSTREAM_CONTEXT.md`; the `v0.36.47` debt row shortened to CV2–CV4 | docs |
+| CV1.1 | `RegisterFile` as the 35-field `UInt64` structure with `gpr`, `readReg`, `writeReg`, `word`, `ofWords` and their lemmas; `TrapContext`'s layout constants move; `wordBounded` retires; the three `not_lawfulBEq` witnesses (§6) are deleted — they are false on a lawful carrier and only prose cites them — while `RegisterFile.beq_self` / `beq_def` / `beq_symm` and the other `beq_*` lemmas are **kept as compatibility lemmas**, re-proved as one-line corollaries of `LawfulBEq`, so their consumers in the scheduler, architecture and information-flow files compile unchanged in this row; **in the same row, because nothing compiles beyond `Machine.lean` without them**: the writers of §3.2 on the new carrier (`stageReturnFrame`, `stageRestartFrame`, `spill`, `writeFfiRegistersToTcb`, `restartAtSvc`, `writeRegisterState`, `setPC`), the 49 literals, `Repr`; the `_wordBounded` lemmas and `RegisterContextBounded.lean` deleted; `contextMatchesCurrent` proofs simplified to decidable equality; **every one of the 292 register theorems compiles**; fixture `main_trace_smoke.expected` unchanged or its change justified; **the documentation of the change in the same PR** (the repository rule): the register-file passages of `docs/spec/SELE4N_SPEC.md` (the carrier, the `x31` semantics), `docs/DEVELOPMENT.md` §5 if a file moved, `WORKSTREAM_CONTEXT.md`, the `v0.36.47` debt row shortened to CV2–CV4, the evidence-index rows of the retired theorems, the CHANGELOG entry | `SeLe4n/Machine.lean`, the 43 `SeLe4n/` files, the 8 test suites, docs |
+| CV1.2 | The information-flow surface: `ObservableState.machineRegs`, the per-core fragments and `lowEquivalentSliceOnCoreCheckWithRegs` on lawful equality; the `machineRegs` unwinding relations re-proved where they cited `beq_*`; then the `beq_*` compatibility lemmas of CV1.1 are **retired with their last consumer** — every citing site (the scheduler and architecture files included, enumerated by the build when the lemmas are deleted) rewritten to `beq_iff_eq` / decidable equality — so the lemmas are never deleted while a consumer remains; the spec's information-flow equality passages and the evidence-index rows of the re-proved unwinding relations in the same PR (consumes CV1.1) | `InformationFlow/*`, `Machine.lean`, the remaining `beq_*` consumers, docs |
 
 ### CV2 — one boundary type (§3.3)
 
@@ -342,7 +344,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 | CV3.2 | `trap::InFlightContextObjects`: per-core persistent object and wrapper, initialised at runtime bring-up; `ffi_trap_context` writes and returns without allocating; `trap_context_of_lean` accepts the executing core's object by address | `rust/sele4n-hal/src/trap.rs`, `ffi.rs`, `lean_runtime/` |
 | CV3.3 | The cross-language test extended: a snapshot is a different object with the same words; the probes export `snapshot` | `rust/sele4n-lean-boundary/` |
 | CV3.4 | Rust unit tests: persistence after `lean_dec`, zero allocations across `ffi_trap_context`, by-address acceptance, refusal of another core's object | `ffi.rs` tests |
-| CV3.5 | The hazard test of CV0.2 re-run against the reused object — must still pass; it is the acceptance test of D3 | boundary crate |
+| CV3.5 | The hazard test of CV0.2 re-run against the reused object — trap 1 saved through `saveCapturedSyscallFrame` into the probe TCB, trap 2 published into the same persistent per-core object, the TCB read back — must still pass; it is the acceptance test of D3 (§1.1), and fails if an entry wrapper retains the object, skips the snapshot at the save site or stores the wrong context (consumes CV0.2, CV3.1, CV3.2) | boundary crate |
 | CV3.6 | QEMU `virt` four-PE boot (Tier 4 lane) green with the persistent objects: every core traps, snapshots, restores | CI |
 
 ### CV4 — restore borrows, return frame updates in place (§3.5)
@@ -351,7 +353,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 |---|---|---|
 | CV4.1 | `restoreTargetOnCore` / `restoreTrapFrame` on the TCB's object; `RestoreTarget.user (context : RegisterFile)` unchanged in statement | `ContextRestore.lean`, `FFI.lean` |
 | CV4.2 | `stageReturnFrame` as a structure update on the TCB's context; measured allocation count per syscall recorded | `SyscallReturn.lean`, measurement |
-| CV4.3 | `IpcMessage.registers : Array RegValue` → `Array UInt64` **if** CV4.2's measurement shows `lean_uint64_to_nat` bignum allocations on the IPC path (message registers ≥ 2^63); otherwise recorded as not needed | `Model/Object/Types.lean`, decode/return-frame readers |
+| CV4.3 | `IpcMessage.registers : Array RegValue` → `Array UInt64`, with `SyscallDecodeResult.msgRegs`, `replyRegisters` and `FaultReply`'s register arrays where they feed it — **not measurement-gated**: a message register is any user `UInt64`, and one `≥ 2^63` read as a `Nat` allocates a bignum whatever CV4.2's workload happens to carry, so the input-dependent allocation goes by construction; `RegValue.valid` retires with its last array; the decode and return-frame readers restated; a Tier 2 case sends a high-bit word (`≥ 2^63`) through the IPC path and CV0.1's counter shows no allocation for it | `Model/Object/Types.lean`, `Architecture/SyscallArgDecode.lean`, decode/return-frame readers, one Tier 2 case |
 
 ### CV5 — closure
 
@@ -386,9 +388,11 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 - **Exclusivity of the TCB object at the return-frame write** is not promised;
   §3.5 measures it.  If the TCB is shared at that point the syscall pays one
   more 280-byte copy, still far below today's forty allocations.
-- **`IpcMessage.registers` stays `Array RegValue`** unless CV4.3's measurement
-  says otherwise; a `UInt64` word ≥ 2^63 read as a `Nat` allocates a bignum,
-  and whether the IPC path ever does so is a measurement, not a guess.
+- **`IpcMessage.registers` becomes `Array UInt64` at CV4.3**, after the
+  entry/exit path (CV1–CV4.2) rather than with it, because the arrays have
+  their own readers; a `UInt64` word ≥ 2^63 read as a `Nat` allocates a bignum
+  on an input the user chooses, which no workload measurement can rule out, so
+  the retype is unconditional and the high-bit case is a test.
 - **Collapsing the per-core bank into the TCB** (D2) is not this workstream.
   It would remove `contextMatchesCurrent` and `setRegsOnCore`, change the
   information-flow projection's source and every unwinding relation that reads
