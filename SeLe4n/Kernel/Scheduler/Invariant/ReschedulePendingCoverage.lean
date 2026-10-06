@@ -587,4 +587,194 @@ theorem markKeyChangeFrom_flagged (pre mid : SystemState) (tid : SeLe4n.ThreadId
       simp [hm']
     · simp [hcur]
 
+/-! ### The key inputs as an object-store relation
+
+The effective key reads a TCB's four key fields and a scheduling context's
+deadline, and nothing else in the object store.  `keyInputsOf` projects one
+object slot onto exactly that, so "no key moved" is a property of the object
+store that composes by `.trans` and that a single store lemma establishes for
+every write whose slot keeps its projection. -/
+
+/-- What one object slot contributes to any thread's effective key. -/
+def keyInputsOf : Option KernelObject →
+    Option ((SeLe4n.Priority × SeLe4n.Deadline × SchedContextBinding ×
+      Option SeLe4n.Priority) ⊕ SeLe4n.Deadline)
+  | some (.tcb t) => some (.inl (t.priority, t.deadline, t.schedContextBinding, t.pipBoost))
+  | some (.schedContext sc) => some (.inr sc.deadline)
+  | _ => none
+
+/-- No object slot's key inputs moved from `pre` to `post`. -/
+def keyInputsEq (pre post : SystemState) : Prop :=
+  ∀ oid : SeLe4n.ObjId, keyInputsOf post.objects[oid]? = keyInputsOf pre.objects[oid]?
+
+theorem keyInputsEq_refl (st : SystemState) : keyInputsEq st st := fun _ => rfl
+
+theorem keyInputsEq_trans {a b d : SystemState} (h₁ : keyInputsEq a b) (h₂ : keyInputsEq b d) :
+    keyInputsEq a d := fun oid => (h₂ oid).trans (h₁ oid)
+
+theorem keyInputsEq_of_objects_eq {pre post : SystemState} (h : post.objects = pre.objects) :
+    keyInputsEq pre post := fun oid => by rw [h]
+
+/-- A store whose value keeps its slot's key inputs moves no key input. -/
+theorem keyInputsEq_storeObject {st st' : SystemState} {oid : SeLe4n.ObjId}
+    {obj : KernelObject} (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hKey : keyInputsOf (some obj) = keyInputsOf st.objects[oid]?) :
+    keyInputsEq st st' := by
+  intro k
+  by_cases hEq : k = oid
+  · subst hEq; rw [storeObject_objects_eq st st' k obj hObjInv hStore]; exact hKey
+  · rw [storeObject_objects_ne st st' oid k obj hEq hObjInv hStore]
+
+/-- The scheduler record is no key input. -/
+theorem keyInputsEq_with_scheduler (st : SystemState) (s : SchedulerState) :
+    keyInputsEq st { st with scheduler := s } := fun _ => rfl
+
+/-- A TCB's four key fields. -/
+def tcbKeyFields (t : TCB) :
+    SeLe4n.Priority × SeLe4n.Deadline × SchedContextBinding × Option SeLe4n.Priority :=
+  (t.priority, t.deadline, t.schedContextBinding, t.pipBoost)
+
+theorem getTcb?_keyFields_of_keyInputsEq {pre post : SystemState} (h : keyInputsEq pre post)
+    (t : SeLe4n.ThreadId) :
+    (post.getTcb? t).map tcbKeyFields = (pre.getTcb? t).map tcbKeyFields := by
+  have hk := h t.toObjId
+  unfold SystemState.getTcb?
+  revert hk
+  generalize post.objects[t.toObjId]? = a
+  generalize pre.objects[t.toObjId]? = b
+  intro hk
+  cases a with
+  | none => cases b with
+    | none => rfl
+    | some o => cases o <;> simp_all [keyInputsOf]
+  | some o => cases b with
+    | none => cases o <;> simp_all [keyInputsOf]
+    | some o' => cases o <;> cases o' <;> simp_all [keyInputsOf, tcbKeyFields]
+
+theorem getSchedContext?_deadline_of_keyInputsEq {pre post : SystemState}
+    (h : keyInputsEq pre post) (sc : SeLe4n.SchedContextId) :
+    (post.getSchedContext? sc).map (·.deadline) = (pre.getSchedContext? sc).map (·.deadline) := by
+  have hk := h sc.toObjId
+  unfold SystemState.getSchedContext?
+  revert hk
+  generalize post.objects[sc.toObjId]? = a
+  generalize pre.objects[sc.toObjId]? = b
+  intro hk
+  cases a with
+  | none => cases b with
+    | none => rfl
+    | some o => cases o <;> simp_all [keyInputsOf]
+  | some o => cases b with
+    | none => cases o <;> simp_all [keyInputsOf]
+    | some o' => cases o <;> cases o' <;> simp_all [keyInputsOf]
+
+/-- The effective key reads the key fields and the contexts' deadlines alone. -/
+theorem resolveEffectivePrioDeadline_congr_deadline {st st' : SystemState} {a b : TCB}
+    (hSc : ∀ sc, (st'.getSchedContext? sc).map (·.deadline) =
+      (st.getSchedContext? sc).map (·.deadline))
+    (hK : tcbKeyFields b = tcbKeyFields a) :
+    resolveEffectivePrioDeadline st' b = resolveEffectivePrioDeadline st a := by
+  simp only [tcbKeyFields, Prod.mk.injEq] at hK
+  obtain ⟨hP, hD, hB, hPip⟩ := hK
+  unfold resolveEffectivePrioDeadline
+  rw [hP, hD, hB, hPip]
+  cases a.schedContextBinding with
+  | unbound => rfl
+  | bound sc =>
+    have := hSc sc
+    cases hq : st'.getSchedContext? sc <;> cases hp : st.getSchedContext? sc <;> simp_all
+  | donated sc o =>
+    have := hSc sc
+    cases hq : st'.getSchedContext? sc <;> cases hp : st.getSchedContext? sc <;> simp_all
+
+/-- Equal key inputs give equal keys for every thread. -/
+theorem schedKeyView_eq_of_keyInputsEq {pre post : SystemState} (h : keyInputsEq pre post)
+    (t : SeLe4n.ThreadId) : schedKeyView post t = schedKeyView pre t := by
+  have hT := getTcb?_keyFields_of_keyInputsEq h t
+  unfold schedKeyView
+  cases hq : post.getTcb? t <;> cases hp : pre.getTcb? t <;> simp only [hq, hp] at hT ⊢
+  · rfl
+  · simp at hT
+  · simp at hT
+  · simp only [Option.map_some, Option.some.injEq] at hT ⊢
+    rw [resolveEffectivePrioDeadline_congr_deadline
+      (getSchedContext?_deadline_of_keyInputsEq h) hT]
+
+/-- An in-place rewrite that keeps its slot's key inputs moves none. -/
+theorem keyInputsEq_rewriteObject {st : SystemState} {id : SeLe4n.ObjId} {new : KernelObject}
+    (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt)
+    (hKey : keyInputsOf (some new) = keyInputsOf st.objects[id]?) :
+    keyInputsEq st (st.rewriteObject id new h) := by
+  intro k
+  by_cases hEq : id = k
+  · subst hEq; rw [SystemState.rewriteObject_objects_self st id new h hInv]; exact hKey
+  · rw [SystemState.rewriteObject_objects_ne st id k new h hEq hInv]
+
+/-- A TCB update that keeps every key field moves no key input. -/
+theorem keyInputsEq_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
+    (hInv : st.objects.invExt) (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) :
+    keyInputsEq st (st.updateTcb tid f) := by
+  cases hT : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact keyInputsEq_refl st
+  | some t =>
+    unfold SystemState.updateTcb
+    rw [SystemState.getTcbWitnessed?_eq_some hT]
+    apply keyInputsEq_rewriteObject _ hInv
+    have hO : st.objects[tid.toObjId]? = some (.tcb t) := by
+      unfold SystemState.getTcb? at hT; split at hT <;> simp_all
+    rw [hO]
+    have := hF t
+    simp only [tcbKeyFields, Prod.mk.injEq] at this
+    simp only [keyInputsOf, this]
+
+/-! ### Steps that cover by frame -/
+
+/-- A step covers and lowers no remote flag: the unit the arm proofs chain. -/
+def stepCovers (e : CoreId) (pre post : SystemState) : Prop :=
+  reschedulePendingCovers e pre post ∧ reschedulePendingMonotone e pre post
+
+theorem stepCovers_refl (e : CoreId) (st : SystemState) : stepCovers e st st :=
+  ⟨reschedulePendingCovers_refl e st, reschedulePendingMonotone_refl e st⟩
+
+theorem stepCovers_trans {e : CoreId} {a b d : SystemState}
+    (h₁ : stepCovers e a b) (h₂ : stepCovers e b d) : stepCovers e a d :=
+  ⟨reschedulePendingCovers_trans h₁.1 h₂.1 h₂.2,
+   reschedulePendingMonotone_trans h₁.2 h₂.2⟩
+
+theorem stepCovers_of_eq {e : CoreId} {pre post : SystemState} (h : post = pre) :
+    stepCovers e pre post := h ▸ stepCovers_refl e pre
+
+/-- **A step that moves no key input, no remote slot and no remote flag down
+covers.**  The discharge for every object-only step. -/
+theorem stepCovers_of_frame {e : CoreId} {pre post : SystemState}
+    (hKeys : keyInputsEq pre post)
+    (hRq : ∀ c, c ≠ e → post.scheduler.runQueueOnCore c = pre.scheduler.runQueueOnCore c)
+    (hCur : ∀ c, c ≠ e → post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)
+    (hMono : reschedulePendingMonotone e pre post) :
+    stepCovers e pre post :=
+  ⟨reschedulePendingCovers_of_frame (schedKeyView_eq_of_keyInputsEq hKeys)
+    (fun c hc => Or.inr ⟨fun t ht => by rw [hRq c hc] at ht; exact ht, hCur c hc⟩), hMono⟩
+
+/-- The common shape: the scheduler is unchanged but for the flags, which only
+rise. -/
+theorem stepCovers_of_scheduler_eq_except_reschedule {e : CoreId} {pre post : SystemState}
+    (hKeys : keyInputsEq pre post)
+    (hSched : post.scheduler =
+      { pre.scheduler with reschedulePending := post.scheduler.reschedulePending })
+    (hMono : reschedulePendingMonotone e pre post) :
+    stepCovers e pre post :=
+  stepCovers_of_frame hKeys (fun c _ => by rw [hSched]; rfl) (fun c _ => by rw [hSched]; rfl) hMono
+
+theorem reschedulePendingMonotone_of_scheduler_eq {e : CoreId} {pre post : SystemState}
+    (h : post.scheduler = pre.scheduler) : reschedulePendingMonotone e pre post :=
+  fun _ _ hp => by rw [h]; exact hp
+
+/-- A scheduler-silent step moving no key input covers. -/
+theorem stepCovers_of_scheduler_eq {e : CoreId} {pre post : SystemState}
+    (hKeys : keyInputsEq pre post) (hSched : post.scheduler = pre.scheduler) :
+    stepCovers e pre post :=
+  stepCovers_of_scheduler_eq_except_reschedule hKeys (by rw [hSched])
+    (reschedulePendingMonotone_of_scheduler_eq hSched)
+
 end SeLe4n.Kernel

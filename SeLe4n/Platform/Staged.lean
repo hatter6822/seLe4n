@@ -222,6 +222,7 @@ import SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuite
 -- composition laws, the bridge to `computeCrossCoreSgis`, and the primitive
 -- and key-hook coverage lemmas).  Staged until PR C's seams consume it.
 import SeLe4n.Kernel.Scheduler.Invariant.ReschedulePendingCoverage
+import SeLe4n.Kernel.Scheduler.Invariant.ReschedulePendingSchedulingPoints
 -- WS-SM SM5.I: the per-core invariant suite theorem inventory — a 39-entry typed
 -- inventory (3 categories: structural / preservation / suite) with the `pcist!`
 -- compile-time identifier-validation macro + per-category count witnesses +
