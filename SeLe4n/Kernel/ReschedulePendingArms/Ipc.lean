@@ -956,4 +956,440 @@ theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContex
       cases h
       exact stepCovers_trans hR (stageDeliveredMessage_keyFrame s callerTid 0 hRInv).stepCovers
 
+/-! ### Notifications -/
+
+theorem capabilityKeyFrame_refl {st : SystemState} (hInv : st.objects.invExt) :
+    capabilityKeyFrame st st :=
+  capabilityKeyFrame_of_objects_scheduler_eq hInv rfl rfl
+
+/-- An endpoint store over a slot that held an endpoint at the start. -/
+theorem keyFrame_storeObject_endpoint {st s : SystemState} {oid : SeLe4n.ObjId}
+    {ep ep' : Endpoint} {pair : Unit × SystemState}
+    (hObj : st.objects[oid]? = some (.endpoint ep)) (hF : capabilityKeyFrame st s)
+    (h : storeObject oid (.endpoint ep') s = .ok pair) : capabilityKeyFrame st pair.2 := by
+  obtain ⟨⟨⟩, s'⟩ := pair
+  exact hF.trans (storeObject_inert_keyFrame hF.2.2 h (by rw [hF.1 oid, hObj]; rfl) rfl)
+
+/-- Removing a thread from an endpoint queue rewrites the endpoint and queue
+links only. -/
+theorem endpointQueueRemoveDual_keyFrame {st st' : SystemState} {endpointId : SeLe4n.ObjId}
+    {isReceiveQ : Bool} {tid : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    capabilityKeyFrame st st' := by
+  have epStore := @keyFrame_storeObject_endpoint
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp
+    | endpoint ep =>
+      simp only []
+      cases hLookup : lookupTcb st tid with
+      | none => simp
+      | some tcb =>
+        simp only []
+        cases hPPrev : tcb.queuePPrev with
+        | none => simp
+        | some pprev =>
+          simp only []
+          generalize (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  With the two
+          -- preconditions collapsed into `dualQueueRemovalEnabled`, unfolding the
+          -- guard exposes the guard's own `match pprev` *inside* the `if`
+          -- condition, and `split` takes that before the `if` -- so the
+          -- constructor split has to come first.
+          cases pprev with
+            | endpointHead =>
+              simp only []
+              split
+              · simp
+              · cases hStore1 : storeObject endpointId _ st with
+                | error e => simp
+                | ok pair1 =>
+                simp only []; cases hNext : tcb.queueNext with
+                | none =>
+                  simp only []
+                  cases hStore2 : storeObject endpointId _ pair1.2 with
+                  | error e => simp
+                  | ok pair2 =>
+                  simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+                  | error e => simp
+                  | ok st4 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, hEq⟩; subst hEq
+                    have f1 := epStore hObj (capabilityKeyFrame_refl hInv) hStore1
+                    have f2 := epStore hObj f1 hStore2
+                    exact f2.trans (storeTcbQueueLinks_keyFrame f2.2.2 hFinal)
+                | some nextTid =>
+                  simp only []
+                  cases hLookupN : lookupTcb pair1.2 nextTid with
+                  | none => simp
+                  | some nextTcb =>
+                  simp only []; cases hLink : storeTcbQueueLinks pair1.2 nextTid _ _ nextTcb.queueNext with
+                  | error e => simp
+                  | ok st2 =>
+                  simp only []; cases hStore2 : storeObject endpointId _ st2 with
+                  | error e => simp
+                  | ok pair2 =>
+                  simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+                  | error e => simp
+                  | ok st4 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, hEq⟩; subst hEq
+                    have f1 := epStore hObj (capabilityKeyFrame_refl hInv) hStore1
+                    have f2 := f1.trans (storeTcbQueueLinks_keyFrame f1.2.2 hLink)
+                    have f3 := epStore hObj f2 hStore2
+                    exact f3.trans (storeTcbQueueLinks_keyFrame f3.2.2 hFinal)
+            | tcbNext prevTid =>
+              dsimp only
+              split
+              · simp
+              · cases hLookupP : lookupTcb st prevTid with
+                | none => simp
+                | some prevTcb =>
+                dsimp only [hLookupP]; split
+                · simp
+                · -- split introduced heq✝ : (if ... then .error else match storeTcbQueueLinks ... with ...) = .ok st''✝
+                  -- and the goal uses st''✝. Resolve heq✝ to extract the actual state.
+                  rename_i _ _ stAp heqAp
+                  split at heqAp
+                  · simp at heqAp
+                  · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcb.queueNext with
+                    | error e => simp [hLink0] at heqAp
+                    | ok stPrev =>
+                    simp [hLink0] at heqAp; subst heqAp
+                    -- Now stAp = stPrev, goal uses stPrev
+                    cases hNext : tcb.queueNext with
+                    | none =>
+                      dsimp only [hNext]
+                      cases hStore2 : storeObject endpointId _ stPrev with
+                      | error e => simp
+                      | ok pair2 =>
+                      dsimp only [hStore2]; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+                      | error e => simp
+                      | ok st4 =>
+                        simp only [Except.ok.injEq, Prod.mk.injEq]
+                        intro ⟨_, hEq⟩; subst hEq
+                        have f1 := storeTcbQueueLinks_keyFrame hInv hLink0
+                        have f2 := epStore hObj f1 hStore2
+                        exact f2.trans (storeTcbQueueLinks_keyFrame f2.2.2 hFinal)
+                    | some nextTid =>
+                      dsimp only [hNext]
+                      cases hLookupN : lookupTcb stPrev nextTid with
+                      | none => simp
+                      | some nextTcb =>
+                      dsimp only [hLookupN]; cases hLink1 : storeTcbQueueLinks stPrev nextTid _ _ nextTcb.queueNext with
+                      | error e => simp
+                      | ok st2 =>
+                      dsimp only [hLink1]; cases hStore2 : storeObject endpointId _ st2 with
+                      | error e => simp
+                      | ok pair2 =>
+                      dsimp only [hStore2]; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+                      | error e => simp
+                      | ok st4 =>
+                        simp only [Except.ok.injEq, Prod.mk.injEq]
+                        intro ⟨_, hEq⟩; subst hEq
+                        have f1 := storeTcbQueueLinks_keyFrame hInv hLink0
+                        have f2 := f1.trans (storeTcbQueueLinks_keyFrame f1.2.2 hLink1)
+                        have f3 := epStore hObj f2 hStore2
+                        exact f3.trans (storeTcbQueueLinks_keyFrame f3.2.2 hFinal)
+
+
+
+/-- A store over a slot that fed no key at the start, of an object that feeds
+none, after a key-preserving prefix. -/
+theorem keyFrame_storeObject_inert_after {st s : SystemState} {oid : SeLe4n.ObjId}
+    {obj : KernelObject} {pair : Unit × SystemState}
+    (hPre : keyInputsOf st.objects[oid]? = none) (hObj : keyInputsOf (some obj) = none)
+    (hF : capabilityKeyFrame st s) (h : storeObject oid obj s = .ok pair) :
+    capabilityKeyFrame st pair.2 := by
+  obtain ⟨⟨⟩, s'⟩ := pair
+  exact hF.trans (storeObject_inert_keyFrame hF.2.2 h (by rw [hF.1 oid]; exact hPre) hObj)
+
+/-- A TCB store keeping the key fields of the TCB the slot held at the start,
+after a key-preserving prefix. -/
+theorem keyFrame_storeObject_tcbKeeping_after {st s : SystemState} {tid : SeLe4n.ThreadId}
+    {t t' : TCB} {pair : Unit × SystemState}
+    (hPre : st.objects[tid.toObjId]? = some (.tcb t)) (hKey : tcbKeyFields t' = tcbKeyFields t)
+    (hF : capabilityKeyFrame st s) (h : storeObject tid.toObjId (.tcb t') s = .ok pair) :
+    capabilityKeyFrame st pair.2 := by
+  obtain ⟨⟨⟩, s'⟩ := pair
+  refine hF.trans ⟨keyInputsEq_storeObject hF.2.2 h ?_, storeObject_scheduler_eq _ _ _ _ h,
+    storeObject_preserves_objects_invExt _ _ _ _ hF.2.2 h⟩
+  rw [hF.1 tid.toObjId, hPre]
+  simp only [tcbKeyFields, Prod.mk.injEq] at hKey
+  simp only [keyInputsOf, hKey]
+
+theorem storeTcbIpcState_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {ipc : ThreadIpcState} (hInv : st.objects.invExt)
+    (h : storeTcbIpcState st tid ipc = .ok st') : capabilityKeyFrame st st' := by
+  unfold storeTcbIpcState at h
+  exact modifyTcb_keyFrame (f := fun tcb => { tcb with ipcState := ipc }) (fun _ => rfl) hInv h
+
+/-- The per-core signal covers on every outcome. -/
+theorem notificationSignalOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.ObjId}
+    {badge : SeLe4n.Badge} {executingCore : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) :
+    stepCovers e st (notificationSignalOnCore notificationId badge executingCore st).1 ∧
+      (notificationSignalOnCore notificationId badge executingCore st).1.objects.invExt := by
+  have hRefl : stepCovers e st st ∧ st.objects.invExt := ⟨stepCovers_refl e st, hInv⟩
+  unfold notificationSignalOnCore
+  split
+  · rename_i ntfn hN
+    have hPre : keyInputsOf st.objects[notificationId]? = none := by
+      rw [(SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hN]; rfl
+    split
+    · dsimp only
+      cases hS : storeObject notificationId _ st with
+      | error _ => exact hRefl
+      | ok p =>
+        obtain ⟨⟨⟩, st1⟩ := p
+        have hF1 := keyFrame_storeObject_inert_after (pair := ((), st1)) hPre rfl
+          (capabilityKeyFrame_refl hInv) hS
+        dsimp only
+        split
+        · exact hRefl
+        · rename_i st2 hT
+          have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hT)
+          exact (wakeThread_stepCovers e st2 _ executingCore hF2.2.2).imp_left
+            (stepCovers_trans hF2.stepCovers)
+    · dsimp only
+      cases hS : storeObject notificationId _ st with
+      | error _ => exact hRefl
+      | ok p =>
+        obtain ⟨⟨⟩, st1⟩ := p
+        have hF1 := keyFrame_storeObject_inert_after (pair := ((), st1)) hPre rfl
+          (capabilityKeyFrame_refl hInv) hS
+        exact ⟨hF1.stepCovers, hF1.2.2⟩
+  · split <;> exact hRefl
+
+theorem notificationSignalBoundOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.ObjId}
+    {badge : SeLe4n.Badge} {executingCore : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) :
+    stepCovers e st (notificationSignalBoundOnCore notificationId badge executingCore st).1 := by
+  unfold notificationSignalBoundOnCore
+  split
+  · dsimp only
+    split
+    · exact stepCovers_refl e st
+    · rename_i st1 hR
+      have hF1 := endpointQueueRemoveDual_keyFrame hInv hR
+      split
+      · exact stepCovers_refl e st
+      · rename_i st2 hT
+        have hF2 := hF1.trans (storeTcbReceiveComplete_keyFrame hF1.2.2 hT)
+        exact stepCovers_trans hF2.stepCovers (wakeThread_stepCovers e st2 _ executingCore hF2.2.2).1
+  · exact (notificationSignalOnCore_stepCovers e hInv).1
+
+theorem notificationSignalBoundCrossCoreDispatchChecked_stepCovers (e : CoreId)
+    {ctx : LabelingContext} {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId}
+    {badge : SeLe4n.Badge} {executingCore : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) :
+    stepCovers e st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
+      badge executingCore st).1 := by
+  unfold notificationSignalBoundCrossCoreDispatchChecked
+  repeat' split
+  all_goals first
+    | exact notificationSignalBoundOnCore_stepCovers e hInv
+    | exact stepCovers_refl e st
+
+/-- The per-core wait covers on every outcome: consuming a badge keeps the
+waiter runnable, and blocking takes it off the executing core. -/
+theorem notificationWaitOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.ObjId}
+    {waiter : SeLe4n.ThreadId} {executingCore : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) :
+    stepCovers e st (notificationWaitOnCore notificationId waiter executingCore st).1 ∧
+      (notificationWaitOnCore notificationId waiter executingCore st).1.objects.invExt := by
+  have hRefl : stepCovers e st st ∧ st.objects.invExt := ⟨stepCovers_refl e st, hInv⟩
+  unfold notificationWaitOnCore
+  split
+  · rename_i ntfn hN
+    have hPre : keyInputsOf st.objects[notificationId]? = none := by
+      rw [(SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hN]; rfl
+    split
+    · dsimp only
+      split
+      · exact hRefl
+      · rename_i st1 hS
+        have hF1 := keyFrame_storeObject_inert_after (pair := ((), st1)) hPre rfl
+          (capabilityKeyFrame_refl hInv) hS
+        split
+        · exact hRefl
+        · rename_i st2 hT
+          have hF2 := hF1.trans (storeTcbIpcState_keyFrame hF1.2.2 hT)
+          exact ⟨hF2.stepCovers, hF2.2.2⟩
+    · split
+      · exact hRefl
+      · rename_i tcb hL
+        split
+        · exact hRefl
+        · split
+          · exact hRefl
+          · dsimp only
+            split
+            · exact hRefl
+            · rename_i st1 hS
+              have hF1 := keyFrame_storeObject_inert_after (pair := ((), st1)) hPre rfl
+                (capabilityKeyFrame_refl hInv) hS
+              split
+              · exact hRefl
+              · rename_i st2 hT
+                unfold storeTcbIpcStateAndMessage_fromTcb at hT
+                have hF2 : capabilityKeyFrame st st2 := by
+                  revert hT
+                  cases hSt : storeObject waiter.toObjId _ st1 with
+                  | error _ => intro h; cases h
+                  | ok p =>
+                    obtain ⟨⟨⟩, s⟩ := p
+                    intro h; cases h
+                    exact keyFrame_storeObject_tcbKeeping_after (pair := ((), _))
+                      (lookupTcb_some_objects _ _ _ hL) (by rfl) hF1 hSt
+                exact ⟨stepCovers_trans hF2.stepCovers (removeRunnableOnCore_stepCovers e _ _ _),
+                  hF2.2.2⟩
+  · split <;> exact hRefl
+
+theorem notificationWaitCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
+    {notificationId : SeLe4n.ObjId} {waiter : SeLe4n.ThreadId} {executingCore : CoreId}
+    {st : SystemState} (hInv : st.objects.invExt) :
+    stepCovers e st (notificationWaitCrossCoreDispatchChecked ctx notificationId waiter
+      executingCore st).1 ∧
+    (notificationWaitCrossCoreDispatchChecked ctx notificationId waiter
+      executingCore st).1.objects.invExt := by
+  unfold notificationWaitCrossCoreDispatchChecked
+  split
+  · exact notificationWaitOnCore_stepCovers e hInv
+  · exact ⟨stepCovers_refl e st, hInv⟩
+
+/-! ### ReplyRecv -/
+
+theorem applyRendezvousCallDonation_stepCovers (e : CoreId) {st st' : SystemState}
+    {receiver donor : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold applyRendezvousCallDonation at h
+  split at h
+  · exact applyCallDonationOnCore_stepCovers e hInv h
+  · cases h
+
+theorem descheduleAtPlacement_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    stepCovers e st (descheduleAtPlacement st tid) ∧ (descheduleAtPlacement st tid).objects.invExt :=
+  ⟨descheduleAt_stepCovers e _ _ _, by unfold descheduleAtPlacement; rw [descheduleAt_objects]; exact hInv⟩
+
+theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
+    {target : SeLe4n.ThreadId} {st st' : SystemState}
+    {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} (hInv : st.objects.invExt)
+    (h : replyRecvPopDonation rid target st = .ok (r, st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold replyRecvPopDonation at h
+  split at h
+  · dsimp only at h
+    split at h
+    · split at h
+      · cases h
+      · rename_i st1 hRet
+        cases h
+        obtain ⟨h1, h1Inv⟩ := returnDonatedSchedContextResolved_stepCovers e hInv hRet
+        exact ⟨stepCovers_trans h1 (migrateSchedContextReplenishment_stepCovers e _ _ _ _),
+          by rw [migrateSchedContextReplenishment_objects]; exact h1Inv⟩
+    · cases h
+  · cases h; exact ⟨stepCovers_refl e st, hInv⟩
+
+theorem replyRecvPostReceiveDonation_stepCovers (e : CoreId)
+    {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
+    {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+      = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold replyRecvPostReceiveDonation at h
+  split at h
+  · cases h
+    exact propagatePipChainCrossCore_stepCovers e serverCore _ st recordedServer hInv
+  · rename_i holder
+    split at h
+    · split at h
+      · cases h
+      · rename_i st2 hD
+        cases h
+        have hH : stepCovers e st (replyRecvHolderDeschedule tid holder st) ∧
+            (replyRecvHolderDeschedule tid holder st).objects.invExt := by
+          unfold replyRecvHolderDeschedule
+          split
+          · exact ⟨stepCovers_refl e st, hInv⟩
+          · exact descheduleAtPlacement_stepCovers e st holder hInv
+        obtain ⟨hDc, hDInv⟩ := applyRendezvousCallDonation_stepCovers e hH.2 hD
+        exact (propagatePipChainCrossCore_stepCovers e serverCore _ st2 recordedServer hDInv).imp_left
+          (stepCovers_trans (stepCovers_trans hH.1 hDc))
+    · cases h
+      obtain ⟨hP, hPInv⟩ := descheduleAtPlacement_stepCovers e st holder hInv
+      exact (propagatePipChainCrossCore_stepCovers e serverCore _ _ recordedServer hPInv).imp_left
+        (stepCovers_trans hP)
+
+theorem applyReceiveLegPipHandoff_stepCovers (e : CoreId) (st : SystemState)
+    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hInv : st.objects.invExt) :
+    stepCovers e st (applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore) ∧
+      (applyReceiveLegPipHandoff st receiver dequeued alreadyWalked executingCore).objects.invExt := by
+  unfold applyReceiveLegPipHandoff
+  split
+  · exact ⟨stepCovers_refl e st, hInv⟩
+  split
+  · exact propagatePipChainCrossCore_stepCovers e executingCore _ st receiver hInv
+  · exact ⟨stepCovers_refl e st, hInv⟩
+
+/-- The per-core reply-and-receive covers on its `.ok`: the reply leg, the
+donation pop, the receive leg, the post-receive donation, the chain walk and the
+staging. -/
+theorem endpointReplyRecvOnCore_stepCovers (e : CoreId) {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
+    {msg : IpcMessage} {receiverCspaceRoot : SeLe4n.ObjId} {receiverSlotBase : SeLe4n.Slot}
+    {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
+    (hInv : st.objects.invExt)
+    (h : endpointReplyRecvOnCore epId tid rid prevCaller msg receiverCspaceRoot receiverSlotBase
+      executingCore st = .ok (summary, st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold endpointReplyRecvOnCore at h
+  dsimp only at h
+  obtain ⟨hR, hRInv⟩ := endpointReplyOnCore_stepCovers e (replier := tid) (target := prevCaller)
+    (msg := msg) (executingCore := executingCore) hInv
+  revert h hR hRInv
+  generalize endpointReplyOnCore tid prevCaller msg executingCore st = r1
+  obtain ⟨st1, res1⟩ := r1
+  cases res1 with
+  | error _ => intro h; cases h
+  | ok _ =>
+  intro h hR hRInv
+  dsimp only at h hR hRInv
+  split at h
+  · cases h
+  rename_i ret st1p hPop
+  obtain ⟨hP, hPInv⟩ := replyRecvPopDonation_stepCovers e hRInv hPop
+  obtain ⟨hV, hVInv⟩ := endpointReceiveDualWithCapsOnCore_stepCovers e (endpointId := epId)
+    (receiver := tid) (replyId := some rid) (receiverCspaceRoot := receiverCspaceRoot)
+    (receiverSlotBase := receiverSlotBase) (executingCore := executingCore) hPInv
+  revert h hV hVInv
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) receiverCspaceRoot
+    receiverSlotBase executingCore st1p = r2
+  obtain ⟨st2, res2⟩ := r2
+  cases res2 with
+  | error _ => intro h; cases h
+  | ok q =>
+  obtain ⟨nextThread, summ, _⟩ := q
+  intro h hV hVInv
+  dsimp only at h hV hVInv
+  split at h
+  · cases h
+  rename_i st3 hPost
+  cases h
+  obtain ⟨hD, hDInv⟩ := replyRecvPostReceiveDonation_stepCovers e hVInv hPost
+  obtain ⟨hW, hWInv⟩ := applyReceiveLegPipHandoff_stepCovers e st3 tid nextThread
+    ((recordedReplyServer? st prevCaller).getD tid) executingCore hDInv
+  have hS1 := stageDeliveredMessage_keyFrame _ prevCaller 0 hWInv
+  have hS2 := stageWokenSendCompletion_keyFrame _ ((st1p.getEndpoint? epId).bind (·.sendQ.head))
+    hS1.2.2
+  exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans (stepCovers_trans
+    (stepCovers_trans (stepCovers_trans hR hP) hV) hD) hW) hS1.stepCovers) hS2.stepCovers,
+    hS2.2.2⟩
+
 end SeLe4n.Kernel
