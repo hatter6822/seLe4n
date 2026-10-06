@@ -165,10 +165,6 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyOnCore restor
 #check @computeCrossCoreSgis_nil_single_core
 -- SM6.B wake-SGI fix: the body fires on a cross-core wake (not only a PIP boost):
 #check @crossCoreSgiBody_remote_wake
-#check @crossCoreWakeDispatch
-#check @crossCoreWakeDispatch_singleCore
-#check @pipChainWakeDispatch
-#check @pipChainWakeDispatch_singleCore
 #check @perCorePipTheorems_memoryModel_count
 #check @perCorePipTheorems_dispatch_count
 
@@ -289,8 +285,8 @@ example (pre post : SystemState)
       pre.scheduler.currentOnCore c = none)
     (hNoRemoteCurPost : ∀ c : CoreId, c ≠ bootCoreId →
       post.scheduler.currentOnCore c = none) :
-    crossCoreWakeDispatch pre post bootCoreId = pure () :=
-  crossCoreWakeDispatch_singleCore pre post hAllBoot hNoRemoteCur hNoRemoteCurPost
+    computeCrossCoreSgis pre post bootCoreId = [] :=
+  computeCrossCoreSgis_nil_single_core pre post hAllBoot hNoRemoteCur hNoRemoteCurPost
 
 -- SM5.F.4: memory-model — the boost publication happens-before the home core observes it.
 example (boostCore homeCore : CoreId) (loc : AtomicLocation) (v : Nat) :

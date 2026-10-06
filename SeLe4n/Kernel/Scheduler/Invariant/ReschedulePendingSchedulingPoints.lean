@@ -125,11 +125,11 @@ theorem handleRescheduleSgiOnCore_stepCovers (e : CoreId) (st st' : SystemState)
       · cases h
     · injection h with h; subst h; exact clearReschedulePendingOnCore_stepCovers e st
 
-/-- The commit's local successor covers. -/
-theorem scheduleLocalSuccessor_stepCovers (e : CoreId) (pre post : SystemState)
-    (hInv : post.objects.invExt) :
-    stepCovers e post (scheduleLocalSuccessor pre post e) := by
-  unfold scheduleLocalSuccessor
+/-- The commit's local successor covers, whichever caller the seam captured. -/
+theorem scheduleLocalSuccessorFrom_stepCovers (e : CoreId) (caller? : Option SeLe4n.ThreadId)
+    (post : SystemState) (hInv : post.objects.invExt) :
+    stepCovers e post (PriorityInheritance.scheduleLocalSuccessorFrom caller? post e) := by
+  unfold PriorityInheritance.scheduleLocalSuccessorFrom
   split
   · split
     · rename_i st' h
@@ -190,10 +190,10 @@ theorem settleResidencyOnCore_stepCovers (e : CoreId) (st : SystemState)
     (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl)
 
 /-- Staging the caller's result rewrites a register context and the bank. -/
-theorem stageCallerReturn_stepCovers (e : CoreId) (pre post : SystemState)
-    (o : Architecture.SyscallOutcome) (hInv : post.objects.invExt) :
-    stepCovers e post (Architecture.stageCallerReturn pre post e o) ∧
-      (Architecture.stageCallerReturn pre post e o).objects.invExt := by
+theorem stageCallerReturnFor_stepCovers (e : CoreId) (caller? : Option SeLe4n.ThreadId)
+    (post : SystemState) (o : Architecture.SyscallOutcome) (hInv : post.objects.invExt) :
+    stepCovers e post (Architecture.stageCallerReturnFor caller? post e o) ∧
+      (Architecture.stageCallerReturnFor caller? post e o).objects.invExt := by
   have hW : ∀ tid f, keyInputsEq post (Architecture.writeReturnFrameToTcb post tid f) :=
     fun _ _ => keyInputsEq_updateTcb hInv fun _ => rfl
   have hWInv : ∀ tid f, (Architecture.writeReturnFrameToTcb post tid f).objects.invExt :=
@@ -204,17 +204,18 @@ theorem stageCallerReturn_stepCovers (e : CoreId) (pre post : SystemState)
   | blocks => exact ⟨stepCovers_refl e post, hInv⟩
   | faulted => exact ⟨stepCovers_refl e post, hInv⟩
   | returns f =>
-    cases hP : pre.scheduler.currentOnCore e with
-    | none => simp only [Architecture.stageCallerReturn, hP]; exact ⟨stepCovers_refl e post, hInv⟩
+    cases caller? with
+    | none => simp only [Architecture.stageCallerReturnFor]; exact ⟨stepCovers_refl e post, hInv⟩
     | some tid =>
-      simp only [Architecture.stageCallerReturn, hP]
+      simp only [Architecture.stageCallerReturnFor]
       split
       · exact ⟨stepCovers_of_scheduler_eq (hW tid f) (hWriteSched tid f), hWInv tid f⟩
       · exact ⟨stepCovers_of_scheduler_eq (hW tid f) (hWriteSched tid f), hWInv tid f⟩
 
-theorem scheduleLocalSuccessor_preserves_objects_invExt (e : CoreId) (pre post : SystemState)
-    (hInv : post.objects.invExt) : (scheduleLocalSuccessor pre post e).objects.invExt := by
-  unfold scheduleLocalSuccessor
+theorem scheduleLocalSuccessorFrom_preserves_objects_invExt (e : CoreId)
+    (caller? : Option SeLe4n.ThreadId) (post : SystemState) (hInv : post.objects.invExt) :
+    (PriorityInheritance.scheduleLocalSuccessorFrom caller? post e).objects.invExt := by
+  unfold PriorityInheritance.scheduleLocalSuccessorFrom
   split
   · split
     · rename_i st' h
@@ -225,14 +226,15 @@ theorem scheduleLocalSuccessor_preserves_objects_invExt (e : CoreId) (pre post :
 /-- **The syscall commit's tail covers**: from the dispatched state, staging
 the caller's result, the local successor and the residency settling raise no
 remote staleness and drop no remote flag. -/
-theorem syscallCommitTail_stepCovers (e : CoreId) (pre post : SystemState)
-    (o : Architecture.SyscallOutcome) (hInv : post.objects.invExt) :
+theorem syscallCommitTail_stepCovers (e : CoreId) (caller? : Option SeLe4n.ThreadId)
+    (post : SystemState) (o : Architecture.SyscallOutcome) (hInv : post.objects.invExt) :
     stepCovers e post (settleResidencyOnCore
-      (scheduleLocalSuccessor pre (Architecture.stageCallerReturn pre post e o) e) e) := by
-  obtain ⟨hStage, hStageInv⟩ := stageCallerReturn_stepCovers e pre post o hInv
+      (PriorityInheritance.scheduleLocalSuccessorFrom caller?
+        (Architecture.stageCallerReturnFor caller? post e o) e) e) := by
+  obtain ⟨hStage, hStageInv⟩ := stageCallerReturnFor_stepCovers e caller? post o hInv
   exact stepCovers_trans (stepCovers_trans hStage
-    (scheduleLocalSuccessor_stepCovers e pre _ hStageInv))
+    (scheduleLocalSuccessorFrom_stepCovers e caller? _ hStageInv))
     (settleResidencyOnCore_stepCovers e _
-      (scheduleLocalSuccessor_preserves_objects_invExt e pre _ hStageInv))
+      (scheduleLocalSuccessorFrom_preserves_objects_invExt e caller? _ hStageInv))
 
 end SeLe4n.Kernel

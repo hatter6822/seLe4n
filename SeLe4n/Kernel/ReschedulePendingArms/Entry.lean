@@ -228,7 +228,7 @@ theorem faultEntryDeliver_stepCovers (lctx : LabelingContext) (st : SystemState)
   · rename_i tid _
     obtain ⟨hD, hDInv⟩ := faultDeliveredState_stepCovers c (lctx := lctx) (st := st) (f := f)
       (ectx := ectx) (w := w) (c := c) (tid := tid) hInv
-    exact stepCovers_trans hD (scheduleLocalSuccessor_stepCovers c st _ hDInv)
+    exact stepCovers_trans hD (scheduleLocalSuccessorFrom_stepCovers c (some tid) _ hDInv)
 
 /-- **The syscall seam covers** on the executing core: the ABI dispatch, the
 caller's return staging, the local scheduling point and the residency
@@ -247,11 +247,8 @@ theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : Cor
       (PriorityInheritance.scheduleLocalSuccessor st
         (Architecture.stageCallerReturn st st' e outcome) e) e) := by
   obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hBi hPlaced hDet h
-  obtain ⟨hR, hRInv⟩ := stageCallerReturn_stepCovers e st st' outcome hDInv
-  exact stepCovers_trans (stepCovers_trans (stepCovers_trans hD hR)
-      (scheduleLocalSuccessor_stepCovers e st _ hRInv))
-    (settleResidencyOnCore_stepCovers e _
-      (scheduleLocalSuccessor_preserves_objects_invExt e st _ hRInv))
+  exact stepCovers_trans hD
+    (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv)
 
 /-- **The suspend seam covers** on the executing core: the suspend, then the
 core's own scheduling point. -/
@@ -260,6 +257,67 @@ theorem suspendThenScheduleLocal_stepCovers {s s' : SystemState} {vtid : SeLe4n.
     (h : Lifecycle.Suspend.suspendThreadOnCore s vtid e = .ok (s', sgi)) :
     stepCovers e s (PriorityInheritance.scheduleLocalSuccessor s s' e) := by
   obtain ⟨hS, hSInv⟩ := suspendThreadOnCore_stepCovers s s' vtid e sgi hInv h
-  exact stepCovers_trans hS (scheduleLocalSuccessor_stepCovers e s s' hSInv)
+  exact stepCovers_trans hS
+    (scheduleLocalSuccessorFrom_stepCovers e (s.scheduler.currentOnCore e) s' hSInv)
+
+/-! ### The seams fire from the flags, and the flags cover the diff
+
+Each seam now emits `rescheduleSgisFromFlags` over the flags it captured before
+the step.  The diff `computeCrossCoreSgis` stays as the specification: every
+core it names is poked by the seam, or its reschedule SGI was already
+outstanding when the step began.  (The converse — the flags name only cores the
+diff names — is not claimed: the flags deliberately over-approximate.) -/
+
+/-- The fault entry's SGIs are the flags it raised. -/
+theorem faultEntryDeliver_sgis_eq_flags (lctx : LabelingContext) (st : SystemState) (f : Fault)
+    (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId) :
+    (faultEntryDeliver lctx st f ectx w c).1 =
+      rescheduleSgisFromFlags st.scheduler.reschedulePending
+        (faultEntryDeliver lctx st f ectx w c).2.scheduler.reschedulePending c := by
+  unfold faultEntryDeliver
+  split <;> rfl
+
+/-- **The fault entry fires every SGI the diff names**, unless it was already
+outstanding. -/
+theorem faultEntryDeliver_sgis_cover_diff (lctx : LabelingContext) (st : SystemState) (f : Fault)
+    (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
+    (hInv : st.objects.invExt)
+    (hId : ∀ oid (tcb : TCB), (faultEntryDeliver lctx st f ectx w c).2.getObject? oid =
+      some (.tcb tcb) → tcb.tid.toObjId = oid)
+    {c' : CoreId} {k : SgiKind}
+    (hMem : (c', k) ∈ PriorityInheritance.computeCrossCoreSgis st (faultEntryDeliver lctx st f ectx w c).2 c) :
+    (c', SgiKind.reschedule) ∈ (faultEntryDeliver lctx st f ectx w c).1 ∨
+      st.scheduler.reschedulePendingOnCore c' = true := by
+  rw [faultEntryDeliver_sgis_eq_flags]
+  exact computeCrossCoreSgis_mem_flags_of_covers hId
+    (faultEntryDeliver_stepCovers lctx st f ectx w c hInv).1 hMem
+
+/-- **The syscall step fires every SGI the diff names**, unless it was already
+outstanding: the diff is taken between the pre-state and the state the commit
+settles to. -/
+theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e : CoreId}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hPlaced : placedThreadsHaveTcbs st)
+    (hDet : ∀ tid, st.scheduler.currentOnCore e = some tid →
+      entryRetypeDetached e SeLe4n.arm64DefaultLayout 32
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+    (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
+      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st'))
+    (hId : ∀ oid (tcb : TCB), (PriorityInheritance.settleResidencyOnCore
+      (PriorityInheritance.scheduleLocalSuccessor st
+        (Architecture.stageCallerReturn st st' e outcome) e) e).getObject? oid =
+      some (.tcb tcb) → tcb.tid.toObjId = oid)
+    {c : CoreId} {k : SgiKind}
+    (hMem : (c, k) ∈ PriorityInheritance.computeCrossCoreSgis st (PriorityInheritance.settleResidencyOnCore
+      (PriorityInheritance.scheduleLocalSuccessor st
+        (Architecture.stageCallerReturn st st' e outcome) e) e) e) :
+    (c, SgiKind.reschedule) ∈ (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st).1.2.1 ∨
+      st.scheduler.reschedulePendingOnCore c = true := by
+  rw [syscallDispatchCrossCoreStep_of_ok h]
+  exact computeCrossCoreSgis_mem_flags_of_covers hId
+    (syscallDispatchCrossCoreStep_stepCovers hInv hBi hPlaced hDet h).1 hMem
 
 end SeLe4n.Kernel

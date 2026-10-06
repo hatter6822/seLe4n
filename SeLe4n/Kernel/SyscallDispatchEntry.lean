@@ -483,43 +483,71 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
-  match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
+  -- KSC-1: everything the commit reads of the pre-state is captured here, before
+  -- the dispatch consumes `st` — the caller, the reschedule flags (`numCores`
+  -- bits) and the shootdown record — so `st` is dead once the dispatch starts.
+  let caller? := st.scheduler.currentOnCore execCore
+  let pending0 := reschedulePendingSnapshot st
+  let tlb0 := st.tlbShootdown
+  match hD : Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st with
   | Except.ok (outcome, st') =>
       -- WS-BP BP7.4: the returning caller's result is in its saved context and
       -- the core's bank before any local reschedule, so a switch saves it.
-      let stR := Architecture.stageCallerReturn st st' execCore outcome
+      let stR := Architecture.stageCallerReturnFor caller? st' execCore outcome
       -- PR #904 review (`v0.36.41`): settle what this core resumes — a thread
       -- still resident on another core is deferred, and the one resumed here
       -- becomes this core's resident thread (`settleResidencyOnCore`).
       let st'' := PriorityInheritance.settleResidencyOnCore
-        (PriorityInheritance.scheduleLocalSuccessor st stR execCore) execCore
-      ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
-        Architecture.shootdownChangedTargets st st'',
-        Architecture.shootdownPostedOps st st'',
-        Architecture.shootdownRoundWindow st st'',
+        (PriorityInheritance.scheduleLocalSuccessorFrom caller? stR execCore) execCore
+      -- KSC-1: a remote core is poked when the step raised its reschedule flag
+      -- (`syscallDispatchCrossCoreStep_sgis_cover_diff`: the flags cover the old
+      -- whole-index diff, which stays as the specification).
+      ((outcome, rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending execCore,
+        Architecture.shootdownChangedTargetsFrom tlb0 st'',
+        Architecture.shootdownPostedOpsFrom tlb0 st'',
+        Architecture.shootdownRoundWindowFrom tlb0 st'',
         st''.pendingIcacheMaintenance,
         st''.pendingPhysicalWrites,
         Architecture.restoreTargetOnCore st'' execCore,
         st''.scheduler.currentOnCore execCore),
        Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st''))
   | Except.error e =>
-      -- WS-BP BP7.4: the error is the caller's result, staged as any is.
-      let outcome := Architecture.SyscallOutcome.returns (Architecture.errorFrame e)
-      -- PR #904 review (`v0.36.41`): a syscall refused on a vacated core — the
-      -- remote deschedule emptied the slot while the thread still ran here —
-      -- still hands the core a successor, so it does not resume the stale frame.
-      let stE := PriorityInheritance.settleResidencyOnCore
-        (Architecture.stageCallerReturn st st execCore outcome) execCore
+      -- Unreachable (`syscallDispatchFromAbi_ne_error`); discharged rather than
+      -- answered from `st`, which would keep the pre-state alive.
+      absurd hD (Platform.FFI.syscallDispatchFromAbi_ne_error ctx execCore syscallId
+        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st e)
+
+/-- **The step, on the dispatch's result**: the committed state and the result
+tuple, every pre-state read being one of the three captures. -/
+theorem syscallDispatchCrossCoreStep_of_ok {ctx : LabelingContext} {execCore : CoreId}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
+    (h : Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
+      ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (outcome, st')) :
+    syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st =
+      let st'' := PriorityInheritance.settleResidencyOnCore
+        (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore execCore)
+          (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore execCore) st' execCore
+            outcome) execCore) execCore
       ((outcome,
-        ([] : List (CoreId × SgiKind)),
-        ([] : List CoreId),
-        ([] : List Architecture.TlbInvalidation),
-        ((0, 0) : Nat × Nat),
-        ([] : List Architecture.ICacheInvalidation),
-        ([] : List Architecture.PhysicalWrite),
-        Architecture.restoreTargetOnCore stE execCore,
-        stE.scheduler.currentOnCore execCore), stE)
+        rescheduleSgisFromFlags st.scheduler.reschedulePending st''.scheduler.reschedulePending
+          execCore,
+        Architecture.shootdownChangedTargetsFrom st.tlbShootdown st'',
+        Architecture.shootdownPostedOpsFrom st.tlbShootdown st'',
+        Architecture.shootdownRoundWindowFrom st.tlbShootdown st'',
+        st''.pendingIcacheMaintenance,
+        st''.pendingPhysicalWrites,
+        Architecture.restoreTargetOnCore st'' execCore,
+        st''.scheduler.currentOnCore execCore),
+       Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st'')) := by
+  unfold syscallDispatchCrossCoreStep
+  split
+  · rename_i o s hD
+    rw [h] at hD; cases hD; rfl
+  · rename_i e hD
+    rw [h] at hD; cases hD
 
 /-- **WS-BP BP7.2 (the ledger is drained exactly once)**: the state the step
 commits owes no physical write, and the writes it hands the runtime are the ones
@@ -541,7 +569,9 @@ theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContex
           execCore).pendingPhysicalWrites := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
-  refine ⟨outcome, st', h, ?_, ?_⟩ <;> simp [syscallDispatchCrossCoreStep, h]
+  refine ⟨outcome, st', h, ?_, ?_⟩ <;> rw [syscallDispatchCrossCoreStep_of_ok h]
+  · simp
+  · rfl
 
 /-- **WS-RR RR7.12**: what a revalidation refusal returns to the caller.
 
@@ -963,25 +993,6 @@ theorem vacatedCore_next_syscall_rejected
   Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hVacated
 
-/-- **WS-SM SM6.A** trace-safety witness: on the boot core, when every thread's
-home core is the boot core (the single-core configuration), the diff-recovered
-SGI list the entry fires is empty.  Combined with `fireCrossCoreSgis [] = pure ()`
-this is the machine-checked statement that the cross-core entry is observably
-identical to a plain commit-and-return on single-core — it commits the same
-post-state and performs no IPI.  Re-exports `computeCrossCoreSgis_nil_single_core`
-at the entry's dispatch granularity. -/
-theorem syscallDispatchCrossCoreEntry_sgis_nil_single_core
-    (pre post : SystemState)
-    (hAllBoot : ∀ t : SeLe4n.ThreadId,
-      determineTargetCore post t = Concurrency.bootCoreId)
-    (hNoRemoteCur : ∀ c : Concurrency.CoreId, c ≠ Concurrency.bootCoreId →
-      pre.scheduler.currentOnCore c = none)
-    (hNoRemoteCurPost : ∀ c : Concurrency.CoreId, c ≠ Concurrency.bootCoreId →
-      post.scheduler.currentOnCore c = none) :
-    PriorityInheritance.computeCrossCoreSgis pre post Concurrency.bootCoreId = [] :=
-  PriorityInheritance.computeCrossCoreSgis_nil_single_core pre post hAllBoot hNoRemoteCur
-    hNoRemoteCurPost
-
 /-- **WS-SM SM6.E**: the cross-core-aware suspend entry — the per-core seam the
 Rust `sele4n_suspend_thread` atomicity bracket resolves against (the suspend
 analogue of `syscallDispatchCrossCoreEntry`, superseding the boot-pinned
@@ -1069,11 +1080,15 @@ def suspendThreadCrossCoreStep (tid : UInt64) (execCore : CoreId) (st : SystemSt
         -- responsible for a vacated core.
         let action : SystemState →
             SystemState × (UInt32 × List (CoreId × SgiKind)) := fun s =>
+          -- KSC-1: the pre-state reads are captured before the suspend; a
+          -- remote core is poked when the step raised its reschedule flag.
+          let caller? := s.scheduler.currentOnCore execCore
+          let pending0 := reschedulePendingSnapshot s
           match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
           | Except.ok (s', _) =>
-              let s'' := PriorityInheritance.scheduleLocalSuccessor s s' execCore
+              let s'' := PriorityInheritance.scheduleLocalSuccessorFrom caller? s' execCore
               (s'', ((0 : UInt32),
-                    PriorityInheritance.computeCrossCoreSgis s s'' execCore))
+                    rescheduleSgisFromFlags pending0 s''.scheduler.reschedulePending execCore))
           | Except.error e =>
               (s, (Platform.FFI.KernelError.toUInt32 e,
                    ([] : List (CoreId × SgiKind))))
@@ -1164,33 +1179,27 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
 -- WS-SM SM9.B.9 — the refusal write does not disturb the runtime seam
 -- ============================================================================
 
-/-- WS-SM SM9.B.9: **the diff-recovered cross-core SGIs are unchanged by a
-refusal write.**
+/-- WS-SM SM9.B.9: **the cross-core SGIs are unchanged by a refusal write.**
 
-The runtime seam commits the dispatch's post-state and then fires the SGIs
-`computeCrossCoreSgis` re-derives from the `(pre, post)` diff.  SM9.B adds a
-field to that post-state on the error path, and this is the statement that the
-addition is invisible to the re-derivation: the SGI rule reads the object
-index, the object store and the scheduler slots, all of which the refusal write
-frames, so the pokes the runtime sends are exactly the pokes it sent before the
+The runtime seam commits the dispatch's post-state and then fires an SGI at each
+remote core whose reschedule flag the step raised (KSC-1).  SM9.B adds a field to
+that post-state on the error path, and this is the statement that the addition is
+invisible to the seam: the refusal write leaves the scheduler, flags included,
+alone, so the pokes the runtime sends are exactly the pokes it sent before the
 ledger existed.
 
-Stated here rather than at the seam because this is where the two meet — and
-worth stating rather than assuming, since "the write only touches one field" is
-a property of `recordSyscallRefusal`, while "the seam reads no other field" is a
-property of `computeCrossCoreSgis`, and only their conjunction says the runtime
-is unaffected. -/
-theorem computeCrossCoreSgis_recordSyscallRefusal_eq
+Stated here rather than at the seam because this is where the two meet — "the
+write only touches one field" is a property of `recordSyscallRefusal`, while
+"the seam reads only the flags" is a property of the seam, and only their
+conjunction says the runtime is unaffected. -/
+theorem rescheduleSgisFromFlags_recordSyscallRefusal_eq
     (ctx : LabelingContext) (executingCore : CoreId) (syscallId : UInt32)
     (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
-    (pre post : SystemState) (execCore : CoreId) :
-    PriorityInheritance.computeCrossCoreSgis pre
-        (Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0 post)
-        execCore
-      = PriorityInheritance.computeCrossCoreSgis pre post execCore := by
-  obtain ⟨L, hEq⟩ :=
-    Platform.FFI.recordSyscallRefusal_frame ctx executingCore syscallId tid ke x0 post
-  rw [hEq]
-  rfl
+    (pending : Vector Bool Concurrency.numCores) (post : SystemState) (execCore : CoreId) :
+    rescheduleSgisFromFlags pending
+        (Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0
+          post).scheduler.reschedulePending execCore
+      = rescheduleSgisFromFlags pending post.scheduler.reschedulePending execCore := by
+  rw [Platform.FFI.recordSyscallRefusal_scheduler_eq]
 
 end SeLe4n.Kernel

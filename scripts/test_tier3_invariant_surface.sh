@@ -4324,7 +4324,7 @@ run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st co
 # its use in the shared fault delivery and in the FP/SIMD step, the theorems
 # about both, and a negative refusing the retired inert arm of the delivery.
 run_check "INVARIANT" rg -n '^def dispatchVacatedCore \(st : SystemState\) \(c : CoreId\) : SystemState :=$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n -U '^  \| none =>\n([ \t]*(--[^\n]*)?\n)*      let st. := PriorityInheritance\.dispatchVacatedCore st c\n      \(PriorityInheritance\.computeCrossCoreSgis st st. c, st.\)$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^  \| none =>\n([ \t]*(--[^\n]*)?\n)*      let st. := PriorityInheritance\.dispatchVacatedCore st c\n      \(rescheduleSgisFromFlags pending0 st.\.scheduler\.reschedulePending c, st.\)$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^      \(res\.1, PriorityInheritance\.dispatchVacatedCore res\.2 c\)$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^theorem faultEntryDeliver_vacated($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryStep_vacated($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
@@ -4349,9 +4349,9 @@ run_check "INVARIANT" rg -n 'switching away then saves every register the thread
 # from, before the local reschedule; every entry hands the HAL the context the
 # committed state names, gated on the context-restore seam; the HAL commits it
 # into the in-flight frame with SPSR sanitised to EL0t.
-run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturn st st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessor st stR execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? stR execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  let staged := PriorityInheritance\.settleResidencyOnCore\n    \(Architecture\.stageCallerReturn unwound unwound execCore outcome\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^      let stE := PriorityInheritance\.settleResidencyOnCore\n        \(Architecture\.stageCallerReturn st st execCore outcome\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  \| Except\.error e =>\n([ \t]*(--[^\n]*)?\n)*      absurd hD \(Platform\.FFI\.syscallDispatchFromAbi_ne_error ' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # PR #904 (v0.36.41): the translation rides with the commit, which installs it
 # only once the frame is replaced — never before a commit that may decline.
@@ -4979,9 +4979,9 @@ run_check "INVARIANT" rg -n 'faultContextOfThread stRegs tid ectx\.elr ectx\.sps
 run_negative_check "INVARIANT" rg -n 'faultContextOfThread st tid' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^theorem faultContextOfThread_writeFaultRegistersToTcb($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n '^theorem ofRegisterFile_spill($|[ ({:\[\]])' SeLe4n/Model/Fault.lean
-# …and the cross-core pokes are derived from the state diff, as the syscall
-# seam derives them, not read off the single SGI the Call chain surfaces.
-run_check "INVARIANT" rg -n 'PriorityInheritance\.computeCrossCoreSgis st st.. c' SeLe4n/Kernel/FaultEntry.lean
+# …and the cross-core pokes are read off the reschedule flags the step raised, as the syscall
+# seam derives them (KSC-1: from the reschedule flags), not read off the single SGI the Call chain surfaces.
+run_check "INVARIANT" rg -n 'rescheduleSgisFromFlags pending0 st..\.scheduler\.reschedulePending c' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n '\.sgi\.toList' SeLe4n/Kernel/FaultEntry.lean
 # v0.36.47 audit: the Rust seam passes three words (the core and the trap's
 # syndrome), and the window is read once from the published in-flight frame on
@@ -5337,7 +5337,7 @@ run_check "INVARIANT" rg -n '^def shootdownCatchUpPerCoreInWindow($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_preserves_foreign($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_eq_catchUp($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n 'shootdownCatchUpPerCoreInWindow st execCore collapsed' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n 'Architecture.shootdownRoundWindow st st' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'Architecture\.shootdownRoundWindowFrom tlb0 st' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^private def runRoundGenerationChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # The 12th `proofLayerInvariantBundle` conjunct (`pendingBounded`) carried across
 # the transition the live catch-up seam runs.  A window drain deliberately leaves
@@ -8439,7 +8439,7 @@ run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_perCore_NI($|[ ({:\[\
 # four carriers is absent here.
 run_check "INVARIANT" rg -n '^theorem lockSet_refusalSeam_writer_declares_stateLevel_write($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem refusalLedger_occupancy_is_not_a_covert_channel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem computeCrossCoreSgis_recordSyscallRefusal_eq($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem rescheduleSgisFromFlags_recordSyscallRefusal_eq($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # SM9.B.3: the bundle carriage the mount owes — unconditional, because the
 # ledger is bounded by its TYPE and no conjunct reads it.  Without this layer a
 # bundle proof for the committed dispatch is blocked exactly where the v0.32.151
@@ -15973,10 +15973,6 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReadyOnCore restoreToReadyWithWak
 #check @computeCrossCoreSgis
 #check @computeCrossCoreSgis_all_reschedule
 #check @computeCrossCoreSgis_nil_single_core
-#check @crossCoreWakeDispatch
-#check @crossCoreWakeDispatch_singleCore
-#check @pipChainWakeDispatch
-#check @pipChainWakeDispatch_singleCore
 #check @emitBoostWakeSgi
 #check @perCorePipTheorems_memoryModel_count
 #check @perCorePipTheorems_dispatch_count

@@ -63,11 +63,15 @@ current.**  An arm may switch the caller out *inside* the syscall — a
 `.tcbResume` of a higher-priority thread, a `.tcbSetPriority` that demotes the
 caller below a queued thread — and the preempt saves the caller from the bank,
 which holds its request registers.  Staging only a still-current caller left
-exactly that caller resuming later with its own arguments as the result. -/
-def stageCallerReturn (pre post : SystemState) (c : CoreId) :
+exactly that caller resuming later with its own arguments as the result.
+
+`caller?` is the pre-entry thread of core `c`.  The commit seams capture it
+before the transition consumes the pre-state, so the pre-state is not kept
+alive across the transition (KSC-1). -/
+def stageCallerReturnFor (caller? : Option SeLe4n.ThreadId) (post : SystemState) (c : CoreId) :
     SyscallOutcome → SystemState
   | .returns f =>
-    match pre.scheduler.currentOnCore c with
+    match caller? with
     | some tid =>
       let s1 := writeReturnFrameToTcb post tid f
       if post.scheduler.currentOnCore c = some tid then
@@ -76,6 +80,11 @@ def stageCallerReturn (pre post : SystemState) (c : CoreId) :
     | none => post
   | .blocks => post
   | .faulted => post
+
+/-- `stageCallerReturnFor` with the caller read off the pre-state. -/
+def stageCallerReturn (pre post : SystemState) (c : CoreId) (o : SyscallOutcome) :
+    SystemState :=
+  stageCallerReturnFor (pre.scheduler.currentOnCore c) post c o
 
 /-- A blocked or faulted caller stages nothing. -/
 theorem stageCallerReturn_blocks (pre post : SystemState) (c : CoreId) :
@@ -87,7 +96,7 @@ theorem stageCallerReturn_faulted (pre post : SystemState) (c : CoreId) :
 /-- The staging writes no scheduler state. -/
 theorem stageCallerReturn_scheduler (pre post : SystemState) (c : CoreId)
     (o : SyscallOutcome) : (stageCallerReturn pre post c o).scheduler = post.scheduler := by
-  unfold stageCallerReturn
+  unfold stageCallerReturn stageCallerReturnFor
   split
   · split
     · split
@@ -107,7 +116,7 @@ theorem stageCallerReturn_stages (pre post : SystemState) (c : CoreId)
     (stageCallerReturn pre post c (.returns f)).getTcb? tid = some (tcb.withReturnFrame f) ∧
     (stageCallerReturn pre post c (.returns f)).machine.regsOnCore c =
       (post.machine.regsOnCore c).stageReturnFrame f := by
-  simp only [stageCallerReturn, hPre, hPost, if_true]
+  simp only [stageCallerReturn, stageCallerReturnFor, hPre, hPost, if_true]
   refine ⟨?_, ?_⟩
   · show (writeReturnFrameToTcb post tid f).getTcb? tid = _
     unfold writeReturnFrameToTcb
@@ -123,7 +132,7 @@ theorem stageCallerReturn_stages_switched_out (pre post : SystemState) (c : Core
     (hPost : post.scheduler.currentOnCore c ≠ some tid)
     (hTcb : post.getTcb? tid = some tcb) (hInv : post.objects.invExt) :
     (stageCallerReturn pre post c (.returns f)).getTcb? tid = some (tcb.withReturnFrame f) := by
-  simp only [stageCallerReturn, hPre, hPost, if_false]
+  simp only [stageCallerReturn, stageCallerReturnFor, hPre, hPost, if_false]
   unfold writeReturnFrameToTcb
   rw [SystemState.updateTcb_getTcb?_self post tid _ hInv, hTcb]; rfl
 

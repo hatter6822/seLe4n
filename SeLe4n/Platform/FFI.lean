@@ -3492,6 +3492,21 @@ theorem syscallDispatchFromAbi_total
           exact ⟨syscallReturnOutcome syscallId st' tid, st',
                  by simp [hSyscall]⟩
 
+/-- The ABI dispatch never takes its `Except.error` arm (`syscallDispatchFromAbi_total`),
+so a caller may discharge that arm by `absurd` rather than keep the pre-state alive
+to return on it (KSC-1). -/
+theorem syscallDispatchFromAbi_ne_error
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (st : SystemState) (e : KernelError) :
+    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr
+      spEl0 x30 st ≠ Except.error e := by
+  obtain ⟨_, _, h⟩ := syscallDispatchFromAbi_total ctx executingCore syscallId
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+  rw [h]; intro h'; cases h'
+
 /-- WS-RC R2.B.5 (restated at the WS-RA type): When `syscallEntryChecked`
     succeeds on the register-spilled state, `syscallDispatchFromAbi`
     returns `(syscallReturnOutcome syscallId st' tid, st')` — the outcome

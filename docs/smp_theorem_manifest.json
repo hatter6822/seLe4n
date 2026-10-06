@@ -116,7 +116,7 @@
         {
           "name": "perCorePipTheorems",
           "module": "SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean",
-          "count": 99
+          "count": 95
         },
         {
           "name": "perCoreDomainTheorems",
@@ -139,8 +139,8 @@
           "count": 44
         }
       ],
-      "entryCount": 680,
-      "theoremCount": 604
+      "entryCount": 676,
+      "theoremCount": 602
     },
     {
       "phase": "SM6",
@@ -188,10 +188,10 @@
       "theoremCount": 0
     }
   ],
-  "entryTotal": 1149,
-  "theoremTotal": 927,
+  "entryTotal": 1145,
+  "theoremTotal": 925,
   "ledgerEntryTotal": 16,
-  "registeredEntryTotal": 1165,
+  "registeredEntryTotal": 1161,
   "theoremInventoryCount": 14,
   "ledgerInventoryCount": 2
 }

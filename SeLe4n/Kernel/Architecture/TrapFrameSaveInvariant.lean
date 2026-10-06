@@ -110,9 +110,9 @@ theorem stageCallerReturn_preserves_ipcInvariantFull (pre post : SystemState) (c
   | faulted => exact hInv
   | returns f =>
     cases hP : pre.scheduler.currentOnCore c with
-    | none => simp only [stageCallerReturn, hP]; exact hInv
+    | none => simp only [stageCallerReturn, stageCallerReturnFor, hP]; exact hInv
     | some tid =>
-      simp only [stageCallerReturn, hP]
+      simp only [stageCallerReturn, stageCallerReturnFor, hP]
       split
       · exact ipcInvariantFull_of_objects_scheduler_eq
           (st := writeReturnFrameToTcb post tid f) rfl rfl
@@ -128,9 +128,9 @@ theorem stageCallerReturn_preserves_objects_invExt (pre post : SystemState) (c :
   | faulted => exact hObjInv
   | returns f =>
     cases hP : pre.scheduler.currentOnCore c with
-    | none => simp only [stageCallerReturn, hP]; exact hObjInv
+    | none => simp only [stageCallerReturn, stageCallerReturnFor, hP]; exact hObjInv
     | some tid =>
-      simp only [stageCallerReturn, hP]
+      simp only [stageCallerReturn, stageCallerReturnFor, hP]
       split
       · exact writeReturnFrameToTcb_preserves_objects_invExt post tid f hObjInv
       · exact writeReturnFrameToTcb_preserves_objects_invExt post tid f hObjInv

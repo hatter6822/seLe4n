@@ -1862,6 +1862,17 @@ theorem asidAllocateWithShootdown_fresh_inert (executingCore : CoreId)
 -- SM7.B — Runtime-seam diff recovery (which cores must a commit poke?)
 -- ============================================================================
 
+/-- The shootdown diff against the pre-state's shootdown record alone.  The
+commit seams capture that record before the transition consumes the pre-state,
+so the pre-state is not kept alive across the transition (KSC-1). -/
+def shootdownChangedTargetsFrom (tlb0 : TlbShootdownState) (post : SystemState) :
+    List CoreId :=
+  allCores.filter (fun c => post.tlbShootdown.pendingOnCore c != tlb0.pendingOnCore c)
+
+/-- The round window against the pre-state's shootdown record alone. -/
+def shootdownRoundWindowFrom (tlb0 : TlbShootdownState) (post : SystemState) : Nat × Nat :=
+  (tlb0.roundGeneration, post.tlbShootdown.roundGeneration)
+
 /-- **WS-SM SM7.B**: the cores whose pending-shootdown queue a commit
 changed — the diff the runtime seam fires `.tlbShootdownReq` SGIs at
 (the shootdown analogue of the SM5.F.4 `computeCrossCoreSgis`
@@ -1869,8 +1880,7 @@ re-derivation: posting is data-driven in the pure model, and the entry
 recovers the target set from the committed `(pre, post)` pair so the
 dispatch signature stays unchanged). -/
 def shootdownChangedTargets (pre post : SystemState) : List CoreId :=
-  allCores.filter (fun c =>
-    post.tlbShootdown.pendingOnCore c != pre.tlbShootdown.pendingOnCore c)
+  shootdownChangedTargetsFrom pre.tlbShootdown post
 
 /-- **WS-SM SM7.B**: membership — exactly the cores with a changed
 pending queue. -/
@@ -1879,7 +1889,7 @@ theorem mem_shootdownChangedTargets_iff (pre post : SystemState)
     c ∈ shootdownChangedTargets pre post ↔
       post.tlbShootdown.pendingOnCore c ≠
         pre.tlbShootdown.pendingOnCore c := by
-  simp [shootdownChangedTargets, List.mem_filter, allCores]
+  simp [shootdownChangedTargets, shootdownChangedTargetsFrom, List.mem_filter, allCores]
 
 /-- **WS-SM SM7.B**: a commit that leaves the shootdown state alone
 pokes nobody — the non-shootdown-syscall inertness of the runtime
@@ -1887,7 +1897,7 @@ seam (trace safety: no existing syscall's SGI behaviour changes). -/
 theorem shootdownChangedTargets_nil_of_eq {pre post : SystemState}
     (h : post.tlbShootdown = pre.tlbShootdown) :
     shootdownChangedTargets pre post = [] := by
-  unfold shootdownChangedTargets
+  unfold shootdownChangedTargets shootdownChangedTargetsFrom
   rw [List.filter_eq_nil_iff]
   intro c _
   rw [h]
@@ -1905,7 +1915,7 @@ recovers this pair from the same `(pre, post)` diff it already uses for
 `shootdownChangedTargets` / `shootdownPostedOps`, so the dispatch
 signature is unchanged. -/
 def shootdownRoundWindow (pre post : SystemState) : Nat × Nat :=
-  (pre.tlbShootdown.roundGeneration, post.tlbShootdown.roundGeneration)
+  shootdownRoundWindowFrom pre.tlbShootdown post
 
 /-- **WS-SM SM7.F.3**: the window's lower bound is the pre-state's
 generation counter. -/
@@ -1928,6 +1938,14 @@ theorem shootdownRoundWindow_empty_of_eq {pre post : SystemState}
   rw [shootdownRoundWindow_fst, shootdownRoundWindow_snd, h]
   exact inRoundWindow_empty _ g
 
+/-- The posted operands against the pre-state's shootdown record alone. -/
+def shootdownPostedOpsFrom (tlb0 : TlbShootdownState) (post : SystemState) :
+    List TlbInvalidation :=
+  ((shootdownChangedTargetsFrom tlb0 post).flatMap (fun c =>
+    ((post.tlbShootdown.pendingOnCore c).filter (fun d =>
+        inRoundWindow (shootdownRoundWindowFrom tlb0 post).1
+          (shootdownRoundWindowFrom tlb0 post).2 d.generation)).map (·.op))).eraseDups
+
 /-- **WS-SM SM7.B**: the newly-posted invalidation operands of a
 commit, deduplicated — the runtime seam executes one initiator-local
 broadcast TLBI per distinct operand (plan §3.2 step 3), and publishes
@@ -1942,10 +1960,7 @@ imprecise) over-approximation that no longer matches what the model's
 catch-up retires.  Under round serialisation the filter is the
 identity, so nothing about a single-round commit changes. -/
 def shootdownPostedOps (pre post : SystemState) : List TlbInvalidation :=
-  ((shootdownChangedTargets pre post).flatMap (fun c =>
-    ((post.tlbShootdown.pendingOnCore c).filter (fun d =>
-        inRoundWindow (shootdownRoundWindow pre post).1
-          (shootdownRoundWindow pre post).2 d.generation)).map (·.op))).eraseDups
+  shootdownPostedOpsFrom pre.tlbShootdown post
 
 /-! ### `List.eraseDups` membership (the seam's dedup loses nothing)
 

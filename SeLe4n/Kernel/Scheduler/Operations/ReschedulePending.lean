@@ -150,12 +150,20 @@ theorem markKeyChangeFrom_extract_frame {F : Type} (extract : SystemState → F)
 /-- The `.reschedule` SGIs a step owes, from the flag vector captured before
 dispatch and the committed state's: one per core other than the executing core
 whose flag went `false → true`.  A core already pending at the step's start is
-not re-poked (its SGI is outstanding), which is the "modulo cores already
-pending" clause of the row's set-equality target. -/
+not re-poked (its SGI is outstanding).  The list covers the whole-index diff
+(every core the diff names is named here or was already pending) and may name
+more: the flags over-approximate, costing at most a spurious reschedule IPI. -/
 def rescheduleSgisFromFlags (pre post : Vector Bool numCores) (e : CoreId) :
     List (CoreId × SgiKind) :=
   (allCores.filter fun c => c != e && !pre.get c && post.get c).map
     fun c => (c, SgiKind.reschedule)
+
+/-- The flag vector a seam captures before its transition.  A call rather than
+a field read on purpose: the compiler sinks a projection to its use, which would
+hold the pre-state's scheduler alive across the transition and force the
+transition to copy it instead of updating it in place; a call is not sunk. -/
+@[noinline] def reschedulePendingSnapshot (st : SystemState) : Vector Bool numCores :=
+  st.scheduler.reschedulePending
 
 /-- Membership in the flag-derived list, spelled out. -/
 theorem mem_rescheduleSgisFromFlags_iff (pre post : Vector Bool numCores) (e c : CoreId)

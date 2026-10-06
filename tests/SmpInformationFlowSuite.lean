@@ -1759,7 +1759,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- rather than an argument, because each of CC-8's four carriers is absent.
 #check @Concurrency.lockSet_refusalSeam_writer_declares_stateLevel_write
 #check @refusalLedger_occupancy_is_not_a_covert_channel
-#check @computeCrossCoreSgis_recordSyscallRefusal_eq
+#check @rescheduleSgisFromFlags_recordSyscallRefusal_eq
 
 
 -- ==========================================================================

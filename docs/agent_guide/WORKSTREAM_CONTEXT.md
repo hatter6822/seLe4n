@@ -88,7 +88,7 @@ the coverage relation, its bridge to the diff and the primitive lemmas, at
 `v0.36.52`; the flag hook on lending and returning a scheduling context
 (PR B2a) at `v0.36.53`; coverage through every dispatcher arm and every
 committing seam, with the bound-unbind and resume hooks (PR B2b), at
-`v0.36.54`; the seam switch (PR C) remains).  Thirteen review rounds on the planning PR reshaped the design
+`v0.36.54`; and the seam switch (PR C), which closes the row, at `v0.36.55`).  Thirteen review rounds on the planning PR reshaped the design
 before any code exists — a transitive tie-break, a key-worsening reschedule
 seam, reconfiguration that never mints budget, every reservation move
 re-admitted per core, label uniformity over bindings, inheritance for bound
@@ -7185,12 +7185,12 @@ code may assume:
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
   phase SM0..SM10, each naming the theorem inventories that phase owns.  Those
-  inventories hold **1149 entries**, of which **927 are theorems**: the
-  inventories register a phase's whole surface, so 222 entries are `def`s —
+  inventories hold **1145 entries**, of which **925 are theorems**: the
+  inventories register a phase's whole surface, so 220 entries are `def`s —
   lock-set footprints, PIP chain-start markers, per-core invariant predicates,
   WCRT cost functions — and
   every inventory's construction macro proves only that the name *resolves*,
-  never that its type is a `Prop`.  **Quote 927, and quote it as theorems; 1149
+  never that its type is a `Prop`.  **Quote 925, and quote it as theorems; 1145
   is the entry count.**  A `List.length` cannot tell the two apart, so the
   propositionality census at the end of that module resolves each identifier
   against the environment and fails elaboration on drift.  **Eight of the eleven

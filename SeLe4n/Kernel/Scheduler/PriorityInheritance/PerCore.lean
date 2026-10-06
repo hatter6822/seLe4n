@@ -1255,13 +1255,11 @@ theorem restoreToReadyWithWake_sets_threadState (st : SystemState) (tid : Thread
 -- The per-core PIP transitions (§3/§4/§5) return the set of cross-core
 -- `.reschedule` SGIs a boost warrants; SM5.I's runtime fires them.  This section is
 -- the **dispatch** that pulls that firing forward: `computeCrossCoreSgis` derives the
--- SGIs from a transition's *state diff* (for the generic syscall path, which returns
--- only a post-state), and the BaseIO combinators (`crossCoreWakeDispatch`,
--- `pipChainWakeDispatch`, …) commit nothing new but *fire* the SGIs over the FFI
--- (`Concurrency.fireCrossCoreSgis`).  Each combinator is proven **inert on single-core**
--- (`pure ()` when every thread is on the boot core) — so wiring it into the live
--- IPC donation / timeout / resume paths is trace-preserving on single-core hardware
--- and activates automatically once per-core affinities are set.
+-- SGIs from a transition's *state diff*.  Since KSC-1 PR C the commit seams fire the
+-- reschedule flags instead (`rescheduleSgisFromFlags`), and the diff is the
+-- specification the flags are proven to cover (`stepCovers`); the `BaseIO` combinator
+-- below commits nothing new but *fires* a surfaced SGI over the FFI
+-- (`Concurrency.fireCrossCoreSgis`).
 
 /-- WS-SM SM5.F.4 / SM6.B: the per-object body of the diff-based dispatch — emits a
 `.reschedule` SGI to a thread's *remote* home core iff its presence/bucket in that
@@ -1449,10 +1447,17 @@ itself would fire on a core that was already idle before the syscall, which is
 not a vacated core and needs no reschedule; and firing unconditionally would add
 preemption points that do not exist today, since
 `handleRescheduleSgiOnCore` switches whenever a candidate outranks the current
-thread. -/
+thread.
+
+`caller?` is the executing core's pre-entry thread, which the commit seams
+capture before the transition consumes the pre-state (KSC-1). -/
+def localSuccessorNeededFrom (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+    (execCore : CoreId) : Bool :=
+  (caller? != none) && (post.scheduler.currentOnCore execCore == none)
+
+/-- `localSuccessorNeededFrom` with the caller read off the pre-state. -/
 def localSuccessorNeeded (pre post : SystemState) (execCore : CoreId) : Bool :=
-  (pre.scheduler.currentOnCore execCore != none) &&
-    (post.scheduler.currentOnCore execCore == none)
+  localSuccessorNeededFrom (pre.scheduler.currentOnCore execCore) post execCore
 
 /-- WS-SM SM8.B (PR #861 review round 17): **run the executing core's scheduler
 when the transition vacated it.**
@@ -1477,12 +1482,17 @@ It is reachable only through `switchToThreadOnCore`'s own rejections — the
 *selection* side is total, since `chooseBestRunnableEffective_always_ok` (this
 PR, review round 15) made the scan skip a non-TCB entry rather than fail.  That
 is what lets this be stated without a scheduler-invariant hypothesis. -/
-def scheduleLocalSuccessor (pre post : SystemState) (execCore : CoreId) : SystemState :=
-  if localSuccessorNeeded pre post execCore then
+def scheduleLocalSuccessorFrom (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+    (execCore : CoreId) : SystemState :=
+  if localSuccessorNeededFrom caller? post execCore then
     match handleRescheduleSgiOnCore post execCore with
     | .ok st => st
     | .error _ => post
   else post
+
+/-- `scheduleLocalSuccessorFrom` with the caller read off the pre-state. -/
+def scheduleLocalSuccessor (pre post : SystemState) (execCore : CoreId) : SystemState :=
+  scheduleLocalSuccessorFrom (pre.scheduler.currentOnCore execCore) post execCore
 
 /-- WS-SM SM8.B: the rule is **inert unless the executing core was vacated** —
 so a transition that left the slot alone, or that rescheduled the core itself,
@@ -1490,7 +1500,8 @@ passes through unchanged. -/
 @[simp] theorem scheduleLocalSuccessor_of_not_needed (pre post : SystemState) (execCore : CoreId)
     (h : localSuccessorNeeded pre post execCore = false) :
     scheduleLocalSuccessor pre post execCore = post := by
-  unfold scheduleLocalSuccessor
+  unfold localSuccessorNeeded at h
+  unfold scheduleLocalSuccessor scheduleLocalSuccessorFrom
   simp [h]
 
 /-- WS-SM SM8.B: in particular, inert when the core was **already idle** before
@@ -1499,7 +1510,7 @@ theorem scheduleLocalSuccessor_of_pre_idle (pre post : SystemState) (execCore : 
     (h : pre.scheduler.currentOnCore execCore = none) :
     scheduleLocalSuccessor pre post execCore = post := by
   apply scheduleLocalSuccessor_of_not_needed
-  unfold localSuccessorNeeded
+  unfold localSuccessorNeeded localSuccessorNeededFrom
   simp [h]
 
 /-- WS-SM SM8.B: and inert when the transition **left a thread running** on the
@@ -1514,7 +1525,7 @@ theorem scheduleLocalSuccessor_of_post_running (pre post : SystemState) (execCor
     (tid : SeLe4n.ThreadId) (h : post.scheduler.currentOnCore execCore = some tid) :
     scheduleLocalSuccessor pre post execCore = post := by
   apply scheduleLocalSuccessor_of_not_needed
-  unfold localSuccessorNeeded
+  unfold localSuccessorNeeded localSuccessorNeededFrom
   simp [h]
 
 /-- **`v0.36.40`: dispatch a core another core vacated.**  A core entered
@@ -1669,14 +1680,14 @@ theorem settleResidencyOnCore_machine_regs (st : SystemState) (c : CoreId) :
 theorem localSuccessorNeeded_post_none (pre post : SystemState) (execCore : CoreId)
     (h : localSuccessorNeeded pre post execCore = true) :
     post.scheduler.currentOnCore execCore = none := by
-  unfold localSuccessorNeeded at h
+  unfold localSuccessorNeeded localSuccessorNeededFrom at h
   simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at h
   exact h.2
 
 theorem localSuccessorNeeded_pre_some (pre post : SystemState) (execCore : CoreId)
     (h : localSuccessorNeeded pre post execCore = true) :
     pre.scheduler.currentOnCore execCore ≠ none := by
-  unfold localSuccessorNeeded at h
+  unfold localSuccessorNeeded localSuccessorNeededFrom at h
   simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at h
   exact h.1
 
@@ -1715,7 +1726,8 @@ theorem scheduleLocalSuccessor_dispatches (pre post : SystemState) (execCore : C
     rw [handleRescheduleSgiOnCore_eq_switch_of_choose_some post execCore tid hChosen hOutrank,
       hSwitch]
     rfl
-  unfold scheduleLocalSuccessor
+  unfold localSuccessorNeeded at hNeeded
+  unfold scheduleLocalSuccessor scheduleLocalSuccessorFrom
   rw [if_pos hNeeded, hHandle]
   exact handleRescheduleSgiOnCore_switches_current post execCore tid _ hChosen hOutrank hHandle
 
@@ -1728,7 +1740,8 @@ theorem scheduleLocalSuccessor_idle_of_no_candidate (pre post : SystemState) (ex
     (hChosen : chooseThreadEffectiveOnCore post execCore = .ok none) :
     scheduleLocalSuccessor pre post execCore
       = post.clearReschedulePendingOnCore execCore := by
-  unfold scheduleLocalSuccessor handleRescheduleSgiOnCore
+  unfold localSuccessorNeeded at hNeeded
+  unfold scheduleLocalSuccessor scheduleLocalSuccessorFrom handleRescheduleSgiOnCore
   rw [if_pos hNeeded, hChosen]
 
 /-- WS-SM SM5.F.4: the dispatch body emits only `.reschedule` SGIs. -/
@@ -1912,44 +1925,6 @@ theorem computeCrossCoreSgis_nil_single_core (pre post : SystemState)
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, not_and, Decidable.not_not]
     intro hne
     rw [hNoRemoteCur c (by simpa using hne), hNoRemoteCurPost c (by simpa using hne)]
-
-/-- WS-SM SM5.F.4 (SM6 dispatch, generic syscall path): fire the cross-core
-`.reschedule` SGIs a transition `pre → post` warrants.  Wire this into the BaseIO
-syscall-return path (after the pure transition commits, before returning to user mode)
-so a cross-core PIP boost from a syscall fires its SGI; on the current single-core path
-it is `pure ()` (`crossCoreWakeDispatch_singleCore`). -/
-def crossCoreWakeDispatch (pre post : SystemState) (execCore : CoreId) : BaseIO Unit :=
-  SeLe4n.Kernel.Concurrency.fireCrossCoreSgis (computeCrossCoreSgis pre post execCore)
-
-/-- WS-SM SM5.F.4: the diff-based syscall dispatch is inert (`pure ()`) on single-core. -/
-theorem crossCoreWakeDispatch_singleCore (pre post : SystemState)
-    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId)
-    (hNoRemoteCur : ∀ c : CoreId, c ≠ bootCoreId →
-      pre.scheduler.currentOnCore c = none)
-    (hNoRemoteCurPost : ∀ c : CoreId, c ≠ bootCoreId →
-      post.scheduler.currentOnCore c = none) :
-    crossCoreWakeDispatch pre post bootCoreId = pure () := by
-  unfold crossCoreWakeDispatch
-  rw [computeCrossCoreSgis_nil_single_core pre post hAllBoot hNoRemoteCur hNoRemoteCurPost]
-  rfl
-
-/-- WS-SM SM5.F.4 (SM6 dispatch, chain path): run the pure cross-core PIP boost chain
-(the caller has committed its boost state under the lock) and fire the chain's
-cross-core `.reschedule` SGIs.  The dispatch SM5.I invokes from the live IPC donation
-path so a cross-core donation boost fires every remote link's SGI. -/
-def pipChainWakeDispatch (st : SystemState) (tid : ThreadId) (execCore : CoreId)
-    (fuel : Nat := st.objectIndex.length) : BaseIO Unit :=
-  SeLe4n.Kernel.Concurrency.fireCrossCoreSgis (propagatePipChainCrossCore st tid execCore fuel).2
-
-/-- WS-SM SM5.F.4: the chain-wake dispatch is inert (`pure ()`) on single-core
-(`propagatePipChainCrossCore_singleCore_no_sgis`). -/
-theorem pipChainWakeDispatch_singleCore (st : SystemState) (tid : ThreadId) (fuel : Nat)
-    (hInv : st.objects.invExt)
-    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore st t = bootCoreId) :
-    pipChainWakeDispatch st tid bootCoreId fuel = pure () := by
-  unfold pipChainWakeDispatch
-  rw [propagatePipChainCrossCore_singleCore_no_sgis st tid fuel hInv hAllBoot]
-  rfl
 
 /-- WS-SM SM5.F.4 (SM6 dispatch, single-boost / resume paths): fire the optional SGI a
 `pipBoostWithWake` / `restoreToReadyWithWake` / `resumeThreadOnCore` returned — the
