@@ -266,4 +266,139 @@ theorem computeCrossCoreSgis_mem_flags_of_covers {e : CoreId} {pre post : System
     exact ⟨rfl, hne, hPre, hFlag⟩
   · exact Or.inr rfl
 
+/-! ### Key frames -/
+
+/-- A TCB rewrite that keeps the four fields the effective key reads. -/
+def schedKeyFieldsEq (a b : TCB) : Prop :=
+  b.priority = a.priority ∧ b.deadline = a.deadline ∧
+    b.schedContextBinding = a.schedContextBinding ∧ b.pipBoost = a.pipBoost
+
+theorem schedKeyFieldsEq_ipcState (a : TCB) (s : ThreadIpcState) :
+    schedKeyFieldsEq a { a with ipcState := s } := ⟨rfl, rfl, rfl, rfl⟩
+
+/-- The effective key reads only the key fields and the scheduling contexts. -/
+theorem resolveEffectivePrioDeadline_congr {st st' : SystemState} {a b : TCB}
+    (hSc : ∀ sc, st'.getSchedContext? sc = st.getSchedContext? sc)
+    (hK : schedKeyFieldsEq a b) :
+    resolveEffectivePrioDeadline st' b = resolveEffectivePrioDeadline st a := by
+  obtain ⟨hP, hD, hB, hPip⟩ := hK
+  unfold resolveEffectivePrioDeadline
+  rw [hP, hD, hB, hPip]
+  cases a.schedContextBinding <;> simp only [hSc]
+
+/-- The scheduler record is not read by the key. -/
+@[simp] theorem schedKeyView_scheduler (st : SystemState) (s : SchedulerState)
+    (t : SeLe4n.ThreadId) :
+    schedKeyView { st with scheduler := s } t = schedKeyView st t := rfl
+
+/-- A key-preserving TCB rewrite moves no thread's key. -/
+theorem schedKeyView_rewriteObject_tcb {st : SystemState} {tid : SeLe4n.ThreadId}
+    {tcb t' : TCB} (hOld : st.getTcb? tid = some tcb)
+    (h : st.rewriteAdmissible tid.toObjId (.tcb t')) (hInv : st.objects.invExt)
+    (hK : schedKeyFieldsEq tcb t') (t : SeLe4n.ThreadId) :
+    schedKeyView (st.rewriteObject tid.toObjId (.tcb t') h) t = schedKeyView st t := by
+  have hSc := SystemState.rewriteObject_tcb_getSchedContext? st tid.toObjId t' h hInv
+  by_cases hEq : t = tid
+  · subst hEq
+    unfold schedKeyView
+    rw [SystemState.rewriteObject_tcb_getTcb?_self st t t' h hInv, hOld]
+    simp only [Option.map_some, resolveEffectivePrioDeadline_congr hSc hK]
+  · have hNe : tid.toObjId ≠ t.toObjId :=
+      fun h' => hEq (SeLe4n.ThreadId.toObjId_injective _ _ h').symm
+    unfold schedKeyView
+    rw [SystemState.rewriteObject_getTcb?_ne st _ _ h hInv t hNe]
+    cases st.getTcb? t with
+    | none => rfl
+    | some x => simp only [Option.map_some, resolveEffectivePrioDeadline_congr hSc
+                  (⟨rfl, rfl, rfl, rfl⟩ : schedKeyFieldsEq x x)]
+
+/-! ### Coverage from frames -/
+
+/-- A core whose slots are untouched and whose threads' keys did not move is
+unstaled. -/
+theorem coreDecisionUnstaled_of_frame {pre post : SystemState} {c : CoreId}
+    (hKeys : ∀ t, schedKeyView post t = schedKeyView pre t)
+    (hRq : ∀ t, t ∈ post.scheduler.runQueueOnCore c → t ∈ pre.scheduler.runQueueOnCore c)
+    (hCur : post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c) :
+    coreDecisionUnstaled pre post c :=
+  ⟨fun t ht => ⟨hRq t ht, (hKeys t).symm⟩, hCur,
+   fun t _ => schedKeyNotWeakened_of_eq (hKeys t).symm⟩
+
+/-- A key-framing step covers every core it flags or leaves slot-unchanged
+(a run queue may only shrink). -/
+theorem reschedulePendingCovers_of_frame {e : CoreId} {pre post : SystemState}
+    (hKeys : ∀ t, schedKeyView post t = schedKeyView pre t)
+    (hSlots : ∀ c, c ≠ e → post.scheduler.reschedulePendingOnCore c = true ∨
+      ((∀ t, t ∈ post.scheduler.runQueueOnCore c → t ∈ pre.scheduler.runQueueOnCore c) ∧
+        post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)) :
+    reschedulePendingCovers e pre post := fun c hc =>
+  (hSlots c hc).imp id fun ⟨hRq, hCur⟩ => coreDecisionUnstaled_of_frame hKeys hRq hCur
+
+/-! ### The run-queue primitives -/
+
+/-- The wake covers: it flags the core it inserts on and moves no key (the
+woken TCB's rewrite only marks it `.ready`). -/
+theorem enqueueRunnableOnCore_covers (e c : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    reschedulePendingCovers e st (enqueueRunnableOnCore st c tid) := by
+  unfold enqueueRunnableOnCore
+  cases hT : st.getTcbWitnessed? tid with
+  | none => exact reschedulePendingCovers_refl e st
+  | some p =>
+    obtain ⟨tcb, hw⟩ := p
+    simp only
+    split
+    · exact reschedulePendingCovers_refl e st
+    · apply reschedulePendingCovers_of_frame
+      · intro t
+        exact (schedKeyView_scheduler _ _ t).trans
+          (schedKeyView_rewriteObject_tcb hw _ hInv (schedKeyFieldsEq_ipcState tcb _) t)
+      · intro c' _
+        by_cases hc : c = c'
+        · subst hc; left; simp
+        · right; simp [hc]
+
+theorem enqueueRunnableOnCore_monotone (e c : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    reschedulePendingMonotone e st (enqueueRunnableOnCore st c tid) := by
+  intro c' _ hF
+  unfold enqueueRunnableOnCore
+  cases st.getTcbWitnessed? tid with
+  | none => exact hF
+  | some p =>
+    obtain ⟨tcb, hw⟩ := p
+    simp only
+    split
+    · exact hF
+    · by_cases hc : c = c'
+      · subst hc; simp
+      · simp [hc, hF]
+
+/-- The removal covers: a queue removal stales nothing, and clearing the
+current slot raises the flag. -/
+theorem removeRunnableOnCore_covers (e : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) :
+    reschedulePendingCovers e st (removeRunnableOnCore st tid c) := by
+  apply reschedulePendingCovers_of_frame (fun t => schedKeyView_scheduler _ _ t)
+  intro c' _
+  by_cases hc : c = c'
+  · subst hc
+    by_cases hcur : st.scheduler.currentOnCore c = some tid
+    · left; simp [hcur]
+    · right
+      refine ⟨fun t ht => ?_, by simp [hcur]⟩
+      simp only [SchedulerState.markReschedulePendingOnCoreIf_runQueueOnCore,
+        SchedulerState.setCurrentOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
+      exact ((RunQueue.mem_remove _ _ _).mp ht).1
+  · right; simp [hc]
+
+theorem removeRunnableOnCore_monotone (e : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) :
+    reschedulePendingMonotone e st (removeRunnableOnCore st tid c) := by
+  intro c' _ hF
+  by_cases hc : c = c'
+  · subst hc; simp [removeRunnableOnCore, hF]
+  · simp [removeRunnableOnCore, hc, hF]
+
 end SeLe4n.Kernel
