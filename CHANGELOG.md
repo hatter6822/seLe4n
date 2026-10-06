@@ -1,3 +1,44 @@
+## v0.36.54 — KSC-1 reschedule-SGI accumulator, PR B2b: the flags cover the diff through every dispatcher arm and committing seam
+
+The rest of PR B2: every transition a syscall, fault or suspend commits is
+proved to cover the live diff on the executing core, so PR C can switch the
+seams from the diff to the flags.  Two binding writers still leaned on a later
+enqueue or deschedule to flag their cores; they now end in the key hook.
+
+- **Two more hooks.**  The bound unbind (`cancelBoundDonationOnCore`,
+  `cancelBoundDonation`) and resume's boost write end in `markKeyChangeFrom`,
+  so every binding or boost write on the syscall path flags the cores it
+  stales.  Frames that read the scheduler through them are restated "equal
+  but for the flags".
+- **The relation and the commit tail**: `keyInputsEq` (no slot moved any
+  thread's key inputs) and `stepCovers e pre post` (coverage plus flag
+  monotonicity, composing by `stepCovers_trans`) in
+  `Scheduler/Invariant/ReschedulePendingCoverage.lean`; coverage for the
+  executing core's scheduling points and the caller-return staging in
+  `Scheduler/Invariant/ReschedulePendingSchedulingPoints.lean`.
+- **Per-arm coverage** (`SeLe4n/Kernel/ReschedulePendingArms/`): the
+  capability, CSpace, VSpace, untyped, service and TCB-field arms move no key
+  (`Capability`); priority, affinity and scheduling-context arms pair their
+  key write with the hook (`Scheduling`); the IPC teardown, donation return
+  and cancellations (`Cancellation`); resume, PIP propagation, suspend and
+  the lifecycle arms (`Lifecycle`); send, receive, call, reply, replyRecv and the
+  notification arms (`Ipc`).
+- **The dispatcher and the seams** (`Dispatch`, `Entry`):
+  `dispatchWithCapChecked_stepCovers`, `dispatchSyscallChecked_stepCovers`,
+  `syscallEntryChecked_stepCovers`, `syscallDispatchFromAbi_stepCovers`, and
+  one theorem per committing seam for the pair it diffs:
+  `syscallDispatchCrossCoreStep_stepCovers`, `faultEntryDeliver_stepCovers`,
+  `suspendThenScheduleLocal_stepCovers`.  Each also returns the post-state
+  store invariant where the next step consumes it.
+- **Retype** covers under the detachment pack (`retypeTargetDetached`) the
+  dispatch's invariant payoff already consumes: the cleanup is then the
+  identity on objects and scheduler, and the one store lands at a slot no
+  placed thread lives at or reads its deadline from.
+- **Tier 2**: `reschedule_pending_suite` §2.8 unbinds a thread queued on core 1
+  from core 0 and checks that core 1, and only core 1, is flagged.
+- The flag stays inert; every fixture is byte-identical.
+- **Remaining** (the row): PR C, the seams read the flags.
+
 ## v0.36.53 — KSC-1 reschedule-SGI accumulator, PR B2a: lending and returning a scheduling context raise the reschedule flags
 
 The B2 arm inventory found one writer class the KSC-1 row names that raised

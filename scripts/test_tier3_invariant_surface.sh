@@ -11794,7 +11794,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem removeRunnableFromAllCores_reple
 # not a scheduling context under `retypeTargetDetached`, so the arm is
 # unreachable there and the frame discharges by `absurd` rather than by `rfl`
 # over the release's scheduler write.
-run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem lifecyclePreRetypeCleanup_detached_frame[^\n]*(\n([ \t][^\n]*)?)*exact absurd hObj \(hDet\.notSc sc\)" SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_detached_frame[^\n]*(\n([ \t][^\n]*)?)*exact absurd hObj \(hDet\.notSc sc\)" SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean'
 # The witness computes the retired cleanup beside the live retype on a BOUND
 # context, with the unbound control on which the two agree.
 run_check "INVARIANT" rg -n '\(b\) NEGATIVE \(the defect\): \.\.\.so the binding invariant is FALSIFIED' tests/SmpIpcSuite.lean

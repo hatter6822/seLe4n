@@ -86,8 +86,9 @@ per-core `reschedulePending` flag, its writers and clears, and the Tier 2
 differential pin against the live diff — landed inert at `v0.36.51`; PR B1,
 the coverage relation, its bridge to the diff and the primitive lemmas, at
 `v0.36.52`; the flag hook on lending and returning a scheduling context
-(PR B2a) at `v0.36.53`; the per-arm coverage proof (the rest of PR B2) and
-the seam switch (PR C) remain).  Thirteen review rounds on the planning PR reshaped the design
+(PR B2a) at `v0.36.53`; coverage through every dispatcher arm and every
+committing seam, with the bound-unbind and resume hooks (PR B2b), at
+`v0.36.54`; the seam switch (PR C) remains).  Thirteen review rounds on the planning PR reshaped the design
 before any code exists — a transitive tie-break, a key-worsening reschedule
 seam, reconfiguration that never mints budget, every reservation move
 re-admitted per core, label uniformity over bindings, inheritance for bound
