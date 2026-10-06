@@ -66,8 +66,11 @@ conversion, no allocation), and the HAL hands its in-flight context over as a
 
 ### 1.1 Acceptance (measured, not stated)
 
-- Heap allocations on the host trace harness per syscall entry+exit, counted
-  by the heap's own allocation counter (CV0.1): **at most two** on a syscall
+- Heap allocations per syscall entry+exit on the kernel runtime itself — the
+  Tier 4 QEMU `virt` lane, where the HAL's `lean_heap` is the allocator the
+  compiled Lean runs on — counted by that heap's own allocation counter
+  (CV0.1; the host boundary crate links the toolchain's `libleanshared`, so
+  it cannot see the kernel heap, §3.6): **at most two** on a syscall
   whose caller continues (the TCB update's own object and the snapshot), and
   **zero boxed `UInt64` or closure allocations** on the entry/exit path (the
   generated C of `Platform/FFI.c`, `SyscallDispatchEntry.c`,
@@ -143,8 +146,13 @@ the type of a register *value* where arrays of them live (`IpcMessage.registers`
 retypes those arrays to `UInt64`; `RegValue.valid` stays with them until then.  `writeReg` takes a `UInt64`-valued argument where every live
 writer already has one (`stageReturnFrame`, `spill`, `writeFfiRegistersToTcb`
 are fed `UInt64`s and wrap them today); the one writer handed an arbitrary
-`RegValue`, `Adapter.writeRegisterState`, narrows with `.toUInt64` under its
-existing `valid` hypothesis.
+`RegValue`, `Adapter.writeRegisterState` (and `adapterWriteRegister` above
+it), is **retyped to take a `UInt64`**: neither carries a validity hypothesis
+today (`adapterWriteRegister` checks only `registerContextStable`), so a
+`.toUInt64` narrowing would truncate a value `≥ 2^64` silently; with the
+argument a `UInt64` no such value can be passed, nothing narrows, and the
+theorems over the pair (`ProofHooks`, `CrossSubsystemPerCorePreservation`,
+the reachability census) are restated over the word.
 
 **D2 — both stores stay.**  The TCB's `registerContext` and the per-core bank
 `machine.coreRegs` both become the new `RegisterFile`; `contextMatchesCurrent`
@@ -306,11 +314,21 @@ where `RegValue` stays (D1).
   `Heap::alloc` only on its large-object arm (`Heap::alloc` forwards every
   request that fits a small class to `alloc_small`, which already counts it,
   so counting in both would double every forwarded allocation and the
-  "at most two" acceptance of §1.1 would misread); `ffi_heap_allocations : BaseIO UInt64` exposes
-  it to the host harness only (`SeLe4n/Testing/`, outside the kernel archive,
-  as `BoundaryProbes` is).  A host test runs one syscall round trip and prints
-  the delta; the baseline is recorded at CV0.1 and the result at CV5.1 in the
-  CHANGELOG.  No gate pins the number: it is evidence, read by review.
+  "at most two" acceptance of §1.1 would misread); the counter is read **on the kernel runtime, in the
+  Tier 4 QEMU `virt` lane**, in the `per_core_stats` exerciser pattern
+  (`rust/sele4n-hal/src/smp_exercisers.rs`, `scripts/qemu_exerciser_lib.sh`):
+  a `heap_allocations_per_syscall` exerciser reads the counter on the boot
+  core, drives one syscall round trip through the Lean kernel, reads it again
+  and prints the delta on its UART line, which the lane's library extracts.
+  The host boundary crate cannot carry this measurement: it links the compiled
+  Lean archive against the toolchain's `libleanshared` and deliberately not
+  against `sele4n-hal`, whose `lean_runtime` would be a second definition of
+  every `lean_*` symbol (`rust/sele4n-lean-boundary/Cargo.toml`), so on the
+  host the allocations go through the upstream runtime where no counter
+  exists.  The baseline is recorded at CV0.1 and the result at CV5.1 in the
+  CHANGELOG.  No gate pins the number: it is evidence, read by review (the
+  exerciser's verdict is only that the two reads happened and the delta is a
+  word).
 
 ## 4. Schedule — phases and sub-tasks, in execution order
 
@@ -321,7 +339,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV0.1 | The heap allocation counter (§3.6) and the host round-trip measurement; record the baseline per syscall at the plan's opening version in `CHANGELOG.md` | `lean_heap.rs`, `SeLe4n/Testing/HeapMeasure.lean`, one Tier 2 host test |
+| CV0.1 | The heap allocation counter (§3.6) and the QEMU-lane round-trip measurement (`heap_allocations_per_syscall` exerciser, Tier 4 `virt`, Lean-linked image); record the baseline per syscall at the plan's opening version in `CHANGELOG.md` | `lean_heap.rs`, `rust/sele4n-hal/src/smp_exercisers.rs`, `scripts/qemu_exerciser_lib.sh`, one Tier 4 script |
 | CV0.2 | The two-trap hazard test written against today's code, **expected to pass today** (every trap allocates), **through the real TCB save path**: the boundary crate publishes trap 1's words, calls the exported entry wrapper so `saveCapturedSyscallFrame` stores the first context into a TCB of a probe state, publishes trap 2's words (all distinct) through the same per-core path, then reads that TCB's saved context back through a `BoundaryProbes` export and compares it word for word to trap 1's (§1.1) — a standalone snapshot comparison would still pass if an entry wrapper retained the reusable object, skipped the snapshot at the save site or stored the wrong context, so it is not the acceptance; this test is the regression test CV3 must keep green | `rust/sele4n-lean-boundary/tests/`, `SeLe4n/Testing/BoundaryProbes.lean` |
 | CV0.3 | Sweep the 78 Tier 3 anchor lines of §1.2 into a list in this plan's §7, each with the sub-task that retargets or deletes it | §7 below |
 
