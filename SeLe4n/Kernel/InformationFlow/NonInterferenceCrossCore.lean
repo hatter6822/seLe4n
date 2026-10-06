@@ -987,7 +987,7 @@ theorem updatePipBoostOnCore_confinedToCores (st : SystemState) (c : CoreId)
     | rfl
     | (simp only [markKeyChangeFor_activeDomainOnCore,
         markKeyChangeFor_domainTimeRemainingOnCore,
-        markKeyChangeFor_domainScheduleIndexOnCore, markKeyChangeFor_machine,
+        markKeyChangeFor_domainScheduleIndexOnCore,
         SchedulerState.setRunQueueOnCore_activeDomainOnCore,
         SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
         SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]

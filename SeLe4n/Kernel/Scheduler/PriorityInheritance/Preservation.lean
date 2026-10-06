@@ -37,10 +37,10 @@ private theorem updatePipBoost_frame {F : Type}
     · rfl
     · split
       · split
-        · exact (markKeyChangeFor_extract_frame extract _ _ _ (h_pending _)).trans
+        · exact (markKeyChangeFor_extract_frame extract _ _ _ h_pending).trans
             (h_insert_sched _ _)
-        · exact (markKeyChangeFor_extract_frame extract _ _ _ (h_pending _)).trans (h_insert _)
-      · exact (markKeyChangeFor_extract_frame extract _ _ _ (h_pending _)).trans (h_insert _)
+        · exact (markKeyChangeFor_extract_frame extract _ _ _ h_pending).trans (h_insert _)
+      · exact (markKeyChangeFor_extract_frame extract _ _ _ h_pending).trans (h_insert _)
   · rfl
 
 /-- D4-O (every-core form, PR #880 round 8): `updatePipBoost` preserves every

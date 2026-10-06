@@ -223,6 +223,14 @@ condition, so a writer never lowers a flag. -/
 def markReschedulePendingOnCoreIf (s : SchedulerState) (c : CoreId) (b : Bool) : SchedulerState :=
   s.setReschedulePendingOnCore c (s.reschedulePendingOnCore c || b)
 
+/-- Mark every core of `cs` on which `p` holds — the key-change hook's write,
+which flags each core whose queue or current slot holds the re-keyed thread
+without assuming the thread sits on one core only. -/
+def markReschedulePendingWhere (s : SchedulerState) (p : CoreId → Bool) :
+    List CoreId → SchedulerState
+  | [] => s
+  | c :: cs => (if p c then s.markReschedulePendingOnCore c else s).markReschedulePendingWhere p cs
+
 /-- WS-SM SM4.B.10: per-core extensionality (plan §3.3).  Two scheduler
 states are equal once their per-core fields agree at *every* `CoreId` and
 their system-wide fields agree.  Named `ext_perCore` to avoid clashing with
@@ -650,6 +658,62 @@ own reductions rather than asking `simp` to see through the definition. -/
 @[simp] theorem markReschedulePendingOnCoreIf_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (b : Bool) :
     (s.markReschedulePendingOnCoreIf c b).configDefaultTimeSlice = s.configDefaultTimeSlice := by
   simp [SchedulerState.markReschedulePendingOnCoreIf]
+
+/-- Any scheduler read the single mark leaves alone, the multi-core mark
+leaves alone. -/
+theorem markReschedulePendingWhere_frame {F : Type} (f : SchedulerState → F)
+    (h : ∀ s c, f (s.markReschedulePendingOnCore c) = f s) (s : SchedulerState)
+    (p : CoreId → Bool) (cs : List CoreId) :
+    f (s.markReschedulePendingWhere p cs) = f s := by
+  induction cs generalizing s with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [markReschedulePendingWhere]
+    rw [ih]
+    split
+    · exact h s c
+    · rfl
+@[simp] theorem markReschedulePendingWhere_currentOnCore (s : SchedulerState) (p : CoreId → Bool) (cs : List CoreId) (c' : CoreId) :
+    (s.markReschedulePendingWhere p cs).currentOnCore c' = s.currentOnCore c' :=
+  markReschedulePendingWhere_frame (·.currentOnCore c') (fun _ _ => by simp) s p cs
+@[simp] theorem markReschedulePendingWhere_runQueueOnCore (s : SchedulerState) (p : CoreId → Bool) (cs : List CoreId) (c' : CoreId) :
+    (s.markReschedulePendingWhere p cs).runQueueOnCore c' = s.runQueueOnCore c' :=
+  markReschedulePendingWhere_frame (·.runQueueOnCore c') (fun _ _ => by simp) s p cs
+@[simp] theorem markReschedulePendingWhere_replenishQueueOnCore (s : SchedulerState) (p : CoreId → Bool) (cs : List CoreId) (c' : CoreId) :
+    (s.markReschedulePendingWhere p cs).replenishQueueOnCore c' = s.replenishQueueOnCore c' :=
+  markReschedulePendingWhere_frame (·.replenishQueueOnCore c') (fun _ _ => by simp) s p cs
+@[simp] theorem markReschedulePendingWhere_activeDomainOnCore (s : SchedulerState) (p : CoreId → Bool) (cs : List CoreId) (c' : CoreId) :
+    (s.markReschedulePendingWhere p cs).activeDomainOnCore c' = s.activeDomainOnCore c' :=
+  markReschedulePendingWhere_frame (·.activeDomainOnCore c') (fun _ _ => by simp) s p cs
+@[simp] theorem markReschedulePendingWhere_domainTimeRemainingOnCore (s : SchedulerState) (p : CoreId → Bool) (cs : List CoreId) (c' : CoreId) :
+    (s.markReschedulePendingWhere p cs).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' :=
+  markReschedulePendingWhere_frame (·.domainTimeRemainingOnCore c') (fun _ _ => by simp) s p cs
+@[simp] theorem markReschedulePendingWhere_domainScheduleIndexOnCore (s : SchedulerState) (p : CoreId → Bool) (cs : List CoreId) (c' : CoreId) :
+    (s.markReschedulePendingWhere p cs).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' :=
+  markReschedulePendingWhere_frame (·.domainScheduleIndexOnCore c') (fun _ _ => by simp) s p cs
+@[simp] theorem markReschedulePendingWhere_lastTimeoutErrorsOnCore (s : SchedulerState) (p : CoreId → Bool) (cs : List CoreId) (c' : CoreId) :
+    (s.markReschedulePendingWhere p cs).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' :=
+  markReschedulePendingWhere_frame (·.lastTimeoutErrorsOnCore c') (fun _ _ => by simp) s p cs
+@[simp] theorem markReschedulePendingWhere_domainSchedule (s : SchedulerState) (p : CoreId → Bool) (cs : List CoreId) :
+    (s.markReschedulePendingWhere p cs).domainSchedule = s.domainSchedule :=
+  markReschedulePendingWhere_frame (·.domainSchedule) (fun _ _ => by simp) s p cs
+@[simp] theorem markReschedulePendingWhere_configDefaultTimeSlice (s : SchedulerState) (p : CoreId → Bool) (cs : List CoreId) :
+    (s.markReschedulePendingWhere p cs).configDefaultTimeSlice = s.configDefaultTimeSlice :=
+  markReschedulePendingWhere_frame (·.configDefaultTimeSlice) (fun _ _ => by simp) s p cs
+/-- A core's flag after the multi-core mark: the old flag, or `p` on a listed core. -/
+theorem markReschedulePendingWhere_reschedulePendingOnCore (s : SchedulerState)
+    (p : CoreId → Bool) (cs : List CoreId) (c' : CoreId) :
+    (s.markReschedulePendingWhere p cs).reschedulePendingOnCore c' =
+      (s.reschedulePendingOnCore c' || (p c' && decide (c' ∈ cs))) := by
+  induction cs generalizing s with
+  | nil => simp [markReschedulePendingWhere]
+  | cons c cs ih =>
+    simp only [markReschedulePendingWhere]
+    rw [ih]
+    by_cases hc : c = c'
+    · subst hc
+      cases p c <;> simp
+    · split <;> simp [hc, List.mem_cons, Ne.symm hc]
 
 /-- The mark and a run-queue write touch different fields, so they commute —
 the rewrite that pushes an accumulator mark outward through a scheduler stage. -/

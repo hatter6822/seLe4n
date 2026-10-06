@@ -401,4 +401,95 @@ theorem removeRunnableOnCore_monotone (e : CoreId) (st : SystemState)
   · subst hc; simp [removeRunnableOnCore, hF]
   · simp [removeRunnableOnCore, hc, hF]
 
+/-! ### The key-change hook -/
+
+/-- The hook writes flags only, so no key moves through it. -/
+@[simp] theorem schedKeyView_markKeyChangeFor (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline) (t : SeLe4n.ThreadId) :
+    schedKeyView (markKeyChangeFor st tid k) t = schedKeyView st t := rfl
+
+theorem markKeyChangeFor_reschedulePendingOnCore_of_moved {pre mid : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {c : CoreId}
+    (hPre : pre.getTcb? tid = some tcb)
+    (hMem : tid ∈ mid.scheduler.runQueueOnCore c)
+    (hMoved : schedKeyView mid tid ≠ schedKeyView pre tid) :
+    (markKeyChangeFor mid tid (resolveEffectivePrioDeadline pre tcb)).scheduler.reschedulePendingOnCore c
+      = true := by
+  have hMem' : (mid.scheduler.runQueueOnCore c).contains tid = true := hMem
+  simp only [markKeyChangeFor, SchedulerState.markReschedulePendingWhere_reschedulePendingOnCore,
+    Concurrency.mem_allCores, decide_true, Bool.and_true, hMem', Bool.and_true]
+  cases hT : mid.getTcb? tid with
+  | none => simp
+  | some x =>
+    have hNe : ¬ ((resolveEffectivePrioDeadline pre tcb).1 = (resolveEffectivePrioDeadline mid x).1 ∧
+        (resolveEffectivePrioDeadline pre tcb).2.val = (resolveEffectivePrioDeadline mid x).2.val) := by
+      rintro ⟨h1, h2⟩
+      apply hMoved
+      simp only [schedKeyView, hT, hPre, Option.map_some, h1, h2]
+    simp only [Option.map_some]
+    rcases Decidable.not_and_iff_not_or_not.mp hNe with h | h <;> simp [h]
+
+theorem markKeyChangeFor_reschedulePendingOnCore_of_weakened {pre mid : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {c : CoreId}
+    (hPre : pre.getTcb? tid = some tcb)
+    (hCur : mid.scheduler.currentOnCore c = some tid)
+    (hW : ¬ schedKeyNotWeakened pre mid tid) :
+    (markKeyChangeFor mid tid (resolveEffectivePrioDeadline pre tcb)).scheduler.reschedulePendingOnCore c
+      = true := by
+  simp only [markKeyChangeFor, SchedulerState.markReschedulePendingWhere_reschedulePendingOnCore,
+    Concurrency.mem_allCores, decide_true, Bool.and_true, hCur, beq_self_eq_true]
+  cases hT : mid.getTcb? tid with
+  | none =>
+    exact absurd (fun kq hq => by simp [schedKeyView, hT] at hq) hW
+  | some x =>
+    have hLt : (resolveEffectivePrioDeadline mid x).1.val < (resolveEffectivePrioDeadline pre tcb).1.val ∨
+        (resolveEffectivePrioDeadline pre tcb).2.val < (resolveEffectivePrioDeadline mid x).2.val := by
+      apply Classical.byContradiction
+      intro hNot
+      apply hW
+      intro kq hq
+      simp only [schedKeyView, hT, Option.map_some, Option.some.injEq] at hq
+      subst hq
+      refine ⟨((resolveEffectivePrioDeadline pre tcb).1, (resolveEffectivePrioDeadline pre tcb).2.val),
+        by simp [schedKeyView, hPre], ?_, ?_⟩ <;> simp only <;> omega
+    simp only [Option.map_some]
+    rcases hLt with h | h <;> simp [h]
+
+/-- **The key hook covers a key writer.**  If the write `pre → mid` moved no
+other thread's key, and every remote core is flagged or kept its slots (its
+queue may only shrink), then the hook's post-state covers the step. -/
+theorem markKeyChangeFor_covers {e : CoreId} {pre mid : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hPre : pre.getTcb? tid = some tcb)
+    (hOthers : ∀ t, t ≠ tid → schedKeyView mid t = schedKeyView pre t)
+    (hSlots : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = true ∨
+      ((∀ t, t ∈ mid.scheduler.runQueueOnCore c → t ∈ pre.scheduler.runQueueOnCore c) ∧
+        mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)) :
+    reschedulePendingCovers e pre
+      (markKeyChangeFor mid tid (resolveEffectivePrioDeadline pre tcb)) := by
+  intro c hc
+  rcases hSlots c hc with hUp | ⟨hRq, hCur⟩
+  · exact Or.inl (markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ hUp)
+  by_cases hA : tid ∈ mid.scheduler.runQueueOnCore c ∧ schedKeyView mid tid ≠ schedKeyView pre tid
+  · exact Or.inl (markKeyChangeFor_reschedulePendingOnCore_of_moved hPre hA.1 hA.2)
+  by_cases hB : mid.scheduler.currentOnCore c = some tid ∧ ¬ schedKeyNotWeakened pre mid tid
+  · exact Or.inl (markKeyChangeFor_reschedulePendingOnCore_of_weakened hPre hB.1 hB.2)
+  right
+  have hKey : ∀ t, t ∈ mid.scheduler.runQueueOnCore c → schedKeyView pre t = schedKeyView mid t := by
+    intro t ht
+    by_cases hEq : t = tid
+    · subst hEq
+      exact (Classical.byContradiction fun h => hA ⟨ht, fun h' => h h'.symm⟩)
+    · exact (hOthers t hEq).symm
+  refine ⟨fun t ht => ?_, ?_, fun t ht => ?_⟩
+  · simp only [markKeyChangeFor_runQueueOnCore] at ht
+    exact ⟨hRq t ht, (hKey t ht).trans (schedKeyView_markKeyChangeFor _ _ _ t).symm⟩
+  · simp only [markKeyChangeFor_currentOnCore]; exact hCur
+  · simp only [markKeyChangeFor_currentOnCore] at ht
+    intro kq hq
+    rw [schedKeyView_markKeyChangeFor] at hq
+    by_cases hEq : t = tid
+    · subst hEq
+      exact (Classical.byContradiction fun h => hB ⟨ht, fun h' => h (h' kq hq)⟩)
+    · exact schedKeyNotWeakened_of_eq (hOthers t hEq).symm kq hq
+
 end SeLe4n.Kernel

@@ -51,31 +51,30 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId SgiKind allCores numCores)
 
-/-- Flag the core whose scheduling decision a key write on `tid` has staled.
+/-- Flag every core whose scheduling decision a key write on `tid` has staled.
 `preKey` is `resolveEffectivePrioDeadline` of `tid` read on the state before
 the write; `st` is the state after it.  Mirrors `crossCoreSgiBody` for the one
-thread: queued on its home with a changed key → the home; current somewhere
-with a dropped effective priority or a later effective deadline → that core;
-otherwise nothing.  The queue membership and the current slot are read from
-`st` because a key writer moves neither (the placements that do mark the core
-themselves). -/
+thread: a core whose run queue holds `tid` is flagged when the key moved, and a
+core whose current slot holds `tid` when its effective priority dropped or its
+effective deadline moved later.  Every core is checked, so the hook assumes no
+placement invariant (`markKeyChangeFor_covers` needs none); under the kernel
+invariants the thread sits on one core and at most one flag is raised.  The
+queue membership and the current slot are read from `st` because a key writer
+moves neither (the placements that do mark the core themselves).  A write that
+left no TCB under `tid` counts as a moved key. -/
 def markKeyChangeFor (st : SystemState) (tid : SeLe4n.ThreadId)
     (preKey : SeLe4n.Priority × SeLe4n.Deadline) : SystemState :=
-  match st.getTcb? tid with
-  | none => st
-  | some tcb =>
-    let postKey := resolveEffectivePrioDeadline st tcb
-    let home := determineTargetCore st tid
-    if tid ∈ st.scheduler.runQueueOnCore home then
-      if preKey.1 == postKey.1 && preKey.2.val == postKey.2.val then st
-      else st.markReschedulePendingOnCore home
-    else
-      match runningCoreOf? st tid with
-      | some c =>
-        if postKey.1.val < preKey.1.val || preKey.2.val < postKey.2.val then
-          st.markReschedulePendingOnCore c
-        else st
-      | none => st
+  let postKey? := (st.getTcb? tid).map (resolveEffectivePrioDeadline st)
+  let moved : Bool := match postKey? with
+    | some k => !(preKey.1 == k.1 && preKey.2.val == k.2.val)
+    | none => true
+  let weakened : Bool := match postKey? with
+    | some k => k.1.val < preKey.1.val || preKey.2.val < k.2.val
+    | none => false
+  let staled : CoreId → Bool := fun c =>
+    (moved && (st.scheduler.runQueueOnCore c).contains tid) ||
+      (weakened && st.scheduler.currentOnCore c == some tid)
+  { st with scheduler := st.scheduler.markReschedulePendingWhere staled allCores }
 
 /-- The `.reschedule` SGIs a step owes, from the flag vector captured before
 dispatch and the committed state's: one per core other than the executing core
@@ -452,12 +451,21 @@ every leaf of `markKeyChangeFor` is the identity or one
 `markReschedulePendingOnCore`. -/
 theorem markKeyChangeFor_extract_frame {F : Type} (extract : SystemState → F)
     (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline)
-    (h : ∀ c, extract (st.markReschedulePendingOnCore c) = extract st) :
+    (h : ∀ (s : SystemState) c, extract (s.markReschedulePendingOnCore c) = extract s) :
     extract (markKeyChangeFor st tid k) = extract st := by
-  unfold markKeyChangeFor
-  dsimp only
-  repeat' split
-  all_goals first | rfl | exact h _
+  have hGen : ∀ (sch : SchedulerState) (p : CoreId → Bool) (cs : List CoreId),
+      extract { st with scheduler := sch } = extract st →
+      extract { st with scheduler := sch.markReschedulePendingWhere p cs } = extract st := by
+    intro sch p cs h0
+    induction cs generalizing sch with
+    | nil => exact h0
+    | cons c cs ih =>
+      simp only [SchedulerState.markReschedulePendingWhere]
+      apply ih
+      split
+      · exact (h { st with scheduler := sch } c).trans h0
+      · exact h0
+  exact hGen st.scheduler _ allCores rfl
 
 /-- Marking one core never lowers another's flag (nor its own). -/
 theorem _root_.SeLe4n.Model.SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_of
@@ -472,11 +480,7 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
     (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline) (c : CoreId)
     (h : st.scheduler.reschedulePendingOnCore c = true) :
     (markKeyChangeFor st tid k).scheduler.reschedulePendingOnCore c = true := by
-  unfold markKeyChangeFor
-  dsimp only
-  repeat' split
-  all_goals first
-    | exact h
-    | exact SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_of _ _ _ h
+  simp only [markKeyChangeFor, SchedulerState.markReschedulePendingWhere_reschedulePendingOnCore,
+    h, Bool.true_or]
 
 end SeLe4n.Kernel
