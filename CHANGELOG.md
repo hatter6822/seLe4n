@@ -1,3 +1,45 @@
+## v0.36.53 — KSC-1 reschedule-SGI accumulator, PR B2a: lending and returning a scheduling context raise the reschedule flags
+
+The B2 arm inventory found one writer class the KSC-1 row names that raised
+no flag: lending and returning a scheduling context.  Both rewrite two
+threads' bindings, and so their effective deadlines, without a run-queue
+write.  The return's recipient can be the recorded reservation origin (WS-HP
+HP10.7), which may be queued or running on another core; after an
+out-of-order delegate reply that core's decision went stale with no flag
+raised.  The live diff still decides today, so nothing was lost yet, but
+PR C's seam switch would have lost that reschedule.  The flag stays inert;
+every fixture is byte-identical.
+
+- **`markKeyChangeFrom pre post tid`** (`Scheduler/Operations/ReschedulePending.lean`):
+  the binding writers' hook.  It reads `tid`'s key on `pre` and hands it to
+  `markKeyChangeFor`; with no TCB for `tid` in `pre` it flags every core
+  whose queue or `current` slot holds `tid`.  `donateSchedContext` and
+  `returnDonatedSchedContext` end in it for both threads whose binding they
+  rewrite.
+- **Per-thread flagging** (`Scheduler/Invariant/ReschedulePendingCoverage.lean`):
+  `keyChangeFlagged pre post tid` (every core the key change on `tid`
+  stales is flagged), `markKeyChangeFrom_flagged` (the hook establishes it),
+  `keyChangeFlagged_of_flagOnly` (it survives later steps that move no slot,
+  key or flag) and `reschedulePendingCovers_of_keyChangeFlagged` (a step whose
+  every moved key is flagged and whose remote slots only shrink covers).
+- **Scheduler frames modulo the flags.**  The two writers' frames, and those
+  of every operation built on them (`applyCallDonation`,
+  `cleanupPreReceiveDonation(Checked)`, `cleanupDonatedSchedContext`,
+  `returnDonationToCancelledCaller`, `cancelIpcBlocking`,
+  `cancelDonatedDonation`), now state that the scheduler is unchanged
+  except `reschedulePending`.  The frame consumers that read no flag accept
+  that form: the base SMP scheduler invariant
+  (`schedulerInvariantBase_perCore_of_frame`, `_smp_of_frame`), the
+  passive-server-idle frame, `placedCoreOf?_congr_of_scheduler_eq`, and
+  observable-slot confinement (new
+  `observableSlotsConfinedToCore(s)_..._except_reschedule_machine_eq`; no
+  observable slot is a flag).
+- **Tier 2**: `reschedule_pending_suite` §2.7 returns a context to an origin
+  queued on core 1 from core 0 and checks that core 1 is flagged and that
+  the flags equal the live diff.
+- **Remaining** (the row): coverage through every arm the dispatcher and
+  the fault entry commit (PR B2's next cuts), then PR C.
+
 ## v0.36.52 — KSC-1 reschedule-SGI accumulator, PR B1: the flags cover the diff (relation, bridge, primitives)
 
 The first half of the KSC-1 row's soundness theorem.  The row asked for set

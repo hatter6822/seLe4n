@@ -72,6 +72,9 @@ open SeLe4n.Kernel.SchedContext.PriorityManagement (setPriorityOnCore)
 #check @enqueueRunnableOnCore_covers
 #check @removeRunnableOnCore_covers
 #check @markKeyChangeFor_covers
+#check @markKeyChangeFrom
+#check @markKeyChangeFrom_flagged
+#check @reschedulePendingCovers_of_keyChangeFlagged
 
 -- The boot default: no core owes a reschedule.
 example (c : CoreId) : (default : SystemState).scheduler.reschedulePendingOnCore c = false :=
@@ -295,6 +298,38 @@ private def runAffinityChecks : IO Unit := do
   assertBool "migration: the queued thread now lives on core 2"
     (decide (srv ∈ post.scheduler.runQueueOnCore core2))
 
+/-- The lent scheduling context of §2.7, deadline 9. -/
+private def scLent : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 300
+/-- The server holding the lent context, running on core 0. -/
+private def lendSrv : SeLe4n.ThreadId := ThreadId.ofNat 230
+/-- The recorded origin the return hands the context to: unbound, queued on core 1. -/
+private def lendOrigin : SeLe4n.ThreadId := ThreadId.ofNat 231
+
+private def stLent : SystemState :=
+  let base := BootstrapBuilder.empty
+    |>.withObject lendSrv.toObjId (.tcb { mkReadyTcb 230 5 (some core0) .Running with
+        schedContextBinding := .donated scLent lendOrigin })
+    |>.withObject lendOrigin.toObjId (.tcb (mkReadyTcb 231 6 (some core1) .Ready))
+    |>.withObject scLent.toObjId (.schedContext { SchedContext.empty scLent with
+        boundThread := some lendSrv, deadline := ⟨9⟩ })
+    |>.build
+  { base with
+      scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(lendOrigin, ⟨6⟩)])
+        |>.setCurrentOnCore core0 (some lendSrv) }
+
+/-- §2.7 the scheduling-context return (`returnDonatedSchedContext`): the
+recipient's effective deadline moves to the context's, and the recipient is
+queued on another core, so that core is flagged. -/
+private def runDonationReturnChecks : IO Unit := do
+  IO.println "--- §2.7 returnDonatedSchedContext ---"
+  match returnDonatedSchedContext stLent lendSrv scLent lendOrigin none with
+  | .ok post =>
+    checkDiff "return to a recipient queued on a remote core" stLent post core0 true
+    expectRaised "return to a recipient queued on a remote core" stLent post core0 [core1]
+  | .error e =>
+    IO.println s!"  FAIL: returnDonatedSchedContext returned {repr e}"
+    throw (IO.userError "returnDonatedSchedContext failed")
+
 -- ============================================================================
 -- §3  Scheduling points clear their own flag and nobody else's
 -- ============================================================================
@@ -354,6 +389,7 @@ def runReschedulePendingChecks : IO Unit := do
   runSuspendChecks
   runPriorityChecks
   runAffinityChecks
+  runDonationReturnChecks
   runClearChecks
   runMonotonicityChecks
   IO.println "=== reschedule_pending_suite: all checks passed ==="

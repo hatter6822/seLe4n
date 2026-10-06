@@ -1776,11 +1776,12 @@ def donation_primitives_reachable_via_operations_hub : IO Unit := do
   let _ : SystemState -> SeLe4n.ReplyId -> SeLe4n.ValidThreadId ->
           Except KernelError SystemState :=
     @applyReplyDonation
-  -- Preservation theorems: scheduler / machine equality.
+  -- Preservation theorems: scheduler (except the reschedule flags) / machine equality.
   let _ : ∀ (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
             (st' : SystemState),
           applyCallDonation st callerVtid receiverVtid = .ok st' ->
-          st'.scheduler = st.scheduler :=
+          st'.scheduler =
+            { st.scheduler with reschedulePending := st'.scheduler.reschedulePending } :=
     @applyCallDonation_scheduler_eq
   let _ : ∀ (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
             (st' : SystemState),
