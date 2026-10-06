@@ -160,7 +160,7 @@ def applyPriorityChangeOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : 
     (markKeyChangeFor
       (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid newPriority
         (determineTargetCore st tid))
-      tid (resolveEffectivePrioDeadline st tcb))
+      tid (effectiveSchedParams st tcb))
     (Lifecycle.Suspend.runningCoreOf? st tid) executingCore shouldPreempt
 
 /-- WS-SM SM8.B: a non-preempting change (a raise, or a ceiling that does not
@@ -171,7 +171,7 @@ theorem applyPriorityChangeOnCore_no_preempt (st : SystemState) (tid : SeLe4n.Th
       = .ok (markKeyChangeFor
               (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid
                 newPriority (determineTargetCore st tid))
-              tid (resolveEffectivePrioDeadline st tcb), none) := by
+              tid (effectiveSchedParams st tcb), none) := by
   simp [applyPriorityChangeOnCore, priorityRescheduleOnCore]
 
 /-- WS-SM SM8.B (operation): **set a thread's priority, across cores.**

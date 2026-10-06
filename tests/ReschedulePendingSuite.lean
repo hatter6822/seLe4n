@@ -28,7 +28,8 @@ until PR C switches the seams.
 * **§2 The differential** — over the SMP scenarios the existing suites exercise
   (cross-core PIP boost, wake and resume, remote queue removal and deschedule,
   suspend, priority raise and drop on a current thread, re-bucket of a queued
-  thread, affinity migration), the set of REMOTE cores whose flag went
+  thread, affinity migration, a reconfigure that moves a bound thread's
+  domain), the set of REMOTE cores whose flag went
   `false → true` during the step is a superset of the cores the live diff
   names, and — where the writer is exact — the same set.
 * **§3 Scheduling points** — `handleRescheduleSgiOnCore` and
@@ -360,6 +361,33 @@ private def runBoundUnbindChecks : IO Unit := do
     IO.println s!"  FAIL: cancelBoundDonationOnCore returned {repr e}"
     throw (IO.userError "cancelBoundDonationOnCore failed")
 
+/-- Reconfigure `scBound` from core 0 with the fixture's own priority (6) and
+deadline (9), so only the domain can move the bound thread's key. -/
+private def configureBound (domain : Nat) : IO SystemState := do
+  match scBound.toObjId.toValid? with
+  | none => throw (IO.userError "scBound has no valid object id")
+  | some vSc =>
+    match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc 1 10 6 9 domain stBound with
+    | .ok (_, post) => pure post
+    | .error e =>
+      IO.println s!"  FAIL: schedContextConfigure returned {repr e}"
+      throw (IO.userError "schedContextConfigure failed")
+
+/-- §2.9 the reconfigure that moves only the bound thread's domain
+(`schedContextConfigure`): the selector filters by domain, so a thread queued
+on another core changed eligibility there and that core is flagged; the same
+reconfigure with the domain left alone flags nothing. -/
+private def runDomainMoveChecks : IO Unit := do
+  IO.println "--- §2.9 schedContextConfigure domain move ---"
+  let moved ← configureBound 1
+  assertBool "domain move reached the bound thread"
+    ((moved.getTcb? boundTid).map (·.domain.val) == some 1)
+  checkDiff "domain move of a thread queued on a remote core" stBound moved core0 true
+  expectRaised "domain move of a thread queued on a remote core" stBound moved core0 [core1]
+  let same ← configureBound 0
+  checkDiff "reconfigure that keeps the domain" stBound same core0 true
+  expectRaised "reconfigure that keeps the domain" stBound same core0 []
+
 -- ============================================================================
 -- §3  Scheduling points clear their own flag and nobody else's
 -- ============================================================================
@@ -421,6 +449,7 @@ def runReschedulePendingChecks : IO Unit := do
   runAffinityChecks
   runDonationReturnChecks
   runBoundUnbindChecks
+  runDomainMoveChecks
   runClearChecks
   runMonotonicityChecks
   IO.println "=== reschedule_pending_suite: all checks passed ==="

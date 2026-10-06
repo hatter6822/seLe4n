@@ -540,7 +540,7 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
                 -- move its priority); `markKeyChangeFor` flags its placement
                 -- exactly when the key the selector orders by changed, so an
                 -- immaterial reconfigure flags nothing.
-                let preKey := resolveEffectivePrioDeadline st boundTcb
+                let preKey := effectiveSchedParams st boundTcb
                 .ok ((), markKeyChangeFor (schedContextConfigureBoundPropagate stStored scIdTyped
                   boundTid boundTcb hBound priority domain) boundTid preKey)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
@@ -827,7 +827,7 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             -- thread's effective key (its deadline is the reservation's now,
             -- its priority the reservation's); the hook flags a re-bucketed
             -- or current thread's core exactly when that key changed.
-            .ok ((), markKeyChangeFor st4 vThreadId.val (resolveEffectivePrioDeadline st tcb))
+            .ok ((), markKeyChangeFor st4 vThreadId.val (effectiveSchedParams st tcb))
           | _ => .error .illegalState
         | none => .error .objectNotFound
     | none => .error .objectNotFound
@@ -984,7 +984,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- The reschedule-SGI accumulator (KSC-1): the thread's key is its
           -- legacy one now; a re-bucketed queued thread flags its home exactly
           -- when that differs from the reservation's key.
-          .ok ((), markKeyChangeFor st5 tid (resolveEffectivePrioDeadline st tcb))
+          .ok ((), markKeyChangeFor st5 tid (effectiveSchedParams st tcb))
         -- Bound thread's TCB not found — clear SC side anyway
         | none =>
           -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other

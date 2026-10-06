@@ -898,7 +898,7 @@ def releaseSchedContextBinding (st : SystemState) (scId : SeLe4n.SchedContextId)
       -- reverts from the destroyed reservation's to its own, so a queued or
       -- current thread's core is flagged exactly when that key changed.
       markKeyChangeFor { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }
-        tid (resolveEffectivePrioDeadline st tcb)
+        tid (effectiveSchedParams st tcb)
     | none =>
       let st1 := SchedContextOps.purgeReplenishmentFromAllCores st scId
       { st1 with scThreadIndex := scThreadIndexRemove st1.scThreadIndex scId tid }
@@ -920,7 +920,7 @@ theorem releaseSchedContextBinding_of_bound (st : SystemState)
         { t with schedContextBinding := SchedContextBinding.unbound }
        let st2 := SchedContextOps.purgeReplenishmentOnCore st1 (determineTargetCore st tid) scId
        markKeyChangeFor { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }
-         tid (resolveEffectivePrioDeadline st tcb)) := by
+         tid (effectiveSchedParams st tcb)) := by
   simp only [releaseSchedContextBinding, hBound, hTcb]
 
 /-- `v0.35.165`: the release at a context whose bound thread the store has lost —

@@ -4139,7 +4139,7 @@ theorem clearReschedulePendingOnCore_preserves_projection
 `markKeyChangeFor` is the identity or one `markReschedulePendingOnCore`. -/
 theorem markKeyChangeFor_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline) :
+    (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     projectState ctx observer (markKeyChangeFor st tid k) =
       projectState ctx observer st :=
   markKeyChangeFor_extract_frame (projectState ctx observer) st tid k

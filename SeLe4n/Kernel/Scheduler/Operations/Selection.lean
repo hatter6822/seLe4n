@@ -499,6 +499,16 @@ theorem effectiveSchedParams_priority_deadline_eq_resolve
   simp only [effectiveSchedParams, resolveEffectivePrioDeadline]
   split <;> (first | rfl | (split <;> rfl))
 
+/-- The priority component, as the two-component resolver reports it. -/
+theorem effectiveSchedParams_fst_eq_resolve (st : SystemState) (tcb : TCB) :
+    (effectiveSchedParams st tcb).1 = (resolveEffectivePrioDeadline st tcb).1 := by
+  rw [← effectiveSchedParams_priority_deadline_eq_resolve]
+
+/-- The deadline component, as the two-component resolver reports it. -/
+theorem effectiveSchedParams_snd_fst_eq_resolve (st : SystemState) (tcb : TCB) :
+    (effectiveSchedParams st tcb).2.1 = (resolveEffectivePrioDeadline st tcb).2 := by
+  rw [← effectiveSchedParams_priority_deadline_eq_resolve]
+
 /-- R5.C: `effectiveSchedParams` is total. -/
 theorem effectiveSchedParams_total (st : SystemState) (tcb : TCB) :
     ∃ triple, effectiveSchedParams st tcb = triple :=

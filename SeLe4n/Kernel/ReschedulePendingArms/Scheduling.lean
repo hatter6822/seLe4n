@@ -110,7 +110,7 @@ theorem applyPriorityChangeOnCore_stepCovers (st st' : SystemState) (tid : SeLe4
   have h1 := stepCovers_markKeyChangeFor (e := e) hT hKeysMid
     (fun c _ => Or.inr ⟨fun x hx => ((hMidSched c).1 x).mp hx, (hMidSched c).2.1⟩)
     (fun c _ hp => by rw [(hMidSched c).2.2]; exact hp)
-  have hInvMk : (markKeyChangeFor mid tid (resolveEffectivePrioDeadline st tcb)).objects.invExt := by
+  have hInvMk : (markKeyChangeFor mid tid (effectiveSchedParams st tcb)).objects.invExt := by
     rw [markKeyChangeFor_objects, hMidObj]; exact hInvU
   have h2 := priorityRescheduleOnCore_stepCovers e _ st' _ _ _ hInvMk hStep
   refine ⟨stepCovers_trans h1 h2, ?_⟩
@@ -287,7 +287,7 @@ theorem resolveEffectivePrioDeadline_congr_binding {st st' : SystemState} {a b :
       (st'.getSchedContext? sc).map (·.deadline) = (st.getSchedContext? sc).map (·.deadline)) :
     resolveEffectivePrioDeadline st' b = resolveEffectivePrioDeadline st a := by
   simp only [tcbKeyFields, Prod.mk.injEq] at hK
-  obtain ⟨hP, hD, hB, hPip⟩ := hK
+  obtain ⟨hP, hD, hB, hPip, -⟩ := hK
   unfold resolveEffectivePrioDeadline
   rw [hP, hD, hB, hPip]
   cases hA : a.schedContextBinding with
@@ -298,6 +298,16 @@ theorem resolveEffectivePrioDeadline_congr_binding {st st' : SystemState} {a b :
   | donated sc o =>
     have := hSc sc (by rw [hA]; rfl)
     cases hq : st'.getSchedContext? sc <;> cases hp : st.getSchedContext? sc <;> simp_all
+
+/-- The full key, likewise: the domain is a key field. -/
+theorem effectiveSchedParams_congr_binding {st st' : SystemState} {a b : TCB}
+    (hK : tcbKeyFields b = tcbKeyFields a)
+    (hSc : ∀ sc, a.schedContextBinding.scId? = some sc →
+      (st'.getSchedContext? sc).map (·.deadline) = (st.getSchedContext? sc).map (·.deadline)) :
+    effectiveSchedParams st' b = effectiveSchedParams st a := by
+  have hDom : b.domain = a.domain := by
+    simp only [tcbKeyFields, Prod.mk.injEq] at hK; exact hK.2.2.2.2
+  exact effectiveSchedParams_eq_of (resolveEffectivePrioDeadline_congr_binding hK hSc) hDom
 
 /-- A write that moves only context `S`'s slot, a context on both sides, keeps
 the key of every thread whose binding does not name `S`. -/
@@ -320,7 +330,7 @@ theorem schedKeyView_eq_of_scSlotWrite {pre post : SystemState} {S : SeLe4n.Sche
     · simp at hT
     · rename_i b a
       simp only [Option.map_some, Option.some.injEq] at hT ⊢
-      rw [resolveEffectivePrioDeadline_congr_binding hT (fun sc hsc => ?_)]
+      rw [effectiveSchedParams_congr_binding hT (fun sc hsc => ?_)]
       have hNe : sc ≠ S := fun h => hNo a hp (h ▸ hsc)
       have hNeO : sc.toObjId ≠ S.toObjId := fun h => hNe (SeLe4n.SchedContextId.toObjId_injective _ _ h)
       exact getSchedContext?_deadline_of_keyInputsOf (hFrame _ hNeO)
@@ -741,7 +751,7 @@ theorem unbindTail_stepCovers (e : CoreId) (st1 : SystemState) (vScId : SeLe4n.V
             ((st1.rewriteObject vScId.val _ hAdm).updateTcb tid fun t =>
               { t with schedContextBinding := SchedContextBinding.unbound })
             home ⟨vScId.val.toNat⟩).scThreadIndex ⟨vScId.val.toNat⟩ tid }
-      tid (resolveEffectivePrioDeadline st1 tcb)) := by
+      tid (effectiveSchedParams st1 tcb)) := by
   have hK1 : keyInputsEq st1 (st1.rewriteObject vScId.val _ hAdm) :=
     keyInputsEq_rewriteObject hAdm hInv (by rw [hSc]; rfl)
   have hInv1 := SystemState.rewriteObject_preserves_objects_invExt st1 _ _ hAdm hInv

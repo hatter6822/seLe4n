@@ -79,7 +79,7 @@ theorem ipcInvariantFull_of_flagOnlyWrite {s1 s2 : SystemState}
 
 /-- The key-change hook writes a flag or nothing. -/
 theorem markKeyChangeFor_preserves_ipcInvariantFull (st : SystemState)
-    (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline)
+    (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (h : ipcInvariantFull st) : ipcInvariantFull (markKeyChangeFor st tid k) :=
   ipcInvariantFull_of_flagOnlyWrite (markKeyChangeFor_objects _ _ _)
     (markKeyChangeFor_runQueueOnCore _ _ _) (markKeyChangeFor_currentOnCore _ _ _) h
@@ -2682,7 +2682,7 @@ theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
   unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at hStep
   have hObjMid : (markKeyChangeFor (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
       (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
-      (determineTargetCore st tid)) tid (resolveEffectivePrioDeadline st tcb)).objects.invExt := by
+      (determineTargetCore st tid)) tid (effectiveSchedParams st tcb)).objects.invExt := by
     rw [markKeyChangeFor_objects, migrateRunQueueBucketOnCore_objects_eq]
     exact SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
       st tid tcb p hObjInv

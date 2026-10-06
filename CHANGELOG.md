@@ -1,3 +1,30 @@
+## v0.36.56 — The reschedule key includes the thread's domain
+
+Follow-up to the KSC-1 accumulator.  The selector admits a thread only when
+its domain is the core's active domain, but the key both the reschedule flags
+and the diff compared was `(priority, deadline)`.  Reconfiguring a scheduling
+context that moved its bound thread's domain therefore poked no remote core:
+the core the thread was queued or running on kept running it out of its domain
+until its next tick.
+
+- **One key.**  `markKeyChangeFor`, `markKeyChangeFrom` and `crossCoreSgiBody`
+  now read `effectiveSchedParams` (`priority × deadline × domain`, the triple
+  the selector already used) instead of `resolveEffectivePrioDeadline`.  A
+  queued thread's key moved when any field changed; a current thread's
+  weakened when its priority dropped, its deadline grew later or its domain
+  changed.
+- **Coverage re-proved over the triple.**  `schedKeyView`,
+  `schedKeyNotWeakened`, `schedKeyFieldsEq`, `keyInputsOf` and
+  `tcbKeyFields` carry the domain; new congruences
+  `effectiveSchedParams_congr`, `_congr_deadline` and `_congr_binding` replace
+  the pair forms at the hook sites, and
+  `effectiveSchedParams_fst_eq_resolve` / `_snd_fst_eq_resolve` bridge the
+  priority and deadline back to the resolver.
+- **Tier 2**: `reschedule_pending_suite` §2.9 reconfigures a bound context
+  from core 0 with only the domain changed and expects core 1 (where the
+  thread is queued) flagged and named by the diff; the same reconfigure with
+  the domain unchanged flags nothing.
+
 ## v0.36.55 — KSC-1 reschedule-SGI accumulator, PR C: the seams fire from the flags and drop the pre-state
 
 Closes the KSC-1 / HAL-3 row.  The syscall step, the fault entry and the

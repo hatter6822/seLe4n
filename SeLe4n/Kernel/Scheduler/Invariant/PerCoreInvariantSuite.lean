@@ -1414,7 +1414,7 @@ theorem clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralRegNo
 /-- KSC-1: `markKeyChangeFor` (the key-change writer) only ever raises
 reschedule-pending flags, so it preserves the Nodup-extended invariant. -/
 theorem markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp
-    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (h : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (markKeyChangeFor st tid k) := fun c' =>
   schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
@@ -3113,7 +3113,7 @@ theorem wakeThread_preserves_runQueueSafetyOnCore (st : SystemState)
 /-- KSC-1: `markKeyChangeFor` only raises reschedule-pending flags, so the
 run-queue safety bundle carries across it on every core. -/
 theorem runQueueSafetyOnCore_of_markKeyChangeFor (st : SystemState) (tid : SeLe4n.ThreadId)
-    (k : SeLe4n.Priority × SeLe4n.Deadline) (c : CoreId) (h : runQueueSafetyOnCore st c) :
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (c : CoreId) (h : runQueueSafetyOnCore st c) :
     runQueueSafetyOnCore (markKeyChangeFor st tid k) c :=
   runQueue_frame_preserves_runQueueSafetyOnCore st _ c (markKeyChangeFor_runQueueOnCore st tid k c)
     (fun x hx => by rw [markKeyChangeFor_getTcb?]; exact hx) h

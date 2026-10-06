@@ -1272,12 +1272,14 @@ core's run queue *changed* across `pre → post`.  Two material cases:
   home core.  (The earlier priority-only gate dropped this SGI — the live wake
   arrived only at the home core's next timer tick.)
 * a **re-bucketing / re-ranking** — the thread was already runnable on its home
-  core but its *effective* priority OR deadline (`resolveEffectivePrioDeadline`,
-  both components — audit closure: within-bucket selection is EDF, so a
-  deadline-only change re-ranks the candidate without moving its bucket)
-  changed: a PIP boost (PR #811 P2-2) or a `schedContextConfigure` deadline
-  rewrite.  An *immaterial* rewrite (both components unchanged on an
-  already-runnable thread) fires nothing.
+  core but its *effective* priority, deadline or domain (`effectiveSchedParams`,
+  all three components — audit closure: within-bucket selection is EDF, so a
+  deadline-only change re-ranks the candidate without moving its bucket; and
+  the selector admits only threads of the core's active domain, so a domain
+  move can make a queued thread eligible) changed: a PIP boost (PR #811 P2-2)
+  or a `schedContextConfigure` deadline or domain rewrite.  An *immaterial*
+  rewrite (every component unchanged on an already-runnable thread) fires
+  nothing.
 * a **deschedule** (WS-SM SM6.E) — the thread was *actively current* on its remote
   home core in `pre` and in `post` is neither current nor queued there: a
   cross-core suspend/cancellation removed it, so the home core must be poked to
@@ -1287,9 +1289,11 @@ core's run queue *changed* across `pre → post`.  Two material cases:
 * a **weakened current** (WS-SM SM6.E, PR #831 review 2 + audit closure) — the
   thread is still current on the same core in both `pre` and `post` but its
   claim to the CPU weakened: its effective priority *dropped* (a PIP-revert
-  disinheritance) or its effective deadline moved *later* (EDF re-ranking —
-  `schedContextConfigure`): a ready thread on that core may now outrank the
-  running choice, so it must re-run its preemption gate.  A strengthening
+  disinheritance), its effective deadline moved *later* (EDF re-ranking —
+  `schedContextConfigure`) or its domain moved (`schedContextConfigure`; the
+  running thread may have left the core's active domain): a ready thread on
+  that core may now outrank the running choice, or the running one may no
+  longer be eligible, so the core must re-run its scheduling decision.  A strengthening
   (priority raise / deadline pulled earlier) fires nothing (the running choice
   can only outrank strictly more), and a still-current thread is not in the
   run queue (dequeue-on-dispatch), so the queue rules never cover this case.
@@ -1325,10 +1329,12 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
         -- effective bucket is unchanged (not a re-bucketing).
         if home == execCore then none
         else if (tpost.tid ∈ pre.scheduler.runQueueOnCore home)
-            && ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1
-                  == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1)
-            && ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).2.val
-                  == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).2.val) then none
+            && ((SeLe4n.Kernel.effectiveSchedParams pre tpre).1
+                  == (SeLe4n.Kernel.effectiveSchedParams post tpost).1)
+            && ((SeLe4n.Kernel.effectiveSchedParams pre tpre).2.1.val
+                  == (SeLe4n.Kernel.effectiveSchedParams post tpost).2.1.val)
+            && ((SeLe4n.Kernel.effectiveSchedParams pre tpre).2.2
+                  == (SeLe4n.Kernel.effectiveSchedParams post tpost).2.2) then none
         else some (home, SgiKind.reschedule)
       else
         -- CURRENT rules (descheduled / weakened), keyed on the core the
@@ -1345,13 +1351,15 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
             -- descheduled-current (WS-SM SM6.E): a cross-core cancellation
             -- removed the running victim — poke the core that was executing it.
             some (preCur, SgiKind.reschedule)
-          else if ((SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1.val
-                < (SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1.val)
-              || ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).2.val
-                < (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).2.val) then
-            -- deboosted-current (PR #831 review 2): still current, effective
-            -- priority dropped — the running core must re-run its preemption
-            -- gate.  A raise fires nothing.
+          else if ((SeLe4n.Kernel.effectiveSchedParams post tpost).1.val
+                < (SeLe4n.Kernel.effectiveSchedParams pre tpre).1.val)
+              || ((SeLe4n.Kernel.effectiveSchedParams pre tpre).2.1.val
+                < (SeLe4n.Kernel.effectiveSchedParams post tpost).2.1.val)
+              || ((SeLe4n.Kernel.effectiveSchedParams pre tpre).2.2
+                != (SeLe4n.Kernel.effectiveSchedParams post tpost).2.2) then
+            -- weakened-current (PR #831 review 2): still current, effective
+            -- priority dropped, deadline later or domain moved — the running
+            -- core must re-run its decision.  A raise fires nothing.
             some (preCur, SgiKind.reschedule)
           else none
         | none => none
@@ -1884,7 +1892,7 @@ theorem crossCoreSgiBody_remote_deboost_current (pre post : SystemState)
   rw [hPost]
   simp only [hPre, hFind]
   rw [if_neg hPostNotRq, if_neg (by simpa using hRemote),
-      if_neg (by simp [hPostCur]), if_pos (by simp [hDrop])]
+      if_neg (by simp [hPostCur]), if_pos (by simp [SeLe4n.Kernel.effectiveSchedParams_fst_eq_resolve, hDrop])]
 
 /-- WS-SM SM5.F.4: every SGI the diff-based dispatch emits is a `.reschedule` — it
 pokes cores only to reschedule, never with a foreign SGI kind. -/

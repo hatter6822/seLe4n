@@ -156,7 +156,7 @@ theorem schedKeyView_eq_of_slotUnread {pre post : SystemState} {X : SeLe4n.ObjId
   · simp at hT
   · rename_i b a
     simp only [Option.map_some, Option.some.injEq] at hT ⊢
-    rw [resolveEffectivePrioDeadline_congr_binding hT (fun sc hsc =>
+    rw [effectiveSchedParams_congr_binding hT (fun sc hsc =>
       getSchedContext?_deadline_of_keyInputsOf (hFrame _ (hNo a hp sc hsc)))]
 
 /-- **The retype covers**, under the detachment pack the dispatch's invariant

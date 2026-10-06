@@ -956,7 +956,7 @@ theorem clearReschedulePendingOnCore_confinedToCores (st : SystemState) (c : Cor
 
 /-- KSC-1: the key-change writer only raises flags, so it is confined to no core. -/
 theorem markKeyChangeFor_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
-    (k : SeLe4n.Priority × SeLe4n.Deadline) :
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     observableSlotsConfinedToCores st (markKeyChangeFor st tid k) [] :=
   ⟨fun _ _ => by rw [markKeyChangeFor_runQueueOnCore],
    fun _ _ => by rw [markKeyChangeFor_currentOnCore],
@@ -3761,7 +3761,7 @@ theorem applyPriorityChangeOnCore_confinedToCores (base st' : SystemState)
   observableSlotsConfinedToCores_trans
     (observableSlotsConfinedToCores_then_flagOnly
       (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
-      (markKeyChangeFor_confinedToCores _ tid (resolveEffectivePrioDeadline base tcb)))
+      (markKeyChangeFor_confinedToCores _ tid (effectiveSchedParams base tcb)))
     (priorityRescheduleOnCore_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `priorityControlWriteSet` moved to the

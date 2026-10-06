@@ -28,7 +28,7 @@ open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 /-- The pre-state form of the hook is the key hook on the thread's pre-state key. -/
 theorem markKeyChangeFrom_eq_of_getTcb {pre st : SystemState} {tid : SeLe4n.ThreadId}
     {tcb : TCB} (h : pre.getTcb? tid = some tcb) :
-    markKeyChangeFrom pre st tid = markKeyChangeFor st tid (resolveEffectivePrioDeadline pre tcb) := by
+    markKeyChangeFrom pre st tid = markKeyChangeFor st tid (effectiveSchedParams pre tcb) := by
   unfold markKeyChangeFrom; rw [h]
 
 /-- Resume's mid state writes only the resumed thread's TCB. -/

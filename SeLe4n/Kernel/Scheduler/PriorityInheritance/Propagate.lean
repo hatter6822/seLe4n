@@ -50,7 +50,7 @@ def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : Syst
       -- before the boost write, for `markKeyChangeFor` on every leaf below —
       -- a re-bucketed holder flags its home, a current holder flags the core
       -- running it on a drop, and nothing else flags anything.
-      let preKey := resolveEffectivePrioDeadline st tcb
+      let preKey := effectiveSchedParams st tcb
       -- Update TCB with new (GLOBAL) pipBoost
       let tcb' := { tcb with pipBoost := newBoost }
       let st' := st.rewriteObject tid.toObjId (KernelObject.tcb tcb')
