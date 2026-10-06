@@ -298,8 +298,9 @@ where `RegValue` stays (D1).
   `SystemState` and every object type stay free of `InFlightContext` — checked
   by the type checker (no field of that type exists), stated in the docstring.
 - Rust tests: the per-core object's header after `lean_dec` is unchanged
-  (persistence); `ffi_trap_context` leaves the heap's `live_allocations`
-  unchanged; two traps on one core with distinct words, a snapshot of the first
+  (persistence); `ffi_trap_context` leaves CV0.1's monotone `allocations`
+  counter unchanged — not the `live_allocations` census, which a temporary
+  object allocated and freed inside the call would leave equal too; two traps on one core with distinct words, a snapshot of the first
   taken in between, the snapshot unchanged after the second (a unit test of
   the compiled `snapshot`, beside — not instead of — the hazard test of CV0.2,
   which drives the real save path and reads the TCB back, re-run at CV3.5); the by-address acceptance in `trap_context_of_lean` and its
@@ -373,7 +374,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 | CV3.1 | `Architecture.InFlightContext`, `snapshot`, `snapshot_word`; `ffiTrapContext : BaseIO (Option InFlightContext)` replacing CV2.1's temporary `Option RegisterFile` binding; `syscallEntryContextOrFaulted` and the entry wrappers on it; `SystemState` stays free of the type (consumes CV2.1) | Lean |
 | CV3.2 | `trap::InFlightContextObjects`: per-core persistent object and wrapper, initialised at runtime bring-up; `ffi_trap_context` writes and returns without allocating; `trap_context_of_lean` accepts the executing core's object by address | `rust/sele4n-hal/src/trap.rs`, `ffi.rs`, `lean_runtime/` |
 | CV3.3 | The cross-language test extended: a snapshot is a different object with the same words; the probes export `snapshot` | `rust/sele4n-lean-boundary/` |
-| CV3.4 | Rust unit tests: persistence after `lean_dec`, zero allocations across `ffi_trap_context`, by-address acceptance, refusal of another core's object | `ffi.rs` tests |
+| CV3.4 | Rust unit tests: persistence after `lean_dec`, zero allocations across `ffi_trap_context` read from CV0.1's monotone `allocations` counter (§3.3; the live census cannot see an allocation freed before return), by-address acceptance, refusal of another core's object | `ffi.rs` tests |
 | CV3.5 | The hazard test of CV0.2 re-run against the reused object — trap 1 saved through `saveCapturedSyscallFrame` into the probe TCB, trap 2 published into the same persistent per-core object, the TCB read back — must still pass; it is the acceptance test of D3 (§1.1), and fails if an entry wrapper retains the object, skips the snapshot at the save site or stores the wrong context (consumes CV0.2, CV3.1, CV3.2) | boundary crate |
 | CV3.6 | QEMU `virt` four-PE boot (Tier 4 lane) green with the persistent objects: every core traps, snapshots, restores | CI |
 
