@@ -2627,7 +2627,7 @@ which rows moved and why:
    | Converting a used leaf into a server could carry stale budget state | configureServer requires a quiescent parentless leaf and applies rule (a) to both refill representations (§4.8) |
    | A domain change on a server or an unbound member broke `serverDomainConsistent` | refused for any context with a parent or members (CB5.6, §3.3) |
    | CLOSED was written before the closure rows had run | CB8.8 flips every canonical status site in one cut; CB8.4/CB8.5 no longer touch status |
-   | The live ABI shipped ahead of its specification | the spec lands in the activation cuts (CB1.6–CB1.8, CB3.7, CB4.6, CB6.6, CB7.3); CB8.1 verifies |
+   | The live ABI shipped ahead of its specification | the spec lands in the activation cuts (CB1.7–CB1.9, CB3.7, CB4.6, CB6.6, CB7.3); CB8.1 verifies |
    | The depth bound admitted a fourth context on a path | `pathLength?` counts the leaf; `hierarchyDepthBounded` and the bindServer rule read it (D9, §4.1) |
    | The mixed tie-break (FIFO for leaves, `scId` otherwise) was not transitive | one mechanism per class: `scId` in the EDF class, the incumbent in the legacy class (D3, §4.3) |
    | Detaching a counted-but-idle child skipped the root admission check | unbindServer checks whenever the child will count on its core; `rootCountsOnCore` reads reservations, not activity (§4.6, §4.8) |
@@ -2962,6 +2962,19 @@ which rows moved and why:
     unconditional snapshot could not deliver — the capture is now
     `snapshotInto`, a full-field update of the TCB's own context, in place
     when that object is exclusively owned).
+
+    The thirteenth round found four, again in named classes, two of them on
+    rows the twelfth cut had just written: a row deciding only the nominal
+    cell (WS-CV CV4.5 copied `restoreTargetOnCore`'s operands into the
+    commit record while the helpers producing them still allocated; CV4.4
+    took the context out of both holders at the stage and not at the
+    capture, which stores the same object behind both), a row written from
+    memory (CV0.2 called the exported entry from a lane that links no HAL;
+    it is now a pure probe over `saveCapturedSyscallFrame`, pinning today's
+    closure hazard and flipped at CV3.5), and one renumbering site this
+    record's own table had missed.  The rule that follows: a row that
+    removes an allocation names the function producing it today and says
+    what that function becomes, not only where its value lands.
 
 ## Appendix A — Verification commands
 

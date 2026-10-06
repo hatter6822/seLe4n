@@ -102,6 +102,14 @@ Documentation only: no Lean, Rust or fixture change.
   capture is `InFlightContext.snapshotInto`, a full-field update into the
   TCB's own context, in place once CV4.4 has made that object exclusively
   owned, so a continuing syscall keeps at most three named allocations.
+  The thirteenth round: CV4.5 writes the restore operands into the commit
+  record where `restoreTargetOnCore` builds `.user` today (no
+  `threadTranslationOperands` pair, no `some` from `fpLiveFor`'s `==`); CV4.4
+  takes the context out of both holders at the capture as well as the
+  stage; CV3.1's entry matches the binding's persistent `some` wrapper
+  directly, so its `Except` intermediate goes; CV0.2's hazard test is a pure boundary-crate probe over
+  `saveCapturedSyscallFrame`, pinning today's closure hazard and flipped at
+  CV3.5; the §14 record's activation-cut range reads CB1.7–CB1.9.
 
 ## v0.36.49 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
 
