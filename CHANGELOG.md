@@ -49,7 +49,7 @@ Documentation only: no Lean, Rust or fixture change.
   of them boxed `UInt64`s on the restore.  The plan's acceptance is measured
   (a heap allocation counter, a two-trap hazard test through the boundary
   crate), not stated.  `HIERARCHICAL_CBS_PLAN.md`'s status and the
-  `WS-CB` registry row say it opens after WS-CV, re-verified by CV5.3.
+  `WS-CB` registry row say it opens after WS-CV, re-verified by CV5.2.
 - `scripts/identifier_naming_baseline.json` regenerated (+2 occurrences):
   registering WS-CV makes `CV<n>` a phase-code family, and the naming gate's
   camel-case split reads the boot log's hardware name `GICv2`
@@ -58,7 +58,7 @@ Documentation only: no Lean, Rust or fixture change.
 - Merged onto `v0.36.49` (the IPC-2 / IPC-5 slice): the CBS plan's hedges
   over whether `endpointReplyRecvOnCore` and `modifyTcb` land first now
   name them as landed; the `Nat`-backed register-file debt row names WS-CV
-  as its owner (closed by CV5.1, the bundle conjunct and boot census
+  as its owner (closed by CV5.3, the bundle conjunct and boot census
   retiring with the carrier at CV1.1); `CONTEXT_BY_VALUE_PLAN.md`'s
   citations re-checked at this head (`Machine.lean:836`, `Heap::alloc`).
 

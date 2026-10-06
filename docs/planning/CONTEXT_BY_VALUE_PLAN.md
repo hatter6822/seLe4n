@@ -73,7 +73,7 @@ conversion, no allocation), and the HAL hands its in-flight context over as a
   generated C of `Platform/FFI.c`, `SyscallDispatchEntry.c`,
   `TrapFrameSave.c` and `ContextRestore.c` contains no `lean_alloc_closure`
   and no `lean_box_uint64` reachable from the entry functions — checked by
-  reading the generated C at CV5.2, not by a scanner).
+  reading the generated C at CV5.1, not by a scanner).
 - The HAL's `ffi_trap_context` allocates nothing (`lean_heap` counter
   unchanged across the call; Rust unit test, CV3.4).
 - The two-trap hazard test (CV3.5): two traps on one core, the first's context
@@ -303,7 +303,7 @@ where `RegValue` stays (D1).
   `lean_alloc_object` serves from); `ffi_heap_allocations : BaseIO UInt64` exposes
   it to the host harness only (`SeLe4n/Testing/`, outside the kernel archive,
   as `BoundaryProbes` is).  A host test runs one syscall round trip and prints
-  the delta; the baseline is recorded at CV0.1 and the result at CV5.2 in the
+  the delta; the baseline is recorded at CV0.1 and the result at CV5.1 in the
   CHANGELOG.  No gate pins the number: it is evidence, read by review.
 
 ## 4. Schedule — phases and sub-tasks, in execution order
@@ -323,22 +323,22 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV1.1 | `RegisterFile` as the 35-field `UInt64` structure with `gpr`, `readReg`, `writeReg`, `word`, `ofWords` and their lemmas; `TrapContext`'s layout constants move; `wordBounded` and the `beq_*`/`not_lawfulBEq` surface retire; **in the same row, because nothing compiles beyond `Machine.lean` without them**: the writers of §3.2 on the new carrier (`stageReturnFrame`, `stageRestartFrame`, `spill`, `writeFfiRegistersToTcb`, `restartAtSvc`, `writeRegisterState`, `setPC`), the 49 literals, `Repr`; the `_wordBounded` lemmas and `RegisterContextBounded.lean` deleted; `contextMatchesCurrent` proofs simplified to decidable equality; **every one of the 292 register theorems compiles**; fixture `main_trace_smoke.expected` unchanged or its change justified | `SeLe4n/Machine.lean`, the 43 `SeLe4n/` files, the 8 test suites |
-| CV1.2 | The information-flow surface: `ObservableState.machineRegs`, the per-core fragments and `lowEquivalentSliceOnCoreCheckWithRegs` on lawful equality; the `machineRegs` unwinding relations re-proved where they cited `beq_*` | `InformationFlow/*` |
+| CV1.1 | `RegisterFile` as the 35-field `UInt64` structure with `gpr`, `readReg`, `writeReg`, `word`, `ofWords` and their lemmas; `TrapContext`'s layout constants move; `wordBounded` retires; the three `not_lawfulBEq` witnesses (§6) are deleted — they are false on a lawful carrier and only prose cites them — while `RegisterFile.beq_self` / `beq_def` / `beq_symm` and the other `beq_*` lemmas are **kept as compatibility lemmas**, re-proved as one-line corollaries of `LawfulBEq`, so their consumers in the scheduler, architecture and information-flow files compile unchanged in this row; **in the same row, because nothing compiles beyond `Machine.lean` without them**: the writers of §3.2 on the new carrier (`stageReturnFrame`, `stageRestartFrame`, `spill`, `writeFfiRegistersToTcb`, `restartAtSvc`, `writeRegisterState`, `setPC`), the 49 literals, `Repr`; the `_wordBounded` lemmas and `RegisterContextBounded.lean` deleted; `contextMatchesCurrent` proofs simplified to decidable equality; **every one of the 292 register theorems compiles**; fixture `main_trace_smoke.expected` unchanged or its change justified | `SeLe4n/Machine.lean`, the 43 `SeLe4n/` files, the 8 test suites |
+| CV1.2 | The information-flow surface: `ObservableState.machineRegs`, the per-core fragments and `lowEquivalentSliceOnCoreCheckWithRegs` on lawful equality; the `machineRegs` unwinding relations re-proved where they cited `beq_*`; then the `beq_*` compatibility lemmas of CV1.1 are **retired with their last consumer** — every citing site (the scheduler and architecture files included, enumerated by the build when the lemmas are deleted) rewritten to `beq_iff_eq` / decidable equality — so the lemmas are never deleted while a consumer remains (consumes CV1.1) | `InformationFlow/*`, `Machine.lean`, the remaining `beq_*` consumers |
 | CV1.3 | Docs for CV1: `docs/spec/SELE4N_SPEC.md` (the register-file passages), `docs/DEVELOPMENT.md` §5 if a file moved, `WORKSTREAM_CONTEXT.md`; the `v0.36.47` debt row shortened to CV2–CV4 | docs |
 
 ### CV2 — one boundary type (§3.3)
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV2.1 | `TrapContext` deleted; `ffiRestoreStageContext` over `RegisterFile`; `restoreTrapFrame` stages the TCB context; conversions and round-trip theorems deleted; `faultEntryFrame?` on `RegisterFile`; anchors retargeted | `Architecture/TrapFrameSave.lean`, `ContextRestore.lean`, `Platform/FFI.lean`, `FaultEntry.lean`, `SyscallDispatchEntry.lean` |
+| CV2.1 | `TrapContext` deleted; `ffiRestoreStageContext` over `RegisterFile`; `restoreTrapFrame` stages the TCB context; conversions and round-trip theorems deleted; `faultEntryFrame?` on `RegisterFile`; **the entry binding retyped in the same row**: `Platform.FFI.ffiTrapContext : BaseIO (Option RegisterFile)` — the HAL's `ffi_trap_context` writes the 35 words into a `RegisterFile` object (the layout constants CV1.1 moved), `registerFileOfTrapContext` goes with the conversions, and `syscallEntryContextOrFaulted` and the entry wrappers read the `RegisterFile` directly — a **temporary** binding that still allocates per trap, replaced by `Option InFlightContext` in CV3.1 (consumes CV1.1); anchors retargeted | `Architecture/TrapFrameSave.lean`, `ContextRestore.lean`, `Platform/FFI.lean`, `FaultEntry.lean`, `SyscallDispatchEntry.lean` |
 | CV2.2 | `BoundaryProbes.lean` and `layout.rs` retargeted to `RegisterFile.word` / `ofWords`; the Rust constants unchanged; Tier 1 lane green | `SeLe4n/Testing/`, `rust/sele4n-lean-boundary/` |
 
 ### CV3 — the persistent in-flight object (§3.4)
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV3.1 | `Architecture.InFlightContext`, `snapshot`, `snapshot_word`; `ffiTrapContext : BaseIO (Option InFlightContext)`; `syscallEntryContextOrFaulted` and the entry wrappers on it; `SystemState` stays free of the type | Lean |
+| CV3.1 | `Architecture.InFlightContext`, `snapshot`, `snapshot_word`; `ffiTrapContext : BaseIO (Option InFlightContext)` replacing CV2.1's temporary `Option RegisterFile` binding; `syscallEntryContextOrFaulted` and the entry wrappers on it; `SystemState` stays free of the type (consumes CV2.1) | Lean |
 | CV3.2 | `trap::InFlightContextObjects`: per-core persistent object and wrapper, initialised at runtime bring-up; `ffi_trap_context` writes and returns without allocating; `trap_context_of_lean` accepts the executing core's object by address | `rust/sele4n-hal/src/trap.rs`, `ffi.rs`, `lean_runtime/` |
 | CV3.3 | The cross-language test extended: a snapshot is a different object with the same words; the probes export `snapshot` | `rust/sele4n-lean-boundary/` |
 | CV3.4 | Rust unit tests: persistence after `lean_dec`, zero allocations across `ffi_trap_context`, by-address acceptance, refusal of another core's object | `ffi.rs` tests |
@@ -357,9 +357,9 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV5.1 | The `v0.36.47` register-file debt row deleted; `WORKSTREAM_CONTEXT.md` section moved to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`; this plan moved to `docs/dev_history/planning/` | docs |
-| CV5.2 | The measurement re-run and recorded against CV0.1's baseline; the generated C of the four entry/exit modules read for `lean_alloc_closure` / `lean_box_uint64` on the entry path (§1.1) and the finding recorded in the CHANGELOG | `CHANGELOG.md` |
-| CV5.3 | `HIERARCHICAL_CBS_PLAN.md` re-verified against the tree WS-CV leaves (its preemption rows save and restore the new `RegisterFile`); WS-CB opens | `docs/planning/HIERARCHICAL_CBS_PLAN.md` |
+| CV5.1 | The measurement re-run and recorded against CV0.1's baseline; the generated C of the four entry/exit modules read for `lean_alloc_closure` / `lean_box_uint64` on the entry path (§1.1) and the finding recorded in the CHANGELOG — the acceptance measurement, before anything is archived | `CHANGELOG.md` |
+| CV5.2 | `HIERARCHICAL_CBS_PLAN.md` re-verified against the tree WS-CV leaves (its preemption rows save and restore the new `RegisterFile`), while this plan is still at its live path (consumes CV5.1) | `docs/planning/HIERARCHICAL_CBS_PLAN.md` |
+| CV5.3 | Closure, last: the `v0.36.47` register-file debt row deleted; `WORKSTREAM_CONTEXT.md` section moved to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`; this plan moved to `docs/dev_history/planning/`; WS-CB opens (consumes CV5.2) | docs |
 
 ## 5. Proof obligations
 
