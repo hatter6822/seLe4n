@@ -383,7 +383,7 @@ def cleanupDonatedSchedContext (st : SystemState) (tid : SeLe4n.ThreadId)
 theorem cleanupDonatedSchedContext_scheduler_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (h : cleanupDonatedSchedContext st tid = .ok st') :
-    st'.scheduler = st.scheduler := by
+    st'.scheduler = { st.scheduler with reschedulePending := st'.scheduler.reschedulePending } := by
   simp only [cleanupDonatedSchedContext] at h
   split at h
   · injection h with h; subst h; rfl

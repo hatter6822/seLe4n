@@ -372,7 +372,7 @@ theorem abortPendingIpcOnEndpoint_passiveServerIdleFrame
   have hI1 : st1.objects.invExt :=
     endpointQueueRemove_preserves_objects_invExt epId isReceiveQ tid st st1 hInv hRem
   refine passiveServerIdleFrame_of_backward_of_not_allowed ?_
-    (abortPendingIpcOnEndpoint_scheduler_eq epId isReceiveQ tid st st' hStep)
+    (by rw [abortPendingIpcOnEndpoint_scheduler_eq epId isReceiveQ tid st st' hStep])
   intro a tcb' hPostT _ hNA
   have hPost := (SystemState.getTcb?_eq_some_iff st' a tcb').mp hPostT
   by_cases hEq : a.toObjId = tid.toObjId

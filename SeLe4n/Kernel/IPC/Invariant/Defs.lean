@@ -6479,7 +6479,9 @@ theorem IpcInvariantFull.toTuple {st : SystemState}
 /-- AI4-A: cleanupPreReceiveDonation preserves scheduler state. -/
 theorem cleanupPreReceiveDonation_scheduler_eq
     (st : SystemState) (receiver : SeLe4n.ThreadId) :
-    (cleanupPreReceiveDonation st receiver).scheduler = st.scheduler := by
+    (cleanupPreReceiveDonation st receiver).scheduler =
+      { st.scheduler with reschedulePending :=
+          (cleanupPreReceiveDonation st receiver).scheduler.reschedulePending } := by
   unfold cleanupPreReceiveDonation
   cases hTcb : lookupTcb st receiver with
   | none => rfl
@@ -6507,7 +6509,7 @@ then disagree about a branch. -/
 theorem cleanupPreReceiveDonationChecked_scheduler_eq
     (st st' : SystemState) (receiver : SeLe4n.ThreadId)
     (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
-    st'.scheduler = st.scheduler :=
+    st'.scheduler = { st.scheduler with reschedulePending := st'.scheduler.reschedulePending } :=
   (cleanupPreReceiveDonationChecked_ok_eq_cleanup st st' receiver h) ▸
     cleanupPreReceiveDonation_scheduler_eq st receiver
 

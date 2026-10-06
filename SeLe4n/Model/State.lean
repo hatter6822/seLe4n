@@ -530,6 +530,22 @@ own reductions rather than asking `simp` to see through the definition. -/
 @[simp] theorem setReschedulePendingOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : Bool) :
     (s.setReschedulePendingOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
   simp [SchedulerState.setReschedulePendingOnCore]
+/-- A flag-vector replacement (the form the binding writers' scheduler frames
+state) leaves every other per-core slot alone. -/
+@[simp] theorem withReschedulePending_currentOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+    ({ s with reschedulePending := v } : SchedulerState).currentOnCore c = s.currentOnCore c := rfl
+@[simp] theorem withReschedulePending_runQueueOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+    ({ s with reschedulePending := v } : SchedulerState).runQueueOnCore c = s.runQueueOnCore c := rfl
+@[simp] theorem withReschedulePending_replenishQueueOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+    ({ s with reschedulePending := v } : SchedulerState).replenishQueueOnCore c = s.replenishQueueOnCore c := rfl
+@[simp] theorem withReschedulePending_activeDomainOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+    ({ s with reschedulePending := v } : SchedulerState).activeDomainOnCore c = s.activeDomainOnCore c := rfl
+@[simp] theorem withReschedulePending_domainTimeRemainingOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+    ({ s with reschedulePending := v } : SchedulerState).domainTimeRemainingOnCore c = s.domainTimeRemainingOnCore c := rfl
+@[simp] theorem withReschedulePending_domainScheduleIndexOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+    ({ s with reschedulePending := v } : SchedulerState).domainScheduleIndexOnCore c = s.domainScheduleIndexOnCore c := rfl
+@[simp] theorem withReschedulePending_lastTimeoutErrorsOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+    ({ s with reschedulePending := v } : SchedulerState).lastTimeoutErrorsOnCore c = s.lastTimeoutErrorsOnCore c := rfl
 @[simp] theorem setCurrentOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
     (s.setCurrentOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
   simp [SchedulerState.setCurrentOnCore, SchedulerState.reschedulePendingOnCore]

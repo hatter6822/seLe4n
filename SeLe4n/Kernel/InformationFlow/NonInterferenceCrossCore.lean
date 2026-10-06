@@ -349,7 +349,7 @@ theorem cleanupPreReceiveDonationChecked_confinedToCores (st st' : SystemState)
     observableSlotsConfinedToCores st st' [] := by
   have hEq : cleanupPreReceiveDonation st receiver = st' :=
     cleanupPreReceiveDonationChecked_ok_eq_cleanup st st' receiver hStep
-  exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+  exact observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
     (hEq ▸ cleanupPreReceiveDonation_scheduler_eq st receiver)
     (hEq ▸ cleanupPreReceiveDonation_machine_eq st receiver)
 
@@ -930,7 +930,7 @@ scheduler frame alone never bounded the teardown's observable writes. -/
 theorem cancelIpcBlocking_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) :
     observableSlotsConfinedToCores st (cancelIpcBlocking st tid tcb) [] :=
-  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+  observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
     (cancelIpcBlocking_scheduler_eq st tid tcb) (cancelIpcBlocking_machine_eq st tid tcb)
 
 -- ============================================================================
@@ -1148,7 +1148,7 @@ theorem applyCallDonation_confinedToCores (st st' : SystemState)
     (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (hStep : applyCallDonation st callerVtid receiverVtid = .ok st') :
     observableSlotsConfinedToCores st st' [] :=
-  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+  observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
     (applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hStep)
     (applyCallDonation_machine_eq st callerVtid receiverVtid st' hStep)
 
@@ -1615,7 +1615,7 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
         ∧ stMig.scheduler.currentOnCore c = stRet.scheduler.currentOnCore c :=
       fun c => migrateSchedContextReplenishment_runQueue_current_eq stRet scId
         holderHome ownerHome c
-    have hRetSched : stRet.scheduler = st.scheduler :=
+    have hRetSched :=
       returnDonatedSchedContext_scheduler_eq st stRet _ _ _ n hRet
     have hList : replyDonationDescheduleCores st rid
         = descheduleAtPlacementCores st holderVtid.val := by
@@ -1629,8 +1629,8 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
     exact observableSlotsConfinedToCores_trans
       (by
         simpa using observableSlotsConfinedToCores_trans
-          (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq hRetSched
-            (returnDonatedSchedContext_machine_eq st stRet _ _ _ n hRet))
+          (observableSlotsConfinedToCores_nil_of_scheduler_regs_eq hRetSched
+            (fun _ => by rw [returnDonatedSchedContext_machine_eq st stRet _ _ _ n hRet]))
           (migrateSchedContextReplenishment_confinedToCores stRet scId holderHome ownerHome))
       (descheduleAtPlacement_confinedToCores stMig holderVtid.val)
 
@@ -1952,7 +1952,7 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
           rw [hRet] at hStep
           obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
           have hReturn : observableSlotsConfinedToCores st st1' [] :=
-            observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+            observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
               (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ n hPopN)
               (returnDonatedSchedContext_machine_eq st st1' _ _ _ n hPopN)
           have hEq : migrateSchedContextReplenishment st1' oldScId
@@ -2584,7 +2584,7 @@ theorem cancelDonatedDonationOnCore_confinedToCores (st st' : SystemState)
       rw [Except.ok.injEq] at h
       subst h
       exact observableSlotsConfinedToCores_trans
-        (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+        (observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
           (cleanupDonatedSchedContext_scheduler_eq st stCleanup tid hCleanup)
           (cleanupDonatedSchedContext_machine_eq st stCleanup tid hCleanup))
         (migrateSchedContextReplenishment_confinedToCores stCleanup _ _ _)

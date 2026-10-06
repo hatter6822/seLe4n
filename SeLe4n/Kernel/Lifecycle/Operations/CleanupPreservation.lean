@@ -1199,8 +1199,8 @@ theorem cancelDonatedDonationOnCore_runQueue_current_eq
       obtain ⟨hRQ, hCur⟩ := migrateSchedContextReplenishment_runQueue_current_eq
         st1 _ (determineTargetCore st tid) _ c
       constructor
-      · rw [hRQ, hS]
-      · rw [hCur, hS]
+      · rw [hRQ, hS]; rfl
+      · rw [hCur, hS]; rfl
   · cases h
 
 /-- `v0.35.164`: the donated arm writes no register bank — the return does not
@@ -1466,13 +1466,14 @@ theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_s
       obtain ⟨scPost, hScPost, hScPostBound⟩ :=
         returnDonatedSchedContext_post_boundThread st st1 tid scId originalOwner hInv
           newOwner? hRet
-      have hSched : st1.scheduler = st.scheduler :=
+      have hSched : st1.scheduler =
+          { st.scheduler with reschedulePending := st1.scheduler.reschedulePending } :=
         returnDonatedSchedContext_scheduler_eq st st1 tid scId originalOwner newOwner? hRet
       rw [← replenishHomeOfSchedContext_eq_of_bound st1 scId (determineTargetCore st tid)
         scPost originalOwner hScPost hScPostBound]
       exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp st st1
         scId (determineTargetCore st tid) scPre tid
-        (fun c => by rw [hSched])
+        (fun c => by rw [hSched]; rfl)
         (fun scId₀ hne => returnDonatedSchedContext_getSchedContext?_ne st st1 tid scId scId₀
           originalOwner hne hInv newOwner? hRet)
         (fun x => determineTargetCore_congr st st1 x

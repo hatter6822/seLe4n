@@ -1008,8 +1008,8 @@ theorem endpointCallWithCapsOnCore_preserves_schedulerInvariantBase_smp
                 obtain ⟨summary, stFinal⟩ := pair
                 simp only
                 exact schedulerInvariantBase_smp_of_frame hBare
-                  (ipcUnwrapCaps_preserves_scheduler _ recvRoot receiverSlotBase _ stCall
-                    stFinal summary hUnwrap)
+                  (by rw [ipcUnwrapCaps_preserves_scheduler _ recvRoot receiverSlotBase _ stCall
+                    stFinal summary hUnwrap])
                   (fun tid hSome => by
                     rw [ipcUnwrapCaps_getTcb?_eq _ recvRoot receiverSlotBase _ stCall stFinal
                       summary tid hBareInv hUnwrap]
@@ -1137,9 +1137,10 @@ theorem applyCallDonationOnCore_preserves_schedulerInvariantBase_smp
   obtain ⟨st1, hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
     donorHome doneeHome hStep
   have h1 : schedulerInvariantBase_smp st1 :=
-    schedulerInvariantBase_smp_of_kindPreserving h
+    schedulerInvariantBase_smp_of_frame h
       (applyCallDonation_scheduler_eq st callerVtid receiverVtid st1 hDon)
-      (applyCallDonation_kindPreservingWrite st st1 callerVtid receiverVtid hObjInv hDon)
+      (kindPreservingWrite.getTcb?_isSome
+        (applyCallDonation_kindPreservingWrite st st1 callerVtid receiverVtid hObjInv hDon))
   rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
   · exact h1
   · exact migrateSchedContextReplenishment_preserves_schedulerInvariantBase_smp _ _ _ h1

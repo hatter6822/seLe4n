@@ -425,7 +425,7 @@ theorem cleanupPreReceiveDonationMigrated_runQueueOnCore (st st' : SystemState)
     st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c := by
   obtain ⟨stClean, hC, rfl⟩ := cleanupPreReceiveDonationMigrated_ok_decompose h
   rw [preReceiveReturnMigration_runQueueOnCore,
-    cleanupPreReceiveDonationChecked_scheduler_eq st stClean receiver hC]
+    cleanupPreReceiveDonationChecked_scheduler_eq st stClean receiver hC]; rfl
 
 /-- ...and no current slot... -/
 theorem cleanupPreReceiveDonationMigrated_currentOnCore (st st' : SystemState)
@@ -434,7 +434,7 @@ theorem cleanupPreReceiveDonationMigrated_currentOnCore (st st' : SystemState)
     st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c := by
   obtain ⟨stClean, hC, rfl⟩ := cleanupPreReceiveDonationMigrated_ok_decompose h
   rw [preReceiveReturnMigration_currentOnCore,
-    cleanupPreReceiveDonationChecked_scheduler_eq st stClean receiver hC]
+    cleanupPreReceiveDonationChecked_scheduler_eq st stClean receiver hC]; rfl
 
 /-- ...and never advances the machine timer. -/
 theorem cleanupPreReceiveDonationMigrated_machine_eq (st st' : SystemState)
@@ -481,11 +481,11 @@ theorem cleanupPreReceiveDonationMigrated_preserves_replenishQueueAffinityConsis
     obtain ⟨newOwner?, _, hRet⟩ := returnDonatedSchedContextResolved_ok_decompose hC
     obtain ⟨scPre, hScPre, hScPreBound⟩ :=
       returnDonatedSchedContext_ok_implies_sc_bound st stClean receiver scId owner newOwner? hRet
-    have hSched : stClean.scheduler = st.scheduler :=
+    have hSched :=
       returnDonatedSchedContext_scheduler_eq st stClean receiver scId owner newOwner? hRet
     exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp st stClean
       scId (determineTargetCore st receiver) scPre receiver
-      (fun c => by rw [hSched])
+      (fun c => by rw [hSched]; rfl)
       (fun scId₀ hne => returnDonatedSchedContext_getSchedContext?_ne st stClean receiver scId
         scId₀ owner hne hObjInv newOwner? hRet)
       (fun tid => determineTargetCore_congr st stClean tid
@@ -4651,7 +4651,7 @@ theorem cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne (st st' : Syst
   have hSched := cleanupPreReceiveDonationChecked_scheduler_eq st stClean receiver hClean
   cases hDon : preReceiveDonation? st receiver with
   | none =>
-    rw [hEq, preReceiveReturnMigration_of_no_donation st stClean receiver hDon, hSched]
+    rw [hEq, preReceiveReturnMigration_of_no_donation st stClean receiver hDon, hSched]; rfl
   | some pair =>
     obtain ⟨scId, owner⟩ := pair
     rw [receivePreReturnReplenishCores_eq_migration st stClean endpointId receiver scId owner
@@ -4662,7 +4662,7 @@ theorem cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne (st st' : Syst
       migrateSchedContextReplenishment_replenishQueueOnCore_other stClean scId
         (determineTargetCore st receiver)
         (replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)) c
-        (Ne.symm hFrom) (Ne.symm hTo), hSched]
+        (Ne.symm hFrom) (Ne.symm hTo), hSched]; rfl
 
 /-- **WS-RR RR8.12**: **the cores whose replenish queue a cross-core receive may
 write** — the dequeued donor's home and the receiver's, on a rendezvous whose

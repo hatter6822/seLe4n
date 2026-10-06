@@ -556,12 +556,15 @@ theorem abortHolderPendingIpc_preserves_donationOwnerValid (st : SystemState)
     · exact hOwner
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return preserves the
-scheduler — its three `storeObject`s write `objects` and the bookkeeping maps,
-and the replenishment migration that *does* write the scheduler sits at the
+scheduler except the reschedule flags — its three `storeObject`s write `objects`
+and the bookkeeping maps, the key-change hook (KSC-1) raises flags only, and the
+replenishment migration that *does* write the rest of the scheduler sits at the
 `OnCore` layer, where the two home cores are resolved for the bracket. -/
 theorem returnDonationToCancelledCaller_scheduler_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    (returnDonationToCancelledCaller st tid tcb).scheduler = st.scheduler := by
+    (returnDonationToCancelledCaller st tid tcb).scheduler =
+      { st.scheduler with reschedulePending :=
+          (returnDonationToCancelledCaller st tid tcb).scheduler.reschedulePending } := by
   unfold returnDonationToCancelledCaller
   split
   · rename_i scId holder _ _ _
@@ -570,8 +573,8 @@ theorem returnDonationToCancelledCaller_scheduler_eq (st : SystemState)
     | error _ => rfl
     | ok st' =>
       obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      exact (returnDonatedSchedContext_scheduler_eq _ st' holder scId tid n hPop).trans
-        (abortHolderPendingIpc_scheduler_eq st holder)
+      rw [returnDonatedSchedContext_scheduler_eq _ st' holder scId tid n hPop,
+        abortHolderPendingIpc_scheduler_eq st holder]
   · rfl
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return never touches
@@ -728,13 +731,16 @@ theorem spliceThreadReplyFrameOut_preserves_ipcInvariant (st : SystemState) (tcb
   · intro oid ntfn hN
     exact hIpc oid ntfn (spliceReplyFrameOut_notification_backward hInv h oid ntfn hN)
 
-/-- D1-I: cancelIpcBlocking only modifies `objects`, preserving the scheduler.
+/-- D1-I: cancelIpcBlocking only modifies `objects`, preserving the scheduler
+    except the reschedule flags (the donation return's KSC-1 key-change hook).
     Each IPC state branch either (a) is a no-op, (b) uses
     removeFromAllEndpointQueues (which preserves scheduler) then inserts into
     objects, or (c) uses removeFromAllNotificationWaitLists then inserts. -/
 theorem cancelIpcBlocking_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    (cancelIpcBlocking st tid tcb).scheduler = st.scheduler := by
+    (cancelIpcBlocking st tid tcb).scheduler =
+      { st.scheduler with
+          reschedulePending := (cancelIpcBlocking st tid tcb).scheduler.reschedulePending } := by
   unfold cancelIpcBlocking
   cases tcb.ipcState with
   | ready => rfl
@@ -746,8 +752,9 @@ theorem cancelIpcBlocking_scheduler_eq
     -- WS-RR RR7.22 (residual, remediation): so does the donation return — its
     -- three `storeObject`s leave the scheduler alone, which is why the
     -- replenishment migration sits at the `OnCore` layer and not here.
-    rw [consumeReplyLink_scheduler_eq, restoreToReadyCancelled_scheduler_eq,
-      spliceThreadReplyFrameOut_scheduler_eq, returnDonationToCancelledCaller_scheduler_eq]
+    simp only [consumeReplyLink_scheduler_eq, restoreToReadyCancelled_scheduler_eq,
+      spliceThreadReplyFrameOut_scheduler_eq]
+    exact returnDonationToCancelledCaller_scheduler_eq st tid tcb
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
 

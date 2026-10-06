@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.Scheduler.Operations.ReschedulePending
 
 /-! # AN3-E.5 (IPC-M09) — `cleanupPreReceiveDonation` co-location banner.
 
@@ -1811,10 +1812,15 @@ def donateSchedContext
                     -- `timeoutBlockedThreads` accurate — only the server (which
                     -- actually runs on the SchedContext) is iterated on budget
                     -- exhaustion, never the descheduled donor.
-                    .ok { st4 with scThreadIndex :=
-                      (scThreadIndexRemove
-                        (scThreadIndexAdd st4.scThreadIndex clientScId serverTid)
-                        clientScId clientTid) }
+                    --
+                    -- The reschedule-SGI accumulator (KSC-1): both bindings moved,
+                    -- so both threads' effective deadlines may have; each one's key
+                    -- is read on the pre-state and every core it stales is flagged.
+                    .ok (markKeyChangeFrom st (markKeyChangeFrom st
+                      { st4 with scThreadIndex :=
+                        (scThreadIndexRemove
+                          (scThreadIndexAdd st4.scThreadIndex clientScId serverTid)
+                          clientScId clientTid) } clientTid) serverTid)
   | none => .error .objectNotFound
 
 /-- WS-OD OD4.1: **the donation push *is* four store steps followed by a
@@ -1866,7 +1872,9 @@ theorem donateSchedContext_ok_storeChain
       storeObject serverTid.toObjId
         (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid })
         s3 = .ok ((), s4) ∧
-      st' = { s4 with scThreadIndex := st'.scThreadIndex } := by
+      st' = { s4 with
+        scheduler := { s4.scheduler with reschedulePending := st'.scheduler.reschedulePending },
+        scThreadIndex := st'.scThreadIndex } := by
   unfold donateSchedContext at h
   revert h
   cases hObj : st.getSchedContext? clientScId with
@@ -1927,7 +1935,8 @@ theorem donateSchedContext_ok_storeChain
                         exact ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply,
                           s1, s2, s3, s4, rfl,
                           by simpa using hBne, rfl, hFrame,
-                          hS1, hS2, hLC, hS3, hL, hS4, rfl⟩
+                          hS1, hS2, hLC, hS3, hL, hS4,
+                          markKeyChangeFrom_twice_eq_with st _ clientTid serverTid⟩
 
 /-- WS-OD OD4.1: **the pushed frame is the donor's own reply object, and it is
 the context's new head.**
@@ -6142,10 +6151,17 @@ def returnDonatedSchedContext
                   -- from {server} back to {originalOwner}: remove the server and re-add the
                   -- now-bound-or-donating donor (the inverse of `donateSchedContext`'s
                   -- index update), keeping `scThreadIndexConsistent`.
-                  .ok { st4 with scThreadIndex :=
-                    (scThreadIndexAdd
-                      (scThreadIndexRemove st4.scThreadIndex scId serverTid)
-                      scId originalOwner) }
+                  --
+                  -- The reschedule-SGI accumulator (KSC-1): both bindings moved, so
+                  -- both threads' effective deadlines may have -- the recipient's
+                  -- above all, which since HP10.7 may be the recorded origin and so
+                  -- queued or running anywhere.  Each key is read on the pre-state
+                  -- and every core it stales is flagged.
+                  .ok (markKeyChangeFrom st (markKeyChangeFrom st
+                    { st4 with scThreadIndex :=
+                      (scThreadIndexAdd
+                        (scThreadIndexRemove st4.scThreadIndex scId serverTid)
+                        scId originalOwner) } originalOwner) serverTid)
   | none => .error .objectNotFound
 
 
@@ -6959,7 +6975,9 @@ theorem returnDonatedSchedContext_ok_storeChain
       lookupTcb s3 serverTid = some serverTcb ∧
       storeObject serverTid.toObjId
         (.tcb { serverTcb with schedContextBinding := .unbound }) s3 = .ok ((), s4) ∧
-      st' = { s4 with scThreadIndex := st'.scThreadIndex } := by
+      st' = { s4 with
+        scheduler := { s4.scheduler with reschedulePending := st'.scheduler.reschedulePending },
+        scThreadIndex := st'.scThreadIndex } := by
   unfold returnDonatedSchedContext SystemState.getSchedContext? at h
   revert h
   cases hObj : st.objects[scId.toObjId]? with
@@ -7017,7 +7035,8 @@ theorem returnDonatedSchedContext_ok_storeChain
                       cases h
                       exact ⟨sc, head?, clientTcb, serverTcb, p1.2, s2, p3.2, p4.2, rfl,
                         trivial, trivial, hHead, by rw [← hS1], hS2, hL1, by rw [← hS3],
-                        hL2, by rw [← hS4], rfl⟩
+                        hL2, by rw [← hS4],
+                        markKeyChangeFrom_twice_eq_with st _ originalOwner serverTid⟩
     | _ => intro h; cases h
 
 /-- WS-OD OD4.4: **a successful pop validated its outer caller.**
@@ -7230,10 +7249,11 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
                      (.tcb { serverTcb with schedContextBinding := .unbound }) st2 with
                  | .error e => .error e
                  | .ok ((), st3) =>
-                   .ok { st3 with scThreadIndex :=
-                     (scThreadIndexAdd
-                       (scThreadIndexRemove st3.scThreadIndex scId serverTid)
-                       scId originalOwner) }) := by
+                   .ok (markKeyChangeFrom st (markKeyChangeFrom st
+                     { st3 with scThreadIndex :=
+                       (scThreadIndexAdd
+                         (scThreadIndexRemove st3.scThreadIndex scId serverTid)
+                         scId originalOwner) } originalOwner) serverTid)) := by
   have hSame : donationReturnSchedContext sc originalOwner
       ((none : Option (SeLe4n.ReplyId × Reply)).bind (fun p => p.2.prev)) none
       = { sc with boundThread := some originalOwner } := by
@@ -8007,7 +8027,8 @@ theorem storeObject_serviceRegistry_eq
     st'.serviceRegistry = st.serviceRegistry := by
   unfold storeObject at hStore; cases hStore; rfl
 
-/-- Z7-C: returnDonatedSchedContext only modifies objects — scheduler preserved. -/
+/-- Z7-C: returnDonatedSchedContext only modifies objects — the scheduler is preserved
+except for the reschedule flags its key hooks raise (KSC-1). -/
 theorem returnDonatedSchedContext_scheduler_eq
     (st st' : SystemState)
     (serverTid : SeLe4n.ThreadId)
@@ -8015,12 +8036,13 @@ theorem returnDonatedSchedContext_scheduler_eq
     (originalOwner : SeLe4n.ThreadId)
     (newOwner? : Option SeLe4n.ThreadId)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
-    st'.scheduler = st.scheduler := by
+    st'.scheduler = { st.scheduler with reschedulePending := st'.scheduler.reschedulePending } := by
   obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
-  rw [hEq]
-  show s4.scheduler = st.scheduler
-  rw [SeLe4n.Model.storeObject_scheduler_eq s3 s4 _ _ h4,
+  have hS : st'.scheduler =
+      { s4.scheduler with reschedulePending := st'.scheduler.reschedulePending } :=
+    congrArg SystemState.scheduler hEq
+  rw [hS,SeLe4n.Model.storeObject_scheduler_eq s3 s4 _ _ h4,
     SeLe4n.Model.storeObject_scheduler_eq s2 s3 _ _ h3,
     storeDonationHeadPop_scheduler_eq hClear,
     SeLe4n.Model.storeObject_scheduler_eq st s1 _ _ h1]

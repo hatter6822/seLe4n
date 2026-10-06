@@ -1678,7 +1678,7 @@ theorem cancelIpcBlockingMigrated_replenishQueueOnCore_ne (st : SystemState)
   rw [hDon]
   dsimp only
   rw [migrateSchedContextReplenishment_replenishQueueOnCore_other _ _ _ _ _ hFrom hTo,
-    Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]
+    Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl
 
 /-- `v0.35.169`: ...and with nothing donated it writes none at all. -/
 theorem cancelIpcBlockingMigrated_replenishQueueOnCore_of_no_donation (st : SystemState)
@@ -1687,7 +1687,7 @@ theorem cancelIpcBlockingMigrated_replenishQueueOnCore_of_no_donation (st : Syst
     (cancelIpcBlockingMigrated victim tcb st).scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   rw [cancelIpcBlockingMigrated_of_no_donation _ _ _ hDon,
-    Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]
+    Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl
 
 /-- `v0.35.169`: and the reclaim-complete teardown writes what the migration
 writes — its holder deschedule is a run-queue step. -/

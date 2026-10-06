@@ -519,10 +519,10 @@ theorem applyCallDonationOnCore_runQueue_current_eq
     donorHome doneeHome h
   have hS := applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon
   rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
-  · exact ⟨by rw [hS], by rw [hS]⟩
+  · exact ⟨by rw [hS]; rfl, by rw [hS]; rfl⟩
   · obtain ⟨hRQ, hCur⟩ :=
       migrateSchedContextReplenishment_runQueue_current_eq st' scId donorHome doneeHome c
-    exact ⟨by rw [hRQ, hS], by rw [hCur, hS]⟩
+    exact ⟨by rw [hRQ, hS]; rfl, by rw [hCur, hS]; rfl⟩
 
 /-- WS-RR RR2.1 (frame): the cross-core call donation commits exactly the
 single-core donation's object store — the migration writes no object. -/
@@ -593,7 +593,8 @@ theorem applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     have hDonate : donateSchedContext st callerVtid.val receiverVtid.val scId = .ok st1 :=
       (applyCallDonation_eq_donate_of_donation st callerVtid receiverVtid scId hSome).symm.trans hDon
     -- The rebinding's readings.
-    have hSched : st1.scheduler = st.scheduler :=
+    have hSched : st1.scheduler =
+        { st.scheduler with reschedulePending := st1.scheduler.reschedulePending } :=
       applyCallDonation_scheduler_eq st callerVtid receiverVtid st1 hDon
     have hHomeEq : ∀ tid, determineTargetCore st1 tid = determineTargetCore st tid := fun tid =>
       determineTargetCore_congr st st1 tid
@@ -610,7 +611,7 @@ theorem applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
       unfold SystemState.getSchedContext?; rw [hScPreRaw]
     -- Reading an entry of `st1`'s queue is reading the same entry of `st`'s.
     have hQueue : ∀ c, st1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c :=
-      fun c => by rw [hSched]
+      fun c => by rw [hSched]; rfl
     -- A `scId` entry anywhere in the pre-state forces that core to be `donorHome`.
     have hConfined : ∀ c t, (scId, t) ∈ (st.scheduler.replenishQueueOnCore c).entries →
         c = donorHome := by
@@ -941,7 +942,7 @@ theorem applyCallDonationOnCore_replenishQueueOnCore_of_no_donation
   obtain ⟨st', hDon, harm⟩ :=
     applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid donorHome doneeHome h
   rcases harm with ⟨_, hEq⟩ | ⟨scId', hSome, _⟩
-  · rw [hEq, applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]
+  · rw [hEq, applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]; rfl
   · exact absurd (hNone.symm.trans hSome) (by simp)
 
 /-- **WS-RR RR8.12 Cut C6c: the call donation's exactness frame.**
@@ -961,10 +962,10 @@ theorem applyCallDonationOnCore_replenishQueueOnCore_ne
   obtain ⟨st', hDon, harm⟩ :=
     applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid donorHome doneeHome h
   rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩
-  · rw [hEq, applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]
+  · rw [hEq, applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]; rfl
   · rw [hEq, migrateSchedContextReplenishment_replenishQueueOnCore_other st' scId donorHome
       doneeHome c (Ne.symm hFrom) (Ne.symm hTo),
-      applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]
+      applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]; rfl
 
 /-- **WS-RR RR8.12 Cut C2 (the licence)**: a successful hand-off whose resolver
 answers `some` **is** the single-core donation followed by the SM5.H migration between
@@ -999,7 +1000,7 @@ theorem applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation
   obtain ⟨st', hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' donorV receiverV _ _ hCore
   rw [hDv, hRv] at harm
   rcases harm with ⟨_, hEq⟩ | ⟨scId', hSome, _⟩
-  · rw [hEq, applyCallDonation_scheduler_eq st donorV receiverV st' hDon]
+  · rw [hEq, applyCallDonation_scheduler_eq st donorV receiverV st' hDon]; rfl
   · exact absurd (hNone.symm.trans hSome) (by simp)
 
 /-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: a successful rendezvous

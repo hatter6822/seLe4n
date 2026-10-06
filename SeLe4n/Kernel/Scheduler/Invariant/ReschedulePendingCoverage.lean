@@ -548,18 +548,6 @@ theorem keyChangeFlagged_of_flagOnly {pre mid post : SystemState} {tid : SeLe4n.
     schedKeyView (markKeyChangeFrom pre post tid) t = schedKeyView post t :=
   markKeyChangeFrom_extract_frame (fun s => schedKeyView s t) pre post tid (fun _ _ => rfl)
 
-@[simp] theorem markKeyChangeFrom_runQueueOnCore (pre post : SystemState) (tid : SeLe4n.ThreadId)
-    (c : CoreId) :
-    (markKeyChangeFrom pre post tid).scheduler.runQueueOnCore c = post.scheduler.runQueueOnCore c :=
-  markKeyChangeFrom_extract_frame (fun s => s.scheduler.runQueueOnCore c) pre post tid
-    (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
-
-@[simp] theorem markKeyChangeFrom_currentOnCore (pre post : SystemState) (tid : SeLe4n.ThreadId)
-    (c : CoreId) :
-    (markKeyChangeFrom pre post tid).scheduler.currentOnCore c = post.scheduler.currentOnCore c :=
-  markKeyChangeFrom_extract_frame (fun s => s.scheduler.currentOnCore c) pre post tid
-    (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
-
 theorem markKeyChangeFrom_reschedulePendingOnCore_mono (pre post : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (h : post.scheduler.reschedulePendingOnCore c = true) :
     (markKeyChangeFrom pre post tid).scheduler.reschedulePendingOnCore c = true := by

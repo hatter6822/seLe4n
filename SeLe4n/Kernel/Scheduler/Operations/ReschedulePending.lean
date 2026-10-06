@@ -461,4 +461,257 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
   simp only [markKeyChangeFor, markReschedulePendingWhere_reschedulePendingOnCore,
     h, Bool.true_or]
 
+/-! ### Frames: the pre-state form of the hook writes flags and nothing else -/
+
+@[simp] theorem markKeyChangeFrom_objects (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).objects = st.objects :=
+  markKeyChangeFrom_extract_frame (fun s => s.objects) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_objectIndex (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).objectIndex = st.objectIndex :=
+  markKeyChangeFrom_extract_frame (fun s => s.objectIndex) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_machine (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).machine = st.machine :=
+  markKeyChangeFrom_extract_frame (fun s => s.machine) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_cdt (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).cdt = st.cdt :=
+  markKeyChangeFrom_extract_frame (fun s => s.cdt) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_cdtNodeSlot (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).cdtNodeSlot = st.cdtNodeSlot :=
+  markKeyChangeFrom_extract_frame (fun s => s.cdtNodeSlot) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_scThreadIndex (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).scThreadIndex = st.scThreadIndex :=
+  markKeyChangeFrom_extract_frame (fun s => s.scThreadIndex) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_irqHandlers (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).irqHandlers = st.irqHandlers :=
+  markKeyChangeFrom_extract_frame (fun s => s.irqHandlers) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_tlbShootdown (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).tlbShootdown = st.tlbShootdown :=
+  markKeyChangeFrom_extract_frame (fun s => s.tlbShootdown) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_perCoreTlb (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).perCoreTlb = st.perCoreTlb :=
+  markKeyChangeFrom_extract_frame (fun s => s.perCoreTlb) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_perCoreICache (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).perCoreICache = st.perCoreICache :=
+  markKeyChangeFrom_extract_frame (fun s => s.perCoreICache) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_pendingIcacheMaintenance (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).pendingIcacheMaintenance = st.pendingIcacheMaintenance :=
+  markKeyChangeFrom_extract_frame (fun s => s.pendingIcacheMaintenance) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_pendingPhysicalWrites (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).pendingPhysicalWrites = st.pendingPhysicalWrites :=
+  markKeyChangeFrom_extract_frame (fun s => s.pendingPhysicalWrites) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_serviceRegistry (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).serviceRegistry = st.serviceRegistry :=
+  markKeyChangeFrom_extract_frame (fun s => s.serviceRegistry) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_objectIndexSet (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).objectIndexSet = st.objectIndexSet :=
+  markKeyChangeFrom_extract_frame (fun s => s.objectIndexSet) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_services (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).services = st.services :=
+  markKeyChangeFrom_extract_frame (fun s => s.services) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_lifecycle (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).lifecycle = st.lifecycle :=
+  markKeyChangeFrom_extract_frame (fun s => s.lifecycle) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_asidTable (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).asidTable = st.asidTable :=
+  markKeyChangeFrom_extract_frame (fun s => s.asidTable) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_interfaceRegistry (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).interfaceRegistry = st.interfaceRegistry :=
+  markKeyChangeFrom_extract_frame (fun s => s.interfaceRegistry) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_cdtSlotNode (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).cdtSlotNode = st.cdtSlotNode :=
+  markKeyChangeFrom_extract_frame (fun s => s.cdtSlotNode) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_cdtNextNode (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).cdtNextNode = st.cdtNextNode :=
+  markKeyChangeFrom_extract_frame (fun s => s.cdtNextNode) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_tlb (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).tlb = st.tlb :=
+  markKeyChangeFrom_extract_frame (fun s => s.tlb) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_objStoreLock (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).objStoreLock = st.objStoreLock :=
+  markKeyChangeFrom_extract_frame (fun s => s.objStoreLock) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_schedulerLocks (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).schedulerLocks = st.schedulerLocks :=
+  markKeyChangeFrom_extract_frame (fun s => s.schedulerLocks) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_declassificationAuditLog (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).declassificationAuditLog = st.declassificationAuditLog :=
+  markKeyChangeFrom_extract_frame (fun s => s.declassificationAuditLog) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_declassificationAuditEpoch (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).declassificationAuditEpoch = st.declassificationAuditEpoch :=
+  markKeyChangeFrom_extract_frame (fun s => s.declassificationAuditEpoch) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_declassificationRefusals (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).declassificationRefusals = st.declassificationRefusals :=
+  markKeyChangeFrom_extract_frame (fun s => s.declassificationRefusals) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_declassificationTaint (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).declassificationTaint = st.declassificationTaint :=
+  markKeyChangeFrom_extract_frame (fun s => s.declassificationTaint) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_getTcb? (pre st : SystemState) (tid tid' : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).getTcb? tid' = st.getTcb? tid' := by
+  unfold SystemState.getTcb?; rw [markKeyChangeFrom_objects]
+
+@[simp] theorem markKeyChangeFrom_getSchedContext? (pre st : SystemState) (tid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) :
+    (markKeyChangeFrom pre st tid).getSchedContext? scId = st.getSchedContext? scId := by
+  unfold SystemState.getSchedContext?; rw [markKeyChangeFrom_objects]
+
+@[simp] theorem markKeyChangeFrom_runQueueOnCore (pre st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (markKeyChangeFrom pre st tid).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.runQueueOnCore c) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_currentOnCore (pre st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (markKeyChangeFrom pre st tid).scheduler.currentOnCore c = st.scheduler.currentOnCore c :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.currentOnCore c) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_replenishQueueOnCore (pre st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (markKeyChangeFrom pre st tid).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.replenishQueueOnCore c) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_activeDomainOnCore (pre st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (markKeyChangeFrom pre st tid).scheduler.activeDomainOnCore c
+      = st.scheduler.activeDomainOnCore c :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.activeDomainOnCore c) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_domainTimeRemainingOnCore (pre st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (markKeyChangeFrom pre st tid).scheduler.domainTimeRemainingOnCore c
+      = st.scheduler.domainTimeRemainingOnCore c :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.domainTimeRemainingOnCore c) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_domainScheduleIndexOnCore (pre st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (markKeyChangeFrom pre st tid).scheduler.domainScheduleIndexOnCore c
+      = st.scheduler.domainScheduleIndexOnCore c :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.domainScheduleIndexOnCore c) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_lastTimeoutErrorsOnCore (pre st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (markKeyChangeFrom pre st tid).scheduler.lastTimeoutErrorsOnCore c
+      = st.scheduler.lastTimeoutErrorsOnCore c :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.lastTimeoutErrorsOnCore c) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_domainSchedule (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).scheduler.domainSchedule = st.scheduler.domainSchedule :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.domainSchedule) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_configDefaultTimeSlice (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).scheduler.configDefaultTimeSlice = st.scheduler.configDefaultTimeSlice :=
+  markKeyChangeFrom_extract_frame (fun s => s.scheduler.configDefaultTimeSlice) pre st tid
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_runnableOnSomeCore (pre st : SystemState)
+    (tid tid' : SeLe4n.ThreadId) :
+    runnableOnSomeCore (markKeyChangeFrom pre st tid) tid' = runnableOnSomeCore st tid' := by
+  unfold runnableOnSomeCore
+  simp only [markKeyChangeFrom_runQueueOnCore]
+
+@[simp] theorem markKeyChangeFrom_placedCoreOf? (pre st : SystemState)
+    (tid tid' : SeLe4n.ThreadId) :
+    placedCoreOf? (markKeyChangeFrom pre st tid) tid' = placedCoreOf? st tid' := by
+  unfold placedCoreOf?
+  simp only [markKeyChangeFrom_runQueueOnCore, markKeyChangeFrom_currentOnCore]
+
+@[simp] theorem markKeyChangeFrom_getObject? (pre st : SystemState) (tid : SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) :
+    (markKeyChangeFrom pre st tid).getObject? oid = st.getObject? oid := by
+  unfold SystemState.getObject?; rw [markKeyChangeFrom_objects]
+
+@[simp] theorem markKeyChangeFrom_getReply? (pre st : SystemState) (tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) :
+    (markKeyChangeFrom pre st tid).getReply? rid = st.getReply? rid := by
+  unfold SystemState.getReply?; rw [markKeyChangeFrom_objects]
+
+/-- The hook writes the scheduler record only: the state after it is the state
+before it with the hook's scheduler.  The form a store-chain decomposition
+states its final step in, so every non-scheduler reading of the step is
+definitional. -/
+theorem markKeyChangeFrom_eq_with_scheduler (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    markKeyChangeFrom pre st tid =
+      { st with scheduler := (markKeyChangeFrom pre st tid).scheduler } :=
+  markKeyChangeFrom_extract_frame
+    (fun s => ({ s with scheduler := (markKeyChangeFrom pre st tid).scheduler } : SystemState))
+    pre st tid (fun _ _ => rfl)
+
+/-- Two hooks in a row (a binding writer's pair) write the reschedule flags
+only: the result is its input with the result's flag vector and its own
+`scThreadIndex` — the form the donation and return store chains state their
+last step in, so every other reading of the step is definitional. -/
+theorem markKeyChangeFrom_twice_eq_with (pre X : SystemState) (a b : SeLe4n.ThreadId) :
+    markKeyChangeFrom pre (markKeyChangeFrom pre X a) b =
+      { X with
+          scheduler := { X.scheduler with reschedulePending :=
+            (markKeyChangeFrom pre (markKeyChangeFrom pre X a) b).scheduler.reschedulePending },
+          scThreadIndex := (markKeyChangeFrom pre (markKeyChangeFrom pre X a) b).scThreadIndex } :=
+  let Y := markKeyChangeFrom pre (markKeyChangeFrom pre X a) b
+  let f := fun s : SystemState =>
+    ({ s with scheduler := { s.scheduler with reschedulePending := Y.scheduler.reschedulePending },
+              scThreadIndex := Y.scThreadIndex } : SystemState)
+  (markKeyChangeFrom_extract_frame f pre _ b (fun _ _ => rfl)).trans
+    (markKeyChangeFrom_extract_frame f pre X a (fun _ _ => rfl))
+
+/-- An unchanged scheduler is in particular unchanged except for its flags —
+the bridge from a whole-scheduler frame to the binding writers' form. -/
+theorem schedulerEqExceptReschedule_of_eq {a b : SystemState}
+    (h : a.scheduler = b.scheduler) :
+    a.scheduler = { b.scheduler with reschedulePending := a.scheduler.reschedulePending } := by
+  rw [h]
+
 end SeLe4n.Kernel

@@ -1501,7 +1501,7 @@ theorem applyCallDonationOnCore_preserves_ipcInvariantFull
     (donationOwnerValid_of_objects_eq hObjs hFull'.donationOwnerValid)
     (passiveServerIdle_of_frame
       (passiveServerIdleFrame.of_objects_scheduler_eq hObjs
-        (by rw [hRq.1, hSchedFrame]) (by rw [hRq.2, hSchedFrame]))
+        (by rw [hRq.1, hSchedFrame]; rfl) (by rw [hRq.2, hSchedFrame]; rfl))
       hFull'.passiveServerIdle)
     (donationBudgetTransfer_of_objects_eq hObjs hFull'.donationBudgetTransfer)
     (donationOwnerUnique_of_objects_eq hObjs hFull'.donationOwnerUnique)

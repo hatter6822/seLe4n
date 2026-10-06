@@ -705,6 +705,7 @@ theorem cancelIpcBlockingReclaimed_currentOnCore_victim_iff (victim : SeLe4n.Thr
   rw [descheduleUnboundHolder_currentOnCore_iff_of_ne _ _ victim tcb victim c
       (fun holder hW => Ne.symm (cancelUnboundHolder?_ne_victim _ _ victim tcb holder hW)),
     cancelIpcBlockingMigrated_currentOnCore, cancelIpcBlocking_scheduler_eq]
+  rfl
 
 /-- WS-RR RR8.6, re-keyed at `v0.35.158`: "current nowhere" carries to the state
 the composite deschedules the victim at.  Stated for the victim alone — the
@@ -3212,12 +3213,14 @@ theorem cancelDonationOnCore_preserves_ipcInvariant
       | error e => exact hIpc
 
 /-- WS-SM SM6.E.3: `cancelDonatedDonation` preserves the **full** scheduler
-(the donated-arm return is object writes only) — the ∀-core strengthening of
-the bootCore-pinned `cancelDonatedDonation_scheduler_runQueue_eq`. -/
+except the reschedule flags (the donated-arm return is object writes plus the
+KSC-1 key-change hook) — the ∀-core strengthening of the bootCore-pinned
+`cancelDonatedDonation_scheduler_runQueue_eq`. -/
 theorem cancelDonatedDonation_scheduler_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : cancelDonatedDonation st tid tcb = .ok st') :
-    st'.scheduler = st.scheduler := by
+    st'.scheduler =
+      { st.scheduler with reschedulePending := st'.scheduler.reschedulePending } := by
   simp only [cancelDonatedDonation] at h
   split at h
   · exact cleanupDonatedSchedContext_scheduler_eq st st' tid h
@@ -3348,7 +3351,7 @@ theorem cancellation_cross_core_correct
     rw [removeRunnableOnCore_runQueueOnCore_ne _ victim c c' hNe]
     unfold cancelIpcBlockingReclaimed
     rw [descheduleUnboundHolder_runQueueOnCore_ne _ _ victim tcb c' hPark,
-        cancelIpcBlockingMigrated_runQueueOnCore, cancelIpcBlocking_scheduler_eq]
+        cancelIpcBlockingMigrated_runQueueOnCore, cancelIpcBlocking_scheduler_eq]; rfl
   · -- (3b) per-core current-slot locality: the same three steps, the holder
     --      deschedule clearing a current slot only on the core it names.
     intro c' hc' hPark
@@ -3359,7 +3362,7 @@ theorem cancellation_cross_core_correct
     rw [removeRunnableOnCore_currentOnCore_ne _ victim c c' hNe]
     unfold cancelIpcBlockingReclaimed
     rw [descheduleUnboundHolder_currentOnCore_ne _ _ victim tcb c' hPark,
-        cancelIpcBlockingMigrated_currentOnCore, cancelIpcBlocking_scheduler_eq]
+        cancelIpcBlockingMigrated_currentOnCore, cancelIpcBlocking_scheduler_eq]; rfl
   · -- (4) object-level fidelity
     exact cancelIpcBlockingOnCore_objects_eq victim tcb executingCore st
 

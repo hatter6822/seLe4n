@@ -958,7 +958,7 @@ theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_s
   cases hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
   | none =>
     refine (replenishQueueAffinityConsistent_smp_congr
-      (fun c => by rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq])
+      (fun c => by rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl)
       (fun scId₀ => cancelIpcBlocking_getSchedContext?_ne st victim tcb hInv scId₀
         (fun s h hD' => by rw [hD] at hD'; exact absurd hD' (by simp)))
       (fun tid => cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv tid)).mpr hCons
@@ -969,7 +969,7 @@ theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_s
     exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp
       st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId
       (determineTargetCore st holder) sc holder
-      (fun c => by rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq])
+      (fun c => by rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl)
       (fun scId₀ hne => cancelIpcBlocking_getSchedContext?_ne st victim tcb hInv scId₀
         (fun s h hD' => by rw [hD] at hD'; cases hD'; exact hne))
       (fun tid => cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv tid)
