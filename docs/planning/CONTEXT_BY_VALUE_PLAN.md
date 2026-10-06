@@ -152,8 +152,9 @@ allocation), and the HAL hands its in-flight context over as a
   `saveCapturedSyscallFrame`, called by a pure `BoundaryProbes` export on a
   probe state, since the host lane links no HAL (§3.6) — the second's words
   all distinct from the first's and written into the same object.  At CV0.2
-  the test pins what the tree does today (the saved context follows the
-  overwritten object: the closure of the `v0.36.47` debt row); from CV3.5 on
+  the test pins what the tree does today (the saved context equals trap 1's
+  words before the overwrite and trap 2's after it: the closure of the
+  `v0.36.47` debt row); from CV3.5 on
   the TCB's saved context, read back from the state after the second trap,
   is the first trap's, word for word.
 - Every tier green; every Tier 3 anchor scoped to a touched file executed.
@@ -239,10 +240,10 @@ second model change with its own unwinding-relation rework and is **not** this
 workstream (§6).
 
 **D3 — the in-flight context is a persistent per-core object of its own type.**
-The HAL owns one 288-byte Lean object per core (`HEADER_BYTES + 280`), header
-`m_rc = 0` (persistent: `lean_inc`/`lean_dec` are no-ops, it is never freed,
-`lean_is_exclusive` is false so compiled Lean never updates it in place), tag 0,
-no object fields, plus one persistent `some` wrapper per core pointing at it.
+The HAL owns one 288-byte Lean object per core (`HEADER_BYTES + 280`), with the
+non-heap header §3.4 states (never freed; `lean_is_exclusive` is false, so
+compiled Lean never updates it in place), tag 0, no object fields, plus one
+persistent `some` wrapper per core pointing at it.
 `ffi_trap_context` writes the trap frame's 35 words into the core's object and
 returns the core's wrapper: **no allocation**.  On the Lean side its type is
 `Architecture.InFlightContext`, a structure with the same 35 `UInt64` fields
@@ -363,10 +364,15 @@ where `RegValue` stays (D1).
 
 - Rust: `trap::InFlightContextObjects` — per core, a 288-byte 8-aligned static
   (`[u64; 36]`-shaped, header word first) and a 16-byte `some` wrapper, both
-  initialised at the core's Lean-runtime bring-up with `lean_set_persistent`
-  semantics (`m_rc = 0`, `m_cs_sz = 0`, `m_other = 0`, `m_tag = 0` for the
-  context; tag 1, one object field for the wrapper).  `ffi_trap_context` writes
-  the frame's 35 words into the core's object and returns the core's wrapper,
+  initialised at the core's Lean-runtime bring-up with
+  `lean_set_non_heap_header` (`lean.h` 4.28: `m_rc = 0`, so `lean_inc` /
+  `lean_dec` skip the object and `lean_is_exclusive` is false, and `m_cs_sz`
+  = the object's byte size, which a non-heap object carries there because no
+  allocator page records it — 288 for the context, 16 for the wrapper;
+  `m_tag = 0` and `m_other = 0` for the context, tag 1 and `m_other = 1` for
+  the wrapper).  The header is stated here once; D3 and CV3.2 cite it.
+  `ffi_trap_context` writes the frame's 35 words into the core's object and
+  returns the core's wrapper,
   or `lean_box(0)` when no frame is published.
   `trap_context_of_lean`: `o == in_flight_object(core) → Some(words)`;
   otherwise today's path.
@@ -477,7 +483,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 | # | Sub-task | Output |
 |---|---|---|
 | CV0.1 | The per-core heap allocation counter (§3.6) and the QEMU-lane round-trip measurement (`heap_allocations_per_syscall` exerciser, Tier 4 `virt`, Lean-linked image); record the baseline per syscall at the plan's opening version in `CHANGELOG.md`, beside §1.1's walk at that head (the number is what the two tables and the dispatcher's figure add up to; CV5.1 reads the difference) | `lean_heap.rs`, `rust/sele4n-hal/src/smp_exercisers.rs`, `scripts/qemu_exerciser_lib.sh`, one Tier 4 script |
-| CV0.2 | The two-trap hazard test **through the real TCB save path, as a pure probe in the host boundary crate**: the crate links the compiled Lean archives against `libleanshared` and no HAL (§3.6; its `shim.c` defines no `ffi_*` symbol), so it cannot call `lean_syscall_dispatch_cross_core`, whose object pulls the HAL's trap-context, core-id, kernel-state, lock, SGI and restore-staging externs.  The test calls three `BoundaryProbes` exports — one building a probe state with one TCB current on core 0, one running `saveCapturedSyscallFrame st core0 (some (registerFileOfTrapContext tc))` on it (today's binding shape; CV3.5 retypes the probe with CV3.1's), one reading that TCB's saved context word `i` — and the Rust side builds trap 1's object from a seed (`sele4n_probe_trap_context_of_seed`), saves it, overwrites the same object's 35 words in place with trap 2's, all distinct (`sele4n_boundary_ctor_set_u64`, which is what the HAL does to a reused per-core object), and reads the TCB back.  **Today the read follows the overwrite**, because the saved context is a closure over the object (`registerFileOfTrapContext`, the `v0.36.47` debt row), so this row pins that as the witness (`assert_ne` on the words) and CV3.5 flips the assertion to word-for-word equality with trap 1.  An entry wrapper retaining the object is excluded by type (D3: no `SystemState` field of the in-flight type), not by this test, which the host lane cannot drive through the wrappers | `rust/sele4n-lean-boundary/tests/`, `SeLe4n/Testing/BoundaryProbes.lean` |
+| CV0.2 | The two-trap hazard test **through the real TCB save path, as a pure probe in the host boundary crate**: the crate links the compiled Lean archives against `libleanshared` and no HAL (§3.6; its `shim.c` defines no `ffi_*` symbol), so it cannot call `lean_syscall_dispatch_cross_core`, whose object pulls the HAL's trap-context, core-id, kernel-state, lock, SGI and restore-staging externs.  The test calls three `BoundaryProbes` exports — one building a probe state with one TCB current on core 0, one running `saveCapturedSyscallFrame st core0 (some (registerFileOfTrapContext tc))` on it (today's binding shape; CV3.5 retypes the probe with CV3.1's), one reading that TCB's saved context word `i` — and the Rust side builds trap 1's object from a seed (`sele4n_probe_trap_context_of_seed`), saves it, overwrites the same object's 35 words in place with trap 2's, all distinct (`sele4n_boundary_ctor_set_u64`, which is what the HAL does to a reused per-core object), and reads the TCB back.  **Today the read follows the overwrite**, because the saved context is a closure over the object (`registerFileOfTrapContext`, the `v0.36.47` debt row), so this row pins that as the witness, as a relation and not a presence: the TCB's words read back equal trap 1's before the overwrite and trap 2's after it, word for word (an `assert_ne` against trap 1 would pass on a default or partly wrong save too); CV3.5 flips the second assertion to equality with trap 1.  An entry wrapper retaining the object is excluded by type (D3: no `SystemState` field of the in-flight type), not by this test, which the host lane cannot drive through the wrappers | `rust/sele4n-lean-boundary/tests/`, `SeLe4n/Testing/BoundaryProbes.lean` |
 | CV0.3 | Sweep the 78 Tier 3 anchor lines of §1.2 into a list in this plan's §7, each with the sub-task that retargets or deletes it | §7 below |
 | CV0.4 | The exception classifier classifies the `ESR_EL1` word, not a context: `Architecture.classifySynchronousExceptionOfEsr : UInt64 → SynchronousExceptionClass` (the body of today's `classifySynchronousException`, which reads only `extractExceptionClass ectx.esr`), with `classifySynchronousException ectx := classifySynchronousExceptionOfEsr ectx.esr` by definition so every theorem over the context form is unchanged, and the export `lean_classify_synchronous_exception` (`Kernel/FaultEntry.lean`) calls the word form — its generated C then builds no `ExceptionContext`, so the one upcall outside the entry lock that allocated on every synchronous exception (`trap.rs`, `build.rs`'s `LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK` justification, `lean_heap.rs`'s concurrency note) allocates nothing; the three notes rewritten to say so (the heap's lock stays load-bearing for the secondary core's bring-up probe), `classifySynchronousExceptionExport_def` restated over the word form, the Rust mirror pin unchanged; the generated C of `FaultEntry.c` read for the export's body; CV0.1's exerciser delta read before and after (§1.1 entry 3; consumes CV0.1) | `SeLe4n/Kernel/Architecture/Fault.lean`, `SeLe4n/Kernel/FaultEntry.lean`, `rust/sele4n-hal/src/trap.rs`, `rust/sele4n-hal/build.rs`, `rust/sele4n-hal/src/lean_heap.rs` | S |
 
@@ -500,9 +506,9 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 | # | Sub-task | Output |
 |---|---|---|
 | CV3.1 | `Architecture.InFlightContext`, `snapshotInto` (a full-field update, in place on an exclusively owned destination), the derived `snapshot`, `snapshotInto_word`; `ffiTrapContext : BaseIO (Option InFlightContext)` — the `some` being the core's persistent wrapper (§3.4), so the binding allocates nothing per trap — replacing CV2.1's temporary `Option RegisterFile` binding, with `syscallEntryContextOrFaulted` matching the `Option` directly in place of building an `Except` around the context (its `.ok` in §1.1's table goes); the entry wrappers on it — the wrappers hand the `InFlightContext` to `syscallDispatchCrossCoreBracketedStep`, which is `@[specialize]`d over its step and reads the argument words from the context's fields, so the seventeen `lean_box_uint64` and two closures of §1.1's table, `syscallWindow`'s eight boxes and the entry action's closure (`modifyGetKernelState` specialised over its action the same way) are gone, and the plan decodes the argument words from the object's fields instead of spilling them into the TCB and looking them up; `SystemState` stays free of the type (consumes CV2.1) | Lean |
-| CV3.2 | `trap::InFlightContextObjects`: per-core persistent object and wrapper, initialised at runtime bring-up; `ffi_trap_context` writes and returns without allocating; `trap_context_of_lean` accepts the executing core's object by address | `rust/sele4n-hal/src/trap.rs`, `ffi.rs`, `lean_runtime/` |
+| CV3.2 | `trap::InFlightContextObjects`: per-core persistent object and wrapper, initialised at runtime bring-up with the non-heap header of §3.4 (`lean_set_non_heap_header`, the byte size in `m_cs_sz`); `ffi_trap_context` writes and returns without allocating; `trap_context_of_lean` accepts the executing core's object by address | `rust/sele4n-hal/src/trap.rs`, `ffi.rs`, `lean_runtime/` |
 | CV3.3 | The cross-language test extended: `snapshotInto` writes the words into the object it is given and `snapshot` yields a different one with the same words; the probes export both | `rust/sele4n-lean-boundary/` |
-| CV3.4 | Rust unit tests: persistence after `lean_dec`, zero allocations across `ffi_trap_context` read from CV0.1's monotone `allocations` counter (§3.4; the live census cannot see an allocation freed before return), by-address acceptance, refusal of another core's object | `ffi.rs` tests |
+| CV3.4 | Rust unit tests: both headers read back through `lean.h`'s accessors (`m_rc = 0`, `m_cs_sz` 288 and 16, the tags and field counts of §3.4); persistence after `lean_dec`, zero allocations across `ffi_trap_context` read from CV0.1's monotone `allocations` counter (§3.4; the live census cannot see an allocation freed before return), by-address acceptance, refusal of another core's object | `ffi.rs` tests |
 | CV3.5 | CV0.2's hazard test flipped: the save probe retyped over `InFlightContext` (trap 1's object is the one the probe hands to `saveCapturedSyscallFrame`, whose `snapshotInto` copies its words into the TCB's context), trap 2's words written into the same object, the TCB read back — the saved context is trap 1's, word for word; it is the acceptance test of D3 (§1.1) and fails if the save site skips `snapshotInto` or stores the wrong context (consumes CV0.2, CV3.1, CV3.2) | boundary crate |
 | CV3.6 | QEMU `virt` four-PE boot (Tier 4 lane) green with the persistent objects: every core traps, snapshots, restores | CI |
 

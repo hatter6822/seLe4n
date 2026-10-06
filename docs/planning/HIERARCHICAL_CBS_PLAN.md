@@ -2976,6 +2976,16 @@ which rows moved and why:
     removes an allocation names the function producing it today and says
     what that function becomes, not only where its value lands.
 
+    The fourteenth round found three, in three of the named classes: a fact
+    at several sites (`WORKSTREAM_CONTEXT.md` restated WS-CV's capture and
+    went stale; the persistent object's header was written in D3, §3.4 and
+    CV3.2), a row from memory (that header named a `lean_set_persistent`
+    that `lean.h` does not have and zeroed the size field a non-heap object
+    must carry), and a presence check standing for a relation (CV0.2's
+    witness was an `assert_ne`; it is now equality with the trap the saved
+    words should follow).  Each is fixed at its owner and the other sites
+    cite it.
+
 ## Appendix A — Verification commands
 
 ```bash

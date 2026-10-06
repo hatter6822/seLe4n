@@ -31,13 +31,14 @@ of summary is a sign the narrative belongs in those files instead.
 
 The TCB's `registerContext`, the per-core register banks and the Lean boundary
 become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
-35-field `UInt64` layout and `TrapContext` is retired, so a kernel entry copies
-280 bytes into the model once (or not at all when the thread merely continues)
-and a restore borrows the TCB's own object with no conversion.  The HAL hands
-each core's in-flight context over as a **persistent per-core object**
-(`m_rc = 0`, never freed) under its own Lean type, `InFlightContext`, whose only
-way into the model is `snapshot` — so the model cannot retain the per-core
-buffer, by type rather than by convention.  Plan:
+35-field `UInt64` layout and `TrapContext` is retired; the HAL hands each
+core's in-flight context over as a persistent per-core object under its own
+Lean type, `InFlightContext`, whose only way into the model is
+`snapshotInto`, a copy of its words into the TCB's own context, so the model
+cannot retain the per-core buffer, by type rather than by convention; the
+restore borrows the TCB's object.  The capture and restore mechanism, the
+object's header and the allocation budget are the plan's D3, §3.4 and §1.1
+and are not restated here.  Plan:
 [`docs/planning/CONTEXT_BY_VALUE_PLAN.md`](../planning/CONTEXT_BY_VALUE_PLAN.md)
 (phases CV0–CV5).  Why first: at `v0.36.47` a saved context was a
 closure capturing the trap-context object, so a reused per-core buffer would

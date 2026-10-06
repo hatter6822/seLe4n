@@ -42,7 +42,7 @@ Documentation only: no Lean, Rust or fixture change.
   The TCB's `registerContext`, the per-core banks and the boundary become one
   35-`UInt64` `RegisterFile` (`Architecture.TrapContext` retired), the HAL
   hands each core's in-flight context over as a persistent per-core object
-  under its own Lean type with `snapshot` as the only way into the model, and
+  under its own Lean type with `snapshotInto` as the only way into the model, and
   the restore borrows the TCB's own object.  Why: at `v0.36.47` a saved
   context was a closure capturing the trap-context object
   (`registerFileOfTrapContext`), so the per-core reuse the maintainer asked
@@ -109,7 +109,13 @@ Documentation only: no Lean, Rust or fixture change.
   stage; CV3.1's entry matches the binding's persistent `some` wrapper
   directly, so its `Except` intermediate goes; CV0.2's hazard test is a pure boundary-crate probe over
   `saveCapturedSyscallFrame`, pinning today's closure hazard and flipped at
-  CV3.5; the §14 record's activation-cut range reads CB1.7–CB1.9.
+  CV3.5; the §14 record's activation-cut range reads CB1.7–CB1.9.  The
+  fourteenth round: `WORKSTREAM_CONTEXT.md`'s WS-CV section cites the plan's
+  mechanism instead of restating it; the persistent objects' headers are
+  `lean_set_non_heap_header`'s (`m_cs_sz` carries the byte size, 288 and
+  16), stated once in §3.4 and read back by CV3.4; CV0.2's witness is a
+  relation — the saved words equal trap 1's before the overwrite and trap
+  2's after — not an `assert_ne`.
 
 ## v0.36.49 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
 
