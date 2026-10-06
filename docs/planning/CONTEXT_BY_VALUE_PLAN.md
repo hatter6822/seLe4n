@@ -68,8 +68,8 @@ conversion, no allocation), and the HAL hands its in-flight context over as a
 
 - Heap allocations per syscall entry+exit on the kernel runtime itself — the
   Tier 4 QEMU `virt` lane, where the HAL's `lean_heap` is the allocator the
-  compiled Lean runs on — counted by that heap's own allocation counter
-  (CV0.1; the host boundary crate links the toolchain's `libleanshared`, so
+  compiled Lean runs on — counted by that heap's own per-core allocation counter, the boot core's
+  slot read with IRQs masked across the round trip (CV0.1; the host boundary crate links the toolchain's `libleanshared`, so
   it cannot see the kernel heap, §3.6): **at most two** on a syscall
   whose caller continues — the snapshot, and the `KernelObject` wrapper the
   TCB's slot re-wraps when constructor reuse does not fire; the TCB record
@@ -315,26 +315,41 @@ where `RegValue` stays (D1).
 - `restoreTargetOnCore` carries `tcb.registerContext`; `restoreTrapFrame`
   borrows it (D4).  `stageReturnFrame` on the TCB's context is a structure
   update, and compiled Lean updates in place only an object with one
-  reference; the entry/exit path at `v0.36.50` has two sources of a second
-  reference, both removed by CV4.4: the entry wrapper reads the state with
+  reference; the entry/exit path at `v0.36.50` has four sources of a second
+  reference, all removed by CV4.4: the entry wrapper reads the state with
   `getKernelState` (`Platform/FFI.lean`) and writes it back, so the `IO.Ref`
   holds every record on the path to the TCB for the whole step, and
   `updateTcb` / `modifyTcb` (`Model/State.lean`, `IPC/Operations/Endpoint.lean`)
   read the TCB record out of the table and insert `f t` while the slot still
   holds `t`, so `f` always sees a shared record and the compiled update copies
-  it and the `RegisterFile` under it.  CV4.4 moves the wrapper to
+  it and the `RegisterFile` under it; `saveTrapFrameOnCore`
+  (`Architecture/TrapFrameSave.lean`) stores one `rf` object in the TCB **and**
+  in the bank `machine.coreRegs`, and `stageCallerReturn`
+  (`Architecture/ContextRestore.lean`) updates the TCB's copy and then the
+  bank's separately, so at the write the object is shared by its two holders
+  (D2 keeps both holders; it does not need two objects); and
+  `stageCallerReturn` takes the **pre-state** to read the caller's id, so the
+  pre-state's table keeps the old records alive across the stage.  CV4.4 moves the wrapper to
   `modifyGetKernelState` (`IO.Ref.modifyGet` **takes** the cell, so the step
   owns the only reference) and gives the save and the stage a take-based
   `SystemState.modifyTcbExclusive` — the slot's value swapped out, `f` run on a
   uniquely referenced record, the result swapped back, `rewriteObject`'s
-  witnessed admissibility kept — so exclusivity is the path's construction,
-  and CV0.1's counter checks it (§1.1).
+  witnessed admissibility kept — **takes the context out of both holders**
+  before the stage (the bank slot and the TCB field swapped with the shared
+  `default` constant, a closed term the runtime allocates once), updates the
+  one object in place and stores it back into both, so `contextMatchesCurrent`
+  holds with one object behind two holders, and hands the stage the caller as
+  a `ThreadId` captured before the arm (the KSC-1 accumulator's commit capture
+  already carries it) instead of the pre-state — so exclusivity is the path's
+  construction, and CV0.1's counter checks it (§1.1).
 - `ffiSyscallReturnFrame` (the six return registers to the HAL's mailbox) is
   unchanged.
 
 ### 3.6 Measurement (CV0, CV5)
 
-- `lean_heap::HeapStats` gains a monotone `allocations` counter, incremented
+- `lean_heap::HeapStats` gains a monotone `allocations` counter **per core**
+  (`allocations_by_core : [u64; CORE_COUNT]`, indexed by `current_core_id`,
+  the total being their sum), incremented
   at **one** point per successful allocation: in `Heap::alloc_small`, and in
   `Heap::alloc` only on its large-object arm (`Heap::alloc` forwards every
   request that fits a small class to `alloc_small`, which already counts it,
@@ -345,6 +360,14 @@ where `RegValue` stays (D1).
   a `heap_allocations_per_syscall` exerciser reads the counter on the boot
   core, drives one syscall round trip through the Lean kernel, reads it again
   and prints the delta on its UART line, which the lane's library extracts.
+  The heap is one for every core (`lean_heap.rs`'s concurrency note: the
+  exception classifier and a secondary core's bring-up probe allocate outside
+  the kernel-entry lock), so a heap-wide delta would charge another PE's
+  allocation to the boot core's syscall; the exerciser reads **its own core's**
+  slot and masks IRQs on the boot core across the two reads (the round trip
+  needs none; a pended tick is taken after the second read), so the delta is
+  the syscall's and nothing else's.  CV3.4's host unit test is single-threaded
+  and reads the total.
   The host boundary crate cannot carry this measurement: it links the compiled
   Lean archive against the toolchain's `libleanshared` and deliberately not
   against `sele4n-hal`, whose `lean_runtime` would be a second definition of
@@ -364,7 +387,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV0.1 | The heap allocation counter (§3.6) and the QEMU-lane round-trip measurement (`heap_allocations_per_syscall` exerciser, Tier 4 `virt`, Lean-linked image); record the baseline per syscall at the plan's opening version in `CHANGELOG.md` | `lean_heap.rs`, `rust/sele4n-hal/src/smp_exercisers.rs`, `scripts/qemu_exerciser_lib.sh`, one Tier 4 script |
+| CV0.1 | The per-core heap allocation counter (§3.6) and the QEMU-lane round-trip measurement (`heap_allocations_per_syscall` exerciser, Tier 4 `virt`, Lean-linked image); record the baseline per syscall at the plan's opening version in `CHANGELOG.md` | `lean_heap.rs`, `rust/sele4n-hal/src/smp_exercisers.rs`, `scripts/qemu_exerciser_lib.sh`, one Tier 4 script |
 | CV0.2 | The two-trap hazard test written against today's code, **expected to pass today** (every trap allocates), **through the real TCB save path**: the boundary crate publishes trap 1's words, calls the exported entry wrapper so `saveCapturedSyscallFrame` stores the first context into a TCB of a probe state, publishes trap 2's words (all distinct) through the same per-core path, then reads that TCB's saved context back through a `BoundaryProbes` export and compares it word for word to trap 1's (§1.1) — a standalone snapshot comparison would still pass if an entry wrapper retained the reusable object, skipped the snapshot at the save site or stored the wrong context, so it is not the acceptance; this test is the regression test CV3 must keep green | `rust/sele4n-lean-boundary/tests/`, `SeLe4n/Testing/BoundaryProbes.lean` |
 | CV0.3 | Sweep the 78 Tier 3 anchor lines of §1.2 into a list in this plan's §7, each with the sub-task that retargets or deletes it | §7 below |
 
@@ -400,7 +423,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 | CV4.1 | `restoreTargetOnCore` / `restoreTrapFrame` on the TCB's object; `RestoreTarget.user (context : RegisterFile)` unchanged in statement | `ContextRestore.lean`, `FFI.lean` |
 | CV4.2 | `stageReturnFrame` as a structure update on the TCB's context; measured allocation count per syscall recorded | `SyscallReturn.lean`, measurement |
 | CV4.3 | `IpcMessage.registers : Array RegValue` → an **unboxed** word carrier, `MessageWords`, a `ByteArray` of `8 · len` bytes (`len ≤ maxMessageRegisters = 120`) with `get i` / `set i v` assembling and splitting the word through `uget` / `uset` (eight scalar byte operations per word, no object per element), with `SyscallDecodeResult.msgRegs`, `replyRegisters` and `FaultReply`'s register arrays where they feed it, **and the fault encoder**: `Architecture.encodeFault` (`Kernel/Architecture/Fault.lean`) returns `Array RegValue` built through `regOf` (`UInt64.toNat`, a bignum for a high-bit word) and `makeFaultMessage` (`Kernel/IPC/Operations/Fault.lean`) assigns it to `IpcMessage.registers`, so a conversion at the assignment would compile while fault entry kept the input-dependent allocations; the encoder and the fault-reply reader construct and read `MessageWords` directly, `regOf` retiring with `RegValue.valid` — **not `Array UInt64`**, whose every push boxes its element through `lean_box_uint64` (a heap object for the word, so the input-dependent allocation would survive and contradict §1.1's zero-`lean_box_uint64` read) — and **not measurement-gated**: a message register is any user `UInt64`, and one `≥ 2^63` read as a `Nat` allocates a bignum whatever CV4.2's workload happens to carry, so the input-dependent allocation goes by construction; `RegValue.valid` retires with its last array; the decode and return-frame readers restated over `MessageWords`; the generated C of `RegisterDecode.c`, `SyscallArgDecode.c` and `Fault.c` read for `lean_box_uint64` on the decode and fault-encode paths as §1.1 reads the entry modules, with the high-bit case; a Tier 2 case sends a high-bit word (`≥ 2^63`) through the IPC path for the semantics (the word arrives intact) and a second delivers a VM fault at an address `≥ 2^63` to a fault handler (the fault word arrives intact), and the allocation evidence is the kernel lane's: CV0.1's `heap_allocations_per_syscall` exerciser gains a high-bit IPC scenario (a send whose message registers carry `≥ 2^63`) and a high-bit fault scenario (a user load from an address `≥ 2^63`, its fault message read by the handler) whose deltas are read beside the plain round trip, since the host Lean runtime has no counter (§3.6) | `Model/Object/Types.lean`, `Architecture/SyscallArgDecode.lean`, `Kernel/Architecture/Fault.lean`, `Kernel/IPC/Operations/Fault.lean`, `Model/Fault.lean`, decode/return-frame readers, two Tier 2 cases |
-| CV4.4 | **Exclusivity by ownership** (§3.5): the entry wrapper moves from `getKernelState` + write-back to `modifyGetKernelState`, so the step owns the state's only reference; `SystemState.modifyTcbExclusive` — the TCB's slot value taken out of `objects` (the `Array.modify` swap pattern over an `RHTable` take), `f` run on a uniquely referenced record, the result swapped back under `rewriteObject`'s witnessed admissibility — carries `saveCapturedSyscallFrame` and `stageReturnFrame`, with the snapshot binding dead at the save; `modifyTcbExclusive_eq_updateTcb` says the two are the same function; the kernel-lane exerciser's continuing-syscall delta is read against the ceiling of §1.1, and one host Lean test holds a second reference to the TCB record across `stageReturnFrame` and observes the copy, so the relation, not the token, is what the check sees (consumes CV4.2) | `Platform/FFI.lean`, `Model/State.lean`, `Architecture/TrapFrameSave.lean`, `Architecture/SyscallReturn.lean`, one host Lean test |
+| CV4.4 | **Exclusivity by ownership** (§3.5): the entry wrapper moves from `getKernelState` + write-back to `modifyGetKernelState`, so the step owns the state's only reference; `SystemState.modifyTcbExclusive` — the TCB's slot value taken out of `objects` (the `Array.modify` swap pattern over an `RHTable` take), `f` run on a uniquely referenced record, the result swapped back under `rewriteObject`'s witnessed admissibility — carries `saveCapturedSyscallFrame` and `stageReturnFrame`, with the snapshot binding dead at the save; the stage **takes the context out of both holders** — the bank slot (`machine.coreRegs`) and the TCB field swapped with the shared `default` constant — updates the one object in place and stores it back into both, since `saveTrapFrameOnCore` stores one object behind two holders and `stageCallerReturn` today updates the two copies separately (`contextMatchesCurrent` keeps its statement: one object, two holders); `stageCallerReturn` receives the caller as a `ThreadId` captured before the arm, not the pre-state; `modifyTcbExclusive_eq_updateTcb` says the two are the same function; the kernel-lane exerciser's continuing-syscall delta is read against the ceiling of §1.1, and one host Lean test holds a second reference to the TCB record across `stageReturnFrame` and observes the copy, so the relation, not the token, is what the check sees (consumes CV4.2) | `Platform/FFI.lean`, `Model/State.lean`, `Architecture/TrapFrameSave.lean`, `Architecture/ContextRestore.lean`, `Architecture/SyscallReturn.lean`, one host Lean test |
 
 ### CV5 — closure
 
@@ -435,7 +458,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 - **Exclusivity of the TCB object at the return-frame write** is established
   by CV4.4's ownership discipline (§3.5) and checked by CV0.1's counter; a
   second reference reaching the TCB at that point costs one more 280-byte copy
-  per syscall, which is why the row removes both sources rather than measuring
+  per syscall, which is why the row removes every source rather than measuring
   whether one happened to be live.
 - **`IpcMessage.registers` becomes the unboxed `MessageWords` at CV4.3**,
   after the entry/exit path (CV1–CV4.2) rather than with it, because the

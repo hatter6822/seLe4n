@@ -17,7 +17,7 @@ Documentation only: no Lean, Rust or fixture change.
   whether or not the IPC-2 and IPC-5 slices land first; the spec targets are
   §8.12.1–§8.12.3 and a new §8.12.18; the main trace's `[STD-002]` scenario is
   recorded as a third `TCB.deadline` setter.
-- **Audit findings absorbed as sub-tasks**, renumbering CB0 and CB1 (78
+- **Audit findings absorbed as sub-tasks**, renumbering CB0 and CB1 (79
   sub-tasks, CB6.10 among them, CB4's hierarchy-invariant preservation folded
   into its two switch cuts): KSC-11 (CB0.6, the progress, idle, domain and WCRT proofs moved
   onto the live selector); SZ-5's scheduler-bundle half (CB0.7, CB2.5, CB5.13);
