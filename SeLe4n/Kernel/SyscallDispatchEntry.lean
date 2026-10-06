@@ -810,8 +810,9 @@ discharged inertly with an error frame.
 
 **WS-SM SM8.B (PR #861 review round 17): the local half of the reschedule.**
 `PriorityInheritance.scheduleLocalSuccessor` runs *inside* the atomic step,
-before the diffs are taken, and dispatches a successor when the transition
-vacated this core (`localSuccessorNeeded`).  It is the inline dual of
+before the diffs are taken, and runs this core's reschedule decision when the
+transition vacated it or raised its own reschedule flag (`localSuccessorNeeded`,
+`scheduleLocalSuccessor_of_pending`).  It is the inline dual of
 `currentSlotChangeSgis`, which pokes every *remote* core whose `current` slot
 changed and excludes the executing core by construction — correctly, since a
 core does not interrupt itself, it runs the handler inline.  That inline half
@@ -1073,7 +1074,8 @@ def suspendThreadCrossCoreStep (tid : UInt64) (execCore : CoreId) (st : SystemSt
         -- too, and is *self-disabling* on this path —
         -- `suspendThreadOnCore` runs its own scheduling point
         -- (`suspendRescheduleOnCore`), so where it dispatched a successor the
-        -- post-state slot is populated and `localSuccessorNeeded` is false
+        -- post-state slot is populated and the reschedule lowered this core's
+        -- flag, so `localSuccessorNeeded` is false
         -- (`scheduleLocalSuccessor_of_post_running`).  The two mechanisms
         -- cannot both dispatch.  It is applied anyway rather than reasoned
         -- away, so that the entry seams do not disagree about who is

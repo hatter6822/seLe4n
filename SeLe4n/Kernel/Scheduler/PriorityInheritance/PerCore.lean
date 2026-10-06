@@ -1441,27 +1441,36 @@ one fact that no core could install a switched-in thread's context; every state-
 committing entry now does, so the three guards that read it are gone with it and
 the transitions they gated run unconditionally. -/
 
-/-- WS-SM SM8.B (PR #861 review round 17): did this transition **vacate the
-executing core** — leave it with no current thread when it had one?
+/-- WS-SM SM8.B (PR #861 review round 17): does this transition owe the
+**executing core** a scheduling point — did it vacate the core, or raise the
+core's own reschedule flag?
 
-The local half of `currentSlotChangeSgis`.  That rule pokes every *remote* core
-whose `current` slot changed and excludes the executing core by construction,
-for the correct reason — a core does not send itself an interrupt, it runs the
-handler inline.  The inline half was never built, so the exclusion was total: a
-core that vacated its own slot ran no scheduler at all.
+The local half of the remote pokes.  `currentSlotChangeSgis` and
+`rescheduleSgisFromFlags` exclude the executing core by construction, for the
+correct reason — a core does not send itself an interrupt, it runs the handler
+inline — so the inline half has to be run here, or the exclusion is total:
 
-Gated on the **change**, not on the post-state alone.  `post.current = none` by
-itself would fire on a core that was already idle before the syscall, which is
-not a vacated core and needs no reschedule; and firing unconditionally would add
-preemption points that do not exist today, since
-`handleRescheduleSgiOnCore` switches whenever a candidate outranks the current
-thread.
+* a core that vacated its own slot would run no scheduler at all;
+* a step that staled the executing core's own decision (a key writer that
+  weakened the caller — a priority drop, a later deadline, a domain move — or an
+  enqueue of a thread that may outrank it) raises that core's flag, and nothing
+  else consumes it before the core's next scheduling point.  While it stays up
+  it also swallows the `false → true` edge a later remote writer needs to poke
+  the core, so a remote wake would wait for that point too.
+
+Gated on the caller, not on the post-state alone: a core that was already idle
+before the entry is not vacated and owes nothing here (`dispatchVacatedCore`
+owns that case).  The flag is the owed-scheduling-point fact itself, so firing
+on it adds no preemption point beyond the ones the writers asked for, and the
+handler keeps the incumbent unless a candidate outranks it or it has left the
+active domain.
 
 `caller?` is the executing core's pre-entry thread, which the commit seams
 capture before the transition consumes the pre-state (KSC-1). -/
 def localSuccessorNeededFrom (caller? : Option SeLe4n.ThreadId) (post : SystemState)
     (execCore : CoreId) : Bool :=
-  (caller? != none) && (post.scheduler.currentOnCore execCore == none)
+  (caller? != none) && (post.scheduler.currentOnCore execCore == none ||
+    post.scheduler.reschedulePendingOnCore execCore)
 
 /-- `localSuccessorNeededFrom` with the caller read off the pre-state. -/
 def localSuccessorNeeded (pre post : SystemState) (execCore : CoreId) : Bool :=
@@ -1522,7 +1531,7 @@ theorem scheduleLocalSuccessor_of_pre_idle (pre post : SystemState) (execCore : 
   simp [h]
 
 /-- WS-SM SM8.B: and inert when the transition **left a thread running** on the
-executing core.
+executing core and owes it no scheduling point (its flag is down).
 
 This is what makes it safe to apply the rule at *every* entry, including
 `suspendThreadCrossCoreEntry`, whose transition already runs its own scheduling
@@ -1530,11 +1539,33 @@ point (`suspendRescheduleOnCore`): where a transition rescheduled the core
 itself, the post-state slot is populated and this rule does not fire.  The two
 mechanisms cannot both dispatch. -/
 theorem scheduleLocalSuccessor_of_post_running (pre post : SystemState) (execCore : CoreId)
-    (tid : SeLe4n.ThreadId) (h : post.scheduler.currentOnCore execCore = some tid) :
+    (tid : SeLe4n.ThreadId) (h : post.scheduler.currentOnCore execCore = some tid)
+    (hFlag : post.scheduler.reschedulePendingOnCore execCore = false) :
     scheduleLocalSuccessor pre post execCore = post := by
   apply scheduleLocalSuccessor_of_not_needed
   unfold localSuccessorNeeded localSuccessorNeededFrom
-  simp [h]
+  simp [h, hFlag]
+
+/-- **The executing core's own flag is consumed by the step.**  A transition
+that raised the flag of the core it ran on, and left the caller running, gets
+the core's reschedule decision inline: the handler switches when a candidate
+outranks the caller or the caller has left the active domain, and otherwise
+keeps it and lowers the flag. -/
+theorem scheduleLocalSuccessor_of_pending (pre post : SystemState) (execCore : CoreId)
+    (hPre : pre.scheduler.currentOnCore execCore ≠ none)
+    (hFlag : post.scheduler.reschedulePendingOnCore execCore = true) :
+    scheduleLocalSuccessor pre post execCore =
+      match handleRescheduleSgiOnCore post execCore with
+      | .ok st => st
+      | .error _ => post := by
+  have hNeeded : localSuccessorNeeded pre post execCore = true := by
+    unfold localSuccessorNeeded localSuccessorNeededFrom
+    cases hC : pre.scheduler.currentOnCore execCore with
+    | none => exact absurd hC hPre
+    | some _ => simp [hFlag]
+  unfold localSuccessorNeeded at hNeeded
+  unfold scheduleLocalSuccessor scheduleLocalSuccessorFrom
+  rw [if_pos hNeeded]
 
 /-- **`v0.36.40`: dispatch a core another core vacated.**  A core entered
 from EL0 whose committed slot is already `none` is running, in hardware, a
@@ -1684,19 +1715,21 @@ theorem settleResidencyOnCore_machine_regs (st : SystemState) (c : CoreId) :
 -- live, so every entry runs `scheduleLocalSuccessor` itself and the core resumes
 -- the thread it dispatched (`Architecture.restoreTargetOnCore`).
 
-/-- WS-SM SM8.B: the two halves of the guard, forward. -/
-theorem localSuccessorNeeded_post_none (pre post : SystemState) (execCore : CoreId)
+/-- WS-SM SM8.B: the two halves of the guard, forward: the core was vacated
+or its own flag is up. -/
+theorem localSuccessorNeeded_vacated_or_pending (pre post : SystemState) (execCore : CoreId)
     (h : localSuccessorNeeded pre post execCore = true) :
-    post.scheduler.currentOnCore execCore = none := by
+    post.scheduler.currentOnCore execCore = none ∨
+      post.scheduler.reschedulePendingOnCore execCore = true := by
   unfold localSuccessorNeeded localSuccessorNeededFrom at h
-  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
   exact h.2
 
 theorem localSuccessorNeeded_pre_some (pre post : SystemState) (execCore : CoreId)
     (h : localSuccessorNeeded pre post execCore = true) :
     pre.scheduler.currentOnCore execCore ≠ none := by
   unfold localSuccessorNeeded localSuccessorNeededFrom at h
-  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at h
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h
   exact h.1
 
 /-- WS-SM SM8.B: a vacated core admits **any** candidate — the preemption gate's
@@ -1723,12 +1756,12 @@ here rather than assumed, because a vacated core has no incumbent. -/
 theorem scheduleLocalSuccessor_dispatches (pre post : SystemState) (execCore : CoreId)
     (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hNeeded : localSuccessorNeeded pre post execCore = true)
+    (hVac : post.scheduler.currentOnCore execCore = none)
     (hChosen : chooseThreadEffectiveOnCore post execCore = .ok (some tid))
     (hSwitch : switchToThreadOnCore post execCore tid = .ok st') :
     (scheduleLocalSuccessor pre post execCore).scheduler.currentOnCore execCore = some tid := by
   have hOutrank : candidateOutranksCurrentOnCore post execCore tid = true :=
-    candidateOutranksCurrentOnCore_of_vacated post execCore tid
-      (localSuccessorNeeded_post_none pre post execCore hNeeded)
+    candidateOutranksCurrentOnCore_of_vacated post execCore tid hVac
   have hHandle : handleRescheduleSgiOnCore post execCore
       = .ok (st'.clearReschedulePendingOnCore execCore) := by
     rw [handleRescheduleSgiOnCore_eq_switch_of_choose_some post execCore tid hChosen hOutrank,
@@ -1745,12 +1778,13 @@ post-state — the honest idle outcome, distinct from the defect it replaces
 (which idled a core whose queue *did* hold an eligible thread). -/
 theorem scheduleLocalSuccessor_idle_of_no_candidate (pre post : SystemState) (execCore : CoreId)
     (hNeeded : localSuccessorNeeded pre post execCore = true)
+    (hVac : post.scheduler.currentOnCore execCore = none)
     (hChosen : chooseThreadEffectiveOnCore post execCore = .ok none) :
     scheduleLocalSuccessor pre post execCore
       = post.clearReschedulePendingOnCore execCore := by
   have hIn : currentOutsideActiveDomainOnCore post execCore = false := by
     unfold currentOutsideActiveDomainOnCore
-    rw [localSuccessorNeeded_post_none pre post execCore hNeeded]
+    rw [hVac]
   unfold localSuccessorNeeded at hNeeded
   unfold scheduleLocalSuccessor scheduleLocalSuccessorFrom handleRescheduleSgiOnCore
   rw [if_pos hNeeded, hChosen]

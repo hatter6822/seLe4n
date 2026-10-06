@@ -440,6 +440,37 @@ private def runDomainEvictionChecks : IO Unit := do
   assertBool "reconfigure that keeps the domain: the incumbent keeps running"
     (stays.scheduler.currentOnCore core1 == some boundTid)
 
+/-- §2.11 the same domain move made **on the core the thread runs on** (the
+thread reconfigures its own context): the flag the writer raises is the
+executing core's own, which no SGI carries, so the commit seams' local
+reschedule (`scheduleLocalSuccessor`, executing core 1) consumes it and evicts
+the caller.  A reconfigure that keeps the domain raises no flag and the rule is
+the identity. -/
+private def runLocalDomainEvictionChecks : IO Unit := do
+  IO.println "--- §2.11 the executing core consumes its own flag ---"
+  let pre := stBoundCurrent false
+  let moved ← configureBound 1 pre
+  assertBool "local domain move: core 1's own flag is raised" (flagOf moved core1)
+  assertBool "local domain move: no SGI names the executing core"
+    (rescheduleSgisFromFlags pre.scheduler.reschedulePending
+      moved.scheduler.reschedulePending core1).isEmpty
+  let idle := PriorityInheritance.scheduleLocalSuccessor pre moved core1
+  assertBool "local eviction to idle: core 1 runs nothing"
+    (idle.scheduler.currentOnCore core1 == none)
+  assertBool "local eviction to idle: the thread stays queued on core 1"
+    (boundTid ∈ (idle.scheduler.runQueueOnCore core1))
+  assertBool "local eviction to idle: core 1's flag is cleared" (!flagOf idle core1)
+  let preSrv := stBoundCurrent true
+  let movedSrv ← configureBound 1 preSrv
+  let switched := PriorityInheritance.scheduleLocalSuccessor preSrv movedSrv core1
+  assertBool "local eviction to a lower-priority thread: srv runs on core 1"
+    (switched.scheduler.currentOnCore core1 == some srv)
+  let kept ← configureBound 0 preSrv
+  assertBool "local reconfigure that keeps the domain: no flag" (!flagOf kept core1)
+  let stays := PriorityInheritance.scheduleLocalSuccessor preSrv kept core1
+  assertBool "local reconfigure that keeps the domain: the caller keeps running"
+    (stays.scheduler.currentOnCore core1 == some boundTid)
+
 -- ============================================================================
 -- §3  Scheduling points clear their own flag and nobody else's
 -- ============================================================================
@@ -503,6 +534,7 @@ def runReschedulePendingChecks : IO Unit := do
   runBoundUnbindChecks
   runDomainMoveChecks
   runDomainEvictionChecks
+  runLocalDomainEvictionChecks
   runClearChecks
   runMonotonicityChecks
   IO.println "=== reschedule_pending_suite: all checks passed ==="
