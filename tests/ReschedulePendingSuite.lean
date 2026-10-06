@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
+import SeLe4n.Kernel.Scheduler.Invariant.ReschedulePendingCoverage
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
@@ -65,6 +66,12 @@ open SeLe4n.Kernel.SchedContext.PriorityManagement (setPriorityOnCore)
 #check @markKeyChangeFor_reschedulePendingOnCore_mono
 #check @markKeyChangeFor_extract_frame
 #check @default_reschedulePendingOnCore
+#check @markReschedulePendingWhere_reschedulePendingOnCore
+#check @reschedulePendingCovers_trans
+#check @computeCrossCoreSgis_mem_flags_of_covers
+#check @enqueueRunnableOnCore_covers
+#check @removeRunnableOnCore_covers
+#check @markKeyChangeFor_covers
 
 -- The boot default: no core owes a reschedule.
 example (c : CoreId) : (default : SystemState).scheduler.reschedulePendingOnCore c = false :=

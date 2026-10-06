@@ -1,3 +1,32 @@
+## v0.36.52 — KSC-1 reschedule-SGI accumulator, PR B1: the flags cover the diff (relation, bridge, primitives)
+
+The first half of the KSC-1 row's soundness theorem.  The row asked for set
+equality between the flags and `computeCrossCoreSgis`; PR A's flags
+deliberately over-approximate (a wake of an already-queued thread and a
+suspend raise a flag while the diff is empty), and the direction the seam
+switch needs is the other one, so the theorem is **coverage**: every core the
+diff names is flagged by the step or was already pending.  The debt row is
+corrected to say so.  The flag stays inert; every fixture is byte-identical.
+
+- **`Scheduler/Invariant/ReschedulePendingCoverage.lean`** (new, staged):
+  `schedKeyView`, `coreDecisionUnstaled` and `reschedulePendingCovers`; the
+  composition law `reschedulePendingCovers_trans` (over steps that lower no
+  remote flag); the bridge `computeCrossCoreSgis_mem_flags_of_covers`, whose
+  only state hypothesis is TCB self-identity in the post-state; key frames
+  for key-preserving TCB rewrites; and coverage for `enqueueRunnableOnCore`,
+  `removeRunnableOnCore` and the key hook (`markKeyChangeFor_covers`).
+- **`markKeyChangeFor` checks every core.**  It flagged the thread's routed
+  home if the thread was queued there, else the first core running it, which
+  is the placement only under the kernel invariants.  It now flags each core
+  whose run queue holds the thread when its key moved and each core whose
+  `current` slot holds it when its key weakened, through the new
+  `markReschedulePendingWhere`, so its coverage needs no placement invariant.
+  Under the invariants it raises the same flag as before.
+  `markKeyChangeFor_extract_frame` now takes its mark hypothesis for every
+  state (its two callers already had it in that form).
+- **Remaining** (the row): PR B2 lifts coverage through every arm the
+  dispatcher and the fault entry commit; PR C switches the seams.
+
 ## v0.36.51 — KSC-1 reschedule-SGI accumulator, PR A: the per-core flag, its writers and the differential pin (inert)
 
 The first of the three cuts the KSC-1 / HAL-3 row of `docs/REGISTERED_DEBT.md`

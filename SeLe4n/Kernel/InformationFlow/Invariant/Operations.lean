@@ -4143,7 +4143,7 @@ theorem markKeyChangeFor_preserves_projection
     projectState ctx observer (markKeyChangeFor st tid k) =
       projectState ctx observer st :=
   markKeyChangeFor_extract_frame (projectState ctx observer) st tid k
-    (fun c => markReschedulePendingOnCore_preserves_projection ctx observer st c)
+    (fun s c => markReschedulePendingOnCore_preserves_projection ctx observer s c)
 
 /-- WS-SM SM8.C.8 (non-interference): a write to the mounted declassification
 audit trail is invisible to the information-flow projection.
