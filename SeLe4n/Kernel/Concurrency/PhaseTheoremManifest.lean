@@ -184,7 +184,7 @@ structure PhaseTheoremEntry where
   /-- **Theorems** among those entries: the entries whose declaration type is a
       `Prop`.  This is the number `smpInventoriedTheoremCount` sums, and it is
       *not* `entryCount`: the inventories register a phase's whole surface, so
-      222 of the 1149 entries are `def`s — lock-set footprints, per-core
+      220 of the 1145 entries are `def`s — lock-set footprints, per-core
       invariant predicates, WCRT cost functions — rather than proofs.  Checked
       against the environment by the census at the end of this module, which
       fails elaboration on drift; zero for every non-theorem kind. -/
@@ -236,8 +236,8 @@ def smpPhaseTheoremManifest : List PhaseTheoremEntry :=
                       "perCoreIdleTheorems", "perCorePipTheorems",
                       "perCoreDomainTheorems", "perCoreCbsTheorems",
                       "perCoreInvariantSuiteTheorems", "perCoreWcrtTheorems"],
-      entryCount := 680,
-      theoremCount := 604 },
+      entryCount := 676,
+      theoremCount := 602 },
     { phase := .crossCoreIpc,
       label := "SM6 — cross-core IPC",
       kind := .unregistered,
@@ -357,7 +357,7 @@ theorem smpPhase_perObjectLocks_entryCount_eq_inventories :
   decide
 
 /-- SM5's registered **entry** count is the sum of its eight SM5.C–J
-    inventories' lengths.  Of those 680 entries, 604 are propositions. -/
+    inventories' lengths.  Of those 676 entries, 602 are propositions. -/
 theorem smpPhase_perCoreScheduler_entryCount_eq_inventories :
     smpPhaseEntryCount .perCoreScheduler
       = crossCoreWakeTheorems.length + perCoreTimerTheorems.length
@@ -412,20 +412,20 @@ here is written twice. -/
     summands are each pinned to a real inventory length above.  Changing any
     inventory changes this number, and the Tier-0 gate fails until the
     manifest and `docs/smp_theorem_manifest.json` agree with the tree. -/
-theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 927 := by
+theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 925 := by
   decide
 
-/-- Entries in the same inventories: 1149, of which 222 are `def`s rather than
+/-- Entries in the same inventories: 1145, of which 220 are `def`s rather than
     proofs.  Kept beside the theorem count so the gap is a number a reader can
     see, not a caveat they have to be told. -/
-theorem smp_inventoried_entry_count : smpInventoriedEntryCount = 1149 := by
+theorem smp_inventoried_entry_count : smpInventoriedEntryCount = 1145 := by
   decide
 
 /-- The two differ, and by how much.  Stated so that collapsing them — quoting
     1111 as a theorem count, which this module did until `v0.34.27` — is a
     visible edit rather than a silent one. -/
 theorem smp_inventoried_theorem_count_lt_entry_count :
-    smpInventoriedTheoremCount + 222 = smpInventoriedEntryCount := by
+    smpInventoriedTheoremCount + 220 = smpInventoriedEntryCount := by
   decide
 
 /-- The total is the sum of the two phases that carry inventories today.

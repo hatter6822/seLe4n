@@ -171,23 +171,28 @@ from it would report a stale argument window and, on a payload-free resume,
 reinstall it over the thread's live registers
 (`faultContextOfThread_writeFaultRegistersToTcb`).
 
-**The SGIs are derived from the diff, not read off the delivery.**  The Call
-chain surfaces at most one poke — the woken handler's home core — but the
+**The SGIs are read off the reschedule flags, not off the delivery.**  The
+Call chain surfaces at most one poke — the woken handler's home core — but the
 delivery can change more than one core's view: the priority-inheritance walk
 re-buckets a handler already queued elsewhere, and a passive handler's
-donation moves a replenishment queue.  `PriorityInheritance.computeCrossCoreSgis`
-recovers every such change from the pre/post states, exactly as
-`syscallDispatchCrossCoreEntry` does for the `.call` arm this delivery
-composes; reading only the surfaced poke would leave a re-bucketed remote core
-running the wrong thread until something else woke it.
+donation moves a replenishment queue.  Every such write raises the flag of the
+core it stales, and the entry pokes each remote core whose flag the step
+raised, exactly as `syscallDispatchCrossCoreEntry` does for the `.call` arm
+this delivery composes (KSC-1: `faultEntryDeliver_sgis_cover_diff` — the flags
+cover the whole-index diff `PriorityInheritance.computeCrossCoreSgis`, which
+stays as the specification); reading only the surfaced poke would leave a
+re-bucketed remote core running the wrong thread until something else woke it.
 
 **The executing core's successor** is dispatched in the same atomic step, as
 at every other state-committing entry (`scheduleLocalSuccessor`): the delivery
 vacates this core, and since WS-BP BP7.6 the context restore installs the
-successor, so the SGI diff is taken against the *final* state. -/
+successor, so the flags are read off the *final* state. -/
 def faultEntryDeliver (lctx : LabelingContext) (st : SystemState) (f : Fault)
     (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId) :
     List (CoreId × SgiKind) × SystemState :=
+  -- KSC-1: the reschedule flags are captured before the delivery consumes `st`;
+  -- a remote core is poked when the step raised its flag.
+  let pending0 := reschedulePendingSnapshot st
   match st.scheduler.currentOnCore c with
   | none =>
       -- `v0.36.40`: another core vacated this one (a remote `.tcbSuspend` or
@@ -195,11 +200,11 @@ def faultEntryDeliver (lctx : LabelingContext) (st : SystemState) (f : Fault)
       -- here).  There is no thread to deliver for, but the core must be handed
       -- something to resume, or the trap layer halts it.
       let st' := PriorityInheritance.dispatchVacatedCore st c
-      (PriorityInheritance.computeCrossCoreSgis st st' c, st')
+      (rescheduleSgisFromFlags pending0 st'.scheduler.reschedulePending c, st')
   | some tid =>
       let st' := faultDeliveredState lctx st f ectx w c tid
-      let st'' := PriorityInheritance.scheduleLocalSuccessor st st' c
-      (PriorityInheritance.computeCrossCoreSgis st st'' c, st'')
+      let st'' := PriorityInheritance.scheduleLocalSuccessorFrom (some tid) st' c
+      (rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending c, st'')
 
 /-- WS-RR RR4.23: the verified step the fault entry commits — classify, spill
 the trap frame's window, build the fault context from the spilled registers,
@@ -648,7 +653,7 @@ theorem faultEntryDeliver_not_dispatchable (lctx : LabelingContext) (st : System
   simp only [hCur]
   have hD : ¬ dispatchableOnCore (faultDeliveredState lctx st f ectx w c tid) tid c :=
     faultDeliverOnCoreChecked_not_dispatchable lctx _ tid f _ c
-  unfold PriorityInheritance.scheduleLocalSuccessor
+  unfold PriorityInheritance.scheduleLocalSuccessorFrom
   split
   · split
     · rename_i stH hH

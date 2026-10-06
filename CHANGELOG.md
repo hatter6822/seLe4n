@@ -1,3 +1,41 @@
+## v0.36.55 — KSC-1 reschedule-SGI accumulator, PR C: the seams fire from the flags and drop the pre-state
+
+Closes the KSC-1 / HAL-3 row.  The syscall step, the fault entry and the
+suspend entry now poke the remote cores whose reschedule flag the step raised,
+instead of diffing the whole object index between the pre-state and the
+committed state, and the syscall step no longer keeps its pre-state alive
+across the dispatch.
+
+- **The seams read the flags.**  Each seam captures the flag vector before its
+  transition (`reschedulePendingSnapshot`, a `@[noinline]` call so the
+  compiler cannot sink the read past the transition and hold the pre-state's
+  scheduler alive) and fires `rescheduleSgisFromFlags` over it.
+- **The diff stays as the specification.**
+  `syscallDispatchCrossCoreStep_sgis_cover_diff` and
+  `faultEntryDeliver_sgis_cover_diff`: every core `computeCrossCoreSgis` names
+  is poked by the seam or was already pending.  The flags may name more (a
+  spurious reschedule IPI at worst).
+- **Captures, not the pre-state.**  `stageCallerReturnFor`,
+  `scheduleLocalSuccessorFrom` and `shootdownChangedTargetsFrom` /
+  `shootdownPostedOpsFrom` / `shootdownRoundWindowFrom` take the captured
+  caller and `tlbShootdown` record; each two-state form is now defined through
+  its capture form, so there is one body.  The scheduling-point coverage
+  lemmas are restated over the captured caller.  The dispatch's unreachable
+  error arm is discharged by `syscallDispatchFromAbi_ne_error` rather than
+  answered from `st`.  Checked in the generated C: `st` is passed to the
+  dispatch owned, and only the captured flags and shootdown record survive it.
+- **Retired**: the unwired `BaseIO` diff wrappers `crossCoreWakeDispatch` and
+  `pipChainWakeDispatch` with their single-core lemmas (SM5 inventory 99 → 95
+  entries, SMP manifest 927 → 925 theorems), and
+  `syscallDispatchCrossCoreEntry_sgis_nil_single_core`, a re-export of the
+  diff's single-core inertness that no longer describes the seam.  The refusal
+  theorem is restated over the flags
+  (`rescheduleSgisFromFlags_recordSyscallRefusal_eq`).
+- **Registered debt**: single-core inertness of the flag seam needs a
+  precision fact the flags do not yet have (pinned meanwhile by the trace
+  fixture and the Tier 2 flag-versus-diff suite), and the suspend entry's
+  refusal arm still returns its pre-state, so the suspend shares it.
+
 ## v0.36.54 — KSC-1 reschedule-SGI accumulator, PR B2b: the flags cover the diff through every dispatcher arm and committing seam
 
 The rest of PR B2: every transition a syscall, fault or suspend commits is

@@ -311,26 +311,20 @@ def perCorePipTheorems : List PerCorePipTheorem :=
       computeCrossCoreSgis_all_reschedule .dispatch,
     ppit! "computeCrossCoreSgis_nil_single_core: the diff dispatch is inert ([]) on single-core"
       computeCrossCoreSgis_nil_single_core .dispatch,
-    ppit! "crossCoreWakeDispatch: the BaseIO syscall-path cross-core wake dispatch (fires the SGIs)"
-      crossCoreWakeDispatch .dispatch,
-    ppit! "crossCoreWakeDispatch_singleCore: the syscall dispatch is inert (pure ()) on single-core"
-      crossCoreWakeDispatch_singleCore .dispatch,
-    ppit! "pipChainWakeDispatch: the BaseIO chain-boost cross-core wake dispatch (fires the chain SGIs)"
-      pipChainWakeDispatch .dispatch,
-    ppit! "pipChainWakeDispatch_singleCore: the chain dispatch is inert (pure ()) on single-core"
-      pipChainWakeDispatch_singleCore .dispatch,
     ppit! "emitBoostWakeSgi: the single-SGI boost/resume dispatch (lifts emitWakeSgi)"
       emitBoostWakeSgi .dispatch]
 
-/-- WS-SM SM5.F: the inventory has 99 substantive entries (61 at the SM5.F landing +
+/-- WS-SM SM5.F: the inventory has 95 substantive entries (61 at the SM5.F landing +
 34 from the completion pass: full per-core decomposition, post-boost dominance, chain
 SGI completeness, the runnability-gate, memory-model HB, the complete `resumeThreadOnCore`,
 and the cross-core wake dispatch; +4 at the PR #811 P2-5 closure: the inline-local-
 reschedule frame lemmas `preemptCurrentOnCore_getTcb?_ne_current` /
 `switchToThreadOnCore_getTcb?_ne_current` / `handleRescheduleSgiOnCore_getTcb?_ne_current`
 and the `resumeReadyMidState_scheduler_eq` frame).  A regression that adds a new SM5.F
-theorem without registering it fails this count witness at the Tier-3 surface check. -/
-theorem perCorePipTheorems_count : perCorePipTheorems.length = 99 := by decide
+theorem without registering it fails this count witness at the Tier-3 surface check.
+KSC-1 PR C retired four: the unwired `BaseIO` diff wrappers and their single-core
+lemmas. -/
+theorem perCorePipTheorems_count : perCorePipTheorems.length = 95 := by decide
 
 /-- WS-SM SM5.F: 8 entries in the `compute` category (SM5.F.1). -/
 theorem perCorePipTheorems_compute_count :
@@ -369,9 +363,10 @@ theorem perCorePipTheorems_witness_count :
 theorem perCorePipTheorems_memoryModel_count :
     (perCorePipTheorems.filter (fun t => t.category == .memoryModel)).length = 2 := by decide
 
-/-- WS-SM SM5.F: 8 entries in the `dispatch` category (SM5.F.4 cross-core wake firing). -/
+/-- WS-SM SM5.F: 4 entries in the `dispatch` category (SM5.F.4 cross-core wake firing; the
+two unwired `BaseIO` diff wrappers and their single-core lemmas retired at KSC-1 PR C). -/
 theorem perCorePipTheorems_dispatch_count :
-    (perCorePipTheorems.filter (fun t => t.category == .dispatch)).length = 8 := by decide
+    (perCorePipTheorems.filter (fun t => t.category == .dispatch)).length = 4 := by decide
 
 /-- WS-SM SM5.F: per-category counts sum to the total. -/
 theorem perCorePipTheorems_partition_sum :

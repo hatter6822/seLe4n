@@ -647,10 +647,9 @@ import SeLe4n.Kernel.InformationFlow.FaultFlow
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,
--- then fires the SM5.F.4 diff-recovered cross-core `.reschedule` SGIs
--- (`computeCrossCoreSgis` + `fireCrossCoreSgis`).  The syscall analogue of
--- `perCoreTimerTickEntry`; single-core-inert (trace-safe — see the surfaced
--- `syscallDispatchCrossCoreEntry_sgis_nil_single_core`).  Staged until the
+-- then fires a cross-core `.reschedule` SGI at each remote core whose reschedule
+-- flag the step raised (KSC-1: `rescheduleSgisFromFlags` + `fireCrossCoreSgis`).
+-- The syscall analogue of `perCoreTimerTickEntry`.  Staged until the
 -- per-core dispatch seam threads the executing core into the pure dispatch so the
 -- Rust trap handler can switch over from the boot-pinned `syscall_dispatch_inner`.
 

@@ -165,10 +165,6 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyOnCore restor
 #check @computeCrossCoreSgis_nil_single_core
 -- SM6.B wake-SGI fix: the body fires on a cross-core wake (not only a PIP boost):
 #check @crossCoreSgiBody_remote_wake
-#check @crossCoreWakeDispatch
-#check @crossCoreWakeDispatch_singleCore
-#check @pipChainWakeDispatch
-#check @pipChainWakeDispatch_singleCore
 #check @perCorePipTheorems_memoryModel_count
 #check @perCorePipTheorems_dispatch_count
 
@@ -289,8 +285,8 @@ example (pre post : SystemState)
       pre.scheduler.currentOnCore c = none)
     (hNoRemoteCurPost : ∀ c : CoreId, c ≠ bootCoreId →
       post.scheduler.currentOnCore c = none) :
-    crossCoreWakeDispatch pre post bootCoreId = pure () :=
-  crossCoreWakeDispatch_singleCore pre post hAllBoot hNoRemoteCur hNoRemoteCurPost
+    computeCrossCoreSgis pre post bootCoreId = [] :=
+  computeCrossCoreSgis_nil_single_core pre post hAllBoot hNoRemoteCur hNoRemoteCurPost
 
 -- SM5.F.4: memory-model — the boost publication happens-before the home core observes it.
 example (boostCore homeCore : CoreId) (loc : AtomicLocation) (v : Nat) :
@@ -404,8 +400,8 @@ private def runResumeChecks : IO Unit := do
 /-- §3.5: SM5.F inventory partition counts. -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.5 SM5.F theorem inventory ---"
-  assertBool "inventory has 99 entries"
-    (decide (perCorePipTheorems.length = 99))
+  assertBool "inventory has 95 entries"
+    (decide (perCorePipTheorems.length = 95))
   assertBool "compute category has 8 entries"
     (decide ((perCorePipTheorems.filter (fun t => t.category == .compute)).length = 8))
   assertBool "updateBoost category has 14 entries"
@@ -420,8 +416,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCorePipTheorems.filter (fun t => t.category == .blockingGraph)).length = 10))
   assertBool "memoryModel category has 2 entries"
     (decide ((perCorePipTheorems.filter (fun t => t.category == .memoryModel)).length = 2))
-  assertBool "dispatch category has 8 entries"
-    (decide ((perCorePipTheorems.filter (fun t => t.category == .dispatch)).length = 8))
+  assertBool "dispatch category has 4 entries"
+    (decide ((perCorePipTheorems.filter (fun t => t.category == .dispatch)).length = 4))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCorePipTheorems.map (·.identifier)).Nodup)
 

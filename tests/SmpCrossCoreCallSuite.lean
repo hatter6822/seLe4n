@@ -145,10 +145,9 @@ open SeLe4n.Testing
 #check @dispatchWithCapChecked
 
 -- SM6.A live SGI-dispatch seam: the cross-core-aware syscall dispatch entry +
--- its body-shape marker + the single-core inertness (trace-safety) witness:
+-- its body-shape marker:
 #check @syscallDispatchCrossCoreEntry
 #check @syscallDispatchCrossCoreEntry_def
-#check @syscallDispatchCrossCoreEntry_sgis_nil_single_core
 
 -- ============================================================================
 -- §2 Elaboration-time examples (Tier-3): theorems apply to typed inputs
