@@ -498,7 +498,7 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull
 
 /-- WS-RR RR8.11: the restore writes one TCB, so it writes no scheduling
 context. -/
-private theorem restoreToReadyStaging_getSchedContext?_eq (st : SystemState)
+theorem restoreToReadyStaging_getSchedContext?_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
     (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     (Lifecycle.Suspend.restoreToReadyStaging st tid frame).getSchedContext? scId
@@ -526,7 +526,7 @@ private theorem restoreToReadyStaging_getSchedContext?_eq (st : SystemState)
           scId.toObjId _ (by simpa using Ne.symm hk) hInv]
 
 /-- WS-RR RR8.11: the frame splice writes Reply objects only. -/
-private theorem spliceThreadReplyFrameOut_getSchedContext?_eq (st : SystemState)
+theorem spliceThreadReplyFrameOut_getSchedContext?_eq (st : SystemState)
     (tcb : TCB) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     (spliceThreadReplyFrameOut st tcb).getSchedContext? scId = st.getSchedContext? scId := by
   unfold spliceThreadReplyFrameOut
@@ -537,7 +537,7 @@ private theorem spliceThreadReplyFrameOut_getSchedContext?_eq (st : SystemState)
 /-- WS-RR RR8.11: the reply-link teardown writes a TCB and a Reply, so it writes
 no scheduling context — RR8.5's projection of the reply path's own consume, whose
 frame `consumeCallerReply_getSchedContext?_eq` states. -/
-private theorem consumeReplyLink_getSchedContext?_eq (st : SystemState)
+theorem consumeReplyLink_getSchedContext?_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
     (scId : SeLe4n.SchedContextId) :
     (Lifecycle.Suspend.consumeReplyLink st tid tcb).getSchedContext? scId
@@ -552,7 +552,7 @@ private theorem consumeReplyLink_getSchedContext?_eq (st : SystemState)
 /-- WS-RR RR8.11: the holder abort writes endpoints and TCBs, so it writes no
 scheduling context — the `unwritten_kind` pair WS-OD OD3.2 built for the chain
 frame, read at the SchedContext kind. -/
-private theorem abortHolderPendingIpc_getSchedContext?_eq (st : SystemState)
+theorem abortHolderPendingIpc_getSchedContext?_eq (st : SystemState)
     (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     (Lifecycle.Suspend.abortHolderPendingIpc st holder).getSchedContext? scId
       = st.getSchedContext? scId := by

@@ -569,7 +569,10 @@ def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
     let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore rqCore) scId) }
     let st2 := { st2 with scThreadIndex :=
       (scThreadIndexRemove st2.scThreadIndex scId tid) }
-    .ok (st2.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound })
+    -- The binding write moves `tid`'s key (its deadline is no longer the
+    -- context's), so it ends in the key hook (KSC-1), as the donation writers do.
+    .ok (markKeyChangeFrom st
+      (st2.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound }) tid)
   | _ => .error .illegalState
 
 /-- **`v0.35.183` (register row 63): the unbind's object store, in two writes.**
@@ -594,7 +597,9 @@ theorem cancelBoundDonationOnCore_objects (st st' : SystemState)
   subst h
   -- The two scheduler-side writes sit between the two object writes, so the
   -- state the final `updateTcb` runs on is not syntactically the
-  -- `updateSchedContext` — only its object table is.
+  -- `updateSchedContext` — only its object table is.  The key hook writes flags
+  -- alone.
+  rw [markKeyChangeFrom_objects]
   apply SystemState.updateTcb_objects_congr
   rfl
 

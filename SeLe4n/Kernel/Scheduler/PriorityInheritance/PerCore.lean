@@ -1087,27 +1087,31 @@ theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.Va
     (h : resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
     ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Ready := by
   obtain ⟨tm, hmid, hmidReady⟩ := resumeReadyMidState_getTcb?_ready st vtid.val tcb hGet hInv
-  have hmidInv : (resumeReadyMidState st vtid.val).objects.invExt :=
-    resumeReadyMidState_objects_invExt st vtid.val hInv
+  -- The key hook after the mid state writes flags alone.
+  replace hmid : (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val).getTcb? vtid.val = some tm := by
+    rw [markKeyChangeFrom_getTcb?]; exact hmid
+  have hmidInv : (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val).objects.invExt := by
+    rw [markKeyChangeFrom_objects]; exact resumeReadyMidState_objects_invExt st vtid.val hInv
   -- The resume's object-writing prefix (H3+H4) establishes `tid` `.Ready` in the
   -- enqueued state `st3` (enqueue is no-op-or-`_makes_ready`; both keep `.Ready`).
-  have hst3 : ∃ t3, (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+  have hst3 : ∃ t3, (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
         (determineTargetCore st vtid.val) vtid.val).getTcb? vtid.val = some t3
         ∧ t3.threadState = .Ready := by
-    by_cases hRun : runnableOnSomeCore (resumeReadyMidState st vtid.val) vtid.val = true
+    by_cases hRun : runnableOnSomeCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) vtid.val = true
     · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_runnable _ _ _ hRun]
       exact ⟨tm, hmid, hmidReady⟩
-    · have hFresh : runnableOnSomeCore (resumeReadyMidState st vtid.val) vtid.val = false := by
+    · have hFresh : runnableOnSomeCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) vtid.val = false := by
         simpa using hRun
       exact ⟨{ tm with ipcState := .ready },
         SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh, hmidReady⟩
   obtain ⟨t3, hst3get, hst3ready⟩ := hst3
   -- `tid` is not `ec`'s current in `st3` (the resume prefix preserves `currentOnCore`).
-  have hst3cur : (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+  have hst3cur : (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
       (determineTargetCore st vtid.val) vtid.val).scheduler.currentOnCore ec ≠ some vtid.val := by
-    rw [SeLe4n.Kernel.enqueueRunnableOnCore_currentOnCore, resumeReadyMidState_scheduler_eq]
+    rw [SeLe4n.Kernel.enqueueRunnableOnCore_currentOnCore, markKeyChangeFrom_currentOnCore,
+      resumeReadyMidState_scheduler_eq]
     exact hNotCur
-  have hst3inv : (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+  have hst3inv : (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
       (determineTargetCore st vtid.val) vtid.val).objects.invExt :=
     SeLe4n.Kernel.enqueueRunnableOnCore_preserves_objects_invExt _ _ _ hmidInv
   simp only [resumeThreadOnCore, hGet] at h
@@ -1116,7 +1120,7 @@ theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.Va
   · -- LOCAL: the inline `handleRescheduleSgiOnCore` frames out `tid` (not `ec`'s
     -- current), so `tid` keeps the `.Ready` it had in `st3`.
     simp only [hLoc, if_true] at h
-    cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+    cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
         (determineTargetCore st vtid.val) vtid.val) ec with
     | error e => rw [hH] at h; simp at h
     | ok st4 =>
@@ -1143,16 +1147,16 @@ theorem resumeThreadOnCore_preserves_objects_invExt (st : SystemState) (vtid : S
     (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt)
     (h : resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
     st'.objects.invExt := by
-  have hmidInv : (resumeReadyMidState st vtid.val).objects.invExt :=
-    resumeReadyMidState_objects_invExt st vtid.val hInv
-  have hst3inv : (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+  have hmidInv : (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val).objects.invExt := by
+    rw [markKeyChangeFrom_objects]; exact resumeReadyMidState_objects_invExt st vtid.val hInv
+  have hst3inv : (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
       (determineTargetCore st vtid.val) vtid.val).objects.invExt :=
     SeLe4n.Kernel.enqueueRunnableOnCore_preserves_objects_invExt _ _ _ hmidInv
   simp only [resumeThreadOnCore, hGet] at h
   rw [if_neg (by simp [hInactive])] at h
   by_cases hLoc : (determineTargetCore st vtid.val == ec) = true
   · simp only [hLoc, if_true] at h
-    cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+    cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
         (determineTargetCore st vtid.val) vtid.val) ec with
     | error e => rw [hH] at h; simp at h
     | ok st4 =>
@@ -1200,7 +1204,7 @@ theorem resumeThreadOnCore_local_no_sgi (st : SystemState) (vtid : SeLe4n.ValidT
   simp only [resumeThreadOnCore, hGet] at h
   rw [if_neg (by simp [hInactive])] at h
   simp only [hLocal, beq_self_eq_true, if_true] at h
-  cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+  cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
       ec vtid.val) ec with
   | error e => rw [hH] at h; simp at h
   | ok st4 =>

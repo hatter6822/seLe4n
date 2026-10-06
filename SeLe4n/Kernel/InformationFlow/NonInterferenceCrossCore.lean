@@ -965,6 +965,16 @@ theorem markKeyChangeFor_confinedToCores (st : SystemState) (tid : SeLe4n.Thread
    fun _ _ => by rw [markKeyChangeFor_domainScheduleIndexOnCore],
    fun _ _ => by rw [markKeyChangeFor_machine]⟩
 
+/-- KSC-1: the pre-state form of the key-change writer only raises flags too. -/
+theorem markKeyChangeFrom_confinedToCores (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (markKeyChangeFrom pre st tid) [] :=
+  ⟨fun _ _ => by rw [markKeyChangeFrom_runQueueOnCore],
+   fun _ _ => by rw [markKeyChangeFrom_currentOnCore],
+   fun _ _ => by rw [markKeyChangeFrom_activeDomainOnCore],
+   fun _ _ => by rw [markKeyChangeFrom_domainTimeRemainingOnCore],
+   fun _ _ => by rw [markKeyChangeFrom_domainScheduleIndexOnCore],
+   fun _ _ => by rw [markKeyChangeFrom_machine]⟩
+
 /-- KSC-1: a trailing flag-only write does not widen a confinement set. -/
 theorem observableSlotsConfinedToCores_then_flagOnly {st stMid st' : SystemState}
     {cs : List CoreId} (h₁ : observableSlotsConfinedToCores st stMid cs)
@@ -2777,11 +2787,13 @@ theorem resumeThreadOnCore_confinedToCores (st st' : SystemState)
     · exact absurd hStep (by simp)
     · next hInactive =>
       have hPre : observableSlotsConfinedToCores st
-          (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+          (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
             (determineTargetCore st vtid.val) vtid.val)
           [determineTargetCore st vtid.val] :=
         observableSlotsConfinedToCores_widen_cons
-          (resumeReadyMidState_confinedToCores st vtid.val)
+          (observableSlotsConfinedToCores_then_flagOnly
+            (resumeReadyMidState_confinedToCores st vtid.val)
+            (markKeyChangeFrom_confinedToCores st _ vtid.val))
           (enqueueRunnableOnCore_confinedToCores _ (determineTargetCore st vtid.val) vtid.val)
       split at hStep
       · -- LOCAL: the home core is the executing core, reschedule runs inline.

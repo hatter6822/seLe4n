@@ -116,7 +116,7 @@ theorem resumeThreadOnCore_replenishQueueOnCore (st st' : SystemState)
     · exact absurd h (by simp)
     · split at h
       · cases hR : handleRescheduleSgiOnCore
-            (enqueueRunnableOnCore (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
+            (enqueueRunnableOnCore (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
               (determineTargetCore st vtid.val) vtid.val) executingCore with
         | error e => rw [hR] at h; exact absurd h (by simp)
         | ok stR =>
@@ -124,11 +124,11 @@ theorem resumeThreadOnCore_replenishQueueOnCore (st st' : SystemState)
           rw [Except.ok.injEq, Prod.mk.injEq] at h
           rw [← h.1,
             handleRescheduleSgiOnCore_replenishQueueOnCore _ executingCore stR c hR,
-            enqueueRunnableOnCore_replenishQueueOnCore,
+            enqueueRunnableOnCore_replenishQueueOnCore, markKeyChangeFrom_replenishQueueOnCore,
             PriorityInheritance.resumeReadyMidState_scheduler_eq]
       · rw [Except.ok.injEq, Prod.mk.injEq] at h
         rw [← h.1, enqueueRunnableOnCore_replenishQueueOnCore,
-            PriorityInheritance.resumeReadyMidState_scheduler_eq]
+            markKeyChangeFrom_replenishQueueOnCore, PriorityInheritance.resumeReadyMidState_scheduler_eq]
   · exact absurd h (by simp)
 
 /-- **`v0.35.167`: the live `.tcbResume` arm's scheduler-domain footprint.**
@@ -1331,7 +1331,7 @@ theorem cancelBoundDonationOnCore_replenishQueueOnCore_ne (st st' : SystemState)
   unfold cancelBoundDonationOnCore at h
   split at h
   · rw [Except.ok.injEq] at h
-    rw [← h]
+    rw [← h, markKeyChangeFrom_replenishQueueOnCore]
     simp only [SystemState.updateTcb_scheduler]
     rw [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hne,
       SystemState.updateSchedContext_scheduler]

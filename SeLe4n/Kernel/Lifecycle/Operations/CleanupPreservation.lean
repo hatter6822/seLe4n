@@ -1075,6 +1075,7 @@ theorem cancelBoundDonationOnCore_preserves_objects_invExt
   split at h
   · injection h with h
     subst h
+    rw [markKeyChangeFrom_objects]
     exact SystemState.updateTcb_preserves_objects_invExt _ _ _
       (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
   · cases h
@@ -1094,6 +1095,7 @@ theorem cancelBoundDonationOnCore_runQueue_current_eq
   split at h
   · injection h with h
     subst h
+    rw [markKeyChangeFrom_runQueueOnCore, markKeyChangeFrom_currentOnCore]
     constructor <;>
       (rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler];
        first | rfl | simp)
@@ -1114,6 +1116,7 @@ theorem cancelBoundDonationOnCore_replenishQueue_purged
   simp only [cancelBoundDonationOnCore, hBind] at h
   injection h with h
   subst h
+  rw [markKeyChangeFrom_replenishQueueOnCore]
   rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler]
   simp
 
@@ -1130,6 +1133,7 @@ theorem cancelBoundDonationOnCore_replenishQueue_ne
   split at h
   · injection h with h
     subst h
+    rw [markKeyChangeFrom_replenishQueueOnCore]
     rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler]
     simp [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hOther]
   · cases h
@@ -1145,6 +1149,7 @@ theorem cancelBoundDonationOnCore_machine_eq
   split at h
   · injection h with h
     subst h
+    rw [markKeyChangeFrom_machine]
     rw [SystemState.updateTcb_eq_objects_update, SystemState.updateSchedContext_eq_objects_update]
   · cases h
 
@@ -1158,6 +1163,7 @@ theorem cancelBoundDonationOnCore_tlbShootdown_eq
   split at h
   · injection h with h
     subst h
+    rw [markKeyChangeFrom_tlbShootdown]
     rw [SystemState.updateTcb_eq_objects_update, SystemState.updateSchedContext_eq_objects_update]
   · cases h
 
@@ -1423,6 +1429,12 @@ theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
   simp only [cancelBoundDonationOnCore, hBind] at h
   injection h with h
   subst h
+  -- The key hook writes flags alone: transport the invariant across it.
+  refine (replenishQueueAffinityConsistent_smp_congr
+    (fun c => markKeyChangeFrom_replenishQueueOnCore _ _ _ c)
+    (fun scId₀ => markKeyChangeFrom_getSchedContext? _ _ _ scId₀)
+    (fun x => determineTargetCore_congr _ _ x (by rw [markKeyChangeFrom_getTcb?]))).mpr ?_
+  simp only [markKeyChangeFrom_replenishQueueOnCore] at hQself hQne
   exact unbind_shape_preserves_replenishQueueAffinityConsistent_smp st _ scId rqCore
     (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
     (fun _ => rfl) tid (fun tcb' => { tcb' with schedContextBinding := .unbound })
