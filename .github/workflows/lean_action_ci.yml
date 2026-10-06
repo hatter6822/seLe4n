@@ -147,6 +147,10 @@ jobs:
 
   test-smoke:
     name: Tiered Tests / Smoke (Tier 2)
+    # Pull requests and manual runs only: a push to `main` is a merged pull
+    # request whose tree this job already passed on the PR's merge ref (see
+    # docs/CI_POLICY.md §1).
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     needs: test-fast
 
@@ -163,7 +167,12 @@ jobs:
           # AN11-F (LOW): job-tagged cache key (smoke lane).  See the
           # comment at test-fast above for the rationale.
           key: ${{ runner.os }}-${{ runner.arch }}-lean-smoke-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          # On a key miss (every PR bumps `lakefile.toml`'s version, so a PR's
+          # first run always misses), seed from the fast-lane cache the fast
+          # job of this same PR has just saved under the same key: it holds
+          # this cut's kernel build.  An older smoke cache is the fallback.
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
             ${{ runner.os }}-${{ runner.arch }}-lean-smoke-
             ${{ runner.os }}-${{ runner.arch }}-lean-fast-
             ${{ runner.os }}-${{ runner.arch }}-lean-
@@ -204,6 +213,10 @@ jobs:
 
   test-full:
     name: Tiered Tests / Full (Tier 3)
+    # Pull requests and manual runs only: a push to `main` is a merged pull
+    # request whose tree this job already passed on the PR's merge ref (see
+    # docs/CI_POLICY.md §1).
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     needs: test-smoke
 
@@ -221,7 +234,11 @@ jobs:
           # the broadest set of targets, so its `.lake/build` is the
           # canonical seed for the smaller smoke / fast lanes.
           key: ${{ runner.os }}-${{ runner.arch }}-lean-full-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          # Key miss: seed from this PR's smoke, then fast, cache under the
+          # same key (see the smoke lane's comment), before any older cache.
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-smoke-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+            ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
             ${{ runner.os }}-${{ runner.arch }}-lean-full-
             ${{ runner.os }}-${{ runner.arch }}-lean-smoke-
             ${{ runner.os }}-${{ runner.arch }}-lean-
@@ -245,6 +262,10 @@ jobs:
 
   test-rust:
     name: Rust ABI Tests
+    # Pull requests and manual runs only: a push to `main` is a merged pull
+    # request whose tree this job already passed on the PR's merge ref (see
+    # docs/CI_POLICY.md §1).
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -287,6 +308,10 @@ jobs:
 
   test-loom-concurrency-model:
     name: Loom Concurrency Model (deployed RwLock)
+    # Pull requests and manual runs only: a push to `main` is a merged pull
+    # request whose tree this job already passed on the PR's merge ref (see
+    # docs/CI_POLICY.md §1).
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
 
     # WS-RR RR6.20: the plan's D-5 acceptance gate lists "`cfg(loom)`
@@ -339,6 +364,10 @@ jobs:
 
   test-aarch64-cross:
     name: aarch64 Cross Build
+    # Pull requests and manual runs only: a push to `main` is a merged pull
+    # request whose tree this job already passed on the PR's merge ref (see
+    # docs/CI_POLICY.md §1).
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
 
     # WS-RR RR1.7: the kernel HAL's real deployment target is

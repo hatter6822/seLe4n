@@ -16,12 +16,23 @@ These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job
 - `test-fast`: `./scripts/test_fast.sh` (Tier 0 + Tier 1)
 - `test-smoke` (after test-fast): `python3 scripts/scenario_catalog.py validate` + `./scripts/test_tier2_trace.sh` + `./scripts/test_tier2_determinism.sh` + `./scripts/test_tier2_negative.sh`
 - `test-full` (after test-smoke): `./scripts/test_tier3_invariant_surface.sh`
-- `test-rust` (`Rust ABI Tests`): `./scripts/test_rust.sh` — workspace tests (incl. `--features std`), ABI conformance suite, `cargo fmt --check`, all-targets clippy. Runs on every PR/push alongside the Lean lanes.
+- `test-rust` (`Rust ABI Tests`): `./scripts/test_rust.sh` — workspace tests (incl. `--features std`), ABI conformance suite, `cargo fmt --check`, all-targets clippy. Runs on every PR alongside the Lean lanes.
 
-The hardware target has two lanes of its own, also on every PR/push:
+The hardware target has two lanes of its own, also on every PR:
 
 - `test-aarch64-cross` (`aarch64 Cross Build`): `./scripts/test_aarch64_cross_build.sh` — `sele4n-hal` for `aarch64-unknown-none-softfloat` in both profiles, the four `.S` sources verified assembled, the cross target linted with `-D warnings`, the release objects disassembled by `scripts/check_fp_simd_free_objects.py`, and (WS-BP BP2.1) a probe linked under `link.ld` by `scripts/check_link_script.py`, which checks the Lean heap arena's placement and the section boundaries the boot map reads (WS-BP BP2.6) on the ELF and proves each of the script's `ASSERT`s live by mutation; and (WS-BP BP5.1) step [7/7] links `sele4n-kernel` — the bare-metal image, its Rust half — in both profiles and runs `scripts/check_kernel_image.py` on the release one.
 - `test-lean-aarch64-archive` (`Lean aarch64 Archive`, WS-BP BP1): `./scripts/test_lean_aarch64_archive.sh` — `libsele4n.a`, the kernel's Lean object code for the same target, built from the elaborator's closure of `SeLe4n` by `scripts/build_lean_aarch64_archive.py` and checked there (closure, allocator configuration, per-module initializers, stdlib fidelity, attributed unresolved symbols, no FP/SIMD register); then `check_kernel_entry_exports.py --require-cross` decides the kernel-entry reconciliation on it and the host archive together.  Since BP2.2 the builder also links the archive with `--gc-sections` from its initializer and every production `@[export]`, and requires every symbol that link leaves undefined to be a global function of the HAL's rlib (the kernel's Lean runtime included) or of `compiler_builtins`.  Then (WS-BP BP5.2–BP5.4) it links the Lean kernel into `sele4n-kernel`, checks the image with `check_kernel_image.py --lean-kernel` and the FP/SIMD gate, cuts `kernel8.img` / `config.txt` with `scripts/build_rpi5_image.sh` and publishes the image's size and section map.  Uploads the archive, `libsele4n.unresolved`, and the `rpi5-kernel-image` artifact.
+
+**Which lanes run on a push to `main`.** Every lane runs on every pull request
+and on manual dispatch.  A push to `main` is a merged pull request whose tree
+already passed every lane on the PR's merge ref (§4 has branch protection require
+the branch to be up to date), so it runs only the lanes whose caches the next
+pull request seeds from: `Tiered Tests / Fast` (also the merged tree's build and
+hygiene check) and `Lean aarch64 Archive` (also the merged image's QEMU boot).
+Smoke, Full, `Rust ABI Tests`, `Loom Concurrency Model` and `aarch64 Cross
+Build` are skipped there; on a pull request the Smoke and Full lanes seed a
+cache miss from the Fast lane's cache of the same run (§3), so they never
+depend on a `main`-side cache of their own.
 
 `scripts/check_aarch64_cross_target.py` (Tier 0) requires both jobs to execute their scripts and install the toolchain components they read object code with.
 
@@ -48,7 +59,7 @@ CI jobs restore shared caches for:
 - `.lake/build` (the ARM64 fast lane deliberately caches only `~/.elan` +
   `.lake/packages` under its `lean-nobuild` key)
 
-Cache keys are derived from `lean-toolchain`, `lake-manifest.json`, `lakefile.toml`, and `scripts/setup_lean_env.sh` so toolchain/dependency/setup changes invalidate stale state.
+Cache keys are derived from `lean-toolchain`, `lake-manifest.json`, `lakefile.toml`, and `scripts/setup_lean_env.sh` so toolchain/dependency/setup changes invalidate stale state.  Because every pull request bumps the version in `lakefile.toml`, a pull request's first run always misses its keys; the Smoke and Full lanes then restore the cache the Fast lane (and, for Full, the Smoke lane) saved earlier in the same run under the same key, before falling back to an older cache.
 
 ## 4. Manual branch-protection setup checklist
 
@@ -82,8 +93,9 @@ The `Platform and Security Baseline` workflow (`.github/workflows/platform_secur
    - Trivy filesystem vulnerability scanning (HIGH/CRITICAL severities),
    - CodeQL analysis for GitHub Actions workflows.
 
-This workflow runs on pull requests, pushes to `main`, weekly schedule, and manual dispatch.
-For fork-origin pull requests, the security-scan job is conditionally skipped because `security-events: write` permissions are unavailable in that context; architecture-targeted fast-gate coverage still runs.
+The security scan runs on pull requests, pushes to `main`, weekly schedule, and manual dispatch.
+The ARM64 fast gate runs on pushes to `main`, the weekly schedule and manual dispatch, not on pull requests: it re-runs the `test_fast.sh` that `Tiered Tests / Fast` already runs on every pull request, rebuilding the whole Lean tree on an ARM64 host, so an ARM64-host regression surfaces on the push that merges it.
+For fork-origin pull requests, the security-scan job is conditionally skipped because `security-events: write` permissions are unavailable in that context; the x86 `Tiered Tests` lanes still run.
 The workflow permissions include `pull-requests: read` so the Gitleaks PR commit-diff scan path can read pull request commits without `Resource not accessible by integration` failures.
 The security scan job performs a full-history checkout (`actions/checkout` with `fetch-depth: 0`) so Gitleaks PR commit-range scans do not fail with ambiguous revision errors on shallow clones.
 CodeQL analysis is a hard-fail gate: the analyze step carries no `continue-on-error` (see §8 for the policy and the reversal that made it blocking).
@@ -133,7 +145,7 @@ What blocking does and does not mean:
   under which the code-scanning merge requirement will otherwise hang.
 - Fork-origin pull requests are unaffected: the whole `security-baseline-scan` job is
   skipped for them by its `if:` guard, because `security-events: write` is not
-  available to fork-origin runs. Architecture-targeted fast-gate coverage still runs.
+  available to fork-origin runs. The x86 `Tiered Tests` lanes still run.
 - Dependabot pull requests upload successfully today (observed in both #858 and #859,
   whose diagnostic SARIF uploads were accepted), so blocking does not strand them.
 

@@ -1,3 +1,27 @@
+## v0.36.56 — CI: stop re-running lanes that add no signal
+
+Cuts runner time per pull-request push and per merge without dropping any
+check from pull requests or any security scan.
+
+- **ARM64 fast gate off pull requests.**  `Platform Signal / ARM64 Fast Gate`
+  re-ran `test_fast.sh`, which `Tiered Tests / Fast` already runs on every pull
+  request, and rebuilt the whole Lean tree on an ARM64 host to do it (about 12
+  runner-minutes a push).  It now runs on pushes to `main`, weekly and on
+  dispatch.  The Gitleaks, Trivy and CodeQL job is unchanged and still runs on
+  every pull request and every push to `main`.
+- **A push to `main` runs only the cache-seeding lanes.**  The merged tree
+  already passed every lane on the pull request's merge ref, so Smoke, Full,
+  `Rust ABI Tests`, Loom and `aarch64 Cross Build` are skipped on the push;
+  `Tiered Tests / Fast` and `Lean aarch64 Archive` still run there, as the
+  merged tree's build, hygiene and QEMU boot check and as the caches the next
+  pull request seeds from.  Manual dispatch still runs every lane.
+- **Smoke and Full seed from this run's caches.**  Every pull request bumps
+  `lakefile.toml`, so its first run misses every Lean cache key; Smoke and Full
+  now restore the cache the Fast (and Smoke) lane just saved under the same
+  key, holding this cut's kernel build, before any older cache.  This is what
+  lets `main` stop maintaining Smoke and Full caches.
+- `docs/CI_POLICY.md` §1, §3 and §6 say which lanes run on which event.
+
 ## v0.36.55 — KSC-1 reschedule-SGI accumulator, PR C: the seams fire from the flags and drop the pre-state
 
 Closes the KSC-1 / HAL-3 row.  The syscall step, the fault entry and the
