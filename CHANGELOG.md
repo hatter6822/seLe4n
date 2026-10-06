@@ -36,7 +36,7 @@ Documentation only: no Lean, Rust or fixture change.
   row becomes the plan's Q16; `docs/agent_guide/WORKSTREAM_CONTEXT.md` and
   `docs/agent_guide/LARGE_FILES.md` updated.
 - **WS-CV registered: the register context by value**
-  (`docs/planning/CONTEXT_BY_VALUE_PLAN.md`, 19 sub-tasks, CV0–CV5), and
+  (`docs/planning/CONTEXT_BY_VALUE_PLAN.md`, 20 sub-tasks, CV0–CV5), and
   scheduled **before WS-CB** by the maintainer's decision of 2026-10-05.
   The TCB's `registerContext`, the per-core banks and the boundary become one
   35-`UInt64` `RegisterFile` (`Architecture.TrapContext` retired), the HAL
