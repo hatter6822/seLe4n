@@ -455,7 +455,7 @@ theorem restoreToReadyStaging_passiveServerIdleFrame (st : SystemState)
     (hInv : st.objects.invExt) :
     passiveServerIdleFrame st (Lifecycle.Suspend.restoreToReadyStaging st tid frame) := by
   refine passiveServerIdleFrame_of_backward_of_not_allowed ?_
-    (Lifecycle.Suspend.restoreToReadyStaging_scheduler_eq st tid frame)
+    (by rw [Lifecycle.Suspend.restoreToReadyStaging_scheduler_eq st tid frame])
   intro a tcb' hPostT _ hNA
   have hPost := (SystemState.getTcb?_eq_some_iff _ a tcb').mp hPostT
   by_cases hk : a.toObjId = tid.toObjId

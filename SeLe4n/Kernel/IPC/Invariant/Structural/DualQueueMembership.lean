@@ -7828,7 +7828,8 @@ theorem passiveServerIdleFrame_of_backward_of_not_allowed {st st' : SystemState}
       ¬ passiveServerIdleAllowed tcb'.ipcState →
       ∃ tcb, st.getTcb? tid = some tcb ∧
         tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding)
-    (hSched : st'.scheduler = st.scheduler) :
+    (hSched : st'.scheduler =
+      { st.scheduler with reschedulePending := st'.scheduler.reschedulePending }) :
     passiveServerIdleFrame st st' :=
   ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => by
     obtain ⟨tcb, hTcb, hIpcEq, hBindEq⟩ :=

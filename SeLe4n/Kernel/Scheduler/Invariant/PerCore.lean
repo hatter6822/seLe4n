@@ -714,7 +714,8 @@ The frame states what the invariant READS, once.  Two conjuncts
 (`queueCurrentConsistentOnCore`, `runQueueUniqueOnCore`) are properties of
 `st.scheduler` alone; the third (`currentThreadValidOnCore`) additionally asks
 that the core's current thread resolve to a TCB.  So a step that leaves the
-scheduler alone needs only that it does not *remove* a TCB — which is what every
+scheduler alone (the reschedule flags aside: the invariant reads none of them)
+needs only that it does not *remove* a TCB — which is what every
 store-shaped step gives, since a store never erases a key.
 
 Stated with `hTcb` as a **survival** hypothesis rather than as store equality
@@ -724,13 +725,14 @@ the common case, and demanding equality there would refuse exactly the steps the
 frame exists for. -/
 theorem schedulerInvariantBase_perCore_of_frame {st st' : SystemState} {c : CoreId}
     (h : schedulerInvariantBase_perCore st c)
-    (hSched : st'.scheduler = st.scheduler)
+    (hSched : st'.scheduler =
+      { st.scheduler with reschedulePending := st'.scheduler.reschedulePending })
     (hTcb : ∀ tid : SeLe4n.ThreadId, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome) :
     schedulerInvariantBase_perCore st' c := by
   obtain ⟨hQCC, hRQU, hCTV⟩ := h
   refine ⟨by rw [hSched]; exact hQCC, by rw [hSched]; exact hRQU, ?_⟩
   unfold currentThreadValidOnCore at hCTV ⊢
-  rw [hSched]
+  rw [hSched, SchedulerState.withReschedulePending_currentOnCore]
   cases hCur : st.scheduler.currentOnCore c with
   | none => simp
   | some tid =>
@@ -746,7 +748,8 @@ scheduler and removes no TCB carries the base invariant on **every** core, so a
 transition's lift is one application rather than one per core. -/
 theorem schedulerInvariantBase_smp_of_frame {st st' : SystemState}
     (h : schedulerInvariantBase_smp st)
-    (hSched : st'.scheduler = st.scheduler)
+    (hSched : st'.scheduler =
+      { st.scheduler with reschedulePending := st'.scheduler.reschedulePending })
     (hTcb : ∀ tid : SeLe4n.ThreadId, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome) :
     schedulerInvariantBase_smp st' :=
   fun c => schedulerInvariantBase_perCore_of_frame (h c) hSched hTcb
@@ -760,7 +763,7 @@ theorem schedulerInvariantBase_smp_of_objects_and_scheduler_eq {st st' : SystemS
     (hSched : st'.scheduler = st.scheduler)
     (hObjs : st'.objects = st.objects) :
     schedulerInvariantBase_smp st' :=
-  schedulerInvariantBase_smp_of_frame h hSched (fun tid hSome => by
+  schedulerInvariantBase_smp_of_frame h (by rw [hSched]) (fun tid hSome => by
     unfold SystemState.getTcb? at hSome ⊢
     rw [hObjs]; exact hSome)
 
@@ -775,11 +778,11 @@ theorem schedulerInvariantBase_smp_of_kindPreserving {st st' : SystemState}
     (hSched : st'.scheduler = st.scheduler)
     (hW : kindPreservingWrite st st') :
     schedulerInvariantBase_smp st' :=
-  schedulerInvariantBase_smp_of_frame h hSched
+  schedulerInvariantBase_smp_of_frame h (by rw [hSched])
     (kindPreservingWrite.getTcb?_isSome hW)
 
 /-- WS-RR RR8.16 (`v0.35.199`): **the donation return preserves the base SMP
-scheduler invariant** — it writes no scheduler state at all
+scheduler invariant** — it writes no scheduler state but the reschedule flags
 (`returnDonatedSchedContext_scheduler_eq`), so the frame and the relation are the
 whole proof. -/
 theorem returnDonatedSchedContext_preserves_schedulerInvariantBase_smp
@@ -790,9 +793,10 @@ theorem returnDonatedSchedContext_preserves_schedulerInvariantBase_smp
     (h : schedulerInvariantBase_smp st)
     (hStep : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     schedulerInvariantBase_smp st' :=
-  schedulerInvariantBase_smp_of_kindPreserving h
+  schedulerInvariantBase_smp_of_frame h
     (returnDonatedSchedContext_scheduler_eq st st' serverTid scId originalOwner newOwner? hStep)
-    (returnDonatedSchedContext_kindPreservingWrite hObjInv hStep)
+    (kindPreservingWrite.getTcb?_isSome
+      (returnDonatedSchedContext_kindPreservingWrite hObjInv hStep))
 
 /-- WS-RR RR8.16 (`v0.35.197`): the frame at the **fields the invariant reads**,
 which is narrower than the whole scheduler and is what the SM5.H replenishment

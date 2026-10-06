@@ -108,13 +108,14 @@ private theorem storeObject_scheduler_eq_local (st : SystemState) (oid : SeLe4n.
     pair.2.scheduler = st.scheduler := by
   unfold storeObject at h; cases h; rfl
 
-/-- Z7-B: donateSchedContext only modifies objects — scheduler is preserved. -/
+/-- Z7-B: donateSchedContext only modifies objects — the scheduler is preserved
+except for the reschedule flags its key hooks raise (KSC-1). -/
 theorem donateSchedContext_scheduler_eq
     (st st' : SystemState)
     (clientTid serverTid : SeLe4n.ThreadId)
     (clientScId : SeLe4n.SchedContextId)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
-    st'.scheduler = st.scheduler := by
+    st'.scheduler = { st.scheduler with reschedulePending := st'.scheduler.reschedulePending } := by
   -- WS-OD OD4.1: read off the operation's own decomposition rather than by a
   -- second copy of its case analysis.  The fourth store made that copy
   -- non-compiling, which is what the shared derivation exists to prevent.
@@ -124,16 +125,18 @@ theorem donateSchedContext_scheduler_eq
   have h2 := storeDonationFramePush_scheduler_eq hS2
   have h3 := storeObject_scheduler_eq_local s2 _ _ _ hS3
   have h4 := storeObject_scheduler_eq_local s3 _ _ _ hS4
-  rw [hEq]
-  show s4.scheduler = st.scheduler
-  exact h4.trans (h3.trans (h2.trans h1))
+  have hS : st'.scheduler =
+      { s4.scheduler with reschedulePending := st'.scheduler.reschedulePending } :=
+    congrArg SystemState.scheduler hEq
+  rw [hS, h4, h3, h2, h1]
 
-/-- Z7-B/AH2-D: applyCallDonation preserves the scheduler exactly. -/
+/-- Z7-B/AH2-D: applyCallDonation preserves the scheduler except for the
+reschedule flags the donation's key hooks raise (KSC-1). -/
 theorem applyCallDonation_scheduler_eq
     (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (st' : SystemState)
     (h : applyCallDonation st callerVtid receiverVtid = .ok st') :
-    st'.scheduler = st.scheduler := by
+    st'.scheduler = { st.scheduler with reschedulePending := st'.scheduler.reschedulePending } := by
   unfold applyCallDonation at h
   cases hRecv : lookupTcb st receiverVtid.val with
   | none => simp [hRecv] at h; cases h; rfl

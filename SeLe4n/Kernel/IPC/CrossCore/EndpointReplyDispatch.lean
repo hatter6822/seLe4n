@@ -341,14 +341,16 @@ theorem applyReplyDonationOnCore_characterisation
     | some holderVtid => rfl
 
 /-- `placedCoreOf?` reads the scheduler alone, so a step that writes only objects
-leaves it exactly where it was.  The transport the single-core bridge below needs,
+leaves it exactly where it was (the reschedule flags it does not read either).  The transport the single-core bridge below needs,
 and the reason that bridge can state its hypothesis on the **pre**-state: a caller
 can discharge a fact about the state it holds, not about one the operation
 computes. -/
 theorem placedCoreOf?_congr_of_scheduler_eq {st st' : SystemState}
-    (tid : SeLe4n.ThreadId) (h : st'.scheduler = st.scheduler) :
+    (tid : SeLe4n.ThreadId)
+    (h : st'.scheduler =
+      { st.scheduler with reschedulePending := st'.scheduler.reschedulePending }) :
     placedCoreOf? st' tid = placedCoreOf? st tid := by
-  unfold placedCoreOf?; rw [h]
+  unfold placedCoreOf?; rw [h]; rfl
 
 /-- WS-SM SM6.C.3 (bootCore bridge) / WS-RR RR2.13, restated at `v0.35.37`:
 `applyReplyDonationOnCore` with donor and donee sharing a home core is the
@@ -399,7 +401,7 @@ theorem applyReplyDonationOnCore_eq_single_of_placed_at_bootCore (st : SystemSta
       | error e => rfl
       | ok st' =>
         obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        have hSched : st'.scheduler = st.scheduler :=
+        have hSched :=
           returnDonatedSchedContext_scheduler_eq st st' _ _ _ _ hPop
         simp only [migrateSchedContextReplenishment_noop, descheduleAtPlacement, descheduleAt,
           placedCoreOf?_congr_of_scheduler_eq _ hSched, hPlaced scId holder hTrig,
@@ -510,7 +512,7 @@ theorem applyReplyDonationOnCore_replenishQueueOnCore_ne (st st'' : SystemState)
   · rw [hEq, descheduleAtPlacement_replenishQueueOnCore,
       migrateSchedContextReplenishment_replenishQueueOnCore_other st' scId holderHome ownerHome
         c (Ne.symm hFrom) (Ne.symm hTo),
-      returnDonatedSchedContext_scheduler_eq st st' holderVtid.val scId _ newOwner? hRet]
+      returnDonatedSchedContext_scheduler_eq st st' holderVtid.val scId _ newOwner? hRet]; rfl
 
 /-- WS-RR RR2.9 (frame): the cross-core donation return never advances the
 machine timer — the return writes objects, the migration writes replenish-queue
@@ -591,7 +593,7 @@ theorem returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsis
     replenishQueueAffinityConsistent_smp
       (migrateSchedContextReplenishment st' scId replierHome ownerHome) := by
   -- The return's readings.
-  have hSched : st'.scheduler = st.scheduler :=
+  have hSched :=
     returnDonatedSchedContext_scheduler_eq st st' replier scId owner newOwner? hRet
   have hHomeEq : ∀ tid, determineTargetCore st' tid = determineTargetCore st tid := fun tid =>
     determineTargetCore_congr st st' tid
@@ -605,7 +607,7 @@ theorem returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsis
   obtain ⟨scPre, hScPre, hScPreBound⟩ :=
     returnDonatedSchedContext_ok_implies_sc_bound st st' replier scId owner newOwner? hRet
   have hQueue : ∀ c, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c :=
-    fun c => by rw [hSched]
+    fun c => by rw [hSched]; rfl
   -- A `scId` entry anywhere in the pre-state forces that core to be the
   -- replier's home — the RR2.8 guard's payoff.
   have hConfined : ∀ c t, (scId, t) ∈ (st.scheduler.replenishQueueOnCore c).entries →

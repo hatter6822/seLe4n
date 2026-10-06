@@ -207,6 +207,7 @@ theorem replyRecvPopDonation_replenishQueueOnCore_ne (rid : SeLe4n.ReplyId)
       (Ne.symm hFrom) (Ne.symm hTo),
       returnDonatedSchedContext_scheduler_eq st st1' holder scId
         (replyDonationRecipient st scId target) newOwner? hPop]
+    rfl
 
 /-- **WS-RR RR8.12 Cut C3a**: and it hands nothing back exactly when the answered
 frame heads nothing — the `none` result is the trigger's own `none`, which is what

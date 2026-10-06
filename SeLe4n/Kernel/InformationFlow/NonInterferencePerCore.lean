@@ -128,13 +128,27 @@ theorem observableSlotsConfinedToCore_trans {st stMid st' : SystemState} {c₀ :
    fun c hc => (h₂.domainScheduleIndex c hc).trans (h₁.domainScheduleIndex c hc),
    fun c hc => (h₂.regs c hc).trans (h₁.regs c hc)⟩
 
+/-- KSC-1: a step that leaves the scheduler alone **except the reschedule flags**
+and the machine alone is confined to every core — no observable slot is a flag.
+The discharge for the scheduling-context binding writers, whose key-change hook
+raises flags on the cores the rebound threads sit on. -/
+theorem observableSlotsConfinedToCore_of_scheduler_except_reschedule_machine_eq
+    {st st' : SystemState} (c₀ : CoreId)
+    (hSched : st'.scheduler =
+      { st.scheduler with reschedulePending := st'.scheduler.reschedulePending })
+    (hMach : st'.machine = st.machine) :
+    observableSlotsConfinedToCore st st' c₀ :=
+  ⟨fun _ _ => by rw [hSched]; rfl, fun _ _ => by rw [hSched]; rfl,
+   fun _ _ => by rw [hSched]; rfl, fun _ _ => by rw [hSched]; rfl,
+   fun _ _ => by rw [hSched]; rfl, fun _ _ => by rw [hMach]⟩
+
 /-- SM8.B.1: a step that leaves the scheduler and the machine alone is confined
 to **every** core — the discharge every object-store-only operation uses. -/
 theorem observableSlotsConfinedToCore_of_scheduler_machine_eq {st st' : SystemState}
     (c₀ : CoreId) (hSched : st'.scheduler = st.scheduler) (hMach : st'.machine = st.machine) :
     observableSlotsConfinedToCore st st' c₀ :=
-  ⟨fun _ _ => by rw [hSched], fun _ _ => by rw [hSched], fun _ _ => by rw [hSched],
-   fun _ _ => by rw [hSched], fun _ _ => by rw [hSched], fun _ _ => by rw [hMach]⟩
+  observableSlotsConfinedToCore_of_scheduler_except_reschedule_machine_eq c₀
+    (by rw [hSched]) hMach
 
 /-- SM8.B.1: a step that leaves the scheduler alone and every core's register
 bank alone is confined to every core.  Weaker premise than
@@ -283,20 +297,34 @@ theorem observableSlotsConfinedToCores_trans {st stMid st' : SystemState}
    fun c hc => (h₂.domainScheduleIndex c (hr hc)).trans (h₁.domainScheduleIndex c (hl hc)),
    fun c hc => (h₂.regs c (hr hc)).trans (h₁.regs c (hl hc))⟩
 
-/-- SM8.B.2: a step touching neither the scheduler nor any register bank is
-confined to the **empty** write set — the strongest confinement statement there
-is, and the one every object-store-only step in a cross-core pipeline gets. -/
+/-- SM8.B.2: a step touching neither the scheduler (the reschedule flags aside:
+no observable slot is a flag) nor any register bank is confined to the **empty**
+write set — the strongest confinement statement there is, and the one every
+object-store-only step in a cross-core pipeline gets. -/
 theorem observableSlotsConfinedToCores_nil_of_scheduler_regs_eq {st st' : SystemState}
-    (hSched : st'.scheduler = st.scheduler)
+    (hSched : st'.scheduler =
+      { st.scheduler with reschedulePending := st'.scheduler.reschedulePending })
     (hRegs : ∀ c, st'.machine.regsOnCore c = st.machine.regsOnCore c) :
     observableSlotsConfinedToCores st st' [] :=
-  ⟨fun _ _ => by rw [hSched], fun _ _ => by rw [hSched], fun _ _ => by rw [hSched],
-   fun _ _ => by rw [hSched], fun _ _ => by rw [hSched], fun c _ => hRegs c⟩
+  ⟨fun _ _ => by rw [hSched]; rfl, fun _ _ => by rw [hSched]; rfl,
+   fun _ _ => by rw [hSched]; rfl, fun _ _ => by rw [hSched]; rfl,
+   fun _ _ => by rw [hSched]; rfl, fun c _ => hRegs c⟩
+
+/-- KSC-1: the machine-frame reading of the above — the discharge for the
+scheduling-context binding writers, whose key-change hook raises flags only. -/
+theorem observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
+    {st st' : SystemState}
+    (hSched : st'.scheduler =
+      { st.scheduler with reschedulePending := st'.scheduler.reschedulePending })
+    (hMach : st'.machine = st.machine) :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_regs_eq hSched (fun _ => by rw [hMach])
 
 theorem observableSlotsConfinedToCores_nil_of_scheduler_machine_eq {st st' : SystemState}
     (hSched : st'.scheduler = st.scheduler) (hMach : st'.machine = st.machine) :
     observableSlotsConfinedToCores st st' [] :=
-  observableSlotsConfinedToCores_nil_of_scheduler_regs_eq hSched (fun _ => by rw [hMach])
+  observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
+    (by rw [hSched]) hMach
 
 theorem observableSlotsConfinedToCores_of_eq {st st' : SystemState} (cs : List CoreId)
     (h : st' = st) : observableSlotsConfinedToCores st st' cs := by
@@ -870,7 +898,7 @@ theorem removeCallerReplyFrame_confinedToCore (st st' : SystemState) (caller : S
 theorem cleanupPreReceiveDonation_confinedToCore (st : SystemState)
     (receiver : SeLe4n.ThreadId) (c₀ : CoreId) :
     observableSlotsConfinedToCore st (cleanupPreReceiveDonation st receiver) c₀ :=
-  observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+  observableSlotsConfinedToCore_of_scheduler_except_reschedule_machine_eq c₀
     (cleanupPreReceiveDonation_scheduler_eq st receiver)
     (cleanupPreReceiveDonation_machine_eq st receiver)
 
@@ -1227,7 +1255,7 @@ theorem returnDonatedSchedContext_confinedToCore (st st' : SystemState)
     (newOwner? : Option SeLe4n.ThreadId)
     (hStep : returnDonatedSchedContext st receiver scId originalOwner newOwner? = .ok st') :
     observableSlotsConfinedToCore st st' c₀ :=
-  observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+  observableSlotsConfinedToCore_of_scheduler_except_reschedule_machine_eq c₀
     (returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner newOwner? hStep)
     (returnDonatedSchedContext_machine_eq st st' receiver scId originalOwner newOwner? hStep)
 
