@@ -465,4 +465,53 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
         (fun x hx => keyFrame_trans_stage hx) h
     · cases h
 
+/-! ### The checked syscall dispatch -/
+
+theorem syscallResolveCap_state {gate : SyscallGate} {st st' : SystemState} {cap : Capability}
+    (h : syscallResolveCap gate st = .ok (cap, st')) : st' = st := by
+  unfold syscallResolveCap at h
+  repeat' split at h
+  all_goals first | (cases h; done) | (cases h; rfl)
+
+/-- **The checked dispatch covers** on the executing core: the capability
+resolution reads, the routed arm covers, and the taint pass writes the taint
+ledger alone. -/
+theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {e : CoreId}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (hBi : schedContextBindingBidirectional st)
+    (hPlaced : ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨
+      st.scheduler.currentOnCore c = some t) → (st.getTcb? t).isSome)
+    (hDet : ∀ args, decoded.syscallId = .lifecycleRetype →
+      decodeLifecycleRetypeArgs decoded = .ok args → retypeTargetDetached st args.targetObj)
+    (h : dispatchSyscallChecked ctx decoded tid e st = .ok ((), st')) :
+    stepCovers e st st' := by
+  unfold dispatchSyscallChecked at h
+  split at h
+  · cases h
+  split at h <;> try (cases h; done)
+  split at h <;> try (cases h; done)
+  dsimp only at h
+  cases hTF : syscallChecksTargetFirst decoded.syscallId <;>
+    simp only [hTF, Bool.false_eq_true, ↓reduceIte] at h
+  all_goals
+    split at h
+    · cases h
+    rename_i stPost hD
+    cases h
+    refine stepCovers_trans (b := stPost) ?_
+      (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl)
+  · unfold syscallInvoke at hD
+    split at hD
+    · cases hD
+    · rename_i cap s1 hR
+      cases syscallLookupCap_preserves_state _ _ _ _ hR
+      exact dispatchWithCapChecked_stepCovers e hInv hBi hPlaced hDet hD
+  · unfold syscallInvokeResolved at hD
+    split at hD
+    · cases hD
+    · rename_i cap s1 hR
+      cases syscallResolveCap_state hR
+      exact dispatchWithCapChecked_stepCovers e hInv hBi hPlaced hDet hD
+
 end SeLe4n.Kernel
