@@ -70,15 +70,25 @@ Documentation only: no Lean, Rust or fixture change.
   (CB1.11's retype fields, CB0.3's `TCB.domain` writers, CV4.3's word
   carriers, CV4.4's second references) is written as the derivation that
   produces it with the known members as the pin (§7's sixth per-row
-  question); WS-CV's acceptance is an enumerated allocation budget (§1.1)
-  instead of "at most two", which adds CV0.4 — the exception classifier
-  classifies the `ESR_EL1` word and allocates no `ExceptionContext` — and
+  question); WS-CV's acceptance is an allocation budget read off the generated C of
+  the entry modules (§1.1, one table row per site, each assigned to the row
+  that removes it or kept by name) instead of "at most two", which adds
+  CV0.4 — the exception classifier classifies the `ESR_EL1` word and
+  allocates no `ExceptionContext` — and CV4.5 — the step's nested result
+  tuple and `RestoreTarget.user` become one flat commit record — and
   §3.5 / CV4.4 are re-baselined on the tree (the entry wrapper already commits
   through `modifyGetKernelState`; CV4.4 reads the caller itself, so WS-CV no
   longer orders against the KSC-1 accumulator); CV4.3 retypes the fault
   window's `Array UInt64`s with a high-bit saved-GPR case; the hazard test
   uses a blocking syscall, whose stage rewrites no word; CB1.12 makes the
-  unbind of a running or queued thread a removal, with its files.
+  unbind of a running or queued thread a removal, with its files.  Three
+  §4 rules of the CBS plan are now checked at their boundary cell (§7's
+  seventh question): member admission compares rounded-up demand with
+  rounded-down capacity (`Bandwidth.capacity`, §4.6); the saturating
+  clock's progress theorems carry `clockHeadroom` (CB1.11, T14); the seam's
+  local arm consumes the executing core's own flag
+  (`keyRescheduleOnCore_local_flag_cleared`, §4.4, T19), as the KSC-1
+  accumulator sets it.
 
 ## v0.36.49 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
 

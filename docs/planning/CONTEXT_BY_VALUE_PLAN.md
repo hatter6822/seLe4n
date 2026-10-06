@@ -69,31 +69,47 @@ conversion, no allocation), and the HAL hands its in-flight context over as a
 
 ### 1.1 Acceptance (measured, not stated)
 
-- **The allocation budget, by construction.**  Heap allocations per syscall
-  entry+exit on the kernel runtime itself — the Tier 4 QEMU `virt` lane, where
-  the HAL's `lean_heap` is the allocator the compiled Lean runs on — are
-  counted by that heap's per-core allocation counter, the boot core's slot
-  read with IRQs masked across the round trip (CV0.1; the host boundary crate
-  links the toolchain's `libleanshared`, so it cannot see the kernel heap,
-  §3.6).  The acceptance is not a number but this list, each entry owned by
-  the row that leaves it or removes it, and the measured delta on a syscall
-  whose caller continues must equal the entries present on that path:
-  1. the snapshot — `InFlightContext.snapshot`, one 280-byte constructor
-     (CV3.1), the one allocation the design keeps;
-  2. the `KernelObject` wrapper the TCB's slot re-wraps when constructor reuse
-     does not fire (CV4.4) — present or absent per path, never more than one;
-  3. nothing else: the exception classifier's `ExceptionContext` — one
-     constructor on every synchronous exception before routing, outside the
-     entry lock — is removed by CV0.4; the TCB record and its `RegisterFile`
-     update in place because CV4.4 makes them uniquely referenced at the
-     write; and **no boxed `UInt64` or closure** is allocated on the
-     entry/exit path — the generated C of `Platform/FFI.c`,
-     `SyscallDispatchEntry.c`, `TrapFrameSave.c`, `ContextRestore.c` and
-     `FaultEntry.c` contains no `lean_alloc_closure`, no `lean_box_uint64` and
-     no `lean_alloc_ctor` reachable from the entry functions other than the
-     snapshot's (read at CV5.1, not scanned).
-  A delta above the list is a failed acceptance traced to its allocation
-  site, not a cost recorded as the new figure.
+- **The allocation budget, read off the generated C.**  Heap allocations per
+  syscall entry+exit on the kernel runtime itself — the Tier 4 QEMU `virt`
+  lane, where the HAL's `lean_heap` is the allocator the compiled Lean runs on
+  — are counted by that heap's per-core allocation counter, the boot core's
+  slot read with IRQs masked across the round trip (CV0.1; the host boundary
+  crate links the toolchain's `libleanshared`, so it cannot see the kernel
+  heap, §3.6).  The acceptance is not a number but the table below, **derived
+  by reading the generated C** of the entry modules
+  (`.lake/build/ir/SeLe4n/Kernel/SyscallDispatchEntry.c`,
+  `Architecture/ContextRestore.c`, `Architecture/TrapFrameSave.c`,
+  `Platform/FFI.c`, `Kernel/FaultEntry.c`: every `lean_alloc_ctor`,
+  `lean_alloc_closure` and `lean_box_uint64` in a function on the
+  continuing-syscall path), each site assigned to the row that removes it or
+  kept as a named entry; the reading is redone at CV5.1 and the measured delta
+  must equal the kept entries present on the path.  Two kinds of site occur:
+  a **fresh** site allocates on every execution; a **copy-on-shared** site is
+  the fallback branch of a structure update (`{ s with … }`) the runtime takes
+  only when the record is shared, so it is removed by ownership, never by
+  rewriting the update.  The reading at `v0.36.50`:
+
+  | Site in the generated C | Kind | Row |
+  |---|---|---|
+  | `syscallDispatchCrossCoreStep`: the nested result tuple, eight `Prod` pairs on the committing path | fresh | CV4.5 — one flat commit record |
+  | `syscallDispatchCrossCoreBracketedStep` and `syscallWindow`: thirteen and eight `lean_box_uint64` (the six argument words boxed into the step closure and the window) and two closures (the step, the `declaredUnifiedLockSet` thunk) | fresh | CV3.1 — the wrappers pass the `InFlightContext` and the bracketed step is specialised over its step |
+  | `syscallDispatchCrossCoreEntry`'s lambda: the step closure, the `(result, state)` pair, the `some` of the suspended thread's id | fresh | CV4.5 — fields of the commit record; the `modifyGet` pair is **kept** |
+  | `restoreTargetOnCore`: `RestoreTarget.user` (one object field, seventeen scalar bytes) | fresh | CV4.5 — restore kind, context, `tableBase`, `asid`, `fpLive` are fields of the commit record |
+  | `stageCallerReturn`: two `TCB` copies (sixteen fields), one `SystemState` copy (twenty-eight fields); the `instDecidableEqThreadId` closure | copy-on-shared; the closure fresh | CV4.4 — exclusivity by ownership; the thread-id equality decided without an instance closure |
+  | `saveTrapFrameOnCore` / `saveCapturedSyscallFrame`: the `RegisterFile` and its `gpr` closure (`registerFileOfTrapWords`), the TCB and state copies | fresh (the file, the closure); copy-on-shared (the records) | CV1.1, CV3.1 — the snapshot, **kept**; CV4.4 — the records |
+  | `InFlightContext.snapshot` (CV3.1) | fresh | **kept** — the one allocation the design keeps |
+  | the `KernelObject` re-wrap of the TCB's slot when constructor reuse does not fire | copy-on-shared | **kept**, present or absent per path (CV4.4) |
+  | `classifySynchronousExceptionExport`'s `ExceptionContext` (`FaultEntry.c`) | fresh | CV0.4 |
+
+  The dispatcher body is outside the table: the `Kernel` monad's `Except.ok`
+  pairs across its binds and whatever the measured syscall itself writes are
+  measured as one figure per scenario and recorded, not budgeted (§6).  So the
+  kept entries on a continuing syscall are the snapshot, the commit record,
+  the `modifyGet` pair and the optional re-wrap — **at most four, each
+  named** — plus the dispatcher's recorded figure; a delta above that is
+  traced to its site in a fresh reading of the generated C, never recorded as
+  the new number.  No `lean_alloc_closure` and no `lean_box_uint64` remains
+  reachable from the entry functions (read at CV5.1, not scanned).
 - The HAL's `ffi_trap_context` allocates nothing (`lean_heap` counter
   unchanged across the call; Rust unit test, CV3.4).
 - The two-trap hazard test (CV0.2, re-run at CV3.5): two traps on one core,
@@ -429,7 +445,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV3.1 | `Architecture.InFlightContext`, `snapshot`, `snapshot_word`; `ffiTrapContext : BaseIO (Option InFlightContext)` replacing CV2.1's temporary `Option RegisterFile` binding; `syscallEntryContextOrFaulted` and the entry wrappers on it; `SystemState` stays free of the type (consumes CV2.1) | Lean |
+| CV3.1 | `Architecture.InFlightContext`, `snapshot`, `snapshot_word`; `ffiTrapContext : BaseIO (Option InFlightContext)` replacing CV2.1's temporary `Option RegisterFile` binding; `syscallEntryContextOrFaulted` and the entry wrappers on it — the wrappers hand the `InFlightContext` to `syscallDispatchCrossCoreBracketedStep`, which is `@[specialize]`d over its step and reads the argument words from the context's fields, so the thirteen `lean_box_uint64` and two closures of §1.1's table, and `syscallWindow`'s eight boxes, are gone; `SystemState` stays free of the type (consumes CV2.1) | Lean |
 | CV3.2 | `trap::InFlightContextObjects`: per-core persistent object and wrapper, initialised at runtime bring-up; `ffi_trap_context` writes and returns without allocating; `trap_context_of_lean` accepts the executing core's object by address | `rust/sele4n-hal/src/trap.rs`, `ffi.rs`, `lean_runtime/` |
 | CV3.3 | The cross-language test extended: a snapshot is a different object with the same words; the probes export `snapshot` | `rust/sele4n-lean-boundary/` |
 | CV3.4 | Rust unit tests: persistence after `lean_dec`, zero allocations across `ffi_trap_context` read from CV0.1's monotone `allocations` counter (§3.4; the live census cannot see an allocation freed before return), by-address acceptance, refusal of another core's object | `ffi.rs` tests |
@@ -443,13 +459,14 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 | CV4.1 | `restoreTargetOnCore` / `restoreTrapFrame` on the TCB's object; `RestoreTarget.user (context : RegisterFile)` unchanged in statement | `ContextRestore.lean`, `FFI.lean` |
 | CV4.2 | `stageReturnFrame` as a structure update on the TCB's context; measured allocation count per syscall recorded | `SyscallReturn.lean`, measurement |
 | CV4.3 | `IpcMessage.registers : Array RegValue` → an **unboxed** word carrier, `MessageWords`, a `ByteArray` of `8 · len` bytes (`len ≤ maxMessageRegisters = 120`) with `get i` / `set i v` assembling and splitting the word through `uget` / `uset` (eight scalar byte operations per word, no object per element), with `SyscallDecodeResult.msgRegs`, `replyRegisters` and `FaultReply`'s register arrays where they feed it, **and the fault encoder**: `Architecture.encodeFault` (`Kernel/Architecture/Fault.lean`) returns `Array RegValue` built through `regOf` (`UInt64.toNat`, a bignum for a high-bit word) and `makeFaultMessage` (`Kernel/IPC/Operations/Fault.lean`) assigns it to `IpcMessage.registers`, so a conversion at the assignment would compile while fault entry kept the input-dependent allocations — **and the fault window itself**: `FaultContext.gprs` and `FaultRegisterWindow.gprs` (`Model/Fault.lean`) are `Array UInt64`, eight boxed words per fault built by `ofRegisterFile`'s `Array.map` over `rf.gpr` and read back by `gprAt` and `spill`, and become eight scalar fields `x0`–`x7` of each structure (`gprAt` a `match`, `spill` the structure update §3.2 already gives it), the encoder reading the fields — the carrier set being derived by a search for `Array UInt64`, `Array RegValue` and `RegValue` on the entry, decode, fault-encode and return paths, these being the members at `v0.36.50`; the encoder and the fault-reply reader construct and read `MessageWords` directly, `regOf` retiring with `RegValue.valid` — **not `Array UInt64`**, whose every push boxes its element through `lean_box_uint64` (a heap object for the word, so the input-dependent allocation would survive and contradict §1.1's zero-`lean_box_uint64` read) — and **not measurement-gated**: a message register is any user `UInt64`, and one `≥ 2^63` read as a `Nat` allocates a bignum whatever CV4.2's workload happens to carry, so the input-dependent allocation goes by construction; `RegValue.valid` retires with its last array; the decode and return-frame readers restated over `MessageWords`; the generated C of `RegisterDecode.c`, `SyscallArgDecode.c` and both `Fault.c` (`Model/`, `Kernel/Architecture/`) read for `lean_box_uint64` on the decode and fault-encode paths as §1.1 reads the entry modules, with the high-bit case; a Tier 2 case sends a high-bit word (`≥ 2^63`) through the IPC path for the semantics (the word arrives intact) and a second delivers a VM fault at an address `≥ 2^63`, from a thread whose `x0`–`x7` are all `≥ 2^63`, to a fault handler (the fault address and the eight window words arrive intact), and the allocation evidence is the kernel lane's: CV0.1's `heap_allocations_per_syscall` exerciser gains a high-bit IPC scenario (a send whose message registers carry `≥ 2^63`) and a high-bit fault scenario (a user load from an address `≥ 2^63`, its fault message read by the handler) whose deltas are read beside the plain round trip, since the host Lean runtime has no counter (§3.6) | `Model/Object/Types.lean`, `Architecture/SyscallArgDecode.lean`, `Kernel/Architecture/Fault.lean`, `Kernel/IPC/Operations/Fault.lean`, `Model/Fault.lean`, decode/return-frame readers, two Tier 2 cases |
-| CV4.4 | **Exclusivity by ownership** (§3.5): the entry wrapper's `modifyGetKernelState` already gives the step the state's only reference, so the work is below it: `SystemState.modifyTcbExclusive` — the TCB's slot value taken out of `objects` (the `Array.modify` swap pattern over an `RHTable` take), `f` run on a uniquely referenced record, the result swapped back under `rewriteObject`'s witnessed admissibility — carries `saveCapturedSyscallFrame` and `stageReturnFrame`, with the snapshot binding dead at the save; the stage **takes the context out of both holders** — the bank slot (`machine.coreRegs`) and the TCB field swapped with the shared `default` constant — updates the one object in place and stores it back into both, since `saveTrapFrameOnCore` stores one object behind two holders and `stageCallerReturn` today updates the two copies separately (`contextMatchesCurrent` keeps its statement: one object, two holders); `stageCallerReturn` receives the caller as a `ThreadId` read from the core's current slot before the arm at its four call sites in `SyscallDispatchEntry.lean`, not the pre-state (independent of the KSC-1 accumulator's seam switch, whose capture carries the same value once it has landed); `modifyTcbExclusive_eq_updateTcb` says the two are the same function; the kernel-lane exerciser's continuing-syscall delta is read against the budget of §1.1, and one host Lean test holds a second reference to the TCB record across `stageReturnFrame` and observes the copy, so the relation, not the token, is what the check sees (consumes CV4.2) | `Model/State.lean`, `Architecture/TrapFrameSave.lean`, `Architecture/ContextRestore.lean`, `Architecture/SyscallReturn.lean`, `SyscallDispatchEntry.lean`, one host Lean test |
+| CV4.4 | **Exclusivity by ownership** (§3.5): the entry wrapper's `modifyGetKernelState` already gives the step the state's only reference, so the work is below it: `SystemState.modifyTcbExclusive` — the TCB's slot value taken out of `objects` (the `Array.modify` swap pattern over an `RHTable` take), `f` run on a uniquely referenced record, the result swapped back under `rewriteObject`'s witnessed admissibility — carries `saveCapturedSyscallFrame` and `stageReturnFrame`, with the snapshot binding dead at the save; the stage **takes the context out of both holders** — the bank slot (`machine.coreRegs`) and the TCB field swapped with the shared `default` constant — updates the one object in place and stores it back into both, since `saveTrapFrameOnCore` stores one object behind two holders and `stageCallerReturn` today updates the two copies separately (`contextMatchesCurrent` keeps its statement: one object, two holders); `stageCallerReturn` receives the caller as a `ThreadId` read from the core's current slot before the arm at its four call sites in `SyscallDispatchEntry.lean`, not the pre-state (independent of the KSC-1 accumulator's seam switch, whose capture carries the same value once it has landed); `modifyTcbExclusive_eq_updateTcb` says the two are the same function; the kernel-lane exerciser's continuing-syscall delta is read against the budget of §1.1, and one host Lean test holds a second reference to the TCB record across `stageReturnFrame` and observes the copy, so the relation, not the token, is what the check sees; the thread-id equality in `stageCallerReturn` is decided over `DecidableEq` directly, so the `instDecidableEqThreadId` closure of §1.1's table is gone (consumes CV4.2) | `Model/State.lean`, `Architecture/TrapFrameSave.lean`, `Architecture/ContextRestore.lean`, `Architecture/SyscallReturn.lean`, `SyscallDispatchEntry.lean`, one host Lean test |
+| CV4.5 | **One commit record**: `syscallDispatchCrossCoreStep` returns a flat `SyscallCommit` structure in place of its nested result tuple — the outcome tag and the six return words as scalar fields, the restore kind with the borrowed context and `tableBase` / `asid` / `fpLive` as fields (`RestoreTarget` stays as the value `restoreTargetOnCore` names in CV4.1's theorem; the record is what crosses the boundary), the shootdown window as two fields, the suspended thread's id as a field with a presence flag rather than an `Option`, and the SGI, shootdown-target, TLB, icache and physical-write lists as fields (empty lists are scalars, so a continuing syscall allocates none) — so the eight `Prod` pairs, the `some` and the `RestoreTarget.user` of §1.1's table become one allocation, and the `modifyGet` pair is the one that remains; `rust/sele4n-hal/src/ffi.rs` reads the record's fields where it unpacked the tuple, with the boundary layout test extended to the record; the step's theorems (`_drains_physicalWrites`, the residency and SGI results) restated over the record's fields.  Written against the step as the KSC-1 accumulator's seam switch leaves it, that slice preceding WS-CV in the roadmap; if it has not landed, this row carries its own pre-state capture (consumes CV4.4) | `SyscallDispatchEntry.lean`, `Architecture/ContextRestore.lean`, `Platform/FFI.lean`, `rust/sele4n-hal/src/ffi.rs`, `rust/sele4n-lean-boundary/tests/layout.rs` | L |
 
 ### CV5 — closure
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV5.1 | The measurement re-run and recorded against CV0.1's baseline; the generated C of the four entry/exit modules read for `lean_alloc_closure` / `lean_box_uint64` on the entry path (§1.1) and the finding recorded in the CHANGELOG — the acceptance measurement, before anything is archived | `CHANGELOG.md` |
+| CV5.1 | The measurement re-run and recorded against CV0.1's baseline; the generated C of the five entry modules re-read site by site against §1.1's table (every row removed or kept as it says, no closure or boxed word reachable from the entry functions) and the finding recorded in the CHANGELOG with the dispatcher's own figure per scenario — the acceptance measurement, before anything is archived | `CHANGELOG.md` |
 | CV5.2 | `HIERARCHICAL_CBS_PLAN.md` re-verified against the tree WS-CV leaves (its preemption rows save and restore the new `RegisterFile`), while this plan is still at its live path (consumes CV5.1) | `docs/planning/HIERARCHICAL_CBS_PLAN.md` |
 | CV5.3 | Closure, last: the `v0.36.47` register-file debt row deleted; `WORKSTREAM_CONTEXT.md` section moved to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`; this plan moved to `docs/dev_history/planning/`; WS-CB opens (consumes CV5.2) | docs |
 
@@ -496,6 +513,13 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
   site rather than recorded as the new number — which is how the classifier's
   `ExceptionContext` (CV0.4) was found while planning, by reading the path,
   rather than while measuring.
+- **The dispatcher body's own allocations are outside the budget.**  The
+  `Kernel` monad is `StateT` over `Except`, so every bind on the dispatcher's
+  path can allocate an `Except.ok` pair the compiler does not reuse, and the
+  measured syscall's own writes (a message, an object) are its own; the
+  exerciser measures the cheapest syscall it can and the figure is recorded
+  per scenario.  Changing the monad's return shape is a candidate workstream
+  registered in `docs/REGISTERED_DEBT.md` at CV5, with no owner.
 - **Collapsing the per-core bank into the TCB** (D2) is not this workstream.
   It would remove `contextMatchesCurrent` and `setRegsOnCore`, change the
   information-flow projection's source and every unwinding relation that reads
