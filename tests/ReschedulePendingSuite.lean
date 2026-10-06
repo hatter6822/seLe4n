@@ -460,6 +460,8 @@ private def runLocalDomainEvictionChecks : IO Unit := do
   assertBool "local eviction to idle: the thread stays queued on core 1"
     (boundTid ∈ (idle.scheduler.runQueueOnCore core1))
   assertBool "local eviction to idle: core 1's flag is cleared" (!flagOf idle core1)
+  assertBool "local eviction to idle: core 1 resumes the idle loop, not the evicted thread"
+    (match Architecture.restoreTargetOnCore idle core1 with | .idle => true | _ => false)
   let preSrv := stBoundCurrent true
   let movedSrv ← configureBound 1 preSrv
   let switched := PriorityInheritance.scheduleLocalSuccessor preSrv movedSrv core1

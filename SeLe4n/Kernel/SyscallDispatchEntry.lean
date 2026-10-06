@@ -499,7 +499,8 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
       -- still resident on another core is deferred, and the one resumed here
       -- becomes this core's resident thread (`settleResidencyOnCore`).
       let st'' := PriorityInheritance.settleResidencyOnCore
-        (PriorityInheritance.scheduleLocalSuccessorFrom caller? stR execCore) execCore
+        (PriorityInheritance.scheduleLocalSuccessorFrom caller? (pending0.get execCore) stR
+          execCore) execCore
       -- KSC-1: a remote core is poked when the step raised its reschedule flag
       -- (`syscallDispatchCrossCoreStep_sgis_cover_diff`: the flags cover the old
       -- whole-index diff, which stays as the specification).
@@ -529,6 +530,7 @@ theorem syscallDispatchCrossCoreStep_of_ok {ctx : LabelingContext} {execCore : C
         ipcBufferAddr elr spsr spEl0 x30 st =
       let st'' := PriorityInheritance.settleResidencyOnCore
         (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore execCore)
+          (st.scheduler.reschedulePendingOnCore execCore)
           (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore execCore) st' execCore
             outcome) execCore) execCore
       ((outcome,
@@ -1088,7 +1090,8 @@ def suspendThreadCrossCoreStep (tid : UInt64) (execCore : CoreId) (st : SystemSt
           let pending0 := reschedulePendingSnapshot s
           match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
           | Except.ok (s', _) =>
-              let s'' := PriorityInheritance.scheduleLocalSuccessorFrom caller? s' execCore
+              let s'' := PriorityInheritance.scheduleLocalSuccessorFrom caller?
+                (pending0.get execCore) s' execCore
               (s'', ((0 : UInt32),
                     rescheduleSgisFromFlags pending0 s''.scheduler.reschedulePending execCore))
           | Except.error e =>

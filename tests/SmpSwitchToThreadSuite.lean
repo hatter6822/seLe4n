@@ -502,11 +502,6 @@ private def restoresIdle (t : Architecture.RestoreTarget) : Bool :=
   | .idle => true
   | _ => false
 
-private def restoresNothing (t : Architecture.RestoreTarget) : Bool :=
-  match t with
-  | .none => true
-  | _ => false
-
 private def runContextRestoreChecks : IO Unit := do
   IO.println "--- §3.12 WS-BP BP7.4 the caller's result survives a same-entry switch ---"
   let saved := Architecture.saveTrapFrameOnCore stPreempt bootCoreId savedFrame
@@ -561,8 +556,8 @@ private def runContextRestoreChecks : IO Unit := do
     (switchOkAnd staged bootCoreId tidA (fun st' => (savedContextOf st' tidP).tpidr == ⟨0x1022⟩))
   assertBool "a core running its idle thread resumes the idle loop"
     (restoresIdle (Architecture.restoreTargetOnCore stIdle bootCoreId))
-  assertBool "a core running nothing restores nothing"
-    (restoresNothing (Architecture.restoreTargetOnCore stPreempt core1))
+  assertBool "a core running nothing resumes the idle loop, not the frame it trapped from"
+    (restoresIdle (Architecture.restoreTargetOnCore stPreempt core1))
   assertBool "the trap words of a context read back as that context"
     (Architecture.registerFileOfTrapWords (Architecture.trapWordsOfRegisterFile savedFrame) == savedFrame)
   -- v0.36.47: the boundary representation.  Every register of `savedFrame`

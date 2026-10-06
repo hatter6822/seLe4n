@@ -4349,7 +4349,7 @@ run_check "INVARIANT" rg -n 'switching away then saves every register the thread
 # from, before the local reschedule; every entry hands the HAL the context the
 # committed state names, gated on the context-restore seam; the HAL commits it
 # into the in-flight frame with SPSR sanitised to EL0t.
-run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? stR execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? \(pending0\.get execCore\) stR\n          execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  let staged := PriorityInheritance\.settleResidencyOnCore\n    \(Architecture\.stageCallerReturn unwound unwound execCore outcome\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  \| Except\.error e =>\n([ \t]*(--[^\n]*)?\n)*      absurd hD \(Platform\.FFI\.syscallDispatchFromAbi_ne_error ' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean

@@ -1458,6 +1458,14 @@ inline — so the inline half has to be run here, or the exclusion is total:
   it also swallows the `false → true` edge a later remote writer needs to poke
   the core, so a remote wake would wait for that point too.
 
+Gated on the flag's **edge** (`pending0`, the core's flag captured before the
+transition, is `false`), not on the flag alone.  A flag already up at entry was
+raised by another core, whose `.reschedule` SGI is outstanding (masked during
+the entry) and runs the handler under the core's own lock once taken; running
+it here instead would write this core's run queue and current slot under a
+step whose lock footprint need not cover them.  A step that raises the flag
+itself staled a thread on this core, which its footprint holds.
+
 Gated on the caller, not on the post-state alone: a core that was already idle
 before the entry is not vacated and owes nothing here (`dispatchVacatedCore`
 owns that case).  The flag is the owed-scheduling-point fact itself, so firing
@@ -1466,15 +1474,17 @@ handler keeps the incumbent unless a candidate outranks it or it has left the
 active domain.
 
 `caller?` is the executing core's pre-entry thread, which the commit seams
-capture before the transition consumes the pre-state (KSC-1). -/
-def localSuccessorNeededFrom (caller? : Option SeLe4n.ThreadId) (post : SystemState)
-    (execCore : CoreId) : Bool :=
+capture before the transition consumes the pre-state (KSC-1), as is `pending0`. -/
+def localSuccessorNeededFrom (caller? : Option SeLe4n.ThreadId) (pending0 : Bool)
+    (post : SystemState) (execCore : CoreId) : Bool :=
   (caller? != none) && (post.scheduler.currentOnCore execCore == none ||
-    post.scheduler.reschedulePendingOnCore execCore)
+    (!pending0 && post.scheduler.reschedulePendingOnCore execCore))
 
-/-- `localSuccessorNeededFrom` with the caller read off the pre-state. -/
+/-- `localSuccessorNeededFrom` with the caller and the flag read off the
+pre-state. -/
 def localSuccessorNeeded (pre post : SystemState) (execCore : CoreId) : Bool :=
-  localSuccessorNeededFrom (pre.scheduler.currentOnCore execCore) post execCore
+  localSuccessorNeededFrom (pre.scheduler.currentOnCore execCore)
+    (pre.scheduler.reschedulePendingOnCore execCore) post execCore
 
 /-- WS-SM SM8.B (PR #861 review round 17): **run the executing core's scheduler
 when the transition vacated it.**
@@ -1499,17 +1509,19 @@ It is reachable only through `switchToThreadOnCore`'s own rejections — the
 *selection* side is total, since `chooseBestRunnableEffective_always_ok` (this
 PR, review round 15) made the scan skip a non-TCB entry rather than fail.  That
 is what lets this be stated without a scheduler-invariant hypothesis. -/
-def scheduleLocalSuccessorFrom (caller? : Option SeLe4n.ThreadId) (post : SystemState)
-    (execCore : CoreId) : SystemState :=
-  if localSuccessorNeededFrom caller? post execCore then
+def scheduleLocalSuccessorFrom (caller? : Option SeLe4n.ThreadId) (pending0 : Bool)
+    (post : SystemState) (execCore : CoreId) : SystemState :=
+  if localSuccessorNeededFrom caller? pending0 post execCore then
     match handleRescheduleSgiOnCore post execCore with
     | .ok st => st
     | .error _ => post
   else post
 
-/-- `scheduleLocalSuccessorFrom` with the caller read off the pre-state. -/
+/-- `scheduleLocalSuccessorFrom` with the caller and the flag read off the
+pre-state. -/
 def scheduleLocalSuccessor (pre post : SystemState) (execCore : CoreId) : SystemState :=
-  scheduleLocalSuccessorFrom (pre.scheduler.currentOnCore execCore) post execCore
+  scheduleLocalSuccessorFrom (pre.scheduler.currentOnCore execCore)
+    (pre.scheduler.reschedulePendingOnCore execCore) post execCore
 
 /-- WS-SM SM8.B: the rule is **inert unless the executing core was vacated** —
 so a transition that left the slot alone, or that rescheduled the core itself,
@@ -1547,12 +1559,13 @@ theorem scheduleLocalSuccessor_of_post_running (pre post : SystemState) (execCor
   simp [h, hFlag]
 
 /-- **The executing core's own flag is consumed by the step.**  A transition
-that raised the flag of the core it ran on, and left the caller running, gets
-the core's reschedule decision inline: the handler switches when a candidate
+that raised the flag of the core it ran on (down at entry, up after), and left
+the caller running, gets the core's reschedule decision inline: the handler switches when a candidate
 outranks the caller or the caller has left the active domain, and otherwise
 keeps it and lowers the flag. -/
 theorem scheduleLocalSuccessor_of_pending (pre post : SystemState) (execCore : CoreId)
     (hPre : pre.scheduler.currentOnCore execCore ≠ none)
+    (hFlag0 : pre.scheduler.reschedulePendingOnCore execCore = false)
     (hFlag : post.scheduler.reschedulePendingOnCore execCore = true) :
     scheduleLocalSuccessor pre post execCore =
       match handleRescheduleSgiOnCore post execCore with
@@ -1562,7 +1575,7 @@ theorem scheduleLocalSuccessor_of_pending (pre post : SystemState) (execCore : C
     unfold localSuccessorNeeded localSuccessorNeededFrom
     cases hC : pre.scheduler.currentOnCore execCore with
     | none => exact absurd hC hPre
-    | some _ => simp [hFlag]
+    | some _ => simp [hFlag0, hFlag]
   unfold localSuccessorNeeded at hNeeded
   unfold scheduleLocalSuccessor scheduleLocalSuccessorFrom
   rw [if_pos hNeeded]
@@ -1574,14 +1587,14 @@ thread the model has taken off it — another core's transition cleared the slot
 holder's deschedule), and the `.reschedule` SGI that would have told this core
 has not yet been taken: it was pending while the core waited on the
 kernel-entry lock with IRQs masked.  An entry that names no thread to act on
-must still hand the core something to resume, or the trap layer has nothing to
-return through and halts the PE (`trap.rs`, after `take_restored`).
+hands the core its runnable successor rather than leaving it in the idle loop
+an empty slot resumes (`Architecture.restoreTargetOnCore`).
 
 `scheduleLocalSuccessor` is inert here by design — its guard is a *change*
 between two states the entry computed, and this core was vacated before the
 entry began — so the vacated case is its own rule: run the core's reschedule,
-which with no current thread admits any budget-eligible candidate and so
-dispatches at least the core's idle thread.  The `.error` arm keeps the state
+which with no current thread admits any budget-eligible candidate (the core's
+idle thread among them when it is queued in the active domain).  The `.error` arm keeps the state
 (fail-closed, as `scheduleLocalSuccessor`'s does); a populated slot is left
 alone, so the rule is the identity wherever the entry has a thread to act on. -/
 def dispatchVacatedCore (st : SystemState) (c : CoreId) : SystemState :=
@@ -1716,13 +1729,14 @@ theorem settleResidencyOnCore_machine_regs (st : SystemState) (c : CoreId) :
 -- the thread it dispatched (`Architecture.restoreTargetOnCore`).
 
 /-- WS-SM SM8.B: the two halves of the guard, forward: the core was vacated
-or its own flag is up. -/
-theorem localSuccessorNeeded_vacated_or_pending (pre post : SystemState) (execCore : CoreId)
+or the step raised its own flag. -/
+theorem localSuccessorNeeded_vacated_or_raised (pre post : SystemState) (execCore : CoreId)
     (h : localSuccessorNeeded pre post execCore = true) :
     post.scheduler.currentOnCore execCore = none ∨
-      post.scheduler.reschedulePendingOnCore execCore = true := by
+      (pre.scheduler.reschedulePendingOnCore execCore = false ∧
+        post.scheduler.reschedulePendingOnCore execCore = true) := by
   unfold localSuccessorNeeded localSuccessorNeededFrom at h
-  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
   exact h.2
 
 theorem localSuccessorNeeded_pre_some (pre post : SystemState) (execCore : CoreId)

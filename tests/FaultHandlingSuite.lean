@@ -2031,11 +2031,10 @@ private def runLazyFpChecks : IO Unit := do
      | some c => (List.range SeLe4n.fpContextWordCount).all fun i => c.word i == distinctFpWord i
      | none => false)
 
-/-- Whether a core has anything to resume — the question the trap layer asks
-after a fault, unknown-syscall or FP/SIMD entry, halting the PE on `false`. -/
-private def resumesSomething : Architecture.RestoreTarget → Bool
-  | .none => false
-  | _ => true
+/-- Whether a core resumes a thread at EL0 (rather than the idle loop). -/
+private def resumesUser : Architecture.RestoreTarget → Bool
+  | .user .. => true
+  | _ => false
 
 /-- **`v0.36.40`: a core another core vacated is handed a successor, not
 halted.**  `stVacated` is what a remote `.tcbSuspend` of the faulter leaves on
@@ -2044,20 +2043,21 @@ another thread still runnable there — while the faulter itself is still runnin
 on core 0's hardware and traps before the `.reschedule` SGI is taken.
 
 The **retired** reading committed the input state unchanged (`([], st)` and
-`(.inert, st)`), whose restore target is `.none`, and the trap layer then halted
-the PE; the witness computes that restore target beside the live one, so each
-assertion is known to discriminate. -/
+`(.inert, st)`), whose empty slot resumes only the idle loop (before an empty
+core resumed the wait loop, `.none`, and the trap layer halted the PE), leaving
+the runnable thread queued; the witness computes that restore target beside the
+live one, so each assertion is known to discriminate. -/
 private def runVacatedCoreChecks : IO Unit := do
   IO.println "  vacated core: a trap on a remotely vacated core dispatches a successor"
   let vacatedQueue := RunQueue.ofList [(grantReplyFaulter, ⟨30⟩)]
   let vacatedSched := (stRunning.scheduler.setCurrentOnCore c0 none).setRunQueueOnCore c0 vacatedQueue
   let stVacated : SystemState := { stRunning with scheduler := vacatedSched }
-  assertBool "RETIRED: the vacated core's committed state resumes nothing (the halt)"
-    (!resumesSomething (Architecture.restoreTargetOnCore stVacated c0))
+  assertBool "RETIRED: the vacated core's committed state resumes only the idle loop"
+    (match Architecture.restoreTargetOnCore stVacated c0 with | .idle => true | _ => false)
   let (sgisF, stF) := faultEntryStep permissiveCtx stVacated dataAbortCtx trapWindow 0
   assertBool "an abort on a vacated core dispatches the core's runnable thread"
     (stF.scheduler.currentOnCore c0 == some grantReplyFaulter)
-  assertBool "and the core resumes it" (resumesSomething (Architecture.restoreTargetOnCore stF c0))
+  assertBool "and the core resumes it" (resumesUser (Architecture.restoreTargetOnCore stF c0))
   assertBool "no fault is delivered for a thread the model no longer runs here"
     (pendingFaultOf stF faulter == pendingFaultOf stVacated faulter)
   assertBool "and no other core is poked" sgisF.isEmpty
@@ -2069,7 +2069,7 @@ private def runVacatedCoreChecks : IO Unit := do
     (match oP with | .inert => true | _ => false)
   assertBool "and dispatches the same successor"
     (stP.scheduler.currentOnCore c0 == some grantReplyFaulter)
-  assertBool "which the core resumes" (resumesSomething (Architecture.restoreTargetOnCore stP c0))
+  assertBool "which the core resumes" (resumesUser (Architecture.restoreTargetOnCore stP c0))
   -- CONTROL: on a core that runs a thread the FP/SIMD step schedules nothing.
   assertBool "CONTROL: on a running core the FP/SIMD step leaves the slot alone"
     ((fpAccessEntryStep stRunning 0 none).2.scheduler.currentOnCore c0 == some faulter)

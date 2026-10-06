@@ -26,8 +26,22 @@ context that moved its bound thread's domain therefore poked no remote core.
   up, so the syscall, fault and suspend seams run the receiver inline
   (`scheduleLocalSuccessor_of_pending`); `scheduleLocalSuccessor_of_post_running`
   takes the flag-down hypothesis and `localSuccessorNeeded_post_none` becomes
-  `localSuccessorNeeded_vacated_or_pending`.  Tier 2
-  `reschedule_pending_suite` §2.11 covers a thread that moves its own domain.
+  `localSuccessorNeeded_vacated_or_raised`.  The guard fires on the flag's
+  rising edge (the flag captured before the step was down): a flag already up
+  at entry belongs to an outstanding SGI, whose handler runs under the core's
+  own lock.  Tier 2 `reschedule_pending_suite` §2.11 covers a thread that
+  moves its own domain.
+
+- **An empty core resumes the idle loop.**  `restoreTargetOnCore` named
+  `.none` for a core with no current thread, the HAL installed nothing, and
+  the trap layer returned through the frame it captured, which on such a core
+  is the thread the model just took off it.  The idle thread is domain 0, so
+  in any other domain's window with nothing runnable the previous window's
+  thread kept running through it (temporal isolation between domains broken
+  on multi-domain schedules), as did a thread that blocked or was evicted
+  there.  An empty core now resumes the kernel's wait loop (`.idle`); `.none`
+  is left for a current thread with no TCB.  Tier 2 suites check the idle
+  resume after a local eviction and for an empty core.
 
 - **One key.**  `markKeyChangeFor`, `markKeyChangeFrom` and `crossCoreSgiBody`
   now read `effectiveSchedParams` (`priority × deadline × domain`, the triple

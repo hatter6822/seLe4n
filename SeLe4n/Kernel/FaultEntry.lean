@@ -203,7 +203,7 @@ def faultEntryDeliver (lctx : LabelingContext) (st : SystemState) (f : Fault)
       (rescheduleSgisFromFlags pending0 st'.scheduler.reschedulePending c, st')
   | some tid =>
       let st' := faultDeliveredState lctx st f ectx w c tid
-      let st'' := PriorityInheritance.scheduleLocalSuccessorFrom (some tid) st' c
+      let st'' := PriorityInheritance.scheduleLocalSuccessorFrom (some tid) (pending0.get c) st' c
       (rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending c, st'')
 
 /-- WS-RR RR4.23: the verified step the fault entry commits — classify, spill
@@ -266,8 +266,7 @@ def unknownSyscallEntryStep (lctx : LabelingContext) (st : SystemState)
 /-- **`v0.36.40`: a trap on a core another core vacated hands the core a
 successor.**  The shared delivery body, on a core whose committed slot is
 already `none`, commits the core's reschedule — so neither fault producer leaves
-the trap layer with nothing to return through (it halts the PE when no restore
-was staged).  No fault is delivered: the model no longer runs the thread that
+the core in the idle loop while a runnable thread waits on its queue.  No fault is delivered: the model no longer runs the thread that
 trapped here, and attributing the trap to it would act on a thread another core
 has already taken off this one. -/
 theorem faultEntryDeliver_vacated (lctx : LabelingContext) (st st' : SystemState)

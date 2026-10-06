@@ -51,8 +51,8 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.56` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 443,144 across 376 Lean files |
-| **Test LoC** | 89,517 across 72 Lean test suites |
+| **Production LoC** | 443,171 across 376 Lean files |
+| **Test LoC** | 89,514 across 72 Lean test suites |
 | **Proved declarations** | 14,896 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
@@ -4400,10 +4400,23 @@ alongside the latent inventory (closing SMP-H3).
    (a writer that weakened the caller's own key, or an enqueue that may
    outrank it) is consumed inline: the commit seams' local reschedule
    (`localSuccessorNeededFrom`) fires when the step vacated the core *or*
-   left its flag up, and runs the same receiver
+   raised its flag (down at entry, up after), and runs the same receiver
    (`scheduleLocalSuccessor_of_pending`).  Without it the caller ran on
    until the core's next scheduling point, and the raised flag swallowed
    the `false → true` edge a later remote writer needs to poke the core.
+   A flag already up at entry is left to the outstanding SGI, whose
+   handler runs under the core's own lock: the step's lock footprint need
+   not cover this core's queue and slot.
+
+   **An empty core resumes the idle loop (`v0.36.56`).**  A core with no
+   current thread resumes the kernel's wait loop
+   (`restoreTargetOnCore` names `.idle`), not nothing.  The trap layer
+   returns through the frame it captured when no restore is installed, and
+   on an empty core that frame belongs to the thread the model just took
+   off it.  Before, a domain window with nothing runnable (the idle thread
+   is domain 0, so it is not admitted in any other domain) let the previous
+   window's thread run on through it, as did a thread that blocked or was
+   evicted there.
 
    **SM4.C — per-core scheduler invariant migration (v0.31.13).**  Lifts
    the scheduler invariant *predicates* from the single-core forms (pinned

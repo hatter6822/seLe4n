@@ -144,13 +144,21 @@ inductive RestoreTarget where
   (`fpLiveFor`) — the trap is lifted exactly then, and armed otherwise, so a
   thread never runs with another's FP/SIMD state accessible. -/
   | user (context : SeLe4n.RegisterFile) (tableBase asid : UInt64) (fpLive : Bool)
-  /-- The core's idle thread: the kernel's wait loop at EL1. -/
+  /-- The kernel's wait loop at EL1: the core's idle thread, or a core whose
+  slot is empty. -/
   | idle
-  /-- The core runs no thread: nothing to install. -/
+  /-- The core's current thread has no TCB (a broken state the invariants
+  exclude): nothing to install. -/
   | none
   deriving Inhabited
 
-/-- **WS-BP BP7.4: the target the committed state names for core `c`.** -/
+/-- **WS-BP BP7.4: the target the committed state names for core `c`.**
+
+A core with no current thread resumes the wait loop.  Nothing else is safe: the
+trap layer returns through the frame it captured when no restore is installed,
+and on an empty core that frame belongs to the thread the model just took off
+it (a block, a deschedule, a domain switch or an eviction with nothing
+runnable in the active domain, where the idle thread is not admitted). -/
 def restoreTargetOnCore (st : SystemState) (c : CoreId) : RestoreTarget :=
   match st.scheduler.currentOnCore c with
   | some tid =>
@@ -161,7 +169,7 @@ def restoreTargetOnCore (st : SystemState) (c : CoreId) : RestoreTarget :=
         let ops := threadTranslationOperands st tid
         .user tcb.registerContext ops.1 ops.2 (fpLiveFor st c tid)
       | none => .none
-  | none => .none
+  | none => .idle
 
 /-- An idle current thread resumes the wait loop, whatever its record holds. -/
 theorem restoreTargetOnCore_idle (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
