@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "local/ipc-unify",
-      "commit_sha": "8cf08dd3c339be4c4e1b41e6a1a05999234de55b",
-      "tree_sha": "0ae10d35e77b5fa04d2b3a03877ce79e34a45a97",
-      "committed_at_utc": "2026-10-05T23:10:04+00:00"
+      "branch": "local/cbs-plan",
+      "commit_sha": "799f9060ec6530addd3e8b6a6bb685146441bc2e",
+      "tree_sha": "6558f3f65d2f6fa7023b638afa45ef7ba271378d",
+      "committed_at_utc": "2026-10-05T23:10:57+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 23831
   },
   "readme_sync": {
-    "version": "0.36.49",
+    "version": "0.36.50",
     "lean_toolchain": "v4.28.0",
     "production_files": 366,
     "production_loc": 435058,

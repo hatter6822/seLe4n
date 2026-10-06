@@ -1,3 +1,144 @@
+## v0.36.50 — WS-CB plan re-verified against v0.36.46; the audit's scheduler findings absorbed; WS-CV registered
+
+Documentation only: no Lean, Rust or fixture change.
+
+- **`docs/planning/HIERARCHICAL_CBS_PLAN.md` re-verified against the tree at
+  `v0.36.46`**, so it is accurate when the work starts.  Stale facts fixed:
+  `maxLockSetSize` is 24 (WS-HP), not 14, and the retired `lockSet_tcbSuspend`
+  is now `lockSet_tcbSuspendOnCore` (at most 17), so D21's raise stays
+  overtaken; `SyscallId.count` / `COUNT` are 41, so the three new ids are
+  41–43 and the count 44; the §4.9 total-table sweep gains the six `SyscallId`
+  tables added since it was written; the replenish-queue slots move to the
+  scheduler-domain `schedLockSet_…OnCore` sets (`SyscallSchedFootprint.lean`),
+  which already declare the configure purge; `determineExecutingCore` is gone
+  and the executing core is threaded from the trap entry (IPC-8);
+  `TCB.boostedPriority` replaces a non-existent `effectiveRunQueuePriority`;
+  the ReplyRecv donation steps are named as they exist, in wording that holds
+  whether or not the IPC-2 and IPC-5 slices land first; the spec targets are
+  §8.12.1–§8.12.3 and a new §8.12.18; the main trace's `[STD-002]` scenario is
+  recorded as a third `TCB.deadline` setter.
+- **Audit findings absorbed as sub-tasks**, renumbering CB0 and CB1 (CB6.10
+  among them, CB4's hierarchy-invariant preservation folded into its two
+  switch cuts; the per-phase tally is the plan's §6, the one site a count is
+  written): KSC-11 (CB0.6, the progress, idle, domain and WCRT proofs moved
+  onto the live selector); SZ-5's scheduler-bundle half (CB0.7, CB2.5, CB5.13);
+  KSC-3 / IPC-7 (CB0.8 waiter index, CB1.6, CB1.9 constant fuel and the
+  deletion of `propagatePriorityInheritance`); KSC-2 (CB1.4 per-domain FIFO,
+  CB1.8, CB1.10 representation switch; D2 amended); KSC-10's scheduler fields
+  (CB1.11); KSC-4's scheduler twins collapsed in CB1.7, CB1.8 and CB4.4, with
+  their deletion left to C.1 row 14.  The former CB1.4–CB1.8 are CB1.5–CB1.9;
+  §14 item 11 records the mapping.
+- **KSC-1 ordering made consistent**: the reschedule-SGI accumulator row in
+  `docs/REGISTERED_DEBT.md` now lands `reschedulePendingOnCore` before CB1.3,
+  with the clearing done by each core's scheduling point rather than by the
+  commit, and CB1.8 consumes it; the plan's CB1.3 adds no field.
+- `docs/REGISTERED_DEBT.md` rows citing the plan renumbered (CB1.6 → CB1.7);
+  the no-budget-bind row is closed by CB1.7's rule (e); the `bound*Consistent`
+  row becomes the plan's Q16; `docs/agent_guide/WORKSTREAM_CONTEXT.md` and
+  `docs/agent_guide/LARGE_FILES.md` updated.
+- **WS-CV registered: the register context by value**
+  (`docs/planning/CONTEXT_BY_VALUE_PLAN.md`, phases CV0–CV5), and
+  scheduled **before WS-CB** by the maintainer's decision of 2026-10-05.
+  The TCB's `registerContext`, the per-core banks and the boundary become one
+  35-`UInt64` `RegisterFile` (`Architecture.TrapContext` retired), the HAL
+  hands each core's in-flight context over as a persistent per-core object
+  under its own Lean type with `snapshotInto` as the only way into the model, and
+  the restore borrows the TCB's own object.  Why: at `v0.36.47` a saved
+  context was a closure capturing the trap-context object
+  (`registerFileOfTrapContext`), so the per-core reuse the maintainer asked
+  about would have rewritten other threads' saved registers, and the
+  entry/exit path made about forty heap allocations per syscall, thirty-one
+  of them boxed `UInt64`s on the restore.  The plan's acceptance is measured
+  (a heap allocation counter, a two-trap hazard test through the boundary
+  crate), not stated.  `HIERARCHICAL_CBS_PLAN.md`'s status and the
+  `WS-CB` registry row say it opens after WS-CV, re-verified by CV5.2.
+- `scripts/identifier_naming_baseline.json` regenerated (+2 occurrences):
+  registering WS-CV makes `CV<n>` a phase-code family, and the naming gate's
+  camel-case split reads the boot log's hardware name `GICv2`
+  (`tests/fixtures/qemu_boot_expected.txt`, `qemu_lean_boot_expected.txt`) as
+  one, so those two occurrences are grandfathered; nothing else collides.
+- Merged onto `v0.36.49` (the IPC-2 / IPC-5 slice): the CBS plan's hedges
+  over whether `endpointReplyRecvOnCore` and `modifyTcb` land first now
+  name them as landed; the `Nat`-backed register-file debt row names WS-CV
+  as its owner (closed by CV5.3, the bundle conjunct and boot census
+  retiring with the carrier at CV1.1); `CONTEXT_BY_VALUE_PLAN.md`'s
+  citations re-checked at this head (`Machine.lean:836`, `Heap::alloc`).
+- **Ten review rounds, fixed by cause rather than by instance** (the CBS
+  plan's §14 item 12): a sub-task count is now written in one place per plan
+  (the CBS phase map; WS-CV writes none) and the headers, this entry, the
+  registry and `WORKSTREAM_CONTEXT.md` carry no copy; a set a row rests on
+  (CB1.11's retype fields, CB0.3's `TCB.domain` writers, CV4.3's word
+  carriers, CV4.4's second references) is written as the derivation that
+  produces it with the known members as the pin (§7's sixth per-row
+  question); WS-CV's acceptance is an allocation budget read off the generated C of
+  the entry modules (§1.1, one table row per site, each assigned to the row
+  that removes it or kept by name) instead of "at most two", which adds
+  CV0.4 — the exception classifier classifies the `ESR_EL1` word and
+  allocates no `ExceptionContext` — and CV4.5 — the step's nested result
+  tuple and `RestoreTarget.user` become one flat commit record — and
+  §3.5 / CV4.4 are re-baselined on the tree (the entry wrapper already commits
+  through `modifyGetKernelState`; CV4.4 reads the caller itself, so WS-CV no
+  longer orders against the KSC-1 accumulator); CV4.3 retypes the fault
+  window's `Array UInt64`s with a high-bit saved-GPR case; the hazard test
+  uses a blocking syscall, whose stage rewrites no word; CB1.12 makes the
+  unbind of a running or queued thread a removal, with its files.  Three
+  §4 rules of the CBS plan are now checked at their boundary cell (§7's
+  seventh question): member admission compares rounded-up demand with
+  rounded-down capacity (`Bandwidth.capacity`, §4.6); the saturating
+  clock's progress theorems carry `clockHeadroom` (CB1.11, T14); the seam's
+  local arm consumes the executing core's own flag
+  (`keyRescheduleOnCore_local_flag_cleared`, §4.4, T19), as the KSC-1
+  accumulator sets it.  The twelfth round: T14's hypotheses and the unbind
+  contract are each stated at one owning site (T14's §4.11 row; CB1.12) and
+  cited from the others; WS-CV §1.1's reading is now the call graph walked
+  from the exported entry `lean_syscall_dispatch_cross_core`, closures
+  included and cut at the dispatcher, which lists what the per-module
+  reading missed — the restore conversion (`trapContextOfRegisterFile`, one
+  280-byte `TrapContext` and thirty-one boxed words per restore), the
+  argument spill's twenty-four `Nat` conversions, `writeReg`'s closure per
+  staged word — and names the lock plan, the scheduling point, the SGI
+  derivation and the shootdown protocol as the other owners on the same
+  round trip, so the acceptance is the difference of two readings; the
+  capture is `InFlightContext.snapshotInto`, a full-field update into the
+  TCB's own context, in place once CV4.4 has made that object exclusively
+  owned, so a continuing syscall keeps at most three named allocations.
+  The thirteenth round: CV4.5 writes the restore operands into the commit
+  record where `restoreTargetOnCore` builds `.user` today (no
+  `threadTranslationOperands` pair, no `some` from `fpLiveFor`'s `==`); CV4.4
+  takes the context out of both holders at the capture as well as the
+  stage; CV3.1's entry matches the binding's persistent `some` wrapper
+  directly, so its `Except` intermediate goes; CV0.2's hazard test is a pure boundary-crate probe over
+  `saveCapturedSyscallFrame`, pinning today's closure hazard and flipped at
+  CV3.4; the §14 record's activation-cut range reads CB1.7–CB1.9.  The
+  fourteenth round: `WORKSTREAM_CONTEXT.md`'s WS-CV section cites the plan's
+  mechanism instead of restating it; the persistent objects' headers are
+  `lean_set_non_heap_header`'s (`m_cs_sz` carries the byte size, 288 and
+  16), stated once in §3.4 and read back by CV3.3; CV0.2's witness is a
+  relation — the saved words equal trap 1's before the overwrite and trap
+  2's after — not an `assert_ne`.  The fifteenth round: CB5.2 names the
+  hierarchy bundle among what its live transitions preserve and CB5.12 says
+  so; CB0.8 routes the wake's `rewriteObject` — the third `ipcState` writer
+  — through the index helper and adds the wake footprints to its pin; CB1.12
+  resolves the unbound thread's core with `placedCoreOf?`, so a thread
+  queued off its home core is removed, not left `.passive` on a queue.  The
+  sixteenth round: CB0.8's writer pin gains the timeout prefix's bare
+  `storeObject` (the fourth writer) and its footprint pin the tick's.  The
+  seventeenth round: CV0.2's witness splits at word 31 (four words are read
+  eagerly today); CB0.8's writer pin is the code-view search's output by
+  definition, the `_fromTcb` stores included; CB1.2 defines
+  `SchedContext.windowEnd` over today's `periodStart`, which CB1.7 makes
+  `deadline`; CV4.4 takes the bank only while the caller is still current;
+  CV §1.1's sites are every allocating runtime call `lean.h` names, the
+  sites WS-CV rows change are first-table rows, and the dispatcher is taken
+  net at each reading; T19's remote arm allows a request already pending.
+  The eighteenth round: CB1.11's clock writers are a search, and the
+  adapter's `advanceTimerState` saturates with `tick`; CV §1.1's allocating
+  calls are derived from `lean.h`'s allocator entries, the byte-array
+  allocators included, with `MessageWords`' backing store a kept site;
+  CV3.1 and the HAL objects it binds to are one row (CV3.3–CV3.6 renumbered
+  CV3.2–CV3.5); CB1.9 adds `inheritanceConsistent` and re-propagates from
+  a reply-blocked waiter's server on every change to its key.
+
 ## v0.36.49 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
 
 - **The `.replyRecv` arm now calls the transition its theorems are about.**  The

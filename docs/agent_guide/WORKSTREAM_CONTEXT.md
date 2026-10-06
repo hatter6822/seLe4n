@@ -27,7 +27,35 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49)
+### WS-CV The register context by value — PLANNED (registered v0.36.50; opens before WS-CB)
+
+The TCB's `registerContext`, the per-core register banks and the Lean boundary
+become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
+35-field `UInt64` layout and `TrapContext` is retired; the HAL hands each
+core's in-flight context over as a persistent per-core object under its own
+Lean type, `InFlightContext`, whose only way into the model is
+`snapshotInto`, a copy of its words into the TCB's own context, so the model
+cannot retain the per-core buffer, by type rather than by convention; the
+restore borrows the TCB's object.  The capture and restore mechanism, the
+object's header and the allocation budget are the plan's D3, §3.4 and §1.1
+and are not restated here.  Plan:
+[`docs/planning/CONTEXT_BY_VALUE_PLAN.md`](../planning/CONTEXT_BY_VALUE_PLAN.md)
+(phases CV0–CV5).  Why first: at `v0.36.47` a saved context was a
+closure capturing the trap-context object, so a reused per-core buffer would
+have rewritten other threads' saved registers, and the entry/exit path made
+about forty heap allocations per syscall; a representation change is cheapest
+before WS-CB adds consumers of the saved context.
+
+**What new code must assume until WS-CV lands**: `RegisterFile.gpr` is a
+function and `RegisterFile`'s `BEq` is not lawful (`RegisterFile.not_lawfulBEq`);
+a theorem needing equality of register files states it field-wise or through
+`RegisterFile.ext`.  **What new code must not do**: add a consumer of
+`registerFileOfTrapContext` / `trapContextOfRegisterFile` or a new
+`RegisterFile` literal with a `gpr := fun …` lambda outside tests — both are
+deleted or rewritten by CV1/CV2; build a saved context from `TrapContext`
+through `ofWords` and the existing writers instead.
+
+### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
 A `SchedContext` will be able to contain other scheduling contexts: a *server*
 holds members instead of a thread, is charged whenever a thread in its subtree
@@ -44,10 +72,16 @@ carries the theorem that the model is unchanged on states without servers.
 No sub-task has started.  The plan also records three pre-existing findings it
 closes first: `schedContextConfigure` applies priority, domain and a
 caller-supplied deadline to the bound thread under the SchedContext write right
-alone, with no caller-MCP check (CB0.3, CB1.6); and the live tick's exhaustion
+alone, with no caller-MCP check (CB0.3, CB1.7); and the live tick's exhaustion
 arm schedules a refill of at most one tick, so a bound thread receives about one
-tick per period after its first window (CB1.6, which moves the engine to
-per-window refills).  Thirteen review rounds on the planning PR reshaped the design
+tick per period after its first window (CB1.7, which moves the engine to
+per-window refills).  At `v0.36.50` the plan was re-verified against
+`v0.36.46` and absorbed the kernel audit's scheduler findings as sub-tasks
+(the live selector carrying the progress proofs, named per-core bundles, a
+waiter index, a per-domain run queue, machine-word scheduler fields, the
+boot-core twins collapsed), renumbering CB0 and CB1; its one hard
+prerequisite is the KSC-1 reschedule-SGI accumulator in
+`docs/REGISTERED_DEBT.md`, which must land before CB1.3.  Thirteen review rounds on the planning PR reshaped the design
 before any code exists — a transitive tie-break, a key-worsening reschedule
 seam, reconfiguration that never mints budget, every reservation move
 re-admitted per core, label uniformity over bindings, inheritance for bound
