@@ -406,7 +406,8 @@ theorem removeRunnableOnCore_monotone (e : CoreId) (st : SystemState)
 /-- The hook writes flags only, so no key moves through it. -/
 @[simp] theorem schedKeyView_markKeyChangeFor (st : SystemState) (tid : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline) (t : SeLe4n.ThreadId) :
-    schedKeyView (markKeyChangeFor st tid k) t = schedKeyView st t := rfl
+    schedKeyView (markKeyChangeFor st tid k) t = schedKeyView st t :=
+  markKeyChangeFor_extract_frame (fun s => schedKeyView s t) st tid k (fun _ _ => rfl)
 
 theorem markKeyChangeFor_reschedulePendingOnCore_of_moved {pre mid : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} {c : CoreId}
@@ -416,7 +417,7 @@ theorem markKeyChangeFor_reschedulePendingOnCore_of_moved {pre mid : SystemState
     (markKeyChangeFor mid tid (resolveEffectivePrioDeadline pre tcb)).scheduler.reschedulePendingOnCore c
       = true := by
   have hMem' : (mid.scheduler.runQueueOnCore c).contains tid = true := hMem
-  simp only [markKeyChangeFor, SchedulerState.markReschedulePendingWhere_reschedulePendingOnCore,
+  simp only [markKeyChangeFor, markReschedulePendingWhere_reschedulePendingOnCore,
     Concurrency.mem_allCores, decide_true, Bool.and_true, hMem', Bool.and_true]
   cases hT : mid.getTcb? tid with
   | none => simp
@@ -436,7 +437,7 @@ theorem markKeyChangeFor_reschedulePendingOnCore_of_weakened {pre mid : SystemSt
     (hW : ¬ schedKeyNotWeakened pre mid tid) :
     (markKeyChangeFor mid tid (resolveEffectivePrioDeadline pre tcb)).scheduler.reschedulePendingOnCore c
       = true := by
-  simp only [markKeyChangeFor, SchedulerState.markReschedulePendingWhere_reschedulePendingOnCore,
+  simp only [markKeyChangeFor, markReschedulePendingWhere_reschedulePendingOnCore,
     Concurrency.mem_allCores, decide_true, Bool.and_true, hCur, beq_self_eq_true]
   cases hT : mid.getTcb? tid with
   | none =>
