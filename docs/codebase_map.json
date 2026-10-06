@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "local/ksc1-c",
-      "commit_sha": "bbef4d98a365c77b4d2fd55a922a023524781432",
-      "tree_sha": "c102bacc197a9265641e6550304837a1aa605e87",
-      "committed_at_utc": "2026-10-06T14:55:26-04:00"
+      "branch": "main",
+      "commit_sha": "7b65103b1e47210f88673f0e5b5ddbe34cfeb10b",
+      "tree_sha": "d8ad66ded93a3fb5e44e1aeca8a224e0ca8475c7",
+      "committed_at_utc": "2026-10-06T16:43:54-04:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0b0ae63e2e7f2019c78c818971a8c89e02303a4cbb1df440ce0996e2811df2b0"
+    "source_digest": "c25b79b27ca4c2878d92c2ff5c2d89e96849e6867979841a0f875215542d916c"
   },
   "summary": {
     "module_count": 448,
-    "declaration_count": 24396
+    "declaration_count": 24397
   },
   "readme_sync": {
     "version": "0.36.55",
     "lean_toolchain": "v4.28.0",
     "production_files": 376,
-    "production_loc": 442606,
+    "production_loc": 442611,
     "test_files": 72,
-    "test_loc": 89383,
+    "test_loc": 89403,
     "proved_theorem_lemma_decls": 14865,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -302245,7 +302245,7 @@
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate",
-          "line": 1235,
+          "line": 1240,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.privateIn"
           ]
@@ -302254,7 +302254,7 @@
           "kind": "def",
           "name": "nonExecutedTransitions",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitions",
-          "line": 1278,
+          "line": 1283,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPlain",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate"
@@ -302264,21 +302264,21 @@
           "kind": "def",
           "name": "standsBesideLive",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.standsBesideLive",
-          "line": 1304,
+          "line": 1309,
           "called": []
         },
         {
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.reconciliationViolations",
-          "line": 1328,
+          "line": 1333,
           "called": []
         },
         {
           "kind": "def",
           "name": "pinSides",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides",
-          "line": 1361,
+          "line": 1366,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf"
           ]
@@ -302287,7 +302287,7 @@
           "kind": "def",
           "name": "pinRelatesPrograms",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms",
-          "line": 1393,
+          "line": 1398,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides"
           ]
@@ -302296,7 +302296,7 @@
           "kind": "def",
           "name": "pinViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinViolations",
-          "line": 1406,
+          "line": 1411,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms"
           ]
@@ -302305,7 +302305,7 @@
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
-          "line": 1446,
+          "line": 1451,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -302315,7 +302315,7 @@
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessReflexiveOverBoth",
-          "line": 1454,
+          "line": 1459,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -302325,7 +302325,7 @@
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
-          "line": 1461,
+          "line": 1466,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -302335,7 +302335,7 @@
           "kind": "def",
           "name": "pinCheckWitnesses",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnesses",
-          "line": 1466,
+          "line": 1471,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
@@ -302346,7 +302346,7 @@
           "kind": "def",
           "name": "pinCheckWitnessViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnessViolations",
-          "line": 1478,
+          "line": 1483,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.carrierFixpointRefusalViolations",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.committingExports",
@@ -310997,7 +310997,7 @@
     {
       "module": "tests.FaultHandlingSuite",
       "path": "tests/FaultHandlingSuite.lean",
-      "declaration_count": 121,
+      "declaration_count": 122,
       "declarations": [
         {
           "kind": "example",
@@ -311306,9 +311306,29 @@
         },
         {
           "kind": "def",
+          "name": "handlerRecvOnCore1",
+          "full_name": "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
+          "line": 352,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.SgiKind",
+            "SeLe4n.Kernel.endpointReceiveDualOnCore",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SchedulerState.clearReschedulePendingOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Testing.FaultHandling.c1",
+            "SeLe4n.Testing.FaultHandling.epHandler",
+            "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.replyH",
+            "SeLe4n.ThreadId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
           "name": "dataAbortCtx",
           "full_name": "SeLe4n.Testing.FaultHandling.dataAbortCtx",
-          "line": 349,
+          "line": 359,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext"
           ],
@@ -311318,7 +311338,7 @@
           "kind": "def",
           "name": "theFault",
           "full_name": "SeLe4n.Testing.FaultHandling.theFault",
-          "line": 354,
+          "line": 364,
           "called": [
             "SeLe4n.Model.Fault"
           ],
@@ -311328,7 +311348,7 @@
           "kind": "def",
           "name": "stepPair",
           "full_name": "SeLe4n.Testing.FaultHandling.stepPair",
-          "line": 359,
+          "line": 369,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SystemState"
@@ -311339,7 +311359,7 @@
           "kind": "def",
           "name": "errorOf",
           "full_name": "SeLe4n.Testing.FaultHandling.errorOf",
-          "line": 368,
+          "line": 378,
           "called": [
             "SeLe4n.Model.KernelError"
           ],
@@ -311349,7 +311369,7 @@
           "kind": "def",
           "name": "resolveErr",
           "full_name": "SeLe4n.Testing.FaultHandling.resolveErr",
-          "line": 373,
+          "line": 383,
           "called": [
             "SeLe4n.Kernel.resolveFaultHandler",
             "SeLe4n.Model.KernelError",
@@ -311363,7 +311383,7 @@
           "kind": "def",
           "name": "ipcStateOf",
           "full_name": "SeLe4n.Testing.FaultHandling.ipcStateOf",
-          "line": 376,
+          "line": 386,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -311376,7 +311396,7 @@
           "kind": "def",
           "name": "threadStateOf",
           "full_name": "SeLe4n.Testing.FaultHandling.threadStateOf",
-          "line": 379,
+          "line": 389,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -311389,7 +311409,7 @@
           "kind": "def",
           "name": "pendingFaultOf",
           "full_name": "SeLe4n.Testing.FaultHandling.pendingFaultOf",
-          "line": 382,
+          "line": 392,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -311402,7 +311422,7 @@
           "kind": "def",
           "name": "savedPcOf",
           "full_name": "SeLe4n.Testing.FaultHandling.savedPcOf",
-          "line": 385,
+          "line": 395,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -311414,7 +311434,7 @@
           "kind": "def",
           "name": "deliveredMessageOf",
           "full_name": "SeLe4n.Testing.FaultHandling.deliveredMessageOf",
-          "line": 388,
+          "line": 398,
           "called": [
             "SeLe4n.Model.IpcMessage",
             "SeLe4n.Model.SystemState",
@@ -311427,7 +311447,7 @@
           "kind": "def",
           "name": "dispatchableOn",
           "full_name": "SeLe4n.Testing.FaultHandling.dispatchableOn",
-          "line": 394,
+          "line": 404,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SchedulerState.currentOnCore",
@@ -311441,7 +311461,7 @@
           "kind": "def",
           "name": "sampleCtx",
           "full_name": "SeLe4n.Testing.FaultHandling.sampleCtx",
-          "line": 402,
+          "line": 412,
           "called": [
             "SeLe4n.Model.FaultContext"
           ],
@@ -311451,7 +311471,7 @@
           "kind": "def",
           "name": "allFaultKinds",
           "full_name": "SeLe4n.Testing.FaultHandling.allFaultKinds",
-          "line": 408,
+          "line": 418,
           "called": [
             "SeLe4n.Model.Fault"
           ],
@@ -311461,7 +311481,7 @@
           "kind": "def",
           "name": "runEncodingChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runEncodingChecks",
-          "line": 416,
+          "line": 426,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultLabel.debugException",
             "SeLe4n.Kernel.Architecture.FaultLabel.nullFault",
@@ -311483,7 +311503,7 @@
           "kind": "def",
           "name": "runClassificationChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runClassificationChecks",
-          "line": 454,
+          "line": 464,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext",
             "SeLe4n.Kernel.Architecture.ExceptionContext.takenFromEl0",
@@ -311497,11 +311517,10 @@
           "kind": "def",
           "name": "runResolutionChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runResolutionChecks",
-          "line": 514,
+          "line": 524,
           "called": [
             "SeLe4n.Badge.ofNat",
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultDeliverOnCore",
             "SeLe4n.Kernel.faultHandlerCapAuthorized",
             "SeLe4n.Kernel.resolveFaultHandler",
@@ -311510,13 +311529,13 @@
             "SeLe4n.Model.Capability",
             "SeLe4n.Testing.FaultHandling.assertBool",
             "SeLe4n.Testing.FaultHandling.c0",
-            "SeLe4n.Testing.FaultHandling.c1",
             "SeLe4n.Testing.FaultHandling.cnRoot",
             "SeLe4n.Testing.FaultHandling.deliveredMessageOf",
             "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.grantReplyFaulter",
             "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.orphan",
             "SeLe4n.Testing.FaultHandling.replyH",
             "SeLe4n.Testing.FaultHandling.resolveErr",
@@ -311530,7 +311549,7 @@
           "kind": "structure",
           "name": "Delivery",
           "full_name": "SeLe4n.Testing.FaultHandling.Delivery",
-          "line": 577,
+          "line": 587,
           "called": [
             "SeLe4n.Kernel.FaultDeliveryResult",
             "SeLe4n.Model.SystemState"
@@ -311541,21 +311560,18 @@
           "kind": "def",
           "name": "deliveryE",
           "full_name": "SeLe4n.Testing.FaultHandling.deliveryE",
-          "line": 583,
+          "line": 593,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext",
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultDeliverOnCore",
             "SeLe4n.Kernel.handleRescheduleSgiOnCore",
             "SeLe4n.Testing.FaultHandling.Delivery",
             "SeLe4n.Testing.FaultHandling.c0",
             "SeLe4n.Testing.FaultHandling.c1",
             "SeLe4n.Testing.FaultHandling.dataAbortCtx",
-            "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
-            "SeLe4n.Testing.FaultHandling.handler",
-            "SeLe4n.Testing.FaultHandling.replyH",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.stRunning",
             "SeLe4n.Testing.FaultHandling.stepPair",
             "SeLe4n.Testing.FaultHandling.theFault"
@@ -311566,7 +311582,7 @@
           "kind": "def",
           "name": "delivery?",
           "full_name": "SeLe4n.Testing.FaultHandling.delivery?",
-          "line": 595,
+          "line": 605,
           "called": [
             "SeLe4n.Testing.FaultHandling.Delivery",
             "SeLe4n.Testing.FaultHandling.deliveryE"
@@ -311577,7 +311593,7 @@
           "kind": "def",
           "name": "runDeliveryChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runDeliveryChecks",
-          "line": 597,
+          "line": 607,
           "called": [
             "SeLe4n.Badge.ofNat",
             "SeLe4n.Kernel.Architecture.ExceptionContext",
@@ -311608,7 +311624,7 @@
           "kind": "def",
           "name": "runNoHandlerChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runNoHandlerChecks",
-          "line": 663,
+          "line": 673,
           "called": [
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
             "SeLe4n.Kernel.faultDeliverOnCore",
@@ -311629,7 +311645,7 @@
           "kind": "def",
           "name": "permissiveCtx",
           "full_name": "SeLe4n.Testing.FaultHandling.permissiveCtx",
-          "line": 694,
+          "line": 704,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityLabel.publicLabel"
@@ -311640,7 +311656,7 @@
           "kind": "def",
           "name": "latticeDenyingCtx",
           "full_name": "SeLe4n.Testing.FaultHandling.latticeDenyingCtx",
-          "line": 703,
+          "line": 713,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityLabel.kernelTrusted",
@@ -311654,7 +311670,7 @@
           "kind": "def",
           "name": "endpointLabelDenyingCtx",
           "full_name": "SeLe4n.Testing.FaultHandling.endpointLabelDenyingCtx",
-          "line": 713,
+          "line": 723,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityLabel.kernelTrusted",
@@ -311668,7 +311684,7 @@
           "kind": "def",
           "name": "objectLabelDenyingCtx",
           "full_name": "SeLe4n.Testing.FaultHandling.objectLabelDenyingCtx",
-          "line": 723,
+          "line": 733,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityLabel.kernelTrusted",
@@ -311682,7 +311698,7 @@
           "kind": "def",
           "name": "overrideDenyingCtx",
           "full_name": "SeLe4n.Testing.FaultHandling.overrideDenyingCtx",
-          "line": 733,
+          "line": 743,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Testing.FaultHandling.epHandler",
@@ -311694,7 +311710,7 @@
           "kind": "def",
           "name": "trapWindow",
           "full_name": "SeLe4n.Testing.FaultHandling.trapWindow",
-          "line": 743,
+          "line": 753,
           "called": [
             "SeLe4n.Model.FaultRegisterWindow"
           ],
@@ -311704,7 +311720,7 @@
           "kind": "def",
           "name": "runFlowGateChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runFlowGateChecks",
-          "line": 746,
+          "line": 756,
           "called": [
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
             "SeLe4n.Kernel.LabelingContext",
@@ -311739,7 +311755,7 @@
           "kind": "def",
           "name": "resumeInfo",
           "full_name": "SeLe4n.Testing.FaultHandling.resumeInfo",
-          "line": 827,
+          "line": 837,
           "called": [
             "SeLe4n.Model.MessageInfo"
           ],
@@ -311749,7 +311765,7 @@
           "kind": "def",
           "name": "restartInfo",
           "full_name": "SeLe4n.Testing.FaultHandling.restartInfo",
-          "line": 830,
+          "line": 840,
           "called": [
             "SeLe4n.Model.MessageInfo"
           ],
@@ -311759,7 +311775,7 @@
           "kind": "def",
           "name": "restartRegs",
           "full_name": "SeLe4n.Testing.FaultHandling.restartRegs",
-          "line": 831,
+          "line": 841,
           "called": [
             "SeLe4n.RegValue",
             "SeLe4n.RegValue.ofNat"
@@ -311770,7 +311786,7 @@
           "kind": "def",
           "name": "abandonInfo",
           "full_name": "SeLe4n.Testing.FaultHandling.abandonInfo",
-          "line": 838,
+          "line": 848,
           "called": [
             "SeLe4n.Model.MessageInfo"
           ],
@@ -311780,7 +311796,7 @@
           "kind": "structure",
           "name": "QueuedDelivery",
           "full_name": "SeLe4n.Testing.FaultHandling.QueuedDelivery",
-          "line": 850,
+          "line": 860,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.FaultDeliveryResult",
@@ -311792,21 +311808,19 @@
           "kind": "def",
           "name": "queuedDeliveryE",
           "full_name": "SeLe4n.Testing.FaultHandling.queuedDeliveryE",
-          "line": 857,
+          "line": 867,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext",
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultDeliverOnCore",
             "SeLe4n.Kernel.faultReplyOnCore",
             "SeLe4n.Testing.FaultHandling.QueuedDelivery",
             "SeLe4n.Testing.FaultHandling.c0",
             "SeLe4n.Testing.FaultHandling.c1",
             "SeLe4n.Testing.FaultHandling.dataAbortCtx",
-            "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.handler",
-            "SeLe4n.Testing.FaultHandling.replyH",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.resumeInfo",
             "SeLe4n.Testing.FaultHandling.stRunning",
             "SeLe4n.Testing.FaultHandling.stepPair",
@@ -311818,7 +311832,7 @@
           "kind": "def",
           "name": "queuedDelivery?",
           "full_name": "SeLe4n.Testing.FaultHandling.queuedDelivery?",
-          "line": 869,
+          "line": 879,
           "called": [
             "SeLe4n.Testing.FaultHandling.QueuedDelivery",
             "SeLe4n.Testing.FaultHandling.queuedDeliveryE"
@@ -311829,7 +311843,7 @@
           "kind": "def",
           "name": "runQueuedDeliveryChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runQueuedDeliveryChecks",
-          "line": 871,
+          "line": 881,
           "called": [
             "SeLe4n.Badge.ofNat",
             "SeLe4n.Badge.toNat",
@@ -311859,7 +311873,7 @@
           "kind": "def",
           "name": "pcAlignCtx",
           "full_name": "SeLe4n.Testing.FaultHandling.pcAlignCtx",
-          "line": 920,
+          "line": 930,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext"
           ],
@@ -311869,7 +311883,7 @@
           "kind": "def",
           "name": "runEntryWindowChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runEntryWindowChecks",
-          "line": 923,
+          "line": 933,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext",
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
@@ -311884,6 +311898,9 @@
             "SeLe4n.Model.FaultContext.gprAt",
             "SeLe4n.Model.FaultRegisterWindow",
             "SeLe4n.Model.FaultRegisterWindow.gprAt",
+            "SeLe4n.Model.SchedulerState.clearReschedulePendingOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
             "SeLe4n.Testing.FaultHandling.assertBool",
             "SeLe4n.Testing.FaultHandling.c0",
             "SeLe4n.Testing.FaultHandling.c1",
@@ -311907,7 +311924,7 @@
           "kind": "def",
           "name": "sampleTrapContext",
           "full_name": "SeLe4n.Testing.FaultHandling.sampleTrapContext",
-          "line": 1012,
+          "line": 1032,
           "called": [
             "SeLe4n.Kernel.Architecture.TrapContext"
           ],
@@ -311917,23 +311934,21 @@
           "kind": "def",
           "name": "runEntryFrameDecodeChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runEntryFrameDecodeChecks",
-          "line": 1020,
+          "line": 1040,
           "called": [
             "SeLe4n.Kernel.Architecture.TrapContext",
             "SeLe4n.Kernel.Architecture.TrapContext.word",
             "SeLe4n.Kernel.Architecture.registerFileOfTrapContext",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultEntryFrame?",
             "SeLe4n.Kernel.faultEntryStep",
             "SeLe4n.Testing.FaultHandling.assertBool",
-            "SeLe4n.Testing.FaultHandling.c1",
             "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.ipcStateOf",
             "SeLe4n.Testing.FaultHandling.pendingFaultOf",
             "SeLe4n.Testing.FaultHandling.permissiveCtx",
-            "SeLe4n.Testing.FaultHandling.replyH",
             "SeLe4n.Testing.FaultHandling.sampleTrapContext",
             "SeLe4n.Testing.FaultHandling.stRunning"
           ],
@@ -311943,7 +311958,7 @@
           "kind": "def",
           "name": "svcCtx",
           "full_name": "SeLe4n.Testing.FaultHandling.svcCtx",
-          "line": 1078,
+          "line": 1098,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext"
           ],
@@ -311953,7 +311968,7 @@
           "kind": "def",
           "name": "runUnknownSyscallChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runUnknownSyscallChecks",
-          "line": 1081,
+          "line": 1101,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext",
             "SeLe4n.Kernel.Architecture.FaultLabel.unknownSyscall",
@@ -311961,7 +311976,6 @@
             "SeLe4n.Kernel.Architecture.wordAt",
             "SeLe4n.Kernel.Concurrency.SgiKind",
             "SeLe4n.Kernel.Concurrency.SgiKind.all",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultEntryStep",
             "SeLe4n.Kernel.faultReplyOnCore",
             "SeLe4n.Kernel.unknownSyscallEntryStep",
@@ -311975,10 +311989,10 @@
             "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.ipcStateOf",
             "SeLe4n.Testing.FaultHandling.pendingFaultOf",
             "SeLe4n.Testing.FaultHandling.permissiveCtx",
-            "SeLe4n.Testing.FaultHandling.replyH",
             "SeLe4n.Testing.FaultHandling.resumeInfo",
             "SeLe4n.Testing.FaultHandling.savedPcOf",
             "SeLe4n.Testing.FaultHandling.stRunning",
@@ -311991,7 +312005,7 @@
           "kind": "def",
           "name": "orphanTcbCap",
           "full_name": "SeLe4n.Testing.FaultHandling.orphanTcbCap",
-          "line": 1143,
+          "line": 1163,
           "called": [
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.Capability",
@@ -312004,7 +312018,7 @@
           "kind": "def",
           "name": "configGate",
           "full_name": "SeLe4n.Testing.FaultHandling.configGate",
-          "line": 1146,
+          "line": 1166,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.SyscallGate",
@@ -312017,7 +312031,7 @@
           "kind": "def",
           "name": "setHandlerDecoded",
           "full_name": "SeLe4n.Testing.FaultHandling.setHandlerDecoded",
-          "line": 1151,
+          "line": 1171,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -312029,7 +312043,7 @@
           "kind": "def",
           "name": "resumeTcbDecoded",
           "full_name": "SeLe4n.Testing.FaultHandling.resumeTcbDecoded",
-          "line": 1157,
+          "line": 1177,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult"
@@ -312040,7 +312054,7 @@
           "kind": "def",
           "name": "runConfigureAndResumeChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runConfigureAndResumeChecks",
-          "line": 1162,
+          "line": 1182,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
@@ -312048,7 +312062,6 @@
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Kernel.dispatchSyscall",
             "SeLe4n.Kernel.dispatchWithCap",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultDeliverOnCore",
             "SeLe4n.Kernel.faultSuspendOnCore",
             "SeLe4n.Kernel.resolveFaultHandler",
@@ -312075,10 +312088,10 @@
             "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.errorOf",
             "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.orphan",
             "SeLe4n.Testing.FaultHandling.orphanTcbCap",
             "SeLe4n.Testing.FaultHandling.pendingFaultOf",
-            "SeLe4n.Testing.FaultHandling.replyH",
             "SeLe4n.Testing.FaultHandling.resolveErr",
             "SeLe4n.Testing.FaultHandling.resumeTcbDecoded",
             "SeLe4n.Testing.FaultHandling.rootCnode",
@@ -312096,7 +312109,7 @@
           "kind": "def",
           "name": "seamCtx",
           "full_name": "SeLe4n.Testing.FaultHandling.seamCtx",
-          "line": 1293,
+          "line": 1313,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityLabel.kernelTrusted",
@@ -312108,7 +312121,7 @@
           "kind": "def",
           "name": "svcElr",
           "full_name": "SeLe4n.Testing.FaultHandling.svcElr",
-          "line": 1301,
+          "line": 1321,
           "called": [],
           "private": true
         },
@@ -312116,7 +312129,7 @@
           "kind": "def",
           "name": "svcSpsr",
           "full_name": "SeLe4n.Testing.FaultHandling.svcSpsr",
-          "line": 1302,
+          "line": 1322,
           "called": [],
           "private": true
         },
@@ -312124,7 +312137,7 @@
           "kind": "def",
           "name": "svcSpEl0",
           "full_name": "SeLe4n.Testing.FaultHandling.svcSpEl0",
-          "line": 1303,
+          "line": 1323,
           "called": [],
           "private": true
         },
@@ -312132,7 +312145,7 @@
           "kind": "def",
           "name": "svcX30",
           "full_name": "SeLe4n.Testing.FaultHandling.svcX30",
-          "line": 1304,
+          "line": 1324,
           "called": [],
           "private": true
         },
@@ -312140,7 +312153,7 @@
           "kind": "def",
           "name": "seamDispatch",
           "full_name": "SeLe4n.Testing.FaultHandling.seamDispatch",
-          "line": 1308,
+          "line": 1328,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.LabelingContext",
@@ -312162,7 +312175,7 @@
           "kind": "structure",
           "name": "SeamFault",
           "full_name": "SeLe4n.Testing.FaultHandling.SeamFault",
-          "line": 1316,
+          "line": 1336,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
@@ -312174,16 +312187,14 @@
           "kind": "def",
           "name": "seamFaultE",
           "full_name": "SeLe4n.Testing.FaultHandling.seamFaultE",
-          "line": 1323,
+          "line": 1343,
           "called": [
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultReplyOnCore",
             "SeLe4n.Testing.FaultHandling.SeamFault",
             "SeLe4n.Testing.FaultHandling.c1",
-            "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.handler",
-            "SeLe4n.Testing.FaultHandling.replyH",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.resumeInfo",
             "SeLe4n.Testing.FaultHandling.seamCtx",
             "SeLe4n.Testing.FaultHandling.seamDispatch",
@@ -312195,7 +312206,7 @@
           "kind": "def",
           "name": "seamErrorFrame",
           "full_name": "SeLe4n.Testing.FaultHandling.seamErrorFrame",
-          "line": 1339,
+          "line": 1359,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.errorFrame",
@@ -312210,7 +312221,7 @@
           "kind": "def",
           "name": "seamCapFault",
           "full_name": "SeLe4n.Testing.FaultHandling.seamCapFault",
-          "line": 1347,
+          "line": 1367,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Model.Fault",
@@ -312225,7 +312236,7 @@
           "kind": "def",
           "name": "runSyscallCapFaultChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runSyscallCapFaultChecks",
-          "line": 1353,
+          "line": 1373,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultLabel.capFault",
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
@@ -312264,7 +312275,7 @@
           "kind": "def",
           "name": "runResumeChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runResumeChecks",
-          "line": 1425,
+          "line": 1445,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -312288,10 +312299,9 @@
           "kind": "def",
           "name": "runRestartChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runRestartChecks",
-          "line": 1450,
+          "line": 1470,
           "called": [
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultDeliverOnCore",
             "SeLe4n.Kernel.faultReplyOnCore",
             "SeLe4n.Testing.FaultHandling.abandonInfo",
@@ -312302,8 +312312,8 @@
             "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.pendingFaultOf",
-            "SeLe4n.Testing.FaultHandling.replyH",
             "SeLe4n.Testing.FaultHandling.restartInfo",
             "SeLe4n.Testing.FaultHandling.restartRegs",
             "SeLe4n.Testing.FaultHandling.savedPcOf",
@@ -312316,7 +312326,7 @@
           "kind": "def",
           "name": "replyDecoded",
           "full_name": "SeLe4n.Testing.FaultHandling.replyDecoded",
-          "line": 1499,
+          "line": 1519,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -312329,7 +312339,7 @@
           "kind": "def",
           "name": "resumeDecoded",
           "full_name": "SeLe4n.Testing.FaultHandling.resumeDecoded",
-          "line": 1503,
+          "line": 1523,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -312341,7 +312351,7 @@
           "kind": "def",
           "name": "abandonDecoded",
           "full_name": "SeLe4n.Testing.FaultHandling.abandonDecoded",
-          "line": 1508,
+          "line": 1528,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -312354,7 +312364,7 @@
           "kind": "def",
           "name": "replyGate",
           "full_name": "SeLe4n.Testing.FaultHandling.replyGate",
-          "line": 1512,
+          "line": 1532,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.SyscallGate",
@@ -312367,7 +312377,7 @@
           "kind": "def",
           "name": "replyCapH",
           "full_name": "SeLe4n.Testing.FaultHandling.replyCapH",
-          "line": 1516,
+          "line": 1536,
           "called": [
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.Capability",
@@ -312379,7 +312389,7 @@
           "kind": "def",
           "name": "hasRunQueueWriteLock",
           "full_name": "SeLe4n.Testing.FaultHandling.hasRunQueueWriteLock",
-          "line": 1521,
+          "line": 1541,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -312391,12 +312401,11 @@
           "kind": "def",
           "name": "runReplySeamChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runReplySeamChecks",
-          "line": 1530,
+          "line": 1550,
           "called": [
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Kernel.dispatchWithCap",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.endpointReplyCrossCoreDispatch",
             "SeLe4n.Kernel.endpointReplyDispatchReplenishCores",
             "SeLe4n.Kernel.endpointReplyDispatchWriteSet",
@@ -312415,6 +312424,7 @@
             "SeLe4n.Testing.FaultHandling.errorOf",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.hasRunQueueWriteLock",
             "SeLe4n.Testing.FaultHandling.pendingFaultOf",
             "SeLe4n.Testing.FaultHandling.replyCapH",
@@ -312433,7 +312443,7 @@
           "kind": "def",
           "name": "scFaulter",
           "full_name": "SeLe4n.Testing.FaultHandling.scFaulter",
-          "line": 1633,
+          "line": 1653,
           "called": [
             "SeLe4n.SchedContextId",
             "SeLe4n.SchedContextId.ofNat"
@@ -312444,7 +312454,7 @@
           "kind": "def",
           "name": "faulterSc",
           "full_name": "SeLe4n.Testing.FaultHandling.faulterSc",
-          "line": 1638,
+          "line": 1658,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Testing.FaultHandling.faulter",
@@ -312456,7 +312466,7 @@
           "kind": "def",
           "name": "stFaultBound",
           "full_name": "SeLe4n.Testing.FaultHandling.stFaultBound",
-          "line": 1644,
+          "line": 1664,
           "called": [
             "SeLe4n.Kernel.RunQueue.ofList",
             "SeLe4n.Model.SchedulerState.setRunQueueOnCore",
@@ -312486,7 +312496,7 @@
           "kind": "def",
           "name": "stBoundRunning",
           "full_name": "SeLe4n.Testing.FaultHandling.stBoundRunning",
-          "line": 1661,
+          "line": 1681,
           "called": [
             "SeLe4n.Model.SchedulerState.setCurrentOnCore",
             "SeLe4n.Model.SystemState",
@@ -312502,7 +312512,7 @@
           "kind": "def",
           "name": "bindingOf",
           "full_name": "SeLe4n.Testing.FaultHandling.bindingOf",
-          "line": 1666,
+          "line": 1686,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Model.SystemState",
@@ -312515,11 +312525,10 @@
           "kind": "def",
           "name": "runFaultDonationChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runFaultDonationChecks",
-          "line": 1670,
+          "line": 1690,
           "called": [
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
             "SeLe4n.Kernel.dispatchWithCap",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultDeliverOnCore",
             "SeLe4n.Kernel.threadHasPendingFault",
             "SeLe4n.Testing.FaultHandling.abandonDecoded",
@@ -312531,11 +312540,11 @@
             "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.pendingFaultOf",
             "SeLe4n.Testing.FaultHandling.replyCapH",
             "SeLe4n.Testing.FaultHandling.replyDecoded",
             "SeLe4n.Testing.FaultHandling.replyGate",
-            "SeLe4n.Testing.FaultHandling.replyH",
             "SeLe4n.Testing.FaultHandling.savedPcOf",
             "SeLe4n.Testing.FaultHandling.scFaulter",
             "SeLe4n.Testing.FaultHandling.stBoundRunning",
@@ -312548,11 +312557,10 @@
           "kind": "def",
           "name": "runProgressChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runProgressChecks",
-          "line": 1754,
+          "line": 1774,
           "called": [
             "SeLe4n.Kernel.Architecture.dispatchSynchronousException",
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultDeliverOnCore",
             "SeLe4n.Testing.FaultHandling.assertBool",
             "SeLe4n.Testing.FaultHandling.c0",
@@ -312562,12 +312570,10 @@
             "SeLe4n.Testing.FaultHandling.dataAbortCtx",
             "SeLe4n.Testing.FaultHandling.deliveryE",
             "SeLe4n.Testing.FaultHandling.dispatchableOn",
-            "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.errorOf",
             "SeLe4n.Testing.FaultHandling.faulter",
-            "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.orphan",
-            "SeLe4n.Testing.FaultHandling.replyH",
             "SeLe4n.Testing.FaultHandling.savedPcOf",
             "SeLe4n.Testing.FaultHandling.stFault",
             "SeLe4n.Testing.FaultHandling.stRunning",
@@ -312579,7 +312585,7 @@
           "kind": "def",
           "name": "traceLine",
           "full_name": "SeLe4n.Testing.FaultHandling.traceLine",
-          "line": 1798,
+          "line": 1818,
           "called": [],
           "private": true
         },
@@ -312587,13 +312593,12 @@
           "kind": "def",
           "name": "faultTraceLines",
           "full_name": "SeLe4n.Testing.FaultHandling.faultTraceLines",
-          "line": 1801,
+          "line": 1821,
           "called": [
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
             "SeLe4n.Kernel.Architecture.readReturnFrame",
             "SeLe4n.Kernel.Architecture.wordAt",
             "SeLe4n.Kernel.dispatchWithCap",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultDeliverOnCore",
             "SeLe4n.Kernel.faultEntryStep",
             "SeLe4n.Kernel.faultReplyOnCore",
@@ -312606,9 +312611,9 @@
             "SeLe4n.Testing.FaultHandling.deliveredMessageOf",
             "SeLe4n.Testing.FaultHandling.delivery?",
             "SeLe4n.Testing.FaultHandling.dispatchableOn",
-            "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.ipcStateOf",
             "SeLe4n.Testing.FaultHandling.orphan",
             "SeLe4n.Testing.FaultHandling.orphanTcbCap",
@@ -312616,7 +312621,6 @@
             "SeLe4n.Testing.FaultHandling.pendingFaultOf",
             "SeLe4n.Testing.FaultHandling.permissiveCtx",
             "SeLe4n.Testing.FaultHandling.queuedDelivery?",
-            "SeLe4n.Testing.FaultHandling.replyH",
             "SeLe4n.Testing.FaultHandling.resumeInfo",
             "SeLe4n.Testing.FaultHandling.resumeTcbDecoded",
             "SeLe4n.Testing.FaultHandling.savedPcOf",
@@ -312632,28 +312636,26 @@
           "kind": "def",
           "name": "faultTraceLines.reviewLines",
           "full_name": "SeLe4n.Testing.FaultHandling.faultTraceLines.reviewLines",
-          "line": 1826,
+          "line": 1846,
           "called": [
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
             "SeLe4n.Kernel.Architecture.readReturnFrame",
             "SeLe4n.Kernel.dispatchWithCap",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultDeliverOnCore",
             "SeLe4n.Kernel.faultEntryStep",
             "SeLe4n.Kernel.unknownSyscallEntryStep",
             "SeLe4n.Testing.FaultHandling.c1",
             "SeLe4n.Testing.FaultHandling.c2",
             "SeLe4n.Testing.FaultHandling.configGate",
-            "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.ipcStateOf",
             "SeLe4n.Testing.FaultHandling.orphan",
             "SeLe4n.Testing.FaultHandling.orphanTcbCap",
             "SeLe4n.Testing.FaultHandling.pcAlignCtx",
             "SeLe4n.Testing.FaultHandling.pendingFaultOf",
             "SeLe4n.Testing.FaultHandling.permissiveCtx",
-            "SeLe4n.Testing.FaultHandling.replyH",
             "SeLe4n.Testing.FaultHandling.resumeTcbDecoded",
             "SeLe4n.Testing.FaultHandling.savedPcOf",
             "SeLe4n.Testing.FaultHandling.stRunning",
@@ -312668,7 +312670,7 @@
           "kind": "def",
           "name": "faultTraceLines.queuedLines",
           "full_name": "SeLe4n.Testing.FaultHandling.faultTraceLines.queuedLines",
-          "line": 1846,
+          "line": 1866,
           "called": [
             "SeLe4n.Testing.FaultHandling.deliveredMessageOf",
             "SeLe4n.Testing.FaultHandling.faulter",
@@ -312684,21 +312686,18 @@
           "kind": "def",
           "name": "faultTraceLines.windowLines",
           "full_name": "SeLe4n.Testing.FaultHandling.faultTraceLines.windowLines",
-          "line": 1857,
+          "line": 1877,
           "called": [
             "SeLe4n.Kernel.Architecture.wordAt",
-            "SeLe4n.Kernel.endpointReceiveDualOnCore",
             "SeLe4n.Kernel.faultEntryStep",
             "SeLe4n.Model.FaultRegisterWindow",
-            "SeLe4n.Testing.FaultHandling.c1",
             "SeLe4n.Testing.FaultHandling.deliveredMessageOf",
-            "SeLe4n.Testing.FaultHandling.epHandler",
             "SeLe4n.Testing.FaultHandling.faulter",
             "SeLe4n.Testing.FaultHandling.handler",
+            "SeLe4n.Testing.FaultHandling.handlerRecvOnCore1",
             "SeLe4n.Testing.FaultHandling.pcAlignCtx",
             "SeLe4n.Testing.FaultHandling.pendingFaultOf",
             "SeLe4n.Testing.FaultHandling.permissiveCtx",
-            "SeLe4n.Testing.FaultHandling.replyH",
             "SeLe4n.Testing.FaultHandling.stRunning",
             "SeLe4n.Testing.FaultHandling.traceLine",
             "SeLe4n.Testing.FaultHandling.trapWindow"
@@ -312709,7 +312708,7 @@
           "kind": "def",
           "name": "fixturePath",
           "full_name": "SeLe4n.Testing.FaultHandling.fixturePath",
-          "line": 1867,
+          "line": 1887,
           "called": [],
           "private": true
         },
@@ -312717,7 +312716,7 @@
           "kind": "def",
           "name": "runTraceFixtureCheck",
           "full_name": "SeLe4n.Testing.FaultHandling.runTraceFixtureCheck",
-          "line": 1875,
+          "line": 1895,
           "called": [
             "SeLe4n.Testing.FaultHandling.fixturePath"
           ],
@@ -312727,7 +312726,7 @@
           "kind": "def",
           "name": "ctxA",
           "full_name": "SeLe4n.Testing.FaultHandling.ctxA",
-          "line": 1901,
+          "line": 1921,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.FpContext.ofWords"
@@ -312738,7 +312737,7 @@
           "kind": "def",
           "name": "distinctFpWord",
           "full_name": "SeLe4n.Testing.FaultHandling.distinctFpWord",
-          "line": 1906,
+          "line": 1926,
           "called": [],
           "private": true
         },
@@ -312746,7 +312745,7 @@
           "kind": "def",
           "name": "ctxDistinct",
           "full_name": "SeLe4n.Testing.FaultHandling.ctxDistinct",
-          "line": 1910,
+          "line": 1930,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.FpContext.ofWords",
@@ -312758,7 +312757,7 @@
           "kind": "def",
           "name": "fpCtxOf",
           "full_name": "SeLe4n.Testing.FaultHandling.fpCtxOf",
-          "line": 1912,
+          "line": 1932,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Model.SystemState",
@@ -312771,7 +312770,7 @@
           "kind": "def",
           "name": "isLoad",
           "full_name": "SeLe4n.Testing.FaultHandling.isLoad",
-          "line": 1915,
+          "line": 1935,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Kernel.Architecture.FpAccessOutcome"
@@ -312782,7 +312781,7 @@
           "kind": "def",
           "name": "fpLiveOf",
           "full_name": "SeLe4n.Testing.FaultHandling.fpLiveOf",
-          "line": 1918,
+          "line": 1938,
           "called": [
             "SeLe4n.Kernel.Architecture.RestoreTarget"
           ],
@@ -312792,7 +312791,7 @@
           "kind": "def",
           "name": "runLazyFpChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runLazyFpChecks",
-          "line": 1922,
+          "line": 1942,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.FpContext.ofWords",
@@ -312838,7 +312837,7 @@
           "kind": "def",
           "name": "resumesSomething",
           "full_name": "SeLe4n.Testing.FaultHandling.resumesSomething",
-          "line": 2016,
+          "line": 2036,
           "called": [
             "SeLe4n.Kernel.Architecture.RestoreTarget"
           ],
@@ -312848,7 +312847,7 @@
           "kind": "def",
           "name": "runVacatedCoreChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runVacatedCoreChecks",
-          "line": 2030,
+          "line": 2050,
           "called": [
             "SeLe4n.Kernel.Architecture.restoreTargetOnCore",
             "SeLe4n.Kernel.RunQueue.ofList",
@@ -312876,7 +312875,7 @@
           "kind": "def",
           "name": "runResidentFrameChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runResidentFrameChecks",
-          "line": 2066,
+          "line": 2086,
           "called": [
             "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
             "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame",
@@ -312908,7 +312907,7 @@
           "kind": "def",
           "name": "runFaultHandlingChecks",
           "full_name": "SeLe4n.Testing.FaultHandling.runFaultHandlingChecks",
-          "line": 2127,
+          "line": 2147,
           "called": [
             "SeLe4n.Testing.FaultHandling.runClassificationChecks",
             "SeLe4n.Testing.FaultHandling.runConfigureAndResumeChecks",
@@ -312937,7 +312936,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 2155,
+          "line": 2175,
           "called": [
             "SeLe4n.Testing.FaultHandling.runFaultHandlingChecks"
           ]
