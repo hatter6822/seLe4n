@@ -9,9 +9,12 @@ check from pull requests or any security scan.
   runner-minutes a push).  It now runs on pushes to `main`, weekly and on
   dispatch.  The Gitleaks, Trivy and CodeQL job is unchanged and still runs on
   every pull request and every push to `main`.
-- **A push to `main` skips the required lanes it already passed.**  Branch
+- **A merge to `main` skips the required lanes it already passed.**  Branch
   protection requires Smoke, Full and `Rust ABI Tests` to pass on the pull
-  request's merge ref, so they are skipped on the push.  Every lane that is not
+  request's merge ref, so they are skipped on a push that the new
+  `Classify Push` job finds, from GitHub's record of the merge, to be a merged
+  pull request's merge commit.  Any other push to `main` (an admin or bypass
+  push) or a failed lookup runs them.  Every lane that is not
   a required check (Loom, `aarch64 Cross Build`, `Lean aarch64 Archive`) still
   runs there, since a pull request can merge before such a lane finishes and
   the push is then its only run; `Tiered Tests / Fast` runs too, as the merged

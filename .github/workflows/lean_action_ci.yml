@@ -21,6 +21,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides whether this run's commit is a pull request's merge commit into
+  # `main`, from GitHub's own record of the merge (the merged pull request's
+  # `merge_commit_sha`).  Only then may the required lanes below skip: their
+  # tree already passed on that pull request's merge ref.  Any other push (an
+  # admin or bypass push straight to `main`), a failed lookup or an
+  # unexpected answer leaves `merged_pr` false, and every lane runs.
+  classify-push:
+    name: Classify Push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      merged_pr: ${{ steps.lookup.outputs.merged_pr }}
+    steps:
+      - id: lookup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref }}
+        run: |
+          merged=false
+          if [ "${EVENT_NAME}" = "push" ] && [ "${REF}" = "refs/heads/main" ]; then
+            if numbers="$(gh api "repos/${REPO}/commits/${SHA}/pulls" \
+                --jq "[.[] | select(.merged_at != null and .base.ref == \"main\" and .merge_commit_sha == \"${SHA}\") | .number] | join(\" \")")"; then
+              if [ -n "${numbers}" ]; then
+                merged=true
+                echo "merge commit of pull request(s): ${numbers}"
+              else
+                echo "not a pull request's merge commit; every lane runs"
+              fi
+            else
+              echo "pull request lookup failed; every lane runs"
+            fi
+          fi
+          echo "merged_pr=${merged}" >> "${GITHUB_OUTPUT}"
+
   test-fast:
     name: Tiered Tests / Fast (Tier 0 + Tier 1)
     runs-on: ubuntu-latest
@@ -147,12 +186,13 @@ jobs:
 
   test-smoke:
     name: Tiered Tests / Smoke (Tier 2)
-    # Pull requests and manual runs only: a push to `main` is a merged pull
-    # request whose tree this required check already passed on the PR's merge
-    # ref (see docs/CI_POLICY.md §1).
-    if: github.event_name != 'push'
+    # Skipped only on a push that `classify-push` finds to be a pull request's
+    # merge commit: this required check already passed on that PR's merge ref
+    # (see docs/CI_POLICY.md §1).  Every other push runs it, and so does a run
+    # whose classification failed (its output is then empty, not `true`).
+    if: ${{ !cancelled() && needs.test-fast.result == 'success' && needs.classify-push.outputs.merged_pr != 'true' }}
     runs-on: ubuntu-latest
-    needs: test-fast
+    needs: [classify-push, test-fast]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -213,12 +253,13 @@ jobs:
 
   test-full:
     name: Tiered Tests / Full (Tier 3)
-    # Pull requests and manual runs only: a push to `main` is a merged pull
-    # request whose tree this required check already passed on the PR's merge
-    # ref (see docs/CI_POLICY.md §1).
-    if: github.event_name != 'push'
+    # Skipped only on a push that `classify-push` finds to be a pull request's
+    # merge commit: this required check already passed on that PR's merge ref
+    # (see docs/CI_POLICY.md §1).  Every other push runs it, and so does a run
+    # whose classification failed (its output is then empty, not `true`).
+    if: ${{ !cancelled() && needs.test-smoke.result == 'success' && needs.classify-push.outputs.merged_pr != 'true' }}
     runs-on: ubuntu-latest
-    needs: test-smoke
+    needs: [classify-push, test-smoke]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -262,11 +303,13 @@ jobs:
 
   test-rust:
     name: Rust ABI Tests
-    # Pull requests and manual runs only: a push to `main` is a merged pull
-    # request whose tree this required check already passed on the PR's merge
-    # ref (see docs/CI_POLICY.md §1).
-    if: github.event_name != 'push'
+    # Skipped only on a push that `classify-push` finds to be a pull request's
+    # merge commit: this required check already passed on that PR's merge ref
+    # (see docs/CI_POLICY.md §1).  Every other push runs it, and so does a run
+    # whose classification failed (its output is then empty, not `true`).
+    if: ${{ !cancelled() && needs.classify-push.outputs.merged_pr != 'true' }}
     runs-on: ubuntu-latest
+    needs: classify-push
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

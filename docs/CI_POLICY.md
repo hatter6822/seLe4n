@@ -24,10 +24,13 @@ The hardware target has two lanes of its own, also on every PR:
 - `test-lean-aarch64-archive` (`Lean aarch64 Archive`, WS-BP BP1): `./scripts/test_lean_aarch64_archive.sh` — `libsele4n.a`, the kernel's Lean object code for the same target, built from the elaborator's closure of `SeLe4n` by `scripts/build_lean_aarch64_archive.py` and checked there (closure, allocator configuration, per-module initializers, stdlib fidelity, attributed unresolved symbols, no FP/SIMD register); then `check_kernel_entry_exports.py --require-cross` decides the kernel-entry reconciliation on it and the host archive together.  Since BP2.2 the builder also links the archive with `--gc-sections` from its initializer and every production `@[export]`, and requires every symbol that link leaves undefined to be a global function of the HAL's rlib (the kernel's Lean runtime included) or of `compiler_builtins`.  Then (WS-BP BP5.2–BP5.4) it links the Lean kernel into `sele4n-kernel`, checks the image with `check_kernel_image.py --lean-kernel` and the FP/SIMD gate, cuts `kernel8.img` / `config.txt` with `scripts/build_rpi5_image.sh` and publishes the image's size and section map.  Uploads the archive, `libsele4n.unresolved`, and the `rpi5-kernel-image` artifact.
 
 **Which lanes run on a push to `main`.** Every lane runs on every pull request
-and on manual dispatch.  A push to `main` is a merged pull request whose tree
-already passed every required check on the PR's merge ref (§4 has branch
-protection require those checks and the branch to be up to date), so the
-required Smoke, Full and `Rust ABI Tests` lanes are skipped there.  Every lane
+and on manual dispatch.  The `Classify Push` job asks GitHub whether the pushed
+commit is a merged pull request's merge commit (the pull request's
+`merge_commit_sha`).  If it is, that tree already passed every required check
+on the PR's merge ref (§4 has branch protection require those checks and the
+branch to be up to date), so the required Smoke, Full and `Rust ABI Tests`
+lanes are skipped.  Any other push to `main` (an admin or bypass push), or a
+failed lookup, runs them.  Every lane
 that is not a required check still runs on the push, because a pull request can
 merge before such a lane finishes or after it fails, and the push is then the
 lane's only run on that tree: `Tiered Tests / Fast` (required too, but it also
