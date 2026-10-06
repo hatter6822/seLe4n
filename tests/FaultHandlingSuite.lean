@@ -344,6 +344,16 @@ private def stRunning : SystemState :=
         c2 (some orphan)).setCurrentOnCore
         c3 (some weak)) }
 
+/-- The handler's receive on core 1 as its syscall seam commits it: the bare
+receive vacates core 1 and raises core 1's reschedule flag, and the seam's own
+scheduling point on core 1 answers that flag.  The flag is cleared here as that
+point would, so a later step's pokes to core 1 are not suppressed by a poke the
+receive's own commit already settled. -/
+private def handlerRecvOnCore1 (st : SystemState) :
+    SystemState × Except KernelError (SeLe4n.ThreadId × Option (CoreId × SgiKind)) :=
+  match endpointReceiveDualOnCore epHandler handler (some replyH) c1 st with
+  | (s, r) => ({ s with scheduler := s.scheduler.clearReschedulePendingOnCore c1 }, r)
+
 /-- The syndrome of a data abort on an unmapped page: EC 0x24 (data abort from
 a lower EL), a fault address, and an ELR addressing the faulting instruction. -/
 private def dataAbortCtx : ExceptionContext :=
@@ -554,7 +564,7 @@ private def runResolutionChecks : IO Unit := do
   -- …and the delivery through such a capability works end to end: the Call
   -- chain links the reply structurally, so withholding full grant costs the
   -- handler nothing it needs.
-  match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+  match handlerRecvOnCore1 stRunning with
   | (stRecv, .ok _) =>
       let fctxG := faultContextOfThread stRecv grantReplyFaulter 0x4_0100 0x3C0
       let (stG, resG) := faultDeliverOnCore stRecv grantReplyFaulter theFault fctxG c0
@@ -582,7 +592,7 @@ private structure Delivery where
 
 private def deliveryE : Except String Delivery := do
   let (afterRecv, _) ← stepPair "step1: handler recv on core 1"
-    (endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning)
+    (handlerRecvOnCore1 stRunning)
   let fctx := faultContextOfThread afterRecv faulter dataAbortCtx.elr dataAbortCtx.spsr
   let (afterFault, result) := faultDeliverOnCore afterRecv faulter theFault fctx c0
   let afterSgi ←
@@ -858,7 +868,7 @@ private def queuedDeliveryE : Except String QueuedDelivery := do
   let fctx := faultContextOfThread stRunning faulter dataAbortCtx.elr dataAbortCtx.spsr
   let (afterFault, result) := faultDeliverOnCore stRunning faulter theFault fctx c0
   let (afterRecv, _) ← stepPair "step2: handler recv on core 1 (dequeues the fault)"
-    (endpointReceiveDualOnCore epHandler handler (some replyH) c1 afterFault)
+    (handlerRecvOnCore1 afterFault)
   let (afterReply, outcome) ←
     match faultReplyOnCore handler faulter resumeInfo #[] c1 afterRecv with
     | (st, .ok (o, _)) => .ok (st, o)
@@ -924,7 +934,14 @@ private def runEntryWindowChecks : IO Unit := do
   IO.println "--- §6e the live entry spills the trap frame's window (audit round) ---"
   match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
   | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
-  | (stRecv, .ok _) =>
+  | (stRecv0, .ok _) =>
+      -- The bare receive vacates core 1 and raises its reschedule flag; the
+      -- syscall seam's own scheduling point on core 1 answers that flag, which
+      -- this bare transition does not run, so the flag is cleared here as that
+      -- point would.  (Left up, it is an outstanding poke: the entry below does
+      -- not re-fire it — checked after the main assertions.)
+      let stRecv : SystemState :=
+        { stRecv0 with scheduler := stRecv0.scheduler.clearReschedulePendingOnCore c1 }
       -- The control: what the mirror holds is NOT what the trap frame carries,
       -- so a context read off the mirror is distinguishable at every word.
       let stale := faultContextOfThread stRecv faulter pcAlignCtx.elr pcAlignCtx.spsr
@@ -957,12 +974,15 @@ private def runEntryWindowChecks : IO Unit := do
             some trapWindow.lr.toNat)
       assertBool "…while the mirror's other registers are untouched"
         ((stE.getTcb? faulter).map (·.registerContext.gpr ⟨9⟩ |>.val) == some 900)
-      -- The pokes come from the state diff, exactly as the syscall seam
-      -- derives them: the handler woken on core 1 is a `.reschedule` to core 1.
+      -- The pokes come from the reschedule flags the delivery raised, exactly as
+      -- the syscall seam's do: the handler woken on core 1 is a `.reschedule`
+      -- to core 1.
       assertBool "the entry fires the .reschedule poke the handler's wake requires"
         (sgis == [(c1, SgiKind.reschedule)])
-      assertBool "…and it is the same list the syscall seam's diff would derive"
+      assertBool "…and it is the same list the whole-index diff (the specification) derives"
         (sgis == PriorityInheritance.computeCrossCoreSgis stRecv stE c0)
+      assertBool "a core whose flag is already up is not re-poked (its SGI is outstanding)"
+        ((faultEntryStep permissiveCtx stRecv0 pcAlignCtx trapWindow 0).1 == [])
       -- A resume reply reinstalls the window the thread actually had, not the
       -- last syscall's arguments: the defect the spill closes.
       match faultReplyOnCore handler faulter resumeInfo #[] c1 stE with
@@ -1056,7 +1076,7 @@ private def runEntryFrameDecodeChecks : IO Unit := do
           ectx.elr.toNat == frame.pc.val)
       -- The decoded window drives the same delivery the fifteen-scalar entry
       -- drove: the step on it delivers, and the recorded context is the window.
-      match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+      match handlerRecvOnCore1 stRunning with
       | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
       | (stRecv, .ok _) =>
           let (_, stE) := faultEntryStep permissiveCtx stRecv ectx w 0
@@ -1080,7 +1100,7 @@ private def svcCtx : ExceptionContext :=
 
 private def runUnknownSyscallChecks : IO Unit := do
   IO.println "--- §6f the unknown-syscall fault has a live producer ---"
-  match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+  match handlerRecvOnCore1 stRunning with
   | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
   | (stRecv, .ok _) =>
       -- The generic entry is inert on an SVC: that class is the syscall path.
@@ -1179,7 +1199,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
         (st1.scheduler.currentOnCore c2 == stRunning.scheduler.currentOnCore c2 &&
           (st1.scheduler.runQueueOnCore c2).toList == (stRunning.scheduler.runQueueOnCore c2).toList)
       -- The configured thread's next fault is delivered, not suspended.
-      match endpointReceiveDualOnCore epHandler handler (some replyH) c1 st1 with
+      match handlerRecvOnCore1 st1 with
       | (st2, .ok _) =>
           let fctx := faultContextOfThread st2 orphan 0x5_0000 0x3C0
           let (_, res) := faultDeliverOnCore st2 orphan theFault fctx c2
@@ -1248,7 +1268,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
       | .ok (_, stCfg) =>
           match dispatchWithCap resumeTcbDecoded handler c1 configGate orphanTcbCap stCfg with
           | .ok (_, stRes2) =>
-              match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRes2 with
+              match handlerRecvOnCore1 stRes2 with
               | (stRecv2, .ok _) =>
                   let fctx2 := faultContextOfThread stRecv2 orphan 0x5_0000 0x3C0
                   let (stD, resD) := faultDeliverOnCore stRecv2 orphan theFault fctx2 c2
@@ -1326,7 +1346,7 @@ private def seamFaultE : Except String SeamFault := do
     | .ok r => .ok r
     | .error e => .error s!"step1: seam dispatch: {repr e}"
   let (afterRecv, _) ← stepPair "step2: handler recv on core 1 (dequeues the capFault)"
-    (endpointReceiveDualOnCore epHandler handler (some replyH) c1 afterFault)
+    (handlerRecvOnCore1 afterFault)
   let (afterReply, replyOutcome) ←
     match faultReplyOnCore handler faulter resumeInfo #[] c1 afterRecv with
     | (st, .ok (o, _)) => .ok (st, o)
@@ -1451,7 +1471,7 @@ private def runRestartChecks : IO Unit := do
   IO.println "--- §7b reply-based restart (RR4.15/RR4.16) ---"
   -- An unknown-syscall fault, so the reply carries a register payload.
   let (afterRecv, _) ←
-    match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+    match handlerRecvOnCore1 stRunning with
     | (st, .ok a) => pure (st, a)
     | (_, .error e) => do
         assertBool s!"handler recv must succeed (got {repr e})" false
@@ -1529,7 +1549,7 @@ saved PC still addressing the faulting instruction and its fault never retired:
 the fault-reply mechanism was verified and unreachable. -/
 private def runReplySeamChecks : IO Unit := do
   IO.println "--- §7c the live .reply dispatch reaches the fault reply (RR4.14/RR4.15) ---"
-  match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+  match handlerRecvOnCore1 stRunning with
   | (afterRecv, .ok _) =>
       let fctx := faultContextOfThread afterRecv faulter 0x4_0000 0x3C0
       let (afterFault, resD) :=
@@ -1672,7 +1692,7 @@ private def runFaultDonationChecks : IO Unit := do
   assertBool "pre: the faulter owns a reservation and the handler owns none"
     (bindingOf stBoundRunning faulter == some (.bound scFaulter) &&
       bindingOf stBoundRunning handler == some .unbound)
-  match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stBoundRunning with
+  match handlerRecvOnCore1 stBoundRunning with
   | (afterRecv, .ok _) =>
       let fctx := faultContextOfThread afterRecv faulter 0x4_0000 0x3C0
       -- An **unknown syscall**, so the handler's reply LABEL decides between a
@@ -1735,7 +1755,7 @@ private def runFaultDonationChecks : IO Unit := do
       -- The CONTROL: the same delivery on the **unbound** fixture donates
       -- nothing, so the assertions above are about the reservation rather than
       -- about the fault.
-      match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+      match handlerRecvOnCore1 stRunning with
       | (recvU, .ok _) =>
           let ctxU := faultContextOfThread recvU faulter 0x4_0000 0x3C0
           let (faultU, _) :=
@@ -1776,7 +1796,7 @@ private def runProgressChecks : IO Unit := do
   -- And through the live exception dispatch (RR4.21), which is what the trap
   -- path runs: the abort arm no longer returns `.error .vmFault` with the
   -- thread left runnable.
-  match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+  match handlerRecvOnCore1 stRunning with
   | (stRecv, .ok _) =>
       match dispatchSynchronousException dataAbortCtx stRecv c0 with
       | .ok (_, stD) =>
@@ -1824,7 +1844,7 @@ where
   /-- PR #887 review: the unknown-syscall producer, the staged handler frame,
   and resume retiring a double fault. -/
   reviewLines : List String :=
-    match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+    match handlerRecvOnCore1 stRunning with
     | (_, .error _) => [traceLine "REVIEW PIPELINE FAILED"]
     | (stRecv, .ok _) =>
         let (sgis, stU) := unknownSyscallEntryStep permissiveCtx stRecv svcCtx trapWindow 0
@@ -1855,7 +1875,7 @@ where
   /-- The entry with the trap frame's window (§6e): the context and the pokes
   the live seam commits. -/
   windowLines : List String :=
-    match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+    match handlerRecvOnCore1 stRunning with
     | (_, .error _) => [traceLine "WINDOW PIPELINE FAILED"]
     | (stRecv, .ok _) =>
         let (sgis, stE) := faultEntryStep permissiveCtx stRecv pcAlignCtx trapWindow 0
