@@ -301,9 +301,12 @@ where `RegValue` stays (D1).
 
 ### 3.6 Measurement (CV0, CV5)
 
-- `lean_heap::HeapStats` gains a monotone `allocations` counter (every
-  `Heap::alloc_small` and every `Heap::alloc`, the big-object path
-  `lean_alloc_object` serves from); `ffi_heap_allocations : BaseIO UInt64` exposes
+- `lean_heap::HeapStats` gains a monotone `allocations` counter, incremented
+  at **one** point per successful allocation: in `Heap::alloc_small`, and in
+  `Heap::alloc` only on its large-object arm (`Heap::alloc` forwards every
+  request that fits a small class to `alloc_small`, which already counts it,
+  so counting in both would double every forwarded allocation and the
+  "at most two" acceptance of §1.1 would misread); `ffi_heap_allocations : BaseIO UInt64` exposes
   it to the host harness only (`SeLe4n/Testing/`, outside the kernel archive,
   as `BoundaryProbes` is).  A host test runs one syscall round trip and prints
   the delta; the baseline is recorded at CV0.1 and the result at CV5.1 in the
