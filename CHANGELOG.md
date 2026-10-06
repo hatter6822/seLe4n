@@ -109,11 +109,11 @@ Documentation only: no Lean, Rust or fixture change.
   stage; CV3.1's entry matches the binding's persistent `some` wrapper
   directly, so its `Except` intermediate goes; CV0.2's hazard test is a pure boundary-crate probe over
   `saveCapturedSyscallFrame`, pinning today's closure hazard and flipped at
-  CV3.5; the §14 record's activation-cut range reads CB1.7–CB1.9.  The
+  CV3.4; the §14 record's activation-cut range reads CB1.7–CB1.9.  The
   fourteenth round: `WORKSTREAM_CONTEXT.md`'s WS-CV section cites the plan's
   mechanism instead of restating it; the persistent objects' headers are
   `lean_set_non_heap_header`'s (`m_cs_sz` carries the byte size, 288 and
-  16), stated once in §3.4 and read back by CV3.4; CV0.2's witness is a
+  16), stated once in §3.4 and read back by CV3.3; CV0.2's witness is a
   relation — the saved words equal trap 1's before the overwrite and trap
   2's after — not an `assert_ne`.  The fifteenth round: CB5.2 names the
   hierarchy bundle among what its live transitions preserve and CB5.12 says
@@ -131,6 +131,13 @@ Documentation only: no Lean, Rust or fixture change.
   CV §1.1's sites are every allocating runtime call `lean.h` names, the
   sites WS-CV rows change are first-table rows, and the dispatcher is taken
   net at each reading; T19's remote arm allows a request already pending.
+  The eighteenth round: CB1.11's clock writers are a search, and the
+  adapter's `advanceTimerState` saturates with `tick`; CV §1.1's allocating
+  calls are derived from `lean.h`'s allocator entries, the byte-array
+  allocators included, with `MessageWords`' backing store a kept site;
+  CV3.1 and the HAL objects it binds to are one row (CV3.3–CV3.6 renumbered
+  CV3.2–CV3.5); CB1.9 adds `inheritanceConsistent` and re-propagates from
+  a reply-blocked waiter's server on every change to its key.
 
 ## v0.36.49 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
 

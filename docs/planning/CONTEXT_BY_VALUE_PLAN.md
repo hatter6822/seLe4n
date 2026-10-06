@@ -83,14 +83,28 @@ allocation), and the HAL hands its in-flight context over as a
   `SyscallDispatchEntry.lean`) — direct calls and closure targets both, the
   exported `lean_*` symbols and the Lean-mangled `lp_seLe4n_…` ones both —
   cut at the dispatcher, `Platform.FFI.syscallDispatchFromAbi`; a site is
-  every runtime call in a function of that set that allocates an object on
-  the 64-bit target, read from `lean.h` 4.28 rather than listed from memory:
-  `lean_alloc_ctor`, `lean_alloc_closure`, `lean_box_uint64`,
-  `lean_uint64_to_nat` (a bignum when the word is `≥ 2^63`; a core id or a
-  small count never allocates), and the array allocators `lean_array_mk`,
-  `lean_alloc_array` / `lean_mk_empty_array*`, `lean_array_push` (on a
-  shared or full array) and `lean_copy_expand_array`; `lean_box_uint32`
-  boxes without allocating there.  The walk at
+  every runtime call in a function of that set that can allocate on the
+  64-bit target, the allocating calls **derived from `lean.h` 4.28, not
+  listed**: an inline function whose body reaches, directly or through other
+  `lean.h` inlines, one of the three allocator entries (`lean_alloc_small`,
+  `lean_alloc_object`, `lean_alloc_ctor_memory`), and a runtime function
+  `lean.h` only declares (its body is in the runtime library), counted as
+  allocating unless the runtime source shows the path taken does not — a
+  call the reading cannot classify is a site.  A call that allocates only on
+  a branch the input decides (`lean_array_push` on a shared or full array,
+  a `lean_nat_*` operation's big-number branch) is a per-input site; the
+  big-number branch of a `Nat` operation is reachable on this path only from
+  a value a listed `lean_uint64_to_nat` produced, and is read with that
+  site's row or listed as its own.  The members at `v0.36.50` (the pin, not
+  the definition): `lean_alloc_ctor`, `lean_alloc_closure`,
+  `lean_box_uint64`, `lean_uint64_to_nat` (a bignum when the word is
+  `≥ 2^63`; a core id or a small count never allocates), `lean_array_mk`,
+  `lean_array_push`, the `lean_nat_*` arithmetic, and `lean_string_append`
+  (only in `currentCoreId`'s out-of-range panic message); `lean_box_uint32`
+  boxes without allocating there.  CV4.3 brings the byte-array allocators
+  onto the path: `lean_mk_empty_byte_array` → `lean_alloc_sarray` for a
+  `MessageWords` backing store and `lean_copy_byte_array` for a write to a
+  shared one.  The walk at
   `v0.36.50` reaches 676 functions.  The first table is the register-context
   path and the entry and exit wrappers themselves, each site assigned to the
   row that removes it or kept by name; the second is the rest of the walk's
@@ -120,7 +134,7 @@ allocation), and the HAL hands its in-flight context over as a
   | `saveCapturedSyscallFrame` → `saveTrapFrameOnCore` (`TrapFrameSave.c`): the TCB (`lean_alloc_ctor(0, 26, 2)`) and its `KernelObject` re-wrap, the `MachineState` (`(0, 16, 2)`), each behind `lean_is_exclusive`; the `SystemState` (`(0, 28, 0)`) rebuilt on both branches; `restartAtSvc`'s rewound `RegisterFile`, a copy because the frame is shared with the save; `saveVacatedFrameOnCore`'s same shapes on a vacated core | copy-on-shared (the TCB, the re-wrap, the machine, the rewound frame); fresh (the state); per-input (the vacated path, which a core with a current thread skips) | CV4.4 — exclusivity by ownership, the state updated in place; CV3.1 — the rewound frame is built only on the vacated path (`saveVacatedFrameOnCore` takes the restart `pc`, not a second file) |
   | `SystemState.getTcb?` (`State.c`) at each lookup of the caller on the path (`saveTrapFrameOnCore`, `writeReturnFrameToTcb`, the overflow read, …): the `some` of the TCB, reused from the slot's cell when that cell is exclusive and allocated otherwise | copy-on-shared | CV4.4 — the slot taken out, no `Option` round trip |
   | `syscallDispatchCrossCoreBracketedStep`: seventeen `lean_box_uint64` (the argument words boxed into the step closure and the `declaredUnifiedLockSet` thunk) and the two closures; `syscallWindow` (`FFI.c`): eight boxes and the window record | fresh | CV3.1 — the wrappers pass the `InFlightContext` and the bracketed step is specialised over its step |
-  | `abiEntryPlan` → `writeFfiRegistersToTcb` (`FFI.c`), the argument spill into the caller's `registerContext`: twenty-four `lean_uint64_to_nat`, three TCB copies, two re-wraps and a state copy behind `lean_is_exclusive`; then `lookupThreadRegisterContext` (`API.c`) reading the file back as a pair under `some`, and `decodeSyscallArgsFromState` decoding it (seven ctor sites, three behind `lean_is_exclusive`, and a `lean_array_mk` building the message-register array from a list on every syscall); `abiEntryMessage` (`SyscallLockBracket.c`), the lock plan's copy of that message, one ctor behind `lean_is_exclusive` | fresh (the conversions, a bignum each when `≥ 2^63`; the pair, the `some`, the decode's records, the array); copy-on-shared (the records, the lock plan's message) | CV1.1 — `UInt64` fields, no conversion; CV4.4 — exclusivity; CV3.1 — the plan decodes from the in-flight object's fields, so the spill-then-lookup round trip goes; CV4.3 — the message carrier becomes `MessageWords`, so the array and its list go |
+  | `abiEntryPlan` → `writeFfiRegistersToTcb` (`FFI.c`), the argument spill into the caller's `registerContext`: twenty-four `lean_uint64_to_nat`, three TCB copies, two re-wraps and a state copy behind `lean_is_exclusive`; then `lookupThreadRegisterContext` (`API.c`) reading the file back as a pair under `some`, and `decodeSyscallArgsFromState` decoding it (seven ctor sites, three behind `lean_is_exclusive`, and a `lean_array_mk` building the message-register array from a list on every syscall); `abiEntryMessage` (`SyscallLockBracket.c`), the lock plan's copy of that message, one ctor behind `lean_is_exclusive` | fresh (the conversions, a bignum each when `≥ 2^63`; the pair, the `some`, the decode's records, the array); copy-on-shared (the records, the lock plan's message) | CV1.1 — `UInt64` fields, no conversion; CV4.4 — exclusivity; CV3.1 — the plan decodes from the in-flight object's fields, so the spill-then-lookup round trip goes; CV4.3 — the message carrier becomes `MessageWords`, so the array and its list go, the backing store that replaces them a kept row below |
   | `syscallDispatchCrossCoreStep`: the nested result tuple — seventeen `Prod` sites across its arms, eight pairs built on the committing path; `shootdownRoundWindow`'s pair | fresh | CV4.5 — one flat commit record, the window as two fields |
   | `restoreTargetOnCore` (`ContextRestore.c`): `RestoreTarget.user` (one object field, seventeen scalar bytes); `fpLiveFor`'s `some`; `threadTranslationOperands`' pair with its two boxed words | fresh | CV4.5 — restore kind, context, `tableBase`, `asid`, `fpLive` are fields of the commit record, written by the step directly: no pair from `threadTranslationOperands`, no `some` built by `fpLiveFor`'s `==` |
   | `settleResidencyOnCore` (`PriorityInheritance/PerCore.c`), on every exit: two `MachineState` copies (`(0, 16, 2)`) and a `SystemState` copy (`(0, 28, 0)`), behind `lean_is_exclusive` | copy-on-shared | CV4.4 — exclusivity by ownership |
@@ -129,6 +143,7 @@ allocation), and the HAL hands its in-flight context over as a
   | `restoreTrapFrame` → `trapContextOfRegisterFile` (`FFI.c`, `ContextRestore.c`), the restore conversion: one 280-byte `TrapContext` filled by thirty-five `trapWordsOfRegisterFile` reads, thirty-one of them through the `gpr` closure chain (a boxed word each at the trap object's accessor; the four `Nat` fields convert back without allocating), handed to `ffi_restore_stage_context` and freed | fresh | CV2.1 — `TrapContext` deleted, `ffiRestoreStageContext` takes the `RegisterFile`; CV4.1 — that file is the TCB's own object, borrowed |
   | `readCallerOverflowWords` → `overflowWordsOrFaulted`, `IpcBufferRead.wordRuns` / `wordsOfBytes` / `wordsOfBatches` and the `mapM` loop: the state read, a cell per overflow word, the byte runs and their results | per-input (a message with words beyond the register window; CV0.1's round trip sends none) | CV4.3 — the words land in `MessageWords`; the byte runs and cells are the IPC-buffer read's, outside this workstream |
   | `InFlightContext.snapshotInto` (CV3.1) into the TCB's context | copy-on-shared | **kept** only on a shared destination, which CV4.4's exclusivity excludes on the continuing path |
+  | `MessageWords`' backing store (CV4.3): one `lean_alloc_sarray` of `8 · len` bytes through `lean_mk_empty_byte_array` per message with `len > 0`, a zero-length message taking `ByteArray.empty` (a nullary `def`, `Init/Prelude.lean:3388`, initialised once at module start); `lean_copy_byte_array` on a `set` into a shared store | fresh, per-input (a message carrying registers; the reading records the length CV0.1's round trip sends, and the store is counted in its delta when that length is nonzero); copy-on-shared (the copy) | **kept** — one allocation per message in place of the array, its list and a cell per word; the copy excluded where the decode builds the store and writes it while it is exclusively owned |
   | the `KernelObject` re-wrap of the TCB's slot when constructor reuse does not fire | copy-on-shared | **kept**, present or absent per path (CV4.4) |
   | `classifySynchronousExceptionExport`'s `ExceptionContext` (`FaultEntry.c`, the classifier the HAL runs before it recognises the syscall) | fresh | CV0.4 |
 
@@ -158,8 +173,8 @@ allocation), and the HAL hands its in-flight context over as a
   first table (read at CV5.1, not scanned); the second table's are their
   owners'.
 - The HAL's `ffi_trap_context` allocates nothing (`lean_heap` counter
-  unchanged across the call; Rust unit test, CV3.4).
-- The two-trap hazard test (CV0.2, flipped at CV3.5): two traps on one core,
+  unchanged across the call; Rust unit test, CV3.3).
+- The two-trap hazard test (CV0.2, flipped at CV3.4): two traps on one core,
   the first's context saved into a TCB **through the real save path** —
   `saveCapturedSyscallFrame`, called by a pure `BoundaryProbes` export on a
   probe state, since the host lane links no HAL (§3.6) — the second's words
@@ -167,7 +182,7 @@ allocation), and the HAL hands its in-flight context over as a
   the test pins what the tree does today (before the overwrite the saved
   context equals trap 1's words; after it the thirty-one general registers,
   read through the closure of the `v0.36.47` debt row, equal trap 2's and the
-  four words read eagerly at the save still equal trap 1's); from CV3.5 on
+  four words read eagerly at the save still equal trap 1's); from CV3.4 on
   the TCB's saved context, read back from the state after the second trap,
   is the first trap's, word for word.
 - Every tier green; every Tier 3 anchor scoped to a touched file executed.
@@ -369,7 +384,7 @@ where `RegValue` stays (D1).
   `TRAP_CONTEXT_*` constants are unchanged (35 words).  The `snapshotInto` and
   `snapshot` exports and the test that `snapshotInto` writes the 35 words into
   the object it is given while `snapshot` yields a *different* object with the
-  same words are CV3.3's (§3.4).
+  same words are CV3.2's (§3.4).
 - `scalar_words_of_lean::<35>` / `trap_context_of_lean` keep their exact-size
   refusal for heap objects.
 
@@ -383,7 +398,7 @@ where `RegValue` stays (D1).
   = the object's byte size, which a non-heap object carries there because no
   allocator page records it — 288 for the context, 16 for the wrapper;
   `m_tag = 0` and `m_other = 0` for the context, tag 1 and `m_other = 1` for
-  the wrapper).  The header is stated here once; D3 and CV3.2 cite it.
+  the wrapper).  The header is stated here once; D3 and CV3.1 cite it.
   `ffi_trap_context` writes the frame's 35 words into the core's object and
   returns the core's wrapper,
   or `lean_box(0)` when no frame is published.
@@ -408,7 +423,7 @@ where `RegValue` stays (D1).
   object allocated and freed inside the call would leave equal too; two traps on one core with distinct words, a snapshot of the first
   taken in between, the snapshot unchanged after the second (a unit test of
   the compiled `snapshot`, beside — not instead of — the hazard test of CV0.2,
-  which drives the real save path and reads the TCB back, re-run at CV3.5); the by-address acceptance in `trap_context_of_lean` and its
+  which drives the real save path and reads the TCB back, re-run at CV3.4); the by-address acceptance in `trap_context_of_lean` and its
   refusal of a *different* core's object.
 
 ### 3.5 Restore and the return frame (CV4)
@@ -476,7 +491,7 @@ where `RegValue` stays (D1).
   allocation to the boot core's syscall; the exerciser reads **its own core's**
   slot and masks IRQs on the boot core across the two reads (the round trip
   needs none; a pended tick is taken after the second read), so the delta is
-  the syscall's and nothing else's.  CV3.4's host unit test is single-threaded
+  the syscall's and nothing else's.  CV3.3's host unit test is single-threaded
   and reads the total.
   The host boundary crate cannot carry this measurement: it links the compiled
   Lean archive against the toolchain's `libleanshared` and deliberately not
@@ -520,12 +535,11 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV3.1 | `Architecture.InFlightContext`, `snapshotInto` (a full-field update, in place on an exclusively owned destination), the derived `snapshot`, `snapshotInto_word`; `ffiTrapContext : BaseIO (Option InFlightContext)` — the `some` being the core's persistent wrapper (§3.4), so the binding allocates nothing per trap — replacing CV2.1's temporary `Option RegisterFile` binding, with `syscallEntryContextOrFaulted` matching the `Option` directly in place of building an `Except` around the context (its `.ok` in §1.1's table goes); the entry wrappers on it — the wrappers hand the `InFlightContext` to `syscallDispatchCrossCoreBracketedStep`, which is `@[specialize]`d over its step and reads the argument words from the context's fields, so the seventeen `lean_box_uint64` and two closures of §1.1's table, `syscallWindow`'s eight boxes and the entry action's closure (`modifyGetKernelState` specialised over its action the same way) are gone, and the plan decodes the argument words from the object's fields instead of spilling them into the TCB and looking them up; `SystemState` stays free of the type (consumes CV2.1) | Lean |
-| CV3.2 | `trap::InFlightContextObjects`: per-core persistent object and wrapper, initialised at runtime bring-up with the non-heap header of §3.4 (`lean_set_non_heap_header`, the byte size in `m_cs_sz`); `ffi_trap_context` writes and returns without allocating; `trap_context_of_lean` accepts the executing core's object by address | `rust/sele4n-hal/src/trap.rs`, `ffi.rs`, `lean_runtime/` |
-| CV3.3 | The cross-language test extended: `snapshotInto` writes the words into the object it is given and `snapshot` yields a different one with the same words; the probes export both | `rust/sele4n-lean-boundary/` |
-| CV3.4 | Rust unit tests: both headers read back through `lean.h`'s accessors (`m_rc = 0`, `m_cs_sz` 288 and 16, the tags and field counts of §3.4); persistence after `lean_dec`, zero allocations across `ffi_trap_context` read from CV0.1's monotone `allocations` counter (§3.4; the live census cannot see an allocation freed before return), by-address acceptance, refusal of another core's object | `ffi.rs` tests |
-| CV3.5 | CV0.2's hazard test flipped: the save probe retyped over `InFlightContext` (trap 1's object is the one the probe hands to `saveCapturedSyscallFrame`, whose `snapshotInto` copies its words into the TCB's context), trap 2's words written into the same object, the TCB read back — the saved context is trap 1's, word for word; it is the acceptance test of D3 (§1.1) and fails if the save site skips `snapshotInto` or stores the wrong context (consumes CV0.2, CV3.1, CV3.2) | boundary crate |
-| CV3.6 | QEMU `virt` four-PE boot (Tier 4 lane) green with the persistent objects: every core traps, snapshots, restores | CI |
+| CV3.1 | `Architecture.InFlightContext`, `snapshotInto` (a full-field update, in place on an exclusively owned destination), the derived `snapshot`, `snapshotInto_word`; `ffiTrapContext : BaseIO (Option InFlightContext)` — the `some` being the core's persistent wrapper (§3.4), so the binding allocates nothing per trap — replacing CV2.1's temporary `Option RegisterFile` binding, with `syscallEntryContextOrFaulted` matching the `Option` directly in place of building an `Except` around the context (its `.ok` in §1.1's table goes); the entry wrappers on it — the wrappers hand the `InFlightContext` to `syscallDispatchCrossCoreBracketedStep`, which is `@[specialize]`d over its step and reads the argument words from the context's fields, so the seventeen `lean_box_uint64` and two closures of §1.1's table, `syscallWindow`'s eight boxes and the entry action's closure (`modifyGetKernelState` specialised over its action the same way) are gone, and the plan decodes the argument words from the object's fields instead of spilling them into the TCB and looking them up; `SystemState` stays free of the type; **in the same row as the HAL objects it binds to**, since the Lean binding promises a persistent wrapper the CV2 HAL does not have and the HAL objects have no Lean reader before the binding: `trap::InFlightContextObjects`, the per-core persistent object and wrapper, initialised at runtime bring-up with the non-heap header of §3.4 (`lean_set_non_heap_header`, the byte size in `m_cs_sz`), `ffi_trap_context` writing the core's object and returning its wrapper without allocating, `trap_context_of_lean` accepting the executing core's object by address (consumes CV2.1) | Lean; `rust/sele4n-hal/src/trap.rs`, `ffi.rs`, `lean_runtime/` |
+| CV3.2 | The cross-language test extended: `snapshotInto` writes the words into the object it is given and `snapshot` yields a different one with the same words; the probes export both | `rust/sele4n-lean-boundary/` |
+| CV3.3 | Rust unit tests: both headers read back through `lean.h`'s accessors (`m_rc = 0`, `m_cs_sz` 288 and 16, the tags and field counts of §3.4); persistence after `lean_dec`, zero allocations across `ffi_trap_context` read from CV0.1's monotone `allocations` counter (§3.4; the live census cannot see an allocation freed before return), by-address acceptance, refusal of another core's object | `ffi.rs` tests |
+| CV3.4 | CV0.2's hazard test flipped: the save probe retyped over `InFlightContext` (trap 1's object is the one the probe hands to `saveCapturedSyscallFrame`, whose `snapshotInto` copies its words into the TCB's context), trap 2's words written into the same object, the TCB read back — the saved context is trap 1's, word for word; it is the acceptance test of D3 (§1.1) and fails if the save site skips `snapshotInto` or stores the wrong context (consumes CV0.2, CV3.1) | boundary crate |
+| CV3.5 | QEMU `virt` four-PE boot (Tier 4 lane) green with the persistent objects: every core traps, snapshots, restores | CI |
 
 ### CV4 — restore borrows, return frame updates in place (§3.5)
 
@@ -581,7 +595,8 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
   `UInt64` array element (`lean_box_uint64` allocates a heap object), so it
   would move the allocation, not remove it; a fixed 120-field scalar structure
   would be unboxed too but copies 960 bytes per update, which the `ByteArray`
-  avoids.
+  avoids at the cost of one backing-store allocation per message carrying
+  registers, a kept site in §1.1's first table.
 - **The acceptance is a budget, not a figure.**  §1.1 lists every allocation
   the path keeps with the row that owns it, and the measurement checks the
   list; an allocation nobody listed shows as a delta and is traced to its
