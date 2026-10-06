@@ -120,7 +120,9 @@ Documentation only: no Lean, Rust or fixture change.
   so; CB0.8 routes the wake's `rewriteObject` — the third `ipcState` writer
   — through the index helper and adds the wake footprints to its pin; CB1.12
   resolves the unbound thread's core with `placedCoreOf?`, so a thread
-  queued off its home core is removed, not left `.passive` on a queue.
+  queued off its home core is removed, not left `.passive` on a queue.  The
+  sixteenth round: CB0.8's writer pin gains the timeout prefix's bare
+  `storeObject` (the fourth writer) and its footprint pin the tick's.
 
 ## v0.36.49 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
 
