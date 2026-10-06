@@ -718,6 +718,96 @@ theorem wakeThread_lossless (st : SystemState) (tid : SeLe4n.ThreadId)
 
 
 -- ============================================================================
+-- §5b  `dropCurrentOnCore` — the handler's drop of an out-of-domain incumbent
+-- ============================================================================
+
+/-- What an out-of-domain verdict says: core `c` runs a resolvable thread other
+than its idle thread, whose domain is not the active one. -/
+theorem currentOutsideActiveDomainOnCore_spec (st : SystemState) (c : CoreId)
+    (h : currentOutsideActiveDomainOnCore st c = true) :
+    ∃ prev tcb, st.scheduler.currentOnCore c = some prev ∧ (prev == idleThreadId c) = false ∧
+      st.getTcb? prev = some tcb ∧ tcb.domain ≠ st.scheduler.activeDomainOnCore c := by
+  unfold currentOutsideActiveDomainOnCore at h
+  split at h
+  · cases h
+  · rename_i prev hCur
+    split at h
+    · cases h
+    · rename_i hIdle
+      split at h
+      · rename_i tcb hT
+        exact ⟨prev, tcb, hCur, by simpa using hIdle, hT, by simpa using h⟩
+      · cases h
+
+/-- The drop writes only the preempted incumbent's context save into the store. -/
+@[simp] theorem dropCurrentOnCore_objects (st : SystemState) (c : CoreId) :
+    (dropCurrentOnCore st c).objects = (preemptCurrentOnCore st c (idleThreadId c)).objects := rfl
+
+@[simp] theorem dropCurrentOnCore_machine (st : SystemState) (c : CoreId) :
+    (dropCurrentOnCore st c).machine = st.machine := by
+  simp [dropCurrentOnCore]
+
+@[simp] theorem dropCurrentOnCore_currentOnCore_self (st : SystemState) (c : CoreId) :
+    (dropCurrentOnCore st c).scheduler.currentOnCore c = none := by
+  simp [dropCurrentOnCore]
+
+theorem dropCurrentOnCore_currentOnCore_ne (st : SystemState) (c c' : CoreId) (h : c ≠ c') :
+    (dropCurrentOnCore st c).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
+  simp [dropCurrentOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ h,
+    preemptCurrentOnCore_currentOnCore]
+
+@[simp] theorem dropCurrentOnCore_runQueueOnCore (st : SystemState) (c c' : CoreId) :
+    (dropCurrentOnCore st c).scheduler.runQueueOnCore c'
+      = (preemptCurrentOnCore st c (idleThreadId c)).scheduler.runQueueOnCore c' := by
+  simp [dropCurrentOnCore]
+
+@[simp] theorem dropCurrentOnCore_replenishQueueOnCore (st : SystemState) (c c' : CoreId) :
+    (dropCurrentOnCore st c).scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' := by
+  simp [dropCurrentOnCore, preemptCurrentOnCore_replenishQueueOnCore]
+
+theorem dropCurrentOnCore_getTcb? (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    (dropCurrentOnCore st c).getTcb? t = (preemptCurrentOnCore st c (idleThreadId c)).getTcb? t := rfl
+
+theorem dropCurrentOnCore_getSchedContext? (st : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) :
+    (dropCurrentOnCore st c).getSchedContext? scId
+      = (preemptCurrentOnCore st c (idleThreadId c)).getSchedContext? scId := rfl
+
+theorem dropCurrentOnCore_determineTargetCore (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
+    determineTargetCore (dropCurrentOnCore st c) t = determineTargetCore st t := by
+  rw [← preemptCurrentOnCore_determineTargetCore st c (idleThreadId c) hInv t]
+  rfl
+
+/-- The core is left idle, so every `current`-indexed per-core fact holds. -/
+theorem dropCurrentOnCore_currentThreadValidOnCore (st : SystemState) (c : CoreId) :
+    currentThreadValidOnCore (dropCurrentOnCore st c) c := by
+  simp [currentThreadValidOnCore]
+
+theorem dropCurrentOnCore_queueCurrentConsistentOnCore (st : SystemState) (c : CoreId) :
+    queueCurrentConsistentOnCore (dropCurrentOnCore st c).scheduler c := by
+  simp [queueCurrentConsistentOnCore]
+
+theorem dropCurrentOnCore_contextMatchesCurrentOnCore (st : SystemState) (c : CoreId) :
+    contextMatchesCurrentOnCore (dropCurrentOnCore st c) c := by
+  simp [contextMatchesCurrentOnCore]
+
+theorem dropCurrentOnCore_currentThreadInActiveDomainOnCore (st : SystemState) (c : CoreId) :
+    currentThreadInActiveDomainOnCore (dropCurrentOnCore st c) c := by
+  simp [currentThreadInActiveDomainOnCore]
+
+theorem dropCurrentOnCore_runnableThreadsAreTCBsOnCore (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) (hRat : runnableThreadsAreTCBsOnCore st c)
+    (hValid : currentThreadValidOnCore st c) :
+    runnableThreadsAreTCBsOnCore (dropCurrentOnCore st c) c := by
+  intro x hx
+  rw [dropCurrentOnCore_runQueueOnCore] at hx
+  rw [dropCurrentOnCore_getTcb?]
+  exact preemptCurrentOnCore_getTcb?_isSome st c _ hInv x
+    (preemptCurrentOnCore_runQueue_resolves st c _ hRat hValid x hx)
+
+-- ============================================================================
 -- §6  SM5.C.5 — `handleRescheduleSgiOnCore` (re-choose + switch / idle)
 -- ============================================================================
 
@@ -726,9 +816,30 @@ eligible thread (`chooseThreadEffectiveOnCore = .ok none`), the handler is the
 identity — core `c` keeps running whatever it was (or idles); no spurious
 dispatch is invented. -/
 theorem handleRescheduleSgiOnCore_idle_when_none (st : SystemState) (c : CoreId)
-    (hc : chooseThreadEffectiveOnCore st c = .ok none) :
+    (hc : chooseThreadEffectiveOnCore st c = .ok none)
+    (hIn : currentOutsideActiveDomainOnCore st c = false) :
     handleRescheduleSgiOnCore st c = .ok (st.clearReschedulePendingOnCore c) := by
-  simp only [handleRescheduleSgiOnCore, hc]
+  simp only [handleRescheduleSgiOnCore, hc, hIn, Bool.false_eq_true, ↓reduceIte]
+
+/-- An incumbent outside core `c`'s active domain is dropped when nothing
+in-domain is eligible: the core is left idle and the incumbent re-queued. -/
+theorem handleRescheduleSgiOnCore_drops_when_none (st : SystemState) (c : CoreId)
+    (hc : chooseThreadEffectiveOnCore st c = .ok none)
+    (hOut : currentOutsideActiveDomainOnCore st c = true) :
+    handleRescheduleSgiOnCore st c
+      = .ok ((dropCurrentOnCore st c).clearReschedulePendingOnCore c) := by
+  simp only [handleRescheduleSgiOnCore, hc, hOut, ↓reduceIte]
+
+/-- An incumbent outside core `c`'s active domain is displaced by any in-domain
+candidate, whatever their priorities. -/
+theorem handleRescheduleSgiOnCore_eq_switch_of_outside (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hc : chooseThreadEffectiveOnCore st c = .ok (some tid))
+    (hOut : currentOutsideActiveDomainOnCore st c = true) :
+    handleRescheduleSgiOnCore st c
+      = (switchToThreadOnCore st c tid).map (·.clearReschedulePendingOnCore c) := by
+  simp only [handleRescheduleSgiOnCore, hc, hOut, Bool.true_or, ↓reduceIte]
+  cases switchToThreadOnCore st c tid <;> rfl
 
 /-- WS-SM SM5.C.5 (audit-pass-3): when the budget-aware re-choose selects `tid`
 (`chooseThreadEffectiveOnCore = .ok (some tid)`) AND `tid` strictly outranks the
@@ -740,7 +851,7 @@ theorem handleRescheduleSgiOnCore_eq_switch_of_choose_some (st : SystemState)
     (hout : candidateOutranksCurrentOnCore st c tid = true) :
     handleRescheduleSgiOnCore st c
       = (switchToThreadOnCore st c tid).map (·.clearReschedulePendingOnCore c) := by
-  simp only [handleRescheduleSgiOnCore, hc, hout, ↓reduceIte]
+  simp only [handleRescheduleSgiOnCore, hc, hout, Bool.or_true, ↓reduceIte]
   cases switchToThreadOnCore st c tid <;> rfl
 
 /-- WS-SM SM5.C.5 (audit-pass-3 / Codex-P1): when the budget-aware candidate
@@ -750,9 +861,10 @@ cross-core wake never preempts a higher-priority running thread. -/
 theorem handleRescheduleSgiOnCore_keeps_current_when_outranked (st : SystemState)
     (c : CoreId) (tid : SeLe4n.ThreadId)
     (hc : chooseThreadEffectiveOnCore st c = .ok (some tid))
-    (hout : candidateOutranksCurrentOnCore st c tid = false) :
+    (hout : candidateOutranksCurrentOnCore st c tid = false)
+    (hIn : currentOutsideActiveDomainOnCore st c = false) :
     handleRescheduleSgiOnCore st c = .ok (st.clearReschedulePendingOnCore c) := by
-  simp [handleRescheduleSgiOnCore, hc, hout]
+  simp [handleRescheduleSgiOnCore, hc, hout, hIn]
 
 /-- WS-SM SM5.C.5: a successful SGI-handler dispatch (candidate outranks current)
 sets core `c`'s current thread to the re-chosen thread.  Composes the SM5.A
@@ -785,7 +897,9 @@ theorem handleRescheduleSgiOnCore_preserves_objects_invExt (st : SystemState)
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact hInv
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_preserves_objects_invExt st c _ hInv
+    · rw [Except.ok.injEq] at h; subst h; exact hInv
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -807,7 +921,9 @@ theorem handleRescheduleSgiOnCore_notification_backward (st : SystemState) (c : 
   unfold handleRescheduleSgiOnCore at hStep
   split at hStep
   · exact absurd hStep (by simp)
-  · rw [Except.ok.injEq] at hStep; subst hStep; exact h
+  · split at hStep
+    · rw [Except.ok.injEq] at hStep; subst hStep; exact preemptCurrentOnCore_notification_backward st c _ hInv oid ntfn h
+    · rw [Except.ok.injEq] at hStep; subst hStep; exact h
   · split at hStep
     · split at hStep
       · rename_i sSw hSw
@@ -831,7 +947,9 @@ theorem handleRescheduleSgiOnCore_getTcb?_ne_current (st : SystemState) (c : Cor
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_getTcb?_ne_current st c _ tid hInv hNe
+    · rw [Except.ok.injEq] at h; subst h; rfl
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -850,7 +968,9 @@ theorem handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed (st : Syst
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact hwf
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed st c _ hwf
+    · rw [Except.ok.injEq] at h; subst h; exact hwf
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -871,7 +991,9 @@ theorem handleRescheduleSgiOnCore_independent_of_other_core (st : SystemState)
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact ⟨rfl, rfl⟩
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact ⟨dropCurrentOnCore_currentOnCore_ne st c c' hcc, (dropCurrentOnCore_runQueueOnCore st c c').trans (preemptCurrentOnCore_runQueueOnCore_ne st c _ c' hcc)⟩
+    · rw [Except.ok.injEq] at h; subst h; exact ⟨rfl, rfl⟩
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -927,7 +1049,9 @@ theorem handleRescheduleSgiOnCore_replenishQueueOnCore (st : SystemState) (c : C
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_replenishQueueOnCore st c c'
+    · rw [Except.ok.injEq] at h; subst h; rfl
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -944,7 +1068,9 @@ theorem handleRescheduleSgiOnCore_machine_timer (st : SystemState) (c : CoreId)
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact congrArg (·.timer) (dropCurrentOnCore_machine st c)
+    · rw [Except.ok.injEq] at h; subst h; rfl
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -965,7 +1091,9 @@ theorem handleRescheduleSgiOnCore_determineTargetCore (st : SystemState) (c : Co
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_determineTargetCore st c hInv t
+    · rw [Except.ok.injEq] at h; subst h; rfl
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -985,7 +1113,9 @@ theorem handleRescheduleSgiOnCore_boundThread (st : SystemState) (c : CoreId)
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; rfl
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_boundThread st c _ hInv scId
+    · rw [Except.ok.injEq] at h; subst h; rfl
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -1006,7 +1136,9 @@ theorem handleRescheduleSgiOnCore_preserves_currentThreadValidOnCore (st : Syste
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact hValid
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_currentThreadValidOnCore st c
+    · rw [Except.ok.injEq] at h; subst h; exact hValid
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -1025,7 +1157,9 @@ theorem handleRescheduleSgiOnCore_preserves_queueCurrentConsistentOnCore (st : S
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact hQcc
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_queueCurrentConsistentOnCore st c
+    · rw [Except.ok.injEq] at h; subst h; exact hQcc
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -1046,7 +1180,9 @@ theorem handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore (st : Sy
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact hCtx
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_contextMatchesCurrentOnCore st c
+    · rw [Except.ok.injEq] at h; subst h; exact hCtx
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -1067,7 +1203,9 @@ theorem handleRescheduleSgiOnCore_preserves_runnableThreadsAreTCBsOnCore (st : S
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact hRat
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_runnableThreadsAreTCBsOnCore st c hInv hRat hValid
+    · rw [Except.ok.injEq] at h; subst h; exact hRat
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -1086,7 +1224,9 @@ theorem handleRescheduleSgiOnCore_preserves_runQueueOnCore_nodup (st : SystemSta
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact hnd
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_preserves_runQueueOnCore_nodup st c _ hnd
+    · rw [Except.ok.injEq] at h; subst h; exact hnd
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -1109,7 +1249,9 @@ theorem handleRescheduleSgiOnCore_preserves_currentThreadInActiveDomainOnCore
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact hDom
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_currentThreadInActiveDomainOnCore st c
+    · rw [Except.ok.injEq] at h; subst h; exact hDom
   · rename_i tid hChoose
     split at h
     · split at h

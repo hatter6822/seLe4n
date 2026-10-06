@@ -1748,9 +1748,13 @@ theorem scheduleLocalSuccessor_idle_of_no_candidate (pre post : SystemState) (ex
     (hChosen : chooseThreadEffectiveOnCore post execCore = .ok none) :
     scheduleLocalSuccessor pre post execCore
       = post.clearReschedulePendingOnCore execCore := by
+  have hIn : currentOutsideActiveDomainOnCore post execCore = false := by
+    unfold currentOutsideActiveDomainOnCore
+    rw [localSuccessorNeeded_post_none pre post execCore hNeeded]
   unfold localSuccessorNeeded at hNeeded
   unfold scheduleLocalSuccessor scheduleLocalSuccessorFrom handleRescheduleSgiOnCore
   rw [if_pos hNeeded, hChosen]
+  simp [hIn]
 
 /-- WS-SM SM5.F.4: the dispatch body emits only `.reschedule` SGIs. -/
 theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid : ObjId)

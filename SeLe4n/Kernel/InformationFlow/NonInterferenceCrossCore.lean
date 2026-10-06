@@ -2373,6 +2373,18 @@ theorem switchToThreadOnCore_confinedToCores (st st' : SystemState) (c : CoreId)
    fun c' hc => switchToThreadOnCore_machine_regsOnCore_ne st c c' tid st'
       (fun he => hc (by simp [he])) h⟩
 
+/-- The drop of an out-of-domain incumbent writes only its own core's queue
+and `current` slot and the incumbent's saved context. -/
+theorem dropCurrentOnCore_confinedToCores (st : SystemState) (c : CoreId) :
+    observableSlotsConfinedToCores st (dropCurrentOnCore st c) [c] :=
+  ⟨fun c' hc => (dropCurrentOnCore_runQueueOnCore st c c').trans
+      (preemptCurrentOnCore_runQueueOnCore_ne st c _ c' (fun he => hc (by simp [he]))),
+   fun c' hc => dropCurrentOnCore_currentOnCore_ne st c c' (fun he => hc (by simp [he])),
+   fun c' _ => by simp [dropCurrentOnCore, preemptCurrentOnCore_activeDomainOnCore],
+   fun c' _ => by simp [dropCurrentOnCore, preemptCurrentOnCore_domainTimeRemainingOnCore],
+   fun c' _ => by simp [dropCurrentOnCore, preemptCurrentOnCore_domainScheduleIndexOnCore],
+   fun c' _ => by simp⟩
+
 /-- SM8.B.2: the per-core reschedule handler is confined to the core it runs
 on — it either idles that core, keeps its current thread, or switches it. -/
 theorem handleRescheduleSgiOnCore_confinedToCores (st st' : SystemState) (c : CoreId)
@@ -2381,8 +2393,13 @@ theorem handleRescheduleSgiOnCore_confinedToCores (st st' : SystemState) (c : Co
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h
-    exact observableSlotsConfinedToCores_widen_any (clearReschedulePendingOnCore_confinedToCores st c)
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h
+      exact observableSlotsConfinedToCores_then_flagOnly
+        (dropCurrentOnCore_confinedToCores st c)
+        (clearReschedulePendingOnCore_confinedToCores _ c)
+    · rw [Except.ok.injEq] at h; subst h
+      exact observableSlotsConfinedToCores_widen_any (clearReschedulePendingOnCore_confinedToCores st c)
   · split at h
     · split at h
       · rename_i sSw hSw

@@ -2275,6 +2275,34 @@ theorem candidateOutranksCurrentOnCore_of_edf_earlier (st : SystemState)
           simp only [decide_eq_true_eq]
           omega
 
+/-- Is core `c`'s current thread outside the core's active domain?  `false` for
+an idle core, for the core's own idle thread (whose dispatch the idle fallback
+gates on its domain, and which no scheduling context can bind, so no domain
+write reaches it) and for a current thread that resolves to no TCB.  Under
+`currentThreadInActiveDomainOnCore` it is always `false`; it turns `true` when
+a write moves a running thread's `domain` — a scheduling-context reconfigure
+(`schedContextConfigureBoundPropagate`) is the one such writer — and the
+reschedule flag that write raises is what brings the core to
+`handleRescheduleSgiOnCore`, which then drops the incumbent. -/
+def currentOutsideActiveDomainOnCore (st : SystemState) (c : CoreId) : Bool :=
+  match st.scheduler.currentOnCore c with
+  | none => false
+  | some tid =>
+      if tid == idleThreadId c then false
+      else
+        match st.getTcb? tid with
+        | some tcb => tcb.domain != st.scheduler.activeDomainOnCore c
+        | none => false
+
+/-- Take core `c`'s current thread off the core with nothing dispatched in its
+place: save its context and put it back in core `c`'s run queue
+(`preemptCurrentOnCore`, against the core's idle-thread id, which is never a
+dispatched user thread), then clear the `current` slot — the legacy idle
+representation a remote deschedule leaves.  The thread stays runnable. -/
+def dropCurrentOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  let st1 := preemptCurrentOnCore st c (idleThreadId c)
+  { st1 with scheduler := st1.scheduler.setCurrentOnCore c none }
+
 /-- WS-SM SM5.C.5 (plan §4.4): the target core's `.reschedule` SGI handler.
 
 When core `c` takes a `.reschedule` SGI (sent by a remote wake), it re-runs its
@@ -2297,7 +2325,12 @@ tick's own local counterpart of the same receiver decision.
 
 - `chooseThreadEffectiveOnCore` errors (corrupted run queue) → propagate.
 - returns `none` (no budget-eligible thread) → no switch; core `c` keeps running
-  (or idles).  Identity (`.ok st`); never invents a dispatch.
+  (or idles).  Identity (`.ok st`); never invents a dispatch — unless the
+  incumbent is outside the core's active domain
+  (`currentOutsideActiveDomainOnCore`), which the selector would never have
+  picked: then it is dropped (`dropCurrentOnCore`, re-queued, core left idle).
+- returns `some tid` and the incumbent is outside the active domain → switch to
+  `tid` whatever their priorities (the incumbent is no contender).
 - returns `some tid` and `tid` outranks current (or core idle) → switch to `tid`
   (`switchToThreadOnCore` preempts the old current back into the run queue and
   dispatches `tid`).
@@ -2326,9 +2359,15 @@ def handleRescheduleSgiOnCore (st : SystemState) (c : CoreId) :
   -- "a point was entered".
   match chooseThreadEffectiveOnCore st c with
   | .error e => .error e
-  | .ok none => .ok (st.clearReschedulePendingOnCore c)
+  | .ok none =>
+      -- An incumbent outside the active domain is dropped even with nothing to
+      -- run in its place: the core idles rather than keep it.
+      if currentOutsideActiveDomainOnCore st c then
+        .ok ((dropCurrentOnCore st c).clearReschedulePendingOnCore c)
+      else .ok (st.clearReschedulePendingOnCore c)
   | .ok (some tid) =>
-      if candidateOutranksCurrentOnCore st c tid then
+      -- Any in-domain candidate displaces an out-of-domain incumbent.
+      if currentOutsideActiveDomainOnCore st c || candidateOutranksCurrentOnCore st c tid then
         match switchToThreadOnCore st c tid with
         | .ok st' => .ok (st'.clearReschedulePendingOnCore c)
         | .error e => .error e

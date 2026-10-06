@@ -5145,6 +5145,33 @@ theorem descheduleAt_threadPlacedOnSomeCore_ne (st : SystemState)
 -- `Scheduler/Operations/Core.lean`, where it states the side condition under
 -- which a dispatch keeps a placed thread placed.
 
+/-- The handler's drop of an out-of-domain incumbent places no thread: it
+re-queues the incumbent where it ran and clears the slot. -/
+theorem dropCurrentOnCore_preserves_unplaced (st : SystemState) (c : CoreId)
+    (u : SeLe4n.ThreadId) (h : threadPlacedOnSomeCore st u = false) :
+    threadPlacedOnSomeCore ((dropCurrentOnCore st c).clearReschedulePendingOnCore c) u = false := by
+  have hPre : threadPlacedOnSomeCore (preemptCurrentOnCore st c (idleThreadId c)) u = false := by
+    rw [preemptCurrentOnCore_threadPlacedOnSomeCore]; exact h
+  cases hP : threadPlacedOnSomeCore
+      ((dropCurrentOnCore st c).clearReschedulePendingOnCore c) u with
+  | false => rfl
+  | true =>
+    exfalso
+    rcases (threadPlacedOnSomeCore_eq_true_iff _ u).mp hP with ⟨c', hc'⟩ | ⟨c', hq'⟩
+    · simp only [SystemState.clearReschedulePendingOnCore_scheduler,
+        SchedulerState.clearReschedulePendingOnCore_currentOnCore] at hc'
+      by_cases hcc : c = c'
+      · subst hcc; rw [dropCurrentOnCore_currentOnCore_self] at hc'; cases hc'
+      · rw [dropCurrentOnCore_currentOnCore_ne st c c' hcc,
+          ← preemptCurrentOnCore_currentOnCore st c (idleThreadId c) c'] at hc'
+        have := (threadPlacedOnSomeCore_eq_true_iff _ u).mpr (Or.inl ⟨c', hc'⟩)
+        rw [hPre] at this; cases this
+    · simp only [SystemState.clearReschedulePendingOnCore_scheduler,
+        SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+        dropCurrentOnCore_runQueueOnCore] at hq'
+      have := (threadPlacedOnSomeCore_eq_true_iff _ u).mpr (Or.inr ⟨c', hq'⟩)
+      rw [hPre] at this; cases this
+
 /-- **`v0.35.158`**: the per-core scheduling point keeps an **unplaced** thread
 unplaced.  Its two non-identity arms dispatch a thread the chooser took out of
 the core's run queue (`chooseThreadEffectiveOnCore_some_mem_runQueueOnCore`,
@@ -5162,7 +5189,9 @@ theorem handleRescheduleSgiOnCore_preserves_unplaced
   unfold handleRescheduleSgiOnCore at hStep
   split at hStep
   · exact absurd hStep (by simp)
-  · rw [← Except.ok.inj hStep]; exact h
+  · split at hStep
+    · rw [← Except.ok.inj hStep]; exact dropCurrentOnCore_preserves_unplaced st c u h
+    · rw [← Except.ok.inj hStep]; exact h
   · split at hStep
     · rename_i tid hChoose _
       have hMem : tid ∈ st.scheduler.runQueueOnCore c :=

@@ -414,7 +414,10 @@ theorem handleRescheduleSgiOnCore_preserves_replenishQueueAffinityConsistentOnCo
     unfold handleRescheduleSgiOnCore at hStep
     split at hStep
     · exact absurd hStep (by simp)
-    · rw [Except.ok.injEq] at hStep; subst hStep; rfl
+    · split at hStep
+      · rw [Except.ok.injEq] at hStep; subst hStep
+        exact dropCurrentOnCore_determineTargetCore st c hInv t
+      · rw [Except.ok.injEq] at hStep; subst hStep; rfl
     · split at hStep
       · split at hStep
         · rename_i sSw hSw
@@ -429,7 +432,10 @@ theorem handleRescheduleSgiOnCore_preserves_replenishQueueAffinityConsistentOnCo
     unfold handleRescheduleSgiOnCore at hStep
     split at hStep
     · exact absurd hStep (by simp)
-    · rw [Except.ok.injEq] at hStep; subst hStep; rfl
+    · split at hStep
+      · rw [Except.ok.injEq] at hStep; subst hStep
+        exact preemptCurrentOnCore_boundThread st c _ hInv scId
+      · rw [Except.ok.injEq] at hStep; subst hStep; rfl
     · split at hStep
       · split at hStep
         · rename_i sSw hSw

@@ -2619,6 +2619,36 @@ theorem switchToThreadOnCore_preserves_ipcInvariantFull (st : SystemState)
     · contradiction
   · contradiction
 
+/-- The handler's drop of an out-of-domain incumbent preserves the whole bundle:
+the preempt re-queues the incumbent, and clearing the slot can only hide a
+thread that is now on the queue. -/
+theorem dropCurrentOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hOut : currentOutsideActiveDomainOnCore st c = true) :
+    ipcInvariantFull (dropCurrentOnCore st c) := by
+  have hInv2 := preemptCurrentOnCore_preserves_ipcInvariantFull st c (idleThreadId c) hObjInv hInv
+  obtain ⟨prev, ptcb, hCur, hNotIdle, hPT, -⟩ := currentOutsideActiveDomainOnCore_spec st c hOut
+  refine ipcInvariantFull_of_getElem_eq (s1 := preemptCurrentOnCore st c (idleThreadId c))
+    (fun _ => rfl) ?_ hInv2
+  intro tid tcb' hT hU hQ hC
+  have hQ' : tid ∉ (preemptCurrentOnCore st c (idleThreadId c)).scheduler.runQueueOnCore
+      Concurrency.bootCoreId := by
+    simpa [dropCurrentOnCore] using hQ
+  by_cases hcb : c = Concurrency.bootCoreId
+  · have hPrevMem := preemptCurrentOnCore_prev_mem st c (idleThreadId c) prev ptcb hCur
+      (by rw [hNotIdle]; decide) hPT
+    have hNe : (preemptCurrentOnCore st c (idleThreadId c)).scheduler.currentOnCore c ≠ some tid := by
+      rw [preemptCurrentOnCore_currentOnCore, hCur]
+      intro hEq
+      cases hEq
+      exact hQ' (by rw [← hcb]; exact hPrevMem)
+    exact hInv2.passiveServerIdle tid tcb' hT hU hQ' (hcb ▸ hNe)
+  · have hC' : (preemptCurrentOnCore st c (idleThreadId c)).scheduler.currentOnCore
+        Concurrency.bootCoreId ≠ some tid := by
+      simpa [dropCurrentOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcb]
+        using hC
+    exact hInv2.passiveServerIdle tid tcb' hT hU hQ' hC'
+
 /-- The reschedule SGI handler preserves the whole bundle: it is a pure
 selection followed by (at most) a switch. -/
 theorem handleRescheduleSgiOnCore_preserves_ipcInvariantFull (st : SystemState)
@@ -2629,8 +2659,13 @@ theorem handleRescheduleSgiOnCore_preserves_ipcInvariantFull (st : SystemState)
   unfold handleRescheduleSgiOnCore at hStep
   split at hStep
   · contradiction
-  · cases hStep
-    exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _ hInv
+  · split at hStep
+    · rename_i hOut
+      cases hStep
+      exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _
+        (dropCurrentOnCore_preserves_ipcInvariantFull st c hObjInv hInv hOut)
+    · cases hStep
+      exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _ hInv
   · split at hStep
     · split at hStep
       · rename_i sSw hSw

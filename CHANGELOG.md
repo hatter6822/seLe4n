@@ -1,15 +1,20 @@
-## v0.36.56 — The reschedule key includes the thread's domain
+## v0.36.56 — The reschedule key includes the thread's domain, and the receiver evicts an out-of-domain incumbent
 
 Follow-up to the KSC-1 accumulator.  The selector admits a thread only when
 its domain is the core's active domain, but the key both the reschedule flags
 and the diff compared was `(priority, deadline)`.  Reconfiguring a scheduling
 context that moved its bound thread's domain therefore poked no remote core.
 
-- **Scope.**  For a thread queued on another core the poke is the whole fix:
-  the receiver re-selects, so a thread that moved into the active domain can
-  preempt.  For a thread running on another core the receiver still keeps an
-  incumbent that left the active domain (it compares only priority and
-  deadline); evicting it is a new registered debt row.
+- **The receiver evicts an out-of-domain incumbent.**  The poke alone fixed
+  only the queued case: `handleRescheduleSgiOnCore` compared priority and
+  deadline and kept a running thread that had left the active domain.  It now
+  checks `currentOutsideActiveDomainOnCore` first: any in-domain candidate
+  displaces such an incumbent, and with none the incumbent is re-queued and
+  the core left idle (`dropCurrentOnCore`).  Every receiver theorem is
+  re-proved over the new arm (wake frames, scheduler invariant suites, IPC
+  bundle, lock-bracket footprint, coverage, NI confinement), and two new
+  equations state the arm (`handleRescheduleSgiOnCore_drops_when_none`,
+  `handleRescheduleSgiOnCore_eq_switch_of_outside`).
 
 - **One key.**  `markKeyChangeFor`, `markKeyChangeFrom` and `crossCoreSgiBody`
   now read `effectiveSchedParams` (`priority × deadline × domain`, the triple
@@ -27,7 +32,10 @@ context that moved its bound thread's domain therefore poked no remote core.
 - **Tier 2**: `reschedule_pending_suite` §2.9 reconfigures a bound context
   from core 0 with only the domain changed and expects core 1 (where the
   thread is queued) flagged and named by the diff; the same reconfigure with
-  the domain unchanged flags nothing.
+  the domain unchanged flags nothing.  §2.10 moves the domain of a thread
+  running on core 1 and runs core 1's receiver: it goes idle with the thread
+  re-queued, or runs a queued lower-priority in-domain thread instead; with the
+  domain unchanged the incumbent keeps running.
 
 ## v0.36.55 — KSC-1 reschedule-SGI accumulator, PR C: the seams fire from the flags and drop the pre-state
 
