@@ -88,7 +88,20 @@ Documentation only: no Lean, Rust or fixture change.
   clock's progress theorems carry `clockHeadroom` (CB1.11, T14); the seam's
   local arm consumes the executing core's own flag
   (`keyRescheduleOnCore_local_flag_cleared`, §4.4, T19), as the KSC-1
-  accumulator sets it.
+  accumulator sets it.  The twelfth round: T14's hypotheses and the unbind
+  contract are each stated at one owning site (T14's §4.11 row; CB1.12) and
+  cited from the others; WS-CV §1.1's reading is now the call graph walked
+  from the exported entry `lean_syscall_dispatch_cross_core`, closures
+  included and cut at the dispatcher, which lists what the per-module
+  reading missed — the restore conversion (`trapContextOfRegisterFile`, one
+  280-byte `TrapContext` and thirty-one boxed words per restore), the
+  argument spill's twenty-four `Nat` conversions, `writeReg`'s closure per
+  staged word — and names the lock plan, the scheduling point, the SGI
+  derivation and the shootdown protocol as the other owners on the same
+  round trip, so the acceptance is the difference of two readings; the
+  capture is `InFlightContext.snapshotInto`, a full-field update into the
+  TCB's own context, in place once CV4.4 has made that object exclusively
+  owned, so a continuing syscall keeps at most three named allocations.
 
 ## v0.36.49 — One ReplyRecv transition, and one TCB field writer (audit IPC-2, IPC-5)
 
