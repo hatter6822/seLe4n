@@ -492,6 +492,7 @@ jobs:
             .lake/build/aarch64-unknown-none-softfloat/libsele4n.a
             .lake/build/aarch64-unknown-none-softfloat/libsele4n.unresolved
             .lake/build/aarch64-unknown-none-softfloat/libsele4n.roots.ld
+            .lake/build/aarch64-unknown-none-softfloat/libsele4n.provenance
           if-no-files-found: warn
 
       # WS-BP BP5.4: the image the firmware would boot, and the size and

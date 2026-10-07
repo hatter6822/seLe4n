@@ -1,3 +1,58 @@
+## v0.36.71 — the allocation exerciser refuses a stale Lean archive; first reading of the separated lock state: 112
+
+**The `heap-allocations-per-syscall` exerciser had been measuring the kernel
+of the CV1.1 head since v0.36.61.**  A Lean-linked `virt` image links
+`.lake/build/aarch64-unknown-none-softfloat/libsele4n.a`, which only
+`scripts/test_lean_aarch64_archive.sh` builds; `qemu_boot_lib.sh` checked
+that the archive existed and linked it.  Run outside the archive lane, every
+exerciser reading from LS1.1 to LS3.1 (the 387 recorded at v0.36.66 to
+v0.36.70) came from the archive built at 07:55 on 2026-10-07: the symbolised
+trace still named `acquireLockOnObject`, `KernelObject.updateLock` and
+`SchedLockSet`, all deleted.  Those entries now carry a correction.  CI is
+unaffected: its archive lane builds the archive and boots it in one job.
+
+- **Provenance** (`scripts/build_lean_aarch64_archive.py`): a build that
+  passes every check writes `libsele4n.provenance`, the SHA-256 of each
+  package module's `.lean` source, `lean-toolchain`, `lakefile.toml`,
+  `lake-manifest.json`, the archive and the roots script, uploaded with the
+  archive by the CI archive lane.  A build deletes
+  the record before it starts, so a refused build leaves none.
+  `--check-fresh` re-hashes the recorded files and refuses on any difference,
+  an absent record or an unreadable one.  Closure changes are covered,
+  because a module joins the closure through an import in a recorded file.
+  Self-test cases: an edited, deleted or re-pinned input, a rebuilt archive,
+  an empty record and a record of absent files (88 cases).
+- **The consumer** (`scripts/qemu_boot_lib.sh`): `--lean-kernel` calls
+  `--check-fresh` before linking and fails, rather than skips, on a stale
+  archive.  Tested by breaking the relation: appending a comment to
+  `SeLe4n/Model/State.lean` makes the check name that file and refuse.
+- **The reading** (archive rebuilt at v0.36.70's tree): **112** heap
+  allocations per notification-signal round trip, down from 572 at the
+  baseline and 387 at CV1.1.  Kernel image 8,398,880 bytes (8,884,824 at
+  CV1.1).  The symbolised trace attributes 111 of them, and **no site is
+  in the lock model**:
+
+  | Sites | Allocations |
+  |---|---|
+  | Register file and return frame (decode, stage, restore, FP liveness) | 21 |
+  | Object-store inserts (`storeObject` → `RHTable.insert`) | 21 |
+  | FFI entry and return (`lean_syscall_dispatch_cross_core`, trap context, register write-back) | 17 |
+  | Capability resolution (`resolveCapAddress`, `CNode.lookup`) | 13 |
+  | Dispatch step and checked dispatch | 12 |
+  | Address translation and the IPC-buffer walk | 9 |
+  | Notification signal and PIP residency | 9 |
+  | Taint plan and edges | 5 |
+  | Runtime array growth (`copy_expand_array`) | 4 |
+
+  The row-by-row split of 387 → 112 across LS1.1–LS3.1 is not
+  recoverable without rebuilding each commit's archive; the plan's LS0.1
+  attribution put about 250 in the lock model, and the trace now holds none.
+- The archive lane's DTB fixture check fails locally against the rpi5_machine
+  fork's QEMU 11.1.1 (`tests/fixtures/qemu_virt_dtb.hex` is CI's QEMU dump);
+  environmental, unchanged here.
+
+Refs: docs/planning/LOCK_STATE_SEPARATION_PLAN.md (row LS3.2's measurement).
+
 ## v0.36.70 — WS-LS LS3.1: the lock words leave the kernel state
 
 **No kernel object and no `SystemState` field carries lock state any more.**
@@ -44,11 +99,10 @@ neither half compiles alone.  `main_trace_smoke.expected` is unchanged.
 - **Plan**: LS3.1 done; LS3.2 is the debt close and measurement, LS3.3 the
   `LockKind.objStore` deletion (still read by `LockKey.kind` and the
   `permittedKinds` lemmas), LS3.4 the archive.
-- **Exerciser**: 387 heap allocations per notification-signal round trip,
+- **Exerciser**: ~~387 heap allocations per notification-signal round trip,
   unchanged from LS2.5: since LS2.4 no executed path wrote a lock word, so
   the fields were dead weight in each object rather than allocation sites.
-  Kernel image 8,884,824 bytes.  The remaining allocations are LS3.2's
-  measurement to attribute.
+  Kernel image 8,884,824 bytes.~~ [Corrected at v0.36.71: this was not a reading of this version's kernel. The exerciser linked the `libsele4n.a` built at the CV1.1 head and never rebuilt it, so every reading from LS1.1 to LS3.1 measured that kernel; the first reading of the tree is v0.36.71's 112.]
 
 Refs: docs/planning/LOCK_STATE_SEPARATION_PLAN.md (row LS3.1).
 
@@ -117,9 +171,9 @@ are `rfl`.  Every state-committing seam that brackets now runs a
 `BracketSpec`, so a footprint is a proof obligation the record discharges
 (`covers` is LS2.3's seam theorem) and never a runtime branch.
 `main_trace_smoke.expected` is unchanged.  The `heap-allocations-per-syscall`
-exerciser reads **387** per notification-signal round trip, unchanged: the
+exerciser reads ~~**387** per notification-signal round trip, unchanged: the
 deleted bracket was runtime-inert on these seams, and the lock words it
-touched are the LS3 cut.
+touched are the LS3 cut.~~ [Corrected at v0.36.71: this was not a reading of this version's kernel. The exerciser linked the `libsele4n.a` built at the CV1.1 head and never rebuilt it, so every reading from LS1.1 to LS3.1 measured that kernel; the first reading of the tree is v0.36.71's 112.]
 
 - **`syscallDispatchBracket ctx execCore syscallId trapped`**: `declared` is
   `declaredUnifiedLockSetForAbiEntry` over the trapped context's six message
@@ -274,7 +328,7 @@ can build the syscall seam's record from the theorem as stated.
   absence of a coverage hypothesis; the `.receive` footprint's and the unified
   footprint's shapes are re-pinned.  Store-reader baseline, theorem manifest
   and codebase map regenerated.  Plan row LS2.3 done, with its four decisions;
-  §6's no-object lemma is LS2.4's.  Exerciser reading: 387 heap allocations per syscall, unchanged from LS2.2 (the three footprint changes add no allocation on the notification-signal round trip).
+  §6's no-object lemma is LS2.4's.  Exerciser reading: ~~387 heap allocations per syscall, unchanged from LS2.2 (the three footprint changes add no allocation on the notification-signal round trip).~~ [Corrected at v0.36.71: this was not a reading of this version's kernel. The exerciser linked the `libsele4n.a` built at the CV1.1 head and never rebuilt it, so every reading from LS1.1 to LS3.1 measured that kernel; the first reading of the tree is v0.36.71's 112.]
 
 ## v0.36.66 — WS-LS LS2.2: the scheduler seams run the bracket specification
 

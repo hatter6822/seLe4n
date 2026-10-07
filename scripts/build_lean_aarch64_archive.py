@@ -57,9 +57,18 @@ Output (under `.lake/build/aarch64-unknown-none-softfloat/`):
                            which reads this same file
   stdlib-c/<githash>/      the regenerated stdlib C, cached per toolchain
   obj/                     the objects (rebuilt when their C or the flags move)
+  libsele4n.provenance     what this archive was built from: the SHA-256 of
+                           every package module's `.lean` source, the
+                           toolchain pin and the Lake configuration, and of
+                           the archive and roots script themselves.  Written
+                           only when every check passed; `--check-fresh`
+                           re-hashes the same files and refuses on any
+                           difference, so an image linked from it is the tree
+                           it claims to be
 
     build_lean_aarch64_archive.py [--jobs N]
     build_lean_aarch64_archive.py --self-test
+    build_lean_aarch64_archive.py --check-fresh
 """
 
 from __future__ import annotations
@@ -92,6 +101,9 @@ ARCHIVE = OUT_DIR / "libsele4n.a"
 UNRESOLVED_REPORT = OUT_DIR / "libsele4n.unresolved"
 # WS-BP BP5.2: the link's roots, as the linker script both links read.
 ROOTS_SCRIPT = OUT_DIR / "libsele4n.roots.ld"
+PROVENANCE = OUT_DIR / "libsele4n.provenance"
+# The configuration every module's C depends on besides its own source.
+BUILD_CONFIG = ("lean-toolchain", "lakefile.toml", "lake-manifest.json")
 HAL_BUILD_SCRIPT = REPO / "rust/sele4n-hal/build.rs"
 SHIM_INCLUDE = REPO / "rust/sele4n-hal/lean_include"
 STAGED_ALLOWLIST = SCRIPTS / "staged_module_allowlist.txt"
@@ -821,7 +833,67 @@ def write_unresolved_report(classes: dict[str, list[str]]) -> None:
 # Driver
 # ---------------------------------------------------------------------------
 
+def file_digest(path: Path) -> str | None:
+    """SHA-256 of a file's bytes, or `None` when it does not exist."""
+    if not path.is_file():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def provenance_record(package: list[str]) -> dict[str, dict[str, str | None]]:
+    """The inputs the archive was compiled from and the outputs it is.
+
+    A module that joins or leaves the closure does so through an import line
+    in a module already recorded, so re-hashing the recorded sources detects
+    a closure change as well as an edit."""
+    inputs = [m.replace(".", "/") + ".lean" for m in package] + list(BUILD_CONFIG)
+    outputs = [ARCHIVE, ROOTS_SCRIPT]
+    return {"inputs": {path: file_digest(REPO / path) for path in sorted(inputs)},
+            "outputs": {str(out.relative_to(REPO)): file_digest(out) for out in outputs}}
+
+
+def stale_entries(recorded: dict, current: dict) -> list[str]:
+    """Every recorded file whose digest differs now; a recorded section or
+    file the current reading lacks counts as different."""
+    stale: list[str] = []
+    for section in ("inputs", "outputs"):
+        then, now = recorded.get(section), current.get(section)
+        if not isinstance(then, dict) or not then or not isinstance(now, dict):
+            stale.append(f"<{section} unrecorded>")
+            continue
+        stale += [path for path, digest in sorted(then.items())
+                  if digest is None or now.get(path) != digest]
+    return stale
+
+
+def check_fresh() -> int:
+    """Refuse an archive whose recorded inputs or outputs have changed."""
+    if not PROVENANCE.is_file():
+        print(f"FAIL: {PROVENANCE.relative_to(REPO)} is absent: the archive predates "
+              "provenance or its build failed; run scripts/test_lean_aarch64_archive.sh")
+        return 1
+    try:
+        recorded = json.loads(PROVENANCE.read_text())
+    except json.JSONDecodeError as exc:
+        print(f"FAIL: {PROVENANCE.relative_to(REPO)} is unreadable ({exc})")
+        return 1
+    inputs = recorded.get("inputs") if isinstance(recorded, dict) else None
+    package = [p.removesuffix(".lean").replace("/", ".") for p in (inputs or {})
+               if p.endswith(".lean")]
+    stale = stale_entries(recorded if isinstance(recorded, dict) else {},
+                          provenance_record(package))
+    if stale:
+        print(f"FAIL: {ARCHIVE.relative_to(REPO)} is stale: {len(stale)} recorded file(s) "
+              f"changed since it was built (first: {', '.join(stale[:5])}); "
+              "run scripts/test_lean_aarch64_archive.sh")
+        return 1
+    print(f"OK: {ARCHIVE.relative_to(REPO)} was built from the current tree "
+          f"({len(package)} package modules)")
+    return 0
+
+
 def build(jobs: int) -> int:
+    PROVENANCE.unlink(missing_ok=True)
     tc = toolchain()
     print(f"[1/8] toolchain {tc['version']} ({tc['githash'][:12]})")
     closure = elaborator_closure()
@@ -892,6 +964,9 @@ def build(jobs: int) -> int:
           f"the file the kernel image links")
     status = fp_gate.check([ARCHIVE], fp_gate.default_objdump())
     print("[8/8] FP/SIMD register operands: " + ("none" if status == 0 else "FOUND"))
+    if status == 0:
+        PROVENANCE.write_text(json.dumps(provenance_record(package), indent=1, sort_keys=True) + "\n")
+        print(f"provenance -> {PROVENANCE.relative_to(REPO)}")
     return status
 
 
@@ -1112,6 +1187,22 @@ def self_test() -> int:
            {"-mgeneral-regs-only", "-mabi=aapcs-soft", "-ffreestanding", "-nostdlibinc", "-Werror"}
            <= set(compile_flags({"prefix": "/t"})))
 
+    then = {"inputs": {"SeLe4n.lean": "a", "lean-toolchain": "t"},
+            "outputs": {"libsele4n.a": "x"}}
+    expect("an unchanged tree is fresh", stale_entries(then, json.loads(json.dumps(then))) == [])
+    expect("an edited source is stale", stale_entries(
+        then, {**then, "inputs": {**then["inputs"], "SeLe4n.lean": "b"}}) == ["SeLe4n.lean"])
+    expect("a deleted source is stale", stale_entries(
+        then, {**then, "inputs": {"SeLe4n.lean": None, "lean-toolchain": "t"}}) == ["SeLe4n.lean"])
+    expect("a moved toolchain pin is stale", stale_entries(
+        then, {**then, "inputs": {**then["inputs"], "lean-toolchain": "u"}}) == ["lean-toolchain"])
+    expect("a rebuilt archive is stale against the old record", stale_entries(
+        then, {**then, "outputs": {"libsele4n.a": "y"}}) == ["libsele4n.a"])
+    expect("an empty record is never fresh", stale_entries({}, then) != [])
+    expect("a record of an absent file is never fresh", stale_entries(
+        {"inputs": {"X.lean": None}, "outputs": {"libsele4n.a": None}},
+        {"inputs": {"X.lean": None}, "outputs": {"libsele4n.a": None}}) != [])
+
     for failure in failures:
         print(f"FAIL self-test: {failure}")
     if failures:
@@ -1123,10 +1214,14 @@ def self_test() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--check-fresh", action="store_true",
+                        help="refuse unless the archive was built from the current tree")
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
     args = parser.parse_args()
     if args.self_test:
         return self_test()
+    if args.check_fresh:
+        return check_fresh()
     try:
         return build(max(1, args.jobs))
     except (Refused, fp_gate.Unreadable) as exc:
