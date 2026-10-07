@@ -140,68 +140,118 @@ theorem notificationSignalCheckedArmR_eq (ctx : LabelingContext)
       · simp only [clearWokenReceiverStash_eq_pure]
   | _ => rfl
 
-/-- `dispatchCheckedArmThenTaint` for the signal, refusing in the state it was
-handed.  The capability lookup writes nothing (`syscallLookupCap_preserves_state`),
-so its refusal and the arm's both carry that state. -/
-@[noinline] def signalArmThenTaintR (ctx : LabelingContext)
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (plan : TaintPlan) (preEpoch : Nat) (preLog : DeclassificationAuditLog)
-    (preTaint : TaintTable) : RefusalCarrying Unit :=
-  fun st =>
-    match syscallLookupCap gate st with
-    | .error e => .error (e, st)
-    | .ok (cap, stCap) =>
-        match notificationSignalCheckedArmR ctx decoded tid executingCore cap stCap with
-        | .error refusal => .error refusal
-        | .ok ((), stPost) => .ok ((), applySyscallTaintAfter plan preEpoch preLog preTaint stPost)
+/-- The signal's taint plan (`syscallTaintPlan`) from its operand, resolved
+once by the caller instead of once per plan field
+(`syscallTaintPlan_eq_signalTaintPlanOf`). -/
+def signalTaintPlanOf (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (operand : Option Capability) : TaintPlan :=
+  match operand with
+  | some cap =>
+      match cap.target with
+      | .object nid =>
+          { edges := signalTaintEdges st tid nid
+            cleared := signalClearedNotification st nid
+            bypassed := signalBypassedNotification st nid
+            originates := syscallRecordsDeclassification decoded.syscallId }
+      | _ => { originates := syscallRecordsDeclassification decoded.syscallId }
+  | none => { originates := syscallRecordsDeclassification decoded.syscallId }
 
-theorem signalArmThenTaintR_eq (ctx : LabelingContext)
+theorem syscallTaintPlan_eq_signalTaintPlanOf (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (hSig : decoded.syscallId = .notificationSignal) :
+    syscallTaintPlan st tid decoded =
+      signalTaintPlanOf st tid decoded (syscallOperandCap? st tid decoded.capAddr) := by
+  simp only [syscallTaintPlan, contentFlowClass, hSig, contentFlowEdges, contentFlowClears,
+    contentFlowBypassed, signalTaintPlanOf]
+  rcases syscallOperandCap? st tid decoded.capAddr with _ | ⟨target, _, _⟩
+  · rfl
+  · cases target <;> rfl
+
+/-- The signal's gate and arm, from its operand resolved once by the caller:
+`syscallResolveCap`'s slot check and idle-object check, the rights gate, then
+`notificationSignalCheckedArmR` and the taint step, every refusal carrying the
+state it was handed (`signalResolvedArmThenTaintR_eq`). -/
+@[noinline] def signalResolvedArmThenTaintR (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
+    (plan : TaintPlan) (preEpoch : Nat) (preLog : DeclassificationAuditLog)
+    (preTaint : TaintTable) (operand : Option Capability) : RefusalCarrying Unit :=
+  fun st =>
+    match operand with
+    | none => .error (.invalidCapability, st)
+    | some cap =>
+        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+        else if cap.hasRight requiredRight then
+          match notificationSignalCheckedArmR ctx decoded tid executingCore cap st with
+          | .error refusal => .error refusal
+          | .ok ((), stPost) =>
+              .ok ((), applySyscallTaintAfter plan preEpoch preLog preTaint stPost)
+        else .error (.illegalAuthority, st)
+
+theorem signalResolvedArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (plan : TaintPlan) (preEpoch : Nat) (preLog : DeclassificationAuditLog)
-    (preTaint : TaintTable) (hSig : decoded.syscallId = .notificationSignal) :
-    signalArmThenTaintR ctx decoded tid executingCore gate plan preEpoch preLog preTaint =
+    (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
+    (hSig : decoded.syscallId = .notificationSignal)
+    (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref) :
+    signalResolvedArmThenTaintR ctx decoded tid executingCore gate.requiredRight plan preEpoch
+        preLog preTaint (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
-        plan preEpoch preLog preTaint) := by
-  funext st
-  simp only [signalArmThenTaintR, dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hSig,
-    syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke]
-  rcases hLookup : syscallLookupCap gate st with _ | ⟨cap, stCap⟩
+        plan preEpoch preLog preTaint) st := by
+  simp only [signalResolvedArmThenTaintR, dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+    hSig, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
+    syscallLookupCap, syscallResolveCap, hRef]
+  rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
-  · have hSame := syscallLookupCap_preserves_state gate st stCap cap hLookup
-    subst hSame
-    simp only []
-    rw [notificationSignalCheckedArmR_eq ctx decoded tid executingCore gate cap hSig]
-    simp only [RefusalCarrying.ofKernel]
-    rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap stCap with
-      _ | ⟨⟨⟩, stPost⟩ <;> rfl
+  · by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    · simp only [hIdle, ↓reduceIte]
+    · by_cases hRight : cap.hasRight gate.requiredRight = true
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+        rw [notificationSignalCheckedArmR_eq ctx decoded tid executingCore gate cap hSig]
+        simp only [RefusalCarrying.ofKernel]
+        rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
+          _ | ⟨⟨⟩, stPost⟩ <;> rfl
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+
+/-- Whether `tid` is the thread `current` names, compared on the identifier's
+word: no `some tid` is built and no equality instance is passed
+(`isCurrent_iff`). -/
+@[inline] def isCurrent (current : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId) : Bool :=
+  match current with
+  | some cur => cur.val == tid.val
+  | none => false
+
+theorem isCurrent_iff (current : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId) :
+    isCurrent current tid = true ↔ current = some tid := by
+  cases current with
+  | none => simp [isCurrent]
+  | some cur =>
+    cases cur; cases tid
+    simp [isCurrent]
 
 /-- `dispatchSyscallChecked`, refusing in the state it was handed.  The signal
-takes the guards and `signalArmThenTaintR`, whose every refusal precedes its
-first write; every other syscall takes `RefusalCarrying.ofKernel` of the
+resolves its operand once, for the gate and the taint plan alike, and takes
+`signalResolvedArmThenTaintR`, whose every refusal precedes its first write; every other syscall takes `RefusalCarrying.ofKernel` of the
 specification. -/
 def dispatchSyscallCheckedR (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
     if decoded.syscallId = .notificationSignal then
-      if st.scheduler.currentOnCore executingCore ≠ some tid then .error (.illegalState, st)
+      if !isCurrent (st.scheduler.currentOnCore executingCore) tid then .error (.illegalState, st)
       else
       match st.getObject? tid.toObjId with
       | some (.tcb tcb) =>
         match st.getObject? tcb.cspaceRoot with
         | some (.cnode rootCn) =>
-          let gate : SyscallGate := {
-            callerId     := tid
-            cspaceRoot   := tcb.cspaceRoot
-            capAddr      := decoded.capAddr
-            capDepth     := rootCn.depth
-            requiredRight := syscallRequiredRight decoded.syscallId
-          }
-          signalArmThenTaintR ctx decoded tid executingCore gate
-            (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
-            st.declassificationAuditLog st.declassificationTaint st
+          match resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st with
+          | .error e => .error (e, st)
+          | .ok ref =>
+            let operand := SystemState.lookupSlotCap st ref
+            signalResolvedArmThenTaintR ctx decoded tid executingCore
+              (syscallRequiredRight decoded.syscallId) (signalTaintPlanOf st tid decoded operand)
+              st.declassificationAuditEpoch st.declassificationAuditLog
+              st.declassificationTaint operand st
         | some _ => .error (.invalidCapability, st)
         | none   => .error (.objectNotFound, st)
       | some _ => .error (.illegalState, st)
@@ -219,18 +269,46 @@ theorem dispatchSyscallCheckedR_eq (ctx : LabelingContext)
   · rw [dispatchSyscallChecked_eq_impl]
     simp only [dispatchSyscallCheckedR, hSig, ↓reduceIte, RefusalCarrying.ofKernel,
       dispatchSyscallCheckedImpl]
-    split
-    · rfl
-    · split
+    by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
+    · have hIs : isCurrent (st.scheduler.currentOnCore executingCore) tid = true :=
+        (isCurrent_iff _ _).2 hCur
+      have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
+      rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
+        if_neg hNot]
+      split
       · next hTcb =>
         split
-        · next hRoot =>
-          rw [signalArmThenTaintR_eq _ _ _ _ _ _ _ _ _ hSig]
-          simp only [hTcb, hRoot, RefusalCarrying.ofKernel]
+        · next tcb hTcb' rootCn hRoot =>
+          simp only [hTcb, hRoot]
+          rcases hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st with
+            e | ref
+          · simp only [dispatchCheckedArmThenTaint, hSig, syscallChecksTargetFirst,
+              Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap,
+              syscallResolveCap, hRef]
+          · have hOperand : syscallOperandCap? st tid decoded.capAddr =
+                SystemState.lookupSlotCap st ref := by
+              simp only [SystemState.getObject?_eq_getElem] at hTcb hRoot
+              simp only [syscallOperandCap?, SystemState.getTcb?, SystemState.getCNode?, hTcb,
+                hRoot, hRef]
+            simp only []
+            rw [syscallTaintPlan_eq_signalTaintPlanOf st tid decoded hSig, hOperand]
+            have hArm := signalResolvedArmThenTaintR_eq ctx decoded tid executingCore
+              { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+                capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+              (signalTaintPlanOf st tid decoded (SystemState.lookupSlotCap st ref))
+              st.declassificationAuditEpoch st.declassificationAuditLog st.declassificationTaint
+              st ref hSig hRef
+            simp only [hSig, RefusalCarrying.ofKernel] at hArm
+            exact hArm
         · next hRoot => simp only [hTcb, hRoot]
         · next hRoot => simp only [hTcb, hRoot]
       · next hTcb => simp only [hTcb]
       · next hTcb => simp only [hTcb]
+    · have hIs : isCurrent (st.scheduler.currentOnCore executingCore) tid = false := by
+        cases h : isCurrent (st.scheduler.currentOnCore executingCore) tid
+        · rfl
+        · exact absurd ((isCurrent_iff _ _).1 h) hCur
+      rw [if_pos (by simp only [hIs, Bool.not_false]), if_pos hCur]
   · simp only [dispatchSyscallCheckedR, hSig, ↓reduceIte]
 
 /-- `syscallEntryChecked`, refusing in the state it was handed
