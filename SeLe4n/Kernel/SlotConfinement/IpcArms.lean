@@ -8,6 +8,9 @@
 -/
 
 import SeLe4n.Kernel.SlotConfinement.Legs
+import SeLe4n.Kernel.Lifecycle.ResumeFootprint
+import SeLe4n.Kernel.Lifecycle.Operations.RetypeFootprint
+import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
 
 /-!
 # Per-core slot confinement — the live IPC and thread-state arms
@@ -1048,7 +1051,8 @@ theorem priorityRescheduleOnCore_confinedToCores (st st' : SystemState)
     | exact absurd h (by simp)
 
 -- WS-RR RR8.12 Cut C3b-iii (`v0.35.169`): `threadOccupiedCores` moved to the
--- production `SeLe4n/Kernel/SyscallSchedFootprint.lean` with the retype write
+-- production `SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean` (via
+-- `SyscallSchedFootprint.lean` until WS-LS LS2.5) with the retype write
 -- set that reads it.  Its lemma family stays here: those are about the destroy
 -- sweep's confinement, which is this module's question.
 
@@ -1213,7 +1217,8 @@ theorem cancelDonatedDonationOnCore_confinedToCores (st st' : SystemState)
   · exact absurd h (by simp)
 
 -- WS-RR RR8.12 Cut C3b-iv (`v0.35.170`): `suspendThreadOnCoreWriteSet` moved to
--- the production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- the production `SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean` (via
+-- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside
 -- `schedLockSet_suspendThreadOnCore`, whose run segment IS it -- the last of the
 -- SM8.B write sets a production footprint needed and this module held.  Same
 -- name, same namespace; the confinement theorems below stay here.
@@ -1346,7 +1351,8 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
 -- it. The arm is rerouted; this section is the audit the inventory was missing.
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `resumeThreadOnCoreWriteSet` moved to the
--- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, where the live
+-- production `SeLe4n/Kernel/Lifecycle/ResumeFootprint.lean` (via
+-- `SyscallSchedFootprint.lean` until WS-LS LS2.5), where the live
 -- `.tcbResume` arm's resolved scheduler-domain footprint
 -- (`schedLockSet_resumeThreadOnCore`) is `schedFootprintOfCores` of it.  A
 -- production footprint cannot read a write set declared in a staged module, and

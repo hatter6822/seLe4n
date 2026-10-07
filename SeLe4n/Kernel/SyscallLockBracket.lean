@@ -417,7 +417,7 @@ dispatch arm names:
 
 **WS-RR RR8.12 Cut C4b: it serves BOTH domains, and that is one builder rather
 than two.**  `declaredSchedulerLockSetForAbiEntry`
-(`SyscallSchedFootprint.lean` §14) reads this record too, so a second builder
+(`SyscallSchedFootprint.lean` §2) reads this record too, so a second builder
 would be the shape that lets one domain's footprint be acquired around the other
 domain's transition — `declaredSchedulerLockSetForAbiEntry_shares_decode` is the
 statement that it is not.  Two things follow.  Four arms above gained the

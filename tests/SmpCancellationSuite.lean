@@ -15,7 +15,8 @@ import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Scheduler.Operations.ResumeDelivery
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
-import SeLe4n.Kernel.SyscallSchedFootprint
+import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
+import SeLe4n.Kernel.SchedContext.SchedContextFootprint
 import SeLe4n.Testing.StateBuilder
 
 /-!

@@ -91,7 +91,12 @@ reschedule receiver and the secondary bring-up run `timerTickBracket` /
 suspend seams' coverage theorems exist — `SyscallSeamCoverage.lean`'s
 `syscallDispatchCrossCoreStep_coversWrites` and `suspendSeamAction_coversWrites`,
 with `SyscallSchedContainment` and the SM8.B confinement family promoted to
-production as `SlotConfinement.*` — and LS2.4 switches the seams; a new
+production as `SlotConfinement.*`; since LS2.4 the two seams run
+`syscallDispatchBracket` / `suspendThreadBracket` through `BracketSpec.run`
+and the word-level bracket is deleted; since LS2.5 every resolved scheduler
+footprint sits beside its transition, the constructor in
+`Scheduler/SchedFootprint.lean` and `SyscallSchedFootprint.lean` holding the
+syscall-level resolver alone; a new
 declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
 same cut, or the seam theorem does not elaborate).
 
@@ -4811,7 +4816,9 @@ code may assume:
   because their own modules cannot name a `SchedLockId`** (WS-RR RR8.12 Cut
   C3b-i, `v0.35.167`).  `schedLockSet_resumeThreadOnCore`,
   `schedLockSet_priorityControlOnCore` and
-  `schedLockSet_setThreadCpuAffinityOnCore` (`SeLe4n/Kernel/SyscallSchedFootprint.lean`)
+  `schedLockSet_setThreadCpuAffinityOnCore` (`Lifecycle/ResumeFootprint.lean`,
+  `SchedContext/PriorityControlFootprint.lean`, `Scheduler/Operations/AffinityFootprint.lean`
+  since WS-LS LS2.5; `SyscallSchedFootprint.lean` before)
   are the live `.tcbResume`, `.tcbSetPriority` / `.tcbSetMCPriority` and
   `.tcbSetAffinity` arms' scheduler-domain footprints — **inert** until the
   bracket cut.  Six things new code must respect.  (1) **Placement is a fact
@@ -4956,7 +4963,7 @@ code may assume:
   `threadOccupiedCores` and the two retype write sets moved to production with
   tombstones — their lemma family and the confinement theorems stay staged, being
   about the destroy sweep's confinement, which is that module's question — and
-  `SyscallSchedFootprint.lean` imports `Lifecycle/Invariant/RetypeReservation.lean`
+  `SyscallSchedFootprint.lean` (now `Lifecycle/Operations/RetypeFootprint.lean`) imports `Lifecycle/Invariant/RetypeReservation.lean`
   for the reference sweep's frame.  `maxLockSetSize` is unmoved.  **`.tcbSuspend`
   is the one arm left**, and it is a cut of its own: its run segment re-runs a
   seven-stage pipeline and its replenish segment two migrations read at

@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.SlotConfinement.PriorityArms
+import SeLe4n.Kernel.Lifecycle.Operations.RetypeFootprint
 
 /-!
 # Per-core slot confinement — the live memory and lifecycle arms
@@ -464,7 +465,8 @@ theorem withIcacheBroadcast_confinedToCores
 
 -- WS-RR RR8.12 Cut C3b-iii (`v0.35.169`): `lifecycleRetypeWriteSetOf` and
 -- `lifecycleRetypeWriteSet` moved to the production
--- `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- `SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean` (via
+-- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside
 -- `schedLockSet_lifecycleRetypeOnCore`, whose run segment IS the second.  Same
 -- names, same namespace; the confinement theorems below stay here.
 

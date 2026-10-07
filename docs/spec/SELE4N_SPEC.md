@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.68` (`lakefile.toml`) |
+| **Package version** | `0.36.69` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 444,617 across 384 Lean files |
-| **Test LoC** | 89,882 across 72 Lean test suites |
+| **Production LoC** | 444,878 across 391 Lean files |
+| **Test LoC** | 89,883 across 72 Lean test suites |
 | **Proved declarations** | 14,968 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
@@ -6504,23 +6504,25 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   retype all establish and which no transition falsifies, proved inductively —
   registered rather than implied.
 
-  **And the three TCB-control arms declare theirs, in a module of their own**
+  **And the three TCB-control arms declare theirs**
   (WS-RR RR8.12 Cut C3b-i, `v0.35.167`).  `schedLockSet_resumeThreadOnCore`,
   `schedLockSet_priorityControlOnCore` and
-  `schedLockSet_setThreadCpuAffinityOnCore` sit in
-  `SeLe4n/Kernel/SyscallSchedFootprint.lean` rather than beside their
-  transitions, and that is a fact about the import graph rather than a convention
-  abandoned: `SchedLockId` is declared in
-  `Scheduler/Operations/PerCoreChooseThread.lean`, which imports
-  `Lifecycle/Suspend.lean` and `IPC/Operations/Endpoint.lean`, so the lifecycle,
-  priority, affinity, SchedContext and retype transition modules are all outside
-  its reverse closure and none can name a `SchedLockId` at all.  Moving the
-  identifier down was rejected — it is declared with `RunQueueLockId`,
-  `ReplenishQueueLockId` and the cross-domain order over them, which is what
-  `schedFootprintOfCores` is about — so the rule is stated once in that module's
-  header: *a resolved scheduler footprint lives beside its transition where that
-  module can name a `SchedLockId`, and here where it cannot*, the shape the
-  object domain reached at `Concurrency/Locks/LockSetTransitions.lean`.  Each is
+  `schedLockSet_setThreadCpuAffinityOnCore` sat in
+  `SeLe4n/Kernel/SyscallSchedFootprint.lean` until WS-LS LS2.5 (`v0.36.69`), a
+  fact about the import graph rather than a convention abandoned: the lock
+  identifier and the constructor `schedFootprintOfCores` were declared in
+  `Scheduler/Operations/PerCoreChooseThread.lean`, above the lifecycle,
+  priority, affinity, SchedContext and retype transition modules, so none of
+  them could build a scheduler footprint.  LS1.2 moved the identifier
+  (`LockKey`, `Concurrency/Locks/LockKey.lean`) and LS2.5 the constructor
+  (`Scheduler/SchedFootprint.lean`) below every transition module, and each
+  footprint now sits beside its transition: `Lifecycle/ResumeFootprint.lean`,
+  `SchedContext/PriorityControlFootprint.lean`,
+  `Scheduler/Operations/AffinityFootprint.lean`,
+  `SchedContext/SchedContextFootprint.lean`,
+  `Lifecycle/Operations/RetypeFootprint.lean` and
+  `IPC/CrossCore/SuspendFootprint.lean`; `SyscallSchedFootprint.lean` keeps the
+  per-syscall resolver and the ABI entry's declarations.  Each is
   `schedFootprintOfCores` of the arm's own SM8.B write set (Cut 7's rule), which
   is what moved `resumeThreadOnCoreWriteSet`, `priorityControlWriteSet` and
   `setThreadCpuAffinityWriteSet` out of the staged non-interference module; the

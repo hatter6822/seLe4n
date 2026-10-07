@@ -147,6 +147,15 @@ import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
 -- so without this line it would be outside every Tier 1 census's environment —
 -- the `v0.35.76` finding one file smaller.
 import SeLe4n.Kernel.SyscallSchedFootprint
+-- WS-LS LS2.5: the per-transition scheduler footprints, each beside its
+-- transition, and the constructor every one of them is an instance of.
+import SeLe4n.Kernel.Scheduler.SchedFootprint
+import SeLe4n.Kernel.Lifecycle.ResumeFootprint
+import SeLe4n.Kernel.SchedContext.PriorityControlFootprint
+import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
+import SeLe4n.Kernel.SchedContext.SchedContextFootprint
+import SeLe4n.Kernel.Lifecycle.Operations.RetypeFootprint
+import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
 -- WS-LS LS2.3: the syscall and suspend seams' footprint coverage — each
 -- declared footprint covers every object-store and scheduler write its seam
 -- performs (`syscallDispatchCrossCoreStep_coversWrites`,

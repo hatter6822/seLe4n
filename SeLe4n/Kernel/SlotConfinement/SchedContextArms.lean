@@ -8,13 +8,16 @@
 -/
 
 import SeLe4n.Kernel.SlotConfinement.IpcArms
+import SeLe4n.Kernel.SchedContext.SchedContextFootprint
+import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
 
 /-!
 # Per-core slot confinement — the live SchedContext arms
 
 §5h: `.schedContextBind`, `.schedContextConfigure`, `.schedContextUnbind`
 and `.tcbSetAffinity`, each bounded by the write set its production
-footprint declares (`SyscallSchedFootprint.lean`).
+footprint declares (`SchedContext/SchedContextFootprint.lean`,
+`Scheduler/Operations/AffinityFootprint.lean`).
 -/
 
 namespace SeLe4n.Kernel
@@ -37,7 +40,8 @@ open SeLe4n.Kernel.PriorityInheritance
 
 -- WS-RR RR8.12 Cut C3b-ii (`v0.35.168`): `schedContextWriteSet` and
 -- `schedContextUnbindWriteSet` moved to the production
--- `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside the footprints whose run
+-- `SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean` (via
+-- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside the footprints whose run
 -- segments they are.  Same names, same namespace.
 --
 -- The resolver they read is **deleted** rather than moved: it was a second copy
@@ -121,7 +125,8 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
 
 
 -- WS-RR RR8.12 Cut C3b-ii (`v0.35.168`): `schedContextBindWriteSet` moved to the
--- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- production `SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean` (via
+-- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside
 -- `schedLockSet_schedContextBindOnCore`.  Same name, same namespace.
 
 /-- SM8.B.2 (**the live `.schedContextBind` bound**): binding writes no core
@@ -259,7 +264,8 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
   · exact absurd hStep (by simp)
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `setThreadCpuAffinityWriteSet` moved to the
--- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- production `SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean` (via
+-- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside
 -- `schedLockSet_setThreadCpuAffinityOnCore`, for the reason the `.tcbResume`
 -- tombstone above gives.  Same name, same namespace.
 
@@ -705,7 +711,8 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
     · exact absurd hStep (by simp)
 
 -- WS-RR RR8.12 Cut C3b-ii (`v0.35.168`): `schedContextUnbindOnCoreWriteSet` moved to
--- the production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- the production `SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean` (via
+-- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside
 -- `schedLockSet_schedContextUnbindOnCore`, whose run segment IS it.  Same name,
 -- same namespace; the confinement theorem below stays here.
 

@@ -274,7 +274,8 @@ This workstream delivers, in order:
   caller's TCB (read), the CNode root (read), the SchedContext (write) and
   the bound TCB (write) — the object domain.  Their scheduler-domain
   footprints are `schedLockSet_schedContextConfigureOnCore` and siblings in
-  `SeLe4n/Kernel/SyscallSchedFootprint.lean` (`v0.35.168`), selected per id by
+  `SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean` (`v0.35.168`, beside
+  their transitions since `v0.36.69`), selected per id by
   `schedLockSetForSyscall`: configure already declares its purge's
   replenish-queue slot on the reservation's home core
   (`schedContextConfigureReplenishCores`), bind's replenish segment is empty
@@ -1762,7 +1763,8 @@ ascending by `LockId`).  **Two declared sets, not one**: since `v0.35.168` the
 object-store entries (TCBs, CNodes, SchedContexts) are a `lockSet_<τ>` in
 `Concurrency/Locks/LockSetTransitions.lean`, and the scheduler-domain slots
 (`SchedLockId.runQueue` / `.replenishQueue`, and the admission slot CB5.2 adds)
-are a `schedLockSet_<τ>OnCore` in `SeLe4n/Kernel/SyscallSchedFootprint.lean`,
+are a `schedLockSet_<τ>OnCore` beside its transition
+(`SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean` for the three),
 joined by `unifiedSchedLockSetForSyscall`.  Each row below therefore lands as
 an object set plus a scheduler-domain set; the replenish-queue, run-queue and
 admission-slot entries belong to the latter.  The existing
@@ -1833,7 +1835,7 @@ home core, and the replenish queue is scheduler state that
 from the object locks.  So every footprint of a transition that reaches one
 of those rules composes the home core's queue lock in the row that lands the
 rule, in the scheduler-domain set (`schedLockSet_…OnCore`,
-`SeLe4n/Kernel/SyscallSchedFootprint.lean`): `schedContextConfigure` and
+`SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean`): `schedContextConfigure` and
 `schedContextUnbind` already declare it at `v0.36.46`
 (`schedLockSet_schedContextConfigureOnCore` via
 `schedContextConfigureReplenishCores`, and
@@ -2883,7 +2885,7 @@ which rows moved and why:
     (at most seventeen), so D21's raise stays overtaken at nineteen;
     `SyscallId.count` / `COUNT` are **41** (ids `0..40`), so the three new ids
     are 41–43 and the count 44 (§3.2, §4.9, CB6.1, §8, §10); the
-    scheduler-domain footprints (`SyscallSchedFootprint.lean`, `v0.35.168`)
+    scheduler-domain footprints (`SchedContext/SchedContextFootprint.lean`, `v0.35.168`)
     already declare the configure purge's replenish slot, so §4.12, CB1.7
     and CB5.14 extend `schedLockSet_…OnCore` sets instead of the object sets;
     §4.9's sweep gains the six `SyscallId` tables added since

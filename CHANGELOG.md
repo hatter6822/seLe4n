@@ -1,3 +1,56 @@
+## v0.36.69 — WS-LS LS2.5: the resolved scheduler footprints move beside their transitions
+
+**Every resolved scheduler-domain footprint now sits beside the transition it
+is about, and `SyscallSchedFootprint.lean` holds only what is stated at the
+syscall level.**  The lifecycle, priority, affinity, SchedContext and retype
+arms' footprints were collected in that module because `LockKey` and the
+constructor `schedFootprintOfCores` were declared above their transition
+modules; LS1.2 moved the key, and this row moves the constructor and the
+footprints.  Names, statements and proofs are unchanged (a file move with no
+proof content, as the debt row said); the compiled kernel is untouched and
+`main_trace_smoke.expected` is unchanged.
+
+- **`SeLe4n/Kernel/Scheduler/SchedFootprint.lean`** (new): `schedCoreSegment`,
+  `schedFootprintOfCores`, its characterisation and bounds, and the SM5.H.4
+  parametric migration footprints, moved verbatim from
+  `Scheduler/Operations/PerCoreChooseThread.lean`.  Pure over `LockKey` and
+  `CoreId`; imports only `Concurrency/`, so every transition module can reach
+  it.  `PerCoreChooseThread.lean` imports it and keeps the `chooseThreadOnCore`
+  lock sets, which are its own.
+- **Six sibling footprint modules**, one per arm, the shape `ChainFootprint.lean`
+  and `CSpaceWalkFootprint.lean` already have: `Lifecycle/ResumeFootprint.lean`
+  (`.tcbResume`), `SchedContext/PriorityControlFootprint.lean`
+  (`.tcbSetPriority` / `.tcbSetMCPriority`),
+  `Scheduler/Operations/AffinityFootprint.lean` (`.tcbSetAffinity`),
+  `SchedContext/SchedContextFootprint.lean` (configure, bind, unbind and their
+  exactness halves), `Lifecycle/Operations/RetypeFootprint.lean`
+  (`.lifecycleRetype` and the destroy path's exactness halves) and
+  `IPC/CrossCore/SuspendFootprint.lean` (`.tcbSuspend`, its step frames and
+  exactness halves).  Each imports its transition's module and the frame lemmas
+  it uses; the chain is Resume → PriorityControl → SchedContext → Retype →
+  Suspend, in the order the write sets read one another.
+- **`SyscallSchedFootprint.lean`** keeps `schedLockSetForSyscall`,
+  `declaredSchedulerLockSetForAbiEntry`, `unifiedLockSetForSyscall` and
+  `declaredUnifiedLockSetForAbiEntry` (§1–§3), imports the six modules, and its
+  header says what it holds rather than why the arms could not live elsewhere.
+- **Consumers cite the new paths**: `SlotConfinement/Legs.lean`, `IpcArms.lean`,
+  `SchedContextArms.lean`, `PriorityArms.lean`, `MemoryArms.lean` and
+  `tests/SmpCancellationSuite.lean` import the module beside the transition;
+  the RR8.12 tombstones in `SlotConfinement/*` name the new home.
+  `SeLe4n.lean` imports all seven modules.
+- **Tier 3**: 109 anchors re-pointed by the identifier each names; new anchors
+  pin the seven root imports, `schedFootprintOfCores`'s home, and the negatives
+  that `PerCoreChooseThread.lean` no longer declares the constructor,
+  `SyscallSchedFootprint.lean` declares no `schedLockSet_*`, `*WriteSet` or
+  `*ReplenishCores`, and `Scheduler/SchedFootprint.lean` imports no transition
+  module.
+- **Docs**: the plan row LS2.5 records the two decisions (the constructor moves
+  first; sibling modules named for the arm); the `REGISTERED_DEBT.md` row LS1.2
+  registered is closed; `SELE4N_SPEC.md`, `WORKSTREAM_CONTEXT.md`,
+  `HIERARCHICAL_CBS_PLAN.md` and `LARGE_FILES.md` name the new paths.
+
+Refs: docs/planning/LOCK_STATE_SEPARATION_PLAN.md (row LS2.5).
+
 ## v0.36.68 — WS-LS LS2.4: the syscall and suspend seams run the bracket specification; the word-level bracket is deleted
 
 **The syscall path stops resolving, acquiring, re-resolving and unwinding a

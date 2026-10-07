@@ -6308,7 +6308,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores($|
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # `v0.35.170` (WS-RR RR8.12 Cut C3b-iv): repointed -- production now, beside the
 # resolved footprint that reads it, as its four siblings were at C3b-i..iii.
-run_check "INVARIANT" rg -n '^def suspendThreadOnCoreWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def suspendThreadOnCoreWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The leaf frames those bounds rest on: per-core confinement reads the domain
@@ -6428,12 +6428,12 @@ run_check "INVARIANT" rg -n 'delegationProof \(sid : SyscallId\) \(proof : sysca
 # occupancy bound.  All three arrive delegation-backed.
 # `v0.35.169` (WS-RR RR8.12 Cut C3b-iii): repointed -- production now, beside
 # the footprint that reads it; the SM8.B claim is unchanged.
-run_check "INVARIANT" rg -n '^def threadOccupiedCores($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def threadOccupiedCores($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
 run_check "INVARIANT" rg -n '^theorem removeRunnableFromAllCores_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
 run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
 # `v0.35.169` (WS-RR RR8.12 Cut C3b-iii): repointed -- production now, beside
 # the footprint that reads it; the SM8.B claim is unchanged.
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
 run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -6456,7 +6456,7 @@ run_negative_check "INVARIANT" rg -n 'let wasCurrent := \(st\.scheduler\.current
 # production now, beside the footprint whose run segment it is; the SM8.B
 # claim this anchor carries (the unbind declares the running core as well as
 # the home core) is unchanged and is what the definition still says.
-run_check "INVARIANT" rg -n '^def schedContextUnbindWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def schedContextUnbindWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # `runningCoreOf?` moved down so the unbind path can see it; the `export` keeps
 # `Lifecycle.Suspend.runningCoreOf?` resolving for every existing reference.
 # The reschedule-SGI accumulator (KSC-1) moved it down once more, to
@@ -11116,8 +11116,8 @@ run_check "INVARIANT" rg -n '^def queueSpliceNeighbors\?' SeLe4n/Model/Object/Ty
 # definition over the core *set*, because the arity was never the question and a
 # fourth was about to be needed.  The two retired names must not come back
 # (negatives below); this pins the survivor.
-run_check "INVARIANT" rg -n '^def schedCoreSegment($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
-run_check "INVARIANT" rg -n '^theorem mem_schedCoreSegment_iff($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^def schedCoreSegment($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem mem_schedCoreSegment_iff($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
 run_check "INVARIANT" rg -n '^def canonicalCores($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Types.lean
 run_check "INVARIANT" rg -n '^theorem allCores_pairwise_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Types.lean
 # WS-RR RR8.12: the two retired fixed-arity spellings are refused tree-wide.  A
@@ -11131,16 +11131,16 @@ run_negative_check "INVARIANT" rg -n 'sortedSchedCoreTriple' SeLe4n/ tests/
 # seven definitions and FOUR of them carried a byte-identical twenty-five-line
 # `_pairwise_le` -- one question with four answers, about to become nine as the
 # remaining syscall arms are declared.
-run_check "INVARIANT" rg -n '^def schedFootprintOfCores($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
-run_check "INVARIANT" rg -n '^theorem mem_schedFootprintOfCores_iff($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
-run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_pairwise_le($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
-run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_subset($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^def schedFootprintOfCores($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem mem_schedFootprintOfCores_iff($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_pairwise_le($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_subset($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
 # ...and the two lemmas that make "the argument is a set" a theorem rather than a
 # claim: `canonicalCores_congr` is what retires a footprint's hand-written
 # deduplication branch, and `canonicalCores_singleton` is the `Option CoreId` arm.
 run_check "INVARIANT" rg -n '^theorem canonicalCores_congr($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Types.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem canonicalCores_singleton' SeLe4n/Kernel/Concurrency/Types.lean
-run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_congr($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_congr($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
 # RELATION, not presence: each repointed footprint's own BODY must name the shared
 # constructor.  The gap is declaration-bounded (the rest of the line, then any run
 # of indented or blank lines), so it cannot reach a neighbouring definition; the
@@ -12194,17 +12194,32 @@ run_negative_check "INVARIANT" rg -n 'retypeInitiatorDrain_objects_scheduler' Se
 # WS-RR RR8.12 Cut C3b-i (`v0.35.167`): the three TCB-control arms' resolved
 # scheduler-domain footprints.
 #
-# `schedFootprintOfCores` is declared in `Scheduler/Operations/PerCoreChooseThread.lean`,
-# which imports `Lifecycle/Suspend.lean` and `IPC/Operations/Endpoint.lean` -- so
-# it sits ABOVE every module holding a lifecycle, priority or affinity
-# transition, and none of them can build a scheduler footprint at all.  These three
-# footprints therefore cannot live beside their transitions the way the IPC
-# arms' do; `SeLe4n/Kernel/SyscallSchedFootprint.lean` is where they go and its
-# header states the rule.
+# `schedFootprintOfCores` was declared in `Scheduler/Operations/PerCoreChooseThread.lean`,
+# which imports the lifecycle, SchedContext and IPC transitions, so until WS-LS
+# the arms below it could not build a scheduler footprint beside their
+# transitions and were collected in `SeLe4n/Kernel/SyscallSchedFootprint.lean`.
+# WS-LS moved the constructor to `Scheduler/SchedFootprint.lean`, below every
+# transition module, and each footprint to a module beside its transition; the
+# syscall-level module keeps only the per-syscall resolver and the ABI entry's
+# declarations.
 # ---------------------------------------------------------------------------
-# The module, and the root that imports it: a module outside every library root
-# is outside every Tier 1 census's derived domain (`v0.35.76`).
+# The modules, and the root that imports them: a module outside every library
+# root is outside every Tier 1 census's derived domain (`v0.35.76`).
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.SyscallSchedFootprint$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.SchedFootprint$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.ResumeFootprint$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.SchedContext\.PriorityControlFootprint$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.Operations\.AffinityFootprint$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.SchedContext\.SchedContextFootprint$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.Operations\.RetypeFootprint$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.IPC\.CrossCore\.SuspendFootprint$' SeLe4n.lean
+# The constructor sits below the transitions, and the syscall-level module holds
+# no per-transition resolved footprint or write set: a footprint added there
+# instead of beside its transition fails here.
+run_check "INVARIANT" rg -n '^def schedFootprintOfCores \(runCores replenishCores : List CoreId\)' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
+run_negative_check "INVARIANT" rg -n '^def (schedFootprintOfCores|schedCoreSegment)' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_negative_check "INVARIANT" rg -n '^def (schedLockSet_|[A-Za-z]+WriteSet |[A-Za-z]+ReplenishCores )' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_negative_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.(Lifecycle|SchedContext|IPC|Scheduler\.Operations)\.' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
 # The three write sets, moved out of the staged NI module so a PRODUCTION
 # footprint can read them (Cut 7's rule: a footprint IS its arm's write set).
 # Their CONTENT needs no anchor and must not get one: each footprint's
@@ -12212,56 +12227,56 @@ run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.SyscallSchedFootprint$' SeL
 # dropping a core from a write set fails to ELABORATE -- measured, at
 # `schedLockSet_resumeThreadOnCore_contains_home_runQueue_write`.  Prefer making
 # the property structural over checking it at all.
-run_check "INVARIANT" rg -n '^def resumeThreadOnCoreWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def priorityControlWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def setThreadCpuAffinityWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def resumeThreadOnCoreWriteSet \(' SeLe4n/Kernel/Lifecycle/ResumeFootprint.lean
+run_check "INVARIANT" rg -n '^def priorityControlWriteSet \(' SeLe4n/Kernel/SchedContext/PriorityControlFootprint.lean
+run_check "INVARIANT" rg -n '^def setThreadCpuAffinityWriteSet \(' SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean
 # NEGATIVE: and none of them may come back in the staged module it left, where a
 # production footprint cannot see it.  Mutation: restore any one of the three
 # definitions there as code.
 run_negative_check "INVARIANT" rg -n '^def (resumeThreadOnCoreWriteSet|priorityControlWriteSet|setThreadCpuAffinityWriteSet) ' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The three footprints.
-run_check "INVARIANT" rg -n '^def schedLockSet_resumeThreadOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedLockSet_priorityControlOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedLockSet_setThreadCpuAffinityOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_resumeThreadOnCore \(' SeLe4n/Kernel/Lifecycle/ResumeFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_priorityControlOnCore \(' SeLe4n/Kernel/SchedContext/PriorityControlFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_setThreadCpuAffinityOnCore \(' SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean
 # RELATION: each footprint IS `schedFootprintOfCores` of its arm's OWN write set
 # -- never a second resolution of the same cores, which is what lets the
 # footprint and the confinement claim name different ones.  Mutation: keep every
 # token and inline the write set's body at the footprint.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_resumeThreadOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(resumeThreadOnCoreWriteSet st vtid executingCore\) \[\]" SeLe4n/Kernel/SyscallSchedFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_priorityControlOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(priorityControlWriteSet st tid executingCore\) \[\]" SeLe4n/Kernel/SyscallSchedFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_setThreadCpuAffinityOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(setThreadCpuAffinityWriteSet st tid affinity\)(\n([ \t][^\n]*)?)*\(setThreadCpuAffinityReplenishCores st tid affinity\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_resumeThreadOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(resumeThreadOnCoreWriteSet st vtid executingCore\) \[\]" SeLe4n/Kernel/Lifecycle/ResumeFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_priorityControlOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(priorityControlWriteSet st tid executingCore\) \[\]" SeLe4n/Kernel/SchedContext/PriorityControlFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_setThreadCpuAffinityOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(setThreadCpuAffinityWriteSet st tid affinity\)(\n([ \t][^\n]*)?)*\(setThreadCpuAffinityReplenishCores st tid affinity\)" SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean'
 # RELATION: the affinity arm's replenish segment keys on the thread's BINDING,
 # not on the arm -- a migration of a thread on no reservation moves no entry, and
 # over-declaring costs the arm lock contention it does not have (SM8.D's CC-5,
 # and WS-OD OD3.5's reason for narrowing a footprint).  Mutation: keep the
 # definition and answer the two cores unconditionally.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadCpuAffinityReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match \(st\.getTcb\? tid\)\.bind \(fun tcb => tcb\.schedContextBinding\.scId\?\) with(\n([ \t][^\n]*)?)*\| none => \[\]" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadCpuAffinityReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match \(st\.getTcb\? tid\)\.bind \(fun tcb => tcb\.schedContextBinding\.scId\?\) with(\n([ \t][^\n]*)?)*\| none => \[\]" SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean'
 # The two exact halves the empty segments rest on: the live arms write no
 # replenish queue at all.
-run_check "INVARIANT" rg -n '^theorem resumeThreadOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem setPriorityOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem setMCPriorityOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context$' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem resumeThreadOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/Lifecycle/ResumeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem setPriorityOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SchedContext/PriorityControlFootprint.lean
+run_check "INVARIANT" rg -n '^theorem setMCPriorityOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SchedContext/PriorityControlFootprint.lean
+run_check "INVARIANT" rg -n '^theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context$' SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean
 # ...and the declarations' own halves, in both directions.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_resumeThreadOnCore_no_replenishQueue \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_priorityControlOnCore_no_replenishQueue \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_contains_replenishQueue_writes$' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_no_replenishQueue_of_no_context$' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_resumeThreadOnCore_no_replenishQueue \(' SeLe4n/Kernel/Lifecycle/ResumeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_priorityControlOnCore_no_replenishQueue \(' SeLe4n/Kernel/SchedContext/PriorityControlFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_contains_replenishQueue_writes$' SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_no_replenishQueue_of_no_context$' SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean
 # Coverage, at the cores the MIGRATION resolves rather than at the argument the
 # footprint resolves from: the transition's destination is
 # `determineTargetCore stSet tid` at the post-affinity-write state, and the two
 # are one value only through `setThreadCpuAffinity_determineTargetCore_eq`.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_covers_migration \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_covers_migration \(' SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean
 # RELATION: and its second conjunct names the POST-write core.  Mutation: keep
 # the theorem and state both conjuncts at the pre-state core, which elaborates.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_setThreadCpuAffinityOnCore_covers_migration[^\n]*(\n([ \t][^\n]*)?)*LockKey\.replenishQueue \(determineTargetCore stSet tid\), Concurrency\.AccessMode\.write" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_setThreadCpuAffinityOnCore_covers_migration[^\n]*(\n([ \t][^\n]*)?)*LockKey\.replenishQueue \(determineTargetCore stSet tid\), Concurrency\.AccessMode\.write" SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean'
 # The coverage relation the parametric footprint's relocation buys.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_covers_parametric \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_covers_parametric \(' SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean
 # The SM5.H.4 parametric family, production now, beside the
 # `migrateSchedContextReplenishmentLockSet` family WS-RR RR2.4 relocated out of
 # the SAME staged module twenty lines short of its own siblings.
-run_check "INVARIANT" rg -n '^def setThreadCpuAffinityWithMigrationLockSet \(' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
-run_check "INVARIANT" rg -n '^def migrateRunQueueOnAffinityChangeLockSet \(' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^def setThreadCpuAffinityWithMigrationLockSet \(' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
+run_check "INVARIANT" rg -n '^def migrateRunQueueOnAffinityChangeLockSet \(' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
 # NEGATIVE: neither may come back in the staged module.  Mutation: restore either
 # definition in `PerCoreCbs.lean` as code.
 run_negative_check "INVARIANT" rg -n '^def (setThreadCpuAffinityWithMigrationLockSet|migrateRunQueueOnAffinityChangeLockSet) ' SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean
@@ -12293,10 +12308,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^private def runAffinityFootprintScena
 # scheduler-domain footprints, in the same module and for the same reason.
 # ---------------------------------------------------------------------------
 # The four write sets, out of the staged non-interference module.
-run_check "INVARIANT" rg -n '^def schedContextWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedContextBindWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedContextUnbindWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedContextUnbindOnCoreWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def schedContextWriteSet \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^def schedContextBindWriteSet \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^def schedContextUnbindWriteSet \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^def schedContextUnbindOnCoreWriteSet \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # NEGATIVE: and none of them in the staged module they left.  Mutation: restore
 # any one of the four definitions there as code.
 run_negative_check "INVARIANT" rg -n '^def (schedContextWriteSet|schedContextBindWriteSet|schedContextUnbindWriteSet|schedContextUnbindOnCoreWriteSet) ' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -12307,42 +12322,42 @@ run_negative_check "INVARIANT" rg -n '^def (schedContextWriteSet|schedContextBin
 # `schedContextSubject?` anywhere under SeLe4n/ as code.
 run_negative_check "INVARIANT" rg -n 'schedContextSubject\?' SeLe4n/
 # The three replenish-core resolvers and the three footprints.
-run_check "INVARIANT" rg -n '^def schedContextConfigureReplenishCores \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedContextUnbindReplenishCores \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedLockSet_schedContextConfigureOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedContextConfigureWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedLockSet_schedContextBindOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedLockSet_schedContextUnbindOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def schedContextConfigureReplenishCores \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^def schedContextUnbindReplenishCores \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_schedContextConfigureOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^def schedContextConfigureWriteSet \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_schedContextBindOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_schedContextUnbindOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # RELATION: each footprint IS `schedFootprintOfCores` of its arm's OWN write set.
 # Mutation: keep every token and inline a write set's body at its footprint.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextConfigureOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextConfigureWriteSet st scObjId\)(\n([ \t][^\n]*)?)*\(schedContextConfigureReplenishCores st scObjId\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextBindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextBindWriteSet st tid\) \[\]" SeLe4n/Kernel/SyscallSchedFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextUnbindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextUnbindOnCoreWriteSet st scObjId executingCore\)(\n([ \t][^\n]*)?)*\(schedContextUnbindReplenishCores st scObjId\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextConfigureOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextConfigureWriteSet st scObjId\)(\n([ \t][^\n]*)?)*\(schedContextConfigureReplenishCores st scObjId\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextBindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextBindWriteSet st tid\) \[\]" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextUnbindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextUnbindOnCoreWriteSet st scObjId executingCore\)(\n([ \t][^\n]*)?)*\(schedContextUnbindReplenishCores st scObjId\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 # RELATION: the unbind's replenish segment has an `allCores` arm -- the ONE
 # segment in this family that is every core, and the honest declaration of
 # `purgeReplenishmentFromAllCores`, which the transition runs when the bound TCB
 # is already gone.  Mutation: keep the definition and answer the home core on
 # both arms, which is what a home-only reading would do.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| none => Concurrency\.allCores" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| none => Concurrency\.allCores" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 # RELATION: the configure's segment keys on the SCHEDCONTEXT resolving, not on
 # its being bound -- an unbound SC has no home, `schedContextReplenishHome`
 # answers the boot core, and the purge still runs there.  Mutation: key it on
 # the bound thread, which would drop the lock the purge takes.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContext\? \(SeLe4n\.SchedContextId\.ofObjId scObjId\) with(\n([ \t][^\n]*)?)*SchedContextOps\.schedContextReplenishHome st sc" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContext\? \(SeLe4n\.SchedContextId\.ofObjId scObjId\) with(\n([ \t][^\n]*)?)*SchedContextOps\.schedContextReplenishHome st sc" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 # The exactness halves -- what each arm writes, against what it declares.
-run_check "INVARIANT" rg -n '^theorem schedContextBind_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedContextConfigureBoundPropagate_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedContextUnbind_replenishQueueOnCore_ne_of_tcb \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_tcb \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBind_replenishQueueOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedContextConfigureBoundPropagate_replenishQueueOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedContextUnbind_replenishQueueOnCore_ne_of_tcb \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_tcb \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # ...and the declarations' own halves, the sweep arm's among them.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextBindOnCore_no_replenishQueue \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextConfigureOnCore_contains_replenishQueue_write$' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_contains_replenishQueue_write$' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_contains_every_replenishQueue_write_of_sweep$' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextBindOnCore_no_replenishQueue \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextConfigureOnCore_contains_replenishQueue_write$' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_contains_replenishQueue_write$' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_contains_every_replenishQueue_write_of_sweep$' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # The relation the one-core configure footprint rests on: purge and re-bucket
 # land on the same core whenever the SC is bound.
-run_check "INVARIANT" rg -n '^theorem schedContextConfigureReplenishCores_eq_writeSet_of_bound \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedContextConfigureReplenishCores_eq_writeSet_of_bound \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # The witness and its runner call.
 run_check "INVARIANT" rg -n '^private def runSchedContextFootprintScenarios : IO Unit' tests/SmpCbsSuite.lean
 run_check "INVARIANT" rg -n '^  runSchedContextFootprintScenarios$' tests/SmpCbsSuite.lean
@@ -12356,45 +12371,45 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^private def runSchedContextFootprintS
 # scheduler-domain footprint.
 # ---------------------------------------------------------------------------
 # The relocated resolver and write sets.
-run_check "INVARIANT" rg -n '^def threadOccupiedCores \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSetOf \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def threadOccupiedCores \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSetOf \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSet \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
 # NEGATIVE: and none of the three in the staged module they left.  Mutation:
 # restore any one of them there as code.
 run_negative_check "INVARIANT" rg -n '^def (threadOccupiedCores|lifecycleRetypeWriteSetOf|lifecycleRetypeWriteSet) ' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The two step resolvers, the arm's segment and the footprint.
-run_check "INVARIANT" rg -n '^def cancelDonationArmReplenishCores \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def releaseSchedContextBindingReplenishCores \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeReplenishCoresOf \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeReplenishCores \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def schedLockSet_lifecycleRetypeOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def cancelDonationArmReplenishCores \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^def releaseSchedContextBindingReplenishCores \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeReplenishCoresOf \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeReplenishCores \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_lifecycleRetypeOnCore \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
 # RELATION: the footprint IS `schedFootprintOfCores` of the arm's own write set
 # and of the arm's own replenish segment.  Mutation: keep every token and give
 # it the empty replenish segment, which is what SM8.B's write set alone says.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_lifecycleRetypeOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(lifecycleRetypeWriteSet st target\)(\n([ \t][^\n]*)?)*\(lifecycleRetypeReplenishCores st target\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_lifecycleRetypeOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(lifecycleRetypeWriteSet st target\)(\n([ \t][^\n]*)?)*\(lifecycleRetypeReplenishCores st target\)" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
 # RELATION: the arm's segment is keyed on the OBJECT KIND, with exactly two kinds
 # naming a core -- the TCB target's donation arm and the SchedContext target's
 # release -- because those are the cleanup's only two reservation steps.
 # Mutation: keep the definition and give the `.schedContext` arm the empty list.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeReplenishCoresOf[^\n]*(\n([ \t][^\n]*)?)*\| \.tcb tcb => cancelDonationArmReplenishCores st tcb\.tid tcb(\n([ \t][^\n]*)?)*\| \.schedContext sc => releaseSchedContextBindingReplenishCores st sc" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeReplenishCoresOf[^\n]*(\n([ \t][^\n]*)?)*\| \.tcb tcb => cancelDonationArmReplenishCores st tcb\.tid tcb(\n([ \t][^\n]*)?)*\| \.schedContext sc => releaseSchedContextBindingReplenishCores st sc" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
 # RELATION: the release's segment has an `allCores` arm, for the reason the
 # unbind's does -- with the bound TCB gone there is no home core to name.
 # Mutation: answer the home core on both arms.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBindingReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| none => Concurrency\.allCores" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBindingReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| none => Concurrency\.allCores" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
 # The membership halves, the sweep arm's and the no-scheduling-effect one among
 # them.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_occupied_runQueue_write$' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_bound_replenishQueue_write$' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_donated_replenishQueue_writes$' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_release_replenishQueue_write$' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_every_replenishQueue_write_of_sweep$' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_empty_of_other \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_occupied_runQueue_write$' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_bound_replenishQueue_write$' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_donated_replenishQueue_writes$' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_release_replenishQueue_write$' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_every_replenishQueue_write_of_sweep$' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_empty_of_other \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
 # The exactness halves -- what the destroy path writes, per step and whole.
-run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_replenishQueueOnCore_ne \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
 # The witness.  Its runner call needs no anchor of its own: the WS-OD
 # contiguous-run anchor over this suite's runner list names every scenario in
 # order and was extended with it, and a sibling positive would be the
@@ -18117,7 +18132,7 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreLockSet_covers_migr
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCoreLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(placed\.toList \+\+ holderPlaced\.toList\) reclaimReplenish" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "schedFootprintOfCores \(placed\.toList \+\+ holderPlaced\.toList\) \[\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingReplenishCores \(st : SystemState\) \(victim : SeLe4n\.ThreadId\)[^\n]*(\n([ \t][^\n]*)?)*let torn := Lifecycle\.Suspend\.cancelIpcBlocking st victim tcb(\n([ \t][^\n]*)?)*let fromCore := determineTargetCore st holder(\n([ \t][^\n]*)?)*\[fromCore, replenishHomeOfSchedContext torn scId fromCore\]" SeLe4n/Kernel/Lifecycle/Suspend.lean'
-run_negative_check "INVARIANT" rg -n '^def cancelIpcBlockingReplenishCores' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_negative_check "INVARIANT" rg -n '^def cancelIpcBlockingReplenishCores' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
 # The same shape one level down, found by sweeping rather than by a review: the
 # pipeline's G3 spells `cancelDonationOnCore`'s three-way match out again, so a
 # step added to that dispatcher would not reach the live path either.  The two
@@ -20862,46 +20877,46 @@ run_negative_check "INVARIANT" rg -F -n 'for stage in body.split("|"):' scripts/
 # resolver, each read at the state its own step runs on -- the `endpointReplyRecvOnCore`
 # discipline, because neither is pre-state computable: the reclaim rebinds the
 # victim, so G3's arm selector reads a binding the pre-state does not carry.
-run_check "INVARIANT" rg -n '^def schedLockSet_suspendThreadOnCore \(st : SystemState\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_suspendThreadOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(suspendThreadOnCoreWriteSet st vtid executingCore\)(\n([ \t][^\n]*)?)*\(suspendThreadReplenishCores st vtid executingCore\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
-run_check "INVARIANT" rg -n '^def suspendThreadReplenishCores \(st : SystemState\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_suspendThreadOnCore \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_suspendThreadOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(suspendThreadOnCoreWriteSet st vtid executingCore\)(\n([ \t][^\n]*)?)*\(suspendThreadReplenishCores st vtid executingCore\)" SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean'
+run_check "INVARIANT" rg -n '^def suspendThreadReplenishCores \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
 # The two halves of the segment, and that each is read at its own state: the
 # reclaim's at the pre-state (the resolver reads the torn state itself), G3's at
 # the post-revert state `stG2b` with the purge core from the PRE-state, which is
 # where the pipeline captures it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*(\n([ \t][^\n]*)?)*cancelIpcBlockingReplenishCores st vtid\.val tcb(\n([ \t][^\n]*)?)*cancelDonationArmReplenishCoresAt stG2b vtid\.val" SeLe4n/Kernel/SyscallSchedFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\(determineTargetCore st vtid\.val\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*(\n([ \t][^\n]*)?)*cancelIpcBlockingReplenishCores st vtid\.val tcb(\n([ \t][^\n]*)?)*cancelDonationArmReplenishCoresAt stG2b vtid\.val" SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\(determineTargetCore st vtid\.val\)" SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean'
 # A pre-state reading of G3's arm would be a proxy for a binding the reclaim
 # rewrites (WS-OD OD5.3), so the segment must not resolve it at `st`.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*(\n([ \t][^\n]*)?)*cancelDonationArmReplenishCoresAt st vtid\.val" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*(\n([ \t][^\n]*)?)*cancelDonationArmReplenishCoresAt st vtid\.val" SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean'
 # Membership, per written core.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_of_inactive($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_executing_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_placed_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_covers_parametric_runQueue($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_of_inactive($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_executing_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_placed_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_covers_parametric_runQueue($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
 #
 # The EXACTNESS half -- the pair a resolved footprint owes.  The pipeline has
 # seven stages and exactly two of them move a reservation; every other stage
 # frames every replenish queue, which is what makes the segment's two halves the
 # whole of it.
-run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingReclaimed_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_replenishQueueOnCore($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^@\[simp\] theorem descheduleAt_replenishQueueOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingReclaimed_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
+run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_replenishQueueOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem descheduleAt_replenishQueueOnCore' SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean
 # ...and it is stated over the whole arm rather than over a component: a claim
 # about `cancelIpcBlockingReclaimed` alone would be a claim about a prefix of
 # the transition the live `.tcbSuspend` runs.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c . suspendThreadReplenishCores st vtid executingCore[^\n]*(\n([ \t][^\n]*)?)*Lifecycle\.Suspend\.suspendThreadOnCore st vtid executingCore = \.ok \(st., sgi\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c . suspendThreadReplenishCores st vtid executingCore[^\n]*(\n([ \t][^\n]*)?)*Lifecycle\.Suspend\.suspendThreadOnCore st vtid executingCore = \.ok \(st., sgi\)" SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean'
 #
 # The donation-arm frame has ONE owner, at an explicit purge core, because the
 # two askers hand it different cores: the destroy path reads it off the state it
 # runs on, and the suspend's G3 was handed it from the PRE-G2 state.  A frame
 # stated at `determineTargetCore st tid` covers the first and not the second.
-run_check "INVARIANT" rg -n '^theorem donationArmAt_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*donationArmAt_replenishQueueOnCore_ne st st. tid tcb \(determineTargetCore st tid\) c hne h" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" rg -n '^theorem donationArmAt_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*donationArmAt_replenishQueueOnCore_ne st st. tid tcb \(determineTargetCore st tid\) c hne h" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
 #
 # The witness computes both retired parametric readings beside the live ones, on
 # a state the live operations reach: the reservation on the holder's home core,
@@ -21161,15 +21176,15 @@ run_check "INVARIANT" rg -n '^theorem syscallCommitTail_coversWrites($|[ ({:\[\]
 # the bridge, because each arm's `_ne` frame is keyed on the FOOTPRINT's own
 # segment: a resolution-keyed frame answers a different question that every
 # consumer would then have to case-split to reach.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextConfigure_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ schedContextConfigureReplenishCores st vScId\.val" SeLe4n/Kernel/SyscallSchedFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextUnbindOnCore_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ schedContextUnbindReplenishCores st vScId\.val" SeLe4n/Kernel/SyscallSchedFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ setThreadCpuAffinityReplenishCores st tid affinity" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextConfigure_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ schedContextConfigureReplenishCores st vScId\.val" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextUnbindOnCore_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ schedContextUnbindReplenishCores st vScId\.val" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ setThreadCpuAffinityReplenishCores st tid affinity" SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean'
 # ...and the resolution-keyed form keeps its own name, so the plain `_ne` cannot
 # silently become the narrower claim.  The rename is the point: every consumer
 # wants the footprint-keyed one, and a family where `_ne` means two things at two
 # arms is the shape a coverage proof gets wrong without noticing.
-run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextConfigure_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ≠ SchedContextOps\.schedContextReplenishHome" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextConfigure_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ≠ SchedContextOps\.schedContextReplenishHome" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 # The three coverage theorems.
 run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextConfigureOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
@@ -21315,11 +21330,11 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_lifecyc
 # The arm's replenish frame, keyed on the footprint's own PRE-STATE segment — it
 # has to be the pre-state, since the object the retype destroys is gone from the
 # post-state and a post-state reading would name the empty set.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ lifecycleRetypeReplenishCores st target" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ lifecycleRetypeReplenishCores st target" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
 # ...descending through the two cached-structure layers by their own frames rather
 # than by a second case analysis of the arm.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*Architecture.withIcacheBroadcast_frame" SeLe4n/Kernel/SyscallSchedFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*retypeInitiatorDrain_scheduler" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*Architecture.withIcacheBroadcast_frame" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*retypeInitiatorDrain_scheduler" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
 # The two frames the drain half needs, in PRODUCTION beside the wrapper they frame
 # rather than private to the staged non-interference module that first needed them.
 run_check "INVARIANT" rg -n '^@\[simp\] theorem retypeInitiatorDrain_scheduler' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean

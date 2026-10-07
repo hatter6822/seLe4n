@@ -14,7 +14,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
-import SeLe4n.Kernel.SyscallSchedFootprint
+import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
 
 /-!
 # Per-core slot confinement — the primitives and the IPC legs

@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.SlotConfinement.SchedContextArms
+import SeLe4n.Kernel.SchedContext.PriorityControlFootprint
 
 /-!
 # Per-core slot confinement — the live priority-control arms
@@ -164,7 +165,8 @@ theorem applyPriorityChangeOnCore_confinedToCores (base st' : SystemState)
   · exact Or.inl (Or.inr hc)
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `priorityControlWriteSet` moved to the
--- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- production `SeLe4n/Kernel/SchedContext/PriorityControlFootprint.lean` (via
+-- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside
 -- `schedLockSet_priorityControlOnCore`, for the reason the `.tcbResume`
 -- tombstone above gives.  Same name, same namespace.
 
