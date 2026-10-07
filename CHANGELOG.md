@@ -16,21 +16,20 @@ context that moved its bound thread's domain therefore poked no remote core.
   equations state the arm (`handleRescheduleSgiOnCore_drops_when_none`,
   `handleRescheduleSgiOnCore_eq_switch_of_outside`).
 
-- **The executing core consumes its own flag.**  `rescheduleSgisFromFlags`
-  never names the executing core, and the seams' local reschedule ran only on
-  a vacated core, so a flag a step raised on the core it ran on (a caller that
-  moved its own domain, dropped its own priority, or enqueued a thread that
-  outranks it) stayed up until that core's next scheduling point, and while
-  up it swallowed the `false → true` edge later remote writers need.
-  `localSuccessorNeededFrom` now also fires when the executing core's flag is
-  up, so the syscall, fault and suspend seams run the receiver inline
-  (`scheduleLocalSuccessor_of_pending`); `scheduleLocalSuccessor_of_post_running`
-  takes the flag-down hypothesis and `localSuccessorNeeded_post_none` becomes
-  `localSuccessorNeeded_vacated_or_raised`.  The guard fires on the flag's
-  rising edge (the flag captured before the step was down): a flag already up
-  at entry belongs to an outstanding SGI, whose handler runs under the core's
-  own lock.  Tier 2 `reschedule_pending_suite` §2.11 covers a thread that
-  moves its own domain.
+- **The executing core pokes itself.**  `rescheduleSgisFromFlags` excluded
+  the executing core and the seams' local reschedule ran only on a vacated
+  core, so a flag a step raised on the core it ran on (a caller that moved its
+  own domain, dropped its own priority, or queued a thread that outranks it)
+  stayed up until that core's next scheduling point, and while up it
+  swallowed the `false → true` edge later remote writers need.  The list now
+  names every core whose flag rose, the executing core included: the core
+  takes its own `.reschedule` SGI as the entry returns, and the reschedule
+  entry runs the receiver under the core's own lock.  Running it inline was
+  tried and dropped: a key writer's lock footprint (configure, bind) holds the
+  thread's home core, not necessarily the core it runs on.
+  `rescheduleSgisFromFlags` loses its executing-core argument and
+  `rescheduleSgisFromFlags_not_execCore` is retired.  Tier 2
+  `reschedule_pending_suite` §2.11 covers a thread that moves its own domain.
 
 - **An empty core resumes the idle loop.**  `restoreTargetOnCore` named
   `.none` for a core with no current thread, the HAL installed nothing, and

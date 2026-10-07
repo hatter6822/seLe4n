@@ -200,11 +200,11 @@ def faultEntryDeliver (lctx : LabelingContext) (st : SystemState) (f : Fault)
       -- here).  There is no thread to deliver for, but the core must be handed
       -- something to resume, or the trap layer halts it.
       let st' := PriorityInheritance.dispatchVacatedCore st c
-      (rescheduleSgisFromFlags pending0 st'.scheduler.reschedulePending c, st')
+      (rescheduleSgisFromFlags pending0 st'.scheduler.reschedulePending, st')
   | some tid =>
       let st' := faultDeliveredState lctx st f ectx w c tid
-      let st'' := PriorityInheritance.scheduleLocalSuccessorFrom (some tid) (pending0.get c) st' c
-      (rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending c, st'')
+      let st'' := PriorityInheritance.scheduleLocalSuccessorFrom (some tid) st' c
+      (rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending, st'')
 
 /-- WS-RR RR4.23: the verified step the fault entry commits — classify, spill
 the trap frame's window, build the fault context from the spilled registers,

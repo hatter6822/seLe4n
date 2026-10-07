@@ -4324,7 +4324,7 @@ run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st co
 # its use in the shared fault delivery and in the FP/SIMD step, the theorems
 # about both, and a negative refusing the retired inert arm of the delivery.
 run_check "INVARIANT" rg -n '^def dispatchVacatedCore \(st : SystemState\) \(c : CoreId\) : SystemState :=$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n -U '^  \| none =>\n([ \t]*(--[^\n]*)?\n)*      let st. := PriorityInheritance\.dispatchVacatedCore st c\n      \(rescheduleSgisFromFlags pending0 st.\.scheduler\.reschedulePending c, st.\)$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^  \| none =>\n([ \t]*(--[^\n]*)?\n)*      let st. := PriorityInheritance\.dispatchVacatedCore st c\n      \(rescheduleSgisFromFlags pending0 st.\.scheduler\.reschedulePending, st.\)$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^      \(res\.1, PriorityInheritance\.dispatchVacatedCore res\.2 c\)$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^theorem faultEntryDeliver_vacated($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryStep_vacated($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
@@ -4349,7 +4349,7 @@ run_check "INVARIANT" rg -n 'switching away then saves every register the thread
 # from, before the local reschedule; every entry hands the HAL the context the
 # committed state names, gated on the context-restore seam; the HAL commits it
 # into the in-flight frame with SPSR sanitised to EL0t.
-run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? \(pending0\.get execCore\) stR\n          execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? stR execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  let staged := PriorityInheritance\.settleResidencyOnCore\n    \(Architecture\.stageCallerReturn unwound unwound execCore outcome\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  \| Except\.error e =>\n([ \t]*(--[^\n]*)?\n)*      absurd hD \(Platform\.FFI\.syscallDispatchFromAbi_ne_error ' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
@@ -4981,7 +4981,7 @@ run_check "INVARIANT" rg -n '^theorem faultContextOfThread_writeFaultRegistersTo
 run_check "INVARIANT" rg -n '^theorem ofRegisterFile_spill($|[ ({:\[\]])' SeLe4n/Model/Fault.lean
 # …and the cross-core pokes are read off the reschedule flags the step raised, as the syscall
 # seam derives them (KSC-1: from the reschedule flags), not read off the single SGI the Call chain surfaces.
-run_check "INVARIANT" rg -n 'rescheduleSgisFromFlags pending0 st..\.scheduler\.reschedulePending c' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n 'rescheduleSgisFromFlags pending0 st..\.scheduler\.reschedulePending, st..\)$' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n '\.sgi\.toList' SeLe4n/Kernel/FaultEntry.lean
 # v0.36.47 audit: the Rust seam passes three words (the core and the trap's
 # syndrome), and the window is read once from the published in-flight frame on
@@ -22093,7 +22093,7 @@ run_check "INVARIANT" rg -n '^theorem modifyTcb_preserves_badgeWellFormed$' SeLe
 run_check "INVARIANT" bash -lc 'rg -U -n "^def handleRescheduleSgiOnCore \(st : SystemState\) \(c : CoreId\) :[^\n]*(\n([ \t][^\n]*)?)*  \| \.ok none =>\n( *\n)*      if currentOutsideActiveDomainOnCore st c then\n        \.ok \(\(dropCurrentOnCore st c\)\.clearReschedulePendingOnCore c\)\n      else \.ok \(st\.clearReschedulePendingOnCore c\)\n  \| \.ok \(some tid\) =>\n( *\n)*      if currentOutsideActiveDomainOnCore st c \|\| candidateOutranksCurrentOnCore st c tid then\n        match switchToThreadOnCore st c tid with\n        \| \.ok st. => \.ok \(st.\.clearReschedulePendingOnCore c\)\n        \| \.error e => \.error e\n      else \.ok \(st\.clearReschedulePendingOnCore c\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def scheduleEffectiveOnCore \(st : SystemState\) \(c : CoreId\) :[^\n]*(\n([ \t][^\n]*)?)*      \.ok \(\(idleFallbackOnCore \(saveOutgoingContextOnCore st c\) c\)\.clearReschedulePendingOnCore c\)(\n([ \t][^\n]*)?)*            \.ok \{ stRestored with scheduler := \(stRestored\.scheduler\.setCurrentOnCore c \(some tid\)\)\n              \|>\.clearReschedulePendingOnCore c \}" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" rg -n '^def markKeyChangeFor \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
-run_check "INVARIANT" rg -n '^def rescheduleSgisFromFlags \(pre post : Vector Bool numCores\) \(e : CoreId\) :' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
+run_check "INVARIANT" rg -n '^def rescheduleSgisFromFlags \(pre post : Vector Bool numCores\) :' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
 run_check "INVARIANT" rg -n '^theorem mem_rescheduleSgisFromFlags_iff($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
 run_check "INVARIANT" rg -n '^name = "reschedule_pending_suite"$' lakefile.toml
 run_check "INVARIANT" rg -n '^run_check_with_timeout "TRACE" lake exe reschedule_pending_suite$' scripts/test_tier2_negative.sh

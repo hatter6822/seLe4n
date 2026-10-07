@@ -31,8 +31,8 @@ operations:
   hook is exact at O(1) and never keeps the pre-state alive.
 
 * `rescheduleSgisFromFlags` — the `.reschedule` SGIs a step owes, read off a
-  captured pre-dispatch flag vector and the post-state's: one per remote core
-  whose flag went `false → true`.  **Not yet the live decider**: in this slice
+  captured pre-dispatch flag vector and the post-state's: one per core (the
+  executing core included) whose flag went `false → true`.  **Not yet the live decider**: in this slice
   the syscall commit still runs `computeCrossCoreSgis` (the whole-object-index
   diff), and the Tier 2 `reschedule_pending_suite` pins this list against the
   diff on every SMP scenario; the seam switch is the row's PR C and the
@@ -150,14 +150,25 @@ theorem markKeyChangeFrom_extract_frame {F : Type} (extract : SystemState → F)
   · exact markReschedulePendingWhere_extract_frame extract h post _ allCores
 
 /-- The `.reschedule` SGIs a step owes, from the flag vector captured before
-dispatch and the committed state's: one per core other than the executing core
-whose flag went `false → true`.  A core already pending at the step's start is
-not re-poked (its SGI is outstanding).  The list covers the whole-index diff
-(every core the diff names is named here or was already pending) and may name
-more: the flags over-approximate, costing at most a spurious reschedule IPI. -/
-def rescheduleSgisFromFlags (pre post : Vector Bool numCores) (e : CoreId) :
+dispatch and the committed state's: one per core whose flag went
+`false → true`.  A core already pending at the step's start is not re-poked
+(its SGI is outstanding).  The list covers the whole-index diff (every core the
+diff names is named here or was already pending) and may name more: the flags
+over-approximate, costing at most a spurious reschedule IPI.
+
+**The executing core included.**  A flag the step raised on its own core and
+left up (the commit's local reschedule clears it on a vacated core) is a
+scheduling point the core owes itself: a writer weakened the caller's own key
+or queued a thread that may outrank it.  The core interrupts itself, and the
+SGI is taken as the entry returns, where the reschedule entry runs the
+receiver under the core's own lock.  Running the receiver inline instead would
+write the core's run queue and current slot under a step whose lock footprint
+need not cover them; leaving the flag up would hold the reschedule to the
+core's next scheduling point and swallow the `false → true` edge a later remote
+writer needs. -/
+def rescheduleSgisFromFlags (pre post : Vector Bool numCores) :
     List (CoreId × SgiKind) :=
-  (allCores.filter fun c => c != e && !pre.get c && post.get c).map
+  (allCores.filter fun c => !pre.get c && post.get c).map
     fun c => (c, SgiKind.reschedule)
 
 /-- The flag vector a seam captures before its transition.  A call rather than
@@ -168,39 +179,33 @@ transition to copy it instead of updating it in place; a call is not sunk. -/
   st.scheduler.reschedulePending
 
 /-- Membership in the flag-derived list, spelled out. -/
-theorem mem_rescheduleSgisFromFlags_iff (pre post : Vector Bool numCores) (e c : CoreId)
+theorem mem_rescheduleSgisFromFlags_iff (pre post : Vector Bool numCores) (c : CoreId)
     (k : SgiKind) :
-    (c, k) ∈ rescheduleSgisFromFlags pre post e ↔
-      k = SgiKind.reschedule ∧ c ≠ e ∧ pre.get c = false ∧ post.get c = true := by
+    (c, k) ∈ rescheduleSgisFromFlags pre post ↔
+      k = SgiKind.reschedule ∧ pre.get c = false ∧ post.get c = true := by
   unfold rescheduleSgisFromFlags
   simp only [List.mem_map, List.mem_filter, Concurrency.mem_allCores, true_and, Prod.mk.injEq]
   constructor
   · intro h
     obtain ⟨c', hc', hEq⟩ := h
     obtain ⟨rfl, rfl⟩ := hEq
-    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true'] at hc'
-    exact ⟨rfl, hc'.1.1, hc'.1.2, hc'.2⟩
-  · rintro ⟨rfl, hne, hpre, hpost⟩
-    exact ⟨c, by simp [hne, hpre, hpost], rfl, rfl⟩
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc'
+    exact ⟨rfl, hc'.1, hc'.2⟩
+  · rintro ⟨rfl, hpre, hpost⟩
+    exact ⟨c, by simp [hpre, hpost], rfl, rfl⟩
 
 /-- Every flag-derived SGI is a `.reschedule` (the counterpart of
 `computeCrossCoreSgis_all_reschedule`). -/
-theorem rescheduleSgisFromFlags_all_reschedule (pre post : Vector Bool numCores) (e : CoreId)
-    (p : CoreId × SgiKind) (h : p ∈ rescheduleSgisFromFlags pre post e) :
+theorem rescheduleSgisFromFlags_all_reschedule (pre post : Vector Bool numCores)
+    (p : CoreId × SgiKind) (h : p ∈ rescheduleSgisFromFlags pre post) :
     p.2 = SgiKind.reschedule := by
   obtain ⟨c, k⟩ := p
-  exact ((mem_rescheduleSgisFromFlags_iff pre post e c k).mp h).1
-
-/-- The executing core never pokes itself (the counterpart of
-`currentSlotChangeSgis_not_execCore`). -/
-theorem rescheduleSgisFromFlags_not_execCore (pre post : Vector Bool numCores) (e c : CoreId)
-    (k : SgiKind) (h : (c, k) ∈ rescheduleSgisFromFlags pre post e) : c ≠ e :=
-  ((mem_rescheduleSgisFromFlags_iff pre post e c k).mp h).2.1
+  exact ((mem_rescheduleSgisFromFlags_iff pre post c k).mp h).1
 
 /-- A flag that was already set surfaces nothing — the list names only the
 cores this step raised. -/
-theorem rescheduleSgisFromFlags_nil_of_eq (v : Vector Bool numCores) (e : CoreId) :
-    rescheduleSgisFromFlags v v e = [] := by
+theorem rescheduleSgisFromFlags_nil_of_eq (v : Vector Bool numCores) :
+    rescheduleSgisFromFlags v v = [] := by
   unfold rescheduleSgisFromFlags
   rw [List.map_eq_nil_iff, List.filter_eq_nil_iff]
   intro c _

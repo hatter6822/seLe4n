@@ -228,7 +228,7 @@ theorem faultEntryDeliver_stepCovers (lctx : LabelingContext) (st : SystemState)
   · rename_i tid _
     obtain ⟨hD, hDInv⟩ := faultDeliveredState_stepCovers c (lctx := lctx) (st := st) (f := f)
       (ectx := ectx) (w := w) (c := c) (tid := tid) hInv
-    exact stepCovers_trans hD (scheduleLocalSuccessorFrom_stepCovers c (some tid) _ _ hDInv)
+    exact stepCovers_trans hD (scheduleLocalSuccessorFrom_stepCovers c (some tid) _ hDInv)
 
 /-- **The syscall seam covers** on the executing core: the ABI dispatch, the
 caller's return staging, the local scheduling point and the residency
@@ -248,8 +248,7 @@ theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : Cor
         (Architecture.stageCallerReturn st st' e outcome) e) e) := by
   obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hBi hPlaced hDet h
   exact stepCovers_trans hD
-    (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e)
-      (st.scheduler.reschedulePendingOnCore e) st' outcome hDInv)
+    (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv)
 
 /-- **The suspend seam covers** on the executing core: the suspend, then the
 core's own scheduling point. -/
@@ -259,8 +258,7 @@ theorem suspendThenScheduleLocal_stepCovers {s s' : SystemState} {vtid : SeLe4n.
     stepCovers e s (PriorityInheritance.scheduleLocalSuccessor s s' e) := by
   obtain ⟨hS, hSInv⟩ := suspendThreadOnCore_stepCovers s s' vtid e sgi hInv h
   exact stepCovers_trans hS
-    (scheduleLocalSuccessorFrom_stepCovers e (s.scheduler.currentOnCore e)
-      (s.scheduler.reschedulePendingOnCore e) s' hSInv)
+    (scheduleLocalSuccessorFrom_stepCovers e (s.scheduler.currentOnCore e) s' hSInv)
 
 /-! ### The seams fire from the flags, and the flags cover the diff
 
@@ -275,7 +273,7 @@ theorem faultEntryDeliver_sgis_eq_flags (lctx : LabelingContext) (st : SystemSta
     (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId) :
     (faultEntryDeliver lctx st f ectx w c).1 =
       rescheduleSgisFromFlags st.scheduler.reschedulePending
-        (faultEntryDeliver lctx st f ectx w c).2.scheduler.reschedulePending c := by
+        (faultEntryDeliver lctx st f ectx w c).2.scheduler.reschedulePending := by
   unfold faultEntryDeliver
   split <;> rfl
 

@@ -258,19 +258,13 @@ theorem computeCrossCoreSgis_mem_flags_of_covers {e : CoreId} {pre post : System
     {c : CoreId} {k : SgiKind} (hMem : (c, k) ∈ computeCrossCoreSgis pre post e) :
     (c, SgiKind.reschedule) ∈
         rescheduleSgisFromFlags pre.scheduler.reschedulePending
-          post.scheduler.reschedulePending e ∨
+          post.scheduler.reschedulePending ∨
       pre.scheduler.reschedulePendingOnCore c = true := by
   have hFlag := computeCrossCoreSgis_core_flagged_of_covers hId hCov hMem
-  have hne : c ≠ e := by
-    have hSub := Concurrency.dedupCrossCoreSgis_subset _ (c, k) hMem
-    rcases List.mem_append.mp hSub with hObj | hSlot
-    · obtain ⟨oid, -, hBody⟩ := List.mem_filterMap.mp hObj
-      exact (crossCoreSgiBody_some_staled (hId oid) hBody).1
-    · exact (currentSlotChangeSgis_staled hSlot).1
   cases hPre : pre.scheduler.reschedulePendingOnCore c
   · left
     rw [mem_rescheduleSgisFromFlags_iff]
-    exact ⟨rfl, hne, hPre, hFlag⟩
+    exact ⟨rfl, hPre, hFlag⟩
   · exact Or.inr rfl
 
 /-! ### Key frames -/

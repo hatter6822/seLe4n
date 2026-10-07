@@ -499,12 +499,11 @@ def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
       -- still resident on another core is deferred, and the one resumed here
       -- becomes this core's resident thread (`settleResidencyOnCore`).
       let st'' := PriorityInheritance.settleResidencyOnCore
-        (PriorityInheritance.scheduleLocalSuccessorFrom caller? (pending0.get execCore) stR
-          execCore) execCore
+        (PriorityInheritance.scheduleLocalSuccessorFrom caller? stR execCore) execCore
       -- KSC-1: a remote core is poked when the step raised its reschedule flag
       -- (`syscallDispatchCrossCoreStep_sgis_cover_diff`: the flags cover the old
       -- whole-index diff, which stays as the specification).
-      ((outcome, rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending execCore,
+      ((outcome, rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending,
         Architecture.shootdownChangedTargetsFrom tlb0 st'',
         Architecture.shootdownPostedOpsFrom tlb0 st'',
         Architecture.shootdownRoundWindowFrom tlb0 st'',
@@ -530,12 +529,10 @@ theorem syscallDispatchCrossCoreStep_of_ok {ctx : LabelingContext} {execCore : C
         ipcBufferAddr elr spsr spEl0 x30 st =
       let st'' := PriorityInheritance.settleResidencyOnCore
         (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore execCore)
-          (st.scheduler.reschedulePendingOnCore execCore)
           (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore execCore) st' execCore
             outcome) execCore) execCore
       ((outcome,
-        rescheduleSgisFromFlags st.scheduler.reschedulePending st''.scheduler.reschedulePending
-          execCore,
+        rescheduleSgisFromFlags st.scheduler.reschedulePending st''.scheduler.reschedulePending,
         Architecture.shootdownChangedTargetsFrom st.tlbShootdown st'',
         Architecture.shootdownPostedOpsFrom st.tlbShootdown st'',
         Architecture.shootdownRoundWindowFrom st.tlbShootdown st'',
@@ -812,9 +809,8 @@ discharged inertly with an error frame.
 
 **WS-SM SM8.B (PR #861 review round 17): the local half of the reschedule.**
 `PriorityInheritance.scheduleLocalSuccessor` runs *inside* the atomic step,
-before the diffs are taken, and runs this core's reschedule decision when the
-transition vacated it or raised its own reschedule flag (`localSuccessorNeeded`,
-`scheduleLocalSuccessor_of_pending`).  It is the inline dual of
+before the diffs are taken, and dispatches a successor when the transition
+vacated this core (`localSuccessorNeeded`).  It is the inline dual of
 `currentSlotChangeSgis`, which pokes every *remote* core whose `current` slot
 changed and excludes the executing core by construction — correctly, since a
 core does not interrupt itself, it runs the handler inline.  That inline half
@@ -1076,8 +1072,7 @@ def suspendThreadCrossCoreStep (tid : UInt64) (execCore : CoreId) (st : SystemSt
         -- too, and is *self-disabling* on this path —
         -- `suspendThreadOnCore` runs its own scheduling point
         -- (`suspendRescheduleOnCore`), so where it dispatched a successor the
-        -- post-state slot is populated and the reschedule lowered this core's
-        -- flag, so `localSuccessorNeeded` is false
+        -- post-state slot is populated and `localSuccessorNeeded` is false
         -- (`scheduleLocalSuccessor_of_post_running`).  The two mechanisms
         -- cannot both dispatch.  It is applied anyway rather than reasoned
         -- away, so that the entry seams do not disagree about who is
@@ -1090,10 +1085,9 @@ def suspendThreadCrossCoreStep (tid : UInt64) (execCore : CoreId) (st : SystemSt
           let pending0 := reschedulePendingSnapshot s
           match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
           | Except.ok (s', _) =>
-              let s'' := PriorityInheritance.scheduleLocalSuccessorFrom caller?
-                (pending0.get execCore) s' execCore
+              let s'' := PriorityInheritance.scheduleLocalSuccessorFrom caller? s' execCore
               (s'', ((0 : UInt32),
-                    rescheduleSgisFromFlags pending0 s''.scheduler.reschedulePending execCore))
+                    rescheduleSgisFromFlags pending0 s''.scheduler.reschedulePending))
           | Except.error e =>
               (s, (Platform.FFI.KernelError.toUInt32 e,
                    ([] : List (CoreId × SgiKind))))
@@ -1200,11 +1194,11 @@ conjunction says the runtime is unaffected. -/
 theorem rescheduleSgisFromFlags_recordSyscallRefusal_eq
     (ctx : LabelingContext) (executingCore : CoreId) (syscallId : UInt32)
     (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
-    (pending : Vector Bool Concurrency.numCores) (post : SystemState) (execCore : CoreId) :
+    (pending : Vector Bool Concurrency.numCores) (post : SystemState) :
     rescheduleSgisFromFlags pending
         (Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0
-          post).scheduler.reschedulePending execCore
-      = rescheduleSgisFromFlags pending post.scheduler.reschedulePending execCore := by
+          post).scheduler.reschedulePending
+      = rescheduleSgisFromFlags pending post.scheduler.reschedulePending := by
   rw [Platform.FFI.recordSyscallRefusal_scheduler_eq]
 
 end SeLe4n.Kernel

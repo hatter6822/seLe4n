@@ -734,7 +734,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- Round 17: the LOCAL half of that rule — a core does not interrupt itself, it
 -- runs the handler inline, and the inline half did not exist.
 #check @SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded
-#check @SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded_vacated_or_raised
+#check @SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded_post_none
 #check @SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded_pre_some
 #check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
 #check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor_of_not_needed
