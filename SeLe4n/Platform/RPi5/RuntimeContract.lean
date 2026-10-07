@@ -344,22 +344,20 @@ theorem registerContextStableCheck_implies_tcb_present
       | .untyped _, _, hStable => simp at hStable
       | .schedContext _, _, hStable => simp at hStable
 
-/-- AN7-C: Register-context conjunct soundness (Boolean form) — when the
-    check passes for a TCB-present state, the post-state register file's
-    decidable `==` against the TCB's stored context is `true`.  This is the
-    strongest form available because `BEq RegisterFile` is NOT `LawfulBEq`
-    (see AK7-G, `TCB.not_lawfulBEq`); callers that need structural equality
-    compose this with `RegisterFile.ext` on a per-field basis. -/
+/-- AN7-C: Register-context conjunct soundness — when the check passes for a
+    TCB-present state, the post-state register file **is** the TCB's stored
+    context.  `RegisterFile`'s `BEq` is `DecidableEq`'s, so the check's
+    `==` decides equality. -/
 theorem registerContextStableCheck_register_match
     (st st' : SeLe4n.Model.SystemState)
     (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
     (hCur : (st'.scheduler.currentOnCore bootCoreId) = some tid)
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
-    (st'.machine.regs == tcb.registerContext) = true := by
+    st'.machine.regs = tcb.registerContext := by
   unfold registerContextStableCheck SystemState.getTcb? at hStable
   simp only [hCur, hObj, Bool.and_eq_true] at hStable
-  exact hStable.1.1.1.1.1
+  exact beq_iff_eq.mp hStable.1.1.1.1.1
 
 /-- AN7-C: Dequeue-on-dispatch conjunct — when the check passes the current
     thread is NOT in the runnable queue (a runnable-queue membership would

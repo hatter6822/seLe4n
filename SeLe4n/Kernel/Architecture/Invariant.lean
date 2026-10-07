@@ -215,7 +215,7 @@ theorem adapterWriteRegister_ok_preserves_proofLayerInvariantBundle
     (contract : RuntimeBoundaryContract)
     (hooks : AdapterProofHooks contract)
     (reg : SeLe4n.RegName)
-    (value : SeLe4n.RegValue)
+    (value : UInt64)
     (st st' : SystemState)
     (hInv : proofLayerInvariantBundle st)
     (hStep : adapterWriteRegister contract reg value st = .ok ((), st')) :
@@ -298,7 +298,7 @@ theorem adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvaria
 theorem adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle
     (contract : RuntimeBoundaryContract)
     (reg : SeLe4n.RegName)
-    (value : SeLe4n.RegValue)
+    (value : UInt64)
     (st : SystemState)
     (hInv : proofLayerInvariantBundle st)
     (_hReject : ¬ contract.registerContextStable st (writeRegisterState reg value st))
@@ -328,7 +328,7 @@ private theorem advanceTimerState_preserves_vspaceInvariantBundle
 /-- WS-E3/H-07: Register writes preserve VSpace invariant bundle.
 Register-only state changes do not affect the object store or ASID table. -/
 private theorem writeRegisterState_preserves_vspaceInvariantBundle
-    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState)
     (hInv : vspaceInvariantBundle st) :
     vspaceInvariantBundle (writeRegisterState reg value st) := by
   rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical⟩
@@ -363,7 +363,6 @@ theorem contextSwitchState_preserves_contextMatchesCurrent
     contextMatchesCurrent (contextSwitchState newTid newRegs st) := by
   simp [contextMatchesCurrent, contextSwitchState,
     SchedulerState.setCurrentOnCore_currentOnCore_self, hLookup, hRegs]
-  exact RegisterFile.beq_self _
 
 /-- X1-G: Context-switch preserves `currentThreadValid` when the target
     thread has a valid TCB in the object store. -/
@@ -725,7 +724,7 @@ theorem deterministicTimerProgress_consumed_by_advanceTimer
 theorem deterministicRegisterContext_consumed_by_writeRegister
     (contract : RuntimeBoundaryContract)
     (hooks : AdapterProofHooks contract)
-    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState)
     (hInv : proofLayerInvariantBundle st)
     (hStable : contract.registerContextStable st (writeRegisterState reg value st)) :
     proofLayerInvariantBundle (writeRegisterState reg value st) :=
@@ -780,7 +779,7 @@ set_option linter.unusedVariables false in
     guard. -/
 private example : ∀ (_contract : RuntimeBoundaryContract)
     (_hooks : AdapterProofHooks _contract)
-    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState)
     (_hInv : proofLayerInvariantBundle st)
     (_hStable : _contract.registerContextStable st
                   (writeRegisterState reg value st)),
@@ -1344,7 +1343,7 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
 -- ============================================================================
 
 private theorem writeRegisterState_preserves_capabilityInvariantBundle
-    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState)
     (hCap : capabilityInvariantBundle st) :
     capabilityInvariantBundle (writeRegisterState reg value st) := by
   obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hCap
@@ -1352,7 +1351,7 @@ private theorem writeRegisterState_preserves_capabilityInvariantBundle
          by exact h4, by exact h5, by exact h6⟩
 
 private theorem writeRegisterState_preserves_ipcInvariantFull
-    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState)
     (hIpc : ipcInvariantFull st) :
     ipcInvariantFull (writeRegisterState reg value st) := by
   have hObjs : (writeRegisterState reg value st).objects = st.objects := rfl
@@ -1413,7 +1412,7 @@ private theorem writeRegisterState_preserves_ipcInvariantFull
     provided as a hypothesis — the RPi5 production contract validates it via
     `registerContextStablePred`. -/
 theorem writeRegisterState_preserves_proofLayerInvariantBundle
-    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState)
     (hInv : proofLayerInvariantBundle st)
     (hCtx : contextMatchesCurrent (writeRegisterState reg value st)) :
     proofLayerInvariantBundle (writeRegisterState reg value st) := by
@@ -1605,7 +1604,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   have hCurIpcReady : currentThreadIpcReady st := hCoupling.2.2.2.1
   -- contextMatchesCurrent for the post-state: directly from BEq hypothesis
   have hCtxPost : contextMatchesCurrent (contextSwitchState newTid newRegs st) := by
-    simp [contextMatchesCurrent, contextSwitchState, SchedulerState.setCurrentOnCore_currentOnCore_self, hLookup]; exact hRegs
+    simp [contextMatchesCurrent, contextSwitchState, SchedulerState.setCurrentOnCore_currentOnCore_self, hLookup]; exact beq_iff_eq.mp hRegs
   -- currentThreadValid for the post-state
   have hValidPost : currentThreadValid (contextSwitchState newTid newRegs st) :=
     contextSwitchState_preserves_currentThreadValid st newTid newRegs tcb hLookup
@@ -1793,7 +1792,7 @@ theorem advanceTimerState_preserves_registerDecodeConsistent
 /-- WS-J1-D: Register writes preserve `registerDecodeConsistent`.
 Register-only state changes do not affect the object store or scheduler current. -/
 theorem writeRegisterState_preserves_registerDecodeConsistent
-    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState)
     (hRdc : registerDecodeConsistent st) :
     registerDecodeConsistent (writeRegisterState reg value st) := by
   intro tid hCur; exact hRdc tid hCur

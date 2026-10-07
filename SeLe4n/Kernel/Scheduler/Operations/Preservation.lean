@@ -2968,7 +2968,7 @@ private theorem timerTick_preserves_contextMatchesCurrent
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv, beq_self_eq_true]; simp
           -- Goal: (tick st.machine).regs = tcb.registerContext
           simp only [contextMatchesCurrent, hCur, hRaw] at hInv
-          simp only [tick]; exact hInv
+          simp only [tick]; exact beq_iff_eq.mp hInv
 
 /-- WS-H12c: Frame theorem for `contextMatchesCurrent`. If a state transition
 preserves `machine.regs`, `scheduler.current`, and the object at the current

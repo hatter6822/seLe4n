@@ -83,7 +83,7 @@ theorem rpi5Restrictive_adapterAdvanceTimer_preserves
 The restrictive contract rejects all register writes; the theorem is
 vacuously true because no successful write path exists. -/
 theorem rpi5Restrictive_adapterWriteRegister_preserves
-    (st st' : SystemState) (reg : SeLe4n.RegName) (value : SeLe4n.RegValue)
+    (st st' : SystemState) (reg : SeLe4n.RegName) (value : UInt64)
     (hInv : proofLayerInvariantBundle st)
     (hOk : adapterWriteRegister rpi5RuntimeContractRestrictive reg value st = .ok ((), st')) :
     proofLayerInvariantBundle st' :=
@@ -125,7 +125,7 @@ open SeLe4n.Kernel in
     `writeRegisterState` doesn't change `scheduler.current` or `objects`, so
     if the check passes, the register match implies `contextMatchesCurrent`. -/
 private theorem registerContextStable_writeRegister_contextMatch
-    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState)
     (hStable : registerContextStablePred st (writeRegisterState reg value st)) :
     contextMatchesCurrent (writeRegisterState reg value st) := by
   -- registerContextStableCheck examines post-state; writeRegisterState only changes regs
@@ -244,7 +244,7 @@ theorem rpi5Production_adapterAdvanceTimer_preserves
     Unlike the restrictive contract, the production contract permits register
     writes when the post-state satisfies `registerContextStablePred`. -/
 theorem rpi5Production_adapterWriteRegister_preserves
-    (st st' : SystemState) (reg : SeLe4n.RegName) (value : SeLe4n.RegValue)
+    (st st' : SystemState) (reg : SeLe4n.RegName) (value : UInt64)
     (hInv : proofLayerInvariantBundle st)
     (hOk : adapterWriteRegister rpi5RuntimeContract reg value st = .ok ((), st')) :
     proofLayerInvariantBundle st' :=

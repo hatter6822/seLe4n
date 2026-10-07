@@ -181,7 +181,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @lowEquivalentSliceOnCoreCheckWithRegs
 #check @lowEquivalentSliceOnCoreCheckWithRegs_of_lowEquivalentOnCore
 #check @lowEquivalentSliceOnCoreCheckWithRegs_le_slice
-#check @machineRegs_beq_not_injective
+#check @machineRegs_beq_iff
 
 -- §1.4  SM8.A.4 — per-core independence
 #check @onCore_perCore_independence
@@ -3546,14 +3546,10 @@ private def runIndependenceChecks : IO Unit := do
   -- Write only core 1's register bank.
   let stRemoteRegs : SystemState :=
     { probeState with
-      machine := probeState.machine.setRegsOnCore c1 { pc := ⟨7⟩, sp := ⟨9⟩, gpr := fun _ => ⟨1⟩ } }
-  -- `Option RegisterFile` has no `DecidableEq` (the `gpr` field is a function
-  -- over an unbounded domain), so the value-level check uses `RegisterFile`'s
-  -- structural `BEq` — the ARM64 comparison over `pc`, `sp` and the 32
-  -- architectural GPRs, which the model documents as the sanctioned test-time
-  -- equality (`RegisterFile.not_lawfulBEq` records why it is not propositional
-  -- equality).  The propositional statement is the theorem-level assertion
-  -- immediately below.
+      machine := probeState.machine.setRegsOnCore c1 (SeLe4n.RegisterFile.withGprs 7 9 (fun _ => 1)) }
+  -- `RegisterFile`'s `BEq` is lawful (thirty-five machine words), so the
+  -- value-level check is equality of the banks; the propositional statement
+  -- is the theorem-level assertion immediately below.
   assertBool "a write to core 1's register bank leaves core 0's projected regs unchanged"
     (projectMachineRegsOnCore probeLabeling lowObserver stRemoteRegs c0
       == projectMachineRegsOnCore probeLabeling lowObserver probeState c0)
@@ -3561,16 +3557,16 @@ private def runIndependenceChecks : IO Unit := do
     (!(projectMachineRegsOnCore probeLabeling lowObserver
         { probeState with
           machine := probeState.machine.setRegsOnCore c0
-            { pc := ⟨7⟩, sp := ⟨9⟩, gpr := fun _ => ⟨1⟩ } } c0
+            (SeLe4n.RegisterFile.withGprs 7 9 (fun _ => 1)) } c0
       == projectMachineRegsOnCore probeLabeling lowObserver probeState c0))
   assertBool "onCore_setRegsOnCore_ne applies (theorem level, c0 ≠ c1)"
     (have _h : ObservableState.onCore probeLabeling c0 lowLabel
         { probeState with
           machine := probeState.machine.setRegsOnCore c1
-            { pc := ⟨7⟩, sp := ⟨9⟩, gpr := fun _ => ⟨1⟩ } }
+            (SeLe4n.RegisterFile.withGprs 7 9 (fun _ => 1)) }
         = ObservableState.onCore probeLabeling c0 lowLabel probeState :=
       onCore_setRegsOnCore_ne probeLabeling lowLabel probeState (by decide)
-        { pc := ⟨7⟩, sp := ⟨9⟩, gpr := fun _ => ⟨1⟩ }
+        (SeLe4n.RegisterFile.withGprs 7 9 (fun _ => 1))
      true)
   -- Fields outside the read set: invisible on EVERY core, including the one written.
   assertBool "the CBS replenishment queue is invisible on every core"
@@ -4016,7 +4012,7 @@ private def runFinerCheckChecks : IO Unit := do
   assertBool "the finer check REJECTS a differing register bank the slice accepts"
     (let stRegs : SystemState :=
        { probeState with
-         machine := probeState.machine.setRegsOnCore c0 { pc := ⟨7⟩, sp := ⟨9⟩, gpr := fun _ => ⟨1⟩ } }
+         machine := probeState.machine.setRegsOnCore c0 (SeLe4n.RegisterFile.withGprs 7 9 (fun _ => 1)) }
      -- the coarse slice accepts (registersObservable is unchanged) …
      decide (ObservableState.sliceOnCore probeLabeling c0 lowLabel stRegs
         = ObservableState.sliceOnCore probeLabeling c0 lowLabel probeState) &&
@@ -4030,9 +4026,9 @@ private def runFinerCheckChecks : IO Unit := do
             probeLabeling c lowLabel (lowEquivalentOnCore_refl probeLabeling lowObserver
               probeState c))
       true))
-  assertBool "…and is STILL not a decision procedure (BEq is not lawful)"
-    (have _h : ∃ rf₁ rf₂ : RegisterFile, (rf₁ == rf₂) = true ∧ rf₁ ≠ rf₂ :=
-      machineRegs_beq_not_injective
+  assertBool "…and the register banks themselves are compared exactly"
+    (have _h : ∀ o₁ o₂ : Option RegisterFile, (o₁ == o₂) = true ↔ o₁ = o₂ :=
+      machineRegs_beq_iff
      true)
 
 /-- §3.13  The object-content order, and the four scheduling clauses.
@@ -5880,15 +5876,14 @@ private def declassChainStage (tid : SeLe4n.ThreadId)
               (.tcb { tcb with
                   cspaceRoot := declassChainCNode
                   registerContext :=
-                    { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-                      gpr := fun r =>
-                        if r.val == 0 then ⟨capPtr⟩
-                        else if r.val == 1 then ⟨msgInfo⟩
-                        else if r.val == 2 then ⟨m0⟩
-                        else if r.val == 3 then ⟨m1⟩
-                        else if r.val == 4 then ⟨m2⟩
-                        else if r.val == 7 then ⟨sysId⟩
-                        else ⟨0⟩ } }) }
+                    SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+                        if r == 0 then capPtr.toUInt64
+                        else if r == 1 then msgInfo.toUInt64
+                        else if r == 2 then m0.toUInt64
+                        else if r == 3 then m1.toUInt64
+                        else if r == 4 then m2.toUInt64
+                        else if r == 7 then sysId.toUInt64
+                        else 0) }) }
 
 /-- WS-SM SM9.D.8 (**the §3.6 chain's middle step**): an **ordinary,
 non-declassifying** delivery moves hop 1's content from the object it landed in
@@ -7510,8 +7505,7 @@ private def hiCallerTcb : TCB :=
   { mkTcb 1011 50 (some c1) with
       cspaceRoot := probeCNode
       registerContext :=
-        { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-          gpr := fun r => if r.val == 0 then ⟨2⟩ else if r.val == 7 then ⟨1⟩ else ⟨0⟩ } }
+        SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then 1 else 0) }
 
 private def successEntryState : SystemState :=
   { niState with
@@ -7784,8 +7778,7 @@ private def suspendCallerTcb : TCB :=
   { mkTcb 1011 50 (some c1) with
       cspaceRoot := suspendCNode
       registerContext :=
-        { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-          gpr := fun r => if r.val == 0 then ⟨1⟩ else if r.val == 7 then ⟨20⟩ else ⟨0⟩ } }
+        SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
 
 private def suspendEntryState : SystemState :=
   { niState with

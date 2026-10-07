@@ -59,7 +59,7 @@ theorem simRestrictive_adapterAdvanceTimer_preserves
 /-- WS-H15d/A-33: End-to-end register write preservation for Sim (vacuous).
 The restrictive contract rejects all register writes. -/
 theorem simRestrictive_adapterWriteRegister_preserves
-    (st st' : SystemState) (reg : SeLe4n.RegName) (value : SeLe4n.RegValue)
+    (st st' : SystemState) (reg : SeLe4n.RegName) (value : UInt64)
     (hInv : proofLayerInvariantBundle st)
     (hOk : adapterWriteRegister simRuntimeContractRestrictive reg value st = .ok ((), st')) :
     proofLayerInvariantBundle st' :=
@@ -112,7 +112,7 @@ theorem simSubstantive_adapterAdvanceTimer_preserves
 /-- S5-D: End-to-end register write preservation for Sim substantive (vacuous).
 The substantive contract rejects all register writes. -/
 theorem simSubstantive_adapterWriteRegister_preserves
-    (st st' : SystemState) (reg : SeLe4n.RegName) (value : SeLe4n.RegValue)
+    (st st' : SystemState) (reg : SeLe4n.RegName) (value : UInt64)
     (hInv : proofLayerInvariantBundle st)
     (hOk : adapterWriteRegister simRuntimeContractSubstantive reg value st = .ok ((), st')) :
     proofLayerInvariantBundle st' :=

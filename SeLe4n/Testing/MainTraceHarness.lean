@@ -251,13 +251,13 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
     { entries := [{ asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat 4096), paddr := (SeLe4n.PAddr.ofNat 8192), perms := default }] }
   let flushed := SeLe4n.Model.adapterFlushTlb tlbWithEntries
   IO.println s!"[CAT-026] TLB flush entry count: {flushed.entries.length}"
-  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractAcceptAll ⟨7⟩ ⟨99⟩ st1 with
+  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractAcceptAll ⟨7⟩ 99 st1 with
   | .error err => IO.println s!"[CAT-027] adapter register write success path error: {reprStr err}"
   | .ok (_, stReg) =>
       IO.println s!"[CAT-028] adapter register write success path value: {(SeLe4n.readReg stReg.machine.regs ⟨7⟩).val}"
       -- T7-B: Post-mutation invariant check on register-write result state
       checkInvariants counter "post-register-write-mutated" stReg
-  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractDenyAll ⟨7⟩ ⟨99⟩ st1 with
+  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractDenyAll ⟨7⟩ 99 st1 with
   | .error err => IO.println s!"[CAT-029] adapter register write unsupported branch: {reprStr err}"
   | .ok _ =>
       IO.println "[CAT-030] unexpected adapter register write success under denied contract"
@@ -458,7 +458,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       IO.println s!"[SST-030] large queue scheduled current: {reprStr ((stLargeScheduled.scheduler.currentOnCore bootCoreId).map SeLe4n.ThreadId.toNat)}"
 
   -- WS-H12c: Context switch — verify machine.regs matches incoming thread's registerContext
-  let ctxRegFile : SeLe4n.RegisterFile := { pc := ⟨42⟩, sp := ⟨1024⟩, gpr := fun _ => ⟨0⟩ }
+  let ctxRegFile : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 42 1024 (fun _ => 0)
   let ctxTcb1 : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
@@ -468,7 +468,6 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   match SeLe4n.Kernel.schedule stCtx with
   | .error err => IO.println s!"[SST-031] context switch schedule error: {reprStr err}"
   | .ok (_, stCtxSched) =>
-      -- V7-F: RegisterFile == is non-lawful BEq (checks 32 GPR indices, not extensional)
       let regsMatch := stCtxSched.machine.regs == ctxRegFile
       IO.println s!"[SST-032] context switch regs match incoming: {regsMatch}"
 
@@ -1219,8 +1218,8 @@ private def runDequeueOnDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState)
 outgoing thread's registers and restores the incoming thread's registers. -/
 private def runInlineContextSwitchTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   -- Set up two threads with distinctive register contexts
-  let outgoingRegs : SeLe4n.RegisterFile := { pc := ⟨100⟩, sp := ⟨2048⟩, gpr := fun i => ⟨i.val + 10⟩ }
-  let incomingRegs : SeLe4n.RegisterFile := { pc := ⟨500⟩, sp := ⟨4096⟩, gpr := fun i => ⟨i.val * 3⟩ }
+  let outgoingRegs : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 100 2048 (fun i => (i + 10).toUInt64)
+  let incomingRegs : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 500 4096 (fun i => (i * 3).toUInt64)
   let outPrio : SeLe4n.Priority := ⟨50⟩
   let inPrio : SeLe4n.Priority := ⟨100⟩
   let outgoingTcb : KernelObject := .tcb {
@@ -1241,7 +1240,6 @@ private def runInlineContextSwitchTrace (counter : IO.Ref Nat) (st1 : SystemStat
   match SeLe4n.Kernel.handleYield stCtx with
   | .error err => IO.println s!"[ICS-001] H12f context switch yield error: {reprStr err}"
   | .ok (_, stSwitched) =>
-      -- V7-F: RegisterFile/TCB == is non-lawful BEq (checks 32 GPR indices, not extensional)
       -- Verify machine.regs now matches incoming thread's registerContext
       let regsMatchIncoming := stSwitched.machine.regs == incomingRegs
       IO.println s!"[ICS-002] H12f context switch regs match incoming: {regsMatchIncoming}"
@@ -1427,7 +1425,7 @@ private def runRuntimeContractFixtureTrace (counter : IO.Ref Nat) (st1 : SystemS
       IO.println s!"[RCF-001] F7 timerOnly timer success: {reprStr stTimer.machine.timer}"
   | .error err =>
       IO.println s!"[RCF-002] F7 timerOnly timer unexpected error: {reprStr err}"
-  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractTimerOnly ⟨0⟩ ⟨42⟩ st1 with
+  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractTimerOnly ⟨0⟩ 42 st1 with
   | .error err =>
       IO.println s!"[RCF-003] F7 timerOnly register denied: {reprStr err}"
   | .ok _ =>
@@ -1448,7 +1446,7 @@ private def runRuntimeContractFixtureTrace (counter : IO.Ref Nat) (st1 : SystemS
       IO.println s!"[RCF-009] F7 readOnlyMemory timer denied: {reprStr err}"
   | .ok _ =>
       IO.println "[RCF-010] F7 readOnlyMemory timer unexpected success"
-  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractReadOnlyMemory ⟨0⟩ ⟨42⟩ st1 with
+  match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractReadOnlyMemory ⟨0⟩ 42 st1 with
   | .error err =>
       IO.println s!"[RCF-011] F7 readOnlyMemory register denied: {reprStr err}"
   | .ok _ =>
@@ -1466,9 +1464,7 @@ private def runRuntimeContractFixtureTrace (counter : IO.Ref Nat) (st1 : SystemS
 private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   -- RDT-002: Verify standalone decode succeeds with valid registers.
   -- x0=0 (capPtr), x1=0 (msgInfo: len=0, caps=0, label=0), x7=0 (send).
-  let validRegs : SeLe4n.RegisterFile :=
-    { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-      gpr := fun _ => ⟨0⟩ }
+  let validRegs : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)
   match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout validRegs 32 with
   | .error err =>
       IO.println s!"[RDT-001] register decode unexpected error: {reprStr err}"
@@ -1515,10 +1511,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
 
   -- RDT-006: syscallEntry with invalid syscall number → decode error.
   let invalidSyscallRegs : SeLe4n.RegisterFile :=
-    { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-      gpr := fun r =>
-        if r.val == 7 then ⟨99⟩  -- invalid syscall number
-        else ⟨0⟩ }
+    SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+        if r == 7 then 99  -- invalid syscall number
+        else 0)
   let stInvalidSyscall : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject rdtTid (.tcb {
@@ -1549,11 +1544,10 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
 
   -- RDT-008: syscallEntry with malformed msgInfo → decode error.
   let malformedMsgInfoRegs : SeLe4n.RegisterFile :=
-    { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-      gpr := fun r =>
-        if r.val == 1 then ⟨127⟩  -- length=127 > 120 → invalid
-        else if r.val == 7 then ⟨0⟩  -- valid syscall (send)
-        else ⟨0⟩ }
+    SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+        if r == 1 then 127  -- length=127 > 120 → invalid
+        else if r == 7 then 0  -- valid syscall (send)
+        else 0)
   let stMalformedMsgInfo : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject rdtTid (.tcb {
@@ -1789,15 +1783,15 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
 
   -- KSD-008: Full layer 1+2 decode round-trip exercise
   let regsForRoundtrip : SeLe4n.RegisterFile :=
-    { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun r =>
-      if r.val == 0 then ⟨5⟩       -- capPtr
-      else if r.val == 1 then ⟨2⟩  -- msgInfo (length=2)
-      else if r.val == 2 then ⟨10⟩ -- msgReg[0]
-      else if r.val == 3 then ⟨20⟩ -- msgReg[1]
-      else if r.val == 4 then ⟨30⟩ -- msgReg[2]
-      else if r.val == 5 then ⟨40⟩ -- msgReg[3]
-      else if r.val == 7 then ⟨0⟩  -- syscallId = send
-      else ⟨0⟩ }
+    SeLe4n.RegisterFile.withGprs 0 0 (fun r =>
+      if r == 0 then 5       -- capPtr
+      else if r == 1 then 2  -- msgInfo (length=2)
+      else if r == 2 then 10 -- msgReg[0]
+      else if r == 3 then 20 -- msgReg[1]
+      else if r == 4 then 30 -- msgReg[2]
+      else if r == 5 then 40 -- msgReg[3]
+      else if r == 7 then 0  -- syscallId = send
+      else 0)
   match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsForRoundtrip 32 with
   | .error e => IO.println s!"[KSD-008] round-trip decode error: {reprStr e}"
   | .ok decoded =>
@@ -1830,14 +1824,13 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
   let pipeNtfn : SeLe4n.ObjId := ⟨704⟩
   let pipeMsgInfo : Nat := 2  -- length=2, caps=0, label=0
   let pipeRegs : SeLe4n.RegisterFile :=
-    { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-      gpr := fun r =>
-        if r.val == 0 then ⟨0⟩            -- capAddr = 0 (endpoint cap)
-        else if r.val == 1 then ⟨pipeMsgInfo⟩  -- msgInfo
-        else if r.val == 2 then ⟨42⟩      -- msgReg[0]
-        else if r.val == 3 then ⟨99⟩      -- msgReg[1]
-        else if r.val == 7 then ⟨0⟩       -- syscallId = send
-        else ⟨0⟩ }
+    SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+        if r == 0 then 0            -- capAddr = 0 (endpoint cap)
+        else if r == 1 then pipeMsgInfo.toUInt64  -- msgInfo
+        else if r == 2 then 42      -- msgReg[0]
+        else if r == 3 then 99      -- msgReg[1]
+        else if r == 7 then 0       -- syscallId = send
+        else 0)
   let stPipe : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject pipeTid (.tcb {

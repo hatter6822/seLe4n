@@ -30,7 +30,7 @@ def advanceTimerState (ticks : Nat) (st : SystemState) : SystemState :=
   { st with machine := { st.machine with timer := st.machine.timer + ticks } }
 
 /-- Deterministic pure register projection used by runtime-boundary adapters. -/
-def writeRegisterState (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState) : SystemState :=
+def writeRegisterState (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState) : SystemState :=
   { st with machine := st.machine.setRegsOnCore bootCoreId (SeLe4n.writeReg st.machine.regs reg value) }
 
 /-- Runtime adapter: advance timer only for non-zero ticks and when contract monotonicity admits the step. -/
@@ -50,7 +50,7 @@ def adapterAdvanceTimer (contract : RuntimeBoundaryContract) (ticks : Nat) : Ker
 def adapterWriteRegister
     (contract : RuntimeBoundaryContract)
     (reg : SeLe4n.RegName)
-    (value : SeLe4n.RegValue) : Kernel Unit :=
+    (value : UInt64) : Kernel Unit :=
   fun st =>
     let st' := writeRegisterState reg value st
     letI : Decidable (contract.registerContextStable st st') :=
@@ -90,7 +90,7 @@ theorem adapterAdvanceTimer_error_unsupportedBinding
 theorem adapterWriteRegister_error_unsupportedBinding
     (contract : RuntimeBoundaryContract)
     (reg : SeLe4n.RegName)
-    (value : SeLe4n.RegValue)
+    (value : UInt64)
     (st : SystemState)
     (hReject : ¬ contract.registerContextStable st (writeRegisterState reg value st)) :
     adapterWriteRegister contract reg value st = .error (mapAdapterError .unsupportedBinding) := by

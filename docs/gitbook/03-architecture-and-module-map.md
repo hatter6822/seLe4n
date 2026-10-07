@@ -126,8 +126,10 @@ inventory was written:
     `DecidableEq`, `Hashable`, `LawfulHashable`, `EquivBEq`, `LawfulBEq`,
     `Repr`, `ToString`, `ofNat`/`toNat`; migrated from `abbrev Nat` in WS-J1-A),
     memory abstraction, and pure update/read helpers,
-  - `RegisterFile` with `pc : RegValue`, `sp : RegValue`, `gpr : RegName → RegValue`
-    fields; 10 read-after-write and frame lemmas (re-proved for typed wrappers),
+  - `RegisterFile`: the thirty-five `UInt64` words of the ARM64 trap frame
+    (`x0`–`x30`, `sp`, `pc`, `pstate`, `tpidr`) as fields, with `gpr`,
+    `readReg`, `writeReg`, `word` / `ofWords` and their read-after-write,
+    frame and round-trip lemmas (WS-CV CV1.1),
   - roundtrip/injectivity theorems for `RegName` and `RegValue`,
   - `MachineConfig` (register/address width, page size with `isPowerOfTwo`
     validation + correctness proof, ASID limit) and `MemoryRegion`/`MemoryKind`

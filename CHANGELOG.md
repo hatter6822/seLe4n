@@ -1,3 +1,53 @@
+## v0.36.61 — WS-CV CV1.1: the register file is thirty-five machine words
+
+`SeLe4n.RegisterFile` is now the ARM64 trap frame's own layout — `x0`–`x30`,
+`sp`, `pc`, `pstate`, `tpidr`, each a `UInt64` field in frame order, with
+`DecidableEq` — instead of `{ pc sp : RegValue, gpr : RegName → RegValue, … }`
+over an unbounded `Nat`.
+
+- **The carrier (`Machine.lean`).**  `word` / `wordOfByte` read a frame word
+  by index, `ofWords` builds a file positionally, and `ofWords_word` /
+  `word_ofWords` / `ext_word` make the encoding an isomorphism; `gpr` is the
+  `RegValue` view of `x0`–`x30` (`0` past them), `writeReg` takes a `UInt64`
+  and is the identity at or beyond `x31`, `withGprs` builds a file from a
+  general-purpose register function.  The trap-frame layout constants moved
+  here from `TrapFrameSave.lean` (`Kernel.Architecture.trapFrame*Word`).
+- **The bound is the type.**  `RegisterFile.wordBounded`,
+  `machineWordBounded`, `Kernel.Architecture.registerContextsWordBounded`,
+  `RegisterContextBounded.lean` (thirty preservation theorems) and every
+  `_wordBounded` lemma beside the pure writers are deleted; the entry/exit
+  round trips `registerFileOfTrapContext_trapContextOfRegisterFile` and
+  `trapWordsOfRegisterFile_registerFileOfTrapWords` hold with no hypothesis.
+- **Equality is lawful.**  `RegisterFile.not_lawfulBEq`, `TCB.not_lawfulBEq`
+  and `machineRegs_beq_not_injective` (all false on the new carrier) are
+  deleted; `machineRegs_beq_iff` states the exact comparison of
+  `Option RegisterFile`; `registerContextStableCheck_register_match` now
+  concludes propositional equality; the `beq_*` compatibility lemmas stay for
+  their consumers until CV1.2.
+- **The writers.**  `stageReturnFrame` and `stageRestartFrame` are structure
+  updates of the staged words; `FaultRegisterWindow.spill` likewise, with
+  `spill_word`; `restartAtSvc` rewinds `pc` by `4` as a `UInt64`;
+  `writeRegisterState` / `adapterWriteRegister` take a `UInt64`.
+- **The two-trap hazard is gone three rows early.**  The save is a copy of
+  the thirty-five words into the thread's own context, so CV0.2's boundary
+  test, written to witness trap 2's words reaching a context saved from
+  trap 1, flips now (`a_saved_context_does_not_follow_the_reused_object`):
+  nothing written into the object after the save reaches the saved context.
+  CV3.4 retypes the probe over the in-flight object and keeps the assertion.
+- **Measured.**  The `heap-allocations-per-syscall` exerciser reads
+  426 → 387 allocations per round trip (the `gpr` closures, the boxed words of
+  every register read and the `Nat` conversions of the argument spill and the
+  return frame; the restore's `TrapContext` rebuild and the save path's copies
+  remain for CV2–CV4).
+- Tests and the trace harness build register files through `withGprs`;
+  `main_trace_smoke.expected` is byte-identical.  The trap-frame Tier 3
+  anchors are re-pointed at the moved definitions; the touched files' 866
+  anchors pass.
+- Documentation: spec §6.2 boundary passage and §11.2.4 decidability, the
+  register-file debt row (the `Nat` carrier half closed, CV2–CV4 own the
+  rest), WORKSTREAM_CONTEXT, the architecture and performance GitBook
+  chapters, and the WS-CV plan (CV1.1 landed; §7 anchors).
+
 ## v0.36.60 — WS-LS registered: lock state separated from kernel state (plan only)
 
 Documentation only; nothing in the model or the kernel changes.

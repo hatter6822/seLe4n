@@ -551,14 +551,9 @@ the frame, every other register (including `x7`, `pc`, `sp`) untouched.
 The dual of the argument spill's register writes. -/
 def _root_.SeLe4n.RegisterFile.stageReturnFrame
     (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) : SeLe4n.RegisterFile :=
-  let rf := SeLe4n.writeReg rf ⟨0⟩ ⟨f.x0.toNat⟩
-  let rf := SeLe4n.writeReg rf ⟨1⟩ ⟨f.x1.toNat⟩
-  let rf := SeLe4n.writeReg rf ⟨2⟩ ⟨f.x2.toNat⟩
-  let rf := SeLe4n.writeReg rf ⟨3⟩ ⟨f.x3.toNat⟩
-  let rf := SeLe4n.writeReg rf ⟨4⟩ ⟨f.x4.toNat⟩
-  SeLe4n.writeReg rf ⟨5⟩ ⟨f.x5.toNat⟩
+  { rf with x0 := f.x0, x1 := f.x1, x2 := f.x2, x3 := f.x3, x4 := f.x4, x5 := f.x5 }
 
-/-- Staging touches `gpr` only — `pc` and `sp` survive. -/
+/-- Staging touches `x0`-`x5` only — `pc` and `sp` survive. -/
 @[simp] theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_pc
     (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) :
     (rf.stageReturnFrame f).pc = rf.pc := rfl
@@ -567,29 +562,68 @@ def _root_.SeLe4n.RegisterFile.stageReturnFrame
     (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) :
     (rf.stageReturnFrame f).sp = rf.sp := rfl
 
-/-- Staging a frame keeps a word-bounded file word-bounded: the six registers
-written are `UInt64`s read as `Nat`s. -/
-theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_wordBounded
-    (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) (hB : rf.wordBounded) :
-    (rf.stageReturnFrame f).wordBounded := by
-  unfold SeLe4n.RegisterFile.stageReturnFrame
-  have w := SeLe4n.writeReg_uint64_wordBounded
-  exact w _ _ _ (w _ _ _ (w _ _ _ (w _ _ _ (w _ _ _ (w _ _ _ hB)))))
+/-- Word `i` of a staged file: the frame's `x0`-`x5`, the file underneath
+everywhere else. -/
+theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_word
+    (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) (i : Nat) :
+    (rf.stageReturnFrame f).word i =
+      if i = 0 then f.x0 else if i = 1 then f.x1 else if i = 2 then f.x2
+      else if i = 3 then f.x3 else if i = 4 then f.x4 else if i = 5 then f.x5
+      else rf.word i := by
+  by_cases hi : i < SeLe4n.Kernel.Architecture.trapFrameWordCount
+  · match i, hi with
+    | 0, _ => rfl
+    | 1, _ => rfl
+    | 2, _ => rfl
+    | 3, _ => rfl
+    | 4, _ => rfl
+    | 5, _ => rfl
+    | 6, _ => rfl
+    | 7, _ => rfl
+    | 8, _ => rfl
+    | 9, _ => rfl
+    | 10, _ => rfl
+    | 11, _ => rfl
+    | 12, _ => rfl
+    | 13, _ => rfl
+    | 14, _ => rfl
+    | 15, _ => rfl
+    | 16, _ => rfl
+    | 17, _ => rfl
+    | 18, _ => rfl
+    | 19, _ => rfl
+    | 20, _ => rfl
+    | 21, _ => rfl
+    | 22, _ => rfl
+    | 23, _ => rfl
+    | 24, _ => rfl
+    | 25, _ => rfl
+    | 26, _ => rfl
+    | 27, _ => rfl
+    | 28, _ => rfl
+    | 29, _ => rfl
+    | 30, _ => rfl
+    | 31, _ => rfl
+    | 32, _ => rfl
+    | 33, _ => rfl
+    | 34, _ => rfl
+    | n + 35, h => exact absurd h (by unfold SeLe4n.Kernel.Architecture.trapFrameWordCount; omega)
+  · have h5 : 5 < i := by unfold SeLe4n.Kernel.Architecture.trapFrameWordCount at hi; omega
+    simp only [show i ≠ 0 by omega, show i ≠ 1 by omega, show i ≠ 2 by omega,
+      show i ≠ 3 by omega, show i ≠ 4 by omega, show i ≠ 5 by omega, if_false]
+    rw [SeLe4n.RegisterFile.word_of_ge _ i hi, SeLe4n.RegisterFile.word_of_ge _ i hi]
 
 /-- Registers outside the frame window are untouched — in particular `x7`
 (the staged syscall number) and the callee-saved range. -/
 theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_gpr_high
     (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) (r : SeLe4n.RegName)
     (h : 5 < r.val) : (rf.stageReturnFrame f).gpr r = rf.gpr r := by
-  unfold SeLe4n.RegisterFile.stageReturnFrame SeLe4n.writeReg
-  simp only
-  have h0 : r.val ≠ 0 := by omega
-  have h1 : r.val ≠ 1 := by omega
-  have h2 : r.val ≠ 2 := by omega
-  have h3 : r.val ≠ 3 := by omega
-  have h4 : r.val ≠ 4 := by omega
-  have h5 : r.val ≠ 5 := by omega
-  simp [h0, h1, h2, h3, h4, h5]
+  unfold SeLe4n.RegisterFile.gpr
+  split
+  · rw [SeLe4n.RegisterFile.stageReturnFrame_word]
+    simp only [show r.val ≠ 0 by omega, show r.val ≠ 1 by omega, show r.val ≠ 2 by omega,
+      show r.val ≠ 3 by omega, show r.val ≠ 4 by omega, show r.val ≠ 5 by omega, if_false]
+  · rfl
 
 /-- The staged registers read back as the frame, register for register —
 the pure core of RA.B.2's `readReturnFrame_writeReturnFrame` round trip. -/
@@ -600,9 +634,8 @@ theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_reads_back
     (rf.stageReturnFrame f).gpr ⟨2⟩ = ⟨f.x2.toNat⟩ ∧
     (rf.stageReturnFrame f).gpr ⟨3⟩ = ⟨f.x3.toNat⟩ ∧
     (rf.stageReturnFrame f).gpr ⟨4⟩ = ⟨f.x4.toNat⟩ ∧
-    (rf.stageReturnFrame f).gpr ⟨5⟩ = ⟨f.x5.toNat⟩ := by
-  unfold SeLe4n.RegisterFile.stageReturnFrame SeLe4n.writeReg
-  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+    (rf.stageReturnFrame f).gpr ⟨5⟩ = ⟨f.x5.toNat⟩ :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Stage a return frame into a TCB's saved register context — the single
 record update every staging site goes through (`registerContext` moves,
@@ -1602,33 +1635,19 @@ change to how a frame lands in a register file cannot apply to syscall
 returns and miss fault restarts. -/
 def _root_.SeLe4n.RegisterFile.stageRestartFrame
     (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) : SeLe4n.RegisterFile :=
-  let rf := rf.stageReturnFrame f.returnWindow
-  let rf := SeLe4n.writeReg rf ⟨6⟩ ⟨f.x6.toNat⟩
-  let rf := SeLe4n.writeReg rf ⟨7⟩ ⟨f.x7.toNat⟩
-  let rf := SeLe4n.writeReg rf ⟨30⟩ ⟨f.lr.toNat⟩
-  { rf with pc := ⟨f.pc.toNat⟩, sp := ⟨f.sp.toNat⟩ }
+  { rf.stageReturnFrame f.returnWindow with
+    x6 := f.x6, x7 := f.x7, x30 := f.lr, pc := f.pc, sp := f.sp }
 
 /-- WS-RR RR4.16: the restart PC lands in the register file's `pc` — the
 word that decides where the thread resumes, and therefore the whole point of
 a restart (`faultRestart_moves_pc` lifts this to the state). -/
 @[simp] theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_pc
     (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) :
-    (rf.stageRestartFrame f).pc = ⟨f.pc.toNat⟩ := rfl
+    (rf.stageRestartFrame f).pc = f.pc := rfl
 
 @[simp] theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_sp
     (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) :
-    (rf.stageRestartFrame f).sp = ⟨f.sp.toNat⟩ := rfl
-
-/-- Staging a restart frame keeps a word-bounded file word-bounded: every
-register it writes, `pc` and `sp` included, is a `UInt64` read as a `Nat`. -/
-theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_wordBounded
-    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) (hB : rf.wordBounded) :
-    (rf.stageRestartFrame f).wordBounded := by
-  unfold SeLe4n.RegisterFile.stageRestartFrame
-  have w := SeLe4n.writeReg_uint64_wordBounded
-  obtain ⟨_, _, hPs, hTp, hGpr⟩ :=
-    w _ _ _ (w _ _ _ (w _ _ _ (rf.stageReturnFrame_wordBounded f.returnWindow hB)))
-  exact ⟨SeLe4n.RegValue.valid_of_uint64 _, SeLe4n.RegValue.valid_of_uint64 _, hPs, hTp, hGpr⟩
+    (rf.stageRestartFrame f).sp = f.sp := rfl
 
 /-- WS-RR RR4.16: the eight-register argument window and the link register
 read back as the frame — the property a handler emulating a trapped syscall
@@ -1643,10 +1662,8 @@ theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_reads_back
     (rf.stageRestartFrame f).gpr ⟨5⟩ = ⟨f.x5.toNat⟩ ∧
     (rf.stageRestartFrame f).gpr ⟨6⟩ = ⟨f.x6.toNat⟩ ∧
     (rf.stageRestartFrame f).gpr ⟨7⟩ = ⟨f.x7.toNat⟩ ∧
-    (rf.stageRestartFrame f).gpr ⟨30⟩ = ⟨f.lr.toNat⟩ := by
-  unfold SeLe4n.RegisterFile.stageRestartFrame SeLe4n.RegisterFile.stageReturnFrame
-    SeLe4n.writeReg FaultRestartFrame.returnWindow
-  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    (rf.stageRestartFrame f).gpr ⟨30⟩ = ⟨f.lr.toNat⟩ :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- WS-RR RR4.16: registers outside the restart window survive — the
 callee-saved range `x8`-`x29` is the faulted thread's own, and a handler that
@@ -1655,18 +1672,49 @@ theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_gpr_untouched
     (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) (r : SeLe4n.RegName)
     (hLow : 7 < r.val) (hHigh : r.val ≠ 30) :
     (rf.stageRestartFrame f).gpr r = rf.gpr r := by
-  unfold SeLe4n.RegisterFile.stageRestartFrame SeLe4n.RegisterFile.stageReturnFrame
-    SeLe4n.writeReg FaultRestartFrame.returnWindow
-  simp only
-  have h0 : r.val ≠ 0 := by omega
-  have h1 : r.val ≠ 1 := by omega
-  have h2 : r.val ≠ 2 := by omega
-  have h3 : r.val ≠ 3 := by omega
-  have h4 : r.val ≠ 4 := by omega
-  have h5 : r.val ≠ 5 := by omega
-  have h6 : r.val ≠ 6 := by omega
-  have h7 : r.val ≠ 7 := by omega
-  simp [h0, h1, h2, h3, h4, h5, h6, h7, hHigh]
+  have hw : ∀ i, 7 < i → i < 31 → i ≠ 30 →
+      (rf.stageRestartFrame f).word i = (rf.stageReturnFrame f.returnWindow).word i := by
+    intro i h7 hLt31 hNe30
+    match i, h7, hLt31, hNe30 with
+    | 0, h7, _, hNe30 => exact absurd h7 (by decide)
+    | 1, h7, _, hNe30 => exact absurd h7 (by decide)
+    | 2, h7, _, hNe30 => exact absurd h7 (by decide)
+    | 3, h7, _, hNe30 => exact absurd h7 (by decide)
+    | 4, h7, _, hNe30 => exact absurd h7 (by decide)
+    | 5, h7, _, hNe30 => exact absurd h7 (by decide)
+    | 6, h7, _, hNe30 => exact absurd h7 (by decide)
+    | 7, h7, _, hNe30 => exact absurd h7 (by decide)
+    | 8, h7, _, hNe30 => rfl
+    | 9, h7, _, hNe30 => rfl
+    | 10, h7, _, hNe30 => rfl
+    | 11, h7, _, hNe30 => rfl
+    | 12, h7, _, hNe30 => rfl
+    | 13, h7, _, hNe30 => rfl
+    | 14, h7, _, hNe30 => rfl
+    | 15, h7, _, hNe30 => rfl
+    | 16, h7, _, hNe30 => rfl
+    | 17, h7, _, hNe30 => rfl
+    | 18, h7, _, hNe30 => rfl
+    | 19, h7, _, hNe30 => rfl
+    | 20, h7, _, hNe30 => rfl
+    | 21, h7, _, hNe30 => rfl
+    | 22, h7, _, hNe30 => rfl
+    | 23, h7, _, hNe30 => rfl
+    | 24, h7, _, hNe30 => rfl
+    | 25, h7, _, hNe30 => rfl
+    | 26, h7, _, hNe30 => rfl
+    | 27, h7, _, hNe30 => rfl
+    | 28, h7, _, hNe30 => rfl
+    | 29, h7, _, hNe30 => rfl
+    | 30, h7, _, hNe30 => exact absurd rfl hNe30
+    | n + 31, _, h, _ => exact absurd h (by omega)
+  unfold SeLe4n.RegisterFile.gpr
+  split
+  · rename_i hr
+    rw [hw r.val hLow hr hHigh, SeLe4n.RegisterFile.stageReturnFrame_word]
+    simp only [show r.val ≠ 0 by omega, show r.val ≠ 1 by omega, show r.val ≠ 2 by omega,
+      show r.val ≠ 3 by omega, show r.val ≠ 4 by omega, show r.val ≠ 5 by omega, if_false]
+  · rfl
 
 /-- WS-RR RR4.16: stage a restart frame into a TCB's saved register context —
 the single record update the restart path goes through, mirroring
@@ -1752,7 +1800,7 @@ theorem writeRestartFrameToTcb_pc
     (hObjInv : st.objects.invExt) :
     (writeRestartFrameToTcb st tid frame).getTcb? tid
       = some (tcb.withRestartFrame frame) ∧
-    (tcb.withRestartFrame frame).registerContext.pc = ⟨frame.pc.toNat⟩ := by
+    (tcb.withRestartFrame frame).registerContext.pc = frame.pc := by
   refine ⟨?_, rfl⟩
   unfold writeRestartFrameToTcb
   rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]

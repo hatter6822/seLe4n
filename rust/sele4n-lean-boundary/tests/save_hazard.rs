@@ -12,13 +12,15 @@
 //! words are then written into **the same object**, as the HAL does to a
 //! per-core context it reuses; the thread's saved context is read back.
 //!
-//! Today the saved register file keeps the general-purpose registers as a
-//! closure over the object, while `sp`, `pc`, `pstate` and `tpidr` (words
-//! 31–34) are read when the file is built, so the read splits at word 31:
-//! words 0–30 follow the object to trap 2, words 31–34 stay trap 1's.  This
-//! test pins that split word for word — the witness of the hazard the
-//! context-by-value workstream (WS-CV) removes; its CV3.4 flips the
-//! post-overwrite assertion to every word equal to trap 1's.
+//! Until WS-CV CV1.1 the saved register file kept the general-purpose
+//! registers as a closure over the object, so words 0–30 followed the object
+//! to trap 2 while `sp`, `pc`, `pstate` and `tpidr` (read when the file was
+//! built) stayed trap 1's — the hazard this test was written to witness.
+//! Since CV1.1 the save is a copy of the thirty-five words into the thread's
+//! own context, so this test pins the opposite, word for word: nothing
+//! written into the object after the save reaches the saved context.  CV3.4
+//! retypes the probe over the persistent in-flight object and keeps the
+//! assertion.
 
 #![cfg(sele4n_lean_host_archive)]
 
@@ -26,9 +28,6 @@ use sele4n_lean_boundary::lean::Object;
 
 /// `trap::TRAP_FRAME_CONTEXT_WORDS`, the HAL's `TrapContext` word count.
 const TRAP_CONTEXT_WORDS: usize = 35;
-/// The first word the register file reads when it is built (`sp`), not
-/// through the object.
-const FIRST_EAGER_WORD: usize = 31;
 /// The probe thread's id.
 const TID: u64 = 7;
 /// Trap 1's seed (`trapContextOfSeed`: word `i` is `seed + i · 0x0101`).  Its
@@ -45,7 +44,7 @@ fn trap2_words() -> Vec<u64> {
 }
 
 #[test]
-fn a_saved_context_follows_the_reused_object_in_its_gprs_only() {
+fn a_saved_context_does_not_follow_the_reused_object() {
     let trap1 = Object::trap_context_of_seed(TRAP1_SEED);
     let trap1_words: Vec<u64> = (0..TRAP_CONTEXT_WORDS)
         .map(|i| trap1.u64_at(8 * i))
@@ -86,13 +85,7 @@ fn a_saved_context_follows_the_reused_object_in_its_gprs_only() {
 
     for (i, (t1, t2)) in trap1_words.iter().zip(&trap2).enumerate() {
         let saved = st.saved_context_word(TID, i as u64);
-        if i < FIRST_EAGER_WORD {
-            assert_eq!(
-                saved, *t2,
-                "gpr word {i} reads the reused object (the hazard)"
-            );
-        } else {
-            assert_eq!(saved, *t1, "word {i} was read when the file was built");
-        }
+        assert_ne!(saved, *t2, "word {i} does not read the reused object");
+        assert_eq!(saved, *t1, "word {i} is still trap 1's: the save copied it");
     }
 }

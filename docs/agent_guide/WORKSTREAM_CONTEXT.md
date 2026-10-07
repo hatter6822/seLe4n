@@ -27,7 +27,7 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; opens before WS-CB)
+### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; opens before WS-CB)
 
 The TCB's `registerContext`, the per-core register banks and the Lean boundary
 become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
@@ -46,14 +46,15 @@ have rewritten other threads' saved registers, and the entry/exit path made
 about forty heap allocations per syscall; a representation change is cheapest
 before WS-CB adds consumers of the saved context.
 
-**What new code must assume until WS-CV lands**: `RegisterFile.gpr` is a
-function and `RegisterFile`'s `BEq` is not lawful (`RegisterFile.not_lawfulBEq`);
-a theorem needing equality of register files states it field-wise or through
-`RegisterFile.ext`.  **What new code must not do**: add a consumer of
-`registerFileOfTrapContext` / `trapContextOfRegisterFile` or a new
-`RegisterFile` literal with a `gpr := fun …` lambda outside tests — both are
-deleted or rewritten by CV1/CV2; build a saved context from `TrapContext`
-through `ofWords` and the existing writers instead.
+**What new code must assume until WS-CV lands**: since CV1.1 `RegisterFile`
+is the thirty-five `UInt64` words of the trap frame with decidable (lawful)
+equality; `RegisterFile.gpr` is a view (`x0`–`x30` as `RegValue`, `0` past
+them) and `writeReg` takes a `UInt64`; a register file is built with
+`RegisterFile.withGprs` / `ofWords` or a structure literal of its words.
+**What new code must not do**: add a consumer of `registerFileOfTrapContext`
+/ `trapContextOfRegisterFile` (deleted by CV2) or a `RegValue`-typed register
+read on the entry/exit path; build a saved context from `TrapContext` through
+`ofWords` and the existing writers instead.
 
 ### WS-LS Lock state separated from kernel state — PLANNED (registered v0.36.60; runs beside WS-CV, before WS-CB)
 

@@ -1313,14 +1313,9 @@ def queueSpliceNeighbors? (removed : TCB) :
     Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
   (removed.queuePrev, removed.queueNext)
 
-/-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
-`RegisterFile` contains a function field (`gpr : Nat → Nat`). Field-wise
-comparison uses the `BEq RegisterFile` instance from `Machine.lean`.
-
-**V7-F: WARNING — non-lawful BEq instance.** Inherits non-lawfulness from
-`BEq RegisterFile` via the `registerContext` field comparison. Safe for
-runtime testing but do NOT rely on `==` for propositional equality in proofs.
-See `TCB.not_lawfulBEq` and `RegisterFile.not_lawfulBEq`. -/
+/-- WS-H12c: Manual `BEq` for `TCB`: field-wise comparison, the saved
+`registerContext` by `RegisterFile`'s decidable equality.  Proofs that need
+propositional equality of TCBs use `TCB.ext`. -/
 instance : BEq TCB where
   beq a b :=
     a.tid == b.tid && a.priority == b.priority && a.domain == b.domain &&
@@ -1559,44 +1554,11 @@ theorem TCB.pendingCapsDropped_bounded {t t' : TCB} (h : TCB.pendingCapsDropped 
   simp only [] at hrel
   exact ⟨hrel.1 ▸ hb.1, Nat.le_trans hrel.2 hb.2⟩
 
-/-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
-    `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.
-    Since `RegisterFile.BEq` is not lawful (see `RegisterFile.not_lawfulBEq`),
-    `TCB.BEq` inherits the same limitation. This prevents accidental use of
-    `TCB` in proofs that assume `LawfulBEq`. -/
-theorem TCB.not_lawfulBEq : ¬ LawfulBEq TCB := by
-  intro h
-  have hEq := @LawfulBEq.eq_of_beq _ _ h
-  -- Construct two TCBs whose registerContext differs only on out-of-range GPR index 32
-  let f₁ : SeLe4n.RegName → SeLe4n.RegValue := fun _ => ⟨0⟩
-  let f₂ : SeLe4n.RegName → SeLe4n.RegValue := fun r => if r.val = 32 then ⟨1⟩ else ⟨0⟩
-  let r₁ : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₁ }
-  let r₂ : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₂ }
-  let oid : SeLe4n.ObjId := ⟨0⟩
-  let va : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0)
-  let t₁ : TCB := {
-    tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
-    cspaceRoot := oid, vspaceRoot := oid, ipcBuffer := va, registerContext := r₁ }
-  let t₂ : TCB := {
-    tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
-    cspaceRoot := oid, vspaceRoot := oid, ipcBuffer := va, registerContext := r₂ }
-  have hBeq : (t₁ == t₂) = true := by decide
-  have hPropEq : t₁ = t₂ := hEq hBeq
-  have hNeq : t₁.registerContext.gpr ⟨32⟩ ≠ t₂.registerContext.gpr ⟨32⟩ := by decide
-  exact hNeq (by rw [hPropEq])
-
 /-- AK7-G (F-M05 / MEDIUM): Sanctioned extensionality lemma for `TCB`.
 
 Use this lemma instead of `==` in any proof that requires propositional
-equality of TCBs. `TCB.ext` requires each structural field to match —
-including the `registerContext : RegisterFile` function field — so the
-proof obligation covers the same surface as `a == b = true` but without
-the out-of-range-GPR trap that `TCB.not_lawfulBEq` exposes.
-
-Companion to `RegisterFile.ext` (Machine.lean). Together they close the
-proof gap cited in F-M05: non-lawful BEq remains available for test
-infrastructure, while proof-critical paths derive equality via explicit
-pointwise witnesses. -/
+equality of TCBs. `TCB.ext` requires each structural field to match,
+`registerContext` included.  Companion to `RegisterFile.ext` (Machine.lean). -/
 theorem TCB.ext {a b : TCB}
     (hTid : a.tid = b.tid) (hPrio : a.priority = b.priority) (hDom : a.domain = b.domain)
     (hCsp : a.cspaceRoot = b.cspaceRoot) (hVsp : a.vspaceRoot = b.vspaceRoot)

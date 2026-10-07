@@ -56,30 +56,11 @@ namespace SeLe4n.Kernel.Architecture
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-/-- The number of words a thread's context occupies in the trap frame. -/
-def trapFrameWordCount : Nat := 35
-
-/-- The index of `SP_EL0` in the trap frame's word layout. -/
-def trapFrameSpWord : Nat := 31
-
-/-- The index of `ELR_EL1` (the program counter the thread resumes at). -/
-def trapFramePcWord : Nat := 32
-
-/-- The index of `SPSR_EL1` (the processor state the thread resumes with). -/
-def trapFramePstateWord : Nat := 33
-
-/-- The index of `TPIDR_EL0` (the thread pointer the thread resumes with). -/
-def trapFrameTpidrWord : Nat := 34
-
 /-- **The register file a trap frame holds**, from its words (`word i` is the
-`i`-th word of the layout above).  `x31` — the zero register's index — reads as
-zero. -/
-def registerFileOfTrapWords (word : Nat → UInt64) : SeLe4n.RegisterFile :=
-  { pc := ⟨(word trapFramePcWord).toNat⟩
-    sp := ⟨(word trapFrameSpWord).toNat⟩
-    gpr := fun r => if r.val < 31 then ⟨(word r.val).toNat⟩ else ⟨0⟩
-    pstate := ⟨(word trapFramePstateWord).toNat⟩
-    tpidr := ⟨(word trapFrameTpidrWord).toNat⟩ }
+`i`-th word of the layout `SeLe4n.RegisterFile` declares): the words, stored by
+value. -/
+@[inline] def registerFileOfTrapWords (word : Nat → UInt64) : SeLe4n.RegisterFile :=
+  SeLe4n.RegisterFile.ofWords word
 
 /-- **The context a trap frame carries, as the HAL hands it over** — the
 thirty-five words of the layout above as fixed-width scalars, in layout order.
@@ -314,41 +295,16 @@ question "which register is which word" has the one owner above. -/
 def registerFileOfTrapContext (c : TrapContext) : SeLe4n.RegisterFile :=
   registerFileOfTrapWords c.word
 
-/-- The register file a trap frame's words describe is word-bounded: every
-register is a `UInt64` read as a `Nat`, or the zero register's `0`. -/
-theorem registerFileOfTrapWords_wordBounded (word : Nat → UInt64) :
-    (registerFileOfTrapWords word).wordBounded := by
-  refine ⟨UInt64.toNat_lt_size _, UInt64.toNat_lt_size _, UInt64.toNat_lt_size _,
-    UInt64.toNat_lt_size _, fun r _ => ?_⟩
-  simp only [registerFileOfTrapWords]
-  split
-  · exact UInt64.toNat_lt_size _
-  · show (0 : Nat) < 2 ^ 64; omega
-
-/-- A context the HAL handed over reads back as a word-bounded register file. -/
-theorem registerFileOfTrapContext_wordBounded (c : TrapContext) :
-    (registerFileOfTrapContext c).wordBounded :=
-  registerFileOfTrapWords_wordBounded c.word
-
 /-- The bulk boundary loses nothing: a context built from words reads back as
 the register file those words describe. -/
 @[simp] theorem registerFileOfTrapContext_ofWords (w : Nat → UInt64) :
-    registerFileOfTrapContext (TrapContext.ofWords w) = registerFileOfTrapWords w := by
-  have h := TrapContext.word_ofWords w
-  simp only [registerFileOfTrapContext, registerFileOfTrapWords, trapFramePcWord, trapFrameSpWord,
-    trapFramePstateWord, trapFrameTpidrWord]
-  rw [h 32 (by decide), h 31 (by decide), h 33 (by decide), h 34 (by decide)]
-  congr 1
-  funext r
-  split
-  · rename_i hr
-    rw [h r.val (by unfold trapFrameWordCount; omega)]
-  · rfl
+    registerFileOfTrapContext (TrapContext.ofWords w) = registerFileOfTrapWords w :=
+  SeLe4n.RegisterFile.ofWords_congr _ _ (TrapContext.word_ofWords w)
 
 /-- **Was the trap taken from EL0?**  `SPSR_EL1.M[3:0] = 0b0000` (`EL0t`): the
 frame is a thread's.  Any other mode is the kernel's own. -/
 def trapFromEl0 (rf : SeLe4n.RegisterFile) : Bool :=
-  rf.pstate.val % 16 == 0
+  rf.pstate % 16 == 0
 
 /-- **WS-BP BP7.3: save the frame a thread trapped with.**  When the trap was
 taken from EL0 and core `c` runs a thread with a TCB, both the core's register
@@ -396,17 +352,16 @@ def saveVacatedFrameOnCore (st : SystemState) (c : CoreId) (rf saved : SeLe4n.Re
 bytes back, so a resume re-issues the syscall (`Platform.FFI.svcFaultIP`'s
 arithmetic, on the saved context). -/
 def restartAtSvc (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
-  { rf with pc := ⟨rf.pc.val - 4⟩ }
+  { rf with pc := rf.pc - 4 }
 
-/-- Rewinding to the `SVC` keeps a word-bounded file word-bounded: the new `pc`
-is at most the old. -/
-theorem restartAtSvc_wordBounded (rf : SeLe4n.RegisterFile) (hB : rf.wordBounded) :
-    (restartAtSvc rf).wordBounded := by
-  obtain ⟨hPc, hSp, hPs, hTp, hGpr⟩ := hB
-  refine ⟨?_, hSp, hPs, hTp, hGpr⟩
-  have h : rf.pc.val < 2 ^ 64 := hPc
-  show rf.pc.val - 4 < 2 ^ 64
-  omega
+/-- The rewind is exact for a frame taken by an `SVC`: its return address is the
+instruction after the `SVC`, so it is at least `4` and the subtraction does not
+wrap. -/
+theorem restartAtSvc_pc_toNat (rf : SeLe4n.RegisterFile) (h : 4 ≤ rf.pc.toNat) :
+    (restartAtSvc rf).pc.toNat = rf.pc.toNat - 4 := by
+  simp only [restartAtSvc]
+  rw [UInt64.toNat_sub_of_le _ _ (by simpa [UInt64.le_iff_toNat_le] using h)]
+  rfl
 
 /-- **The save an entry performs**: the captured frame, if the HAL published
 one (`Platform.FFI.captureTrapFrame`); a handler with no frame saves nothing.

@@ -1141,8 +1141,7 @@ private def bracketCaller : TCB :=
   { mkTcb 401 40 none with
       cspaceRoot := bracketCNode
       registerContext :=
-        { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-          gpr := fun r => if r.val == 0 then ⟨1⟩ else if r.val == 7 then ⟨20⟩ else ⟨0⟩ } }
+        SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
 
 private def bracketState : SystemState :=
   let base :=

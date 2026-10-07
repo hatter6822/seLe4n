@@ -4305,8 +4305,8 @@ run_check "INVARIANT" rg -n 'destroying a table.s last capability clears the roo
 # frame the thread trapped with into the core's bank and its context.  Each
 # positive is a relation: the capture feeding the step's state, per entry, and
 # the handler publishing its frame before it routes anything.
-run_check "INVARIANT" rg -n '^  pstate : RegValue := ⟨0⟩$' SeLe4n/Machine.lean
-run_check "INVARIANT" rg -n '^  rf\.pstate\.val % 16 == 0$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n '^  pstate : UInt64 := 0$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^  rf\.pstate % 16 == 0$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 # PR #904 (v0.36.41): the syscall entry's save rewinds a vacated core's frame to
 # its SVC, so the resident thread re-issues the syscall its deschedule interrupted.
 run_check "INVARIANT" rg -n '^        \(Architecture\.saveCapturedSyscallFrame st execCore frame\) words\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
@@ -5876,7 +5876,7 @@ run_check "INVARIANT" rg -n '^theorem perCoreSlice_erases_shared_content($|[ ({:
 run_check "INVARIANT" rg -n '^def lowEquivalentSliceOnCoreCheckWithRegs($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem lowEquivalentSliceOnCoreCheckWithRegs_of_lowEquivalentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem lowEquivalentSliceOnCoreCheckWithRegs_le_slice($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem machineRegs_beq_not_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem machineRegs_beq_iff($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # SM8.A.4 the read-set characterisation + the cross-core frames + the excluded
 # fields (the machine timer's exclusion restated per core).
 run_check "INVARIANT" rg -n '^theorem onCore_perCore_independence($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
@@ -8216,11 +8216,11 @@ run_check "INVARIANT" rg -n -F -- 'pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;
 run_check "INVARIANT" rg -n -F -- 'words[34] = frame.tpidr_el0;' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = word(34);' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = 0;' rust/sele4n-hal/src/trap.rs
-run_check "INVARIANT" rg -n '^def trapFrameWordCount : Nat := 35$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
-run_check "INVARIANT" rg -n '^def trapFrameTpidrWord : Nat := 34$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
-run_check "INVARIANT" rg -n -F -- 'tpidr := ⟨(word trapFrameTpidrWord).toNat⟩ }' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
-run_check "INVARIANT" rg -n -F -- 'else if i = trapFrameTpidrWord then rf.tpidr.val.toUInt64' SeLe4n/Kernel/Architecture/ContextRestore.lean
-run_check "INVARIANT" rg -n -F -- 'a.pstate == b.pstate && a.tpidr == b.tpidr &&' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^def Kernel\.Architecture\.trapFrameWordCount : Nat := 35$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^def Kernel\.Architecture\.trapFrameTpidrWord : Nat := 34$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^  \| 34 => rf\.tpidr$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def trapWordsOfRegisterFile \(rf : SeLe4n\.RegisterFile\) \(i : Nat\) : UInt64 :=\n  rf\.word i$' SeLe4n/Kernel/Architecture/ContextRestore.lean
+run_check "INVARIANT" rg -n -U '^  tpidr : UInt64 := 0\n  deriving DecidableEq, Inhabited$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n -F -- 'the incoming thread resumes with its own thread pointer, not the outgoing thread' tests/SmpSwitchToThreadSuite.lean
 #
 # The four controls EL0 could reach with no save and no trap — the preemption

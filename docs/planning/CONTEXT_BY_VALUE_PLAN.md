@@ -2,7 +2,7 @@
 
 > **Workstream**: WS-CV (one fixed-width register context, stored by value,
 > handed over by reference)
-> **Status**: **PLANNED** — registered at `v0.36.50`; no sub-task started.
+> **Status**: **IN FLIGHT** — registered at `v0.36.50`; CV0 landed at `v0.36.59`, CV1.1 at `v0.36.61`.
 > Opens **before WS-CB** (maintainer's decision, 2026-10-05): a representation
 > change is cheapest with the fewest consumers, and WS-CB adds consumers of the
 > saved context (budget-expiry preemption saves and restores it).  Its one
@@ -174,7 +174,10 @@ allocation), and the HAL hands its in-flight context over as a
   owners'.
 - The HAL's `ffi_trap_context` allocates nothing (`lean_heap` counter
   unchanged across the call; Rust unit test, CV3.3).
-- The two-trap hazard test (CV0.2, flipped at CV3.4): two traps on one core,
+- The two-trap hazard test (CV0.2, flipped at CV1.1 — earlier than the CV3.4
+  the plan scheduled, because the 35-word carrier made the save a copy before
+  the in-flight object existed; CV3.4 retypes the probe and keeps the
+  assertion): two traps on one core,
   the first's context saved into a TCB **through the real save path** —
   `saveCapturedSyscallFrame`, called by a pure `BoundaryProbes` export on a
   probe state, since the host lane links no HAL (§3.6) — the second's words
@@ -182,9 +185,10 @@ allocation), and the HAL hands its in-flight context over as a
   the test pins what the tree does today (before the overwrite the saved
   context equals trap 1's words; after it the thirty-one general registers,
   read through the closure of the `v0.36.47` debt row, equal trap 2's and the
-  four words read eagerly at the save still equal trap 1's); from CV3.4 on
-  the TCB's saved context, read back from the state after the second trap,
-  is the first trap's, word for word.
+  four words read eagerly at the save still equal trap 1's); from CV1.1 on
+  (`v0.36.61`) the TCB's saved context, read back from the state after the
+  second trap, is the first trap's, word for word
+  (`a_saved_context_does_not_follow_the_reused_object`).
 - Every tier green; every Tier 3 anchor scoped to a touched file executed.
 
 ### 1.2 The surface, measured at `v0.36.48`
@@ -521,7 +525,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 
 | # | Sub-task | Output |
 |---|---|---|
-| CV1.1 | `RegisterFile` as the 35-field `UInt64` structure with `gpr`, `readReg`, `writeReg`, `word`, `ofWords` and their lemmas; `TrapContext`'s layout constants move; `wordBounded` retires; the three `not_lawfulBEq` witnesses (§6) are deleted — they are false on a lawful carrier and only prose cites them — while `RegisterFile.beq_self` / `beq_def` / `beq_symm` and the other `beq_*` lemmas are **kept as compatibility lemmas**, re-proved as one-line corollaries of `LawfulBEq`, so their consumers in the scheduler, architecture and information-flow files compile unchanged in this row; **in the same row, because nothing compiles beyond `Machine.lean` without them**: the writers of §3.2 on the new carrier (`stageReturnFrame`, `stageRestartFrame`, `spill`, `writeFfiRegistersToTcb`, `restartAtSvc`, `writeRegisterState`, `setPC`), the 49 literals, `Repr`; the `_wordBounded` lemmas and `RegisterContextBounded.lean` deleted; `contextMatchesCurrent` proofs simplified to decidable equality; **every one of the 292 register theorems compiles**; fixture `main_trace_smoke.expected` unchanged or its change justified; **the documentation of the change in the same PR** (the repository rule): the register-file passages of `docs/spec/SELE4N_SPEC.md` (the carrier, the `x31` semantics), `docs/DEVELOPMENT.md` §5 if a file moved, `WORKSTREAM_CONTEXT.md`, the `v0.36.47` debt row shortened to CV2–CV4, the evidence-index rows of the retired theorems, the CHANGELOG entry | `SeLe4n/Machine.lean`, the 43 `SeLe4n/` files, the 8 test suites, docs |
+| CV1.1 | `RegisterFile` as the 35-field `UInt64` structure with `gpr`, `readReg`, `writeReg`, `word`, `ofWords` and their lemmas; `TrapContext`'s layout constants move; `wordBounded` retires; the three `not_lawfulBEq` witnesses (§6) are deleted — they are false on a lawful carrier and only prose cites them — while `RegisterFile.beq_self` / `beq_def` / `beq_symm` and the other `beq_*` lemmas are **kept as compatibility lemmas**, re-proved as one-line corollaries of `LawfulBEq`, so their consumers in the scheduler, architecture and information-flow files compile unchanged in this row; **in the same row, because nothing compiles beyond `Machine.lean` without them**: the writers of §3.2 on the new carrier (`stageReturnFrame`, `stageRestartFrame`, `spill`, `writeFfiRegistersToTcb`, `restartAtSvc`, `writeRegisterState`, `setPC`), the 49 literals, `Repr`; the `_wordBounded` lemmas and `RegisterContextBounded.lean` deleted; `contextMatchesCurrent` proofs simplified to decidable equality; **every one of the 292 register theorems compiles**; fixture `main_trace_smoke.expected` unchanged or its change justified; **the documentation of the change in the same PR** (the repository rule): the register-file passages of `docs/spec/SELE4N_SPEC.md` (the carrier, the `x31` semantics), `docs/DEVELOPMENT.md` §5 if a file moved, `WORKSTREAM_CONTEXT.md`, the `v0.36.47` debt row shortened to CV2–CV4, the evidence-index rows of the retired theorems, the CHANGELOG entry | `SeLe4n/Machine.lean`, the 43 `SeLe4n/` files, the 8 test suites, docs  **Landed `v0.36.61`.** |
 | CV1.2 | The information-flow surface: `ObservableState.machineRegs`, the per-core fragments and `lowEquivalentSliceOnCoreCheckWithRegs` on lawful equality; the `machineRegs` unwinding relations re-proved where they cited `beq_*`; then the `beq_*` compatibility lemmas of CV1.1 are **retired with their last consumer** — every citing site (the scheduler and architecture files included, enumerated by the build when the lemmas are deleted) rewritten to `beq_iff_eq` / decidable equality — so the lemmas are never deleted while a consumer remains; the spec's information-flow equality passages and the evidence-index rows of the re-proved unwinding relations in the same PR (consumes CV1.1) | `InformationFlow/*`, `Machine.lean`, the remaining `beq_*` consumers, docs |
 
 ### CV2 — one boundary type (§3.3)
@@ -538,7 +542,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 | CV3.1 | `Architecture.InFlightContext`, `snapshotInto` (a full-field update, in place on an exclusively owned destination), the derived `snapshot`, `snapshotInto_word`; `ffiTrapContext : BaseIO (Option InFlightContext)` — the `some` being the core's persistent wrapper (§3.4), so the binding allocates nothing per trap — replacing CV2.1's temporary `Option RegisterFile` binding, with `syscallEntryContextOrFaulted` matching the `Option` directly in place of building an `Except` around the context (its `.ok` in §1.1's table goes); the entry wrappers on it — the wrappers hand the `InFlightContext` to `syscallDispatchCrossCoreBracketedStep`, which is `@[specialize]`d over its step and reads the argument words from the context's fields, so the seventeen `lean_box_uint64` and two closures of §1.1's table, `syscallWindow`'s eight boxes and the entry action's closure (`modifyGetKernelState` specialised over its action the same way) are gone, and the plan decodes the argument words from the object's fields instead of spilling them into the TCB and looking them up; `SystemState` stays free of the type; **in the same row as the HAL objects it binds to**, since the Lean binding promises a persistent wrapper the CV2 HAL does not have and the HAL objects have no Lean reader before the binding: `trap::InFlightContextObjects`, the per-core persistent object and wrapper, initialised at runtime bring-up with the non-heap header of §3.4 (`lean_set_non_heap_header`, the byte size in `m_cs_sz`), `ffi_trap_context` writing the core's object and returning its wrapper without allocating, `trap_context_of_lean` accepting the executing core's object by address (consumes CV2.1) | Lean; `rust/sele4n-hal/src/trap.rs`, `ffi.rs`, `lean_runtime/` |
 | CV3.2 | The cross-language test extended: `snapshotInto` writes the words into the object it is given and `snapshot` yields a different one with the same words; the probes export both | `rust/sele4n-lean-boundary/` |
 | CV3.3 | Rust unit tests: both headers read back through `lean.h`'s accessors (`m_rc = 0`, `m_cs_sz` 288 and 16, the tags and field counts of §3.4); persistence after `lean_dec`, zero allocations across `ffi_trap_context` read from CV0.1's monotone `allocations` counter (§3.4; the live census cannot see an allocation freed before return), by-address acceptance, refusal of another core's object | `ffi.rs` tests |
-| CV3.4 | CV0.2's hazard test flipped: the save probe retyped over `InFlightContext` (trap 1's object is the one the probe hands to `saveCapturedSyscallFrame`, whose `snapshotInto` copies its words into the TCB's context), trap 2's words written into the same object, the TCB read back — the saved context is trap 1's, word for word; it is the acceptance test of D3 (§1.1) and fails if the save site skips `snapshotInto` or stores the wrong context (consumes CV0.2, CV3.1) | boundary crate |
+| CV3.4 | CV0.2's hazard test (already flipped at CV1.1, `v0.36.61`, when the save became a copy) retyped: the save probe retyped over `InFlightContext` (trap 1's object is the one the probe hands to `saveCapturedSyscallFrame`, whose `snapshotInto` copies its words into the TCB's context), trap 2's words written into the same object, the TCB read back — the saved context is trap 1's, word for word; it is the acceptance test of D3 (§1.1) and fails if the save site skips `snapshotInto` or stores the wrong context (consumes CV0.2, CV3.1) | boundary crate |
 | CV3.5 | QEMU `virt` four-PE boot (Tier 4 lane) green with the persistent objects: every core traps, snapshots, restores | CI |
 
 ### CV4 — restore borrows, return frame updates in place (§3.5)
@@ -647,7 +651,7 @@ requires).
 | `registerContextStableDecidable` field (`Architecture/Assumptions.lean`) | 218 | kept |
 | `saveOutgoingContext` / `…OnCore` / `…Checked` bodies through `updateTcb` / `getTcbWitnessed?`, and their three `objects.insert` negatives | 3061–3063, 3072, 3073, 3076 | kept |
 | `writeReturnFrameToTcb`, `writeRestartFrameToTcb`, `writeFaultRegistersToTcb` (`spill` into `registerContext`), `writeFfiRegistersToTcb` bodies, their `objects.insert` / `getTcb?` negatives and their three `_id_when_not_tcb` proofs | 3229–3235, 3238–3240 | kept (CV4.3 changes `FaultRegisterWindow`'s fields, not the `spill` call) |
-| `pstate : RegValue := ⟨0⟩` (`Machine.lean`) | 4308 | **CV1.1** retargets (`pstate : UInt64`) |
+| `pstate : RegValue := ⟨0⟩` (`Machine.lean`) | 4308 | **CV1.1** retargets (`pstate : UInt64`) — **done `v0.36.61`**, with the trap-frame layout anchors (word count, tpidr word, the tpidr arm, the restore's word read, the structural equality) re-pointed at `Machine.lean` and `ContextRestore.lean` |
 | `saveTrapFrameOnCore_contextMatchesCurrentOnCore` | 4343 | kept (restated over `snapshotInto` at CV3.1) |
 | `ffiRestoreStageContext (trapContextOfRegisterFile ctx)` (`Platform/FFI.lean`) | 4358 | **CV2.1** retargets (`trapContextOfRegisterFile` deleted; the TCB's context is staged) |
 | `RestoreTarget.deliveredFrame?`, `switchToThreadOnCore_delivers_readReturnFrame`, `abortPendingIpcOnEndpoint_readReturnFrame` | 4397, 4398, 4400 | kept |
@@ -656,7 +660,7 @@ requires).
 | `ofRegisterFile_spill` (`Model/Fault.lean`) | 4981 | kept (re-proved at CV4.3 over the scalar `x0`–`x7` window) |
 | `machineRegs_beq_self` | 5825 | **CV1.2** deletes (the `beq_*` lemmas retire with their last consumer) |
 | `onCore_machineRegs`, `onCore_setRegsOnCore_ne` | 5849, 5888 | kept |
-| `machineRegs_beq_not_injective` | 5879 | **CV1.1** deletes (a `not_lawfulBEq` witness, §6) |
+| `machineRegs_beq_not_injective` | 5879 | **CV1.1** deletes (a `not_lawfulBEq` witness, §6) — **done `v0.36.61`**, replaced by `machineRegs_beq_iff` |
 | `saveOutgoingContext_confinedToCore`, `restoreIncomingContext_confinedToBootCore` | 6018, 6019 | kept |
 | `recordPhysicalWrites (writeReturnFrameToTcb …)` in the receive path | 7714 | kept |
 | `saveVacatedFrameOnCore`'s `registerContext := saved` arm | 7740 | **CV3.1** retargets (the save is `snapshotInto`) |

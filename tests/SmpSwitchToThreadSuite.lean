@@ -550,7 +550,7 @@ private def runContextRestoreChecks : IO Unit := do
       match Architecture.restoreTargetOnCore st' bootCoreId with
       | .user c _ _ _ =>
         let staged := Architecture.trapWordsOfRegisterFile c Architecture.trapFrameTpidrWord
-        staged == (savedContextOf st' tidA).tpidr.val.toUInt64 && staged != 0x1022
+        staged == (savedContextOf st' tidA).tpidr && staged != 0x1022
       | _ => false))
   assertBool "the outgoing thread keeps its thread pointer for its next resume"
     (switchOkAnd staged bootCoreId tidA (fun st' => (savedContextOf st' tidP).tpidr == ⟨0x1022⟩))

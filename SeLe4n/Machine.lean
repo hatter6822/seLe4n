@@ -221,215 +221,302 @@ instance (r : MemoryRegion) (w : Nat) : Decidable (r.wellFormed w) :=
 
 end MemoryRegion
 
-/-- Pure register file state used by scheduler/context-switch modeling.
+/-- The number of words a thread's context occupies: `x0`–`x30`, `SP_EL0`,
+`ELR_EL1`, `SPSR_EL1` and `TPIDR_EL0`, the order of the HAL's trap frame. -/
+def Kernel.Architecture.trapFrameWordCount : Nat := 35
 
-S4-F: **Design rationale for `gpr : RegName → RegValue` (function representation).**
-An `Array RegValue` (size 32) alternative was evaluated and rejected because:
+/-- The index of `SP_EL0` in the context's word layout. -/
+def Kernel.Architecture.trapFrameSpWord : Nat := 31
 
-1. **Proof simplicity.** The function representation enables `readReg_writeReg_eq`
-   and `readReg_writeReg_ne` to be proved by simple `simp [readReg, writeReg]`.
-   Array-based proofs would require bounds checking (`h : i < 32`) threaded
-   through every read/write lemma, adding ~50 additional proof obligations.
+/-- The index of `ELR_EL1` (the program counter the thread resumes at). -/
+def Kernel.Architecture.trapFramePcWord : Nat := 32
 
-2. **Extensionality.** `RegisterFile.ext` (pointwise equality) is natural for
-   functions. For arrays, extensionality requires `Array.ext_iff` with index
-   bounds, complicating preservation proofs across the scheduler and IPC
-   subsystems.
+/-- The index of `SPSR_EL1` (the processor state the thread resumes with). -/
+def Kernel.Architecture.trapFramePstateWord : Nat := 33
 
-3. **BEq instance.** The existing BEq compares all 32 GPR indices in a loop.
-   This is semantically equivalent for both representations, but the function
-   representation avoids array bounds checks in the BEq implementation.
+/-- The index of `TPIDR_EL0` (the thread pointer the thread resumes with). -/
+def Kernel.Architecture.trapFrameTpidrWord : Nat := 34
 
-4. **No performance impact.** The Lean model is not compiled to machine code
-   for execution — it exists purely for proof. Register file access in the
-   trace harness is infrequent. There is no runtime benefit to array backing.
+/-- **A thread's register context**: the thirty-five 64-bit words the HAL saves
+on a trap and restores on return, in the trap frame's order — `x0`–`x30`, then
+`SP_EL0`, `ELR_EL1`, `SPSR_EL1` and `TPIDR_EL0`.
 
-The function representation will be revisited if/when the model targets
-extracted executable code (e.g., via Lean-to-C compilation for the RPi5
-bring-up). At that point, a `Fin 32 → RegValue` or `Vector RegValue 32`
-representation may be preferable for extraction efficiency. -/
+The registers are machine words, so the file holds exactly what the hardware
+holds: no value outside `[0, 2^64)` exists to be narrowed at the boundary, and
+the file is a value with lawful decidable equality.  A structure whose fields
+are all `UInt64` compiles to one constructor object with no object fields and
+`8 · 35` scalar bytes, field `i` at byte offset `8 · i` — the layout the HAL's
+trap frame has, so a saved context is the trap frame's words, stored by value.
+
+`x31` names the zero register: `gpr` reads it as `0` and `writeReg` ignores a
+write to it.  `default` (every field `0`) is a fresh thread's context and every
+core's bank at boot. -/
 structure RegisterFile where
-  pc : RegValue
-  sp : RegValue
-  gpr : RegName → RegValue
-  /-- **WS-BP BP7.3**: the saved processor state (`SPSR_EL1` at the trap): the
-  condition flags, the exception level and stack selector (`M[3:0]`) and the
-  interrupt masks the thread returns to.  A thread preempted between a compare
-  and its branch resumes with the wrong condition unless this is saved with the
-  rest of its context.  `0` is `EL0t` with every flag clear and every interrupt
-  unmasked — a fresh thread's state. -/
-  pstate : RegValue := ⟨0⟩
-  /-- **The thread pointer `TPIDR_EL0`**, which EL0 writes and reads with no trap.
-  It is thread state, not core state: the core's register holds whatever the last
-  thread to run there wrote, so a switch that does not save and restore it hands
-  that value to the next thread — a 64-bit storage channel between any two
-  threads that share a core, domains included.  seL4 carries it as `TLS_BASE`.
-  `0` is a fresh thread's value. -/
-  tpidr : RegValue := ⟨0⟩
+  /-- `x0`. -/
+  x0 : UInt64 := 0
+  /-- `x1`. -/
+  x1 : UInt64 := 0
+  /-- `x2`. -/
+  x2 : UInt64 := 0
+  /-- `x3`. -/
+  x3 : UInt64 := 0
+  /-- `x4`. -/
+  x4 : UInt64 := 0
+  /-- `x5`. -/
+  x5 : UInt64 := 0
+  /-- `x6`. -/
+  x6 : UInt64 := 0
+  /-- `x7`. -/
+  x7 : UInt64 := 0
+  /-- `x8`. -/
+  x8 : UInt64 := 0
+  /-- `x9`. -/
+  x9 : UInt64 := 0
+  /-- `x10`. -/
+  x10 : UInt64 := 0
+  /-- `x11`. -/
+  x11 : UInt64 := 0
+  /-- `x12`. -/
+  x12 : UInt64 := 0
+  /-- `x13`. -/
+  x13 : UInt64 := 0
+  /-- `x14`. -/
+  x14 : UInt64 := 0
+  /-- `x15`. -/
+  x15 : UInt64 := 0
+  /-- `x16`. -/
+  x16 : UInt64 := 0
+  /-- `x17`. -/
+  x17 : UInt64 := 0
+  /-- `x18`. -/
+  x18 : UInt64 := 0
+  /-- `x19`. -/
+  x19 : UInt64 := 0
+  /-- `x20`. -/
+  x20 : UInt64 := 0
+  /-- `x21`. -/
+  x21 : UInt64 := 0
+  /-- `x22`. -/
+  x22 : UInt64 := 0
+  /-- `x23`. -/
+  x23 : UInt64 := 0
+  /-- `x24`. -/
+  x24 : UInt64 := 0
+  /-- `x25`. -/
+  x25 : UInt64 := 0
+  /-- `x26`. -/
+  x26 : UInt64 := 0
+  /-- `x27`. -/
+  x27 : UInt64 := 0
+  /-- `x28`. -/
+  x28 : UInt64 := 0
+  /-- `x29`. -/
+  x29 : UInt64 := 0
+  /-- `x30`. -/
+  x30 : UInt64 := 0
+  /-- `SP_EL0`, the stack pointer (word 31). -/
+  sp : UInt64 := 0
+  /-- `ELR_EL1`, the program counter the thread resumes at (word 32). -/
+  pc : UInt64 := 0
+  /-- `SPSR_EL1` at the trap (word 33): the condition flags, the exception level
+  and stack selector (`M[3:0]`) and the interrupt masks the thread returns to.  A
+  thread preempted between a compare and its branch resumes with the wrong
+  condition unless this is saved with the rest of its context.  `0` is `EL0t`
+  with every flag clear and every interrupt unmasked — a fresh thread's state. -/
+  pstate : UInt64 := 0
+  /-- The thread pointer `TPIDR_EL0` (word 34), which EL0 writes and reads with
+  no trap.  It is thread state, not core state: a switch that does not save and
+  restore it hands one thread's value to the next — a 64-bit storage channel
+  between any two threads that share a core.  seL4 carries it as `TLS_BASE`. -/
+  tpidr : UInt64 := 0
+  deriving DecidableEq, Inhabited
 
-instance : Inhabited RegisterFile where
-  default := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun _ => ⟨0⟩ }
-
-/-- **Every register of `rf` fits in one machine word** — `pc`, `sp`, `pstate`,
-`tpidr` and every valid general-purpose register.  `RegValue` is an unbounded
-`Nat`, so this is the hypothesis under which the trap-frame conversion is
-lossless: `Kernel.Architecture.trapContextOfRegisterFile` narrows each register
-with `Nat.toUInt64`, which wraps a value at or above `2^64`.  A context the HAL
-handed over satisfies it (`Kernel.Architecture.registerFileOfTrapContext_wordBounded`);
-`Kernel.Architecture.registerContextsWordBounded` carries it for every saved
-context and every core's bank, every register-context writer preserves it
-(`SeLe4n/Kernel/Architecture/RegisterContextBounded.lean`), and the live restore
-path discharges it (`Kernel.Architecture.restoreTargetOnCore_user_roundTrip`). -/
-def RegisterFile.wordBounded (rf : RegisterFile) : Prop :=
-  rf.pc.valid ∧ rf.sp.valid ∧ rf.pstate.valid ∧ rf.tpidr.valid ∧
-    ∀ r : RegName, r.isValid → (rf.gpr r).valid
-
-/-- The all-zero register file — a fresh thread's, and every bank's at boot — is
-word-bounded. -/
-theorem RegisterFile.default_wordBounded : (default : RegisterFile).wordBounded := by
-  refine ⟨?_, ?_, ?_, ?_, fun _ _ => ?_⟩ <;> (show (0 : Nat) < 2 ^ 64; omega)
-
-/-- WS-H12c: Manual `Repr` for `RegisterFile`. Since `gpr` is a function
-(`RegName → RegValue`), only `pc` and `sp` are shown in trace output. -/
-instance : Repr RegisterFile where
-  reprPrec rf _ := s!"RegisterFile(pc={rf.pc.val}, sp={rf.sp.val})"
-
-/-- R6-C/R7-B: Number of GPR indices compared in `RegisterFile` equality.
+/-- R6-C/R7-B: Number of general-purpose register indices (`x0`–`x30` and the
+    zero register).
     ARM64: 32 (x0–x30 plus xzr/zero register). Tied to `RegName.arm64GPRCount`
     for consistency with the hardware register model. -/
 def registerFileGPRCount : Nat := RegName.arm64GPRCount
 
-/-- R6-C: Structural `BEq` for `RegisterFile`. Compares `pc`, `sp`, and
-all `registerFileGPRCount` GPR indices. Uses a named constant instead of
-a magic number to tie the comparison range to the architecture definition.
 
-**S1-J: Lawfulness note.** This `BEq` instance is *not* lawful in the
-strict `LawfulBEq` sense (`a == b = true → a = b`) because `gpr` is a
-function `RegName → RegValue`. Extensional equality of functions is
-undecidable in general; this instance checks equality at all 32 valid
-GPR indices (0..31), which is sound for the ARM64 register model since
-`RegName.isValid` restricts valid names to this range. For proofs that
-require propositional equality of register files, use `RegisterFile.ext`
-(which requires pointwise equality of the `gpr` function).
+namespace RegisterFile
 
-**V7-F: WARNING — non-lawful BEq instance.** Safe for runtime testing and trace
-validation. Do NOT use `==` on `RegisterFile` in proof contexts that require
-propositional equality — use `RegisterFile.ext` instead. See
-`RegisterFile.not_lawfulBEq` for the formal negative witness.
+open Kernel.Architecture (trapFrameWordCount)
 
-AF2-E: Non-lawful BEq is a known and accepted limitation. ARM64 has
-exactly 32 GPRs (x0–x30 + xzr). The `not_lawfulBEq` counterexample
-(below) uses index 32 which is unreachable in practice — all kernel
-code constructs `RegisterFile` from 32-element arrays. `LawfulBEq`
-would require dependent typing (`RegisterFile` over `Fin 32`) which
-conflicts with Lean 4 function extensionality for the `gpr` field.
-The safety analysis at X5-G (below) confirms this does NOT affect kernel
-correctness: `BEq` is used only in test infrastructure and trace
-validation, never in proof-critical paths. -/
-instance : BEq RegisterFile where
-  beq a b := a.pc == b.pc && a.sp == b.sp && a.pstate == b.pstate && a.tpidr == b.tpidr &&
-    (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
+/-- Word `b` of the layout, indexed by a byte — the form the compiler lowers to
+a jump table (a `match` on `UInt8` literals compiles to `uint8_t` compares the C
+compiler folds; one on `Nat` literals to a chain of `lean_nat_dec_eq`).  `0`
+past the layout. -/
+def wordOfByte (rf : RegisterFile) : UInt8 → UInt64
+  | 0 => rf.x0
+  | 1 => rf.x1
+  | 2 => rf.x2
+  | 3 => rf.x3
+  | 4 => rf.x4
+  | 5 => rf.x5
+  | 6 => rf.x6
+  | 7 => rf.x7
+  | 8 => rf.x8
+  | 9 => rf.x9
+  | 10 => rf.x10
+  | 11 => rf.x11
+  | 12 => rf.x12
+  | 13 => rf.x13
+  | 14 => rf.x14
+  | 15 => rf.x15
+  | 16 => rf.x16
+  | 17 => rf.x17
+  | 18 => rf.x18
+  | 19 => rf.x19
+  | 20 => rf.x20
+  | 21 => rf.x21
+  | 22 => rf.x22
+  | 23 => rf.x23
+  | 24 => rf.x24
+  | 25 => rf.x25
+  | 26 => rf.x26
+  | 27 => rf.x27
+  | 28 => rf.x28
+  | 29 => rf.x29
+  | 30 => rf.x30
+  | 31 => rf.sp
+  | 32 => rf.pc
+  | 33 => rf.pstate
+  | 34 => rf.tpidr
+  | _ => 0
 
-/-- AG7-D: BEq reflexivity for RegisterFile. Although the BEq instance is not
-    lawful in general (due to the function-typed `gpr` field), `a == a = true`
-    holds for any `RegisterFile` because each component comparison (`pc == pc`,
-    `sp == sp`, `gpr ⟨i⟩ == gpr ⟨i⟩`) is reflexive via `RegValue`'s lawful BEq. -/
-theorem RegisterFile.beq_self (a : RegisterFile) : (a == a) = true := by
-  simp [BEq.beq]
+/-- Word `i` of the layout; `0` past it.  One bound test on the `Nat`, then
+`wordOfByte` on the index narrowed to a byte (exact below the bound). -/
+def word (rf : RegisterFile) (i : Nat) : UInt64 :=
+  if i < trapFrameWordCount then rf.wordOfByte i.toUInt8 else 0
 
-/-- WS-SM SM5.I: the structural `BEq` on `RegisterFile` unfolded — the conjunction
-of the `pc` / `sp` / 32-GPR-index `RegValue` comparisons.  Lets the partial-
-equivalence lemmas below reduce to component `RegValue` equalities (which *are*
-`LawfulBEq`) without unfolding the inner `==` to raw `decide`. -/
-theorem RegisterFile.beq_def (a b : RegisterFile) :
-    (a == b) = (a.pc == b.pc && a.sp == b.sp && a.pstate == b.pstate && a.tpidr == b.tpidr &&
-      (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩) := rfl
+/-- A word past the layout reads as `0`. -/
+theorem word_of_ge (rf : RegisterFile) (i : Nat) (h : ¬ i < trapFrameWordCount) :
+    rf.word i = 0 := by
+  simp [word, h]
 
-/-- WS-SM SM5.I: `RegisterFile`'s structural `BEq` is **symmetric**.  Although it
-is not `LawfulBEq` (the `gpr` function may differ beyond index 31), each component
-comparison is a `LawfulBEq RegValue` test, so the finite conjunction is symmetric.
-Needed for the per-core register-bank `contextMatchesCurrentOnCore` sibling frame:
-when a thread is (pathologically) current on two cores whose banks both match its
-saved context, the two banks agree with each other. -/
-theorem RegisterFile.beq_symm {a b : RegisterFile} (h : (a == b) = true) :
-    (b == a) = true := by
-  rw [RegisterFile.beq_def] at h
-  rw [RegisterFile.beq_def]
-  simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at h ⊢
-  obtain ⟨⟨⟨⟨hpc, hsp⟩, hps⟩, htp⟩, hgpr⟩ := h
-  refine ⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩
-  · rw [beq_iff_eq] at hpc ⊢; exact hpc.symm
-  · rw [beq_iff_eq] at hsp ⊢; exact hsp.symm
-  · rw [beq_iff_eq] at hps ⊢; exact hps.symm
-  · rw [beq_iff_eq] at htp ⊢; exact htp.symm
-  · intro i hi; have hgi := hgpr i hi; rw [beq_iff_eq] at hgi ⊢; exact hgi.symm
+/-- The register file whose word `i` is `w i`.  Inlined, so a caller's `w` is
+applied at each index directly rather than through a closure.
 
-/-- WS-SM SM5.I: `RegisterFile`'s structural `BEq` is **transitive** (companion to
-`beq_symm` / `beq_self`: it is a partial equivalence relation, sufficient for the
-register-bank `contextMatchesCurrentOnCore` reasoning even without `LawfulBEq`). -/
-theorem RegisterFile.beq_trans {a b c : RegisterFile}
-    (hab : (a == b) = true) (hbc : (b == c) = true) : (a == c) = true := by
-  rw [RegisterFile.beq_def] at hab hbc
-  rw [RegisterFile.beq_def]
-  simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at hab hbc ⊢
-  obtain ⟨⟨⟨⟨hpcab, hspab⟩, hpsab⟩, htpab⟩, hgprab⟩ := hab
-  obtain ⟨⟨⟨⟨hpcbc, hspbc⟩, hpsbc⟩, htpbc⟩, hgprbc⟩ := hbc
-  refine ⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩
-  · rw [beq_iff_eq] at hpcab hpcbc ⊢; exact hpcab.trans hpcbc
-  · rw [beq_iff_eq] at hspab hspbc ⊢; exact hspab.trans hspbc
-  · rw [beq_iff_eq] at hpsab hpsbc ⊢; exact hpsab.trans hpsbc
-  · rw [beq_iff_eq] at htpab htpbc ⊢; exact htpab.trans htpbc
-  · intro i hi
-    have h1 := hgprab i hi; have h2 := hgprbc i hi
-    rw [beq_iff_eq] at h1 h2 ⊢; exact h1.trans h2
+This is the Lean-side layout pin: the constructor is applied *positionally*,
+so field `i` is `w i` by construction, and `word_ofWords` (which reads each
+field by *name*) proves that declared position `i` is layout word `i`.  A field
+reordered or inserted without the same change here and in `wordOfByte` fails
+to elaborate. -/
+@[inline] def ofWords (w : Nat → UInt64) : RegisterFile :=
+  ⟨w 0, w 1, w 2, w 3, w 4, w 5, w 6, w 7, w 8, w 9, w 10, w 11, w 12, w 13, w 14, w 15, w 16, w 17, w 18, w 19, w 20, w 21, w 22, w 23, w 24, w 25, w 26, w 27, w 28, w 29, w 30, w 31, w 32, w 33, w 34⟩
 
-/-- U2-N/U-M17: Negative `LawfulBEq` witness for `RegisterFile`.
-    `BEq RegisterFile` checks equality at 32 GPR indices but cannot prove
-    `a == b = true → a = b` because `gpr` is a function — two extensionally
-    different functions may agree on indices 0..31. This instance prevents
-    accidental use of `RegisterFile` in proofs that assume `LawfulBEq`. -/
-theorem RegisterFile.not_lawfulBEq : ¬ LawfulBEq RegisterFile := by
-  intro h
-  -- Construct two register files with different gpr functions that agree on 0..31
-  -- but differ on an out-of-range index (index 32).
-  let f₁ : RegName → RegValue := fun _ => ⟨0⟩
-  let f₂ : RegName → RegValue := fun r => if r.val = 32 then ⟨1⟩ else ⟨0⟩
-  let r₁ : RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₁ }
-  let r₂ : RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₂ }
-  have hBeq : (r₁ == r₂) = true := by decide
-  have hPropEq : r₁ = r₂ := @LawfulBEq.eq_of_beq _ _ h r₁ r₂ hBeq
-  have hEval : r₁.gpr ⟨32⟩ ≠ r₂.gpr ⟨32⟩ := by decide
-  exact hEval (by rw [hPropEq])
+/-- **Encoding a register file's words and decoding them is the identity.** -/
+@[simp] theorem ofWords_word (rf : RegisterFile) : ofWords rf.word = rf := by
+  cases rf; rfl
 
--- X5-G (L-2): Safety analysis of RegisterFile's non-lawful BEq.
---
--- The non-lawful BEq does NOT affect kernel correctness because:
--- 1. `RegisterFile.BEq` is used only in `contextMatchesCurrent` comparisons
---    and test infrastructure — never in proof-critical paths.
--- 2. The 32-index check (0..31) covers all ARM64 GPRs (x0–x30 + xzr).
---    Index 32+ is never accessed by kernel code, proven by `regCount = 32`
---    bound in `decodeSyscallArgs` (SyscallArgDecode.lean).
--- 3. The non-lawful edge case (functions agreeing on 0..31 but differing at
---    index ≥ 32) cannot occur in practice because `RegisterFile` is only
---    constructed from finite register arrays with 32 entries. The `gpr`
---    function is always a closure over a finite array, not an arbitrary
---    function on `RegName`.
--- 4. All proofs requiring propositional register-file equality use
---    `RegisterFile.ext` (below), which requires pointwise equality of the
---    `gpr` function — bypassing `BEq` entirely.
---
--- The `not_lawfulBEq` counterexample (above) uses synthetic functions that
--- disagree at out-of-range indices — a scenario impossible in real kernel
--- execution.
+/-- Two word functions that agree on the layout's words build the same file. -/
+theorem ofWords_congr (w w' : Nat → UInt64)
+    (h : ∀ i, i < trapFrameWordCount → w i = w' i) : ofWords w = ofWords w' := by
+  simp only [ofWords]
+  congr 1 <;> exact h _ (by decide)
 
-/-- S1-J: Extensionality lemma for `RegisterFile`. Two register files are equal
-    when their `pc`, `sp`, `gpr` functions, (WS-BP BP7.3) `pstate` and the
-    thread pointer `tpidr` agree. -/
-theorem RegisterFile.ext {a b : RegisterFile}
+/-- **Decoding then encoding is the identity on the layout's words.** -/
+@[simp] theorem word_ofWords (w : Nat → UInt64) :
+    ∀ i, i < trapFrameWordCount → (ofWords w).word i = w i
+  | 0, _ => rfl
+  | 1, _ => rfl
+  | 2, _ => rfl
+  | 3, _ => rfl
+  | 4, _ => rfl
+  | 5, _ => rfl
+  | 6, _ => rfl
+  | 7, _ => rfl
+  | 8, _ => rfl
+  | 9, _ => rfl
+  | 10, _ => rfl
+  | 11, _ => rfl
+  | 12, _ => rfl
+  | 13, _ => rfl
+  | 14, _ => rfl
+  | 15, _ => rfl
+  | 16, _ => rfl
+  | 17, _ => rfl
+  | 18, _ => rfl
+  | 19, _ => rfl
+  | 20, _ => rfl
+  | 21, _ => rfl
+  | 22, _ => rfl
+  | 23, _ => rfl
+  | 24, _ => rfl
+  | 25, _ => rfl
+  | 26, _ => rfl
+  | 27, _ => rfl
+  | 28, _ => rfl
+  | 29, _ => rfl
+  | 30, _ => rfl
+  | 31, _ => rfl
+  | 32, _ => rfl
+  | 33, _ => rfl
+  | 34, _ => rfl
+  | n + 35, h => absurd h (by unfold trapFrameWordCount; omega)
+
+/-- Two register files with the same words are equal — the layout reads every
+field. -/
+theorem ext_word {a b : RegisterFile} (h : ∀ i, i < trapFrameWordCount → a.word i = b.word i) :
+    a = b := by
+  rw [← ofWords_word a, ← ofWords_word b]
+  exact ofWords_congr _ _ h
+
+/-- **General-purpose register `r`** as a `RegValue`: `x0`–`x30` for `r.val < 31`;
+`x31` — the zero register — and every index past it read as `0`. -/
+def gpr (rf : RegisterFile) (r : RegName) : RegValue :=
+  if r.val < 31 then ⟨(rf.word r.val).toNat⟩ else ⟨0⟩
+
+/-- A register file from its `pc`, `sp` and a function giving each of the
+thirty-one general-purpose registers by index; `pstate` and `tpidr` are `0`. -/
+@[inline] def withGprs (pc sp : UInt64) (g : Nat → UInt64) : RegisterFile :=
+  { ofWords (fun i => if i < 31 then g i else 0) with pc, sp }
+
+/-- **Two register files are equal when their `pc`, `sp`, general-purpose
+registers, `pstate` and `tpidr` agree.**  `x0`–`x30` are recovered from `gpr`,
+since a word is determined by its `toNat`. -/
+theorem ext {a b : RegisterFile}
     (hpc : a.pc = b.pc) (hsp : a.sp = b.sp) (hgpr : ∀ r, a.gpr r = b.gpr r)
     (hps : a.pstate = b.pstate) (htp : a.tpidr = b.tpidr) :
     a = b := by
-  cases a; cases b; simp at *; exact ⟨hpc, hsp, funext hgpr, hps, htp⟩
+  apply ext_word
+  intro i hi
+  by_cases hg : i < 31
+  · have h := hgpr ⟨i⟩
+    simp only [gpr, hg, if_true, RegValue.mk.injEq] at h
+    exact UInt64.toNat_inj.mp h
+  · have : i = 31 ∨ i = 32 ∨ i = 33 ∨ i = 34 := by
+      unfold trapFrameWordCount at hi; omega
+    rcases this with rfl | rfl | rfl | rfl
+    · exact hsp
+    · exact hpc
+    · exact hps
+    · exact htp
+
+/-- `BEq` is decidable equality's, so it is lawful: `==` on register files is
+propositional equality. -/
+theorem beq_iff_eq' (a b : RegisterFile) : (a == b) = true ↔ a = b := beq_iff_eq
+
+/-- `==` is reflexive.  Kept for the consumers that still cite it; a corollary of
+`LawfulBEq`. -/
+theorem beq_self (a : RegisterFile) : (a == a) = true := beq_self_eq_true a
+
+/-- `==` is symmetric (a `LawfulBEq` corollary, kept for its consumers). -/
+theorem beq_symm {a b : RegisterFile} (h : (a == b) = true) : (b == a) = true := by
+  rw [beq_iff_eq] at h ⊢; exact h.symm
+
+/-- `==` is transitive (a `LawfulBEq` corollary, kept for its consumers). -/
+theorem beq_trans {a b c : RegisterFile} (hab : (a == b) = true) (hbc : (b == c) = true) :
+    (a == c) = true := by
+  rw [beq_iff_eq] at hab hbc ⊢; exact hab.trans hbc
+
+end RegisterFile
+
+/-- `RegisterFile`'s trace form: the program counter and stack pointer, as the
+trace harness has always printed it. -/
+instance : Repr RegisterFile where
+  reprPrec rf _ := s!"RegisterFile(pc={rf.pc.toNat}, sp={rf.sp.toNat})"
+
 
 -- ============================================================================
 -- AG3-G (H3-ARCH-06): System Register Model
@@ -826,8 +913,8 @@ structure MachineState where
       indexed by `CoreId`.  Replaces the former single `regs : RegisterFile`.
       The boot core's bank (`coreRegs.get bootCoreId`) is the executing-core /
       single-core view exposed by the `MachineState.regs` accessor below, so all
-      existing single-core code (FFI, boot, the trace harness, `setPC`,
-      `wordBounded`, the scheduler's single-core context save/restore) is
+      existing single-core code (FFI, boot, the trace harness, `setPC`, the
+      scheduler's single-core context save/restore) is
       behaviourally unchanged; the per-core scheduler's context save/restore
       (SM5.B/SM5.D) writes the *operated* core's bank via `setRegsOnCore c`,
       which is what makes `contextMatchesCurrentOnCore` a genuine `∀ c`
@@ -1101,53 +1188,110 @@ updates the single-core `regs` view. -/
 @[simp] theorem MachineState.setRegsOnCore_systemRegisters (ms : MachineState) (c : CoreId)
     (v : RegisterFile) : (ms.setRegsOnCore c v).systemRegisters = ms.systemRegisters := rfl
 
-/-- R7-C/L-03: Machine-state word-boundedness invariant.
-    Asserts that every register value of every core's bank fits in one machine
-    word. This is always true on real ARM64 hardware but must be stated as an
-    invariant in the abstract model since the underlying `Nat` type is unbounded.
-
-    S1-N / WS-BP BP7.3: the predicate is `RegisterFile.wordBounded` on every
-    core's bank, so it covers *all* fields of `RegisterFile`: `pc`, `sp`,
-    `pstate` (`SPSR_EL1`, modelled since WS-BP BP7.3), `tpidr` (`TPIDR_EL0`)
-    and every valid GPR index (0..31).  It is the bank half of
-    `Kernel.Architecture.registerContextsWordBounded`, which pairs it with the
-    same bound on every TCB's saved context. -/
-def machineWordBounded (ms : MachineState) : Prop :=
-  ∀ (c : CoreId), (ms.regsOnCore c).wordBounded
-
-/-- R7-C/L-03: The default machine state satisfies word-boundedness.
-    Every core's register bank is initialized to 0 (the default `coreRegs` is
-    `Vector.replicate numCores default`), which is trivially word-bounded —
-    WS-SM SM5.I (per-core banks): the invariant quantifies over **every** core's
-    bank, not just the boot core's. -/
-theorem machineWordBounded_default : machineWordBounded (default : MachineState) := by
-  intro c
-  have hr : (default : MachineState).regsOnCore c = (default : RegisterFile) :=
-    PerCoreVector.replicate_get numCores (default : RegisterFile) c
-  rw [hr]
-  exact RegisterFile.default_wordBounded
-
 def readReg (rf : RegisterFile) (r : RegName) : RegValue :=
   rf.gpr r
 
-def writeReg (rf : RegisterFile) (r : RegName) (v : RegValue) : RegisterFile :=
-  { rf with gpr := fun r' => if r'.val = r.val then v else rf.gpr r' }
+/-- `x`n` := v` for `n < 31`, indexed by a byte: a jump to one field update
+(in place when the file is unshared).  The identity past `x30`. -/
+def RegisterFile.setGprOfByte (rf : RegisterFile) : UInt8 → UInt64 → RegisterFile
+  | 0, v => { rf with x0 := v }
+  | 1, v => { rf with x1 := v }
+  | 2, v => { rf with x2 := v }
+  | 3, v => { rf with x3 := v }
+  | 4, v => { rf with x4 := v }
+  | 5, v => { rf with x5 := v }
+  | 6, v => { rf with x6 := v }
+  | 7, v => { rf with x7 := v }
+  | 8, v => { rf with x8 := v }
+  | 9, v => { rf with x9 := v }
+  | 10, v => { rf with x10 := v }
+  | 11, v => { rf with x11 := v }
+  | 12, v => { rf with x12 := v }
+  | 13, v => { rf with x13 := v }
+  | 14, v => { rf with x14 := v }
+  | 15, v => { rf with x15 := v }
+  | 16, v => { rf with x16 := v }
+  | 17, v => { rf with x17 := v }
+  | 18, v => { rf with x18 := v }
+  | 19, v => { rf with x19 := v }
+  | 20, v => { rf with x20 := v }
+  | 21, v => { rf with x21 := v }
+  | 22, v => { rf with x22 := v }
+  | 23, v => { rf with x23 := v }
+  | 24, v => { rf with x24 := v }
+  | 25, v => { rf with x25 := v }
+  | 26, v => { rf with x26 := v }
+  | 27, v => { rf with x27 := v }
+  | 28, v => { rf with x28 := v }
+  | 29, v => { rf with x29 := v }
+  | 30, v => { rf with x30 := v }
+  | _, _ => rf
 
-/-- Writing a valid value into a word-bounded file keeps it word-bounded. -/
-theorem writeReg_wordBounded (rf : RegisterFile) (r : RegName) (v : RegValue)
-    (hB : rf.wordBounded) (hv : v.valid) : (writeReg rf r v).wordBounded := by
-  obtain ⟨hPc, hSp, hPs, hTp, hGpr⟩ := hB
-  refine ⟨hPc, hSp, hPs, hTp, fun r' hr' => ?_⟩
-  show RegValue.valid (if r'.val = r.val then v else rf.gpr r')
-  split
-  · exact hv
-  · exact hGpr r' hr'
+/-- **Write general-purpose register `r`.**  `x0`–`x30` take `v`; a write to
+`x31` — the zero register — or past it changes nothing. -/
+def writeReg (rf : RegisterFile) (r : RegName) (v : UInt64) : RegisterFile :=
+  if r.val < 31 then rf.setGprOfByte r.val.toUInt8 v else rf
 
-/-- Writing a 64-bit word into a word-bounded file keeps it word-bounded — the
-form every register writer below the boundary takes. -/
-theorem writeReg_uint64_wordBounded (rf : RegisterFile) (r : RegName) (x : UInt64)
-    (hB : rf.wordBounded) : (writeReg rf r ⟨x.toNat⟩).wordBounded :=
-  writeReg_wordBounded rf r _ hB (RegValue.valid_of_uint64 x)
+/-- **`writeReg` word by word**: the written register's word is `v`, every other
+word is unchanged. -/
+theorem writeReg_eq_ofWords (rf : RegisterFile) (r : RegName) (v : UInt64) :
+    writeReg rf r v =
+      RegisterFile.ofWords (fun i => if i = r.val ∧ r.val < 31 then v else rf.word i) := by
+  obtain ⟨n⟩ := r
+  unfold writeReg
+  dsimp only
+  by_cases h : n < 31
+  · simp only [h, if_true]
+    match n, h with
+    | 0, _ => cases rf; rfl
+    | 1, _ => cases rf; rfl
+    | 2, _ => cases rf; rfl
+    | 3, _ => cases rf; rfl
+    | 4, _ => cases rf; rfl
+    | 5, _ => cases rf; rfl
+    | 6, _ => cases rf; rfl
+    | 7, _ => cases rf; rfl
+    | 8, _ => cases rf; rfl
+    | 9, _ => cases rf; rfl
+    | 10, _ => cases rf; rfl
+    | 11, _ => cases rf; rfl
+    | 12, _ => cases rf; rfl
+    | 13, _ => cases rf; rfl
+    | 14, _ => cases rf; rfl
+    | 15, _ => cases rf; rfl
+    | 16, _ => cases rf; rfl
+    | 17, _ => cases rf; rfl
+    | 18, _ => cases rf; rfl
+    | 19, _ => cases rf; rfl
+    | 20, _ => cases rf; rfl
+    | 21, _ => cases rf; rfl
+    | 22, _ => cases rf; rfl
+    | 23, _ => cases rf; rfl
+    | 24, _ => cases rf; rfl
+    | 25, _ => cases rf; rfl
+    | 26, _ => cases rf; rfl
+    | 27, _ => cases rf; rfl
+    | 28, _ => cases rf; rfl
+    | 29, _ => cases rf; rfl
+    | 30, _ => cases rf; rfl
+    | n + 31, h => exact absurd h (by omega)
+  · simp only [h, if_false, and_false]
+    exact (RegisterFile.ofWords_word rf).symm
+
+/-- Word `i` after a register write. -/
+theorem word_writeReg (rf : RegisterFile) (r : RegName) (v : UInt64) (i : Nat) :
+    (writeReg rf r v).word i = if i = r.val ∧ r.val < 31 then v else rf.word i := by
+  rw [writeReg_eq_ofWords]
+  by_cases hi : i < Kernel.Architecture.trapFrameWordCount
+  · exact RegisterFile.word_ofWords _ i hi
+  · have hr : ¬ (i = r.val ∧ r.val < 31) := by
+      unfold Kernel.Architecture.trapFrameWordCount at hi; omega
+    rw [RegisterFile.word_of_ge _ i hi, if_neg hr, RegisterFile.word_of_ge _ i hi]
+
+/-- A write to the zero register, or past it, changes nothing. -/
+theorem writeReg_of_ge (rf : RegisterFile) (r : RegName) (v : UInt64) (h : ¬ r.val < 31) :
+    writeReg rf r v = rf := by
+  simp [writeReg, h]
 
 def readMem (ms : MachineState) (addr : PAddr) : UInt8 :=
   ms.memory addr
@@ -1236,7 +1380,7 @@ theorem writeMemChecked_preserves_timer
   · cases h; rfl
   · cases h
 
-def setPC (ms : MachineState) (pc : RegValue) : MachineState :=
+def setPC (ms : MachineState) (pc : UInt64) : MachineState :=
   ms.setRegsOnCore bootCoreId { ms.regs with pc }
 
 def tick (ms : MachineState) : MachineState :=
@@ -1313,16 +1457,15 @@ theorem tick_preserves_interruptsEnabled (ms : MachineState) :
 -- Register read-after-write and frame lemmas (WS-E4 preparation)
 -- ============================================================================
 
-theorem readReg_writeReg_eq (rf : RegisterFile) (r : RegName) (v : RegValue) :
-    readReg (writeReg rf r v) r = v := by
-  simp [readReg, writeReg]
+theorem readReg_writeReg_eq (rf : RegisterFile) (r : RegName) (v : UInt64) (h : r.val < 31) :
+    readReg (writeReg rf r v) r = ⟨v.toNat⟩ := by
+  simp [readReg, RegisterFile.gpr, h, word_writeReg]
 
-theorem readReg_writeReg_ne (rf : RegisterFile) (r r' : RegName) (v : RegValue)
+theorem readReg_writeReg_ne (rf : RegisterFile) (r r' : RegName) (v : UInt64)
     (hNe : r' ≠ r) :
     readReg (writeReg rf r v) r' = readReg rf r' := by
-  simp [readReg, writeReg]
-  intro h
-  exact absurd (RegName.ext h) hNe
+  have hv : r'.val ≠ r.val := fun h => hNe (RegName.ext h)
+  simp [readReg, RegisterFile.gpr, word_writeReg, hv]
 
 theorem readMem_writeMem_eq (ms : MachineState) (addr : PAddr) (value : UInt8) :
     readMem (writeMem ms addr value) addr = value := by
@@ -1333,11 +1476,29 @@ theorem readMem_writeMem_ne (ms : MachineState) (addr addr' : PAddr) (value : UI
     readMem (writeMem ms addr value) addr' = readMem ms addr' := by
   simp [readMem, writeMem, hNe]
 
-theorem writeReg_preserves_pc (rf : RegisterFile) (r : RegName) (v : RegValue) :
-    (writeReg rf r v).pc = rf.pc := rfl
+theorem writeReg_preserves_pc (rf : RegisterFile) (r : RegName) (v : UInt64) :
+    (writeReg rf r v).pc = rf.pc := by
+  have h := word_writeReg rf r v 32
+  rw [if_neg (by omega)] at h
+  exact h
 
-theorem writeReg_preserves_sp (rf : RegisterFile) (r : RegName) (v : RegValue) :
-    (writeReg rf r v).sp = rf.sp := rfl
+theorem writeReg_preserves_sp (rf : RegisterFile) (r : RegName) (v : UInt64) :
+    (writeReg rf r v).sp = rf.sp := by
+  have h := word_writeReg rf r v 31
+  rw [if_neg (by omega)] at h
+  exact h
+
+theorem writeReg_preserves_pstate (rf : RegisterFile) (r : RegName) (v : UInt64) :
+    (writeReg rf r v).pstate = rf.pstate := by
+  have h := word_writeReg rf r v 33
+  rw [if_neg (by omega)] at h
+  exact h
+
+theorem writeReg_preserves_tpidr (rf : RegisterFile) (r : RegName) (v : UInt64) :
+    (writeReg rf r v).tpidr = rf.tpidr := by
+  have h := word_writeReg rf r v 34
+  rw [if_neg (by omega)] at h
+  exact h
 
 theorem writeMem_preserves_regs (ms : MachineState) (addr : PAddr) (value : UInt8) :
     (writeMem ms addr value).regs = ms.regs := rfl
@@ -1345,10 +1506,10 @@ theorem writeMem_preserves_regs (ms : MachineState) (addr : PAddr) (value : UInt
 theorem writeMem_preserves_timer (ms : MachineState) (addr : PAddr) (value : UInt8) :
     (writeMem ms addr value).timer = ms.timer := rfl
 
-theorem setPC_preserves_memory (ms : MachineState) (pc : RegValue) :
+theorem setPC_preserves_memory (ms : MachineState) (pc : UInt64) :
     (setPC ms pc).memory = ms.memory := rfl
 
-theorem setPC_preserves_timer (ms : MachineState) (pc : RegValue) :
+theorem setPC_preserves_timer (ms : MachineState) (pc : UInt64) :
     (setPC ms pc).timer = ms.timer := rfl
 
 theorem tick_preserves_regs (ms : MachineState) :
@@ -1369,14 +1530,14 @@ This formalizes the zero-initialization assumption documented on `Memory`. -/
 theorem default_memory_returns_zero (addr : PAddr) :
     (default : MachineState).memory addr = 0 := rfl
 
-/-- L-02/WS-E6: Default register file has PC = RegValue 0.
+/-- L-02/WS-E6: Default register file has PC = 0.
 Combined with zero memory, this ensures the boot entry point is deterministic. -/
 theorem default_registerFile_pc_zero :
-    (default : RegisterFile).pc = ⟨0⟩ := rfl
+    (default : RegisterFile).pc = 0 := rfl
 
-/-- L-02/WS-E6: Default register file has SP = RegValue 0. -/
+/-- L-02/WS-E6: Default register file has SP = 0. -/
 theorem default_registerFile_sp_zero :
-    (default : RegisterFile).sp = ⟨0⟩ := rfl
+    (default : RegisterFile).sp = 0 := rfl
 
 /-- L-02/WS-E6: Default timer starts at zero. -/
 theorem default_timer_zero :

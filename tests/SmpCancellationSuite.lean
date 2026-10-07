@@ -1887,8 +1887,7 @@ private def runDiffSeamEdfChecks : IO Unit := do
 /-- A register file whose `x0`-`x5` are all recognisable non-frame values —
 what a blocked caller's argument spill leaves behind. -/
 private def staleRequestRegs : SeLe4n.RegisterFile :=
-  { pc := ⟨0x4000⟩, sp := ⟨0x9000⟩,
-    gpr := fun r => ⟨0xBAD0 + r.val⟩ }
+  SeLe4n.RegisterFile.withGprs 0x4000 0x9000 (fun r => 0xBAD0 + r.toUInt64)
 
 private def mkTcbWithStaleRegs (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
   { mkTcb tid prio aff with registerContext := staleRequestRegs }
@@ -1923,7 +1922,7 @@ it switches to `tid` — the frame read by `RestoreTarget.deliveredFrame?`, the
 one reading the delivery theorems are stated over — or `none` when the switch
 fails or names no user context. -/
 private def resumedAfterSwitch (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
-    Option (Architecture.SyscallReturnFrame × SeLe4n.RegValue) :=
+    Option (Architecture.SyscallReturnFrame × UInt64) :=
   match switchToThreadOnCore st c tid with
   | .ok st' =>
       let target := Architecture.restoreTargetOnCore st' c
