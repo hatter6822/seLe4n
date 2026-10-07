@@ -2072,6 +2072,20 @@ def scThreadIndexRemove (idx : RHTable SeLe4n.SchedContextId (List SeLe4n.Thread
     let remaining := tids.filter (· != tid)
     if remaining.isEmpty then idx.erase scId else idx.insert scId remaining
 
+/-- The object store's entry for `id`, as stored.  Every typed read below is
+compiled through this one lookup (each by a `@[csimp]` equation beside it):
+it is `@[noinline]` so the store's probe loop is specialised once rather than
+in every module a read is inlined into, and it returns the table's own entry,
+so the read allocates nothing; the inlined read's `some` meets its caller's
+`match` and is never built.  Proofs reason about `st.objects[id]?`. -/
+@[noinline] def SystemState.objectEntry? (st : SystemState) (id : SeLe4n.ObjId) :
+    Option (SeLe4n.Kernel.RobinHood.RHEntry SeLe4n.ObjId KernelObject) :=
+  st.objects.getEntry? id
+
+theorem SystemState.objects_get?_eq_objectEntry? (st : SystemState) (id : SeLe4n.ObjId) :
+    st.objects[id]? = (st.objectEntry? id).map SeLe4n.Kernel.RobinHood.RHEntry.value :=
+  SeLe4n.Kernel.RobinHood.RHTable.get?_eq_getEntry?_map st.objects id
+
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
 
 def lookupObject (id : SeLe4n.ObjId) : Kernel KernelObject :=
@@ -3086,6 +3100,20 @@ def lookupCNode (st : SystemState) (id : SeLe4n.ObjId) : Option CNode :=
   | some (.cnode cn) => some cn
   | _ => none
 
+/-- `lookupCNode` as compiled: through `objectEntry?` (see there). -/
+@[inline] def lookupCNodeByEntry (st : SystemState) (id : SeLe4n.ObjId) : Option CNode :=
+  match st.objectEntry? id with
+  | some e => match e.value with
+    | .cnode x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem lookupCNode_eq_byEntry : @lookupCNode = @lookupCNodeByEntry := by
+  funext st id
+  simp only [lookupCNode, lookupCNodeByEntry, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? id with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
+
 -- ============================================================================
 -- WS-AL AL2-A (cascades AK7-F): kind-verified lookup helpers
 --
@@ -3107,12 +3135,42 @@ def getTcb? (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   | some (.tcb t) => some t
   | _             => none
 
+/-- `getTcb?` as compiled: through `objectEntry?` (see there). -/
+@[inline] def getTcbByEntry? (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
+  match st.objectEntry? tid.toObjId with
+  | some e => match e.value with
+    | .tcb x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem getTcb_eq_byEntry : @getTcb? = @getTcbByEntry? := by
+  funext st tid
+  simp only [getTcb?, getTcbByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? tid.toObjId with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
+
 /-- AL2-A: Read a SchedContext from the global object store. -/
 def getSchedContext? (st : SystemState) (scId : SeLe4n.SchedContextId)
     : Option SeLe4n.Kernel.SchedContext :=
   match st.objects[scId.toObjId]? with
   | some (.schedContext sc) => some sc
   | _                       => none
+
+/-- `getSchedContext?` as compiled: through `objectEntry?` (see there). -/
+@[inline] def getSchedContextByEntry? (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Option SeLe4n.Kernel.SchedContext :=
+  match st.objectEntry? scId.toObjId with
+  | some e => match e.value with
+    | .schedContext x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem getSchedContext_eq_byEntry :
+    @getSchedContext? = @getSchedContextByEntry? := by
+  funext st scId
+  simp only [getSchedContext?, getSchedContextByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? scId.toObjId with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
 
 /-! ### The reschedule-SGI accumulator at state level
 
@@ -3228,11 +3286,40 @@ def getReply? (st : SystemState) (replyId : SeLe4n.ReplyId)
   | some (.reply r) => some r
   | _               => none
 
+/-- `getReply?` as compiled: through `objectEntry?` (see there). -/
+@[inline] def getReplyByEntry? (st : SystemState) (replyId : SeLe4n.ReplyId) :
+    Option SeLe4n.Kernel.Reply :=
+  match st.objectEntry? replyId.toObjId with
+  | some e => match e.value with
+    | .reply x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem getReply_eq_byEntry : @getReply? = @getReplyByEntry? := by
+  funext st replyId
+  simp only [getReply?, getReplyByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? replyId.toObjId with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
+
 /-- AL2-A: Read an Endpoint from the global object store. -/
 def getEndpoint? (st : SystemState) (id : SeLe4n.ObjId) : Option Endpoint :=
   match st.objects[id]? with
   | some (.endpoint ep) => some ep
   | _                   => none
+
+/-- `getEndpoint?` as compiled: through `objectEntry?` (see there). -/
+@[inline] def getEndpointByEntry? (st : SystemState) (id : SeLe4n.ObjId) : Option Endpoint :=
+  match st.objectEntry? id with
+  | some e => match e.value with
+    | .endpoint x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem getEndpoint_eq_byEntry : @getEndpoint? = @getEndpointByEntry? := by
+  funext st id
+  simp only [getEndpoint?, getEndpointByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? id with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
 
 /-- AL2-A: Read a Notification from the global object store. -/
 def getNotification? (st : SystemState) (id : SeLe4n.ObjId) : Option Notification :=
@@ -3240,11 +3327,40 @@ def getNotification? (st : SystemState) (id : SeLe4n.ObjId) : Option Notificatio
   | some (.notification n) => some n
   | _                      => none
 
+/-- `getNotification?` as compiled: through `objectEntry?` (see there). -/
+@[inline] def getNotificationByEntry? (st : SystemState) (id : SeLe4n.ObjId) : Option Notification :=
+  match st.objectEntry? id with
+  | some e => match e.value with
+    | .notification x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem getNotification_eq_byEntry :
+    @getNotification? = @getNotificationByEntry? := by
+  funext st id
+  simp only [getNotification?, getNotificationByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? id with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
+
 /-- AL2-A: Read an UntypedObject from the global object store. -/
 def getUntyped? (st : SystemState) (id : SeLe4n.ObjId) : Option UntypedObject :=
   match st.objects[id]? with
   | some (.untyped ut) => some ut
   | _                  => none
+
+/-- `getUntyped?` as compiled: through `objectEntry?` (see there). -/
+@[inline] def getUntypedByEntry? (st : SystemState) (id : SeLe4n.ObjId) : Option UntypedObject :=
+  match st.objectEntry? id with
+  | some e => match e.value with
+    | .untyped x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem getUntyped_eq_byEntry : @getUntyped? = @getUntypedByEntry? := by
+  funext st id
+  simp only [getUntyped?, getUntypedByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? id with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
 
 /-- AN10-B: Read a CNode from the global object store. Same kind-checked
 discriminator pattern as the AL2-A helpers, extended to cover Capability
@@ -3254,6 +3370,20 @@ def getCNode? (st : SystemState) (id : SeLe4n.ObjId) : Option CNode :=
   | some (.cnode cn) => some cn
   | _                => none
 
+/-- `getCNode?` as compiled: through `objectEntry?` (see there). -/
+@[inline] def getCNodeByEntry? (st : SystemState) (id : SeLe4n.ObjId) : Option CNode :=
+  match st.objectEntry? id with
+  | some e => match e.value with
+    | .cnode x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem getCNode_eq_byEntry : @getCNode? = @getCNodeByEntry? := by
+  funext st id
+  simp only [getCNode?, getCNodeByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? id with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
+
 /-- AN10-B: Read a VSpaceRoot from the global object store. Used by the
 IPC-buffer reader and VSpace operations that descend a thread's vspace
 root. -/
@@ -3261,6 +3391,21 @@ def getVSpaceRoot? (st : SystemState) (id : SeLe4n.ObjId) : Option VSpaceRoot :=
   match st.objects[id]? with
   | some (.vspaceRoot root) => some root
   | _                       => none
+
+/-- `getVSpaceRoot?` as compiled: through `objectEntry?` (see there). -/
+@[inline] def getVSpaceRootByEntry? (st : SystemState) (id : SeLe4n.ObjId) : Option VSpaceRoot :=
+  match st.objectEntry? id with
+  | some e => match e.value with
+    | .vspaceRoot x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem getVSpaceRoot_eq_byEntry :
+    @getVSpaceRoot? = @getVSpaceRootByEntry? := by
+  funext st id
+  simp only [getVSpaceRoot?, getVSpaceRootByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? id with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
 
 /-- Read a frame — a page of physical memory the kernel handed out as an
 object — from the global object store.  The kind-checked member of the
@@ -3272,6 +3417,20 @@ def getFrame? (st : SystemState) (id : SeLe4n.ObjId) : Option FrameObject :=
   | some (.frame f) => some f
   | _               => none
 
+/-- `getFrame?` as compiled: through `objectEntry?` (see there). -/
+@[inline] def getFrameByEntry? (st : SystemState) (id : SeLe4n.ObjId) : Option FrameObject :=
+  match st.objectEntry? id with
+  | some e => match e.value with
+    | .frame x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem getFrame_eq_byEntry : @getFrame? = @getFrameByEntry? := by
+  funext st id
+  simp only [getFrame?, getFrameByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? id with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
+
 /-- **WS-BP BP7.1 (`v0.36.12`)**: read an intermediate translation table from the
 global object store — the kind-checked member of the typed-accessor family for
 `KernelObject.pageTable`. -/
@@ -3279,6 +3438,20 @@ def getPageTable? (st : SystemState) (id : SeLe4n.ObjId) : Option PageTableObjec
   match st.objects[id]? with
   | some (.pageTable p) => some p
   | _                   => none
+
+/-- `getPageTable?` as compiled: through `objectEntry?` (see there). -/
+@[inline] def getPageTableByEntry? (st : SystemState) (id : SeLe4n.ObjId) : Option PageTableObject :=
+  match st.objectEntry? id with
+  | some e => match e.value with
+    | .pageTable x => some x
+    | _ => none
+  | none => none
+
+@[csimp] theorem getPageTable_eq_byEntry : @getPageTable? = @getPageTableByEntry? := by
+  funext st id
+  simp only [getPageTable?, getPageTableByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? id with _ | ⟨_, o, _⟩ <;> try cases o
+  all_goals rfl
 
 /-- **WS-SM SM8.B**: read a stored object from the global object store without
 discriminating its variant — the most general member of the AL2-A / AN10-B
@@ -3296,6 +3469,17 @@ about `objects[id]?` still applies — the value is that the store's
 representation is named in one place. -/
 def getObject? (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObject :=
   st.objects[id]?
+
+/-- `getObject?` as compiled: through `objectEntry?`. -/
+@[inline] def getObjectByEntry? (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObject :=
+  match st.objectEntry? id with
+  | some e => some e.value
+  | none => none
+
+@[csimp] theorem getObject_eq_byEntry : @getObject? = @getObjectByEntry? := by
+  funext st id
+  simp only [getObject?, getObjectByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? id with _ | ⟨_, o, _⟩ <;> rfl
 
 /-- **WS-SM SM8.B**: `getObject?` is the store read, definitionally. -/
 @[simp] theorem getObject?_eq_getElem (st : SystemState) (id : SeLe4n.ObjId) :
@@ -3315,6 +3499,19 @@ view: this one reads the store, so it agrees by construction with any transition
 that derives behaviour from the stored object (`scrubObjectMemory` does). -/
 def getObjectType? (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
   (st.objects[id]?).map KernelObject.objectType
+
+/-- `getObjectType?` as compiled: through `objectEntry?`. -/
+@[inline] def getObjectTypeByEntry? (st : SystemState) (id : SeLe4n.ObjId) :
+    Option KernelObjectType :=
+  match st.objectEntry? id with
+  | some e => some e.value.objectType
+  | none => none
+
+@[csimp] theorem getObjectType_eq_byEntry :
+    @getObjectType? = @getObjectTypeByEntry? := by
+  funext st id
+  simp only [getObjectType?, getObjectTypeByEntry?, SystemState.objects_get?_eq_objectEntry?]
+  rcases st.objectEntry? id with _ | ⟨_, o, _⟩ <;> rfl
 
 /-- **WS-SM SM7.D**: `getObjectType?` reports exactly the stored object's type —
 the characterisation every consumer reasons through. -/

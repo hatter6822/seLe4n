@@ -106,6 +106,8 @@ import lean_code_view  # noqa: E402  (needs the path above)
 #   `other`  yields no object at all (a projection, a predicate, a constructor).
 _TABLE_OPS = {
     "get?": "read",
+    "getEntry?": "read",
+    "getByEntry": "read",
     "insert": "write",
     "insertNoResize": "write",
     "erase": "write",
@@ -1547,7 +1549,10 @@ ACCESSOR_BODIES = {
               "getSchedContext?", "getReply?", "getFrame?", "getPageTable?",
               "getTcbWitnessed?", "getSchedContextWitnessed?",
               "getEndpointWitnessed?", "getNotificationWitnessed?",
-              "lookupObject", "lookupCNode", "lookupVSpaceRoot")
+              "lookupObject", "lookupCNode", "lookupVSpaceRoot",
+              # The stored-entry lookup every accessor above is compiled
+              # through (`@[csimp]`); kind-agnostic, as `getObject?` is.
+              "SystemState.objectEntry?")
 } | {
     ("SeLe4n/Model/State.lean", d): "live object-store write primitive"
     for d in ("storeObject", "storeObjectKindChecked")

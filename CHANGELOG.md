@@ -36,6 +36,16 @@ nothing in the model's semantics changes.
   resolution (`addr % 2 ^ 64`, `2 ^ radixWidth`, `2 ^ guardWidth`) now costs
   no allocation: **572 → 504 per round trip**.  A host test pins that a
   scalar result allocates nothing and a big one exactly its object.
+- **Object-store reads allocate nothing.**  `RHTable.get?` returned a fresh
+  `some` per lookup, and each typed read (`getTcb?`, `getCNode?`, …) another.
+  `getEntryLoop` returns the table's own stored entry, and each typed read is
+  compiled, by a `@[csimp]` equation proved beside it, through one shared
+  `SystemState.objectEntry?` lookup (`@[noinline]`, so the probe loop is
+  specialised once) and an inlined match that meets the caller's.  Proofs keep
+  reasoning about `st.objects[id]?`.  **504 → 426 per round trip**, image
+  +0.6% (plain inlining reached 423 at +2.3%).  The store-read census
+  registers `objectEntry?` as a store accessor and classifies the two new
+  table reads.
 
 ## v0.36.58 — A reply-blocked waiter's priority change re-walks its server's boost
 
