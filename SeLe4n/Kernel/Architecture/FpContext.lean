@@ -90,6 +90,16 @@ def fpOwnedElsewhere (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : B
 def fpLiveFor (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
   fpOwnerOf st c == some tid
 
+/-- WS-ZA ZA2.2: `fpLiveFor` as compiled — compared with `Option.isEqSome`, so
+no `some tid` is built for the comparison. -/
+def fpLiveForImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
+  (fpOwnerOf st c).isEqSome tid
+
+@[csimp] theorem fpLiveFor_eq_impl : @fpLiveFor = @fpLiveForImpl := by
+  funext st c tid
+  unfold fpLiveFor fpLiveForImpl
+  cases fpOwnerOf st c <;> rfl
+
 /-- **WS-BP BP7.9**: what an FP/SIMD access trap does. -/
 inductive FpAccessOutcome where
   /-- Load this context into the registers and lift the trap. -/

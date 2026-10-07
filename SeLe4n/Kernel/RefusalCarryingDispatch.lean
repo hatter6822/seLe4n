@@ -213,21 +213,13 @@ theorem signalResolvedArmThenTaintR_eq (ctx : LabelingContext)
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
 
-/-- Whether `tid` is the thread `current` names, compared on the identifier's
-word: no `some tid` is built and no equality instance is passed
-(`isCurrent_iff`). -/
-@[inline] def isCurrent (current : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId) : Bool :=
-  match current with
-  | some cur => cur.val == tid.val
-  | none => false
-
-theorem isCurrent_iff (current : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId) :
-    isCurrent current tid = true ↔ current = some tid := by
+/-- `Option.isEqSome` decides `current = some tid` without building
+`some tid`. -/
+theorem threadId_isEqSome_iff (current : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId) :
+    current.isEqSome tid = true ↔ current = some tid := by
   cases current with
-  | none => simp [isCurrent]
-  | some cur =>
-    cases cur; cases tid
-    simp [isCurrent]
+  | none => simp [Option.isEqSome]
+  | some cur => simp [Option.isEqSome]
 
 /-- `dispatchSyscallChecked`, refusing in the state it was handed.  The signal
 resolves its operand once, for the gate and the taint plan alike, and takes
@@ -238,7 +230,7 @@ def dispatchSyscallCheckedR (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
     if decoded.syscallId = .notificationSignal then
-      if !isCurrent (st.scheduler.currentOnCore executingCore) tid then .error (.illegalState, st)
+      if !(st.scheduler.currentOnCore executingCore).isEqSome tid then .error (.illegalState, st)
       else
       match st.getObject? tid.toObjId with
       | some (.tcb tcb) =>
@@ -270,8 +262,8 @@ theorem dispatchSyscallCheckedR_eq (ctx : LabelingContext)
     simp only [dispatchSyscallCheckedR, hSig, ↓reduceIte, RefusalCarrying.ofKernel,
       dispatchSyscallCheckedImpl]
     by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
-    · have hIs : isCurrent (st.scheduler.currentOnCore executingCore) tid = true :=
-        (isCurrent_iff _ _).2 hCur
+    · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = true :=
+        (threadId_isEqSome_iff _ _).2 hCur
       have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
       rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
         if_neg hNot]
@@ -304,10 +296,10 @@ theorem dispatchSyscallCheckedR_eq (ctx : LabelingContext)
         · next hRoot => simp only [hTcb, hRoot]
       · next hTcb => simp only [hTcb]
       · next hTcb => simp only [hTcb]
-    · have hIs : isCurrent (st.scheduler.currentOnCore executingCore) tid = false := by
-        cases h : isCurrent (st.scheduler.currentOnCore executingCore) tid
+    · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = false := by
+        cases h : (st.scheduler.currentOnCore executingCore).isEqSome tid
         · rfl
-        · exact absurd ((isCurrent_iff _ _).1 h) hCur
+        · exact absurd ((threadId_isEqSome_iff _ _).1 h) hCur
       rw [if_pos (by simp only [hIs, Bool.not_false]), if_pos hCur]
   · simp only [dispatchSyscallCheckedR, hSig, ↓reduceIte]
 

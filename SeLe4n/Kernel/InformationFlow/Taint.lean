@@ -264,6 +264,36 @@ instance : DecidableEq DeclassificationTaint := fun a b =>
   else
     .isFalse (fun heq => h (by subst heq; exact ⟨rfl, rfl⟩))
 
+/-- WS-ZA ZA2.2: equality of two tag lists, element by element, with no
+equality instance passed (`tagsBeq_iff`). -/
+def tagsBeq : List Nat → List Nat → Bool
+  | [], [] => true
+  | a :: as, b :: bs => a == b && tagsBeq as bs
+  | _, _ => false
+
+theorem tagsBeq_iff : ∀ (as bs : List Nat), tagsBeq as bs = true ↔ as = bs
+  | [], [] => by simp [tagsBeq]
+  | [], _ :: _ => by simp [tagsBeq]
+  | _ :: _, [] => by simp [tagsBeq]
+  | a :: as, b :: bs => by simp [tagsBeq, tagsBeq_iff as bs]
+
+/-- WS-ZA ZA2.2: the equality decision as compiled — the tag lists compared by
+`tagsBeq`, so no `Nat` equality closure is built per comparison.  Equal to the
+instance because `Decidable` is a subsingleton (`instDecidableEq_eq_impl`). -/
+def decEqImpl : DecidableEq DeclassificationTaint := fun a b =>
+  decidable_of_iff (a.saturated = b.saturated ∧ tagsBeq a.tags b.tags = true) (by
+    rw [tagsBeq_iff]
+    constructor
+    · rintro ⟨hs, ht⟩
+      cases a; cases b
+      simp only at hs ht
+      subst hs; subst ht; rfl
+    · rintro rfl; exact ⟨rfl, rfl⟩)
+
+@[csimp] theorem instDecidableEq_eq_impl : @instDecidableEq = @decEqImpl := by
+  funext a b
+  exact Subsingleton.elim _ _
+
 /-- WS-SM SM9.D.1: the external rendering — the data fields, since the proof
 field has no content.  Hand-written for the same reason `DecidableEq` is. -/
 instance : Repr DeclassificationTaint where

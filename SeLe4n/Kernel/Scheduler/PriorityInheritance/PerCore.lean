@@ -1581,6 +1581,27 @@ taken the exception that saves the context. -/
 def residentElsewhere (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
   Concurrency.allCores.any fun c' => c' != c && st.machine.residentOnCore c' == some tid
 
+/-- WS-ZA ZA2.2: `residentElsewhere` over an explicit list of cores, comparing
+with `Option.isEqSome`: no closure over the state and no `some tid` per core. -/
+def residentElsewhereAmong (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    List CoreId → Bool
+  | [] => false
+  | d :: ds =>
+      (d != c && (st.machine.residentOnCore d).isEqSome tid) || residentElsewhereAmong st c tid ds
+
+/-- WS-ZA ZA2.2: `residentElsewhere` as compiled. -/
+def residentElsewhereImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
+  residentElsewhereAmong st c tid Concurrency.allCores
+
+@[csimp] theorem residentElsewhere_eq_impl : @residentElsewhere = @residentElsewhereImpl := by
+  funext st c tid
+  unfold residentElsewhere residentElsewhereImpl
+  have hEq : ∀ o : Option SeLe4n.ThreadId, o.isEqSome tid = (o == some tid) := by
+    intro o; cases o <;> rfl
+  induction Concurrency.allCores with
+  | nil => rfl
+  | cons d ds ih => simp only [List.any_cons, residentElsewhereAmong, ih, hEq]
+
 /-- **PR #904 review (`v0.36.41`): a thread still resident elsewhere is not
 resumed here.**  Its saved context is stale until the core it is resident on
 saves it, and resuming it here would run it on two cores at once; switching it
