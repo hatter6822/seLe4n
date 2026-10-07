@@ -1,3 +1,35 @@
+## v0.36.59 — WS-CV CV0: count the kernel heap's allocations per syscall
+
+Opens WS-CV (`docs/planning/CONTEXT_BY_VALUE_PLAN.md`) with its baseline phase;
+nothing in the model's semantics changes.
+
+- **Per-core allocation counter (CV0.1).**  `lean_heap.rs` counts every
+  successful allocation, small or large, to the core that made it
+  (`HeapStats.allocations_by_core`, `kernel_allocations_on`); a host test pins
+  that each allocation is counted once, to its core.
+- **The measurement (CV0.1).**  The `heap-allocations-per-syscall` exerciser
+  (Tier 4, `virt`, Lean-linked image, gate
+  `scripts/test_qemu_heap_allocations_per_syscall.sh`) dispatches one
+  `NotificationSignal` from kernel mode on core 0 through the real classifier
+  and dispatcher with IRQs masked across the two counter reads, and prints the
+  delta.  **Baseline: 573 allocations per round trip at v0.36.57, 572 after
+  CV0.4.**  Traced by caller: the lock model ~182, object-store lookups and
+  inserts ~154 (each `RHTable.get?` allocates its `some`), register-file
+  closures ~70, `Nat` big-number arithmetic in capability-address resolution
+  ~68, the rest ~100.
+- **Two-trap hazard test (CV0.2).**  `rust/sele4n-lean-boundary/tests/save_hazard.rs`
+  saves a trap context into a TCB through `saveCapturedSyscallFrame`,
+  overwrites the trap object in place, and pins today's split: words 0–30 of
+  the saved context follow the overwrite (they are a closure over the object),
+  words 31–34 do not.  CV3 flips it.
+- **Anchor list (CV0.3).**  The plan's §7 lists the 57 Tier 3 anchor lines the
+  workstream touches, each with the sub-task that retargets it.
+- **Classifier reads the ESR word (CV0.4).**
+  `classifySynchronousExceptionOfEsr` takes `ESR_EL1` directly, so the one
+  upcall outside the entry lock no longer builds an `ExceptionContext`;
+  `classifySynchronousException` is defined through it and every theorem over
+  it is unchanged.
+
 ## v0.36.58 — A reply-blocked waiter's priority change re-walks its server's boost
 
 Fixes a live priority-inversion bug found while re-verifying the CBS plan.  A
