@@ -79,7 +79,7 @@ theorem ipcInvariantFull_of_flagOnlyWrite {s1 s2 : SystemState}
 
 /-- The key-change hook writes a flag or nothing. -/
 theorem markKeyChangeFor_preserves_ipcInvariantFull (st : SystemState)
-    (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline)
+    (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (h : ipcInvariantFull st) : ipcInvariantFull (markKeyChangeFor st tid k) :=
   ipcInvariantFull_of_flagOnlyWrite (markKeyChangeFor_objects _ _ _)
     (markKeyChangeFor_runQueueOnCore _ _ _) (markKeyChangeFor_currentOnCore _ _ _) h
@@ -2619,6 +2619,36 @@ theorem switchToThreadOnCore_preserves_ipcInvariantFull (st : SystemState)
     · contradiction
   · contradiction
 
+/-- The handler's drop of an out-of-domain incumbent preserves the whole bundle:
+the preempt re-queues the incumbent, and clearing the slot can only hide a
+thread that is now on the queue. -/
+theorem dropCurrentOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hOut : currentOutsideActiveDomainOnCore st c = true) :
+    ipcInvariantFull (dropCurrentOnCore st c) := by
+  have hInv2 := preemptCurrentOnCore_preserves_ipcInvariantFull st c (idleThreadId c) hObjInv hInv
+  obtain ⟨prev, ptcb, hCur, hNotIdle, hPT, -⟩ := currentOutsideActiveDomainOnCore_spec st c hOut
+  refine ipcInvariantFull_of_getElem_eq (s1 := preemptCurrentOnCore st c (idleThreadId c))
+    (fun _ => rfl) ?_ hInv2
+  intro tid tcb' hT hU hQ hC
+  have hQ' : tid ∉ (preemptCurrentOnCore st c (idleThreadId c)).scheduler.runQueueOnCore
+      Concurrency.bootCoreId := by
+    simpa [dropCurrentOnCore] using hQ
+  by_cases hcb : c = Concurrency.bootCoreId
+  · have hPrevMem := preemptCurrentOnCore_prev_mem st c (idleThreadId c) prev ptcb hCur
+      (by rw [hNotIdle]; decide) hPT
+    have hNe : (preemptCurrentOnCore st c (idleThreadId c)).scheduler.currentOnCore c ≠ some tid := by
+      rw [preemptCurrentOnCore_currentOnCore, hCur]
+      intro hEq
+      cases hEq
+      exact hQ' (by rw [← hcb]; exact hPrevMem)
+    exact hInv2.passiveServerIdle tid tcb' hT hU hQ' (hcb ▸ hNe)
+  · have hC' : (preemptCurrentOnCore st c (idleThreadId c)).scheduler.currentOnCore
+        Concurrency.bootCoreId ≠ some tid := by
+      simpa [dropCurrentOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcb]
+        using hC
+    exact hInv2.passiveServerIdle tid tcb' hT hU hQ' hC'
+
 /-- The reschedule SGI handler preserves the whole bundle: it is a pure
 selection followed by (at most) a switch. -/
 theorem handleRescheduleSgiOnCore_preserves_ipcInvariantFull (st : SystemState)
@@ -2629,8 +2659,13 @@ theorem handleRescheduleSgiOnCore_preserves_ipcInvariantFull (st : SystemState)
   unfold handleRescheduleSgiOnCore at hStep
   split at hStep
   · contradiction
-  · cases hStep
-    exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _ hInv
+  · split at hStep
+    · rename_i hOut
+      cases hStep
+      exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _
+        (dropCurrentOnCore_preserves_ipcInvariantFull st c hObjInv hInv hOut)
+    · cases hStep
+      exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _ hInv
   · split at hStep
     · split at hStep
       · rename_i sSw hSw
@@ -2682,7 +2717,7 @@ theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
   unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at hStep
   have hObjMid : (markKeyChangeFor (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
       (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
-      (determineTargetCore st tid)) tid (resolveEffectivePrioDeadline st tcb)).objects.invExt := by
+      (determineTargetCore st tid)) tid (effectiveSchedParams st tcb)).objects.invExt := by
     rw [markKeyChangeFor_objects, migrateRunQueueBucketOnCore_objects_eq]
     exact SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
       st tid tcb p hObjInv

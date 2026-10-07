@@ -108,6 +108,19 @@ theorem clearReschedulePendingOnCore_stepCovers (e : CoreId) (st : SystemState) 
     have hne : e ≠ c := Ne.symm hc
     simp [SystemState.clearReschedulePendingOnCore, SchedulerState.clearReschedulePendingOnCore_reschedulePendingOnCore_ne _ _ _ hne]
 
+/-- The drop of an out-of-domain incumbent re-queues it and clears the slot, all
+on its own core. -/
+theorem dropCurrentOnCore_stepCovers (e : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt) :
+    stepCovers e st (dropCurrentOnCore st e) := by
+  refine stepCovers_trans (preemptCurrentOnCore_stepCovers e st (idleThreadId e) hInv)
+    (stepCovers_of_local_slots ?_ ?_)
+  · apply keyInputsEq_of_objects_eq
+    rfl
+  · intro c hc
+    have hne : e ≠ c := Ne.symm hc
+    simp [dropCurrentOnCore, hne]
+
 /-- The reschedule handler on the executing core covers. -/
 theorem handleRescheduleSgiOnCore_stepCovers (e : CoreId) (st st' : SystemState)
     (hInv : st.objects.invExt) (h : handleRescheduleSgiOnCore st e = .ok st') :
@@ -115,7 +128,11 @@ theorem handleRescheduleSgiOnCore_stepCovers (e : CoreId) (st st' : SystemState)
   unfold handleRescheduleSgiOnCore at h
   split at h
   · cases h
-  · injection h with h; subst h; exact clearReschedulePendingOnCore_stepCovers e st
+  · split at h
+    · injection h with h; subst h
+      exact stepCovers_trans (dropCurrentOnCore_stepCovers e st hInv)
+        (clearReschedulePendingOnCore_stepCovers e _)
+    · injection h with h; subst h; exact clearReschedulePendingOnCore_stepCovers e st
   · split at h
     · split at h
       · injection h with h; subst h

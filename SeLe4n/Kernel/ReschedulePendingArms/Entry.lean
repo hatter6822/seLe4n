@@ -273,7 +273,7 @@ theorem faultEntryDeliver_sgis_eq_flags (lctx : LabelingContext) (st : SystemSta
     (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId) :
     (faultEntryDeliver lctx st f ectx w c).1 =
       rescheduleSgisFromFlags st.scheduler.reschedulePending
-        (faultEntryDeliver lctx st f ectx w c).2.scheduler.reschedulePending c := by
+        (faultEntryDeliver lctx st f ectx w c).2.scheduler.reschedulePending := by
   unfold faultEntryDeliver
   split <;> rfl
 

@@ -3318,7 +3318,7 @@ run_negative_check "INVARIANT" rg -n 'objects\.insert' SeLe4n/Kernel/SchedContex
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate \(stStored : SystemState\)\n    \(scId : SeLe4n\.SchedContextId\)\n    \(boundTid : SeLe4n\.ThreadId\) \(boundTcb : TCB\)\n    \(hBound : stStored\.getTcb\? boundTid = some boundTcb\)\n    \(priority domain : Nat\) : SystemState :=" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*        stStored\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb boundTcb2\)\n          \(SystemState\.rewriteAdmissible_tcb hBound boundTcb2\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*  match stProp\.getTcbWitnessed\? boundTid with\n  \| some ⟨currentTcb, hCurrent⟩ =>\n    if currentTcb\.domain\.val = domain ∨\n       ¬ schedContextConfigurePropagates boundTcb scId then stProp\n    else(\n([ \t][^\n]*)?)*      stProp\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb currentTcb2\)\n        \(SystemState\.rewriteAdmissible_tcb hCurrent currentTcb2\)\n  \| none => stProp$" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigure \(vScId[^\n]*(\n([ \t][^\n]*)?)*              match stStored\.getTcbWitnessed\? boundTid with\n              \| some ⟨boundTcb, hBound⟩ =>\n( *\n)*                let preKey := resolveEffectivePrioDeadline st boundTcb\n                \.ok \(\(\), markKeyChangeFor \(schedContextConfigureBoundPropagate stStored scIdTyped\n                  boundTid boundTcb hBound priority domain\) boundTid preKey\)" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigure \(vScId[^\n]*(\n([ \t][^\n]*)?)*              match stStored\.getTcbWitnessed\? boundTid with\n              \| some ⟨boundTcb, hBound⟩ =>\n( *\n)*                let preKey := effectiveSchedParams st boundTcb\n                \.ok \(\(\), markKeyChangeFor \(schedContextConfigureBoundPropagate stStored scIdTyped\n                  boundTid boundTcb hBound priority domain\) boundTid preKey\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 # NEGATIVE: the propagation must not resolve the bound thread bare again, and
 # the domain write must not swallow its condition (a rewrite that runs on
 # every configure re-inserts an unchanged record).
@@ -4324,7 +4324,7 @@ run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st co
 # its use in the shared fault delivery and in the FP/SIMD step, the theorems
 # about both, and a negative refusing the retired inert arm of the delivery.
 run_check "INVARIANT" rg -n '^def dispatchVacatedCore \(st : SystemState\) \(c : CoreId\) : SystemState :=$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n -U '^  \| none =>\n([ \t]*(--[^\n]*)?\n)*      let st. := PriorityInheritance\.dispatchVacatedCore st c\n      \(rescheduleSgisFromFlags pending0 st.\.scheduler\.reschedulePending c, st.\)$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^  \| none =>\n([ \t]*(--[^\n]*)?\n)*      let st. := PriorityInheritance\.dispatchVacatedCore st c\n      \(rescheduleSgisFromFlags pending0 st.\.scheduler\.reschedulePending, st.\)$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^      \(res\.1, PriorityInheritance\.dispatchVacatedCore res\.2 c\)$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^theorem faultEntryDeliver_vacated($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryStep_vacated($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
@@ -4981,7 +4981,7 @@ run_check "INVARIANT" rg -n '^theorem faultContextOfThread_writeFaultRegistersTo
 run_check "INVARIANT" rg -n '^theorem ofRegisterFile_spill($|[ ({:\[\]])' SeLe4n/Model/Fault.lean
 # …and the cross-core pokes are read off the reschedule flags the step raised, as the syscall
 # seam derives them (KSC-1: from the reschedule flags), not read off the single SGI the Call chain surfaces.
-run_check "INVARIANT" rg -n 'rescheduleSgisFromFlags pending0 st..\.scheduler\.reschedulePending c' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n 'rescheduleSgisFromFlags pending0 st..\.scheduler\.reschedulePending, st..\)$' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n '\.sgi\.toList' SeLe4n/Kernel/FaultEntry.lean
 # v0.36.47 audit: the Rust seam passes three words (the core and the trap's
 # syndrome), and the window is read once from the published in-flight frame on
@@ -11733,7 +11733,7 @@ run_check "INVARIANT" rg -n '^def releaseSchedContextBinding \(' SeLe4n/Kernel/L
 # purging EVERY core, since no thread is left to name one.  Mutation: keep every
 # name and drop the purge (the record update then reads `st1`), or purge one core
 # on the arm that has no thread.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBinding[^\n]*(\n([ \t][^\n]*)?)*match sc\.boundThread with\n *\| none => st\n *\| some tid =>\n *match st\.getTcb\? tid with\n *\| some tcb =>\n *let st1 := st\.updateTcb tid fun t =>\n *\{ t with schedContextBinding := SchedContextBinding\.unbound \}\n *let st2 := SchedContextOps\.purgeReplenishmentOnCore st1 \(determineTargetCore st tid\) scId\n( *\n)* *markKeyChangeFor \{ st2 with scThreadIndex := scThreadIndexRemove st2\.scThreadIndex scId tid \}\n *tid \(resolveEffectivePrioDeadline st tcb\)\n *\| none =>\n *let st1 := SchedContextOps\.purgeReplenishmentFromAllCores st scId" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBinding[^\n]*(\n([ \t][^\n]*)?)*match sc\.boundThread with\n *\| none => st\n *\| some tid =>\n *match st\.getTcb\? tid with\n *\| some tcb =>\n *let st1 := st\.updateTcb tid fun t =>\n *\{ t with schedContextBinding := SchedContextBinding\.unbound \}\n *let st2 := SchedContextOps\.purgeReplenishmentOnCore st1 \(determineTargetCore st tid\) scId\n( *\n)* *markKeyChangeFor \{ st2 with scThreadIndex := scThreadIndexRemove st2\.scThreadIndex scId tid \}\n *tid \(effectiveSchedParams st tcb\)\n *\| none =>\n *let st1 := SchedContextOps\.purgeReplenishmentFromAllCores st scId" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 # NEGATIVE: the unbind without the purge -- the index removal then reads the
 # unbound state rather than the purged one, which is the defect one field over
 # (`v0.35.164`'s S-05 index-only arm).  Mutation: delete the `st2` binding.
@@ -22090,10 +22090,10 @@ run_check "INVARIANT" rg -n '^theorem modifyTcb_preserves_badgeWellFormed$' SeLe
 # one is.  Shape anchors over the two clearing sites; the writers are pinned
 # to the live diff by the Tier 2 differential suite, whose wiring is anchored
 # below (the flag is inert until the row's PR C switches the seams).
-run_check "INVARIANT" bash -lc 'rg -U -n "^def handleRescheduleSgiOnCore \(st : SystemState\) \(c : CoreId\) :[^\n]*(\n([ \t][^\n]*)?)*  \| \.ok none => \.ok \(st\.clearReschedulePendingOnCore c\)\n  \| \.ok \(some tid\) =>\n      if candidateOutranksCurrentOnCore st c tid then\n        match switchToThreadOnCore st c tid with\n        \| \.ok st. => \.ok \(st.\.clearReschedulePendingOnCore c\)\n        \| \.error e => \.error e\n      else \.ok \(st\.clearReschedulePendingOnCore c\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def handleRescheduleSgiOnCore \(st : SystemState\) \(c : CoreId\) :[^\n]*(\n([ \t][^\n]*)?)*  \| \.ok none =>\n( *\n)*      if currentOutsideActiveDomainOnCore st c then\n        \.ok \(\(dropCurrentOnCore st c\)\.clearReschedulePendingOnCore c\)\n      else \.ok \(st\.clearReschedulePendingOnCore c\)\n  \| \.ok \(some tid\) =>\n( *\n)*      if currentOutsideActiveDomainOnCore st c \|\| candidateOutranksCurrentOnCore st c tid then\n        match switchToThreadOnCore st c tid with\n        \| \.ok st. => \.ok \(st.\.clearReschedulePendingOnCore c\)\n        \| \.error e => \.error e\n      else \.ok \(st\.clearReschedulePendingOnCore c\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def scheduleEffectiveOnCore \(st : SystemState\) \(c : CoreId\) :[^\n]*(\n([ \t][^\n]*)?)*      \.ok \(\(idleFallbackOnCore \(saveOutgoingContextOnCore st c\) c\)\.clearReschedulePendingOnCore c\)(\n([ \t][^\n]*)?)*            \.ok \{ stRestored with scheduler := \(stRestored\.scheduler\.setCurrentOnCore c \(some tid\)\)\n              \|>\.clearReschedulePendingOnCore c \}" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" rg -n '^def markKeyChangeFor \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
-run_check "INVARIANT" rg -n '^def rescheduleSgisFromFlags \(pre post : Vector Bool numCores\) \(e : CoreId\) :' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
+run_check "INVARIANT" rg -n '^def rescheduleSgisFromFlags \(pre post : Vector Bool numCores\) :' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
 run_check "INVARIANT" rg -n '^theorem mem_rescheduleSgisFromFlags_iff($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
 run_check "INVARIANT" rg -n '^name = "reschedule_pending_suite"$' lakefile.toml
 run_check "INVARIANT" rg -n '^run_check_with_timeout "TRACE" lake exe reschedule_pending_suite$' scripts/test_tier2_negative.sh

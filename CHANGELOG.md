@@ -1,3 +1,68 @@
+## v0.36.57 — The reschedule key includes the thread's domain, and the receiver evicts an out-of-domain incumbent, locally too
+
+Follow-up to the KSC-1 accumulator.  The selector admits a thread only when
+its domain is the core's active domain, but the key both the reschedule flags
+and the diff compared was `(priority, deadline)`.  Reconfiguring a scheduling
+context that moved its bound thread's domain therefore poked no remote core.
+
+- **The receiver evicts an out-of-domain incumbent.**  The poke alone fixed
+  only the queued case: `handleRescheduleSgiOnCore` compared priority and
+  deadline and kept a running thread that had left the active domain.  It now
+  checks `currentOutsideActiveDomainOnCore` first: any in-domain candidate
+  displaces such an incumbent, and with none the incumbent is re-queued and
+  the core left idle (`dropCurrentOnCore`).  Every receiver theorem is
+  re-proved over the new arm (wake frames, scheduler invariant suites, IPC
+  bundle, lock-bracket footprint, coverage, NI confinement), and two new
+  equations state the arm (`handleRescheduleSgiOnCore_drops_when_none`,
+  `handleRescheduleSgiOnCore_eq_switch_of_outside`).
+
+- **The executing core pokes itself.**  `rescheduleSgisFromFlags` excluded
+  the executing core and the seams' local reschedule ran only on a vacated
+  core, so a flag a step raised on the core it ran on (a caller that moved its
+  own domain, dropped its own priority, or queued a thread that outranks it)
+  stayed up until that core's next scheduling point, and while up it
+  swallowed the `false → true` edge later remote writers need.  The list now
+  names every core whose flag rose, the executing core included: the core
+  takes its own `.reschedule` SGI as the entry returns, and the reschedule
+  entry runs the receiver under the core's own lock.  Running it inline was
+  tried and dropped: a key writer's lock footprint (configure, bind) holds the
+  thread's home core, not necessarily the core it runs on.
+  `rescheduleSgisFromFlags` loses its executing-core argument and
+  `rescheduleSgisFromFlags_not_execCore` is retired.  Tier 2
+  `reschedule_pending_suite` §2.11 covers a thread that moves its own domain.
+
+- **An empty core resumes the idle loop.**  `restoreTargetOnCore` named
+  `.none` for a core with no current thread, the HAL installed nothing, and
+  the trap layer returned through the frame it captured, which on such a core
+  is the thread the model just took off it.  The idle thread is domain 0, so
+  in any other domain's window with nothing runnable the previous window's
+  thread kept running through it (temporal isolation between domains broken
+  on multi-domain schedules), as did a thread that blocked or was evicted
+  there.  An empty core now resumes the kernel's wait loop (`.idle`); `.none`
+  is left for a current thread with no TCB.  Tier 2 suites check the idle
+  resume after a local eviction and for an empty core.
+
+- **One key.**  `markKeyChangeFor`, `markKeyChangeFrom` and `crossCoreSgiBody`
+  now read `effectiveSchedParams` (`priority × deadline × domain`, the triple
+  the selector already used) instead of `resolveEffectivePrioDeadline`.  A
+  queued thread's key moved when any field changed; a current thread's
+  weakened when its priority dropped, its deadline grew later or its domain
+  changed.
+- **Coverage re-proved over the triple.**  `schedKeyView`,
+  `schedKeyNotWeakened`, `schedKeyFieldsEq`, `keyInputsOf` and
+  `tcbKeyFields` carry the domain; new congruences
+  `effectiveSchedParams_congr`, `_congr_deadline` and `_congr_binding` replace
+  the pair forms at the hook sites, and
+  `effectiveSchedParams_fst_eq_resolve` / `_snd_fst_eq_resolve` bridge the
+  priority and deadline back to the resolver.
+- **Tier 2**: `reschedule_pending_suite` §2.9 reconfigures a bound context
+  from core 0 with only the domain changed and expects core 1 (where the
+  thread is queued) flagged and named by the diff; the same reconfigure with
+  the domain unchanged flags nothing.  §2.10 moves the domain of a thread
+  running on core 1 and runs core 1's receiver: it goes idle with the thread
+  re-queued, or runs a queued lower-priority in-domain thread instead; with the
+  domain unchanged the incumbent keeps running.
+
 ## v0.36.56 — CI: stop re-running lanes that add no signal
 
 Cuts runner time per pull-request push without dropping any check from pull

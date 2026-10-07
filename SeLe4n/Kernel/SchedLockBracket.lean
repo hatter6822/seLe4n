@@ -405,7 +405,8 @@ theorem not_mem_handleRescheduleSgiOnCoreLockSet_replenishQueue (c d : CoreId) :
   rintro (h | h) <;> exact absurd h (by simp)
 
 /-- **WS-RR RR7.39**: the reschedule step is the identity, the core's own
-reschedule-pending clear, or one switch (then that clear) on the decoded core.
+reschedule-pending clear, one switch (then that clear), or the drop of an
+out-of-domain incumbent (then that clear) on the decoded core.
 
 `handleRescheduleSgiOnCore` propagates the selector's error, returns the
 decoded core's flag clear (the KSC-1 accumulator's scheduling-point write) when
@@ -417,9 +418,12 @@ theorem perCoreRescheduleStep_id_or_switch (st : SystemState) (coreId : UInt64)
     (h : coreId.toNat < numCores) :
     perCoreRescheduleStep st coreId = st ∨
       perCoreRescheduleStep st coreId = st.clearReschedulePendingOnCore ⟨coreId.toNat, h⟩ ∨
-      ∃ tid st', switchToThreadOnCore st ⟨coreId.toNat, h⟩ tid = .ok st' ∧
+      (∃ tid st', switchToThreadOnCore st ⟨coreId.toNat, h⟩ tid = .ok st' ∧
         perCoreRescheduleStep st coreId
-          = st'.clearReschedulePendingOnCore ⟨coreId.toNat, h⟩ := by
+          = st'.clearReschedulePendingOnCore ⟨coreId.toNat, h⟩) ∨
+      perCoreRescheduleStep st coreId
+        = (dropCurrentOnCore st ⟨coreId.toNat, h⟩).clearReschedulePendingOnCore
+            ⟨coreId.toNat, h⟩ := by
   unfold perCoreRescheduleStep
   rw [dif_pos h]
   unfold handleRescheduleSgiOnCore
@@ -427,14 +431,19 @@ theorem perCoreRescheduleStep_id_or_switch (st : SystemState) (coreId : UInt64)
   | error e => exact Or.inl rfl
   | ok cand =>
     cases cand with
-    | none => exact Or.inr (Or.inl rfl)
+    | none =>
+      simp only
+      by_cases hDrop : currentOutsideActiveDomainOnCore st ⟨coreId.toNat, h⟩ = true
+      · rw [if_pos hDrop]; exact Or.inr (Or.inr (Or.inr rfl))
+      · rw [if_neg hDrop]; exact Or.inr (Or.inl rfl)
     | some tid =>
       simp only
-      by_cases hOut : candidateOutranksCurrentOnCore st ⟨coreId.toNat, h⟩ tid
+      by_cases hOut : (currentOutsideActiveDomainOnCore st ⟨coreId.toNat, h⟩ ||
+          candidateOutranksCurrentOnCore st ⟨coreId.toNat, h⟩ tid) = true
       · rw [if_pos hOut]
         cases hSw : switchToThreadOnCore st ⟨coreId.toNat, h⟩ tid with
         | error e => exact Or.inl rfl
-        | ok st' => exact Or.inr (Or.inr ⟨tid, st', hSw, rfl⟩)
+        | ok st' => exact Or.inr (Or.inr (Or.inl ⟨tid, st', hSw, rfl⟩))
       · rw [if_neg hOut]; exact Or.inr (Or.inl rfl)
 
 /-- **WS-RR RR7.39 (the payoff for the reschedule seam)**: the verified
@@ -452,7 +461,8 @@ theorem perCoreRescheduleStep_coversWrites (st : SystemState) (coreId : UInt64)
       ⟨handleRescheduleSgiOnCoreLockSet ⟨coreId.toNat, h⟩,
         switchToThreadOnCoreLockSet_keys_nodup _⟩
       st (perCoreRescheduleStep st coreId) := by
-  rcases perCoreRescheduleStep_id_or_switch st coreId h with hId | hClr | ⟨tid, st', hSw, hEq⟩
+  rcases perCoreRescheduleStep_id_or_switch st coreId h with
+    hId | hClr | ⟨tid, st', hSw, hEq⟩ | hDrop
   · rw [hId]; exact schedFootprintCoversWrites_refl _ _
   · rw [hClr]; exact schedFootprintCoversWrites_clearReschedulePendingOnCore _ _ _
   · rw [hEq]
@@ -470,5 +480,23 @@ theorem perCoreRescheduleStep_coversWrites (st : SystemState) (coreId : UInt64)
         switchToThreadOnCore_activeDomainOnCore_eq st ⟨coreId.toNat, h⟩ tid st' d hSw⟩
     · intro d _
       exact switchToThreadOnCore_replenishQueueOnCore st ⟨coreId.toNat, h⟩ tid st' d hSw
+  · rw [hDrop]
+    refine ⟨?_, ?_, ?_⟩
+    · intro hNot
+      exact absurd (List.mem_cons_self) hNot
+    · intro d hNot
+      have hne : d ≠ ⟨coreId.toNat, h⟩ := fun hEqCore =>
+        hNot ((mem_handleRescheduleSgiOnCoreLockSet_runQueue_iff _ d).mpr hEqCore)
+      refine ⟨?_, ?_, ?_⟩
+      · simp only [SystemState.clearReschedulePendingOnCore_scheduler,
+          SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+          dropCurrentOnCore_runQueueOnCore]
+        exact preemptCurrentOnCore_runQueueOnCore_ne st _ _ d (fun hc => hne hc.symm)
+      · simp only [SystemState.clearReschedulePendingOnCore_scheduler,
+          SchedulerState.clearReschedulePendingOnCore_currentOnCore]
+        exact dropCurrentOnCore_currentOnCore_ne st _ d (fun hc => hne hc.symm)
+      · simp [dropCurrentOnCore, preemptCurrentOnCore_activeDomainOnCore]
+    · intro d _
+      simp
 
 end SeLe4n.Kernel

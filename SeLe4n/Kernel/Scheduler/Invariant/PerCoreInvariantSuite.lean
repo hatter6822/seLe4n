@@ -748,6 +748,27 @@ theorem switchToThreadOnCore_preserves_schedulerInvariantStructural_smp
 
 -- ── §3.5  Cross-core reschedule-SGI handler (`handleRescheduleSgiOnCore`) ──
 
+/-- The handler's drop of an out-of-domain incumbent preserves the structural
+SMP invariant: core `c₀` is left idle with the incumbent re-queued, and every
+sibling core is framed. -/
+theorem dropCurrentOnCore_preserves_schedulerInvariantStructural_smp
+    (st : SystemState) (c₀ : CoreId) (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructural_smp st) :
+    schedulerInvariantStructural_smp (dropCurrentOnCore st c₀) := by
+  refine schedulerInvariantStructural_smp_of_establish_and_frame (c₀ := c₀) hPre ?_ ?_ ?_ ?_
+  · refine ⟨dropCurrentOnCore_queueCurrentConsistentOnCore st c₀,
+      dropCurrentOnCore_currentThreadValidOnCore st c₀,
+      dropCurrentOnCore_runnableThreadsAreTCBsOnCore st c₀ hInv (hPre c₀).2.2.1 (hPre c₀).2.1, ?_⟩
+    unfold runQueueOnCoreWellFormed
+    rw [dropCurrentOnCore_runQueueOnCore]
+    exact preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed st c₀ _ (hPre c₀).2.2.2
+  · exact fun c' hc => dropCurrentOnCore_currentOnCore_ne st c₀ c' hc
+  · exact fun c' hc => (dropCurrentOnCore_runQueueOnCore st c₀ c').trans
+      (preemptCurrentOnCore_runQueueOnCore_ne st c₀ _ c' hc)
+  · intro t hsome
+    obtain ⟨x, hx⟩ := preemptCurrentOnCore_getTcb?_isSome st c₀ _ hInv t (Option.isSome_iff_exists.mp hsome)
+    rw [dropCurrentOnCore_getTcb?, hx]; rfl
+
 /-- WS-SM SM5.I.8: the reschedule-SGI handler preserves the structural SMP
 invariant.  On the target core it either keeps the current thread (a no-op,
 `st' = st`) or preemptively switches to a strictly-outranking candidate (via
@@ -762,7 +783,11 @@ theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructural_smp
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)                                  -- selection error: impossible
-  · rw [Except.ok.injEq] at h; subst h; exact hPre            -- nothing eligible: st' = st
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h
+      exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructural_smp _ _
+        (dropCurrentOnCore_preserves_schedulerInvariantStructural_smp st c₀ hInv hPre)
+    · rw [Except.ok.injEq] at h; subst h; exact hPre          -- nothing eligible: st' = st
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -1172,6 +1197,37 @@ theorem switchToThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
   · exact switchToThreadOnCore_preserves_contextMatchesCurrentOnCore_sibling
       st c₀ c' tid st' hc hInv hPre h
 
+/-- The drop preserves the register-bank-extended invariant: core `c₀` is idle,
+and a sibling's current thread keeps a register context its bank matched (the
+only save is the incumbent's, whose bank already matched on `c₀`). -/
+theorem dropCurrentOnCore_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (c₀ : CoreId) (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralReg_smp st) :
+    schedulerInvariantStructuralReg_smp (dropCurrentOnCore st c₀) := by
+  refine schedulerInvariantStructuralReg_smp_of_base_and_ctx
+    (dropCurrentOnCore_preserves_schedulerInvariantStructural_smp st c₀ hInv
+      (fun c => (hPre c).1)) ?_
+  intro c'
+  by_cases hc : c₀ = c'
+  · subst hc; exact dropCurrentOnCore_contextMatchesCurrentOnCore st c₀
+  · refine contextMatchesCurrentOnCore_frame_at
+      (dropCurrentOnCore_currentOnCore_ne st c₀ c' hc)
+      (by rw [dropCurrentOnCore_machine])
+      ?_ (hPre c').1.2.1 (hPre c').2
+    intro t tcb _ htcb
+    obtain ⟨tcb', ht', hdisj⟩ :=
+      preemptCurrentOnCore_getTcb?_regContext st c₀ (idleThreadId c₀) t tcb hInv htcb
+    refine ⟨tcb', by rw [dropCurrentOnCore_getTcb?]; exact ht', ?_⟩
+    cases hdisj with
+    | inl heq => rw [heq]; exact RegisterFile.beq_self _
+    | inr hr =>
+        obtain ⟨hcurc0, hrc⟩ := hr
+        have hcm0 := (hPre c₀).2
+        unfold contextMatchesCurrentOnCore at hcm0
+        simp only [hcurc0, htcb] at hcm0
+        rw [hrc]
+        exact RegisterFile.beq_symm hcm0
+
 /-- WS-SM SM5.I.8 (register-bank payoff): the reschedule-SGI handler preserves the
 register-bank-extended structural SMP invariant — switch (the SM5.B Reg
 preservation) or no-op (`st' = st`, carries the pre-state invariant). -/
@@ -1184,7 +1240,11 @@ theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralReg_smp
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact hPre
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h
+      exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralReg_smp _ _
+        (dropCurrentOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ hInv hPre)
+    · rw [Except.ok.injEq] at h; subst h; exact hPre
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -1414,7 +1474,7 @@ theorem clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralRegNo
 /-- KSC-1: `markKeyChangeFor` (the key-change writer) only ever raises
 reschedule-pending flags, so it preserves the Nodup-extended invariant. -/
 theorem markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp
-    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (h : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (markKeyChangeFor st tid k) := fun c' =>
   schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
@@ -1839,6 +1899,22 @@ theorem switchToThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
         (preemptCurrentOnCore_preserves_runQueueUniqueOnCore_self st c₀ tid (hPre c₀).2)
     · rw [if_neg hAff] at h; simp at h
 
+/-- The drop preserves the Nodup-extended invariant: the preempt's re-queue keeps
+core `c₀`'s queue duplicate-free, and siblings are framed. -/
+theorem dropCurrentOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId) (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (dropCurrentOnCore st c₀) := by
+  refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
+    (dropCurrentOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ hInv
+      (fun c => (hPre c).1)) ?_
+  refine runQueueUniqueOnCore_smp_of_operated_and_frame (c₀ := c₀) (fun c => (hPre c).2) ?_ ?_
+  · unfold runQueueUniqueOnCore
+    rw [dropCurrentOnCore_runQueueOnCore]
+    exact preemptCurrentOnCore_preserves_runQueueUniqueOnCore_self st c₀ _ (hPre c₀).2
+  · exact fun c' hc => (dropCurrentOnCore_runQueueOnCore st c₀ c').trans
+      (preemptCurrentOnCore_runQueueOnCore_ne st c₀ _ c' hc)
+
 theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c₀ : CoreId) (st' : SystemState)
     (hInv : st.objects.invExt)
@@ -1848,7 +1924,11 @@ theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralRegNodup
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
-  · rw [Except.ok.injEq] at h; subst h; exact hPre
+  · split at h
+    · rw [Except.ok.injEq] at h; subst h
+      exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralRegNodup_smp _ _
+        (dropCurrentOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hInv hPre)
+    · rw [Except.ok.injEq] at h; subst h; exact hPre
   · split at h
     · split at h
       · rename_i sSw hSw
@@ -3113,7 +3193,7 @@ theorem wakeThread_preserves_runQueueSafetyOnCore (st : SystemState)
 /-- KSC-1: `markKeyChangeFor` only raises reschedule-pending flags, so the
 run-queue safety bundle carries across it on every core. -/
 theorem runQueueSafetyOnCore_of_markKeyChangeFor (st : SystemState) (tid : SeLe4n.ThreadId)
-    (k : SeLe4n.Priority × SeLe4n.Deadline) (c : CoreId) (h : runQueueSafetyOnCore st c) :
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (c : CoreId) (h : runQueueSafetyOnCore st c) :
     runQueueSafetyOnCore (markKeyChangeFor st tid k) c :=
   runQueue_frame_preserves_runQueueSafetyOnCore st _ c (markKeyChangeFor_runQueueOnCore st tid k c)
     (fun x hx => by rw [markKeyChangeFor_getTcb?]; exact hx) h
@@ -4679,8 +4759,13 @@ theorem handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive (st : Sy
       rw [hCh] at hStep
       cases r with
       | none =>
-          simp only [Except.ok.injEq] at hStep; subst hStep
-          exact allThreadsTimeSlicePositive_of_objects_eq rfl h
+          simp only at hStep
+          split at hStep
+          · simp only [Except.ok.injEq] at hStep; subst hStep
+            exact allThreadsTimeSlicePositive_of_objects_eq rfl
+              (preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive st c _ hInv h)
+          · simp only [Except.ok.injEq] at hStep; subst hStep
+            exact allThreadsTimeSlicePositive_of_objects_eq rfl h
       | some tid =>
           simp only at hStep
           split at hStep

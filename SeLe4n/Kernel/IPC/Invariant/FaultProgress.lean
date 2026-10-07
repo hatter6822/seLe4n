@@ -314,7 +314,18 @@ theorem handleRescheduleSgiOnCore_preserves_not_dispatchable
   unfold handleRescheduleSgiOnCore at hStep
   split at hStep
   · exact absurd hStep (by simp)
-  · rw [← Except.ok.inj hStep]; exact h
+  · split at hStep
+    · rw [← Except.ok.inj hStep]
+      simp only [SystemState.clearReschedulePendingOnCore_scheduler,
+        SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.clearReschedulePendingOnCore_currentOnCore,
+        dropCurrentOnCore_runQueueOnCore, dropCurrentOnCore_currentOnCore_self]
+      rintro (hm | hc)
+      · rcases preemptCurrentOnCore_mem_runQueueOnCore_self st c _ u hm with hm' | hc'
+        · exact hQ hm'
+        · exact hC hc'
+      · cases hc
+    · rw [← Except.ok.inj hStep]; exact h
   · split at hStep
     · rename_i tid hChoose _
       have hMem : tid ∈ st.scheduler.runQueueOnCore c :=
