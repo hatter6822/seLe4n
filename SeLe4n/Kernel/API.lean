@@ -4730,6 +4730,53 @@ def dispatchSyscallChecked (ctx : LabelingContext)
     | some _ => .error .illegalState
     | none   => .error .objectNotFound
 
+/-- WS-ZA ZA1.1: `dispatchSyscallChecked`'s arm and taint step, given the three
+fields of the pre-state the taint step reads (`applySyscallTaintAfter`).  A
+separate, non-inlined function so its arguments are read before the arm runs. -/
+@[noinline] def dispatchCheckedArmThenTaint (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (plan : TaintPlan) (preEpoch : Nat) (preLog : DeclassificationAuditLog)
+    (preTaint : TaintTable) : Kernel Unit :=
+  fun st =>
+    match (if syscallChecksTargetFirst decoded.syscallId then
+             syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid executingCore gate)
+           else
+             syscallInvoke gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
+    | .error e => .error e
+    | .ok ((), stPost) => .ok ((), applySyscallTaintAfter plan preEpoch preLog preTaint stPost)
+
+/-- WS-ZA ZA1.1: the compiled `dispatchSyscallChecked`.  It reads what the taint
+step needs of the pre-state before the arm, so the arm owns the state it writes
+(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1). -/
+def dispatchSyscallCheckedImpl (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) : Kernel Unit :=
+  fun st =>
+    if st.scheduler.currentOnCore executingCore ≠ some tid then .error .illegalState
+    else
+    match st.getObject? tid.toObjId with
+    | some (.tcb tcb) =>
+      match st.getObject? tcb.cspaceRoot with
+      | some (.cnode rootCn) =>
+        let gate : SyscallGate := {
+          callerId     := tid
+          cspaceRoot   := tcb.cspaceRoot
+          capAddr      := decoded.capAddr
+          capDepth     := rootCn.depth
+          requiredRight := syscallRequiredRight decoded.syscallId
+        }
+        dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
+          (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
+          st.declassificationAuditLog st.declassificationTaint st
+      | some _ => .error .invalidCapability
+      | none   => .error .objectNotFound
+    | some _ => .error .illegalState
+    | none   => .error .objectNotFound
+
+@[csimp] theorem dispatchSyscallChecked_eq_impl :
+    @dispatchSyscallChecked = @dispatchSyscallCheckedImpl := rfl
+
 /-- T6-I/M-IF-1: Top-level register-sourced syscall entry point with
     information-flow enforcement. All cross-domain operations are gated by
     `securityFlowsTo` before execution.
@@ -5267,6 +5314,47 @@ def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
     | none   => .error .objectNotFound
+
+/-- WS-ZA ZA1.1: `dispatchSyscall`'s arm and taint step, given the three fields
+of the pre-state the taint step reads (`applySyscallTaintAfter`).  A separate,
+non-inlined function so its arguments are read before the arm runs. -/
+@[noinline] def dispatchArmThenTaint (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (plan : TaintPlan) (preEpoch : Nat) (preLog : DeclassificationAuditLog)
+    (preTaint : TaintTable) : Kernel Unit :=
+  fun st =>
+    match (syscallInvoke gate (dispatchWithCap decoded tid executingCore gate)) st with
+    | .error e => .error e
+    | .ok ((), stPost) => .ok ((), applySyscallTaintAfter plan preEpoch preLog preTaint stPost)
+
+/-- WS-ZA ZA1.1: the compiled `dispatchSyscall`.  It reads what the taint step
+needs of the pre-state before the arm, so the arm owns the state it writes
+(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1). -/
+def dispatchSyscallImpl (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) : Kernel Unit :=
+  fun st =>
+    if st.scheduler.currentOnCore executingCore ≠ some tid then .error .illegalState
+    else
+    match st.getObject? tid.toObjId with
+    | some (.tcb tcb) =>
+      match st.getObject? tcb.cspaceRoot with
+      | some (.cnode rootCn) =>
+        let gate : SyscallGate := {
+          callerId     := tid
+          cspaceRoot   := tcb.cspaceRoot
+          capAddr      := decoded.capAddr
+          capDepth     := rootCn.depth
+          requiredRight := syscallRequiredRight decoded.syscallId
+        }
+        dispatchArmThenTaint decoded tid executingCore gate
+          (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
+          st.declassificationAuditLog st.declassificationTaint st
+      | some _ => .error .invalidCapability
+      | none   => .error .objectNotFound
+    | some _ => .error .illegalState
+    | none   => .error .objectNotFound
+
+@[csimp] theorem dispatchSyscall_eq_impl : @dispatchSyscall = @dispatchSyscallImpl := rfl
 
 /-- WS-J1-C: Top-level register-sourced syscall entry point.
 

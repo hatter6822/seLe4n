@@ -122,6 +122,58 @@ def notificationSignalOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
       if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
+/-- WS-ZA ZA1.1: the compiled `notificationSignalOnCore`.  A signal with no
+waiter stores the badge through the pure store `withObjectStored`, which cannot
+fail, so the pre-state is not held across the write for a refusal that cannot
+happen (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  The waiter path is the
+specification's; its refusal after the notification store is ZA2.3's. -/
+def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (executingCore : CoreId) (st : SystemState) :
+    SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
+  match st.getNotification? notificationId with
+  | some ntfn =>
+      match ntfn.waitingThreads.tail? with
+      | some (waiter, rest) =>
+          let nextState : NotificationState := if rest.val.isEmpty then .idle else .waiting
+          let ntfn' : Notification := {
+            state := nextState
+            waitingThreads := rest
+            pendingBadge := none
+            boundTCB := ntfn.boundTCB
+          }
+          match storeObject notificationId (.notification ntfn') st with
+          | .error e => (st, .error e)
+          | .ok ((), st') =>
+              let badgeMsg : IpcMessage := { IpcMessage.empty with badge := some badge }
+              match storeTcbIpcStateAndMessage st' waiter .ready (some badgeMsg) with
+              | .error e => (st, .error e)
+              | .ok st'' =>
+                  ((wakeThread st'' waiter executingCore).1,
+                   .ok (wakeThread st'' waiter executingCore).2)
+      | none =>
+          let mergedBadge : SeLe4n.Badge :=
+            match ntfn.pendingBadge with
+            | some existing => SeLe4n.Badge.bor existing badge
+            | none => SeLe4n.Badge.ofNatMasked badge.toNat
+          (st.withObjectStored notificationId (.notification {
+              state := .active
+              waitingThreads := SeLe4n.NoDupList.empty
+              pendingBadge := some mergedBadge
+              boundTCB := ntfn.boundTCB }), .ok none)
+  | none =>
+      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+      else (st, .error .objectNotFound)
+
+@[csimp] theorem notificationSignalOnCore_eq_impl :
+    @notificationSignalOnCore = @notificationSignalOnCoreImpl := by
+  funext notificationId badge executingCore st
+  unfold notificationSignalOnCore notificationSignalOnCoreImpl
+  split
+  · split
+    · rfl
+    · simp only [SystemState.storeObject_eq_withObjectStored]
+  · rfl
+
 /-- WS-SM SM6.B.1 (plan §3.1): notification wait across cores.
 
 Mirrors the single-core `notificationWait`, with one cross-core substitution: on
