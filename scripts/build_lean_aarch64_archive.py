@@ -59,8 +59,10 @@ Output (under `.lake/build/aarch64-unknown-none-softfloat/`):
   obj/                     the objects (rebuilt when their C or the flags move)
   libsele4n.provenance     what this archive was built from: the SHA-256 of
                            every package module's `.lean` source, the
-                           toolchain pin and the Lake configuration, and of
-                           the archive and roots script themselves.  Written
+                           toolchain pin and the Lake configuration, every
+                           tree file the builder loads or names
+                           (`builder_files`), and of the archive and roots
+                           script themselves.  Written
                            only when every check passed; `--check-fresh`
                            re-hashes the same files and refuses on any
                            difference, so an image linked from it is the tree
@@ -102,12 +104,10 @@ UNRESOLVED_REPORT = OUT_DIR / "libsele4n.unresolved"
 # WS-BP BP5.2: the link's roots, as the linker script both links read.
 ROOTS_SCRIPT = OUT_DIR / "libsele4n.roots.ld"
 PROVENANCE = OUT_DIR / "libsele4n.provenance"
-# The configuration every module's C and object depends on besides its own
-# source: the toolchain pin and Lake's configuration, which decide the C, and
-# this builder, which decides the flags and the closure.  The headers the
-# compile reads (`SHIM_INCLUDE`) are added by `provenance_record`, read from the tree.
-BUILD_CONFIG = ("lean-toolchain", "lakefile.toml", "lake-manifest.json",
-                "scripts/build_lean_aarch64_archive.py")
+# What Lake reads besides the sources: the toolchain pin and Lake's
+# configuration, which decide the C.  What THIS builder reads is derived from
+# the builder itself (`builder_files`), never listed.
+LAKE_CONFIG = ("lean-toolchain", "lakefile.toml", "lake-manifest.json")
 HAL_BUILD_SCRIPT = REPO / "rust/sele4n-hal/build.rs"
 SHIM_INCLUDE = REPO / "rust/sele4n-hal/lean_include"
 STAGED_ALLOWLIST = SCRIPTS / "staged_module_allowlist.txt"
@@ -849,9 +849,25 @@ def config_digests() -> dict[str, str | None]:
     configuration and the headers every object is compiled against.  It keys
     the object cache (`prepare_objects`) as well as the record, so an object
     is reused only under the configuration the record will name."""
-    paths = list(BUILD_CONFIG) + [str(h.relative_to(REPO))
-                                  for h in sorted(SHIM_INCLUDE.rglob("*")) if h.is_file()]
-    return {path: file_digest(REPO / path) for path in sorted(paths)}
+    paths = list(LAKE_CONFIG) + [str(f.relative_to(REPO)) for f in builder_files()]
+    return {path: file_digest(REPO / path) for path in sorted(set(paths))}
+
+
+def builder_files() -> list[Path]:
+    """Every tree file this builder's behaviour depends on, derived from the
+    builder rather than listed: each module it loaded from the tree (itself
+    and the gates it imports), and each tree path a module-level constant
+    names outside the build output -- a file (present or not, so a deletion
+    is recorded) or every file under a directory.  `REPO` and `SCRIPTS` are
+    the roots the constants are spelled from, not inputs."""
+    files = {Path(m.__file__).resolve() for m in list(sys.modules.values())
+             if getattr(m, "__file__", None) and Path(m.__file__).resolve().is_relative_to(REPO)}
+    for value in list(globals().values()):
+        if (not isinstance(value, Path) or value in (REPO, SCRIPTS)
+                or not value.is_relative_to(REPO) or value.is_relative_to(REPO / ".lake")):
+            continue
+        files |= {f for f in value.rglob("*") if f.is_file()} if value.is_dir() else {value}
+    return sorted(files)
 
 
 def input_digests(package: list[str]) -> dict[str, str | None]:
@@ -1237,6 +1253,11 @@ def self_test() -> int:
     expect("the object cache is keyed on the headers",
            object_cache_stamp(stamp_tc, ["-O2"], {"h.h": "a"})
            != object_cache_stamp(stamp_tc, ["-O2"], {"h.h": "b"}))
+    expect("every tree file the builder loads or names is recorded",
+           {"scripts/build_lean_aarch64_archive.py", "scripts/check_kernel_entry_exports.py",
+            "scripts/check_fp_simd_free_objects.py", "scripts/staged_module_allowlist.txt"}
+           <= set(config_digests()))
+    expect("build output is not an input", not any(p.startswith(".lake/") for p in config_digests()))
     expect("every shim header keys the object cache",
            all(str(h.relative_to(REPO)) in config_digests()
                for h in SHIM_INCLUDE.rglob("*") if h.is_file()))

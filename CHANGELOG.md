@@ -54,6 +54,15 @@ the measured signal; it now requires label 0 and prints no reading
 otherwise (checked under QEMU with an invalid message-info word: the gate
 fails, naming label `0xfff20`).
 
+**Fixed: the record named only some of the files the builder reads.**  Its
+configuration set was a hand list (the toolchain pin, Lake's configuration,
+the builder itself), so an edit to a gate the builder imports
+(`check_kernel_entry_exports.py`, which decides `libsele4n.roots.ld`) or to
+`staged_module_allowlist.txt` left an old archive fresh.  The set is now
+derived from the builder (`builder_files`): every module it loaded from the
+tree, transitive imports included, and every tree path its constants name
+outside `.lake/`.
+
 ## v0.36.71 — the allocation exerciser refuses a stale Lean archive; first reading of the separated lock state: 112
 
 **The `heap-allocations-per-syscall` exerciser had been measuring the kernel
