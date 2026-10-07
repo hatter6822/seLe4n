@@ -1161,8 +1161,9 @@ structure ReplyRecvArgs where
   deriving Repr, DecidableEq
 
 /-- V2-I: Decode notification signal arguments from message registers.
-    Requires 1 message register (badge). -/
-def decodeNotificationSignalArgs (decoded : SyscallDecodeResult)
+    Requires 1 message register (badge).  Inlined, so a caller that matches
+    the result builds no `Except` (WS-ZA ZA2.3). -/
+@[inline] def decodeNotificationSignalArgs (decoded : SyscallDecodeResult)
     : Except KernelError NotificationSignalArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
   pure { badge := Badge.ofNatMasked r0.val }
