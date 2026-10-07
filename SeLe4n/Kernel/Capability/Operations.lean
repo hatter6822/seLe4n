@@ -288,6 +288,80 @@ theorem lookupSlotCap_congr_objects
     SystemState.lookupSlotCap st₁ ref = SystemState.lookupSlotCap st₂ ref := by
   simp only [SystemState.lookupSlotCap, SystemState.lookupCNode, hObjects]
 
+/-- `resolveCapAddress` in continuation form: the refusal goes to `onErr` and
+the resolved slot's CNode and index to `onOk`, so a caller that matches the
+result at once builds neither the `Except` nor the `SlotRef`
+(`resolveCapAddressK_eq`).  WS-ZA ZA2.5. -/
+@[specialize] def resolveCapAddressK {α : Type} (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
+    (bitsRemaining : Nat) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  if hZero : bitsRemaining = 0 then onErr .illegalState
+  else
+    match st.getCNode? rootId with
+    | some cn =>
+      let consumed := cn.guardWidth + cn.radixWidth
+      if hCons : consumed = 0 then onErr .illegalState
+      else if bitsRemaining < consumed then onErr .illegalState
+      else
+        let maskedAddr := addr.toNat % SeLe4n.machineWordMax
+        let shiftedAddr := maskedAddr >>> (bitsRemaining - consumed)
+        let radixMask := 2 ^ cn.radixWidth
+        let slotIndex := shiftedAddr % radixMask
+        let guardExtracted := (shiftedAddr / radixMask) % (2 ^ cn.guardWidth)
+        if guardExtracted ≠ cn.guardValue then onErr .invalidCapability
+        else
+          let slot := SeLe4n.Slot.ofNat slotIndex
+          if bitsRemaining - consumed = 0 then onOk rootId slot
+          else
+            match cn.lookup slot with
+            | some cap =>
+              match cap.target with
+              | .object childId =>
+                have hConsPos : consumed > 0 := Nat.pos_of_ne_zero hCons
+                have hBitsPos : bitsRemaining > 0 := Nat.pos_of_ne_zero hZero
+                have : bitsRemaining - consumed < bitsRemaining := Nat.sub_lt hBitsPos hConsPos
+                resolveCapAddressK childId addr (bitsRemaining - consumed) st onErr onOk
+              | _ => onErr .invalidCapability
+            | none => onErr .invalidCapability
+    | none => onErr .objectNotFound
+  termination_by bitsRemaining
+
+theorem resolveCapAddressK_eq {α : Type} (addr : SeLe4n.CPtr) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.Slot → α) :
+    ∀ (bitsRemaining : Nat) (rootId : SeLe4n.ObjId),
+      resolveCapAddressK rootId addr bitsRemaining st onErr onOk =
+        match resolveCapAddress rootId addr bitsRemaining st with
+        | .error e => onErr e
+        | .ok ref => onOk ref.cnode ref.slot := by
+  intro bitsRemaining
+  induction bitsRemaining using Nat.strongRecOn with
+  | _ bits ih =>
+    intro rootId
+    rw [resolveCapAddressK, resolveCapAddress]
+    by_cases hZero : bits = 0
+    · simp only [hZero, ↓reduceDIte]
+    · simp only [hZero, ↓reduceDIte]
+      cases st.getCNode? rootId with
+      | none => rfl
+      | some cn =>
+        by_cases hCons : cn.guardWidth + cn.radixWidth = 0
+        · simp only [hCons, ↓reduceDIte]
+        · simp only [hCons, ↓reduceDIte]
+          by_cases hLt : bits < cn.guardWidth + cn.radixWidth
+          · simp only [hLt, ↓reduceIte]
+          · simp only [hLt, ↓reduceIte]
+            split
+            · rfl
+            · split
+              · rfl
+              · cases cn.lookup _ with
+                | none => rfl
+                | some cap =>
+                  simp only []
+                  cases cap.target with
+                  | object childId => exact ih _ (by omega) _
+                  | _ => rfl
+
 /-- WS-H13/H-01 (deliverable 9): `resolveCapAddress` returns `.error .illegalState`
 when called with zero bits remaining. -/
 theorem resolveCapAddress_zero_bits

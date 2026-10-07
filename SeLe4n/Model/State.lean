@@ -4839,8 +4839,9 @@ theorem getTcb?_eq_none_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
           exact absurd (Option.some.inj hEq) (hNotTcb t)
         · rfl
 
-/-- Read a capability from a typed slot reference. -/
-def lookupSlotCap (st : SystemState) (ref : SlotRef) : Option Capability :=
+/-- Read a capability from a typed slot reference.  Inlined, so a caller that
+matches the result builds no `some` (WS-ZA ZA2.5). -/
+@[inline] def lookupSlotCap (st : SystemState) (ref : SlotRef) : Option Capability :=
   match lookupCNode st ref.cnode with
   | none => none
   | some cn => cn.lookup ref.slot

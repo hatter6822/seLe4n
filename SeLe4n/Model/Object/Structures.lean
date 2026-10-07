@@ -819,8 +819,9 @@ theorem resolveSlot_mask_idempotent (n : Nat) (h : n < SeLe4n.machineWordMax) :
     n % SeLe4n.machineWordMax = n :=
   Nat.mod_eq_of_lt h
 
-/-- WS-G5/F-P03: O(1) amortized slot lookup via `RHTable.get?`. -/
-def lookup (node : CNode) (slot : SeLe4n.Slot) : Option Capability :=
+/-- WS-G5/F-P03: O(1) amortized slot lookup via `RHTable.get?`.  Inlined, so a
+caller that matches the result builds no `some` (WS-ZA ZA2.5). -/
+@[inline] def lookup (node : CNode) (slot : SeLe4n.Slot) : Option Capability :=
   node.slots.get? slot
 
 /-- WS-G5/F-P03: O(1) amortized slot insert via `RHTable.insert`.
