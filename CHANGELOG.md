@@ -1,3 +1,44 @@
+## v0.36.58 — A reply-blocked waiter's priority change re-walks its server's boost
+
+Fixes a live priority-inversion bug found while re-verifying the CBS plan.  A
+server's `pipBoost` is the highest effective priority among the threads
+reply-blocked on it, but the writers that change a waiter's priority never
+re-walked the chain: `setPriorityOnCore` and `setMCPriorityOnCore` (through
+`updatePrioritySource`) and `schedContextConfigure`'s bound-priority write.  So
+raising a waiter left its server under-boosted (the inversion bound broke) and
+lowering it left the server over-boosted until the reply.
+
+- **The re-walk.**  Each writer now ends in `repropagateFromWaiter`
+  (`PriorityInheritance/Propagate.lean`): when the thread has a blocking server,
+  it runs `propagatePipChainCrossCore` from that server with the pre-state's
+  `objectIndex.length` as fuel, on the operation's own core: the executing
+  core for the priority syscalls, the bound thread's home core (the core its
+  footprint locks) for configure.  The walk's SGIs are dropped; each boost it
+  moves raises the holder's reschedule flag through `updatePipBoostOnCore`'s
+  key hook, so the KSC-1 seams poke the right cores.
+- **Footprints and write sets.**  `priorityControlWriteSet` and the new
+  `schedContextConfigureWriteSet` (now the configure footprint's run segment)
+  append `waiterChainWriteSet`: the home cores of the chain from the waiter's
+  server.  The segment is read from the pre-state, and `pipChainWriteSet_congr`
+  / `chainShape_of_tcbFields` prove it equals the mid-state's, because the
+  priority, ceiling and domain writes keep every thread's affinity and IPC
+  state.
+- **Proofs.**  IPC invariant preservation, reschedule-flag coverage, the
+  replenish-queue frames, NI projection (`repropagateFromWaiter_preserves_projection`,
+  under the same chain hypotheses as `propagatePIP_preserves_projection`) and
+  cross-core confinement (`repropagateFromWaiter_confinedToCores`,
+  `waiterChainWriteSet_configurePropagate`) are re-proved over the new tail;
+  `setPriorityOnCore_preserves_projection` / `setMCPriorityOnCore_preserves_projection`
+  gain the two chain hypotheses and the priority confinement theorems gain
+  `objects.invExt`.  `storeObject_schedContextAt_getTcb?_eq` is now public.
+- **Tests.**  `PM-PIP-01` raises, lowers and ceiling-caps a reply-blocked
+  waiter and checks the server's boost follows (50 → 90, 20, 30), and that the
+  footprint names the server's home core; `PM-PIP-02` does the same through a
+  configure.
+- **Not in this cut.**  The single-core `setPriorityOp` / `setMCPriorityOp` and
+  the frozen twins have no live caller and still do not re-walk; the CBS plan's
+  CB1.9 (`inheritanceConsistent`) already owns them, and its row now says so.
+
 ## v0.36.57 — The reschedule key includes the thread's domain, and the receiver evicts an out-of-domain incumbent, locally too
 
 Follow-up to the KSC-1 accumulator.  The selector admits a thread only when

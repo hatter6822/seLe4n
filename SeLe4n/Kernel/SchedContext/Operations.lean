@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.SchedContext.Budget
 import SeLe4n.Kernel.SchedContext.ReplenishQueue
 import SeLe4n.Kernel.Scheduler.Operations
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Model.State
 
 /-! # SchedContext Operations — WS-Z Phase Z5
@@ -452,6 +453,43 @@ def schedContextConfigureBoundPropagate (stStored : SystemState)
         (SystemState.rewriteAdmissible_tcb hCurrent currentTcb2)
   | none => stProp
 
+/-- The propagation tail keeps the object store's invariant: its two writes are
+TCB rewrites, and the re-bucket touches the scheduler only.  The chain re-walk
+`schedContextConfigure` runs after it needs this. -/
+theorem schedContextConfigureBoundPropagate_preserves_objects_invExt (stStored : SystemState)
+    (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
+    (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
+    (hInv : stStored.objects.invExt) :
+    (schedContextConfigureBoundPropagate stStored scId boundTid boundTcb hBound priority
+      domain).objects.invExt := by
+  unfold schedContextConfigureBoundPropagate
+  have hProp : ∀ s : SystemState, s.objects.invExt →
+      ∀ (hW : ∀ t, s.getTcbWitnessed? boundTid = some t → True),
+      (match s.getTcbWitnessed? boundTid with
+        | some ⟨currentTcb, hCurrent⟩ =>
+          if currentTcb.domain.val = domain ∨
+             ¬ schedContextConfigurePropagates boundTcb scId then s
+          else
+            s.rewriteObject boundTid.toObjId (KernelObject.tcb { currentTcb with domain := ⟨domain⟩ })
+              (SystemState.rewriteAdmissible_tcb hCurrent { currentTcb with domain := ⟨domain⟩ })
+        | none => s).objects.invExt := by
+    intro s hs _
+    split
+    · split
+      · exact hs
+      · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hs
+    · exact hs
+  apply hProp _ _ (fun _ _ => trivial)
+  split
+  · exact hInv
+  · dsimp only []
+    have hW := SystemState.rewriteObject_preserves_objects_invExt stStored boundTid.toObjId
+      (KernelObject.tcb { boundTcb with priority := ⟨priority⟩ })
+      (SystemState.rewriteAdmissible_tcb hBound _) hInv
+    split
+    · exact hW
+    · exact hW
+
 /-- Z5-F3: Configure a SchedContext's scheduling parameters.
 1. Validates parameters (period > 0, budget ≤ period, etc.)
 2. Checks admission control (total bandwidth ≤ 100%)
@@ -540,9 +578,17 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
                 -- move its priority); `markKeyChangeFor` flags its placement
                 -- exactly when the key the selector orders by changed, so an
                 -- immaterial reconfigure flags nothing.
+                --
+                -- A bound thread reply-blocked on a server lends that server its
+                -- priority, so a priority propagated here re-walks the server's
+                -- inheritance chain (`repropagateFromWaiter`); the boost it held
+                -- was computed from the old priority.  The walk runs as the bound
+                -- thread's home core, the core this configure's footprint locks.
                 let preKey := effectiveSchedParams st boundTcb
-                .ok ((), markKeyChangeFor (schedContextConfigureBoundPropagate stStored scIdTyped
-                  boundTid boundTcb hBound priority domain) boundTid preKey)
+                .ok ((), PriorityInheritance.repropagateFromWaiter
+                  (markKeyChangeFor (schedContextConfigureBoundPropagate stStored scIdTyped
+                    boundTid boundTcb hBound priority domain) boundTid preKey) boundTid
+                  (determineTargetCore st boundTid) st.objectIndex.length)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
           .error .resourceExhausted

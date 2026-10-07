@@ -1530,10 +1530,93 @@ private def pm_fp_01_priorityFootprintNamesHomeAndExecutingCores : IO Unit := do
           == (st.scheduler.replenishQueueOnCore c).entries))
 
 
+-- ============================================================================
+-- A priority change on a reply-blocked waiter re-walks the server's boost
+-- ============================================================================
+
+/-- A server on core 2 holding a boost lent by a waiter on the boot core: the
+waiter (priority 50) is blocked on the server's reply, so the server's
+`pipBoost` is 50.  The caller may set any priority. -/
+private def pipWaiterState (callerTid serverTid waiterTid : SeLe4n.ThreadId)
+    (waiterBinding : SchedContextBinding := .unbound)
+    (extra : List (ObjId × KernelObject) := []) : SystemState :=
+  let core2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
+  mkState ([
+    (callerTid.toObjId, .tcb (mkTcb callerTid.toNat (prio := 200))),
+    (serverTid.toObjId, .tcb { mkTcb serverTid.toNat (prio := 10) with
+      pipBoost := some ⟨50⟩, cpuAffinity := some core2 }),
+    (waiterTid.toObjId, .tcb { mkTcb waiterTid.toNat (prio := 50) (binding := waiterBinding) with
+      ipcState := .blockedOnReply ⟨70⟩ (some serverTid) })
+  ] ++ extra)
+
+private def serverBoost (st : SystemState) (serverTid : SeLe4n.ThreadId) :
+    Option SeLe4n.Priority :=
+  match st.objects[serverTid.toObjId]? with
+  | some (.tcb tcb) => tcb.pipBoost
+  | _ => none
+
+/-- PM-PIP-01: raising and lowering a reply-blocked waiter's priority moves the
+boost its server holds; before the fix the server kept the boost computed from
+the waiter's old priority. -/
+private def pm_pip_01_setPriorityReboostsServer : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let serverTid : SeLe4n.ThreadId := ⟨2⟩
+  let waiterTid : SeLe4n.ThreadId := ⟨3⟩
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let core2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
+  let st := pipWaiterState callerTid serverTid waiterTid
+  expect "PM-PIP-01 precondition: the server holds the waiter's boost"
+    (serverBoost st serverTid == some ⟨50⟩)
+  match setPriorityOnCore st ⟨callerTid, by decide⟩ ⟨waiterTid, by decide⟩ ⟨90⟩ core1 with
+  | .error e => throw <| IO.userError s!"PM-PIP-01 raise should succeed, got {repr e}"
+  | .ok (st1, _) =>
+    expect "PM-PIP-01 raising the waiter raises the server's boost (50 -> 90)"
+      (serverBoost st1 serverTid == some ⟨90⟩)
+  match setPriorityOnCore st ⟨callerTid, by decide⟩ ⟨waiterTid, by decide⟩ ⟨20⟩ core1 with
+  | .error e => throw <| IO.userError s!"PM-PIP-01 lower should succeed, got {repr e}"
+  | .ok (st1, _) =>
+    expect "PM-PIP-01 lowering the waiter lowers the server's boost (50 -> 20)"
+      (serverBoost st1 serverTid == some ⟨20⟩)
+  match setMCPriorityOnCore st ⟨callerTid, by decide⟩ ⟨waiterTid, by decide⟩ ⟨30⟩ core1 with
+  | .error e => throw <| IO.userError s!"PM-PIP-01 ceiling should succeed, got {repr e}"
+  | .ok (st1, _) =>
+    expect "PM-PIP-01 a ceiling that caps the waiter lowers the server's boost (50 -> 30)"
+      (serverBoost st1 serverTid == some ⟨30⟩)
+  let fp := schedLockSet_priorityControlOnCore st waiterTid core1
+  expect "PM-PIP-01 the footprint names the server's home core, where the re-walk re-buckets"
+    (decide ((SchedLockId.runQueue ⟨core2⟩,
+      SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
+
+/-- PM-PIP-02: a configure that propagates a new priority to a reply-blocked
+bound thread re-walks its server's boost too, and its footprint names the
+server's home core. -/
+private def pm_pip_02_configureReboostsServer : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let serverTid : SeLe4n.ThreadId := ⟨2⟩
+  let waiterTid : SeLe4n.ThreadId := ⟨3⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  let core2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some waiterTid
+  }
+  let st := pipWaiterState callerTid serverTid waiterTid (.bound scId)
+    [(scObjId, .schedContext sc)]
+  expect "PM-PIP-02 the configure footprint names the server's home core"
+    (decide ((SchedLockId.runQueue ⟨core2⟩, SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
+      schedLockSet_schedContextConfigureOnCore st scObjId))
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 90 0 0 st with
+  | .error e => throw <| IO.userError s!"PM-PIP-02 configure should succeed, got {repr e}"
+  | .ok ((), st1) =>
+    expect "PM-PIP-02 the propagated priority raises the server's boost (50 -> 90)"
+      (serverBoost st1 serverTid == some ⟨90⟩)
+
+
 end SeLe4n.Testing.PriorityManagementSuite
 
 open SeLe4n.Testing.PriorityManagementSuite in
-
 def main : IO Unit := do
   IO.println "=== D2 Priority Management Test Suite ==="
   IO.println "--- D2-M1: setPriority success cases ---"
@@ -1602,4 +1685,7 @@ def main : IO Unit := do
   pm_frozenCeilingRebucketsLikeTheLiveWrite
   IO.println "--- `v0.35.167`: the priority arms' resolved scheduler footprint ---"
   pm_fp_01_priorityFootprintNamesHomeAndExecutingCores
-  IO.println "=== All D2 priority management tests passed (45 tests) ==="
+  IO.println "--- A reply-blocked waiter's priority change re-walks its server's boost ---"
+  pm_pip_01_setPriorityReboostsServer
+  pm_pip_02_configureReboostsServer
+  IO.println "=== All D2 priority management tests passed (47 tests) ==="

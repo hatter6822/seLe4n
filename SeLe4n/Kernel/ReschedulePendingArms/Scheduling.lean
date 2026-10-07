@@ -55,6 +55,73 @@ theorem priorityRescheduleOnCore_stepCovers (e : CoreId) (st st' : SystemState)
   · rw [hEq]; exact stepCovers_refl e st
   · exact handleRescheduleSgiOnCore_stepCovers e st st' hInv hH
 
+/-- A run-queue re-key of a queued thread adds no member. -/
+theorem mem_runQueue_reKey {s : SchedulerState} {h c : CoreId} {x t : SeLe4n.ThreadId}
+    {p : SeLe4n.Priority} (hMem : x ∈ s.runQueueOnCore h)
+    (ht : t ∈ (s.setRunQueueOnCore h (((s.runQueueOnCore h).remove x).insert x p)).runQueueOnCore c) :
+    t ∈ s.runQueueOnCore c := by
+  by_cases hc : h = c
+  · subst hc
+    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert,
+      RunQueue.mem_remove] at ht
+    rcases ht with ⟨ht, _⟩ | rfl
+    · exact ht
+    · exact hMem
+  · rwa [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ h c _ hc] at ht
+
+/-- **One boost update covers**: the boost write on the holder ends in the key
+hook, and the re-bucket keeps the queue's membership. -/
+theorem updatePipBoostOnCore_stepCovers (e c : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    stepCovers e st (PriorityInheritance.updatePipBoostOnCore st c tid) := by
+  unfold PriorityInheritance.updatePipBoostOnCore
+  split
+  · rename_i tcb hT _
+    dsimp only []
+    split
+    · exact stepCovers_refl e st
+    have hAdm := SystemState.rewriteAdmissible_tcb hT
+      { tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }
+    have hK : keyInputsEqExcept tid st (st.rewriteObject tid.toObjId _ hAdm) := by
+      have := keyInputsEqExcept_updateTcb (f := fun t => { t with
+        pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }) hInv (by rw [hT]; rfl)
+      unfold SystemState.updateTcb at this
+      rw [SystemState.getTcbWitnessed?_eq_some hT] at this
+      exact this
+    split
+    · split
+      · rename_i hMem _
+        refine stepCovers_markKeyChangeFor hT hK (fun c' _ => Or.inr ⟨fun t ht => ?_, ?_⟩)
+          (fun c' _ hF => ?_)
+        · exact mem_runQueue_reKey (s := st.scheduler) hMem ht
+        · exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ _ _
+        · rw [SchedulerState.setRunQueueOnCore_reschedulePendingOnCore]; exact hF
+      · exact stepCovers_markKeyChangeFor hT hK (fun c' _ => Or.inr ⟨fun t ht => ht, rfl⟩)
+          (fun c' _ hF => hF)
+    · exact stepCovers_markKeyChangeFor hT hK (fun c' _ => Or.inr ⟨fun t ht => ht, rfl⟩)
+        (fun c' _ hF => hF)
+  · exact stepCovers_refl e st
+
+/-- **The cross-core chain walk covers**: each link is one boost update. -/
+theorem propagatePipChainCrossCore_stepCovers (e ec : CoreId) (fuel : Nat) :
+    ∀ (st : SystemState) (tid : SeLe4n.ThreadId), st.objects.invExt →
+      stepCovers e st (PriorityInheritance.propagatePipChainCrossCore st tid ec fuel).1 ∧
+        (PriorityInheritance.propagatePipChainCrossCore st tid ec fuel).1.objects.invExt := by
+  induction fuel with
+  | zero => intro st _ hInv; exact ⟨stepCovers_refl e st, hInv⟩
+  | succ n ih =>
+    intro st tid hInv
+    rw [PriorityInheritance.propagatePipChainCrossCore_step]
+    have h1 := updatePipBoostOnCore_stepCovers e (determineTargetCore st tid) st tid hInv
+    have h1Inv := PriorityInheritance.updatePipBoostOnCore_preserves_objects_invExt st
+      (determineTargetCore st tid) tid hInv
+    dsimp only []
+    split
+    · rename_i next _
+      obtain ⟨h2, h2Inv⟩ := ih _ next h1Inv
+      exact ⟨stepCovers_trans h1 h2, h2Inv⟩
+    · exact ⟨h1, h1Inv⟩
+
 theorem updatePrioritySource_keyInputsEqExcept (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (p : SeLe4n.Priority) (hInv : st.objects.invExt)
     (hT : st.getTcb? tid = some tcb) :
@@ -73,108 +140,6 @@ theorem updatePrioritySource_keyInputsEqExcept (st : SystemState) (tid : SeLe4n.
     exact hK.trans_keyInputsEqExcept (keyInputsEqExcept_updateTcb
       (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) hT')
   · exact keyInputsEqExcept_updateTcb hInv (by rw [hT]; rfl)
-
-theorem applyPriorityChangeOnCore_stepCovers (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (p : SeLe4n.Priority) (e : CoreId) (b : Bool)
-    (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
-    (hT : st.getTcb? tid = some tcb)
-    (hStep : SchedContext.PriorityManagement.applyPriorityChangeOnCore st tid tcb p e b
-      = .ok (st', sgi)) :
-    stepCovers e st st' ∧ st'.objects.invExt := by
-  unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at hStep
-  obtain ⟨objs, hU⟩ :=
-    SchedContext.PriorityManagement.updatePrioritySource_only_modifies_objects st tid tcb p
-  have hInvU := SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
-    st tid tcb p hInv
-  have hKeys := updatePrioritySource_keyInputsEqExcept st tid tcb p hInv hT
-  generalize hMid : SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
-    (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
-    (determineTargetCore st tid) = mid at hStep
-  have hMidObj : mid.objects = (SchedContext.PriorityManagement.updatePrioritySource
-      st tid tcb p).objects := by rw [← hMid]; exact migrateRunQueueBucketOnCore_objects_eq _ _ _ _
-  have hMidSched : ∀ c, (∀ x, x ∈ mid.scheduler.runQueueOnCore c ↔
-        x ∈ st.scheduler.runQueueOnCore c) ∧
-      mid.scheduler.currentOnCore c = st.scheduler.currentOnCore c ∧
-      mid.scheduler.reschedulePendingOnCore c = st.scheduler.reschedulePendingOnCore c := by
-    intro c
-    subst hMid
-    refine ⟨fun x => (migrateRunQueueBucketOnCore_mem_runQueueOnCore _ _ _ _ _ x).trans
-      (by rw [hU]), ?_, ?_⟩
-    · rw [migrateRunQueueBucketOnCore_currentOnCore, hU]
-    · unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
-      split
-      · simp [SchedulerState.reschedulePendingOnCore, SchedulerState.setRunQueueOnCore, hU]
-      · rw [hU]
-  have hKeysMid : keyInputsEqExcept tid st mid :=
-    hKeys.trans_keyInputsEq (keyInputsEq_of_objects_eq hMidObj)
-  have h1 := stepCovers_markKeyChangeFor (e := e) hT hKeysMid
-    (fun c _ => Or.inr ⟨fun x hx => ((hMidSched c).1 x).mp hx, (hMidSched c).2.1⟩)
-    (fun c _ hp => by rw [(hMidSched c).2.2]; exact hp)
-  have hInvMk : (markKeyChangeFor mid tid (effectiveSchedParams st tcb)).objects.invExt := by
-    rw [markKeyChangeFor_objects, hMidObj]; exact hInvU
-  have h2 := priorityRescheduleOnCore_stepCovers e _ st' _ _ _ hInvMk hStep
-  refine ⟨stepCovers_trans h1 h2, ?_⟩
-  rcases SchedContext.PriorityManagement.priorityRescheduleOnCore_state_cases
-      _ st' _ e _ _ hStep with hEq | hH
-  · rw [hEq]; exact hInvMk
-  · exact handleRescheduleSgiOnCore_preserves_objects_invExt _ e st' hInvMk hH
-
-theorem setPriorityOnCore_stepCovers (st st' : SystemState)
-    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (p : SeLe4n.Priority) (e : CoreId)
-    (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
-    (hStep : SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid p e
-      = .ok (st', sgi)) :
-    stepCovers e st st' ∧ st'.objects.invExt := by
-  unfold SchedContext.PriorityManagement.setPriorityOnCore at hStep
-  split at hStep
-  · split at hStep
-    · contradiction
-    · split at hStep
-      · rename_i targetTcb hTarget
-        exact applyPriorityChangeOnCore_stepCovers st st' _ targetTcb p e _ _ hInv hTarget hStep
-      · contradiction
-  · contradiction
-
-theorem setMCPriorityOnCore_stepCovers (st st' : SystemState)
-    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (p : SeLe4n.Priority) (e : CoreId)
-    (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
-    (hStep : SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid p e
-      = .ok (st', sgi)) :
-    stepCovers e st st' ∧ st'.objects.invExt := by
-  unfold SchedContext.PriorityManagement.setMCPriorityOnCore at hStep
-  split at hStep
-  · split at hStep
-    · contradiction
-    · split at hStep
-      · rename_i targetTcb hTarget _
-        have hPreRaw := (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
-        have kM := insertObjects_tcbKeyKeeping_keyFrame (tcb' := { targetTcb with
-          maxControlledPriority := p }) hInv hPreRaw rfl
-        have hEq : st.rewriteObject vTargetTid.val.toObjId
-            (.tcb { targetTcb with maxControlledPriority := p })
-            (SystemState.rewriteAdmissible_tcb hTarget _) =
-            { st with objects := (st.objects.insert vTargetTid.val.toObjId
-              (.tcb { targetTcb with maxControlledPriority := p })) } := rfl
-        have hAt : (st.rewriteObject vTargetTid.val.toObjId
-            (.tcb { targetTcb with maxControlledPriority := p })
-            (SystemState.rewriteAdmissible_tcb hTarget _)).getTcb? vTargetTid.val =
-            some { targetTcb with maxControlledPriority := p } := by
-          rw [hEq]
-          exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr
-            (insertObjects_getElem_self st _ _ hInv)
-        have sM : stepCovers e st (st.rewriteObject vTargetTid.val.toObjId
-            (.tcb { targetTcb with maxControlledPriority := p })
-            (SystemState.rewriteAdmissible_tcb hTarget _)) := by
-          rw [hEq]; exact kM.stepCovers
-        dsimp only at hStep
-        split at hStep
-        · obtain ⟨h2, hI⟩ := applyPriorityChangeOnCore_stepCovers _ st' vTargetTid.val _ p e _ _
-            (by rw [hEq]; exact kM.2.2) hAt hStep
-          exact ⟨stepCovers_trans sM h2, hI⟩
-        · cases hStep
-          exact ⟨sM, by rw [hEq]; exact kM.2.2⟩
-      · contradiction
-  · contradiction
 
 /-! ### Affinity -/
 
@@ -485,15 +450,35 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
               have hFr := schedContextConfigureBoundPropagate_keyWriteSlotFrame stStored ⟨vScId.val.toNat⟩ boundTid
                 boundTcb hBound priority domain hInvSt
               have hPre : st.getTcb? boundTid = some boundTcb := by rw [← hGetSt]; exact hBound
-              refine ⟨⟨markKeyChangeFor_covers hPre (fun t ht => ?_) (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩),
-                fun c _ h => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ ?_⟩, ?_⟩
-              · rw [schedKeyView_eq_of_keyInputsEqExcept hFr.1 ht]
-                refine hKeySt t fun tcb hT hB => ht ?_
-                have := hReader t tcb hT hB; rw [hBT] at this; exact (Option.some.inj this).symm
-              · have := hFr.2.1 c t ht; rwa [hRqSt] at this
-              · rw [hFr.2.2.1, hCurSt]
-              · rw [hFr.2.2.2.1, hFlSt]; exact h
-              · rw [markKeyChangeFor_objects]; exact hFr.2.2.2.2
+              have hX : stepCovers e st (markKeyChangeFor
+                    (SchedContextOps.schedContextConfigureBoundPropagate stStored ⟨vScId.val.toNat⟩
+                      boundTid boundTcb hBound priority domain) boundTid
+                    (effectiveSchedParams st boundTcb)) ∧
+                  (markKeyChangeFor
+                    (SchedContextOps.schedContextConfigureBoundPropagate stStored ⟨vScId.val.toNat⟩
+                      boundTid boundTcb hBound priority domain) boundTid
+                    (effectiveSchedParams st boundTcb)).objects.invExt := by
+                refine ⟨⟨markKeyChangeFor_covers hPre (fun t ht => ?_)
+                    (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩),
+                  fun c _ h => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ ?_⟩, ?_⟩
+                · rw [schedKeyView_eq_of_keyInputsEqExcept hFr.1 ht]
+                  refine hKeySt t fun tcb hT hB => ht ?_
+                  have := hReader t tcb hT hB; rw [hBT] at this; exact (Option.some.inj this).symm
+                · have := hFr.2.1 c t ht; rwa [hRqSt] at this
+                · rw [hFr.2.2.1, hCurSt]
+                · rw [hFr.2.2.2.1, hFlSt]; exact h
+                · rw [markKeyChangeFor_objects]; exact hFr.2.2.2.2
+              -- The bound thread's chain re-walk: the identity, or one walk.
+              generalize markKeyChangeFor
+                  (SchedContextOps.schedContextConfigureBoundPropagate stStored ⟨vScId.val.toNat⟩
+                    boundTid boundTcb hBound priority domain) boundTid
+                  (effectiveSchedParams st boundTcb) = X at hX ⊢
+              have hRe := PriorityInheritance.repropagateFromWaiter_preserves
+                (fun s => stepCovers e X s ∧ s.objects.invExt) X boundTid
+                (determineTargetCore st boundTid) st.objectIndex.length
+                (fun server _ => propagatePipChainCrossCore_stepCovers e _ _ _ server hX.2)
+                ⟨stepCovers_refl e _, hX.2⟩
+              exact ⟨stepCovers_trans hX.1 hRe.1, hRe.2⟩
             · rename_i hNone
               cases hStep
               refine ⟨hNoReader fun t tcb hT hB => ?_, hInvSt⟩
@@ -504,20 +489,6 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
     · contradiction
 
 /-! ### Scheduling-context bind and unbind -/
-
-/-- A run-queue re-key of a queued thread adds no member. -/
-theorem mem_runQueue_reKey {s : SchedulerState} {h c : CoreId} {x t : SeLe4n.ThreadId}
-    {p : SeLe4n.Priority} (hMem : x ∈ s.runQueueOnCore h)
-    (ht : t ∈ (s.setRunQueueOnCore h (((s.runQueueOnCore h).remove x).insert x p)).runQueueOnCore c) :
-    t ∈ s.runQueueOnCore c := by
-  by_cases hc : h = c
-  · subst hc
-    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert,
-      RunQueue.mem_remove] at ht
-    rcases ht with ⟨ht, _⟩ | rfl
-    · exact ht
-    · exact hMem
-  · rwa [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ h c _ hc] at ht
 
 /-- Writing one core's run queue leaves every other core's. -/
 theorem mem_runQueue_set_ne {s : SchedulerState} {h c : CoreId} {t : SeLe4n.ThreadId}
@@ -837,5 +808,121 @@ theorem schedContextUnbindOnCore_stepCovers (st st' : SystemState) (vScId : SeLe
     obtain ⟨h1, hInvMid⟩ := schedContextUnbind_stepCovers st stMid vScId e hObjInv hUnbind
     exact ⟨stepCovers_trans h1 (priorityRescheduleOnCore_stepCovers e _ _ _ _ _ hInvMid hStep),
       priorityRescheduleOnCore_invExt e _ _ _ _ _ hInvMid hStep⟩
+
+/-! ### Priority inheritance and priority control -/
+
+theorem applyPriorityChangeOnCore_stepCovers (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (p : SeLe4n.Priority) (e : CoreId) (b : Bool)
+    (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
+    (hT : st.getTcb? tid = some tcb)
+    (hStep : SchedContext.PriorityManagement.applyPriorityChangeOnCore st tid tcb p e b
+      = .ok (st', sgi)) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at hStep
+  obtain ⟨objs, hU⟩ :=
+    SchedContext.PriorityManagement.updatePrioritySource_only_modifies_objects st tid tcb p
+  have hInvU := SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
+    st tid tcb p hInv
+  have hKeys := updatePrioritySource_keyInputsEqExcept st tid tcb p hInv hT
+  generalize hMid : SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+    (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
+    (determineTargetCore st tid) = mid at hStep
+  have hMidObj : mid.objects = (SchedContext.PriorityManagement.updatePrioritySource
+      st tid tcb p).objects := by rw [← hMid]; exact migrateRunQueueBucketOnCore_objects_eq _ _ _ _
+  have hMidSched : ∀ c, (∀ x, x ∈ mid.scheduler.runQueueOnCore c ↔
+        x ∈ st.scheduler.runQueueOnCore c) ∧
+      mid.scheduler.currentOnCore c = st.scheduler.currentOnCore c ∧
+      mid.scheduler.reschedulePendingOnCore c = st.scheduler.reschedulePendingOnCore c := by
+    intro c
+    subst hMid
+    refine ⟨fun x => (migrateRunQueueBucketOnCore_mem_runQueueOnCore _ _ _ _ _ x).trans
+      (by rw [hU]), ?_, ?_⟩
+    · rw [migrateRunQueueBucketOnCore_currentOnCore, hU]
+    · unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+      split
+      · simp [SchedulerState.reschedulePendingOnCore, SchedulerState.setRunQueueOnCore, hU]
+      · rw [hU]
+  have hKeysMid : keyInputsEqExcept tid st mid :=
+    hKeys.trans_keyInputsEq (keyInputsEq_of_objects_eq hMidObj)
+  have h1 := stepCovers_markKeyChangeFor (e := e) hT hKeysMid
+    (fun c _ => Or.inr ⟨fun x hx => ((hMidSched c).1 x).mp hx, (hMidSched c).2.1⟩)
+    (fun c _ hp => by rw [(hMidSched c).2.2]; exact hp)
+  have hInvMk : (markKeyChangeFor mid tid (effectiveSchedParams st tcb)).objects.invExt := by
+    rw [markKeyChangeFor_objects, hMidObj]; exact hInvU
+  -- The waiter-side chain re-walk: the identity, or one chain walk.
+  have hRe : stepCovers e (markKeyChangeFor mid tid (effectiveSchedParams st tcb))
+        (PriorityInheritance.repropagateFromWaiter
+          (markKeyChangeFor mid tid (effectiveSchedParams st tcb)) tid e st.objectIndex.length) ∧
+      (PriorityInheritance.repropagateFromWaiter
+          (markKeyChangeFor mid tid (effectiveSchedParams st tcb)) tid e
+          st.objectIndex.length).objects.invExt :=
+    PriorityInheritance.repropagateFromWaiter_preserves
+      (fun s => stepCovers e (markKeyChangeFor mid tid (effectiveSchedParams st tcb)) s ∧
+        s.objects.invExt) _ tid _ _
+      (fun server _ => propagatePipChainCrossCore_stepCovers e _ _ _ server hInvMk)
+      ⟨stepCovers_refl e _, hInvMk⟩
+  have h2 := priorityRescheduleOnCore_stepCovers e _ st' _ _ _ hRe.2 hStep
+  refine ⟨stepCovers_trans (stepCovers_trans h1 hRe.1) h2, ?_⟩
+  rcases SchedContext.PriorityManagement.priorityRescheduleOnCore_state_cases
+      _ st' _ e _ _ hStep with hEq | hH
+  · rw [hEq]; exact hRe.2
+  · exact handleRescheduleSgiOnCore_preserves_objects_invExt _ e st' hRe.2 hH
+
+theorem setPriorityOnCore_stepCovers (st st' : SystemState)
+    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (p : SeLe4n.Priority) (e : CoreId)
+    (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
+    (hStep : SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid p e
+      = .ok (st', sgi)) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold SchedContext.PriorityManagement.setPriorityOnCore at hStep
+  split at hStep
+  · split at hStep
+    · contradiction
+    · split at hStep
+      · rename_i targetTcb hTarget
+        exact applyPriorityChangeOnCore_stepCovers st st' _ targetTcb p e _ _ hInv hTarget hStep
+      · contradiction
+  · contradiction
+
+theorem setMCPriorityOnCore_stepCovers (st st' : SystemState)
+    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (p : SeLe4n.Priority) (e : CoreId)
+    (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
+    (hStep : SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid p e
+      = .ok (st', sgi)) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold SchedContext.PriorityManagement.setMCPriorityOnCore at hStep
+  split at hStep
+  · split at hStep
+    · contradiction
+    · split at hStep
+      · rename_i targetTcb hTarget _
+        have hPreRaw := (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
+        have kM := insertObjects_tcbKeyKeeping_keyFrame (tcb' := { targetTcb with
+          maxControlledPriority := p }) hInv hPreRaw rfl
+        have hEq : st.rewriteObject vTargetTid.val.toObjId
+            (.tcb { targetTcb with maxControlledPriority := p })
+            (SystemState.rewriteAdmissible_tcb hTarget _) =
+            { st with objects := (st.objects.insert vTargetTid.val.toObjId
+              (.tcb { targetTcb with maxControlledPriority := p })) } := rfl
+        have hAt : (st.rewriteObject vTargetTid.val.toObjId
+            (.tcb { targetTcb with maxControlledPriority := p })
+            (SystemState.rewriteAdmissible_tcb hTarget _)).getTcb? vTargetTid.val =
+            some { targetTcb with maxControlledPriority := p } := by
+          rw [hEq]
+          exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr
+            (insertObjects_getElem_self st _ _ hInv)
+        have sM : stepCovers e st (st.rewriteObject vTargetTid.val.toObjId
+            (.tcb { targetTcb with maxControlledPriority := p })
+            (SystemState.rewriteAdmissible_tcb hTarget _)) := by
+          rw [hEq]; exact kM.stepCovers
+        dsimp only at hStep
+        split at hStep
+        · obtain ⟨h2, hI⟩ := applyPriorityChangeOnCore_stepCovers _ st' vTargetTid.val _ p e _ _
+            (by rw [hEq]; exact kM.2.2) hAt hStep
+          exact ⟨stepCovers_trans sM h2, hI⟩
+        · cases hStep
+          exact ⟨sM, by rw [hEq]; exact kM.2.2⟩
+      · contradiction
+  · contradiction
 
 end SeLe4n.Kernel

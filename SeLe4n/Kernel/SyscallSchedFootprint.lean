@@ -174,15 +174,22 @@ theorem schedLockSet_resumeThreadOnCore_no_replenishQueue (st : SystemState)
 
 open SeLe4n.Kernel.SchedContext.PriorityManagement in
 /-- **The cores the live `.tcbSetPriority` / `.tcbSetMCPriority` may write** — the
-target's home core, where its run-queue bucket migrates, and the executing core,
-which runs the demotion's preemption point inline.  A remote preemption is posted
-as an SGI, so the set over-approximates by one core there.
+target's home core, where its run-queue bucket migrates; the executing core,
+which runs the demotion's preemption point inline; and, when the target is
+reply-blocked on a server, the home cores of the inheritance chain the change
+re-walks (`waiterChainWriteSet`).  A remote preemption is posted as an SGI, so
+the set over-approximates by one core there.
+
+The chain segment is read from the **pre-state**, though the walk runs after the
+priority write: the write moves neither a home core nor a blocking edge, so the
+two name the same cores (`priorityChangeMid_chainShape`).
 
 SM8.B.2's write set, moved here from the staged
 `InformationFlow/NonInterferenceCrossCore.lean` at `v0.35.167`. -/
 def priorityControlWriteSet (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) : List CoreId :=
-  [determineTargetCore st tid, executingCore]
+  [determineTargetCore st tid, executingCore] ++
+    waiterChainWriteSet st tid executingCore st.objectIndex.length
 
 /-- `v0.35.167`: the model-level preemption seam writes no replenish queue — it
 either returns its input or runs the reschedule handler, which writes run queues
@@ -219,7 +226,8 @@ theorem applyPriorityChangeOnCore_replenishQueueOnCore (st st' : SystemState)
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at h
   rw [priorityRescheduleOnCore_replenishQueueOnCore _ st' _ executingCore shouldPreempt
-      sgi c h, markKeyChangeFor_replenishQueueOnCore,
+      sgi c h, PriorityInheritance.repropagateFromWaiter_replenishQueueOnCore,
+    markKeyChangeFor_replenishQueueOnCore,
     SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_replenishQueueOnCore]
   obtain ⟨objs, hEq⟩ :=
     SchedContext.PriorityManagement.updatePrioritySource_only_modifies_objects st tid tcb
@@ -597,11 +605,26 @@ def schedContextConfigureReplenishCores (st : SystemState) (scObjId : SeLe4n.Obj
   | some sc => [SchedContextOps.schedContextReplenishHome st sc]
   | none => []
 
+/-- **The cores a `.schedContextConfigure` may write** — the bound thread's home
+core, where the propagated priority re-buckets it (`schedContextWriteSet`), and,
+when that thread is reply-blocked on a server, the home cores of the inheritance
+chain the propagated priority re-walks (`waiterChainWriteSet`).
+
+The chain segment is read from the **pre-state**, though the walk runs after the
+SchedContext store and the propagation: neither moves a home core or a blocking
+edge (`schedContextConfigureBoundPropagate_tcbChainFields`). -/
+def schedContextConfigureWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) :
+    List CoreId :=
+  schedContextWriteSet st scObjId ++
+    match SchedContextOps.schedContextBoundThread? st scObjId with
+    | some tid => waiterChainWriteSet st tid (determineTargetCore st tid) st.objectIndex.length
+    | none => []
+
 /-- **`v0.35.168`: the live `.schedContextConfigure` arm's scheduler-domain
 footprint.** -/
 def schedLockSet_schedContextConfigureOnCore (st : SystemState) (scObjId : SeLe4n.ObjId) :
     List (SchedLockId × Concurrency.AccessMode) :=
-  schedFootprintOfCores (schedContextWriteSet st scObjId)
+  schedFootprintOfCores (schedContextConfigureWriteSet st scObjId)
     (schedContextConfigureReplenishCores st scObjId)
 
 /-- `v0.35.168`: the footprint holds the bound thread's home core's run-queue
@@ -612,7 +635,7 @@ theorem schedLockSet_schedContextConfigureOnCore_contains_home_runQueue_write
     (SchedLockId.runQueue ⟨determineTargetCore st tid⟩, Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextConfigureOnCore st scObjId :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
-    (by unfold schedContextWriteSet; rw [h]; simp)
+    (by unfold schedContextConfigureWriteSet schedContextWriteSet; rw [h]; simp)
 
 /-- `v0.35.168`: ...and the SC's home core's replenish-queue write lock, which is
 the purge's. -/
@@ -942,7 +965,8 @@ theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemStat
         · split at h
           · rename_i boundTcb hBound _
             rw [Except.ok.injEq, Prod.mk.injEq] at h
-            rw [← h.2, markKeyChangeFor_replenishQueueOnCore,
+            rw [← h.2, PriorityInheritance.repropagateFromWaiter_replenishQueueOnCore,
+              markKeyChangeFor_replenishQueueOnCore,
               schedContextConfigureBoundPropagate_replenishQueueOnCore, hSched]
             exact SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm
           · rw [Except.ok.injEq, Prod.mk.injEq] at h

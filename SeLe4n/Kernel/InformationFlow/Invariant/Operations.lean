@@ -4366,6 +4366,121 @@ theorem migrateRunQueueBucket_preserves_projection
   migrateRunQueueBucketOnCore_preserves_projection ctx observer st tid newPriority
     bootCoreId hTidHigh
 
+/-- A remove-then-insert of a high thread on **any** core's run queue preserves
+the projection: on the boot core it is the pre-SMP argument, and every other
+core's queue is invisible to `projectState`. -/
+private theorem runQueueOnCore_remove_insert_preserves_projection_at_high
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (prio : SeLe4n.Priority)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer
+      { st with scheduler := (st.scheduler.setRunQueueOnCore c
+          (((st.scheduler.runQueueOnCore c).remove tid).insert tid prio)) } =
+    projectState ctx observer st := by
+  by_cases hc : c = bootCoreId
+  · subst hc
+    exact runQueue_remove_insert_preserves_projection_at_high ctx observer st tid _ hTidHigh
+  · simp only [projectState, projectRunnable, projectCurrent, projectActiveDomain,
+      projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
+      SchedulerState.runnable,
+      SchedulerState.setRunQueueOnCore_currentOnCore,
+      SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+      SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+    rfl
+
+/-- The per-core boost of a **high** thread preserves the projection: it writes
+the thread's TCB, re-buckets it on its home core and may raise a reschedule
+flag, and none of the three is visible to a low observer. -/
+theorem updatePipBoostOnCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (hTidHigh : threadObservable ctx observer tid = false)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (PriorityInheritance.updatePipBoostOnCore st c tid) =
+      projectState ctx observer st := by
+  unfold PriorityInheritance.updatePipBoostOnCore
+  split
+  · dsimp only
+    split
+    · rfl
+    · have hObj : ∀ (o : KernelObject) h,
+          projectState ctx observer (st.rewriteObject tid.toObjId o h) =
+            projectState ctx observer st := by
+        intro o h
+        dsimp only [SystemState.rewriteObject]
+        exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
+          hTidObjHigh hObjInv
+      split
+      · split
+        · rw [markKeyChangeFor_preserves_projection,
+            runQueueOnCore_remove_insert_preserves_projection_at_high ctx observer _ c tid _
+              hTidHigh]
+          exact hObj _ _
+        · rw [markKeyChangeFor_preserves_projection]; exact hObj _ _
+      · rw [markKeyChangeFor_preserves_projection]; exact hObj _ _
+  · rfl
+
+/-- The cross-core chain walk preserves the projection when it starts at a high
+thread and the blocking graph never leads from a high thread to a low one — the
+hypotheses `propagatePIP_preserves_projection` takes for the boot-core walk. -/
+theorem propagatePipChainCrossCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (hCoherent : ∀ t : SeLe4n.ThreadId,
+        threadObservable ctx observer t = false →
+        objectObservable ctx observer t.toObjId = false)
+    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
+        threadObservable ctx observer t = false →
+        PriorityInheritance.blockingServer s t = some server →
+        threadObservable ctx observer server = false)
+    (st : SystemState) (startTid : SeLe4n.ThreadId)
+    (ec : SeLe4n.Kernel.Concurrency.CoreId) (fuel : Nat)
+    (hStartHigh : threadObservable ctx observer startTid = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 =
+      projectState ctx observer st := by
+  induction fuel generalizing st startTid with
+  | zero => rfl
+  | succ n ih =>
+    rw [PriorityInheritance.propagatePipChainCrossCore_step]
+    have hBoost : projectState ctx observer (PriorityInheritance.pipBoostWithWake st startTid ec).1 =
+        projectState ctx observer st := by
+      rw [PriorityInheritance.pipBoostWithWake_state]
+      exact updatePipBoostOnCore_preserves_projection ctx observer st _ startTid hStartHigh
+        (hCoherent startTid hStartHigh) hObjInv
+    have hInv' := PriorityInheritance.pipBoostWithWake_preserves_objects_invExt st startTid ec hObjInv
+    cases hBS : PriorityInheritance.blockingServer st startTid with
+    | none => exact hBoost
+    | some next =>
+      simp only []
+      rw [ih _ next (hBlockingChainHigh st startTid next hStartHigh hBS) hInv']
+      exact hBoost
+
+/-- `repropagateFromWaiter` from a **high** waiter preserves the projection, under
+the chain hypotheses above. -/
+theorem repropagateFromWaiter_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (hCoherent : ∀ t : SeLe4n.ThreadId,
+        threadObservable ctx observer t = false →
+        objectObservable ctx observer t.toObjId = false)
+    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
+        threadObservable ctx observer t = false →
+        PriorityInheritance.blockingServer s t = some server →
+        threadObservable ctx observer server = false)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ec : SeLe4n.Kernel.Concurrency.CoreId)
+    (fuel : Nat) (hTidHigh : threadObservable ctx observer tid = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (PriorityInheritance.repropagateFromWaiter st tid ec fuel) =
+      projectState ctx observer st := by
+  rcases PriorityInheritance.repropagateFromWaiter_cases st tid ec fuel with h | ⟨server, hS, h⟩
+  · rw [h]
+  · rw [h]
+    exact propagatePipChainCrossCore_preserves_projection ctx observer hCoherent
+      hBlockingChainHigh st server _ _ (hBlockingChainHigh st tid server hTidHigh hS) hObjInv
+
 -- ============================================================================
 -- WS-SM SM5.H.4 audit: information-flow non-interference for the `tcbSetAffinity`
 -- syscall path. The syscall-reachable op (`setThreadCpuAffinityOp`) is a
@@ -4782,6 +4897,13 @@ theorem setPriorityOnCore_preserves_projection
     (hScHigh : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
                 ∀ scId, targetTcb.schedContextBinding.ownScId? = some scId →
                 objectObservable ctx observer scId.toObjId = false)
+    (hCoherent : ∀ t : SeLe4n.ThreadId,
+        threadObservable ctx observer t = false →
+        objectObservable ctx observer t.toObjId = false)
+    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
+        threadObservable ctx observer t = false →
+        PriorityInheritance.blockingServer s t = some server →
+        threadObservable ctx observer server = false)
     (hObjInv : st.objects.invExt)
     (hReschedProj : ∀ stIn stOut c,
                       projectState ctx observer stIn = projectState ctx observer st →
@@ -4813,9 +4935,14 @@ theorem setPriorityOnCore_preserves_projection
                newPriority _ hTargetThreadHigh]
           exact hProj1
         simp only [] at hStep
+        have hObjMid := SchedContext.PriorityManagement.markKeyChangeFor_migrate_updatePrioritySource_objects_invExt
+          st vTargetTid.val targetTcb newPriority (determineTargetCore st vTargetTid.val)
+          (effectiveSchedParams st targetTcb) hObjInv
         exact priorityRescheduleOnCore_preserves_projection ctx observer st _ st' _
           executingCore _ sgi
-          ((markKeyChangeFor_preserves_projection ctx observer _ _ _).trans hProj2)
+          ((repropagateFromWaiter_preserves_projection ctx observer hCoherent hBlockingChainHigh
+              _ _ _ _ hTargetThreadHigh hObjMid).trans
+            ((markKeyChangeFor_preserves_projection ctx observer _ _ _).trans hProj2))
           hReschedProj hStep
       · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
@@ -4923,6 +5050,13 @@ theorem setMCPriorityOnCore_preserves_projection
                 ∀ scId,
                   ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding.ownScId? = some scId →
                 objectObservable ctx observer scId.toObjId = false)
+    (hCoherent : ∀ t : SeLe4n.ThreadId,
+        threadObservable ctx observer t = false →
+        objectObservable ctx observer t.toObjId = false)
+    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
+        threadObservable ctx observer t = false →
+        PriorityInheritance.blockingServer s t = some server →
+        threadObservable ctx observer server = false)
     (hObjInv : st.objects.invExt)
     (hReschedProj : ∀ stIn stOut c,
                       projectState ctx observer stIn = projectState ctx observer st →
@@ -4966,9 +5100,14 @@ theorem setMCPriorityOnCore_preserves_projection
             rw [migrateRunQueueBucketOnCore_preserves_projection ctx observer _ vTargetTid.val
                  newMCP _ hTargetThreadHigh]
             exact hProj1
+          have hObjMid := SchedContext.PriorityManagement.markKeyChangeFor_migrate_updatePrioritySource_objects_invExt
+            stAfterMCP vTargetTid.val targetTcb' newMCP (determineTargetCore stAfterMCP vTargetTid.val)
+            (effectiveSchedParams stAfterMCP targetTcb') hObjInvMCP
           exact priorityRescheduleOnCore_preserves_projection ctx observer st _ st' _
             executingCore true sgi
-            ((markKeyChangeFor_preserves_projection ctx observer _ _ _).trans hProj2)
+            ((repropagateFromWaiter_preserves_projection ctx observer hCoherent hBlockingChainHigh
+                _ _ _ _ hTargetThreadHigh hObjMid).trans
+              ((markKeyChangeFor_preserves_projection ctx observer _ _ _).trans hProj2))
             hReschedProj hStep
         · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hs, -⟩ := hStep

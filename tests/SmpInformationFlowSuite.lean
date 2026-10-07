@@ -641,6 +641,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.setThreadCpuAffinityWithMigration_crossCoreNonInterference
 #check @SeLe4n.Kernel.schedContextConfigure_confinedToCores
 #check @SeLe4n.Kernel.schedContextConfigure_crossCoreNonInterference
+-- The configure write set gains the bound thread's inheritance chain, which the
+-- propagated priority re-walks when the thread is reply-blocked.
+#check @SeLe4n.Kernel.schedContextConfigureWriteSet
+#check @SeLe4n.Kernel.waiterChainWriteSet_configurePropagate
+#check @SeLe4n.Kernel.observableSlotsConfinedToCores_repropagate
 -- SM8.B.2 (PR #861 review round 35): the three entries that emptied the
 -- per-core routing allowlist.  Two carry an EMPTY write set — the shape the
 -- inventory previously could not express, which is the only reason those arms
@@ -712,6 +717,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @setPriorityOnCore_crossCoreNonInterference
 #check @setMCPriorityOnCore_confinedToCores
 #check @setMCPriorityOnCore_crossCoreNonInterference
+#check @repropagateFromWaiter_confinedToCores
+#check @priorityChangeMid_chainShape
 -- Round 15: the memory-subsystem arms, proven to write NO core rather than
 -- excused by an allowlist entry.
 #check @SchedulerMachineFramed

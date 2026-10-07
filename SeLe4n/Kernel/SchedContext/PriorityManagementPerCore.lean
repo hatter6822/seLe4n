@@ -141,6 +141,21 @@ theorem priorityRescheduleOnCore_state_cases (st st' : SystemState)
     rw [Except.ok.injEq, Prod.mk.injEq] at h
     exact Or.inl h.1.symm
 
+/-- The state the priority write leaves before the chain walk keeps the object
+store's invariant: the source write is the only object write, and the re-bucket
+and the flag touch the scheduler only.  The walk's own preservation needs it. -/
+theorem markKeyChangeFor_migrate_updatePrioritySource_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (newPriority : SeLe4n.Priority) (home : CoreId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (hObjInv : st.objects.invExt) :
+    (markKeyChangeFor
+      (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid newPriority
+        home) tid k).objects.invExt := by
+  rw [markKeyChangeFor_objects]
+  unfold migrateRunQueueBucketOnCore
+  split
+  · exact updatePrioritySource_preserves_objects_invExt st tid tcb newPriority hObjInv
+  · exact updatePrioritySource_preserves_objects_invExt st tid tcb newPriority hObjInv
+
 /-- WS-SM SM8.B: the priority ops' **shared state effect** — write the new value
 to whichever field owns the thread's priority, re-bucket it on its home core, and
 run the preemption seam on the core actually running it.
@@ -156,11 +171,15 @@ def applyPriorityChangeOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : 
   priorityRescheduleOnCore
     -- The reschedule-SGI accumulator (KSC-1): after the write and the
     -- re-bucket, flag the target's core exactly when its effective key
-    -- changed (a queued target) or dropped (a current one).
-    (markKeyChangeFor
-      (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid newPriority
-        (determineTargetCore st tid))
-      tid (effectiveSchedParams st tcb))
+    -- changed (a queued target) or dropped (a current one).  Then, when the
+    -- target is reply-blocked on a server, re-walk the inheritance chain from
+    -- that server, whose boost was computed from the target's old priority.
+    (PriorityInheritance.repropagateFromWaiter
+      (markKeyChangeFor
+        (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid newPriority
+          (determineTargetCore st tid))
+        tid (effectiveSchedParams st tcb))
+      tid executingCore st.objectIndex.length)
     (Lifecycle.Suspend.runningCoreOf? st tid) executingCore shouldPreempt
 
 /-- WS-SM SM8.B: a non-preempting change (a raise, or a ceiling that does not
@@ -168,10 +187,12 @@ bite) surfaces no SGI. -/
 theorem applyPriorityChangeOnCore_no_preempt (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority) (executingCore : CoreId) :
     applyPriorityChangeOnCore st tid tcb newPriority executingCore false
-      = .ok (markKeyChangeFor
-              (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid
-                newPriority (determineTargetCore st tid))
-              tid (effectiveSchedParams st tcb), none) := by
+      = .ok (PriorityInheritance.repropagateFromWaiter
+              (markKeyChangeFor
+                (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid
+                  newPriority (determineTargetCore st tid))
+                tid (effectiveSchedParams st tcb))
+              tid executingCore st.objectIndex.length, none) := by
   simp [applyPriorityChangeOnCore, priorityRescheduleOnCore]
 
 /-- WS-SM SM8.B (operation): **set a thread's priority, across cores.**

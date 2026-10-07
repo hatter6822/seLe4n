@@ -495,6 +495,39 @@ def propagatePipChainCrossCore (st : SystemState) (startTid : ThreadId)
       (tailRes.1, here ++ tailRes.2)
     | none => (res.1, here)
 
+/-- **Re-propagate inheritance after a waiter's own priority changed.**
+
+A server's `pipBoost` is the maximum effective priority of the threads
+reply-blocked on it (`computeMaxWaiterPriority`), so it is a function of every
+waiter's priority, not only of who is waiting.  The IPC paths that change *who*
+waits (call, reply, cancellation, timeout) re-run the chain walk; a write to a
+waiter's *priority* must too, or the server keeps the boost its waiter had
+before: a raise leaves the server under-boosted (the priority-inversion bound
+fails for the raised waiter), and a drop leaves it over-boosted until some other
+IPC event happens to re-walk the chain.
+
+`tid` is the thread whose priority was written.  Its own `pipBoost` reads its
+waiters, not its own base, so it needs no update; the walk starts at the server
+`tid` is blocked on and climbs the chain from there.  `blockingServer` reads the
+state handed in, which a priority write does not change (it never touches
+`ipcState`).  The walk's SGIs are dropped: each boost raises the reschedule
+flag of the core it affects (`updatePipBoostOnCore`'s `markKeyChangeFor`), and
+the syscall seam turns the flags into SGIs.  `ec` is the core the writer runs
+its scheduling work on — the executing core for the priority syscalls, the bound
+thread's home core for `schedContextConfigure`, whose lock footprint is that
+core's — and it steers only the dropped SGI list, never the state
+(`propagatePipChainCrossCore_state_core_independent`).
+
+`fuel` bounds the walk as every chain walk's fuel does; a caller passes its
+**pre-state's** `objectIndex.length`, so the walk and the write set its
+footprint declares from that pre-state (`waiterChainWriteSet`) run the same
+number of steps by construction. -/
+def repropagateFromWaiter (st : SystemState) (tid : ThreadId) (ec : CoreId) (fuel : Nat) :
+    SystemState :=
+  match blockingServer st tid with
+  | some server => (propagatePipChainCrossCore st server ec fuel).1
+  | none => st
+
 /-- WS-SM SM5.F.4: cross-core chain walk with zero fuel is identity (no boost, no SGI). -/
 theorem propagatePipChainCrossCore_zero (st : SystemState) (tid : ThreadId) (ec : CoreId) :
     propagatePipChainCrossCore st tid ec 0 = (st, []) := rfl
@@ -618,6 +651,36 @@ theorem propagatePipChainCrossCore_preserves_objects_invExt (st : SystemState)
     cases blockingServer st tid with
     | none => exact hNext
     | some nextServer => exact ih _ nextServer hNext
+
+/-- `repropagateFromWaiter` is the identity or one full chain walk — the case
+split every preservation proof of it reduces to, so each property a chain walk
+preserves transfers without unfolding the `match` at the call site. -/
+theorem repropagateFromWaiter_cases (st : SystemState) (tid : ThreadId) (ec : CoreId)
+    (fuel : Nat) :
+    repropagateFromWaiter st tid ec fuel = st ∨
+      ∃ server, blockingServer st tid = some server ∧
+        repropagateFromWaiter st tid ec fuel =
+          (propagatePipChainCrossCore st server ec fuel).1 := by
+  unfold repropagateFromWaiter
+  cases blockingServer st tid with
+  | none => exact Or.inl rfl
+  | some server => exact Or.inr ⟨server, rfl, rfl⟩
+
+/-- Any property every chain walk preserves, `repropagateFromWaiter` preserves. -/
+theorem repropagateFromWaiter_preserves (P : SystemState → Prop) (st : SystemState)
+    (tid : ThreadId) (ec : CoreId) (fuel : Nat)
+    (hWalk : ∀ server, blockingServer st tid = some server →
+      P (propagatePipChainCrossCore st server ec fuel).1)
+    (hP : P st) : P (repropagateFromWaiter st tid ec fuel) := by
+  rcases repropagateFromWaiter_cases st tid ec fuel with h | ⟨server, hS, h⟩
+  · rw [h]; exact hP
+  · rw [h]; exact hWalk server hS
+
+theorem repropagateFromWaiter_preserves_objects_invExt (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (fuel : Nat) (hInv : st.objects.invExt) :
+    (repropagateFromWaiter st tid ec fuel).objects.invExt :=
+  repropagateFromWaiter_preserves (fun s => s.objects.invExt) st tid ec fuel
+    (fun _ _ => propagatePipChainCrossCore_preserves_objects_invExt st _ ec _ hInv) hInv
 
 /-- **WS-RM (`v0.35.6`)**: `updatePipBoostOnCore`'s only object write stores a
 `.tcb` at a key that already held one, so at every key a Reply reads back to the
@@ -946,6 +1009,16 @@ theorem propagatePipChainCrossCore_replenishQueueOnCore (st : SystemState) (tid 
     | none => exact hHere
     | some nextServer =>
         exact (ih (pipBoostWithWake st tid ec).1 nextServer).trans hHere
+
+/-- The waiter-side re-walk moves no reservation either. -/
+theorem repropagateFromWaiter_replenishQueueOnCore (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (fuel : Nat) (c : CoreId) :
+    (repropagateFromWaiter st tid ec fuel).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c :=
+  repropagateFromWaiter_preserves
+    (fun s => s.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) st tid
+    ec fuel (fun server _ => propagatePipChainCrossCore_replenishQueueOnCore st server ec _ c)
+    rfl
 
 -- ============================================================================
 -- §  WS-RR RR8.12 (Cut 4) — the walk's scheduler frames
@@ -1355,5 +1428,13 @@ def pipChainWriteSet (st : SystemState) (startTid : SeLe4n.ThreadId)
              pipChainWriteSet (pipBoostWithWake st startTid executingCore).1 nextServer
                executingCore fuel
          | none => [])
+
+/-- **The cores `repropagateFromWaiter` may write**: the chain walk's cores from
+the server the waiter is blocked on, or none when it is blocked on no server. -/
+def waiterChainWriteSet (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
+    (fuel : Nat) : List CoreId :=
+  match blockingServer st tid with
+  | some server => pipChainWriteSet st server ec fuel
+  | none => []
 
 end SeLe4n.Kernel

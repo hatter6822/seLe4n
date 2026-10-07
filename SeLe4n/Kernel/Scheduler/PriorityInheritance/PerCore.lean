@@ -1995,4 +1995,86 @@ theorem contextSwitchSites_complete (s : ContextSwitchSite) : s ∈ contextSwitc
 -- site breaks `contextSwitchSites_complete`, which is the reminder that it owes
 -- the same restore.
 
+-- ============================================================================
+-- The chain write set reads only home cores and blocking edges
+-- ============================================================================
+
+/-- **`pipChainWriteSet` is a function of the home cores and blocking edges
+alone.**  Each step names the member's home core and follows its blocking edge;
+the boosts between steps change neither (`updatePipBoostOnCore_preserves_*`).
+So two states that agree on both name the same cores, which is what lets a
+footprint computed from the pre-state cover a walk that runs after a priority
+write. -/
+theorem pipChainWriteSet_congr (ec : CoreId) : ∀ (n : Nat) (a b : SystemState) (s : ThreadId),
+    a.objects.invExt → b.objects.invExt →
+    (∀ t, determineTargetCore a t = determineTargetCore b t) →
+    (∀ t, blockingServer a t = blockingServer b t) →
+    pipChainWriteSet a s ec n = pipChainWriteSet b s ec n
+  | 0, _, _, _, _, _, _, _ => rfl
+  | n + 1, a, b, s, ha, hb, hHome, hEdge => by
+      simp only [pipChainWriteSet]
+      rw [hHome s, hEdge s]
+      cases blockingServer b s with
+      | none => rfl
+      | some next =>
+        simp only []
+        congr 1
+        refine pipChainWriteSet_congr ec n _ _ next
+          (pipBoostWithWake_preserves_objects_invExt a s ec ha)
+          (pipBoostWithWake_preserves_objects_invExt b s ec hb) (fun t => ?_) (fun t => ?_)
+        · rw [pipBoostWithWake_state, pipBoostWithWake_state,
+            updatePipBoostOnCore_preserves_determineTargetCore _ _ _ _ ha,
+            updatePipBoostOnCore_preserves_determineTargetCore _ _ _ _ hb, hHome]
+        · rw [pipBoostWithWake_state, pipBoostWithWake_state,
+            updatePipBoostOnCore_preserves_blockingServer _ _ _ ha,
+            updatePipBoostOnCore_preserves_blockingServer _ _ _ hb, hEdge]
+
+/-- The waiter-side write set under the same agreement. -/
+theorem waiterChainWriteSet_congr (a b : SystemState) (tid : ThreadId) (ec : CoreId)
+    (fuel : Nat)
+    (ha : a.objects.invExt) (hb : b.objects.invExt)
+    (hHome : ∀ t, determineTargetCore a t = determineTargetCore b t)
+    (hEdge : ∀ t, blockingServer a t = blockingServer b t) :
+    waiterChainWriteSet a tid ec fuel = waiterChainWriteSet b tid ec fuel := by
+  unfold waiterChainWriteSet
+  rw [hEdge tid]
+  cases blockingServer b tid with
+  | none => rfl
+  | some server => exact pipChainWriteSet_congr ec _ a b server ha hb hHome hEdge
+
+/-- Home cores and blocking edges read only a thread's affinity and IPC state:
+two states whose TCBs agree on those two fields agree on both. -/
+theorem chainShape_of_tcbFields (a b : SystemState)
+    (h : ∀ t, (a.getTcb? t).map (fun x => (x.cpuAffinity, x.ipcState)) =
+      (b.getTcb? t).map (fun x => (x.cpuAffinity, x.ipcState))) :
+    (∀ t, determineTargetCore a t = determineTargetCore b t) ∧
+      (∀ t, blockingServer a t = blockingServer b t) := by
+  refine ⟨fun t => ?_, fun t => ?_⟩
+  · have ht := h t
+    cases ha : a.getTcb? t with
+    | none =>
+      cases hb : b.getTcb? t with
+      | none => simp [determineTargetCore, ha, hb]
+      | some y => rw [ha, hb] at ht; simp at ht
+    | some x =>
+      cases hb : b.getTcb? t with
+      | none => rw [ha, hb] at ht; simp at ht
+      | some y =>
+        rw [ha, hb] at ht
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at ht
+        simp [determineTargetCore, ha, hb, ht.1]
+  · have ht := h t
+    cases ha : a.getTcb? t with
+    | none =>
+      cases hb : b.getTcb? t with
+      | none => simp [blockingServer, ha, hb]
+      | some y => rw [ha, hb] at ht; simp at ht
+    | some x =>
+      cases hb : b.getTcb? t with
+      | none => rw [ha, hb] at ht; simp at ht
+      | some y =>
+        rw [ha, hb] at ht
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at ht
+        simp only [blockingServer, ha, hb, Option.bind_some, TCB.blockingServer?_congr ht.2]
+
 end SeLe4n.Kernel.PriorityInheritance

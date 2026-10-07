@@ -632,7 +632,7 @@ theorem getTcb?_of_lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : T
 /-- WS-RR RR2.3 (frame helper): a `storeObject` that replaces one SchedContext
 with another leaves every thread's TCB resolution unchanged — neither the
 written value nor the previous occupant is a TCB. -/
-private theorem storeObject_schedContextAt_getTcb?_eq
+theorem storeObject_schedContextAt_getTcb?_eq
     (st st' : SystemState) (stored : SeLe4n.SchedContextId) (scOld scNew : SchedContext)
     (hOld : st.getSchedContext? stored = some scOld)
     (hObjInv : st.objects.invExt)

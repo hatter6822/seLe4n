@@ -98,59 +98,6 @@ theorem retirePendingFaultForResume_keyFrame (st : SystemState) (tid : SeLe4n.Th
 
 /-! ### Priority-inheritance propagation -/
 
-/-- **One boost update covers**: the boost write on the holder ends in the key
-hook, and the re-bucket keeps the queue's membership. -/
-theorem updatePipBoostOnCore_stepCovers (e c : CoreId) (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    stepCovers e st (PriorityInheritance.updatePipBoostOnCore st c tid) := by
-  unfold PriorityInheritance.updatePipBoostOnCore
-  split
-  · rename_i tcb hT _
-    dsimp only []
-    split
-    · exact stepCovers_refl e st
-    have hAdm := SystemState.rewriteAdmissible_tcb hT
-      { tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }
-    have hK : keyInputsEqExcept tid st (st.rewriteObject tid.toObjId _ hAdm) := by
-      have := keyInputsEqExcept_updateTcb (f := fun t => { t with
-        pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }) hInv (by rw [hT]; rfl)
-      unfold SystemState.updateTcb at this
-      rw [SystemState.getTcbWitnessed?_eq_some hT] at this
-      exact this
-    split
-    · split
-      · rename_i hMem _
-        refine stepCovers_markKeyChangeFor hT hK (fun c' _ => Or.inr ⟨fun t ht => ?_, ?_⟩)
-          (fun c' _ hF => ?_)
-        · exact mem_runQueue_reKey (s := st.scheduler) hMem ht
-        · exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ _ _
-        · rw [SchedulerState.setRunQueueOnCore_reschedulePendingOnCore]; exact hF
-      · exact stepCovers_markKeyChangeFor hT hK (fun c' _ => Or.inr ⟨fun t ht => ht, rfl⟩)
-          (fun c' _ hF => hF)
-    · exact stepCovers_markKeyChangeFor hT hK (fun c' _ => Or.inr ⟨fun t ht => ht, rfl⟩)
-        (fun c' _ hF => hF)
-  · exact stepCovers_refl e st
-
-/-- **The cross-core chain walk covers**: each link is one boost update. -/
-theorem propagatePipChainCrossCore_stepCovers (e ec : CoreId) (fuel : Nat) :
-    ∀ (st : SystemState) (tid : SeLe4n.ThreadId), st.objects.invExt →
-      stepCovers e st (PriorityInheritance.propagatePipChainCrossCore st tid ec fuel).1 ∧
-        (PriorityInheritance.propagatePipChainCrossCore st tid ec fuel).1.objects.invExt := by
-  induction fuel with
-  | zero => intro st _ hInv; exact ⟨stepCovers_refl e st, hInv⟩
-  | succ n ih =>
-    intro st tid hInv
-    rw [PriorityInheritance.propagatePipChainCrossCore_step]
-    have h1 := updatePipBoostOnCore_stepCovers e (determineTargetCore st tid) st tid hInv
-    have h1Inv := PriorityInheritance.updatePipBoostOnCore_preserves_objects_invExt st
-      (determineTargetCore st tid) tid hInv
-    dsimp only []
-    split
-    · rename_i next _
-      obtain ⟨h2, h2Inv⟩ := ih _ next h1Inv
-      exact ⟨stepCovers_trans h1 h2, h2Inv⟩
-    · exact ⟨h1, h1Inv⟩
-
 /-! ### Suspend -/
 
 /-- Taking a thread off the core the state places it on covers: a queue removal

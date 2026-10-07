@@ -2003,9 +2003,20 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
             split at hStep
             · rename_i boundTcb hBT _
               cases hStep
-              exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
-                (schedContextConfigureBoundPropagate_preserves_ipcInvariantFull stStored
-                  _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT)
+              have hObjP : (markKeyChangeFor (SchedContextOps.schedContextConfigureBoundPropagate
+                  stStored ⟨vScId.val.toNat⟩ boundTid boundTcb hBT priority domain) boundTid
+                  (effectiveSchedParams st boundTcb)).objects.invExt := by
+                rw [markKeyChangeFor_objects]
+                exact SchedContextOps.schedContextConfigureBoundPropagate_preserves_objects_invExt
+                  _ _ _ _ _ _ _ hObjInvStored
+              exact PriorityInheritance.repropagateFromWaiter_preserves ipcInvariantFull _ _ _ _
+                (fun _ _ => propagatePipChainCrossCore_preserves_ipcInvariantFull _ _ _ _ hObjP
+                  (markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+                    (schedContextConfigureBoundPropagate_preserves_ipcInvariantFull stStored
+                      _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT)))
+                (markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+                  (schedContextConfigureBoundPropagate_preserves_ipcInvariantFull stStored
+                    _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT))
             · cases hStep
               exact hInvStored
       · contradiction
@@ -2721,10 +2732,18 @@ theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
     rw [markKeyChangeFor_objects, migrateRunQueueBucketOnCore_objects_eq]
     exact SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
       st tid tcb p hObjInv
-  exact priorityRescheduleOnCore_preserves_ipcInvariantFull _ _ _ _ _ _ hObjMid
-    (markKeyChangeFor_preserves_ipcInvariantFull _ _ _
-      (migrateRunQueueBucketOnCore_preserves_ipcInvariantFull _ _ _ _
-        (updatePrioritySource_preserves_ipcInvariantFull st tid tcb p hObjInv hInv hPre))) hStep
+  have hInvMid : ipcInvariantFull (markKeyChangeFor
+      (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+        (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
+        (determineTargetCore st tid)) tid (effectiveSchedParams st tcb)) :=
+    markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+    (migrateRunQueueBucketOnCore_preserves_ipcInvariantFull _ _ _ _
+      (updatePrioritySource_preserves_ipcInvariantFull st tid tcb p hObjInv hInv hPre))
+  exact priorityRescheduleOnCore_preserves_ipcInvariantFull _ _ _ _ _ _
+    (PriorityInheritance.repropagateFromWaiter_preserves_objects_invExt _ _ _ _ hObjMid)
+    (PriorityInheritance.repropagateFromWaiter_preserves ipcInvariantFull _ _ _ _
+      (fun _ _ => propagatePipChainCrossCore_preserves_ipcInvariantFull _ _ _ _ hObjMid hInvMid)
+      hInvMid) hStep
 
 /-- `.tcbSetPriority`: authority check, then the priority write and bucket
 re-key — no conjunct-read field or membership moves. -/
