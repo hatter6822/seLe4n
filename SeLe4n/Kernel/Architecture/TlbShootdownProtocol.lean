@@ -1869,8 +1869,10 @@ def shootdownChangedTargetsFrom (tlb0 : TlbShootdownState) (post : SystemState) 
     List CoreId :=
   allCores.filter (fun c => post.tlbShootdown.pendingOnCore c != tlb0.pendingOnCore c)
 
-/-- The round window against the pre-state's shootdown record alone. -/
-def shootdownRoundWindowFrom (tlb0 : TlbShootdownState) (post : SystemState) : Nat × Nat :=
+/-- The round window against the pre-state's shootdown record alone.  Inlined,
+so the entry hands the two generations on without building the pair
+(WS-ZA ZA3.1). -/
+@[inline] def shootdownRoundWindowFrom (tlb0 : TlbShootdownState) (post : SystemState) : Nat × Nat :=
   (tlb0.roundGeneration, post.tlbShootdown.roundGeneration)
 
 /-- **WS-SM SM7.B**: the cores whose pending-shootdown queue a commit

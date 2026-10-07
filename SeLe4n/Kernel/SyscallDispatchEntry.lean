@@ -296,7 +296,7 @@ is the statement for this transition, resting on the per-core window
 handler and its fold. -/
 def completeShootdownRounds (changed : List Concurrency.CoreId)
     (ops : List Architecture.TlbInvalidation)
-    (window : Nat × Nat)
+    (windowFrom windowTo : Nat)
     (execCore : Concurrency.CoreId) : BaseIO Unit := do
   if changed.isEmpty then
     pure ()
@@ -309,7 +309,7 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     acquireShootdownRoundLockServicingSelf execCore
     -- WS-SM SM7.F.3 (PR #854 review P1): the round identity the HARDWARE
     -- side runs under is allocated HERE — under the round lock — and is
-    -- deliberately NOT the model's commit-time `window.2`.
+    -- deliberately NOT the model's commit-time `windowTo`.
     --
     -- The acknowledgment test is monotone (`acked_gen >= gen`), so this
     -- generation has to order the round against the rounds whose acks
@@ -334,7 +334,7 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- `0 >= 0` would pass with nothing serviced).  The Rust side fails
     -- closed if the counter wraps.
     --
-    -- The model window (`window`) keeps its own generations and still
+    -- The model window (`windowFrom`, `windowTo`) keeps its own generations and still
     -- keys the catch-up drain below — the two identities answer
     -- different questions and are intentionally independent.  A commit
     -- that opened two model rounds (the retype's destroyed + installed
@@ -417,7 +417,7 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- per-core refinement.
     Platform.FFI.modifyGetKernelState (fun st =>
       ((), Architecture.shootdownCatchUpPerCoreInWindow st execCore collapsed
-        window.1 window.2))
+        windowFrom windowTo))
     -- PR #854 review: the release is **after** the catch-up commit, so the
     -- lock brackets every access `shootdownRoundLock_release_acquire` names
     -- as `e_crit` — the operand publication, the posted queues, and the
@@ -458,9 +458,9 @@ of the runtime bracket at the definition level (the state-diff half is
 `shootdownChangedTargets_nil_of_eq`); the trace fixture's
 byte-identity across the SM7.B landing rests on it. -/
 theorem completeShootdownRounds_nil
-    (ops : List Architecture.TlbInvalidation) (window : Nat × Nat)
+    (ops : List Architecture.TlbInvalidation) (windowFrom windowTo : Nat)
     (execCore : Concurrency.CoreId) :
-    completeShootdownRounds [] ops window execCore = pure () := rfl
+    completeShootdownRounds [] ops windowFrom windowTo execCore = pure () := rfl
 
 /-- **WS-LS LS2.4: the syscall seam's bracket.**
 
@@ -718,7 +718,8 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   Concurrency.fireCrossCoreSgis result.2.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
-  completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
+  completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1.1
+    result.2.2.2.2.1.2 execCore
   -- WS-SM SM7.D.1: emit the instruction-cache maintenance this commit
   -- recorded.  Ordered *after* the shootdown round so the translations are
   -- already retired everywhere when the instruction lines fetched through them
@@ -779,7 +780,8 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
         Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
         Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1
         Concurrency.fireCrossCoreSgis result.2.1
-        completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
+        completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1.1
+          result.2.2.2.2.1.2 execCore
         Platform.FFI.completeIcacheMaintenance result.2.2.2.2.2.1
         Concurrency.releaseSwitchedFpOwnerOnCore execCore
         Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1
