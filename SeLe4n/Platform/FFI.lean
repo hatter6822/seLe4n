@@ -7,6 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.RefusalCarryingDispatch
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
@@ -2930,6 +2931,50 @@ def syscallDispatchFromAbi
               .ok (.returns (Architecture.errorFrame ke),
                    recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRegs)
       | .ok ((), st') => .ok (syscallReturnOutcome syscallId st' tid, st')
+
+/-- WS-ZA ZA1.3: the compiled `syscallDispatchFromAbi`.  The entry runs as
+`syscallEntryCheckedR`, whose refusal carries the state it was refused in, so
+the refusal arms read that state instead of keeping `stRegs` alive across the
+dispatch; a syscall that checks before it writes then owns the state it writes
+(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  Equal to the specification through
+`syscallEntryCheckedR_eq`. -/
+def syscallDispatchFromAbiImpl
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 : UInt64)
+    (ipcBufferAddr : UInt64)
+    (elr spsr spEl0 x30 : UInt64) : Kernel Architecture.SyscallOutcome :=
+  fun st =>
+    match (st.scheduler.currentOnCore executingCore) with
+    | none => .ok (.returns (Architecture.errorFrame .illegalState), st)
+    | some tid =>
+      let layout := SeLe4n.arm64DefaultLayout
+      match syscallEntryCheckedR ctx layout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+      | .error (ke, stRefused) =>
+          match syscallCapFaultOf layout stRefused tid ke with
+          | some fault =>
+              .ok (.faulted,
+                   deliverSyscallCapFault ctx executingCore stRefused tid fault
+                     (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+                     elr spsr)
+          | none =>
+              .ok (.returns (Architecture.errorFrame ke),
+                   recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRefused)
+      | .ok ((), st') => .ok (syscallReturnOutcome syscallId st' tid, st')
+
+@[csimp] theorem syscallDispatchFromAbi_eq_impl :
+    @syscallDispatchFromAbi = @syscallDispatchFromAbiImpl := by
+  funext ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+  simp only [syscallDispatchFromAbiImpl, syscallEntryCheckedR_eq, RefusalCarrying.ofKernel]
+  unfold syscallDispatchFromAbi
+  split
+  · rfl
+  · next tid _ =>
+    simp only []
+    rcases syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with _ | ⟨⟨⟩, st'⟩ <;> rfl
 
 -- ============================================================================
 -- AN9-D (DEF-C-M04): suspendThread atomicity bracket

@@ -1685,6 +1685,25 @@ theorem SystemState.objects_get?_eq_objectEntry? (st : SystemState) (id : SeLe4n
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
 
+/-- WS-ZA ZA1.3: a kernel computation whose refusal carries the state it was
+refused in.  `Kernel` drops the state on `.error`, so a caller that answers a
+refusal from the state it started with must keep that state alive across the
+computation, and every table the computation writes is then shared and copied
+whole.  A computation proven equal to `RefusalCarrying.ofKernel k` refuses in
+exactly the state it was handed, so its caller can read that state off the
+refusal instead of keeping its own (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1). -/
+abbrev RefusalCarrying (α : Type) :=
+  SystemState → Except (KernelError × SystemState) (α × SystemState)
+
+/-- WS-ZA ZA1.3: the specification of a refusal-carrying computation — `k`,
+with the state it was handed attached to each refusal.  Compiled, it keeps
+that state alive across `k`; a faster form proven equal to it does not. -/
+def RefusalCarrying.ofKernel (k : Kernel α) : RefusalCarrying α :=
+  fun st =>
+    match k st with
+    | .error e => .error (e, st)
+    | .ok r => .ok r
+
 def lookupObject (id : SeLe4n.ObjId) : Kernel KernelObject :=
   fun st =>
     match st.objects[id]? with
