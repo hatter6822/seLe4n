@@ -3388,7 +3388,7 @@ theorem withLockSet_eq_continueFromAcquired {α : Type} (S : LockSet) (lockCore 
 /-- SM8.D.5: the guarded entry, continued from the state the word-level growing
 phase ended in.  **WS-LS LS2.1**: this is the word-level bracket's
 continuation and stays beside the revalidated bracket (which is executed at
-the suspend seam until LS2.2); its decomposition `…_eq_fromAcquired` against
+the suspend seam until LS2.4); its decomposition `…_eq_fromAcquired` against
 `syscallEntryUnderLockSet` is retired with that bracket's move to the pair,
 where the kernel half the entry runs on *is* the pre-state's
 (`syscallEntryUnderLockSet_fst`). -/

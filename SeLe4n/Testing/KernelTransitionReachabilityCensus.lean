@@ -1018,14 +1018,16 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushPlatform
   , `SeLe4n.Kernel.Architecture.writeRegisterState
   , `SeLe4n.Kernel.Architecture.writeRestartFrameToTcb
-  , `SeLe4n.Kernel.Concurrency.BracketSpec.run
+  -- WS-LS LS2.2: `BracketSpec.run` is what the scheduler seams execute (so
+  -- the record's step field is reached through it); the ghost path is the
+  -- proofs', and the pair's kernel half is a projection, not a transition.
+  -- `LockBracketOutcome.state` is the word-level outcome's projection, which
+  -- no seam reads once the scheduler seams run the specification; LS2.4
+  -- deletes it with `runBracketed`.
   , `SeLe4n.Kernel.Concurrency.BracketSpec.runGhost
-  -- WS-LS LS2.1: the bracket record's step is a field the seams run through
-  -- `run`/`runGhost` (LS2.2 switches them); the pair's kernel half is a
-  -- projection, not a transition.
-  , `SeLe4n.Kernel.Concurrency.BracketSpec.step
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.action
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.ofWithLockSet
+  , `SeLe4n.Kernel.Concurrency.LockBracketOutcome.state
   , `SeLe4n.Kernel.Concurrency.LockedSystemState.kernel
   -- WS-LS LS1.2: the one word update the three per-key primitives are each
   -- proved equal to (`acquireLock_eq_applyLockOp` and siblings), so the
@@ -1238,7 +1240,9 @@ literal can spell, so each is built with the compiler's own mangling through
 `ReplyStackWriteCensus.privateIn`.  Eight of these are that census's own planted
 witnesses, which enter this domain because this module imports it for
 `isAuxiliary`; they are deliberately not executed, and their presence here is
-the derivation working rather than noise to carve out.  One more is **this**
+the derivation working rather than noise to carve out.  One is the export
+commit-discipline census's planted `BracketSpec` (its step is the identity),
+which enters for the same reason.  One more is **this**
 census's own, planted above so the `opaque` arm of its domain is decided by
 something on this tree; the control beside it is deliberately absent, since its
 result type is not `SystemState` and a widening that admitted it would fail
@@ -1261,6 +1265,8 @@ def nonExecutedTransitionsPrivate : List Name :=
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitWriter
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_1
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed
+  , privateIn `SeLe4n.Testing.ExportCommitDisciplineCensus
+      `SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessSpec
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
       `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessAliasedTransformer
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus

@@ -34,13 +34,15 @@ into a kernel object on the executed path.
   `runGhost` have one answer.
 * `withLockSetGhost` — the ghost form of `withLockSet`: the same shape with
   the lock trace applied to the table instead of to the objects.  The
-  word-level `withLockSet` stays until LS2.2 switches the seams (it is still
-  executed at `SyscallDispatchEntry.lean`'s suspend seam); LS3.1 renames
+  word-level `withLockSet` stays until LS2.4 switches the syscall seams (it
+  is still executed at `SyscallDispatchEntry.lean`'s suspend seam); LS3.1 renames
   this one to `withLockSet` with its anchors.
 * `BracketSpec`, `run`, `runGhost`, `runGhost_kernel` (O1),
   `runGhost_locks_of_unheld` (O3), `guard` (O4, Track D's hypothesis).
 
-Nothing executes against the ghost table here: LS2.2 switches the seams.
+Nothing executes against the ghost table here: the seams run `run`, the
+kernel projection (the scheduler seams since LS2.2 through `timerTickBracket`
+and `rescheduleBracket` in `SchedLockBracket.lean`; the syscall seams at LS2.4).
 -/
 
 namespace SeLe4n.Kernel
@@ -223,8 +225,8 @@ objects.  The action runs on `s.kernel`: the growing phase changes only
 `locks`, by type, which is the fact the word-level bracket's re-resolution
 guarded by computation.
 
-The word-level `withLockSet` stays beside this until LS2.2 switches the seams
-(the suspend seam still executes it); LS3.1 renames this one to `withLockSet`
+The word-level `withLockSet` stays beside this until LS2.4 switches the syscall
+seams (the suspend seam still executes it); LS3.1 renames this one to `withLockSet`
 with its anchors.  Every theorem the 2PL, serializability and observer files
 state over the word-level bracket is restated over this one in LS2.1, with
 the lock-write-invisibility hypotheses gone: here the kernel half of the
@@ -285,9 +287,10 @@ does, and the proof that the declaration covers the doing.
 declares nothing, which the executed path runs unbracketed and the ghost path
 runs with the table untouched); `step` is the transition; `covers` is the
 obligation every seam's spec discharges with its own coverage theorem
-(`unifiedLockSetForSyscall_coversWrites`, `perCoreTimerTickStep_coversWrites`,
-`perCoreRescheduleStep_coversWrites`, the suspend frames).  LS2.2 builds one
-per committing seam and points the exported bodies at `run`. -/
+(`perCoreTimerTickStep_coversWrites` and `perCoreRescheduleStep_coversWrites`
+for `timerTickBracket` / `rescheduleBracket` since LS2.2; the syscall and
+suspend seams' are LS2.3's, and LS2.4 builds their specs and points the
+exported bodies at `run`). -/
 structure BracketSpec (α : Type) where
   /-- The footprint the entry declares for a pre-state, if any. -/
   declared : SystemState → Option LockSet

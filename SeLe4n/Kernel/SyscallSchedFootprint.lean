@@ -44,7 +44,7 @@ and `Lifecycle/Operations/RetypeWrappers.lean` were all outside
 scheduler keys as its own constructors and the cross-domain order
 (`LockKey.object_lt_runQueue`, `LockKey.runQueue_lt_replenishQueue`) beside
 it.  Every footprint and write set here can now move beside its transition;
-that move is WS-LS LS2.3 (`docs/planning/LOCK_STATE_SEPARATION_PLAN.md` §4)
+that move is WS-LS LS2.5 (`docs/planning/LOCK_STATE_SEPARATION_PLAN.md` §4)
 and a row of `docs/REGISTERED_DEBT.md`, so this module is a waypoint, not a
 home.
 

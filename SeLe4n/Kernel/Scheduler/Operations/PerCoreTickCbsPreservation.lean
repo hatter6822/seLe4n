@@ -37,8 +37,11 @@ The three conjuncts decompose by difficulty:
 
 ## Build reachability
 
-Staged via `SeLe4n/Platform/Staged.lean`.  The SM5.I per-core run loop is the
-runtime exerciser; the theorems here are the formal preservation guarantee.
+Production since **WS-LS LS2.2**: `timerTickBracket`'s coverage field
+(`SchedLockBracket.lean`) consumes `perCoreTimerTickStep_coversWrites`, whose
+replenish clause chains through this module, so the module sits in the
+production closure.  The SM5.I per-core run loop is the runtime exerciser; the
+theorems here are the formal preservation guarantee.
 -/
 
 namespace SeLe4n.Kernel

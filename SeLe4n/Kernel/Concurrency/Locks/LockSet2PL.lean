@@ -269,7 +269,7 @@ theorem withLockSet_invariant_preserved {α : Type} (S : LockSet) (core : CoreId
 -- §5b — The word-level growing phase (retired with the words at LS3.1)
 -- ============================================================================
 -- These are about the lock words in kernel objects, which the word-level
--- `withLockSet` still writes until LS2.2 switches the seams and LS3.1 deletes
+-- `withLockSet` still writes until LS2.4 switches the syscall seams and LS3.1 deletes
 -- the words.  Their ghost forms are `LockState.acquireAll_unheld_heldAll_pairs`
 -- (the growing phase holds the footprint, with no object-presence hypothesis)
 -- and `LockState.bracket_unheld` (the round trip).

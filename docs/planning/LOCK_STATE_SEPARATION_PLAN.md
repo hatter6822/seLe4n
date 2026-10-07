@@ -244,24 +244,35 @@ New module `SeLe4n/Kernel/Concurrency/Locks/LockState.lean`:
   / `_snd` and the `*_atomic_under_lockSet` theorems
   (`NotificationSignal.lean:872,889`, `EndpointCall.lean:1021`,
   `EndpointReply.lean:2876`, `Cancellation.lean:2956-3050`) stay `rfl`.
-- One `BracketSpec` per committing seam: the syscall seam over
-  `declaredUnifiedLockSetForAbiEntry` with `unifiedLockSetForSyscall_coversWrites`
-  (`SyscallSchedFootprint.lean:2656`); the timer tick with
-  `perCoreTimerTickStep_coversWrites` (`SchedLockTimerContainment.lean:145`);
-  the reschedule entries with `perCoreRescheduleStep_coversWrites`
-  (`SchedLockBracket.lean:458`); suspend with `tcbSuspend_covers_victim` /
-  `_cancellation` (`LockSetForSyscall.lean:1356,1376`).  The exported bodies
-  call `.run`; `syscallDispatchCrossCoreBracketedStep` loses its `match` on
-  the outcome; `LockBracketOutcome`, `runBracketed`, `LockBracketDomain`,
-  `objectLockBracketDomain`,
-  `runUnderDeclaredLockSet`, `syscallBracketRefusalResult` and the Tier 2
-  check that exercised a refusal are deleted.
+- One `BracketSpec` per committing seam, each with a seam-level coverage
+  theorem as its `covers` field.  **Two exist** (re-read at LS2.2): the timer
+  tick's `perCoreTimerTickStep_coversWrites` and the reschedule entries'
+  `perCoreRescheduleStep_coversWrites`, both in `SchedLockBracket.lean` since
+  LS2.2 moved the timer chain there (`timerTickBracket`, `rescheduleBracket`;
+  the secondary bring-up runs the reschedule spec).  **Two do not**, which
+  the plan's first draft stated from recall: at the syscall seam
+  `unifiedLockSetForSyscall_coversWrites` (`SyscallSchedFootprint.lean:2614`)
+  is a monotonicity bridge taking `hCover : footprintCoversWrites S st₀ st₁`
+  as a hypothesis, and the per-arm coverage theorems
+  (`SyscallSchedContainment.lean:98-551`, sixteen) are staged and stated arm
+  by arm, not over `syscallDispatchCrossCoreStep`; at the suspend seam
+  `lockSetForSyscall_tcbSuspend_covers_victim` / `_cancellation`
+  (`Concurrency/Locks/LockSetForSyscall.lean:1356,1376`) are membership
+  facts, not `footprintCoversWrites`.  LS2.3 proves those two, following the
+  per-arm shape KSC-1 used for `syscallDispatchFromAbi_stepCovers`
+  (`ReschedulePendingArms/Entry.lean:171`); LS2.4 then switches the two
+  seams: the exported bodies call `.run`,
+  `syscallDispatchCrossCoreBracketedStep` loses its `match` on the outcome,
+  and `LockBracketOutcome`, `runBracketed`, `LockBracketDomain`,
+  `objectLockBracketDomain`, `runUnderDeclaredLockSet`,
+  `syscallBracketRefusalResult` and the Tier 2 check that exercised a refusal
+  are deleted.
 - `runChainExtension` / `withDynamicChainExtension` /
   `withPipChainSchedExtension` (`LockBracket.lean:277`,
   `DynamicChainExtension.lean:453`, `Scheduler/PriorityInheritance/ChainFootprint.lean:451`; no export
   reaches them) become a ghost extension of `declared` — the chain footprint
   is a function of the kernel state since RR7.40, so a spec declares the
-  union — or are deleted with their consumers; the row decides each by its
+  union — or are deleted with their consumers; LS2.4 decides each by its
   consumers at the time, which it lists.
 - `ExportCommitDisciplineCensus`: *bracketed* means the body reaches
   `BracketSpec.run`; a second derived assertion, that no state-committing
@@ -326,15 +337,17 @@ documentation (§4's per-row list) and its Tier 3 anchor sweep (§7), and runs
 | Row | Does | Done when |
 |---|---|---|
 | LS1.1 (**done `v0.36.63`**) | `LockKey`, its order, `LockState` and the per-key ops and folds (`SeLe4n/Kernel/Concurrency/Locks/LockState.lean`); `heldAll` over `LockState`; the ghost theorems of §3.1 restated (`acquireAll_unheld_held`, `unwindAll_not_queued`, `acquireAll_unwindAll_unheld`, `lockAcquireSequence_ordered`); the refinement lift lemma (`applySeq_unheld_key_refines`, obligation O5, through `applySeq_key`; stated in `Locks/Refinement.lean`, the staged bridge hub, so the ghost module itself pulls no bridge into the production closure).  Split from the re-keying (LS1.2) when the row started: the ghost compiles alone beside the per-object layer, and the re-keying touches every footprint declaration (249 `LockId × AccessMode` sites in 19 files at this head), so each row lands as its own cut. | Done: `lake build SeLe4n` green with the old brackets untouched; `with_lock_set_suite` executes acquire, contention, withdrawal and unwind against `LockState` (eleven runtime checks) and `#check`s every new name; Tier 3 pins the ten load-bearing ones. |
-| LS1.2 (**done `v0.36.64`**) | `LockSet` re-keyed over `LockKey` (`pairs : List (LockKey × AccessMode)`, `lockAcquireSequence` pointed at §3.1's sort, `lockSetHeld c S L` over `LockState` beside the per-object form until LS3); `SchedLockSet` and `SchedLockId` retired into it, `canonicalSchedLockOfObject` and its four congruences deleted with them, the sixteen arms' declarations (`SyscallSchedContainment.lean:77-551`) and the unified footprint (`SyscallSchedFootprint.lean`) re-keyed, not re-proved; the two Tier 1 footprint censuses re-keyed.  The old brackets fold over `LockKey` through the primitives `schedAcquireLock` dispatches today, so `runBracketed` keeps running until LS2.2. | `lake build SeLe4n` green; `rg -n 'SchedLockId\|SchedLockSet' SeLe4n tests scripts` empty; `main_trace_smoke.expected` unchanged; `lock_set_suite` and `smp_foundations_suite` execute against the re-keyed set. |
+| LS1.2 (**done `v0.36.64`**) | `LockSet` re-keyed over `LockKey` (`pairs : List (LockKey × AccessMode)`, `lockAcquireSequence` pointed at §3.1's sort, `lockSetHeld c S L` over `LockState` beside the per-object form until LS3); `SchedLockSet` and `SchedLockId` retired into it, `canonicalSchedLockOfObject` and its four congruences deleted with them, the sixteen arms' declarations (`SyscallSchedContainment.lean:77-551`) and the unified footprint (`SyscallSchedFootprint.lean`) re-keyed, not re-proved; the two Tier 1 footprint censuses re-keyed.  The old brackets fold over `LockKey` through the primitives `schedAcquireLock` dispatches today, so `runBracketed` keeps running until LS2.4 (the syscall seams; the scheduler seams switched at LS2.2). | `lake build SeLe4n` green; `rg -n 'SchedLockId\|SchedLockSet' SeLe4n tests scripts` empty; `main_trace_smoke.expected` unchanged; `lock_set_suite` and `smp_foundations_suite` execute against the re-keyed set. |
 
 ### LS2 — the bracket (§3.2): the seams switch, the old bracket is deleted
 
 | Row | Does | Done when |
 |---|---|---|
-| LS2.1 (**done `v0.36.65`**) | `LockedSystemState`, `BracketSpec`, `run`, `runGhost`, `runGhost_kernel`; `withLockSet` as `runGhost` of a constant spec; the `*_atomic_under_lockSet`, 2PL and observer theorems restated over the pair; `applySequentialWithLockSet` and `syscallEntryUnderLockSet` over the pair. | Every theorem §7 lists under 2PL, serializability and `withLockSet` elaborates; the old `runBracketed` is still the seams' bracket.  Done: `Locks/BracketSpec.lean` holds the pair, `footprintCoversWrites` (moved from `SchedLockBracket.lean`), `withLockSetGhost` (the ghost bracket; LS3.1 renames it `withLockSet`), `BracketSpec` with O1 (`rfl`), O3 and O4 (`guard`, `guard_of_unheld`, `not_guard_of_contended`); the word-level `withLockSet` stays because the suspend seam executes it until LS2.2.  Every restated theorem keeps its name; the hypotheses dropped are the lock-insensitivity ones (an observer's acquire/unwind insensitivity, the `invExt` guard on object-store observers, the three per-primitive invariant preservations) — strengthenings, O6.  Deleted with nothing left to prove: `AcquireInsensitive`/`UnwindInsensitive` and their `On` forms, the per-fold invisibility lemmas, `lockSet_observer_atomic_on` / `_of_objectStoreObserver` (collapsed into `lockSet_observer_atomic`), `lockSet_invariant_preserved` and its worked instantiation, Serializability §8b/§8c/§9b, `ActionPiCongr`, FineLockFlow's `lockSetAcquiredState` and grant lemmas (now `guard_of_unheld` / `not_guard_of_contended`), the six cancellation insensitivity lemmas. |
-| LS2.2 | The four seams' `BracketSpec`s (§3.2) and their exported bodies calling `.run`; `runBracketed`, its domains, `runUnderDeclaredLockSet`, `LockBracketOutcome`, `syscallBracketRefusalResult` and the refusal test deleted; the chain-extension combinators decided (§3.2); the export census re-pointed and its negative added; the two footprint censuses re-keyed.  **The first row that changes the compiled kernel**, and it lands after LS2.1's proofs. | Exerciser delta read and recorded; `main_trace_smoke.expected` unchanged; the census fails if a seam is pointed at `runGhost` (tested by breaking the relation). |
-| LS2.3 | The resolved scheduler footprints and write sets of `SeLe4n/Kernel/SyscallSchedFootprint.lean` move beside their transitions.  Their placement had one reason — `LockKey` was declared in `PerCoreChooseThread.lean`, above the transition modules — and LS1.2 removed it (`LockKey` is in `Concurrency/Locks/LockKey.lean`, below all of them); the module's own docstring says so.  `unifiedLockSetForSyscall` and the ABI-entry declarations stay. | Every moved footprint is cited by its consumers at the new path; the two footprint censuses and the export census pass; a Tier 3 negative anchor holds `SyscallSchedFootprint.lean` to no per-transition resolved footprint; the `REGISTERED_DEBT.md` row LS1.2 registered is closed. |
+| LS2.1 (**done `v0.36.65`**) | `LockedSystemState`, `BracketSpec`, `run`, `runGhost`, `runGhost_kernel`; `withLockSet` as `runGhost` of a constant spec; the `*_atomic_under_lockSet`, 2PL and observer theorems restated over the pair; `applySequentialWithLockSet` and `syscallEntryUnderLockSet` over the pair. | Every theorem §7 lists under 2PL, serializability and `withLockSet` elaborates; the old `runBracketed` is still the seams' bracket.  Done: `Locks/BracketSpec.lean` holds the pair, `footprintCoversWrites` (moved from `SchedLockBracket.lean`), `withLockSetGhost` (the ghost bracket; LS3.1 renames it `withLockSet`), `BracketSpec` with O1 (`rfl`), O3 and O4 (`guard`, `guard_of_unheld`, `not_guard_of_contended`); the word-level `withLockSet` stays because the suspend seam executes it until LS2.4.  Every restated theorem keeps its name; the hypotheses dropped are the lock-insensitivity ones (an observer's acquire/unwind insensitivity, the `invExt` guard on object-store observers, the three per-primitive invariant preservations) — strengthenings, O6.  Deleted with nothing left to prove: `AcquireInsensitive`/`UnwindInsensitive` and their `On` forms, the per-fold invisibility lemmas, `lockSet_observer_atomic_on` / `_of_objectStoreObserver` (collapsed into `lockSet_observer_atomic`), `lockSet_invariant_preserved` and its worked instantiation, Serializability §8b/§8c/§9b, `ActionPiCongr`, FineLockFlow's `lockSetAcquiredState` and grant lemmas (now `guard_of_unheld` / `not_guard_of_contended`), the six cancellation insensitivity lemmas. |
+| LS2.2 (**done `v0.36.66`**) | The scheduler seams' `BracketSpec`s — `timerTickBracket` and `rescheduleBracket` (`SchedLockBracket.lean`), whose `covers` fields are the two existing coverage theorems — and the timer-tick, reschedule and secondary bring-up bodies calling `.run`; the timer coverage chain (`SchedLockTimerContainment.lean`, folded into `SchedLockBracket.lean` §5, with `PerCoreTickCbsPreservation.lean` and `PerCoreCbs.lean`) promoted to production; the export census's *bracketed* form extended to `BracketSpec.run` and its ghost negative added (§3.2).  Narrowed when the row started: §3.2's claim of four seam-level coverage theorems was wrong for the syscall and suspend seams, so those switch at LS2.4 once LS2.3 has proved them.  **The first row that changes the compiled kernel**, and it lands after LS2.1's proofs. | `main_trace_smoke.expected` unchanged; the census fails if a seam is pointed at `runGhost` (tested by breaking the relation: the planted `censusWitnessGhostCommit`).  Done: exerciser reading 387, unchanged by construction (the syscall seam is untouched); `runBracketed`'s outcome projection has no reader, so the reachability census pins `LockBracketOutcome.state` until LS2.4. |
+| LS2.3 | The syscall and suspend seams' coverage theorems: `syscallDispatchCrossCoreStep` covered by `declaredUnifiedLockSetForAbiEntry`'s footprint, per declared arm, in the shape of `syscallDispatchFromAbi_stepCovers` (`ReschedulePendingArms/Entry.lean:171`), including the frames of the wrapper's own writes (`stageCallerReturnFor`, `scheduleLocalSuccessorFrom`, `settleResidencyOnCore` on the executing core); the suspend seam's action covered by the unified `.tcbSuspend` footprint, which the seam declares instead of the object-only `lockSetForSyscall .tcbSuspend` (`SyscallDispatchEntry.lean:1099-1102`).  Decides, with the sixteen staged per-arm theorems' import closure read at the row's start, whether they are promoted or the seam-level proof routes around SM8.B confinement.  Possible finding to settle here: whether every declared arm's run-queue segment names the executing core, since the wrapper writes its slots. | Both theorems elaborate in the production closure; `unifiedLockSetForSyscall_coversWrites`'s `hCover` is discharged at the seam, not assumed. |
+| LS2.4 | The syscall and suspend seams' `BracketSpec`s with LS2.3's theorems as `covers`, their bodies calling `.run`; `runBracketed`, its domains, `runUnderDeclaredLockSet`, `LockBracketOutcome`, `syscallBracketRefusalResult`, the word-level `withLockSet` at the seam and the refusal test deleted; the chain-extension combinators decided (§3.2); the two footprint censuses re-keyed. | Exerciser delta read and recorded; `main_trace_smoke.expected` unchanged; `rg -n 'runBracketed\|LockBracketOutcome' SeLe4n tests` empty. |
+| LS2.5 | The resolved scheduler footprints and write sets of `SeLe4n/Kernel/SyscallSchedFootprint.lean` move beside their transitions.  Their placement had one reason — `LockKey` was declared in `PerCoreChooseThread.lean`, above the transition modules — and LS1.2 removed it (`LockKey` is in `Concurrency/Locks/LockKey.lean`, below all of them); the module's own docstring says so.  `unifiedLockSetForSyscall` and the ABI-entry declarations stay. | Every moved footprint is cited by its consumers at the new path; the two footprint censuses and the export census pass; a Tier 3 negative anchor holds `SyscallSchedFootprint.lean` to no per-transition resolved footprint; the `REGISTERED_DEBT.md` row LS1.2 registered is closed. |
 
 ### LS3 — the words leave the kernel state (§3.3)
 
@@ -349,16 +362,19 @@ Rows are sequential; no two run in parallel.  LS1.1 and LS1.2 are two rows
 because the ghost compiles alone and the re-keying is a sweep of every
 declaration site; LS2.1 and LS2.2 are two rows
 because each compiles alone (LS2.1 adds beside the old bracket; LS2.2
-switches and deletes); LS2.3 is a move with no proof content and follows
-LS2.2 so the footprints move once, into the seams' final shape; LS3.1 cannot precede LS2.2 (the old bracket writes
-the fields it deletes).
+switches the seams whose coverage exists); LS2.3 carries the syscall seams'
+coverage proofs and LS2.4 their switch and the deletions, two rows because a
+transition goes live only after the proofs that cover it; LS2.5 is a move
+with no proof content and follows LS2.4 so the footprints move once, into the
+seams' final shape; LS3.1 cannot precede LS2.4 (the old bracket writes the
+fields it deletes).
 
 ## 5. Proof obligations
 
 | | Obligation | Where |
 |---|---|---|
 | O1 | `BracketSpec.runGhost_kernel : (b.runGhost c s).2.kernel = (b.run s.kernel).2` — `rfl`. The executed path is the kernel projection of the proven one. | LS2.1 |
-| O2 | `BracketSpec.covers` for each of the four seams, from the four existing coverage theorems §3.2 names, re-keyed. | LS2.2 |
+| O2 | `BracketSpec.covers` for each of the four seams: the timer tick's and the reschedule entries' from the two existing theorems (§3.2), the syscall and suspend seams' from theorems LS2.3 proves (none exists at the seam today; §3.2 cites what does). | LS2.2 (scheduler seams), LS2.3–LS2.4 (syscall seams) |
 | O3 | `runGhost_locks_of_unheld : s.locks = .unheld → (b.runGhost c s).2.locks = .unheld` and `lockSetHeld c S (acquireAll c S.lockAcquireSequence .unheld)` — under the entry lock every entry starts free and ends free, and the step ran held; the refusal arm's replacement. | LS1.1 over the pair list (`LockState.acquireAll_unheld_held`, `LockState.acquireAll_unwindAll_unheld`), LS2.1 at the spec |
 | O4 | The ghost bracket's guard as a hypothesis for Track D: `declared s.kernel = some S ∧ lockSetHeld c S (acquireAll …)` is what the HAL's resolve–acquire–re-resolve loop must establish; stated once, consumed by no kernel code. | LS2.1 |
 | O5 | The refinement lift of §3.1. | LS1.1 (`LockState.applySeq_unheld_key_refines`, in `Locks/Refinement.lean` beside the bridges, which are staged) |
@@ -370,7 +386,7 @@ the fields it deletes).
   whose object is absent is never written and the guard refuses
   (`updateObjectLockAt`'s `none` arm, `WithLockSet.lean:339-343`); after
   LS1 it is granted and the step decides.  The resolver names only objects it
-  read, so the cell is unreachable from a declared footprint; LS2.2 states
+  read, so the cell is unreachable from a declared footprint; LS2.3 states
   it as a lemma over `declaredUnifiedLockSetForAbiEntry` or records the
   resolver arm that cannot.
 - **Serializability's commutation premise is never discharged from

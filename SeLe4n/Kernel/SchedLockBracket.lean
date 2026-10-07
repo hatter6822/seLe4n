@@ -7,15 +7,20 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- WS-RR RR7.39: PRODUCTION.  The declared-footprint bracket the three live
--- per-core scheduler entries run.  `SeLe4n/Kernel/PerCoreTimerEntry.lean`,
+-- WS-RR RR7.39 / WS-LS LS2.2: PRODUCTION.  The declared footprints, their
+-- write-set containment and the `BracketSpec`s the three live per-core
+-- scheduler entries run.  `SeLe4n/Kernel/PerCoreTimerEntry.lean`,
 -- `PerCoreRescheduleEntry.lean` and `SecondaryEntry.lean` are the consumers.
+-- The timer tick's containment chain (`PerCoreCbs`,
+-- `PerCoreTickCbsPreservation`) entered the production closure with it at
+-- LS2.2: a bracket record cannot be built without its coverage proof, and the
+-- record is what the entry runs.
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
-import SeLe4n.Kernel.Concurrency.Locks.LockBracket
 import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 
 /-!
 # WS-RR RR7.39 — the declared footprint, at the per-core scheduler entries
@@ -56,18 +61,24 @@ is whether the growing phase **granted** the set or merely queued on it.
 
 ## 2.  The bracket
 
-`runBracketed` at `objectLockBracketDomain` — the *same* definition the ABI
-seam runs (`SeLe4n/Kernel/SyscallLockBracket.lean`), differing only in which
-domain record supplies the five primitives.  RR7.39 made it shared precisely so
-that "what does a revalidating 2PL bracket do" has one answer.
+A `BracketSpec` per seam (§6): the declared footprint, the step, and the proof
+that the footprint covers the step's writes, as one record.  The entry runs
+`BracketSpec.run`, which is the step and nothing else — since WS-LS LS2.2 the
+growing and shrinking phases live on the ghost lock table
+(`Concurrency/Locks/BracketSpec.lean`), where `runGhost_kernel` says the
+executed path is the kernel projection of the proven one.  The former
+revalidating bracket (`runBracketed`) still runs at the two syscall seams
+until their seam-level coverage lands (plan rows LS2.3 and LS2.4).
 
 ## 3.  The write-set containment
 
 A declared footprint that does not cover a write is a *false* footprint, and the
 2PL argument would then rest on exclusion the runtime never established.
 `footprintCoversWrites` states the obligation as data — for every lock the
-footprint does **not** name, the state it guards is unchanged — and §4 discharges
-it for both live steps.
+footprint does **not** name, the state it guards is unchanged — and §4–§5 discharge
+it for both live steps (§4 the reschedule step, §5 the timer tick, the latter
+moved here from the former `Scheduler/Operations/SchedLockTimerContainment.lean`
+at LS2.2 so that the record and its proof field sit in one module).
 
 For the timer tick the obligation reduces to one fact, because RR7.39 widened its
 footprint to every core's run-queue lock (see
@@ -91,8 +102,7 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId SgiKind AccessMode bootCoreId numCores
-  LockBracketOutcome runBracketed coreIdOfUInt64?
-  LockKey LockSet objectLockBracketDomain)
+  coreIdOfUInt64? LockKey LockSet BracketSpec)
 
 -- ============================================================================
 -- §1  The footprints, resolved from the entry's own decode
@@ -188,65 +198,6 @@ theorem declaredLockSetForReschedule_state_independent (coreId : UInt64)
     (st₁ st₂ : SystemState) :
     declaredLockSetForReschedule coreId st₁
       = declaredLockSetForReschedule coreId st₂ := rfl
-
--- ============================================================================
--- §2  The brackets
--- ============================================================================
-
-/-- **WS-RR RR7.39**: the core a scheduler entry acquires on behalf of.
-
-The executing core, where the argument names one.  The `bootCoreId` fall-back is
-provably never used to acquire anything: on an out-of-range id the footprint is
-`none` and the bracket takes its undeclared arm
-(`timerTickUnderDeclaredLockSet_invalid_core`), so the default is discharged by a
-theorem rather than trusted as a convention. -/
-@[inline] def schedEntryLockCore (coreId : UInt64) : CoreId :=
-  (coreIdOfUInt64? coreId).getD bootCoreId
-
-/-- **WS-RR RR7.39**: the per-core timer tick, inside its declared footprint. -/
-def timerTickUnderDeclaredLockSet (coreId : UInt64) (st : SystemState) :
-    LockBracketOutcome (List (CoreId × SgiKind) × Bool) :=
-  runBracketed objectLockBracketDomain (declaredLockSetForTimerTick coreId)
-    (schedEntryLockCore coreId)
-    (fun s => perCoreTimerTickStepWithClockAdvance s coreId) st
-
-/-- **WS-RR RR7.39**: the per-core reschedule step, inside its declared
-footprint. -/
-def rescheduleUnderDeclaredLockSet (coreId : UInt64) (st : SystemState) :
-    LockBracketOutcome Unit :=
-  runBracketed objectLockBracketDomain (declaredLockSetForReschedule coreId)
-    (schedEntryLockCore coreId)
-    (fun s => ((), perCoreRescheduleStep s coreId)) st
-
-/-- **WS-RR RR7.39**: on an out-of-range core id the tick bracket is the bare
-step — no lock is written, and the `schedEntryLockCore` fall-back is therefore
-never used to acquire.  Composed with `perCoreTimerTickStep_invalid_core`, such
-an entry commits nothing at all. -/
-theorem timerTickUnderDeclaredLockSet_invalid_core (coreId : UInt64) (st : SystemState)
-    (h : ¬ coreId.toNat < numCores) :
-    timerTickUnderDeclaredLockSet coreId st
-      = .undeclared (perCoreTimerTickStepWithClockAdvance st coreId) :=
-  Concurrency.runBracketed_undeclared _ _ _ _ st
-    (declaredLockSetForTimerTick_invalid_core coreId st h)
-
-/-- **WS-RR RR7.39**: likewise for the reschedule bracket. -/
-theorem rescheduleUnderDeclaredLockSet_invalid_core (coreId : UInt64) (st : SystemState)
-    (h : ¬ coreId.toNat < numCores) :
-    rescheduleUnderDeclaredLockSet coreId st
-      = .undeclared ((), perCoreRescheduleStep st coreId) :=
-  Concurrency.runBracketed_undeclared _ _ _ _ st
-    (declaredLockSetForReschedule_invalid_core coreId st h)
-
-/-- **WS-RR RR7.39 (a refused tick commits nothing)**: where the guard refuses,
-the bracket produces no value, so the entry advances neither the HAL's shadow
-clock nor any cross-core SGI.
-
-The load-bearing negative at this seam.  A refusal that still reported a
-`(sgis, clockAdvanced)` pair would have the entry poke remote cores and advance a
-clock for a tick that never ran. -/
-@[simp] theorem timerTickUnderDeclaredLockSet_refused_value (unwound : SystemState) :
-    (LockBracketOutcome.refused (α := List (CoreId × SgiKind) × Bool) unwound).value?
-      = none := rfl
 
 -- ============================================================================
 -- §3  What the footprint must cover
@@ -427,5 +378,223 @@ theorem perCoreRescheduleStep_coversWrites (st : SystemState) (coreId : UInt64)
       · simp [dropCurrentOnCore, preemptCurrentOnCore_activeDomainOnCore]
     · intro d _
       simp
+
+-- ============================================================================
+-- §5  The timer step's writes are inside its footprint
+-- ============================================================================
+-- Moved from `Scheduler/Operations/SchedLockTimerContainment.lean` at **WS-LS
+-- LS2.2**.  `timerTickOnCoreCompleteLockSet c` names the object-store table
+-- write lock, **every** core's run-queue write lock, and core `c`'s
+-- replenish-queue write lock, so `footprintCoversWrites` has content in exactly
+-- one clause: no core's replenish queue other than `c`'s may move.  The chain,
+-- one link per composed transition: `tickClockedState` writes `machine` only;
+-- `setLastTimeoutErrorsOnCore` writes a diagnostic slot;
+-- `processReplenishmentsDueOnCore` pops core `c`'s queue and its wakes touch
+-- only run queues; `timerTickBudgetOnCore` inserts through
+-- `replenishOnCore … c`; `scheduleEffectiveOnCore`, `handleRescheduleSgiOnCore`
+-- and `scheduleDomainOnCore` frame every replenish queue.
+
+/-- **WS-RR RR7.39 (frame)**: `timerTickOnCore` writes no replenish queue but its
+own core's.
+
+Every arm is a composition of transitions that either frame every replenish queue
+or write core `c`'s slot; the `hne` hypothesis discharges the latter. -/
+theorem timerTickOnCore_replenishQueueOnCore_ne (st : SystemState) (c : CoreId)
+    (res : SystemState × List (CoreId × SgiKind)) (c' : CoreId) (hne : c ≠ c')
+    (hTick : timerTickOnCore st c = .ok res) :
+    res.1.scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
+  rw [timerTickOnCore_eq_prepared] at hTick
+  -- the prepared state — the diagnostic clear composed with the drain — frames `c'`
+  have hPrep : (timerTickOnCorePrepared st c).1.scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' := by
+    simp only [timerTickOnCorePrepared]
+    rw [processReplenishmentsDueOnCore_replenishQueueOnCore_ne _ c _ c' hne]
+    simp [SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore]
+  split at hTick
+  · -- idle core: either the local-wake reschedule, or the prepared state verbatim
+    split at hTick
+    · split at hTick
+      · simp at hTick
+      · rename_i st2 hSgi
+        simp only [Except.ok.injEq] at hTick
+        subst hTick
+        rw [show ((st2, (timerTickOnCorePrepared st c).2.1) :
+          SystemState × List (CoreId × SgiKind)).1 = st2 from rfl,
+          handleRescheduleSgiOnCore_replenishQueueOnCore _ c st2 c' hSgi, hPrep]
+    · simp only [Except.ok.injEq] at hTick
+      subst hTick
+      exact hPrep
+  · -- a current thread: the budget charge, then at most one re-dispatch
+    split at hTick
+    · simp at hTick
+    · rename_i st3 preempted timeoutSgis hBudget
+      obtain ⟨tcb, hTcb, hBudget⟩ := timerTickChargeCurrentOnCore_ok hBudget
+      have hSt3 : st3.scheduler.replenishQueueOnCore c'
+          = st.scheduler.replenishQueueOnCore c' := by
+        rw [timerTickBudgetOnCore_replenishQueueOnCore_ne _ c _ tcb st3 preempted c' hne
+          hBudget, hPrep]
+      split at hTick
+      · split at hTick
+        · simp at hTick
+        · rename_i st4 hSched
+          simp only [Except.ok.injEq] at hTick
+          subst hTick
+          rw [show ((st4, (timerTickOnCorePrepared st c).2.1 ++ timeoutSgis) :
+            SystemState × List (CoreId × SgiKind)).1 = st4 from rfl,
+            scheduleEffectiveOnCore_replenishQueueOnCore st3 c st4 c' hSched, hSt3]
+      · split at hTick
+        · split at hTick
+          · simp at hTick
+          · rename_i st4 hSgi
+            simp only [Except.ok.injEq] at hTick
+            subst hTick
+            rw [show ((st4, (timerTickOnCorePrepared st c).2.1 ++ timeoutSgis) :
+              SystemState × List (CoreId × SgiKind)).1 = st4 from rfl,
+              handleRescheduleSgiOnCore_replenishQueueOnCore st3 c st4 c' hSgi, hSt3]
+        · simp only [Except.ok.injEq] at hTick
+          subst hTick
+          exact hSt3
+
+/-- **WS-RR RR7.39 (frame)**: the run-loop step writes no replenish queue but its
+own core's — the tick's frame carried through the fail-closed core decode and the
+domain transition. -/
+theorem perCoreTimerTickStep_replenishQueueOnCore_ne (st : SystemState) (coreId : UInt64)
+    (c' : CoreId) (h : coreId.toNat < numCores)
+    (hne : (⟨coreId.toNat, h⟩ : CoreId) ≠ c') :
+    (perCoreTimerTickStep st coreId).1.scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' := by
+  unfold perCoreTimerTickStep
+  rw [dif_pos h]
+  cases hTick : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩ with
+  | error e => rfl
+  | ok res =>
+    simp only
+    cases hDom : scheduleDomainOnCore res.1 ⟨coreId.toNat, h⟩ with
+    | error e => rfl
+    | ok st2 =>
+      simp only
+      rw [scheduleDomainOnCore_replenishQueueOnCore res.1 _ st2 c' hDom,
+        timerTickOnCore_replenishQueueOnCore_ne _ _ res c' hne hTick,
+        tickClockedState_scheduler]
+
+/-- **WS-RR RR7.39 (the payoff for the timer seam)**: the verified tick step's
+writes are inside the footprint the entry declares.
+
+Two of the three clauses are vacuous by the footprint's own width — it names the
+object-store table lock and every core's run-queue lock — and the third is
+`perCoreTimerTickStep_replenishQueueOnCore_ne`.  So the footprint the bracket
+acquires is not a *false* footprint. -/
+theorem perCoreTimerTickStep_coversWrites (st : SystemState) (coreId : UInt64)
+    (h : coreId.toNat < numCores) :
+    footprintCoversWrites
+      ⟨timerTickOnCoreCompleteLockSet ⟨coreId.toNat, h⟩,
+        timerTickOnCoreCompleteLockSet_keys_nodup _⟩
+      st (perCoreTimerTickStep st coreId).1 := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro hNot
+    exact absurd List.mem_cons_self hNot
+  · intro d hNot
+    exact absurd
+      (List.mem_cons_of_mem _ (List.mem_append_left _ (mem_allCoreRunQueueLockSegment d))) hNot
+  · intro d hNot
+    have hne : (⟨coreId.toNat, h⟩ : CoreId) ≠ d := by
+      rintro rfl
+      exact hNot (List.mem_cons_of_mem _ (List.mem_append_right _ (List.mem_singleton.mpr rfl)))
+    exact perCoreTimerTickStep_replenishQueueOnCore_ne st coreId d h hne
+
+/-- **WS-RR RR7.39**: the clock-advance-flagged step commits the plain step's
+state, so its containment is the plain step's. -/
+theorem perCoreTimerTickStepWithClockAdvance_coversWrites (st : SystemState)
+    (coreId : UInt64) (h : coreId.toNat < numCores) :
+    footprintCoversWrites
+      ⟨timerTickOnCoreCompleteLockSet ⟨coreId.toNat, h⟩,
+        timerTickOnCoreCompleteLockSet_keys_nodup _⟩
+      st (perCoreTimerTickStepWithClockAdvance st coreId).2 :=
+  perCoreTimerTickStep_coversWrites st coreId h
+
+-- ============================================================================
+-- §6  The brackets: one `BracketSpec` per scheduler seam
+-- ============================================================================
+
+/-- **WS-LS LS2.2**: the per-core timer tick's bracket.
+
+The footprint is `declaredLockSetForTimerTick` (§1), the step is the run-loop
+step with its clock-advance flag, and the proof field is
+`perCoreTimerTickStepWithClockAdvance_coversWrites` (§5) at the footprint the
+decode resolves — so the record cannot be built for a footprint the step
+writes outside of.  The entry runs `BracketSpec.run`, which is the step and
+nothing else; the growing and shrinking phases exist on the ghost table
+(`BracketSpec.runGhost`) alone, and `runGhost_kernel` says the executed path
+is the kernel projection of the proven one.
+
+No core argument: the executed bracket acquires nothing, so it names no
+acquirer.  The former `schedEntryLockCore` fall-back — whose only use was an
+acquire the undeclared arm never performed — is gone with the acquire. -/
+def timerTickBracket (coreId : UInt64) :
+    BracketSpec (List (CoreId × SgiKind) × Bool) where
+  declared := declaredLockSetForTimerTick coreId
+  step := fun s => perCoreTimerTickStepWithClockAdvance s coreId
+  covers := by
+    intro st S hS
+    by_cases h : coreId.toNat < numCores
+    · rw [declaredLockSetForTimerTick_resolves coreId st h] at hS
+      rw [← Option.some.inj hS]
+      exact perCoreTimerTickStepWithClockAdvance_coversWrites st coreId h
+    · rw [declaredLockSetForTimerTick_invalid_core coreId st h] at hS
+      cases hS
+
+/-- **WS-LS LS2.2**: the per-core reschedule step's bracket — and, through
+`secondaryKernelMain_eq_perCoreRescheduleEntry`, the secondary bring-up
+entry's.  The proof field is `perCoreRescheduleStep_coversWrites` (§4). -/
+def rescheduleBracket (coreId : UInt64) : BracketSpec Unit where
+  declared := declaredLockSetForReschedule coreId
+  step := fun s => ((), perCoreRescheduleStep s coreId)
+  covers := by
+    intro st S hS
+    by_cases h : coreId.toNat < numCores
+    · rw [declaredLockSetForReschedule_resolves coreId st h] at hS
+      rw [← Option.some.inj hS]
+      exact perCoreRescheduleStep_coversWrites st coreId h
+    · rw [declaredLockSetForReschedule_invalid_core coreId st h] at hS
+      cases hS
+
+/-- **WS-LS LS2.2**: what the timer entry executes is the verified step —
+`rfl`, because `BracketSpec.run` is the step.  The old bracket's three arms
+(undeclared / committed / refused) are gone with the lock words it wrote;
+`timerTickUnderDeclaredLockSet_invalid_core` and the refused-value negative
+are subsumed by this equation holding on every core id. -/
+theorem timerTickBracket_run (coreId : UInt64) (st : SystemState) :
+    (timerTickBracket coreId).run st = perCoreTimerTickStepWithClockAdvance st coreId := rfl
+
+/-- **WS-LS LS2.2**: likewise for the reschedule entry. -/
+theorem rescheduleBracket_run (coreId : UInt64) (st : SystemState) :
+    (rescheduleBracket coreId).run st = ((), perCoreRescheduleStep st coreId) := rfl
+
+/-- **WS-LS LS2.2**: on the proven path a valid core's tick advances the ghost
+table by the complete timer footprint and hands it back — the whole trace of
+the bracket, with the step's kernel half unchanged by it. -/
+theorem timerTickBracket_runGhost_locks (coreId : UInt64) (c : CoreId)
+    (s : Concurrency.LockedSystemState) (h : coreId.toNat < numCores) :
+    ((timerTickBracket coreId).runGhost c s).2.locks =
+      Concurrency.LockState.bracket c
+        ⟨timerTickOnCoreCompleteLockSet ⟨coreId.toNat, h⟩,
+          timerTickOnCoreCompleteLockSet_keys_nodup _⟩ s.locks := by
+  rw [BracketSpec.runGhost_locks]
+  show Concurrency.LockState.bracketDeclared c (declaredLockSetForTimerTick coreId s.kernel)
+    s.locks = _
+  rw [declaredLockSetForTimerTick_resolves coreId s.kernel h,
+    Concurrency.LockState.bracketDeclared_some]
+
+/-- **WS-LS LS2.2**: an out-of-range core id declares nothing, so the proven
+path leaves the ghost table alone — the fail-closed condition
+`perCoreTimerTickStep_invalid_core` reports on the step, read at the table. -/
+theorem timerTickBracket_runGhost_locks_invalid_core (coreId : UInt64) (c : CoreId)
+    (s : Concurrency.LockedSystemState) (h : ¬ coreId.toNat < numCores) :
+    ((timerTickBracket coreId).runGhost c s).2.locks = s.locks := by
+  rw [BracketSpec.runGhost_locks]
+  show Concurrency.LockState.bracketDeclared c (declaredLockSetForTimerTick coreId s.kernel)
+    s.locks = _
+  rw [declaredLockSetForTimerTick_invalid_core coreId s.kernel h,
+    Concurrency.LockState.bracketDeclared_none]
 
 end SeLe4n.Kernel

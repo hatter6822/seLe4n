@@ -1,3 +1,70 @@
+## v0.36.66 — WS-LS LS2.2: the scheduler seams run the bracket specification
+
+**The first WS-LS row that changes the compiled kernel.**  The timer tick, the
+`.reschedule` SGI receiver and the secondary bring-up entry now execute
+`BracketSpec.run` on `timerTickBracket` / `rescheduleBracket`
+(`SchedLockBracket.lean` §6), which is the step and nothing else: no lock
+word is read or written on those paths.  `main_trace_smoke.expected` is
+unchanged (the trace harness runs no scheduler entry); the exerciser's
+notification-signal round trip is unchanged by construction, since the
+syscall seam is untouched.
+
+- **`timerTickBracket coreId : BracketSpec (List (CoreId × SgiKind) × Bool)`**
+  and **`rescheduleBracket coreId : BracketSpec Unit`**, whose `declared`
+  fields are the RR7.39 resolvers (`declaredLockSetForTimerTick` /
+  `declaredLockSetForReschedule`, kept, with their `_invalid_core` and
+  `_state_independent` facts) and whose `covers` fields are the two
+  existing coverage theorems — so a record cannot be built without its
+  coverage proof.  `timerTickBracket_run` / `rescheduleBracket_run` (`rfl`)
+  say what the entries execute is the verified step;
+  `timerTickBracket_runGhost_locks` and its `_invalid_core` form say what the
+  proven path does to the ghost table (one `LockState.bracket` of the
+  complete tick footprint, keys nodup; nothing for an out-of-range core).
+  `PerCoreTimerEntry.lean`, `PerCoreRescheduleEntry.lean` and
+  `SecondaryEntry.lean` call `.run` (the timer entry's result tuple loses
+  its `Option`; the `| none => pure ()` arm is gone with it).
+- **Deleted**: `timerTickUnderDeclaredLockSet`, `rescheduleUnderDeclaredLockSet`,
+  `schedEntryLockCore`, `timerTickUnderDeclaredLockSet_invalid_core`,
+  `rescheduleUnderDeclaredLockSet_invalid_core`,
+  `timerTickUnderDeclaredLockSet_refused_value` (the word-level scheduler
+  brackets and their refused-value negative; the refusal arm has no ghost
+  counterpart, O3).  `runBracketed`, `LockBracketOutcome` and
+  `runUnderDeclaredLockSet` stay for the syscall and suspend seams until
+  LS2.4; the reachability census pins `LockBracketOutcome.state`, which no
+  seam reads any more.
+- **The timer coverage chain is production**:
+  `Scheduler/Operations/SchedLockTimerContainment.lean` is folded into
+  `SchedLockBracket.lean` §5 (`perCoreTimerTickStep_coversWrites`,
+  `perCoreTimerTickStepWithClockAdvance_coversWrites` and their frames),
+  and `PerCoreTickCbsPreservation.lean` / `PerCoreCbs.lean`, which the
+  replenish clause chains through, leave `scripts/staged_module_allowlist.txt`
+  (the partition gate derives the set; the three rows are removed).
+- **Export census** (`ExportCommitDisciplineCensus.lean`): *bracketed* now
+  means the body reaches `BracketSpec.run` (or, until LS2.4,
+  `runUnderDeclaredLockSet` / `runBracketed` / `withLockSet`); a new
+  **ghost negative** fails the build when a state-committing export reaches
+  `BracketSpec.runGhost`, `withLockSetGhost` or any `LockState` primitive,
+  under both disciplines, decided on the planted `censusWitnessGhostCommit`
+  (the same record run on the ghost path — the relation broken, not the
+  token).  Registry unchanged: 10 seams, 5 bracketed.
+- **Plan corrected and renumbered** (`LOCK_STATE_SEPARATION_PLAN.md` §3.2,
+  §4, O2): the first draft's claim that four seam-level coverage theorems
+  exist was recall, and wrong for two — `unifiedLockSetForSyscall_coversWrites`
+  (`SyscallSchedFootprint.lean:2614`) takes coverage as a hypothesis, the
+  sixteen per-arm theorems are staged and per-arm, and the suspend facts are
+  membership.  So LS2.2 switches the three scheduler seams; **LS2.3** (new)
+  proves the syscall and suspend seams' coverage in `syscallDispatchFromAbi_stepCovers`'s
+  shape; **LS2.4** (new) switches them and deletes the word-level bracket;
+  the footprint move is **LS2.5** (debt row re-pointed).
+- Tier 3: the RR7.39 elaborated surface imports `SchedLockBracket` and
+  `#check`s the two records and their `_run` / `_runGhost_locks` facts; the
+  entries' tails are re-pinned on the new shape; the census's `ghostForms`
+  and ghost witness are pinned.  `SmpFoundationsSuite` checks 7–9 run
+  `rescheduleBracket` on an out-of-range and a valid core and the ghost
+  path on an all-free table; `SyscallReturnAbiSuite`'s badge-delivery
+  witness runs `rescheduleBracket`.  Store-reader baseline follows the
+  moved lemmas.  Plan row LS2.2 done.
+
 ## v0.36.65 — WS-LS LS2.1: the bracket as a specification over the ghost lock state
 
 Nothing the compiled kernel runs changes; `main_trace_smoke.expected` is

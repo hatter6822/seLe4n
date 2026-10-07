@@ -441,7 +441,6 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 -- `timerTickOnCore_preserves_perCoreCbsInvariant` (affinity-consistency supplied as the
 -- placement-gated input).  The SM5.I per-core run loop is the runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
-import SeLe4n.Kernel.Scheduler.Operations.SchedLockTimerContainment
 -- WS-RR RR8.12 Cut C6a: the syscall arms' scheduler-domain write-set
 -- containment -- the proof that each arm's declared footprint is not a FALSE
 -- one, so the bracket at the syscall seam (Cut C6c) acquires an exclusion the

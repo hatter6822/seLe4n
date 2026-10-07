@@ -56,7 +56,7 @@ them) and `writeReg` takes a `UInt64`; a register file is built with
 read on the entry/exit path; build a saved context from `TrapContext` through
 `ofWords` and the existing writers instead.
 
-### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; LS2.1 v0.36.65; runs beside WS-CV, before WS-CB)
+### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; LS2.1 v0.36.65; LS2.2 v0.36.66; runs beside WS-CV, before WS-CB)
 
 The lock words leave the kernel state: a ghost `LockState` (one total function
 over one `LockKey` type) sits beside `SystemState` in `LockedSystemState`, a
@@ -85,8 +85,10 @@ result over the word-level `withLockSet` (since LS2.1 those results are over
 `LockedSystemState` and `withLockSetGhost` in `Locks/BracketSpec.lean` /
 `LockSet2PL.lean` / `Serializability.lean`, where the bracket's kernel
 projection is the action by `rfl`; a new bracketed seam is a `BracketSpec`
-whose `covers` field is its coverage theorem, and LS2.2 points the exported
-bodies at `BracketSpec.run`).
+whose `covers` field is its coverage theorem; since LS2.2 the timer tick, the
+reschedule receiver and the secondary bring-up run `timerTickBracket` /
+`rescheduleBracket` through `BracketSpec.run`, and LS2.3–LS2.4 prove the
+syscall seams' coverage and switch them).
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
@@ -2143,7 +2145,11 @@ code may assume:
   the timer tick, the `.reschedule` SGI receiver and the secondary bring-up entry
   run inside the footprints SM5.B–G declared for them, with the write set proved
   inside the footprint on both steps (`perCoreRescheduleStep_coversWrites`,
-  `perCoreTimerTickStep_coversWrites`).  Two things new code must respect.  (1)
+  `perCoreTimerTickStep_coversWrites`).  Since WS-LS LS2.2 those three seams run
+  `timerTickBracket` / `rescheduleBracket` (`SchedLockBracket.lean`), the
+  `BracketSpec`s whose `covers` field is that proof; the syscall and suspend
+  seams still run `runBracketed` / `withLockSet` until LS2.4.  Two things new
+  code must respect.  (1)
   **The tick's footprint names every core's run-queue write lock**, not the boot
   core's and its own: the replenish drain and the bound-exhausted timeout both
   wake via `determineTargetCore`, so the two-lock segment was a *false* footprint
@@ -5176,9 +5182,10 @@ code may assume:
   **the coverage lands before the bracket**, which is the numbering rule's
   semantic half: a bracket acquiring a footprint nobody proved covers the writes
   hands out exclusion the runtime never established.
-  `SeLe4n/Kernel/SyscallSchedContainment.lean` is staged, for the reason
-  `SchedLockTimerContainment` is — every proof consumes an SM8.B confinement
-  theorem, and those are staged.  Four things new code must respect.
+  `SeLe4n/Kernel/SyscallSchedContainment.lean` is staged because every proof
+  consumes an SM8.B confinement theorem, and those are staged (the timer
+  tick's coverage chain, which consumes none, is production since WS-LS
+  LS2.2).  Four things new code must respect.
 
   (1) **One bridge, and the three clauses are discharged three different ways.**
   `footprintCoversWrites_of_cores` (production, beside the obligation) makes

@@ -371,8 +371,8 @@ example (coreId : UInt64) :
       = (do
           let frame ← SeLe4n.Platform.FFI.captureTrapFrame
           let record ← SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>
-            let st' := (SeLe4n.Kernel.rescheduleUnderDeclaredLockSet coreId
-              (SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+            let st' := ((SeLe4n.Kernel.rescheduleBracket coreId).run
+              (SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt st coreId frame)).2
             -- PR #904 review (`v0.36.41`): the core's residency settles on the
             -- successor the reschedule staged.
             let st' := SeLe4n.Kernel.PriorityInheritance.settleResidencyAt st' coreId
@@ -1105,29 +1105,35 @@ private def runSchedLockDomainChecks : IO Unit := do
     (SeLe4n.Kernel.declaredLockSetForReschedule 1 st |>.isSome)
   assertBool "NEGATIVE: an out-of-range core id declares no reschedule footprint"
     (SeLe4n.Kernel.declaredLockSetForReschedule 99 st |>.isNone)
-  -- 7. An out-of-range id runs the bare step: the bracket's undeclared arm, with
-  --    no lock written anywhere.
-  let outBad := SeLe4n.Kernel.rescheduleUnderDeclaredLockSet 99 st
-  assertBool "an out-of-range reschedule takes the undeclared arm"
-    (match outBad with | .undeclared _ => true | _ => false)
+  -- 7. WS-LS LS2.2: the executed bracket is the step and nothing else — on an
+  --    out-of-range id and on a valid core alike no lock word is written,
+  --    because the executed path has none to write.
+  let outBad := (SeLe4n.Kernel.rescheduleBracket 99).run st
+  assertBool "an out-of-range reschedule commits the bare step"
+    (decide (outBad.2.scheduler.currentOnCore c1
+      = (SeLe4n.Kernel.perCoreRescheduleStep st 99).scheduler.currentOnCore c1))
   assertBool "…and writes no scheduler lock word"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-      decide (outBad.state.runQueueLockOnCore c
+      decide (outBad.2.runQueueLockOnCore c
         = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
-  -- 8. On a valid core the bracket commits, and hands the locks back.
-  let outGood := SeLe4n.Kernel.rescheduleUnderDeclaredLockSet 1 st
-  assertBool "a valid reschedule commits inside its footprint"
-    (match outGood with | .committed _ => true | _ => false)
-  assertBool "the bracket leaves every scheduler lock word unheld again"
+  -- 8. On a valid core the proven bracket advances the ghost table by the
+  --    declared footprint and hands it back; the executed one writes nothing.
+  let outGood := (SeLe4n.Kernel.rescheduleBracket 1).run st
+  assertBool "the executed bracket leaves every scheduler lock word unheld"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-      decide (outGood.state.runQueueLockOnCore c
+      decide (outGood.2.runQueueLockOnCore c
         = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
-  assertBool "the committed outcome carries a value; a refusal would not"
-    (outGood.value?.isSome)
+  let ghost := (SeLe4n.Kernel.rescheduleBracket 1).runGhost c1
+    ⟨st, SeLe4n.Kernel.Concurrency.LockState.unheld⟩
+  assertBool "the proven bracket hands the ghost table back all-free"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      decide (ghost.2.locks (.runQueue c) = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
+  assertBool "the proven bracket's kernel half is the executed one's"
+    (decide (ghost.2.kernel.scheduler.currentOnCore c1 = outGood.2.scheduler.currentOnCore c1))
   -- 9. The bracket's committed state is the step's — bracketing changes the
-  --    locks, never the transition.
+  --    ghost table, never the transition.
   assertBool "the bracketed reschedule commits the verified step's scheduler state"
-    (decide (outGood.state.scheduler.currentOnCore c1
+    (decide (outGood.2.scheduler.currentOnCore c1
       = (SeLe4n.Kernel.perCoreRescheduleStep st 1).scheduler.currentOnCore c1))
 
 private def runSecondaryKernelMainChecks : IO Unit := do

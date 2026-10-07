@@ -4317,7 +4317,7 @@ run_check "INVARIANT" rg -n '^  let words ← match ← readCallerOverflowWords 
 run_check "INVARIANT" rg -n '^      \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := faultEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := unknownSyscallEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)\)\.state$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)\)\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 # v0.36.40: a trap on a core another core vacated (a remote suspend cleared the
 # slot while its thread still ran here) dispatches a successor rather than
 # resuming nothing, which the trap layer answers by halting the PE.  The rule,
@@ -7107,7 +7107,16 @@ run_check "INVARIANT" rg -n '^structure LockSet($|[ ({:\[\]])' SeLe4n/Kernel/Con
 run_check "INVARIANT" rg -n '^def objectLockBracketDomain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
 run_check "INVARIANT" rg -n '^def runBracketed($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
 run_check "INVARIANT" rg -n '^theorem perCoreRescheduleStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
-run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/SchedLockTimerContainment.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
+# WS-LS (lock-state separation): the scheduler seams run a `BracketSpec` whose
+# coverage field IS the containment theorem, and whose kernel projection is the
+# step by `rfl`; the bring-up seam runs the reschedule specification too.
+run_check "INVARIANT" rg -n '^def timerTickBracket($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
+run_check "INVARIANT" rg -n '^def rescheduleBracket($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
+run_check "INVARIANT" rg -n '^theorem timerTickBracket_runGhost_locks($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
+run_check "INVARIANT" rg -n '\(timerTickBracket coreId\)\.run' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n '\(rescheduleBracket coreId\)\.run' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n '\(rescheduleBracket coreId\)\.run' SeLe4n/Kernel/SecondaryEntry.lean
 # The object arm of every scheduler primitive **is** SM3.C's own primitive:
 # one answer to "what does acquiring an object lock do".
 run_check "INVARIANT" rg -n '^  \| \.object l => acquireLockOnObject s core l mode$' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
@@ -7115,9 +7124,9 @@ run_check "INVARIANT" rg -n '^  \| \.object l => acquireLockOnObject s core l mo
 # shared one — the derivation that stops the two from drifting.
 run_check "INVARIANT" rg -n '^theorem runUnderDeclaredLockSet_eq_runBracketed($|[ ({:\[\]])' SeLe4n/Kernel/SyscallLockBracket.lean
 # NEGATIVE: the scheduler bracket must not be a second, privately spelled
-# revalidating bracket.  Both seams route through `runBracketed`, so neither
-# `timerTickUnderDeclaredLockSet` nor `rescheduleUnderDeclaredLockSet` may
-# re-derive the acquire / re-resolve / refuse shape with its own `if`.
+# revalidating bracket.  Both seams run a specification, so neither
+# `timerTickBracket` nor `rescheduleBracket` may re-derive the acquire /
+# re-resolve / refuse shape with its own `if`.
 run_negative_check "INVARIANT" rg -n 'let acquired := acquireAll' SeLe4n/Kernel/SchedLockBracket.lean
 # **The RR7.39 finding.**  The tick's replenish-drain and timeout wakes both
 # place via `determineTargetCore`, so a run-queue segment naming only the boot
@@ -7794,7 +7803,7 @@ run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n 
 # physical writes and the instruction-cache operands — in its atomic step, and
 # performs them before its restore (the writes before any SGI).
 run_check "INVARIANT" rg -n -U '      \(st.\.pendingPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
-run_check "INVARIANT" rg -n -U '^  \| none => pure \(\)\n  Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2\n  Concurrency\.releaseSwitchedFpOwner coreId$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.fireCrossCoreSgis r\.1\.1\n  Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2\n  Concurrency\.releaseSwitchedFpOwner coreId$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n -U '      \(st.\.pendingPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites record\.2\.2\.1\n  Platform\.FFI\.completeIcacheMaintenance record\.2\.2\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 run_check "INVARIANT" rg -n -U '    \(suspendThreadCrossCoreDrainedStep tid execCore\)\n  Platform\.FFI\.completePhysicalWrites result\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.1\.2\n  Platform\.FFI\.completeIcacheMaintenance result\.2\.2$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
@@ -9466,6 +9475,11 @@ run_check "INVARIANT" rg -n '^def commitDisciplineRegistry($|[ ({:\[\]])' SeLe4n
 run_check "INVARIANT" rg -n '^def reconciliationViolations($|[ ({:\[\]])' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 run_check "INVARIANT" rg -n 'censusWitnessBareCommit' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 run_check "INVARIANT" rg -n 'censusWitnessIndirectCommit' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+# WS-LS (lock-state separation): a seam that runs the ghost form (the pair
+# instead of the kernel state) is refused under both disciplines; the planted
+# ghost-commit witness decides it.
+run_check "INVARIANT" rg -n '^def ghostForms($|[ ({:\[\]])' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+run_check "INVARIANT" rg -n 'censusWitnessGhostCommit' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 # The registry is reconciled BOTH ways: an unrecorded seam overstates nothing
 # and hides a gap, a stale entry overstates coverage.  A one-way check would
 # pass while the registry drifted in the direction that matters.
@@ -15737,7 +15751,8 @@ lake env lean /tmp/sm5d_surface.lean'
 # signature change on any of them fails here rather than leaving a `run_check`
 # matching a stale spelling.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
-import SeLe4n.Kernel.Scheduler.Operations.SchedLockTimerContainment
+import SeLe4n.Kernel.SchedLockBracket
+import SeLe4n.Kernel.Concurrency.Locks.LockBracket
 open SeLe4n.Kernel
 #check @SeLe4n.Model.SchedulerLockState
 #check @SeLe4n.Model.SystemState.runQueueLockOnCore
@@ -15757,9 +15772,11 @@ open SeLe4n.Kernel
 #check @declaredLockSetForReschedule
 #check @declaredLockSetForTimerTick_invalid_core
 #check @declaredLockSetForTimerTick_state_independent
-#check @timerTickUnderDeclaredLockSet
-#check @rescheduleUnderDeclaredLockSet
-#check @timerTickUnderDeclaredLockSet_invalid_core
+#check @timerTickBracket
+#check @rescheduleBracket
+#check @timerTickBracket_run
+#check @rescheduleBracket_run
+#check @timerTickBracket_runGhost_locks
 #check @footprintCoversWrites
 #check @perCoreRescheduleStep_coversWrites
 #check @perCoreTimerTickStep_coversWrites

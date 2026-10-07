@@ -62,10 +62,11 @@ All theorems are proved with no dependency beyond Lean's foundational `propext` 
 `setThreadCpuAffinityWithMigration` (this module's SM5.H.4 composite: affinity
 write + replenishment migration + run-queue migration), and WS-SM SM6.E's
 per-core donated cancellation arm consumes `migrateSchedContextReplenishment`
-at the cancellation boundary.  This module stays staged via `Platform.Staged`
-only for its remaining proof-layer surface (the SM5.H.5 affinity invariant and
-its preservation family, whose production consumers are SM7+ work); the
-operations themselves are production (`Scheduler.Operations.Core`).
+at the cancellation boundary.  This module was staged via `Platform.Staged`
+for its proof-layer surface until **WS-LS LS2.2**, when the timer tick's
+coverage proof (`timerTickBracket`, `SchedLockBracket.lean`) pulled its
+replenish frames into the production closure; the operations themselves are
+production (`Scheduler.Operations.Core`).
 
 ## Naming erratum (plan §3.8)
 
@@ -121,7 +122,7 @@ discharging the SM5.H.6 pipeline-order future-ness from `sc.period > 0`.
 
 `replenishOnCore`, `replenishScOnCore`, the migration, and the composite are
 **production** defs in `Scheduler/Operations/Core.lean` (reached via the SM5.H.4
-`tcbSetAffinity` syscall); this staged module collects their theorem surface. -/
+`tcbSetAffinity` syscall); this module collects their theorem surface. -/
 
 /-- WS-SM SM5.H.2: scheduling a replenishment never touches the object store. -/
 @[simp] theorem replenishOnCore_objects (st : SystemState) (c : CoreId)
@@ -1337,7 +1338,7 @@ theorem ensureRunnable_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.Thr
 --
 -- WS-SM SM5.H, relocated at **WS-RR RR8.12**: `wakeThread_replenishQueueOnCore`
 -- is declared in `Scheduler/Operations/PerCoreWake.lean`, beside `wakeThread`.
--- This module is staged, so the production IPC footprints that need the frame in
+-- This module was staged, so the production IPC footprints that need the frame in
 -- order to declare an empty replenish segment could not read it; the `_local`
 -- suffix was the signal that the owner was in the wrong layer.
 
