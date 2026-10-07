@@ -684,9 +684,12 @@ def RHTable.modify [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k 
   | some e => some { e with value := f e.value }
   | none => none
 
-/-- WS-ZA ZA1.6: the compiled `RHTable.modify`, inlined so the update `f` is
-specialised at each call site rather than passed as a closure. -/
-@[inline] def RHTable.modifyImpl [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : α)
+/-- WS-ZA ZA1.6: the compiled `RHTable.modify`, specialised so the update `f`
+is compiled in at each call site rather than passed as a closure.  A call, not
+inlined: the caller releases the record it projected the table from before the
+call, so the table arrives exclusive (inlined, the branch that answers the table
+unchanged kept that record alive across the write). -/
+@[specialize] def RHTable.modifyImpl [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : α)
     (f : β → β) : RHTable α β :=
   if t.size * 4 ≥ t.capacity * 3 then
     match t.get? k with

@@ -318,17 +318,20 @@ def syscallEntryCheckedR (ctx : LabelingContext)
     match st.scheduler.currentOnCore executingCore with
     | none => .error (.illegalState, st)
     | some tid =>
-      match lookupThreadRegisterContext tid st with
-      | .error e => .error (e, st)
-      | .ok (regs, _) =>
+      -- `lookupThreadRegisterContext`, read in place: its `.ok (regs, st)` is
+      -- two cells this match never needs.
+      match st.getObject? tid.toObjId with
+      | some (.tcb tcb) =>
         match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-                st tid layout regs regCount with
+                st tid layout tcb.registerContext regCount with
         | .error e => .error (e, st)
         | .ok decoded =>
           if decoded.overflowCount = 0 then
             dispatchSyscallCheckedR ctx decoded tid executingCore st
           else
             RefusalCarrying.ofKernel (syscallEntryChecked ctx layout executingCore regCount) st
+      | some _ => .error (.illegalState, st)
+      | none => .error (.objectNotFound, st)
 
 theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : Concurrency.CoreId)
@@ -345,9 +348,9 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
         Bool.false_eq_true, ↓reduceIte]
     · next tid hCur =>
       split
-      · next e hRegs => simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur,
-          hRegs, Bool.false_eq_true, ↓reduceIte]
-      · next regs _ hRegs =>
+      · next tcb hObj =>
+        have hRegs : lookupThreadRegisterContext tid st = .ok (tcb.registerContext, st) := by
+          simp only [lookupThreadRegisterContext, hObj]
         split
         · next e hDec => simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur,
             hRegs, hDec, Bool.false_eq_true, ↓reduceIte]
@@ -359,5 +362,16 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
               hZero, Bool.false_eq_true, ↓reduceIte,
               SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
           · rfl
+      · next o hNot hObj =>
+        have hRegs : lookupThreadRegisterContext tid st = .error .illegalState := by
+          unfold lookupThreadRegisterContext; rw [hObj]
+          cases o <;> first | rfl | exact absurd rfl (hNot _)
+        simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs,
+          Bool.false_eq_true, ↓reduceIte]
+      · next hObj =>
+        have hRegs : lookupThreadRegisterContext tid st = .error .objectNotFound := by
+          simp only [lookupThreadRegisterContext, hObj]
+        simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs,
+          Bool.false_eq_true, ↓reduceIte]
 
 end SeLe4n.Kernel
