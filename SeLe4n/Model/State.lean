@@ -5691,8 +5691,9 @@ theorem updateTcb_eq_self_of_none {st : SystemState} {tid : SeLe4n.ThreadId}
 
 /-- WS-ZA ZA1.6: the compiled `updateTcb` — the TCB updated in its slot
 (`RHTable.modify`), so on an exclusively owned state neither the TCB nor its
-`KernelObject` cell is rebuilt. -/
-def updateTcbImpl (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+`KernelObject` cell is rebuilt.  Inlined, with `RHTable.modifyImpl`, so the
+update is compiled into the caller and no closure carries it. -/
+@[inline] def updateTcbImpl (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
     SystemState :=
   match st.objects[tid.toObjId]? with
   | some (.tcb _) => { st with objects := st.objects.modify tid.toObjId (mapTcbObject f) }

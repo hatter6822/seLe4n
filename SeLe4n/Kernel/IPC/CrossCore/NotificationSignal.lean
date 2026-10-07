@@ -128,12 +128,19 @@ empty.  `RHTable.modify` hands it the cell exclusively, so the notification and
 its `some` badge cell are rewritten where they are. -/
 @[inline] def signalPendingObject (badge : SeLe4n.Badge) : KernelObject → KernelObject
   | .notification n =>
-      .notification { n with
-        state := .active
-        waitingThreads := SeLe4n.NoDupList.empty
-        pendingBadge := some (match n.pendingBadge with
-          | some existing => SeLe4n.Badge.bor existing badge
-          | none => SeLe4n.Badge.ofNatMasked badge.toNat) }
+      -- One constructor per branch, so the pending badge's `some` is rebuilt
+      -- from the one it replaces.
+      match n.pendingBadge with
+      | some existing =>
+          .notification { n with
+            state := .active
+            waitingThreads := SeLe4n.NoDupList.empty
+            pendingBadge := some (SeLe4n.Badge.bor existing badge) }
+      | none =>
+          .notification { n with
+            state := .active
+            waitingThreads := SeLe4n.NoDupList.empty
+            pendingBadge := some (SeLe4n.Badge.ofNatMasked badge.toNat) }
   | o => o
 
 /-- WS-ZA ZA1.1: the compiled `notificationSignalOnCore`.  A signal with no
@@ -194,7 +201,7 @@ def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n
       · rw [if_pos hL,
           SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN)]
         simp only [storeObject_eq_impl, storeObjectImpl, KernelObject.objectType, hL, ↓reduceIte]
-        rfl
+        cases hp : ntfn.pendingBadge <;> simp only [signalPendingObject, hp]
       · rw [if_neg hL]
         simp only [SystemState.storeObject_eq_withObjectStored]
   · rfl
