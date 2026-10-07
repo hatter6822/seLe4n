@@ -5684,6 +5684,15 @@ theorem updateTcb_eq_self_of_none {st : SystemState} {tid : SeLe4n.ThreadId}
   unfold updateTcb
   rw [getTcbWitnessed?_eq_none h]
 
+/-- WS-ZA ZA1.6: **the object at `id` updated in its slot**, the state record
+written in place.  Specialised at each call site, so `f` is compiled in and the
+state record is the one this function received: the caller's own record update,
+inlined among its other reads of the state, is where the compiler stops reusing
+it. -/
+@[specialize] def modifyObject (st : SystemState) (id : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) : SystemState :=
+  { st with objects := st.objects.modify id f }
+
 /-- WS-ZA ZA1.6: the object update a TCB update performs. -/
 @[inline] def mapTcbObject (f : TCB → TCB) : KernelObject → KernelObject
   | .tcb t => .tcb (f t)
@@ -5696,7 +5705,7 @@ update is compiled into the caller and no closure carries it. -/
 @[inline] def updateTcbImpl (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
     SystemState :=
   match st.objects[tid.toObjId]? with
-  | some (.tcb _) => { st with objects := st.objects.modify tid.toObjId (mapTcbObject f) }
+  | some (.tcb _) => st.modifyObject tid.toObjId (mapTcbObject f)
   | _ => st
 
 @[csimp] theorem updateTcb_eq_impl : @updateTcb = @updateTcbImpl := by
@@ -5704,6 +5713,7 @@ update is compiled into the caller and no closure carries it. -/
   unfold updateTcbImpl
   split
   · next t hx =>
+    unfold modifyObject
     rw [updateTcb_eq_of_some ((getTcb?_eq_some_iff st tid t).mpr hx),
       RHTable.modify_of_get? hx]
     rfl

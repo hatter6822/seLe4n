@@ -173,7 +173,7 @@ def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n
                    .ok (wakeThread st'' waiter executingCore).2)
       | none =>
           if storeLeavesIndexAndTypes st notificationId .notification then
-            ({ st with objects := st.objects.modify notificationId (signalPendingObject badge) },
+            (st.modifyObject notificationId (signalPendingObject badge),
              .ok none)
           else
           let mergedBadge : SeLe4n.Badge :=
@@ -198,7 +198,7 @@ def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n
     split
     · rfl
     · by_cases hL : storeLeavesIndexAndTypes st notificationId .notification = true
-      · rw [if_pos hL,
+      · rw [if_pos hL, SystemState.modifyObject,
           SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN)]
         simp only [storeObject_eq_impl, storeObjectImpl, KernelObject.objectType, hL, ↓reduceIte]
         cases hp : ntfn.pendingBadge <;> simp only [signalPendingObject, hp]
