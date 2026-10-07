@@ -8182,7 +8182,7 @@ run_check "INVARIANT" rg -n -F -- 'if ticks + sgis > irqs:' scripts/qemu_exercis
 run_check "INVARIANT" rg -n -F -- 'if irqs == 0 or ticks == 0:' scripts/qemu_exerciser_lib.sh
 run_check "INVARIANT" rg -n -F -- 'if not all(b <= w <= a for b, w, a in zip(before, words, after)):' scripts/qemu_exerciser_lib.sh
 run_check "INVARIANT" rg -n -F -- 'if len(set(sgis_by_core.values())) != len(sgis_by_core):' scripts/qemu_exerciser_lib.sh
-run_check "INVARIANT" rg -n '^EXERCISER_DRIVERS=\(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats\)$' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n '^EXERCISER_DRIVERS=\(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall\)$' scripts/qemu_exerciser_lib.sh
 # The gate runs on the Lean-linked image alone and reports NOT RUN otherwise;
 # the Tier-4 runner runs it in that mode only, and the archive lane reaches it
 # through the all-driver gate's Lean run.
