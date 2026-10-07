@@ -16,7 +16,7 @@
 const ALIGN: usize = 8;
 
 #[cfg(test)]
-pub use backend::live_allocations;
+pub use backend::{allocations, live_allocations};
 
 /// `size` bytes, word-aligned, or `None` when the heap cannot serve them.
 pub fn alloc(size: usize) -> Option<usize> {
@@ -91,6 +91,12 @@ mod backend {
 
     pub fn usable_size(addr: usize) -> Option<usize> {
         HEAP.with(|h| h.borrow().usable_size(addr).ok())
+    }
+
+    /// Successful allocations in this thread's heap so far, for checks that an
+    /// operation allocates nothing (or exactly what it returns).
+    pub fn allocations() -> u64 {
+        HEAP.with(|h| h.borrow().stats().allocations())
     }
 
     /// Live allocations in this thread's heap, for leak checks.

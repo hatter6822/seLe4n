@@ -29,6 +29,13 @@ nothing in the model's semantics changes.
   upcall outside the entry lock no longer builds an `ExceptionContext`;
   `classifySynchronousException` is defined through it and every theorem over
   it is unchanged.
+- **Big-number arithmetic allocates only big results.**  The HAL's `Nat`
+  runtime (`lean_runtime/nat.rs`) builds a result in an inline store of up to
+  8 limbs and allocates its object only when the result cannot be a scalar;
+  scratch buffers of up to 16 limbs live on the stack.  Capability-address
+  resolution (`addr % 2 ^ 64`, `2 ^ radixWidth`, `2 ^ guardWidth`) now costs
+  no allocation: **572 → 504 per round trip**.  A host test pins that a
+  scalar result allocates nothing and a big one exactly its object.
 
 ## v0.36.58 — A reply-blocked waiter's priority change re-walks its server's boost
 

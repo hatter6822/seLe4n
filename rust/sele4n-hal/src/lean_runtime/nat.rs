@@ -123,8 +123,18 @@ unsafe fn int_val(o: Obj, store: &mut [u64; 1]) -> Val<'_> {
 // Results
 // ==========================================================================
 
-/// A big-number object under construction: `cap` zeroed limbs.
+/// Limbs a [`Building`] or [`Scratch`] keeps on the stack before it falls back
+/// to the kernel heap.  The kernel's own arithmetic stays far below this (a
+/// capability address, `2 ^ 64`, a guard), so a result that ends up a scalar,
+/// or a scratch buffer, costs no allocation; a result that must be big costs
+/// exactly one, its object.
+const INLINE_LIMBS: usize = 8;
+
+/// A big-number result under construction: `cap` zeroed limbs, on the stack
+/// when they fit, else already in the object that will hold them.
 struct Building {
+    inline: [u64; INLINE_LIMBS],
+    /// The object, when `cap` exceeds [`INLINE_LIMBS`]; null otherwise.
     o: Obj,
     cap: usize,
 }
@@ -132,30 +142,29 @@ struct Building {
 impl Building {
     fn new(cap: usize) -> Self {
         let cap = cap.max(1);
-        let bytes = cap
-            .checked_mul(8)
-            .and_then(|b| b.checked_add(MPZ_BYTES))
-            .unwrap_or_else(|| object::internal_panic_out_of_memory());
-        let o = object::alloc_object(bytes);
-        // SAFETY: `o` is a fresh allocation of `bytes` bytes.
-        unsafe {
-            set_st_header(o, TAG_MPZ, 0);
-            let m = &mut *o.cast::<MpzObject>();
-            m.size = cap;
-            m.neg = 0;
+        if cap <= INLINE_LIMBS {
+            return Self {
+                inline: [0; INLINE_LIMBS],
+                o: core::ptr::null_mut(),
+                cap,
+            };
         }
-        let mut b = Self { o, cap };
+        let mut b = Self {
+            inline: [0; INLINE_LIMBS],
+            o: alloc_mpz(cap),
+            cap,
+        };
         b.limbs().fill(0);
         b
     }
 
     fn limbs(&mut self) -> &mut [u64] {
+        if self.o.is_null() {
+            return &mut self.inline[..self.cap];
+        }
         // SAFETY: `o` holds `cap` limbs after its fixed part and this builder
         // is its only owner.
-        unsafe {
-            let base = self.o.cast::<u8>().add(MPZ_BYTES).cast::<u64>();
-            core::slice::from_raw_parts_mut(base, self.cap)
-        }
+        unsafe { mpz_limbs_mut(self.o, self.cap) }
     }
 
     /// The object holding `neg` and the first `len` limbs, always big.
@@ -163,6 +172,12 @@ impl Building {
         let len = limbs::normalized_len(&self.limbs()[..len]);
         if len == 0 {
             fatal("big number result is zero where one is required");
+        }
+        if self.o.is_null() {
+            let o = alloc_mpz(len);
+            // SAFETY: `o` is a fresh number object of `len` limbs.
+            unsafe { mpz_limbs_mut(o, len) }.copy_from_slice(&self.inline[..len]);
+            self.o = o;
         }
         // SAFETY: this builder owns `o`.
         unsafe {
@@ -212,13 +227,50 @@ impl Building {
     }
 
     fn discard(self) {
-        // SAFETY: the object was never handed out.
-        unsafe { object::free_object(self.o) };
+        if !self.o.is_null() {
+            // SAFETY: the object was never handed out.
+            unsafe { object::free_object(self.o) };
+        }
     }
 }
 
-/// Scratch limbs from the kernel heap, freed on drop.
+/// `cap` limbs of a fresh number object, header written, limbs unset.
+fn alloc_mpz(cap: usize) -> Obj {
+    let bytes = cap
+        .checked_mul(8)
+        .and_then(|b| b.checked_add(MPZ_BYTES))
+        .unwrap_or_else(|| object::internal_panic_out_of_memory());
+    let o = object::alloc_object(bytes);
+    // SAFETY: `o` is a fresh allocation of `bytes` bytes.
+    unsafe {
+        set_st_header(o, TAG_MPZ, 0);
+        let m = &mut *o.cast::<MpzObject>();
+        m.size = cap;
+        m.neg = 0;
+    }
+    o
+}
+
+/// The `cap` limbs after a number object's fixed part.
+///
+/// # Safety
+///
+/// `o` must be a number object allocated with at least `cap` limbs, and the
+/// caller its only user for the slice's lifetime.
+unsafe fn mpz_limbs_mut<'a>(o: Obj, cap: usize) -> &'a mut [u64] {
+    // SAFETY: forwarded from the caller.
+    unsafe {
+        let base = o.cast::<u8>().add(MPZ_BYTES).cast::<u64>();
+        core::slice::from_raw_parts_mut(base, cap)
+    }
+}
+
+/// Zeroed scratch limbs: on the stack up to twice [`INLINE_LIMBS`] (what
+/// `limbs::pow` asks for a result the builder keeps inline), else from the
+/// kernel heap and freed on drop.
 pub(super) struct Scratch {
+    inline: [u64; 2 * INLINE_LIMBS],
+    /// The heap allocation, or 0 when the limbs are inline.
     addr: usize,
     len: usize,
 }
@@ -226,16 +278,30 @@ pub(super) struct Scratch {
 impl Scratch {
     pub(super) fn new(len: usize) -> Self {
         let len = len.max(1);
+        if len <= 2 * INLINE_LIMBS {
+            return Self {
+                inline: [0; 2 * INLINE_LIMBS],
+                addr: 0,
+                len,
+            };
+        }
         let addr = len
             .checked_mul(8)
             .and_then(mem::alloc)
             .unwrap_or_else(|| object::internal_panic_out_of_memory());
-        let mut s = Self { addr, len };
+        let mut s = Self {
+            inline: [0; 2 * INLINE_LIMBS],
+            addr,
+            len,
+        };
         s.slice().fill(0);
         s
     }
 
     pub(super) fn slice(&mut self) -> &mut [u64] {
+        if self.addr == 0 {
+            return &mut self.inline[..self.len];
+        }
         // SAFETY: `addr` is a live allocation of `len` limbs this scratch owns.
         unsafe { core::slice::from_raw_parts_mut(self.addr as *mut u64, self.len) }
     }
@@ -243,7 +309,7 @@ impl Scratch {
 
 impl Drop for Scratch {
     fn drop(&mut self) {
-        if !mem::free(self.addr) {
+        if self.addr != 0 && !mem::free(self.addr) {
             fatal("big number scratch lost");
         }
     }
