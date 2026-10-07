@@ -844,33 +844,42 @@ def file_digest(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def provenance_record(package: list[str]) -> dict[str, dict[str, str | None]]:
-    """The inputs the archive was compiled from and the outputs it is.
+def input_digests(package: list[str]) -> dict[str, str | None]:
+    """The digest of every file the archive is compiled from.
 
     A module that joins or leaves the closure does so through an import line
     in a module already recorded, so re-hashing the recorded sources detects
     a closure change as well as an edit."""
     inputs = ([m.replace(".", "/") + ".lean" for m in package] + list(BUILD_CONFIG)
               + [str(h.relative_to(REPO)) for h in sorted(SHIM_INCLUDE.rglob("*")) if h.is_file()])
+    return {path: file_digest(REPO / path) for path in sorted(inputs)}
+
+
+def provenance_record(inputs: dict[str, str | None]) -> dict[str, dict[str, str | None]]:
+    """The inputs the archive was compiled from and the outputs it is.  The
+    inputs are passed in: `build` reads them before it compiles anything, so a
+    source edited while the build runs is recorded as it was compiled, not as
+    it is when the build ends."""
     outputs = [ARCHIVE, ROOTS_SCRIPT]
-    return {"inputs": {path: file_digest(REPO / path) for path in sorted(inputs)},
+    return {"inputs": inputs,
             "outputs": {str(out.relative_to(REPO)): file_digest(out) for out in outputs}}
 
 
+def stale_files(then: object, now: object, section: str) -> list[str]:
+    """Every file of one recorded section whose digest differs now, and every
+    file the current reading has that the record lacks (a header added beside
+    the shim); a section unrecorded or unread counts as different."""
+    if not isinstance(then, dict) or not then or not isinstance(now, dict):
+        return [f"<{section} unrecorded>"]
+    return ([path for path, digest in sorted(then.items())
+             if digest is None or now.get(path) != digest]
+            + [f"{path} (new)" for path in sorted(set(now) - set(then))])
+
+
 def stale_entries(recorded: dict, current: dict) -> list[str]:
-    """Every recorded file whose digest differs now, and every file the current
-    reading has that the record lacks (a header added beside the shim); a
-    recorded section or file the current reading lacks counts as different."""
-    stale: list[str] = []
-    for section in ("inputs", "outputs"):
-        then, now = recorded.get(section), current.get(section)
-        if not isinstance(then, dict) or not then or not isinstance(now, dict):
-            stale.append(f"<{section} unrecorded>")
-            continue
-        stale += [path for path, digest in sorted(then.items())
-                  if digest is None or now.get(path) != digest]
-        stale += [f"{path} (new)" for path in sorted(set(now) - set(then))]
-    return stale
+    """`stale_files` over both sections of a build record."""
+    return [entry for section in ("inputs", "outputs")
+            for entry in stale_files(recorded.get(section), current.get(section), section)]
 
 
 def check_fresh() -> int:
@@ -888,7 +897,7 @@ def check_fresh() -> int:
     package = [p.removesuffix(".lean").replace("/", ".") for p in (inputs or {})
                if p.endswith(".lean")]
     stale = stale_entries(recorded if isinstance(recorded, dict) else {},
-                          provenance_record(package))
+                          provenance_record(input_digests(package)))
     if stale:
         print(f"FAIL: {ARCHIVE.relative_to(REPO)} is stale: {len(stale)} input or output file(s) "
               f"differ from its build record (first: {', '.join(stale[:5])}); "
@@ -907,6 +916,7 @@ def build(jobs: int) -> int:
     package, stdlib = classify_closure(closure, lake_modules(), staged_modules())
     print(f"[2/8] closure: {len(package)} package + {len(stdlib)} stdlib modules "
           f"(elaborator and Lake agree; no staged, testing or Lean.* module)")
+    inputs = input_digests(package)
     check_config((Path(tc["prefix"]) / "include/lean/config.h").read_text(),
                  (SHIM_INCLUDE / "lean/config.h").read_text())
     print("[3/8] allocator configuration: toolchain config.h with LEAN_MIMALLOC -> LEAN_SMALL_ALLOCATOR")
@@ -971,10 +981,16 @@ def build(jobs: int) -> int:
           f"the file the kernel image links")
     status = fp_gate.check([ARCHIVE], fp_gate.default_objdump())
     print("[8/8] FP/SIMD register operands: " + ("none" if status == 0 else "FOUND"))
-    if status == 0:
-        PROVENANCE.write_text(json.dumps(provenance_record(package), indent=1, sort_keys=True) + "\n")
-        print(f"provenance -> {PROVENANCE.relative_to(REPO)}")
-    return status
+    if status != 0:
+        return status
+    changed = stale_files(inputs, input_digests(package), "inputs")
+    if changed:
+        print(f"FAIL: {len(changed)} input file(s) changed while the archive was built "
+              f"(first: {changed[0]}); no provenance record written, so the archive is stale")
+        return 1
+    PROVENANCE.write_text(json.dumps(provenance_record(inputs), indent=1, sort_keys=True) + "\n")
+    print(f"provenance -> {PROVENANCE.relative_to(REPO)}")
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -1197,6 +1213,11 @@ def self_test() -> int:
     then = {"inputs": {"SeLe4n.lean": "a", "lean-toolchain": "t"},
             "outputs": {"libsele4n.a": "x"}}
     expect("an unchanged tree is fresh", stale_entries(then, json.loads(json.dumps(then))) == [])
+    expect("the record holds the inputs read before the build, not the tree's",
+           provenance_record({"SeLe4n.lean": "before"})["inputs"] == {"SeLe4n.lean": "before"})
+    expect("an input edited while the build ran is caught",
+           stale_files({"SeLe4n.lean": "before"}, {"SeLe4n.lean": "after"}, "inputs")
+           == ["SeLe4n.lean"])
     expect("an edited source is stale", stale_entries(
         then, {**then, "inputs": {**then["inputs"], "SeLe4n.lean": "b"}}) == ["SeLe4n.lean"])
     expect("a deleted source is stale", stale_entries(

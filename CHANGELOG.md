@@ -32,8 +32,16 @@ none is a first-touch cost, and none comes from the lock model.
   proven equal to the one it replaces.
 
 Registered in `docs/REGISTERED_DEBT.md`'s workstream index and
-`docs/agent_guide/WORKSTREAM_CONTEXT.md`.  No code changes; the reading is
-still 118.
+`docs/agent_guide/WORKSTREAM_CONTEXT.md`.  The reading is still 118.
+
+**Fixed: the archive's build record could describe source it was not built
+from.**  v0.36.71's `libsele4n.provenance` hashed the inputs when the build
+ended, so a source edited while the archive was compiling was recorded as
+built and `--check-fresh` passed on an archive holding the old code (found
+when an edit landed mid-build and the record named a version of
+`RobinHood/Core.lean` that was never compiled).  `build_lean_aarch64_archive.py`
+now reads the inputs before compiling, records those, and refuses to write a
+record when any input changed during the build.
 
 ## v0.36.71 — the allocation exerciser refuses a stale Lean archive; first reading of the separated lock state: 112
 
